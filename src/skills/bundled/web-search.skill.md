@@ -10,7 +10,7 @@ tags:
 requires:
   tools:
     - web_search
-Native Engine:
+nativeEngine:
   category: research
   priority: 80
   triggers:

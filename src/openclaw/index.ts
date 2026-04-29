@@ -190,7 +190,7 @@ export {
 /**
  * Initialize all Native Engine modules with default configuration
  */
-export function initializeNative EngineModules(config: {
+export function initializeNativeEngineModules(config: {
   builtInTools?: string[];
   policyHierarchy?: PolicyHierarchy;
   compactionConfig?: CompactionConfig;
@@ -225,7 +225,7 @@ export function initializeNative EngineModules(config: {
 /**
  * Reset all Native Engine module singletons
  */
-export function resetAllNative EngineModules(): void {
+export function resetAllNativeEngineModules(): void {
   _resetToolPolicyEngine();
   _resetToolLifecycleHooks();
   _resetSmartCompactionEngine();

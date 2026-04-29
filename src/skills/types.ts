@@ -28,7 +28,7 @@ export interface SkillMetadata {
   /** Skill configuration schema */
   config?: SkillConfigSchema;
   /** Native Engine-specific metadata */
-  Native Engine?: Native EngineMetadata;
+  nativeEngine?: NativeEngineMetadata;
   /** CC11: If true, skill runs in a forked context (isolated sub-agent) */
   contextFork?: boolean;
   /** CC11: If true, skill content is returned directly without LLM invocation */
@@ -60,7 +60,7 @@ export interface SkillConfigProperty {
   enum?: unknown[];
 }
 
-export interface Native EngineMetadata {
+export interface NativeEngineMetadata {
   /** Skill category */
   category?: string;
   /** Priority (higher = more likely to match) */

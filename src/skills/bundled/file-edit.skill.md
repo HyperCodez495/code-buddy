@@ -11,7 +11,7 @@ requires:
   tools:
     - read_file
     - edit_file
-Native Engine:
+nativeEngine:
   category: development
   priority: 90
   triggers:

@@ -56,7 +56,7 @@ function createSkillMd(overrides: Partial<Skill> = {}): Skill {
         tools: ['bash', 'view_file'],
         env: ['NODE_ENV'],
       },
-      Native Engine: {
+      nativeEngine: {
         category: 'testing',
         priority: 10,
         triggers: ['run tests', 'write tests'],
@@ -444,8 +444,8 @@ describe('unifiedToSkillMd', () => {
     expect(converted.metadata.version).toBe('2.0.0');
     expect(converted.metadata.author).toBe('Tester');
     expect(converted.metadata.tags).toEqual(['testing']);
-    expect(converted.metadata.Native Engine?.priority).toBe(5);
-    expect(converted.metadata.Native Engine?.triggers).toEqual(['construct']);
+    expect(converted.metadata.nativeEngine?.priority).toBe(5);
+    expect(converted.metadata.nativeEngine?.triggers).toEqual(['construct']);
     expect(converted.content.description).toBe('Be helpful.');
     expect(converted.enabled).toBe(true);
   });

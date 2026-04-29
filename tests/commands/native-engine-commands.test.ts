@@ -16,7 +16,7 @@ import {
   registerIdentityCommands,
   registerGroupCommands,
   registerAuthProfileCommands,
-} from '../../src/commands/cli/Native Engine-commands';
+} from '../../src/commands/cli/native-engine-commands';
 import { getHeartbeatEngine } from '../../src/daemon/heartbeat.js';
 import { resetAuthProfileManager } from '../../src/auth/profile-manager.js';
 

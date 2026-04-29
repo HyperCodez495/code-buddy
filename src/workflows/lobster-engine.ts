@@ -102,7 +102,7 @@ export class LobsterEngine {
     }
 
     // Normalize Standard format
-    this.normalizeNative EngineFormat(workflow);
+    this.normalizeNativeEngineFormat(workflow);
 
     logger.debug(`Parsed workflow: ${workflow.name} v${workflow.version}`);
     return workflow;
@@ -114,7 +114,7 @@ export class LobsterEngine {
    * - Resolve `args` defaults into `variables`
    * - Infer implicit `dependsOn` from `stdin` references
    */
-  normalizeNative EngineFormat(workflow: LobsterWorkflow): void {
+  normalizeNativeEngineFormat(workflow: LobsterWorkflow): void {
     // Merge env → variables
     if (workflow.env) {
       workflow.variables = { ...workflow.env, ...workflow.variables };

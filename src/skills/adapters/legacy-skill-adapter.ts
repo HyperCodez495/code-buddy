@@ -200,9 +200,9 @@ export function skillMdToUnified(skill: Skill): UnifiedSkill {
     version: skill.metadata.version,
     author: skill.metadata.author,
     tags: skill.metadata.tags ? [...skill.metadata.tags] : undefined,
-    priority: skill.metadata.Native Engine?.priority,
-    triggers: skill.metadata.Native Engine?.triggers
-      ? [...skill.metadata.Native Engine.triggers]
+    priority: skill.metadata.nativeEngine?.priority,
+    triggers: skill.metadata.nativeEngine?.triggers
+      ? [...skill.metadata.nativeEngine.triggers]
       : undefined,
     examples: skill.content.examples
       ? skill.content.examples.map(e => ({ ...e }))
@@ -260,7 +260,7 @@ export function unifiedToSkillMd(unified: UnifiedSkill): Skill {
       author: unified.author,
       tags: unified.tags ? [...unified.tags] : undefined,
       requires: unified.requires,
-      Native Engine: {
+      nativeEngine: {
         priority: unified.priority,
         triggers: unified.triggers ? [...unified.triggers] : undefined,
         examples: unified.examples

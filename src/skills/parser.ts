@@ -113,7 +113,7 @@ function parseMetadata(yamlContent: string, sourcePath: string): SkillMetadata {
       tags: parsed.tags as string[] | undefined,
       requires: parsed.requires as SkillMetadata['requires'],
       config: parsed.config as SkillMetadata['config'],
-      Native Engine: parsed.Native Engine as SkillMetadata['Native Engine'],
+      nativeEngine: parsed.nativeEngine as SkillMetadata['nativeEngine'],
       // CC11: context fork and disable-model-invocation
       contextFork: parsed.context === 'fork' || parsed.contextFork === true,
       disableModelInvocation: parsed['disable-model-invocation'] === true || parsed.disableModelInvocation === true,

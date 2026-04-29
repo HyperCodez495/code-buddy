@@ -181,7 +181,7 @@ describe('LobsterEngine', () => {
         ],
         env: { MY_VAR: 'hello' },
       };
-      engine.normalizeNative EngineFormat(wf);
+      engine.normalizeNativeEngineFormat(wf);
       expect(wf.variables).toEqual({ MY_VAR: 'hello' });
     });
 
@@ -192,7 +192,7 @@ describe('LobsterEngine', () => {
         ],
         args: { branch: { default: 'main' } },
       };
-      engine.normalizeNative EngineFormat(wf);
+      engine.normalizeNativeEngineFormat(wf);
       expect(wf.variables!.branch).toBe('main');
     });
 
@@ -203,7 +203,7 @@ describe('LobsterEngine', () => {
           { id: 'test', name: 'Test', command: 'npm test', stdin: '$build.stdout' },
         ],
       };
-      engine.normalizeNative EngineFormat(wf);
+      engine.normalizeNativeEngineFormat(wf);
       expect(wf.steps[1].dependsOn).toEqual(['build']);
     });
 
@@ -214,7 +214,7 @@ describe('LobsterEngine', () => {
           { id: 'process', name: 'Process', command: 'echo $fetch.stdout | jq .' },
         ],
       };
-      engine.normalizeNative EngineFormat(wf);
+      engine.normalizeNativeEngineFormat(wf);
       expect(wf.steps[1].dependsOn).toContain('fetch');
     });
 
@@ -225,7 +225,7 @@ describe('LobsterEngine', () => {
           { id: 'b', name: 'B', command: 'echo $a.stdout', dependsOn: ['a'] },
         ],
       };
-      engine.normalizeNative EngineFormat(wf);
+      engine.normalizeNativeEngineFormat(wf);
       expect(wf.steps[1].dependsOn).toEqual(['a']); // no duplicate
     });
 
@@ -290,7 +290,7 @@ describe('LobsterEngine', () => {
     });
 
     it('should parse full Native Engine-style workflow JSON', () => {
-      const Native EngineWorkflow = JSON.stringify({
+      const nativeEngineWorkflow = JSON.stringify({
         name: 'deploy-pipeline',
         version: '2.0.0',
         args: { target: { default: 'staging' } },
@@ -302,7 +302,7 @@ describe('LobsterEngine', () => {
           { id: 'deploy', name: 'Deploy', command: 'deploy $test.stdout', condition: '$review.approved', dependsOn: ['review'] },
         ],
       });
-      const wf = engine.parseWorkflow(Native EngineWorkflow);
+      const wf = engine.parseWorkflow(nativeEngineWorkflow);
       expect(wf.name).toBe('deploy-pipeline');
       expect(wf.variables?.NODE_ENV).toBe('production');
       expect(wf.variables?.target).toBe('staging');

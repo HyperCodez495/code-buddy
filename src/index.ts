@@ -2106,12 +2106,12 @@ for (const cmdName of utilityCommandNames) {
 
 // Enterprise-grade commands
 addLazyCommandGroup(program, 'heartbeat', 'Manage the heartbeat engine (periodic agent wake)', async () => {
-  const { registerHeartbeatCommands } = await import('./commands/cli/Native Engine-commands.js');
+  const { registerHeartbeatCommands } = await import('./commands/cli/native-engine-commands.js');
   registerHeartbeatCommands(program);
 });
 
 addLazyCommandGroup(program, 'hub', 'Skills marketplace (search, install, publish)', async () => {
-  const { registerHubCommands } = await import('./commands/cli/Native Engine-commands.js');
+  const { registerHubCommands } = await import('./commands/cli/native-engine-commands.js');
   registerHubCommands(program);
 });
 
@@ -2121,17 +2121,17 @@ addLazyCommandGroup(program, 'device', 'Manage paired device nodes (SSH, ADB, lo
 });
 
 addLazyCommandGroup(program, 'identity', 'Manage agent identity files (SOUL.md, USER.md, etc.)', async () => {
-  const { registerIdentityCommands } = await import('./commands/cli/Native Engine-commands.js');
+  const { registerIdentityCommands } = await import('./commands/cli/native-engine-commands.js');
   registerIdentityCommands(program);
 });
 
 addLazyCommandGroup(program, 'groups', 'Manage group chat security', async () => {
-  const { registerGroupCommands } = await import('./commands/cli/Native Engine-commands.js');
+  const { registerGroupCommands } = await import('./commands/cli/native-engine-commands.js');
   registerGroupCommands(program);
 });
 
 addLazyCommandGroup(program, 'auth-profile', 'Manage authentication profiles (API key rotation)', async () => {
-  const { registerAuthProfileCommands } = await import('./commands/cli/Native Engine-commands.js');
+  const { registerAuthProfileCommands } = await import('./commands/cli/native-engine-commands.js');
   registerAuthProfileCommands(program);
 });
 
