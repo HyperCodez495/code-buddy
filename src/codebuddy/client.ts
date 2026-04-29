@@ -1,4 +1,9 @@
-import type { ChatCompletionMessageParam, ChatCompletionChunk } from "openai/resources/chat";
+import type {
+  ChatCompletionMessageParam,
+  ChatCompletionChunk,
+  ChatCompletionCreateParamsNonStreaming,
+  ChatCompletionCreateParamsStreaming,
+} from "openai/resources/chat";
 import { validateModel, getModelInfo } from "../utils/model-utils.js";
 import { getModelToolConfig } from "../config/model-tools.js";
 import { logger } from "../utils/logger.js";
