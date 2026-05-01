@@ -562,6 +562,15 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Consult a stronger reviewer model for a second opinion (full conversation forwarded)'
   },
 
+  // AskUserQuestion (structured multi-option mid-task questions)
+  {
+    name: 'ask_user_question',
+    category: 'utility' as ToolCategory,
+    keywords: ['ask', 'question', 'user', 'clarify', 'choose', 'option', 'decide', 'multi-choice', 'prompt', 'interactive', 'pick'],
+    priority: 7,
+    description: 'Ask the user 1-4 structured multi-option questions mid-task'
+  },
+
   // Codebase replace
   {
     name: 'codebase_replace',

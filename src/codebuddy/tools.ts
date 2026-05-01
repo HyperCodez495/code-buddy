@@ -40,6 +40,7 @@ import {
   LSP_TOOLS,
   SECRETS_TOOLS,
   ADVISOR_TOOLS,
+  ASK_USER_QUESTION_TOOLS,
   CODEBASE_REPLACE_TOOLS,
 } from "./tool-definitions/index.js";
 
@@ -128,6 +129,9 @@ export function initializeToolRegistry(): void {
 
   // Advisor tool (second opinion from a stronger reviewer)
   registerGroup(ADVISOR_TOOLS);
+
+  // AskUserQuestion tool (structured multi-option mid-task questions)
+  registerGroup(ASK_USER_QUESTION_TOOLS);
 
   // Codebase replace tools
   registerGroup(CODEBASE_REPLACE_TOOLS);

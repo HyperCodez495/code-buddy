@@ -251,6 +251,13 @@ export {
   resetAdvisorConfigProvider,
 } from './advisor-tools.js';
 
+// Tool Adapters - AskUserQuestion (ask_user_question)
+export {
+  AskUserQuestionExecuteTool,
+  createAskUserQuestionTools,
+  resetAskUserQuestionInstances,
+} from './ask-user-question-tools.js';
+
 // Tool Adapters - Codebase Replace (codebase_replace)
 export {
   CodebaseReplaceTool,
@@ -339,6 +346,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createMergeConflictTools } = await import('./merge-conflict-tools.js');
   const { createVulnScannerTools } = await import('./vuln-scanner-tools.js');
   const { createAdvisorTools } = await import('./advisor-tools.js');
+  const { createAskUserQuestionTools } = await import('./ask-user-question-tools.js');
   
   // Await MCP Manager initialization before registering its tools
   const { getMcpManager } = await import('../mcp/mcp-manager.js');
@@ -375,6 +383,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createMergeConflictTools(),
     ...createVulnScannerTools(),
     ...createAdvisorTools(),
+    ...createAskUserQuestionTools(),
     ...createMcpTools(),
   ];
 

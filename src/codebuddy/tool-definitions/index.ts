@@ -169,6 +169,12 @@ export {
   ADVISOR_TOOLS,
 } from './advisor-tools.js';
 
+// AskUserQuestion tool (structured multi-option mid-task questions)
+export {
+  ASK_USER_QUESTION_TOOL,
+  ASK_USER_QUESTION_TOOLS,
+} from './ask-user-question-tools.js';
+
 // Codebase replace tools (find & replace across files)
 export {
   CODEBASE_REPLACE_TOOL,
