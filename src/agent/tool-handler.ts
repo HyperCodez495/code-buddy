@@ -52,6 +52,8 @@ import {
   createMergeConflictTools,
   createVulnScannerTools,
   createCodebaseReplaceTools,
+  createAdvisorTools,
+  createAskUserQuestionTools,
   createGuiTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
@@ -198,6 +200,8 @@ export class ToolHandler {
       ...createMergeConflictTools(),
       ...createVulnScannerTools(),
       ...createCodebaseReplaceTools(),
+      ...createAdvisorTools(),
+      ...createAskUserQuestionTools(),
       ...createGuiTools(),
     ];
 
