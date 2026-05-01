@@ -439,6 +439,13 @@ export class CodeBuddyAgent extends BaseAgent {
       setDecisionContextProvider((query) => getDecisionMemory().buildDecisionContext(query));
     }).catch((e) => { logger.debug('Decision memory module load failed (optional)', { error: String(e) }); });
 
+    // Wire AskUserQuestion readline UI provider (V4.3 ADR-01)
+    import('../tools/ask-user-question-tool.js').then(({ setAskUserQuestionUIProvider }) => {
+      import('../tools/ask-user-question-readline-provider.js').then(({ getAskUserQuestionReadlineProvider }) => {
+        setAskUserQuestionUIProvider(getAskUserQuestionReadlineProvider());
+      }).catch((e) => { logger.debug('AskUserQuestion readline provider wire failed (optional)', { error: String(e) }); });
+    }).catch((e) => { logger.debug('AskUserQuestion provider register failed (optional)', { error: String(e) }); });
+
     // Wire Advisor tool context + config providers (V4.1)
     import('../tools/advisor-tool.js').then(({ setAdvisorContextProvider }) => {
       setAdvisorContextProvider(() => ({
