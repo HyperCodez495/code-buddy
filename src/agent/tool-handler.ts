@@ -54,6 +54,7 @@ import {
   createCodebaseReplaceTools,
   createAdvisorTools,
   createAskUserQuestionTools,
+  createExitPlanModeTools,
   createGuiTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
@@ -202,6 +203,7 @@ export class ToolHandler {
       ...createCodebaseReplaceTools(),
       ...createAdvisorTools(),
       ...createAskUserQuestionTools(),
+      ...createExitPlanModeTools(),
       ...createGuiTools(),
     ];
 
