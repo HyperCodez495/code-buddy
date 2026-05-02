@@ -142,10 +142,8 @@ function createApp(config: ServerConfig): Application {
     app.use(createRateLimitMiddleware(config));
   }
 
-  // Authentication
-  if (config.authEnabled) {
-    app.use(createAuthMiddleware(config));
-  }
+  // Authentication (always applied — enables both enforcing and disabling auth)
+  app.use(createAuthMiddleware(config));
 
   // CSRF protection for state-changing endpoints (POST/PUT/DELETE)
   if (process.env.CSRF_PROTECTION !== 'false') {
