@@ -343,23 +343,86 @@ export class A2AAgentClient {
     return result;
   }
 
-  /** Submit a task to a specific agent */
+  /** Submit a task to a specific agent (local or remote) */
   async submitTask(
     agentKey: string,
     request: string,
     metadata?: Record<string, string>
   ): Promise<Task> {
+    // Try local agent first
     const agent = this.agents.get(agentKey);
-    if (!agent) throw new Error(`Agent not found: ${agentKey}`);
+    if (agent) {
+      return agent.submitTask({
+        id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+        message: {
+          role: 'user',
+          parts: [{ type: 'text', text: request }],
+        },
+        metadata,
+      });
+    }
 
-    return agent.submitTask({
-      id: `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-      message: {
-        role: 'user',
-        parts: [{ type: 'text', text: request }],
-      },
-      metadata,
-    });
+    // Try remote agent (spoke)
+    const remote = this.remoteCards.get(agentKey);
+    if (remote) {
+      return this.submitTaskToRemote(agentKey, remote, request, metadata);
+    }
+
+    throw new Error(`Agent not found (local or remote): ${agentKey}`);
+  }
+
+  /** Submit a task to a remote agent via HTTP */
+  private async submitTaskToRemote(
+    agentKey: string,
+    remote: RemoteAgent,
+    request: string,
+    metadata?: Record<string, string>
+  ): Promise<Task> {
+    const taskId = `task_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+
+    try {
+      // Forward the task to the remote spoke
+      const response = await fetch(`${remote.url}/api/a2a/tasks/send`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: taskId,
+          message: { role: 'user', parts: [{ type: 'text', text: request }] },
+          metadata,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error(`Remote task submission failed: ${response.statusText}`);
+      }
+
+      const result = await response.json() as Record<string, unknown>;
+
+      // Wrap remote response in a local Task object for consistency
+      return {
+        id: taskId,
+        sessionId: `${agentKey}_${taskId}`,
+        status: { status: TaskStatus.COMPLETED, timestamp: Date.now() },
+        messages: [{ role: 'user', parts: [{ type: 'text', text: request }] }],
+        artifacts: (result.artifacts as Artifact[]) || [],
+        metadata: { ...metadata, agent: agentKey },
+        history: [{ status: TaskStatus.SUBMITTED, timestamp: Date.now() }],
+      };
+    } catch (err) {
+      const error = err instanceof Error ? err.message : String(err);
+      return {
+        id: taskId,
+        sessionId: `${agentKey}_${taskId}`,
+        status: { status: TaskStatus.FAILED, message: error, timestamp: Date.now() },
+        messages: [{ role: 'user', parts: [{ type: 'text', text: request }] }],
+        artifacts: [],
+        metadata: { ...metadata, agent: agentKey },
+        history: [
+          { status: TaskStatus.SUBMITTED, timestamp: Date.now() },
+          { status: TaskStatus.FAILED, message: error, timestamp: Date.now() },
+        ],
+      };
+    }
   }
 
   /** Get task status */
