@@ -110,8 +110,8 @@ import {
   handleHeartbeat,
   // Daily reset handler (audit OpenClaw heritage activation)
   handleDailyReset,
-  // Team session handler (audit OpenClaw heritage activation — TeamSessionManager wake)
-  handleSession,
+  // Team session handler — slash /share (audit OpenClaw heritage activation, TeamSessionManager wake)
+  handleShare,
   // Clipboard handler
   handleCopy,
   // PR handler (GitHub/GitLab PR creation)
@@ -472,8 +472,8 @@ export class EnhancedCommandHandler {
     // Daily reset scheduler (audit OpenClaw heritage activation)
     ['__DAILY_RESET__', (args) => handleDailyReset(args)],
 
-    // Team session manager (audit OpenClaw heritage activation — TeamSessionManager wake)
-    ['__SESSION__', (args) => handleSession(args)],
+    // Team session manager — slash /share (audit OpenClaw heritage, TeamSessionManager wake)
+    ['__SHARE__', (args) => handleShare(args)],
 
     // Clipboard (copy last response, code block, or text)
     ['__COPY__', (args) => handleCopy(args, this.conversationHistory)],

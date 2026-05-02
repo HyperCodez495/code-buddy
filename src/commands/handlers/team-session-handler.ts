@@ -1,5 +1,10 @@
 /**
- * Team Session slash command handler (`/session`)
+ * Team Session slash command handler (`/share`)
+ *
+ * Renamed from `/session` after grep revealed `/sessions` (HTTP sessions
+ * persistance, src/commands/handlers/session-handlers.ts) — singular vs
+ * plural would tab-collide. `/share` is unambiguous and matches the user-
+ * facing intent: "share my coding session with team members".
  *
  * Wires user-facing activation of the TeamSessionManager
  * (`src/collaboration/team-session.ts`). The manager has existed since
@@ -8,19 +13,19 @@
  * findings 2026-05-02 — top 1 priority).
  *
  * Sub-actions:
- *   /session enable                — instantiate the singleton (idempotent)
- *   /session disable               — dispose the singleton, clear timers
- *   /session status                — show enabled, active session, sync state
- *   /session create <name>         — create a new local session
- *   /session join <sessionId>      — join an existing local session by id
- *   /session list                  — list sessions on disk
- *   /session leave                 — leave the current session
+ *   /share enable                — instantiate the singleton (idempotent)
+ *   /share disable               — dispose the singleton, clear timers
+ *   /share status                — show enabled, active session, sync state
+ *   /share create <name>         — create a new local session
+ *   /share join <sessionId>      — join an existing local session by id
+ *   /share list                  — list sessions on disk
+ *   /share leave                 — leave the current session
  *
  * **Limitation V0.1**: real-time sync requires a WebSocket server,
  * which is not wired in V0.1. All session metadata is persisted locally
- * under ~/.codebuddy/sessions/, but cross-host members will not see each
+ * under ~/.codebuddy/shares/, but cross-host members will not see each
  * other's edits. V0.2 will wire `src/server/websocket/handler.ts` to a
- * `/ws/sessions/:id` endpoint and hook the share* / annotation methods
+ * `/ws/shares/:id` endpoint and hook the share* / annotation methods
  * into broadcast.
  *
  * Slash name `session` (not `team`/`team-session`/`collab`) chosen to:
@@ -41,7 +46,7 @@ const VALID_ACTIONS = new Set([
   'enable', 'disable', 'status', 'create', 'join', 'list', 'leave', 'help', '',
 ]);
 
-const HELP_TEXT = `Usage: /session <action> [args]
+const HELP_TEXT = `Usage: /share <action> [args]
 
 Actions:
   enable                Instantiate the team-session singleton (idempotent).
@@ -49,7 +54,7 @@ Actions:
   status                Show enabled flag, active session, real-time sync state.
   create <name>         Create a new local session named <name>.
   join <sessionId>      Join an existing local session.
-  list                  List sessions persisted under ~/.codebuddy/sessions/.
+  list                  List sessions persisted under ~/.codebuddy/shares/.
   leave                 Leave the current session.
 
 V0.1 limitation: real-time sync requires a WebSocket server (V0.2 work).
@@ -94,9 +99,9 @@ function formatStatusLines(
 }
 
 /**
- * /session <action> [args]
+ * /share <action> [args]
  */
-export async function handleSession(args: string[]): Promise<CommandHandlerResult> {
+export async function handleShare(args: string[]): Promise<CommandHandlerResult> {
   const action = (args[0] || 'status').trim().toLowerCase();
   const rest = args.slice(1);
 
@@ -105,7 +110,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
       handled: true,
       entry: {
         type: 'assistant',
-        content: `Unknown session action: ${args[0]}\n\n${HELP_TEXT}`,
+        content: `Unknown share action: ${args[0]}\n\n${HELP_TEXT}`,
         timestamp: new Date(),
       },
     };
@@ -210,7 +215,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
         handled: true,
         entry: {
           type: 'assistant',
-          content: 'Team session manager already enabled. Use /session status to see active session.',
+          content: 'Team session manager already enabled. Use /share status to see active session.',
           timestamp: new Date(),
         },
       };
@@ -220,7 +225,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
       handled: true,
       entry: {
         type: 'assistant',
-        content: 'Team session manager started (local-first mode — V0.1).\nUse /session create <name> to start a session.',
+        content: 'Team session manager started (local-first mode — V0.1).\nUse /share create <name> to start a session.',
         timestamp: new Date(),
       },
     };
@@ -231,7 +236,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
     if (!name) {
       return {
         handled: true,
-        entry: { type: 'assistant', content: 'Usage: /session create <name>', timestamp: new Date() },
+        entry: { type: 'assistant', content: 'Usage: /share create <name>', timestamp: new Date() },
       };
     }
     try {
@@ -240,7 +245,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
         handled: true,
         entry: {
           type: 'assistant',
-          content: `Session created: ${session.name}\nID: ${session.id}\nOwner: ${internals.currentMember?.name ?? '(unknown)'}\nStorage: ~/.codebuddy/sessions/${session.id}.json`,
+          content: `Session created: ${session.name}\nID: ${session.id}\nOwner: ${internals.currentMember?.name ?? '(unknown)'}\nStorage: ~/.codebuddy/shares/${session.id}.json`,
           timestamp: new Date(),
         },
       };
@@ -261,7 +266,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
     if (!sessionId) {
       return {
         handled: true,
-        entry: { type: 'assistant', content: 'Usage: /session join <sessionId>', timestamp: new Date() },
+        entry: { type: 'assistant', content: 'Usage: /share join <sessionId>', timestamp: new Date() },
       };
     }
     try {
@@ -271,7 +276,7 @@ export async function handleSession(args: string[]): Promise<CommandHandlerResul
           handled: true,
           entry: {
             type: 'assistant',
-            content: `Session not found: ${sessionId}\nUse /session list to see available sessions.`,
+            content: `Session not found: ${sessionId}\nUse /share list to see available sessions.`,
             timestamp: new Date(),
           },
         };

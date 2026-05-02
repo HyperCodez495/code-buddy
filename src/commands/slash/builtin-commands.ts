@@ -1304,9 +1304,9 @@ const agentControlCommands: SlashCommand[] = [
     ]
   },
   {
-    name: 'session',
-    description: 'Manage team-collaboration sessions (enable/disable/status/create/join/list/leave) — local-first V0.1, WS sync V0.2',
-    prompt: '__SESSION__',
+    name: 'share',
+    description: 'Share a coding session with team members (enable/disable/status/create/join/list/leave) — local-first V0.1, WS sync V0.2',
+    prompt: '__SHARE__',
     filePath: '',
     isBuiltin: true,
     arguments: [

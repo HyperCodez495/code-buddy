@@ -255,8 +255,8 @@ export { handleHeartbeat } from './heartbeat-handler.js';
 // Daily reset handler (audit OpenClaw heritage activation)
 export { handleDailyReset } from './daily-reset-handler.js';
 
-// Team session handler (audit OpenClaw heritage activation — TeamSessionManager wake)
-export { handleSession } from './team-session-handler.js';
+// Team session handler — slash /share (audit OpenClaw heritage activation, TeamSessionManager wake)
+export { handleShare } from './team-session-handler.js';
 
 // PR handlers (GitHub/GitLab PR creation)
 export {
