@@ -41,6 +41,7 @@ import {
   SECRETS_TOOLS,
   ADVISOR_TOOLS,
   ASK_USER_QUESTION_TOOLS,
+  EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
 } from "./tool-definitions/index.js";
 
@@ -132,6 +133,9 @@ export function initializeToolRegistry(): void {
 
   // AskUserQuestion tool (structured multi-option mid-task questions)
   registerGroup(ASK_USER_QUESTION_TOOLS);
+
+  // ExitPlanMode tool (request approval to leave plan mode)
+  registerGroup(EXIT_PLAN_MODE_TOOLS);
 
   // Codebase replace tools
   registerGroup(CODEBASE_REPLACE_TOOLS);

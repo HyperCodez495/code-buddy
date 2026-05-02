@@ -446,6 +446,13 @@ export class CodeBuddyAgent extends BaseAgent {
       }).catch((e) => { logger.debug('AskUserQuestion readline provider wire failed (optional)', { error: String(e) }); });
     }).catch((e) => { logger.debug('AskUserQuestion provider register failed (optional)', { error: String(e) }); });
 
+    // Wire ExitPlanMode readline UI provider (V4.4 — mirror of V4.3 ADR-01)
+    import('../tools/exit-plan-mode-tool.js').then(({ setExitPlanModeUIProvider }) => {
+      import('../tools/exit-plan-mode-readline-provider.js').then(({ getExitPlanModeReadlineProvider }) => {
+        setExitPlanModeUIProvider(getExitPlanModeReadlineProvider());
+      }).catch((e) => { logger.debug('ExitPlanMode readline provider wire failed (optional)', { error: String(e) }); });
+    }).catch((e) => { logger.debug('ExitPlanMode provider register failed (optional)', { error: String(e) }); });
+
     // Wire Advisor tool context + config providers (V4.1)
     import('../tools/advisor-tool.js').then(({ setAdvisorContextProvider }) => {
       setAdvisorContextProvider(() => ({

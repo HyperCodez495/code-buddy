@@ -258,6 +258,13 @@ export {
   resetAskUserQuestionInstances,
 } from './ask-user-question-tools.js';
 
+// Tool Adapters - ExitPlanMode (exit_plan_mode)
+export {
+  ExitPlanModeExecuteTool,
+  createExitPlanModeTools,
+  resetExitPlanModeInstances,
+} from './exit-plan-mode-tools.js';
+
 // Tool Adapters - Codebase Replace (codebase_replace)
 export {
   CodebaseReplaceTool,
@@ -347,6 +354,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createVulnScannerTools } = await import('./vuln-scanner-tools.js');
   const { createAdvisorTools } = await import('./advisor-tools.js');
   const { createAskUserQuestionTools } = await import('./ask-user-question-tools.js');
+  const { createExitPlanModeTools } = await import('./exit-plan-mode-tools.js');
   
   // Await MCP Manager initialization before registering its tools
   const { getMcpManager } = await import('../mcp/mcp-manager.js');
@@ -384,6 +392,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createVulnScannerTools(),
     ...createAdvisorTools(),
     ...createAskUserQuestionTools(),
+    ...createExitPlanModeTools(),
     ...createMcpTools(),
   ];
 

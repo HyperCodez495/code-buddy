@@ -6,9 +6,32 @@
  * or have their descriptions modified to only allow .md plan files.
  *
  * Inspired by Gemini CLI's plan mode.
+ *
+ * V4.4 ADR option A (2026-05-02) — bridged to OperatingModeManager.
+ * Historically this module had its own `_currentMode` state that no caller
+ * ever set to PLAN, so plan-mode features (`isPlanMode`, `filterToolsForMode`,
+ * `getPlanModePrompt`, etc.) were inert. The actual user-visible mode toggle
+ * (`/plan` slash command) lives in `OperatingModeManager.setMode('plan')`.
+ *
+ * Bridge: every "are we in plan mode?" check now consults
+ * `getOperatingModeManager().getMode() === 'plan'`. The legacy `_currentMode`
+ * state, `getAgentMode()`, and `setAgentMode()` are kept as a no-op
+ * deprecated API so existing callers (and tests) compile, but they no
+ * longer affect runtime behavior. ADR-03 (separate ticket) will fold
+ * `AgentMode` enum into `OperatingMode`.
  */
 
 import { logger } from '../utils/logger.js';
+import { getOperatingModeManager } from './operating-modes.js';
+
+/**
+ * Single source of truth for "are we in plan mode?" — reads from
+ * OperatingModeManager (the system actually toggled by `/plan`).
+ * All public predicates below delegate here.
+ */
+function inPlanMode(): boolean {
+  return getOperatingModeManager().getMode() === 'plan';
+}
 
 // ============================================================================
 // Types
@@ -44,7 +67,7 @@ const PLAN_MODE_ALLOWED_TOOLS = new Set([
   // Think
   'reason', 'think',
   // Plan
-  'plan', 'submit_plan',
+  'plan', 'submit_plan', 'exit_plan_mode',
   // Communicate
   'ask_human',
   // Knowledge
@@ -71,6 +94,7 @@ const PLAN_MODE_RESTRICTED_TOOLS = new Set([
  */
 let _currentMode: AgentMode = AgentMode.DEFAULT;
 let _planPath: string | null = null;
+let _awaitingApproval = false;
 
 // ============================================================================
 // Public API
@@ -78,6 +102,11 @@ let _planPath: string | null = null;
 
 /**
  * Get the current agent mode.
+ *
+ * @deprecated V4.4 — use `getOperatingModeManager().getMode()` directly.
+ * This still returns the legacy module-local `_currentMode` for compat,
+ * but plan-mode predicates (`isPlanMode`, `filterToolsForMode`, etc.) no
+ * longer consult it. Will be removed in ADR-03.
  */
 export function getAgentMode(): AgentMode {
   return _currentMode;
@@ -85,20 +114,25 @@ export function getAgentMode(): AgentMode {
 
 /**
  * Set the agent mode.
+ *
+ * @deprecated V4.4 — use `getOperatingModeManager().setMode('plan' | …)`.
+ * This still mutates legacy `_currentMode` for compat, but plan-mode
+ * predicates no longer consult it. Will be removed in ADR-03.
  */
 export function setAgentMode(mode: AgentMode): void {
   const previous = _currentMode;
   _currentMode = mode;
   if (previous !== mode) {
-    logger.info(`Agent mode changed: ${previous} → ${mode}`);
+    logger.info(`Agent mode changed (legacy, no runtime effect): ${previous} → ${mode}`);
   }
 }
 
 /**
- * Check if we're in plan mode.
+ * Check if we're in plan mode. Reads from `OperatingModeManager` (the
+ * system actually toggled by `/plan`). V4.4 ADR option A.
  */
 export function isPlanMode(): boolean {
-  return _currentMode === AgentMode.PLAN;
+  return inPlanMode();
 }
 
 /**
@@ -116,11 +150,30 @@ export function getApprovedPlanPath(): string | null {
 }
 
 /**
+ * Mark plan mode as awaiting user approval (set by `exit_plan_mode` tool
+ * while the approval prompt is on screen). Used by the UI / status bar
+ * to surface a "waiting for approval" indicator.
+ */
+export function setAwaitingApproval(awaiting: boolean): void {
+  _awaitingApproval = awaiting;
+}
+
+/** Check whether plan mode is currently awaiting user approval. */
+export function isAwaitingApproval(): boolean {
+  return _awaitingApproval;
+}
+
+/** Clear the awaiting-approval flag. */
+export function clearAwaitingApproval(): void {
+  _awaitingApproval = false;
+}
+
+/**
  * Check if a tool is allowed in the current mode.
  * In plan mode, only read/search/think/plan tools are allowed.
  */
 export function isToolAllowedInCurrentMode(toolName: string): boolean {
-  if (_currentMode !== AgentMode.PLAN) return true;
+  if (!inPlanMode()) return true;
 
   return PLAN_MODE_ALLOWED_TOOLS.has(toolName) ||
     PLAN_MODE_RESTRICTED_TOOLS.has(toolName);
@@ -135,7 +188,7 @@ export function getPlanModeToolDescription(
   toolName: string,
   originalDescription: string,
 ): string | null {
-  if (_currentMode !== AgentMode.PLAN) return null;
+  if (!inPlanMode()) return null;
   if (!PLAN_MODE_RESTRICTED_TOOLS.has(toolName)) return null;
 
   return `PLAN MODE ONLY: ${originalDescription}. You are in Plan Mode and may ONLY use this tool to write or update plan files (.md) in the .codebuddy/plans/ directory. You cannot modify source code directly.`;
@@ -148,7 +201,7 @@ export function getPlanModeToolDescription(
 export function filterToolsForMode<T extends { function: { name: string; description?: string } }>(
   tools: T[],
 ): T[] {
-  if (_currentMode !== AgentMode.PLAN) return tools;
+  if (!inPlanMode()) return tools;
 
   return tools
     .filter(t => isToolAllowedInCurrentMode(t.function.name))
@@ -171,7 +224,7 @@ export function filterToolsForMode<T extends { function: { name: string; descrip
  * Get the plan mode system prompt injection.
  */
 export function getPlanModePrompt(): string | null {
-  if (_currentMode !== AgentMode.PLAN) return null;
+  if (!inPlanMode()) return null;
 
   return `<plan_mode>
 You are in PLAN MODE (read-only research phase).
@@ -195,4 +248,5 @@ Blocked operations: edit code, run commands, create source files.
 export function resetPlanMode(): void {
   _currentMode = AgentMode.DEFAULT;
   _planPath = null;
+  _awaitingApproval = false;
 }

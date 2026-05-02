@@ -571,6 +571,15 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Ask the user 1-4 structured multi-option questions mid-task'
   },
 
+  // ExitPlanMode (request approval to leave plan mode)
+  {
+    name: 'exit_plan_mode',
+    category: 'utility' as ToolCategory,
+    keywords: ['plan', 'exit', 'approve', 'approval', 'leave', 'execute', 'proceed', 'unlock', 'sign-off'],
+    priority: 7,
+    description: 'Request user approval to leave plan mode and start executing'
+  },
+
   // Codebase replace
   {
     name: 'codebase_replace',

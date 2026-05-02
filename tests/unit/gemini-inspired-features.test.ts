@@ -380,43 +380,47 @@ describe('Loop Detection Service', () => {
 
 describe('Plan Mode', () => {
   let planMode: typeof import('@/agent/plan-mode.js');
+  let operatingModes: typeof import('@/agent/operating-modes.js');
 
+  // V4.4 ADR option A: plan-mode predicates now read from OperatingModeManager.
+  // Tests toggle the real source of truth (`setMode('plan')`) instead of the
+  // deprecated `setAgentMode(AgentMode.PLAN)` no-op.
   beforeEach(async () => {
     planMode = await import('@/agent/plan-mode.js');
-    planMode.setAgentMode(planMode.AgentMode.DEFAULT);
+    operatingModes = await import('@/agent/operating-modes.js');
+    operatingModes.getOperatingModeManager().setMode('balanced');
   });
 
-  it('should default to DEFAULT mode', () => {
-    expect(planMode.getAgentMode()).toBe('default');
+  it('should default to non-plan mode', () => {
     expect(planMode.isPlanMode()).toBe(false);
   });
 
-  it('should switch to PLAN mode', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+  it('should switch to plan mode via OperatingModeManager', () => {
+    operatingModes.getOperatingModeManager().setMode('plan');
     expect(planMode.isPlanMode()).toBe(true);
   });
 
   it('should allow read tools in plan mode', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     expect(planMode.isToolAllowedInCurrentMode('read_file')).toBe(true);
     expect(planMode.isToolAllowedInCurrentMode('grep')).toBe(true);
     expect(planMode.isToolAllowedInCurrentMode('reason')).toBe(true);
   });
 
   it('should allow restricted write tools for .md only', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     // Write tools are "allowed" but with modified descriptions
     expect(planMode.isToolAllowedInCurrentMode('str_replace_editor')).toBe(true);
   });
 
   it('should block non-plan tools', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     expect(planMode.isToolAllowedInCurrentMode('bash')).toBe(false);
     expect(planMode.isToolAllowedInCurrentMode('run_command')).toBe(false);
   });
 
   it('should modify descriptions for restricted tools', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     const modified = planMode.getPlanModeToolDescription('str_replace_editor', 'Edit files');
     expect(modified).toContain('PLAN MODE ONLY');
     expect(modified).toContain('.md');
@@ -427,7 +431,7 @@ describe('Plan Mode', () => {
   });
 
   it('should filter tools for plan mode', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     const tools = [
       { function: { name: 'read_file', description: 'Read a file' } },
       { function: { name: 'bash', description: 'Run command' } },
@@ -440,7 +444,7 @@ describe('Plan Mode', () => {
   });
 
   it('should return plan mode prompt', () => {
-    planMode.setAgentMode(planMode.AgentMode.PLAN);
+    operatingModes.getOperatingModeManager().setMode('plan');
     const prompt = planMode.getPlanModePrompt();
     expect(prompt).toContain('<plan_mode>');
     expect(prompt).toContain('read-only');

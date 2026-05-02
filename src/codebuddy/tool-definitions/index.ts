@@ -175,6 +175,12 @@ export {
   ASK_USER_QUESTION_TOOLS,
 } from './ask-user-question-tools.js';
 
+// ExitPlanMode tool (request approval to leave plan mode)
+export {
+  EXIT_PLAN_MODE_TOOL,
+  EXIT_PLAN_MODE_TOOLS,
+} from './exit-plan-mode-tools.js';
+
 // Codebase replace tools (find & replace across files)
 export {
   CODEBASE_REPLACE_TOOL,
