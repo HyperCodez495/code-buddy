@@ -73,6 +73,9 @@ export class MultiAgentSystem extends EventEmitter {
    */
   private agentListeners: Map<AgentRole, Map<string, (...args: unknown[]) => void>> = new Map();
 
+  /** Phase L (V0.4) — per-workflow cost accumulator. Lazy-init at first runWorkflow. */
+  private costManager: import('./workflow-cost-manager.js').WorkflowCostManager | null = null;
+
   constructor(
     apiKey: string,
     baseURL?: string,
@@ -247,6 +250,23 @@ export class MultiAgentSystem extends EventEmitter {
     this.timeline = [];
     this.currentPlan = null;
 
+    // Phase L (V0.4) — initialize cost manager from TOML. Reused across
+    // tasks of this workflow run; reset() clears between runs. If cost
+    // tracking disabled (max_workflow_cost_usd = 0), still tracks total
+    // for /agents metrics — just no warnings or hard cap.
+    try {
+      const { WorkflowCostManager } = await import('./workflow-cost-manager.js');
+      const { getConfigManager } = await import('../../config/toml-config.js');
+      const masCfg = getConfigManager().getConfig().multi_agent_system;
+      this.costManager = new WorkflowCostManager({
+        maxWorkflowCostUsd: masCfg?.max_workflow_cost_usd ?? 0,
+        warningThresholdPercent: masCfg?.cost_warning_threshold_percent ?? 0.8,
+        gracefulOverflow: masCfg?.graceful_cost_overflow ?? true,
+      });
+    } catch {
+      this.costManager = null;
+    }
+
     // Ensure tools are loaded
     if (this.tools.length === 0) {
       await this.initializeTools();
@@ -352,6 +372,9 @@ export class MultiAgentSystem extends EventEmitter {
 
       plan.status = errors.length === 0 ? "completed" : "failed";
 
+      // Phase L (V0.4) — attach cost summary if costManager populated.
+      const costMetrics = this.costManager?.getMetrics();
+
       const workflowResult: WorkflowResult = {
         success: errors.length === 0,
         plan,
@@ -361,6 +384,9 @@ export class MultiAgentSystem extends EventEmitter {
         totalDuration: Date.now() - startTime,
         summary,
         errors,
+        costUsdTotal: costMetrics?.totalUsd,
+        costBreakdown: costMetrics ? Array.from(costMetrics.perRole.entries()) : undefined,
+        costExceeded: costMetrics?.exceededCap,
       };
 
       this.emit("workflow:complete", { result: workflowResult });
@@ -619,6 +645,24 @@ export class MultiAgentSystem extends EventEmitter {
     this.orchestrator.updateTaskStatus(this.currentPlan!, task.id, "in_progress");
     this.addTimelineEvent("task_started", `Started: ${task.title}`, { task });
 
+    // Phase L (V0.4) — pre-task cost check (warning-only, advisor recommendation).
+    // Hard cap (skip remaining tasks) only fires on EXACT cumulative cost (post-task).
+    if (this.costManager) {
+      const model = (agent as unknown as { model?: string }).model ?? 'default';
+      const estRounds = 3; // Conservative; refined with avgRounds metric in V0.5
+      const estimate = this.costManager.estimateTaskCost(task.assignedTo, estRounds, model);
+      const warning = this.costManager.checkWarning(estimate);
+      if (warning) {
+        this.addTimelineEvent("phase_started", warning, { warning: true, costEstimate: estimate });
+      }
+      if (this.costManager.isCapExceeded()) {
+        // Hard cap reached on prior task's exact cost — gracefully skip
+        this.addTimelineEvent("task_failed", `Skipped (cost cap exceeded): ${task.title}`, { task, costSkip: true });
+        task.status = "blocked";
+        return;
+      }
+    }
+
     try {
       // Check dry run
       if (options.dryRun) {
@@ -647,6 +691,15 @@ export class MultiAgentSystem extends EventEmitter {
       );
 
       results.set(task.id, result);
+
+      // Phase L (V0.4) — record cost (exact if token counts in result,
+      // else estimation). Mutates result.costUsd so EnhancedCoordinator
+      // can pick it up via recordTaskCompletion.
+      if (this.costManager) {
+        const model = (agent as unknown as { model?: string }).model ?? 'default';
+        const cost = await this.costManager.recordExact(result, model, result.rounds);
+        result.costUsd = cost;
+      }
 
       // Store artifacts in shared context
       for (const artifact of result.artifacts) {

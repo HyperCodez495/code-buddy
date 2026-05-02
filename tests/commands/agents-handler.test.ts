@@ -36,11 +36,14 @@ const mocks = vi.hoisted(() => {
   const recordTaskCompletionMock = vi.fn();
   const getPerformanceReportMock = vi.fn(() => '== Performance Report ==\n(empty — no workflows yet)');
   const getConflictsMock = vi.fn(() => []);
+  // Phase L (V0.4) — getAgentMetrics returns null by default (no cost recorded)
+  const getAgentMetricsMock = vi.fn(() => null);
   const fakeCoordinator = {
     markTaskStarted: markTaskStartedMock,
     recordTaskCompletion: recordTaskCompletionMock,
     getPerformanceReport: getPerformanceReportMock,
     getConflicts: getConflictsMock,
+    getAgentMetrics: getAgentMetricsMock,
   };
   const getEnhancedCoordinatorMock = vi.fn(() => fakeCoordinator);
 
@@ -57,6 +60,7 @@ const mocks = vi.hoisted(() => {
     runWorkflowMock, stopMock, disposeMock, onMock, listenerCountMock, removeAllListenersMock,
     fakeSystem, getMultiAgentSystemMock, resetMultiAgentSystemMock,
     markTaskStartedMock, recordTaskCompletionMock, getPerformanceReportMock, getConflictsMock,
+    getAgentMetricsMock,
     fakeCoordinator, getEnhancedCoordinatorMock,
     getStatsMock, fakeRegistry, getSessionRegistryMock,
   };
@@ -108,6 +112,7 @@ describe('handleAgents (/agents)', () => {
     mocks.recordTaskCompletionMock.mockReset();
     mocks.getPerformanceReportMock.mockReset().mockReturnValue('== Performance Report ==\n(empty — no workflows yet)');
     mocks.getConflictsMock.mockReset().mockReturnValue([]);
+    mocks.getAgentMetricsMock.mockReset().mockReturnValue(null);
     mocks.getEnhancedCoordinatorMock.mockClear();
     mocks.getStatsMock.mockReset().mockReturnValue({
       totalSessions: 0,
@@ -300,6 +305,27 @@ describe('handleAgents (/agents)', () => {
     expect(r.entry?.content).toContain('Performance Report');
     expect(mocks.getEnhancedCoordinatorMock).toHaveBeenCalled();
     expect(mocks.getPerformanceReportMock).toHaveBeenCalled();
+  });
+
+  it('metrics shows cost breakdown when agents have totalCostUsd > 0 (Phase L)', async () => {
+    mocks.getAgentMetricsMock.mockImplementation((role: string) => {
+      if (role === 'coder') return { role, totalCostUsd: 0.42, avgCostPerTask: 0.21, totalTasks: 2 };
+      if (role === 'reviewer') return { role, totalCostUsd: 0.15, avgCostPerTask: 0.15, totalTasks: 1 };
+      return null;
+    });
+    const r = await handleAgents(['metrics']);
+    expect(r.entry?.content).toContain('Cost Breakdown (V0.4 Phase L)');
+    expect(r.entry?.content).toContain('coder');
+    expect(r.entry?.content).toContain('$0.4200');
+    expect(r.entry?.content).toContain('reviewer');
+    expect(r.entry?.content).toContain('total $0.5700');
+  });
+
+  it('metrics shows "no cost recorded yet" hint when no cost data', async () => {
+    mocks.getAgentMetricsMock.mockReturnValue({ totalCostUsd: 0, avgCostPerTask: 0, totalTasks: 0 });
+    const r = await handleAgents(['metrics']);
+    expect(r.entry?.content).toContain('no cost recorded yet');
+    expect(r.entry?.content).toContain('max_workflow_cost_usd');
   });
 
   it('conflicts returns empty message + Phase H V0.3 hint when none detected', async () => {

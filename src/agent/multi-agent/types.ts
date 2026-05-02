@@ -185,6 +185,14 @@ export interface AgentExecutionResult {
   duration: number;
   feedback?: AgentFeedback[];
   error?: string;
+  /** Phase L (V0.4) — token counts if the agent execute path captured them.
+   *  V0.4 baseline: usually undefined → falls back to estimation. V0.5 will
+   *  thread these from BaseAgent.execute via the LLM client response. */
+  inputTokens?: number;
+  outputTokens?: number;
+  /** Phase L — exact cost in USD if both token counts present. Otherwise
+   *  the WorkflowCostManager uses an estimation heuristic. */
+  costUsd?: number;
 }
 
 /**
@@ -199,6 +207,14 @@ export interface WorkflowResult {
   totalDuration: number;
   summary: string;
   errors: string[];
+  /** Phase L (V0.4) — total cost across all agents/tasks for this workflow.
+   *  Aggregated by WorkflowCostManager. 0 if cost tracking disabled in TOML. */
+  costUsdTotal?: number;
+  /** Phase L — per-agent breakdown ([agent role, cost]) for /agents metrics. */
+  costBreakdown?: Array<[AgentRole, number]>;
+  /** Phase L — true if max_workflow_cost_usd cap was reached and remaining
+   *  tasks were skipped gracefully. */
+  costExceeded?: boolean;
 }
 
 /**

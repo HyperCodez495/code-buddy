@@ -26,6 +26,7 @@ import {
 /**
  * Agent performance metrics
  */
+/** Per-role aggregated metrics. Phase L (V0.4) added totalCostUsd + avgCostPerTask. */
 export interface AgentMetrics {
   role: AgentRole;
   totalTasks: number;
@@ -36,6 +37,13 @@ export interface AgentMetrics {
   successRate: number;
   specialties: Map<string, number>; // task type -> success count
   recentPerformance: number[]; // last N success/fail (1/0)
+  /** Phase L (V0.4) — cumulative USD spent on this agent across all
+   *  recorded tasks. Set by MAS via WorkflowCostManager + carried via
+   *  recordTaskCompletion. 0 if cost tracking disabled. */
+  totalCostUsd: number;
+  /** Phase L — avgCostPerTask = totalCostUsd / totalTasks. Used for
+   *  /agents metrics breakdown. */
+  avgCostPerTask: number;
 }
 
 /**
@@ -185,6 +193,8 @@ export class EnhancedCoordinator extends EventEmitter {
         successRate: 0.5, // Start with neutral
         specialties: new Map(),
         recentPerformance: [],
+        totalCostUsd: 0, // Phase L V0.4
+        avgCostPerTask: 0, // Phase L V0.4
       });
       this.activeTasksPerAgent.set(role, new Set());
     }
@@ -333,6 +343,14 @@ export class EnhancedCoordinator extends EventEmitter {
     metrics.avgDuration = (metrics.avgDuration * (metrics.totalTasks - 1) + result.duration) / metrics.totalTasks;
     metrics.avgRounds = (metrics.avgRounds * (metrics.totalTasks - 1) + result.rounds) / metrics.totalTasks;
     metrics.successRate = metrics.successfulTasks / metrics.totalTasks;
+
+    // Phase L (V0.4) — accumulate cost if the result includes it. The
+    // WorkflowCostManager populates result.costUsd before this method
+    // is called (cf. multi-agent-system.ts executeTask).
+    if (result.costUsd !== undefined) {
+      metrics.totalCostUsd += result.costUsd;
+      metrics.avgCostPerTask = metrics.totalCostUsd / metrics.totalTasks;
+    }
 
     // Update specialties
     const taskType = this.extractTaskType(task);

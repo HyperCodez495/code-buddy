@@ -258,7 +258,25 @@ export async function handleAgents(args: string[]): Promise<CommandHandlerResult
       const { getEnhancedCoordinator } = await import('../../agent/multi-agent/enhanced-coordination.js');
       const coordinator = getEnhancedCoordinator();
       const report = coordinator.getPerformanceReport();
-      return textResult(report);
+
+      // Phase L (V0.4) — append cost breakdown if any agent has totalCostUsd > 0
+      const roles = ['orchestrator', 'coder', 'reviewer', 'tester'] as const;
+      const costRows: string[] = [];
+      let totalCostUsd = 0;
+      for (const role of roles) {
+        const m = coordinator.getAgentMetrics(role);
+        if (m && m.totalCostUsd > 0) {
+          costRows.push(`  ${role.padEnd(13)} $${m.totalCostUsd.toFixed(4)} total  $${m.avgCostPerTask.toFixed(4)} avg/task  (${m.totalTasks} tasks)`);
+          totalCostUsd += m.totalCostUsd;
+        }
+      }
+      let withCost = report;
+      if (costRows.length > 0) {
+        withCost += `\n\nCost Breakdown (V0.4 Phase L) — total $${totalCostUsd.toFixed(4)}\n${'─'.repeat(50)}\n${costRows.join('\n')}`;
+      } else {
+        withCost += `\n\nCost Breakdown: (no cost recorded yet — set [multi_agent_system].max_workflow_cost_usd to track)`;
+      }
+      return textResult(withCost);
     } catch (err) {
       return textResult(`Could not load EnhancedCoordinator: ${err instanceof Error ? err.message : String(err)}`);
     }

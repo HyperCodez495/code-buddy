@@ -434,6 +434,14 @@ export interface MultiAgentSystemConfig {
   coordination?: CoordinationTomlConfig;
   /** SessionRegistry sub-config (Phase F) */
   sessions?: SessionsTomlConfig;
+  /** Phase L (V0.4) — hard cap on a single workflow's total cost in USD.
+   *  0 (default) = disabled, no cap, just track in metrics. */
+  max_workflow_cost_usd?: number;
+  /** Phase L — fraction of cap (0..1) at which to log a warning. Default 0.8 (80%). */
+  cost_warning_threshold_percent?: number;
+  /** Phase L — true (default) = on cap exceed, gracefully skip remaining tasks.
+   *  false = throw on next task (abrupt). */
+  graceful_cost_overflow?: boolean;
 }
 
 /**
