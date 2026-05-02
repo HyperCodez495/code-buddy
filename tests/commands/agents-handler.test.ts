@@ -454,23 +454,57 @@ describe('handleAgents (/agents)', () => {
     expect(r.entry?.content).toContain('active goal');
   });
 
-  it('resume shows interrupted workflow details with V0.1 limitation note', async () => {
+  it('resume actually re-launches workflow with resumeFrom (Phase J V0.3)', async () => {
+    mocks.runWorkflowMock.mockImplementation(() => new Promise(() => { /* never */ }));
     persistenceMocks.loadWorkflowMock.mockResolvedValue({
       goal: 'interrupted goal',
       startedAt: '2026-05-02T10:00:00Z',
       strategy: 'parallel',
       status: 'running',
+      schemaVersion: 'v0.3',
+      completedTaskIds: ['t1', 't2'],
       plan: null,
-      results: [['t1', { success: true, role: 'coder' }] as never],
+      results: [
+        ['t1', { success: true, role: 'coder' }] as never,
+        ['t2', { success: true, role: 'reviewer' }] as never,
+      ],
       artifacts: [],
       timeline: [],
       errors: [],
     });
     const r = await handleAgents(['resume']);
-    expect(r.entry?.content).toContain('Found interrupted workflow');
+    expect(r.entry?.content).toContain('Resuming interrupted workflow');
     expect(r.entry?.content).toContain('interrupted goal');
-    expect(r.entry?.content).toContain('Tasks done:  1');
-    expect(r.entry?.content).toContain('V0.1 limitation');
-    expect(r.entry?.content).toContain('/agents run interrupted goal');
+    expect(r.entry?.content).toContain('Tasks to skip:     2');
+    expect(r.entry?.content).toContain('Schema version:    v0.3');
+
+    // Critical: runWorkflow was called with resumeFrom
+    expect(mocks.runWorkflowMock).toHaveBeenCalledOnce();
+    const [goalArg, optsArg] = mocks.runWorkflowMock.mock.calls[0] as [string, { strategy: string; resumeFrom: { completedTaskIds: string[] } }];
+    expect(goalArg).toBe('interrupted goal');
+    expect(optsArg.strategy).toBe('parallel');
+    expect(optsArg.resumeFrom.completedTaskIds).toEqual(['t1', 't2']);
+  });
+
+  it('resume on v0.1 (migrated) save still works — derives completedTaskIds from results', async () => {
+    mocks.runWorkflowMock.mockImplementation(() => new Promise(() => { /* never */ }));
+    persistenceMocks.loadWorkflowMock.mockResolvedValue({
+      goal: 'old v0.1 workflow',
+      startedAt: '2026-05-02T10:00:00Z',
+      strategy: 'sequential',
+      status: 'running',
+      schemaVersion: 'v0.1',  // pre-Phase-J save
+      // completedTaskIds derived by loadWorkflow migration → present here
+      completedTaskIds: ['old-t1'],
+      plan: null,
+      results: [['old-t1', { success: true, role: 'coder' }] as never],
+      artifacts: [],
+      timeline: [],
+      errors: [],
+    });
+    const r = await handleAgents(['resume']);
+    expect(r.entry?.content).toContain('v0.1');
+    expect(r.entry?.content).toContain('Tasks to skip:     1');
+    expect(mocks.runWorkflowMock).toHaveBeenCalledOnce();
   });
 });

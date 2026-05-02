@@ -141,4 +141,55 @@ describe('workflow-persistence', () => {
     expect(persistPath).toContain(path.join(os.homedir(), '.codebuddy', 'agents'));
     expect(persistPath).toMatch(/current\.json$/);
   });
+
+  // Phase J — schema versioning + completedTaskIds migration
+
+  it('save auto-stamps schemaVersion = v0.3 when caller omits it', async () => {
+    await saveWorkflow(makeState());
+    const loaded = await loadWorkflow();
+    expect(loaded!.schemaVersion).toBe('v0.3');
+  });
+
+  it('save auto-derives completedTaskIds from results when caller omits it', async () => {
+    await saveWorkflow(makeState({
+      results: [
+        ['task-a', { success: true, role: 'coder', taskId: 'task-a', output: '', artifacts: [], toolsUsed: [], rounds: 1, duration: 1 }],
+        ['task-b', { success: true, role: 'reviewer', taskId: 'task-b', output: '', artifacts: [], toolsUsed: [], rounds: 1, duration: 1 }],
+      ],
+    }));
+    const loaded = await loadWorkflow();
+    expect(loaded!.completedTaskIds).toEqual(['task-a', 'task-b']);
+  });
+
+  it('load auto-migrates pre-v0.3 saves (no schemaVersion → v0.1 + derived completedTaskIds)', async () => {
+    // Hand-write a v0.2-shape file (no schemaVersion, no completedTaskIds)
+    await fs.mkdir(path.dirname(persistPath), { recursive: true });
+    const v02 = {
+      goal: 'old goal',
+      startedAt: '2026-05-02T10:00:00Z',
+      strategy: 'hierarchical',
+      status: 'running',
+      plan: null,
+      results: [['t1', { success: true, role: 'coder' }]],
+      artifacts: [],
+      timeline: [],
+      errors: [],
+    };
+    await fs.writeFile(persistPath, JSON.stringify(v02), 'utf8');
+
+    const loaded = await loadWorkflow();
+    expect(loaded!.schemaVersion).toBe('v0.1');
+    expect(loaded!.completedTaskIds).toEqual(['t1']);
+  });
+
+  it('explicit schemaVersion + completedTaskIds in save are preserved', async () => {
+    await saveWorkflow(makeState({
+      schemaVersion: 'v0.3',
+      completedTaskIds: ['custom-id-only'],
+      results: [['actual-id', { success: true, role: 'coder', taskId: 'actual-id', output: '', artifacts: [], toolsUsed: [], rounds: 1, duration: 1 }]],
+    }));
+    const loaded = await loadWorkflow();
+    expect(loaded!.completedTaskIds).toEqual(['custom-id-only']);
+    expect(loaded!.schemaVersion).toBe('v0.3');
+  });
 });

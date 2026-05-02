@@ -39,6 +39,11 @@ import type {
 
 export type WorkflowStatus = 'running' | 'completed' | 'failed' | 'interrupted';
 
+/** Phase J — schema version for backward-compat resume.
+ *  v0.1 = pre-Phase-J workflows; resume = restart from scratch.
+ *  v0.3 = explicit completedTaskIds for true per-task skip on resume. */
+export type WorkflowSchemaVersion = 'v0.1' | 'v0.3';
+
 export interface PersistedWorkflow {
   goal: string;
   /** ISO timestamp string */
@@ -54,6 +59,10 @@ export interface PersistedWorkflow {
   /** ISO timestamp string, present if status !== 'running' */
   finishedAt?: string;
   summary?: string;
+  /** Phase J — schema version. Absent in v0.2 saves; loadWorkflow auto-migrates. */
+  schemaVersion?: WorkflowSchemaVersion;
+  /** Phase J — explicit list of completed task IDs (derived from results in v0.1 migration). */
+  completedTaskIds?: string[];
 }
 
 const PERSIST_DIR = path.join(os.homedir(), '.codebuddy', 'agents');
@@ -71,7 +80,14 @@ async function ensureDir(): Promise<void> {
 export async function saveWorkflow(state: PersistedWorkflow): Promise<void> {
   try {
     await ensureDir();
-    const json = JSON.stringify(state, null, 2);
+    // Phase J — auto-stamp schemaVersion v0.3 + derive completedTaskIds
+    // from results if caller didn't provide one explicitly.
+    const enriched: PersistedWorkflow = {
+      ...state,
+      schemaVersion: state.schemaVersion ?? 'v0.3',
+      completedTaskIds: state.completedTaskIds ?? state.results.map(([id]) => id),
+    };
+    const json = JSON.stringify(enriched, null, 2);
     await fs.writeFile(TMP_PATH, json, 'utf8');
     await fs.rename(TMP_PATH, CURRENT_PATH);
   } catch (err) {
@@ -92,6 +108,15 @@ export async function loadWorkflow(): Promise<PersistedWorkflow | null> {
   try {
     const raw = await fs.readFile(CURRENT_PATH, 'utf8');
     const parsed = JSON.parse(raw) as PersistedWorkflow;
+    // Phase J — auto-migrate pre-v0.3 saves. Workflows persisted by
+    // V0.2 (Phase G) lacked `schemaVersion` — treat as v0.1 and derive
+    // completedTaskIds from results so /agents resume can still skip them.
+    if (!parsed.schemaVersion) {
+      parsed.schemaVersion = 'v0.1';
+    }
+    if (!parsed.completedTaskIds) {
+      parsed.completedTaskIds = parsed.results.map(([id]) => id);
+    }
     return parsed;
   } catch (err) {
     const code = (err as NodeJS.ErrnoException).code;

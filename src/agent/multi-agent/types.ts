@@ -237,6 +237,14 @@ export interface WorkflowOptions {
   autoApprove?: boolean;
   onProgress?: (event: WorkflowEvent) => void;
   onAgentMessage?: (message: AgentMessage) => void;
+  /** Phase J (V0.3) — resume from a previously persisted workflow.
+   *  When set, MAS pre-populates the in-memory `results` Map and marks
+   *  the matching `plan.phases[*].tasks[*]` as `completed`, so the 5
+   *  strategy executors skip them. Optional — back-compat with V0.2 callers. */
+  resumeFrom?: {
+    completedTaskIds: string[];
+    results: Array<[string, AgentExecutionResult]>;
+  };
 }
 
 /**

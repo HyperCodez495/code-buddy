@@ -275,6 +275,35 @@ export class MultiAgentSystem extends EventEmitter {
       this.emit("workflow:start", { plan });
       this.addTimelineEvent("phase_completed", "Planning phase completed", { plan });
 
+      // Phase J — checkpoint resume. If caller passed `resumeFrom`,
+      // pre-populate the in-memory results Map and mark the matching
+      // plan tasks as `completed` so the 5 strategy executors skip them
+      // (orchestrator.getNextTasks reads task.status, hence we must
+      // mutate plan.phases[*].tasks[*], not just maintain a side-set).
+      if (opts.resumeFrom) {
+        const completed = new Set(opts.resumeFrom.completedTaskIds);
+        for (const [id, result] of opts.resumeFrom.results) {
+          results.set(id, result);
+          for (const artifact of result.artifacts ?? []) {
+            this.sharedContext.artifacts.set(artifact.id, artifact);
+          }
+        }
+        let skipped = 0;
+        for (const phase of plan.phases) {
+          for (const task of phase.tasks) {
+            if (completed.has(task.id)) {
+              task.status = "completed";
+              skipped++;
+            }
+          }
+        }
+        this.addTimelineEvent(
+          "phase_started",
+          `Resume: skipping ${skipped} completed task(s)`,
+          { resumed: true, skipped, total: plan.phases.flatMap(p => p.tasks).length }
+        );
+      }
+
       // Phase 2: Execution
       this.addTimelineEvent("phase_started", "Execution phase started", { phase: "execution" });
 
@@ -371,6 +400,7 @@ export class MultiAgentSystem extends EventEmitter {
       this.addTimelineEvent("phase_started", `Phase: ${phase.name}`, { phase });
 
       for (const task of phase.tasks) {
+        if (task.status === "completed") continue; // Phase J — skip resumed
         await this.executeTask(task, results, errors, options);
       }
 
@@ -391,15 +421,17 @@ export class MultiAgentSystem extends EventEmitter {
     for (const phase of plan.phases) {
       this.addTimelineEvent("phase_started", `Phase: ${phase.name}`, { phase });
 
+      // Phase J — filter completed tasks before scheduling
+      const pending = phase.tasks.filter((t) => t.status !== "completed");
       if (phase.parallelizable) {
         // Execute all tasks in parallel
-        const promises = phase.tasks.map(task =>
+        const promises = pending.map(task =>
           this.executeTask(task, results, errors, options)
         );
         await Promise.all(promises);
       } else {
         // Execute sequentially
-        for (const task of phase.tasks) {
+        for (const task of pending) {
           await this.executeTask(task, results, errors, options);
         }
       }
@@ -460,6 +492,7 @@ export class MultiAgentSystem extends EventEmitter {
     for (const phase of plan.phases) {
       // Track per-phase tasks for conflict detection at phase end
       for (const task of phase.tasks) {
+        if (task.status === "completed") continue; // Phase J — skip resumed
         if (task.assignedTo === "coder") {
           // Step 1: Coder implements
           await this.executeTask(task, results, errors, options);

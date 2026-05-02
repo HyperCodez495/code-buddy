@@ -510,23 +510,71 @@ export async function handleAgents(args: string[]): Promise<CommandHandlerResult
         'Stop it first with /agents stop.'
       );
     }
-    // V0.1 resume strategy: restart workflow from scratch with original goal.
-    // Real per-task checkpoint resume = V0.3 (requires checkpoint hooks in MAS
-    // workflow loop, not just timeline events). Honest user-facing note:
+
+    // Phase J (V0.3) — true per-task checkpoint resume.
+    // schemaVersion v0.3 = saved by Phase J-aware code with completedTaskIds.
+    // schemaVersion v0.1 = pre-Phase-J save migrated on load (completedTaskIds derived from results).
+    // Both paths now actually resume by re-launching runWorkflow with resumeFrom.
+    if (!agentsEnabled) {
+      getMultiAgentSystem(apiKey, baseURL);
+      agentsEnabled = true;
+    }
+    const system = getMultiAgentSystem(apiKey, baseURL);
+    await wireCoordinatorIfPresent(system as unknown as { on: (e: string, h: (...a: unknown[]) => void) => void; listenerCount: (e: string) => number });
+
+    const completedTaskIds = persisted.completedTaskIds ?? persisted.results.map(([id]) => id);
+    const startedAt = new Date();
+    const resumeOpts = {
+      strategy: persisted.strategy,
+      resumeFrom: {
+        completedTaskIds,
+        results: persisted.results,
+      },
+    };
+
+    const promise = system.runWorkflow(persisted.goal, resumeOpts).then(
+      (result) => {
+        lastResult = {
+          goal: persisted.goal,
+          success: result.success,
+          summary: result.summary || '(no summary)',
+          durationMs: result.totalDuration,
+          finishedAt: new Date(),
+        };
+        activeWorkflow = null;
+        if (result.success) {
+          persistence.clearWorkflow().catch(() => { /* logged inside */ });
+        }
+        logger.info('MultiAgentSystem workflow resumed + completed', { goal: persisted.goal, success: result.success, skipped: completedTaskIds.length });
+        return result;
+      },
+      (err: unknown) => {
+        lastResult = {
+          goal: persisted.goal,
+          success: false,
+          summary: `Error: ${err instanceof Error ? err.message : String(err)}`,
+          durationMs: Date.now() - startedAt.getTime(),
+          finishedAt: new Date(),
+        };
+        activeWorkflow = null;
+        logger.error('MultiAgentSystem workflow resume failed', { goal: persisted.goal, error: String(err) });
+        throw err;
+      }
+    );
+    activeWorkflow = { goal: persisted.goal, startedAt, promise };
+
     return textResult(
-      `Found interrupted workflow:\n` +
-      `  Goal:        ${persisted.goal}\n` +
-      `  Strategy:    ${persisted.strategy}\n` +
-      `  Started:     ${persisted.startedAt}\n` +
-      `  Tasks done:  ${persisted.results.length}\n` +
-      `  Artifacts:   ${persisted.artifacts.length}\n` +
+      `Resuming interrupted workflow (V0.3 per-task checkpoint):\n` +
+      `  Goal:              ${persisted.goal}\n` +
+      `  Strategy:          ${persisted.strategy}\n` +
+      `  Originally started: ${persisted.startedAt}\n` +
+      `  Schema version:    ${persisted.schemaVersion ?? 'v0.1'}\n` +
+      `  Tasks to skip:     ${completedTaskIds.length} (already completed)\n` +
+      `  Artifacts saved:   ${persisted.artifacts.length}\n` +
       `\n` +
-      `V0.1 limitation: resume restarts the workflow from scratch — completed\n` +
-      `tasks ARE re-run. The persisted artifacts are still on disk for review.\n` +
-      `True per-task checkpoint resume is V0.3 (needs MAS-side checkpoint hooks).\n` +
-      `\n` +
-      `To restart: /agents run ${persisted.goal}\n` +
-      `To discard: delete ~/.codebuddy/agents/current.json`
+      `Workflow restarted in background. Monitor with /agents status, stop with /agents stop.\n` +
+      `Note: tasks marked completed are skipped, results re-injected. LLM non-determinism\n` +
+      `means re-running pending tasks may produce slightly different output than the original run.`
     );
   }
 
