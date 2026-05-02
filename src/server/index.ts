@@ -145,23 +145,6 @@ function createApp(config: ServerConfig): Application {
   // Authentication (always applied — enables both enforcing and disabling auth)
   app.use(createAuthMiddleware(config));
 
-  // CSRF protection for state-changing endpoints (POST/PUT/DELETE)
-  if (process.env.CSRF_PROTECTION !== 'false') {
-    const csrfProtection = new CSRFProtection({
-      secure: process.env.NODE_ENV === 'production',
-    });
-
-    // Provide CSRF token endpoint
-    app.get('/api/csrf-token', (req, res) => {
-      const sessionId = (req as unknown as Record<string, unknown>).sessionId as string | undefined;
-      const token = csrfProtection.generateToken(sessionId);
-      res.json({ token: token.token });
-    });
-
-    // Apply CSRF middleware for state-changing requests
-    app.use(csrfProtection.middleware() as express.RequestHandler);
-  }
-
   // Health routes (no auth required)
   app.use('/api/health', healthRoutes);
 
@@ -174,13 +157,33 @@ function createApp(config: ServerConfig): Application {
   // Also expose at /metrics for Prometheus compatibility
   app.use('/metrics', metricsRoutes);
 
+  // A2A routes (auth-based, exempt from CSRF) — must be mounted BEFORE CSRF middleware
+  app.use('/api/a2a', createA2AProtocolRoutes());
+
+  // CSRF protection for state-changing endpoints (POST/PUT/DELETE)
+  // Applied AFTER A2A routes so they are never touched by CSRF middleware
+  if (process.env.CSRF_PROTECTION !== 'false') {
+    const csrfProtection = new CSRFProtection({
+      secure: process.env.NODE_ENV === 'production',
+    });
+
+    // Provide CSRF token endpoint
+    app.get('/api/csrf-token', (req, res) => {
+      const sessionId = (req as unknown as Record<string, unknown>).sessionId as string | undefined;
+      const token = csrfProtection.generateToken(sessionId);
+      res.json({ token: token.token });
+    });
+
+    // Apply CSRF middleware for state-changing requests (now applied after A2A)
+    app.use(csrfProtection.middleware() as express.RequestHandler);
+  }
+
   // API routes
   app.use('/api/chat', chatRoutes);
   app.use('/api/tools', toolsRoutes);
   app.use('/api/sessions', sessionsRoutes);
   app.use('/api/memory', memoryRoutes);
   app.use('/api/workflows', createWorkflowApiRouter());
-  app.use('/api/a2a', createA2AProtocolRoutes());
   app.use('/api/acp', createACPRoutes());
   app.use('/api/cloud/tasks', createCloudTaskRoutes());
   app.use('/api/webhooks', createWebhookRoutes());
