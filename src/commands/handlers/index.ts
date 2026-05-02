@@ -258,6 +258,9 @@ export { handleDailyReset } from './daily-reset-handler.js';
 // Team session handler — slash /share (audit OpenClaw heritage activation, TeamSessionManager wake)
 export { handleShare } from './team-session-handler.js';
 
+// Agents handler — slash /agents (audit OpenClaw heritage activation, MultiAgentSystem wake)
+export { handleAgents } from './agents-handler.js';
+
 // PR handlers (GitHub/GitLab PR creation)
 export {
   handlePR,

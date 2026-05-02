@@ -320,6 +320,28 @@ export interface TeamSessionTomlConfig {
 }
 
 /**
+ * MultiAgentSystem configuration (audit OpenClaw heritage findings 2026-05-02).
+ * Wired by the `/agents enable` slash command. V0.1 limitation: no persistence
+ * across process exits, no event streaming to terminal (logger.info only).
+ *
+ * Cost note: a workflow runs 4 agents (orchestrator + coder + reviewer +
+ * tester) with up to N iterations of LLM calls each. Set sane caps via
+ * parallel_agents / max_iterations / timeout_ms before enabling auto-boot.
+ */
+export interface MultiAgentSystemConfig {
+  /** Whether the singleton auto-instantiates at boot (default: false) */
+  enabled?: boolean;
+  /** Default collaboration strategy (sequential | parallel | hierarchical | peer_review | iterative). Default: hierarchical */
+  default_strategy?: 'sequential' | 'parallel' | 'hierarchical' | 'peer_review' | 'iterative';
+  /** Max agents running in parallel for `parallel`/`hierarchical` strategies (default: 3) */
+  parallel_agents?: number;
+  /** Workflow-level timeout in milliseconds (default: 600000 = 10 min) */
+  timeout_ms?: number;
+  /** Max iterations for `iterative` strategy (default: 5) */
+  max_iterations?: number;
+}
+
+/**
  * Heartbeat engine configuration — periodic HEARTBEAT.md review.
  * Wired by the `/heartbeat enable` slash command (V4.x autonomous fleet
  * support, AUTONOMOUS-FLEET-PROTOCOL-2026-05-02 v0.1).
@@ -389,6 +411,8 @@ export interface CodeBuddyConfig {
   daily_reset?: DailyResetConfig;
   /** Team session manager settings — TeamSessionManager wake (audit OpenClaw heritage) */
   team_session?: TeamSessionTomlConfig;
+  /** Multi-agent system settings — MultiAgentSystem wake (audit OpenClaw heritage) */
+  multi_agent_system?: MultiAgentSystemConfig;
   /** Named configuration profiles (activated via --profile <name>) */
   profiles?: Record<string, ProfileConfig>;
 }

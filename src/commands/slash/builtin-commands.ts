@@ -1314,6 +1314,16 @@ const agentControlCommands: SlashCommand[] = [
     ]
   },
   {
+    name: 'agents',
+    description: 'Multi-agent orchestration (run/plan/status/stop/strategy) — 4 specialised agents (orchestrator/coder/reviewer/tester), 5 strategies. Requires GROK_API_KEY.',
+    prompt: '__AGENTS__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: 'enable | disable | status | run <goal> | plan <goal> | stop | strategy <name>', required: false }
+    ]
+  },
+  {
     name: 'suggest',
     description: 'Get proactive suggestions for the current project context',
     prompt: '__SUGGEST__',

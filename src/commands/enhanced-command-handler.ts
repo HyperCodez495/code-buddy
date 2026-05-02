@@ -112,6 +112,8 @@ import {
   handleDailyReset,
   // Team session handler — slash /share (audit OpenClaw heritage activation, TeamSessionManager wake)
   handleShare,
+  // Agents handler — slash /agents (audit OpenClaw heritage activation, MultiAgentSystem wake)
+  handleAgents,
   // Clipboard handler
   handleCopy,
   // PR handler (GitHub/GitLab PR creation)
@@ -474,6 +476,9 @@ export class EnhancedCommandHandler {
 
     // Team session manager — slash /share (audit OpenClaw heritage, TeamSessionManager wake)
     ['__SHARE__', (args) => handleShare(args)],
+
+    // Multi-agent system — slash /agents (audit OpenClaw heritage, MultiAgentSystem wake)
+    ['__AGENTS__', (args) => handleAgents(args)],
 
     // Clipboard (copy last response, code block, or text)
     ['__COPY__', (args) => handleCopy(args, this.conversationHistory)],
