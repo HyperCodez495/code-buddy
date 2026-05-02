@@ -359,6 +359,39 @@ export class PluginManager extends EventEmitter {
       }
       // If isolated, the instance will be created in the worker thread
 
+      // Phase K (V0.3) — wake PluginConflictDetector. Check for conflicts
+      // BEFORE final registration so blocker conflicts (duplicate plugin
+      // ID, plugin ID vs built-in tool name) abort the load with a clear
+      // error. Non-blocker conflicts (missing dependency) log a warning
+      // but proceed. Use manifest fields directly (Plugin interface in
+      // conflict-detection.ts is a subset that maps cleanly).
+      try {
+        const { getPluginConflictDetector } = await import('./conflict-detection.js');
+        const detector = getPluginConflictDetector();
+        const report = detector.checkConflicts({
+          id: manifest.id,
+          name: manifest.name,
+          version: manifest.version,
+          description: manifest.description,
+        });
+        if (report.hasConflicts) {
+          const blockers = report.conflicts.filter(
+            (c) => c.type === 'plugin_id_vs_tool' || c.type === 'duplicate_tool'
+          );
+          if (blockers.length > 0) {
+            const msgs = blockers.map((c) => c.message).join('; ');
+            this.logger.error(`Cannot load plugin ${manifest.id}: ${msgs}`);
+            return false;
+          }
+          // Non-blocker (dependency_missing) — log + continue
+          for (const c of report.conflicts) {
+            this.logger.warn(`Plugin conflict for ${manifest.id}: ${c.message}`);
+          }
+        }
+      } catch (err) {
+        this.logger.debug(`Conflict detection skipped for ${manifest.id}`, { error: String(err) });
+      }
+
       const metadata: PluginMetadata = {
         manifest,
         status: PluginStatus.LOADED,

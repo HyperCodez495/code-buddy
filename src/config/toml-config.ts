@@ -372,6 +372,45 @@ export interface SessionsTomlConfig {
 }
 
 /**
+ * Enterprise modules configuration (Phase K — top #3 audit OpenClaw,
+ * audit `claude-et-patrice/propositions/AUDIT-OPENCLAW-HERITAGE-2026-05-02.md`).
+ *
+ * `initializeNativeEngineModules()` in `src/openclaw/index.ts` instantiates
+ * 6 enterprise modules. Audit (2026-05-02) revealed 5/6 of them have
+ * SERIOUS conflicts with currently-active systems:
+ *
+ *  | Module                  | Status   | Conflict                                    |
+ *  |-------------------------|----------|---------------------------------------------|
+ *  | tool_policy_engine      | DEFERRED | Conflicts with active PolicyManager         |
+ *  | tool_lifecycle_hooks    | DEFERRED | 3 hook systems active — adapter needed      |
+ *  | smart_compaction_engine | DEFERRED | Doublon with active ContextManagerV2        |
+ *  | retry_fallback_engine   | DEFERRED | CircuitBreaker active + depends on above    |
+ *  | semantic_memory_search  | DEFERRED | Overlaps with active ICM + hybrid-search    |
+ *  | plugin_conflict_detector| ✅ WAKED | Wired into PluginManager.loadPlugin in V0.3 |
+ *
+ * The 5 deferred modules have flags below for V0.4+ activation. Default
+ * `enabled: false` ensures no regression. Wake requires architectural
+ * decisions documented in the audit (e.g. PolicyManager deprecation for
+ * tool_policy_engine, ContextManager role clarification for smart_compaction).
+ */
+export interface EnterpriseModulesTomlConfig {
+  /** Master switch — when false, none of the modules below are instantiated by initializeNativeEngineModules() */
+  enabled?: boolean;
+  /** ❌ DEFERRED V0.4 — conflicts with active PolicyManager (src/security/tool-policy/) */
+  tool_policy_engine?: { enabled?: boolean };
+  /** ❌ DEFERRED V0.4 — 3 hook systems active (tool-hooks.ts, lifecycle-hooks.ts, this) */
+  tool_lifecycle_hooks?: { enabled?: boolean };
+  /** ❌ DEFERRED V0.4 — doublon with active ContextManagerV2 */
+  smart_compaction_engine?: { enabled?: boolean };
+  /** ❌ DEFERRED V0.4 — conflicts with active CircuitBreaker, depends on smart_compaction_engine */
+  retry_fallback_engine?: { enabled?: boolean };
+  /** ❌ DEFERRED V0.4 — overlaps with active ICM + hybrid-search */
+  semantic_memory_search?: { enabled?: boolean };
+  /** ✅ WAKED V0.3 (Phase K) — wired into PluginManager.loadPlugin. Always-on, no flag needed for activation. */
+  plugin_conflict_detector?: { enabled?: boolean };
+}
+
+/**
  * MultiAgentSystem configuration (audit OpenClaw heritage findings 2026-05-02).
  * Wired by the `/agents enable` slash command. V0.1 limitation: no persistence
  * across process exits, no event streaming to terminal (logger.info only).
@@ -469,6 +508,8 @@ export interface CodeBuddyConfig {
   team_session?: TeamSessionTomlConfig;
   /** Multi-agent system settings — MultiAgentSystem wake (audit OpenClaw heritage) */
   multi_agent_system?: MultiAgentSystemConfig;
+  /** Enterprise modules — top #3 audit OpenClaw (Phase K). 1/6 modules waked (PluginConflictDetector); 5 deferred to V0.4 */
+  enterprise_modules?: EnterpriseModulesTomlConfig;
   /** Named configuration profiles (activated via --profile <name>) */
   profiles?: Record<string, ProfileConfig>;
 }
