@@ -361,13 +361,49 @@ export class A2AAgentClient {
       return { agentKey: agent };
     }
     if (skill) {
-      const candidates = this.findAgentsWithSkill(skill);
-      if (candidates.length === 0) {
+      // POC Niveau 3: Smart skill selection — find best spoke for this skill
+      const best = this.findBestSpokeForSkill(skill);
+      if (!best) {
         return { error: `No agents found for skill: ${skill}`, status: 404 };
       }
-      return { agentKey: selectAgent(candidates) };
+      return { agentKey: best };
     }
     return { error: 'Missing required field: `agent` or `skill`', status: 400 };
+  }
+
+  /** Score a spoke for a given skill (higher = better) */
+  private scoreSpokeForSkill(spokeName: string, skillId: string): number {
+    const remote = this.remoteCards.get(spokeName);
+    if (!remote) return 0;
+
+    // Base score: has the skill
+    let score = 10;
+
+    // Bonus for always-on spokes (assume names with "ministar" or "linux" are always-on)
+    if (spokeName.toLowerCase().includes('ministar') || spokeName.toLowerCase().includes('linux')) {
+      score += 5;
+    }
+
+    // Bonus for fresh heartbeat (last registered < 1 min ago)
+    const heartbeatAge = Date.now() - remote.lastHeartbeat;
+    if (heartbeatAge < 60000) {
+      score += 3;
+    }
+
+    return score;
+  }
+
+  /** Find best spoke for a skill (smart selection) */
+  findBestSpokeForSkill(skillId: string): string | null {
+    const candidates = this.findAgentsWithSkill(skillId);
+    if (candidates.length === 0) return null;
+
+    // Score all spokes
+    const scored = candidates
+      .map((name) => ({ name, score: this.scoreSpokeForSkill(name, skillId) }))
+      .sort((a, b) => b.score - a.score);
+
+    return scored.length > 0 ? scored[0].name : null;
   }
 
   /** Submit a task to a specific agent (local or remote) */
