@@ -84,23 +84,32 @@ export function createA2AProtocolRoutes(): Router {
     res.json({ agents: cards, remoteAgents: remotes });
   });
 
-  // Submit a task
+  // Submit a task. Body accepts EITHER {agent} (Niveau 2 explicit routing)
+  // OR {skill} (Niveau 3 auto-routing — hub finds matching spoke and delegates).
+  // Both `message` is required regardless of routing mode.
   router.post('/tasks/send', requireScope('admin'), asyncHandler(async (req, res) => {
-    const { agent: agentName, message } = req.body;
+    const { agent: agentName, skill: skillId, message } = req.body;
 
-    if (!agentName || !message) {
-      res.status(400).json({ error: 'Missing required fields: agent, message' });
+    if (!message) {
+      res.status(400).json({ error: 'Missing required field: message' });
+      return;
+    }
+
+    const resolved = client.resolveTarget({ agent: agentName, skill: skillId });
+    if ('error' in resolved) {
+      res.status(resolved.status).json({ error: resolved.error });
       return;
     }
 
     try {
       const messageText = extractMessageText(message);
-      const task = await client.submitTask(agentName, messageText);
+      const task = await client.submitTask(resolved.agentKey, messageText);
       res.json({
         id: task.id,
         status: task.status,
         result: getTaskResult(task),
         artifacts: task.artifacts,
+        routedTo: resolved.agentKey,
       });
     } catch (err) {
       res.status(404).json({ error: err instanceof Error ? err.message : 'Unknown error' });

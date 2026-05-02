@@ -343,6 +343,33 @@ export class A2AAgentClient {
     return result;
   }
 
+  /**
+   * Resolve a task target from caller-supplied {agent, skill}.
+   * V0.1 strategy: 'first' (deterministic, no hub state). V0.1.1 will
+   * add round-robin (counter), V0.2 least-loaded.
+   *
+   * Returns either {agentKey} on success, or {error, status} on failure.
+   * Pure function — no side effects, fully unit-testable. The HTTP
+   * handler layer wraps this and translates {error, status} to res.
+   */
+  resolveTarget(opts: { agent?: string; skill?: string }): { agentKey: string } | { error: string; status: 400 | 404 } {
+    const { agent, skill } = opts;
+    if (agent && skill) {
+      return { error: 'Provide either `agent` or `skill`, not both', status: 400 };
+    }
+    if (agent) {
+      return { agentKey: agent };
+    }
+    if (skill) {
+      const candidates = this.findAgentsWithSkill(skill);
+      if (candidates.length === 0) {
+        return { error: `No agents found for skill: ${skill}`, status: 404 };
+      }
+      return { agentKey: selectAgent(candidates) };
+    }
+    return { error: 'Missing required field: `agent` or `skill`', status: 400 };
+  }
+
   /** Submit a task to a specific agent (local or remote) */
   async submitTask(
     agentKey: string,
@@ -465,6 +492,20 @@ export function createAgentCard(config: {
 }
 
 /** Extract text from a task's last agent message */
+/**
+ * Select one agent key from a list of candidates (POC Niveau 3 — skill routing).
+ *
+ * V0.1 strategy: 'first' (deterministic, zero hub state, debug-friendly).
+ * V0.1.1 will add round-robin (hub-side counter), V0.2 least-loaded
+ * (probe-based). The signature stays simple in V0.1 to ease testing.
+ */
+export function selectAgent(candidates: string[]): string {
+  if (candidates.length === 0) {
+    throw new Error('selectAgent: empty candidate list');
+  }
+  return candidates[0];
+}
+
 export function getTaskResult(task: Task): string {
   // Check artifacts first
   if (task.artifacts.length > 0) {
