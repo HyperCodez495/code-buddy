@@ -193,5 +193,8 @@ export {
   DOCUMENT_GENERATOR_TOOLS,
 } from './document-tools.js';
 
+// Session tools (multi-agent coordination — Phase E wake)
+export { SESSION_TOOLS } from './session-tools.js';
+
 // Re-export CodeBuddyTool from client for convenience
 export type { CodeBuddyTool as Tool } from './types.js';

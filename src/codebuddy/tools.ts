@@ -43,6 +43,7 @@ import {
   ASK_USER_QUESTION_TOOLS,
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
+  SESSION_TOOLS,
 } from "./tool-definitions/index.js";
 
 /**
@@ -139,6 +140,12 @@ export function initializeToolRegistry(): void {
 
   // Codebase replace tools
   registerGroup(CODEBASE_REPLACE_TOOLS);
+
+  // Session tools — multi-agent coordination (Phase E wake of SessionToolExecutor).
+  // Always available; the SessionRegistry is lazy-instantiated by getSessionRegistry()
+  // singleton on first use. Persistence + cleanup timer require [multi_agent_system.sessions].enabled
+  // in TOML (cf. Phase F boot wiring).
+  registerGroup(SESSION_TOOLS);
 
   isRegistryInitialized = true;
   logger.debug('Tool registry initialized with built-in tools');

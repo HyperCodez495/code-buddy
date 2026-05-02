@@ -279,6 +279,11 @@ export {
   resetGuiToolInstance,
 } from './gui-tools.js';
 
+// Tool Adapters - Session coordination (sessions_list/history/send/spawn) — Phase E wake
+export {
+  createSessionTools,
+} from './session-tools.js';
+
 // Tool Adapters - PTY Interactive Shell
 export { InteractiveShellTool } from '../interactive-shell-tool.js';
 

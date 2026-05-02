@@ -56,6 +56,7 @@ import {
   createAskUserQuestionTools,
   createExitPlanModeTools,
   createGuiTools,
+  createSessionTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
 import { CodeBuddyToolCall } from "../codebuddy/client.js";
@@ -205,6 +206,7 @@ export class ToolHandler {
       ...createAskUserQuestionTools(),
       ...createExitPlanModeTools(),
       ...createGuiTools(),
+      ...createSessionTools(),
     ];
 
     // Register canonical-prefix alias tools (shell_exec→bash, file_read→view_file, etc.)

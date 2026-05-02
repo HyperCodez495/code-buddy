@@ -588,6 +588,38 @@ export const TOOL_METADATA: ToolMetadata[] = [
     priority: 7,
     description: 'Find and replace text across multiple files in the codebase'
   },
+
+  // Session tools — multi-agent coordination (Phase E wake of SessionToolExecutor).
+  // These let the LLM coordinate with other in-process sessions: discover them,
+  // read their transcript, message them, or spawn isolated sandboxed sub-agents.
+  {
+    name: 'sessions_list',
+    category: 'utility' as ToolCategory,
+    keywords: ['sessions', 'list', 'active', 'agents', 'discover', 'coordination', 'multi-agent'],
+    priority: 5,
+    description: 'List active sessions in the multi-agent system (discover who you can communicate with)',
+  },
+  {
+    name: 'sessions_history',
+    category: 'utility' as ToolCategory,
+    keywords: ['sessions', 'history', 'transcript', 'messages', 'review', 'context', 'multi-agent'],
+    priority: 5,
+    description: 'Get conversation history from another session by key or id',
+  },
+  {
+    name: 'sessions_send',
+    category: 'utility' as ToolCategory,
+    keywords: ['sessions', 'send', 'message', 'communicate', 'notify', 'multi-agent', 'broadcast'],
+    priority: 6,
+    description: 'Send a message to another session (fire-and-forget, or wait for response)',
+  },
+  {
+    name: 'sessions_spawn',
+    category: 'utility' as ToolCategory,
+    keywords: ['sessions', 'spawn', 'create', 'subagent', 'delegate', 'parallel', 'subtask', 'multi-agent'],
+    priority: 7,
+    description: 'Spawn an isolated sandboxed sub-agent session for a delegated task (depth-3 + 10/workflow caps)',
+  },
 ];
 
 /**

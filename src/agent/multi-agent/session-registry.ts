@@ -415,6 +415,43 @@ export class SessionRegistry extends EventEmitter {
       throw new Error(`Parent session ${params.parentSessionId} not found`);
     }
 
+    // Phase E safety caps — bound the runaway-spawn blast radius.
+    // Depth limit (height of the spawn tree) prevents an LLM agent from
+    // recursively spawning itself N levels deep.
+    const MAX_SPAWN_DEPTH = 3;
+    let depth = 1;
+    let walker: SessionInfo | undefined = parent;
+    while (walker?.parentSessionId) {
+      walker = this.sessions.get(walker.parentSessionId);
+      if (!walker) break;
+      depth++;
+      if (depth > MAX_SPAWN_DEPTH) {
+        throw new Error(`Max spawn depth (${MAX_SPAWN_DEPTH}) exceeded — refusing to spawn deeper`);
+      }
+    }
+    // Workflow-wide breadth cap — depth 3 alone permits 1+3+9+27 = 40
+    // siblings worst-case. Cap the total descendants per root session.
+    const MAX_SESSIONS_PER_WORKFLOW = 10;
+    let root: SessionInfo = parent;
+    while (root.parentSessionId) {
+      const next = this.sessions.get(root.parentSessionId);
+      if (!next) break;
+      root = next;
+    }
+    let descendantCount = 0;
+    for (const s of this.sessions.values()) {
+      if (s.kind !== 'spawn') continue;
+      // Walk up; if we hit `root.id`, it's a descendant of root.
+      let cursor: SessionInfo | undefined = s;
+      while (cursor?.parentSessionId) {
+        if (cursor.parentSessionId === root.id) { descendantCount++; break; }
+        cursor = this.sessions.get(cursor.parentSessionId);
+      }
+    }
+    if (descendantCount >= MAX_SESSIONS_PER_WORKFLOW) {
+      throw new Error(`Workflow session cap reached (${MAX_SESSIONS_PER_WORKFLOW}) — refusing to spawn`);
+    }
+
     const child = this.createSession({
       kind: 'spawn',
       agentId: params.agentId || parent.agentId,
