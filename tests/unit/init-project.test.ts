@@ -9,6 +9,7 @@ import {
   formatInitResult,
   generateCODEBUDDYMdContent,
   generateContextMdContent,
+  generateAgentsMdContent,
 } from '../../src/utils/init-project.js';
 
 jest.mock('../../src/agent/repo-profiler.js', () => ({
@@ -164,6 +165,80 @@ describe('generateCODEBUDDYMdContent', () => {
     });
     expect(content).toContain('npm run typecheck');
     expect(content).toContain('npm run validate');
+  });
+});
+
+// ============================================================================
+// generateAgentsMdContent
+// ============================================================================
+
+describe('generateAgentsMdContent', () => {
+  it('returns a generic fallback when profile is null (no crash)', () => {
+    const content = generateAgentsMdContent(null);
+    // Header always present
+    expect(content).toContain('— Agent Guide');
+    expect(content).toContain('## Build & Test');
+    expect(content).toContain('## Conventions');
+    expect(content).toContain('## Architecture');
+    expect(content).toContain('## More Context');
+    // Generic build commands as fallback
+    expect(content).toContain('npm test');
+    expect(content).toContain('npm run build');
+    // Cross-CLI banner
+    expect(content).toContain('Read by Claude Code, Gemini CLI, Cursor, Codex, and Code Buddy');
+  });
+
+  it('renders rich content for a fully-populated profile', () => {
+    const content = generateAgentsMdContent({
+      name: 'demo-tool',
+      description: 'A demo CLI tool.',
+      languages: ['TypeScript', 'JavaScript'],
+      framework: 'Express',
+      moduleType: 'esm',
+      testFramework: 'Vitest',
+      packageManager: 'npm',
+      commands: {
+        test: 'npm test',
+        lint: 'npm run lint',
+        build: 'npm run build',
+        typecheck: 'npm run typecheck',
+        format: 'prettier --write .',
+      },
+      directories: { src: 'src', tests: 'tests', docs: 'docs' },
+      entryPoints: ['dist/index.js'],
+      hasClaudeMd: true,
+    });
+
+    expect(content).toContain('demo-tool — Agent Guide');
+    expect(content).toContain('A demo CLI tool.');
+    // Build & Test
+    expect(content).toContain('npm test');
+    expect(content).toContain('npm run typecheck');
+    expect(content).toContain('prettier --write .');
+    // Conventions
+    expect(content).toContain('TypeScript, JavaScript');
+    expect(content).toContain('Express');
+    expect(content).toContain('ESM');
+    expect(content).toContain('Vitest');
+    // Architecture
+    expect(content).toContain('`src/`');
+    expect(content).toContain('`tests/`');
+    expect(content).toContain('`docs/`');
+    expect(content).toContain('dist/index.js');
+    // CLAUDE.md pointer present when hasClaudeMd
+    expect(content).toContain('`CLAUDE.md`');
+    // Always-present pointers
+    expect(content).toContain('.codebuddy/CONTEXT.md');
+    expect(content).toContain('.codebuddy/CODEBUDDY.md');
+  });
+
+  it('omits the CLAUDE.md pointer when hasClaudeMd is false', () => {
+    const content = generateAgentsMdContent({
+      name: 'no-claude',
+      languages: ['TypeScript'],
+      hasClaudeMd: false,
+    });
+    expect(content).not.toContain('`CLAUDE.md`');
   });
 });
 
@@ -354,6 +429,44 @@ describe('initCodeBuddyProject', () => {
     expect(contextIdx).toBeGreaterThanOrEqual(0);
     expect(codebuddyIdx).toBeGreaterThanOrEqual(0);
     expect(contextIdx).toBeLessThan(codebuddyIdx);
+  });
+
+  it('creates AGENTS.md at PROJECT ROOT (not in .codebuddy/) and lists it in created', async () => {
+    const result = await initCodeBuddyProject(tmpDir);
+
+    const agentsRootPath = path.join(tmpDir, 'AGENTS.md');
+    const agentsCodebuddyPath = path.join(tmpDir, '.codebuddy', 'AGENTS.md');
+
+    // Lives at root, not in .codebuddy/
+    expect(fs.existsSync(agentsRootPath)).toBe(true);
+    expect(fs.existsSync(agentsCodebuddyPath)).toBe(false);
+    expect(result.created).toContain('AGENTS.md');
+
+    // Content sanity-check: profile-derived data flows through
+    const content = fs.readFileSync(agentsRootPath, 'utf-8');
+    expect(content).toContain('— Agent Guide');
+    expect(content).toContain('npm test');
+    // Mock profile sets hasClaudeMd: true → CLAUDE.md pointer present
+    expect(content).toContain('`CLAUDE.md`');
+  });
+
+  it('AGENTS.md is skipped on re-run without force, overwritten with force:true', async () => {
+    await initCodeBuddyProject(tmpDir);
+    const agentsPath = path.join(tmpDir, 'AGENTS.md');
+
+    // Mutate
+    fs.writeFileSync(agentsPath, 'USER EDITED AGENTS.md\n');
+
+    // Re-run without force: should skip
+    const second = await initCodeBuddyProject(tmpDir);
+    expect(second.skipped).toContain('AGENTS.md (already exists)');
+    expect(fs.readFileSync(agentsPath, 'utf-8')).toBe('USER EDITED AGENTS.md\n');
+
+    // Re-run with force: should overwrite
+    const third = await initCodeBuddyProject(tmpDir, { force: true });
+    expect(third.created).toContain('AGENTS.md');
+    expect(fs.readFileSync(agentsPath, 'utf-8')).not.toBe('USER EDITED AGENTS.md\n');
+    expect(fs.readFileSync(agentsPath, 'utf-8')).toContain('— Agent Guide');
   });
 
   it('settings.json uses grok-code-fast-1 as default model', async () => {
