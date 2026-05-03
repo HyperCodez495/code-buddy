@@ -114,6 +114,8 @@ import {
   handleShare,
   // Agents handler — slash /agents (audit OpenClaw heritage activation, MultiAgentSystem wake)
   handleAgents,
+  // Fleet handler — slash /fleet (Phase (d).5 V0.4.1, inter-Claude WS streaming receiver)
+  handleFleet,
   // Clipboard handler
   handleCopy,
   // PR handler (GitHub/GitLab PR creation)
@@ -479,6 +481,9 @@ export class EnhancedCommandHandler {
 
     // Multi-agent system — slash /agents (audit OpenClaw heritage, MultiAgentSystem wake)
     ['__AGENTS__', (args) => handleAgents(args)],
+
+    // Fleet listener — slash /fleet (Phase (d).5 V0.4.1, inter-Claude streaming)
+    ['__FLEET__', (args) => handleFleet(args)],
 
     // Clipboard (copy last response, code block, or text)
     ['__COPY__', (args) => handleCopy(args, this.conversationHistory)],

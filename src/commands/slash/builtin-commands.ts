@@ -1324,6 +1324,16 @@ const agentControlCommands: SlashCommand[] = [
     ]
   },
   {
+    name: 'fleet',
+    description: 'Inter-Claude live streaming receiver (listen/stop/status) — connects to a peer Code Buddy WS and streams fleet:* events. Requires apiKey with fleet:listen scope.',
+    prompt: '__FLEET__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: 'listen <ws-url> [--api-key <key>] | stop | status', required: false }
+    ]
+  },
+  {
     name: 'suggest',
     description: 'Get proactive suggestions for the current project context',
     prompt: '__SUGGEST__',

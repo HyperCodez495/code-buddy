@@ -13,6 +13,11 @@
 
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import { getUserHooksManager } from '../../hooks/user-hooks.js';
+// Phase (d).2 V0.4.1 — eager import so concurrent tool emits don't get
+// serialized through dynamic-import promise chains (same fix as (d).3
+// for workflow events). fleet-bridge stays lean; it lazy-imports its
+// own deps so this doesn't bloat CLI-only startup.
+import { broadcastFleetEvent as _broadcastFleetEvent } from '../../server/websocket/fleet-bridge.js';
 
 /**
  * Phase (d).2 V0.4.1 — fleet stream opt-in. When CODEBUDDY_FLEET_STREAM=1
@@ -35,18 +40,14 @@ export function emitFleetToolStarted(
   toolCall: { id: string; function: { name: string } }
 ): void {
   if (!isFleetStreamEnabled()) return;
-  // Lazy import so unit tests for this module don't need to mock the WS
-  // bridge and CLI-only mode doesn't load server-side code at all.
-  import('../../server/websocket/fleet-bridge.js')
-    .then(({ broadcastFleetEvent }) => {
-      broadcastFleetEvent('fleet:agent:tool_started', {
-        toolName: toolCall.function.name,
-        toolCallId: toolCall.id,
-      });
-    })
-    .catch(() => {
-      /* fleet-bridge unavailable — drop the event */
+  try {
+    _broadcastFleetEvent('fleet:agent:tool_started', {
+      toolName: toolCall.function.name,
+      toolCallId: toolCall.id,
     });
+  } catch {
+    /* fleet-bridge swallows internally; this catches surprises */
+  }
 }
 
 export function emitFleetToolCompleted(
@@ -58,19 +59,17 @@ export function emitFleetToolCompleted(
   const eventType = result.success
     ? 'fleet:agent:tool_completed'
     : 'fleet:agent:tool_error';
-  import('../../server/websocket/fleet-bridge.js')
-    .then(({ broadcastFleetEvent }) => {
-      broadcastFleetEvent(eventType, {
-        toolName: toolCall.function.name,
-        toolCallId: toolCall.id,
-        success: result.success,
-        durationMs,
-        error: result.error,
-      });
-    })
-    .catch(() => {
-      /* fleet-bridge unavailable — drop the event */
+  try {
+    _broadcastFleetEvent(eventType, {
+      toolName: toolCall.function.name,
+      toolCallId: toolCall.id,
+      success: result.success,
+      durationMs,
+      error: result.error,
     });
+  } catch {
+    /* fleet-bridge swallows internally */
+  }
 }
 
 export interface PreHookResult {
