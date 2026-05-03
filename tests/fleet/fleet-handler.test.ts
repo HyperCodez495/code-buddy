@@ -109,7 +109,7 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
   describe('help / status / unknown', () => {
     it('returns help when no action given', async () => {
       const r = await handleFleet([]);
-      expect(r.entry?.content).toContain('No fleet listener active');
+      expect(r.entry?.content).toContain('No fleet listeners active');
       expect(r.entry?.content).toContain('/fleet');
     });
 
@@ -120,7 +120,7 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
 
     it('reports no active listener via status when nothing running', async () => {
       const r = await handleFleet(['status']);
-      expect(r.entry?.content).toContain('No fleet listener active');
+      expect(r.entry?.content).toContain('No fleet listeners active');
     });
 
     it('handles unknown actions gracefully', async () => {
@@ -172,11 +172,32 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       expect(fleetListenerMock.constructorCalls[0].apiKey).toBe('cb_sk_cli');
     });
 
-    it('rejects when listener already active', async () => {
+    it('rejects when SAME peer name (or default-derived id) is already active', async () => {
+      // Same URL → same default peer id → second listen rejects
       const r1 = await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k1']);
       expect(r1.entry?.content).toContain('connected');
-      const r2 = await handleFleet(['listen', 'ws://other:3000/ws', '--api-key', 'k2']);
-      expect(r2.entry?.content).toContain('already active');
+      const r2 = await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k2']);
+      expect(r2.entry?.content).toContain('is already active');
+    });
+
+    it('Phase (d).12 — accepts a SECOND listener to a different peer (different default id)', async () => {
+      const r1 = await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1']);
+      expect(r1.entry?.content).toContain('connected');
+      // Different host → different default id → accepted
+      const r2 = await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2']);
+      expect(r2.entry?.content).toContain('connected');
+      expect(fleetListenerMock.constructorCalls).toHaveLength(2);
+    });
+
+    it('Phase (d).12 — accepts two listeners to the SAME url with explicit --name overrides', async () => {
+      const r1 = await handleFleet([
+        'listen', 'ws://peer:3000/ws', '--api-key', 'k1', '--name', 'session-a',
+      ]);
+      expect(r1.entry?.content).toContain('"session-a"');
+      const r2 = await handleFleet([
+        'listen', 'ws://peer:3000/ws', '--api-key', 'k2', '--name', 'session-b',
+      ]);
+      expect(r2.entry?.content).toContain('"session-b"');
     });
 
     it('reports connect error', async () => {
@@ -199,9 +220,20 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
     it('reports active listener with URL + uptime', async () => {
       await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
       const r = await handleFleet(['status']);
-      expect(r.entry?.content).toContain('ACTIVE');
+      expect(r.entry?.content).toContain('1 active');
       expect(r.entry?.content).toContain('ws://peer:3000/ws');
       expect(r.entry?.content).toContain('Uptime');
+    });
+
+    it('Phase (d).12 — multi-peer status shows all active peers stacked', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2', '--name', 'b']);
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('2 active');
+      expect(r.entry?.content).toContain('Peer "a"');
+      expect(r.entry?.content).toContain('Peer "b"');
+      expect(r.entry?.content).toContain('ws://peerA:3000/ws');
+      expect(r.entry?.content).toContain('ws://peerB:3000/ws');
     });
 
     // Phase (d).9 — presence display in /fleet status.
@@ -289,13 +321,13 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
   describe('history action (Phase (d).11)', () => {
     it('reports no listener when none active', async () => {
       const r = await handleFleet(['history']);
-      expect(r.entry?.content).toContain('No fleet listener active');
+      expect(r.entry?.content).toContain('No fleet listeners active');
     });
 
     it('reports empty buffer when no events recorded', async () => {
       await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
       const r = await handleFleet(['history']);
-      expect(r.entry?.content).toContain('No fleet events recorded yet.');
+      expect(r.entry?.content).toContain('No fleet events recorded yet');
     });
 
     it('renders all events with HH:mm:ss + type when buffer has 3 entries', async () => {
@@ -325,7 +357,7 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       ]);
       const r = await handleFleet(['history']);
       const out = r.entry?.content ?? '';
-      expect(out).toContain('Fleet event history — last 3 of 3');
+      expect(out).toContain('Fleet event history for "peer:3000" — last 3 of 3');
       expect(out).toContain('fleet:agent:tool_started');
       expect(out).toContain('tool=view_file');
       expect(out).toContain('[darkstar:abcdef01]');
@@ -373,13 +405,13 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
   describe('stop action', () => {
     it('reports nothing to stop when idle', async () => {
       const r = await handleFleet(['stop']);
-      expect(r.entry?.content).toContain('No fleet listener active');
+      expect(r.entry?.content).toContain('No fleet listeners active to stop.');
     });
 
-    it('disconnects active listener', async () => {
+    it('disconnects active listener (single peer → no name needed)', async () => {
       await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
       const r = await handleFleet(['stop']);
-      expect(r.entry?.content).toContain('Fleet listener stopped');
+      expect(r.entry?.content).toContain('stopped');
       expect(fleetListenerMock.disconnectMock).toHaveBeenCalled();
     });
 
@@ -388,6 +420,42 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       await handleFleet(['stop']);
       const r2 = await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k2']);
       expect(r2.entry?.content).toContain('connected');
+    });
+
+    it('Phase (d).12 — multiple peers active + no name → demands a name', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2', '--name', 'b']);
+      const r = await handleFleet(['stop']);
+      expect(r.entry?.content).toContain('Multiple fleet listeners active');
+      expect(fleetListenerMock.disconnectMock).not.toHaveBeenCalled();
+    });
+
+    it('Phase (d).12 — stop NAME stops the named peer only', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2', '--name', 'b']);
+      const r = await handleFleet(['stop', 'a']);
+      expect(r.entry?.content).toContain('"a" stopped');
+      expect(fleetListenerMock.disconnectMock).toHaveBeenCalledTimes(1);
+      const status = await handleFleet(['status']);
+      expect(status.entry?.content).toContain('1 active');
+      expect(status.entry?.content).toContain('Peer "b"');
+    });
+
+    it('Phase (d).12 — stop UNKNOWN_NAME reports error with active list', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      const r = await handleFleet(['stop', 'nonexistent']);
+      expect(r.entry?.content).toContain('No fleet peer named "nonexistent"');
+      expect(r.entry?.content).toContain('Active peers: a');
+    });
+
+    it('Phase (d).12 — stop --all disconnects every peer', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2', '--name', 'b']);
+      const r = await handleFleet(['stop', '--all']);
+      expect(r.entry?.content).toContain('stopped 2 listener(s)');
+      expect(fleetListenerMock.disconnectMock).toHaveBeenCalledTimes(2);
+      const status = await handleFleet(['status']);
+      expect(status.entry?.content).toContain('No fleet listeners active');
     });
   });
 });

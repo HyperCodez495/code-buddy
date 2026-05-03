@@ -1,5 +1,5 @@
 /**
- * Fleet listener slash command handler — `/fleet` (Phase (d).5 + (d).6 V0.4.1).
+ * Fleet listener slash command handler — `/fleet` (Phase (d).5 → (d).12 V0.4.1).
  *
  * Closes the inter-Claude streaming loop started in (d).1: connects to a
  * peer Code Buddy's Gateway WebSocket, subscribes to fleet:* events, and
@@ -7,24 +7,33 @@
  * path; the key must have the `fleet:listen` scope.
  *
  * Sub-actions:
- *   /fleet listen <ws-url> [--api-key <key>]
+ *   /fleet listen <ws-url> [--api-key <key>] [--name <id>]
  *                  [--auto-reconnect [--max-attempts <n>]]
  *                                              Connect + start streaming.
+ *                                              --name (Phase (d).12) gives
+ *                                              the peer a stable id; default
+ *                                              is derived from the WS host.
  *                                              --auto-reconnect (Phase (d).6)
  *                                              keeps the listener alive
  *                                              across ws drops with
  *                                              exponential-backoff retry.
- *   /fleet stop                                 Disconnect (cancels any
- *                                              pending reconnect).
- *   /fleet status                               Show connection state +
- *                                              reconnect counter.
+ *   /fleet stop [name|--all]                    Disconnect a peer (or all).
+ *                                              Defaults to the only active
+ *                                              listener when there's one.
+ *   /fleet status                               Show all connected peers.
+ *   /fleet history [N] [--peer <name>]          Show last N fleet:* events
+ *                                              from one peer (or the only
+ *                                              one if not specified).
+ *
+ * Phase (d).12 — multi-peer fan-in: a single Claude can now hold N
+ * simultaneous /fleet listen sessions to different peers, each with its
+ * own auto-reconnect, presence beacon, compaction state and event ring.
  *
  * Honest scope cuts (V0.4.1):
- * - Only ONE listener at a time (singleton). Multiple peer connections
- *   would need a fleet of fleets, V0.5+ if needed.
  * - apiKey can come from --api-key flag or CODEBUDDY_FLEET_API_KEY env;
  *   no TOML wiring yet (the rest of the codebase reads server keys from
  *   env, so this matches).
+ * - Routing actif (sending tasks to peers) is Phase (d).13.
  */
 
 import type { CommandHandlerResult } from './branch-handlers.js';
@@ -34,43 +43,48 @@ const HELP = `Usage: /fleet <action> [args]
 
 Actions:
   listen <ws-url> [--api-key <key>]   Connect to a peer Code Buddy's WS
-         [--auto-reconnect]           and stream fleet:* events live.
-         [--max-attempts <n>]         Example: /fleet listen ws://100.98.18.76:3000/ws
-                                      apiKey from --api-key flag or
+         [--name <id>]                and stream fleet:* events live.
+         [--auto-reconnect]           Example: /fleet listen ws://100.98.18.76:3000/ws
+         [--max-attempts <n>]         apiKey from --api-key flag or
                                       CODEBUDDY_FLEET_API_KEY env. Must
                                       have fleet:listen scope on the peer.
-                                      --auto-reconnect (Phase (d).6) keeps
-                                      the listener alive across ws drops.
+                                      --name (d).12 gives the peer a stable
+                                      id; default derived from the WS host.
+                                      --auto-reconnect (d).6 keeps the
+                                      listener alive across ws drops.
                                       --max-attempts caps retry tries
-                                      (default 5; only used with
-                                      --auto-reconnect).
-  stop                                Disconnect the active listener
-                                      (cancels any pending reconnect).
-  status                              Show whether a listener is active.
-  history [N]                         Show the last N fleet:* events
-                                      from the in-memory ring (default
-                                      20, capped at the listener's
-                                      ring capacity, default 50).
+                                      (default 5; with --auto-reconnect).
+  stop [name|--all]                   Disconnect a peer (or all). Defaults
+                                      to the only active listener when one.
+  status                              Show all connected peers + their state.
+  history [N] [--peer <name>]         Show last N fleet:* events from one
+                                      peer (default 20, caps at ring size).
 
-Phase (d).5 → (d).11 V0.4.1 — single listener at a time, opt-in
-auto-reconnect with exponential backoff, presence beacon, compaction
-notices, in-memory event history.`;
+Phase (d).5 → (d).12 V0.4.1 — multi-peer fan-in, opt-in auto-reconnect,
+presence beacon, compaction notices, in-memory event history.`;
 
 interface ActiveListener {
+  /** Phase (d).12 — stable peer id (the Map key). Used by /fleet stop & history. */
+  id: string;
   url: string;
   startedAt: Date;
   eventCount: number;
   autoReconnect: boolean;
-  // FleetListener instance kept as `unknown` so this module doesn't pull
-  // in the ws import at handler-load time (matches lazy-import patterns).
+  /**
+   * Tighter cap honored on /fleet listen than the manager default.
+   * Stored so /fleet status can show "N/M attempts".
+   */
+  maxAttempts: number;
+  /**
+   * FleetListener instance kept as `unknown`-equivalent to avoid pulling
+   * the ws import at handler-load time (matches lazy-import patterns).
+   */
   listener: {
     disconnect: () => Promise<void>;
     getReconnectAttempts: () => number;
     isReconnecting: () => boolean;
-    // Phase (d).9 — presence telemetry surfaced through /fleet status.
     getLastSeen: () => { at: number | null; reason: string | null; ageMs: number | null };
     isStale: (thresholdMs?: number) => boolean;
-    // Phase (d).10 — peer compaction state surfaced through /fleet status.
     getPeerCompactionState: () => {
       active: boolean;
       startedAt: number | null;
@@ -85,7 +99,6 @@ interface ActiveListener {
         completedAt: number;
       } | null;
     };
-    // Phase (d).11 — in-memory event history surfaced through /fleet history.
     getEventHistory: () => readonly {
       at: number;
       type: string;
@@ -96,13 +109,17 @@ interface ActiveListener {
   };
 }
 
-/** Phase (d).11 — default count rendered by `/fleet history` when no N supplied. */
+/** Default count rendered by `/fleet history` when no N supplied. */
 const HISTORY_DEFAULT_COUNT = 20;
 
 /** Stale threshold for /fleet status `⚠ stale` flag (Phase (d).9). */
 const STALE_THRESHOLD_MS = 90_000;
 
-let activeListener: ActiveListener | null = null;
+/**
+ * Phase (d).12 — registry of active peer listeners, keyed by peer id.
+ * Replaces the V0.4.1 single-peer singleton.
+ */
+const activeListeners = new Map<string, ActiveListener>();
 
 function textResult(content: string): CommandHandlerResult {
   return {
@@ -114,8 +131,19 @@ function textResult(content: string): CommandHandlerResult {
 interface ParsedListenArgs {
   url: string | null;
   apiKey: string | null;
+  name: string | null;
   autoReconnect: boolean;
   maxAttempts: number | null;
+}
+
+interface ParsedStopArgs {
+  name: string | null;
+  all: boolean;
+}
+
+interface ParsedHistoryArgs {
+  count: number | null;
+  peer: string | null;
 }
 
 /**
@@ -181,15 +209,33 @@ function formatHistorySource(record: { hostname?: string; agentId?: string }): s
   return ` [${host}${agent}]`;
 }
 
+/**
+ * Phase (d).12 — derive a default peer id from the WS URL (host:port).
+ * `ws://100.98.18.76:3000/ws` → `100-98-18-76:3000` (dots → dashes for
+ * easier shell typing in /fleet stop / --peer).
+ */
+function deriveDefaultPeerId(url: string): string {
+  try {
+    const u = new URL(url);
+    return u.host.replace(/\./g, '-');
+  } catch {
+    return `peer-${Date.now()}`;
+  }
+}
+
 function parseArgs(rest: string[]): ParsedListenArgs {
   let url: string | null = null;
   let apiKey: string | null = null;
+  let name: string | null = null;
   let autoReconnect = false;
   let maxAttempts: number | null = null;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === '--api-key' && i + 1 < rest.length) {
       apiKey = rest[i + 1];
+      i++;
+    } else if (arg === '--name' && i + 1 < rest.length) {
+      name = rest[i + 1];
       i++;
     } else if (arg === '--auto-reconnect') {
       autoReconnect = true;
@@ -201,7 +247,95 @@ function parseArgs(rest: string[]): ParsedListenArgs {
       url = arg;
     }
   }
-  return { url, apiKey, autoReconnect, maxAttempts };
+  return { url, apiKey, name, autoReconnect, maxAttempts };
+}
+
+function parseStopArgs(rest: string[]): ParsedStopArgs {
+  let name: string | null = null;
+  let all = false;
+  for (const arg of rest) {
+    if (arg === '--all') all = true;
+    else if (!name && !arg.startsWith('--')) name = arg;
+  }
+  return { name, all };
+}
+
+function parseHistoryArgs(rest: string[]): ParsedHistoryArgs {
+  let count: number | null = null;
+  let peer: string | null = null;
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === '--peer' && i + 1 < rest.length) {
+      peer = rest[i + 1];
+      i++;
+    } else if (count === null && !arg.startsWith('--')) {
+      const n = parseInt(arg, 10);
+      if (Number.isFinite(n) && n > 0) count = n;
+    }
+  }
+  return { count, peer };
+}
+
+/**
+ * Phase (d).12 — render one peer block for /fleet status.
+ * Reused logic from the V0.4.1 single-peer status; output now stacks
+ * one block per active peer.
+ */
+function formatPeerStatus(p: ActiveListener): string {
+  const elapsed = Math.round((Date.now() - p.startedAt.getTime()) / 1000);
+  const lines: string[] = [];
+  lines.push(`Peer "${p.id}"`);
+  lines.push(`  URL:     ${p.url}`);
+  lines.push(`  Uptime:  ${elapsed}s`);
+  lines.push(`  Events:  ${p.eventCount} received`);
+  if (p.autoReconnect) {
+    const attempts = p.listener.getReconnectAttempts();
+    const pending = p.listener.isReconnecting();
+    lines.push(
+      `  Reconnect: enabled (${attempts}/${p.maxAttempts} attempts since last connect` +
+        `${pending ? ', retry pending' : ''})`,
+    );
+  } else {
+    lines.push('  Reconnect: disabled');
+  }
+  // Presence
+  const seen = p.listener.getLastSeen();
+  if (seen.at === null) {
+    lines.push('  Last seen: never (no events received yet)');
+  } else {
+    const ageSec = Math.round((seen.ageMs ?? 0) / 1000);
+    const reason = seen.reason ?? 'unknown';
+    const stale = p.listener.isStale(STALE_THRESHOLD_MS);
+    const prefix = stale ? `  ⚠ stale (>${STALE_THRESHOLD_MS / 1000}s) — ` : '  ';
+    lines.push(`${prefix}Last seen: ${ageSec}s ago (${reason})`);
+  }
+  // Compaction
+  const compactionState = p.listener.getPeerCompactionState();
+  if (compactionState.active) {
+    const ageSec = Math.round((compactionState.ageMs ?? 0) / 1000);
+    lines.push(`  ⏸ Peer compacting (started ${ageSec}s ago, in progress)`);
+  } else if (compactionState.lastResult) {
+    const r = compactionState.lastResult;
+    const saved =
+      typeof r.originalTokens === 'number' && typeof r.compactedTokens === 'number'
+        ? r.originalTokens - r.compactedTokens
+        : null;
+    const strategyTxt = r.strategy ?? 'unknown';
+    const durTxt = typeof r.durationMs === 'number' ? `${r.durationMs}ms` : 'n/a';
+    const savedTxt = saved !== null ? ` (saved ${saved} tokens)` : '';
+    lines.push(`  Last compaction: ${strategyTxt} in ${durTxt}${savedTxt}`);
+  }
+  return lines.join('\n');
+}
+
+/**
+ * Phase (d).12 — pick a default peer when /fleet stop / history is given
+ * without a name and there's exactly one listener active. Returns null
+ * when 0 or >1 listeners (caller must error / require name).
+ */
+function pickDefaultPeer(): ActiveListener | null {
+  if (activeListeners.size !== 1) return null;
+  return activeListeners.values().next().value ?? null;
 }
 
 export async function handleFleet(args: string[]): Promise<CommandHandlerResult> {
@@ -213,96 +347,72 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
   }
 
   if (action === 'status') {
-    if (!activeListener) {
-      return textResult('No fleet listener active.\n\n' + HELP);
+    if (activeListeners.size === 0) {
+      return textResult('No fleet listeners active.\n\n' + HELP);
     }
-    const elapsed = Math.round((Date.now() - activeListener.startedAt.getTime()) / 1000);
-    let reconnectLine = '';
-    if (activeListener.autoReconnect) {
-      const attempts = activeListener.listener.getReconnectAttempts();
-      const pending = activeListener.listener.isReconnecting();
-      reconnectLine =
-        `  Reconnect: enabled (` +
-        `${attempts} attempt(s) since last connect` +
-        `${pending ? ', retry pending' : ''})\n`;
-    } else {
-      reconnectLine = `  Reconnect: disabled\n`;
+    const blocks: string[] = [];
+    blocks.push(`Fleet listeners — ${activeListeners.size} active`);
+    blocks.push('');
+    for (const peer of activeListeners.values()) {
+      blocks.push(formatPeerStatus(peer));
+      blocks.push('');
     }
-    // Phase (d).9 — presence line. Three cases:
-    //  - No event yet → "Last seen: never"
-    //  - Recent → "Last seen: 12s ago (heartbeat)"
-    //  - Stale → "⚠ stale (>90s) — Last seen: 124s ago (heartbeat)"
-    const seen = activeListener.listener.getLastSeen();
-    let lastSeenLine: string;
-    if (seen.at === null) {
-      lastSeenLine = `  Last seen: never (no events received yet)\n`;
-    } else {
-      const ageSec = Math.round((seen.ageMs ?? 0) / 1000);
-      const reason = seen.reason ?? 'unknown';
-      const stale = activeListener.listener.isStale(STALE_THRESHOLD_MS);
-      const prefix = stale ? `  ⚠ stale (>${STALE_THRESHOLD_MS / 1000}s) — ` : `  `;
-      lastSeenLine = `${prefix}Last seen: ${ageSec}s ago (${reason})\n`;
-    }
-    // Phase (d).10 — peer compaction line. Three states:
-    //   active=true → "⏸ Peer compacting (started Xs ago, strategy)"
-    //   inactive + lastResult set → "Last compaction: strategy in Xms (saved Y tokens)"
-    //   neither → no line at all (avoid clutter pre-first-compaction)
-    const compactionState = activeListener.listener.getPeerCompactionState();
-    let compactionLine = '';
-    if (compactionState.active) {
-      const ageSec = Math.round((compactionState.ageMs ?? 0) / 1000);
-      compactionLine = `  ⏸ Peer compacting (started ${ageSec}s ago, in progress)\n`;
-    } else if (compactionState.lastResult) {
-      const r = compactionState.lastResult;
-      const saved =
-        typeof r.originalTokens === 'number' && typeof r.compactedTokens === 'number'
-          ? r.originalTokens - r.compactedTokens
-          : null;
-      const strategyTxt = r.strategy ?? 'unknown';
-      const durTxt = typeof r.durationMs === 'number' ? `${r.durationMs}ms` : 'n/a';
-      const savedTxt = saved !== null ? ` (saved ${saved} tokens)` : '';
-      compactionLine = `  Last compaction: ${strategyTxt} in ${durTxt}${savedTxt}\n`;
-    }
-
-    return textResult(
-      `Fleet listener ACTIVE\n` +
-        `  URL:     ${activeListener.url}\n` +
-        `  Uptime:  ${elapsed}s\n` +
-        `  Events:  ${activeListener.eventCount} received\n` +
-        reconnectLine +
-        lastSeenLine +
-        compactionLine +
-        `\nStop with /fleet stop.`,
-    );
+    blocks.push('Stop a peer with /fleet stop <name>, or all with /fleet stop --all.');
+    return textResult(blocks.join('\n'));
   }
 
   if (action === 'stop') {
-    if (!activeListener) {
-      return textResult('No fleet listener active to stop.');
+    if (activeListeners.size === 0) {
+      return textResult('No fleet listeners active to stop.');
     }
-    const url = activeListener.url;
-    const count = activeListener.eventCount;
+    const { name, all } = parseStopArgs(rest);
+    if (all) {
+      const stopped: string[] = [];
+      for (const peer of [...activeListeners.values()]) {
+        try {
+          await peer.listener.disconnect();
+        } catch (err) {
+          logger.debug('Fleet listener disconnect error (ignored)', { error: String(err) });
+        }
+        activeListeners.delete(peer.id);
+        stopped.push(`${peer.id} (${peer.eventCount} event(s))`);
+      }
+      return textResult(`Fleet stopped ${stopped.length} listener(s): ${stopped.join(', ')}`);
+    }
+    let target: ActiveListener | null = null;
+    if (name) {
+      target = activeListeners.get(name) ?? null;
+      if (!target) {
+        return textResult(
+          `No fleet peer named "${name}". Active peers: ${[...activeListeners.keys()].join(', ')}`,
+        );
+      }
+    } else {
+      target = pickDefaultPeer();
+      if (!target) {
+        return textResult(
+          `Multiple fleet listeners active (${activeListeners.size}). ` +
+            `Specify a peer name or use --all. Active: ${[...activeListeners.keys()].join(', ')}`,
+        );
+      }
+    }
+    const url = target.url;
+    const count = target.eventCount;
+    const id = target.id;
     try {
-      await activeListener.listener.disconnect();
+      await target.listener.disconnect();
     } catch (err) {
       logger.debug('Fleet listener disconnect error (ignored)', { error: String(err) });
     }
-    activeListener = null;
-    return textResult(`Fleet listener stopped. URL: ${url}\nReceived ${count} event(s) total.`);
+    activeListeners.delete(id);
+    return textResult(`Fleet listener "${id}" stopped. URL: ${url}\nReceived ${count} event(s) total.`);
   }
 
   if (action === 'listen') {
-    if (activeListener) {
-      return textResult(
-        `Fleet listener already active for ${activeListener.url}.\n` +
-          `Stop it first with /fleet stop, then re-issue /fleet listen.`,
-      );
-    }
-
-    const { url, apiKey: cliKey, autoReconnect, maxAttempts } = parseArgs(rest);
+    const { url, apiKey: cliKey, name: explicitName, autoReconnect, maxAttempts } = parseArgs(rest);
     if (!url) {
       return textResult(
-        'Usage: /fleet listen <ws-url> [--api-key <key>] [--auto-reconnect] [--max-attempts <n>]\n\n' + HELP,
+        'Usage: /fleet listen <ws-url> [--api-key <key>] [--name <id>] [--auto-reconnect] [--max-attempts <n>]\n\n' + HELP,
       );
     }
     const apiKey = cliKey ?? process.env.CODEBUDDY_FLEET_API_KEY;
@@ -314,71 +424,85 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
       );
     }
 
+    const peerId = explicitName ?? deriveDefaultPeerId(url);
+    if (activeListeners.has(peerId)) {
+      return textResult(
+        `Fleet peer "${peerId}" is already active for ${activeListeners.get(peerId)!.url}. ` +
+          `Stop it first with /fleet stop ${peerId}, then re-issue /fleet listen, ` +
+          `or pick a different --name.`,
+      );
+    }
+
     try {
       const { FleetListener } = await import('../../fleet/fleet-listener.js');
+      const cap = maxAttempts ?? 5;
       const listener = new FleetListener({
         url,
         apiKey,
         autoReconnect,
-        // Tighter default for /fleet listen than the manager's default (10):
-        // a remote peer that drops 5 times in a row is probably gone.
-        reconnect: autoReconnect ? { maxRetries: maxAttempts ?? 5 } : undefined,
+        reconnect: autoReconnect ? { maxRetries: cap } : undefined,
       });
       const startedAt = new Date();
-      let eventCount = 0;
 
+      // Phase (d).12 — wire stdout streaming with the peer id in the prefix
+      // so multi-peer output stays distinguishable when interleaved.
       listener.on('fleet:event', (data: { type: string; payload: Record<string, unknown> }) => {
-        eventCount++;
-        if (activeListener) activeListener.eventCount = eventCount;
-        const source = (data.payload?.source as { hostname?: string; agentId?: string } | undefined);
+        const peer = activeListeners.get(peerId);
+        if (peer) peer.eventCount++;
+        const source = data.payload?.source as { hostname?: string; agentId?: string } | undefined;
         const hostInfo = source ? ` [${source.hostname}${source.agentId ? `:${source.agentId.slice(0, 8)}` : ''}]` : '';
-        // Direct stdout write for live streaming (same pattern as /agents).
-        process.stdout.write(`  [fleet${hostInfo}] ${data.type}\n`);
+        process.stdout.write(`  [fleet:${peerId}${hostInfo}] ${data.type}\n`);
       });
 
       listener.on('disconnected', () => {
-        process.stdout.write(`  [fleet] disconnected from ${url}\n`);
-        // Phase (d).6 — only clear the singleton when the listener is
-        // really down. With auto-reconnect, a `disconnected` event is the
-        // start of a retry cycle, not the end of the session — keep the
-        // singleton so /fleet status still shows useful state and /fleet
-        // listen rejects a parallel connect attempt.
+        process.stdout.write(`  [fleet:${peerId}] disconnected from ${url}\n`);
+        // Without auto-reconnect, the disconnected event marks the end of
+        // the session — clear the registry entry. With auto-reconnect,
+        // disconnected starts a retry cycle, so we keep the entry.
         if (!autoReconnect) {
-          activeListener = null;
+          activeListeners.delete(peerId);
         }
       });
 
       listener.on('error', (err: Error) => {
-        process.stdout.write(`  [fleet] error: ${err.message}\n`);
+        process.stdout.write(`  [fleet:${peerId}] error: ${err.message}\n`);
       });
 
-      // Phase (d).6 — reconnect lifecycle visibility.
       if (autoReconnect) {
         listener.on('reconnecting', (data: { attempt: number; delayMs: number }) => {
           process.stdout.write(
-            `  [fleet] reconnect attempt ${data.attempt}/${maxAttempts ?? 5} in ${data.delayMs}ms\n`,
+            `  [fleet:${peerId}] reconnect attempt ${data.attempt}/${cap} in ${data.delayMs}ms\n`,
           );
         });
         listener.on('reconnected', (data: { attempt: number }) => {
-          process.stdout.write(`  [fleet] reconnected after ${data.attempt} attempt(s)\n`);
+          process.stdout.write(`  [fleet:${peerId}] reconnected after ${data.attempt} attempt(s)\n`);
         });
         listener.on('exhausted', (data: { totalAttempts: number }) => {
           process.stdout.write(
-            `  [fleet] reconnect exhausted after ${data.totalAttempts} attempt(s) — listener stopped\n`,
+            `  [fleet:${peerId}] reconnect exhausted after ${data.totalAttempts} attempt(s) — listener stopped\n`,
           );
-          activeListener = null;
+          activeListeners.delete(peerId);
         });
       }
 
       await listener.connect();
-      activeListener = { url, startedAt, eventCount: 0, autoReconnect, listener };
-      logger.info('Fleet listener started', { url, autoReconnect });
+      activeListeners.set(peerId, {
+        id: peerId,
+        url,
+        startedAt,
+        eventCount: 0,
+        autoReconnect,
+        maxAttempts: cap,
+        listener,
+      });
+      logger.info('Fleet listener started', { id: peerId, url, autoReconnect });
       const reconnectNote = autoReconnect
-        ? ` Auto-reconnect enabled (max ${maxAttempts ?? 5} attempts).`
+        ? ` Auto-reconnect enabled (max ${cap} attempts).`
         : '';
       return textResult(
-        `Fleet listener connected to ${url}.\n` +
-          `Streaming fleet:* events live.${reconnectNote} Stop with /fleet stop.`,
+        `Fleet peer "${peerId}" connected to ${url}.\n` +
+          `Streaming fleet:* events live.${reconnectNote} ` +
+          `Stop with /fleet stop ${peerId}.`,
       );
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
@@ -387,24 +511,37 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
   }
 
   if (action === 'history') {
-    if (!activeListener) {
-      return textResult('No fleet listener active.\n\n' + HELP);
+    if (activeListeners.size === 0) {
+      return textResult('No fleet listeners active.\n\n' + HELP);
     }
-    // Parse optional N. Anything non-positive falls back to default.
-    const requestedN = parseInt(rest[0] ?? '', 10);
-    const n =
-      Number.isFinite(requestedN) && requestedN > 0
-        ? Math.floor(requestedN)
-        : HISTORY_DEFAULT_COUNT;
+    const { count, peer: peerName } = parseHistoryArgs(rest);
+    const n = count ?? HISTORY_DEFAULT_COUNT;
 
-    const history = activeListener.listener.getEventHistory();
-    if (history.length === 0) {
-      return textResult('No fleet events recorded yet.');
+    let target: ActiveListener | null = null;
+    if (peerName) {
+      target = activeListeners.get(peerName) ?? null;
+      if (!target) {
+        return textResult(
+          `No fleet peer named "${peerName}". Active peers: ${[...activeListeners.keys()].join(', ')}`,
+        );
+      }
+    } else {
+      target = pickDefaultPeer();
+      if (!target) {
+        return textResult(
+          `Multiple fleet listeners active (${activeListeners.size}). ` +
+            `Specify --peer <name>. Active: ${[...activeListeners.keys()].join(', ')}`,
+        );
+      }
     }
-    // Slice from the tail (most recent N). Already chronological in the ring.
+
+    const history = target.listener.getEventHistory();
+    if (history.length === 0) {
+      return textResult(`No fleet events recorded yet for "${target.id}".`);
+    }
     const slice = history.slice(Math.max(0, history.length - n));
     const lines: string[] = [];
-    lines.push(`Fleet event history — last ${slice.length} of ${history.length} (capacity ${history.length}+)`);
+    lines.push(`Fleet event history for "${target.id}" — last ${slice.length} of ${history.length}`);
     for (const rec of slice) {
       lines.push(
         `  [${formatHistoryTime(rec.at)}] ${rec.type}${formatHistorySource(rec)} ${summarizeHistoryPayload(rec.type, rec.payload)}`,
@@ -416,10 +553,10 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
   return textResult(`Unknown fleet action: ${args[0]}\n\n${HELP}`);
 }
 
-/** Test reset hook. */
+/** Test reset hook. Stops all listeners and clears the registry. */
 export function _resetFleetHandlerForTests(): void {
-  if (activeListener) {
-    activeListener.listener.disconnect().catch(() => { /* ignore */ });
+  for (const peer of activeListeners.values()) {
+    peer.listener.disconnect().catch(() => { /* ignore */ });
   }
-  activeListener = null;
+  activeListeners.clear();
 }
