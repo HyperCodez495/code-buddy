@@ -32,6 +32,12 @@
 
 import { EventEmitter } from 'events';
 import { logger } from '../../utils/logger.js';
+// Phase (d).3 (V0.4.1) — opt-in fleet broadcast for workflow lifecycle
+// events. Eager-imported so concurrent emits don't get serialized through
+// the dynamic-import promise chain (which observably starved subsequent
+// emits in vitest under fast event bursts). The fleet-bridge module
+// itself stays lean; it lazy-imports its own deps.
+import { broadcastFleetEvent as _broadcastFleetEvent } from '../../server/websocket/fleet-bridge.js';
 import {
   type MultiAgentSystem,
   createMultiAgentSystem,
@@ -120,6 +126,32 @@ function makeWorkflowId(): string {
   workflowCounter += 1;
   // 8 chars random + counter for uniqueness across rapid submits
   return `wf-${Date.now().toString(36)}-${workflowCounter.toString(36)}`;
+}
+
+/**
+ * Phase (d).3 V0.4.1 — fleet stream opt-in for workflow lifecycle events.
+ * Mirrors the agent:tool gate (CODEBUDDY_FLEET_STREAM=1). Best-effort,
+ * lazy-imports the fleet bridge so this module stays usable in CLI-only
+ * mode where no WS server is running.
+ */
+function isFleetStreamEnabled(): boolean {
+  const v = process.env.CODEBUDDY_FLEET_STREAM;
+  return v === '1' || v === 'true' || v === 'TRUE';
+}
+
+function emitFleetWorkflowEvent(
+  type: 'fleet:workflow:event' | 'fleet:workflow:start' | 'fleet:workflow:complete',
+  workflowId: string,
+  payload: Record<string, unknown>,
+): void {
+  if (!isFleetStreamEnabled()) return;
+  try {
+    _broadcastFleetEvent(type, { workflowId, ...payload }, workflowId);
+  } catch {
+    // fleet-bridge swallows internally; this catches any surprise
+    // (e.g. tests stubbing it weirdly). Best-effort, never breaks
+    // workflow execution.
+  }
 }
 
 /**
@@ -258,6 +290,10 @@ export class WorkflowOrchestrator extends EventEmitter {
           }
         }
       }
+      // Phase (d).3 — fleet broadcast (opt-in via CODEBUDDY_FLEET_STREAM=1).
+      // Emit BEFORE the local re-emit so a throwing local listener can't
+      // block the fleet broadcast.
+      emitFleetWorkflowEvent('fleet:workflow:event', workflowId, { event });
       // Re-emit for listeners on the orchestrator (UI, tests).
       this.emit('workflow:event', { workflowId, event });
       debouncedSave();
@@ -265,6 +301,29 @@ export class WorkflowOrchestrator extends EventEmitter {
     (mas as unknown as {
       on: (e: string, h: (event: WorkflowEvent) => void) => void;
     }).on('workflow:event', eventListener);
+
+    // Phase (d).3 — workflow lifecycle hooks for fleet streaming. Hooks
+    // are detached automatically when finalizeSlot calls mas.off()
+    // (only for workflow:event listener — start/complete listeners are
+    // registered per-slot but the singleton MAS reuses listeners across
+    // workflows; the fire-once `addListener` pattern handles that).
+    const onMasStart = (data: unknown) => {
+      const plan = (data as { plan?: { goal?: string } } | undefined)?.plan;
+      emitFleetWorkflowEvent('fleet:workflow:start', workflowId, {
+        goal: plan?.goal,
+        strategy,
+      });
+    };
+    const onMasComplete = (data: unknown) => {
+      const result = (data as { result?: { success?: boolean; summary?: string; totalDuration?: number } } | undefined)?.result;
+      emitFleetWorkflowEvent('fleet:workflow:complete', workflowId, {
+        success: result?.success,
+        summary: result?.summary,
+        durationMs: result?.totalDuration,
+      });
+    };
+    (mas as unknown as { once: (e: string, h: (data: unknown) => void) => void }).once('workflow:start', onMasStart);
+    (mas as unknown as { once: (e: string, h: (data: unknown) => void) => void }).once('workflow:complete', onMasComplete);
 
     // Run the workflow synchronously (returns a promise). The mock's
     // mockImplementationOnce path needs runWorkflow called once; calling

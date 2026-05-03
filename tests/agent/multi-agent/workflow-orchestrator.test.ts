@@ -51,6 +51,10 @@ const masMocks = vi.hoisted(() => {
         const idx = list.indexOf(h);
         if (idx >= 0) list.splice(idx, 1);
       }),
+      // Phase (d).3 — once() needed by orchestrator's workflow:start /
+      // workflow:complete fleet hooks. No-op for these tests since they
+      // don't exercise lifecycle event paths.
+      once: vi.fn(),
       removeListener: vi.fn(),
     };
     created.push(fake);
