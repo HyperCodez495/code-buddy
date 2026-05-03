@@ -6,11 +6,62 @@ export interface SubagentConfig {
   name: string;
   description: string;
   systemPrompt: string;
-  tools?: string[];  // Allowed tools (empty = all, specific names = restricted)
+  /** Allowed tools (empty/undefined = all available, specific names = whitelist) */
+  tools?: string[];
+  /**
+   * Tool names this subagent CANNOT use (blacklist enforcement).
+   *
+   * Complements `tools` whitelist — when both are set, the result is
+   * `tools - disallowedTools`. Provides defense-in-depth for read-only
+   * subagents (Explore, audit-only reviewers) where accidentally allowing
+   * an edit tool would be a silent correctness bug.
+   *
+   * Pattern from Claude Code's `BuiltInAgentDefinition.disallowedTools`
+   * (see `D:\CascadeProjects\claude-code-source-code-main\src\tools\AgentTool\built-in\exploreAgent.ts:67-73`).
+   */
+  disallowedTools?: string[];
   model?: string;
   maxRounds?: number;
   timeout?: number;  // in milliseconds
 }
+
+/**
+ * Read-only system prompt used by `Explore` and `explorer` (alias)
+ * subagents. Adapted from Claude Code's exploreAgent.ts (READ-ONLY MODE
+ * directive repeated 5-6× to make the constraint maximally salient to
+ * the LLM). Combined with `tools` whitelist + `disallowedTools` blacklist
+ * for defense-in-depth: even if the LLM tries to call a write tool, it
+ * never reaches the executor.
+ */
+const EXPLORE_READONLY_SYSTEM_PROMPT = `You are a file search specialist for Code Buddy. You excel at thoroughly navigating and exploring codebases.
+
+=== CRITICAL: READ-ONLY MODE - NO FILE MODIFICATIONS ===
+This is a READ-ONLY exploration task. You are STRICTLY PROHIBITED from:
+- Creating new files (no create_file, no touch, no file creation of any kind)
+- Modifying existing files (no str_replace_editor, no apply_patch, no Edit operations)
+- Deleting files (no rm or deletion)
+- Moving or copying files (no mv or cp)
+- Running ANY commands that change system state
+
+Your role is EXCLUSIVELY to search and analyze existing code. Attempting to use write tools will fail (blacklist enforcement at the dispatcher level).
+
+Your strengths:
+- Rapidly finding files and patterns via \`search\`
+- Reading file contents via \`view_file\`
+
+Guidelines:
+- Use \`search\` for both file pattern matching and content search (regex supported)
+- Use \`view_file\` when you know the specific file path you need to read
+- NEVER attempt write operations: no mkdir, touch, rm, cp, mv, npm install, git add, git commit
+- Adapt your search depth based on the thoroughness level the caller specifies
+- Communicate your final report directly as a regular message
+
+NOTE: You are meant to be a fast agent that returns output as quickly as possible. To achieve this:
+- Make efficient use of the tools you have at your disposal
+- Wherever possible, spawn multiple parallel tool calls (search + view_file simultaneously)
+- Do not over-explore; stop when you have answered the caller's question
+
+Complete the user's search request efficiently and report your findings clearly.`;
 
 export interface SubagentResult {
   success: boolean;
@@ -79,20 +130,43 @@ Be clear about which tests pass and fail.`,
     maxRounds: 15,
   },
 
+  // Capital-E `Explore` aligns with Claude Code's subagent_type naming
+  // convention. Strict read-only enforcement via system prompt + whitelist
+  // + blacklist (defense-in-depth).
+  "Explore": {
+    name: "Explore",
+    description:
+      "Fast read-only codebase exploration. Strict no-write enforcement (system prompt + tool whitelist + blacklist defense-in-depth). Use when you need to find files, search patterns, or understand the codebase without risk of accidental modification.",
+    systemPrompt: EXPLORE_READONLY_SYSTEM_PROMPT,
+    tools: ["view_file", "search"],
+    disallowedTools: [
+      "str_replace_editor",
+      "create_file",
+      "apply_patch",
+      "delete_file",
+      "bash",
+    ],
+    model: "grok-code-fast-1",
+    maxRounds: 10,
+  },
+
+  // Backward-compatible lowercase alias. Existing callers (`spawn("explorer", ...)`)
+  // continue to work; new callers should prefer `"Explore"` for clarity.
+  // Same restrictions as `Explore` — bash removed from whitelist (was a
+  // silent loophole pre-rc.4: bash allowed mkdir/rm/etc. on a "read-only"
+  // agent).
   "explorer": {
     name: "explorer",
-    description: "Fast codebase explorer for understanding project structure",
-    systemPrompt: `You are a codebase explorer. Your task is to quickly understand and navigate codebases.
-
-Focus on:
-1. Project structure and organization
-2. Key files and their purposes
-3. Dependencies and imports
-4. Entry points and main logic
-5. Configuration files
-
-Provide a clear, organized summary of your findings.`,
-    tools: ["view_file", "search", "bash"],
+    description: "Fast codebase explorer (alias for `Explore`, kept for backward compat)",
+    systemPrompt: EXPLORE_READONLY_SYSTEM_PROMPT,
+    tools: ["view_file", "search"],
+    disallowedTools: [
+      "str_replace_editor",
+      "create_file",
+      "apply_patch",
+      "delete_file",
+      "bash",
+    ],
     model: "grok-code-fast-1",
     maxRounds: 10,
   },
@@ -179,11 +253,26 @@ export class Subagent extends EventEmitter {
       task,
     });
 
-    // Filter tools if restricted
+    // Filter tools if restricted (whitelist)
     let filteredTools = tools;
     if (this.config.tools && this.config.tools.length > 0 && tools) {
       filteredTools = tools.filter((t) =>
         this.config.tools!.includes(t.function?.name || "")
+      );
+    }
+
+    // Apply disallowedTools blacklist (defense-in-depth pattern from Claude Code's
+    // BuiltInAgentDefinition). Even if a tool slips into the whitelist OR if no
+    // whitelist is set, the blacklist kicks them out. Critical for read-only
+    // subagents (Explore, audit reviewers) where a write tool would be a silent
+    // correctness bug.
+    if (
+      this.config.disallowedTools &&
+      this.config.disallowedTools.length > 0 &&
+      filteredTools
+    ) {
+      filteredTools = filteredTools.filter(
+        (t) => !this.config.disallowedTools!.includes(t.function?.name || "")
       );
     }
 

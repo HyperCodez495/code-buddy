@@ -15,6 +15,31 @@ Heading toward `1.0.0` final. Backlog tracked under `## [Unreleased]`'s
 [`docs/fleet-guide.md`](docs/fleet-guide.md) (V1.x roadmap section)
 and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
+### Added since rc.3
+- **`Explore` subagent (read-only-strict) + `disallowedTools` field on
+  `SubagentConfig`** — implements **Phase A + Phase C** of the Claude Code
+  subagent audit (`AUDIT-CLAUDE-CODE-SUBAGENT-2026-05-04.md`). Reuses the
+  existing `src/agent/subagents.ts` infrastructure (already had
+  `SubagentManager`, `ParallelSubagentRunner`, whitelist filtering — turns
+  out Code Buddy's subagent infra was more mature than I'd realized).
+  Three reinforcements:
+  1. New `disallowedTools?: string[]` field on `SubagentConfig` —
+     defense-in-depth blacklist applied AFTER the whitelist filter in
+     `Subagent.run()`. Pattern from Claude Code's
+     `BuiltInAgentDefinition.disallowedTools` (exploreAgent.ts:67-73).
+  2. New `"Explore"` (capital-E) entry in `PREDEFINED_SUBAGENTS` with
+     a strict READ-ONLY MODE system prompt (adapted from Claude Code's
+     `exploreAgent.ts:13-57`), `tools: ["view_file", "search"]` whitelist,
+     and `disallowedTools: ["bash", "str_replace_editor", "create_file",
+     "apply_patch", "delete_file"]` blacklist.
+  3. Legacy `"explorer"` lowercase alias kept for backward compat AND
+     gets the same hardening (was a silent loophole pre-rc.4: bash was
+     in the whitelist so `mkdir`/`rm` worked on a "read-only" agent).
+  10 new tests (`tests/agent/subagents-explore-readonly.test.ts`).
+  60/60 existing subagent tests still pass. Phase B (architectural
+  enforcement layer) deferred — the whitelist+blacklist combo covers
+  enforcement needs for V1.
+
 ### Audit notes (post-rc.3, doc-only)
 - **Claude Code subagent + plan mode audit**
   (`claude-et-patrice/propositions/AUDIT-CLAUDE-CODE-SUBAGENT-2026-05-04.md`,
