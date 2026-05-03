@@ -17,6 +17,106 @@ and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
 ---
 
+## [1.0.0-rc.2] — 2026-05-04
+
+**Second release candidate**. Six narrow ships during a single session
+focused on three axes Patrice flagged: agentic loop hardening, memory
+management ("très important"), and cross-CLI fleet alignment.
+
+### Added
+- **Auto-memory writeback** (`a2a4f72`) — system-prompt directive teaches
+  the LLM when to call the `remember` tool; RAG selector force-includes
+  it in the always-available list. The LLM now proactively persists user
+  preferences, architectural decisions, and non-obvious gotchas to
+  `.codebuddy/CODEBUDDY_MEMORY.md` (project) or `~/.codebuddy/memory.md`
+  (user) without explicit user intervention. Same UX pattern as Claude
+  Code's auto-managed `MEMORY.md`. Gated on `memoryEnabled +
+  persistentMemory` being wired (no-op when the markdown backend is
+  absent).
+- **`/memory recent [N] [scope?]`** (`b2424cc`) — recency view on the
+  persistent memory store. Shows the last N entries (default 10, max 50)
+  sorted by `updatedAt` desc, with relative timestamps ("2 minutes ago")
+  and category. Scope filter (`project` | `user`) optional. UX surface
+  for the auto-memory feature: Patrice can see in one command what the
+  LLM just persisted and `/memory forget` what is noise.
+- **`AGENTS.md` cross-CLI scaffold** (`841bd0b`) — `buddy --init` now
+  generates `AGENTS.md` at the project root. This is the emergent
+  cross-CLI convention file read by Claude Code, Gemini CLI 0.20+,
+  Cursor, Codex, and Code Buddy itself (already wired in
+  `jit-context.ts` and `bootstrap-loader.ts`). Minimal "30-second
+  first-glance" guide with build/test/lint commands, conventions,
+  architecture, and pointers to `.codebuddy/CONTEXT.md` /
+  `.codebuddy/CODEBUDDY.md` for detail. Idempotent (skip on re-run,
+  `--force` overwrites). Lives at root so it is committed alongside
+  the codebase, not gitignored under `.codebuddy/`.
+- **`withStreamRetry` helper** (`cd653ab`) — pure async-generator wrapper
+  with exponential backoff retry on retryable network errors
+  (ECONNRESET, ETIMEDOUT, "socket hang up", undici stream terminated).
+  Default predicate covers Node network codes + undici / fetch error
+  names; non-retryable errors (auth, validation, 4xx semantic) propagate
+  immediately. AbortSignal-aware. Standalone module
+  (`src/codebuddy/stream-retry.ts`), 26 tests covering happy path,
+  retry-then-succeed, exhaustion, custom predicate, exponential backoff
+  timing (with fake timers), abort during retry wait. Derived from the
+  comparative audit Gemini CLI vs Code Buddy
+  (`AUDIT-GEMINI-CLI-AGENTIC-LOOP-2026-05-04.md`, recommendation #1).
+- **`processUserMessageWithStreamingEvents`** (`7ec4bc0`) — new
+  collector method on `agent-executor.ts` that returns
+  `{ entries, streamingEvents }`, allowing sequential callers to access
+  streaming-only events (`ask_user`, `tool_stream`, `token_count`,
+  `reasoning`, `steer`) that the existing `processUserMessage` silently
+  drops. Backward compat: existing method unchanged. Closes Gemini CLI
+  audit recommendation #2.
+
+### Changed
+- **`CodeBuddyClient.chatStream`** (`2a06864`) — wraps the dispatch
+  (Gemini-native or OpenAI-compat strategy) in a generator factory and
+  applies `withStreamRetry` when opt-in is active. Opt-in resolution
+  order: per-call `ChatOptions.streamRetry` (boolean or
+  `{ maxAttempts, initialDelayMs, maxDelayMs }`) wins when explicitly
+  set (including `false`), else env var `CODEBUDDY_STREAM_RETRY=1`,
+  else no retry. Default off — full backward compat. Trade-off
+  documented: a retried stream restarts from the beginning, so callers
+  see duplicated chunks across the retry boundary (matches Gemini CLI
+  behavior; true delta-resume requires LLM-level support not available
+  today). 6 wirage tests on top of the 26 helper tests.
+- **`ChatOptions`** — new optional `streamRetry?: boolean | {…}` field
+  documenting the per-call opt-in path and the env var fallback.
+
+### Fixed
+- **`alwaysInclude` propagation in tool selector** — `getRelevantTools`
+  in `src/codebuddy/tools.ts` accepted the option but silently dropped
+  it before reaching `selectRelevantTools` (the convenience function in
+  `src/tools/tool-selector.ts:778` only forwarded `maxTools`). Strategy
+  callers like `tool-selection-strategy.ts` thought their `alwaysInclude`
+  list was honored — silently was not. Fixed by extending the
+  `selectRelevantTools` signature with `alwaysInclude?: string[]` and
+  propagating through `getRelevantTools`. Latent bug, surfaced while
+  shipping auto-memory (`remember` had to be force-included for RAG to
+  always show it).
+
+### Audit follow-ups closed
+Post-Gemini-CLI-source audit
+(`claude-et-patrice/propositions/AUDIT-GEMINI-CLI-AGENTIC-LOOP-2026-05-04.md`):
+- Reco #1 (mid-stream retry exponential backoff) — helper `cd653ab` +
+  wirage `2a06864`
+- Reco #2 (streaming events visibility in sequential mode) — `7ec4bc0`
+- Reco #3 (history curation explicit `getComprehensiveHistory` vs
+  `getCuratedHistory`) — deferred V1.x
+
+### Notes for V1 final (1.0.0)
+- Live smoke test of `peer.chat` with ≥2 providers on ≥2 hosts still
+  pending (operator validation, hub-pull blocker on Ministar Linux)
+- `withStreamRetry` activation by default deferred until ≥1 week of
+  opt-in observation without regressions
+- Vue agrégée des 7 sources mémoire deferred (Persistent + Enhanced +
+  Lessons + Decision + KG + ICM + Auto-capture)
+- Mode `buddy init --update` (preserve user edits via marker comments)
+  deferred — needs structural markers in generated files
+- Smoke test E2E auto-memory deferred (full agent boot too costly)
+
+---
+
 ## [1.0.0-rc.1] — 2026-05-04
 
 **Release candidate**. Signal that Code Buddy is approaching its first

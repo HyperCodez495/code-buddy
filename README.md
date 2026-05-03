@@ -26,6 +26,8 @@
 
 **Now with a [Multi-AI Fleet Hub](docs/fleet-guide.md)** — multiple Code Buddy peers can observe each other's events live and invoke each other's LLMs via `/fleet send peer.chat`. Pilot local Ollama LLMs from any peer in your Tailscale network for free coding/reasoning. *(Phase (d).1 → (d).16a, May 2026.)*
 
+**Auto-memory writeback** — the agent persists what it learns (preferences, decisions, gotchas) to `.codebuddy/CODEBUDDY_MEMORY.md` across sessions. View with `/memory recent`. `buddy --init` also generates an `AGENTS.md` at the project root for cross-CLI compatibility (read by Claude Code, Gemini CLI, Cursor, Codex). *(rc.2, May 2026.)*
+
 <br/>
 
 [Quick Start](#quick-start) |
