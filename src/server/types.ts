@@ -141,7 +141,11 @@ export type ApiScope =
   | 'sessions:write'
   | 'memory'
   | 'memory:write'
-  | 'admin';
+  | 'admin'
+  /** Phase (d).1 V0.4.1 — fleet event listener (subscribes to live agent
+   *  events broadcast by this Code Buddy instance). Inter-Claude streaming
+   *  for the Tailscale fleet. Read-only. */
+  | 'fleet:listen';
 
 export interface JwtPayload {
   /** Subject (user ID or key ID) */
