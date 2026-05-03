@@ -14,12 +14,15 @@ import {
   listPeerMethods,
   dispatchPeerRequest,
   _resetPeerRpcForTests,
+  getPeerRole,
   type PeerMethodContext,
 } from '../../src/server/websocket/peer-rpc.js';
 
 const ctx: PeerMethodContext = {
   connectionId: 'ws_test_123',
   scopes: ['peer:invoke', 'fleet:listen'],
+  traceId: '',
+  depth: 0,
 };
 
 describe('peer-rpc — Phase (d).13', () => {
@@ -61,7 +64,8 @@ describe('peer-rpc — Phase (d).13', () => {
       expect(payload.hostname.length).toBeGreaterThan(0);
       expect(payload.pid).toBe(process.pid);
       expect(payload.methods).toContain('peer.describe');
-      expect(payload.apiVersion).toBe('d.13');
+      // Phase (d).14 — apiVersion bumped from "d.13" to "d.14".
+      expect(payload.apiVersion).toBe('d.14');
     });
 
     it('peer.describe honors CODEBUDDY_FLEET_HOSTNAME env override', async () => {
@@ -155,7 +159,11 @@ describe('peer-rpc — Phase (d).13', () => {
         return null;
       });
       await dispatchPeerRequest({ id: '9', method: 'inspect-ctx' }, ctx);
-      expect(captured).toEqual(ctx);
+      // Phase (d).14 — ctx now includes traceId/depth, so deep equal
+      // would fail (dispatcher generates a fresh traceId). Compare
+      // selectively.
+      expect(captured?.connectionId).toBe(ctx.connectionId);
+      expect(captured?.scopes).toEqual(ctx.scopes);
     });
 
     it('passes the params dict verbatim (no mutation)', async () => {
@@ -167,6 +175,148 @@ describe('peer-rpc — Phase (d).13', () => {
       const params = { a: 1, b: 'two', c: { nested: true } };
       await dispatchPeerRequest({ id: '10', method: 'inspect-params', params }, ctx);
       expect(captured).toEqual(params);
+    });
+  });
+
+  // ========================================================================
+  // Phase (d).14 — role taxonomy + depth cap + trace propagation
+  // ========================================================================
+  describe('Phase (d).14 — depth cap + trace propagation', () => {
+    it('peer.describe (Phase (d).14) exposes role + maxDepth + apiVersion=d.14', async () => {
+      const r = await dispatchPeerRequest({ id: 'd', method: 'peer.describe' }, ctx);
+      expect(r.ok).toBe(true);
+      const payload = r.payload as { apiVersion: string; role: string; maxDepth: number };
+      expect(payload.apiVersion).toBe('d.14');
+      expect(['main', 'orchestrator', 'leaf']).toContain(payload.role);
+      expect(typeof payload.maxDepth).toBe('number');
+    });
+
+    it('generates a fresh traceId when frame omits it (top-level call)', async () => {
+      let captured: PeerMethodContext | null = null;
+      registerPeerMethod('inspect-trace', async (_p, c) => {
+        captured = c;
+        return null;
+      });
+      await dispatchPeerRequest({ id: 't1', method: 'inspect-trace' }, ctx);
+      expect(captured?.traceId).toMatch(/^trace-[a-z0-9]+-[a-z0-9]+$/);
+      expect(captured?.depth).toBe(0);
+    });
+
+    it('propagates the frame.traceId + depth verbatim to the handler ctx', async () => {
+      let captured: PeerMethodContext | null = null;
+      registerPeerMethod('inspect-trace', async (_p, c) => {
+        captured = c;
+        return null;
+      });
+      await dispatchPeerRequest(
+        { id: 't2', method: 'inspect-trace', traceId: 'trace-custom-xyz', depth: 2 },
+        ctx,
+      );
+      expect(captured?.traceId).toBe('trace-custom-xyz');
+      expect(captured?.depth).toBe(2);
+    });
+
+    it('rejects with MAX_DEPTH_EXCEEDED when depth is past the cap (default 3)', async () => {
+      const r = await dispatchPeerRequest(
+        { id: 'd1', method: 'peer.ping', depth: 4 },
+        ctx,
+      );
+      expect(r.ok).toBe(false);
+      expect(r.error?.code).toBe('MAX_DEPTH_EXCEEDED');
+      expect(r.error?.message).toContain('depth 4');
+      expect(r.error?.message).toContain('max 3');
+    });
+
+    it('honors CODEBUDDY_PEER_MAX_DEPTH env override', async () => {
+      const orig = process.env.CODEBUDDY_PEER_MAX_DEPTH;
+      process.env.CODEBUDDY_PEER_MAX_DEPTH = '0';
+      try {
+        // depth=1 with cap=0 → exceeds
+        const r = await dispatchPeerRequest(
+          { id: 'd2', method: 'peer.ping', depth: 1 },
+          ctx,
+        );
+        expect(r.ok).toBe(false);
+        expect(r.error?.code).toBe('MAX_DEPTH_EXCEEDED');
+        // depth=0 still allowed at cap=0
+        const r2 = await dispatchPeerRequest(
+          { id: 'd3', method: 'peer.ping', depth: 0 },
+          ctx,
+        );
+        expect(r2.ok).toBe(true);
+      } finally {
+        if (orig === undefined) delete process.env.CODEBUDDY_PEER_MAX_DEPTH;
+        else process.env.CODEBUDDY_PEER_MAX_DEPTH = orig;
+      }
+    });
+
+    it('treats negative / NaN / non-numeric depth as 0 (defensive)', async () => {
+      let captured: PeerMethodContext | null = null;
+      registerPeerMethod('inspect-d', async (_p, c) => {
+        captured = c;
+        return null;
+      });
+      await dispatchPeerRequest(
+        { id: 'd4', method: 'inspect-d', depth: -5 },
+        ctx,
+      );
+      expect(captured?.depth).toBe(0);
+      await dispatchPeerRequest(
+        { id: 'd5', method: 'inspect-d', depth: NaN },
+        ctx,
+      );
+      expect(captured?.depth).toBe(0);
+    });
+
+    it('floors fractional depth values', async () => {
+      let captured: PeerMethodContext | null = null;
+      registerPeerMethod('inspect-d', async (_p, c) => {
+        captured = c;
+        return null;
+      });
+      await dispatchPeerRequest(
+        { id: 'd6', method: 'inspect-d', depth: 2.7 },
+        ctx,
+      );
+      expect(captured?.depth).toBe(2);
+    });
+  });
+
+  describe('Phase (d).14 — getPeerRole', () => {
+    it('returns "main" by default', () => {
+      const orig = process.env.CODEBUDDY_PEER_ROLE;
+      delete process.env.CODEBUDDY_PEER_ROLE;
+      try {
+        expect(getPeerRole()).toBe('main');
+      } finally {
+        if (orig !== undefined) process.env.CODEBUDDY_PEER_ROLE = orig;
+      }
+    });
+
+    it('returns the env value when it matches the union', () => {
+      const orig = process.env.CODEBUDDY_PEER_ROLE;
+      try {
+        process.env.CODEBUDDY_PEER_ROLE = 'orchestrator';
+        expect(getPeerRole()).toBe('orchestrator');
+        process.env.CODEBUDDY_PEER_ROLE = 'leaf';
+        expect(getPeerRole()).toBe('leaf');
+        process.env.CODEBUDDY_PEER_ROLE = 'main';
+        expect(getPeerRole()).toBe('main');
+      } finally {
+        if (orig === undefined) delete process.env.CODEBUDDY_PEER_ROLE;
+        else process.env.CODEBUDDY_PEER_ROLE = orig;
+      }
+    });
+
+    it('falls back to "main" for an unknown role string', () => {
+      const orig = process.env.CODEBUDDY_PEER_ROLE;
+      process.env.CODEBUDDY_PEER_ROLE = 'unknown-role-xyz';
+      try {
+        expect(getPeerRole()).toBe('main');
+      } finally {
+        if (orig === undefined) delete process.env.CODEBUDDY_PEER_ROLE;
+        else process.env.CODEBUDDY_PEER_ROLE = orig;
+      }
     });
   });
 });

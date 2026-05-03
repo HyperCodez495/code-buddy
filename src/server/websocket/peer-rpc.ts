@@ -32,12 +32,21 @@ import { logger } from '../../utils/logger.js';
  * Server-side handler context passed to method implementations.
  * Includes connection id for audit logs and the originating client's
  * scopes for permission-aware methods.
+ *
+ * Phase (d).14 — `traceId` + `depth` carry the call-chain context so a
+ * handler that fans out to OTHER peers can propagate them. Default for
+ * a fresh request is a new traceId + depth=0; a handler that calls
+ * another peer's request() should pass `{ traceId: ctx.traceId, depth: ctx.depth + 1 }`.
  */
 export interface PeerMethodContext {
   /** WS connection id of the caller. */
   connectionId: string;
   /** Scopes held by the caller's authenticated session. */
   scopes: string[];
+  /** Phase (d).14 — call-chain trace id for loop detection. */
+  traceId: string;
+  /** Phase (d).14 — current call depth in the chain (0 = fresh request from a human/external). */
+  depth: number;
 }
 
 /** Method handler signature. Async, returns the JSON-serializable payload. */
@@ -54,6 +63,20 @@ export interface PeerRequestFrame {
   method: string;
   /** Method params (method-specific shape). */
   params?: Record<string, unknown>;
+  /**
+   * Phase (d).14 — call-chain trace id. When omitted, the dispatcher
+   * generates a fresh one (treats this as a top-level / external call).
+   * When present, it's propagated to ctx so handlers fanning out can
+   * keep the chain visible.
+   */
+  traceId?: string;
+  /**
+   * Phase (d).14 — current depth in the chain. Defaults to 0 when
+   * absent (top-level request). Each peer that fans out a sub-request
+   * increments. The dispatcher rejects with MAX_DEPTH_EXCEEDED when
+   * the value would push past the configured ceiling.
+   */
+  depth?: number;
 }
 
 /** Response frame sent back over WS (peer:response type). */
@@ -73,6 +96,47 @@ export interface PeerResponseFrame {
 // ──────────────────────────────────────────────────────────────────
 
 const handlers = new Map<string, PeerMethodHandler>();
+
+/**
+ * Phase (d).14 — peer role. Influences what the SERVER answers:
+ *   main         — accepts all requests (default)
+ *   orchestrator — accepts all requests (semantic only — no behaviour
+ *                   change today; future hook for routing decisions)
+ *   leaf         — accepts requests but tags responses to discourage
+ *                   the caller from chaining further. Future role can
+ *                   refuse outgoing peer.invoke (gated client-side in
+ *                   FleetListener.request).
+ */
+export type PeerRole = 'main' | 'orchestrator' | 'leaf';
+
+/** Default max call depth before rejecting with MAX_DEPTH_EXCEEDED. */
+const DEFAULT_MAX_DEPTH = 3;
+
+function getMaxDepth(): number {
+  const raw = process.env.CODEBUDDY_PEER_MAX_DEPTH;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n >= 0) return n;
+  }
+  return DEFAULT_MAX_DEPTH;
+}
+
+/** Read the peer role from env. Validates against the union; defaults to 'main'. */
+export function getPeerRole(): PeerRole {
+  const raw = process.env.CODEBUDDY_PEER_ROLE;
+  if (raw === 'main' || raw === 'orchestrator' || raw === 'leaf') return raw;
+  return 'main';
+}
+
+/**
+ * Generate a fresh trace id for a top-level request. Format chosen so
+ * the chain is human-readable in logs: `trace-{ts36}-{rand36}`.
+ */
+function newTraceId(): string {
+  const ts = Date.now().toString(36);
+  const rand = Math.floor(Math.random() * 1e9).toString(36);
+  return `trace-${ts}-${rand}`;
+}
 
 /**
  * Register a peer method handler. Idempotent for the same (method,
@@ -114,12 +178,14 @@ function registerBuiltInMethods(): void {
   // peer.describe — return basic identity + list of registered methods.
   // Mirror of OpenClaw node.describe but with method-list discovery
   // baked in (we don't have a Capabilities enum yet — just expose what
-  // we can answer).
+  // we can answer). Phase (d).14 adds `role` + `maxDepth`.
   registerPeerMethod('peer.describe', async () => ({
     hostname: process.env.CODEBUDDY_FLEET_HOSTNAME || os.hostname(),
     pid: process.pid,
     methods: listPeerMethods(),
-    apiVersion: 'd.13',
+    apiVersion: 'd.14',
+    role: getPeerRole(),
+    maxDepth: getMaxDepth(),
   }));
 
   // peer.ping — minimal connectivity check. Echoes a server-side
@@ -145,6 +211,11 @@ registerBuiltInMethods();
  * Route a `peer:request` frame to its handler and return the response
  * frame. Never throws — all error paths produce a structured error
  * response. The caller (handler.ts) just sends what we return.
+ *
+ * Phase (d).14 — the `ctx.traceId/depth` passed by handler.ts is
+ * ignored here; this dispatcher derives them from the FRAME (so the
+ * chain is end-to-end propagated). The ctx that lands in the user
+ * handler carries the resolved values.
  */
 export async function dispatchPeerRequest(
   frame: PeerRequestFrame,
@@ -165,6 +236,25 @@ export async function dispatchPeerRequest(
       error: { code: 'INVALID_REQUEST', message: 'method missing or not a string' },
     };
   }
+
+  // Phase (d).14 — resolve trace + depth from the frame, defaulting to
+  // a fresh top-level chain. Reject if depth is past the cap.
+  const traceId = frame.traceId && typeof frame.traceId === 'string' ? frame.traceId : newTraceId();
+  const depth = typeof frame.depth === 'number' && Number.isFinite(frame.depth) && frame.depth >= 0
+    ? Math.floor(frame.depth)
+    : 0;
+  const maxDepth = getMaxDepth();
+  if (depth > maxDepth) {
+    return {
+      id: frame.id,
+      ok: false,
+      error: {
+        code: 'MAX_DEPTH_EXCEEDED',
+        message: `peer.invoke chain depth ${depth} > max ${maxDepth} (traceId=${traceId})`,
+      },
+    };
+  }
+
   const handler = handlers.get(frame.method);
   if (!handler) {
     return {
@@ -173,12 +263,19 @@ export async function dispatchPeerRequest(
       error: { code: 'UNKNOWN_METHOD', message: `no handler registered for "${frame.method}"` },
     };
   }
+
+  // Build the per-call ctx with the resolved trace + depth.
+  const callCtx: PeerMethodContext = {
+    ...ctx,
+    traceId,
+    depth,
+  };
   try {
-    const payload = await handler(frame.params ?? {}, ctx);
+    const payload = await handler(frame.params ?? {}, callCtx);
     return { id: frame.id, ok: true, payload };
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    logger.debug(`[peer-rpc] method "${frame.method}" threw`, { error: message });
+    logger.debug(`[peer-rpc] method "${frame.method}" threw`, { error: message, traceId, depth });
     return {
       id: frame.id,
       ok: false,

@@ -642,19 +642,36 @@ export class FleetListener extends EventEmitter {
    * peer-rpc registry. Returns the method's payload on success or
    * rejects with an Error carrying `code` (UNKNOWN_METHOD,
    * METHOD_ERROR, INVALID_REQUEST, REQUEST_TIMEOUT, NOT_AUTHENTICATED,
-   * NOT_OPEN, DISCONNECTED).
+   * NOT_OPEN, DISCONNECTED, MAX_DEPTH_EXCEEDED, ROLE_LEAF).
    *
    * The default timeout is 30s, mirror of OpenClaw's invoke default.
-   * Override per-call via the `timeoutMs` option. The timeout fires
-   * locally — a server still chewing on the request will eventually
-   * send peer:response but its result will be discarded since the
-   * pending entry is gone.
+   * Override per-call via the `timeoutMs` option.
+   *
+   * Phase (d).14 — `traceId` and `depth` propagate the call chain so
+   * the receiver can detect loops / enforce a depth cap. A handler
+   * fanning out to another peer should pass them from its received
+   * ctx: `request(m, p, { traceId: ctx.traceId, depth: ctx.depth + 1 })`.
+   * Defaults: a fresh top-level call (no traceId, depth=0) lets the
+   * server generate the traceId.
+   *
+   * Phase (d).14 — `CODEBUDDY_PEER_ROLE=leaf` makes this listener
+   * REFUSE to issue outgoing peer.invoke calls (throws ROLE_LEAF).
+   * This protects mesh deployments where some nodes are pure
+   * service-providers and shouldn't initiate work themselves.
    */
   async request(
     method: string,
     params: Record<string, unknown> = {},
-    options: { timeoutMs?: number } = {},
+    options: { timeoutMs?: number; traceId?: string; depth?: number } = {},
   ): Promise<unknown> {
+    // Phase (d).14 — leaf role refuses outgoing requests entirely.
+    if (process.env.CODEBUDDY_PEER_ROLE === 'leaf') {
+      const err = new Error(
+        'peer.invoke ROLE_LEAF: this peer is configured as leaf and cannot initiate peer.invoke calls',
+      );
+      (err as Error & { code?: string }).code = 'ROLE_LEAF';
+      throw err;
+    }
     if (!this.authenticated) {
       const err = new Error('peer.invoke NOT_AUTHENTICATED: listener is not authenticated');
       (err as Error & { code?: string }).code = 'NOT_AUTHENTICATED';
@@ -677,7 +694,13 @@ export class FleetListener extends EventEmitter {
       // unref so a hung request can't keep the process alive past exit
       timer.unref?.();
       this.pendingRequests.set(id, { resolve, reject, timer });
-      this.send('peer:request', { id, method, params });
+      // Phase (d).14 — include traceId + depth in the wire frame when
+      // the caller provided them; otherwise omit and let the receiver
+      // generate fresh ones (fresh top-level call).
+      const frame: Record<string, unknown> = { id, method, params };
+      if (options.traceId !== undefined) frame.traceId = options.traceId;
+      if (options.depth !== undefined) frame.depth = options.depth;
+      this.send('peer:request', frame);
     });
   }
 

@@ -437,21 +437,29 @@ messageHandlers.set('peer:request', async (ws, state, payload) => {
     return;
   }
   const { dispatchPeerRequest } = await import('./peer-rpc.js');
-  // payload is the request frame { id, method, params }
+  // payload is the request frame { id, method, params, traceId?, depth? }
   const frame = (payload ?? {}) as {
     id?: string;
     method?: string;
     params?: Record<string, unknown>;
+    traceId?: string;
+    depth?: number;
   };
   const response = await dispatchPeerRequest(
     {
       id: frame.id ?? '',
       method: frame.method ?? '',
       params: frame.params,
+      traceId: frame.traceId,
+      depth: frame.depth,
     },
     {
       connectionId: state.id,
       scopes: state.scopes,
+      // Placeholders — the dispatcher resolves traceId/depth from the
+      // FRAME (so propagation is end-to-end) and overwrites these.
+      traceId: '',
+      depth: 0,
     },
   );
   send(ws, {

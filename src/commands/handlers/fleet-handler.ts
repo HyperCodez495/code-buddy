@@ -95,7 +95,7 @@ interface ActiveListener {
     request: (
       method: string,
       params?: Record<string, unknown>,
-      options?: { timeoutMs?: number },
+      options?: { timeoutMs?: number; traceId?: string; depth?: number },
     ) => Promise<unknown>;
     getLastSeen: () => { at: number | null; reason: string | null; ageMs: number | null };
     isStale: (thresholdMs?: number) => boolean;

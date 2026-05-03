@@ -987,6 +987,42 @@ describe('FleetListener — Phase (d).5 V0.4.1', () => {
       await l.disconnect();
     });
 
+    it('Phase (d).14 — CODEBUDDY_PEER_ROLE=leaf refuses outgoing request() with code=ROLE_LEAF', async () => {
+      const orig = process.env.CODEBUDDY_PEER_ROLE;
+      process.env.CODEBUDDY_PEER_ROLE = 'leaf';
+      try {
+        const { l } = await authedListener();
+        await expect(l.request('peer.ping')).rejects.toMatchObject({
+          message: expect.stringContaining('ROLE_LEAF'),
+        });
+        await l.disconnect();
+      } finally {
+        if (orig === undefined) delete process.env.CODEBUDDY_PEER_ROLE;
+        else process.env.CODEBUDDY_PEER_ROLE = orig;
+      }
+    });
+
+    it('Phase (d).14 — propagates traceId + depth in the wire frame when caller passes them', async () => {
+      const { l, fake } = await authedListener();
+      // Attach a catch so the timeout doesn't bubble (we never respond)
+      void l.request('peer.ping', {}, { traceId: 'trace-test-123', depth: 2, timeoutMs: 100 }).catch(() => {});
+      const sent = fake.sentMessages.map((m) => JSON.parse(m));
+      const reqFrame = sent.find((m) => m.type === 'peer:request');
+      expect(reqFrame.payload.traceId).toBe('trace-test-123');
+      expect(reqFrame.payload.depth).toBe(2);
+      await l.disconnect();
+    });
+
+    it('Phase (d).14 — omits traceId/depth from the wire frame when not provided (top-level call)', async () => {
+      const { l, fake } = await authedListener();
+      void l.request('peer.ping', {}, { timeoutMs: 100 }).catch(() => {});
+      const sent = fake.sentMessages.map((m) => JSON.parse(m));
+      const reqFrame = sent.find((m) => m.type === 'peer:request');
+      expect(reqFrame.payload.traceId).toBeUndefined();
+      expect(reqFrame.payload.depth).toBeUndefined();
+      await l.disconnect();
+    });
+
     it('peer:response with unknown id is silently ignored (no crash)', async () => {
       const { l, fake } = await authedListener();
       // No pending requests — response with id should just be dropped
