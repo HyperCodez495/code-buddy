@@ -75,8 +75,11 @@ export interface SubagentResult {
 export const PREDEFINED_SUBAGENTS: Record<string, SubagentConfig> = {
   "code-reviewer": {
     name: "code-reviewer",
-    description: "Expert code reviewer for analyzing code quality, security, and best practices",
+    description: "Expert code reviewer for analyzing code quality, security, and best practices. Read-only by design — defense-in-depth via tools whitelist + disallowedTools blacklist.",
     systemPrompt: `You are an expert code reviewer. Your task is to review code changes and provide constructive feedback.
+
+=== READ-ONLY MODE ===
+You analyze and report only. You CANNOT modify files (no str_replace_editor, no create_file, no apply_patch). Attempting to use write tools will fail at the dispatcher level. If you spot a bug, report it; do not try to fix it inline.
 
 Focus on:
 1. Code quality and readability
@@ -90,6 +93,16 @@ Be specific in your feedback, referencing line numbers when possible.
 Prioritize issues by severity: CRITICAL, WARNING, SUGGESTION.
 End with a summary and overall assessment.`,
     tools: ["view_file", "search"],
+    // Defense-in-depth: even if a caller extends `tools` in a custom config,
+    // the blacklist below removes write tools. Pattern from Claude Code's
+    // BuiltInAgentDefinition.disallowedTools (see also Explore subagent below).
+    disallowedTools: [
+      "str_replace_editor",
+      "create_file",
+      "apply_patch",
+      "delete_file",
+      "bash",
+    ],
     model: "grok-3-latest",
     maxRounds: 10,
   },

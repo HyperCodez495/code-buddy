@@ -96,6 +96,23 @@ describe('Explore subagent (read-only enforcement)', () => {
       expect(blacklist).toContain('delete_file');
     });
 
+    it('code-reviewer is hardened with disallowedTools (rc.4 follow-up)', () => {
+      // Pre-rc.4: code-reviewer had `tools: ["view_file", "search"]` whitelist
+      // but no disallowedTools — a custom config that extended `tools` could
+      // accidentally allow write tools. rc.4 adds the defense-in-depth blacklist.
+      const config = PREDEFINED_SUBAGENTS['code-reviewer'];
+      expect(config).toBeDefined();
+      expect(config.disallowedTools).toBeDefined();
+      const blacklist = config.disallowedTools ?? [];
+      expect(blacklist).toContain('bash');
+      expect(blacklist).toContain('str_replace_editor');
+      expect(blacklist).toContain('create_file');
+      expect(blacklist).toContain('apply_patch');
+      expect(blacklist).toContain('delete_file');
+      // System prompt also reinforced with READ-ONLY MODE statement
+      expect(config.systemPrompt).toContain('READ-ONLY MODE');
+    });
+
     it('legacy "explorer" alias has the same hardened config (backward-compat)', () => {
       // Existing callers like `spawn("explorer", ...)` keep working AND
       // benefit from the new restrictions (was a silent loophole pre-rc.4

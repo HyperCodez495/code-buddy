@@ -261,6 +261,9 @@ export { handleShare } from './team-session-handler.js';
 // Agents handler — slash /agents (audit OpenClaw heritage activation, MultiAgentSystem wake)
 export { handleAgents } from './agents-handler.js';
 
+// Subagent handler — slash /subagent (rc.4: list/inspect PREDEFINED_SUBAGENTS, surfaces Explore + others)
+export { handleSubagent } from './subagent-handler.js';
+
 // Fleet handler — slash /fleet (Phase (d).5 V0.4.1 — inter-Claude WS streaming receiver)
 export { handleFleet } from './fleet-handler.js';
 

@@ -16,6 +16,21 @@ Heading toward `1.0.0` final. Backlog tracked under `## [Unreleased]`'s
 and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
 ### Added since rc.3
+- **`/subagent` slash command + `code-reviewer` hardening** — surfaces
+  the `PREDEFINED_SUBAGENTS` registry to users. `/subagent list` shows
+  the 7 predefined subagents (Explore, code-reviewer, debugger, etc.)
+  with their tools whitelist + disallowedTools blacklist; `/subagent
+  info <name>` shows full details including system prompt preview.
+  Read-only handler (no spawn — main agent handles spawning via tool).
+  Closes the UX gap that left the `Explore` subagent shipped in `4ae5a07`
+  invisible to users (`/agent` is for custom agents, `/agents` for
+  MultiAgentSystem; `/subagent` is the new third surface for the
+  conversational subagents). Bonus: `code-reviewer` now has the same
+  `disallowedTools` blacklist treatment as Explore (defense-in-depth
+  against custom configs that might extend the whitelist), plus a
+  short READ-ONLY MODE statement at the top of its system prompt.
+  11 new handler tests + 1 new code-reviewer test.
+
 - **`Explore` subagent (read-only-strict) + `disallowedTools` field on
   `SubagentConfig`** — implements **Phase A + Phase C** of the Claude Code
   subagent audit (`AUDIT-CLAUDE-CODE-SUBAGENT-2026-05-04.md`). Reuses the

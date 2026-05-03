@@ -923,6 +923,16 @@ const toolCommands: SlashCommand[] = [
     arguments: [
       { name: 'action', description: 'list, <id>, create <name>, info <id>, reload', required: false }
     ]
+  },
+  {
+    name: 'subagent',
+    description: 'List and inspect predefined conversational subagents (Explore, code-reviewer, debugger, etc.) — read-only discovery, complements /agent (custom) and /agents (MultiAgentSystem)',
+    prompt: '__SUBAGENT__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: 'list (default), info <name>, help', required: false }
+    ]
   }
 ];
 
