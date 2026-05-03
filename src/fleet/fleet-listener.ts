@@ -95,6 +95,12 @@ export class FleetListener extends EventEmitter {
   // Set true when the user explicitly called disconnect() OR when the
   // server returned a terminal auth-failure code. Prevents auto-reconnect.
   private userDisconnected = false;
+  // Phase (d).9 — presence tracking. Updated on every fleet:* event
+  // (incl. fleet:peer:heartbeat). Lets `/fleet status` flag a stale
+  // peer that hasn't said anything in a while. Null until the first
+  // event arrives.
+  private lastSeenAt: number | null = null;
+  private lastSeenReason: string | null = null;
   private readonly options: FleetListenerOptions;
   private readonly reconnector: ReconnectionManager | null;
 
@@ -327,6 +333,12 @@ export class FleetListener extends EventEmitter {
     // Fleet event re-emit. We forward type + payload as-is so consumers
     // can pattern-match on 'fleet:agent:tool_started' etc.
     if (msg.type.startsWith('fleet:')) {
+      // Phase (d).9 — every fleet:* event counts as presence. Heartbeat
+      // is the explicit "still here" signal; activity events double as
+      // implicit presence so we don't need both to keep the listener
+      // confident the peer is alive.
+      this.lastSeenAt = Date.now();
+      this.lastSeenReason = msg.type === 'fleet:peer:heartbeat' ? 'heartbeat' : msg.type;
       this.emit(msg.type, msg.payload ?? {});
       // Also emit on a generic 'fleet:event' channel so callers can
       // subscribe to all events at once for logging / debugging.
@@ -424,5 +436,29 @@ export class FleetListener extends EventEmitter {
    */
   isReconnecting(): boolean {
     return this.reconnector?.isPending() ?? false;
+  }
+
+  /**
+   * Phase (d).9 — last-seen telemetry for the connected peer. Returns
+   * the timestamp + reason (event type or 'heartbeat') of the most
+   * recent fleet:* event received. `ageMs` is `Date.now() - at`, or
+   * `null` until the first event arrives.
+   */
+  getLastSeen(): { at: number | null; reason: string | null; ageMs: number | null } {
+    return {
+      at: this.lastSeenAt,
+      reason: this.lastSeenReason,
+      ageMs: this.lastSeenAt === null ? null : Date.now() - this.lastSeenAt,
+    };
+  }
+
+  /**
+   * Phase (d).9 — true when the peer hasn't been heard from in
+   * `thresholdMs` milliseconds. Returns false if no events have ever
+   * been received (we can't say "stale" without a baseline).
+   */
+  isStale(thresholdMs: number = 90_000): boolean {
+    if (this.lastSeenAt === null) return false;
+    return Date.now() - this.lastSeenAt > thresholdMs;
   }
 }

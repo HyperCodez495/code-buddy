@@ -598,4 +598,71 @@ describe('FleetListener — Phase (d).5 V0.4.1', () => {
       }
     });
   });
+
+  // ==========================================================================
+  // Phase (d).9 — presence tracking (lastSeenAt + isStale)
+  // ==========================================================================
+  describe('presence tracking (Phase (d).9)', () => {
+    async function authenticated() {
+      const l = new FleetListener({ url: 'ws://peer/ws', apiKey: 'k' });
+      const cp = l.connect();
+      await new Promise((r) => setImmediate(r));
+      const fake = wsMock.instances[0];
+      fake.open();
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'connected' });
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'authenticated', payload: {} });
+      await cp;
+      return { l, fake };
+    }
+
+    it('getLastSeen() returns nulls before any fleet:* event is received', async () => {
+      const { l } = await authenticated();
+      const seen = l.getLastSeen();
+      expect(seen.at).toBe(null);
+      expect(seen.reason).toBe(null);
+      expect(seen.ageMs).toBe(null);
+      expect(l.isStale()).toBe(false); // unknown ≠ stale
+      await l.disconnect();
+    });
+
+    it('records "heartbeat" reason on fleet:peer:heartbeat reception', async () => {
+      const { l, fake } = await authenticated();
+      const before = Date.now();
+      fake.receive({ type: 'fleet:peer:heartbeat', payload: {} });
+      const seen = l.getLastSeen();
+      expect(seen.at).toBeGreaterThanOrEqual(before);
+      expect(seen.reason).toBe('heartbeat');
+      expect(seen.ageMs).toBeGreaterThanOrEqual(0);
+      await l.disconnect();
+    });
+
+    it('records the event type as reason for non-heartbeat fleet events', async () => {
+      const { l, fake } = await authenticated();
+      fake.receive({ type: 'fleet:agent:tool_started', payload: { tool: 'view_file' } });
+      const seen = l.getLastSeen();
+      expect(seen.reason).toBe('fleet:agent:tool_started');
+      expect(seen.at).not.toBe(null);
+      await l.disconnect();
+    });
+
+    it('isStale(threshold) returns true once threshold has elapsed since last event', async () => {
+      const { l, fake } = await authenticated();
+      fake.receive({ type: 'fleet:peer:heartbeat', payload: {} });
+      expect(l.isStale(50)).toBe(false); // just received
+
+      // Age the listener by mocking Date.now without disturbing setImmediate
+      const realNow = Date.now;
+      const seenAt = l.getLastSeen().at!;
+      try {
+        Date.now = () => seenAt + 60; // 60ms after the event
+        expect(l.isStale(50)).toBe(true);
+        expect(l.isStale(100)).toBe(false);
+      } finally {
+        Date.now = realNow;
+      }
+      await l.disconnect();
+    });
+  });
 });

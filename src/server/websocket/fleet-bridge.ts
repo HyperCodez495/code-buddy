@@ -52,6 +52,10 @@ export const FLEET_EVENT_TYPES = [
   'fleet:workflow:complete',
   'fleet:session:spawn',
   'fleet:session:message',
+  // Phase (d).9 — periodic presence beacon emitted by the heartbeat
+  // broadcaster module. Gives fleet:listen consumers a "still here"
+  // signal between activity bursts so they can flag stale peers.
+  'fleet:peer:heartbeat',
 ] as const;
 
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];
@@ -125,4 +129,17 @@ export function broadcastFleetEvent(
     // Best-effort: WS server not running (e.g. unit tests, CLI-only mode).
     // We never want a fleet broadcast failure to break the calling agent.
   }
+}
+
+/**
+ * Phase (d).9 — fire one presence-beacon event. Hooks for `idleSince` /
+ * `busyWith` are reserved in the payload shape so the heartbeat-broadcaster
+ * module (or future agent runtime instrumentation) can fill them without
+ * a wire-format change. Today the body is intentionally minimal; consumers
+ * just need to see SOMETHING with their peer's source identifier on it.
+ */
+export function broadcastFleetHeartbeat(
+  payload: { idleSince?: number; busyWith?: string } = {},
+): void {
+  broadcastFleetEvent('fleet:peer:heartbeat', { ...payload });
 }

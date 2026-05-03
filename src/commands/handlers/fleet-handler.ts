@@ -62,8 +62,14 @@ interface ActiveListener {
     disconnect: () => Promise<void>;
     getReconnectAttempts: () => number;
     isReconnecting: () => boolean;
+    // Phase (d).9 — presence telemetry surfaced through /fleet status.
+    getLastSeen: () => { at: number | null; reason: string | null; ageMs: number | null };
+    isStale: (thresholdMs?: number) => boolean;
   };
 }
+
+/** Stale threshold for /fleet status `⚠ stale` flag (Phase (d).9). */
+const STALE_THRESHOLD_MS = 90_000;
 
 let activeListener: ActiveListener | null = null;
 
@@ -128,12 +134,28 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
     } else {
       reconnectLine = `  Reconnect: disabled\n`;
     }
+    // Phase (d).9 — presence line. Three cases:
+    //  - No event yet → "Last seen: never"
+    //  - Recent → "Last seen: 12s ago (heartbeat)"
+    //  - Stale → "⚠ stale (>90s) — Last seen: 124s ago (heartbeat)"
+    const seen = activeListener.listener.getLastSeen();
+    let lastSeenLine: string;
+    if (seen.at === null) {
+      lastSeenLine = `  Last seen: never (no events received yet)\n`;
+    } else {
+      const ageSec = Math.round((seen.ageMs ?? 0) / 1000);
+      const reason = seen.reason ?? 'unknown';
+      const stale = activeListener.listener.isStale(STALE_THRESHOLD_MS);
+      const prefix = stale ? `  ⚠ stale (>${STALE_THRESHOLD_MS / 1000}s) — ` : `  `;
+      lastSeenLine = `${prefix}Last seen: ${ageSec}s ago (${reason})\n`;
+    }
     return textResult(
       `Fleet listener ACTIVE\n` +
         `  URL:     ${activeListener.url}\n` +
         `  Uptime:  ${elapsed}s\n` +
         `  Events:  ${activeListener.eventCount} received\n` +
         reconnectLine +
+        lastSeenLine +
         `\nStop with /fleet stop.`,
     );
   }

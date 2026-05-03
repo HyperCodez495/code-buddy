@@ -13,6 +13,14 @@ const fleetListenerMock = vi.hoisted(() => {
   const disconnectMock = vi.fn(async () => undefined);
   const onMock = vi.fn();
   const constructorCalls: Array<{ url: string; apiKey?: string; jwt?: string }> = [];
+  // Phase (d).9 — presence telemetry. Default: never seen anything.
+  // Tests that need a "seen" value override these via getLastSeenMock.mockReturnValueOnce(...).
+  const getLastSeenMock = vi.fn(() => ({
+    at: null as number | null,
+    reason: null as string | null,
+    ageMs: null as number | null,
+  }));
+  const isStaleMock = vi.fn(() => false);
 
   class FleetListenerStub {
     constructor(opts: { url: string; apiKey?: string; jwt?: string }) {
@@ -23,9 +31,21 @@ const fleetListenerMock = vi.hoisted(() => {
     on = onMock;
     isConnected = () => true;
     isAuthenticated = () => true;
+    getReconnectAttempts = () => 0;
+    isReconnecting = () => false;
+    getLastSeen = getLastSeenMock;
+    isStale = isStaleMock;
   }
 
-  return { FleetListenerStub, connectMock, disconnectMock, onMock, constructorCalls };
+  return {
+    FleetListenerStub,
+    connectMock,
+    disconnectMock,
+    onMock,
+    constructorCalls,
+    getLastSeenMock,
+    isStaleMock,
+  };
 });
 
 vi.mock('../../src/fleet/fleet-listener.js', () => ({
@@ -43,6 +63,10 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
     fleetListenerMock.connectMock.mockReset().mockResolvedValue(undefined);
     fleetListenerMock.disconnectMock.mockReset().mockResolvedValue(undefined);
     fleetListenerMock.onMock.mockClear();
+    fleetListenerMock.getLastSeenMock
+      .mockReset()
+      .mockReturnValue({ at: null, reason: null, ageMs: null });
+    fleetListenerMock.isStaleMock.mockReset().mockReturnValue(false);
     _resetFleetHandlerForTests();
     delete process.env.CODEBUDDY_FLEET_API_KEY;
   });
@@ -148,6 +172,40 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       expect(r.entry?.content).toContain('ACTIVE');
       expect(r.entry?.content).toContain('ws://peer:3000/ws');
       expect(r.entry?.content).toContain('Uptime');
+    });
+
+    // Phase (d).9 — presence display in /fleet status.
+    it('shows "Last seen: never" when no fleet event has been received yet', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('Last seen: never');
+    });
+
+    it('shows last-seen age + reason when the listener has received an event', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getLastSeenMock.mockReturnValueOnce({
+        at: Date.now() - 5_000,
+        reason: 'fleet:agent:tool_started',
+        ageMs: 5_000,
+      });
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('Last seen: 5s ago');
+      expect(r.entry?.content).toContain('fleet:agent:tool_started');
+      expect(r.entry?.content).not.toContain('⚠ stale');
+    });
+
+    it('prefixes the stale warning when isStale() returns true', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getLastSeenMock.mockReturnValueOnce({
+        at: Date.now() - 120_000,
+        reason: 'heartbeat',
+        ageMs: 120_000,
+      });
+      fleetListenerMock.isStaleMock.mockReturnValueOnce(true);
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('⚠ stale');
+      expect(r.entry?.content).toContain('Last seen: 120s ago');
+      expect(r.entry?.content).toContain('heartbeat');
     });
   });
 

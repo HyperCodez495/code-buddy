@@ -32,6 +32,7 @@ import {
 } from './middleware/index.js';
 import { chatRoutes, toolsRoutes, sessionsRoutes, memoryRoutes, healthRoutes, metricsRoutes, createWorkflowApiRouter, createA2AProtocolRoutes, createACPRoutes, createK8sHealthAliases, createDashboardRouter, createCloudTaskRoutes, createWebhookRoutes } from './routes/index.js';
 import { setupWebSocket, closeAllConnections, getConnectionStats } from './websocket/index.js';
+import { startFleetHeartbeat, stopFleetHeartbeat } from '../fleet/heartbeat-broadcaster.js';
 import { logger } from '../utils/logger.js';
 import { initMetrics, getMetrics as _getMetrics } from '../metrics/index.js';
 import { CSRFProtection } from '../security/csrf-protection.js';
@@ -806,6 +807,10 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
   if (config.websocketEnabled) {
     await setupWebSocket(server, config);
     logger.info('WebSocket server enabled at /ws');
+    // Phase (d).9 — start the fleet presence beacon. Periodic
+    // fleet:peer:heartbeat events let remote FleetListener clients flag
+    // a peer as stale when they stop arriving. Idempotent + unref'd.
+    startFleetHeartbeat();
   }
 
   return new Promise((resolve, reject) => {
@@ -842,6 +847,10 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
  */
 export async function stopServer(server: HttpServer): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Phase (d).9 — cancel the heartbeat timer so it doesn't keep
+    // emitting against a half-shut server. Idempotent.
+    stopFleetHeartbeat();
+
     // Close WebSocket connections
     closeAllConnections();
 
