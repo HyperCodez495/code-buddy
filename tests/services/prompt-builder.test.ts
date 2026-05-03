@@ -379,7 +379,7 @@ describe('PromptBuilder — Phase T4', () => {
       expect(finalPrompt).toMatch(/After the user corrects your approach/i);
     });
 
-    it('injects BOTH directives in order (auto-memory first, then lessons)', async () => {
+    it('injects BOTH directives (presence; order is intentionally shuffled by varySystemPrompt)', async () => {
       const { builder, cacheSystemPrompt } = buildBuilder({
         config: { memoryEnabled: true },
         withMemory: true,
@@ -387,11 +387,11 @@ describe('PromptBuilder — Phase T4', () => {
       });
       await builder.buildSystemPrompt(undefined, 'grok-3', null);
       const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
-      const memoryIdx = finalPrompt.indexOf('<auto_memory_directive>');
-      const lessonsIdx = finalPrompt.indexOf('<lessons_directive>');
-      expect(memoryIdx).toBeGreaterThan(-1);
-      expect(lessonsIdx).toBeGreaterThan(-1);
-      expect(memoryIdx).toBeLessThan(lessonsIdx);
+      // Both directives must be present. Order is not asserted because
+      // `varySystemPrompt` (Manus AI anti-repetition pattern) shuffles
+      // reminder blocks daily — order checking would make tests flaky.
+      expect(finalPrompt).toContain('<auto_memory_directive>');
+      expect(finalPrompt).toContain('<lessons_directive>');
     });
 
     it('does NOT inject the lessons directive when memoryEnabled=false', async () => {
@@ -414,6 +414,65 @@ describe('PromptBuilder — Phase T4', () => {
       const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
       // Must explain that lessons complement remember (not duplicate)
       expect(finalPrompt).toMatch(/complement.*remember|differ from .*remember/i);
+    });
+  });
+
+  describe('writing_rules directive (Manus AI structured-blocks pattern)', () => {
+    it('injects <writing_rules> ALWAYS — no memoryEnabled gate', async () => {
+      // memoryEnabled=false intentionally — writing rules are universal
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: false },
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).toContain('<writing_rules>');
+      expect(finalPrompt).toContain('</writing_rules>');
+    });
+
+    it('contains the prohibitions: control tokens, meta-commentary, gratuitous emoji', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: true },
+        withMemory: true,
+        withPersistentMemory: 'persistent-bit',
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      // Control token examples
+      expect(finalPrompt).toContain('<|im_start|>');
+      expect(finalPrompt).toContain('<think>');
+      expect(finalPrompt).toContain('GLM-5');
+      // Meta-commentary prohibition
+      expect(finalPrompt).toMatch(/As an AI/);
+      expect(finalPrompt).toContain('No meta-commentary');
+      // Emoji rule
+      expect(finalPrompt).toMatch(/No emoji unless/);
+      // Zero-width chars
+      expect(finalPrompt).toContain('U+200B');
+    });
+
+    it('contains positive guidance: markdown structure, file:line, "I don\'t know"', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: false },
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).toMatch(/Code fences with language/i);
+      expect(finalPrompt).toMatch(/path\/to\/file\.ts:42/);
+      expect(finalPrompt).toContain("I don't know");
+      expect(finalPrompt).toMatch(/markdown hyperlinks/i);
+    });
+
+    it('all three directives present together when memory is wired (no order assertion — varySystemPrompt shuffles)', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: true },
+        withMemory: true,
+        withPersistentMemory: 'persistent-bit',
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).toContain('<auto_memory_directive>');
+      expect(finalPrompt).toContain('<lessons_directive>');
+      expect(finalPrompt).toContain('<writing_rules>');
     });
   });
 

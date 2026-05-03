@@ -16,6 +16,22 @@ Heading toward `1.0.0` final. Backlog tracked under `## [Unreleased]`'s
 and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
 ### Added since rc.4
+- **`<writing_rules>` system prompt directive** — proactive output
+  discipline inspired by Manus AI's structured prompt blocks pattern
+  (gist `renschni/4fbc70b...`, May 2026 reverse-engineering of Manus AI).
+  Complements `output-sanitizer.ts` (post-hoc strip) by instructing
+  the LLM BEFORE generation: never emit control tokens (`<|im_start|>`,
+  `<think>`, GLM-5 brackets, etc.), no zero-width chars, markdown
+  structure (code fences with language hint, file:line references for
+  navigability), no meta-commentary ("As an AI..."), no gratuitous
+  emoji, prefer "I don't know" over fabrication. Always-on (no
+  memoryEnabled gate — output discipline is universal). 4 new tests in
+  `tests/services/prompt-builder.test.ts`. The 7th iteration of the
+  "system directive narrow ship" pattern this session — closes the
+  Manus AI structured-blocks gap (Option B; Option A = full refactor
+  with `<browser_rules>`/`<shell_rules>`/`<system_capability>` blocks
+  remains deferred V1.x as it requires extensive validation).
+
 - **Lessons feature activation (Manus AI-inspired)** — system-prompt
   `<lessons_directive>` + RAG always-include for `lessons_add` /
   `lessons_search` + removal of the complexity gate that dropped lessons

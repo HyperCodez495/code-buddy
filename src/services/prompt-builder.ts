@@ -300,6 +300,35 @@ Lessons complement \`remember\`: \`remember\` stores facts (preferences, decisio
         logger.debug('Injected lessons directive into system prompt');
       }
 
+      // Inject `<writing_rules>` directive — proactive output discipline.
+      // Inspired by Manus AI's structured prompt blocks pattern (gist
+      // renschni/4fbc70b... May 2026 reverse-engineering). Pairs with
+      // `src/utils/output-sanitizer.ts` (post-hoc strip): the sanitizer
+      // is a safety net; this directive instructs the LLM BEFORE
+      // generation so wasted tokens are minimized and tone/structure
+      // remain consistent.
+      //
+      // Always-on (no `memoryEnabled` gate) — output discipline is
+      // universally useful, even for sessions with no persistent memory.
+      systemPrompt += `\n\n<writing_rules>
+Output formatting discipline:
+
+- Never emit model control tokens in your output: no \`<|im_start|>\`, \`<|im_end|>\`, \`<think>\`, \`<reasoning>\`, \`[INST]\`, \`<<SYS>>\`, GLM-5 full-width brackets, or any \`<|…|>\` variant. The runtime strips these as a safety net but the cost is wasted tokens.
+- No zero-width characters (U+200B, U+200C, U+200D, U+FEFF) or invisible Unicode for "stylistic" effect.
+- Use markdown for structure when output is rendered:
+  - Code fences with language hint: \`\`\`ts not bare \`\`\`
+  - Inline code with backticks for identifiers, paths, commands
+  - Tables for tabular comparisons (≥3 rows make a table worth it)
+  - Bold/italic sparingly — only when emphasis is load-bearing
+- No emoji unless the user explicitly requested them or they convey load-bearing information (e.g. ✅/❌ status markers in a table).
+- No meta-commentary about being an AI: skip "As an AI...", "I'll help you with...", "Let me explain...". Just answer.
+- Tone: direct, factual, terse. Match the user's register (formal ↔ casual).
+- Links: markdown hyperlinks \`[label](url)\`, not raw URLs in flowing text.
+- File references: use \`path/to/file.ts:42\` format so the user can navigate by click.
+- When uncertain about facts, say "I don't know" rather than fabricating. When uncertain about correctness of code, mark it as untested.
+</writing_rules>`;
+      logger.debug('Injected writing_rules directive into system prompt');
+
       // Inject auto-detected coding style conventions
       try {
         const { getCodingStyleAnalyzer } = await import('../memory/coding-style-analyzer.js');
