@@ -1,5 +1,5 @@
 /**
- * Fleet event bridge (Phase (d).1 V0.4.1).
+ * Fleet event bridge (Phase (d).1 + (d).7 V0.4.1).
  *
  * Lightweight wrapper around the Gateway WebSocket `broadcast()` so the
  * agent runtime can publish live events (tool starts, workflow progress,
@@ -14,19 +14,24 @@
  * - Single source of truth for the event-type constants — receivers and
  *   emitters stay in sync.
  *
- * Phase (d).1 scope: WS plumbing only. Agent emit hooks (calling
- * broadcastFleetEvent from CodeBuddyAgent / agent-executor / MAS) are
- * Phase (d).2 — out of scope tonight.
+ * Backpressure (Phase (d).7): the underlying `broadcast()` in handler.ts
+ * skips clients whose ws.bufferedAmount has grown past
+ * SERVER_CONFIG.WS_BROADCAST_BUFFER_LIMIT (default 2 MiB,
+ * env-overridable). Drops are counted per-client and surfaced through
+ * `getConnectionStats().totalBroadcastsDropped`. A hung remote can no
+ * longer inflate the server's send buffer indefinitely.
  *
- * Honest deferrals:
- * - Cross-host trust: when a remote Claude connects to this Code Buddy's
- *   /ws endpoint, what credential does it use? Hub-issued JWT vs. shared
- *   apiKey vs. per-spoke key are valid options with different operational
- *   trade-offs. Phase (d).2 picks one.
- * - Backpressure: events are bursty (per tool call). The current
- *   `broadcast()` has no slow-consumer handling — a hung remote could
- *   bloat the underlying ws send buffer. Phase (d).2 / V0.5 add a per-
- *   client send queue with drop-on-overflow.
+ * Honest deferrals (V0.5+):
+ * - Cross-host trust: hub-issued JWT vs. shared apiKey vs. per-spoke
+ *   key — three valid options with different operational trade-offs.
+ *   Caller picks based on operational needs.
+ * - Event replay during a slow-consumer drop window: events skipped
+ *   because of backpressure are lost (no server-side retention buffer).
+ *   Best-effort by design — V0.6+ if a use case demands replay.
+ *
+ * Follow-up: src/gateway/ws-transport.ts:382 has a structurally identical
+ * broadcast() with the same slow-consumer risk. Not in (d).7 scope to
+ * keep the diff narrow; mirror this pattern there in a separate ship.
  */
 
 import os from 'os';

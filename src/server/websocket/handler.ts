@@ -10,7 +10,7 @@ import type { ServerConfig, WebSocketMessage, WebSocketResponse } from '../types
 import { validateApiKey } from '../auth/api-keys.js';
 import { logger } from "../../utils/logger.js";
 import { verifyToken } from '../auth/jwt.js';
-import { TIMEOUT_CONFIG } from '../../config/constants.js';
+import { TIMEOUT_CONFIG, SERVER_CONFIG } from '../../config/constants.js';
 // Lazy import to avoid circular dependency through channels/index.ts
 let _enqueueMessage: typeof import('../../channels/index.js').enqueueMessage;
 async function getEnqueueMessage() {
@@ -52,6 +52,10 @@ interface ConnectionState {
   messageWindowStart: number;
   toolCount: number;
   toolWindowStart: number;
+  // Phase (d).7 — count of broadcast() calls skipped for this client
+  // because its ws.bufferedAmount exceeded SERVER_CONFIG.WS_BROADCAST_BUFFER_LIMIT.
+  // Reset only on disconnect; surfaced via getConnectionStats().totalBroadcastsDropped.
+  droppedBroadcasts: number;
 }
 
 // Active connections
@@ -488,6 +492,7 @@ export async function setupWebSocket(
       messageWindowStart: now,
       toolCount: 0,
       toolWindowStart: now,
+      droppedBroadcasts: 0,
     };
 
     connections.set(ws, state);
@@ -547,31 +552,73 @@ export function getConnectionCount(): number {
 }
 
 /**
- * Get connection stats
+ * Get connection stats. `totalBroadcastsDropped` is the cross-client sum
+ * of broadcast() calls skipped due to backpressure since the affected
+ * connections opened (Phase (d).7).
  */
 export function getConnectionStats(): {
   total: number;
   authenticated: number;
   streaming: number;
+  totalBroadcastsDropped: number;
 } {
   let authenticated = 0;
   let streaming = 0;
+  let totalBroadcastsDropped = 0;
 
   for (const state of connections.values()) {
     if (state.authenticated) authenticated++;
     if (state.streaming) streaming++;
+    totalBroadcastsDropped += state.droppedBroadcasts;
   }
 
-  return { total: connections.size, authenticated, streaming };
+  return { total: connections.size, authenticated, streaming, totalBroadcastsDropped };
 }
 
 /**
- * Broadcast message to all authenticated connections
+ * Read the broadcast buffer ceiling. Env override resolved per call so
+ * tests can adjust without restarting the module.
+ */
+function getBroadcastBufferLimit(): number {
+  const raw = process.env.CODEBUDDY_FLEET_BROADCAST_BUFFER_LIMIT;
+  if (raw) {
+    const n = parseInt(raw, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  }
+  return SERVER_CONFIG.WS_BROADCAST_BUFFER_LIMIT;
+}
+
+/**
+ * Broadcast message to all authenticated connections.
+ *
+ * Phase (d).7 — drop-on-overflow: if a client's ws.bufferedAmount has
+ * grown past WS_BROADCAST_BUFFER_LIMIT (default 2 MiB, env-overridable
+ * via CODEBUDDY_FLEET_BROADCAST_BUFFER_LIMIT), this call is skipped for
+ * that client and its `droppedBroadcasts` counter is incremented. Other
+ * clients still receive the message. Prevents one stuck remote Claude
+ * from inflating the server's ws send buffer indefinitely.
+ *
+ * Drops are logged at debug level once per 100 drops per client to keep
+ * logs informative without spamming under sustained backpressure.
  */
 export function broadcast(message: WebSocketResponse, scopeFilter?: string): void {
+  const limit = getBroadcastBufferLimit();
   for (const [ws, state] of connections.entries()) {
     if (!state.authenticated) continue;
     if (scopeFilter && !state.scopes.includes(scopeFilter)) continue;
+
+    if (ws.bufferedAmount > limit) {
+      state.droppedBroadcasts++;
+      if (state.droppedBroadcasts % 100 === 1) {
+        logger.debug('[ws] broadcast dropped — slow consumer', {
+          connectionId: state.id,
+          bufferedAmount: ws.bufferedAmount,
+          limit,
+          totalDropsForClient: state.droppedBroadcasts,
+        });
+      }
+      continue;
+    }
 
     send(ws, message);
   }
@@ -584,5 +631,23 @@ export function closeAllConnections(): void {
   for (const ws of connections.keys()) {
     ws.close(1001, 'Server shutting down');
   }
+  connections.clear();
+}
+
+/**
+ * Test-only: register a pre-built connection state so unit tests can
+ * exercise broadcast() / getConnectionStats() without spinning up a real
+ * WS server. Pair with `_resetConnectionsForTests()` in beforeEach.
+ */
+export function _registerConnectionForTests(ws: WebSocket, state: ConnectionState): void {
+  connections.set(ws, state);
+}
+
+/**
+ * Test-only: clear the module-level connections map without invoking
+ * ws.close() on the held instances (some tests use plain mocks without
+ * a close method). Use in beforeEach/afterEach.
+ */
+export function _resetConnectionsForTests(): void {
   connections.clear();
 }

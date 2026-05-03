@@ -186,6 +186,15 @@ export const SERVER_CONFIG = {
   DEFAULT_MAX_CONNECTIONS: 100,
   /** Default JWT expiration */
   DEFAULT_JWT_EXPIRATION: '24h',
+  /**
+   * Per-client buffered-bytes ceiling for the WS broadcast() send path
+   * before drop-on-overflow kicks in (Phase (d).7). At ~1 KB per fleet
+   * event this allows ~2000 events of slack. Guards against slow-consumer
+   * memory blow-up: a hung remote Claude won't be able to back up the
+   * server's ws send buffer indefinitely. Override with the env var
+   * CODEBUDDY_FLEET_BROADCAST_BUFFER_LIMIT (bytes) for tests / tuning.
+   */
+  WS_BROADCAST_BUFFER_LIMIT: 2 * 1024 * 1024,
 } as const;
 
 // === Timeouts ===
