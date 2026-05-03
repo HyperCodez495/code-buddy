@@ -91,7 +91,11 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   useRAG: true,
   maxTools: 15,
   minScore: 0.5,
-  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search'],
+  // `remember` is force-included so the LLM can always auto-persist non-obvious
+  // facts to .codebuddy/CODEBUDDY_MEMORY.md, even on tasks where the RAG selector
+  // wouldn't otherwise surface the memory tools (e.g. a pure code-edit query).
+  // Paired with the auto-memory directive in `prompt-builder.ts`.
+  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes

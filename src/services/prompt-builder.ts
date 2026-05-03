@@ -234,6 +234,38 @@ export class PromptBuilder {
         }
       } catch { /* identity module optional */ }
 
+      // Inject auto-memory directive — tells the LLM WHEN to call the
+      // `remember` tool to auto-persist non-obvious facts to
+      // .codebuddy/CODEBUDDY_MEMORY.md (project) or ~/.codebuddy/memory.md
+      // (user). Without this directive, the tool is registered but the LLM
+      // has no instruction on when to use it, so the file stays empty.
+      // Paired with `alwaysInclude: ['remember']` in tool-selection-strategy.
+      if (this.config.memoryEnabled && this.persistentMemory) {
+        systemPrompt += `\n\n<auto_memory_directive>
+You have a persistent memory system at .codebuddy/CODEBUDDY_MEMORY.md (project-scoped) and ~/.codebuddy/memory.md (user-scoped, all projects). Use the \`remember\` tool to save facts that will be useful in future sessions.
+
+When to call \`remember\`:
+- User preferences ("user prefers single quotes", "always use Vitest, not Jest")
+- Architectural decisions ("API uses JWT in HttpOnly cookies, not localStorage")
+- Non-obvious gotchas ("vi.hoisted() needed for mock factories in this repo")
+- Project-specific conventions or constraints the user just revealed
+
+When NOT to call \`remember\`:
+- Things derivable from reading the code, git log, or package.json
+- Ephemeral task details (current bug being fixed, in-progress edits)
+- Information already covered by an existing memory entry
+
+Format:
+- \`key\`: short kebab-case identifier (e.g. \`test-framework\`, \`indent-style\`, \`jwt-storage\`)
+- \`value\`: 1-3 sentences, factual, written for future-you in a fresh session
+- \`scope\`: \`project\` (default — fact is specific to THIS repo) or \`user\` (preference across all projects)
+- \`category\`: \`preferences\`, \`decisions\`, \`patterns\`, \`project\`, or \`custom\`
+
+Call \`remember\` proactively when you learn something worth remembering — don't wait for the user to ask.
+</auto_memory_directive>`;
+        logger.debug('Injected auto-memory directive into system prompt');
+      }
+
       // Inject auto-detected coding style conventions
       try {
         const { getCodingStyleAnalyzer } = await import('../memory/coding-style-analyzer.js');

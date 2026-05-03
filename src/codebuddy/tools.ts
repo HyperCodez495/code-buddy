@@ -445,7 +445,7 @@ export async function getRelevantTools(
     };
   }
 
-  return selectRelevantTools(query, allTools, maxTools);
+  return selectRelevantTools(query, allTools, maxTools, options.alwaysInclude);
 }
 
 /**

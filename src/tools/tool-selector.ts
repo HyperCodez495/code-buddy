@@ -773,14 +773,20 @@ export function getToolSelector(): ToolSelector {
 }
 
 /**
- * Convenience function for tool selection
+ * Convenience function for tool selection.
+ *
+ * `alwaysInclude` is propagated to the underlying selector so that callers
+ * (e.g. ToolSelectionStrategy) can guarantee specific tools survive RAG
+ * filtering — without it, the option silently dropped on the way through
+ * `getRelevantTools`.
  */
 export function selectRelevantTools(
   query: string,
   allTools: CodeBuddyTool[],
-  maxTools: number = 10
+  maxTools: number = 10,
+  alwaysInclude?: string[]
 ): ToolSelectionResult {
-  return getToolSelector().selectTools(query, allTools, { maxTools });
+  return getToolSelector().selectTools(query, allTools, { maxTools, alwaysInclude });
 }
 
 /**

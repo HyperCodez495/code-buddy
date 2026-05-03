@@ -313,6 +313,49 @@ describe('PromptBuilder — Phase T4', () => {
     });
   });
 
+  describe('auto-memory directive', () => {
+    it('injects <auto_memory_directive> when memoryEnabled=true and persistentMemory is wired', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: true },
+        withMemory: true,
+        withPersistentMemory: 'persistent-bit',
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).toContain('<auto_memory_directive>');
+      expect(finalPrompt).toContain('</auto_memory_directive>');
+      // Anchor phrases that prove the LLM gets actionable instruction:
+      expect(finalPrompt).toContain('`remember`');
+      expect(finalPrompt).toContain('CODEBUDDY_MEMORY.md');
+      expect(finalPrompt).toMatch(/When to call.*remember/i);
+      expect(finalPrompt).toMatch(/When NOT to call/i);
+    });
+
+    it('does NOT inject the directive when memoryEnabled=false (even with persistentMemory wired)', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: false },
+        withPersistentMemory: 'persistent-bit',
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).not.toContain('<auto_memory_directive>');
+    });
+
+    it('does NOT inject the directive when persistentMemory is missing (even with memoryEnabled=true)', async () => {
+      // memoryEnabled=true but no persistentMemory passed → no directive
+      // (the directive is gated on the markdown backend being available, since
+      // there's no point telling the LLM to call `remember` if the markdown
+      // file won't be created/updated).
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { memoryEnabled: true },
+        withMemory: true, // EnhancedMemory only — no PersistentMemory
+      });
+      await builder.buildSystemPrompt(undefined, 'grok-3', null);
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).not.toContain('<auto_memory_directive>');
+    });
+  });
+
   describe('budget truncation', () => {
     it('truncates a system prompt longer than the model budget and appends "..."', async () => {
       // Force a tiny budget so the LEGACY_PROMPT_BODY ALONE overshoots.
