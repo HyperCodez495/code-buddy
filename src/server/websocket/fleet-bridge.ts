@@ -56,6 +56,12 @@ export const FLEET_EVENT_TYPES = [
   // broadcaster module. Gives fleet:listen consumers a "still here"
   // signal between activity bursts so they can flag stale peers.
   'fleet:peer:heartbeat',
+  // Phase (d).10 — compaction lifecycle notices. Bridged from the
+  // SmartCompactionEngine singleton via src/fleet/compaction-bridge.ts.
+  // Lets remote Claudes know a peer is briefly indisposed so they don't
+  // queue up tasks during a 5-30s summarization window.
+  'fleet:peer:compacting:start',
+  'fleet:peer:compacting:complete',
 ] as const;
 
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];
@@ -142,4 +148,35 @@ export function broadcastFleetHeartbeat(
   payload: { idleSince?: number; busyWith?: string } = {},
 ): void {
   broadcastFleetEvent('fleet:peer:heartbeat', { ...payload });
+}
+
+/**
+ * Phase (d).10 — emit a "compaction started" notice. Called by the
+ * compaction-bridge listener when SmartCompactionEngine fires its
+ * internal `compaction:start` event. Lets remote Claudes flag the peer
+ * as briefly indisposed.
+ */
+export function broadcastCompactionStart(
+  payload: { messageCount?: number; tokens?: number } = {},
+): void {
+  broadcastFleetEvent('fleet:peer:compacting:start', { ...payload });
+}
+
+/**
+ * Phase (d).10 — emit a "compaction completed" notice. Called by the
+ * compaction-bridge listener when SmartCompactionEngine fires its
+ * internal `compaction:complete` event. Carries the engine result so
+ * remote Claudes can report what happened (strategy, tokens saved).
+ */
+export function broadcastCompactionComplete(
+  payload: {
+    success?: boolean;
+    originalTokens?: number;
+    compactedTokens?: number;
+    messagesRemoved?: number;
+    strategy?: string;
+    durationMs?: number;
+  } = {},
+): void {
+  broadcastFleetEvent('fleet:peer:compacting:complete', { ...payload });
 }

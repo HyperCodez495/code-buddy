@@ -65,6 +65,21 @@ interface ActiveListener {
     // Phase (d).9 — presence telemetry surfaced through /fleet status.
     getLastSeen: () => { at: number | null; reason: string | null; ageMs: number | null };
     isStale: (thresholdMs?: number) => boolean;
+    // Phase (d).10 — peer compaction state surfaced through /fleet status.
+    getPeerCompactionState: () => {
+      active: boolean;
+      startedAt: number | null;
+      ageMs: number | null;
+      lastResult: {
+        success?: boolean;
+        originalTokens?: number;
+        compactedTokens?: number;
+        messagesRemoved?: number;
+        strategy?: string;
+        durationMs?: number;
+        completedAt: number;
+      } | null;
+    };
   };
 }
 
@@ -149,6 +164,27 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
       const prefix = stale ? `  ⚠ stale (>${STALE_THRESHOLD_MS / 1000}s) — ` : `  `;
       lastSeenLine = `${prefix}Last seen: ${ageSec}s ago (${reason})\n`;
     }
+    // Phase (d).10 — peer compaction line. Three states:
+    //   active=true → "⏸ Peer compacting (started Xs ago, strategy)"
+    //   inactive + lastResult set → "Last compaction: strategy in Xms (saved Y tokens)"
+    //   neither → no line at all (avoid clutter pre-first-compaction)
+    const compactionState = activeListener.listener.getPeerCompactionState();
+    let compactionLine = '';
+    if (compactionState.active) {
+      const ageSec = Math.round((compactionState.ageMs ?? 0) / 1000);
+      compactionLine = `  ⏸ Peer compacting (started ${ageSec}s ago, in progress)\n`;
+    } else if (compactionState.lastResult) {
+      const r = compactionState.lastResult;
+      const saved =
+        typeof r.originalTokens === 'number' && typeof r.compactedTokens === 'number'
+          ? r.originalTokens - r.compactedTokens
+          : null;
+      const strategyTxt = r.strategy ?? 'unknown';
+      const durTxt = typeof r.durationMs === 'number' ? `${r.durationMs}ms` : 'n/a';
+      const savedTxt = saved !== null ? ` (saved ${saved} tokens)` : '';
+      compactionLine = `  Last compaction: ${strategyTxt} in ${durTxt}${savedTxt}\n`;
+    }
+
     return textResult(
       `Fleet listener ACTIVE\n` +
         `  URL:     ${activeListener.url}\n` +
@@ -156,6 +192,7 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
         `  Events:  ${activeListener.eventCount} received\n` +
         reconnectLine +
         lastSeenLine +
+        compactionLine +
         `\nStop with /fleet stop.`,
     );
   }

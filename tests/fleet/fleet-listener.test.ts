@@ -665,4 +665,93 @@ describe('FleetListener — Phase (d).5 V0.4.1', () => {
       await l.disconnect();
     });
   });
+
+  // ==========================================================================
+  // Phase (d).10 — peer compaction state tracking
+  // ==========================================================================
+  describe('peer compaction state (Phase (d).10)', () => {
+    async function authenticatedListener() {
+      const l = new FleetListener({ url: 'ws://peer/ws', apiKey: 'k' });
+      const cp = l.connect();
+      await new Promise((r) => setImmediate(r));
+      const fake = wsMock.instances[0];
+      fake.open();
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'connected' });
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'authenticated', payload: {} });
+      await cp;
+      return { l, fake };
+    }
+
+    it('returns inactive state by default', async () => {
+      const { l } = await authenticatedListener();
+      const s = l.getPeerCompactionState();
+      expect(s.active).toBe(false);
+      expect(s.startedAt).toBe(null);
+      expect(s.ageMs).toBe(null);
+      expect(s.lastResult).toBe(null);
+      await l.disconnect();
+    });
+
+    it('flips active=true on fleet:peer:compacting:start', async () => {
+      const { l, fake } = await authenticatedListener();
+      const before = Date.now();
+      fake.receive({
+        type: 'fleet:peer:compacting:start',
+        payload: { messageCount: 50, tokens: 12000 },
+      });
+      const s = l.getPeerCompactionState();
+      expect(s.active).toBe(true);
+      expect(s.startedAt).toBeGreaterThanOrEqual(before);
+      expect(s.ageMs).toBeGreaterThanOrEqual(0);
+      expect(s.lastResult).toBe(null); // no complete yet
+      await l.disconnect();
+    });
+
+    it('flips active=false + records lastResult on fleet:peer:compacting:complete', async () => {
+      const { l, fake } = await authenticatedListener();
+      fake.receive({
+        type: 'fleet:peer:compacting:start',
+        payload: { messageCount: 50 },
+      });
+      fake.receive({
+        type: 'fleet:peer:compacting:complete',
+        payload: {
+          success: true,
+          originalTokens: 20_000,
+          compactedTokens: 7_500,
+          messagesRemoved: 18,
+          strategy: 'hybrid',
+          durationMs: 1234,
+        },
+      });
+      const s = l.getPeerCompactionState();
+      expect(s.active).toBe(false);
+      expect(s.ageMs).toBe(null); // not active anymore
+      expect(s.lastResult).not.toBe(null);
+      expect(s.lastResult!.success).toBe(true);
+      expect(s.lastResult!.originalTokens).toBe(20_000);
+      expect(s.lastResult!.compactedTokens).toBe(7_500);
+      expect(s.lastResult!.strategy).toBe('hybrid');
+      expect(s.lastResult!.durationMs).toBe(1234);
+      expect(typeof s.lastResult!.completedAt).toBe('number');
+      await l.disconnect();
+    });
+
+    it('ageMs grows while active (Date.now override)', async () => {
+      const { l, fake } = await authenticatedListener();
+      fake.receive({ type: 'fleet:peer:compacting:start', payload: {} });
+      const startedAt = l.getPeerCompactionState().startedAt!;
+      const realNow = Date.now;
+      try {
+        Date.now = () => startedAt + 5_000;
+        const s = l.getPeerCompactionState();
+        expect(s.ageMs).toBe(5_000);
+      } finally {
+        Date.now = realNow;
+      }
+      await l.disconnect();
+    });
+  });
 });

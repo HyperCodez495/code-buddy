@@ -21,6 +21,21 @@ const fleetListenerMock = vi.hoisted(() => {
     ageMs: null as number | null,
   }));
   const isStaleMock = vi.fn(() => false);
+  // Phase (d).10 — peer compaction telemetry. Default: never compacted.
+  const getPeerCompactionStateMock = vi.fn(() => ({
+    active: false as boolean,
+    startedAt: null as number | null,
+    ageMs: null as number | null,
+    lastResult: null as null | {
+      success?: boolean;
+      originalTokens?: number;
+      compactedTokens?: number;
+      messagesRemoved?: number;
+      strategy?: string;
+      durationMs?: number;
+      completedAt: number;
+    },
+  }));
 
   class FleetListenerStub {
     constructor(opts: { url: string; apiKey?: string; jwt?: string }) {
@@ -35,6 +50,7 @@ const fleetListenerMock = vi.hoisted(() => {
     isReconnecting = () => false;
     getLastSeen = getLastSeenMock;
     isStale = isStaleMock;
+    getPeerCompactionState = getPeerCompactionStateMock;
   }
 
   return {
@@ -45,6 +61,7 @@ const fleetListenerMock = vi.hoisted(() => {
     constructorCalls,
     getLastSeenMock,
     isStaleMock,
+    getPeerCompactionStateMock,
   };
 });
 
@@ -67,6 +84,12 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       .mockReset()
       .mockReturnValue({ at: null, reason: null, ageMs: null });
     fleetListenerMock.isStaleMock.mockReset().mockReturnValue(false);
+    fleetListenerMock.getPeerCompactionStateMock.mockReset().mockReturnValue({
+      active: false,
+      startedAt: null,
+      ageMs: null,
+      lastResult: null,
+    });
     _resetFleetHandlerForTests();
     delete process.env.CODEBUDDY_FLEET_API_KEY;
   });
@@ -206,6 +229,50 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       expect(r.entry?.content).toContain('⚠ stale');
       expect(r.entry?.content).toContain('Last seen: 120s ago');
       expect(r.entry?.content).toContain('heartbeat');
+    });
+
+    // Phase (d).10 — peer compaction lines.
+    it('shows "⏸ Peer compacting" when peer compaction is active', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getPeerCompactionStateMock.mockReturnValueOnce({
+        active: true,
+        startedAt: Date.now() - 8_000,
+        ageMs: 8_000,
+        lastResult: null,
+      });
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('⏸ Peer compacting');
+      expect(r.entry?.content).toContain('started 8s ago');
+    });
+
+    it('shows "Last compaction" line with strategy + savings when not active', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getPeerCompactionStateMock.mockReturnValueOnce({
+        active: false,
+        startedAt: null,
+        ageMs: null,
+        lastResult: {
+          success: true,
+          originalTokens: 20_000,
+          compactedTokens: 8_000,
+          messagesRemoved: 18,
+          strategy: 'hybrid',
+          durationMs: 1234,
+          completedAt: Date.now(),
+        },
+      });
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).toContain('Last compaction: hybrid in 1234ms');
+      expect(r.entry?.content).toContain('saved 12000 tokens');
+      expect(r.entry?.content).not.toContain('⏸ Peer compacting');
+    });
+
+    it('omits the compaction line entirely when no compaction has happened', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      // default mock: active=false, lastResult=null → no line
+      const r = await handleFleet(['status']);
+      expect(r.entry?.content).not.toContain('Peer compacting');
+      expect(r.entry?.content).not.toContain('Last compaction');
     });
   });
 

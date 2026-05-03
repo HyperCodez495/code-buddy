@@ -84,6 +84,21 @@ interface IncomingMessage {
   timestamp?: string;
 }
 
+/**
+ * Phase (d).10 — payload shape stored after a fleet:peer:compacting:complete
+ * event. `completedAt` is the local epoch ms (avoids cross-host clock drift).
+ * All other fields are passthroughs from the SmartCompactionEngine result.
+ */
+export interface PeerCompactionResult {
+  success?: boolean;
+  originalTokens?: number;
+  compactedTokens?: number;
+  messagesRemoved?: number;
+  strategy?: string;
+  durationMs?: number;
+  completedAt: number;
+}
+
 export class FleetListener extends EventEmitter {
   private ws: WebSocket | null = null;
   private connected = false;
@@ -101,6 +116,13 @@ export class FleetListener extends EventEmitter {
   // event arrives.
   private lastSeenAt: number | null = null;
   private lastSeenReason: string | null = null;
+  // Phase (d).10 — peer compaction state. Tracks whether the connected
+  // peer is currently in a compaction cycle so consumers can hold off
+  // on sending tasks for ~5-30 s. Set true on fleet:peer:compacting:start,
+  // false on :complete (and lastResult is captured then).
+  private peerCompacting = false;
+  private compactingStartedAt: number | null = null;
+  private lastCompactionResult: PeerCompactionResult | null = null;
   private readonly options: FleetListenerOptions;
   private readonly reconnector: ReconnectionManager | null;
 
@@ -339,6 +361,24 @@ export class FleetListener extends EventEmitter {
       // confident the peer is alive.
       this.lastSeenAt = Date.now();
       this.lastSeenReason = msg.type === 'fleet:peer:heartbeat' ? 'heartbeat' : msg.type;
+      // Phase (d).10 — track peer compaction lifecycle so /fleet status
+      // and downstream consumers can defer task dispatch.
+      if (msg.type === 'fleet:peer:compacting:start') {
+        this.peerCompacting = true;
+        this.compactingStartedAt = Date.now();
+      } else if (msg.type === 'fleet:peer:compacting:complete') {
+        this.peerCompacting = false;
+        const p = (msg.payload ?? {}) as Record<string, unknown>;
+        this.lastCompactionResult = {
+          success: typeof p.success === 'boolean' ? p.success : undefined,
+          originalTokens: typeof p.originalTokens === 'number' ? p.originalTokens : undefined,
+          compactedTokens: typeof p.compactedTokens === 'number' ? p.compactedTokens : undefined,
+          messagesRemoved: typeof p.messagesRemoved === 'number' ? p.messagesRemoved : undefined,
+          strategy: typeof p.strategy === 'string' ? p.strategy : undefined,
+          durationMs: typeof p.durationMs === 'number' ? p.durationMs : undefined,
+          completedAt: Date.now(),
+        };
+      }
       this.emit(msg.type, msg.payload ?? {});
       // Also emit on a generic 'fleet:event' channel so callers can
       // subscribe to all events at once for logging / debugging.
@@ -460,5 +500,32 @@ export class FleetListener extends EventEmitter {
   isStale(thresholdMs: number = 90_000): boolean {
     if (this.lastSeenAt === null) return false;
     return Date.now() - this.lastSeenAt > thresholdMs;
+  }
+
+  /**
+   * Phase (d).10 — peer compaction state snapshot.
+   *
+   * `active` is true while the peer is between fleet:peer:compacting:start
+   * and :complete. `startedAt` is the local epoch ms when the start
+   * event arrived (not the peer's clock — avoids cross-host clock
+   * drift). `ageMs` = `Date.now() - startedAt` when active, otherwise
+   * null. `lastResult` is the most recent `:complete` payload (or null
+   * if the peer hasn't completed a compaction yet).
+   */
+  getPeerCompactionState(): {
+    active: boolean;
+    startedAt: number | null;
+    ageMs: number | null;
+    lastResult: PeerCompactionResult | null;
+  } {
+    return {
+      active: this.peerCompacting,
+      startedAt: this.compactingStartedAt,
+      ageMs:
+        this.peerCompacting && this.compactingStartedAt !== null
+          ? Date.now() - this.compactingStartedAt
+          : null,
+      lastResult: this.lastCompactionResult,
+    };
   }
 }
