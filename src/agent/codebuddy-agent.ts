@@ -609,6 +609,16 @@ export class CodeBuddyAgent extends BaseAgent {
           const reg = getSessionRegistry(s);
           await reg.start();
           logger.info('SessionRegistry auto-started from TOML config');
+          // Phase (d).4 (V0.4.1) — attach session fleet bridge. Listeners are
+          // installed unconditionally; the per-emit env gate
+          // (CODEBUDDY_FLEET_STREAM=1) decides whether to broadcast. This way
+          // toggling at runtime doesn't require re-attaching.
+          try {
+            const { enableSessionFleetBridge } = await import('../agent/multi-agent/session-fleet-bridge.js');
+            enableSessionFleetBridge(reg);
+          } catch (err) {
+            logger.debug('Session fleet bridge attach skipped (optional)', { error: String(err) });
+          }
         }).catch((e) => { logger.debug('SessionRegistry module load failed (optional)', { error: String(e) }); });
       }
     }).catch((e) => { logger.debug('Coordination/sessions config check failed (optional)', { error: String(e) }); });
