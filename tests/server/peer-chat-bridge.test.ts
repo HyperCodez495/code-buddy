@@ -218,15 +218,37 @@ describe('peer-chat-bridge — Phase (d).15', () => {
     });
   });
 
-  describe('integration with peer.describe (Phase (d).14 → d.15)', () => {
+  describe('integration with peer.describe (Phase (d).14 → d.16)', () => {
     it('after wire, peer.chat appears in peer.describe.methods', async () => {
       wirePeerChatBridge(() => null);
       const r = await dispatchPeerRequest(
         { id: 'd1', method: 'peer.describe' },
         baseCtx,
       );
-      const payload = r.payload as { methods: string[] };
+      const payload = r.payload as { methods: string[]; peerChatProvider: unknown };
       expect(payload.methods).toContain('peer.chat');
+      // No providerInfo passed → field is null
+      expect(payload.peerChatProvider).toBeNull();
+    });
+
+    it('Phase (d).16a — providerInfo passed to wire is exposed via peer.describe.peerChatProvider', async () => {
+      wirePeerChatBridge(() => null, {
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        isLocal: false,
+      });
+      const r = await dispatchPeerRequest(
+        { id: 'd2', method: 'peer.describe' },
+        baseCtx,
+      );
+      const payload = r.payload as {
+        peerChatProvider: { provider: string; model: string; isLocal: boolean } | null;
+      };
+      expect(payload.peerChatProvider).toEqual({
+        provider: 'gemini',
+        model: 'gemini-2.5-flash',
+        isLocal: false,
+      });
     });
   });
 });

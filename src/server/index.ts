@@ -817,14 +817,31 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
     // fleet:peer:compacting:* so remote Claudes know when this peer is
     // briefly indisposed by a summarization pass.
     wireCompactionBridge();
-    // Phase (d).15 — register the `peer.chat` business method so remote
-    // Claudes can ask THIS peer's LLM a one-shot question. The default
-    // getClient closure returns null (CLIENT_UNAVAILABLE), since the
-    // standalone server doesn't instantiate a client by default. To
-    // expose this peer as a real LLM endpoint, wire a real getter
-    // either here (env-driven, V0.5+) or by calling wirePeerChatBridge
-    // again with a real getter from the embedding host process.
-    wirePeerChatBridge(() => null);
+    // Phase (d).16a — auto-detect the peer.chat client from env
+    // (priority order: ollama > grok > anthropic > gemini > openai).
+    // When no key is detected, peer.chat still wires but answers
+    // CLIENT_UNAVAILABLE. The providerInfo is surfaced via peer.describe
+    // so remote Claudes know what they're talking to.
+    (async () => {
+      try {
+        const { createPeerChatClientFromEnv } = await import('../fleet/peer-chat-client-factory.js');
+        const factory = createPeerChatClientFromEnv();
+        if (factory) {
+          wirePeerChatBridge(() => factory.client, factory.info);
+          logger.info(
+            `[fleet] peer.chat wired: ${factory.info.provider} (${factory.info.model}${factory.info.isLocal ? ', local' : ''})`,
+          );
+        } else {
+          wirePeerChatBridge(() => null);
+          logger.info('[fleet] peer.chat wired without provider — set GOOGLE_API_KEY / GROK_API_KEY / ... or OLLAMA_HOST to activate');
+        }
+      } catch (err) {
+        logger.warn('[fleet] peer.chat factory failed, falling back to null client', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+        wirePeerChatBridge(() => null);
+      }
+    })().catch(() => { /* unhandled-rejection guard */ });
   }
 
   return new Promise((resolve, reject) => {

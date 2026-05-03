@@ -179,14 +179,28 @@ function registerBuiltInMethods(): void {
   // Mirror of OpenClaw node.describe but with method-list discovery
   // baked in (we don't have a Capabilities enum yet — just expose what
   // we can answer). Phase (d).14 adds `role` + `maxDepth`.
-  registerPeerMethod('peer.describe', async () => ({
-    hostname: process.env.CODEBUDDY_FLEET_HOSTNAME || os.hostname(),
-    pid: process.pid,
-    methods: listPeerMethods(),
-    apiVersion: 'd.15',
-    role: getPeerRole(),
-    maxDepth: getMaxDepth(),
-  }));
+  registerPeerMethod('peer.describe', async () => {
+    // Phase (d).16a — surface the wired peer.chat provider (or null)
+    // so remote Claudes can discover what kind of LLM is behind this
+    // peer's peer.chat, if any. Lazy import to avoid pulling
+    // peer-chat-bridge at peer-rpc load time.
+    let peerChatProvider: { provider: string; model: string; isLocal: boolean } | null = null;
+    try {
+      const { getPeerChatProviderInfo } = await import('../../fleet/peer-chat-bridge.js');
+      peerChatProvider = getPeerChatProviderInfo();
+    } catch {
+      /* bridge not loaded — peer.chat not wired */
+    }
+    return {
+      hostname: process.env.CODEBUDDY_FLEET_HOSTNAME || os.hostname(),
+      pid: process.pid,
+      methods: listPeerMethods(),
+      apiVersion: 'd.16',
+      role: getPeerRole(),
+      maxDepth: getMaxDepth(),
+      peerChatProvider,
+    };
+  });
 
   // peer.ping — minimal connectivity check. Echoes a server-side
   // timestamp so the caller can measure round-trip latency.

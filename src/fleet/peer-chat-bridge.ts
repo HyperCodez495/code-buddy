@@ -22,11 +22,13 @@
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
 import { logger } from '../utils/logger.js';
+import type { PeerChatProviderInfo } from './peer-chat-client-factory.js';
 
 /** Closure that returns the CodeBuddyClient to use for peer.chat, or null if none is wired. */
 export type PeerChatClientGetter = () => CodeBuddyClient | null;
 
 let cachedGetter: PeerChatClientGetter | null = null;
+let cachedProviderInfo: PeerChatProviderInfo | null = null;
 let wired = false;
 
 const DEFAULT_SYSTEM_PROMPT = 'Answer this side question briefly. Do not use tools.';
@@ -40,12 +42,16 @@ const DEFAULT_SYSTEM_PROMPT = 'Answer this side question briefly. Do not use too
  * Idempotent — a second call is a no-op (does NOT replace the cached
  * getter; un-wire first if you need to swap).
  */
-export function wirePeerChatBridge(getClient: PeerChatClientGetter): void {
+export function wirePeerChatBridge(
+  getClient: PeerChatClientGetter,
+  providerInfo?: PeerChatProviderInfo | null,
+): void {
   if (wired) {
     logger.debug('[peer-chat-bridge] wire() called while already wired — no-op');
     return;
   }
   cachedGetter = getClient;
+  cachedProviderInfo = providerInfo ?? null;
   registerPeerMethod('peer.chat', async (params, ctx) => {
     const prompt = typeof params.prompt === 'string' ? params.prompt : '';
     const systemPrompt =
@@ -99,8 +105,18 @@ export function unwirePeerChatBridge(): void {
   if (!wired) return;
   unregisterPeerMethod('peer.chat');
   cachedGetter = null;
+  cachedProviderInfo = null;
   wired = false;
   logger.debug('[peer-chat-bridge] unwired');
+}
+
+/**
+ * Phase (d).16a — read the wired provider info (or null if peer.chat
+ * isn't wired with a real client). Surfaced via peer.describe so remote
+ * Claudes can discover what kind of LLM lives behind this peer.chat.
+ */
+export function getPeerChatProviderInfo(): PeerChatProviderInfo | null {
+  return cachedProviderInfo;
 }
 
 /** Whether the bridge is currently registered on the peer-rpc registry. */
@@ -116,5 +132,6 @@ export function _unwireForTests(): void {
     /* peer-rpc may not be initialised in some test setups */
   }
   cachedGetter = null;
+  cachedProviderInfo = null;
   wired = false;
 }
