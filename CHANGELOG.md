@@ -15,7 +15,22 @@ Heading toward `1.0.0` final. Backlog tracked under `## [Unreleased]`'s
 [`docs/fleet-guide.md`](docs/fleet-guide.md) (V1.x roadmap section)
 and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
-### Added since rc.3
+---
+
+## [1.0.0-rc.4] — 2026-05-04
+
+**Fourth release candidate**. Four ships post-rc.3 focused on the
+**conversational subagent surface**: a fresh audit of Claude Code's
+source (now available locally), Phase A+C implementation closing the
+audit, two new user-facing slashes (`/subagent` for discovery,
+`/swarm` for one-command team-lead spawning inspired by Korben's
+article on Claude Code's hidden Swarms mode).
+
+The releases pattern of the session continues: rc.2 (6 ships), rc.3
+(3 ships), rc.4 (4 ships). All narrow, all tested, all building on
+existing infrastructure rather than inventing new modules.
+
+### Added
 - **`/swarm <task>` slash command** — UX wrapper around the existing
   `MultiAgentSystem` (V0.4) that exposes the team-lead pattern in one
   memorable command. Forces strategy=parallel for the run, delegates
@@ -71,7 +86,7 @@ and the audit follow-ups noted under `## [0.5.1-fleet]`.
   enforcement layer) deferred — the whitelist+blacklist combo covers
   enforcement needs for V1.
 
-### Audit notes (post-rc.3, doc-only)
+### Audit shipped
 - **Claude Code subagent + plan mode audit**
   (`claude-et-patrice/propositions/AUDIT-CLAUDE-CODE-SUBAGENT-2026-05-04.md`,
   268 lines) — 3rd iteration of the audit-doc pattern, this time with
@@ -79,10 +94,24 @@ and the audit follow-ups noted under `## [0.5.1-fleet]`.
   Audited 4 zones: plan mode workflow phasé (⚠️ partial), structured user
   questions (✅ complete parity), subagent specialization (⚠️ partial — the
   central gap), background scheduling (⚠️ partial). Identifies 3-phase
-  adaptation roadmap (Interface → ExploreAgent → enforcement layer) for
-  V1.x — implementation deferred, doc serves as fleet reference for
-  asynchronous iteration. Pattern already shipped 4 commits via prior
-  audits (compaction reco + Gemini CLI recos #1, #2, #3).
+  adaptation roadmap; **Phase A + Phase C shipped in this release** via
+  the Explore subagent + disallowedTools field above. Pattern produced
+  5 ships across the 3 audits done this session.
+
+### Notes for V1 final (1.0.0)
+Same items as rc.3, narrowed by what shipped here:
+- Live smoke test of `peer.chat` with ≥2 providers on ≥2 hosts still
+  pending (operator validation, hub-pull blocker on Ministar Linux)
+- `withStreamRetry` activation by default deferred until ≥1 week of
+  opt-in observation without regressions
+- Migration of `agent-executor.ts:636` and `:844` to `getCuratedHistory()`
+  deferred (would close the latent compression-without-repair gap)
+- Phase B of the subagent audit (architectural enforcement layer)
+  deferred — the whitelist+blacklist combo covers V1 needs
+- Vue agrégée des 7 sources mémoire deferred
+- Mode `buddy init --update` deferred
+- `/swarm` shared task board between subagents deferred (TodoWrite is
+  main-agent only)
 
 ---
 
