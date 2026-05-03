@@ -423,6 +423,45 @@ messageHandlers.set('status', async (ws, state, _payload) => {
 });
 
 /**
+ * Phase (d).13 — peer:request RPC handler. Routes to the peer-rpc
+ * registry. Caller must hold the `peer:invoke` scope (analogous to
+ * `fleet:listen` for read-only fleet event consumption).
+ */
+messageHandlers.set('peer:request', async (ws, state, payload) => {
+  if (!state.authenticated) {
+    sendError(ws, 'UNAUTHORIZED', 'Authentication required');
+    return;
+  }
+  if (!state.scopes.includes('peer:invoke')) {
+    sendError(ws, 'FORBIDDEN', 'peer:invoke scope required');
+    return;
+  }
+  const { dispatchPeerRequest } = await import('./peer-rpc.js');
+  // payload is the request frame { id, method, params }
+  const frame = (payload ?? {}) as {
+    id?: string;
+    method?: string;
+    params?: Record<string, unknown>;
+  };
+  const response = await dispatchPeerRequest(
+    {
+      id: frame.id ?? '',
+      method: frame.method ?? '',
+      params: frame.params,
+    },
+    {
+      connectionId: state.id,
+      scopes: state.scopes,
+    },
+  );
+  send(ws, {
+    type: 'peer:response',
+    payload: response as unknown as Record<string, unknown>,
+    timestamp: new Date().toISOString(),
+  });
+});
+
+/**
  * Process incoming message
  */
 async function processMessage(ws: WebSocket, state: ConnectionState, data: RawData): Promise<void> {

@@ -40,6 +40,11 @@ const fleetListenerMock = vi.hoisted(() => {
   const getEventHistoryMock = vi.fn<
     () => readonly { at: number; type: string; payload: Record<string, unknown>; hostname?: string; agentId?: string }[]
   >(() => []);
+  // Phase (d).13 — peer RPC. Default: resolves to { ok: true } so /fleet send tests
+  // that don't override see a working request.
+  const requestMock = vi.fn<
+    (method: string, params?: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<unknown>
+  >(async () => ({ ok: true }));
 
   class FleetListenerStub {
     constructor(opts: { url: string; apiKey?: string; jwt?: string }) {
@@ -56,6 +61,7 @@ const fleetListenerMock = vi.hoisted(() => {
     isStale = isStaleMock;
     getPeerCompactionState = getPeerCompactionStateMock;
     getEventHistory = getEventHistoryMock;
+    request = requestMock;
   }
 
   return {
@@ -68,6 +74,7 @@ const fleetListenerMock = vi.hoisted(() => {
     isStaleMock,
     getPeerCompactionStateMock,
     getEventHistoryMock,
+    requestMock,
   };
 });
 
@@ -97,6 +104,7 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       lastResult: null,
     });
     fleetListenerMock.getEventHistoryMock.mockReset().mockReturnValue([]);
+    fleetListenerMock.requestMock.mockReset().mockResolvedValue({ ok: true });
     _resetFleetHandlerForTests();
     delete process.env.CODEBUDDY_FLEET_API_KEY;
   });
@@ -456,6 +464,90 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       expect(fleetListenerMock.disconnectMock).toHaveBeenCalledTimes(2);
       const status = await handleFleet(['status']);
       expect(status.entry?.content).toContain('No fleet listeners active');
+    });
+  });
+
+  // ==========================================================================
+  // Phase (d).13 — /fleet send peer.invoke routing
+  // ==========================================================================
+  describe('send action (Phase (d).13)', () => {
+    it('reports no listeners when none active', async () => {
+      const r = await handleFleet(['send', 'peer:3000', 'peer.ping']);
+      expect(r.entry?.content).toContain('No fleet listeners active');
+    });
+
+    it('rejects when peer + method are missing', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const r = await handleFleet(['send']);
+      expect(r.entry?.content).toContain('Usage:');
+    });
+
+    it('rejects when peer name is unknown', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k', '--name', 'a']);
+      const r = await handleFleet(['send', 'nonexistent', 'peer.ping']);
+      expect(r.entry?.content).toContain('No fleet peer named "nonexistent"');
+      expect(r.entry?.content).toContain('Active peers: a');
+    });
+
+    it('successful invoke renders OK + duration + JSON payload', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.requestMock.mockResolvedValueOnce({
+        pong: true,
+        serverTime: 1234567890,
+      });
+      const r = await handleFleet(['send', 'peer:3000', 'peer.ping']);
+      expect(r.entry?.content).toContain('Peer "peer:3000" → peer.ping OK');
+      expect(r.entry?.content).toContain('"pong": true');
+      expect(r.entry?.content).toContain('"serverTime": 1234567890');
+    });
+
+    it('passes the JSON params blob to listener.request', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      await handleFleet([
+        'send',
+        'peer:3000',
+        'peer.echo',
+        '{"hello":"world","n":42}',
+      ]);
+      expect(fleetListenerMock.requestMock).toHaveBeenCalledWith(
+        'peer.echo',
+        { hello: 'world', n: 42 },
+        { timeoutMs: 30_000 },
+      );
+    });
+
+    it('rejects malformed JSON params', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const r = await handleFleet(['send', 'peer:3000', 'peer.echo', '{bad json']);
+      expect(r.entry?.content).toContain('invalid JSON params');
+      expect(fleetListenerMock.requestMock).not.toHaveBeenCalled();
+    });
+
+    it('rejects JSON params that are not an object (array, string, number)', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const r = await handleFleet(['send', 'peer:3000', 'peer.echo', '[1,2,3]']);
+      expect(r.entry?.content).toContain('params must be a JSON object');
+    });
+
+    it('honors --timeout override', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      await handleFleet([
+        'send', 'peer:3000', 'peer.ping', '--timeout', '500',
+      ]);
+      expect(fleetListenerMock.requestMock).toHaveBeenCalledWith(
+        'peer.ping',
+        {},
+        { timeoutMs: 500 },
+      );
+    });
+
+    it('renders FAILED message on request rejection (preserves the code)', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const err = new Error('peer.invoke METHOD_ERROR: handler exploded');
+      fleetListenerMock.requestMock.mockRejectedValueOnce(err);
+      const r = await handleFleet(['send', 'peer:3000', 'peer.boom']);
+      expect(r.entry?.content).toContain('Peer "peer:3000" → peer.boom FAILED');
+      expect(r.entry?.content).toContain('METHOD_ERROR');
     });
   });
 });

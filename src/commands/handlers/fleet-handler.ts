@@ -59,9 +59,17 @@ Actions:
   status                              Show all connected peers + their state.
   history [N] [--peer <name>]         Show last N fleet:* events from one
                                       peer (default 20, caps at ring size).
+  send <peer> <method> [json-params]  (Phase (d).13) Invoke a peer RPC
+            [--timeout <ms>]          method synchronously and print the
+                                      response. Method names are dotted,
+                                      e.g. "peer.describe" / "peer.ping" /
+                                      "peer.echo". The peer's apiKey must
+                                      have peer:invoke scope. Default
+                                      timeout is 30000ms.
 
-Phase (d).5 → (d).12 V0.4.1 — multi-peer fan-in, opt-in auto-reconnect,
-presence beacon, compaction notices, in-memory event history.`;
+Phase (d).5 → (d).13 V0.4.1 — multi-peer fan-in, opt-in auto-reconnect,
+presence beacon, compaction notices, in-memory event history, active peer
+RPC routing.`;
 
 interface ActiveListener {
   /** Phase (d).12 — stable peer id (the Map key). Used by /fleet stop & history. */
@@ -83,6 +91,12 @@ interface ActiveListener {
     disconnect: () => Promise<void>;
     getReconnectAttempts: () => number;
     isReconnecting: () => boolean;
+    /** Phase (d).13 — peer RPC invoker. Returns method payload or rejects with code-bearing Error. */
+    request: (
+      method: string,
+      params?: Record<string, unknown>,
+      options?: { timeoutMs?: number },
+    ) => Promise<unknown>;
     getLastSeen: () => { at: number | null; reason: string | null; ageMs: number | null };
     isStale: (thresholdMs?: number) => boolean;
     getPeerCompactionState: () => {
@@ -548,6 +562,73 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
       );
     }
     return textResult(lines.join('\n'));
+  }
+
+  if (action === 'send') {
+    if (activeListeners.size === 0) {
+      return textResult('No fleet listeners active. Connect with /fleet listen first.');
+    }
+    // Parse: send <peer> <method> [json-params] [--timeout <ms>]
+    let peerName: string | null = null;
+    let method: string | null = null;
+    let jsonParams: string | null = null;
+    let timeoutMs = 30_000;
+    for (let i = 0; i < rest.length; i++) {
+      const arg = rest[i];
+      if (arg === '--timeout' && i + 1 < rest.length) {
+        const n = parseInt(rest[i + 1], 10);
+        if (Number.isFinite(n) && n > 0) timeoutMs = n;
+        i++;
+      } else if (!peerName) {
+        peerName = arg;
+      } else if (!method) {
+        method = arg;
+      } else if (!jsonParams) {
+        // Take everything from here until --timeout as the params blob,
+        // re-joining with spaces. Lets users paste un-quoted JSON.
+        const remaining = rest.slice(i);
+        const tIdx = remaining.indexOf('--timeout');
+        const blobEnd = tIdx === -1 ? remaining.length : tIdx;
+        jsonParams = remaining.slice(0, blobEnd).join(' ');
+        i += blobEnd - 1;
+      }
+    }
+    if (!peerName || !method) {
+      return textResult(
+        'Usage: /fleet send <peer> <method> [json-params] [--timeout <ms>]\n\n' + HELP,
+      );
+    }
+    const target = activeListeners.get(peerName);
+    if (!target) {
+      return textResult(
+        `No fleet peer named "${peerName}". Active peers: ${[...activeListeners.keys()].join(', ')}`,
+      );
+    }
+    let params: Record<string, unknown> = {};
+    if (jsonParams) {
+      try {
+        const parsed = JSON.parse(jsonParams);
+        if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
+          return textResult('Error: params must be a JSON object (e.g. {"key":"value"}).');
+        }
+        params = parsed as Record<string, unknown>;
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return textResult(`Error: invalid JSON params: ${msg}`);
+      }
+    }
+    try {
+      const t0 = Date.now();
+      const result = await target.listener.request(method, params, { timeoutMs });
+      const elapsed = Date.now() - t0;
+      const formatted = JSON.stringify(result, null, 2);
+      return textResult(
+        `Peer "${peerName}" → ${method} OK (${elapsed}ms):\n${formatted}`,
+      );
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      return textResult(`Peer "${peerName}" → ${method} FAILED:\n  ${message}`);
+    }
   }
 
   return textResult(`Unknown fleet action: ${args[0]}\n\n${HELP}`);

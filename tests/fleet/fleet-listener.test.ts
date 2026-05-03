@@ -852,4 +852,152 @@ describe('FleetListener — Phase (d).5 V0.4.1', () => {
       await l.disconnect();
     });
   });
+
+  // ==========================================================================
+  // Phase (d).13 — peer RPC request() method
+  // ==========================================================================
+  describe('peer RPC request() (Phase (d).13)', () => {
+    async function authedListener() {
+      const l = new FleetListener({ url: 'ws://peer/ws', apiKey: 'k' });
+      const cp = l.connect();
+      await new Promise((r) => setImmediate(r));
+      const fake = wsMock.instances[0];
+      fake.open();
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'connected' });
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'authenticated', payload: {} });
+      await cp;
+      return { l, fake };
+    }
+
+    it('sends a peer:request frame with id+method+params and resolves on matching peer:response', async () => {
+      const { l, fake } = await authedListener();
+      const reqPromise = l.request('peer.echo', { hello: 'world' });
+      // The request was sent — find it in fake.sentMessages
+      const sent = fake.sentMessages.map((m) => JSON.parse(m));
+      const reqFrame = sent.find((m) => m.type === 'peer:request');
+      expect(reqFrame).toBeDefined();
+      expect(reqFrame.payload.method).toBe('peer.echo');
+      expect(reqFrame.payload.params).toEqual({ hello: 'world' });
+      expect(typeof reqFrame.payload.id).toBe('string');
+      expect(reqFrame.payload.id).toMatch(/^req-/);
+
+      // Server responds with the matching id
+      fake.receive({
+        type: 'peer:response',
+        payload: { id: reqFrame.payload.id, ok: true, payload: { echoed: { hello: 'world' } } },
+      });
+      const result = await reqPromise;
+      expect(result).toEqual({ echoed: { hello: 'world' } });
+      expect(l.getPendingRequestCount()).toBe(0);
+      await l.disconnect();
+    });
+
+    it('rejects with code=METHOD_ERROR when peer:response carries an error', async () => {
+      const { l, fake } = await authedListener();
+      const reqPromise = l.request('boom');
+      const reqFrame = JSON.parse(fake.sentMessages.find((m) => m.includes('peer:request'))!);
+      fake.receive({
+        type: 'peer:response',
+        payload: {
+          id: reqFrame.payload.id,
+          ok: false,
+          error: { code: 'METHOD_ERROR', message: 'handler exploded' },
+        },
+      });
+      await expect(reqPromise).rejects.toMatchObject({
+        message: expect.stringContaining('METHOD_ERROR'),
+      });
+      await l.disconnect();
+    });
+
+    it('rejects with code=REQUEST_TIMEOUT when no response arrives within timeoutMs', async () => {
+      vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+      try {
+        const { l } = await authedListener();
+        // Pre-attach a catch so the timeout-driven rejection has a handler
+        // even if the test runner takes a tick to wire `expect().rejects`.
+        const reqPromise = l.request('peer.echo', {}, { timeoutMs: 100 }).then(
+          () => ({ ok: true as const }),
+          (e: Error) => ({ ok: false as const, message: e.message }),
+        );
+        await vi.advanceTimersByTimeAsync(150);
+        const result = await reqPromise;
+        expect(result).toMatchObject({
+          ok: false,
+          message: expect.stringContaining('REQUEST_TIMEOUT'),
+        });
+        expect(l.getPendingRequestCount()).toBe(0);
+        await l.disconnect();
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('throws NOT_AUTHENTICATED when called before auth completes', async () => {
+      const l = new FleetListener({ url: 'ws://peer/ws', apiKey: 'k' });
+      // Don't await connect — just construct
+      await expect(l.request('peer.ping')).rejects.toMatchObject({
+        message: expect.stringContaining('NOT_AUTHENTICATED'),
+      });
+    });
+
+    it('disconnect() rejects all in-flight requests with code=DISCONNECTED', async () => {
+      const { l } = await authedListener();
+      // Attach catch handlers immediately so the rejections that fire
+      // inside disconnect() don't bubble up as unhandledRejection.
+      const r1 = l.request('peer.ping').then(
+        () => ({ ok: true }),
+        (e: Error) => ({ ok: false, message: e.message }),
+      );
+      const r2 = l.request('peer.echo', { x: 1 }).then(
+        () => ({ ok: true }),
+        (e: Error) => ({ ok: false, message: e.message }),
+      );
+      expect(l.getPendingRequestCount()).toBe(2);
+
+      await l.disconnect();
+
+      const e1 = await r1;
+      const e2 = await r2;
+      expect(e1).toMatchObject({ ok: false, message: expect.stringContaining('DISCONNECTED') });
+      expect(e2).toMatchObject({ ok: false, message: expect.stringContaining('DISCONNECTED') });
+      expect(l.getPendingRequestCount()).toBe(0);
+    });
+
+    it('two concurrent requests get matching responses by id (no swap)', async () => {
+      const { l, fake } = await authedListener();
+      const p1 = l.request('peer.echo', { which: 'first' });
+      const p2 = l.request('peer.echo', { which: 'second' });
+      const sent = fake.sentMessages.map((m) => JSON.parse(m));
+      const reqs = sent.filter((m) => m.type === 'peer:request');
+      expect(reqs).toHaveLength(2);
+      // Respond out of order: second first
+      fake.receive({
+        type: 'peer:response',
+        payload: { id: reqs[1].payload.id, ok: true, payload: { which: 'second' } },
+      });
+      fake.receive({
+        type: 'peer:response',
+        payload: { id: reqs[0].payload.id, ok: true, payload: { which: 'first' } },
+      });
+      expect(await p1).toEqual({ which: 'first' });
+      expect(await p2).toEqual({ which: 'second' });
+      await l.disconnect();
+    });
+
+    it('peer:response with unknown id is silently ignored (no crash)', async () => {
+      const { l, fake } = await authedListener();
+      // No pending requests — response with id should just be dropped
+      expect(() => {
+        fake.receive({
+          type: 'peer:response',
+          payload: { id: 'never-sent', ok: true, payload: 'ghost' },
+        });
+      }).not.toThrow();
+      expect(l.getPendingRequestCount()).toBe(0);
+      await l.disconnect();
+    });
+  });
 });

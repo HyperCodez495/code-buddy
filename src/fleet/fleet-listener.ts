@@ -150,6 +150,20 @@ export class FleetListener extends EventEmitter {
   // capacity=0 disables history capture entirely.
   private readonly historyCapacity: number;
   private eventHistory: FleetEventRecord[] = [];
+  // Phase (d).13 — pending peer:request map for ID-correlation between
+  // sent peer:request frames and the matching peer:response. Mirror of
+  // OpenClaw GatewayChannel.pending. Each entry carries resolve/reject
+  // and a timer handle so disconnect() can flush + reject all in-flight
+  // requests cleanly.
+  private pendingRequests = new Map<
+    string,
+    {
+      resolve: (value: unknown) => void;
+      reject: (reason: Error) => void;
+      timer: NodeJS.Timeout;
+    }
+  >();
+  private requestSeq = 0;
   private readonly options: FleetListenerOptions;
   private readonly reconnector: ReconnectionManager | null;
 
@@ -387,6 +401,35 @@ export class FleetListener extends EventEmitter {
       }
       return;
     }
+    // Phase (d).13 — peer RPC response. Match by frame.id against the
+    // pending map and resolve/reject the awaiting request().
+    if (msg.type === 'peer:response') {
+      const frame = (msg.payload ?? {}) as {
+        id?: string;
+        ok?: boolean;
+        payload?: unknown;
+        error?: { code?: string; message?: string };
+      };
+      if (typeof frame.id === 'string') {
+        const pending = this.pendingRequests.get(frame.id);
+        if (pending) {
+          clearTimeout(pending.timer);
+          this.pendingRequests.delete(frame.id);
+          if (frame.ok) {
+            pending.resolve(frame.payload);
+          } else {
+            const code = frame.error?.code ?? 'UNKNOWN_ERROR';
+            const message = frame.error?.message ?? 'peer returned an error';
+            const err = new Error(`peer.invoke ${code}: ${message}`);
+            (err as Error & { code?: string }).code = code;
+            pending.reject(err);
+          }
+        }
+      }
+      // Don't re-emit on the user-facing event channels — peer:response
+      // is a low-level RPC mechanism, callers use request() to await.
+      return;
+    }
     // Fleet event re-emit. We forward type + payload as-is so consumers
     // can pattern-match on 'fleet:agent:tool_started' etc.
     if (msg.type.startsWith('fleet:')) {
@@ -482,6 +525,10 @@ export class FleetListener extends EventEmitter {
     // skips scheduling a reconnect.
     this.userDisconnected = true;
     this.reconnector?.cancel();
+    // Phase (d).13 — flush pending peer.invoke requests so awaiting
+    // callers reject promptly rather than waiting for the per-call
+    // timeout.
+    this.rejectPendingRequests('disconnect() called');
     if (!this.ws) return;
     return new Promise<void>((resolve) => {
       const ws = this.ws;
@@ -588,6 +635,81 @@ export class FleetListener extends EventEmitter {
   /** Phase (d).11 — current ring capacity (informational). */
   getHistoryCapacity(): number {
     return this.historyCapacity;
+  }
+
+  /**
+   * Phase (d).13 — invoke a method on the connected peer via the
+   * peer-rpc registry. Returns the method's payload on success or
+   * rejects with an Error carrying `code` (UNKNOWN_METHOD,
+   * METHOD_ERROR, INVALID_REQUEST, REQUEST_TIMEOUT, NOT_AUTHENTICATED,
+   * NOT_OPEN, DISCONNECTED).
+   *
+   * The default timeout is 30s, mirror of OpenClaw's invoke default.
+   * Override per-call via the `timeoutMs` option. The timeout fires
+   * locally — a server still chewing on the request will eventually
+   * send peer:response but its result will be discarded since the
+   * pending entry is gone.
+   */
+  async request(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { timeoutMs?: number } = {},
+  ): Promise<unknown> {
+    if (!this.authenticated) {
+      const err = new Error('peer.invoke NOT_AUTHENTICATED: listener is not authenticated');
+      (err as Error & { code?: string }).code = 'NOT_AUTHENTICATED';
+      throw err;
+    }
+    if (!this.ws || this.ws.readyState !== 1) {
+      const err = new Error('peer.invoke NOT_OPEN: ws is not in OPEN state');
+      (err as Error & { code?: string }).code = 'NOT_OPEN';
+      throw err;
+    }
+    const id = this.nextRequestId();
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    return new Promise<unknown>((resolve, reject) => {
+      const timer = setTimeout(() => {
+        this.pendingRequests.delete(id);
+        const err = new Error(`peer.invoke REQUEST_TIMEOUT: ${method} did not respond within ${timeoutMs}ms`);
+        (err as Error & { code?: string }).code = 'REQUEST_TIMEOUT';
+        reject(err);
+      }, timeoutMs);
+      // unref so a hung request can't keep the process alive past exit
+      timer.unref?.();
+      this.pendingRequests.set(id, { resolve, reject, timer });
+      this.send('peer:request', { id, method, params });
+    });
+  }
+
+  /**
+   * Phase (d).13 — generate a unique request id. Combines a per-listener
+   * monotonic counter with the current timestamp to keep ids unique
+   * even across listener restarts within the same ms.
+   */
+  private nextRequestId(): string {
+    this.requestSeq = (this.requestSeq + 1) >>> 0;
+    return `req-${Date.now().toString(36)}-${this.requestSeq.toString(36)}`;
+  }
+
+  /**
+   * Phase (d).13 — flush any in-flight requests with a DISCONNECTED
+   * error so awaiting callers don't hang. Called from disconnect() and
+   * on terminal close paths.
+   */
+  private rejectPendingRequests(reason: string): void {
+    if (this.pendingRequests.size === 0) return;
+    for (const [, pending] of this.pendingRequests) {
+      clearTimeout(pending.timer);
+      const err = new Error(`peer.invoke DISCONNECTED: ${reason}`);
+      (err as Error & { code?: string }).code = 'DISCONNECTED';
+      pending.reject(err);
+    }
+    this.pendingRequests.clear();
+  }
+
+  /** Phase (d).13 — count of in-flight peer.invoke requests (debug aid). */
+  getPendingRequestCount(): number {
+    return this.pendingRequests.size;
   }
 
   getPeerCompactionState(): {

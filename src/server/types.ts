@@ -145,7 +145,12 @@ export type ApiScope =
   /** Phase (d).1 V0.4.1 — fleet event listener (subscribes to live agent
    *  events broadcast by this Code Buddy instance). Inter-Claude streaming
    *  for the Tailscale fleet. Read-only. */
-  | 'fleet:listen';
+  | 'fleet:listen'
+  /** Phase (d).13 V0.4.1 — peer RPC invoker (sends `peer:request` frames
+   *  routed through the peer-rpc registry). Active routing — caller can
+   *  trigger work on the receiver. Pair this scope with fleet:listen if
+   *  the caller also wants to observe events. */
+  | 'peer:invoke';
 
 export interface JwtPayload {
   /** Subject (user ID or key ID) */
