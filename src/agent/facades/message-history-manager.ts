@@ -12,6 +12,7 @@
 import type { ChatEntry } from '../types.js';
 import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import { logger } from '../../utils/logger.js';
+import { repairToolCallPairs } from '../../context/transcript-repair.js';
 
 /**
  * Configuration for history size limits
@@ -133,6 +134,55 @@ export class MessageHistoryManager {
    */
   getMessagesRef(): CodeBuddyMessage[] {
     return this.messages;
+  }
+
+  /**
+   * Return the COMPLETE LLM message history exactly as stored — no
+   * curation, no repair, no compression. Use this for debug, audit,
+   * or when you need to inspect the raw turn-by-turn record.
+   *
+   * Equivalent to `getMessages()` (returns a defensive copy of the
+   * array), but named explicitly to mark intent vs `getCuratedHistory()`.
+   *
+   * Pattern aligned with Gemini CLI's comprehensive vs curated history
+   * distinction (see audit doc
+   * `claude-et-patrice/propositions/AUDIT-GEMINI-CLI-AGENTIC-LOOP-2026-05-04.md`,
+   * recommendation #3).
+   */
+  getComprehensiveHistory(): CodeBuddyMessage[] {
+    return [...this.messages];
+  }
+
+  /**
+   * Return the LLM message history with transcript repair applied:
+   * - Orphaned tool_result entries (no matching tool_call) are removed
+   * - Lost tool_call entries (no result) get a synthetic
+   *   `[result lost during compaction]` message injected
+   *
+   * Use this when you want to send the history to the LLM or to a
+   * downstream system that expects valid tool_call ↔ tool_result
+   * pairing — `getComprehensiveHistory()` would surface invalid pairs
+   * that crash strict validators (Anthropic, Gemini native).
+   *
+   * Note: this method does NOT apply compression / sliding-window /
+   * summarization. Compression is the responsibility of
+   * `ContextManagerV2.prepareMessages()` because it requires
+   * model-specific context-window knowledge that the facade doesn't
+   * own. Compose them at the call site when you need both:
+   *
+   *   const compressed = contextManager.prepareMessages(
+   *     historyManager.getCuratedHistory()
+   *   );
+   *
+   * Or use `prepareTurnMessages()` in `context-pipeline.ts` which
+   * already does the composition (compression then repair) for the
+   * primary turn loop.
+   *
+   * Internal state is not mutated — `getComprehensiveHistory()` after
+   * `getCuratedHistory()` returns the same content as before.
+   */
+  getCuratedHistory(): CodeBuddyMessage[] {
+    return repairToolCallPairs(this.messages);
   }
 
   /**
