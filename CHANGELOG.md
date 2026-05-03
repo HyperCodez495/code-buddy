@@ -15,6 +15,19 @@ Heading toward `1.0.0` final. Backlog tracked under `## [Unreleased]`'s
 [`docs/fleet-guide.md`](docs/fleet-guide.md) (V1.x roadmap section)
 and the audit follow-ups noted under `## [0.5.1-fleet]`.
 
+### Audit notes (post-rc.3, doc-only)
+- **Claude Code subagent + plan mode audit**
+  (`claude-et-patrice/propositions/AUDIT-CLAUDE-CODE-SUBAGENT-2026-05-04.md`,
+  268 lines) — 3rd iteration of the audit-doc pattern, this time with
+  direct access to the Claude Code source (`D:\CascadeProjects\claude-code-source-code-main`).
+  Audited 4 zones: plan mode workflow phasé (⚠️ partial), structured user
+  questions (✅ complete parity), subagent specialization (⚠️ partial — the
+  central gap), background scheduling (⚠️ partial). Identifies 3-phase
+  adaptation roadmap (Interface → ExploreAgent → enforcement layer) for
+  V1.x — implementation deferred, doc serves as fleet reference for
+  asynchronous iteration. Pattern already shipped 4 commits via prior
+  audits (compaction reco + Gemini CLI recos #1, #2, #3).
+
 ---
 
 ## [1.0.0-rc.3] — 2026-05-04
