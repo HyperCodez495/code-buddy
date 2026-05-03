@@ -75,6 +75,12 @@ export interface FleetListenerOptions {
   autoReconnect?: boolean;
   /** Override defaults for the reconnect backoff (only used when autoReconnect=true). */
   reconnect?: Partial<ReconnectionConfig>;
+  /**
+   * Phase (d).11 — capacity of the in-memory event history ring. Default
+   * 50. Each record is ~500 bytes so 50 ≈ 25 KB per listener — safe for
+   * any sane workload. Set to 0 to disable history capture entirely.
+   */
+  historyCapacity?: number;
 }
 
 interface IncomingMessage {
@@ -97,6 +103,22 @@ export interface PeerCompactionResult {
   strategy?: string;
   durationMs?: number;
   completedAt: number;
+}
+
+/**
+ * Phase (d).11 — record kept in the in-memory event history ring. `at` is
+ * the local epoch ms when the event was received (not the peer's clock —
+ * avoids cross-host clock drift in the displayed timeline). `hostname`
+ * and `agentId` are extracted from `payload.source` for convenience so
+ * /fleet history doesn't have to dig into the payload to render the
+ * source column.
+ */
+export interface FleetEventRecord {
+  at: number;
+  type: string;
+  payload: Record<string, unknown>;
+  hostname?: string;
+  agentId?: string;
 }
 
 export class FleetListener extends EventEmitter {
@@ -123,6 +145,11 @@ export class FleetListener extends EventEmitter {
   private peerCompacting = false;
   private compactingStartedAt: number | null = null;
   private lastCompactionResult: PeerCompactionResult | null = null;
+  // Phase (d).11 — in-memory event history ring. Capacity from options
+  // (default 50). Push at end, evict from head when length > capacity.
+  // capacity=0 disables history capture entirely.
+  private readonly historyCapacity: number;
+  private eventHistory: FleetEventRecord[] = [];
   private readonly options: FleetListenerOptions;
   private readonly reconnector: ReconnectionManager | null;
 
@@ -132,6 +159,14 @@ export class FleetListener extends EventEmitter {
       throw new Error('FleetListener requires apiKey or jwt');
     }
     this.options = options;
+    // Phase (d).11 — clamp historyCapacity. Negative or NaN falls back
+    // to default; 0 is honored as "history disabled".
+    this.historyCapacity =
+      typeof options.historyCapacity === 'number' &&
+      Number.isFinite(options.historyCapacity) &&
+      options.historyCapacity >= 0
+        ? Math.floor(options.historyCapacity)
+        : 50;
     // Default 'error' listener — EventEmitter throws synchronously when
     // 'error' is emitted with no listener registered, which would crash
     // the calling agent on a transient WS hiccup. Callers can still
@@ -361,6 +396,25 @@ export class FleetListener extends EventEmitter {
       // confident the peer is alive.
       this.lastSeenAt = Date.now();
       this.lastSeenReason = msg.type === 'fleet:peer:heartbeat' ? 'heartbeat' : msg.type;
+      // Phase (d).11 — capture in the in-memory ring before emit. Pushed
+      // ahead of consumers so getEventHistory() called from inside an
+      // event handler already sees the new record. capacity=0 = noop.
+      if (this.historyCapacity > 0) {
+        const payload = msg.payload ?? {};
+        const source = payload.source as { hostname?: string; agentId?: string } | undefined;
+        this.eventHistory.push({
+          at: this.lastSeenAt,
+          type: msg.type,
+          payload,
+          hostname: source?.hostname,
+          agentId: source?.agentId,
+        });
+        // Evict from head until we're back at capacity. Single-shift loop
+        // is fine — we push one at a time so length is at most capacity+1.
+        while (this.eventHistory.length > this.historyCapacity) {
+          this.eventHistory.shift();
+        }
+      }
       // Phase (d).10 — track peer compaction lifecycle so /fleet status
       // and downstream consumers can defer task dispatch.
       if (msg.type === 'fleet:peer:compacting:start') {
@@ -512,6 +566,30 @@ export class FleetListener extends EventEmitter {
    * null. `lastResult` is the most recent `:complete` payload (or null
    * if the peer hasn't completed a compaction yet).
    */
+  /**
+   * Phase (d).11 — defensive copy of the in-memory event history ring.
+   * Returns the most recent N events in chronological order (oldest at
+   * index 0, newest last). Returns an empty array when no events have
+   * been received OR when historyCapacity was set to 0.
+   *
+   * The returned array is a shallow copy: mutations don't affect the
+   * internal ring. Each FleetEventRecord still references the original
+   * payload object — callers shouldn't mutate that either.
+   */
+  getEventHistory(): readonly FleetEventRecord[] {
+    return [...this.eventHistory];
+  }
+
+  /** Phase (d).11 — drop all stored events. Useful for tests + power users. */
+  clearEventHistory(): void {
+    this.eventHistory = [];
+  }
+
+  /** Phase (d).11 — current ring capacity (informational). */
+  getHistoryCapacity(): number {
+    return this.historyCapacity;
+  }
+
   getPeerCompactionState(): {
     active: boolean;
     startedAt: number | null;

@@ -47,9 +47,14 @@ Actions:
   stop                                Disconnect the active listener
                                       (cancels any pending reconnect).
   status                              Show whether a listener is active.
+  history [N]                         Show the last N fleet:* events
+                                      from the in-memory ring (default
+                                      20, capped at the listener's
+                                      ring capacity, default 50).
 
-Phase (d).5 + (d).6 V0.4.1 — single listener at a time, opt-in
-auto-reconnect with exponential backoff.`;
+Phase (d).5 → (d).11 V0.4.1 — single listener at a time, opt-in
+auto-reconnect with exponential backoff, presence beacon, compaction
+notices, in-memory event history.`;
 
 interface ActiveListener {
   url: string;
@@ -80,8 +85,19 @@ interface ActiveListener {
         completedAt: number;
       } | null;
     };
+    // Phase (d).11 — in-memory event history surfaced through /fleet history.
+    getEventHistory: () => readonly {
+      at: number;
+      type: string;
+      payload: Record<string, unknown>;
+      hostname?: string;
+      agentId?: string;
+    }[];
   };
 }
+
+/** Phase (d).11 — default count rendered by `/fleet history` when no N supplied. */
+const HISTORY_DEFAULT_COUNT = 20;
 
 /** Stale threshold for /fleet status `⚠ stale` flag (Phase (d).9). */
 const STALE_THRESHOLD_MS = 90_000;
@@ -100,6 +116,69 @@ interface ParsedListenArgs {
   apiKey: string | null;
   autoReconnect: boolean;
   maxAttempts: number | null;
+}
+
+/**
+ * Phase (d).11 — format the time portion of a history line as HH:mm:ss.
+ * Uses local timezone (matches the user's terminal display).
+ */
+function formatHistoryTime(at: number): string {
+  const d = new Date(at);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+/**
+ * Phase (d).11 — render a one-line summary of a fleet event payload,
+ * keyed off the event type. Goal: make /fleet history scannable at a
+ * glance without forcing the reader to dig into the JSON.
+ */
+function summarizeHistoryPayload(
+  type: string,
+  payload: Record<string, unknown>,
+): string {
+  if (type === 'fleet:peer:heartbeat') return '(heartbeat)';
+  if (type === 'fleet:peer:compacting:start') return '(compacting started)';
+  if (type === 'fleet:peer:compacting:complete') {
+    const strategy = typeof payload.strategy === 'string' ? payload.strategy : 'unknown';
+    const dur = typeof payload.durationMs === 'number' ? `${payload.durationMs}ms` : 'n/a';
+    return `(compacted: ${strategy} ${dur})`;
+  }
+  if (type.startsWith('fleet:agent:tool')) {
+    const tool = typeof payload.toolName === 'string'
+      ? payload.toolName
+      : typeof payload.tool === 'string'
+        ? payload.tool
+        : 'unknown';
+    return `tool=${tool}`;
+  }
+  if (type.startsWith('fleet:workflow:')) {
+    const wid = typeof payload.workflowId === 'string' ? payload.workflowId : 'unknown';
+    return `workflowId=${wid}`;
+  }
+  if (type.startsWith('fleet:session:')) {
+    const child =
+      typeof payload.childSessionId === 'string' ? payload.childSessionId :
+      typeof payload.sessionId === 'string' ? payload.sessionId :
+      'unknown';
+    return `child=${child}`;
+  }
+  // Fallback: stringify and clip. Excludes the `source` key (already
+  // rendered in the source column).
+  const filtered: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(payload)) {
+    if (k !== 'source') filtered[k] = v;
+  }
+  const json = JSON.stringify(filtered);
+  return json.length > 60 ? json.slice(0, 57) + '...' : json;
+}
+
+/** Phase (d).11 — render the source column "[hostname:agentShort]" or "" when unknown. */
+function formatHistorySource(record: { hostname?: string; agentId?: string }): string {
+  if (!record.hostname && !record.agentId) return '';
+  const host = record.hostname ?? '?';
+  const agent = record.agentId ? `:${record.agentId.slice(0, 8)}` : '';
+  return ` [${host}${agent}]`;
 }
 
 function parseArgs(rest: string[]): ParsedListenArgs {
@@ -305,6 +384,33 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
       const msg = err instanceof Error ? err.message : String(err);
       return textResult(`Fleet listener connect failed: ${msg}`);
     }
+  }
+
+  if (action === 'history') {
+    if (!activeListener) {
+      return textResult('No fleet listener active.\n\n' + HELP);
+    }
+    // Parse optional N. Anything non-positive falls back to default.
+    const requestedN = parseInt(rest[0] ?? '', 10);
+    const n =
+      Number.isFinite(requestedN) && requestedN > 0
+        ? Math.floor(requestedN)
+        : HISTORY_DEFAULT_COUNT;
+
+    const history = activeListener.listener.getEventHistory();
+    if (history.length === 0) {
+      return textResult('No fleet events recorded yet.');
+    }
+    // Slice from the tail (most recent N). Already chronological in the ring.
+    const slice = history.slice(Math.max(0, history.length - n));
+    const lines: string[] = [];
+    lines.push(`Fleet event history — last ${slice.length} of ${history.length} (capacity ${history.length}+)`);
+    for (const rec of slice) {
+      lines.push(
+        `  [${formatHistoryTime(rec.at)}] ${rec.type}${formatHistorySource(rec)} ${summarizeHistoryPayload(rec.type, rec.payload)}`,
+      );
+    }
+    return textResult(lines.join('\n'));
   }
 
   return textResult(`Unknown fleet action: ${args[0]}\n\n${HELP}`);

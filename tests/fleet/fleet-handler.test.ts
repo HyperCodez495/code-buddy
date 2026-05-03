@@ -36,6 +36,10 @@ const fleetListenerMock = vi.hoisted(() => {
       completedAt: number;
     },
   }));
+  // Phase (d).11 — event history. Default: empty.
+  const getEventHistoryMock = vi.fn<
+    () => readonly { at: number; type: string; payload: Record<string, unknown>; hostname?: string; agentId?: string }[]
+  >(() => []);
 
   class FleetListenerStub {
     constructor(opts: { url: string; apiKey?: string; jwt?: string }) {
@@ -51,6 +55,7 @@ const fleetListenerMock = vi.hoisted(() => {
     getLastSeen = getLastSeenMock;
     isStale = isStaleMock;
     getPeerCompactionState = getPeerCompactionStateMock;
+    getEventHistory = getEventHistoryMock;
   }
 
   return {
@@ -62,6 +67,7 @@ const fleetListenerMock = vi.hoisted(() => {
     getLastSeenMock,
     isStaleMock,
     getPeerCompactionStateMock,
+    getEventHistoryMock,
   };
 });
 
@@ -90,6 +96,7 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       ageMs: null,
       lastResult: null,
     });
+    fleetListenerMock.getEventHistoryMock.mockReset().mockReturnValue([]);
     _resetFleetHandlerForTests();
     delete process.env.CODEBUDDY_FLEET_API_KEY;
   });
@@ -273,6 +280,93 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       const r = await handleFleet(['status']);
       expect(r.entry?.content).not.toContain('Peer compacting');
       expect(r.entry?.content).not.toContain('Last compaction');
+    });
+  });
+
+  // ==========================================================================
+  // Phase (d).11 — /fleet history slash action
+  // ==========================================================================
+  describe('history action (Phase (d).11)', () => {
+    it('reports no listener when none active', async () => {
+      const r = await handleFleet(['history']);
+      expect(r.entry?.content).toContain('No fleet listener active');
+    });
+
+    it('reports empty buffer when no events recorded', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const r = await handleFleet(['history']);
+      expect(r.entry?.content).toContain('No fleet events recorded yet.');
+    });
+
+    it('renders all events with HH:mm:ss + type when buffer has 3 entries', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      // Use a fixed reference epoch so the HH:mm:ss assertion is stable.
+      const t0 = new Date('2026-05-03T10:15:30').getTime();
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        {
+          at: t0,
+          type: 'fleet:agent:tool_started',
+          payload: { tool: 'view_file', source: { hostname: 'darkstar', agentId: 'abcdef0123' } },
+          hostname: 'darkstar',
+          agentId: 'abcdef0123',
+        },
+        {
+          at: t0 + 2000,
+          type: 'fleet:peer:heartbeat',
+          payload: { source: { hostname: 'darkstar' } },
+          hostname: 'darkstar',
+        },
+        {
+          at: t0 + 4000,
+          type: 'fleet:workflow:start',
+          payload: { workflowId: 'wf-x', source: { hostname: 'ministar' } },
+          hostname: 'ministar',
+        },
+      ]);
+      const r = await handleFleet(['history']);
+      const out = r.entry?.content ?? '';
+      expect(out).toContain('Fleet event history — last 3 of 3');
+      expect(out).toContain('fleet:agent:tool_started');
+      expect(out).toContain('tool=view_file');
+      expect(out).toContain('[darkstar:abcdef01]');
+      expect(out).toContain('fleet:peer:heartbeat');
+      expect(out).toContain('(heartbeat)');
+      expect(out).toContain('fleet:workflow:start');
+      expect(out).toContain('workflowId=wf-x');
+      expect(out).toContain('[ministar]');
+      // Timestamps formatted HH:mm:ss
+      expect(out).toMatch(/\[\d{2}:\d{2}:\d{2}\]/);
+    });
+
+    it('respects /fleet history N to limit the rendered count', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const t0 = Date.now();
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        { at: t0, type: 'fleet:agent:tool_started', payload: { tool: 'a' } },
+        { at: t0 + 1, type: 'fleet:agent:tool_started', payload: { tool: 'b' } },
+        { at: t0 + 2, type: 'fleet:agent:tool_started', payload: { tool: 'c' } },
+        { at: t0 + 3, type: 'fleet:agent:tool_started', payload: { tool: 'd' } },
+      ]);
+      const r = await handleFleet(['history', '2']);
+      const out = r.entry?.content ?? '';
+      expect(out).toContain('last 2 of 4');
+      expect(out).toContain('tool=c');
+      expect(out).toContain('tool=d');
+      expect(out).not.toContain('tool=a');
+      expect(out).not.toContain('tool=b');
+    });
+
+    it('summarizes compacting:complete with strategy + duration', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        {
+          at: Date.now(),
+          type: 'fleet:peer:compacting:complete',
+          payload: { strategy: 'hybrid', durationMs: 1234, success: true },
+        },
+      ]);
+      const r = await handleFleet(['history']);
+      expect(r.entry?.content).toContain('(compacted: hybrid 1234ms)');
     });
   });
 

@@ -754,4 +754,102 @@ describe('FleetListener — Phase (d).5 V0.4.1', () => {
       await l.disconnect();
     });
   });
+
+  // ==========================================================================
+  // Phase (d).11 — in-memory event history ring
+  // ==========================================================================
+  describe('event history ring (Phase (d).11)', () => {
+    async function authenticatedListenerWithCapacity(capacity?: number) {
+      const l = new FleetListener({
+        url: 'ws://peer/ws',
+        apiKey: 'k',
+        ...(capacity !== undefined ? { historyCapacity: capacity } : {}),
+      });
+      const cp = l.connect();
+      await new Promise((r) => setImmediate(r));
+      const fake = wsMock.instances[0];
+      fake.open();
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'connected' });
+      await new Promise((r) => setImmediate(r));
+      fake.receive({ type: 'authenticated', payload: {} });
+      await cp;
+      return { l, fake };
+    }
+
+    it('returns empty history before any fleet:* event', async () => {
+      const { l } = await authenticatedListenerWithCapacity();
+      expect(l.getEventHistory()).toEqual([]);
+      expect(l.getHistoryCapacity()).toBe(50);
+      await l.disconnect();
+    });
+
+    it('captures events in chronological order with hostname extracted from source', async () => {
+      const { l, fake } = await authenticatedListenerWithCapacity();
+      fake.receive({
+        type: 'fleet:agent:tool_started',
+        payload: { tool: 'view_file', source: { hostname: 'darkstar', agentId: 'abc12345' } },
+      });
+      fake.receive({
+        type: 'fleet:workflow:start',
+        payload: { workflowId: 'wf-1', source: { hostname: 'ministar' } },
+      });
+
+      const hist = l.getEventHistory();
+      expect(hist).toHaveLength(2);
+      expect(hist[0].type).toBe('fleet:agent:tool_started');
+      expect(hist[0].hostname).toBe('darkstar');
+      expect(hist[0].agentId).toBe('abc12345');
+      expect(hist[0].at).toBeGreaterThan(0);
+      expect(hist[1].type).toBe('fleet:workflow:start');
+      expect(hist[1].hostname).toBe('ministar');
+      await l.disconnect();
+    });
+
+    it('evicts oldest entries when capacity is exceeded', async () => {
+      const { l, fake } = await authenticatedListenerWithCapacity(3);
+      for (let i = 0; i < 5; i++) {
+        fake.receive({
+          type: 'fleet:agent:tool_started',
+          payload: { tool: `tool-${i}`, source: { hostname: 'h' } },
+        });
+      }
+      const hist = l.getEventHistory();
+      expect(hist).toHaveLength(3);
+      // Last three: tool-2, tool-3, tool-4 in order.
+      expect((hist[0].payload as { tool: string }).tool).toBe('tool-2');
+      expect((hist[1].payload as { tool: string }).tool).toBe('tool-3');
+      expect((hist[2].payload as { tool: string }).tool).toBe('tool-4');
+      await l.disconnect();
+    });
+
+    it('clearEventHistory() resets the ring', async () => {
+      const { l, fake } = await authenticatedListenerWithCapacity();
+      fake.receive({ type: 'fleet:peer:heartbeat', payload: {} });
+      expect(l.getEventHistory()).toHaveLength(1);
+      l.clearEventHistory();
+      expect(l.getEventHistory()).toHaveLength(0);
+      await l.disconnect();
+    });
+
+    it('getEventHistory() returns a defensive copy (mutations do not leak)', async () => {
+      const { l, fake } = await authenticatedListenerWithCapacity();
+      fake.receive({ type: 'fleet:peer:heartbeat', payload: {} });
+      const snap = l.getEventHistory() as unknown as Array<unknown>;
+      // Cast away readonly so the test can attempt the (illegal) mutation
+      snap.length = 0;
+      // Internal ring should still hold the event
+      expect(l.getEventHistory()).toHaveLength(1);
+      await l.disconnect();
+    });
+
+    it('historyCapacity=0 disables capture entirely', async () => {
+      const { l, fake } = await authenticatedListenerWithCapacity(0);
+      fake.receive({ type: 'fleet:peer:heartbeat', payload: {} });
+      fake.receive({ type: 'fleet:agent:tool_started', payload: { tool: 'x' } });
+      expect(l.getEventHistory()).toEqual([]);
+      expect(l.getHistoryCapacity()).toBe(0);
+      await l.disconnect();
+    });
+  });
 });
