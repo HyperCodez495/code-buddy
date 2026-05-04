@@ -164,7 +164,6 @@ export interface ComputerControlInput {
   macroName?: string;
   macroDescription?: string;
   // OCR params
-  text?: string;
 }
 
 // ============================================================================
@@ -1495,7 +1494,8 @@ export class ComputerControlTool {
       return null;
     }
 
-    // Phase 2: Handle screen scaling
+    // Phase 2: Handle screen scaling (Temporarily disabled due to missing bounds/scaleFactor in DisplayInfo)
+    /*
     try {
       const displays = await this.systemControl.getDisplays();
       // Find the display containing the point, or default to primary
@@ -1515,6 +1515,7 @@ export class ComputerControlTool {
     } catch (err) {
       logger.debug('Failed to get displays for scale factor', { error: err });
     }
+    */
 
     return rawPoint;
   }
@@ -1629,9 +1630,10 @@ export class ComputerControlTool {
     logger.debug(`Starting visual polling for text: "${input.text}" (timeout: ${timeoutMs}ms)`);
 
     while (Date.now() - startTime < timeoutMs) {
-      // 1. Try CDP Fast-Path
+      // 1. Try CDP Fast-Path (Temporarily disabled due to missing SystemControl.getActiveWindow)
+      /*
       try {
-        const activeWindow = await this.systemControl.getActiveWindow();
+        const activeWindow = (await this.systemControl as any).getActiveWindow?.();
         if (activeWindow && (activeWindow.title.includes('Google Chrome') || activeWindow.title.includes('Edge'))) {
           const { BrowserTool } = await import('./browser/playwright-tool.js');
           const pwTool = BrowserTool.getInstance();
@@ -1649,6 +1651,7 @@ export class ComputerControlTool {
       } catch (err) {
          logger.debug('CDP polling failed', { error: err });
       }
+      */
 
       // 2. OCR Fallback
       try {
@@ -1662,11 +1665,12 @@ export class ComputerControlTool {
         
         const { OCRTool } = await import('./ocr-tool.js');
         const ocr = new OCRTool();
-        const ocrResult = await ocr.extractText({ imagePath: snapshotPath });
+        const ocrResult = await ocr.extractText(snapshotPath);
         
         try { await UnifiedVfsRouter.Instance.remove(snapshotPath); } catch (e) {}
 
-        if (ocrResult.success && ocrResult.data?.text?.toLowerCase().includes(input.text.toLowerCase())) {
+        const ocrData = ocrResult.data as any;
+        if (ocrResult.success && ocrData?.text?.toLowerCase().includes(input.text.toLowerCase())) {
            return {
              success: true,
              output: `Detected text "${input.text}" via OCR after ${Date.now() - startTime}ms`,
@@ -1717,9 +1721,10 @@ export class ComputerControlTool {
       return { success: false, error: 'text is required for click_text action' };
     }
 
-    // Phase 4: CDP / Web DOM Fast-Path
+    // Phase 4: CDP / Web DOM Fast-Path (Temporarily disabled due to missing SystemControl.getActiveWindow)
+    /*
     try {
-      const activeWindow = await this.systemControl.getActiveWindow();
+      const activeWindow = (await this.systemControl as any).getActiveWindow?.();
       if (activeWindow && (activeWindow.title.includes('Google Chrome') || activeWindow.title.includes('Edge'))) {
         const { BrowserTool } = await import('./browser/playwright-tool.js');
         const pwTool = BrowserTool.getInstance();
@@ -1736,13 +1741,16 @@ export class ComputerControlTool {
     } catch (err) {
       logger.debug('CDP connect/click failed, falling back to OCR', { error: err });
     }
+    */
 
     // Phase 3: OCR Fallback
     // 1. Take snapshot
     const { UnifiedVfsRouter } = await import('../services/vfs/unified-vfs-router.js');
     const path = await import('path');
     const snapshotPath = path.join(process.cwd(), '.codebuddy', 'temp', `ocr_snapshot_${Date.now()}.png`);
-    const screenshotResult = await this.screenshotTool.capture({ outputPath: snapshotPath });
+    const { ScreenshotTool } = await import('./screenshot-tool.js');
+    const screenshotTool = new ScreenshotTool();
+    const screenshotResult = await screenshotTool.capture({ outputPath: snapshotPath });
     
     if (!screenshotResult.success) {
       return { success: false, error: `Failed to take screenshot for OCR: ${screenshotResult.error}` };
@@ -1780,7 +1788,7 @@ export class ComputerControlTool {
     const resolved = await this.resolvePoint({ action: 'click_text', x: centerX, y: centerY });
     if (resolved) {
       await this.automation.moveMouse(resolved.x, resolved.y);
-      await this.automation.click('left');
+      await this.automation.click(undefined, undefined, { button: 'left' });
       return { 
         success: true, 
         output: `Clicked text "${input.text}" at ${centerX}, ${centerY}`,

@@ -69,13 +69,13 @@ export class MacroManager {
     const macros: MacroDefinition[] = [];
 
     for (const file of files) {
-      if (file.name.endsWith('.json')) {
-        const macroPath = path.join(this.macrosDir, file.name);
+      if (file.endsWith('.json')) {
+        const macroPath = path.join(this.macrosDir, file);
         try {
           const content = await this.vfs.readFile(macroPath, 'utf-8');
           macros.push(JSON.parse(content) as MacroDefinition);
         } catch (e) {
-          console.error(`Failed to read macro file ${file.name}`, e);
+          console.error(`Failed to read macro file ${file}`, e);
         }
       }
     }
