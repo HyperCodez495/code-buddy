@@ -1642,6 +1642,26 @@ declare global {
           limit?: number
         ) => Promise<Array<{ path: string; modifiedAt: number; size: number }>>;
       };
+      presence: {
+        enroll: (payload: {
+          name: string;
+          aliases?: string[];
+          embedding: number[];
+          snapshotPath?: string;
+        }) => Promise<unknown>;
+        addSample: (payload: {
+          personId: string;
+          embedding: number[];
+          snapshotPath?: string;
+        }) => Promise<unknown>;
+        encode: (payload: { rgbBytes: number[] }) => Promise<number[]>;
+        match: (payload: {
+          embedding: number[];
+          threshold?: number;
+        }) => Promise<unknown>;
+        list: () => Promise<unknown[]>;
+        remove: (payload: { personId: string }) => Promise<boolean>;
+      };
       config: {
         get: () => Promise<AppConfig>;
         getPresets: () => Promise<ProviderPresets>;

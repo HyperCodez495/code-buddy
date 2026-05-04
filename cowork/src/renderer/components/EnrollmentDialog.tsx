@@ -29,23 +29,9 @@ import type { FaceDetection } from '../../shared/presence/types';
 const SAMPLES_REQUIRED = 5;
 const CROP_SIZE = 112;
 
-interface ElectronAPI {
-  presence: {
-    enroll: (p: {
-      name: string;
-      aliases?: string[];
-      embedding: number[];
-    }) => Promise<unknown>;
-    addSample: (p: { personId: string; embedding: number[] }) => Promise<unknown>;
-    encode: (p: { rgbBytes: number[] }) => Promise<number[]>;
-  };
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
-}
+// Window.electronAPI.presence is declared in cowork/src/preload/index.ts
+// (the canonical declaration also lives there for every other API surface
+// — keeping the contract in one file avoids duplicate-declaration errors).
 
 export interface EnrollmentDialogProps {
   isOpen: boolean;

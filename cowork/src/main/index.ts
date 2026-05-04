@@ -1007,6 +1007,14 @@ app
     // Initialize knowledge service (Claude Cowork parity)
     knowledgeService = new KnowledgeService();
 
+    // Initialize presence bridge (face memory). Lazy-imported because the
+    // chain of presence-bridge -> face-recognizer -> onnxruntime-node loads
+    // a native binding we don't want eager on Cowork startup. The bridge
+    // simply registers IPC handlers; encoder load is deferred to first call.
+    const { getPresenceBridge } = await import('./presence/presence-bridge');
+    getPresenceBridge();
+    log('[main] PresenceBridge initialized — IPC handlers presence:* active');
+
     // Global search wires existing project services for cross-source queries.
     globalSearchService = new GlobalSearchService({
       db,

@@ -20,22 +20,15 @@
 
 import { useEffect, useState } from 'react';
 
+// Window.electronAPI.presence is declared in cowork/src/preload/index.ts.
+// We narrow the shape locally because preload uses `unknown[]` for `list()`
+// (the canonical PersonIdentity type lives in cowork/shared/presence/types
+// but the preload contract intentionally stays loose to avoid a circular
+// dependency between preload and renderer types).
 interface PresenceListEntry {
   id: string;
   name: string;
   aliases: string[];
-}
-
-interface ElectronAPI {
-  presence?: {
-    list: () => Promise<PresenceListEntry[]>;
-  };
-}
-
-declare global {
-  interface Window {
-    electronAPI?: ElectronAPI;
-  }
 }
 
 export interface PresenceIndicatorProps {
@@ -50,8 +43,8 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     let cancelled = false;
     const refresh = async () => {
       try {
-        const list = await window.electronAPI?.presence?.list();
-        if (!cancelled) setEnrolled(list ?? []);
+        const raw = (await window.electronAPI?.presence?.list()) as PresenceListEntry[] | undefined;
+        if (!cancelled) setEnrolled(raw ?? []);
       } catch {
         if (!cancelled) setEnrolled([]);
       }
