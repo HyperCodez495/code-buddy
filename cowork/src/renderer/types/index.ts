@@ -499,6 +499,55 @@ export interface SandboxSyncStatus {
   totalSize?: number;
 }
 
+// Fleet (multi-host Code Buddy listener) — GAP 3
+export type FleetPeerStatus =
+  | 'connecting'
+  | 'connected'
+  | 'authenticated'
+  | 'disconnected'
+  | 'reconnecting'
+  | 'error';
+
+export interface FleetPeer {
+  id: string;
+  url: string;
+  label?: string;
+  addedAt: number;
+  status: FleetPeerStatus;
+  lastError?: string;
+  lastSeenAt?: number;
+  lastEventType?: string;
+}
+
+export interface FleetEventRecord {
+  peerId: string;
+  type: string;
+  payload: Record<string, unknown>;
+  receivedAt: number;
+  hostname?: string;
+  agentId?: string;
+}
+
+// A2A active task tracking — GAP 1
+export type A2ATaskStatus =
+  | 'submitted'
+  | 'working'
+  | 'input-required'
+  | 'completed'
+  | 'failed'
+  | 'canceled';
+
+export interface A2ATask {
+  taskId: string;
+  agentId: string;
+  agentName?: string;
+  status: A2ATaskStatus;
+  startedAt: number;
+  updatedAt: number;
+  result?: string;
+  error?: string;
+}
+
 export type ServerEvent =
   | { type: 'stream.message'; payload: { sessionId: string; message: Message } }
   | { type: 'stream.partial'; payload: { sessionId: string; delta: string } }
@@ -544,6 +593,10 @@ export type ServerEvent =
   | { type: 'subagent.status'; payload: { sessionId: string; agentId: string; status: SubAgentStatus; nickname: string } }
   | { type: 'subagent.completed'; payload: { sessionId: string; agentId: string; nickname: string; result: string } }
   | { type: 'subagent.output'; payload: { sessionId: string; agentId: string; delta: string } }
+  | { type: 'fleet.peers'; payload: { peers: FleetPeer[] } }
+  | { type: 'fleet.peer.update'; payload: { peer: FleetPeer } }
+  | { type: 'fleet.event'; payload: FleetEventRecord }
+  | { type: 'a2a.task.update'; payload: A2ATask }
   | { type: 'notification.message'; payload: { notification: NotificationEntry } }
   | { type: 'identity.updated'; payload: unknown[] }
   | { type: 'identity.activated'; payload: unknown | null }

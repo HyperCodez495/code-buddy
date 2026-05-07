@@ -1,4 +1,4 @@
-import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus } from 'lucide-react';
+import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus, Sparkles, Network } from 'lucide-react';
 import { useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
@@ -47,6 +47,26 @@ export function Titlebar() {
           onEnrollClicked={() => useAppStore.getState().setShowEnrollmentDialog(true)}
         />
       </div>
+
+      {/* Multi-agent orchestrator launcher (Ctrl+Shift+M). */}
+      <button
+        onClick={() => useAppStore.getState().setShowOrchestratorLauncher(true)}
+        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+        title="Spawn multi-agent team (Ctrl+Shift+M)"
+        aria-label="Spawn multi-agent team"
+      >
+        <Sparkles className="w-4 h-4 text-text-secondary" />
+      </button>
+
+      {/* Fleet panel — multi-host Code Buddy listener (GAP 3) */}
+      <button
+        onClick={() => useAppStore.getState().setShowFleetPanel(true)}
+        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+        title="Fleet — multi-host Code Buddy"
+        aria-label="Open fleet panel"
+      >
+        <Network className="w-4 h-4 text-text-secondary" />
+      </button>
 
       {/* Bookmarks panel (Phase 3 step 4) */}
       <button

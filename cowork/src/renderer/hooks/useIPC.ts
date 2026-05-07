@@ -393,6 +393,22 @@ export function useIPC() {
             );
             break;
 
+          case 'fleet.peers':
+            store.setFleetPeers(event.payload.peers);
+            break;
+
+          case 'fleet.peer.update':
+            store.upsertFleetPeer(event.payload.peer);
+            break;
+
+          case 'fleet.event':
+            store.appendFleetEvent(event.payload);
+            break;
+
+          case 'a2a.task.update':
+            store.upsertA2ATask(event.payload);
+            break;
+
           case 'notification.message':
             store.addNotification(event.payload.notification);
             break;

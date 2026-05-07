@@ -47,6 +47,8 @@ import { NotificationToastContainer } from './components/NotificationToast';
 import { NotificationCenter } from './components/NotificationCenter';
 import { EnrollmentDialog } from './components/EnrollmentDialog';
 import { ModelInstallDialog } from './components/ModelInstallDialog';
+import { OrchestratorLauncher } from './components/OrchestratorLauncher';
+import { FleetPanel } from './components/FleetPanel';
 import { PresenceService } from './services/presence/PresenceService';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
@@ -112,6 +114,7 @@ function App() {
   const showEnrollmentDialog = useAppStore((s) => s.showEnrollmentDialog);
   const setShowEnrollmentDialog = useAppStore((s) => s.setShowEnrollmentDialog);
   const presenceEnabled = useAppStore((s) => s.presenceEnabled);
+  const setShowOrchestratorLauncher = useAppStore((s) => s.setShowOrchestratorLauncher);
   const splitPaneEnabled = useAppStore((s) => s.splitPaneEnabled);
   const toggleSplitPane = useAppStore((s) => s.toggleSplitPane);
   const updateInfo = useUpdateInfo();
@@ -278,6 +281,10 @@ function App() {
         // Phase 3 step 17: reasoning trace viewer
         e.preventDefault();
         setShowReasoningViewer(true);
+      } else if (mod && e.shiftKey && (e.key === 'm' || e.key === 'M')) {
+        // Multi-agent orchestrator launcher
+        e.preventDefault();
+        setShowOrchestratorLauncher(true);
       } else if (mod && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
         e.preventDefault();
         setShowSessionInsights(true);
@@ -332,6 +339,7 @@ function App() {
     setShowSessionInsights,
     setShowResumeChooser,
     setShowFocusView,
+    setShowOrchestratorLauncher,
     toggleSplitPane,
   ]);
 
@@ -525,6 +533,13 @@ function App() {
         onEnrolled={() => setShowEnrollmentDialog(false)}
       />
       <ModelInstallDialog />
+
+      {/* Multi-agent orchestrator launcher — opens via Sparkles button
+          in Titlebar or Cmd/Ctrl+Shift+M. */}
+      <OrchestratorLauncher />
+
+      {/* Fleet panel — multi-host Code Buddy listener (GAP 3) */}
+      <FleetPanel />
     </div>
   );
 }

@@ -19,6 +19,9 @@ import type {
   SubAgent,
   SubAgentStatus,
   NotificationEntry,
+  FleetPeer,
+  FleetEventRecord,
+  A2ATask,
 } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
@@ -225,6 +228,13 @@ interface AppState {
   showModelInstallDialog: boolean;
   presenceEnabled: boolean;
 
+  // Multi-agent orchestrator launcher — modal-driven UI for triggering
+  // the existing OrchestratorBridge in main. The last-used options are
+  // persisted (localStorage) so the user doesn't have to re-pick the
+  // strategy + maxRounds on every spawn.
+  showOrchestratorLauncher: boolean;
+  lastOrchestratorOptions: { strategy: string; maxRounds: number };
+
   // Auto-update
   updateInfo: UpdateInfo | null;
 
@@ -239,6 +249,14 @@ interface AppState {
   // Sub-agents per session (Claude Cowork parity)
   subAgents: Record<string, SubAgent[]>;
   subAgentOutputs: Record<string, Record<string, string>>; // sessionId → agentId → output
+
+  // Fleet — multi-host Code Buddy listener (GAP 3)
+  fleetPeers: Record<string, FleetPeer>;
+  fleetEvents: FleetEventRecord[]; // ring buffer (FLEET_EVENT_RING)
+  showFleetPanel: boolean;
+
+  // A2A active tasks (GAP 1)
+  a2aTasks: Record<string, A2ATask>;
 
   // Notifications (Claude Cowork parity)
   notifications: NotificationEntry[];
@@ -384,6 +402,10 @@ interface AppState {
   setShowModelInstallDialog: (show: boolean) => void;
   setPresenceEnabled: (enabled: boolean) => void;
 
+  // Orchestrator launcher actions
+  setShowOrchestratorLauncher: (show: boolean) => void;
+  setLastOrchestratorOptions: (opts: { strategy: string; maxRounds: number }) => void;
+
   // Update actions
   setUpdateInfo: (info: UpdateInfo | null) => void;
 
@@ -404,6 +426,17 @@ interface AppState {
   completeSubAgent: (sessionId: string, agentId: string, result: string) => void;
   appendSubAgentOutput: (sessionId: string, agentId: string, delta: string) => void;
   clearSubAgents: (sessionId: string) => void;
+
+  // Fleet actions
+  setFleetPeers: (peers: FleetPeer[]) => void;
+  upsertFleetPeer: (peer: FleetPeer) => void;
+  removeFleetPeer: (peerId: string) => void;
+  appendFleetEvent: (event: FleetEventRecord) => void;
+  setShowFleetPanel: (show: boolean) => void;
+
+  // A2A task actions
+  upsertA2ATask: (task: A2ATask) => void;
+  removeA2ATask: (taskId: string) => void;
 
   // Notification actions
   addNotification: (notification: NotificationEntry) => void;
@@ -515,6 +548,28 @@ export const useAppStore = create<AppState>((set) => ({
   })(),
   showEnrollmentDialog: false,
   showModelInstallDialog: false,
+  showOrchestratorLauncher: false,
+  lastOrchestratorOptions: ((): { strategy: string; maxRounds: number } => {
+    try {
+      const raw =
+        typeof window !== 'undefined'
+          ? window.localStorage?.getItem('cowork.orchestrator.lastOptions')
+          : null;
+      if (raw) {
+        const parsed = JSON.parse(raw) as { strategy?: string; maxRounds?: number };
+        return {
+          strategy: typeof parsed.strategy === 'string' ? parsed.strategy : 'parallel',
+          maxRounds:
+            typeof parsed.maxRounds === 'number' && parsed.maxRounds > 0
+              ? parsed.maxRounds
+              : 3,
+        };
+      }
+    } catch {
+      /* ignore */
+    }
+    return { strategy: 'parallel', maxRounds: 3 };
+  })(),
   presenceEnabled: ((): boolean => {
     try {
       // Default true — but the service still won't start the camera until
@@ -533,6 +588,10 @@ export const useAppStore = create<AppState>((set) => ({
   activeProjectId: null,
   subAgents: {},
   subAgentOutputs: {},
+  fleetPeers: {},
+  fleetEvents: [],
+  showFleetPanel: false,
+  a2aTasks: {},
   notifications: [],
   showNotificationCenter: false,
 
@@ -1090,6 +1149,20 @@ export const useAppStore = create<AppState>((set) => ({
     }
   },
 
+  // Orchestrator launcher actions
+  setShowOrchestratorLauncher: (show) => set({ showOrchestratorLauncher: show }),
+  setLastOrchestratorOptions: (opts) => {
+    set({ lastOrchestratorOptions: opts });
+    try {
+      window.localStorage?.setItem(
+        'cowork.orchestrator.lastOptions',
+        JSON.stringify(opts),
+      );
+    } catch {
+      /* ignore */
+    }
+  },
+
   // Update actions
   setUpdateInfo: (info) => set({ updateInfo: info }),
 
@@ -1155,6 +1228,42 @@ export const useAppStore = create<AppState>((set) => ({
           [sessionId]: { ...sessionOutputs, [agentId]: existing + delta },
         },
       };
+    }),
+
+  // Fleet actions (GAP 3)
+  setFleetPeers: (peers) =>
+    set(() => ({
+      fleetPeers: peers.reduce<Record<string, FleetPeer>>((acc, p) => {
+        acc[p.id] = p;
+        return acc;
+      }, {}),
+    })),
+  upsertFleetPeer: (peer) =>
+    set((state) => ({ fleetPeers: { ...state.fleetPeers, [peer.id]: peer } })),
+  removeFleetPeer: (peerId) =>
+    set((state) => {
+      const { [peerId]: _dropped, ...rest } = state.fleetPeers;
+      return {
+        fleetPeers: rest,
+        fleetEvents: state.fleetEvents.filter((e) => e.peerId !== peerId),
+      };
+    }),
+  appendFleetEvent: (event) =>
+    set((state) => {
+      const next = [...state.fleetEvents, event];
+      const FLEET_EVENT_RING = 200;
+      while (next.length > FLEET_EVENT_RING) next.shift();
+      return { fleetEvents: next };
+    }),
+  setShowFleetPanel: (show) => set({ showFleetPanel: show }),
+
+  // A2A task actions (GAP 1)
+  upsertA2ATask: (task) =>
+    set((state) => ({ a2aTasks: { ...state.a2aTasks, [task.taskId]: task } })),
+  removeA2ATask: (taskId) =>
+    set((state) => {
+      const { [taskId]: _dropped, ...rest } = state.a2aTasks;
+      return { a2aTasks: rest };
     }),
   clearSubAgents: (sessionId) =>
     set((state) => {

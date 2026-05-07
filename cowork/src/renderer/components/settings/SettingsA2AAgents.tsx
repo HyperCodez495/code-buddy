@@ -20,7 +20,11 @@ import {
   Cpu,
   Search,
   ShieldCheck,
+  XCircle,
+  Clock,
 } from 'lucide-react';
+import { useAppStore } from '../../store';
+import type { A2ATask, A2ATaskStatus } from '../../types';
 
 interface AgentCard {
   name: string;
@@ -133,16 +137,63 @@ export function SettingsA2AAgents() {
       setInvoking(id);
       try {
         const result = await window.electronAPI.a2a.invoke(id, msg);
-        setInvokeResult((prev) => ({
-          ...prev,
-          [id]: result.success ? (result.result ?? 'OK') : (result.error ?? 'Failed'),
-        }));
+        const summary = result.success
+          ? `Submitted (task ${result.taskId ?? '?'}). Track status below.`
+          : (result.error ?? 'Failed');
+        setInvokeResult((prev) => ({ ...prev, [id]: summary }));
       } finally {
         setInvoking(null);
       }
     },
     [invokeInput]
   );
+
+  // GAP 1 — Active tasks tracking via store (events flow from main bridge)
+  const a2aTasks = useAppStore((s) => s.a2aTasks);
+  const upsertA2ATask = useAppStore((s) => s.upsertA2ATask);
+  const removeA2ATask = useAppStore((s) => s.removeA2ATask);
+  const tasks = useMemo<A2ATask[]>(
+    () =>
+      Object.values(a2aTasks).sort((a, b) => b.startedAt - a.startedAt),
+    [a2aTasks]
+  );
+
+  // Initial fetch — events keep us in sync after that
+  useEffect(() => {
+    if (!window.electronAPI?.a2a?.listTasks) return;
+    void window.electronAPI.a2a.listTasks().then((list) => {
+      for (const t of list as A2ATask[]) upsertA2ATask(t);
+    });
+  }, [upsertA2ATask]);
+
+  const handleCancel = useCallback(
+    async (agentId: string, taskId: string) => {
+      if (!window.electronAPI?.a2a?.cancelTask) return;
+      await window.electronAPI.a2a.cancelTask(agentId, taskId);
+    },
+    []
+  );
+
+  const handleClearTask = useCallback(
+    (taskId: string) => removeA2ATask(taskId),
+    [removeA2ATask]
+  );
+
+  const statusClass = (status: A2ATaskStatus): string => {
+    switch (status) {
+      case 'completed':
+        return 'text-success';
+      case 'failed':
+      case 'canceled':
+        return 'text-error';
+      case 'input-required':
+        return 'text-warning';
+      case 'submitted':
+      case 'working':
+      default:
+        return 'text-accent';
+    }
+  };
 
   return (
     <div className="space-y-4" data-testid="settings-a2a-agents">
@@ -356,6 +407,86 @@ export function SettingsA2AAgents() {
             )}
           </div>
         ))}
+      </div>
+
+      {/* GAP 1 — Active A2A tasks (polling-driven) */}
+      <div className="space-y-2 border-t border-border pt-4">
+        <div className="flex items-center gap-2">
+          <Clock size={14} className="text-text-muted" />
+          <h4 className="text-sm font-semibold text-text-primary">
+            {t('a2a.activeTasks', 'Active tasks')}
+          </h4>
+          <span className="text-[10px] text-text-muted">({tasks.length})</span>
+        </div>
+        {tasks.length === 0 ? (
+          <p className="text-xs text-text-muted">
+            {t('a2a.noTasks', 'No tasks yet. Invoke an agent to start one.')}
+          </p>
+        ) : (
+          <div className="space-y-1.5">
+            {tasks.map((task) => {
+              const isTerminal =
+                task.status === 'completed' ||
+                task.status === 'failed' ||
+                task.status === 'canceled';
+              return (
+                <div
+                  key={task.taskId}
+                  className="flex items-start gap-2 rounded-md border border-border bg-surface/40 px-3 py-2"
+                  data-testid="a2a-task-row"
+                >
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-mono text-text-muted">
+                        {task.taskId.slice(0, 12)}
+                      </span>
+                      <span className="text-text-secondary">
+                        → {task.agentName ?? task.agentId}
+                      </span>
+                      <span className={`font-medium ${statusClass(task.status)}`}>
+                        {task.status}
+                      </span>
+                    </div>
+                    <div className="mt-0.5 text-[10px] text-text-muted">
+                      {t('a2a.started', 'Started')}{' '}
+                      {new Date(task.startedAt).toLocaleTimeString()} ·{' '}
+                      {t('a2a.updated', 'updated')}{' '}
+                      {new Date(task.updatedAt).toLocaleTimeString()}
+                    </div>
+                    {task.result && (
+                      <pre className="mt-1 max-h-24 overflow-y-auto whitespace-pre-wrap break-all rounded bg-surface px-2 py-1 font-mono text-[10px] text-text-secondary">
+                        {task.result}
+                      </pre>
+                    )}
+                    {task.error && (
+                      <p className="mt-1 text-[10px] text-error">{task.error}</p>
+                    )}
+                  </div>
+                  <div className="flex shrink-0 items-center gap-1">
+                    {!isTerminal && (
+                      <button
+                        onClick={() => void handleCancel(task.agentId, task.taskId)}
+                        className="rounded p-1 text-text-muted hover:bg-surface-hover hover:text-error"
+                        title={t('a2a.cancel', 'Cancel task')}
+                      >
+                        <XCircle size={12} />
+                      </button>
+                    )}
+                    {isTerminal && (
+                      <button
+                        onClick={() => handleClearTask(task.taskId)}
+                        className="rounded p-1 text-text-muted hover:bg-surface-hover hover:text-text-primary"
+                        title={t('a2a.clear', 'Remove from list')}
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
       </div>
     </div>
   );

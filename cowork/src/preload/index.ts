@@ -1200,6 +1200,60 @@ contextBridge.exposeInMainWorld('electronAPI', {
       result?: string;
       error?: string;
     }> => ipcRenderer.invoke('a2a.invoke', { id, message }),
+    cancelTask: (id: string, taskId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('a2a.cancelTask', { id, taskId }),
+    listTasks: (): Promise<
+      Array<{
+        taskId: string;
+        agentId: string;
+        agentName?: string;
+        status: string;
+        startedAt: number;
+        updatedAt: number;
+        result?: string;
+        error?: string;
+      }>
+    > => ipcRenderer.invoke('a2a.listTasks'),
+  },
+
+  // Fleet — multi-host Code Buddy listener (GAP 3)
+  fleet: {
+    list: (): Promise<
+      Array<{
+        id: string;
+        url: string;
+        label?: string;
+        addedAt: number;
+        status: string;
+        lastError?: string;
+        lastSeenAt?: number;
+        lastEventType?: string;
+      }>
+    > => ipcRenderer.invoke('fleet.list'),
+    addPeer: (input: {
+      url: string;
+      apiKey?: string;
+      jwt?: string;
+      label?: string;
+    }): Promise<{ success: boolean; peer?: unknown; error?: string }> =>
+      ipcRenderer.invoke('fleet.addPeer', input),
+    removePeer: (peerId: string): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('fleet.removePeer', peerId),
+    reconnect: (peerId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('fleet.reconnect', peerId),
+    getEvents: (
+      peerId?: string,
+      limit?: number
+    ): Promise<
+      Array<{
+        peerId: string;
+        type: string;
+        payload: Record<string, unknown>;
+        receivedAt: number;
+        hostname?: string;
+        agentId?: string;
+      }>
+    > => ipcRenderer.invoke('fleet.events', peerId, limit),
   },
 
   // Reasoning trace viewer (Claude Cowork parity Phase 3 step 17)
@@ -2528,9 +2582,61 @@ declare global {
         ) => Promise<{
           success: boolean;
           taskId?: string;
+          status?: string;
           result?: string;
           error?: string;
         }>;
+        cancelTask: (
+          id: string,
+          taskId: string
+        ) => Promise<{ success: boolean; error?: string }>;
+        listTasks: () => Promise<
+          Array<{
+            taskId: string;
+            agentId: string;
+            agentName?: string;
+            status: string;
+            startedAt: number;
+            updatedAt: number;
+            result?: string;
+            error?: string;
+          }>
+        >;
+      };
+      fleet: {
+        list: () => Promise<
+          Array<{
+            id: string;
+            url: string;
+            label?: string;
+            addedAt: number;
+            status: string;
+            lastError?: string;
+            lastSeenAt?: number;
+            lastEventType?: string;
+          }>
+        >;
+        addPeer: (input: {
+          url: string;
+          apiKey?: string;
+          jwt?: string;
+          label?: string;
+        }) => Promise<{ success: boolean; peer?: unknown; error?: string }>;
+        removePeer: (peerId: string) => Promise<{ success: boolean }>;
+        reconnect: (peerId: string) => Promise<{ success: boolean; error?: string }>;
+        getEvents: (
+          peerId?: string,
+          limit?: number
+        ) => Promise<
+          Array<{
+            peerId: string;
+            type: string;
+            payload: Record<string, unknown>;
+            receivedAt: number;
+            hostname?: string;
+            agentId?: string;
+          }>
+        >;
       };
       reasoning: {
         listTraces: () => Promise<

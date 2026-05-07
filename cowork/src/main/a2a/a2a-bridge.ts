@@ -1,10 +1,19 @@
 /**
- * A2ABridge — Claude Cowork parity Phase 3 step 19
+ * A2ABridge — Claude Cowork parity Phase 3 step 19 + GAP 1 (task polling)
  *
  * Local registry for remote A2A (Agent-to-Agent) agents. Resolves a
  * remote AgentCard by fetching `<url>/.well-known/agent.json`, persists
- * the card in `<userData>/a2a-registry.json`, and exposes a basic
- * `invoke()` that POSTs a task payload to `<url>/tasks/send`.
+ * the card in `<userData>/a2a-registry.json`, and exposes:
+ *
+ *   - `invoke()` — POSTs a task payload to `<url>/tasks/send`, then
+ *     polls `<url>/tasks/:taskId` (or subscribes via SSE if the agent
+ *     advertises `capabilities.streaming`) until the task reaches a
+ *     terminal status. Each transition is emitted as an
+ *     `a2a.task.update` ServerEvent so Cowork's UI can render the
+ *     full lifecycle (submitted → working → input-required → completed
+ *     / failed / canceled).
+ *   - `cancelTask()` — POSTs to `<url>/tasks/:taskId/cancel`.
+ *   - `listTasks()` — returns currently-tracked tasks.
  *
  * The bridge does not depend on the core `A2AAgentClient` so Cowork
  * can manage its own remote-agent list without pulling the runtime
@@ -18,6 +27,7 @@ import * as path from 'path';
 import os from 'os';
 import { app } from 'electron';
 import { log, logWarn } from '../utils/logger';
+import type { ServerEvent, A2ATask, A2ATaskStatus } from '../../renderer/types';
 
 export interface AgentSkill {
   id: string;
@@ -51,16 +61,71 @@ interface RegistryFile {
   agents: RegisteredAgent[];
 }
 
+interface TaskResponse {
+  id?: string;
+  status?: { status?: string; message?: string };
+  messages?: Array<{ role?: string; parts?: Array<{ type?: string; text?: string }> }>;
+}
+
+interface TrackedTask {
+  task: A2ATask;
+  agentUrl: string;
+  pollTimer?: NodeJS.Timeout;
+  abortController?: AbortController;
+}
+
+const POLL_INTERVAL_MS = 2000;
+const POLL_TIMEOUT_MS = 10 * 60_000; // 10 min
+const TERMINAL_STATUSES: ReadonlySet<A2ATaskStatus> = new Set([
+  'completed',
+  'failed',
+  'canceled',
+]);
+
 function sanitizeId(value: string): string {
   return value.toLowerCase().replace(/[^a-z0-9-_]/g, '-').replace(/-+/g, '-').slice(0, 64);
 }
 
+function normalizeStatus(raw: string | undefined): A2ATaskStatus {
+  switch ((raw ?? '').toLowerCase()) {
+    case 'submitted':
+      return 'submitted';
+    case 'working':
+      return 'working';
+    case 'input-required':
+    case 'input_required':
+      return 'input-required';
+    case 'completed':
+      return 'completed';
+    case 'failed':
+      return 'failed';
+    case 'canceled':
+    case 'cancelled':
+      return 'canceled';
+    default:
+      return 'working';
+  }
+}
+
+function extractAgentReply(task: TaskResponse | undefined): string | undefined {
+  const reply = task?.messages?.find((m) => m.role === 'agent');
+  if (!reply?.parts) return undefined;
+  return reply.parts
+    .filter((p) => p.type === 'text')
+    .map((p) => p.text ?? '')
+    .join('\n')
+    .trim() || undefined;
+}
+
 export class A2ABridge {
   private readonly registryPath: string;
+  private readonly sendToRenderer: ((event: ServerEvent) => void) | null;
   private agents: Map<string, RegisteredAgent> = new Map();
   private loaded = false;
+  private tasks: Map<string, TrackedTask> = new Map();
 
-  constructor() {
+  constructor(sendToRenderer?: (event: ServerEvent) => void) {
+    this.sendToRenderer = sendToRenderer ?? null;
     const userData = app.isReady()
       ? app.getPath('userData')
       : path.join(os.homedir(), '.codebuddy-cowork');
@@ -145,6 +210,12 @@ export class A2ABridge {
     if (!this.agents.has(id)) {
       return { success: false };
     }
+    // Cancel any tasks owned by this agent
+    for (const [taskId, tracked] of this.tasks.entries()) {
+      if (tracked.task.agentId === id) {
+        this.stopPolling(taskId);
+      }
+    }
     this.agents.delete(id);
     await this.save();
     return { success: true };
@@ -169,49 +240,256 @@ export class A2ABridge {
     };
   }
 
+  /**
+   * Submit a task to a remote A2A agent. Returns immediately with the
+   * task identifier. The terminal result (or failure) is delivered via
+   * `a2a.task.update` ServerEvents — `result` is set on completion.
+   */
   async invoke(
     id: string,
     message: string
-  ): Promise<{ success: boolean; taskId?: string; result?: string; error?: string }> {
+  ): Promise<{ success: boolean; taskId?: string; status?: A2ATaskStatus; error?: string }> {
     await this.load();
     const agent = this.agents.get(id);
     if (!agent) return { success: false, error: 'Agent not found' };
+
     try {
       const base = agent.url.replace(/\/$/, '');
       const res = await fetch(`${base}/tasks/send`, {
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          message: {
-            role: 'user',
-            parts: [{ type: 'text', text: message }],
-          },
+          message: { role: 'user', parts: [{ type: 'text', text: message }] },
         }),
       });
       if (!res.ok) {
         return { success: false, error: `HTTP ${res.status} ${res.statusText}` };
       }
-      const task = (await res.json()) as {
-        id?: string;
-        messages?: Array<{ role?: string; parts?: Array<{ type?: string; text?: string }> }>;
+      const taskResp = (await res.json()) as TaskResponse;
+      const taskId = taskResp.id ?? `local-${Date.now()}`;
+      const status = normalizeStatus(taskResp.status?.status);
+      const result = extractAgentReply(taskResp);
+      const now = Date.now();
+      const task: A2ATask = {
+        taskId,
+        agentId: id,
+        agentName: agent.card.name,
+        status,
+        startedAt: now,
+        updatedAt: now,
+        result,
       };
-      const agentReply = task.messages?.find((m) => m.role === 'agent');
-      const resultText = agentReply?.parts
-        ?.filter((p) => p.type === 'text')
-        .map((p) => p.text ?? '')
-        .join('\n');
-      return { success: true, taskId: task.id, result: resultText };
+      const tracked: TrackedTask = { task, agentUrl: base };
+      this.tasks.set(taskId, tracked);
+      this.emitTaskUpdate(task);
+
+      if (!TERMINAL_STATUSES.has(status)) {
+        // Server returned non-terminal — start polling (or SSE if streaming).
+        if (agent.card.capabilities?.streaming) {
+          this.subscribeSSE(tracked);
+        } else {
+          this.startPolling(tracked);
+        }
+      }
+      return { success: true, taskId, status };
     } catch (err) {
       return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async cancelTask(
+    id: string,
+    taskId: string
+  ): Promise<{ success: boolean; error?: string }> {
+    await this.load();
+    const agent = this.agents.get(id);
+    if (!agent) return { success: false, error: 'Agent not found' };
+    const tracked = this.tasks.get(taskId);
+    try {
+      const base = agent.url.replace(/\/$/, '');
+      const res = await fetch(`${base}/tasks/${encodeURIComponent(taskId)}/cancel`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+      });
+      if (!res.ok) {
+        return { success: false, error: `HTTP ${res.status} ${res.statusText}` };
+      }
+      if (tracked) {
+        const updated: A2ATask = {
+          ...tracked.task,
+          status: 'canceled',
+          updatedAt: Date.now(),
+        };
+        tracked.task = updated;
+        this.stopPolling(taskId);
+        this.emitTaskUpdate(updated);
+      }
+      return { success: true };
+    } catch (err) {
+      return { success: false, error: (err as Error).message };
+    }
+  }
+
+  async listTasks(): Promise<A2ATask[]> {
+    return Array.from(this.tasks.values())
+      .map((t) => ({ ...t.task }))
+      .sort((a, b) => b.startedAt - a.startedAt);
+  }
+
+  private emitTaskUpdate(task: A2ATask): void {
+    if (!this.sendToRenderer) return;
+    this.sendToRenderer({ type: 'a2a.task.update', payload: { ...task } });
+  }
+
+  private startPolling(tracked: TrackedTask): void {
+    const taskId = tracked.task.taskId;
+    const startedAt = Date.now();
+
+    const poll = async () => {
+      if (!this.tasks.has(taskId)) return; // removed
+      try {
+        const res = await fetch(
+          `${tracked.agentUrl}/tasks/${encodeURIComponent(taskId)}`
+        );
+        if (!res.ok) {
+          this.completeWithError(tracked, `HTTP ${res.status} ${res.statusText}`);
+          return;
+        }
+        const data = (await res.json()) as TaskResponse;
+        const newStatus = normalizeStatus(data.status?.status);
+        const result = extractAgentReply(data);
+        const changed =
+          newStatus !== tracked.task.status ||
+          (result && result !== tracked.task.result);
+        if (changed) {
+          const updated: A2ATask = {
+            ...tracked.task,
+            status: newStatus,
+            updatedAt: Date.now(),
+            result: result ?? tracked.task.result,
+            error: data.status?.message && newStatus === 'failed'
+              ? data.status.message
+              : undefined,
+          };
+          tracked.task = updated;
+          this.emitTaskUpdate(updated);
+        }
+        if (TERMINAL_STATUSES.has(newStatus)) {
+          this.stopPolling(taskId);
+          return;
+        }
+        if (Date.now() - startedAt > POLL_TIMEOUT_MS) {
+          this.completeWithError(tracked, 'Polling timeout (10 min)');
+          return;
+        }
+      } catch (err) {
+        // Transient error — log but keep polling, the next tick may succeed
+        logWarn(`[A2ABridge] poll(${taskId}) failed:`, err);
+      }
+    };
+
+    tracked.pollTimer = setInterval(() => {
+      void poll();
+    }, POLL_INTERVAL_MS);
+  }
+
+  private subscribeSSE(tracked: TrackedTask): void {
+    // EventSource is browser API; in main process we use fetch + ReadableStream.
+    const taskId = tracked.task.taskId;
+    const ac = new AbortController();
+    tracked.abortController = ac;
+
+    void (async () => {
+      try {
+        const res = await fetch(
+          `${tracked.agentUrl}/tasks/${encodeURIComponent(taskId)}/stream`,
+          {
+            headers: { accept: 'text/event-stream' },
+            signal: ac.signal,
+          }
+        );
+        if (!res.ok || !res.body) {
+          // Fall back to polling
+          logWarn(`[A2ABridge] SSE stream failed for ${taskId}, falling back to poll`);
+          this.startPolling(tracked);
+          return;
+        }
+        const reader = res.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          buffer += decoder.decode(value, { stream: true });
+          const events = buffer.split('\n\n');
+          buffer = events.pop() ?? '';
+          for (const evt of events) {
+            const dataLine = evt.split('\n').find((l) => l.startsWith('data:'));
+            if (!dataLine) continue;
+            try {
+              const data = JSON.parse(dataLine.slice(5).trim()) as TaskResponse;
+              const newStatus = normalizeStatus(data.status?.status);
+              const result = extractAgentReply(data);
+              const updated: A2ATask = {
+                ...tracked.task,
+                status: newStatus,
+                updatedAt: Date.now(),
+                result: result ?? tracked.task.result,
+              };
+              tracked.task = updated;
+              this.emitTaskUpdate(updated);
+              if (TERMINAL_STATUSES.has(newStatus)) {
+                this.stopPolling(taskId);
+                return;
+              }
+            } catch {
+              /* ignore parse errors */
+            }
+          }
+        }
+      } catch (err) {
+        if ((err as Error).name === 'AbortError') return;
+        logWarn(`[A2ABridge] SSE error for ${taskId}:`, err);
+        this.startPolling(tracked); // fall back
+      }
+    })();
+  }
+
+  private completeWithError(tracked: TrackedTask, message: string): void {
+    const updated: A2ATask = {
+      ...tracked.task,
+      status: 'failed',
+      updatedAt: Date.now(),
+      error: message,
+    };
+    tracked.task = updated;
+    this.stopPolling(tracked.task.taskId);
+    this.emitTaskUpdate(updated);
+  }
+
+  private stopPolling(taskId: string): void {
+    const tracked = this.tasks.get(taskId);
+    if (!tracked) return;
+    if (tracked.pollTimer) {
+      clearInterval(tracked.pollTimer);
+      tracked.pollTimer = undefined;
+    }
+    if (tracked.abortController) {
+      try {
+        tracked.abortController.abort();
+      } catch {
+        /* ignore */
+      }
+      tracked.abortController = undefined;
     }
   }
 }
 
 let singleton: A2ABridge | null = null;
 
-export function getA2ABridge(): A2ABridge {
+export function getA2ABridge(sendToRenderer?: (event: ServerEvent) => void): A2ABridge {
   if (!singleton) {
-    singleton = new A2ABridge();
+    singleton = new A2ABridge(sendToRenderer);
   }
   return singleton;
 }

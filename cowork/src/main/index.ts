@@ -20,6 +20,7 @@ import { config } from 'dotenv';
 import { registerProjectIpcHandlers } from './ipc/project-ipc';
 import { registerSubAgentIpcHandlers } from './ipc/subagent-ipc';
 import { registerOrchestratorIpcHandlers } from './ipc/orchestrator-ipc';
+import { registerFleetIpcHandlers } from './ipc/fleet-ipc';
 import { registerMentionIpcHandlers } from './ipc/mention-ipc';
 import { registerCommandIpcHandlers } from './ipc/command-ipc';
 import { registerSkillMdIpcHandlers } from './ipc/skill-md-ipc';
@@ -34,6 +35,7 @@ import {
 import { ProjectMemoryService } from './project/project-memory';
 import { SubAgentBridge } from './agent/sub-agent-bridge';
 import { OrchestratorBridge } from './agent/orchestrator-bridge';
+import { FleetBridge } from './fleet/fleet-bridge';
 import { MentionProcessor } from './input/mention-processor';
 import { SlashCommandBridge } from './commands/slash-command-bridge';
 import { SkillMdBridge } from './skills/skill-md-bridge';
@@ -159,6 +161,7 @@ let scheduledTaskManager: ScheduledTaskManager | null = null;
 let projectManager: ProjectManager | null = null;
 let subAgentBridge: SubAgentBridge | null = null;
 let orchestratorBridge: OrchestratorBridge | null = null;
+let fleetBridge: FleetBridge | null = null;
 let mentionProcessor: MentionProcessor | null = null;
 let slashCommandBridge: SlashCommandBridge | null = null;
 let skillMdBridge: SkillMdBridge | null = null;
@@ -962,6 +965,18 @@ app
       () => configStore.get('baseUrl') || process.env.GROK_BASE_URL
     );
 
+    // Initialize fleet bridge — multi-host Code Buddy listener (GAP 3)
+    fleetBridge = new FleetBridge(sendToRenderer);
+    void fleetBridge.init();
+
+    // Initialize A2A bridge with sendToRenderer so async task updates
+    // (GAP 1 polling) can reach the renderer. Lazy `getA2ABridge()` calls
+    // elsewhere will return this instance.
+    {
+      const { getA2ABridge: bootA2A } = await import('./a2a/a2a-bridge');
+      bootA2A(sendToRenderer);
+    }
+
     // Initialize mention processor (Claude Cowork parity)
     mentionProcessor = new MentionProcessor();
     sessionManager.setMentionProcessor(mentionProcessor);
@@ -1651,6 +1666,9 @@ registerSubAgentIpcHandlers(subAgentBridge);
 
 // ── Orchestrator IPC handlers ────────────────────────────────────────
 registerOrchestratorIpcHandlers(orchestratorBridge);
+
+// ── Fleet IPC handlers (GAP 3 — multi-host Code Buddy listener) ──────
+registerFleetIpcHandlers(fleetBridge);
 
 // ── Mention IPC handlers (Claude Cowork parity) ──────────────────────
 registerMentionIpcHandlers(mentionProcessor);
@@ -2896,6 +2914,25 @@ ipcMain.handle('a2a.invoke', async (_event, params: { id: string; message: strin
     return await getA2ABridge().invoke(params.id, params.message);
   } catch (err) {
     return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('a2a.cancelTask', async (_event, params: { id: string; taskId: string }) => {
+  try {
+    const { getA2ABridge } = await import('./a2a/a2a-bridge');
+    return await getA2ABridge().cancelTask(params.id, params.taskId);
+  } catch (err) {
+    return { success: false, error: (err as Error).message };
+  }
+});
+
+ipcMain.handle('a2a.listTasks', async () => {
+  try {
+    const { getA2ABridge } = await import('./a2a/a2a-bridge');
+    return await getA2ABridge().listTasks();
+  } catch (err) {
+    logError('[a2a.listTasks] failed:', err);
+    return [];
   }
 });
 
