@@ -26,6 +26,7 @@ import { registerSkillMdIpcHandlers } from './ipc/skill-md-ipc';
 import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
+import { classifyEngineLoadError, isEmbeddedOptOut } from './engine/embedded-mode';
 import {
   ProjectManager,
 } from './project/project-manager';
@@ -834,9 +835,17 @@ app
 
     pluginRuntimeService = new PluginRuntimeService(new PluginCatalogService());
 
-    // Initialize Code Buddy engine adapter if running in embedded mode
+    // Initialize Code Buddy engine adapter (embedded mode).
+    //
+    // Default-on: we attempt to load the engine unless the user has
+    // explicitly opted out with `CODEBUDDY_EMBEDDED=0`. See
+    // `engine/embedded-mode.ts` for the rationale (previously every
+    // entry point other than `buddy gui` silently fell back to the
+    // pi-coding-agent runner).
     let engineAdapter: EngineAdapterLike | undefined;
-    if (process.env.CODEBUDDY_EMBEDDED === '1') {
+    if (isEmbeddedOptOut()) {
+      log('[Main] CODEBUDDY_EMBEDDED=0 — embedded engine disabled by env opt-out');
+    } else {
       try {
         const enginePath =
           process.env.CODEBUDDY_ENGINE_PATH || resolve(app.getAppPath(), '..', 'dist');
@@ -881,7 +890,11 @@ app
 
         log('[Main] Code Buddy engine adapter initialized (embedded mode)');
       } catch (err) {
-        logWarn('[Main] Failed to load Code Buddy engine, falling back to pi-coding-agent:', err);
+        if (classifyEngineLoadError(err) === 'missing') {
+          log('[Main] Code Buddy engine not present, using pi-coding-agent runner');
+        } else {
+          logWarn('[Main] Failed to load Code Buddy engine, falling back to pi-coding-agent:', err);
+        }
       }
     }
 
