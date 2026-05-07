@@ -10,7 +10,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'file_read',
     keywords: ['view', 'read', 'show', 'display', 'content', 'file', 'open', 'look', 'see', 'check', 'list', 'directory', 'ls', 'cat'],
     priority: 10,
-    description: 'View file contents or directory listings'
+    description: 'View file contents or directory listings',
+    fleetSafe: true,
   },
 
   // File writing
@@ -49,7 +50,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'file_read',
     keywords: ['list', 'directory', 'files', 'ls', 'folder', 'contents', 'dir', 'entries'],
     priority: 9,
-    description: 'List files and directories with type, size, and modification time'
+    description: 'List files and directories with type, size, and modification time',
+    fleetSafe: true,
   },
 
   // File search
@@ -58,35 +60,40 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'file_search',
     keywords: ['search', 'find', 'locate', 'grep', 'look for', 'where', 'which', 'query', 'pattern', 'regex'],
     priority: 10,
-    description: 'Search for text content or files'
+    description: 'Search for text content or files',
+    fleetSafe: true,
   },
   {
     name: 'find_symbols',
     category: 'file_search',
     keywords: ['symbols', 'functions', 'classes', 'definitions', 'code', 'index', 'semantic'],
     priority: 8,
-    description: 'Find symbols (functions, classes, variables) in the codebase'
+    description: 'Find symbols (functions, classes, variables) in the codebase',
+    fleetSafe: true,
   },
   {
     name: 'find_references',
     category: 'file_search',
     keywords: ['references', 'usages', 'where used', 'callers', 'semantic'],
     priority: 8,
-    description: 'Find references/usages of a symbol'
+    description: 'Find references/usages of a symbol',
+    fleetSafe: true,
   },
   {
     name: 'find_definition',
     category: 'file_search',
     keywords: ['definition', 'go to definition', 'declaration', 'symbol'],
     priority: 8,
-    description: 'Find definition/declaration location of a symbol'
+    description: 'Find definition/declaration location of a symbol',
+    fleetSafe: true,
   },
   {
     name: 'search_multi',
     category: 'file_search',
     keywords: ['multi', 'search', 'batch', 'parallel', 'patterns', 'queries'],
     priority: 7,
-    description: 'Run multiple searches in one call'
+    description: 'Run multiple searches in one call',
+    fleetSafe: true,
   },
 
   // System operations
@@ -145,14 +152,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'web',
     keywords: ['search', 'google', 'web', 'internet', 'online', 'latest', 'news', 'documentation', 'docs', 'how to', 'weather', 'météo', 'meteo', 'forecast', 'temperature', 'info', 'find', 'lookup'],
     priority: 8,
-    description: 'Search the web for information including weather, news, documentation, and general queries'
+    description: 'Search the web for information including weather, news, documentation, and general queries',
+    fleetSafe: true,
   },
   {
     name: 'web_fetch',
     category: 'web',
     keywords: ['fetch', 'url', 'website', 'page', 'download', 'http', 'https', 'link', 'read'],
     priority: 7,
-    description: 'Fetch web page content'
+    description: 'Fetch web page content',
+    fleetSafe: true,
   },
   // Firecrawl (Native Engine v2026.3.14)
   {
@@ -160,14 +169,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'web',
     keywords: ['search', 'firecrawl', 'crawl', 'web', 'find', 'query', 'results', 'internet'],
     priority: 8,
-    description: 'Search the web via Firecrawl API'
+    description: 'Search the web via Firecrawl API',
+    fleetSafe: true,
   },
   {
     name: 'firecrawl_scrape',
     category: 'web',
     keywords: ['scrape', 'firecrawl', 'crawl', 'extract', 'web', 'page', 'content', 'markdown', 'fetch'],
     priority: 8,
-    description: 'Scrape a web page via Firecrawl API'
+    description: 'Scrape a web page via Firecrawl API',
+    fleetSafe: true,
   },
 
   {
@@ -198,7 +209,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'planning',
     keywords: ['todo', 'task', 'list', 'view', 'show', 'what', 'do', 'faire', 'tâches', 'taches', 'pending', 'status'],
     priority: 7,
-    description: 'View current todo list and task status'
+    description: 'View current todo list and task status',
+    fleetSafe: true,
   },
   {
     name: 'update_todo_list',
@@ -214,14 +226,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'codebase',
     keywords: ['codebase', 'structure', 'architecture', 'map', 'overview', 'symbols', 'dependencies', 'analyze', 'graph', 'imports', 'who imports', 'neighbors', 'path', 'layers', 'components', 'modules', 'relationships', 'calls', 'call graph', 'extends', 'inherits', 'methods', 'flowchart', 'organigramme'],
     priority: 6,
-    description: 'Analyze codebase structure and query code graph'
+    description: 'Analyze codebase structure and query code graph',
+    fleetSafe: true,
   },
   {
     name: 'code_graph',
     category: 'codebase',
     keywords: ['code graph', 'call graph', 'who calls', 'what calls', 'callers', 'callees', 'impact analysis', 'what breaks', 'affected', 'flowchart', 'mermaid', 'diagram', 'organigramme', 'class hierarchy', 'inheritance', 'extends', 'implements', 'file functions', 'methods', 'signatures', 'dependency path', 'module dependencies', 'communities', 'clusters', 'subsystems', 'semantic search', 'embedding', 'similarity', 'pagerank', 'dead code', 'unused', 'uncalled', 'orphan', 'coupling', 'heatmap', 'refactoring', 'god function', 'hub module', 'drift', 'snapshot', 'evolution', 'visualize', 'interactive', 'd3', 'impact preview', 'pr impact', 'diff impact'],
     priority: 7,
-    description: 'Query code dependency graph: callers, callees, impact analysis, Mermaid flowcharts, class hierarchies'
+    description: 'Query code dependency graph: callers, callees, impact analysis, Mermaid flowcharts, class hierarchies',
+    fleetSafe: true,
   },
   {
     name: 'spawn_subagent',
@@ -297,7 +311,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'codebase',
     keywords: ['reason', 'think', 'plan', 'analyze', 'architecture', 'design', 'debug', 'complex', 'trade-off', 'compare', 'evaluate', 'strategy', 'decision', 'mcts', 'tree-of-thought'],
     priority: 6,
-    description: 'Solve complex problems using Tree-of-Thought reasoning with MCTS'
+    description: 'Solve complex problems using Tree-of-Thought reasoning with MCTS',
+    fleetSafe: true,
   },
 
   // Docs search
@@ -306,7 +321,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'codebase',
     keywords: ['docs', 'documentation', 'architecture', 'subsystem', 'api', 'security', 'config', 'design', 'how does', 'explain', 'overview'],
     priority: 5,
-    description: 'Search project documentation for architecture, API, security, and configuration information'
+    description: 'Search project documentation for architecture, API, security, and configuration information',
+    fleetSafe: true,
   },
 
   // Plan management
@@ -384,14 +400,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'utility',
     keywords: ['restore', 'context', 'memory', 'compressed', 'retrieve', 'earlier'],
     priority: 7,
-    description: 'Restore compressed context content by identifier'
+    description: 'Restore compressed context content by identifier',
+    fleetSafe: true,
   },
   {
     name: 'knowledge_search',
     category: 'utility',
     keywords: ['knowledge', 'search', 'convention', 'docs', 'domain', 'procedure'],
     priority: 5,
-    description: 'Search the agent knowledge base'
+    description: 'Search the agent knowledge base',
+    fleetSafe: true,
   },
   {
     name: 'knowledge_add',
@@ -447,7 +465,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'utility',
     keywords: ['memory', 'recall', 'retrieve', 'lookup', 'context'],
     priority: 5,
-    description: 'Retrieve persistent memory by key'
+    description: 'Retrieve persistent memory by key',
+    fleetSafe: true,
   },
   {
     name: 'forget',
@@ -468,14 +487,16 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'utility',
     keywords: ['lesson', 'search', 'pattern', 'rule', 'past', 'history', 'mistake'],
     priority: 5,
-    description: 'Search lessons learned'
+    description: 'Search lessons learned',
+    fleetSafe: true,
   },
   {
     name: 'lessons_list',
     category: 'utility',
     keywords: ['lesson', 'list', 'all', 'show', 'history'],
     priority: 4,
-    description: 'List all lessons learned'
+    description: 'List all lessons learned',
+    fleetSafe: true,
   },
   {
     name: 'task_verify',
@@ -489,7 +510,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'codebase',
     keywords: ['knowledge', 'graph', 'relationships', 'imports', 'calls', 'extends', 'dependencies', 'code', 'architecture'],
     priority: 6,
-    description: 'Query code entity relationships and dependencies'
+    description: 'Query code entity relationships and dependencies',
+    fleetSafe: true,
   },
 
   // LSP rename/refactor
@@ -514,7 +536,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'codebase',
     keywords: ['bug', 'find', 'scan', 'analysis', 'static', 'security', 'lint', 'check', 'vulnerability', 'error', 'leak', 'dead code', 'race condition', 'null', 'injection'],
     priority: 7,
-    description: 'Scan source files for potential bugs using regex-based static analysis'
+    description: 'Scan source files for potential bugs using regex-based static analysis',
+    fleetSafe: true,
   },
 
   // Merge conflict resolution
@@ -541,7 +564,8 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'control' as ToolCategory,
     keywords: ['terminate', 'finish', 'done', 'complete', 'end', 'stop', 'exit', 'signal'],
     priority: 5,
-    description: 'Signal task completion and end the agent loop'
+    description: 'Signal task completion and end the agent loop',
+    fleetSafe: true,
   },
 
   // Secrets detection
@@ -598,6 +622,7 @@ export const TOOL_METADATA: ToolMetadata[] = [
     keywords: ['sessions', 'list', 'active', 'agents', 'discover', 'coordination', 'multi-agent'],
     priority: 5,
     description: 'List active sessions in the multi-agent system (discover who you can communicate with)',
+    fleetSafe: true,
   },
   {
     name: 'sessions_history',
@@ -605,6 +630,7 @@ export const TOOL_METADATA: ToolMetadata[] = [
     keywords: ['sessions', 'history', 'transcript', 'messages', 'review', 'context', 'multi-agent'],
     priority: 5,
     description: 'Get conversation history from another session by key or id',
+    fleetSafe: true,
   },
   {
     name: 'sessions_send',

@@ -102,6 +102,13 @@ export interface IToolMetadata {
   modifiesFiles?: boolean;
   /** Whether tool makes network requests */
   makesNetworkRequests?: boolean;
+  /**
+   * Whether this tool is safe to expose to remote peers via A2A / fleet.
+   * Default `false` (opt-in). See `src/tools/types.ts:ToolMetadata.fleetSafe`
+   * for the binding criteria — kept in lockstep with the legacy registry's
+   * flag so a single audit pass populates both.
+   */
+  fleetSafe?: boolean;
 }
 
 // ============================================================================

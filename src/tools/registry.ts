@@ -104,13 +104,36 @@ export class ToolRegistry {
 
   /**
    * Check if a tool is registered and currently enabled.
-   * 
+   *
    * @param name - The name of the tool to check
    * @returns True if the tool exists and isEnabled() returns true
    */
   public isToolEnabled(name: string): boolean {
     const tool = this.tools.get(name);
     return tool ? tool.isEnabled() : false;
+  }
+
+  /**
+   * Whether the named tool is marked safe for remote (A2A / fleet) invocation.
+   * Default `false` when the metadata doesn't carry the flag — opt-in by design.
+   *
+   * The flag itself is set in `src/tools/metadata.ts` per the criteria in
+   * `ToolMetadata.fleetSafe` JSDoc. A peer-originated executor MUST consult
+   * this before exposing or running a tool on behalf of a remote agent.
+   */
+  public isFleetSafe(name: string): boolean {
+    const tool = this.tools.get(name);
+    return tool?.metadata.fleetSafe === true;
+  }
+
+  /**
+   * Return the subset of currently-enabled tools whose metadata declares
+   * `fleetSafe: true`. Used to build the tool list exposed to A2A peers.
+   */
+  public getFleetSafeTools(): CodeBuddyTool[] {
+    return Array.from(this.tools.values())
+      .filter((t) => t.isEnabled() && t.metadata.fleetSafe === true)
+      .map((t) => t.definition);
   }
 
   /**

@@ -32,6 +32,21 @@ export interface ToolMetadata {
   priority: number;
   /** Human-readable description */
   description: string;
+  /**
+   * Whether this tool is safe to expose to remote peers via A2A / fleet.
+   *
+   * Default `false` (opt-in). A tool MUST satisfy ALL of:
+   *   - read-only OR strictly bounded side effects (no arbitrary code exec,
+   *     no host-side mutation that the local user hasn't explicitly authorized)
+   *   - cannot exfiltrate secrets (env, ~/.ssh, ~/.aws, credentials)
+   *   - cannot drive UI input (keyboard/mouse synthesis)
+   *   - bounded resource usage (no unbounded loops, sub-process forks, etc.)
+   *
+   * The fleet event bus and A2A executor inspect this flag before allowing
+   * a peer-originated invocation. Tools without `fleetSafe: true` are
+   * silently filtered out from peer-visible tool lists.
+   */
+  fleetSafe?: boolean;
 }
 
 /**
