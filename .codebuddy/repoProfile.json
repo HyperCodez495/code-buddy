@@ -1,5 +1,5 @@
 {
-  "detectedAt": "2026-05-03T01:22:05.016Z",
+  "detectedAt": "2026-05-07T21:29:35.164Z",
   "languages": [
     "TypeScript",
     "JavaScript"
@@ -26,7 +26,7 @@
     ]
   },
   "contextPack": "Language: TypeScript, JavaScript | Framework: Ink (terminal UI) | Package manager: npm | Commands: test=\"npm run test\", lint=\"npm run lint\", format=\"npm run format\", build=\"npm run build\", typecheck=\"npm run typecheck\", validate=\"npm run validate\" | Dirs: src=src, tests=tests, docs=docs | Naming: camelCase (JS/TS)",
-  "_configMtime": 1775945349006.342,
+  "_configMtime": 1777894532030.432,
   "name": "@phuetz/code-buddy",
   "description": "Open-source multi-provider AI coding agent for the terminal. Supports Grok, Claude, ChatGPT, Gemini, Ollama and LM Studio with 52+ tools, multi-channel messaging, skills system, and Enterprise-grade architecture.",
   "moduleType": "esm",
@@ -57,16 +57,16 @@
   "cartography": {
     "fileStats": {
       "byExtension": {
-        ".ts": 2282,
+        ".ts": 2318,
         ".js": 27,
         ".tsx": 48
       },
       "locEstimate": {
-        "TypeScript": 777220,
+        "TypeScript": 790624,
         "JavaScript": 319
       },
-      "totalSourceFiles": 1554,
-      "totalTestFiles": 803,
+      "totalSourceFiles": 1567,
+      "totalTestFiles": 826,
       "largestFiles": [
         {
           "path": "src/index.ts",
@@ -75,6 +75,10 @@
         {
           "path": "tests/agent/execution/agent-executor.test.ts",
           "lines": 1983
+        },
+        {
+          "path": "src/tools/computer-control-tool.ts",
+          "lines": 2262
         },
         {
           "path": "tests/unit/codebuddy-client.test.ts",
@@ -101,10 +105,6 @@
           "lines": 1922
         },
         {
-          "path": "src/tools/computer-control-tool.ts",
-          "lines": 1890
-        },
-        {
           "path": "tests/channels/matrix.test.ts",
           "lines": 1890
         }
@@ -115,17 +115,17 @@
         {
           "name": "Agent core",
           "directory": "src/agent",
-          "fileCount": 189
+          "fileCount": 187
         },
         {
           "name": "Tool implementations",
           "directory": "src/tools",
-          "fileCount": 165
+          "fileCount": 166
         },
         {
           "name": "Command handlers",
           "directory": "src/commands",
-          "fileCount": 102
+          "fileCount": 104
         },
         {
           "name": "Utilities",
@@ -140,7 +140,7 @@
         {
           "name": "Context management",
           "directory": "src/context",
-          "fileCount": 63
+          "fileCount": 65
         },
         {
           "name": "Messaging channels",
@@ -155,11 +155,16 @@
         {
           "name": "codebuddy",
           "directory": "src/codebuddy",
-          "fileCount": 34
+          "fileCount": 35
         },
         {
           "name": "Configuration",
           "directory": "src/config",
+          "fileCount": 30
+        },
+        {
+          "name": "HTTP server",
+          "directory": "src/server",
           "fileCount": 30
         },
         {
@@ -170,11 +175,6 @@
         {
           "name": "Knowledge base",
           "directory": "src/knowledge",
-          "fileCount": 29
-        },
-        {
-          "name": "HTTP server",
-          "directory": "src/server",
           "fileCount": 29
         },
         {
@@ -190,7 +190,7 @@
         {
           "name": "Memory system",
           "directory": "src/memory",
-          "fileCount": 18
+          "fileCount": 19
         },
         {
           "name": "renderers",
@@ -208,14 +208,14 @@
           "fileCount": 16
         },
         {
+          "name": "Provider adapters",
+          "directory": "src/providers",
+          "fileCount": 16
+        },
+        {
           "name": "Skills system",
           "directory": "src/skills",
           "fileCount": 15
-        },
-        {
-          "name": "Provider adapters",
-          "directory": "src/providers",
-          "fileCount": 14
         },
         {
           "name": "analytics",
@@ -388,6 +388,11 @@
           "fileCount": 5
         },
         {
+          "name": "fleet",
+          "directory": "src/fleet",
+          "fileCount": 5
+        },
+        {
           "name": "inference",
           "directory": "src/inference",
           "fileCount": 5
@@ -503,6 +508,11 @@
           "fileCount": 3
         },
         {
+          "name": "Protocols",
+          "directory": "src/protocols",
+          "fileCount": 3
+        },
+        {
           "name": "screen-capture",
           "directory": "src/screen-capture",
           "fileCount": 3
@@ -573,11 +583,6 @@
           "fileCount": 2
         },
         {
-          "name": "Protocols",
-          "directory": "src/protocols",
-          "fileCount": 2
-        },
-        {
           "name": "tasks",
           "directory": "src/tasks",
           "fileCount": 2
@@ -605,7 +610,7 @@
       "hotModules": [
         {
           "module": "src/utils/logger",
-          "importedBy": 516
+          "importedBy": 523
         },
         {
           "module": "src/types",
@@ -613,15 +618,15 @@
         },
         {
           "module": "src/codebuddy/client",
-          "importedBy": 74
+          "importedBy": 77
         },
         {
           "module": "src/services/vfs/unified-vfs-router",
-          "importedBy": 45
+          "importedBy": 46
         },
         {
           "module": "src/agent/codebuddy-agent",
-          "importedBy": 42
+          "importedBy": 44
         },
         {
           "module": "src/tools/registry/types",
@@ -629,7 +634,7 @@
         },
         {
           "module": "src/knowledge/knowledge-graph",
-          "importedBy": 32
+          "importedBy": 31
         },
         {
           "module": "src/commands/handlers/branch-handlers",
@@ -668,6 +673,10 @@
         {
           "a": "src/codebuddy/client",
           "b": "src/codebuddy/providers/provider-openai-compat"
+        },
+        {
+          "a": "src/context/smart-compaction",
+          "b": "src/context/tool-pair-preserver"
         },
         {
           "a": "src/knowledge/knowledge-graph",
@@ -1495,6 +1504,7 @@
         "BrowserTool",
         "ExitPlanModeReadlineProvider",
         "GatewayTool",
+        "MacroManager",
         "mcp-manager",
         "MessageTool",
         "plan-tools",
@@ -2643,6 +2653,16 @@
           ]
         },
         {
+          "module": "fleet",
+          "exports": [
+            "FleetListener",
+            "getFleetHeartbeatIntervalMs",
+            "createPeerChatClientFromEnv",
+            "isCompactionBridgeWired",
+            "getPeerChatProviderInfo"
+          ]
+        },
+        {
           "module": "gateway",
           "exports": [
             "WebSocketGateway",
@@ -2897,9 +2917,9 @@
           "exports": [
             "A2AAgentServer",
             "A2AAgentClient",
+            "createCodeBuddyTaskExecutor",
             "createACPServerRoutes",
-            "createAgentCard",
-            "getTaskResult"
+            "createAgentCard"
           ]
         },
         {
