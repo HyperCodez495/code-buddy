@@ -205,6 +205,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
     },
   },
 
+  // Code Buddy backend toggles that need a live IPC round-trip (the
+  // settings file is the source of truth, but some flags benefit from
+  // hot-apply without restarting the app).
+  codebuddy: {
+    setGeminiGrounding: (
+      payload: { enabled: boolean },
+    ): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke('codebuddy:set-gemini-grounding', payload),
+  },
+
   // Config methods
   config: {
     get: (): Promise<AppConfig> => ipcRenderer.invoke('config.get'),
@@ -1696,6 +1706,11 @@ declare global {
         onDownloadProgress: (
           listener: (progress: { bytes: number; total: number | null }) => void,
         ) => () => void;
+      };
+      codebuddy: {
+        setGeminiGrounding: (
+          payload: { enabled: boolean },
+        ) => Promise<{ ok: boolean; reason?: string }>;
       };
       config: {
         get: () => Promise<AppConfig>;

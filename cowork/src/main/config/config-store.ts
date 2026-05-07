@@ -143,6 +143,15 @@ export interface AppConfig {
     apiKey?: string;
     /** Model override forwarded on every request */
     model?: string;
+    /**
+     * Activate Gemini's native server-side Google Search grounding when
+     * the resolved model is in the Gemini family (gemini-* / gemini-2.* /
+     * gemini-3.*). Wired through to GeminiNativeProvider via
+     * setDefaultGoogleSearch at engine adapter init. No-op for non-Gemini
+     * providers — kept here rather than per-provider because this is a
+     * UX-level toggle, not a provider config.
+     */
+    geminiGroundingEnabled?: boolean;
   };
 }
 

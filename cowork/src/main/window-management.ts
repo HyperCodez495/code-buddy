@@ -104,7 +104,8 @@ export function setupTray() {
       : process.platform === 'win32'
         ? 'tray-icon.ico'
         : 'tray-icon.png';
-  // TODO: create resources/tray-icon.ico from tray-icon.png for full Windows tray fidelity
+  // tray-icon.ico is generated from tray-icon.png by scripts/build-tray-icon.js
+  // (run as part of `npm run build` and available as `npm run build:tray-icon`).
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, iconName)
     : join(__dirname, '../../resources', iconName);

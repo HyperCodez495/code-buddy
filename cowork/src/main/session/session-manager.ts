@@ -76,6 +76,13 @@ export interface EngineAdapterLike {
   ): Promise<{ content: string; tokenCount?: number; toolCallCount?: number }>;
   cancel(sessionId: string): void;
   clearSession(sessionId: string): void;
+  /**
+   * Toggle Gemini server-side Google Search grounding default for this
+   * adapter. Optional because not every adapter implementation routes
+   * through the Gemini-native provider; calling it on an adapter that
+   * doesn't have a Gemini path is a no-op rather than a crash.
+   */
+  setDefaultGoogleSearch?: (enabled: boolean) => void;
 }
 
 /** Minimal interface for the project memory service */

@@ -1,11 +1,17 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Zap, CheckCircle, XCircle, Loader2, RefreshCw } from 'lucide-react';
+import { Zap, CheckCircle, XCircle, Loader2, RefreshCw, Globe } from 'lucide-react';
 
 interface CodeBuddyConfig {
   enabled: boolean;
   endpoint: string;
   apiKey: string;
   model: string;
+  /**
+   * Activate Gemini's native server-side Google Search grounding when
+   * the active model is Gemini. Persisted in the codebuddy.* config
+   * branch and hot-applied via IPC after save.
+   */
+  geminiGroundingEnabled: boolean;
 }
 
 interface HealthStatus {
@@ -22,6 +28,7 @@ export function SettingsCodeBuddy() {
     endpoint: 'http://localhost:3000',
     apiKey: '',
     model: '',
+    geminiGroundingEnabled: false,
   });
   const [health, setHealth] = useState<HealthStatus>({ status: 'unknown' });
   const [isTesting, setIsTesting] = useState(false);
@@ -31,13 +38,14 @@ export function SettingsCodeBuddy() {
   // Load config on mount
   useEffect(() => {
     window.electronAPI?.config.get().then((appConfig) => {
-      const cb = (appConfig as unknown as { codebuddy?: CodeBuddyConfig })?.codebuddy;
+      const cb = (appConfig as unknown as { codebuddy?: Partial<CodeBuddyConfig> })?.codebuddy;
       if (cb) {
         setConfig({
           enabled: cb.enabled ?? false,
           endpoint: cb.endpoint || 'http://localhost:3000',
           apiKey: cb.apiKey || '',
           model: cb.model || '',
+          geminiGroundingEnabled: cb.geminiGroundingEnabled ?? false,
         });
       }
     }).catch(() => {});
@@ -106,8 +114,22 @@ export function SettingsCodeBuddy() {
           endpoint: config.endpoint,
           apiKey: config.apiKey || undefined,
           model: config.model || undefined,
+          geminiGroundingEnabled: config.geminiGroundingEnabled,
         },
       } as Parameters<NonNullable<typeof window.electronAPI>['config']['save']>[0]);
+
+      // Hot-apply grounding to the live engine adapter so the user
+      // doesn't need to restart Cowork to see the toggle take effect
+      // on the next turn. Failures here are non-fatal — the toggle is
+      // already persisted to config and will apply at next boot.
+      try {
+        await window.electronAPI?.codebuddy?.setGeminiGrounding?.({
+          enabled: config.geminiGroundingEnabled,
+        });
+      } catch {
+        /* hot-apply best-effort; persisted setting is the source of truth */
+      }
+
       setSavedMsg('Configuration saved!');
       setTimeout(() => setSavedMsg(''), 3000);
     } catch (err) {
@@ -197,6 +219,45 @@ export function SettingsCodeBuddy() {
           />
         </div>
       </div>
+
+      {/* Advanced: provider-specific feature flags. Only relevant when
+          the Code Buddy backend is enabled — hidden otherwise to keep
+          the panel focused on connection setup. */}
+      {config.enabled && (
+        <div className="space-y-3 pt-3 border-t border-border-muted">
+          <h4 className="text-sm font-medium text-text-primary flex items-center gap-2">
+            <Globe className="w-4 h-4 text-accent" />
+            Advanced
+          </h4>
+          <div className="flex items-center justify-between p-4 rounded-lg bg-surface-secondary border border-border-muted">
+            <div className="flex-1 min-w-0 mr-4">
+              <p className="text-sm font-medium text-text-primary">
+                Gemini Google Search grounding
+              </p>
+              <p className="text-xs text-text-muted mt-0.5">
+                When the active model is a Gemini family member, let it search
+                the web server-side and append cited sources to its replies.
+                Ignored for non-Gemini models — safe to leave on.
+              </p>
+            </div>
+            <button
+              onClick={() => setConfig(c => ({ ...c, geminiGroundingEnabled: !c.geminiGroundingEnabled }))}
+              className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${
+                config.geminiGroundingEnabled ? 'bg-accent' : 'bg-gray-400'
+              }`}
+              aria-label="Toggle Gemini Google Search grounding"
+              role="switch"
+              aria-checked={config.geminiGroundingEnabled}
+            >
+              <span
+                className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                  config.geminiGroundingEnabled ? 'translate-x-5' : ''
+                }`}
+              />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Test connection */}
       <div className="flex gap-3">

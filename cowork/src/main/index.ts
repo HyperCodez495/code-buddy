@@ -27,6 +27,7 @@ import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import { classifyEngineLoadError, isEmbeddedOptOut, resolveEnginePath } from './engine/embedded-mode';
+import { applyGroundingToggle } from './codebuddy/grounding-handler';
 import {
   ProjectManager,
 } from './project/project-manager';
@@ -354,7 +355,8 @@ function setupTray() {
       : process.platform === 'win32'
         ? 'tray-icon.ico'
         : 'tray-icon.png';
-  // TODO: create resources/tray-icon.ico from tray-icon.png for full Windows tray fidelity
+  // tray-icon.ico is generated from tray-icon.png by scripts/build-tray-icon.js
+  // (run as part of `npm run build` and available as `npm run build:tray-icon`).
   const iconPath = app.isPackaged
     ? join(process.resourcesPath, iconName)
     : join(__dirname, '../../resources', iconName);
@@ -895,6 +897,19 @@ app
           logWarn('[Main] Failed to wire permission bridge:', permErr);
         }
 
+        // Apply the user's persisted "Gemini Google Search grounding"
+        // preference, if any. No-op when the user hasn't touched the
+        // toggle (apiConfig.codebuddy?.geminiGroundingEnabled === undefined)
+        // and when the adapter doesn't expose the method (defensive).
+        if (apiConfig.codebuddy?.geminiGroundingEnabled === true) {
+          const result = applyGroundingToggle(engineAdapter, true);
+          if (result.ok) {
+            log('[Main] Gemini Google Search grounding enabled by user setting');
+          } else {
+            log(`[Main] Gemini grounding toggle saved but not applied (reason: ${result.reason ?? 'unknown'})`);
+          }
+        }
+
         log('[Main] Code Buddy engine adapter initialized (embedded mode)');
       } catch (err) {
         if (classifyEngineLoadError(err) === 'missing') {
@@ -904,6 +919,19 @@ app
         }
       }
     }
+
+    // Hot-apply IPC for the user's "Gemini Google Search grounding"
+    // toggle. Registered unconditionally so the renderer can call it
+    // even when the embedded engine isn't loaded — the helper returns
+    // {ok:false, reason} and the UI can degrade gracefully. The toggle
+    // is also persisted to config-store, so the preference survives a
+    // restart even when the hot-apply path is a no-op.
+    ipcMain.handle(
+      'codebuddy:set-gemini-grounding',
+      async (_event, payload: { enabled: boolean }) => {
+        return applyGroundingToggle(engineAdapter, payload.enabled === true);
+      },
+    );
 
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
