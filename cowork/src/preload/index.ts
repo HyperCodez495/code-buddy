@@ -179,6 +179,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     list: (): Promise<unknown[]> => ipcRenderer.invoke('presence:list'),
     remove: (payload: { personId: string }): Promise<boolean> =>
       ipcRenderer.invoke('presence:remove', payload),
+    hasModel: (): Promise<{ installed: boolean; path: string }> =>
+      ipcRenderer.invoke('presence:has-model'),
+    selectModelFile: (): Promise<string | null> =>
+      ipcRenderer.invoke('presence:select-model-file'),
+    installModelFromPath: (
+      payload: { sourcePath: string },
+    ): Promise<{ ok: boolean; error?: string; installedPath?: string }> =>
+      ipcRenderer.invoke('presence:install-model-from-path', payload),
+    downloadModel: (
+      payload: { url: string },
+    ): Promise<{ ok: boolean; error?: string; installedPath?: string }> =>
+      ipcRenderer.invoke('presence:download-model', payload),
+    onDownloadProgress: (
+      listener: (progress: { bytes: number; total: number | null }) => void,
+    ): (() => void) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        progress: { bytes: number; total: number | null },
+      ) => listener(progress);
+      ipcRenderer.on('presence:download-progress', wrapped);
+      return () => {
+        ipcRenderer.removeListener('presence:download-progress', wrapped);
+      };
+    },
   },
 
   // Config methods
@@ -1661,6 +1685,17 @@ declare global {
         }) => Promise<unknown>;
         list: () => Promise<unknown[]>;
         remove: (payload: { personId: string }) => Promise<boolean>;
+        hasModel: () => Promise<{ installed: boolean; path: string }>;
+        selectModelFile: () => Promise<string | null>;
+        installModelFromPath: (
+          payload: { sourcePath: string },
+        ) => Promise<{ ok: boolean; error?: string; installedPath?: string }>;
+        downloadModel: (
+          payload: { url: string },
+        ) => Promise<{ ok: boolean; error?: string; installedPath?: string }>;
+        onDownloadProgress: (
+          listener: (progress: { bytes: number; total: number | null }) => void,
+        ) => () => void;
       };
       config: {
         get: () => Promise<AppConfig>;

@@ -39,6 +39,9 @@ greeting itself.
 | `cowork/src/main/presence/presence-bridge.ts` | main | IPC handlers + event bus + cross-process state file |
 | `cowork/src/renderer/components/EnrollmentDialog.tsx` | renderer | UI: capture 5 face samples → enroll |
 | `cowork/src/renderer/components/PresenceIndicator.tsx` | renderer | Status badge in header |
+| `cowork/src/renderer/components/ModelInstallDialog.tsx` | renderer | UI: install Buffalo_S via file-picker or download |
+| `cowork/src/renderer/services/presence/PresenceService.ts` | renderer | Continuous detection loop daemon (singleton) |
+| `cowork/src/renderer/services/presence/face-utils.ts` | renderer | Shared `largestFace` + `cropFaceToRgbBytes` |
 | `src/memory/presence-injector.ts` | core agent | Reads cross-process file, formats `<presence>` block |
 
 ## Setup
@@ -53,29 +56,31 @@ npm install
 This pulls `@mediapipe/tasks-vision` (~ 1 MB on top of normal install)
 and `onnxruntime-node` (native binding ~30 MB).
 
-### 2. Download the Buffalo_S face recognition model
+### 2. Install the Buffalo_S face recognition model
 
 Buffalo_S is the small variant of InsightFace's ArcFace family. ~13 MB,
 512-dim embedding output, 112×112 RGB input.
 
-**Manual install (V0)**:
+**Two paths, both surfaced in `ModelInstallDialog` the first time the
+user clicks "Enroll":**
 
-1. Download `buffalo_s.zip` from
-   https://github.com/deepinsight/insightface/tree/master/python-package
-   (look for the `buffalo_s` model bundle in the model zoo).
-2. Extract `buffalo_s/w600k_mbf.onnx` (or whichever is the recognition
-   model — Buffalo_S also ships a detector model we don't need).
-3. Rename it to `buffalo_s.onnx`.
-4. Place it at `<userData>/models/buffalo_s.onnx`:
-   - **Windows**: `%APPDATA%\codebuddy-cowork\models\buffalo_s.onnx`
-   - **macOS**: `~/Library/Application Support/codebuddy-cowork/models/buffalo_s.onnx`
-   - **Linux**: `~/.config/codebuddy-cowork/models/buffalo_s.onnx`
+1. **In-app download** (recommended) — the dialog pre-fills a public
+   HuggingFace mirror URL, the user confirms, the model is streamed to
+   `<userData>/models/buffalo_s.onnx` with a progress bar. The URL is
+   editable so any public `.onnx` mirror works. Magic byte (`0x08`) and
+   size (5–50 MB) are validated; the file is written atomically via
+   `.tmp` + rename. No silent network calls — the user always clicks
+   "Télécharger" first.
 
-The exact path is logged on first failed call (`FaceRecognizer: Buffalo_S
-model not found at <path>...`).
+2. **Local file** — if the user has already downloaded the model
+   (e.g. from
+   https://github.com/deepinsight/insightface/tree/master/python-package),
+   they can pick the `.onnx` from disk. Same validation pipeline.
 
-**V0.2 plan**: auto-download the model on first enrollment (after
-explicit user consent — no silent network calls).
+The cross-platform install path:
+- **Windows**: `%APPDATA%\codebuddy-cowork\models\buffalo_s.onnx`
+- **macOS**: `~/Library/Application Support/codebuddy-cowork/models/buffalo_s.onnx`
+- **Linux**: `~/.config/codebuddy-cowork/models/buffalo_s.onnx`
 
 ### 3. Enroll your face
 
@@ -105,19 +110,33 @@ conversation history (formal session → "Bonjour Patrice", late-night
 philosophical chat → "bonjour mon chéri"). This is the only place where
 trusting the LLM beats hardcoding.
 
-## V0 limitations
+## What's wired today
 
-- **No continuous loop**: today the renderer doesn't run a background
-  presence detector. Enrollment + manual checks only. V0.5 will add a
-  `PresenceService` daemon that captures + matches every N seconds.
-- **No auto model download**: see the section above. V0.2 plan.
-- **No voice fingerprinting**: the speaker-verification side
+- **Continuous detection loop**: `PresenceService` (singleton, started
+  by `App.tsx` once per app lifecycle) runs detect → encode → match
+  every 3 s by default. Self-aborts if no model installed or no
+  identity enrolled — the camera light never turns on for nothing.
+- **Visibility-aware**: pauses on `visibilitychange = hidden`, resumes
+  on visible. The `MediaStream` is kept open across pause/resume to
+  avoid a re-acquisition blink.
+- **Opt-in toggle**: persisted via `localStorage`
+  (`cowork.presence.enabled`); defaults to on but can be disabled and
+  the lifecycle hook stops the daemon.
+- **In-app model install**: download or file-picker, both with magic
+  byte + size validation, atomic writes.
+
+## Still on the roadmap (V1+)
+
+- **Voice fingerprinting**: the speaker-verification side
   (`SpeakerVerifier` analogue of `FaceRecognizer`) lives on the V1
   roadmap. Audio capture infra reuses the renderer/services/presence/
   pattern.
 - **Singleton store**: V0 supports multiple identities (you + your
   partner + …) but matches only the closest. Multi-person scenes (two
   faces in frame at once) just match the largest face.
+- **Multi-window gating**: two BrowserWindows would race for the
+  camera. We don't gate this today; in practice Cowork ships a single
+  main window so it's a non-issue.
 
 ## Threshold tuning
 

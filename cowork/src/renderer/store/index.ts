@@ -218,6 +218,13 @@ interface AppState {
   splitPaneEnabled: boolean;
   splitPaneRatio: number;
 
+  // Presence (face-memory) — UI dialogs + opt-in toggle.
+  // The toggle is persisted because the user's choice to run the camera
+  // service should survive restarts; the dialogs are transient.
+  showEnrollmentDialog: boolean;
+  showModelInstallDialog: boolean;
+  presenceEnabled: boolean;
+
   // Auto-update
   updateInfo: UpdateInfo | null;
 
@@ -372,6 +379,11 @@ interface AppState {
   toggleSplitPane: () => void;
   setSplitPaneRatio: (ratio: number) => void;
 
+  // Presence actions
+  setShowEnrollmentDialog: (show: boolean) => void;
+  setShowModelInstallDialog: (show: boolean) => void;
+  setPresenceEnabled: (enabled: boolean) => void;
+
   // Update actions
   setUpdateInfo: (info: UpdateInfo | null) => void;
 
@@ -499,6 +511,19 @@ export const useAppStore = create<AppState>((set) => ({
       return Number.isFinite(n) && n > 0.15 && n < 0.85 ? n : 0.5;
     } catch {
       return 0.5;
+    }
+  })(),
+  showEnrollmentDialog: false,
+  showModelInstallDialog: false,
+  presenceEnabled: ((): boolean => {
+    try {
+      // Default true — but the service still won't start the camera until
+      // at least one identity is enrolled (PresenceService.start() guard).
+      return typeof window !== 'undefined'
+        ? window.localStorage?.getItem('cowork.presence.enabled') !== '0'
+        : true;
+    } catch {
+      return true;
     }
   })(),
   updateInfo: null,
@@ -1048,6 +1073,18 @@ export const useAppStore = create<AppState>((set) => ({
     set({ splitPaneRatio: clamped });
     try {
       window.localStorage?.setItem('cowork.layout.splitRatio', String(clamped));
+    } catch {
+      /* ignore */
+    }
+  },
+
+  // Presence actions
+  setShowEnrollmentDialog: (show) => set({ showEnrollmentDialog: show }),
+  setShowModelInstallDialog: (show) => set({ showModelInstallDialog: show }),
+  setPresenceEnabled: (enabled) => {
+    set({ presenceEnabled: enabled });
+    try {
+      window.localStorage?.setItem('cowork.presence.enabled', enabled ? '1' : '0');
     } catch {
       /* ignore */
     }

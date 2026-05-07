@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useUnreadNotificationCount } from '../store/selectors';
 import { TabBar } from './TabBar';
+import { PresenceIndicator } from './PresenceIndicator';
 
 const isMac = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
 
@@ -40,10 +41,17 @@ export function Titlebar() {
         <TabBar />
       </div>
 
+      {/* Presence indicator (face memory) — opens EnrollmentDialog on click. */}
+      <div className="titlebar-no-drag px-2 flex items-center ml-auto">
+        <PresenceIndicator
+          onEnrollClicked={() => useAppStore.getState().setShowEnrollmentDialog(true)}
+        />
+      </div>
+
       {/* Bookmarks panel (Phase 3 step 4) */}
       <button
         onClick={() => useAppStore.getState().setShowBookmarksPanel(true)}
-        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors ml-auto"
+        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
         title={t('bookmarks.title')}
       >
         <Star className="w-4 h-4 text-text-secondary" />

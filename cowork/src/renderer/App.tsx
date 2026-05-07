@@ -45,6 +45,9 @@ import { SplitPaneLayout } from './components/SplitPaneLayout';
 import { UpdateNotification } from './components/UpdateNotification';
 import { NotificationToastContainer } from './components/NotificationToast';
 import { NotificationCenter } from './components/NotificationCenter';
+import { EnrollmentDialog } from './components/EnrollmentDialog';
+import { ModelInstallDialog } from './components/ModelInstallDialog';
+import { PresenceService } from './services/presence/PresenceService';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -106,6 +109,9 @@ function App() {
   const setShowTestRunner = useAppStore((s) => s.setShowTestRunner);
   const showReasoningViewer = useAppStore((s) => s.showReasoningViewer);
   const setShowReasoningViewer = useAppStore((s) => s.setShowReasoningViewer);
+  const showEnrollmentDialog = useAppStore((s) => s.showEnrollmentDialog);
+  const setShowEnrollmentDialog = useAppStore((s) => s.setShowEnrollmentDialog);
+  const presenceEnabled = useAppStore((s) => s.presenceEnabled);
   const splitPaneEnabled = useAppStore((s) => s.splitPaneEnabled);
   const toggleSplitPane = useAppStore((s) => s.toggleSplitPane);
   const updateInfo = useUpdateInfo();
@@ -176,6 +182,28 @@ function App() {
     setContextPanelCollapsed(width < 1100);
     setSidebarCollapsed(width < 800);
   }, [width, setContextPanelCollapsed, setSidebarCollapsed]);
+
+  // Presence (face memory) — start the continuous detection loop only
+  // when the user has opted in AND we're inside Electron. The service
+  // self-aborts if no model or no enrollment, so we don't double-guard
+  // here. Pause on tab hide so the camera light tracks user attention.
+  useEffect(() => {
+    if (!isElectron || !presenceEnabled) return;
+    const svc = PresenceService.getInstance();
+
+    void svc.start();
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') svc.pause();
+      else svc.resume();
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility);
+      svc.stop();
+    };
+  }, [isElectron, presenceEnabled]);
 
   // Auto-collapse sidebar when Settings is open, restore on close
   useEffect(() => {
@@ -489,6 +517,14 @@ function App() {
       {/* Notification toasts + center (Claude Cowork parity) */}
       <NotificationToastContainer />
       <NotificationCenter />
+
+      {/* Presence — face memory enrollment + model install. */}
+      <EnrollmentDialog
+        isOpen={showEnrollmentDialog}
+        onClose={() => setShowEnrollmentDialog(false)}
+        onEnrolled={() => setShowEnrollmentDialog(false)}
+      />
+      <ModelInstallDialog />
     </div>
   );
 }

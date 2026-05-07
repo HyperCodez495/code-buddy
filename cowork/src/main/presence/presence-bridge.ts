@@ -28,18 +28,40 @@
  */
 
 import { EventEmitter } from 'events';
-import { ipcMain } from 'electron';
+import { ipcMain, dialog, type IpcMainInvokeEvent } from 'electron';
 import * as fs from 'fs/promises';
+import { createWriteStream } from 'fs';
 import * as path from 'path';
 import * as os from 'os';
+import * as https from 'https';
+import * as http from 'http';
+import { URL as NodeURL } from 'url';
 import { log, logError } from '../utils/logger';
 import { getPresenceStore } from './presence-store';
-import { getFaceRecognizer } from './face-recognizer';
+import { FaceRecognizer, getFaceRecognizer } from './face-recognizer';
 import type {
   PersonIdentity,
   PresenceEvent,
   PresenceMatch,
 } from '../../shared/presence/types';
+
+/**
+ * Min/max plausible size for the Buffalo_S ONNX model. The file is
+ * ~13 MB; we accept 5–50 MB to allow for compressed variants and
+ * future Buffalo_M without false-rejecting a legitimate file.
+ */
+const MIN_MODEL_SIZE_BYTES = 5 * 1024 * 1024;
+const MAX_MODEL_SIZE_BYTES = 50 * 1024 * 1024;
+
+/**
+ * Allowed schemes for model download. We deliberately reject anything
+ * that isn't HTTPS (or HTTP for localhost mirrors used in tests) — the
+ * model is small enough that a slow secure transfer is fine.
+ */
+const ALLOWED_DOWNLOAD_PROTOCOLS = new Set(['https:', 'http:']);
+
+/** Cap on HTTP redirects we follow (HF → CDN typically does 1–2 hops). */
+const MAX_DOWNLOAD_REDIRECTS = 5;
 
 /**
  * Stable cross-process location where the *current* presence state is
@@ -175,6 +197,102 @@ export class PresenceBridge extends EventEmitter {
     ipcMain.handle('presence:remove', async (_event, payload: { personId: string }): Promise<boolean> => {
       return getPresenceStore().removePerson(payload.personId);
     });
+
+    ipcMain.handle(
+      'presence:has-model',
+      async (): Promise<{ installed: boolean; path: string }> => {
+        const modelPath = FaceRecognizer.defaultModelPath();
+        try {
+          await fs.access(modelPath);
+          return { installed: true, path: modelPath };
+        } catch {
+          return { installed: false, path: modelPath };
+        }
+      },
+    );
+
+    ipcMain.handle(
+      'presence:select-model-file',
+      async (): Promise<string | null> => {
+        const result = await dialog.showOpenDialog({
+          title: 'Sélectionner le modèle Buffalo_S ONNX',
+          properties: ['openFile'],
+          filters: [
+            { name: 'Modèle ONNX', extensions: ['onnx'] },
+            { name: 'Tous les fichiers', extensions: ['*'] },
+          ],
+        });
+        if (result.canceled || result.filePaths.length === 0) return null;
+        return result.filePaths[0];
+      },
+    );
+
+    ipcMain.handle(
+      'presence:download-model',
+      async (
+        event: IpcMainInvokeEvent,
+        payload: { url: string },
+      ): Promise<{ ok: boolean; error?: string; installedPath?: string }> => {
+        const sender = event.sender;
+        const sendProgress = (bytes: number, total: number | null) => {
+          // BrowserWindow may have been destroyed between the dispatch and
+          // the progress tick — guard against the resulting "Object has
+          // been destroyed" throw.
+          if (sender.isDestroyed()) return;
+          sender.send('presence:download-progress', { bytes, total });
+        };
+        return downloadModel(payload.url, sendProgress);
+      },
+    );
+
+    ipcMain.handle(
+      'presence:install-model-from-path',
+      async (
+        _event,
+        payload: { sourcePath: string },
+      ): Promise<{ ok: boolean; error?: string; installedPath?: string }> => {
+        try {
+          const stat = await fs.stat(payload.sourcePath);
+          if (!stat.isFile()) {
+            return { ok: false, error: 'Le chemin sélectionné n\'est pas un fichier.' };
+          }
+          if (stat.size < MIN_MODEL_SIZE_BYTES || stat.size > MAX_MODEL_SIZE_BYTES) {
+            return {
+              ok: false,
+              error: `Taille inattendue (${(stat.size / (1024 * 1024)).toFixed(1)} Mo). Buffalo_S fait ~13 Mo.`,
+            };
+          }
+
+          // Validate ONNX magic byte: protobuf serialised ONNX models start
+          // with field tag 0x08 (varint, field number 1, wire type 0 = ir_version).
+          // A renamed zip would start with PK (0x50 0x4B), a renamed tarball
+          // with another magic — anything but 0x08 fails here.
+          const fh = await fs.open(payload.sourcePath, 'r');
+          try {
+            const buf = Buffer.alloc(1);
+            await fh.read(buf, 0, 1, 0);
+            if (buf[0] !== 0x08) {
+              return {
+                ok: false,
+                error: 'Magic byte invalide — ce fichier n\'est pas un modèle ONNX.',
+              };
+            }
+          } finally {
+            await fh.close();
+          }
+
+          const destPath = FaceRecognizer.defaultModelPath();
+          await fs.mkdir(path.dirname(destPath), { recursive: true });
+          await fs.copyFile(payload.sourcePath, destPath);
+          log(`[PresenceBridge] Installed Buffalo_S model from ${payload.sourcePath} → ${destPath}`);
+          return { ok: true, installedPath: destPath };
+        } catch (err) {
+          const msg = (err as Error).message;
+          logError(`[PresenceBridge] install-model-from-path failed: ${msg}`);
+          return { ok: false, error: msg };
+        }
+      },
+    );
   }
 
   /**
@@ -272,8 +390,222 @@ export class PresenceBridge extends EventEmitter {
     ipcMain.removeHandler('presence:match');
     ipcMain.removeHandler('presence:list');
     ipcMain.removeHandler('presence:remove');
+    ipcMain.removeHandler('presence:has-model');
+    ipcMain.removeHandler('presence:select-model-file');
+    ipcMain.removeHandler('presence:install-model-from-path');
+    ipcMain.removeHandler('presence:download-model');
   }
 }
+
+/**
+ * Download a Buffalo_S ONNX model from `url` to
+ * `<userData>/models/buffalo_s.onnx`. Streams to a `.tmp` file, validates
+ * the ONNX magic byte on the first chunk (fast reject for HTML or zip
+ * mirrors), then atomically renames on success. Reports progress via
+ * the `onProgress` callback.
+ *
+ * Exported for tests; not part of the renderer-visible API.
+ */
+export async function downloadModel(
+  rawUrl: string,
+  onProgress: (bytes: number, total: number | null) => void,
+): Promise<{ ok: boolean; error?: string; installedPath?: string }> {
+  let parsed: NodeURL;
+  try {
+    parsed = new NodeURL(rawUrl);
+  } catch {
+    return { ok: false, error: 'URL invalide.' };
+  }
+  if (!ALLOWED_DOWNLOAD_PROTOCOLS.has(parsed.protocol)) {
+    return {
+      ok: false,
+      error: `Protocole non autorisé (${parsed.protocol}). Utilise https:// ou http://.`,
+    };
+  }
+
+  const destPath = FaceRecognizer.defaultModelPath();
+  const tmpPath = `${destPath}.tmp`;
+  await fs.mkdir(path.dirname(destPath), { recursive: true });
+  // Best-effort cleanup of a leftover .tmp from a previous failed run.
+  await fs.rm(tmpPath, { force: true });
+
+  let response: http.IncomingMessage;
+  try {
+    response = await getFollowingRedirects(parsed.toString(), MAX_DOWNLOAD_REDIRECTS);
+  } catch (err) {
+    return { ok: false, error: `Connexion: ${(err as Error).message}` };
+  }
+
+  if (response.statusCode !== 200) {
+    response.resume();
+    return {
+      ok: false,
+      error: `HTTP ${response.statusCode ?? '???'} — vérifie l'URL.`,
+    };
+  }
+
+  const total = (() => {
+    const raw = response.headers['content-length'];
+    if (typeof raw !== 'string') return null;
+    const n = parseInt(raw, 10);
+    return Number.isFinite(n) && n > 0 ? n : null;
+  })();
+  if (total !== null && (total < MIN_MODEL_SIZE_BYTES || total > MAX_MODEL_SIZE_BYTES)) {
+    response.resume();
+    return {
+      ok: false,
+      error: `Taille annoncée (${(total / (1024 * 1024)).toFixed(1)} Mo) hors plage Buffalo_S.`,
+    };
+  }
+
+  let received = 0;
+  let magicChecked = false;
+  let magicValid = false;
+  const sink = createWriteStream(tmpPath);
+
+  const cleanup = async () => {
+    try {
+      sink.destroy();
+    } catch {
+      /* ignore */
+    }
+    await fs.rm(tmpPath, { force: true });
+  };
+
+  return await new Promise((resolve) => {
+    let lastReport = 0;
+    response.on('data', (chunk: Buffer) => {
+      if (!magicChecked && chunk.length > 0) {
+        magicChecked = true;
+        magicValid = chunk[0] === 0x08;
+        if (!magicValid) {
+          response.destroy(new Error('magic'));
+          return;
+        }
+      }
+      received += chunk.length;
+      if (received > MAX_MODEL_SIZE_BYTES) {
+        response.destroy(new Error('oversize'));
+        return;
+      }
+      const now = Date.now();
+      if (now - lastReport > 200) {
+        lastReport = now;
+        try {
+          onProgress(received, total);
+        } catch {
+          /* listener errors must not abort the download */
+        }
+      }
+    });
+
+    response.on('error', (err) => {
+      void cleanup().finally(() => {
+        if (err.message === 'magic') {
+          resolve({ ok: false, error: 'Le fichier téléchargé n\'est pas un ONNX (magic byte).' });
+        } else if (err.message === 'oversize') {
+          resolve({
+            ok: false,
+            error: `Téléchargement > ${MAX_MODEL_SIZE_BYTES / (1024 * 1024)} Mo, abandon.`,
+          });
+        } else {
+          resolve({ ok: false, error: `Réseau: ${err.message}` });
+        }
+      });
+    });
+
+    sink.on('error', (err) => {
+      response.destroy();
+      void cleanup().finally(() => {
+        resolve({ ok: false, error: `Écriture: ${err.message}` });
+      });
+    });
+
+    sink.on('finish', () => {
+      void (async () => {
+        try {
+          if (received < MIN_MODEL_SIZE_BYTES) {
+            await cleanup();
+            resolve({
+              ok: false,
+              error: `Taille reçue (${(received / (1024 * 1024)).toFixed(1)} Mo) trop petite pour Buffalo_S.`,
+            });
+            return;
+          }
+          await fs.rename(tmpPath, destPath);
+          // Final progress event so the UI bar reaches 100% even when the
+          // server omits content-length (total stays null in that case).
+          try {
+            onProgress(received, total ?? received);
+          } catch {
+            /* ignore */
+          }
+          log(`[PresenceBridge] Downloaded Buffalo_S model from ${rawUrl} → ${destPath}`);
+          resolve({ ok: true, installedPath: destPath });
+        } catch (err) {
+          await cleanup();
+          resolve({ ok: false, error: (err as Error).message });
+        }
+      })();
+    });
+
+    response.pipe(sink);
+  });
+}
+
+/**
+ * Promise-wrapped GET that follows up to `maxRedirects` 3xx hops. Rejects
+ * on circular redirects, missing `location`, or unsupported protocols.
+ */
+function getFollowingRedirects(
+  url: string,
+  maxRedirects: number,
+): Promise<http.IncomingMessage> {
+  return new Promise((resolve, reject) => {
+    const visited = new Set<string>();
+    const visit = (current: string, hopsLeft: number): void => {
+      if (visited.has(current)) {
+        reject(new Error(`Boucle de redirection détectée à ${current}`));
+        return;
+      }
+      visited.add(current);
+
+      const parsed = new NodeURL(current);
+      if (!ALLOWED_DOWNLOAD_PROTOCOLS.has(parsed.protocol)) {
+        reject(new Error(`Redirection vers protocole interdit (${parsed.protocol}).`));
+        return;
+      }
+
+      const lib = parsed.protocol === 'http:' ? http : https;
+      const req = lib.get(current, { headers: { 'user-agent': 'codebuddy-cowork' } }, (res) => {
+        const status = res.statusCode ?? 0;
+        if (status >= 300 && status < 400) {
+          if (hopsLeft <= 0) {
+            res.resume();
+            reject(new Error('Trop de redirections.'));
+            return;
+          }
+          const location = res.headers.location;
+          if (typeof location !== 'string' || location.length === 0) {
+            res.resume();
+            reject(new Error('Redirection sans en-tête Location.'));
+            return;
+          }
+          res.resume();
+          // Resolve relative redirects against the current URL.
+          const next = new NodeURL(location, current).toString();
+          visit(next, hopsLeft - 1);
+          return;
+        }
+        resolve(res);
+      });
+      req.on('error', reject);
+      req.end();
+    };
+    visit(url, maxRedirects);
+  });
+}
+
 
 let singleton: PresenceBridge | null = null;
 export function getPresenceBridge(): PresenceBridge {
