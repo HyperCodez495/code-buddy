@@ -7,8 +7,8 @@ import frTranslations from './locales/fr.json';
 import zhTranslations from './locales/zh.json';
 
 i18n
-  .use(LanguageDetector) // 自动检测浏览器语言
-  .use(initReactI18next) // 初始化 react-i18next
+  .use(LanguageDetector) // detect browser language
+  .use(initReactI18next) // initialize react-i18next
   .init({
     resources: {
       en: {
@@ -21,19 +21,25 @@ i18n
         translation: zhTranslations,
       },
     },
-    fallbackLng: 'en', // 默认语言
-    supportedLngs: ['en', 'fr', 'zh'], // 支持的语言
+    // Default language — French. Phase d.21 V1.0 ship: this Cowork
+    // build targets Patrice (FR-FR) primarily; English + Chinese remain
+    // available via the language switcher. Users on en/zh navigators
+    // still get their language because LanguageDetector runs first
+    // (localStorage → navigator); fallbackLng only kicks in when
+    // detection fails or returns an unsupported locale.
+    fallbackLng: 'fr',
+    supportedLngs: ['en', 'fr', 'zh'],
     nonExplicitSupportedLngs: true,
     load: 'languageOnly',
     interpolation: {
-      escapeValue: false, // React 已经处理了 XSS
+      escapeValue: false, // React already escapes XSS
     },
-    pluralSeparator: '_', // 复数分隔符
-    contextSeparator: '_', // 上下文分隔符
+    pluralSeparator: '_',
+    contextSeparator: '_',
     detection: {
-      order: ['localStorage', 'navigator'], // 先检查 localStorage，再检查浏览器语言
-      caches: ['localStorage'], // 将语言选择保存到 localStorage
-      lookupLocalStorage: 'i18nextLng', // localStorage key
+      order: ['localStorage', 'navigator'],
+      caches: ['localStorage'],
+      lookupLocalStorage: 'i18nextLng',
     },
   });
 
