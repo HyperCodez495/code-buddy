@@ -1082,8 +1082,20 @@ app
     // a native binding we don't want eager on Cowork startup. The bridge
     // simply registers IPC handlers; encoder load is deferred to first call.
     const { getPresenceBridge } = await import('./presence/presence-bridge');
-    getPresenceBridge();
+    const presenceBridge = getPresenceBridge();
     log('[main] PresenceBridge initialized — IPC handlers presence:* active');
+
+    // Forward bridge events (detected/left/unknown/enrolled) to every
+    // renderer window so the titlebar PresenceIndicator can show live
+    // identity. The bridge already throttles via PRESENCE_DEDUP_WINDOW_MS
+    // so we don't need to debounce here.
+    presenceBridge.on('presence', (event) => {
+      for (const win of BrowserWindow.getAllWindows()) {
+        if (!win.isDestroyed()) {
+          win.webContents.send('presence:event', event);
+        }
+      }
+    });
 
     // Global search wires existing project services for cross-source queries.
     globalSearchService = new GlobalSearchService({

@@ -1,24 +1,22 @@
 /**
  * PresenceIndicator — minimal status badge for the Cowork header.
  *
- * Polls `presence:list` to know if any identities are enrolled. Renders:
- *   - Nothing when presence is fully off / nobody enrolled.
- *   - A discreet "Camera off — enroll" link when enrolled but no live
- *     match has been pushed to the bus recently.
- *   - A green dot + name when somebody was just detected.
+ * Polls `presence:list` to know if any identities are enrolled, and
+ * subscribes (via the Zustand store, fed by PresenceService) to live
+ * presence events. Renders, in priority order:
+ *   1. A green dot + name when the camera currently sees a known person.
+ *   2. A neutral "👤 inconnu" when a face is detected but doesn't match
+ *      any enrolled identity.
+ *   3. Nothing / "Enregistrer un visage" when nobody is enrolled yet.
+ *   4. A discreet "X visages enregistrés" fallback otherwise.
  *
- * The actual presence loop (continuous webcam capture + detect + encode +
- * match every N seconds) is *not* in this component. That belongs in a
- * top-level service (`PresenceService` to come) so it doesn't tie its
- * lifecycle to the indicator's mount/unmount.
- *
- * V0: this component is a status reflector only — clicking it opens
- * `EnrollmentDialog`. The continuous loop will arrive in V0.5.
+ * Clicking the indicator always opens `EnrollmentDialog`.
  *
  * @module cowork/renderer/components/PresenceIndicator
  */
 
 import { useEffect, useState } from 'react';
+import { useAppStore } from '../store';
 
 // Window.electronAPI.presence is declared in cowork/src/preload/index.ts.
 // We narrow the shape locally because preload uses `unknown[]` for `list()`
@@ -38,6 +36,8 @@ export interface PresenceIndicatorProps {
 
 export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
   const [enrolled, setEnrolled] = useState<PresenceListEntry[] | null>(null);
+  const currentPresence = useAppStore((s) => s.currentPresence);
+  const lastEventType = useAppStore((s) => s.lastPresenceEventType);
 
   useEffect(() => {
     let cancelled = false;
@@ -58,8 +58,41 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     };
   }, []);
 
+  // 1. Live match — somebody known is in front of the camera.
+  if (currentPresence && lastEventType === 'detected') {
+    const pct = Math.round(currentPresence.confidence * 100);
+    return (
+      <button
+        onClick={onEnrollClicked}
+        className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:opacity-80"
+        title={`${currentPresence.name} reconnu (${pct}%) — cliquer pour gérer les identités`}
+      >
+        <span className="relative inline-flex h-1.5 w-1.5">
+          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+        </span>
+        <span>👋 {currentPresence.name}</span>
+        <span className="text-emerald-700/60 dark:text-emerald-300/60">({pct}%)</span>
+      </button>
+    );
+  }
+
+  // 2. Unknown face — somebody is there but doesn't match anyone enrolled.
+  if (lastEventType === 'unknown') {
+    return (
+      <button
+        onClick={onEnrollClicked}
+        className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:opacity-80"
+        title="Visage inconnu détecté — cliquer pour l'enregistrer"
+      >
+        <span>👤 inconnu</span>
+      </button>
+    );
+  }
+
   if (enrolled === null) return null; // initial load — render nothing
   if (enrolled.length === 0) {
+    // 3. Nobody enrolled yet.
     return (
       <button
         onClick={onEnrollClicked}
@@ -71,8 +104,8 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     );
   }
 
-  // V0: we only show "X visage(s) enregistré(s)" + click to add another.
-  // V0.5 will subscribe to presence:detected events and show the live name + dot.
+  // 4. Enrolled but nobody currently in front of the camera (or no live
+  //    event yet — the service may still be warming up).
   return (
     <button
       onClick={onEnrollClicked}

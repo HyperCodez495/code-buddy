@@ -203,6 +203,31 @@ contextBridge.exposeInMainWorld('electronAPI', {
         ipcRenderer.removeListener('presence:download-progress', wrapped);
       };
     },
+    // Live presence events forwarded by the main process whenever the
+    // bridge sees a face come in / go out / get enrolled. Returns an
+    // unsubscribe function — callers MUST call it on teardown.
+    onEvent: (
+      listener: (event: {
+        type: 'detected' | 'unknown' | 'left' | 'enrolled';
+        match?: {
+          personId: string;
+          name: string;
+          aliases: string[];
+          confidence: number;
+          matchedAt: number;
+        };
+        timestamp: number;
+      }) => void,
+    ): (() => void) => {
+      const wrapped = (
+        _event: Electron.IpcRendererEvent,
+        payload: Parameters<typeof listener>[0],
+      ) => listener(payload);
+      ipcRenderer.on('presence:event', wrapped);
+      return () => {
+        ipcRenderer.removeListener('presence:event', wrapped);
+      };
+    },
   },
 
   // Code Buddy backend toggles that need a live IPC round-trip (the
@@ -1796,6 +1821,19 @@ declare global {
         ) => Promise<{ ok: boolean; error?: string; installedPath?: string }>;
         onDownloadProgress: (
           listener: (progress: { bytes: number; total: number | null }) => void,
+        ) => () => void;
+        onEvent: (
+          listener: (event: {
+            type: 'detected' | 'unknown' | 'left' | 'enrolled';
+            match?: {
+              personId: string;
+              name: string;
+              aliases: string[];
+              confidence: number;
+              matchedAt: number;
+            };
+            timestamp: number;
+          }) => void,
         ) => () => void;
       };
       codebuddy: {

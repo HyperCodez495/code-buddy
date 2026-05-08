@@ -38,6 +38,7 @@
 
 import { createFaceDetector, FaceDetector } from './face-detector';
 import { cropFaceToRgbBytes, largestFace } from './face-utils';
+import { useAppStore } from '../../store';
 
 export type PresenceServiceState =
   | 'idle'
@@ -66,6 +67,19 @@ interface PresenceAPI {
   list: () => Promise<unknown[]>;
   encode: (payload: { rgbBytes: number[] }) => Promise<number[]>;
   match: (payload: { embedding: number[]; threshold?: number }) => Promise<unknown>;
+  onEvent?: (
+    listener: (event: {
+      type: 'detected' | 'unknown' | 'left' | 'enrolled';
+      match?: {
+        personId: string;
+        name: string;
+        aliases: string[];
+        confidence: number;
+        matchedAt: number;
+      };
+      timestamp: number;
+    }) => void,
+  ) => () => void;
 }
 
 function getPresenceAPI(): PresenceAPI | null {
@@ -100,6 +114,14 @@ export class PresenceService {
   private intervalHandle: ReturnType<typeof setInterval> | null = null;
   private listeners = new Set<StateListener>();
   private consecutiveErrors = 0;
+  private unsubEvent: (() => void) | null = null;
+  /**
+   * Phase (d).21 ship 1 — Presence V0.6: track who we last greeted so
+   * the toast fires once per session per person. Reset on `presence:left`
+   * so the same person gets greeted again when they return. Reset on
+   * stop() so a fresh start always greets.
+   */
+  private lastGreetedPersonId: string | null = null;
   private readonly intervalMs: number;
   private readonly matchThreshold?: number;
 
@@ -150,6 +172,40 @@ export class PresenceService {
       // idle silently — no UI noise.
       this.setState('idle');
       return;
+    }
+
+    // Subscribe to live presence events from the main process so the
+    // titlebar PresenceIndicator (and any other consumer of the store)
+    // can react to detected/unknown/left/enrolled. Subscribed before the
+    // model/enrollment guards so 'enrolled' events still flow even when
+    // the camera loop bails. Idempotent — re-entry is a no-op.
+    if (this.unsubEvent === null && api.onEvent) {
+      this.unsubEvent = api.onEvent((evt) => {
+        const store = useAppStore.getState();
+        store.setCurrentPresence({
+          type: evt.type,
+          ...(evt.match ? { match: evt.match } : {}),
+        });
+        // Phase (d).21 ship 1 — proactive greeting toast.
+        // Fires once per person per session: on 'detected' for a new
+        // personId, OR after a 'left' has cleared lastGreetedPersonId.
+        if (evt.type === 'detected' && evt.match) {
+          const matchedId = evt.match.personId;
+          if (matchedId && matchedId !== this.lastGreetedPersonId) {
+            this.lastGreetedPersonId = matchedId;
+            store.addNotification({
+              id: `greeting-${matchedId}-${Date.now()}`,
+              title: '👋 Bonjour',
+              body: `${evt.match.name} est devant la caméra.`,
+              priority: 'normal',
+              timestamp: Date.now(),
+              read: false,
+            });
+          }
+        } else if (evt.type === 'left') {
+          this.lastGreetedPersonId = null;
+        }
+      });
     }
 
     try {
@@ -215,6 +271,11 @@ export class PresenceService {
       clearInterval(this.intervalHandle);
       this.intervalHandle = null;
     }
+    if (this.unsubEvent !== null) {
+      this.unsubEvent();
+      this.unsubEvent = null;
+    }
+    this.lastGreetedPersonId = null;
     this.cleanupResources();
     this.setState('idle');
   }

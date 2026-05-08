@@ -76,6 +76,18 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
 
     const start = async () => {
       try {
+        // Phase (d).21 ship 2 — proactive model check.
+        // If the Buffalo_S model isn't installed, open ModelInstallDialog
+        // and abort the enrollment bootstrap *before* taking the camera.
+        // The reactive fallback at the encode call site stays as a safety
+        // net for races where hasModel() lies.
+        const hm = await window.electronAPI?.presence?.hasModel();
+        if (cancelled) return;
+        if (hm && !hm.installed) {
+          setShowModelInstallDialog(true);
+          onClose();
+          return;
+        }
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: 640, height: 480, facingMode: 'user' },
           audio: false,

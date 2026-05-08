@@ -231,6 +231,19 @@ interface AppState {
   showEnrollmentDialog: boolean;
   showModelInstallDialog: boolean;
   presenceEnabled: boolean;
+  // Live presence — pushed by PresenceService whenever the main-process
+  // bridge fires an event. Volatile (no localStorage) — it's the present.
+  // `currentPresence` carries the matched person while the camera sees
+  // them; `lastPresenceEventType` lets the indicator distinguish "Patrice
+  // est là" from "un visage inconnu" from "personne".
+  currentPresence: {
+    personId: string;
+    name: string;
+    aliases: string[];
+    confidence: number;
+    matchedAt: number;
+  } | null;
+  lastPresenceEventType: 'detected' | 'unknown' | 'left' | 'enrolled' | null;
 
   // Multi-agent orchestrator launcher — modal-driven UI for triggering
   // the existing OrchestratorBridge in main. The last-used options are
@@ -412,6 +425,18 @@ interface AppState {
   setShowEnrollmentDialog: (show: boolean) => void;
   setShowModelInstallDialog: (show: boolean) => void;
   setPresenceEnabled: (enabled: boolean) => void;
+  setCurrentPresence: (
+    payload: {
+      type: 'detected' | 'unknown' | 'left' | 'enrolled';
+      match?: {
+        personId: string;
+        name: string;
+        aliases: string[];
+        confidence: number;
+        matchedAt: number;
+      };
+    } | null,
+  ) => void;
 
   // Orchestrator launcher actions
   setShowOrchestratorLauncher: (show: boolean) => void;
@@ -567,6 +592,8 @@ export const useAppStore = create<AppState>((set) => ({
   })(),
   showEnrollmentDialog: false,
   showModelInstallDialog: false,
+  currentPresence: null,
+  lastPresenceEventType: null,
   showOrchestratorLauncher: false,
   lastOrchestratorOptions: ((): { strategy: string; maxRounds: number } => {
     try {
@@ -1170,6 +1197,25 @@ export const useAppStore = create<AppState>((set) => ({
       window.localStorage?.setItem('cowork.presence.enabled', enabled ? '1' : '0');
     } catch {
       /* ignore */
+    }
+  },
+  setCurrentPresence: (payload) => {
+    if (payload === null) {
+      set({ currentPresence: null, lastPresenceEventType: null });
+      return;
+    }
+    // 'left' clears the current match; 'enrolled' is informational and
+    // doesn't change who's currently in front of the camera; 'detected'
+    // sets the match; 'unknown' keeps currentPresence null but records
+    // the event type so the indicator can show "👤 inconnu".
+    if (payload.type === 'left') {
+      set({ currentPresence: null, lastPresenceEventType: 'left' });
+    } else if (payload.type === 'detected' && payload.match) {
+      set({ currentPresence: payload.match, lastPresenceEventType: 'detected' });
+    } else if (payload.type === 'unknown') {
+      set({ currentPresence: null, lastPresenceEventType: 'unknown' });
+    } else {
+      set({ lastPresenceEventType: payload.type });
     }
   },
 
