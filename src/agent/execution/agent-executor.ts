@@ -609,6 +609,14 @@ export class AgentExecutor {
     let toolRounds = 0;
     let totalOutputTokens = 0;
 
+    // Phase (d).21 ship 4 — start a progress session for this turn.
+    // The default sink (boot-wired) logs at 25/50/75/100. Lazy-import to
+    // avoid circular load at module init time.
+    try {
+      const { getProgressTracker } = await import('../planner/progress-default-sink.js');
+      getProgressTracker().start(maxToolRounds);
+    } catch { /* progress tracker optional */ }
+
     try {
       const pipeline = this.deps.middlewarePipeline;
 
@@ -926,6 +934,30 @@ export class AgentExecutor {
             await recordToolMetric(toolCall.function.name, result.success, Date.now() - _streamToolStartMs);
             // Phase (d).2 — fleet broadcast on completion (opt-in).
             emitFleetToolCompleted(toolCall, result, Date.now() - _streamToolStartMs);
+            // Phase (d).21 ship 3 — proactive notification on tool completion.
+            // Default sink logs at info (success) / warn (failure). Gated by
+            // quiet hours + rate limit in NotificationManager.
+            try {
+              const { notify } = await import('../proactive/notification-default-sink.js');
+              const _toolDurationStream = Date.now() - _streamToolStartMs;
+              notify({
+                channelType: 'cli',
+                channelId: 'tool-completion',
+                message: result.success
+                  ? `${toolCall.function.name} completed in ${_toolDurationStream}ms`
+                  : `${toolCall.function.name} failed: ${result.error ?? 'unknown error'}`,
+                priority: result.success ? 'low' : 'high',
+              });
+            } catch { /* notification optional */ }
+            // Phase (d).21 ship 4 — progress update.
+            try {
+              const { getProgressTracker } = await import('../planner/progress-default-sink.js');
+              getProgressTracker().update(
+                toolCall.id,
+                result.success ? 'completed' : 'failed',
+                toolCall.function.name,
+              );
+            } catch { /* progress optional */ }
 
             // --- Track file access for code graph context (streaming, incremental update) ---
             try {

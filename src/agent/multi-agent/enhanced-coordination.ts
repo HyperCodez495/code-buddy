@@ -900,22 +900,27 @@ export class EnhancedCoordinator extends EventEmitter {
     // metrics would be ignored anyway since the allocator skips them).
     if (this.config.enableLearning) {
       try {
-        const { loadMetrics } = await import('./metrics-persistence.js');
+        const { loadMetrics, clearMetrics } = await import('./metrics-persistence.js');
         const loaded = await loadMetrics();
         if (loaded) {
-          for (const [role, metrics] of loaded.metrics) {
-            this.agentMetrics.set(role, metrics);
-          }
-          this.metricsSavedAt = loaded.savedAt;
-
-          // V0.4.1 — warning only, V0.5 will enforce.
+          // V0.5 (Phase d.21 ship 5) — TTL enforcement: clear stale
+          // metrics before they bias allocation. Mirrors the V0.4.1
+          // warning behaviour but actually deletes the file and resets
+          // the in-memory baseline.
           const ageMs = Date.now() - loaded.savedAt.getTime();
           const ageDays = ageMs / (1000 * 60 * 60 * 24);
           if (ageDays > this.metricsTtlDays) {
-            logger.warn(
-              `[multi-agent] persisted metrics are ${Math.floor(ageDays)} days old (TTL ${this.metricsTtlDays}d). ` +
-              `Allocation may be biased by stale data. V0.4.1 = warning only; V0.5 will auto-clear.`
+            await clearMetrics();
+            this.initializeMetrics();
+            this.metricsSavedAt = null;
+            logger.info(
+              `[multi-agent] persisted metrics ${Math.floor(ageDays)} days old (TTL ${this.metricsTtlDays}d) — cleared (V0.5 enforcement)`,
             );
+          } else {
+            for (const [role, metrics] of loaded.metrics) {
+              this.agentMetrics.set(role, metrics);
+            }
+            this.metricsSavedAt = loaded.savedAt;
           }
         }
       } catch (err) {

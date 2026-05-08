@@ -473,6 +473,20 @@ export class CodeBuddyAgent extends BaseAgent {
       }).catch((e) => { logger.debug('Advisor toml-config import failed (optional)', { error: String(e) }); });
     }).catch((e) => { logger.debug('Advisor config provider wire failed (optional)', { error: String(e) }); });
 
+    // Phase (d).21 ship 3 — wake NotificationManager via default sink.
+    // Idempotent. Once wired, anyone in the codebase can call notify()
+    // / notifyQuick() and it will gate + log + emit on the manager bus.
+    import('./proactive/notification-default-sink.js')
+      .then(({ wireDefaultNotificationSink }) => wireDefaultNotificationSink())
+      .catch((e) => logger.debug('NotificationManager wire failed (optional)', { error: String(e) }));
+
+    // Phase (d).21 ship 4 — wake ProgressTracker via default sink.
+    // Idempotent. Logs at 25/50/75/100 thresholds; consumers can attach
+    // additional listeners on getProgressTracker() for richer UX.
+    import('./planner/progress-default-sink.js')
+      .then(({ wireDefaultProgressSink }) => wireDefaultProgressSink())
+      .catch((e) => logger.debug('ProgressTracker wire failed (optional)', { error: String(e) }));
+
     // Boot-time auto-start of HeartbeatEngine when [heartbeat] enabled=true in TOML.
     // The /heartbeat slash command can also start it manually at runtime.
     // Wired for autonomous fleet support (AUTONOMOUS-FLEET-PROTOCOL v0.1).
