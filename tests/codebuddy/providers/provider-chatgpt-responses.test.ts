@@ -661,6 +661,104 @@ describe('ChatGptResponsesProvider — chatStream wiring', () => {
     expect(body.reasoning).toBeUndefined();
   });
 
+  it('auto-fallback: model_not_supported triggers retry with next FALLBACK_MODELS entry', async () => {
+    const responses: Response[] = [
+      // Round 1 with the user's chosen model → 400 model_not_supported
+      new Response(
+        JSON.stringify({ detail: "The 'gpt-5.5' model is not supported when using Codex with a ChatGPT account." }),
+        { status: 400, headers: { 'content-type': 'application/json' } },
+      ),
+      // Round 2 with the auto-fallback → success
+      streamingResponse([
+        'data: {"type":"response.output_text.delta","delta":"OK"}\n\n',
+        'data: {"type":"response.completed"}\n\n',
+      ]),
+    ];
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () => {
+      return responses.shift() ?? new Response('', { status: 500 });
+    });
+
+    const provider = new ChatGptResponsesProvider({
+      authProvider: async () => authBundle(),
+      model: 'gpt-5.5', // first FALLBACK_MODELS entry is 'gpt-5.1-codex'
+      defaultMaxTokens: 1000,
+    });
+
+    const out: string[] = [];
+    for await (const chunk of provider.chatStream(
+      [{ role: 'user', content: 'X' } as CodeBuddyMessage],
+      [],
+      {}, // no `model` override → auto-fallback enabled
+    )) {
+      const c = chunk.choices[0]?.delta?.content;
+      if (c) out.push(c);
+    }
+
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(out.join('')).toBe('OK');
+    // 2nd request used the fallback model (first entry of FALLBACK_MODELS).
+    const body2 = JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string);
+    expect(body2.model).toBe('gpt-5.1-codex');
+  });
+
+  it('auto-fallback: skipped when caller pinned --model explicitly', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: "The 'gpt-5.5' model is not supported." }),
+        { status: 400 },
+      ),
+    );
+
+    const provider = new ChatGptResponsesProvider({
+      authProvider: async () => authBundle(),
+      model: 'fallback-model',
+      defaultMaxTokens: 1000,
+    });
+
+    let caught: Error | null = null;
+    try {
+      const gen = provider.chatStream(
+        [{ role: 'user', content: 'X' } as CodeBuddyMessage],
+        [],
+        { model: 'gpt-5.5' }, // explicit pin → no fallback
+      );
+      for await (const _ of gen) { /* drain */ }
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeTruthy();
+    expect(caught!.message).toContain('gpt-5.5');
+  });
+
+  it('auto-fallback: skipped when disableModelFallback=true', async () => {
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({ detail: "The 'gpt-5.5' model is not supported." }),
+        { status: 400 },
+      ),
+    );
+
+    const provider = new ChatGptResponsesProvider({
+      authProvider: async () => authBundle(),
+      model: 'gpt-5.5',
+      defaultMaxTokens: 1000,
+      disableModelFallback: true,
+    });
+
+    let caught: Error | null = null;
+    try {
+      const gen = provider.chatStream(
+        [{ role: 'user', content: 'X' } as CodeBuddyMessage],
+        [],
+        {},
+      );
+      for await (const _ of gen) { /* drain */ }
+    } catch (err) {
+      caught = err as Error;
+    }
+    expect(caught).toBeTruthy();
+  });
+
   it('surfaces model_not_found errors with suggested fallbacks', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(JSON.stringify({ error: { code: 'model_not_found', message: 'not allowed' } }), {

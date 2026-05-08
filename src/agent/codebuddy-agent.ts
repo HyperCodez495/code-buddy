@@ -195,10 +195,31 @@ export class CodeBuddyAgent extends BaseAgent {
     this.repairCoordinator.on('repair:error', this.repairListeners.error);
 
     // Initialize StreamingHandler
+    //
+    // `extractToolCalls` parses streamed content for embedded "commentary
+    // tool calls" — useful for small Ollama models that hallucinate JSON
+    // tool-call shapes inside their text. But for backends with native
+    // structured tool_calls (ChatGPT Codex, Anthropic, Gemini, Grok...),
+    // it triggers false positives when the LLM legitimately mentions tool
+    // names in markdown backticks (e.g. "use `view_file` to read"), which
+    // splits the response into duplicate TUI entries (Phase d.25 fix).
+    //
+    // Heuristic: enable only for local/small models that can't emit
+    // structured tool_calls. Everything else uses the native API path.
+    const lower = modelToUse.toLowerCase();
+    const isLocalOrSmall =
+      lower.startsWith('qwen') ||
+      lower.startsWith('llama') ||
+      lower.startsWith('deepseek') ||
+      lower.startsWith('gemma') ||
+      lower.startsWith('mistral') ||
+      lower.startsWith('ollama/') ||
+      lower.includes(':') /* Ollama tag form like `qwen2.5-coder:7b` */;
     this.streamingHandler = new StreamingHandler({
       model: modelToUse,
       trackTokens: true,
-      sanitizeOutput: true
+      sanitizeOutput: true,
+      extractToolCalls: isLocalOrSmall,
     });
 
     // Initialize ToolHandler

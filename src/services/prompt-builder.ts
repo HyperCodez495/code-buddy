@@ -137,6 +137,16 @@ export class PromptBuilder {
         let persistentMemoryContext = "";
         if (this.persistentMemory) {
           try {
+            // CodeBuddyAgent fires `initializeMemory()` without awaiting,
+            // so the in-memory Maps may still be empty when this builder
+            // runs on the user's first message after launch. Force-await
+            // initialize() (idempotent — the manager has its own initPromise
+            // gate) so the user-scoped persistent memory is actually loaded
+            // from ~/.codebuddy/memory.md before we read it.
+            const pmAny = this.persistentMemory as unknown as { initialize?: () => Promise<void> };
+            if (typeof pmAny.initialize === 'function') {
+              await pmAny.initialize();
+            }
             persistentMemoryContext = this.persistentMemory.getContextForPrompt();
           } catch (err) {
             logger.warn("Failed to build persistent memory context", { error: getErrorMessage(err) });
@@ -201,6 +211,24 @@ export class PromptBuilder {
           this.config.cwd,
           customInstructions || undefined
         );
+      }
+
+      // Inject persistent memory context for paths that don't already
+      // pass it to a PromptManager (legacy + chat-only). Without this,
+      // the user's `remember`-stored facts (~/.codebuddy/memory.md)
+      // never reach the LLM on session restart, so e.g. the saved
+      // first name appears written to disk but the next session asks
+      // "what's your name?" anyway. The `if (systemPromptId ...)` and
+      // `else if (systemPromptId === 'auto')` branches above already
+      // forward `memoryContext` via `promptManager.buildSystemPrompt({
+      // memoryContext })`, so we skip injection there.
+      const wentThroughPromptManager =
+        (systemPromptId && systemPromptId !== 'auto') || systemPromptId === 'auto';
+      if (memoryContext && !wentThroughPromptManager) {
+        systemPrompt += `\n\n<persistent_memory>\n${memoryContext}\n</persistent_memory>`;
+        logger.debug('Injected persistent memory context into system prompt', {
+          chars: memoryContext.length,
+        });
       }
 
       // Prepend intro hook content if available (Moltbot-style role injection)

@@ -283,16 +283,14 @@ async function ensureUserSettingsDirectory(): Promise<void> {
   }
 }
 
-// Detected provider configuration
-interface DetectedProvider {
-  provider: 'gemini' | 'grok' | 'openai' | 'anthropic' | 'ollama' | 'chatgpt' | 'unknown';
-  apiKey: string;
-  baseURL: string;
-  defaultModel: string;
-}
+// Detected provider configuration — moved to `src/utils/provider-detector.ts`
+// (Phase d.25) so it can be unit-tested in isolation. Re-exported here
+// for the rest of this file's call sites.
+import { detectProviderFromEnv, type DetectedProvider } from './utils/provider-detector.js';
 
-// Detect provider from environment variables
-function detectProviderFromEnv(): DetectedProvider | null {
+// Legacy inline implementation kept commented for git-archaeology only.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
+function _detectProviderFromEnvLegacy(): DetectedProvider | null {
   // Priority order (mirror of src/fleet/peer-chat-client-factory.ts —
   // explicit user intent first, then local, then cloud env keys):
   //   0. CODEBUDDY_PROVIDER override (always wins when set + valid)
