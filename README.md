@@ -45,6 +45,30 @@ Code Buddy is an open-source multi-provider AI coding agent that runs in your te
 
 ---
 
+## In action
+
+**ChatGPT Pro / Plus subscription login (Phase d.23+)** — `buddy login`, sign in once with your ChatGPT account, then chat with `gpt-5.5` directly from the terminal. No API key, cost reported as `$0.0000` (flat-fee plan).
+
+<p align="center">
+  <img src="docs/screenshots/chatgpt-oauth-login.png" alt="ChatGPT OAuth login flow" width="900"/>
+</p>
+
+**Interactive TUI + tool calling.** The agent reads project context, calls tools in parallel (`web_search` ×2 for the screenshot below), and streams the synthesised answer.
+
+<p align="center">
+  <img src="docs/screenshots/tool-calling-parallel.png" alt="Tool calling parallel" width="900"/>
+</p>
+
+**Self-audit.** Asked to find a bug in its own integration code, `gpt-5.5` reads `src/codebuddy/providers/provider-chatgpt-responses.ts`, identifies a stale-variable issue (mutated `body.model` not propagated), and proposes the exact fix:
+
+<p align="center">
+  <img src="docs/screenshots/self-audit-bug-1.png" alt="Self-audit bug found" width="900"/>
+</p>
+
+More captures + walk-through: [`docs/screenshots/`](docs/screenshots/README.md).
+
+---
+
 ## Quick Start
 
 ```bash
