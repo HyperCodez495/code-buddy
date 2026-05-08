@@ -51,11 +51,14 @@ Code Buddy is an open-source multi-provider AI coding agent that runs in your te
 # Install
 npm install -g @phuetz/code-buddy
 
-# Set API key (any supported provider)
-export GROK_API_KEY=your_api_key
-
-# Start interactive mode
+# Option A — bring your own API key
+export GROK_API_KEY=your_api_key   # or GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
 buddy
+
+# Option B — log in with your ChatGPT Plus / Pro subscription (no API key needed)
+buddy login                         # opens browser for OAuth → tokens persisted
+buddy whoami                        # ✅ connected · your.email@example.com · Plan: pro
+buddy                               # auto-routes to gpt-5.5 via the Codex backend, cost $0.0000
 
 # Or with a specific task
 buddy --prompt "analyze the codebase structure"
@@ -64,7 +67,7 @@ buddy --prompt "analyze the codebase structure"
 buddy --yolo
 ```
 
-See [Getting Started](docs/getting-started.md) for installation options, headless mode, session management, and typical workflows.
+See [Getting Started](docs/getting-started.md) for installation options, headless mode, session management, and typical workflows. The ChatGPT Codex OAuth flow is documented with screenshots in [`docs/screenshots/`](docs/screenshots/README.md).
 
 ---
 
