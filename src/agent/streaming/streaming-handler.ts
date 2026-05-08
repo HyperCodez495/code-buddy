@@ -275,21 +275,37 @@ export class StreamingHandler {
       }
     }
 
-    // Calculate token count if enabled
+    // Calculate token count if enabled.
+    //
+    // Trigger on ANY token-relevant delta — not just `displayContent`.
+    // Bug caught by gpt-5.5 audit (Phase d.25): a turn that emits only
+    // tool_calls (no text content) or only reasoning chunks would never
+    // update the running token count, so the per-turn token usage line
+    // shown in the TUI was wrong for those turns. Now we also recount
+    // when reasoning streams in or when tool_calls accumulate.
     let tokenCount: number | undefined;
     let shouldEmitTokenCount = false;
 
-    if (this.config.trackTokens && this.tokenCounter && displayContent) {
+    const hasTokenRelevantDelta =
+      !!displayContent ||
+      !!reasoningDelta ||
+      (Array.isArray(this.accumulatedMessage.tool_calls) &&
+        this.accumulatedMessage.tool_calls.length > 0);
+
+    if (this.config.trackTokens && this.tokenCounter && hasTokenRelevantDelta) {
       const contentTokens = this.tokenCounter.estimateStreamingTokens(
         this.accumulatedRawContent
       );
+      const reasoningTokens = this.accumulatedReasoningContent
+        ? this.tokenCounter.estimateStreamingTokens(this.accumulatedReasoningContent)
+        : 0;
       const toolCallTokens = this.accumulatedMessage.tool_calls
         ? this.tokenCounter.countTokens(
             JSON.stringify(this.accumulatedMessage.tool_calls)
           )
         : 0;
 
-      tokenCount = contentTokens + toolCallTokens;
+      tokenCount = contentTokens + reasoningTokens + toolCallTokens;
 
       // Check if we should emit a token count update
       const now = Date.now();
