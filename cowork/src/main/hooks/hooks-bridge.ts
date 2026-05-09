@@ -190,12 +190,30 @@ export class HooksBridge {
   }
 
   /**
-   * Dry-run a command handler. HTTP/prompt/agent handlers are not
-   * executed — they return a no-op success so authors can still save
-   * them without triggering side effects from the editor.
+   * Dry-run a hook handler. Supports `command` (spawn shell) and `http`
+   * (POST with synthetic dry-run body). `prompt`/`agent` handlers are
+   * still mocked — they have no side-effect surface meaningful enough
+   * to test from the authoring UI without actually invoking an LLM.
    */
   async test(handler: UserHookHandler): Promise<HooksTestResult> {
-    if (handler.type !== 'command' || !handler.command) {
+    if (handler.type === 'command') {
+      return this.testCommandHandler(handler);
+    }
+    if (handler.type === 'http') {
+      return this.testHttpHandler(handler);
+    }
+    // prompt / agent — no-op success.
+    return {
+      success: true,
+      exitCode: 0,
+      stdout: '',
+      stderr: '',
+      durationMs: 0,
+    };
+  }
+
+  private async testCommandHandler(handler: UserHookHandler): Promise<HooksTestResult> {
+    if (!handler.command) {
       return {
         success: true,
         exitCode: 0,
@@ -278,6 +296,98 @@ export class HooksBridge {
         });
       });
     });
+  }
+
+  /**
+   * Dry-run an HTTP handler: POST a synthetic body with the
+   * `X-CodeBuddy-Hook-DryRun: 1` header so the receiver can choose to
+   * skip side effects. We don't follow redirects and we cap response
+   * body to 64 KB to keep the UI snappy.
+   */
+  private async testHttpHandler(handler: UserHookHandler): Promise<HooksTestResult> {
+    const url = handler.url;
+    if (!url || !/^https?:\/\//i.test(url)) {
+      return {
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        error: 'Invalid HTTP url (must start with http:// or https://)',
+      };
+    }
+    const start = Date.now();
+    const timeout = handler.timeout ?? 10_000;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), timeout);
+    const headers: Record<string, string> = {
+      'content-type': 'application/json',
+      'x-codebuddy-hook-dryrun': '1',
+      ...(handler.headers ?? {}),
+    };
+    const body = JSON.stringify({
+      tool: 'sample',
+      event: 'PreToolUse',
+      dryRun: true,
+      cwd: this.workspaceDir ?? process.cwd(),
+    });
+    try {
+      const res = await fetch(url, {
+        method: 'POST',
+        signal: ctrl.signal,
+        headers,
+        body,
+        redirect: 'manual',
+      });
+      clearTimeout(timer);
+      // Cap response read to 64 KB to keep the UI fast.
+      const reader = res.body?.getReader();
+      let stdout = '';
+      let total = 0;
+      const cap = 64 * 1024;
+      if (reader) {
+        const decoder = new TextDecoder();
+        while (total < cap) {
+          const { value, done } = await reader.read();
+          if (done) break;
+          if (value) {
+            const remaining = cap - total;
+            const chunk = value.byteLength > remaining ? value.slice(0, remaining) : value;
+            stdout += decoder.decode(chunk, { stream: true });
+            total += chunk.byteLength;
+          }
+        }
+        stdout += decoder.decode();
+        try {
+          await reader.cancel();
+        } catch {
+          /* ignore */
+        }
+      }
+      return {
+        success: res.ok,
+        exitCode: res.status,
+        stdout,
+        stderr: '',
+        durationMs: Date.now() - start,
+      };
+    } catch (err) {
+      clearTimeout(timer);
+      const message =
+        err instanceof Error
+          ? err.name === 'AbortError'
+            ? `Timed out after ${timeout}ms`
+            : err.message
+          : String(err);
+      return {
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        durationMs: Date.now() - start,
+        error: message,
+      };
+    }
   }
 }
 
