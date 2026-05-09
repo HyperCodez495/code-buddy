@@ -35,6 +35,11 @@ interface CoreFleetListener {
   disconnect(): Promise<void> | void;
   on(event: string, listener: (...args: unknown[]) => void): void;
   off(event: string, listener: (...args: unknown[]) => void): void;
+  request(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { timeoutMs?: number; traceId?: string; depth?: number },
+  ): Promise<unknown>;
 }
 
 interface CoreFleetListenerOptions {
@@ -309,6 +314,29 @@ export class FleetBridge {
   async getRecentEvents(peerId?: string, limit = 100): Promise<FleetEventRecord[]> {
     const filtered = peerId ? this.events.filter((e) => e.peerId === peerId) : this.events;
     return filtered.slice(-limit);
+  }
+
+  /**
+   * Wiring W1 — invoke a peer-rpc method on a connected peer.
+   *
+   * Throws if the peer is unknown or its listener is not yet
+   * authenticated. Caller (saga-runner) is responsible for the retry
+   * policy and step bookkeeping.
+   */
+  async peerRequest(
+    peerId: string,
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { timeoutMs?: number; traceId?: string; depth?: number } = {},
+  ): Promise<unknown> {
+    const entry = this.peers.get(peerId);
+    if (!entry) {
+      throw new Error(`peer not found: ${peerId}`);
+    }
+    if (!entry.listener) {
+      throw new Error(`peer ${peerId} has no active listener (status=${entry.meta.status})`);
+    }
+    return entry.listener.request(method, params, options);
   }
 
   async shutdown(): Promise<void> {

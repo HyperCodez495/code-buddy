@@ -1,9 +1,12 @@
 import { ipcMain } from 'electron';
-import { log, logError } from '../utils/logger';
+import { log, logError, logWarn } from '../utils/logger';
 import type { FleetBridge } from '../fleet/fleet-bridge';
 import { loadCoreModule } from '../utils/core-loader';
+import { SagaRunner } from '../fleet/saga-runner';
+import { sendToRenderer } from '../ipc-main-bridge';
 
 export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
+  const sagaRunner = fleetBridge ? new SagaRunner(fleetBridge, sendToRenderer) : null;
   ipcMain.handle('fleet.list', async () => {
     if (!fleetBridge) return [];
     return fleetBridge.listPeers();
@@ -38,17 +41,16 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
     }
   );
 
-  // ── Fleet P5 — dispatch handlers ────────────────────────────────
-
-  /**
-   * Build a DispatchPlan via the core TaskRouter, persist a saga,
-   * and (best-effort) fire `peer.dispatch` on every step's peer.
-   *
-   * Failure modes:
-   * - No FleetBridge wired → ok=false (peer registry empty).
-   * - Router throws (no peer matches) → ok=false with rationale.
-   * - peer.dispatch RPC failure → step marked failed, saga continues.
-   */
+  // ── Fleet dispatch (Wiring W1+W3+W4+W5) ─────────────────────────
+  //
+  // 1. Privacy lint pre-dispatch (W4) — auto-bumps privacyTag to
+  //    'sensitive' if the goal contains secrets.
+  // 2. Cost cap pre-dispatch (W5) — refuses if today's spend or this
+  //    saga's accumulated spend would exceed the configured caps.
+  // 3. Build DispatchPlan via TaskRouter, persist saga via SagaStore.
+  // 4. Hand off to SagaRunner (W1) which fires peer.dispatch, polls
+  //    peer.dispatchStatus, updates step status, and finalises the
+  //    saga via the result aggregator (W3).
   ipcMain.handle(
     'fleet.dispatch',
     async (
@@ -58,15 +60,13 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
         parallelism?: number;
         privacyTag?: 'public' | 'sensitive';
         maxCostUsd?: number;
+        estimatedCostUsd?: number;
       },
     ) => {
-      if (!fleetBridge) {
+      if (!fleetBridge || !sagaRunner) {
         return { ok: false, error: 'FleetBridge not initialized' };
       }
       try {
-        // Lazy-import core fleet modules — they're heavy and only
-        // needed when dispatch is actually used. Wide types because
-        // the core modules aren't accessible from cowork's tsconfig.
         type ClassificationLike = Record<string, unknown>;
         type RouterMod = {
           TaskRouter: new () => {
@@ -89,16 +89,67 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
             }) => Promise<{ id: string }>;
           };
         };
-        const routerMod = await loadCoreModule<RouterMod>('fleet/task-router.js');
-        const clsMod = await loadCoreModule<ClsMod>('optimization/model-routing.js');
-        const sagaMod = await loadCoreModule<SagaMod>('fleet/saga-store.js');
+        type LintMod = {
+          scanForSecrets: (
+            prompt: string,
+          ) => { hasSecrets: boolean; highConfidence: boolean; matches: unknown[] };
+        };
+        type CostMod = {
+          getCostTracker: () => {
+            canSpend: (
+              estimated: number,
+              sagaId: string | undefined,
+            ) => Promise<{ ok: boolean; reason?: string; remainingUsd?: number }>;
+          };
+        };
+
+        const [routerMod, clsMod, sagaMod, lintMod, costMod] = await Promise.all([
+          loadCoreModule<RouterMod>('fleet/task-router.js'),
+          loadCoreModule<ClsMod>('optimization/model-routing.js'),
+          loadCoreModule<SagaMod>('fleet/saga-store.js'),
+          loadCoreModule<LintMod>('fleet/privacy-lint.js'),
+          loadCoreModule<CostMod>('fleet/cost-tracker.js'),
+        ]);
         if (!routerMod || !clsMod || !sagaMod) {
           return { ok: false, error: 'core fleet modules unavailable' };
         }
 
-        // Pull live peers + their capabilities from the bridge.
-        // `listPeers()` is async on some bridge implementations; await
-        // defensively even though current FleetBridge returns sync.
+        // (W4) Privacy lint — auto-bump to 'sensitive' if secrets detected
+        // unless caller explicitly set 'public' (in which case we refuse).
+        let effectivePrivacyTag = input.privacyTag;
+        let lintWarning: string | undefined;
+        if (lintMod) {
+          const lint = lintMod.scanForSecrets(input.goal);
+          if (lint.hasSecrets) {
+            if (input.privacyTag === 'public') {
+              return {
+                ok: false,
+                error: `Privacy lint blocked dispatch — secrets detected (${lint.matches.length} match(es)) but caller forced privacyTag='public'. Remove the secret or drop privacyTag.`,
+              };
+            }
+            if (effectivePrivacyTag !== 'sensitive') {
+              effectivePrivacyTag = 'sensitive';
+              lintWarning = `auto-bumped to sensitive (${lint.matches.length} match(es))`;
+              logWarn('[fleet.dispatch] privacy lint auto-bumped privacyTag', {
+                matches: lint.matches.length,
+                highConfidence: lint.highConfidence,
+              });
+            }
+          }
+        }
+
+        // (W5) Cost cap pre-dispatch.
+        if (costMod && typeof input.estimatedCostUsd === 'number') {
+          const tracker = costMod.getCostTracker();
+          const check = await tracker.canSpend(input.estimatedCostUsd, undefined);
+          if (!check.ok) {
+            return {
+              ok: false,
+              error: `Cost cap reached — ${check.reason ?? 'unknown reason'}`,
+            };
+          }
+        }
+
         const peers = (await Promise.resolve(fleetBridge.listPeers())) as Array<
           { id: string; capability?: unknown }
         >;
@@ -120,7 +171,7 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
         const router = new routerMod.TaskRouter();
         const plan = router.plan(classification, peerSlots, {
           parallelism: input.parallelism,
-          privacyTag: input.privacyTag,
+          privacyTag: effectivePrivacyTag,
           maxCostUsd: input.maxCostUsd,
         });
 
@@ -128,13 +179,26 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
           goal: input.goal,
           plan,
           metadata: {
-            privacyTag: input.privacyTag,
+            privacyTag: effectivePrivacyTag,
             parallelism: input.parallelism,
             requestedAt: Date.now(),
+            lintWarning,
           },
         });
-        log('[fleet.dispatch] saga created', { sagaId: saga.id });
-        return { ok: true, sagaId: saga.id };
+        log('[fleet.dispatch] saga created — handing off to runner', {
+          sagaId: saga.id,
+        });
+
+        // (W1+W3) Hand off to SagaRunner — fires peer.dispatch, polls
+        // status, finalises via aggregator.
+        sagaRunner.start(saga.id);
+
+        return {
+          ok: true,
+          sagaId: saga.id,
+          privacyTag: effectivePrivacyTag,
+          lintWarning,
+        };
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         logError('[fleet.dispatch] failed:', message);
@@ -142,6 +206,26 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
       }
     },
   );
+
+  // (W6) Manual + auto discovery handler — returns peers detected on
+  // the Tailscale tailnet and via the manual YAML fallback that aren't
+  // already paired in the FleetBridge.
+  ipcMain.handle('fleet.discoverPeers', async () => {
+    if (!fleetBridge) return { ok: false, error: 'FleetBridge not initialized', peers: [] };
+    try {
+      const { discoverPeers } = await import('../fleet/discovery');
+      const all = await discoverPeers();
+      const known = new Set(
+        (await Promise.resolve(fleetBridge.listPeers())).map((p) => p.url),
+      );
+      const fresh = all.filter((p) => !known.has(p.url));
+      return { ok: true, peers: fresh, total: all.length };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[fleet.discoverPeers] failed:', message);
+      return { ok: false, error: message, peers: [] };
+    }
+  });
 
   ipcMain.handle('fleet.listSagas', async () => {
     try {

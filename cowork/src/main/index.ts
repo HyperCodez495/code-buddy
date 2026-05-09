@@ -1043,6 +1043,11 @@ app
     fleetBridge = new FleetBridge(sendToRenderer);
     void fleetBridge.init();
 
+    // (W6) Schedule Tailscale + manual YAML discovery at boot and
+    // every 5 minutes thereafter. Newly-detected peers are emitted as
+    // `fleet.peer.discovered` events; the UI shows a confirm modal.
+    void scheduleFleetDiscovery();
+
     // Initialize team bridge — Phase 4 layer 9 (Agent Teams observability)
     teamBridge = new TeamBridge(sendToRenderer);
     void teamBridge.init();
@@ -1453,6 +1458,41 @@ app
 
 // Flag to prevent double cleanup
 let isCleaningUp = false;
+
+// (W6) Wiring — periodic peer discovery via Tailscale + manual YAML.
+// Diffs against the FleetBridge's current peer registry and surfaces
+// new candidates to the renderer for an "Add this peer?" confirm UI.
+const DISCOVERY_INTERVAL_MS = 5 * 60 * 1_000;
+let discoveryTimer: ReturnType<typeof setInterval> | null = null;
+
+async function scheduleFleetDiscovery(): Promise<void> {
+  const runOnce = async () => {
+    if (!fleetBridge) return;
+    try {
+      const { discoverPeers } = await import('./fleet/discovery');
+      const all = await discoverPeers();
+      const known = new Set(
+        (await Promise.resolve(fleetBridge.listPeers())).map((p) => p.url),
+      );
+      const fresh = all.filter((p) => !known.has(p.url));
+      if (fresh.length > 0) {
+        sendToRenderer({
+          type: 'fleet.peer.discovered',
+          payload: { peers: fresh },
+        });
+      }
+    } catch (err) {
+      // Silent fail — discovery is best-effort, don't pollute the log.
+      void err;
+    }
+  };
+  // First pass after boot — small delay so Tailscale, FleetBridge init,
+  // and any startup races settle.
+  setTimeout(() => void runOnce(), 5_000);
+  if (!discoveryTimer) {
+    discoveryTimer = setInterval(() => void runOnce(), DISCOVERY_INTERVAL_MS);
+  }
+}
 
 function withTimeout<T>(operation: Promise<T>, timeoutMs: number, label: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

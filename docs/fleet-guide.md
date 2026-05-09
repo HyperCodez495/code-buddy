@@ -572,6 +572,136 @@ all coordinated by the same fleet protocol.
 
 ---
 
+## Wiring end-to-end (post-2026-05-09)
+
+Phase (e).1-(e).8 a livré 8 modules (capability registry, task router,
+saga store, result aggregator, privacy lint, cost tracker, Tailscale
+discovery, FleetCommandCenter UI). Le wiring W1-W6 (mai 2026) les
+connecte en flow complet :
+
+| Wiring | Effet |
+|---|---|
+| **W1** — `fleet.dispatch` IPC fire `peer.dispatch` sur chaque step | `cowork/src/main/ipc/fleet-ipc.ts` + `cowork/src/main/fleet/saga-runner.ts` |
+| **W2** — Cowork poll `peer.dispatchStatus` toutes les 2s, met à jour saga step | `SagaRunner.pollStatus` |
+| **W3** — Auto-call aggregator quand tous les parallel steps terminal | `SagaRunner.maybeFinalise` → `aggregateParallelResults` ou `finaliseFromSingle` |
+| **W4** — Privacy lint scan le goal AVANT le router (auto-bump à `sensitive`) | `fleet.dispatch` IPC handler |
+| **W5** — Cost cap `canSpend()` vérifié AVANT chaque dispatch | `fleet.dispatch` IPC handler |
+| **W6** — `discoverPeers()` Tailscale + YAML appelé au boot + toutes les 5 min | `cowork/src/main/index.ts` + IPC `fleet.discoverPeers` |
+
+### Flow complet d'une dispatch
+
+```
+1. UI dispatche un goal via fleet.dispatch IPC
+2. Privacy lint scan le prompt (W4)
+   ├─ secrets détectés → privacyTag bumped à 'sensitive'
+   └─ caller a forcé 'public' avec secrets → reject
+3. Cost cap canSpend() (W5)
+   └─ daily cap atteint → reject
+4. TaskRouter.plan() avec peers + capabilities
+5. SagaStore.create() → saga persistée à ~/.codebuddy/sagas/<id>.json
+6. SagaRunner.start(sagaId) — handoff async
+7. Pour chaque step (séquentiel ou parallel):
+   a. Marque step 'running' + emit fleet.saga.update
+   b. fleetBridge.peerRequest('peer.dispatch', {prompt, model})
+   c. Reçoit {runId} immédiatement
+   d. Poll fleetBridge.peerRequest('peer.dispatchStatus', {runId}) toutes les 2s
+   e. Status terminal → completeStep ou failStep
+   f. Emit fleet.saga.update
+8. Si parallel + au moins un completed → aggregateParallelResults() → finalise()
+9. Si séquentiel → finaliseFromSingle() → finalise()
+10. Renderer reçoit fleet.saga.update → re-fetch saga via fleet.listSagas
+```
+
+Sequential primary+fallback : si `primary` réussit, `fallback` est
+**skip**, pas dispatché. Si `primary` échoue, `fallback` est tenté.
+
+---
+
+## Code Buddy Gateway vs OpenClaw Gateway
+
+Code Buddy peut s'appuyer sur **deux gateways indépendants et
+complémentaires**. Ne pas confondre :
+
+| Aspect | **Code Buddy Gateway** | **OpenClaw Gateway** |
+|---|---|---|
+| Daemon | `buddy --serve` / `buddy server` | `openclaw gateway` (repo upstream) |
+| Port défaut | 3001 (WS) / 3000 (HTTP) | configurable, ≠ 3001 |
+| Lockfile | aucun | `~/.openclaw/gateway.json` |
+| Workspace | `~/.codebuddy/` | `~/.openclaw/workspace/` |
+| Implémentation | propriétaire `src/gateway/server.ts` + `src/server/websocket/` | upstream openclaw, daemon séparé |
+| Rôle | **Bus AI peer-to-peer** : agents ↔ agents, dispatch, sagas | **Bus multi-channel humain** : Telegram, WhatsApp, Discord, iMessage, Slack |
+| Statut | shippé Phases (d).1-(d).16a + (e).1-(e).8 | intégration Phase (e).7 *(reportée — besoin daemon installé)* |
+
+### Coexistence sans conflit
+
+Les deux gateways peuvent tourner **côte à côte sur la même machine**.
+Pas de collision de port, fichiers ou socket :
+
+```
+Ministar Linux
+├─ port 3001 ─── Code Buddy Gateway   (buddy --serve)
+│                ├─ Cowork local
+│                ├─ peer DARKSTAR via Tailscale
+│                └─ peer cloud agent
+│
+└─ port ???? ─── OpenClaw Gateway     (openclaw gateway)
+                 ├─ canal Telegram
+                 ├─ canal WhatsApp
+                 ├─ canal iMessage
+                 └─ skills SKILL.md
+```
+
+### Quand utiliser lequel
+
+| Tu veux… | Tu lances… |
+|---|---|
+| Multi-provider AI parallèle (Claude+Ollama+Gemini sur même goal) | **Code Buddy Gateway seul** |
+| Multi-machine via Tailscale (Ministar + DARKSTAR + G7 PT) | **Code Buddy Gateway seul** |
+| Dispatch automatique avec scoring capability/cost/load/latency | **Code Buddy Gateway seul** |
+| Recevoir messages Telegram/WhatsApp/Discord et les router à un agent | **+ OpenClaw Gateway** |
+| Skills via marketplace ClawHub | **+ OpenClaw Gateway** |
+| Intégrations Gmail/GitHub/Spotify/iMessage natives | **+ OpenClaw Gateway** |
+
+**Recommandation** : commence avec le seul Code Buddy Gateway.
+Branche OpenClaw quand tu veux les canaux externes — c'est un
+add-on, pas un remplacement.
+
+### Topologie quand les deux tournent (Phase (e).7)
+
+```
+Telegram → OpenClaw Gateway → openclaw-node bridge → Cowork ServerEvent
+                                                  → TaskRouter (e.3)
+                                                  → peer.dispatch sur Code Buddy Gateway
+                                                  → peer DARKSTAR fait le travail
+                                                  → résultat remonte
+                                                  → openclaw-node → OpenClaw Gateway → Telegram
+```
+
+Le `openclaw-node` Cowork (Phase (e).7, à coder) lit
+`~/.openclaw/gateway.json` pour découvrir le daemon, s'enregistre
+comme nœud, et **forward les messages dans la fleet Code Buddy**.
+La fleet Code Buddy reste le brain ; OpenClaw apporte les canaux.
+
+### Trois scénarios concrets
+
+**1. Tout local, sans OpenClaw** (état au 2026-05-09)
+- `buddy --serve` sur Ministar et DARKSTAR
+- Cowork dispatche depuis le FleetCommandCenter
+- Pas besoin d'OpenClaw
+
+**2. Avec OpenClaw mais sans channels externes**
+- `openclaw gateway` tourne dans un coin
+- Cowork pair avec lui (Phase (e).7)
+- Skills installées via `clawhub` accessibles à la fleet Code Buddy
+
+**3. Full multi-channel**
+- `openclaw gateway` + canal Telegram configuré (`openclaw onboard`)
+- Message Telegram → Gateway → openclaw-node → Cowork → TaskRouter
+  dispatche sur Ollama DARKSTAR
+- Réponse remonte par le même chemin
+
+---
+
 ## Roadmap (post-V1)
 
 - **V1.2** — `peer.chat-session.start/.continue/.end` (multi-tour

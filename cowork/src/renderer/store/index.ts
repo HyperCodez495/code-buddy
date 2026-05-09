@@ -324,6 +324,17 @@ interface AppState {
   // Fleet — multi-host Code Buddy listener (GAP 3)
   fleetPeers: Record<string, FleetPeer>;
   fleetEvents: FleetEventRecord[]; // ring buffer (FLEET_EVENT_RING)
+  /** Wiring W7 — bumped on every fleet.saga.update; FleetCommandCenter
+   *  watches as a re-fetch trigger so it doesn't have to poll at 3s. */
+  fleetSagaUpdateToken: number;
+  /** Wiring W7 — peers freshly seen by Tailscale/YAML discovery, awaiting
+   *  user confirmation. Cleared as the user dismisses or pairs them. */
+  fleetDiscoveredPeers: Array<{
+    label: string;
+    url: string;
+    source: 'tailscale' | 'manual';
+    apiKey?: string;
+  }>;
   showFleetPanel: boolean;
   /**
    * Fleet P5 — full Command Center overlay (`FleetCommandCenter.tsx`).
@@ -566,6 +577,11 @@ interface AppState {
   upsertFleetPeer: (peer: FleetPeer) => void;
   removeFleetPeer: (peerId: string) => void;
   appendFleetEvent: (event: FleetEventRecord) => void;
+  bumpFleetSagaUpdate: () => void;
+  setFleetDiscoveredPeers: (
+    peers: Array<{ label: string; url: string; source: 'tailscale' | 'manual'; apiKey?: string }>,
+  ) => void;
+  dismissFleetDiscoveredPeer: (url: string) => void;
   setShowFleetPanel: (show: boolean) => void;
   setShowFleetCommandCenter: (show: boolean) => void;
 
@@ -741,6 +757,8 @@ export const useAppStore = create<AppState>((set) => ({
   subAgentOutputs: {},
   fleetPeers: {},
   fleetEvents: [],
+  fleetSagaUpdateToken: 0,
+  fleetDiscoveredPeers: [],
   showFleetPanel: false,
   showFleetCommandCenter: false,
   a2aTasks: {},
@@ -1617,6 +1635,19 @@ export const useAppStore = create<AppState>((set) => ({
       while (next.length > FLEET_EVENT_RING) next.shift();
       return { fleetEvents: next };
     }),
+  bumpFleetSagaUpdate: () =>
+    set((state) => ({ fleetSagaUpdateToken: state.fleetSagaUpdateToken + 1 })),
+  setFleetDiscoveredPeers: (peers) =>
+    set((state) => {
+      const known = new Set(state.fleetDiscoveredPeers.map((p) => p.url));
+      const merged = [...state.fleetDiscoveredPeers];
+      for (const p of peers) if (!known.has(p.url)) merged.push(p);
+      return { fleetDiscoveredPeers: merged };
+    }),
+  dismissFleetDiscoveredPeer: (url) =>
+    set((state) => ({
+      fleetDiscoveredPeers: state.fleetDiscoveredPeers.filter((p) => p.url !== url),
+    })),
   setShowFleetPanel: (show) => set({ showFleetPanel: show }),
   setShowFleetCommandCenter: (show) => set({ showFleetCommandCenter: show }),
 

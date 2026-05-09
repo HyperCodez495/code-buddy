@@ -682,6 +682,18 @@ export type ServerEvent =
   | { type: 'fleet.peers'; payload: { peers: FleetPeer[] } }
   | { type: 'fleet.peer.update'; payload: { peer: FleetPeer } }
   | { type: 'fleet.event'; payload: FleetEventRecord }
+  | { type: 'fleet.saga.update'; payload: { sagaId: string } }
+  | {
+      type: 'fleet.peer.discovered';
+      payload: {
+        peers: Array<{
+          label: string;
+          url: string;
+          source: 'tailscale' | 'manual';
+          apiKey?: string;
+        }>;
+      };
+    }
   | { type: 'a2a.task.update'; payload: A2ATask }
   | { type: 'team.update'; payload: { event: 'started' | 'stopped'; leadId?: string; goal?: string; stats?: { memberCount: number; completedTasks: number; totalTasks: number }; snapshot: TeamSnapshot } }
   | { type: 'team.member.update'; payload: { event: 'added'; member: TeamMember } | { event: 'removed'; memberId: string; role: string } }

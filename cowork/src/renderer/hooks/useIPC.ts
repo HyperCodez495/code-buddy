@@ -410,6 +410,14 @@ export function useIPC() {
             store.appendFleetEvent(event.payload);
             break;
 
+          case 'fleet.saga.update':
+            store.bumpFleetSagaUpdate();
+            break;
+
+          case 'fleet.peer.discovered':
+            store.setFleetDiscoveredPeers(event.payload.peers);
+            break;
+
           case 'a2a.task.update':
             store.upsertA2ATask(event.payload);
             break;

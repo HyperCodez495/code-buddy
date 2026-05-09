@@ -54,6 +54,9 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const fleetPeers = useAppStore((s) => s.fleetPeers);
   const peers = useMemo(() => Object.values(fleetPeers), [fleetPeers]);
+  // Wiring W7 — bumped on every fleet.saga.update event so we re-fetch
+  // sagas reactively instead of waiting for the 3s polling cycle.
+  const sagaUpdateToken = useAppStore((s) => s.fleetSagaUpdateToken);
 
   const [selectedPeerId, setSelectedPeerId] = useState<string | null>(null);
   const [goalText, setGoalText] = useState('');
@@ -102,7 +105,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [isOpen]);
+  }, [isOpen, sagaUpdateToken]);
 
   const handleDispatch = async () => {
     if (!goalText.trim() || dispatching) return;
