@@ -160,4 +160,53 @@ describe('Tab management — store actions', () => {
     const tabA = useAppStore.getState().openTabs.find((t) => t.id === 'a');
     expect(tabA?.unread ?? 0).toBe(0);
   });
+
+  // ── Pin persistence — hydration helper ───────────────────────────
+
+  it('setPinnedSessionIds marks matching tabs and re-sorts pinned-first', () => {
+    seedTabs(
+      { id: 'a', sessionId: 's-a', title: 'A' },
+      { id: 'b', sessionId: 's-b', title: 'B' },
+      { id: 'c', sessionId: 's-c', title: 'C' }
+    );
+    useAppStore.getState().setPinnedSessionIds(['s-c']);
+    const ids = useAppStore.getState().openTabs.map((t) => t.id);
+    expect(ids).toEqual(['c', 'a', 'b']);
+    expect(useAppStore.getState().openTabs[0].pinned).toBe(true);
+  });
+
+  it('setPinnedSessionIds drops unknown ids silently (deleted sessions)', () => {
+    seedTabs(
+      { id: 'a', sessionId: 's-a', title: 'A' },
+      { id: 'b', sessionId: 's-b', title: 'B' }
+    );
+    useAppStore.getState().setPinnedSessionIds(['s-a', 's-deleted-long-ago']);
+    const tabs = useAppStore.getState().openTabs;
+    expect(tabs.find((t) => t.sessionId === 's-a')?.pinned).toBe(true);
+    expect(tabs).toHaveLength(2); // no phantom tab created
+  });
+
+  it('setPinnedSessionIds with empty array unpins everything', () => {
+    seedTabs(
+      { id: 'a', sessionId: 's-a', title: 'A', pinned: true },
+      { id: 'b', sessionId: 's-b', title: 'B' }
+    );
+    useAppStore.getState().setPinnedSessionIds([]);
+    const allUnpinned = useAppStore
+      .getState()
+      .openTabs.every((t) => !t.pinned);
+    expect(allUnpinned).toBe(true);
+  });
+
+  it('setPinnedSessionIds is idempotent', () => {
+    seedTabs(
+      { id: 'a', sessionId: 's-a', title: 'A' },
+      { id: 'b', sessionId: 's-b', title: 'B' }
+    );
+    useAppStore.getState().setPinnedSessionIds(['s-b']);
+    const first = JSON.stringify(useAppStore.getState().openTabs);
+    useAppStore.getState().setPinnedSessionIds(['s-b']);
+    const second = JSON.stringify(useAppStore.getState().openTabs);
+    expect(second).toBe(first);
+  });
 });

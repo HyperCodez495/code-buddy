@@ -454,6 +454,14 @@ interface AppState {
   updateTabTitle: (sessionId: string, title: string) => void;
   /** Toggle the pinned flag for a tab. Pinned tabs are sorted to the left. */
   togglePinnedTab: (tabId: string) => void;
+  /**
+   * Hydrate the pinned set from a persisted list of session IDs.
+   * Called once at app boot after the renderer fetches the saved
+   * config. Matching live tabs are marked pinned and re-sorted to
+   * the leftmost group; unknown IDs are dropped silently (the
+   * underlying session may have been deleted between launches).
+   */
+  setPinnedSessionIds: (sessionIds: string[]) => void;
   /** Bump the unread badge for a tab (clamped). */
   incrementTabUnread: (sessionId: string) => void;
   /** Clear the unread counter for a tab — called when the user views it. */
@@ -1344,6 +1352,17 @@ export const useAppStore = create<AppState>((set) => ({
       // Sort: pinned first (stable), unpinned in their existing order.
       const pinned = flipped.filter((t) => t.pinned);
       const unpinned = flipped.filter((t) => !t.pinned);
+      return { openTabs: [...pinned, ...unpinned] };
+    }),
+  setPinnedSessionIds: (sessionIds) =>
+    set((state) => {
+      const pinSet = new Set(sessionIds);
+      const next = state.openTabs.map((t) => ({
+        ...t,
+        pinned: pinSet.has(t.sessionId),
+      }));
+      const pinned = next.filter((t) => t.pinned);
+      const unpinned = next.filter((t) => !t.pinned);
       return { openTabs: [...pinned, ...unpinned] };
     }),
   incrementTabUnread: (sessionId) =>

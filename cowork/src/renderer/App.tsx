@@ -17,6 +17,7 @@ import {
 } from './store/selectors';
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
+import { useTabPinPersistence } from './hooks/useTabPinPersistence';
 import { Sidebar } from './components/Sidebar';
 import { WelcomeView } from './components/WelcomeView';
 import { PermissionDialog } from './components/PermissionDialog';
@@ -142,6 +143,8 @@ function App() {
 
   const { listSessions, stopSession, isElectron } = useIPC();
   const { width } = useWindowSize();
+  // Pin state survives restarts via configStore.tabs.pinnedSessionIds.
+  useTabPinPersistence();
   const initialized = useRef(false);
   const sidebarBeforeSettings = useRef(false);
 

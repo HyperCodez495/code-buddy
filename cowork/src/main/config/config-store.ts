@@ -181,6 +181,17 @@ export interface AppConfig {
    * Persisted across restarts.
    */
   coreEngineMode?: 'auto' | 'force-on' | 'force-off';
+
+  /**
+   * Tab UI preferences. Only `pinnedSessionIds` is persisted —
+   * `unread` counts are intentionally transient (a notification you
+   * already saw shouldn't follow you to the next launch).
+   */
+  tabs?: {
+    /** Session IDs the user has explicitly pinned. Resolved against
+        live `openTabs` at renderer mount; missing IDs are dropped. */
+    pinnedSessionIds?: string[];
+  };
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';
