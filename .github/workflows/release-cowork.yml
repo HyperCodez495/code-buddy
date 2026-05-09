@@ -1,0 +1,110 @@
+name: Release Cowork
+
+# Trigger only on `cowork-v*` tags so this workflow doesn't fire on the
+# root `v*` tags handled by `release.yml`. Tag a Cowork release with:
+#   git tag cowork-v1.0.0-rc.8
+#   git push origin cowork-v1.0.0-rc.8
+
+on:
+  push:
+    tags:
+      - 'cowork-v*'
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-cowork:
+    name: Create Cowork Release
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+          registry-url: 'https://registry.npmjs.org'
+          cache: 'npm'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Cowork dependencies
+        working-directory: cowork
+        run: npm ci
+
+      - name: Compile core
+        run: npx tsc -p .
+
+      - name: Build Cowork (renderer + main + preload)
+        working-directory: cowork
+        run: npx vite build
+
+      - name: Run Cowork tests
+        working-directory: cowork
+        run: npx vitest run --passWithNoTests
+
+      - name: Extract version from tag
+        id: version
+        run: |
+          # Strip the `cowork-v` prefix to get the bare semver.
+          echo "VERSION=${GITHUB_REF#refs/tags/cowork-v}" >> $GITHUB_OUTPUT
+
+      - name: Verify package.json version matches tag
+        working-directory: cowork
+        run: |
+          PKG_VERSION=$(node -p "require('./package.json').version")
+          if [ "$PKG_VERSION" != "${{ steps.version.outputs.VERSION }}" ]; then
+            echo "::error::Tag version (${{ steps.version.outputs.VERSION }}) does not match package.json version ($PKG_VERSION). Bump cowork/package.json before tagging."
+            exit 1
+          fi
+
+      - name: Publish to npm
+        working-directory: cowork
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+      - name: Generate changelog
+        id: changelog
+        run: |
+          PREV_TAG=$(git describe --tags --match='cowork-v*' --abbrev=0 HEAD^ 2>/dev/null || echo "")
+          if [ -z "$PREV_TAG" ]; then
+            CHANGELOG="Initial Cowork release."
+          else
+            CHANGELOG=$(git log "$PREV_TAG"..HEAD --pretty=format:"- %s (%h)" --no-merges -- cowork/ src/server/ src/providers/_shared/)
+          fi
+          {
+            echo "CHANGELOG<<EOF"
+            echo "$CHANGELOG"
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref }}
+          name: "Cowork ${{ steps.version.outputs.VERSION }}"
+          body: |
+            ## Cowork ${{ steps.version.outputs.VERSION }}
+
+            ## Changes
+
+            ${{ steps.changelog.outputs.CHANGELOG }}
+
+            ## Installation
+
+            ```bash
+            npm install -g @phuetz/codebuddy-cowork@${{ steps.version.outputs.VERSION }}
+            ```
+
+            See `cowork/ARCHITECTURE.md` and `cowork/DEV-LINUX.md`
+            for setup notes.
+          draft: false
+          prerelease: ${{ contains(steps.version.outputs.VERSION, 'rc') || contains(steps.version.outputs.VERSION, 'beta') || contains(steps.version.outputs.VERSION, 'alpha') }}
