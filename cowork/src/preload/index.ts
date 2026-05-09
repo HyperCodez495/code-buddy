@@ -1134,6 +1134,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       websocket: boolean;
       error?: string | null;
     }> => ipcRenderer.invoke('server.stop'),
+    dashboard: (): Promise<{
+      recent: Array<{
+        timestamp: number;
+        method: string;
+        path: string;
+        statusCode: number;
+        responseTimeMs: number;
+        ip: string;
+      }>;
+      stats: {
+        total: number;
+        errors: number;
+        averageLatency: number;
+        uptime: number;
+        byStatus: Record<string, number>;
+      } | null;
+    }> => ipcRenderer.invoke('server.dashboard'),
   },
 
   // Project templates (Claude Cowork parity Phase 2 step 12)
@@ -2617,6 +2634,23 @@ declare global {
           startedAt: number | null;
           websocket: boolean;
           error?: string | null;
+        }>;
+        dashboard: () => Promise<{
+          recent: Array<{
+            timestamp: number;
+            method: string;
+            path: string;
+            statusCode: number;
+            responseTimeMs: number;
+            ip: string;
+          }>;
+          stats: {
+            total: number;
+            errors: number;
+            averageLatency: number;
+            uptime: number;
+            byStatus: Record<string, number>;
+          } | null;
         }>;
       };
       template: {

@@ -35,6 +35,21 @@ const requestStats = {
 };
 
 /**
+ * Ring buffer of the most recent N requests, for the live "Server
+ * activity" dashboard surfaced by the Cowork UI. Capped to keep memory
+ * bounded; oldest entries fall off when the cap is hit.
+ */
+const RECENT_REQUESTS_CAP = 100;
+const recentRequests: Array<{
+  timestamp: number;
+  method: string;
+  path: string;
+  statusCode: number;
+  responseTimeMs: number;
+  ip: string;
+}> = [];
+
+/**
  * Format log entry for console output
  */
 function formatLogEntry(entry: LogEntry): string {
@@ -128,6 +143,19 @@ export function createLoggingMiddleware(config: ServerConfig) {
         requestStats.errors++;
       }
 
+      // Append to the recent-requests ring buffer.
+      recentRequests.push({
+        timestamp: Date.now(),
+        method: req.method,
+        path: req.path,
+        statusCode: res.statusCode,
+        responseTimeMs: responseTime,
+        ip: entry.ip,
+      });
+      if (recentRequests.length > RECENT_REQUESTS_CAP) {
+        recentRequests.shift();
+      }
+
       // Log to console
       logger.info(formatLogEntry(entry));
     });
@@ -159,6 +187,23 @@ export function getRequestStats(): {
       Array.from(requestStats.byStatus.entries()).map(([k, v]) => [k.toString(), v])
     ),
   };
+}
+
+/**
+ * Get the most recent N requests (default 50, max 100). Returns
+ * newest-first.
+ */
+export function getRecentRequests(limit: number = 50): Array<{
+  timestamp: number;
+  method: string;
+  path: string;
+  statusCode: number;
+  responseTimeMs: number;
+  ip: string;
+}> {
+  const n = Math.min(limit, recentRequests.length);
+  // Slice from the tail so callers get the latest first when reversed.
+  return recentRequests.slice(-n).reverse();
 }
 
 /**

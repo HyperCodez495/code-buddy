@@ -21,6 +21,25 @@ interface CoreServerModule {
   stopServer: (server: { close: (cb?: (err?: Error) => void) => void }) => Promise<void>;
 }
 
+interface CoreLoggingModule {
+  getRecentRequests: (limit?: number) => Array<{
+    timestamp: number;
+    method: string;
+    path: string;
+    statusCode: number;
+    responseTimeMs: number;
+    ip: string;
+  }>;
+  getRequestStats: () => {
+    total: number;
+    errors: number;
+    averageLatency: number;
+    uptime: number;
+    byEndpoint: Record<string, number>;
+    byStatus: Record<string, number>;
+  };
+}
+
 interface CoreDatabaseModule {
   getDatabaseManager: (config?: { dbPath?: string }) => {
     isInitialized(): boolean;
@@ -165,6 +184,47 @@ export class ServerBridge {
       this.websocket = false;
     }
     return this.status();
+  }
+
+  /**
+   * Read-only window into the live request log + aggregate stats.
+   * Powers the "Server activity" modal opened from the titlebar.
+   */
+  async dashboard(): Promise<{
+    recent: Array<{
+      timestamp: number;
+      method: string;
+      path: string;
+      statusCode: number;
+      responseTimeMs: number;
+      ip: string;
+    }>;
+    stats: {
+      total: number;
+      errors: number;
+      averageLatency: number;
+      uptime: number;
+      byStatus: Record<string, number>;
+    } | null;
+  }> {
+    try {
+      const mod = await loadCoreModule<CoreLoggingModule>('server/middleware/logging.js');
+      if (!mod) return { recent: [], stats: null };
+      const recent = mod.getRecentRequests(50);
+      const fullStats = mod.getRequestStats();
+      return {
+        recent,
+        stats: {
+          total: fullStats.total,
+          errors: fullStats.errors,
+          averageLatency: fullStats.averageLatency,
+          uptime: fullStats.uptime,
+          byStatus: fullStats.byStatus,
+        },
+      };
+    } catch {
+      return { recent: [], stats: null };
+    }
   }
 }
 

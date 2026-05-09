@@ -3163,6 +3163,11 @@ ipcMain.handle('server.stop', async () => {
   return getServerBridge().stop();
 });
 
+ipcMain.handle('server.dashboard', async () => {
+  const { getServerBridge } = await import('./server/server-bridge');
+  return getServerBridge().dashboard();
+});
+
 // Test runner — Claude Cowork parity Phase 3 step 12
 ipcMain.handle('test.detect', async () => {
   try {

@@ -5,6 +5,7 @@ import { useAppStore } from '../store';
 import { useUnreadNotificationCount } from '../store/selectors';
 import { TabBar } from './TabBar';
 import { PresenceIndicator } from './PresenceIndicator';
+import { ServerDashboard } from './ServerDashboard';
 
 const isMac = typeof window !== 'undefined' && window.electronAPI?.platform === 'darwin';
 
@@ -199,6 +200,7 @@ function ServerToggle() {
     websocket: false,
   });
   const [busy, setBusy] = useState(false);
+  const [dashboardOpen, setDashboardOpen] = useState(false);
 
   // Initial fetch + light polling.
   useEffect(() => {
@@ -235,32 +237,39 @@ function ServerToggle() {
   const tooltip = status.running
     ? `Stop Code Buddy server (running on ${status.host}:${status.port}${
         status.websocket ? ' +WS' : ''
-      })`
+      }) — right-click for activity dashboard`
     : status.error
       ? `Start Code Buddy server — last error: ${status.error}`
-      : 'Start Code Buddy server (port 3000 + WS gateway 3001)';
+      : 'Start Code Buddy server (port 3000 + WS gateway 3001) — right-click for dashboard';
 
   return (
-    <button
-      onClick={() => void toggle()}
-      disabled={busy}
-      className="relative w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors disabled:opacity-50"
-      title={tooltip}
-      aria-label={status.running ? 'Stop Code Buddy server' : 'Start Code Buddy server'}
-      data-testid="server-toggle-button"
-    >
-      {busy ? (
-        <Loader2 className="w-4 h-4 text-text-secondary animate-spin" />
-      ) : (
-        <Power
-          className={`w-4 h-4 ${
-            status.running ? 'text-success' : status.error ? 'text-error' : 'text-text-secondary'
-          }`}
-        />
-      )}
-      {status.running && !busy && (
-        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-success animate-pulse" />
-      )}
-    </button>
+    <>
+      <button
+        onClick={() => void toggle()}
+        onContextMenu={(e) => {
+          e.preventDefault();
+          setDashboardOpen(true);
+        }}
+        disabled={busy}
+        className="relative w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors disabled:opacity-50"
+        title={tooltip}
+        aria-label={status.running ? 'Stop Code Buddy server' : 'Start Code Buddy server'}
+        data-testid="server-toggle-button"
+      >
+        {busy ? (
+          <Loader2 className="w-4 h-4 text-text-secondary animate-spin" />
+        ) : (
+          <Power
+            className={`w-4 h-4 ${
+              status.running ? 'text-success' : status.error ? 'text-error' : 'text-text-secondary'
+            }`}
+          />
+        )}
+        {status.running && !busy && (
+          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-success animate-pulse" />
+        )}
+      </button>
+      <ServerDashboard isOpen={dashboardOpen} onClose={() => setDashboardOpen(false)} />
+    </>
   );
 }
