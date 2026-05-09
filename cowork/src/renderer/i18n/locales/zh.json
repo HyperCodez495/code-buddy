@@ -1668,7 +1668,8 @@
       "tool": "工具",
       "condition": "条件",
       "parallel": "并行",
-      "approval": "审批"
+      "approval": "审批",
+      "setVariable": "设置变量"
     }
   },
   "computerUse": {

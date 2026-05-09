@@ -76,7 +76,7 @@ function setupBridgeLikeFixture(): BridgeFixture {
       capabilities: {
         tools: [],
         maxConcurrency: 1,
-        taskTypes: ['tool_invoke', 'approval_wait'],
+        taskTypes: ['tool_invoke', 'approval_wait', 'set_variable'],
       },
     });
   }
@@ -114,6 +114,8 @@ function setupBridgeLikeFixture(): BridgeFixture {
         output = await toolAgent.runToolInvoke(task.definition.input);
       } else if (task.definition.type === 'approval_wait') {
         output = await toolAgent.runApprovalWait(task.definition.input, instanceId);
+      } else if (task.definition.type === 'set_variable') {
+        output = await toolAgent.runSetVariable(task.definition.input);
       } else {
         throw new Error(`unsupported ${task.definition.type}`);
       }
@@ -418,6 +420,73 @@ describe('workflow-bridge integration (real Orchestrator)', () => {
       const lastIdx = cmds.length - 1;
       expect(cmds[lastIdx]).toBe('AFTER');
       expect(new Set(cmds.slice(0, 2))).toEqual(new Set(['A', 'B']));
+    },
+    10000
+  );
+
+  it(
+    'V0.7 — setVariable node JSON-parses literals and stores them under aliasAs',
+    async () => {
+      const fixture = setupBridgeLikeFixture();
+
+      const visual: WorkflowVisualDefinition = {
+        id: 'wf_v07_setvar',
+        name: 'setVariable smoke',
+        nodes: [
+          node('start', 'start'),
+          node('v_count', 'setVariable', { name: 'count', valueExpression: '42' }),
+          node('v_label', 'setVariable', {
+            name: 'label',
+            valueExpression: '"hello world"',
+          }),
+          node('end', 'end'),
+        ],
+        edges: [
+          edge('start', 'v_count'),
+          edge('v_count', 'v_label'),
+          edge('v_label', 'end'),
+        ],
+      };
+
+      const { instance } = await fixture.run(visual, 'wf_v07_setvar');
+      expect(instance.status).toBe('completed');
+      // The orchestrator's final output is the workflow context. The
+      // aliasAs entries should appear at top-level with the parsed values.
+      expect(instance.output).toBeTruthy();
+      expect(instance.output?.count).toEqual({ name: 'count', value: 42 });
+      expect(instance.output?.label).toEqual({ name: 'label', value: 'hello world' });
+    },
+    10000
+  );
+
+  it(
+    'V0.7 — tool node with outputAs stores the tool output at $alias',
+    async () => {
+      const fixture = setupBridgeLikeFixture();
+
+      const visual: WorkflowVisualDefinition = {
+        id: 'wf_v07_outputas',
+        name: 'outputAs smoke',
+        nodes: [
+          node('start', 'start'),
+          node('t1', 'tool', {
+            toolName: 'bash_run',
+            toolInput: { command: 'echo hello' },
+            outputAs: 'firstResult',
+          }),
+          node('end', 'end'),
+        ],
+        edges: [edge('start', 't1'), edge('t1', 'end')],
+      };
+
+      const { instance } = await fixture.run(visual, 'wf_v07_outputas');
+      expect(instance.status).toBe('completed');
+      const ctx = instance.output as Record<string, unknown> | undefined;
+      expect(ctx?.firstResult).toBeTruthy();
+      // Both the namespaced key and the alias point to the same shape.
+      const firstResult = ctx!.firstResult as Record<string, unknown>;
+      expect(firstResult.success).toBe(true);
+      expect(firstResult.toolName).toBe('bash_run');
     },
     10000
   );

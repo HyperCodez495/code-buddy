@@ -437,4 +437,91 @@ describe('dag-compiler / V0.5 — convergence', () => {
     });
     expect(() => compileVisualToCore(def)).toThrow(/converge on different/);
   });
+
+  // ──────── V0.7 — setVariable + outputAs ────────
+
+  it('compiles a setVariable node into a set_variable task with aliasAs', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('v1', 'setVariable', { name: 'count', valueExpression: '42' }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 'v1'), edge('v1', 'end')],
+    });
+
+    const core = compileVisualToCore(def);
+
+    expect(core.steps).toHaveLength(1);
+    expect(core.steps[0].type).toBe('task');
+    expect(core.steps[0].tasks).toHaveLength(1);
+    const task = core.steps[0].tasks![0];
+    expect(task.type).toBe('set_variable');
+    expect(task.input.variableName).toBe('count');
+    expect(task.input.valueExpression).toBe('42');
+    expect(task.aliasAs).toBe('count');
+    expect(task.requiredCapabilities).toEqual(['set_variable']);
+  });
+
+  it('compiles a tool node with outputAs and emits aliasAs (not in input)', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('t1', 'tool', {
+          toolName: 'bash_run',
+          toolInput: { command: 'ls' },
+          outputAs: 'files',
+        }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 't1'), edge('t1', 'end')],
+    });
+
+    const core = compileVisualToCore(def);
+
+    const task = core.steps[0].tasks![0];
+    expect(task.type).toBe('tool_invoke');
+    // The alias goes on the task definition (top-level) so the
+    // orchestrator's executeTaskStep stores it under context['files'].
+    expect(task.aliasAs).toBe('files');
+    // The tool's input should NOT carry outputAs — only the runtime alias does.
+    expect(task.input.outputAs).toBeUndefined();
+  });
+
+  it('rejects setVariable node missing config.name', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('v1', 'setVariable', { valueExpression: '42' }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 'v1'), edge('v1', 'end')],
+    });
+    expect(() => compileVisualToCore(def)).toThrow(CompilationError);
+  });
+
+  it('rejects setVariable node missing config.valueExpression', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('v1', 'setVariable', { name: 'foo' }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 'v1'), edge('v1', 'end')],
+    });
+    expect(() => compileVisualToCore(def)).toThrow(CompilationError);
+  });
+
+  it('omits aliasAs when tool node has no outputAs', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('t1', 'tool', { toolName: 'bash_run', toolInput: { command: 'ls' } }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 't1'), edge('t1', 'end')],
+    });
+    const core = compileVisualToCore(def);
+    expect(core.steps[0].tasks![0].aliasAs).toBeUndefined();
+  });
 });

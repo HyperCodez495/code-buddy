@@ -27,6 +27,7 @@ import type {
   ConditionNodeConfig,
   ApprovalNodeConfig,
   LoopNodeConfig,
+  SetVariableNodeConfig,
 } from '../../shared/workflow-types';
 
 export type CoreTaskPriority = 'low' | 'medium' | 'high' | 'critical';
@@ -41,6 +42,8 @@ export interface CoreTaskDefinition {
   priority: CoreTaskPriority;
   timeout?: number;
   maxRetries?: number;
+  /** See `Orchestrator.executeTaskStep` — stores output at `context[aliasAs]`. */
+  aliasAs?: string;
 }
 
 export interface CoreWorkflowStep {
@@ -140,6 +143,27 @@ function ensureToolConfig(node: WorkflowVisualNode): ToolNodeConfig {
     maxRetries: typeof cfg.maxRetries === 'number' && cfg.maxRetries > 0
       ? cfg.maxRetries
       : undefined,
+    outputAs: typeof cfg.outputAs === 'string' && cfg.outputAs.length > 0
+      ? cfg.outputAs
+      : undefined,
+  };
+}
+
+function ensureSetVariableConfig(node: WorkflowVisualNode): SetVariableNodeConfig {
+  const cfg = node.config as Partial<SetVariableNodeConfig> | undefined;
+  if (!cfg || typeof cfg.name !== 'string' || cfg.name.length === 0) {
+    throw new CompilationError(
+      `Node '${node.id}' (setVariable): missing config.name`
+    );
+  }
+  if (typeof cfg.valueExpression !== 'string') {
+    throw new CompilationError(
+      `Node '${node.id}' (setVariable): missing config.valueExpression`
+    );
+  }
+  return {
+    name: cfg.name,
+    valueExpression: cfg.valueExpression,
   };
 }
 
@@ -335,6 +359,39 @@ function compileSingle(
               requiredCapabilities: ['tool_invoke'],
               priority: 'medium',
               ...(cfg.maxRetries ? { maxRetries: cfg.maxRetries } : {}),
+              ...(cfg.outputAs ? { aliasAs: cfg.outputAs } : {}),
+            },
+          ],
+        },
+        // continueFrom omitted → fall through to nextSequentialNode
+      };
+    }
+    case 'setVariable': {
+      const cfg = ensureSetVariableConfig(node);
+      return {
+        step: {
+          id: makeStepId('step', node.id),
+          name: node.name || `set $${cfg.name}`,
+          type: 'task',
+          tasks: [
+            {
+              id: `task_${node.id}`,
+              type: 'set_variable',
+              name: node.name || `set $${cfg.name}`,
+              description: `Cowork set_variable for visual node '${node.id}'`,
+              input: {
+                cowork_visual_node_id: node.id,
+                variableName: cfg.name,
+                valueExpression: cfg.valueExpression,
+              },
+              requiredCapabilities: ['set_variable'],
+              priority: 'medium',
+              // The orchestrator copies the task output to `context[aliasAs]`.
+              // For `setVariable` that means `$<name>` resolves to
+              // `{ value: <evaluated> }` — to preserve the natural
+              // `$myVar === 42` ergonomics, the runtime agent returns the
+              // evaluated value directly (no envelope).
+              aliasAs: cfg.name,
             },
           ],
         },

@@ -23,11 +23,19 @@ import {
   Trash2,
   Plus,
   X,
+  Variable,
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 
-type NodeType = 'tool' | 'condition' | 'parallel' | 'approval' | 'start' | 'end';
+type NodeType =
+  | 'tool'
+  | 'condition'
+  | 'parallel'
+  | 'approval'
+  | 'setVariable'
+  | 'start'
+  | 'end';
 
 interface WorkflowNode {
   id: string;
@@ -69,6 +77,7 @@ const NODE_COLORS: Record<NodeType, string> = {
   condition: '#f59e0b',
   parallel: '#8b5cf6',
   approval: '#ec4899',
+  setVariable: '#14b8a6',
 };
 
 const NODE_ICONS: Record<NodeType, LucideIcon> = {
@@ -78,6 +87,7 @@ const NODE_ICONS: Record<NodeType, LucideIcon> = {
   condition: GitBranch,
   parallel: Layers,
   approval: ShieldCheck,
+  setVariable: Variable,
 };
 
 function makeNodeId(): string {
@@ -283,7 +293,7 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
           <div className="text-[10px] uppercase tracking-wide font-semibold text-text-muted mb-2">
             {t('workflow.palette')}
           </div>
-          {(['tool', 'condition', 'parallel', 'approval'] as NodeType[]).map((type) => {
+          {(['tool', 'condition', 'parallel', 'approval', 'setVariable'] as NodeType[]).map((type) => {
             const Icon = NODE_ICONS[type];
             return (
               <button
@@ -501,6 +511,9 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
                 Parallel runs every outgoing branch concurrently. Connect ≥2 branches and let them flow to <code>end</code>.
               </div>
             )}
+            {selectedNode.type === 'setVariable' && (
+              <NodeConfigSetVariable node={selectedNode} setNodes={setNodes} />
+            )}
 
             <div className="text-[10px] text-text-muted">
               <div>id: {selectedNode.id}</div>
@@ -537,6 +550,7 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
     toolName?: string;
     toolInput?: Record<string, unknown>;
     maxRetries?: number;
+    outputAs?: string;
   };
   const [jsonText, setJsonText] = useState(() => JSON.stringify(cfg.toolInput ?? {}, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
@@ -619,6 +633,68 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
         />
         <div className="text-[10px] text-text-muted mt-1">
           0 = fail-fast. The orchestrator re-queues the task on failure.
+        </div>
+      </div>
+      <div>
+        <label className="block text-[10px] text-text-muted mb-1">
+          Output alias (optional)
+        </label>
+        <input
+          type="text"
+          value={cfg.outputAs ?? ''}
+          onChange={(e) =>
+            updateConfig({
+              outputAs: e.target.value.trim() === '' ? undefined : e.target.value.trim(),
+            })
+          }
+          placeholder="e.g. files"
+          className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+        />
+        <div className="text-[10px] text-text-muted mt-1">
+          When set, the tool result is also stored at <code>$&lt;alias&gt;</code> for
+          easier reference in downstream conditions / inputs.
+        </div>
+      </div>
+    </>
+  );
+};
+
+const NodeConfigSetVariable: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
+  const cfg = (node.config ?? {}) as { name?: string; valueExpression?: string };
+  const updateConfig = (patch: Record<string, unknown>) => {
+    setNodes((prev) =>
+      prev.map((n) =>
+        n.id === node.id ? { ...n, config: { ...(n.config ?? {}), ...patch } } : n
+      )
+    );
+  };
+  return (
+    <>
+      <div>
+        <label className="block text-[10px] text-text-muted mb-1">Variable name</label>
+        <input
+          type="text"
+          value={cfg.name ?? ''}
+          onChange={(e) => updateConfig({ name: e.target.value })}
+          placeholder="e.g. counter"
+          className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+        />
+        <div className="text-[10px] text-text-muted mt-1">
+          Available downstream as <code>$&lt;name&gt;.value</code>.
+        </div>
+      </div>
+      <div>
+        <label className="block text-[10px] text-text-muted mb-1">Value expression</label>
+        <input
+          type="text"
+          value={cfg.valueExpression ?? ''}
+          onChange={(e) => updateConfig({ valueExpression: e.target.value })}
+          placeholder='42 / "hello" / [1,2,3] / $other'
+          className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+        />
+        <div className="text-[10px] text-text-muted mt-1">
+          JSON literal or <code>$varName</code>. The orchestrator resolves
+          <code>$varName</code> upstream; literals are JSON-parsed.
         </div>
       </div>
     </>

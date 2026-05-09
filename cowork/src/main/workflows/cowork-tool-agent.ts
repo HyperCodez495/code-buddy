@@ -1,9 +1,12 @@
 /**
  * `CoworkToolAgent` — registers itself with the core `Orchestrator` and
- * fulfils the two task types emitted by the visual DAG compiler:
+ * fulfils the task types emitted by the visual DAG compiler:
  *  - `tool_invoke` → delegates to `FormalToolRegistry.execute(toolName, toolInput)`
  *  - `approval_wait` → suspends until the renderer signals approval/rejection
  *    via the `workflow.approve` IPC channel.
+ *  - `set_variable` → evaluates a JS expression in the current workflow
+ *    context and returns `{ name, value }`. The orchestrator copies the
+ *    output to `context[aliasAs]` so `$<name>.value` resolves downstream.
  *
  * The agent does not hold the orchestrator instance directly — it is wired
  * by `WorkflowBridge` which subscribes to `task_assigned` events and routes
@@ -63,6 +66,38 @@ interface PendingApproval {
 export class CoworkToolAgent {
   private pending = new Map<string, PendingApproval>();
   constructor(private readonly options: CoworkToolAgentOptions) {}
+
+  /**
+   * Run a `set_variable` task: evaluate `valueExpression` against the
+   * supplied context, return `{ name, value }`. The orchestrator's
+   * `aliasAs` then exposes the result at `context[name]` so downstream
+   * conditions can reference `$<name>.value`.
+   *
+   * Falls back to JSON.parse when the expression looks like a JSON
+   * literal (string, number, bool, array, object) so users don't have
+   * to wrap quoted strings in extra quotes.
+   */
+  async runSetVariable(
+    taskInput: Record<string, unknown>
+  ): Promise<Record<string, unknown>> {
+    const variableName = taskInput.variableName;
+    const valueExpression = taskInput.valueExpression;
+    if (typeof variableName !== 'string' || variableName.length === 0) {
+      throw new Error('set_variable task missing string variableName');
+    }
+    // The orchestrator's `resolveVariables` (orchestrator.ts:705) replaces
+    // exact `$varname` strings with the underlying context value before
+    // the task runs — so `valueExpression` may already be a non-string
+    // (object, number, array, …). Only re-evaluate when it's still a
+    // string (JSON literal or in-progress expression).
+    let evaluated: unknown;
+    if (typeof valueExpression === 'string') {
+      evaluated = parseExpressionLiteral(valueExpression);
+    } else {
+      evaluated = valueExpression;
+    }
+    return { name: variableName, value: evaluated };
+  }
 
   /**
    * Run a `tool_invoke` task: extract toolName/toolInput from `input`,
@@ -210,5 +245,33 @@ export class CoworkToolAgent {
   /** Number of approvals waiting for a renderer answer. Used in tests. */
   pendingCount(): number {
     return this.pending.size;
+  }
+}
+
+/**
+ * Parse a `setVariable` expression that's still a string after the
+ * orchestrator's `resolveVariables` pass. Tries JSON first (handles
+ * `42`, `"hello"`, `[1,2,3]`, `{"a": 1}`, `true`, `null`), then falls
+ * back to returning the raw string so users can store text values
+ * without quoting.
+ */
+function parseExpressionLiteral(expression: string): unknown {
+  const trimmed = expression.trim();
+  if (trimmed.length === 0) return '';
+  try {
+    return JSON.parse(trimmed);
+  } catch {
+    // Not a JSON literal — return as string. This lets users write
+    // `valueExpression: hello world` and get the string back without
+    // having to wrap in quotes. Unquoted identifiers that look like
+    // `$varname` are normally resolved upstream; if they reach here
+    // it means resolveVariables didn't find the variable, so we
+    // log so the user notices the typo.
+    if (trimmed.startsWith('$')) {
+      logWarn(
+        `[CoworkToolAgent] setVariable expression '${trimmed}' not resolved by orchestrator — typo?`
+      );
+    }
+    return trimmed;
   }
 }

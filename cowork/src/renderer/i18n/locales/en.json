@@ -1670,7 +1670,8 @@
       "tool": "Tool",
       "condition": "Condition",
       "parallel": "Parallel",
-      "approval": "Approval"
+      "approval": "Approval",
+      "setVariable": "Set variable"
     }
   },
   "computerUse": {

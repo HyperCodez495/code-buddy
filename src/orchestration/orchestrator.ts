@@ -563,10 +563,15 @@ export class Orchestrator extends EventEmitter {
       // Wait for completion
       await this.waitForTask(task.definition.id);
 
-      // Add output to context
+      // Add output to context — both under the task's namespaced key and,
+      // optionally, under a user-provided alias for readability in
+      // downstream conditions / tool inputs.
       const completedTask = this.tasks.get(task.definition.id);
       if (completedTask?.output) {
         context[`task_${task.definition.id}`] = completedTask.output;
+        if (typeof taskDef.aliasAs === 'string' && taskDef.aliasAs.length > 0) {
+          context[taskDef.aliasAs] = completedTask.output;
+        }
       }
     }
   }

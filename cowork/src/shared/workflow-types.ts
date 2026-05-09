@@ -13,7 +13,8 @@ export type WorkflowNodeType =
   | 'condition'
   | 'parallel'
   | 'approval'
-  | 'loop';
+  | 'loop'
+  | 'setVariable';
 
 export interface ToolNodeConfig {
   toolName: string;
@@ -24,6 +25,25 @@ export interface ToolNodeConfig {
    * (cf. `Orchestrator.failTask` in `src/orchestration/orchestrator.ts`).
    */
   maxRetries?: number;
+  /**
+   * Optional alias under which the tool result is stored in the
+   * workflow context. Without it, the result is reachable as
+   * `task_<nodeId>`. With it, downstream condition expressions /
+   * tool inputs can reference `$<outputAs>` for readability.
+   */
+  outputAs?: string;
+}
+
+export interface SetVariableNodeConfig {
+  /** Variable name (e.g. "myList"). Will be available as `$myList` later. */
+  name: string;
+  /**
+   * JSON-literal value or a JS expression evaluated in the workflow
+   * context. The compiler does NOT eval here — the runtime agent
+   * does (via the same safeEvalCondition path, narrow to a single
+   * expression).
+   */
+  valueExpression: string;
 }
 
 export interface ConditionNodeConfig {

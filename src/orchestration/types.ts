@@ -115,6 +115,14 @@ export interface TaskDefinition {
   maxRetries?: number;
   /** Parent task (for subtasks) */
   parentId?: string;
+  /**
+   * Optional alias key under which the orchestrator additionally stores
+   * `task.output` in the workflow context. Without it, the result is
+   * only reachable as `context['task_<id>']`. With it, downstream
+   * conditions and tool inputs can reference `$<aliasAs>` directly,
+   * which is more readable for humans authoring visual workflows.
+   */
+  aliasAs?: string;
 }
 
 export interface TaskInstance {

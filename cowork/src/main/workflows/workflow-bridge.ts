@@ -406,7 +406,7 @@ export class WorkflowBridge {
             capabilities: {
               tools: [],
               maxConcurrency: 1,
-              taskTypes: ['tool_invoke', 'approval_wait'],
+              taskTypes: ['tool_invoke', 'approval_wait', 'set_variable'],
             },
           });
         }
@@ -450,6 +450,8 @@ export class WorkflowBridge {
                 task.definition.input,
                 workflowInstanceId
               );
+            } else if (task.definition.type === 'set_variable') {
+              output = await toolAgent.runSetVariable(task.definition.input);
             } else {
               throw new Error(`Unsupported task type '${task.definition.type}'`);
             }
