@@ -75,8 +75,8 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 | Auto-approve session flags | `ConfirmationService` session flags | `ConfirmationService` session flags (same singleton) | OK | — |
 | **Session lifecycle** |  |  |  |  |
 | Session cache (per Cowork session) | `Map piSessions, MAX 50` | `Map agents, no max` (eviction TBD) | GAP | low (no leak observed yet) |
-| Hot-swap model | `piSession.setModel()` native | dispose + recreate on next prompt | GAP | medium (UX hiccup) |
-| Hot-swap thinking level | `piSession.setThinkingLevel()` native | not exposed | GAP | low |
+| Hot-swap model | `piSession.setModel()` native | Auto-dispose + recreate on next runSession when `apiKey:baseURL:model` identity changes (Phase 8). History rehydrated from `messages`. | OK (Phase 8) | — |
+| Hot-swap thinking level | `piSession.setThinkingLevel()` native | not exposed yet | GAP | low |
 | AbortController for cancel | yes | yes | OK | — |
 | Disposal on session close | yes | yes (`clearSession`) | OK | — |
 | Restore prior history | `existingMessages` pushed to pi history | `convertMessages` pushes to core `chatHistory` | OK | — |
@@ -116,8 +116,15 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 
 ### Medium (should fix soon, has UX impact)
 
-2. **Hot-swap model** — switching model in a session today re-creates
-   the agent + loses in-memory context. Workaround OK for V1, document.
+2. ~~**Hot-swap model**~~ — **fixed in Phase 8 (2026-05-09)**.
+   `CodeBuddyEngineAdapter` tracks per-session identity
+   `apiKey:baseURL:model`. On next `runSession`, if the desired
+   identity differs from cached, the agent is disposed and recreated.
+   The full message history is replayed into the new agent (the
+   `messages` array always carries it), so the user perceives a
+   model switch with zero context loss beyond the in-memory
+   middleware state. 6 tests in
+   `tests/desktop/codebuddy-engine-adapter-hotswap.test.ts`.
 3. ~~**Permission UI consistency**~~ — **fixed in Phase 7 (2026-05-09)**.
    The `DesktopPermissionBridge` now emits a `permission.request`
    payload that matches Cowork's `PermissionRequest` shape

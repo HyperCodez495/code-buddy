@@ -38,6 +38,14 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
   private disposed = false;
   /** Last-pushed MCP server snapshots for diff-on-sync. */
   private mcpServerSnapshots?: Map<string, string>;
+  /**
+   * Identity of the cached agent per session: stringified
+   * `apiKey:baseURL:model`. When a `runSession` call arrives with a
+   * different identity, the cached agent is disposed and a fresh one
+   * is created so the user's model switch in Settings actually takes
+   * effect on the next turn (Phase 8).
+   */
+  private agentIdentities: Map<string, string> = new Map();
 
   constructor(config: EngineSessionConfig) {
     this.config = config;
@@ -67,8 +75,30 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // Lazy-import CodeBuddyAgent to avoid loading heavy modules at startup
       const { CodeBuddyAgent } = await import('../agent/codebuddy-agent.js');
 
-      // Get or create agent for this session
+      // Phase 8 — detect model / endpoint / apiKey change between turns and
+      // dispose the cached agent if the identity differs so the next
+      // turn picks up the new config. Without this, switching model
+      // mid-session in Cowork's Settings was a no-op until the user
+      // manually closed the session.
+      const desiredIdentity = `${config.apiKey || ''}:${config.baseURL || ''}:${config.model || ''}`;
+      const cachedIdentity = this.agentIdentities.get(sessionId);
       let agent = this.agents.get(sessionId) as InstanceType<typeof CodeBuddyAgent> | undefined;
+      if (agent && cachedIdentity !== desiredIdentity) {
+        logger.info('[CodeBuddyEngineAdapter] config changed — disposing cached agent', {
+          sessionId,
+          from: cachedIdentity,
+          to: desiredIdentity,
+        });
+        try {
+          (agent as { dispose?: () => void }).dispose?.();
+        } catch (err) {
+          logger.warn('[CodeBuddyEngineAdapter] dispose failed during hot-swap', { err });
+        }
+        this.agents.delete(sessionId);
+        agent = undefined;
+      }
+
+      // Get or create agent for this session
       if (!agent) {
         agent = new CodeBuddyAgent(
           config.apiKey,
@@ -78,8 +108,11 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         );
 
         this.agents.set(sessionId, agent);
+        this.agentIdentities.set(sessionId, desiredIdentity);
 
-        // Load prior conversation history into the agent (for session restore)
+        // Load prior conversation history into the agent (for session restore
+        // OR for picking up where the previous incarnation left off after a
+        // model swap — the messages array always carries the full history).
         if (messages.length > 1) {
           for (let i = 0; i < messages.length - 1; i++) {
             const msg = messages[i];
@@ -254,6 +287,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
     }
     this.agents.delete(sessionId);
     this.abortControllers.delete(sessionId);
+    this.agentIdentities.delete(sessionId);
     logger.debug('[CodeBuddyEngineAdapter] cleared session', { sessionId });
   }
 
@@ -376,6 +410,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
 
     this.agents.clear();
     this.abortControllers.clear();
+    this.agentIdentities.clear();
     this.permissionCallback = null;
     logger.info('[CodeBuddyEngineAdapter] disposed');
   }
