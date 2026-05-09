@@ -1,0 +1,104 @@
+/**
+ * Fleet — shared type definitions.
+ *
+ * Centralises types used across the fleet subsystem: capability
+ * advertising, dispatch envelopes, saga state. Kept in its own file
+ * (vs. inlined in fleet-listener.ts) so other modules can import
+ * without pulling the full WS client.
+ *
+ * @module fleet/types
+ */
+
+/** Provider families a peer can talk to. */
+export type FleetProvider =
+  | 'anthropic'
+  | 'openai'
+  | 'gemini'
+  | 'ollama'
+  | 'lm-studio'
+  | 'chatgpt-oauth'
+  | 'grok'
+  | 'mistral'
+  | 'unknown';
+
+/**
+ * Strengths a model is known for. Used by the task router (Fleet P3)
+ * to score `model.strengths` vs `task.requires`. Glob-matched via
+ * `getModelToolConfig()` patterns at registry build time.
+ */
+export type ModelStrength =
+  | 'reasoning'      // strong CoT, research, complex planning (Claude Opus, GPT-5, qwen3.6:35b-a3b)
+  | 'vision'         // multimodal images (Gemini Pro Vision, Claude 3+, GPT-4o)
+  | 'code'           // code generation / refactoring (Codex, qwen-coder, Claude)
+  | 'long-context'   // 128k+ context window comfortably (Gemini Pro, Claude 200k)
+  | 'cheap'          // <$0.5/Mtok input — good for parallel workers (Haiku, gemma4, Mistral Tiny)
+  | 'fast'           // <500ms p50 first token (Haiku, gpt-5-mini, gemma4:8b)
+  | 'tool-calling'   // reliable structured tool calls
+  | 'french'         // strong native French quality (Mistral, qwen3.6 fine-tunes)
+  | 'thinking';      // extended-thinking budget (Claude, qwen-thinking)
+
+/**
+ * Egress class describes where the network call physically goes.
+ * Critical for privacy routing — a `cloud` egress can leak code to
+ * a third party, while `local` stays on the box.
+ *
+ * - `local`  : same machine, loopback only (Ollama on 127.0.0.1)
+ * - `lan`    : same physical / Tailscale network (peer Code Buddy on
+ *              another machine)
+ * - `cloud`  : public internet (Anthropic API, OpenAI API, Gemini API)
+ */
+export type FleetEgress = 'local' | 'lan' | 'cloud';
+
+/**
+ * One model entry advertised by a peer. The peer enumerates these
+ * from its local config (Ollama daemon list, configured cloud keys,
+ * etc.) and surfaces them through `peer.describe`.
+ */
+export interface FleetModelDescriptor {
+  /** Provider-side model id, e.g., 'claude-opus-4', 'qwen3.6:35b-a3b-q4_K_M'. */
+  id: string;
+  /** Native context window in tokens. Used to gate long-context tasks. */
+  contextWindow: number;
+  /** Heuristic strengths derived from `getModelToolConfig()` glob matches. */
+  strengths: ModelStrength[];
+  /** Public price (USD per million input tokens). Omitted for local. */
+  costInputUsdPerMtok?: number;
+  /** Public price (USD per million output tokens). Omitted for local. */
+  costOutputUsdPerMtok?: number;
+  /** Rolling avg first-token latency in ms (best-effort sample). */
+  avgLatencyMs?: number;
+  /** Provider family — see `FleetProvider`. */
+  provider: FleetProvider;
+}
+
+/**
+ * Aggregate capability advertised by a single peer. The router uses
+ * this to score "which peer + which model is best for this task".
+ */
+export interface PeerCapability {
+  /** All models this peer can route to today. Empty when it has no
+      provider keys configured (yet still useful as a fleet observer). */
+  models: FleetModelDescriptor[];
+  /** Where this peer makes its outbound LLM calls — privacy gate. */
+  egress: FleetEgress;
+  /** Stable label the user gave the machine (`ministar`, `darkstar`, …). */
+  machineLabel: string;
+  /**
+   * Lightweight machine spec for routing. Optional — a peer may not
+   * know its own GPU on Windows without WMI permissions.
+   */
+  machineSpec?: {
+    cpu?: string;
+    /** GPU family / model. e.g., 'RTX 3090 ×2', 'Radeon 890M iGPU'. */
+    gpu?: string;
+    /** RAM in GB. */
+    ramGb?: number;
+  };
+  /**
+   * Max concurrent LLM calls this peer is willing to serve. Used by
+   * the router's `load` term in scoring. Fall back to `1` if not set.
+   */
+  maxConcurrency?: number;
+  /** Currently in-flight requests — populated dynamically (not from describe). */
+  activeRequests?: number;
+}

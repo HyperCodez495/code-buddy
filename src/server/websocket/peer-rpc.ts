@@ -204,14 +204,29 @@ function registerBuiltInMethods(): void {
     } catch {
       /* bridge not loaded — peer.chat not wired */
     }
+    // Fleet P2 — surface the peer's capability snapshot (configured
+    // providers, local Ollama models, machine spec) so remote routers
+    // can score "best peer × model" without an extra round-trip. Lazy
+    // import to keep peer-rpc load-time dependency-free.
+    let capabilities:
+      | import('../../fleet/types.js').PeerCapability
+      | null = null;
+    try {
+      const { getLocalCapabilities } = await import('../../fleet/capability-registry.js');
+      capabilities = await getLocalCapabilities();
+    } catch (err) {
+      // Capability detection is best-effort — never fail describe.
+      capabilities = null;
+    }
     return {
       hostname: process.env.CODEBUDDY_FLEET_HOSTNAME || os.hostname(),
       pid: process.pid,
       methods: listPeerMethods(),
-      apiVersion: 'd.16',
+      apiVersion: 'd.17', // bumped: now exposes capabilities
       role: getPeerRole(),
       maxDepth: getMaxDepth(),
       peerChatProvider,
+      capabilities,
     };
   });
 
