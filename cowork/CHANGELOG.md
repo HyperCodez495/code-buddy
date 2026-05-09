@@ -7,23 +7,59 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-### Added
+### Added — Cowork-on-core migration (Phases 1–11)
 
-- **Cowork-on-core migration (Phases 1–5)** — Cowork now runs on the
-  same Code Buddy core agentic loop as the CLI by default. The legacy
-  `pi-coding-agent` runner is retained as a fallback. New
-  `RUNNER_AUDIT.md` documents the parity matrix and remaining gaps.
-- **Engine MCP runtime sync** — when you add/edit/remove an MCP server
-  in Settings, the change now propagates to the embedded engine's
-  `MCPManager` singleton automatically (previously only pi saw the
-  update). New `EngineAdapter.setMcpServers()` API.
-- **Runner status badge** — titlebar shows a CPU icon (green for
+Cowork now runs on the same Code Buddy core agentic loop as the CLI
+by default; pi-coding-agent is the fallback. `RUNNER_AUDIT.md` tracks
+the parity matrix; the only entries still listed as gaps are
+sudo-password injection and the log-only `steer` / `run_event`
+streaming chunks.
+
+- **Engine MCP runtime sync** (P2) — when you add/edit/remove an MCP
+  server in Settings, the change now propagates to the embedded
+  engine's `MCPManager` singleton automatically (previously only pi
+  saw the update). New `EngineAdapter.setMcpServers()` API.
+- **Runner status badge** (P3) — titlebar shows a CPU icon (green for
   engine, orange for pi fallback, red for error). Click for details.
-- **Settings → Core engine** page with a 3-state radio: Auto / Always
-  on / Always off. Persisted across restarts. Env var
-  `CODEBUDDY_EMBEDDED=0` continues to override in Auto mode.
-- 24 new tests covering MCP sync (10), event mapping (9), and
-  embedded-mode precedence (5).
+- **Settings → Core engine** (P4) — 3-state radio: Auto / Always on /
+  Always off. Persisted across restarts. Env var `CODEBUDDY_EMBEDDED=0`
+  continues to override in Auto mode.
+- **Hot-swap model** (P8) — switching model mid-session now actually
+  works on the engine path. The adapter detects `apiKey:baseURL:model`
+  changes between turns, disposes the cached agent, and recreates one
+  with the full message history replayed.
+- **Skills hot-reload** (P10) — installing / uninstalling a SKILL.md
+  via Settings reloads the engine's skills registry without restart.
+  New `EngineAdapter.reloadSkills()` API, fired from
+  `SessionManager.invalidateSkillsSetup`.
+- **LRU agent cache** (P9) — `MAX_CACHED_SESSIONS = 50` matches pi.
+  Insertion-ordered `Map` with touch-on-access; oldest evicted on
+  overflow with `dispose()`.
+
+### Fixed — Cowork-on-core migration
+
+- **Engine permission deadlock** (P7, ship-blocker) — every destructive
+  tool call (Bash, Edit, Write…) on the engine path silently
+  deadlocked because the permission UI was wired only to the pi
+  payload shape. The renderer rendered "use undefined" and the
+  response was sent on the wrong IPC channel. Fix: the engine's
+  `DesktopPermissionBridge` now emits a Cowork-native `PermissionRequest`
+  with a `bridgeId` marker so the renderer routes the answer via
+  `permission.bridge.response`. Pi continues to use `permission.response`
+  unchanged.
+
+### Tests
+
+68 new tests across the runner stack:
+- 5 embedded-mode policy (env × Settings precedence)
+- 10 MCP runtime sync (Cowork-side + core-side diff logic)
+- 9 EngineStreamEvent → ServerEvent translation
+- 5 permission-bridge payload shape + roundtrip
+- 6 hot-swap on model/baseURL/apiKey change
+- 7 LRU eviction (cap, touch, dispose, clear, global dispose)
+- 4 skills hot-reload (call, legacy fallback, error tolerance)
+- 22 existing core tests still passing
+- 3 new E2E (badge renders, IPC shape, dialog opens)
 
 ### Removed
 

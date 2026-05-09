@@ -66,6 +66,7 @@ flowchart LR
 
 | Bridge | File | Responsibility |
 | ------ | ---- | -------------- |
+| `CodeBuddyEngineRunner` | `cowork/src/main/engine/codebuddy-engine-runner.ts` | **Default agent runner since post-2026-05.** Wraps the `CodeBuddyEngineAdapter` (built into `dist/desktop/codebuddy-engine-adapter.js`) which itself wraps the core `CodeBuddyAgent`. Translates `EngineStreamEvent` chunks into Cowork `ServerEvent`s. See `RUNNER_AUDIT.md` for the parity matrix vs the legacy `ClaudeAgentRunner` (pi). |
 | `WorkflowBridge` | `cowork/src/main/workflows/workflow-bridge.ts` | Persists visual workflows to `<userData>/workflows/workflows.json`, compiles them via `dag-compiler.ts` into the core `Orchestrator` shape, and dispatches `task_assigned` events to `CoworkToolAgent` (which delegates to `FormalToolRegistry.execute`). Live execution events (`workflow.event`, `workflow.approval_required`) flow back to the renderer. |
 | `HooksBridge` | `cowork/src/main/hooks/hooks-bridge.ts` | CRUD on `.codebuddy/hooks.json` + dry-run for the four handler types (`command`, `http`, `prompt`, `agent`). |
 | `A2ABridge` | `cowork/src/main/a2a/a2a-bridge.ts` | Google A2A protocol — register remote agents by URL, fetch `/.well-known/agent.json`, invoke `/tasks/send`. |
@@ -102,6 +103,51 @@ enumerates ~70 event types: `stream.message`, `stream.partial`,
 | `<userData>/models/buffalo_s.onnx` | ArcFace recognizer (~13 MB, manual or scripted install). |
 | `~/.codebuddy/codebuddy.db` | Core SQLite (server route handlers, ICM memory). |
 | `~/.codebuddy/presence/current.json` | Cross-process presence state (read by the core agent). |
+
+## Agent runner architecture
+
+Cowork has two agentic-loop implementations that coexist behind the
+same `IAgentRunner` interface:
+
+```
+SessionManager.createAgentRunner()
+   │
+   ├─ if engineAdapter set (DEFAULT post-2026-05)
+   │     → CodeBuddyEngineRunner.run()
+   │        └─ CodeBuddyEngineAdapter.runSession()
+   │           └─ CodeBuddyAgent.processUserMessageStream()
+   │              └─ runTurnLoop yields StreamingChunk
+   │                 └─ EngineStreamEvent translated to ServerEvent
+   │
+   └─ else (CODEBUDDY_EMBEDDED=0 or bundle absent)
+        → ClaudeAgentRunner.run() [legacy pi-coding-agent fallback]
+```
+
+Decision is made at boot in `cowork/src/main/index.ts:870` by
+`shouldLoadEngine(userMode, env)` (`cowork/src/main/engine/embedded-mode.ts`),
+combining the user's Settings → Core engine choice (`'auto' |
+'force-on' | 'force-off'`) with the env override `CODEBUDDY_EMBEDDED`.
+
+The **engine path** is preferred because it brings the core's 7
+middlewares (turn limit, cost, context warning, reasoning, workflow
+guard, auto-repair, quality gate), output sanitizer, transcript
+repair, and ~110 built-in tools. The **pi path** stays as fallback
+for environments where the engine bundle didn't ship (e.g. `cowork`
+checked out without building the parent CLI).
+
+State sync from Cowork → engine runs through optional methods on the
+`EngineAdapter` interface (`src/desktop/engine-adapter.ts`):
+
+| Method | Trigger | Purpose |
+| ------ | ------- | ------- |
+| `setMcpServers(configs)` | `SessionManager.invalidateMcpServersCache` | Push add/remove/update of MCP servers to the core's `MCPManager` singleton (separate from Cowork's). |
+| `setPermissionCallback(cb)` | Boot | Hook the GUI permission modal into `ConfirmationService`. |
+| `reloadSkills()` | `SessionManager.invalidateSkillsSetup` | Reload the SKILL.md registry after install/uninstall. |
+
+The runner badge in the titlebar (`cowork/src/renderer/components/RunnerBadge.tsx`)
+calls `electronAPI.runner.status()` every 5 s so Patrice sees instantly
+which runner is live, with click-to-open `RunnerDetailsDialog` for
+boot errors / cached session count.
 
 ## Critical regression to watch
 
