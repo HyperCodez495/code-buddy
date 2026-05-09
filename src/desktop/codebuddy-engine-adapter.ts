@@ -19,6 +19,7 @@ import type {
   EngineSessionConfig,
   EngineSessionResult,
   EngineModelInfo,
+  EngineMcpServerConfig,
 } from '../shared/engine-types.js';
 
 /**
@@ -35,6 +36,8 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
   private permissionCallback: EnginePermissionCallback | null = null;
   private ready = true;
   private disposed = false;
+  /** Last-pushed MCP server snapshots for diff-on-sync. */
+  private mcpServerSnapshots?: Map<string, string>;
 
   constructor(config: EngineSessionConfig) {
     this.config = config;
@@ -274,6 +277,83 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
   setPermissionCallback(callback: EnginePermissionCallback): void {
     this.permissionCallback = callback;
     logger.debug('[CodeBuddyEngineAdapter] permission callback set');
+  }
+
+  /**
+   * Synchronise the core MCPManager singleton with the host's view of
+   * the MCP servers. Called by Cowork at boot and after any
+   * add/update/delete/enable/disable.
+   *
+   * Diff strategy:
+   * - Servers present in `configs` but not in current registry → addServer
+   * - Servers present in current registry but not in `configs` → removeServer
+   * - Servers in both → compare transport JSON; on mismatch, remove + re-add
+   *   so the connection picks up the new config (no in-place patch in core).
+   * - `enabled === false` entries are removed if connected, skipped on add.
+   *
+   * Errors per-server are logged but don't fail the whole sync — one
+   * broken MCP shouldn't prevent the others from coming up.
+   */
+  async setMcpServers(configs: EngineMcpServerConfig[]): Promise<void> {
+    const { getMCPManager } = await import('../codebuddy/tools.js');
+    const manager = getMCPManager();
+    const current = new Map<string, unknown>();
+    // The core MCPManager exposes `serverConfigs` only as private state.
+    // We track which servers we've added ourselves via this map so we
+    // can diff cleanly without reading private internals.
+    if (!this.mcpServerSnapshots) {
+      this.mcpServerSnapshots = new Map();
+    }
+    for (const [name, snapshot] of this.mcpServerSnapshots) {
+      current.set(name, snapshot);
+    }
+
+    const desired = new Map<string, EngineMcpServerConfig>();
+    for (const cfg of configs) {
+      if (cfg.enabled === false) continue;
+      desired.set(cfg.name, cfg);
+    }
+
+    // Removals (in current, not in desired)
+    for (const name of current.keys()) {
+      if (!desired.has(name)) {
+        try {
+          await manager.removeServer(name);
+          this.mcpServerSnapshots.delete(name);
+          logger.info('[CodeBuddyEngineAdapter] removed MCP server', { name });
+        } catch (err) {
+          logger.warn('[CodeBuddyEngineAdapter] removeServer failed', { name, err });
+        }
+      }
+    }
+
+    // Additions + transport-change re-adds
+    for (const [name, cfg] of desired) {
+      const snapshot = JSON.stringify(cfg.transport);
+      if (current.get(name) === snapshot) continue; // unchanged
+      // Re-add (drops the existing connection if any)
+      if (current.has(name)) {
+        try {
+          await manager.removeServer(name);
+        } catch {
+          /* ignore */
+        }
+      }
+      try {
+        await manager.addServer({
+          name: cfg.name,
+          transport: cfg.transport,
+          enabled: true,
+        });
+        this.mcpServerSnapshots.set(name, snapshot);
+        logger.info('[CodeBuddyEngineAdapter] added MCP server', {
+          name,
+          type: cfg.transport.type,
+        });
+      } catch (err) {
+        logger.warn('[CodeBuddyEngineAdapter] addServer failed', { name, err });
+      }
+    }
   }
 
   dispose(): void {

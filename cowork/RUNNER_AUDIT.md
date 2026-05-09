@@ -63,8 +63,8 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 | `run_event` | n/a | not handled (log-only acceptable) | GAP | nice-to-have |
 | **Tool integration** |  |  |  |  |
 | Built-in tools (read/write/edit/bash/...) | from pi SDK | from core `getToolRegistry()` (~110 tools) | DIFF (more tools) | — |
-| MCP server config sync at runtime | `invalidateMcpServersCache()` rebuilds tools per query | **No mechanism** — engine adapter has no MCP setter | **GAP** | **blocker** |
-| MCP tool routing | `mcp__<server>__<name>` via `buildMcpCustomTools` | `mcp__<server>__<name>` via core's `MCPManager` singleton (separate instance from Cowork's) | GAP | blocker |
+| MCP server config sync at runtime | `invalidateMcpServersCache()` rebuilds tools per query | `EngineAdapter.setMcpServers(configs)` (Phase 2). Diff-based sync from `SessionManager.invalidateMcpServersCache` + `initializeMCP` + `reloadMCP`. | OK (Phase 2) | — |
+| MCP tool routing | `mcp__<server>__<name>` via `buildMcpCustomTools` | `mcp__<server>__<name>` via core's `MCPManager` singleton, kept in sync with Cowork's via the new setter | OK (Phase 2) | — |
 | Bash sudo password injection | `wrapBashToolForSudo` IPCs `requestSudoPassword` | not ported | GAP | low (rare in GUI) |
 | Bash default timeout | `wrapBashToolWithDefaultTimeout` | core BashTool has its own timeout config | OK | — |
 | Custom tool registration | n/a | core's plugin system | DIFF | — |
@@ -105,11 +105,14 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 
 ### Blocker (must fix before deprecating pi)
 
-1. **MCP runtime sync** — when Patrice adds/removes/updates an MCP server
-   in Settings, the engine doesn't see it. Two MCPManagers exist in
-   parallel (Cowork side and core side). Fix : extend `EngineAdapter`
-   interface with `setMcpServers(configs)` + a Cowork-side bridge that
-   re-pushes whenever `invalidateMcpServersCache` would have fired.
+1. ~~**MCP runtime sync**~~ — **fixed in Phase 2 (2026-05-09)**.
+   `EngineAdapter` now exposes optional `setMcpServers(configs)`.
+   `CodeBuddyEngineAdapter` implements diff-based sync against the
+   core's `MCPManager` singleton (add new, remove missing, re-add on
+   transport change). Cowork's `SessionManager` calls it from
+   `initializeMCP()`, `reloadMCP()`, and `invalidateMcpServersCache()`.
+   Tests : 4 in `cowork/tests/engine-mcp-sync.test.ts` +
+   6 in `tests/desktop/codebuddy-engine-adapter-mcp.test.ts`.
 
 ### Medium (should fix soon, has UX impact)
 

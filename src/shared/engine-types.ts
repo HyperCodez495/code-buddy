@@ -130,3 +130,26 @@ export interface EnginePermissionRequest {
 }
 
 export type EnginePermissionResponse = 'allow' | 'deny' | 'allow_always';
+
+// ── MCP Server Sync ────────────────────────────────────────────────────
+
+/**
+ * MCP server configuration as the host (Cowork) ships it to the engine.
+ * Subset of `src/mcp/types.ts:MCPServerConfig` plus the host-only fields
+ * that don't apply (id, name shape, etc.) collapsed to the shape the
+ * core MCPManager expects.
+ */
+export interface EngineMcpServerConfig {
+  /** Unique server identifier — used as the MCP namespace prefix `mcp__<name>__*`. */
+  name: string;
+  /** Transport definition (stdio command, SSE URL, etc.). */
+  transport: {
+    type: 'stdio' | 'http' | 'sse' | 'streamable_http';
+    command?: string;
+    args?: string[];
+    env?: Record<string, string>;
+    url?: string;
+    headers?: Record<string, string>;
+  };
+  enabled?: boolean;
+}

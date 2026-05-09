@@ -35,7 +35,7 @@ import {
 import { SandboxSync } from '../sandbox/sandbox-sync';
 import { ClaudeAgentRunner } from '../claude/agent-runner';
 import { configStore } from '../config/config-store';
-import { MCPManager } from '../mcp/mcp-manager';
+import { MCPManager, type MCPServerConfig } from '../mcp/mcp-manager';
 import { mcpConfigStore } from '../mcp/mcp-config-store';
 import { PluginRuntimeService } from '../skills/plugin-runtime-service';
 import {
@@ -83,6 +83,25 @@ export interface EngineAdapterLike {
    * doesn't have a Gemini path is a no-op rather than a crash.
    */
   setDefaultGoogleSearch?: (enabled: boolean) => void;
+  /**
+   * Push the host's view of the MCP server registry to the engine.
+   * Optional — older bundles without the runtime sync hook simply
+   * don't expose it. See `EngineAdapter.setMcpServers` (core).
+   */
+  setMcpServers?: (
+    configs: Array<{
+      name: string;
+      transport: {
+        type: 'stdio' | 'http' | 'sse' | 'streamable_http';
+        command?: string;
+        args?: string[];
+        env?: Record<string, string>;
+        url?: string;
+        headers?: Record<string, string>;
+      };
+      enabled?: boolean;
+    }>,
+  ) => Promise<void>;
 }
 
 /** Minimal interface for the project memory service */
@@ -291,6 +310,8 @@ export class SessionManager {
   async reloadMCP(): Promise<void> {
     log('[SessionManager] Reloading MCP servers');
     await this.initializeMCP();
+    // Push to the embedded engine adapter too — see syncMcpServersToEngine.
+    await this.syncMcpServersToEngine();
   }
 
   /**
@@ -300,6 +321,30 @@ export class SessionManager {
   invalidateMcpServersCache(): void {
     if (this.agentRunner && 'invalidateMcpServersCache' in this.agentRunner) {
       (this.agentRunner as ClaudeAgentRunner).invalidateMcpServersCache();
+    }
+    // Phase 2 — Cowork-on-core migration: also push the new MCP server
+    // list to the embedded engine adapter so its core MCPManager
+    // singleton stays in sync with what the user has configured. The
+    // pi runner rebuilds tools per-query (above), but the engine's
+    // MCPManager is set once at boot and needs explicit refresh.
+    void this.syncMcpServersToEngine();
+  }
+
+  private async syncMcpServersToEngine(): Promise<void> {
+    if (!this.engineAdapter || typeof this.engineAdapter.setMcpServers !== 'function') {
+      return;
+    }
+    try {
+      const enabled = mcpConfigStore.getEnabledServers();
+      const configs = enabled.map((s) => ({
+        name: s.name,
+        transport: toEngineTransport(s),
+        enabled: true,
+      }));
+      await this.engineAdapter.setMcpServers(configs);
+      log(`[SessionManager] synced ${configs.length} MCP server(s) to engine`);
+    } catch (err) {
+      logError('[SessionManager] syncMcpServersToEngine failed:', err);
     }
   }
 
@@ -342,6 +387,10 @@ export class SessionManager {
       const servers = mcpConfigStore.getEnabledServers();
       await this.mcpManager.initializeServers(servers);
       log(`[SessionManager] Initialized ${servers.length} MCP servers`);
+      // Push the same set to the embedded engine adapter so its core
+      // MCPManager singleton matches Cowork's view from boot. The
+      // engine adapter is a no-op if not present (legacy bundles).
+      await this.syncMcpServersToEngine();
     } catch (error) {
       logError('[SessionManager] Failed to initialize MCP servers:', error);
       this.sendToRenderer({
@@ -1685,4 +1734,36 @@ export class SessionManager {
 
     this.db.traceSteps.update(stepId, rowUpdates);
   }
+}
+
+/**
+ * Translate a Cowork-side `MCPServerConfig` (which uses `type` +
+ * inline command/url fields) to the engine's transport shape (a single
+ * `transport` object with everything inside). The two have diverged
+ * historically; this is the single point of conversion so adding new
+ * transport types stays localised.
+ */
+function toEngineTransport(server: MCPServerConfig): {
+  type: 'stdio' | 'http' | 'sse' | 'streamable_http';
+  command?: string;
+  args?: string[];
+  env?: Record<string, string>;
+  url?: string;
+  headers?: Record<string, string>;
+} {
+  const coworkType = server.type;
+  const engineType: 'stdio' | 'http' | 'sse' | 'streamable_http' =
+    coworkType === 'sse'
+      ? 'sse'
+      : coworkType === 'streamable-http'
+        ? 'streamable_http'
+        : 'stdio';
+  return {
+    type: engineType,
+    command: server.command,
+    args: server.args,
+    env: server.env,
+    url: server.url,
+    headers: server.headers,
+  };
 }

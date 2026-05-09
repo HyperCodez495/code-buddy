@@ -14,6 +14,7 @@ import type {
   EngineSessionConfig,
   EngineSessionResult,
   EngineModelInfo,
+  EngineMcpServerConfig,
   EnginePermissionRequest,
   EnginePermissionResponse,
 } from '../shared/engine-types.js';
@@ -26,6 +27,7 @@ export type {
   EngineSessionConfig,
   EngineSessionResult,
   EngineModelInfo,
+  EngineMcpServerConfig,
   EnginePermissionRequest,
   EnginePermissionResponse,
 } from '../shared/engine-types.js';
@@ -92,6 +94,20 @@ export interface EngineAdapter {
    * user approval for destructive operations.
    */
   setPermissionCallback(callback: EnginePermissionCallback): void;
+
+  /**
+   * Synchronise the engine's MCP server registry with the host's
+   * (Cowork's) view. Called at boot and whenever the user adds /
+   * updates / removes / enables / disables a server in Settings.
+   *
+   * Implementations should diff against the current registry: add new
+   * entries, remove missing ones, and reconnect entries whose transport
+   * config changed. Only entries with `enabled !== false` are connected.
+   *
+   * Optional — adapters that don't expose MCP can omit this and the
+   * host will skip the call.
+   */
+  setMcpServers?(configs: EngineMcpServerConfig[]): Promise<void>;
 
   /**
    * Release all resources. Called when the app is shutting down.
