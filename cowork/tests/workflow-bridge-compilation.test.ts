@@ -343,6 +343,74 @@ describe('dag-compiler / V0.5 — convergence', () => {
     expect(core.steps[1].tasks![0].input.cowork_visual_node_id).toBe('after');
   });
 
+  it('passes maxRetries from a tool node to the core TaskDefinition', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('t1', 'tool', {
+          toolName: 'shell_exec',
+          toolInput: { command: 'flaky' },
+          maxRetries: 3,
+        }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 't1'), edge('t1', 'end')],
+    });
+    const core = compileVisualToCore(def);
+    expect(core.steps[0].tasks![0].maxRetries).toBe(3);
+  });
+
+  it('omits maxRetries when zero or unset (fail-fast default)', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('t1', 'tool', { toolName: 'shell_exec', toolInput: {} }),
+        node('end', 'end'),
+      ],
+      edges: [edge('start', 't1'), edge('t1', 'end')],
+    });
+    const core = compileVisualToCore(def);
+    expect(core.steps[0].tasks![0].maxRetries).toBeUndefined();
+  });
+
+  it('compiles a nested parallel inside another parallel branch', () => {
+    // Outer parallel splits into a/b. Branch `a` itself contains an
+    // inner parallel splitting into a1/a2. Both parallels converge on
+    // `end`. Tests that the recursive compiler handles arbitrary
+    // structural nesting.
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('outer', 'parallel'),
+        node('inner', 'parallel'),
+        node('a1', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('a2', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('b', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'outer'),
+        edge('outer', 'inner'),
+        edge('outer', 'b'),
+        edge('inner', 'a1'),
+        edge('inner', 'a2'),
+        edge('a1', 'end'),
+        edge('a2', 'end'),
+        edge('b', 'end'),
+      ],
+    });
+    const core = compileVisualToCore(def);
+    expect(core.steps).toHaveLength(1);
+    expect(core.steps[0].type).toBe('parallel');
+    expect(core.steps[0].branches).toHaveLength(2);
+    // One of the branches should itself contain a `parallel` step.
+    const branches = core.steps[0].branches!;
+    const hasNested = branches.some(
+      (b) => b.length === 1 && b[0].type === 'parallel'
+    );
+    expect(hasNested).toBe(true);
+  });
+
   it('rejects branches that converge on different terminations', () => {
     // One branch (a) walks into a real join `shared` (incoming=2 because
     // an unrelated `extra` node also points there), the other (b) goes

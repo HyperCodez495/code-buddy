@@ -527,9 +527,28 @@ interface NodeConfigProps {
 }
 
 const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
-  const cfg = (node.config ?? {}) as { toolName?: string; toolInput?: Record<string, unknown> };
+  const cfg = (node.config ?? {}) as {
+    toolName?: string;
+    toolInput?: Record<string, unknown>;
+    maxRetries?: number;
+  };
   const [jsonText, setJsonText] = useState(() => JSON.stringify(cfg.toolInput ?? {}, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
+  const [toolCatalogue, setToolCatalogue] = useState<
+    Array<{ name: string; description: string }> | null
+  >(null);
+
+  React.useEffect(() => {
+    if (toolCatalogue !== null) return;
+    const api = (window as { electronAPI?: { tools?: { list?: () => Promise<Array<{ name: string; description: string; category: string }>> } } }).electronAPI;
+    if (!api?.tools?.list) {
+      setToolCatalogue([]);
+      return;
+    }
+    api.tools.list()
+      .then((list) => setToolCatalogue(list.sort((a, b) => a.name.localeCompare(b.name))))
+      .catch(() => setToolCatalogue([]));
+  }, [toolCatalogue]);
 
   const updateConfig = (patch: Record<string, unknown>) => {
     setNodes((prev) =>
@@ -543,13 +562,28 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
     <>
       <div>
         <label className="block text-[10px] text-text-muted mb-1">Tool name</label>
-        <input
-          type="text"
-          value={cfg.toolName ?? ''}
-          onChange={(e) => updateConfig({ toolName: e.target.value })}
-          placeholder="e.g. bash_run, str_replace_editor"
-          className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
-        />
+        {toolCatalogue && toolCatalogue.length > 0 ? (
+          <select
+            value={cfg.toolName ?? ''}
+            onChange={(e) => updateConfig({ toolName: e.target.value })}
+            className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+          >
+            <option value="">— select a tool —</option>
+            {toolCatalogue.map((t) => (
+              <option key={t.name} value={t.name} title={t.description}>
+                {t.name}
+              </option>
+            ))}
+          </select>
+        ) : (
+          <input
+            type="text"
+            value={cfg.toolName ?? ''}
+            onChange={(e) => updateConfig({ toolName: e.target.value })}
+            placeholder="e.g. shell_exec, list_directory, view_file"
+            className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+          />
+        )}
       </div>
       <div>
         <label className="block text-[10px] text-text-muted mb-1">
@@ -573,6 +607,22 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
           placeholder='{"command": "echo hello"}'
         />
         {jsonError && <div className="text-[10px] text-error mt-1">{jsonError}</div>}
+      </div>
+      <div>
+        <label className="block text-[10px] text-text-muted mb-1">
+          Max retries on failure
+        </label>
+        <input
+          type="number"
+          min={0}
+          step={1}
+          value={cfg.maxRetries ?? 0}
+          onChange={(e) => updateConfig({ maxRetries: Math.max(0, Number(e.target.value) || 0) })}
+          className="w-full px-2 py-1 text-xs bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
+        />
+        <div className="text-[10px] text-text-muted mt-1">
+          0 = fail-fast. The orchestrator re-queues the task on failure.
+        </div>
       </div>
     </>
   );

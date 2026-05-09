@@ -40,6 +40,7 @@ export interface CoreTaskDefinition {
   requiredCapabilities?: string[];
   priority: CoreTaskPriority;
   timeout?: number;
+  maxRetries?: number;
 }
 
 export interface CoreWorkflowStep {
@@ -136,6 +137,9 @@ function ensureToolConfig(node: WorkflowVisualNode): ToolNodeConfig {
   return {
     toolName: cfg.toolName,
     toolInput: (cfg.toolInput as Record<string, unknown>) ?? {},
+    maxRetries: typeof cfg.maxRetries === 'number' && cfg.maxRetries > 0
+      ? cfg.maxRetries
+      : undefined,
   };
 }
 
@@ -330,6 +334,7 @@ function compileSingle(
               },
               requiredCapabilities: ['tool_invoke'],
               priority: 'medium',
+              ...(cfg.maxRetries ? { maxRetries: cfg.maxRetries } : {}),
             },
           ],
         },

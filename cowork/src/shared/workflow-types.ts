@@ -18,6 +18,12 @@ export type WorkflowNodeType =
 export interface ToolNodeConfig {
   toolName: string;
   toolInput: Record<string, unknown>;
+  /**
+   * If set, the core orchestrator will re-queue the task on failure up
+   * to `maxRetries` times before marking the workflow failed
+   * (cf. `Orchestrator.failTask` in `src/orchestration/orchestrator.ts`).
+   */
+  maxRetries?: number;
 }
 
 export interface ConditionNodeConfig {
