@@ -74,10 +74,12 @@ const SPECS: Record<PeerChatProviderId, ProviderSpec> = {
   // for the privacy router (the binary contacts Google servers).
   'gemini-cli': {
     id: 'gemini-cli',
-    // Gemini 3 Pro Preview — alias accepted by gemini-cli, served as
-    // gemini-3.1-pro-preview by Google (visible in stats.models). Use
-    // CODEBUDDY_PEER_MODEL to fall back to gemini-2.5-pro / -flash.
-    defaultModel: 'gemini-3-pro-preview',
+    // Pinned to 3.1 explicitly so a fleet behavior shift only happens
+    // when Patrice updates this default (vs. the `gemini-3-pro-preview`
+    // alias, which Google can auto-route to 3.2/3.3 etc.). Override
+    // via CODEBUDDY_PEER_MODEL — works for both the alias and any
+    // dotted version the binary accepts.
+    defaultModel: 'gemini-3.1-pro-preview',
     defaultBaseUrl: GEMINI_CLI_BASE_URL,
     isLocal: true,
     resolve: () => {

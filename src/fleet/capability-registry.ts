@@ -260,9 +260,11 @@ function buildGeminiCatalog(): FleetModelDescriptor[] {
  * can avoid this peer.
  */
 function buildGeminiCliCatalog(): FleetModelDescriptor[] {
-  // gemini-cli accepts the public aliases below. The Ultra-tier
-  // subscription unlocks the 3.x preview models in addition to 2.5.
+  // Concrete versions pinned first (so the router scoring keys on
+  // stable identifiers), then the auto-bumping aliases as fallbacks.
   const ids = [
+    'gemini-3.1-pro-preview',
+    'gemini-3.1-flash-preview',
     'gemini-3-pro-preview',
     'gemini-3-flash-preview',
     'gemini-2.5-pro',
