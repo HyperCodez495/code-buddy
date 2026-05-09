@@ -526,6 +526,12 @@ interface NodeConfigProps {
   setNodes: React.Dispatch<React.SetStateAction<WorkflowNode[]>>;
 }
 
+interface ToolCatalogueEntry {
+  name: string;
+  description: string;
+  category: string;
+}
+
 const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
   const cfg = (node.config ?? {}) as {
     toolName?: string;
@@ -534,13 +540,11 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
   };
   const [jsonText, setJsonText] = useState(() => JSON.stringify(cfg.toolInput ?? {}, null, 2));
   const [jsonError, setJsonError] = useState<string | null>(null);
-  const [toolCatalogue, setToolCatalogue] = useState<
-    Array<{ name: string; description: string }> | null
-  >(null);
+  const [toolCatalogue, setToolCatalogue] = useState<ToolCatalogueEntry[] | null>(null);
 
   React.useEffect(() => {
     if (toolCatalogue !== null) return;
-    const api = (window as { electronAPI?: { tools?: { list?: () => Promise<Array<{ name: string; description: string; category: string }>> } } }).electronAPI;
+    const api = (window as { electronAPI?: { tools?: { list?: () => Promise<ToolCatalogueEntry[]> } } }).electronAPI;
     if (!api?.tools?.list) {
       setToolCatalogue([]);
       return;
@@ -563,18 +567,11 @@ const NodeConfigTool: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
       <div>
         <label className="block text-[10px] text-text-muted mb-1">Tool name</label>
         {toolCatalogue && toolCatalogue.length > 0 ? (
-          <select
+          <ToolSelector
             value={cfg.toolName ?? ''}
-            onChange={(e) => updateConfig({ toolName: e.target.value })}
-            className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent"
-          >
-            <option value="">— select a tool —</option>
-            {toolCatalogue.map((t) => (
-              <option key={t.name} value={t.name} title={t.description}>
-                {t.name}
-              </option>
-            ))}
-          </select>
+            tools={toolCatalogue}
+            onChange={(toolName) => updateConfig({ toolName })}
+          />
         ) : (
           <input
             type="text"
@@ -688,5 +685,163 @@ const NodeConfigApproval: React.FC<NodeConfigProps> = ({ node, setNodes }) => {
         />
       </div>
     </>
+  );
+};
+
+/**
+ * Combobox-style tool selector with live search + grouping by category.
+ * Used by `NodeConfigTool` to pick from the 110+ tools the
+ * `FormalToolRegistry` exposes via `electronAPI.tools.list()`.
+ */
+interface ToolSelectorProps {
+  value: string;
+  tools: ToolCatalogueEntry[];
+  onChange: (name: string) => void;
+}
+
+const ToolSelector: React.FC<ToolSelectorProps> = ({ value, tools, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const [query, setQuery] = useState('');
+  const [highlight, setHighlight] = useState<number>(0);
+  const wrapperRef = useRef<HTMLDivElement | null>(null);
+
+  // Close on outside click
+  React.useEffect(() => {
+    if (!open) return;
+    const onClick = (e: MouseEvent) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    };
+    window.addEventListener('mousedown', onClick);
+    return () => window.removeEventListener('mousedown', onClick);
+  }, [open]);
+
+  const grouped = useMemo(() => {
+    const q = query.trim().toLowerCase();
+    const filtered = q
+      ? tools.filter(
+          (t) =>
+            t.name.toLowerCase().includes(q) ||
+            t.description.toLowerCase().includes(q) ||
+            (t.category || '').toLowerCase().includes(q)
+        )
+      : tools;
+    // Group by category. Tools without a category land in "Other".
+    const map = new Map<string, ToolCatalogueEntry[]>();
+    for (const t of filtered) {
+      const cat = t.category || 'Other';
+      if (!map.has(cat)) map.set(cat, []);
+      map.get(cat)!.push(t);
+    }
+    return Array.from(map.entries()).sort(([a], [b]) => a.localeCompare(b));
+  }, [tools, query]);
+
+  // Flat ordered list for keyboard nav.
+  const flat = useMemo(
+    () => grouped.flatMap(([, items]) => items),
+    [grouped]
+  );
+
+  React.useEffect(() => {
+    if (highlight >= flat.length) setHighlight(0);
+  }, [flat.length, highlight]);
+
+  const select = (name: string) => {
+    onChange(name);
+    setOpen(false);
+    setQuery('');
+  };
+
+  const handleKey = (e: React.KeyboardEvent) => {
+    if (e.key === 'ArrowDown') {
+      e.preventDefault();
+      setHighlight((h) => Math.min(flat.length - 1, h + 1));
+    } else if (e.key === 'ArrowUp') {
+      e.preventDefault();
+      setHighlight((h) => Math.max(0, h - 1));
+    } else if (e.key === 'Enter') {
+      e.preventDefault();
+      const target = flat[highlight];
+      if (target) select(target.name);
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      setOpen(false);
+    }
+  };
+
+  return (
+    <div className="relative" ref={wrapperRef}>
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        className="w-full px-2 py-1 text-xs font-mono bg-background border border-border rounded text-text-primary focus:outline-none focus:border-accent text-left flex items-center justify-between"
+      >
+        <span className={value ? '' : 'text-text-muted'}>
+          {value || '— select a tool —'}
+        </span>
+        <span className="text-text-muted ml-2">▾</span>
+      </button>
+
+      {open && (
+        <div className="absolute z-30 mt-1 left-0 right-0 max-h-[320px] overflow-y-auto bg-background border border-border rounded-lg shadow-elevated">
+          <div className="sticky top-0 bg-background px-2 py-1.5 border-b border-border-muted">
+            <input
+              type="text"
+              autoFocus
+              value={query}
+              onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={handleKey}
+              placeholder="Search tools…"
+              className="w-full px-2 py-1 text-xs bg-surface border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+            />
+          </div>
+          {grouped.length === 0 ? (
+            <div className="px-3 py-4 text-[11px] text-text-muted text-center">
+              No tool matches "{query}".
+            </div>
+          ) : (
+            grouped.map(([cat, items]) => {
+              return (
+                <div key={cat} className="border-b border-border-muted/40 last:border-b-0">
+                  <div className="sticky top-[38px] bg-surface/60 px-2 py-1 text-[10px] font-medium uppercase tracking-wider text-text-muted">
+                    {cat} ({items.length})
+                  </div>
+                  {items.map((t) => {
+                    const flatIndex = flat.findIndex((x) => x.name === t.name);
+                    const isHighlight = flatIndex === highlight;
+                    const isSelected = t.name === value;
+                    return (
+                      <button
+                        key={t.name}
+                        type="button"
+                        onClick={() => select(t.name)}
+                        onMouseEnter={() => setHighlight(flatIndex)}
+                        className={`w-full text-left px-2.5 py-1.5 transition-colors flex items-start gap-2 ${
+                          isHighlight
+                            ? 'bg-surface-hover'
+                            : isSelected
+                              ? 'bg-accent/10'
+                              : 'hover:bg-surface-hover/60'
+                        }`}
+                      >
+                        <span className="text-xs font-mono text-text-primary flex-shrink-0">
+                          {t.name}
+                        </span>
+                        {t.description && (
+                          <span className="text-[10px] text-text-muted/80 flex-1 min-w-0 truncate">
+                            {t.description}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              );
+            })
+          )}
+        </div>
+      )}
+    </div>
   );
 };
