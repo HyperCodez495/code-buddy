@@ -706,6 +706,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('voice.transcribe', { audio, language: options?.language }),
     status: (): Promise<{ available: boolean; bootError: string | null }> =>
       ipcRenderer.invoke('voice.status'),
+    /**
+     * Synthesise `text` to French speech via Piper. Returns a WAV
+     * ArrayBuffer the renderer can wrap in a Blob and play through an
+     * `<audio>` element.
+     */
+    speak: (
+      text: string,
+      options?: { lengthScale?: number },
+    ): Promise<{
+      ok: boolean;
+      audio?: ArrayBuffer;
+      sampleRate?: number;
+      durationMs?: number;
+      error?: string;
+    }> => ipcRenderer.invoke('voice.speak', { text, lengthScale: options?.lengthScale }),
+    ttsStatus: (): Promise<{ available: boolean; bootError: string | null }> =>
+      ipcRenderer.invoke('voice.ttsStatus'),
   },
 
   // Auto-update
@@ -2307,6 +2324,17 @@ declare global {
           options?: { language?: string }
         ) => Promise<{ ok: boolean; text?: string; durationMs?: number; error?: string }>;
         status: () => Promise<{ available: boolean; bootError: string | null }>;
+        speak: (
+          text: string,
+          options?: { lengthScale?: number },
+        ) => Promise<{
+          ok: boolean;
+          audio?: ArrayBuffer;
+          sampleRate?: number;
+          durationMs?: number;
+          error?: string;
+        }>;
+        ttsStatus: () => Promise<{ available: boolean; bootError: string | null }>;
       };
       update: {
         check: () => Promise<unknown>;

@@ -342,7 +342,7 @@ export function ChatView() {
           .map((b) => b.text ?? '')
           .join(' ')
       : String(last.content ?? '');
-    if (text) speakText(text);
+    if (text) void speakText(text);
   }, [messages]);
 
   // Additional scroll trigger for content height changes (e.g., TodoWrite expand/collapse)

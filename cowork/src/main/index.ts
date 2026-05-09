@@ -55,6 +55,7 @@ import { getModelCapabilities } from './config/model-capability-bridge';
 import { TemplateService } from './project/template-service';
 import { WorkflowBridge } from './workflows/workflow-bridge';
 import { VoiceBridge } from './voice/voice-bridge';
+import { TTSBridge } from './voice/tts-bridge';
 import { SessionExportService } from './session/session-export-service';
 import { SessionInsightsBridge } from './session/session-insights-bridge';
 import { ActivityFeed } from './activity/activity-feed';
@@ -185,6 +186,7 @@ let previewService: PreviewService | null = null;
 let templateService: TemplateService | null = null;
 let workflowBridge: WorkflowBridge | null = null;
 let voiceBridge: VoiceBridge | null = null;
+let ttsBridge: TTSBridge | null = null;
 let sessionExportService: SessionExportService | null = null;
 let sessionInsightsBridge: SessionInsightsBridge | null = null;
 let activityFeed: ActivityFeed | null = null;
@@ -1158,6 +1160,10 @@ app
     // loaded on first transcription, not at boot, so cold-start UX is
     // unaffected if the user never clicks the mic.
     voiceBridge = new VoiceBridge();
+    // TTS bridge — Piper + fr_FR voice. Boots fast (no model load
+    // until first synthesize), so always-on is fine. Override paths
+    // via COWORK_PIPER_BIN / COWORK_PIPER_VOICE env vars.
+    ttsBridge = new TTSBridge();
 
     // Session export — enhanced formats (markdown/json/html) with redaction
     const sessionInsightsSource = sessionManager;
@@ -2809,6 +2815,57 @@ ipcMain.handle('voice.status', async () => {
   return {
     available: voiceBridge.isReady() || voiceBridge.getBootError() === null,
     bootError: voiceBridge.getBootError(),
+  };
+});
+
+/**
+ * Text → speech via Piper. Returns the WAV bytes for the renderer to
+ * play. Renderer keeps an `<audio>` element + Blob URL alive for the
+ * duration of playback then revokes the URL.
+ */
+ipcMain.handle(
+  'voice.speak',
+  async (
+    _event,
+    payload: { text: string; lengthScale?: number },
+  ): Promise<{
+    ok: boolean;
+    audio?: ArrayBuffer;
+    sampleRate?: number;
+    durationMs?: number;
+    error?: string;
+  }> => {
+    if (!ttsBridge) {
+      return { ok: false, error: 'tts bridge not initialized' };
+    }
+    if (!ttsBridge.isReady()) {
+      return { ok: false, error: ttsBridge.getBootError() ?? 'tts not ready' };
+    }
+    try {
+      const result = await ttsBridge.synthesize(payload.text, {
+        lengthScale: payload.lengthScale,
+      });
+      return {
+        ok: true,
+        audio: result.audio,
+        sampleRate: result.sampleRate,
+        durationMs: result.synthesisDurationMs,
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[voice.speak] failed:', message);
+      return { ok: false, error: message };
+    }
+  },
+);
+
+ipcMain.handle('voice.ttsStatus', async () => {
+  if (!ttsBridge) {
+    return { available: false, bootError: 'bridge not initialized' };
+  }
+  return {
+    available: ttsBridge.isReady(),
+    bootError: ttsBridge.getBootError(),
   };
 });
 
