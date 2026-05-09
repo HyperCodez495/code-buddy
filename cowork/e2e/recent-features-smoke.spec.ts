@@ -81,6 +81,59 @@ test('IPC liveness — voice.status round-trips successfully (mainWindow regress
   expect(electronApp.windows().length).toBeGreaterThan(0);
 });
 
+test('Phase 3 — runner badge renders in titlebar with runner status', async ({ appPage }) => {
+  // Asserts the Cowork-on-core migration plumbing all the way to UI:
+  // Titlebar mounts <RunnerBadge> → renderer calls electronAPI.runner.status()
+  // → main returns engine|pi shape → badge renders without crashing.
+  // If any of those steps regresses, the badge silently disappears
+  // and Patrice can't tell which runner is active.
+  const badge = appPage.getByTestId('runner-badge');
+  await expect(badge).toBeVisible({ timeout: 10000 });
+  const titleAttr = await badge.getAttribute('title');
+  expect(titleAttr).toBeTruthy();
+  // Title should mention either engine or pi explicitly.
+  expect(titleAttr!.toLowerCase()).toMatch(/engine|pi|core/);
+});
+
+test('Phase 3 — runner.status IPC returns the documented shape', async ({ appPage }) => {
+  await appPage.waitForFunction(() => Boolean((window as { electronAPI?: unknown }).electronAPI), {
+    timeout: 10000,
+  });
+  const result = await appPage.evaluate(async () => {
+    const api = (window as unknown as {
+      electronAPI?: { runner?: { status?: () => Promise<unknown> } };
+    }).electronAPI;
+    if (!api?.runner?.status) return { ok: false, reason: 'runner.status missing' };
+    try {
+      const r = await api.runner.status();
+      return { ok: true, response: r };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  expect(result.ok).toBe(true);
+  if (result.ok && 'response' in result) {
+    const resp = result.response as Record<string, unknown>;
+    expect(resp).toHaveProperty('runner');
+    expect(['engine', 'pi']).toContain(resp.runner);
+    expect(resp).toHaveProperty('engineReady');
+    expect(typeof resp.engineReady).toBe('boolean');
+    expect(resp).toHaveProperty('bootError');
+  }
+});
+
+test('Phase 3 — clicking the runner badge opens the details dialog', async ({ appPage }) => {
+  const badge = appPage.getByTestId('runner-badge');
+  await expect(badge).toBeVisible({ timeout: 10000 });
+  await badge.click();
+  // RunnerDetailsDialog uses role="dialog" — test it without leaning
+  // on a specific data-testid so future copy changes don't break.
+  const dialog = appPage.getByRole('dialog');
+  await expect(dialog).toBeVisible();
+  // Esc / outside-click should close cleanly.
+  await appPage.keyboard.press('Escape');
+});
+
 test('Cmd+K (or Ctrl+K) opens global search and a query types into the input', async ({
   appPage,
 }) => {
