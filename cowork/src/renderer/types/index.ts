@@ -352,6 +352,13 @@ export interface PermissionRequest {
   toolName: string;
   input: Record<string, unknown>;
   sessionId: string;
+  /**
+   * When set, the request originated from the embedded Code Buddy
+   * core engine's `DesktopPermissionBridge` rather than from the pi
+   * runner. The response must travel back via `permission.bridge.response`
+   * so the bridge resolves the right pending Promise.
+   */
+  bridgeId?: string;
 }
 
 export type PermissionResult = 'allow' | 'deny' | 'allow_always';

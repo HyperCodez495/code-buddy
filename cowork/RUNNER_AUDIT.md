@@ -70,7 +70,7 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 | Custom tool registration | n/a | core's plugin system | DIFF | — |
 | Computer Use / GUI overlay | n/a | `isGuiOperateTool` detection + screenshot extraction | OK (engine) | — |
 | **Permission flow** |  |  |  |  |
-| Tool approval UX | `permission.request` ServerEvent + `permission.response` IPC | `permission.bridge.request` (separate channel) via `DesktopPermissionBridge` | DIFF | medium (two different UIs?) |
+| Tool approval UX | `permission.request` ServerEvent + `permission.response` IPC | `permission.request` ServerEvent (Cowork-shape, with `bridgeId`) + `permission.bridge.response` reply (Phase 7) | OK (Phase 7) | — |
 | Allow-once / allow-always | yes | yes (`allow` / `allow_always` / `deny`) | OK | — |
 | Auto-approve session flags | `ConfirmationService` session flags | `ConfirmationService` session flags (same singleton) | OK | — |
 | **Session lifecycle** |  |  |  |  |
@@ -118,9 +118,17 @@ better), **N/A** (pi-specific quirk that doesn't apply to engine).
 
 2. **Hot-swap model** — switching model in a session today re-creates
    the agent + loses in-memory context. Workaround OK for V1, document.
-3. **Permission UI consistency** — `permission.request` (pi) vs
-   `permission.bridge.request` (engine) might use different modal
-   shapes. Audit visually + unify if divergent.
+3. ~~**Permission UI consistency**~~ — **fixed in Phase 7 (2026-05-09)**.
+   The `DesktopPermissionBridge` now emits a `permission.request`
+   payload that matches Cowork's `PermissionRequest` shape
+   (`toolUseId`, `toolName`, `input`, `sessionId`) plus a `bridgeId`
+   marker. The renderer's `respondToPermission()` reads `bridgeId`
+   and routes the answer via `permission.bridge.response` so the
+   engine bridge resolves correctly. Without this fix, every
+   destructive tool on the engine path silently deadlocked because
+   the dialog rendered "use undefined" and the response went to the
+   wrong channel. 5 tests in
+   `tests/desktop/permission-bridge-unify.test.ts`.
 
 ### Low (acceptable V1, follow-up)
 

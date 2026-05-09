@@ -82,15 +82,26 @@ export class DesktopPermissionBridge {
 
       this.pending.set(request.id, { request, resolve, timer });
 
-      // Send to renderer
+      // Send to renderer in the shape its `PermissionDialog` expects
+      // (see `cowork/src/renderer/types/index.ts:PermissionRequest`).
+      // The `bridgeId` field signals the renderer to route the
+      // response via `permission.bridge.response` instead of the
+      // pi-runner channel `permission.response` — both runners share
+      // the `permission.request` ServerEvent name but speak to
+      // different reply channels.
+      const inputPayload: Record<string, unknown> = {};
+      if (request.filename !== undefined) inputPayload.filename = request.filename;
+      if (request.content !== undefined) inputPayload.content = request.content;
+      if (request.diffPreview !== undefined) inputPayload.diffPreview = request.diffPreview;
+
       this.sendToRenderer({
         type: 'permission.request',
         payload: {
-          id: request.id,
-          operation: request.operation,
-          filename: request.filename,
-          content: request.content,
-          diffPreview: request.diffPreview,
+          toolUseId: request.id,
+          toolName: request.operation,
+          input: inputPayload,
+          sessionId: 'engine',
+          bridgeId: request.id,
         },
       });
 
