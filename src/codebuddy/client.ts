@@ -12,6 +12,7 @@ import type { CircuitBreakerConfig } from "../providers/circuit-breaker.js";
 import { GeminiNativeProvider } from "./providers/provider-gemini-native.js";
 import { OpenAICompatProvider } from "./providers/provider-openai-compat.js";
 import { ChatGptResponsesProvider } from "./providers/provider-chatgpt-responses.js";
+import { GeminiCliProvider } from "./providers/provider-gemini-cli.js";
 import { withStreamRetry } from "./stream-retry.js";
 
 /** Sentinel apiKey for the ChatGPT OAuth path — auto-detect chain in
@@ -19,6 +20,12 @@ import { withStreamRetry } from "./stream-retry.js";
 export const CHATGPT_OAUTH_SENTINEL = 'oauth-chatgpt';
 /** Canonical baseURL for the ChatGPT Codex Responses backend. */
 export const CHATGPT_RESPONSES_BASE_URL = 'https://chatgpt.com/backend-api/codex';
+/** Sentinel apiKey selecting the local `gemini` CLI subprocess strategy.
+ *  Set by the fleet peer-chat factory when env declares
+ *  `CODEBUDDY_PEER_PROVIDER=gemini-cli`. */
+export const GEMINI_CLI_SENTINEL = 'gemini-cli';
+/** Synthetic baseURL marker for the Gemini CLI subprocess strategy. */
+export const GEMINI_CLI_BASE_URL = 'gemini-cli://local';
 
 export type CodeBuddyMessage = ChatCompletionMessageParam;
 
@@ -189,6 +196,10 @@ export class CodeBuddyClient {
   private chatgptProvider: ChatGptResponsesProvider | null = null;
   /** True when routed through ChatGPT Responses (apiKey sentinel or matching baseURL). */
   private isChatGptProvider: boolean = false;
+  /** Strategy that wraps the local `gemini` CLI binary as a subprocess. */
+  private geminiCliProvider: GeminiCliProvider | null = null;
+  /** True when routed through the Gemini CLI subprocess. */
+  private isGeminiCliProvider: boolean = false;
 
   /**
    * Configure the circuit breaker for this client.
@@ -234,7 +245,15 @@ export class CodeBuddyClient {
     }
 
     const selectedBaseURL = baseURL ?? process.env.GROK_BASE_URL ?? DEFAULT_BASE_URL;
-    this.baseURL = normalizeBaseURL(selectedBaseURL);
+    // Subprocess providers (gemini-cli) use synthetic baseURL strings that
+    // don't pass URL validation. Skip normalization in that case — the
+    // baseURL is informational only, the actual transport is the local
+    // child process.
+    const isSubprocessProvider =
+      apiKey === GEMINI_CLI_SENTINEL || selectedBaseURL.startsWith('gemini-cli://');
+    this.baseURL = isSubprocessProvider
+      ? selectedBaseURL.replace(/\/$/, '')
+      : normalizeBaseURL(selectedBaseURL);
     this.apiKey = apiKey;
 
     // Detect Gemini provider
@@ -245,6 +264,11 @@ export class CodeBuddyClient {
     this.isChatGptProvider =
       apiKey === CHATGPT_OAUTH_SENTINEL ||
       this.baseURL.includes('chatgpt.com/backend-api/codex');
+    // Detect Gemini CLI subprocess provider. Sentinel apiKey or the
+    // synthetic `gemini-cli://` baseURL prefix select this strategy.
+    this.isGeminiCliProvider =
+      apiKey === GEMINI_CLI_SENTINEL ||
+      this.baseURL.startsWith('gemini-cli://');
     const envGeminiTimeout = Number(
       process.env.CODEBUDDY_GEMINI_TIMEOUT_MS || process.env.CODEBUDDY_REQUEST_TIMEOUT_MS
     );
@@ -296,6 +320,17 @@ export class CodeBuddyClient {
           const { getChatGptAuth } = await import('../providers/codex-oauth.js');
           return getChatGptAuth();
         },
+        model: model || this.currentModel,
+        defaultMaxTokens: this.defaultMaxTokens,
+      });
+    } else if (this.isGeminiCliProvider) {
+      // Wrap the local `gemini` binary as a subprocess. The path comes
+      // from `GEMINI_CLI_PATH` (env), with `gemini` in PATH as fallback —
+      // when the binary is missing the constructor throws so the failure
+      // surfaces immediately at fleet boot rather than at first dispatch.
+      const binaryPath = process.env.GEMINI_CLI_PATH || 'gemini';
+      this.geminiCliProvider = new GeminiCliProvider({
+        binaryPath,
         model: model || this.currentModel,
         defaultMaxTokens: this.defaultMaxTokens,
       });
@@ -377,6 +412,7 @@ export class CodeBuddyClient {
     this.geminiProvider?.setModel(model);
     this.openaiCompatProvider?.setModel(model);
     this.chatgptProvider?.setModel(model);
+    this.geminiCliProvider?.setModel(model);
   }
 
   getCurrentModel(): string {
@@ -392,6 +428,7 @@ export class CodeBuddyClient {
    */
   getProviderName(): string {
     if (this.isChatGptProvider) return 'ChatGPT (OAuth)';
+    if (this.isGeminiCliProvider) return 'Gemini CLI (Ultra)';
     const url = this.baseURL.toLowerCase();
     if (url.includes('chatgpt.com')) return 'ChatGPT (OAuth)';
     if (url.includes('api.x.ai') || url.includes('xai')) return 'xAI';
@@ -463,6 +500,9 @@ export class CodeBuddyClient {
     if (this.chatgptProvider) {
       return this.chatgptProvider.chat(messages, tools, opts);
     }
+    if (this.geminiCliProvider) {
+      return this.geminiCliProvider.chat(messages, tools, opts);
+    }
     return this.openaiCompatProvider!.chat(messages, tools, opts, searchOptions);
   }
 
@@ -485,6 +525,9 @@ export class CodeBuddyClient {
       }
       if (this.chatgptProvider) {
         return this.chatgptProvider.chatStream(messages, tools, opts);
+      }
+      if (this.geminiCliProvider) {
+        return this.geminiCliProvider.chatStream(messages, tools, opts);
       }
       return this.openaiCompatProvider!.chatStream(messages, tools, opts, searchOptions);
     };

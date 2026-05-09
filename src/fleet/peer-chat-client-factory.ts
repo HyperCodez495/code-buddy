@@ -18,10 +18,18 @@
  * Override the model with CODEBUDDY_PEER_MODEL.
  */
 
-import { CodeBuddyClient } from '../codebuddy/client.js';
+import * as fs from 'node:fs';
+import * as path from 'node:path';
+import { CodeBuddyClient, GEMINI_CLI_SENTINEL, GEMINI_CLI_BASE_URL } from '../codebuddy/client.js';
 import { logger } from '../utils/logger.js';
 
-export type PeerChatProviderId = 'ollama' | 'grok' | 'anthropic' | 'gemini' | 'openai';
+export type PeerChatProviderId =
+  | 'ollama'
+  | 'gemini-cli'
+  | 'grok'
+  | 'anthropic'
+  | 'gemini'
+  | 'openai';
 
 export interface PeerChatProviderInfo {
   provider: PeerChatProviderId;
@@ -58,6 +66,21 @@ const SPECS: Record<PeerChatProviderId, ProviderSpec> = {
       if (!/^https?:\/\//i.test(baseUrl)) baseUrl = `http://${baseUrl}`;
       if (!baseUrl.endsWith('/v1')) baseUrl = baseUrl.replace(/\/+$/, '') + '/v1';
       return { apiKey: 'ollama', baseUrl };
+    },
+  },
+  // Gemini CLI subprocess — uses the user's Gemini Ultra subscription via
+  // the local `gemini` binary. Marked isLocal because the marginal cost
+  // for the user is zero (they already pay Ultra). Egress is still 'cloud'
+  // for the privacy router (the binary contacts Google servers).
+  'gemini-cli': {
+    id: 'gemini-cli',
+    defaultModel: 'gemini-2.5-pro',
+    defaultBaseUrl: GEMINI_CLI_BASE_URL,
+    isLocal: true,
+    resolve: () => {
+      const binPath = resolveGeminiCliBinary();
+      if (!binPath) return null;
+      return { apiKey: GEMINI_CLI_SENTINEL, baseUrl: GEMINI_CLI_BASE_URL };
     },
   },
   grok: {
@@ -106,14 +129,43 @@ const SPECS: Record<PeerChatProviderId, ProviderSpec> = {
   },
 };
 
-/** Detection priority: local first to spare cloud quotas. */
+/** Detection priority: local first to spare cloud quotas.
+ *
+ * `gemini-cli` sits above `gemini` (API key) so a user with both will
+ * always burn the Ultra subscription (zero marginal cost) before
+ * tapping a paid AI Studio quota. */
 const AUTO_DETECT_ORDER: PeerChatProviderId[] = [
   'ollama',
+  'gemini-cli',
   'grok',
   'anthropic',
   'gemini',
   'openai',
 ];
+
+/**
+ * Locate the `gemini` binary on the host. Honours `GEMINI_CLI_PATH` if
+ * set, otherwise walks `PATH` looking for `gemini`. Returns null when
+ * not found so the factory can short-circuit cleanly.
+ */
+function resolveGeminiCliBinary(): string | null {
+  const explicit = process.env.GEMINI_CLI_PATH;
+  if (explicit) {
+    return fs.existsSync(explicit) ? explicit : null;
+  }
+  const PATH = process.env.PATH ?? '';
+  if (!PATH) return null;
+  for (const dir of PATH.split(path.delimiter)) {
+    if (!dir) continue;
+    const candidate = path.join(dir, 'gemini');
+    try {
+      if (fs.existsSync(candidate)) return candidate;
+    } catch {
+      /* permission errors etc — keep walking */
+    }
+  }
+  return null;
+}
 
 /**
  * Build a peer.chat client + provider info from env, or null when no

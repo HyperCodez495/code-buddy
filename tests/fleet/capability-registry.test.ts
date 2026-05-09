@@ -49,6 +49,11 @@ function clearProviderEnv() {
 beforeEach(() => {
   clearProviderEnv();
   resetCapabilityCache();
+  // Disable gemini-cli auto-detect by default (a real `gemini` binary
+  // installed on the test host would otherwise produce 2 extra models
+  // and break "no env vars" assertions). Tests that exercise gemini-cli
+  // detection must override this to a real path.
+  process.env.GEMINI_CLI_PATH = '/tmp/__no_gemini_cli_in_tests__';
   // Default: deny every fetch (Ollama / LM Studio probes return [])
   global.fetch = vi.fn(async () => {
     throw new Error('econn refused');
@@ -89,6 +94,19 @@ describe('capability-registry — env-based detection', () => {
     process.env.GOOGLE_API_KEY = 'gxxx';
     const cap = await getLocalCapabilities();
     expect(cap.models.some((m) => m.provider === 'gemini')).toBe(true);
+  });
+
+  it('Gemini CLI subprocess detected when GEMINI_CLI_PATH points at an existing binary', async () => {
+    // Use process.execPath as a stand-in for the gemini binary.
+    process.env.GEMINI_CLI_PATH = process.execPath;
+    const cap = await getLocalCapabilities();
+    const cliModels = cap.models.filter((m) => m.provider === 'gemini-cli');
+    expect(cliModels.length).toBeGreaterThan(0);
+    // Cost is reported as 0 because the subscription has already been paid.
+    expect(cliModels[0].costInputUsdPerMtok).toBe(0);
+    expect(cliModels[0].costOutputUsdPerMtok).toBe(0);
+    // Egress still 'cloud' for privacy routing.
+    expect(cap.egress).toBe('cloud');
   });
 
   it('aggregates several providers when multiple keys are set', async () => {

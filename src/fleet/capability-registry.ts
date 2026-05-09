@@ -22,7 +22,9 @@
  * @module fleet/capability-registry
  */
 
+import * as fs from 'node:fs';
 import * as os from 'os';
+import * as path from 'node:path';
 import { logger } from '../utils/logger.js';
 import { getModelToolConfig } from '../config/model-tools.js';
 import type {
@@ -92,6 +94,9 @@ async function buildCapabilitySnapshot(): Promise<PeerCapability> {
   if (process.env.GEMINI_API_KEY || process.env.GOOGLE_API_KEY) {
     models.push(...buildGeminiCatalog());
   }
+  if (detectGeminiCliBinary()) {
+    models.push(...buildGeminiCliCatalog());
+  }
   if (process.env.GROK_API_KEY) {
     models.push(...buildGrokCatalog());
   }
@@ -141,10 +146,34 @@ function isCloudProvider(p: FleetProvider): boolean {
     p === 'anthropic' ||
     p === 'openai' ||
     p === 'gemini' ||
+    p === 'gemini-cli' ||
     p === 'grok' ||
     p === 'mistral' ||
     p === 'chatgpt-oauth'
   );
+}
+
+/**
+ * Best-effort detection of the local `gemini` binary. Mirrors the
+ * factory's `resolveGeminiCliBinary` but kept private here to avoid a
+ * cross-module dependency between capability registry and the factory.
+ */
+function detectGeminiCliBinary(): boolean {
+  const explicit = process.env.GEMINI_CLI_PATH;
+  if (explicit) {
+    try { return fs.existsSync(explicit); } catch { return false; }
+  }
+  const PATH = process.env.PATH ?? '';
+  if (!PATH) return false;
+  for (const dir of PATH.split(path.delimiter)) {
+    if (!dir) continue;
+    try {
+      if (fs.existsSync(path.join(dir, 'gemini'))) return true;
+    } catch {
+      /* skip dir */
+    }
+  }
+  return false;
 }
 
 /**
@@ -220,6 +249,25 @@ function buildGeminiCatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('flash') ? 0.3 : 2.5,
     costOutputUsdPerMtok: id.includes('flash') ? 1.2 : 10,
     provider: 'gemini',
+  }));
+}
+
+/**
+ * Catalog for the Gemini CLI subprocess provider. Cost is reported as
+ * 0/Mtok because the user has already paid for the Ultra subscription
+ * — the marginal cost per token is zero from the fleet router's POV.
+ * Egress is still classified `cloud` upstream so privacy-tagged tasks
+ * can avoid this peer.
+ */
+function buildGeminiCliCatalog(): FleetModelDescriptor[] {
+  const ids = ['gemini-2.5-pro', 'gemini-2.5-flash'];
+  return ids.map((id) => ({
+    id,
+    contextWindow: 1_000_000,
+    strengths: deriveStrengths(id, 'gemini-cli'),
+    costInputUsdPerMtok: 0,
+    costOutputUsdPerMtok: 0,
+    provider: 'gemini-cli',
   }));
 }
 

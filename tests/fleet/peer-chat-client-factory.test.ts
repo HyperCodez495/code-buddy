@@ -24,6 +24,7 @@ const ENV_KEYS_TO_PRESERVE = [
   'GOOGLE_API_KEY',
   'GEMINI_API_KEY',
   'OPENAI_API_KEY',
+  'GEMINI_CLI_PATH',
 ];
 
 let originalEnv: Record<string, string | undefined>;
@@ -34,6 +35,11 @@ beforeEach(() => {
     originalEnv[key] = process.env[key];
     delete process.env[key];
   }
+  // Disable gemini-cli auto-detect by default so tests that don't
+  // explicitly opt-in aren't influenced by a real `gemini` binary
+  // installed on the test host. A non-existent path short-circuits
+  // the PATH walk in `resolveGeminiCliBinary()`.
+  process.env.GEMINI_CLI_PATH = '/tmp/__no_gemini_cli_in_tests__';
 });
 
 afterEach(() => {
@@ -48,6 +54,7 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
     it('exposes the documented priority order (local first)', () => {
       expect(_getDetectionOrderForTests()).toEqual([
         'ollama',
+        'gemini-cli',
         'grok',
         'anthropic',
         'gemini',
@@ -130,6 +137,48 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
     it('OpenAI is the last-resort fallback', () => {
       process.env.OPENAI_API_KEY = 'sk-x';
       expect(createPeerChatClientFromEnv()!.info.provider).toBe('openai');
+    });
+  });
+
+  describe('gemini-cli — subprocess provider', () => {
+    it('detects when GEMINI_CLI_PATH points at an existing binary', () => {
+      // Use process.execPath as a stand-in for the gemini binary —
+      // it's guaranteed to exist in test environments.
+      process.env.GEMINI_CLI_PATH = process.execPath;
+      const result = createPeerChatClientFromEnv();
+      expect(result).not.toBeNull();
+      expect(result!.info.provider).toBe('gemini-cli');
+      expect(result!.info.isLocal).toBe(true);
+      expect(result!.info.model).toBe('gemini-2.5-pro');
+    });
+
+    it('returns null when GEMINI_CLI_PATH points at a missing file', () => {
+      process.env.GEMINI_CLI_PATH = '/tmp/__definitely_not_a_real_binary__';
+      // No other provider env set — should be null, not an error.
+      expect(createPeerChatClientFromEnv()).toBeNull();
+    });
+
+    it('beats the gemini API key when both are configured', () => {
+      // Both gemini-cli (Ultra subscription) and a Gemini API key set —
+      // we must prefer the CLI to avoid burning paid quota.
+      process.env.GEMINI_CLI_PATH = process.execPath;
+      process.env.GOOGLE_API_KEY = 'AIza-test';
+      const result = createPeerChatClientFromEnv();
+      expect(result!.info.provider).toBe('gemini-cli');
+    });
+
+    it('honours CODEBUDDY_PEER_MODEL override on gemini-cli', () => {
+      process.env.GEMINI_CLI_PATH = process.execPath;
+      process.env.CODEBUDDY_PEER_MODEL = 'gemini-2.5-flash';
+      const result = createPeerChatClientFromEnv();
+      expect(result!.info.model).toBe('gemini-2.5-flash');
+    });
+
+    it('explicit override CODEBUDDY_PEER_PROVIDER=gemini-cli also works', () => {
+      process.env.CODEBUDDY_PEER_PROVIDER = 'gemini-cli';
+      process.env.GEMINI_CLI_PATH = process.execPath;
+      const result = createPeerChatClientFromEnv();
+      expect(result!.info.provider).toBe('gemini-cli');
     });
   });
 

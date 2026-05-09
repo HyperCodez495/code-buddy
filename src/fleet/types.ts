@@ -14,6 +14,7 @@ export type FleetProvider =
   | 'anthropic'
   | 'openai'
   | 'gemini'
+  | 'gemini-cli'   // wraps the local `gemini` binary (Ultra subscription)
   | 'ollama'
   | 'lm-studio'
   | 'chatgpt-oauth'
