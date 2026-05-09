@@ -34,7 +34,8 @@ interface BridgeFixture {
   registryCalls: Array<{ name: string; input: Record<string, unknown> }>;
   run: (
     visual: WorkflowVisualDefinition,
-    workflowId: string
+    workflowId: string,
+    initialContext?: Record<string, unknown>
   ) => Promise<{
     instance: { instanceId: string; status: string; output?: Record<string, unknown> };
     workflowId: string;
@@ -154,7 +155,11 @@ function setupBridgeLikeFixture(): BridgeFixture {
 
   orchestrator.start();
 
-  const run = async (visual: WorkflowVisualDefinition, workflowId: string) => {
+  const run = async (
+    visual: WorkflowVisualDefinition,
+    workflowId: string,
+    initialContext: Record<string, unknown> = {}
+  ) => {
     const coreDef = compileVisualToCore(visual);
 
     // Run-scoped captureHandler — prepended so it runs BEFORE the global
@@ -171,7 +176,7 @@ function setupBridgeLikeFixture(): BridgeFixture {
     try {
       const instance = await orchestrator.startWorkflow(
         coreDef as unknown as Record<string, unknown>,
-        {}
+        initialContext
       );
       events.push({
         type: instance.status === 'completed' ? 'completed' : 'failed',
@@ -335,6 +340,84 @@ describe('workflow-bridge integration (real Orchestrator)', () => {
         .filter((e) => e.type === 'node_completed')
         .map((e) => (e as { nodeId: string }).nodeId);
       expect(completedNodes).toEqual(['apv', 'go']);
+    },
+    10000
+  );
+
+  it(
+    'V0.5 — runs a loop body 3 times via core engine iteration',
+    async () => {
+      const fixture = setupBridgeLikeFixture();
+      // Note on the loop semantics: the core engine evaluates
+      // `loopCondition` *before* updating `context.iteration` from its
+      // local counter, which adds a one-tick lag. With initial
+      // `iteration: 0` and condition `iteration < 2`, the body runs
+      // exactly 3 times (iter values 0, 1, 2) before the condition
+      // becomes false on the 4th check (ctx.iter=2, 2<2 → false).
+      const visual: WorkflowVisualDefinition = {
+        id: 'wf_loop',
+        name: 'loop',
+        nodes: [
+          node('start', 'start'),
+          node('lp', 'loop', { condition: 'iteration < 2' }),
+          node('body', 'tool', { toolName: 'bash_run', toolInput: { command: 'iter' } }),
+          node('after', 'tool', { toolName: 'bash_run', toolInput: { command: 'done' } }),
+          node('end', 'end'),
+        ],
+        edges: [
+          edge('start', 'lp'),
+          edge('lp', 'body', 'body'),
+          edge('lp', 'after', 'exit'),
+          edge('body', 'end'),
+          edge('after', 'end'),
+        ],
+      };
+
+      const { instance } = await fixture.run(visual, 'wf_loop', { iteration: 0 });
+      expect(instance.status).toBe('completed');
+      // 3 body invocations (iter 0, 1, 2) + 1 after = 4 total.
+      expect(fixture.registryCalls).toHaveLength(4);
+      const bodyCalls = fixture.registryCalls.filter(
+        (c) => c.input.command === 'iter'
+      );
+      expect(bodyCalls).toHaveLength(3);
+      expect(fixture.registryCalls[3].input.command).toBe('done');
+    },
+    10000
+  );
+
+  it(
+    'V0.5 — parallel branches converge on a join, main chain continues',
+    async () => {
+      const fixture = setupBridgeLikeFixture();
+      const visual: WorkflowVisualDefinition = {
+        id: 'wf_join',
+        name: 'parallel-join',
+        nodes: [
+          node('start', 'start'),
+          node('p', 'parallel'),
+          node('a', 'tool', { toolName: 'bash_run', toolInput: { command: 'A' } }),
+          node('b', 'tool', { toolName: 'bash_run', toolInput: { command: 'B' } }),
+          node('after', 'tool', { toolName: 'bash_run', toolInput: { command: 'AFTER' } }),
+          node('end', 'end'),
+        ],
+        edges: [
+          edge('start', 'p'),
+          edge('p', 'a'),
+          edge('p', 'b'),
+          edge('a', 'after'),
+          edge('b', 'after'),
+          edge('after', 'end'),
+        ],
+      };
+
+      const { instance } = await fixture.run(visual, 'wf_join');
+      expect(instance.status).toBe('completed');
+      const cmds = fixture.registryCalls.map((c) => c.input.command);
+      // A and B run (order not guaranteed because parallel), then AFTER.
+      const lastIdx = cmds.length - 1;
+      expect(cmds[lastIdx]).toBe('AFTER');
+      expect(new Set(cmds.slice(0, 2))).toEqual(new Set(['A', 'B']));
     },
     10000
   );

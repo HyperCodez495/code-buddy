@@ -214,3 +214,159 @@ describe('dag-compiler / compileVisualToCore', () => {
     expect(() => compileVisualToCore(def)).toThrow(/Cycle detected/);
   });
 });
+
+describe('dag-compiler / V0.5 — loop nodes', () => {
+  it('compiles a loop with linear body', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('lp', 'loop', { condition: '$i < 3' }),
+        node('a', 'tool', { toolName: 'bash_run', toolInput: { command: 'iter' } }),
+        node('after', 'tool', { toolName: 'bash_run', toolInput: { command: 'done' } }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'lp'),
+        edge('lp', 'a', 'body'),
+        edge('lp', 'after', 'exit'),
+        edge('a', 'end'),
+        edge('after', 'end'),
+      ],
+    });
+
+    const core = compileVisualToCore(def);
+
+    expect(core.steps).toHaveLength(2);
+    expect(core.steps[0].type).toBe('loop');
+    expect(core.steps[0].loopCondition).toBe('$i < 3');
+    expect(core.steps[0].loopBody).toHaveLength(1);
+    expect(core.steps[0].loopBody![0].tasks![0].input.cowork_visual_node_id).toBe('a');
+    // After the exit, the main chain continues with `after`.
+    expect(core.steps[1].tasks![0].input.cowork_visual_node_id).toBe('after');
+  });
+
+  it('rejects a loop missing config.condition', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('lp', 'loop'),
+        node('a', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'lp'),
+        edge('lp', 'a', 'body'),
+        edge('lp', 'end', 'exit'),
+        edge('a', 'end'),
+      ],
+    });
+    expect(() => compileVisualToCore(def)).toThrow(/missing config\.condition/);
+  });
+
+  it("rejects a loop without 'body'/'exit' edge labels", () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('lp', 'loop', { condition: 'true' }),
+        node('a', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'lp'),
+        edge('lp', 'a'), // no label
+        edge('lp', 'end'),
+        edge('a', 'end'),
+      ],
+    });
+    expect(() => compileVisualToCore(def)).toThrow(/labelled 'body' and 'exit'/);
+  });
+});
+
+describe('dag-compiler / V0.5 — convergence', () => {
+  it('parallel branches rejoin on a shared node, main chain continues', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('p', 'parallel'),
+        node('a', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('b', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('after', 'tool', { toolName: 'bash_run', toolInput: { command: 'done' } }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'p'),
+        edge('p', 'a'),
+        edge('p', 'b'),
+        edge('a', 'after'),
+        edge('b', 'after'),
+        edge('after', 'end'),
+      ],
+    });
+
+    const core = compileVisualToCore(def);
+
+    expect(core.steps).toHaveLength(2);
+    expect(core.steps[0].type).toBe('parallel');
+    expect(core.steps[0].branches).toHaveLength(2);
+    // Each branch contains one task — the join is excluded from branches.
+    expect(core.steps[0].branches![0]).toHaveLength(1);
+    expect(core.steps[0].branches![1]).toHaveLength(1);
+    // The join `after` becomes the next step in the main chain.
+    expect(core.steps[1].tasks![0].input.cowork_visual_node_id).toBe('after');
+  });
+
+  it('condition true/false branches rejoin and continue', () => {
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('c', 'condition', { expression: '$x === 1' }),
+        node('ok', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('ko', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('after', 'tool', { toolName: 'bash_run', toolInput: { command: 'done' } }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'c'),
+        edge('c', 'ok', 'true'),
+        edge('c', 'ko', 'false'),
+        edge('ok', 'after'),
+        edge('ko', 'after'),
+        edge('after', 'end'),
+      ],
+    });
+
+    const core = compileVisualToCore(def);
+    expect(core.steps).toHaveLength(2);
+    expect(core.steps[0].type).toBe('conditional');
+    expect(core.steps[0].trueBranch).toHaveLength(1);
+    expect(core.steps[0].falseBranch).toHaveLength(1);
+    expect(core.steps[1].tasks![0].input.cowork_visual_node_id).toBe('after');
+  });
+
+  it('rejects branches that converge on different terminations', () => {
+    // One branch (a) walks into a real join `shared` (incoming=2 because
+    // an unrelated `extra` node also points there), the other (b) goes
+    // straight to `end`. Mismatched joins → CompilationError.
+    const def = baseDef({
+      nodes: [
+        node('start', 'start'),
+        node('p', 'parallel'),
+        node('a', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('b', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('extra', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('shared', 'tool', { toolName: 'noop', toolInput: {} }),
+        node('end', 'end'),
+      ],
+      edges: [
+        edge('start', 'p'),
+        edge('p', 'a'),
+        edge('p', 'b'),
+        edge('a', 'shared'),
+        edge('extra', 'shared'), // gives shared incoming=2 → real join
+        edge('b', 'end'),         // b skips shared
+        edge('shared', 'end'),
+      ],
+    });
+    expect(() => compileVisualToCore(def)).toThrow(/converge on different/);
+  });
+});

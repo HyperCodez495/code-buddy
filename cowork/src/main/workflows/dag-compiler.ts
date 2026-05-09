@@ -3,13 +3,21 @@
  * `WorkflowDefinition` shape consumed by the core `Orchestrator`
  * (`src/orchestration/orchestrator.ts`).
  *
- * V1 limitations (documented in `cowork/src/main/workflows/README.md`):
- *  - Each `parallel` node's branches must be disconnected sub-trees that
- *    flow to `end` (no convergence before `end`).
- *  - `condition` nodes require exactly two outgoing edges labelled `'true'`
- *    and `'false'`.
- *  - Tool nodes must carry a `config: { toolName, toolInput }`.
+ * V0.5 features:
+ *  - `loop` nodes with `body` + `exit` outgoing edges (the loop body is
+ *    a linear chain ; iteration is handled by the core engine).
+ *  - Convergence after a `parallel` or `condition` block — branches can
+ *    rejoin at a single "join" node before continuing the main chain.
+ *
+ * Limitations still in place:
+ *  - All branches of a `parallel`/`condition` must converge on the same
+ *    join (or all flow to `end`). Heterogeneous endings → CompilationError.
+ *  - `condition` requires labelled `'true'`/`'false'` outgoing edges.
+ *  - `loop` body is a linear chain (it must not contain another loop or
+ *    parallel/condition that re-enters the same loop body).
+ *  - Tool nodes must carry `config: { toolName, toolInput }`.
  *  - Approval nodes carry `config: { message, timeoutMs? }`.
+ *  - Loop nodes carry `config: { condition, maxIterations? }`.
  */
 import type {
   WorkflowVisualDefinition,
@@ -18,6 +26,7 @@ import type {
   ToolNodeConfig,
   ConditionNodeConfig,
   ApprovalNodeConfig,
+  LoopNodeConfig,
 } from '../../shared/workflow-types';
 
 export type CoreTaskPriority = 'low' | 'medium' | 'high' | 'critical';
@@ -42,6 +51,8 @@ export interface CoreWorkflowStep {
   condition?: string;
   trueBranch?: CoreWorkflowStep[];
   falseBranch?: CoreWorkflowStep[];
+  loopCondition?: string;
+  loopBody?: CoreWorkflowStep[];
 }
 
 export interface CoreWorkflowDefinition {
@@ -62,6 +73,22 @@ interface CompileContext {
   byId: Map<string, WorkflowVisualNode>;
   outgoingByNode: Map<string, WorkflowVisualEdge[]>;
   incomingByNode: Map<string, WorkflowVisualEdge[]>;
+}
+
+interface CompiledStep {
+  step: CoreWorkflowStep;
+  /**
+   * Where the main chain should resume after this step.
+   * - `undefined` → the structure does not specify a continuation; the
+   *   compiler should follow the node's single outgoing edge (default
+   *   for tool/approval).
+   * - `null` → the structure absorbs everything downstream and the main
+   *   chain ends here (parallel/condition with all branches reaching
+   *   `end`).
+   * - `WorkflowVisualNode` → the structure provides this node as the
+   *   explicit continuation (loop exit, parallel/condition join).
+   */
+  continueFrom?: WorkflowVisualNode | null;
 }
 
 function buildContext(def: WorkflowVisualDefinition): CompileContext {
@@ -132,20 +159,35 @@ function ensureApprovalConfig(node: WorkflowVisualNode): ApprovalNodeConfig {
   };
 }
 
+function ensureLoopConfig(node: WorkflowVisualNode): LoopNodeConfig {
+  const cfg = node.config as Partial<LoopNodeConfig> | undefined;
+  if (!cfg || typeof cfg.condition !== 'string' || cfg.condition.length === 0) {
+    throw new CompilationError(
+      `Node '${node.id}' (loop): missing config.condition`
+    );
+  }
+  return {
+    condition: cfg.condition,
+    maxIterations: typeof cfg.maxIterations === 'number' ? cfg.maxIterations : undefined,
+  };
+}
+
 /**
- * Compile a chain of nodes starting at `node` and walking forward. Stops
- * when reaching `end`, a node with multiple incoming edges (would mean
- * convergence — unsupported V1), or a node we've already visited.
+ * Walk forward from `startNode` collecting nodes into a chain until we
+ * reach `end` or `stopAtNodeId` (exclusive). Used for compiling the
+ * branches of a parallel/condition (stopAt = join) or the body of a loop
+ * (stopAt = undefined, body terminates naturally).
  */
 function compileChain(
   ctx: CompileContext,
-  node: WorkflowVisualNode
+  startNode: WorkflowVisualNode,
+  stopAtNodeId?: string
 ): CoreWorkflowStep[] {
   const steps: CoreWorkflowStep[] = [];
   const localVisited = new Set<string>();
-  let current: WorkflowVisualNode | null = node;
+  let current: WorkflowVisualNode | null = startNode;
 
-  while (current && current.type !== 'end') {
+  while (current && current.type !== 'end' && current.id !== stopAtNodeId) {
     if (localVisited.has(current.id)) {
       throw new CompilationError(
         `Cycle detected at node '${current.id}' — workflows must be acyclic`
@@ -153,44 +195,116 @@ function compileChain(
     }
     localVisited.add(current.id);
 
-    const compiledStep = compileSingle(ctx, current);
-    if (compiledStep) steps.push(compiledStep);
-
-    current = nextSequentialNode(ctx, current);
+    const compiled = compileSingle(ctx, current);
+    if (compiled) {
+      steps.push(compiled.step);
+      // continueFrom semantics: undefined → default edge walk; null →
+      // end of chain; Node → explicit jump.
+      if (compiled.continueFrom === undefined) {
+        current = nextSequentialNode(ctx, current);
+      } else {
+        current = compiled.continueFrom;
+      }
+    } else {
+      // Transparent node (start already filtered above; end caught by
+      // the loop guard).
+      current = nextSequentialNode(ctx, current);
+    }
   }
 
   return steps;
 }
 
+/**
+ * Plain-edge follower for nodes that don't define their own continuation
+ * (start, tool, approval). Refuses ≥2 outgoing edges — those are reserved
+ * for structural nodes (parallel, condition, loop).
+ */
 function nextSequentialNode(
   ctx: CompileContext,
   node: WorkflowVisualNode
 ): WorkflowVisualNode | null {
   const out = ctx.outgoingByNode.get(node.id) ?? [];
-  // For tool/approval/start nodes we follow the single outgoing edge.
-  // For parallel/condition nodes the *next* sequential node is whatever
-  // they all converge into — but V1 forbids convergence inside branches,
-  // so the parallel/condition step itself absorbs all downstream nodes.
-  if (node.type === 'parallel' || node.type === 'condition') {
-    // The branches are absorbed; downstream after the structure is ignored.
-    // V1 contract: a parallel/condition is a "leaf" of the main chain.
-    return null;
-  }
   if (out.length === 0) return null;
   if (out.length > 1) {
     throw new CompilationError(
       `Node '${node.id}' (${node.type}): has ${out.length} outgoing edges; only `
-        + `parallel/condition nodes can have multiple outputs`
+        + `parallel/condition/loop nodes can have multiple outputs`
     );
   }
   const target = ctx.byId.get(out[0].target);
   return target ?? null;
 }
 
+/**
+ * For a node with multiple outgoing branches, find the first node where
+ * all branches converge — or `null` if all branches end at `end`.
+ *
+ * Throws if branches converge on different nodes (heterogeneous topology
+ * is unsupported in V0.5).
+ */
+function findJoinTarget(
+  ctx: CompileContext,
+  branchEntryNodes: WorkflowVisualNode[]
+): WorkflowVisualNode | null {
+  // For each branch entry, walk forward until we hit a node that has
+  // multiple incoming edges (a candidate join) or `end`.
+  const branchEnds: Array<{ branchEntryId: string; joinId: string | null }> = [];
+  for (const entry of branchEntryNodes) {
+    const visited = new Set<string>();
+    let current: WorkflowVisualNode | null = entry;
+    let join: string | null = null;
+    while (current) {
+      if (visited.has(current.id)) {
+        // Internal cycle inside a branch → unsupported.
+        throw new CompilationError(
+          `Cycle detected inside branch starting at '${entry.id}'`
+        );
+      }
+      visited.add(current.id);
+      if (current.type === 'end') {
+        join = null; // branch terminates at end
+        break;
+      }
+      const incoming = (ctx.incomingByNode.get(current.id) ?? []).length;
+      if (incoming > 1 && current.id !== entry.id) {
+        join = current.id; // candidate join — first node with >1 incoming
+        break;
+      }
+      const out: WorkflowVisualEdge[] = ctx.outgoingByNode.get(current.id) ?? [];
+      if (out.length === 0) {
+        join = null;
+        break;
+      }
+      if (out.length > 1) {
+        // Nested structural node — its own join handling will absorb
+        // downstream. We treat it as the branch's "leaf".
+        break;
+      }
+      current = ctx.byId.get(out[0].target) ?? null;
+    }
+    branchEnds.push({ branchEntryId: entry.id, joinId: join });
+  }
+
+  // Reconcile: all branches must agree.
+  const distinct = new Set(branchEnds.map((b) => b.joinId));
+  if (distinct.size === 1) {
+    const only = branchEnds[0].joinId;
+    return only ? ctx.byId.get(only) ?? null : null;
+  }
+  // Mixed (some end, some join, or different joins) → reject.
+  const detail = branchEnds
+    .map((b) => `${b.branchEntryId}→${b.joinId ?? 'end'}`)
+    .join(', ');
+  throw new CompilationError(
+    `Branches converge on different nodes (or mix end/join): ${detail}`
+  );
+}
+
 function compileSingle(
   ctx: CompileContext,
   node: WorkflowVisualNode
-): CoreWorkflowStep | null {
+): CompiledStep | null {
   switch (node.type) {
     case 'start':
       return null;
@@ -199,49 +313,55 @@ function compileSingle(
     case 'tool': {
       const cfg = ensureToolConfig(node);
       return {
-        id: makeStepId('step', node.id),
-        name: node.name || `tool ${cfg.toolName}`,
-        type: 'task',
-        tasks: [
-          {
-            id: `task_${node.id}`,
-            type: 'tool_invoke',
-            name: node.name || cfg.toolName,
-            description: `Cowork tool_invoke for visual node '${node.id}'`,
-            input: {
-              cowork_visual_node_id: node.id,
-              toolName: cfg.toolName,
-              toolInput: cfg.toolInput,
+        step: {
+          id: makeStepId('step', node.id),
+          name: node.name || `tool ${cfg.toolName}`,
+          type: 'task',
+          tasks: [
+            {
+              id: `task_${node.id}`,
+              type: 'tool_invoke',
+              name: node.name || cfg.toolName,
+              description: `Cowork tool_invoke for visual node '${node.id}'`,
+              input: {
+                cowork_visual_node_id: node.id,
+                toolName: cfg.toolName,
+                toolInput: cfg.toolInput,
+              },
+              requiredCapabilities: ['tool_invoke'],
+              priority: 'medium',
             },
-            requiredCapabilities: ['tool_invoke'],
-            priority: 'medium',
-          },
-        ],
+          ],
+        },
+        // continueFrom omitted → fall through to nextSequentialNode
       };
     }
     case 'approval': {
       const cfg = ensureApprovalConfig(node);
       return {
-        id: makeStepId('step', node.id),
-        name: node.name || 'approval',
-        type: 'task',
-        tasks: [
-          {
-            id: `task_${node.id}`,
-            type: 'approval_wait',
-            name: node.name || 'Approval',
-            description: `Cowork approval_wait for visual node '${node.id}'`,
-            input: {
-              cowork_visual_node_id: node.id,
-              stepId: node.id,
-              message: cfg.message,
-              timeoutMs: cfg.timeoutMs ?? 60000,
+        step: {
+          id: makeStepId('step', node.id),
+          name: node.name || 'approval',
+          type: 'task',
+          tasks: [
+            {
+              id: `task_${node.id}`,
+              type: 'approval_wait',
+              name: node.name || 'Approval',
+              description: `Cowork approval_wait for visual node '${node.id}'`,
+              input: {
+                cowork_visual_node_id: node.id,
+                stepId: node.id,
+                message: cfg.message,
+                timeoutMs: cfg.timeoutMs ?? 60000,
+              },
+              requiredCapabilities: ['approval_wait'],
+              priority: 'medium',
+              timeout: (cfg.timeoutMs ?? 60000) + 5000,
             },
-            requiredCapabilities: ['approval_wait'],
-            priority: 'medium',
-            timeout: (cfg.timeoutMs ?? 60000) + 5000,
-          },
-        ],
+          ],
+        },
+        // continueFrom omitted → fall through to nextSequentialNode
       };
     }
     case 'condition': {
@@ -264,13 +384,18 @@ function compileSingle(
       if (!trueTarget || !falseTarget) {
         throw new CompilationError(`Node '${node.id}' (condition): edge target missing`);
       }
+      const join = findJoinTarget(ctx, [trueTarget, falseTarget]);
+      const stopAt = join?.id;
       return {
-        id: makeStepId('step', node.id),
-        name: node.name || 'condition',
-        type: 'conditional',
-        condition: cfg.expression,
-        trueBranch: compileBranch(ctx, trueTarget),
-        falseBranch: compileBranch(ctx, falseTarget),
+        step: {
+          id: makeStepId('step', node.id),
+          name: node.name || 'condition',
+          type: 'conditional',
+          condition: cfg.expression,
+          trueBranch: compileChain(ctx, trueTarget, stopAt),
+          falseBranch: compileChain(ctx, falseTarget, stopAt),
+        },
+        continueFrom: join,
       };
     }
     case 'parallel': {
@@ -280,7 +405,7 @@ function compileSingle(
           `Node '${node.id}' (parallel): expected ≥2 outgoing edges, found ${out.length}`
         );
       }
-      const branches: CoreWorkflowStep[][] = [];
+      const branchTargets: WorkflowVisualNode[] = [];
       for (const edge of out) {
         const target = ctx.byId.get(edge.target);
         if (!target) {
@@ -288,13 +413,61 @@ function compileSingle(
             `Node '${node.id}' (parallel): edge target '${edge.target}' missing`
           );
         }
-        branches.push(compileBranch(ctx, target));
+        branchTargets.push(target);
+      }
+      const join = findJoinTarget(ctx, branchTargets);
+      const stopAt = join?.id;
+      const branches = branchTargets.map((t) => compileChain(ctx, t, stopAt));
+      return {
+        step: {
+          id: makeStepId('step', node.id),
+          name: node.name || 'parallel',
+          type: 'parallel',
+          branches,
+        },
+        continueFrom: join,
+      };
+    }
+    case 'loop': {
+      const cfg = ensureLoopConfig(node);
+      const out = ctx.outgoingByNode.get(node.id) ?? [];
+      const bodyEdge = out.find((e) => e.label === 'body');
+      const exitEdge = out.find((e) => e.label === 'exit');
+      if (!bodyEdge || !exitEdge) {
+        throw new CompilationError(
+          `Node '${node.id}' (loop): outgoing edges must be labelled 'body' and 'exit'`
+        );
+      }
+      if (out.length !== 2) {
+        throw new CompilationError(
+          `Node '${node.id}' (loop): expected exactly 2 outgoing edges (body + exit), found ${out.length}`
+        );
+      }
+      const bodyTarget = ctx.byId.get(bodyEdge.target);
+      const exitTarget = ctx.byId.get(exitEdge.target);
+      if (!bodyTarget || !exitTarget) {
+        throw new CompilationError(`Node '${node.id}' (loop): edge target missing`);
+      }
+      // The loop body is a linear chain that terminates naturally — it
+      // must NOT loop back to this node visually (the iteration is
+      // handled by the core engine, not the DAG).
+      const loopBody = compileChain(ctx, bodyTarget);
+      const stepBase: CoreWorkflowStep = {
+        id: makeStepId('step', node.id),
+        name: node.name || 'loop',
+        type: 'loop',
+        loopCondition: cfg.condition,
+        loopBody,
+      };
+      // maxIterations is not natively part of the core WorkflowStep type
+      // but the core engine has a hard cap of 100; we keep the user's
+      // value in the step `name` for traceability if they configured one.
+      if (cfg.maxIterations) {
+        stepBase.name = `${stepBase.name} (max ${cfg.maxIterations})`;
       }
       return {
-        id: makeStepId('step', node.id),
-        name: node.name || 'parallel',
-        type: 'parallel',
-        branches,
+        step: stepBase,
+        continueFrom: exitTarget,
       };
     }
     default:
@@ -302,16 +475,6 @@ function compileSingle(
         `Unknown node type '${(node as WorkflowVisualNode).type}' on node '${node.id}'`
       );
   }
-}
-
-function compileBranch(
-  ctx: CompileContext,
-  startNode: WorkflowVisualNode
-): CoreWorkflowStep[] {
-  // A branch is a linear chain from `startNode` until we hit `end` or
-  // a parallel/condition leaf. Reuses compileChain so nested
-  // parallel/condition inside a branch is supported.
-  return compileChain(ctx, startNode);
 }
 
 /**

@@ -12,7 +12,8 @@ export type WorkflowNodeType =
   | 'tool'
   | 'condition'
   | 'parallel'
-  | 'approval';
+  | 'approval'
+  | 'loop';
 
 export interface ToolNodeConfig {
   toolName: string;
@@ -28,10 +29,18 @@ export interface ApprovalNodeConfig {
   timeoutMs?: number;
 }
 
+export interface LoopNodeConfig {
+  /** Condition string, evaluated by the core safeEvalCondition. */
+  condition: string;
+  /** Hard cap to prevent infinite loops. Defaults to 100 (core engine limit). */
+  maxIterations?: number;
+}
+
 export type WorkflowNodeConfig =
   | ToolNodeConfig
   | ConditionNodeConfig
   | ApprovalNodeConfig
+  | LoopNodeConfig
   | Record<string, never>;
 
 export interface WorkflowVisualNode {
@@ -46,8 +55,12 @@ export interface WorkflowVisualEdge {
   id: string;
   source: string;
   target: string;
-  /** Used by `condition` nodes to label which output edge is the true/false branch. */
-  label?: 'true' | 'false';
+  /**
+   * Edge label used by structural nodes :
+   * - `condition` outgoing edges: `'true'` / `'false'`.
+   * - `loop` outgoing edges: `'body'` / `'exit'`.
+   */
+  label?: 'true' | 'false' | 'body' | 'exit';
 }
 
 export interface WorkflowVisualDefinition {
