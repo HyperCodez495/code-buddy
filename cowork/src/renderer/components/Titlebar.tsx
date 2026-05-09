@@ -1,5 +1,5 @@
-import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus, Sparkles, Network, Users, HelpCircle } from 'lucide-react';
-import { useState } from 'react';
+import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus, Sparkles, Network, Users, HelpCircle, Power, Loader2 } from 'lucide-react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useUnreadNotificationCount } from '../store/selectors';
@@ -114,6 +114,9 @@ export function Titlebar() {
         <Focus className="w-4 h-4 text-text-secondary" />
       </button>
 
+      {/* Code Buddy HTTP server toggle — boots `src/server/index.ts` in-process */}
+      <ServerToggle />
+
       {/* Keyboard shortcuts help (Ctrl+/) */}
       <button
         onClick={() => useAppStore.getState().setShowShortcutsDialog(true)}
@@ -172,5 +175,92 @@ export function Titlebar() {
         </div>
       )}
     </div>
+  );
+}
+
+interface ServerStatusShape {
+  running: boolean;
+  port: number | null;
+  host: string | null;
+  websocket: boolean;
+  error?: string | null;
+}
+
+/**
+ * Power button + dot indicator for the Code Buddy HTTP server. Click to
+ * toggle (start uses default ports 3000/3001 + WS). Polls every 5s while
+ * idle so the UI stays in sync if the server is stopped from elsewhere.
+ */
+function ServerToggle() {
+  const [status, setStatus] = useState<ServerStatusShape>({
+    running: false,
+    port: null,
+    host: null,
+    websocket: false,
+  });
+  const [busy, setBusy] = useState(false);
+
+  // Initial fetch + light polling.
+  useEffect(() => {
+    let cancelled = false;
+    const refresh = async () => {
+      try {
+        const s = await window.electronAPI?.server?.status();
+        if (!cancelled && s) setStatus(s);
+      } catch {
+        /* ignore */
+      }
+    };
+    void refresh();
+    const id = setInterval(refresh, 5000);
+    return () => {
+      cancelled = true;
+      clearInterval(id);
+    };
+  }, []);
+
+  const toggle = async () => {
+    if (busy || !window.electronAPI?.server) return;
+    setBusy(true);
+    try {
+      const s = status.running
+        ? await window.electronAPI.server.stop()
+        : await window.electronAPI.server.start({});
+      setStatus(s);
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const tooltip = status.running
+    ? `Stop Code Buddy server (running on ${status.host}:${status.port}${
+        status.websocket ? ' +WS' : ''
+      })`
+    : status.error
+      ? `Start Code Buddy server — last error: ${status.error}`
+      : 'Start Code Buddy server (port 3000 + WS gateway 3001)';
+
+  return (
+    <button
+      onClick={() => void toggle()}
+      disabled={busy}
+      className="relative w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors disabled:opacity-50"
+      title={tooltip}
+      aria-label={status.running ? 'Stop Code Buddy server' : 'Start Code Buddy server'}
+      data-testid="server-toggle-button"
+    >
+      {busy ? (
+        <Loader2 className="w-4 h-4 text-text-secondary animate-spin" />
+      ) : (
+        <Power
+          className={`w-4 h-4 ${
+            status.running ? 'text-success' : status.error ? 'text-error' : 'text-text-secondary'
+          }`}
+        />
+      )}
+      {status.running && !busy && (
+        <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-success animate-pulse" />
+      )}
+    </button>
   );
 }

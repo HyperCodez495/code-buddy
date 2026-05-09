@@ -1102,6 +1102,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('tools.list'),
   },
 
+  /**
+   * Code Buddy HTTP server (core `src/server/index.ts`) lifecycle —
+   * exposes start/stop/status so the Cowork UI can boot the server
+   * (default port 3000, WS gateway 3001) from a button in the titlebar.
+   */
+  server: {
+    status: (): Promise<{
+      running: boolean;
+      port: number | null;
+      host: string | null;
+      startedAt: number | null;
+      websocket: boolean;
+      error?: string | null;
+    }> => ipcRenderer.invoke('server.status'),
+    start: (
+      cfg?: { port?: number; host?: string; websocketEnabled?: boolean }
+    ): Promise<{
+      running: boolean;
+      port: number | null;
+      host: string | null;
+      startedAt: number | null;
+      websocket: boolean;
+      error?: string | null;
+    }> => ipcRenderer.invoke('server.start', cfg ?? {}),
+    stop: (): Promise<{
+      running: boolean;
+      port: number | null;
+      host: string | null;
+      startedAt: number | null;
+      websocket: boolean;
+      error?: string | null;
+    }> => ipcRenderer.invoke('server.stop'),
+  },
+
   // Project templates (Claude Cowork parity Phase 2 step 12)
   template: {
     list: (): Promise<
@@ -2558,6 +2592,32 @@ declare global {
       };
       tools: {
         list: () => Promise<Array<{ name: string; description: string; category: string }>>;
+      };
+      server: {
+        status: () => Promise<{
+          running: boolean;
+          port: number | null;
+          host: string | null;
+          startedAt: number | null;
+          websocket: boolean;
+          error?: string | null;
+        }>;
+        start: (cfg?: { port?: number; host?: string; websocketEnabled?: boolean }) => Promise<{
+          running: boolean;
+          port: number | null;
+          host: string | null;
+          startedAt: number | null;
+          websocket: boolean;
+          error?: string | null;
+        }>;
+        stop: () => Promise<{
+          running: boolean;
+          port: number | null;
+          host: string | null;
+          startedAt: number | null;
+          websocket: boolean;
+          error?: string | null;
+        }>;
       };
       template: {
         list: () => Promise<
