@@ -99,6 +99,15 @@ export interface PendingApproval {
   message: string;
   /** Absolute timestamp in ms when the approval will auto-reject. */
   expiresAt?: number;
+  /**
+   * Optional preview of the imminent action the approval guards. When
+   * present, the ApprovalDialog renders a JSON preview + a destructive
+   * warning if the tool/input matches a known-risky pattern.
+   */
+  payload?: {
+    toolName?: string;
+    toolInput?: Record<string, unknown>;
+  };
 }
 
 export type WorkflowEventPayload =

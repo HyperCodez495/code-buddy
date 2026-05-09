@@ -221,6 +221,10 @@ interface AppState {
     stepId: string;
     message: string;
     expiresAt?: number;
+    payload?: {
+      toolName?: string;
+      toolInput?: Record<string, unknown>;
+    };
   }>;
   openTabs: Array<{ id: string; sessionId: string; title: string }>;
   showMemoryEditor: boolean;

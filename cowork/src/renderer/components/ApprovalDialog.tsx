@@ -10,9 +10,36 @@
  * @module cowork/renderer/components/ApprovalDialog
  */
 
-import { useEffect, useState } from 'react';
-import { CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
+import { CheckCircle2, XCircle, Clock, AlertTriangle, Wrench } from 'lucide-react';
 import { useAppStore } from '../store';
+
+/**
+ * Heuristic detector for approval payloads that look destructive
+ * enough to warrant a red warning banner. Pattern-matches the tool
+ * input string representation against known-risky shapes (rm -rf,
+ * chmod 777, eval, format /, …).
+ */
+function looksDestructive(toolName: string | undefined, toolInput: Record<string, unknown> | undefined): { warning: string | null } {
+  if (!toolInput && !toolName) return { warning: null };
+  const blob = `${toolName ?? ''} ${JSON.stringify(toolInput ?? {})}`.toLowerCase();
+  const patterns: Array<{ re: RegExp; reason: string }> = [
+    { re: /rm\s+-[rRf]+\s/, reason: 'recursive/forced rm' },
+    { re: /chmod\s+(?:0?7?77|a\+\w*x)/, reason: 'overly permissive chmod' },
+    { re: /\beval\s*\(/, reason: 'eval()' },
+    { re: /sudo\s+/, reason: 'sudo escalation' },
+    { re: /format\s+\w*:|mkfs\.|fdisk/, reason: 'disk format' },
+    { re: /:\(\)\s*\{[^}]*:\|:&\}/, reason: 'fork bomb' },
+    { re: /curl[^|]*\|\s*(?:bash|sh)\b/, reason: 'piped curl|bash' },
+    { re: /wget[^|]*\|\s*(?:bash|sh)\b/, reason: 'piped wget|bash' },
+    { re: /\bdrop\s+(?:database|table)\b/, reason: 'DROP DATABASE/TABLE' },
+    { re: /git\s+push\s+--force/, reason: 'git push --force' },
+  ];
+  for (const { re, reason } of patterns) {
+    if (re.test(blob)) return { warning: reason };
+  }
+  return { warning: null };
+}
 
 export const ApprovalDialog: React.FC = () => {
   const pending = useAppStore((s) => s.pendingApprovals);
@@ -29,11 +56,21 @@ export const ApprovalDialog: React.FC = () => {
     return () => clearInterval(id);
   }, [head]);
 
+  // Hooks above must be called unconditionally — declare the destructive
+  // hint before the early return.
+  const destructive = useMemo(
+    () => looksDestructive(head?.payload?.toolName, head?.payload?.toolInput),
+    [head?.payload?.toolName, head?.payload?.toolInput]
+  );
+
   if (!head) return null;
 
   const remainingMs = head.expiresAt ? Math.max(0, head.expiresAt - now) : null;
   const remainingLabel =
     remainingMs !== null ? `${Math.ceil(remainingMs / 1000)}s` : '—';
+  const inputJson = head.payload?.toolInput
+    ? JSON.stringify(head.payload.toolInput, null, 2)
+    : null;
 
   const reply = async (approved: boolean) => {
     setSubmitting(true);
@@ -51,7 +88,7 @@ export const ApprovalDialog: React.FC = () => {
       role="dialog"
       aria-modal="true"
     >
-      <div className="w-[420px] max-w-[90vw] bg-background border border-border rounded-xl shadow-elevated p-5 space-y-4">
+      <div className="w-[480px] max-w-[92vw] max-h-[85vh] bg-background border border-border rounded-xl shadow-elevated p-5 space-y-4 overflow-y-auto">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
             Workflow approval required
@@ -60,6 +97,35 @@ export const ApprovalDialog: React.FC = () => {
             {head.message || 'Approve to continue the workflow.'}
           </p>
         </div>
+
+        {/* Destructive-pattern warning */}
+        {destructive.warning && (
+          <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/40 text-error">
+            <AlertTriangle size={14} className="mt-0.5 shrink-0" />
+            <div className="text-xs">
+              <div className="font-semibold">Destructive pattern detected: {destructive.warning}</div>
+              <div className="text-error/80 mt-0.5">Re-read the tool input below before approving.</div>
+            </div>
+          </div>
+        )}
+
+        {/* Tool preview */}
+        {head.payload?.toolName && (
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-muted">
+              <Wrench size={11} />
+              <span>About to invoke</span>
+            </div>
+            <div className="text-xs font-mono text-text-primary px-2 py-1 rounded bg-surface border border-border-muted">
+              {head.payload.toolName}
+            </div>
+            {inputJson && (
+              <pre className="text-[11px] font-mono whitespace-pre-wrap break-words rounded bg-surface px-2 py-2 max-h-48 overflow-y-auto text-text-secondary border border-border-muted">
+                {inputJson}
+              </pre>
+            )}
+          </div>
+        )}
 
         {head.expiresAt && (
           <div className="flex items-center gap-1 text-[11px] text-text-muted">

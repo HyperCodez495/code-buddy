@@ -383,6 +383,7 @@ export class WorkflowBridge {
               stepId: payload.stepId,
               message: payload.message,
               expiresAt: payload.expiresAt,
+              payload: payload.payload,
             };
             this.sendToRenderer?.({
               type: 'workflow.approval_required',

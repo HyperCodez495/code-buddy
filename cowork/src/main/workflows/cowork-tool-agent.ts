@@ -40,6 +40,11 @@ export interface ApprovalRequestPayload {
   stepId: string;
   message: string;
   expiresAt?: number;
+  /** Optional preview of the action the approval guards. */
+  payload?: {
+    toolName?: string;
+    toolInput?: Record<string, unknown>;
+  };
 }
 
 export interface CoworkToolAgentOptions {
@@ -143,6 +148,26 @@ export class CoworkToolAgent {
           stepId,
           message,
           expiresAt: Date.now() + timeoutMs,
+          // Forward an optional payload so the renderer can preview the
+          // imminent action (tool name + input) before approving. The
+          // dag-compiler doesn't set this today; future versions can
+          // surface "the next step in the workflow is `shell_exec
+          // {command: 'rm -rf /'}` — really approve?".
+          payload:
+            typeof taskInput.previewToolName === 'string' ||
+            taskInput.previewToolInput !== undefined
+              ? {
+                  toolName:
+                    typeof taskInput.previewToolName === 'string'
+                      ? taskInput.previewToolName
+                      : undefined,
+                  toolInput:
+                    typeof taskInput.previewToolInput === 'object' &&
+                    taskInput.previewToolInput !== null
+                      ? (taskInput.previewToolInput as Record<string, unknown>)
+                      : undefined,
+                }
+              : undefined,
         });
       } catch (err) {
         // Failing to surface the request is fatal for this task — the user
