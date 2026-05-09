@@ -22,6 +22,7 @@ import { registerProjectIpcHandlers } from './ipc/project-ipc';
 import { registerSubAgentIpcHandlers } from './ipc/subagent-ipc';
 import { registerOrchestratorIpcHandlers } from './ipc/orchestrator-ipc';
 import { registerFleetIpcHandlers } from './ipc/fleet-ipc';
+import { setMainWindow } from './window-management';
 import { registerTeamIpcHandlers } from './ipc/team-ipc';
 import { registerMentionIpcHandlers } from './ipc/mention-ipc';
 import { registerCommandIpcHandlers } from './ipc/command-ipc';
@@ -513,6 +514,10 @@ function createWindow() {
   }
 
   mainWindow = new BrowserWindow(windowOptions);
+  // Register the canonical mainWindow with `window-management.ts` so
+  // `getMainWindow()` (used by `ipc-main-bridge.ts:sendToRenderer`)
+  // returns this instance — without this every IPC event was dropped.
+  setMainWindow(mainWindow);
 
   const allowedOrigins = new Set<string>();
   if (process.env.VITE_DEV_SERVER_URL) {
@@ -613,6 +618,7 @@ function createWindow() {
 
   mainWindow.on('closed', () => {
     mainWindow = null;
+    setMainWindow(null);
   });
 
   // Register Panic Stop Shortcut

@@ -1517,6 +1517,9 @@ export const useAppStore = create<AppState>((set) => ({
 if (typeof window !== 'undefined') {
   const w = window as unknown as Record<string, unknown>;
 
+  // Debug: expose the store so DevTools / CDP can introspect it.
+  w.useAppStore = useAppStore;
+
   w.__getNavStatus = () => {
     const s = useAppStore.getState();
     return {

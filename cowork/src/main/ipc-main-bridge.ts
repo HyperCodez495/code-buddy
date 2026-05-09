@@ -91,5 +91,12 @@ export function sendToRenderer(event: ServerEvent) {
   const mainWindow = getMainWindow();
   if (mainWindow && !mainWindow.isDestroyed()) {
     mainWindow.webContents.send('server-event', event);
+  } else {
+    // Helps catch regressions of the "main/index.ts and window-management.ts
+    // each held a separate `let mainWindow` so getMainWindow() always
+    // returned null" bug — kept as a warning rather than spam.
+    logError(
+      `[ipc-main-bridge] dropped ${event.type} — mainWindow=${!!mainWindow} destroyed=${mainWindow?.isDestroyed()}`
+    );
   }
 }

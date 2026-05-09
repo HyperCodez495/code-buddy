@@ -34,6 +34,18 @@ export function getMainWindow(): BrowserWindow | null {
   return mainWindow;
 }
 
+/**
+ * Allow other modules (notably `main/index.ts` which creates its own
+ * BrowserWindow) to register the canonical mainWindow so
+ * `sendToRenderer()` (`ipc-main-bridge.ts`) can find it. Without this,
+ * `getMainWindow()` returns the local-only `let mainWindow` of this
+ * module — which stays null when the actual window is created in
+ * `index.ts:515` — and every IPC event is silently dropped.
+ */
+export function setMainWindow(win: BrowserWindow | null): void {
+  mainWindow = win;
+}
+
 export function getTray(): Tray | null {
   return tray;
 }
