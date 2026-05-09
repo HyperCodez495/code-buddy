@@ -281,3 +281,58 @@ export class SubAgentBridge {
     }));
   }
 }
+
+/**
+ * Dry-run a sub-agent — spawn, await, close, return the captured
+ * result. Used by `HooksBridge.testAgentHandler` to validate an
+ * `agent`-type hook from the authoring UI without needing a full
+ * SubAgentBridge instance attached to a renderer.
+ */
+export async function dryRunSubAgent(
+  prompt: string,
+  role: string | undefined,
+  timeoutMs: number = 10_000
+): Promise<{ status: SubAgentStatus; nickname: string; result?: string; error?: string; durationMs: number }> {
+  const start = Date.now();
+  // Use a no-op sendToRenderer — the dry-run consumer doesn't watch the
+  // event stream, only the final result.
+  const bridge = new SubAgentBridge(() => {});
+  let agentId: string | null = null;
+  try {
+    const spawned = await bridge.spawn({
+      prompt: `[DRY RUN] ${prompt}`,
+      role: role as SubAgentRole,
+      forkContext: false,
+    });
+    if ('error' in spawned) {
+      return { status: 'error', nickname: '?', error: spawned.error, durationMs: Date.now() - start };
+    }
+    agentId = spawned.id;
+    const completed = await bridge.wait([spawned.id], timeoutMs);
+    const final = completed[0];
+    if (!final) {
+      return { status: 'error', nickname: spawned.nickname, error: 'Timeout (no result)', durationMs: Date.now() - start };
+    }
+    return {
+      status: final.status,
+      nickname: final.nickname,
+      result: final.result,
+      durationMs: Date.now() - start,
+    };
+  } catch (err) {
+    return {
+      status: 'error',
+      nickname: '?',
+      error: err instanceof Error ? err.message : String(err),
+      durationMs: Date.now() - start,
+    };
+  } finally {
+    if (agentId) {
+      try {
+        await bridge.close(agentId);
+      } catch {
+        /* best effort */
+      }
+    }
+  }
+}

@@ -206,7 +206,10 @@ export class HooksBridge {
     if (handler.type === 'prompt') {
       return this.testPromptHandler(handler);
     }
-    // agent — no-op success.
+    if (handler.type === 'agent') {
+      return this.testAgentHandler(handler);
+    }
+    // No remaining types — defensive no-op.
     return {
       success: true,
       exitCode: 0,
@@ -214,6 +217,51 @@ export class HooksBridge {
       stderr: '',
       durationMs: 0,
     };
+  }
+
+  /**
+   * Dry-run an `agent`-type handler: spawn a sub-agent with the
+   * configured prompt + role, wait up to 10 s, return the result. Used
+   * by the SettingsHooks Test button.
+   */
+  private async testAgentHandler(handler: UserHookHandler): Promise<HooksTestResult> {
+    const prompt = handler.agent?.prompt?.trim();
+    if (!prompt) {
+      return {
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        error: 'Empty agent.prompt',
+      };
+    }
+    try {
+      const { dryRunSubAgent } = await import('../agent/sub-agent-bridge');
+      const result = await dryRunSubAgent(
+        prompt,
+        handler.agent?.role,
+        handler.timeout ?? 10_000
+      );
+      const ok = result.status === 'completed';
+      return {
+        success: ok,
+        exitCode: ok ? 0 : 1,
+        stdout: result.result ?? `(agent ${result.status})`,
+        stderr: result.error ?? '',
+        durationMs: result.durationMs,
+        error: result.error,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        exitCode: null,
+        stdout: '',
+        stderr: '',
+        durationMs: 0,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
   }
 
   private async testCommandHandler(handler: UserHookHandler): Promise<HooksTestResult> {
