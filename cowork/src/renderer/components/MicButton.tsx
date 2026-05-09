@@ -55,12 +55,19 @@ export const MicButton: React.FC<MicButtonProps> = ({
   };
 
   const startRecording = async () => {
-    if (status !== 'idle') return;
+    if (status !== 'idle' && status !== 'error') return;
     if (typeof navigator === 'undefined' || !navigator.mediaDevices?.getUserMedia) {
       setStatus('unsupported');
       setErrorMsg('mediaDevices unavailable');
       return;
     }
+    // Optimistic UX — flip the button to 'recording' immediately so the
+    // user gets visual confirmation of their click. We'll roll back on
+    // permission denial / device error in the catch block below. Without
+    // this, a slow getUserMedia (e.g., first-time permission prompt)
+    // makes the button look unresponsive for 200-500 ms.
+    setStatus('recording');
+    setErrorMsg(null);
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
       streamRef.current = stream;
@@ -95,8 +102,7 @@ export const MicButton: React.FC<MicButtonProps> = ({
       stopTimerRef.current = setTimeout(() => {
         if (recorder.state === 'recording') recorder.stop();
       }, maxDurationMs);
-      setStatus('recording');
-      setErrorMsg(null);
+      // Status is already 'recording' from the optimistic update above.
     } catch (err) {
       setStatus('error');
       setErrorMsg(err instanceof Error ? err.message : String(err));

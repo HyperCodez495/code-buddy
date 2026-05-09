@@ -12,7 +12,7 @@
  * Dependencies: session-manager, config-store, mcp-manager, sandbox-adapter,
  *               skills-manager, scheduled-task-manager, nav-server, remote-manager
  */
-import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut } from 'electron';
+import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut, session } from 'electron';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
 import { pathToFileURL } from 'url';
 import * as fs from 'fs';
@@ -833,6 +833,38 @@ import { sendToRenderer } from './ipc-main-bridge';
 app
   .whenReady()
   .then(async () => {
+    // Grant microphone access by default — without this, the renderer's
+    // `navigator.mediaDevices.getUserMedia({audio: true})` rejects
+    // silently and the MicButton (Phase 8 voice) appears stuck on
+    // click. The user already implicitly authorised the mic when they
+    // installed Cowork; the OS still gates physical access at the
+    // audio-capture layer, so this is purely about Electron's own
+    // intra-process permission gate.
+    session.defaultSession.setPermissionRequestHandler(
+      (_webContents, permission, callback) => {
+        // Electron's union for request-side permission includes
+        // 'media' (covers both audio + video capture in one bucket).
+        // Older Electrons also expose 'audioCapture' separately so we
+        // accept both via a permissive cast.
+        const p = permission as string;
+        if (p === 'media' || p === 'audioCapture') {
+          callback(true);
+          return;
+        }
+        callback(false);
+      },
+    );
+    // Electron 11+ also queries via setPermissionCheckHandler before
+    // actually firing the request — both must agree for getUserMedia
+    // to succeed. The check-side union is slightly different from the
+    // request-side; same permissive cast.
+    session.defaultSession.setPermissionCheckHandler(
+      (_webContents, permission) => {
+        const p = permission as string;
+        return p === 'media' || p === 'audioCapture';
+      },
+    );
+
     // Apply dev logs setting from config
     const enableDevLogs = configStore.get('enableDevLogs');
     setDevLogsEnabled(enableDevLogs);
