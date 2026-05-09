@@ -657,13 +657,22 @@ export class SmartCompactionEngine extends EventEmitter {
 
 let compactionEngineInstance: SmartCompactionEngine | null = null;
 
+/** Default config used when the singleton is constructed without one. */
+const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
+  maxTokens: 32_000,
+  provider: 'openai',
+  channelType: 'cli',
+  preserveSystem: true,
+  preserveToolCalls: true,
+};
+
 export function getSmartCompactionEngine(config?: CompactionConfig): SmartCompactionEngine {
-  if (!compactionEngineInstance && config) {
-    compactionEngineInstance = new SmartCompactionEngine(config);
+  if (!compactionEngineInstance) {
+    compactionEngineInstance = new SmartCompactionEngine(config ?? DEFAULT_COMPACTION_CONFIG);
   } else if (config) {
-    compactionEngineInstance!.updateConfig(config);
+    compactionEngineInstance.updateConfig(config);
   }
-  return compactionEngineInstance!;
+  return compactionEngineInstance;
 }
 
 export function resetSmartCompactionEngine(): void {
