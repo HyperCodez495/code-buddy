@@ -785,6 +785,13 @@ export interface AppConfig {
   sandboxEnabled?: boolean;
   enableThinking?: boolean;
   isConfigured: boolean;
+  /** Embedded HTTP server settings — see config-store.ts for details. */
+  server?: {
+    port?: number;
+    host?: string;
+    websocketEnabled?: boolean;
+    jwtSecret?: string;
+  };
 }
 
 export interface ProviderPreset {

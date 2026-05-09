@@ -155,6 +155,20 @@ export interface AppConfig {
      */
     geminiGroundingEnabled?: boolean;
   };
+
+  /**
+   * Embedded Code Buddy HTTP server (the one started by the titlebar
+   * power button). Persisted so settings survive Cowork restarts.
+   * If absent, defaults are 127.0.0.1:3000 with WS on 3001 and a
+   * runtime-generated JWT secret.
+   */
+  server?: {
+    port?: number;
+    host?: string;
+    websocketEnabled?: boolean;
+    /** Persistent JWT secret. If absent, a runtime fallback is minted. */
+    jwtSecret?: string;
+  };
 }
 
 const DEFAULT_CONFIG_SET_ID = 'default';

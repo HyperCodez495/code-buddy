@@ -21,6 +21,7 @@ import {
   Network,
   FolderKanban,
   Blocks,
+  ServerCog,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -43,6 +44,7 @@ import { SettingsCustomCommands } from './settings/SettingsCustomCommands';
 import { SettingsWorkspacePresets } from './settings/SettingsWorkspacePresets';
 import { SettingsHooks } from './settings/SettingsHooks';
 import { SettingsA2AAgents } from './settings/SettingsA2AAgents';
+import { SettingsServer } from './settings/SettingsServer';
 import { SettingsCustomize } from './settings/SettingsCustomize';
 import { SettingsProjects } from './settings/SettingsProjects';
 
@@ -91,6 +93,7 @@ type TabId =
   | 'workspacePresets'
   | 'hooks'
   | 'a2a'
+  | 'server'
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
@@ -113,6 +116,7 @@ const VALID_TABS = new Set<TabId>([
   'workspacePresets',
   'hooks',
   'a2a',
+  'server',
   'general',
 ]);
 
@@ -270,6 +274,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('a2a.title', 'Remote agents (A2A)'),
       icon: Network,
       description: t('a2a.hint', 'Register and invoke remote A2A agents'),
+    },
+    {
+      id: 'server' as TabId,
+      label: t('settingsServer.title', 'Embedded server'),
+      icon: ServerCog,
+      description: t('settingsServer.hintShort', 'Configure port, JWT, websocket'),
     },
     {
       id: 'general' as TabId,
@@ -439,6 +449,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'a2a' ? '' : 'hidden'}>
                 {viewedTabs.has('a2a') && <SettingsA2AAgents />}
+              </div>
+              <div className={activeTab === 'server' ? '' : 'hidden'}>
+                {viewedTabs.has('server') && <SettingsServer />}
               </div>
               <div className={activeTab === 'general' ? '' : 'hidden'}>
                 {viewedTabs.has('general') && <SettingsGeneral />}
