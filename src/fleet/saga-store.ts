@@ -367,8 +367,9 @@ export function deriveSagaStatus(saga: SagaRecord): SagaStatus {
     if (!fallback) return 'failed';
     if (fallback.status === 'completed') return 'completed';
     if (fallback.status === 'failed') return 'failed';
-    if (fallback.status === 'running') return 'running';
-    return 'pending'; // fallback waiting to be tried
+    // running was already handled above; remaining cases are
+    // 'pending' | 'skipped' — both equivalent to "not started yet".
+    return 'pending';
   }
   return 'pending';
 }
