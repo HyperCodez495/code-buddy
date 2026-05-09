@@ -12,20 +12,20 @@ export {
   retryWithResult,
   RetryStrategies,
   RetryPredicates,
-} from '@phuetz/ai-providers';
+} from '../providers/_shared/index.js';
 
 // Re-export types
 export type {
   RetryOptions,
   RetryResult,
-} from '@phuetz/ai-providers';
+} from '../providers/_shared/index.js';
 
 // ============================================================================
 // Code Buddy-specific additions (not in shared package)
 // ============================================================================
 
-import type { RetryOptions } from '@phuetz/ai-providers';
-import { retry } from '@phuetz/ai-providers';
+import type { RetryOptions } from '../providers/_shared/index.js';
+import { retry } from '../providers/_shared/index.js';
 
 /**
  * Create a retryable version of a function

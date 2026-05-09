@@ -24,7 +24,7 @@ export type {
   JSONSchema,
   FinishReason,
   TokenUsage,
-} from '@phuetz/ai-providers';
+} from './_shared/index.js';
 
 // Re-export types that need backward-compatible shaping
 import type {
@@ -33,7 +33,7 @@ import type {
   LLMResponse as SharedLLMResponse,
   CompletionOptions as SharedCompletionOptions,
   ToolDefinition as SharedToolDefinition,
-} from '@phuetz/ai-providers';
+} from './_shared/index.js';
 
 // ============================================================================
 // Code Buddy ProviderType (includes 'claude' alias used throughout codebase)

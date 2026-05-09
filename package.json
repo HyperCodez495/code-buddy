@@ -131,7 +131,6 @@
     "@opentelemetry/exporter-trace-otlp-http": "^0.212.0",
     "@opentelemetry/instrumentation-http": "^0.212.0",
     "@opentelemetry/sdk-node": "^0.212.0",
-    "@phuetz/ai-providers": "file:../ai-providers",
     "@resvg/resvg-js": "^2.6.2",
     "@sentry/node": "^10.40.0",
     "@vscode/ripgrep": "^1.17.0",
