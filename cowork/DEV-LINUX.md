@@ -64,6 +64,65 @@ curl -s http://localhost:9222/json | jq -r '.[] | select(.type=="page") | .webSo
 # Runtime.evaluate JS into the renderer.
 ```
 
+## Debugging the embedded engine
+
+Cowork's main process loads the Code Buddy core engine from
+`<repo>/dist/desktop/codebuddy-engine-adapter.js` via dynamic ESM
+import. Four resolution layers, narrow → broad
+(`cowork/src/main/engine/embedded-mode.ts`):
+
+1. **`CODEBUDDY_ENGINE_PATH` env override** — used verbatim when set.
+   Example: `CODEBUDDY_ENGINE_PATH=/home/patrice/DEV/code-buddy/dist`
+2. **Packaged mode** — `<install>/resources/dist/`.
+3. **Dev (from bundle)** — `import.meta.url` of the main bundle, then
+   `<bundleDir>/../../../dist/`. Stable regardless of how Electron was
+   invoked (direct binary launch, `buddy gui`, etc.). This is the
+   layer that fires under the manual launch documented in this guide.
+4. **Dev (from appPath)** — `app.getAppPath() + '/../dist'`. Fallback
+   when the bundle dir isn't available (rare — unit tests, custom
+   entry points).
+
+The startup log shows which layer was used:
+
+```
+[Main] Resolving Code Buddy engine: layer=dev-from-bundle path=/home/patrice/DEV/code-buddy/dist
+```
+
+### Symptom — pi-coding-agent runner is used instead of the engine
+
+If you see this near the top of the log:
+
+```
+[Main] Code Buddy engine not present at /<…>/dist/desktop/codebuddy-engine-adapter.js (layer=<layer>). Falling back to pi-coding-agent runner.
+[Runtime] Using pi-coding-agent runner (engine not loaded)
+```
+
+…the resolver pointed correctly but the file isn't there. Two fixes:
+
+- **Build the core**: `npx tsc -p .` at the repo root. The dev loop
+  in this guide rebuilds `cowork/dist-electron/` only — the parent
+  CLI compilation lives at the root and produces `<repo>/dist/`.
+  Re-run after pulling.
+- **Override the path** when launching electron manually (i.e. you
+  bypassed `buddy gui` / `npm run dev`):
+
+  ```bash
+  CODEBUDDY_ENGINE_PATH=/home/patrice/DEV/code-buddy/dist \
+  DISPLAY=:0 NODE_ENV=production \
+    ./cowork/node_modules/electron/dist/electron \
+    --no-sandbox --disable-gpu \
+    ./cowork/dist-electron/main/index.js
+  ```
+
+### What the fallback gives up
+
+The pi-coding-agent runner is functional for chat but misses what
+Phase 11 wired through the engine adapter: MCP runtime sync, model
+hot-swap, agent LRU cache, skills hot-reload, Tool Policy / Lifecycle
+Hooks / Smart Compaction / `node.*` RPC. If you're testing these
+features, make sure `[Runtime] Using Code Buddy engine (embedded)`
+shows in the log instead.
+
 ## Verifying the embedded server
 
 Click the power button (⏻) in the titlebar, then:

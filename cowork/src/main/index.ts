@@ -14,7 +14,7 @@
  */
 import { app, BrowserWindow, ipcMain, dialog, shell, Menu, nativeTheme, Tray, globalShortcut, session } from 'electron';
 import { join, resolve, dirname, isAbsolute, basename } from 'path';
-import { pathToFileURL } from 'url';
+import { fileURLToPath, pathToFileURL } from 'url';
 import * as fs from 'fs';
 import { execFileSync } from 'child_process';
 import { config } from 'dotenv';
@@ -30,7 +30,11 @@ import { registerSkillMdIpcHandlers } from './ipc/skill-md-ipc';
 import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
-import { classifyEngineLoadError, resolveEnginePath, shouldLoadEngine } from './engine/embedded-mode';
+import {
+  classifyEngineLoadError,
+  resolveEnginePathWithDiagnostic,
+  shouldLoadEngine,
+} from './engine/embedded-mode';
 import { applyGroundingToggle } from './codebuddy/grounding-handler';
 import {
   ProjectManager,
@@ -875,7 +879,6 @@ app
     log('=== Open Cowork Starting ===');
     log('Config file:', configStore.getPath());
     log('Is configured:', configStore.isConfigured());
-    log('[Runtime] Using pi-coding-agent SDK for all providers');
     log('Developer logs:', enableDevLogs ? 'Enabled' : 'Disabled');
     log('Environment Variables:');
     log('  ANTHROPIC_AUTH_TOKEN:', process.env.ANTHROPIC_AUTH_TOKEN ? '✓ Set' : '✗ Not set');
@@ -915,22 +918,41 @@ app
           : 'CODEBUDDY_EMBEDDED=0 env opt-out';
       log(`[Main] embedded engine disabled (${reason})`);
     } else {
+      // Packaged-aware resolution: extraResources copies the engine to
+      // `<install>/resources/dist/desktop/` (see electron-builder.yml),
+      // while dev mode keeps it at `<repo>/dist/desktop/` next to cowork.
+      // The diagnostic form gives us `{ path, layer }` so a failed
+      // load can be diagnosed from a single startup line — see the
+      // catch handler below.
+      // `import.meta.url` of the main bundle is preferred over
+      // `app.getAppPath()` for dev resolution: it's stable regardless of
+      // how Electron was invoked, including direct binary launch with
+      // an explicit file argument (where `app.getAppPath()` points at
+      // the file's dir instead of cowork/).
+      const mainBundleDir = (() => {
+        try {
+          return dirname(fileURLToPath(import.meta.url));
+        } catch {
+          return undefined;
+        }
+      })();
+      const engineResolution = resolveEnginePathWithDiagnostic({
+        envOverride: process.env.CODEBUDDY_ENGINE_PATH,
+        isPackaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+        mainBundleDir,
+      });
+      log(
+        `[Main] Resolving Code Buddy engine: layer=${engineResolution.layer} path=${engineResolution.path}`,
+      );
       try {
-        // Packaged-aware resolution: extraResources copies the engine to
-        // `<install>/resources/dist/desktop/` (see electron-builder.yml),
-        // while dev mode keeps it at `<repo>/dist/desktop/` next to cowork.
-        const enginePath = resolveEnginePath({
-          envOverride: process.env.CODEBUDDY_ENGINE_PATH,
-          isPackaged: app.isPackaged,
-          resourcesPath: process.resourcesPath,
-          appPath: app.getAppPath(),
-        });
         // Node's ESM loader on Windows REQUIRES file:// URLs for absolute
         // paths (`d:\...` is rejected with ERR_UNSUPPORTED_ESM_URL_SCHEME).
         // pathToFileURL produces a cross-platform-safe `file:///D:/...`
         // form that the loader accepts on every platform.
         const adapterUrl = pathToFileURL(
-          resolve(enginePath, 'desktop', 'codebuddy-engine-adapter.js'),
+          resolve(engineResolution.path, 'desktop', 'codebuddy-engine-adapter.js'),
         ).href;
         const { CodeBuddyEngineAdapter } = await import(
           /* webpackIgnore: true */ /* @vite-ignore */ adapterUrl
@@ -946,7 +968,7 @@ app
         // Wire permission bridge for engine tool approvals
         try {
           const permBridgeUrl = pathToFileURL(
-            resolve(enginePath, 'desktop', 'permission-bridge.js'),
+            resolve(engineResolution.path, 'desktop', 'permission-bridge.js'),
           ).href;
           const { DesktopPermissionBridge } = await import(
             /* webpackIgnore: true */ /* @vite-ignore */ permBridgeUrl
@@ -990,11 +1012,27 @@ app
         log('[Main] Code Buddy engine adapter initialized (embedded mode)');
       } catch (err) {
         if (classifyEngineLoadError(err) === 'missing') {
-          log('[Main] Code Buddy engine not present, using pi-coding-agent runner');
+          log(
+            `[Main] Code Buddy engine not present at ${engineResolution.path}/desktop/codebuddy-engine-adapter.js ` +
+              `(layer=${engineResolution.layer}). Falling back to pi-coding-agent runner. ` +
+              `Fix: run \`npx tsc -p .\` at the repo root to build the core, ` +
+              `or set CODEBUDDY_ENGINE_PATH=/path/to/dist to point elsewhere.`,
+          );
         } else {
           logWarn('[Main] Failed to load Code Buddy engine, falling back to pi-coding-agent:', err);
         }
       }
+    }
+
+    // Single source of truth for which runtime is in use. Logged AFTER
+    // the load attempt so it never contradicts the engine init log
+    // above (an earlier "[Runtime] Using pi-coding-agent SDK..." line
+    // sat right at the top of the boot, before the engine had even
+    // been tried — confusing).
+    if (engineAdapter) {
+      log('[Runtime] Using Code Buddy engine (embedded)');
+    } else {
+      log('[Runtime] Using pi-coding-agent runner (engine not loaded)');
     }
 
     // Hot-apply IPC for the user's "Gemini Google Search grounding"

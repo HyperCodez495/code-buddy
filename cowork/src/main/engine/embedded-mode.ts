@@ -104,6 +104,22 @@ export interface ResolveEnginePathInput {
   resourcesPath: string;
   /** Value of `app.getAppPath()`. */
   appPath: string;
+  /**
+   * Directory of the main bundle, derived by the caller from
+   * `path.dirname(fileURLToPath(import.meta.url))`. When supplied AND
+   * we're in dev mode (not packaged + no env override), this is
+   * preferred over `appPath` because it's stable regardless of how
+   * Electron was invoked — direct binary launch with a file path
+   * argument, for example, sets `appPath` to the dir of that file
+   * instead of the cowork/ source tree.
+   *
+   * Layout assumption: the main bundle lives at
+   * `<repo>/cowork/dist-electron/main/index.js`, so the engine sits
+   * at `<bundleDir>/../../../dist/`. Optional; if omitted (e.g. unit
+   * tests without a bundle), the resolver falls back to the
+   * `appPath`-based 'dev' layer.
+   */
+  mainBundleDir?: string;
 }
 
 /**
@@ -125,11 +141,46 @@ export interface ResolveEnginePathInput {
  * Electron's runtime exposes.
  */
 export function resolveEnginePath(args: ResolveEnginePathInput): string {
+  return resolveEnginePathWithDiagnostic(args).path;
+}
+
+/** Which `resolveEnginePath` layer produced the result. Useful in logs
+ *  so a missing engine file is debuggable from a single startup line.
+ *  `'dev-from-bundle'` is a more reliable variant of `'dev'` that uses
+ *  `import.meta.url` of the main bundle instead of `app.getAppPath()`. */
+export type EnginePathLayer = 'env-override' | 'packaged' | 'dev-from-bundle' | 'dev';
+
+/**
+ * Resolution + the layer that produced it. Same logic as
+ * {@link resolveEnginePath} but returns enough context for the caller
+ * to print "Engine resolved to <path> via <layer>" — when the file
+ * isn't where the resolver pointed, that single line tells you which
+ * fallback to try (`CODEBUDDY_ENGINE_PATH`, rebuild, ...).
+ */
+export interface EnginePathResolution {
+  path: string;
+  layer: EnginePathLayer;
+}
+
+export function resolveEnginePathWithDiagnostic(
+  args: ResolveEnginePathInput,
+): EnginePathResolution {
   if (args.envOverride !== undefined && args.envOverride !== '') {
-    return args.envOverride;
+    return { path: args.envOverride, layer: 'env-override' };
   }
   if (args.isPackaged) {
-    return path.join(args.resourcesPath, 'dist');
+    return { path: path.join(args.resourcesPath, 'dist'), layer: 'packaged' };
   }
-  return path.resolve(args.appPath, '..', 'dist');
+  // Prefer `import.meta.url` of the main bundle when available — it's
+  // stable regardless of how Electron was invoked. Direct binary
+  // launches (e.g. `electron ./dist-electron/main/index.js`) set
+  // `app.getAppPath()` to the dir of the file argument, which makes
+  // the appPath-based layer compute the wrong path.
+  if (args.mainBundleDir !== undefined && args.mainBundleDir !== '') {
+    return {
+      path: path.resolve(args.mainBundleDir, '..', '..', '..', 'dist'),
+      layer: 'dev-from-bundle',
+    };
+  }
+  return { path: path.resolve(args.appPath, '..', 'dist'), layer: 'dev' };
 }

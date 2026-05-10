@@ -14,6 +14,7 @@ import {
   classifyEngineLoadError,
   isEmbeddedOptOut,
   resolveEnginePath,
+  resolveEnginePathWithDiagnostic,
   shouldLoadEngine,
 } from '../src/main/engine/embedded-mode';
 
@@ -133,6 +134,133 @@ describe('resolveEnginePath', () => {
         appPath: '/app/resources/app.asar',
       }),
     ).toBe('/staging/engine');
+  });
+});
+
+describe('resolveEnginePathWithDiagnostic', () => {
+  it("reports 'env-override' layer when CODEBUDDY_ENGINE_PATH is set", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        envOverride: '/custom/dist',
+        isPackaged: false,
+        resourcesPath: '/foo',
+        appPath: '/foo/cowork',
+      }),
+    ).toEqual({ path: '/custom/dist', layer: 'env-override' });
+  });
+
+  it("reports 'packaged' layer when isPackaged=true and no env override", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: true,
+        resourcesPath: '/Applications/Cowork.app/Contents/Resources',
+        appPath: '/Applications/Cowork.app/Contents/Resources/app.asar',
+      }),
+    ).toEqual({
+      path: path.join('/Applications/Cowork.app/Contents/Resources', 'dist'),
+      layer: 'packaged',
+    });
+  });
+
+  it("reports 'dev' layer when neither env override nor packaged nor mainBundleDir", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/repo/cowork',
+      }),
+    ).toEqual({
+      path: path.resolve('/repo/cowork', '..', 'dist'),
+      layer: 'dev',
+    });
+  });
+
+  it("reports 'dev-from-bundle' layer when mainBundleDir is supplied (preferred over appPath)", () => {
+    // The bundle lives at <repo>/cowork/dist-electron/main/; three up + dist = <repo>/dist
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/somewhere/wrong',  // ← intentionally wrong, should be ignored
+        mainBundleDir: '/repo/cowork/dist-electron/main',
+      }),
+    ).toEqual({
+      path: path.resolve('/repo/cowork/dist-electron/main', '..', '..', '..', 'dist'),
+      layer: 'dev-from-bundle',
+    });
+    // sanity — the result is /repo/dist regardless of what appPath was
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/somewhere/wrong',
+        mainBundleDir: '/repo/cowork/dist-electron/main',
+      }).path,
+    ).toBe('/repo/dist');
+  });
+
+  it("env-override wins over mainBundleDir even when both are present", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        envOverride: '/custom/dist',
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/ignored',
+        mainBundleDir: '/repo/cowork/dist-electron/main',
+      }),
+    ).toEqual({ path: '/custom/dist', layer: 'env-override' });
+  });
+
+  it("packaged mode wins over mainBundleDir (production extraResources)", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: true,
+        resourcesPath: '/app/resources',
+        appPath: '/app/resources/app.asar',
+        mainBundleDir: '/app/resources/app.asar/dist-electron/main',
+      }),
+    ).toEqual({
+      path: path.join('/app/resources', 'dist'),
+      layer: 'packaged',
+    });
+  });
+
+  it("treats empty mainBundleDir as unset (falls back to dev layer)", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/repo/cowork',
+        mainBundleDir: '',
+      }),
+    ).toEqual({
+      path: path.resolve('/repo/cowork', '..', 'dist'),
+      layer: 'dev',
+    });
+  });
+
+  it("treats empty envOverride as unset (falls through to packaged/dev)", () => {
+    expect(
+      resolveEnginePathWithDiagnostic({
+        envOverride: '',
+        isPackaged: false,
+        resourcesPath: '/ignored',
+        appPath: '/repo/cowork',
+      }),
+    ).toEqual({
+      path: path.resolve('/repo/cowork', '..', 'dist'),
+      layer: 'dev',
+    });
+  });
+
+  it('resolveEnginePath stays a thin wrapper that returns just the path string', () => {
+    const args = {
+      envOverride: '/custom/dist',
+      isPackaged: false,
+      resourcesPath: '/foo',
+      appPath: '/foo/cowork',
+    };
+    expect(resolveEnginePath(args)).toBe(resolveEnginePathWithDiagnostic(args).path);
   });
 });
 
