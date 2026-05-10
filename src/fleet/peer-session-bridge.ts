@@ -1,28 +1,47 @@
 /**
- * Peer chat-session bridge (Phase (d).20 / Fleet V1.2).
+ * Peer chat-session bridge (Phase (d).20 + d.22 / Fleet V1.2 + V1.2-saga).
  *
  * Registers `peer.chat-session.start`, `peer.chat-session.continue`,
  * and `peer.chat-session.end` on the peer-rpc registry. Adds multi-turn
  * conversational state to what `peer.chat` (d.15) and `peer.chat-stream`
  * (d.19) already do as one-shot stateless RPCs.
  *
- * State lives in-memory on the peer that hosts the LLM client — there
- * is no cross-restart durability in V1.2. The caller owns the session
- * lifecycle: open with `start`, append turns with `continue`, close
- * with `end`. Sessions also self-purge after an idle TTL (default
- * 30 min, override via `CODEBUDDY_PEER_SESSION_IDLE_MS`).
+ * State lives in-memory on the peer that hosts the LLM client AND is
+ * mirrored to disk via `peer-session-store.ts` (V1.2-saga). On boot
+ * `wirePeerSessionBridge()` re-hydrates sessions younger than the idle
+ * TTL so a restart doesn't drop callers' conversation history. The
+ * caller owns the lifecycle: open with `start`, append turns with
+ * `continue`, close with `end`. Sessions also self-purge after the
+ * configured idle TTL (default 30 min, override via
+ * `CODEBUDDY_PEER_SESSION_IDLE_MS`).
  *
  * Concurrent `continue` calls on the same session are serialised
  * FIFO so assistant messages don't interleave. Each call reads
  * `cachedGetter()` fresh, so swapping the wired client between turns
  * works the same way it does for `peer.chat`.
  *
+ * Each lifecycle event (`start` / `continue` success / `end`) also
+ * emits a `fleet:chat-session:*` broadcast so `/fleet listen`
+ * consumers and `/fleet history` see chat-session activity. Payloads
+ * are metadata only (sessionId, turnCount, usage) — never prompt
+ * content or assistant text — so a remote listener can monitor
+ * activity without sniffing conversations.
+ *
  * Idempotent (mirror of peer-chat-bridge): a second wire call is a no-op.
  */
 
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
+import {
+  broadcastChatSessionEnd,
+  broadcastChatSessionStart,
+  broadcastChatSessionTurn,
+} from '../server/websocket/fleet-bridge.js';
 import { logger } from '../utils/logger.js';
+import {
+  getPeerSessionStore,
+  type PersistedChatSession,
+} from './peer-session-store.js';
 
 /** Closure that returns the CodeBuddyClient to use, or null if none is wired. */
 export type PeerChatClientGetter = () => CodeBuddyClient | null;
@@ -71,14 +90,41 @@ function newSessionId(): string {
  * Opportunistic GC — drop sessions whose `lastUsedAt` is older than
  * the configured idle window. Called at the top of each `start` and
  * `continue` so we don't leak across long-running peers without
- * relying on a setInterval timer.
+ * relying on a setInterval timer. V1.2-saga: also purges the disk
+ * file and emits `fleet:chat-session:end` (reason='expired') for
+ * each session that gets dropped.
  */
-function purgeExpired(now: number, idleMs: number): void {
+async function purgeExpired(now: number, idleMs: number): Promise<void> {
+  const dropped: string[] = [];
   for (const [id, session] of sessions) {
     if (now - session.lastUsedAt > idleMs) {
       sessions.delete(id);
+      dropped.push(id);
     }
   }
+  for (const id of dropped) {
+    try {
+      await getPeerSessionStore().delete(id);
+    } catch (err) {
+      logger.warn('[peer-session-bridge] purgeExpired disk delete failed', {
+        sessionId: id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    broadcastChatSessionEnd({ sessionId: id, reason: 'expired' });
+  }
+}
+
+/** Build a {@link PersistedChatSession} snapshot from an in-memory session. */
+function snapshot(session: ChatSession): PersistedChatSession {
+  return {
+    sessionId: session.sessionId,
+    systemPrompt: session.systemPrompt,
+    model: session.model,
+    messages: [...session.messages],
+    createdAt: session.createdAt,
+    lastUsedAt: session.lastUsedAt,
+  };
 }
 
 /**
@@ -89,17 +135,49 @@ function purgeExpired(now: number, idleMs: number): void {
  * Idempotent — a second call is a no-op (does NOT replace the cached
  * getter; un-wire first if you need to swap).
  */
-export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
+export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Promise<void> {
   if (wired) {
     logger.debug('[peer-session-bridge] wire() called while already wired — no-op');
     return;
   }
   cachedGetter = getClient;
 
+  // V1.2-saga — replay sessions from disk that haven't idled out.
+  // Best-effort: if the store can't be read (perms, corrupt dir), we
+  // continue with an empty in-memory map rather than refusing to wire.
+  try {
+    const store = getPeerSessionStore();
+    const idleMs = getIdleMs();
+    const now = Date.now();
+    await store.purgeExpired(now, idleMs);
+    const persisted = await store.loadAll();
+    for (const p of persisted) {
+      if (now - p.lastUsedAt > idleMs) continue; // double-check vs the boundary
+      sessions.set(p.sessionId, {
+        sessionId: p.sessionId,
+        systemPrompt: p.systemPrompt,
+        model: p.model,
+        messages: [...p.messages],
+        createdAt: p.createdAt,
+        lastUsedAt: p.lastUsedAt,
+        pending: Promise.resolve(),
+      });
+    }
+    if (sessions.size > 0) {
+      logger.info(
+        `[peer-session-bridge] hydrated ${sessions.size} session(s) from disk`,
+      );
+    }
+  } catch (err) {
+    logger.warn('[peer-session-bridge] hydrate failed — continuing with empty state', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   registerPeerMethod('peer.chat-session.start', async (params, ctx) => {
     const idleMs = getIdleMs();
     const now = Date.now();
-    purgeExpired(now, idleMs);
+    await purgeExpired(now, idleMs);
 
     const systemPrompt =
       typeof params.systemPrompt === 'string' && params.systemPrompt.length > 0
@@ -109,7 +187,7 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
       typeof params.model === 'string' && params.model.length > 0 ? params.model : undefined;
 
     const sessionId = newSessionId();
-    sessions.set(sessionId, {
+    const session: ChatSession = {
       sessionId,
       systemPrompt,
       model,
@@ -117,7 +195,22 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
       createdAt: now,
       lastUsedAt: now,
       pending: Promise.resolve(),
-    });
+    };
+    sessions.set(sessionId, session);
+
+    // V1.2-saga — persist before returning so a crash right after the
+    // RPC response (when the caller starts pushing turns) still finds
+    // the record on disk. Failure logs but doesn't fail the RPC: the
+    // in-memory state is authoritative within this process.
+    try {
+      await getPeerSessionStore().save(snapshot(session));
+    } catch (err) {
+      logger.warn('[peer-session-bridge] save on start failed', {
+        sessionId,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+    broadcastChatSessionStart({ sessionId, model });
 
     return {
       sessionId,
@@ -138,7 +231,7 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
 
     const idleMs = getIdleMs();
     const now = Date.now();
-    purgeExpired(now, idleMs);
+    await purgeExpired(now, idleMs);
 
     const session = sessions.get(sessionId);
     if (!session) {
@@ -148,6 +241,12 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
       // Defensive — purgeExpired should already have evicted, but a
       // race between two callers could leave us here.
       sessions.delete(sessionId);
+      try {
+        await getPeerSessionStore().delete(sessionId);
+      } catch {
+        /* best-effort */
+      }
+      broadcastChatSessionEnd({ sessionId, reason: 'expired' });
       throw new Error(`SESSION_EXPIRED: session "${sessionId}" idled past ${idleMs}ms`);
     }
 
@@ -176,6 +275,7 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
         ? { model: session.model }
         : undefined;
 
+      const turnStartedAt = Date.now();
       let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
       try {
         response = await client.chat(requestMessages, undefined, chatOptions);
@@ -190,6 +290,30 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
       const text = response?.choices?.[0]?.message?.content ?? '';
       session.messages.push({ role: 'assistant', content: text });
       session.lastUsedAt = Date.now();
+
+      // V1.2-saga — flush the new turn to disk before returning so a
+      // crash mid-conversation can be replayed on next boot. Failure
+      // logs but doesn't fail the turn: the caller already got an
+      // answer; losing only the disk record is acceptable.
+      try {
+        await getPeerSessionStore().save(snapshot(session));
+      } catch (err) {
+        logger.warn('[peer-session-bridge] save on continue failed', {
+          sessionId: session.sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+
+      // turnCount = number of full user/assistant exchanges. messages
+      // alternates user/assistant so length / 2 (rounded down) is the
+      // count of completed exchanges.
+      const turnCount = Math.floor(session.messages.length / 2);
+      broadcastChatSessionTurn({
+        sessionId: session.sessionId,
+        turnCount,
+        elapsedMs: Date.now() - turnStartedAt,
+        usage: response?.usage,
+      });
 
       return {
         text,
@@ -212,6 +336,17 @@ export function wirePeerSessionBridge(getClient: PeerChatClientGetter): void {
       throw new Error('peer.chat-session.end: sessionId is required (string)');
     }
     const closed = sessions.delete(sessionId);
+    if (closed) {
+      try {
+        await getPeerSessionStore().delete(sessionId);
+      } catch (err) {
+        logger.warn('[peer-session-bridge] delete on end failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      broadcastChatSessionEnd({ sessionId, reason: 'end' });
+    }
     return { closed, traceId: ctx.traceId };
   });
 

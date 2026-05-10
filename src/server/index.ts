@@ -834,13 +834,13 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
         const factory = createPeerChatClientFromEnv();
         if (factory) {
           wirePeerChatBridge(() => factory.client, factory.info);
-          wirePeerSessionBridge(() => factory.client);
+          await wirePeerSessionBridge(() => factory.client);
           logger.info(
             `[fleet] peer.chat wired: ${factory.info.provider} (${factory.info.model}${factory.info.isLocal ? ', local' : ''})`,
           );
         } else {
           wirePeerChatBridge(() => null);
-          wirePeerSessionBridge(() => null);
+          await wirePeerSessionBridge(() => null);
           logger.info('[fleet] peer.chat wired without provider — set GOOGLE_API_KEY / GROK_API_KEY / ... or OLLAMA_HOST to activate');
         }
       } catch (err) {
@@ -848,7 +848,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
           error: err instanceof Error ? err.message : String(err),
         });
         wirePeerChatBridge(() => null);
-        wirePeerSessionBridge(() => null);
+        await wirePeerSessionBridge(() => null);
       }
     })().catch(() => { /* unhandled-rejection guard */ });
 

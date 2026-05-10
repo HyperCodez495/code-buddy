@@ -62,6 +62,13 @@ export const FLEET_EVENT_TYPES = [
   // queue up tasks during a 5-30s summarization window.
   'fleet:peer:compacting:start',
   'fleet:peer:compacting:complete',
+  // Phase d.22 / V1.2-saga — peer.chat-session.* lifecycle. Metadata
+  // only (sessionId, turnCount, usage, model) — never prompt/assistant
+  // content — so a /fleet listen consumer sees activity without being
+  // able to sniff conversation content.
+  'fleet:chat-session:start',
+  'fleet:chat-session:turn',
+  'fleet:chat-session:end',
 ] as const;
 
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];
@@ -179,4 +186,42 @@ export function broadcastCompactionComplete(
   } = {},
 ): void {
   broadcastFleetEvent('fleet:peer:compacting:complete', { ...payload });
+}
+
+/**
+ * V1.2-saga — emit a "chat session opened" notice. Called by
+ * peer-session-bridge when peer.chat-session.start succeeds. Metadata
+ * only — no system prompt, no model output.
+ */
+export function broadcastChatSessionStart(
+  payload: { sessionId: string; model?: string },
+): void {
+  broadcastFleetEvent('fleet:chat-session:start', { ...payload });
+}
+
+/**
+ * V1.2-saga — emit a "chat session turn completed" notice. Called by
+ * peer-session-bridge after each successful peer.chat-session.continue.
+ * Metadata only — no prompt, no assistant text.
+ */
+export function broadcastChatSessionTurn(
+  payload: {
+    sessionId: string;
+    turnCount: number;
+    elapsedMs?: number;
+    usage?: unknown;
+  },
+): void {
+  broadcastFleetEvent('fleet:chat-session:turn', { ...payload });
+}
+
+/**
+ * V1.2-saga — emit a "chat session closed" notice. Called by
+ * peer-session-bridge on peer.chat-session.end (or when GC purges an
+ * idle session).
+ */
+export function broadcastChatSessionEnd(
+  payload: { sessionId: string; reason?: 'end' | 'expired' },
+): void {
+  broadcastFleetEvent('fleet:chat-session:end', { ...payload });
 }

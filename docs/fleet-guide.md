@@ -579,15 +579,48 @@ Concurrent `continue` calls on the same sessionId are serialised FIFO
 (promise-chained per session) so assistant messages can't interleave
 on shared `messages` history. Different sessions run independently.
 
-#### Limitations (V1.2)
+#### Persistence (V1.2-saga, Phase d.22)
 
-- **In-memory only** — sessions are lost on peer restart. V1.2-saga
-  (optional follow-up) would back state with the saga store.
+Sessions persist to `~/.codebuddy/peer-sessions/<sessionId>.json` using
+the same lockfile + atomic-rename pattern as the saga store. On peer
+restart, sessions younger than `CODEBUDDY_PEER_SESSION_IDLE_MS` are
+re-hydrated before the RPC methods are registered, so the first
+incoming `peer.chat-session.continue` already sees the historic state.
+Older entries are purged at boot.
+
+Storage is local to the peer hosting the LLM client — there is no
+cross-host replication. Two `buddy server` processes sharing the same
+directory is not a supported topology.
+
+#### Observability — `fleet:chat-session:*` events
+
+Three events are emitted on the fleet bus during a chat session
+lifecycle, visible to `/fleet listen` consumers and recorded by
+`/fleet history`:
+
+- `fleet:chat-session:start` — payload `{ sessionId, model? }`
+- `fleet:chat-session:turn`  — payload `{ sessionId, turnCount, elapsedMs?, usage? }`
+- `fleet:chat-session:end`   — payload `{ sessionId, reason: 'end' | 'expired' }`
+
+**Privacy**: payloads carry **metadata only** — no prompt content, no
+assistant text, no system prompt. A remote `/fleet listen` consumer
+sees that a session is active and how many turns have been exchanged,
+but never the conversation itself. Useful for `/fleet status`-style
+monitoring without compromising conversation privacy.
+
+#### Limitations (V1.2-saga)
+
+- ~~**In-memory only**~~ — **persisted** as of V1.2-saga (Phase d.22).
+  Sessions survive peer restart up to the idle TTL.
 - **No tools** — call surface mirrors `peer.chat` / `/btw`. Exposing
   remote tools is V1.3 (`peer.tool.invoke`), gated behind a serious
   permission design.
 - **Caller-owned cleanup** — peers won't close sessions for you
   unless they idle out. Always `end` what you `start`.
+- **Single-process** — two `buddy server` processes sharing the same
+  `~/.codebuddy/peer-sessions/` directory is not supported.
+- **No content encryption at rest** — disk encryption is the user's
+  responsibility (same as the saga store).
 
 #### Errors
 

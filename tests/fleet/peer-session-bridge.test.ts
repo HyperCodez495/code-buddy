@@ -11,6 +11,9 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import * as fs from 'fs';
+import * as os from 'os';
+import * as path from 'path';
 import {
   dispatchPeerRequest,
   listPeerMethods,
@@ -22,6 +25,51 @@ import {
   isPeerSessionBridgeWired,
   wirePeerSessionBridge,
 } from '../../src/fleet/peer-session-bridge.js';
+import {
+  PeerSessionStore,
+  _setPeerSessionStoreForTests,
+  resetPeerSessionStore,
+} from '../../src/fleet/peer-session-store.js';
+
+// Each test gets its own tmpdir-backed store so disk effects stay
+// isolated and the real ~/.codebuddy/ is never touched.
+let storeTmpDir: string;
+
+beforeEach(() => {
+  storeTmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'peer-session-bridge-test-'));
+  _setPeerSessionStoreForTests(new PeerSessionStore({ storeDir: storeTmpDir }));
+});
+
+afterEach(() => {
+  resetPeerSessionStore();
+  try {
+    fs.rmSync(storeTmpDir, { recursive: true, force: true });
+  } catch {
+    /* ignore */
+  }
+});
+
+// Mock the fleet-bridge broadcast helpers so tests can assert on calls
+// without spinning up the WS server. Real broadcastFleetEvent silently
+// no-ops when no server is running, so without the mock we'd just be
+// asserting on undefined.
+vi.mock('../../src/server/websocket/fleet-bridge.js', () => ({
+  broadcastChatSessionStart: vi.fn(),
+  broadcastChatSessionTurn: vi.fn(),
+  broadcastChatSessionEnd: vi.fn(),
+}));
+
+import {
+  broadcastChatSessionEnd,
+  broadcastChatSessionStart,
+  broadcastChatSessionTurn,
+} from '../../src/server/websocket/fleet-bridge.js';
+
+beforeEach(() => {
+  vi.mocked(broadcastChatSessionStart).mockClear();
+  vi.mocked(broadcastChatSessionTurn).mockClear();
+  vi.mocked(broadcastChatSessionEnd).mockClear();
+});
 
 const baseCtx = (overrides: Partial<PeerMethodContext> = {}): PeerMethodContext => ({
   connectionId: 'test-conn',
@@ -81,9 +129,9 @@ describe('peer-session-bridge — wiring', () => {
     _unwireForTests();
   });
 
-  it('registers all 3 peer.chat-session.* methods when wired', () => {
+  it('registers all 3 peer.chat-session.* methods when wired', async () => {
     expect(isPeerSessionBridgeWired()).toBe(false);
-    wirePeerSessionBridge(() => null);
+    await wirePeerSessionBridge(() => null);
     expect(isPeerSessionBridgeWired()).toBe(true);
     const methods = listPeerMethods();
     expect(methods).toContain('peer.chat-session.start');
@@ -91,11 +139,11 @@ describe('peer-session-bridge — wiring', () => {
     expect(methods).toContain('peer.chat-session.end');
   });
 
-  it('second wire call is a no-op (idempotent)', () => {
+  it('second wire call is a no-op (idempotent)', async () => {
     const a = makeClient();
     const b = makeClient();
-    wirePeerSessionBridge(() => a.client as never);
-    wirePeerSessionBridge(() => b.client as never);
+    await wirePeerSessionBridge(() => a.client as never);
+    await wirePeerSessionBridge(() => b.client as never);
     expect(isPeerSessionBridgeWired()).toBe(true);
   });
 });
@@ -105,7 +153,7 @@ describe('peer.chat-session.start', () => {
   afterEach(() => _unwireForTests());
 
   it('returns a sessionId matching /^sess_/ and expiresAt in the future', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const before = Date.now();
     const response = await dispatch('peer.chat-session.start', {});
     expect(response.ok).toBe(true);
@@ -115,7 +163,7 @@ describe('peer.chat-session.start', () => {
   });
 
   it('echoes traceId in the response payload', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const response = await dispatch('peer.chat-session.start', {}, { traceId: 'trace-xyz' });
     expect(response.ok).toBe(true);
     const payload = response.payload as { traceId: string };
@@ -125,7 +173,7 @@ describe('peer.chat-session.start', () => {
   it('GC purges idle sessions on the next start', async () => {
     process.env.CODEBUDDY_PEER_SESSION_IDLE_MS = '50';
     try {
-      wirePeerSessionBridge(() => makeClient().client as never);
+      await wirePeerSessionBridge(() => makeClient().client as never);
       const r1 = await dispatch('peer.chat-session.start', {});
       const session1 = (r1.payload as { sessionId: string }).sessionId;
       expect(_listSessionsForTests().some((s) => s.sessionId === session1)).toBe(true);
@@ -149,7 +197,7 @@ describe('peer.chat-session.continue', () => {
 
   it('happy path — accumulates history across two turns', async () => {
     const { client, calls } = makeClient(['Bonjour Patrice', 'Bien sûr, voici le code']);
-    wirePeerSessionBridge(() => client as never);
+    await wirePeerSessionBridge(() => client as never);
 
     const startRes = await dispatch('peer.chat-session.start', { systemPrompt: 'Tu es un assistant FR' });
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
@@ -174,7 +222,7 @@ describe('peer.chat-session.continue', () => {
 
   it('uses the default system prompt when none is provided at start', async () => {
     const { client, calls } = makeClient();
-    wirePeerSessionBridge(() => client as never);
+    await wirePeerSessionBridge(() => client as never);
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
     await dispatch('peer.chat-session.continue', { sessionId, prompt: 'q' });
@@ -185,7 +233,7 @@ describe('peer.chat-session.continue', () => {
 
   it('passes the model option to client.chat on every continue', async () => {
     const { client, calls } = makeClient();
-    wirePeerSessionBridge(() => client as never);
+    await wirePeerSessionBridge(() => client as never);
     const startRes = await dispatch('peer.chat-session.start', { model: 'qwen2.5-coder:7b' });
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
     await dispatch('peer.chat-session.continue', { sessionId, prompt: 'a' });
@@ -195,7 +243,7 @@ describe('peer.chat-session.continue', () => {
   });
 
   it('returns SESSION_NOT_FOUND when sessionId is unknown', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const response = await dispatch('peer.chat-session.continue', {
       sessionId: 'sess_does_not_exist',
       prompt: 'hi',
@@ -207,7 +255,7 @@ describe('peer.chat-session.continue', () => {
   it('returns SESSION_EXPIRED and purges the entry when idle window elapsed', async () => {
     process.env.CODEBUDDY_PEER_SESSION_IDLE_MS = '50';
     try {
-      wirePeerSessionBridge(() => makeClient().client as never);
+      await wirePeerSessionBridge(() => makeClient().client as never);
       const startRes = await dispatch('peer.chat-session.start', {});
       const sessionId = (startRes.payload as { sessionId: string }).sessionId;
 
@@ -225,7 +273,7 @@ describe('peer.chat-session.continue', () => {
   });
 
   it('returns CLIENT_UNAVAILABLE when no client is wired', async () => {
-    wirePeerSessionBridge(() => null);
+    await wirePeerSessionBridge(() => null);
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
     const response = await dispatch('peer.chat-session.continue', { sessionId, prompt: 'hi' });
@@ -234,7 +282,7 @@ describe('peer.chat-session.continue', () => {
   });
 
   it('rejects missing sessionId or prompt', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const r1 = await dispatch('peer.chat-session.continue', { prompt: 'hi' });
     expect(r1.ok).toBe(false);
     expect(r1.error?.message).toContain('sessionId is required');
@@ -266,7 +314,7 @@ describe('peer.chat-session.continue', () => {
         });
       },
     };
-    wirePeerSessionBridge(() => slowClient as never);
+    await wirePeerSessionBridge(() => slowClient as never);
 
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
@@ -309,7 +357,7 @@ describe('peer.chat-session.continue', () => {
         };
       }),
     };
-    wirePeerSessionBridge(() => client as never);
+    await wirePeerSessionBridge(() => client as never);
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
 
@@ -328,7 +376,7 @@ describe('peer.chat-session.continue', () => {
   });
 
   it('echoes traceId in continue responses', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
     const response = await dispatch(
@@ -346,7 +394,7 @@ describe('peer.chat-session.end', () => {
   afterEach(() => _unwireForTests());
 
   it('returns { closed: true } the first time, { closed: false } the second', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const startRes = await dispatch('peer.chat-session.start', {});
     const sessionId = (startRes.payload as { sessionId: string }).sessionId;
 
@@ -360,9 +408,219 @@ describe('peer.chat-session.end', () => {
   });
 
   it('rejects missing sessionId', async () => {
-    wirePeerSessionBridge(() => makeClient().client as never);
+    await wirePeerSessionBridge(() => makeClient().client as never);
     const response = await dispatch('peer.chat-session.end', {});
     expect(response.ok).toBe(false);
     expect(response.error?.message).toContain('sessionId is required');
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// V1.2-saga / Phase d.22 — durabilité + observabilité
+// ──────────────────────────────────────────────────────────────────
+
+describe('V1.2-saga — disk persistence', () => {
+  beforeEach(() => _unwireForTests());
+  afterEach(() => _unwireForTests());
+
+  it('start writes a session file to disk', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const startRes = await dispatch('peer.chat-session.start', {
+      systemPrompt: 'persist me',
+      model: 'qwen3:4b',
+    });
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+
+    const file = path.join(storeTmpDir, `${sessionId}.json`);
+    expect(fs.existsSync(file)).toBe(true);
+    const record = JSON.parse(fs.readFileSync(file, 'utf-8'));
+    expect(record.sessionId).toBe(sessionId);
+    expect(record.systemPrompt).toBe('persist me');
+    expect(record.model).toBe('qwen3:4b');
+    expect(record.messages).toEqual([]);
+  });
+
+  it('continue updates the disk file with the new turn', async () => {
+    const { client } = makeClient(['A1', 'A2']);
+    await wirePeerSessionBridge(() => client as never);
+    const startRes = await dispatch('peer.chat-session.start', {});
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+
+    await dispatch('peer.chat-session.continue', { sessionId, prompt: 'q1' });
+    let record = JSON.parse(fs.readFileSync(path.join(storeTmpDir, `${sessionId}.json`), 'utf-8'));
+    expect(record.messages).toHaveLength(2);
+
+    await dispatch('peer.chat-session.continue', { sessionId, prompt: 'q2' });
+    record = JSON.parse(fs.readFileSync(path.join(storeTmpDir, `${sessionId}.json`), 'utf-8'));
+    expect(record.messages).toHaveLength(4);
+    expect(record.messages.map((m: { content: string }) => m.content)).toEqual(['q1', 'A1', 'q2', 'A2']);
+  });
+
+  it('end deletes the disk file', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const startRes = await dispatch('peer.chat-session.start', {});
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+    const file = path.join(storeTmpDir, `${sessionId}.json`);
+    expect(fs.existsSync(file)).toBe(true);
+    await dispatch('peer.chat-session.end', { sessionId });
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('hydrates fresh sessions from disk at wire time, drops expired ones', async () => {
+    // Pre-populate the disk-backed store with a fresh + an expired session.
+    process.env.CODEBUDDY_PEER_SESSION_IDLE_MS = '100';
+    try {
+      const now = Date.now();
+      const fresh = {
+        sessionId: 'sess_fresh',
+        systemPrompt: 'sys',
+        model: 'qwen3:4b',
+        messages: [
+          { role: 'user' as const, content: 'q1' },
+          { role: 'assistant' as const, content: 'a1' },
+        ],
+        createdAt: now - 50,
+        lastUsedAt: now - 50,
+      };
+      const stale = {
+        ...fresh,
+        sessionId: 'sess_stale',
+        lastUsedAt: now - 10_000,
+      };
+      fs.writeFileSync(path.join(storeTmpDir, 'sess_fresh.json'), JSON.stringify(fresh));
+      fs.writeFileSync(path.join(storeTmpDir, 'sess_stale.json'), JSON.stringify(stale));
+
+      await wirePeerSessionBridge(() => makeClient().client as never);
+
+      const live = _listSessionsForTests().map((s) => s.sessionId);
+      expect(live).toContain('sess_fresh');
+      expect(live).not.toContain('sess_stale');
+
+      // The stale one should have been purged from disk too.
+      expect(fs.existsSync(path.join(storeTmpDir, 'sess_stale.json'))).toBe(false);
+    } finally {
+      delete process.env.CODEBUDDY_PEER_SESSION_IDLE_MS;
+    }
+  });
+
+  it('hydrated session can immediately accept a continue (history replayed)', async () => {
+    const now = Date.now();
+    fs.writeFileSync(
+      path.join(storeTmpDir, 'sess_replay.json'),
+      JSON.stringify({
+        sessionId: 'sess_replay',
+        systemPrompt: 'system',
+        model: undefined,
+        messages: [
+          { role: 'user', content: 'historic q' },
+          { role: 'assistant', content: 'historic a' },
+        ],
+        createdAt: now,
+        lastUsedAt: now,
+      }),
+    );
+
+    const { client, calls } = makeClient(['follow up answer']);
+    await wirePeerSessionBridge(() => client as never);
+
+    const r = await dispatch('peer.chat-session.continue', {
+      sessionId: 'sess_replay',
+      prompt: 'follow up q',
+    });
+    expect(r.ok).toBe(true);
+
+    // The LLM saw system + 2 historic + 1 new user = 4 messages.
+    expect(calls).toHaveLength(1);
+    const sentMessages = calls[0].messages as Array<{ role: string; content: string }>;
+    expect(sentMessages).toHaveLength(4);
+    expect(sentMessages[0].role).toBe('system');
+    expect(sentMessages[1].content).toBe('historic q');
+    expect(sentMessages[2].content).toBe('historic a');
+    expect(sentMessages[3].content).toBe('follow up q');
+  });
+});
+
+describe('V1.2-saga — observability events', () => {
+  beforeEach(() => _unwireForTests());
+  afterEach(() => _unwireForTests());
+
+  it('emits fleet:chat-session:start on start', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const r = await dispatch('peer.chat-session.start', { model: 'qwen3:4b' });
+    const sessionId = (r.payload as { sessionId: string }).sessionId;
+    expect(broadcastChatSessionStart).toHaveBeenCalledTimes(1);
+    expect(broadcastChatSessionStart).toHaveBeenCalledWith({
+      sessionId,
+      model: 'qwen3:4b',
+    });
+  });
+
+  it('emits fleet:chat-session:turn on each successful continue', async () => {
+    await wirePeerSessionBridge(() => makeClient(['A1', 'A2']).client as never);
+    const startRes = await dispatch('peer.chat-session.start', {});
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+
+    await dispatch('peer.chat-session.continue', { sessionId, prompt: 'q1' });
+    await dispatch('peer.chat-session.continue', { sessionId, prompt: 'q2' });
+
+    expect(broadcastChatSessionTurn).toHaveBeenCalledTimes(2);
+    const firstCall = vi.mocked(broadcastChatSessionTurn).mock.calls[0][0];
+    expect(firstCall.sessionId).toBe(sessionId);
+    expect(firstCall.turnCount).toBe(1);
+    expect(typeof firstCall.elapsedMs).toBe('number');
+
+    const secondCall = vi.mocked(broadcastChatSessionTurn).mock.calls[1][0];
+    expect(secondCall.turnCount).toBe(2);
+  });
+
+  it('emits fleet:chat-session:end with reason="end" on explicit close', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const startRes = await dispatch('peer.chat-session.start', {});
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+
+    await dispatch('peer.chat-session.end', { sessionId });
+    expect(broadcastChatSessionEnd).toHaveBeenCalledWith({ sessionId, reason: 'end' });
+  });
+
+  it('emits fleet:chat-session:end with reason="expired" when GC purges', async () => {
+    process.env.CODEBUDDY_PEER_SESSION_IDLE_MS = '50';
+    try {
+      await wirePeerSessionBridge(() => makeClient().client as never);
+      const startRes = await dispatch('peer.chat-session.start', {});
+      const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      vi.mocked(broadcastChatSessionEnd).mockClear();
+
+      // Trigger GC by starting a new session.
+      await dispatch('peer.chat-session.start', {});
+
+      expect(broadcastChatSessionEnd).toHaveBeenCalledWith({ sessionId, reason: 'expired' });
+    } finally {
+      delete process.env.CODEBUDDY_PEER_SESSION_IDLE_MS;
+    }
+  });
+
+  it('does NOT emit content (prompt / text / messages) in any payload', async () => {
+    await wirePeerSessionBridge(() => makeClient(['secret answer']).client as never);
+    const startRes = await dispatch('peer.chat-session.start', {
+      systemPrompt: 'private system prompt',
+    });
+    const sessionId = (startRes.payload as { sessionId: string }).sessionId;
+    await dispatch('peer.chat-session.continue', { sessionId, prompt: 'secret question' });
+    await dispatch('peer.chat-session.end', { sessionId });
+
+    const allPayloads = [
+      ...vi.mocked(broadcastChatSessionStart).mock.calls.map((c) => c[0]),
+      ...vi.mocked(broadcastChatSessionTurn).mock.calls.map((c) => c[0]),
+      ...vi.mocked(broadcastChatSessionEnd).mock.calls.map((c) => c[0]),
+    ];
+    const blob = JSON.stringify(allPayloads);
+    expect(blob).not.toContain('secret answer');
+    expect(blob).not.toContain('secret question');
+    expect(blob).not.toContain('private system prompt');
+    expect(blob).not.toMatch(/\bprompt\b/);
+    expect(blob).not.toMatch(/\bmessages\b/);
+    expect(blob).not.toMatch(/\bcontent\b/);
   });
 });

@@ -57,6 +57,41 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     LOC for the new sub-action + state). 18 unit tests in
     `tests/fleet/fleet-chat-helper.test.ts`.
 
+### Added — Fleet V1.2-saga + observability (Phase d.22)
+
+- **Cross-restart session durability** — `peer.chat-session.*` state
+  now persists to `~/.codebuddy/peer-sessions/<sessionId>.json` using
+  the same lockfile + atomic-rename pattern as the saga store. On
+  peer restart, sessions younger than `CODEBUDDY_PEER_SESSION_IDLE_MS`
+  are re-hydrated before the RPC methods are registered; older
+  entries are purged. Closes the V1.2 limitation explicitly deferred
+  in the previous release.
+  - New module `src/fleet/peer-session-store.ts` (~180 LOC) with
+    `save / load / loadAll / delete / purgeExpired` and a
+    test-injectable singleton (`_setPeerSessionStoreForTests`).
+  - 14 unit tests in `tests/fleet/peer-session-store.test.ts`
+    (round-trip, atomic write, corrupt-file resilience, TTL purge).
+  - `wirePeerSessionBridge` is now `async`; the boot path in
+    `src/server/index.ts` was updated accordingly.
+- **`fleet:chat-session:*` observability events** — start / turn / end
+  emitted on the fleet bus so `/fleet listen` consumers and
+  `/fleet history` see chat-session activity.
+  - `fleet:chat-session:start` carries `{ sessionId, model? }`.
+  - `fleet:chat-session:turn` carries `{ sessionId, turnCount,
+    elapsedMs, usage }`.
+  - `fleet:chat-session:end` carries `{ sessionId, reason: 'end' |
+    'expired' }` (so listeners distinguish explicit close vs TTL
+    purge).
+  - **Privacy guard**: payloads are metadata only — no prompt content,
+    no assistant text, no system prompt. A unit test scans the
+    aggregated payload blob for the words `prompt` / `messages` /
+    `content` and the actual conversation strings to enforce this.
+  - 3 new event types + wrappers in
+    `src/server/websocket/fleet-bridge.ts`.
+- 10 new unit tests in `tests/fleet/peer-session-bridge.test.ts`
+  (hydrate at wire, persist on start/continue/end, history replay
+  after restart, all 4 event paths, privacy assertion).
+
 ---
 
 ## [1.0.0-rc.8] — 2026-05-09 (afternoon)
