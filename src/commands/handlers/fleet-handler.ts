@@ -65,7 +65,11 @@ Actions:
                                       to each peer (in parallel, 5s timeout) and
                                       prints the open chat sessions per peer.
   history [N] [--peer <name>]         Show last N fleet:* events from one
-                                      peer (default 20, caps at ring size).
+            [--type <glob>] [--json]   peer (default 20, caps at ring size).
+                                      --type filters by event-type glob
+                                      (e.g. "fleet:agent:tool*"). --json
+                                      emits raw event records as JSON
+                                      for pipe-to-jq workflows.
   send <peer> <method> [json-params]  (Phase (d).13) Invoke a peer RPC
             [--timeout <ms>]          method synchronously and print the
                                       response. Method names are dotted,
@@ -131,6 +135,10 @@ interface ParsedStopArgs {
 interface ParsedHistoryArgs {
   count: number | null;
   peer: string | null;
+  /** Glob-ish filter on event `type` (e.g. `fleet:agent:tool*`). */
+  type: string | null;
+  /** `true` when `--json` was passed — render as JSON array instead of text. */
+  json: boolean;
 }
 
 /**
@@ -250,17 +258,36 @@ function parseStopArgs(rest: string[]): ParsedStopArgs {
 function parseHistoryArgs(rest: string[]): ParsedHistoryArgs {
   let count: number | null = null;
   let peer: string | null = null;
+  let type: string | null = null;
+  let json = false;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
     if (arg === '--peer' && i + 1 < rest.length) {
       peer = rest[i + 1];
       i++;
+    } else if (arg === '--type' && i + 1 < rest.length) {
+      type = rest[i + 1];
+      i++;
+    } else if (arg === '--json') {
+      json = true;
     } else if (count === null && !arg.startsWith('--')) {
       const n = parseInt(arg, 10);
       if (Number.isFinite(n) && n > 0) count = n;
     }
   }
-  return { count, peer };
+  return { count, peer, type, json };
+}
+
+/**
+ * Compile a glob-ish event-type filter (e.g. `fleet:agent:tool*`) to
+ * a RegExp. Only `*` is special — everything else is escaped. `*`
+ * matches any run of non-empty characters except newline, which is
+ * what users expect from a CLI glob.
+ */
+function compileTypeFilter(pattern: string): RegExp {
+  const escaped = pattern.replace(/[.+?^${}()|[\]\\]/g, '\\$&');
+  const regex = escaped.replace(/\*/g, '.*');
+  return new RegExp('^' + regex + '$');
 }
 
 /**
@@ -899,7 +926,7 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
     if (getFleetRegistry().size() === 0) {
       return textResult('No fleet listeners active.\n\n' + HELP);
     }
-    const { count, peer: peerName } = parseHistoryArgs(rest);
+    const { count, peer: peerName, type: typeFilter, json } = parseHistoryArgs(rest);
     const n = count ?? HISTORY_DEFAULT_COUNT;
 
     let target: ActiveListener | null = null;
@@ -920,13 +947,45 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
       }
     }
 
-    const history = target.listener.getEventHistory();
+    let history = target.listener.getEventHistory();
+    if (typeFilter) {
+      let re: RegExp;
+      try {
+        re = compileTypeFilter(typeFilter);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        return textResult(`Invalid --type pattern "${typeFilter}": ${msg}`);
+      }
+      history = history.filter((rec) => re.test(rec.type));
+    }
     if (history.length === 0) {
-      return textResult(`No fleet events recorded yet for "${target.id}".`);
+      if (json) return textResult('[]');
+      const noteSuffix = typeFilter ? ` matching "${typeFilter}"` : '';
+      return textResult(`No fleet events recorded yet for "${target.id}"${noteSuffix}.`);
     }
     const slice = history.slice(Math.max(0, history.length - n));
+
+    if (json) {
+      // JSON output: emit each event verbatim, augmented with the
+      // peer id so consumers can pipe multiple peers' history into
+      // jq without losing context.
+      const targetId = target.id;
+      const payload = slice.map((rec) => ({
+        peer: targetId,
+        at: rec.at,
+        type: rec.type,
+        hostname: rec.hostname ?? null,
+        agentId: rec.agentId ?? null,
+        payload: rec.payload ?? null,
+      }));
+      return textResult(JSON.stringify(payload, null, 2));
+    }
+
     const lines: string[] = [];
-    lines.push(`Fleet event history for "${target.id}" — last ${slice.length} of ${history.length}`);
+    const filterNote = typeFilter ? ` (filter: "${typeFilter}")` : '';
+    lines.push(
+      `Fleet event history for "${target.id}" — last ${slice.length} of ${history.length}${filterNote}`,
+    );
     for (const rec of slice) {
       lines.push(
         `  [${formatHistoryTime(rec.at)}] ${rec.type}${formatHistorySource(rec)} ${summarizeHistoryPayload(rec.type, rec.payload)}`,

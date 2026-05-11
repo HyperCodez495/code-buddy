@@ -57,6 +57,24 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     LOC for the new sub-action + state). 18 unit tests in
     `tests/fleet/fleet-chat-helper.test.ts`.
 
+### Added — /fleet history --type + --json
+
+- **`--type <glob>`** — filter the rendered history by event-type
+  pattern (e.g. `fleet:agent:tool*` or `fleet:peer:*`). The glob
+  supports `*` only; everything else is escaped, so it's safe with
+  literal `:` in event names. The filter operates on the in-memory
+  ring after the size cap so older filtered-out events don't get
+  hidden.
+- **`--json`** — emit the rendered slice as a JSON array (one object
+  per event with `peer`, `at`, `type`, `hostname`, `agentId`,
+  `payload`). Lets `/fleet history --json | jq` workflows feed into
+  external tooling. Empty result becomes `[]` (no header), which is
+  what jq users expect.
+- Both flags combine cleanly. New `compileTypeFilter()` helper in
+  `src/commands/handlers/fleet-handler.ts` converts the glob to a
+  RegExp anchored at both ends. 5 new tests in
+  `tests/fleet/fleet-handler.test.ts`.
+
 ### Added — /fleet status --with-sessions
 
 - New flag on `/fleet status` that fans out `peer.chat-session.list`

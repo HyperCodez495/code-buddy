@@ -408,6 +408,81 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       const r = await handleFleet(['history']);
       expect(r.entry?.content).toContain('(compacted: hybrid 1234ms)');
     });
+
+    // V1.2.x — /fleet history --type <glob> + --json
+
+    it('filters history with --type glob (only tool_* events kept)', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const t0 = Date.now();
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        { at: t0, type: 'fleet:agent:tool_started', payload: { tool: 'view_file' } },
+        { at: t0 + 1, type: 'fleet:peer:heartbeat', payload: {} },
+        { at: t0 + 2, type: 'fleet:agent:tool_completed', payload: { tool: 'view_file' } },
+        { at: t0 + 3, type: 'fleet:workflow:start', payload: { workflowId: 'w1' } },
+      ]);
+      const r = await handleFleet(['history', '--type', 'fleet:agent:tool*']);
+      const out = r.entry?.content ?? '';
+      expect(out).toContain('last 2 of 2');
+      expect(out).toContain('(filter: "fleet:agent:tool*")');
+      expect(out).toContain('fleet:agent:tool_started');
+      expect(out).toContain('fleet:agent:tool_completed');
+      expect(out).not.toContain('heartbeat');
+      expect(out).not.toContain('workflow:start');
+    });
+
+    it('says "matching ..." when --type yields zero results', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        { at: Date.now(), type: 'fleet:peer:heartbeat', payload: {} },
+      ]);
+      const r = await handleFleet(['history', '--type', 'fleet:agent:*']);
+      expect(r.entry?.content).toContain('matching "fleet:agent:*"');
+    });
+
+    it('--json emits a JSON array of event records with peer id annotation', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const t0 = 1_700_000_000_000;
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        {
+          at: t0,
+          type: 'fleet:agent:tool_started',
+          payload: { tool: 'view_file' },
+          hostname: 'darkstar',
+          agentId: 'abc',
+        },
+      ]);
+      const r = await handleFleet(['history', '--json']);
+      const parsed = JSON.parse(r.entry?.content ?? '[]');
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0]).toMatchObject({
+        peer: 'peer:3000',
+        at: t0,
+        type: 'fleet:agent:tool_started',
+        hostname: 'darkstar',
+        agentId: 'abc',
+      });
+      expect(parsed[0].payload.tool).toBe('view_file');
+    });
+
+    it('--json with no events returns the empty array', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([]);
+      const r = await handleFleet(['history', '--json']);
+      expect(r.entry?.content).toBe('[]');
+    });
+
+    it('combines --type and --json', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      const t0 = Date.now();
+      fleetListenerMock.getEventHistoryMock.mockReturnValueOnce([
+        { at: t0, type: 'fleet:agent:tool_started', payload: { tool: 'a' } },
+        { at: t0 + 1, type: 'fleet:peer:heartbeat', payload: {} },
+      ]);
+      const r = await handleFleet(['history', '--type', 'fleet:agent:*', '--json']);
+      const parsed = JSON.parse(r.entry?.content ?? '[]');
+      expect(parsed).toHaveLength(1);
+      expect(parsed[0].type).toBe('fleet:agent:tool_started');
+    });
   });
 
   describe('stop action', () => {
