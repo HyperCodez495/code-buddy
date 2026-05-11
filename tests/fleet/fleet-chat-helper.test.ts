@@ -317,3 +317,89 @@ describe('/fleet stop auto-cleanup', () => {
     expect(content(result)).toContain('Dropped 2 chat session(s)');
   });
 });
+
+describe('/fleet status --with-sessions', () => {
+  it('without --with-sessions flag, behaves as before (no session lines)', async () => {
+    registerPeer('ministar-linux', vi.fn(async () => ({})));
+    const result = await handleFleet(['status']);
+    expect(content(result)).toContain('Fleet listeners — 1 active');
+    expect(content(result)).not.toContain('Chat sessions');
+  });
+
+  it('with --with-sessions, fans out peer.chat-session.list and prints results', async () => {
+    const request = vi.fn(async (method: string) => {
+      if (method === 'peer.chat-session.list') {
+        return {
+          count: 2,
+          sessions: [
+            { sessionId: 'sess_a1b2c3', turnCount: 3, model: 'qwen3:4b', ageMs: 5_000, idleMs: 2_000, expiresInMs: 1_798_000 },
+            { sessionId: 'sess_d4e5f6', turnCount: 1, model: undefined, ageMs: 1_000, idleMs: 500, expiresInMs: 1_799_500 },
+          ],
+        };
+      }
+      throw new Error(`unexpected method ${method}`);
+    });
+    registerPeer('ministar-linux', request);
+
+    const result = await handleFleet(['status', '--with-sessions']);
+    expect(content(result)).toContain('Chat sessions (2)');
+    expect(content(result)).toContain('sess_a1b2c3');
+    expect(content(result)).toContain('turn 3');
+    expect(content(result)).toContain('model qwen3:4b');
+    expect(content(result)).toContain('sess_d4e5f6');
+    expect(content(result)).toContain('default model');
+    expect(request).toHaveBeenCalledWith('peer.chat-session.list', {}, { timeoutMs: 5_000 });
+  });
+
+  it('reports (none open) when a peer has zero sessions', async () => {
+    registerPeer(
+      'ministar-linux',
+      vi.fn(async (method) => {
+        if (method === 'peer.chat-session.list') return { count: 0, sessions: [] };
+        return {};
+      }),
+    );
+    const result = await handleFleet(['status', '--with-sessions']);
+    expect(content(result)).toContain('Chat sessions: (none open on this peer)');
+  });
+
+  it('shows (unreachable) when peer.chat-session.list fails', async () => {
+    registerPeer(
+      'ministar-linux',
+      vi.fn(async () => {
+        throw new Error('REQUEST_TIMEOUT after 5000ms');
+      }),
+    );
+    const result = await handleFleet(['status', '--with-sessions']);
+    expect(content(result)).toContain('Chat sessions: (unreachable');
+    expect(content(result)).toContain('REQUEST_TIMEOUT');
+  });
+
+  it('fans out in parallel — slow peer does not block fast peer', async () => {
+    const slowDone = vi.fn();
+    registerPeer(
+      'slow',
+      vi.fn(async (method) => {
+        if (method === 'peer.chat-session.list') {
+          await new Promise((resolve) => setTimeout(resolve, 60));
+          slowDone();
+          return { count: 0, sessions: [] };
+        }
+        return {};
+      }),
+    );
+    registerPeer(
+      'fast',
+      vi.fn(async (method) => {
+        if (method === 'peer.chat-session.list') return { count: 0, sessions: [] };
+        return {};
+      }),
+    );
+    const t0 = Date.now();
+    await handleFleet(['status', '--with-sessions']);
+    const elapsed = Date.now() - t0;
+    // Total should be near 60ms (slow peer), not 120ms (serial).
+    expect(elapsed).toBeLessThan(120);
+    expect(slowDone).toHaveBeenCalled();
+  });
+});

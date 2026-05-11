@@ -57,6 +57,23 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     LOC for the new sub-action + state). 18 unit tests in
     `tests/fleet/fleet-chat-helper.test.ts`.
 
+### Added — /fleet status --with-sessions
+
+- New flag on `/fleet status` that fans out `peer.chat-session.list`
+  to every connected peer in parallel (5 s timeout each) and prints
+  the open sessions inline under each peer block. Slow peers don't
+  serialise the command — total elapsed ≈ max(per-peer latency), not
+  sum.
+- Output per peer block adds either `Chat sessions (N):` with one
+  line per session (sessionId, turn count, idle, model), `Chat
+  sessions: (none open on this peer)`, or `Chat sessions:
+  (unreachable — <error>)` when the RPC failed (timeout, peer dropped
+  the method, etc.).
+- 5 new tests in `tests/fleet/fleet-chat-helper.test.ts` covering
+  baseline `/fleet status` unchanged, populated session list, empty
+  list, unreachable peer, and parallelism (slow + fast peer total
+  near max not sum).
+
 ### Added — Fleet peer.chat-session.list
 
 - **Read-only snapshot RPC** — `peer.chat-session.list` returns the

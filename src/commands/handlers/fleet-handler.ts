@@ -60,7 +60,10 @@ Actions:
                                       (default 5; with --auto-reconnect).
   stop [name|--all]                   Disconnect a peer (or all). Defaults
                                       to the only active listener when one.
-  status                              Show all connected peers + their state.
+  status [--with-sessions]            Show all connected peers + their state.
+                                      --with-sessions fans out peer.chat-session.list
+                                      to each peer (in parallel, 5s timeout) and
+                                      prints the open chat sessions per peer.
   history [N] [--peer <name>]         Show last N fleet:* events from one
                                       peer (default 20, caps at ring size).
   send <peer> <method> [json-params]  (Phase (d).13) Invoke a peer RPC
@@ -332,6 +335,17 @@ function pickDefaultPeer(): ActiveListener | null {
  * sessionId is opaque (`sess_…`) and gets re-quoted in every continue;
  * we keep a user-friendly alias on top so people don't have to copy it.
  */
+/** Shape of one entry returned by peer.chat-session.list on the wire.
+ *  Metadata only — never includes prompt/assistant content. */
+interface ChatSessionSummary {
+  sessionId: string;
+  turnCount: number;
+  model?: string;
+  ageMs: number;
+  idleMs: number;
+  expiresInMs: number;
+}
+
 interface ChatSessionRef {
   alias: string;
   peerName: string;
@@ -673,11 +687,54 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
     if (getFleetRegistry().size() === 0) {
       return textResult('No fleet listeners active.\n\n' + HELP);
     }
+    const withSessions = rest.includes('--with-sessions');
     const blocks: string[] = [];
     blocks.push(`Fleet listeners — ${getFleetRegistry().size()} active`);
     blocks.push('');
+
+    // When --with-sessions, fetch peer.chat-session.list from each peer
+    // in parallel so the slowest peer doesn't serialise the whole
+    // status command. Best-effort: a failing peer just gets a short
+    // "(unreachable)" note instead of a session list.
+    const sessionsByPeer = new Map<string, ChatSessionSummary[] | { error: string }>();
+    if (withSessions) {
+      await Promise.all(
+        getFleetRegistry().list().map(async (peer) => {
+          try {
+            const result = await peer.listener.request(
+              'peer.chat-session.list',
+              {},
+              { timeoutMs: 5_000 },
+            );
+            const payload = result as { sessions?: ChatSessionSummary[] };
+            sessionsByPeer.set(peer.id, payload?.sessions ?? []);
+          } catch (err) {
+            const message = err instanceof Error ? err.message : String(err);
+            sessionsByPeer.set(peer.id, { error: message });
+          }
+        }),
+      );
+    }
+
     for (const peer of getFleetRegistry().list()) {
       blocks.push(formatPeerStatus(peer));
+      if (withSessions) {
+        const entry = sessionsByPeer.get(peer.id);
+        if (entry && 'error' in entry) {
+          blocks.push(`  Chat sessions: (unreachable — ${entry.error})`);
+        } else if (entry && entry.length > 0) {
+          blocks.push(`  Chat sessions (${entry.length}):`);
+          for (const s of entry) {
+            const modelTxt = s.model ? `model ${s.model}` : 'default model';
+            blocks.push(
+              `    ${s.sessionId.padEnd(22)} turn ${String(s.turnCount).padEnd(2)} ` +
+                `idle ${formatRelativeAge(s.idleMs)}  ${modelTxt}`,
+            );
+          }
+        } else {
+          blocks.push('  Chat sessions: (none open on this peer)');
+        }
+      }
       blocks.push('');
     }
     blocks.push('Stop a peer with /fleet stop <name>, or all with /fleet stop --all.');
