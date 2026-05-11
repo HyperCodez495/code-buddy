@@ -129,7 +129,7 @@ describe('peer-session-bridge — wiring', () => {
     _unwireForTests();
   });
 
-  it('registers all 4 peer.chat-session.* methods when wired', async () => {
+  it('registers all 5 peer.chat-session.* methods when wired', async () => {
     expect(isPeerSessionBridgeWired()).toBe(false);
     await wirePeerSessionBridge(() => null);
     expect(isPeerSessionBridgeWired()).toBe(true);
@@ -137,6 +137,7 @@ describe('peer-session-bridge — wiring', () => {
     expect(methods).toContain('peer.chat-session.start');
     expect(methods).toContain('peer.chat-session.continue');
     expect(methods).toContain('peer.chat-session.continue-stream');
+    expect(methods).toContain('peer.chat-session.list');
     expect(methods).toContain('peer.chat-session.end');
   });
 
@@ -863,5 +864,102 @@ describe('peer.chat-session.continue-stream', () => {
     // the model already said before the failure.
     const live = _listSessionsForTests().find((s) => s.sessionId === sessionId);
     expect(live?.messageCount).toBe(2);
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────
+// peer.chat-session.list — read-only snapshot (V1.2.x)
+// ──────────────────────────────────────────────────────────────────
+
+describe('peer.chat-session.list', () => {
+  beforeEach(() => _unwireForTests());
+  afterEach(() => _unwireForTests());
+
+  it('returns count=0 + empty array when no sessions are open', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const r = await dispatch('peer.chat-session.list', {});
+    expect(r.ok).toBe(true);
+    expect((r.payload as { count: number }).count).toBe(0);
+    expect((r.payload as { sessions: unknown[] }).sessions).toEqual([]);
+  });
+
+  it('lists open sessions with metadata only (sessionId, turnCount, model, age)', async () => {
+    const { client } = makeClient(['A1', 'A2']);
+    await wirePeerSessionBridge(() => client as never);
+    const s1 = await dispatch('peer.chat-session.start', {
+      systemPrompt: 'private prompt',
+      model: 'qwen3:4b',
+    });
+    const sid1 = (s1.payload as { sessionId: string }).sessionId;
+    await dispatch('peer.chat-session.continue', { sessionId: sid1, prompt: 'first turn' });
+
+    const s2 = await dispatch('peer.chat-session.start', { model: 'gpt-4o' });
+    const sid2 = (s2.payload as { sessionId: string }).sessionId;
+
+    const r = await dispatch('peer.chat-session.list', {});
+    expect(r.ok).toBe(true);
+    const payload = r.payload as {
+      count: number;
+      sessions: Array<{
+        sessionId: string;
+        turnCount: number;
+        model?: string;
+        ageMs: number;
+        idleMs: number;
+        expiresInMs: number;
+      }>;
+    };
+    expect(payload.count).toBe(2);
+    const byId = new Map(payload.sessions.map((s) => [s.sessionId, s]));
+    expect(byId.get(sid1)?.turnCount).toBe(1);
+    expect(byId.get(sid1)?.model).toBe('qwen3:4b');
+    expect(byId.get(sid2)?.turnCount).toBe(0);
+    expect(byId.get(sid2)?.model).toBe('gpt-4o');
+    expect(byId.get(sid1)?.ageMs).toBeGreaterThanOrEqual(0);
+    expect(byId.get(sid1)?.expiresInMs).toBeGreaterThan(0);
+  });
+
+  it('NEVER exposes systemPrompt, prompts or assistant text', async () => {
+    const { client } = makeClient(['secret assistant text']);
+    await wirePeerSessionBridge(() => client as never);
+    const s = await dispatch('peer.chat-session.start', {
+      systemPrompt: 'CONFIDENTIAL_SYSTEM_PROMPT_HEAD',
+    });
+    const sid = (s.payload as { sessionId: string }).sessionId;
+    await dispatch('peer.chat-session.continue', {
+      sessionId: sid,
+      prompt: 'CONFIDENTIAL_USER_QUESTION',
+    });
+
+    const r = await dispatch('peer.chat-session.list', {});
+    const blob = JSON.stringify(r.payload);
+    expect(blob).not.toContain('CONFIDENTIAL_SYSTEM_PROMPT_HEAD');
+    expect(blob).not.toContain('CONFIDENTIAL_USER_QUESTION');
+    expect(blob).not.toContain('secret assistant text');
+    expect(blob).not.toMatch(/\bsystemPrompt\b/);
+    expect(blob).not.toMatch(/\bmessages\b/);
+    expect(blob).not.toMatch(/\bcontent\b/);
+  });
+
+  it('purges expired sessions before returning, so callers never see ghosts', async () => {
+    process.env.CODEBUDDY_PEER_SESSION_IDLE_MS = '50';
+    try {
+      await wirePeerSessionBridge(() => makeClient().client as never);
+      const s = await dispatch('peer.chat-session.start', {});
+      const sid = (s.payload as { sessionId: string }).sessionId;
+      // Wait past the idle window.
+      await new Promise((resolve) => setTimeout(resolve, 80));
+      const r = await dispatch('peer.chat-session.list', {});
+      expect((r.payload as { count: number }).count).toBe(0);
+      expect(_listSessionsForTests().find((x) => x.sessionId === sid)).toBeUndefined();
+    } finally {
+      delete process.env.CODEBUDDY_PEER_SESSION_IDLE_MS;
+    }
+  });
+
+  it('echoes traceId', async () => {
+    await wirePeerSessionBridge(() => makeClient().client as never);
+    const r = await dispatch('peer.chat-session.list', {}, { traceId: 'trace-list' });
+    expect((r.payload as { traceId: string }).traceId).toBe('trace-list');
   });
 });

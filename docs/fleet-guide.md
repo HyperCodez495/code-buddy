@@ -572,6 +572,11 @@ append turns with `continue`, close with `end`.
   the stream errors before any delta arrives, the user message is
   rolled back ; if some text was already produced, that partial
   answer is persisted so the next turn sees it.
+- `peer.chat-session.list()`
+  → `{ count, sessions: [{ sessionId, turnCount, model?, ageMs, idleMs,
+  expiresInMs }], traceId }`. Read-only metadata snapshot, never
+  returns prompt content or assistant text. Used by `/fleet status
+  --with-sessions` and external monitoring.
 - `peer.chat-session.end({ sessionId })`
   → `{ closed: boolean, traceId }`
 

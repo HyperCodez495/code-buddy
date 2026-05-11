@@ -57,6 +57,21 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     LOC for the new sub-action + state). 18 unit tests in
     `tests/fleet/fleet-chat-helper.test.ts`.
 
+### Added — Fleet peer.chat-session.list
+
+- **Read-only snapshot RPC** — `peer.chat-session.list` returns the
+  in-memory sessions on a peer with metadata only: `sessionId`,
+  `turnCount`, `model?`, `ageMs`, `idleMs`, `expiresInMs`. Useful for
+  `/fleet status --with-sessions` and external monitors that want to
+  know which conversations are open without sniffing content.
+- **Privacy guarantee**: a test asserts the response NEVER contains
+  the words `systemPrompt`, `messages`, or `content`, and NEVER
+  exposes the actual prompt / assistant text the session is carrying.
+- Calls `purgeExpired` before returning so callers never see ghosts.
+- 5 new tests in `tests/fleet/peer-session-bridge.test.ts` covering
+  empty state, multi-session metadata, privacy assertion, idle-purge
+  before report, and `traceId` echo.
+
 ### Added — Fleet peer.chat-session.continue-stream
 
 - **Streaming variant of `peer.chat-session.continue`** — mirrors the

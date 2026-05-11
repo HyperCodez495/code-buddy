@@ -460,6 +460,33 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
     return next;
   });
 
+  // Read-only snapshot of the in-memory sessions on this peer. Useful
+  // for /fleet status --with-sessions and any external monitoring
+  // tool that wants to know what conversations are open without
+  // sniffing content. Metadata only — sessionId, turnCount,
+  // ageMs, lastUsedMs, model. NEVER returns systemPrompt, messages,
+  // or any conversation text.
+  registerPeerMethod('peer.chat-session.list', async (_params, ctx) => {
+    const idleMs = getIdleMs();
+    const now = Date.now();
+    // Drop expired entries before reporting so the caller doesn't
+    // see ghosts that will vanish on the next dispatch.
+    await purgeExpired(now, idleMs);
+    const items = Array.from(sessions.values()).map((s) => ({
+      sessionId: s.sessionId,
+      turnCount: Math.floor(s.messages.length / 2),
+      model: s.model,
+      ageMs: now - s.createdAt,
+      idleMs: now - s.lastUsedAt,
+      expiresInMs: Math.max(0, idleMs - (now - s.lastUsedAt)),
+    }));
+    return {
+      count: items.length,
+      sessions: items,
+      traceId: ctx.traceId,
+    };
+  });
+
   registerPeerMethod('peer.chat-session.end', async (params, ctx) => {
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
     if (!sessionId) {
@@ -511,6 +538,7 @@ export function _unwireForTests(): void {
     unregisterPeerMethod('peer.chat-session.start');
     unregisterPeerMethod('peer.chat-session.continue');
     unregisterPeerMethod('peer.chat-session.continue-stream');
+    unregisterPeerMethod('peer.chat-session.list');
     unregisterPeerMethod('peer.chat-session.end');
   } catch {
     /* peer-rpc may not be initialised in some test setups */
