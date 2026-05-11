@@ -392,9 +392,15 @@ function setupTray() {
         : join(__dirname, '../../resources', 'tray-icon.png')
       : iconPath;
 
-  // Gracefully skip tray if icon is missing (e.g. dev environment)
+  // Gracefully skip tray if icon is missing (e.g. dev environment).
+  // The dev path (`resources/tray-icon.png`) is gitignored on Linux
+  // dev machines — only the packaged build ships the asset. Skipping
+  // is expected in dev and silently no-ops; in packaged mode it IS a
+  // build/install problem worth surfacing as an info-level warning.
   if (!fs.existsSync(resolvedIconPath)) {
-    log('[Tray] Icon not found at', resolvedIconPath, '— skipping tray setup');
+    if (app.isPackaged) {
+      log('[Tray] Icon not found at', resolvedIconPath, '— skipping tray setup');
+    }
     return;
   }
 
@@ -1372,8 +1378,13 @@ app
       }
     });
 
-    // Auto-updater: check for updates in production
-    if (!isDev && !isE2E) {
+    // Auto-updater: check for updates in production. We gate on
+    // `app.isPackaged` rather than `!isDev` because electron-updater
+    // only ships inside the packaged binary — a NODE_ENV=production
+    // dev launch (which DEV-LINUX.md actually recommends) would
+    // otherwise emit a misleading "Failed to load electron-updater"
+    // warning at every boot.
+    if (app.isPackaged && !isE2E) {
       import('electron-updater')
         .then(({ autoUpdater }) => {
           autoUpdater.checkForUpdatesAndNotify().catch((err: unknown) => {
