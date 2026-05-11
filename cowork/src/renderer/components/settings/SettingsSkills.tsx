@@ -309,6 +309,32 @@ export function SettingsSkills({ isActive }: { isActive: boolean }) {
     }
   }
 
+  // Force a full disk-scan reload via `skills.reload` (vs. the cache-aware
+  // `getAll`) AND invalidate the session-side skills setup, so a change
+  // the user made to a SKILL.md on disk takes effect without restarting
+  // Cowork. The toast reports the count so the user knows the call
+  // actually scanned something.
+  async function handleHotReloadSkills() {
+    setIsLoading(true);
+    try {
+      const result = await window.electronAPI.skills.reload();
+      setSkills(result.skills || []);
+      setError(null);
+      showPluginInstallToast(
+        t('skills.hotReloadDone', { count: result.count, defaultValue: `Reloaded ${result.count} skill(s) from disk` }),
+      );
+    } catch (err) {
+      setError({
+        text:
+          err instanceof Error && err.message
+            ? `${t('skills.failedToReload', { defaultValue: 'Failed to reload skills' })}: ${err.message}`
+            : t('skills.failedToReload', { defaultValue: 'Failed to reload skills' }),
+      });
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleDelete(skillId: string, skillName: string) {
     if (!confirm(t('skills.deleteSkill', { name: skillName }))) return;
 
@@ -452,6 +478,18 @@ export function SettingsSkills({ isActive }: { isActive: boolean }) {
           >
             <RefreshCw className="w-4 h-4" />
             {t('skills.refreshSkills')}
+          </button>
+          <button
+            onClick={handleHotReloadSkills}
+            disabled={isLoading}
+            title={t('skills.hotReloadHint', {
+              defaultValue:
+                'Force a full disk re-scan and invalidate the session cache. Use this when you edited a SKILL.md file directly on disk.',
+            })}
+            className="w-full py-2.5 px-3 rounded-lg border border-border hover:border-accent hover:bg-accent/5 transition-all flex items-center justify-center gap-2 text-text-secondary hover:text-accent disabled:opacity-50"
+          >
+            <RefreshCw className="w-4 h-4" />
+            {t('skills.hotReloadAllSkills', { defaultValue: 'Reload all skills (from disk)' })}
           </button>
         </div>
       </SettingsContentSection>

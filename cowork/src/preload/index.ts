@@ -339,6 +339,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // Skills methods
   skills: {
     getAll: (): Promise<Skill[]> => ipcRenderer.invoke('skills.getAll'),
+    reload: (): Promise<{ success: boolean; count: number; skills: Skill[] }> =>
+      ipcRenderer.invoke('skills.reload'),
     install: (skillPath: string): Promise<{ success: boolean; skill: Skill }> =>
       ipcRenderer.invoke('skills.install', skillPath),
     delete: (skillId: string): Promise<{ success: boolean }> =>
@@ -2091,6 +2093,7 @@ declare global {
       };
       skills: {
         getAll: () => Promise<Skill[]>;
+        reload: () => Promise<{ success: boolean; count: number; skills: Skill[] }>;
         install: (skillPath: string) => Promise<{ success: boolean; skill: Skill }>;
         delete: (skillId: string) => Promise<{ success: boolean }>;
         setEnabled: (skillId: string, enabled: boolean) => Promise<{ success: boolean }>;

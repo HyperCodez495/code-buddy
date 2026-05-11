@@ -3966,6 +3966,24 @@ ipcMain.handle('skills.getAll', async () => {
   }
 });
 
+ipcMain.handle('skills.reload', async () => {
+  try {
+    if (!skillsManager) {
+      throw new Error('Skills manager is still starting');
+    }
+    // Force a full re-scan of the global skills directory then push
+    // the new state through the same channel install/delete use, so
+    // the engine's SKILL.md registry + the ClaudeAgentRunner's
+    // per-query cache both pick up the change.
+    const skills = await skillsManager.reloadAll();
+    sessionManager?.invalidateSkillsSetup();
+    return { success: true, count: skills.length, skills };
+  } catch (error) {
+    logError('[Skills] Error reloading skills:', error);
+    throw error;
+  }
+});
+
 ipcMain.handle('skills.install', async (_event, skillPath: string) => {
   try {
     if (!skillsManager) {

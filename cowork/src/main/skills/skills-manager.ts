@@ -789,6 +789,22 @@ export class SkillsManager {
   }
 
   /**
+   * Force a full reload of the global skills directory, bypassing the
+   * signature cache. Used by the UI "Reload all skills" button when
+   * the user has changed skill files on disk and wants the change to
+   * take effect without restarting the app.
+   *
+   * Returns the freshly-loaded skill list so the caller can refresh
+   * the renderer in the same round-trip.
+   */
+  async reloadAll(): Promise<Skill[]> {
+    this.globalSkillsLoaded = false;
+    this.loadedGlobalSkillsSignature = '';
+    await this.loadGlobalSkills();
+    return this.deduplicateSkills(Array.from(this.loadedSkills.values()));
+  }
+
+  /**
    * List all skills with optional filters
    */
   async listSkills(filter?: {
