@@ -57,6 +57,22 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     LOC for the new sub-action + state). 18 unit tests in
     `tests/fleet/fleet-chat-helper.test.ts`.
 
+### Added — Fleet privacy-lint PII patterns
+
+- **SSN, IBAN, phone, credit-card detection** added to
+  `src/fleet/privacy-lint.ts`. The router now flags prompts containing
+  US Social Security numbers (with the SSA-reserved prefix block
+  list), IBANs (FR/DE/etc., with or without space grouping), phone
+  numbers (E.164 international + French national format), and credit
+  card numbers (Visa/MC/Amex/Discover/JCB/Diners) validated through a
+  Luhn checksum to keep false positives down.
+- `pii-ssn` and `pii-credit-card` are high-confidence; `pii-iban` and
+  `pii-phone` are low-confidence (caller decides whether to block or
+  just downgrade `privacyTag` to `'sensitive'`).
+- 10 new unit tests in `tests/fleet/privacy-lint.test.ts` covering
+  positive cases, SSN reserved prefixes, Luhn rejection, and
+  no-false-positive on benign sentences with numbers.
+
 ### Added — Fleet V1.2-saga + observability (Phase d.22)
 
 - **Cross-restart session durability** — `peer.chat-session.*` state

@@ -88,4 +88,65 @@ describe('scanForSecrets', () => {
     const ranges = out.matches.map((m) => `${m.start}-${m.end}`);
     expect(new Set(ranges).size).toBe(ranges.length);
   });
+
+  describe('PII patterns (V1.2.x)', () => {
+    it('detects US Social Security numbers (xxx-xx-xxxx)', () => {
+      const out = scanForSecrets('SSN on file: 123-45-6789, please verify.');
+      expect(out.matches.some((m) => m.kind === 'pii-ssn')).toBe(true);
+      expect(out.highConfidence).toBe(true);
+    });
+
+    it('rejects SSN-shaped strings with reserved prefixes (000, 666, 9xx)', () => {
+      // SSA never issued these — they're not real SSNs.
+      const out = scanForSecrets('Test data: 000-12-3456 and 666-78-9012 and 900-12-3456');
+      expect(out.matches.some((m) => m.kind === 'pii-ssn')).toBe(false);
+    });
+
+    it('detects FR IBAN', () => {
+      const out = scanForSecrets('Virement: FR76 3000 4000 0312 3456 7890 143');
+      expect(out.matches.some((m) => m.kind === 'pii-iban')).toBe(true);
+    });
+
+    it('detects DE IBAN without spaces', () => {
+      const out = scanForSecrets('IBAN DE89370400440532013000 for payments.');
+      expect(out.matches.some((m) => m.kind === 'pii-iban')).toBe(true);
+    });
+
+    it('detects E.164 international phone numbers', () => {
+      const out = scanForSecrets('Call me at +33 6 12 34 56 78 when you can.');
+      expect(out.matches.some((m) => m.kind === 'pii-phone')).toBe(true);
+    });
+
+    it('detects French national phone numbers', () => {
+      const out = scanForSecrets('Mon numéro: 06.12.34.56.78');
+      expect(out.matches.some((m) => m.kind === 'pii-phone')).toBe(true);
+    });
+
+    it('detects Visa credit card numbers (Luhn-valid)', () => {
+      // 4111111111111111 = canonical Visa test card, passes Luhn.
+      const out = scanForSecrets('Card: 4111111111111111 exp 12/27');
+      expect(out.matches.some((m) => m.kind === 'pii-credit-card')).toBe(true);
+      expect(out.highConfidence).toBe(true);
+    });
+
+    it('detects Amex credit card numbers', () => {
+      // 378282246310005 = canonical Amex test card.
+      const out = scanForSecrets('Amex: 378282246310005');
+      expect(out.matches.some((m) => m.kind === 'pii-credit-card')).toBe(true);
+    });
+
+    it('skips digit runs that look like cards but fail Luhn', () => {
+      // 4111111111111112 — flips the last digit, breaks Luhn.
+      const out = scanForSecrets('Random sequence: 4111111111111112 ignore');
+      expect(out.matches.some((m) => m.kind === 'pii-credit-card')).toBe(false);
+    });
+
+    it('does not flag normal sentences with numbers', () => {
+      const out = scanForSecrets(
+        'I bought 1234 apples in 2025 for 99 euros, total 99 cents lost.',
+      );
+      expect(out.matches.some((m) => m.kind === 'pii-credit-card')).toBe(false);
+      expect(out.matches.some((m) => m.kind === 'pii-ssn')).toBe(false);
+    });
+  });
 });

@@ -20,7 +20,11 @@ export type PrivacyMatchKind =
   | 'dotenv-block'      // multi-line block starting with KEY=VALUE
   | 'jwt'               // 3-segment dot-separated base64 token
   | 'aws-secret-key'    // 40-char base64 secret
-  | 'private-key-pem';  // BEGIN PRIVATE KEY / OPENSSH / RSA blocks
+  | 'private-key-pem'   // BEGIN PRIVATE KEY / OPENSSH / RSA blocks
+  | 'pii-ssn'           // US SSN (xxx-xx-xxxx), FR NIR (15 digits)
+  | 'pii-iban'          // IBAN (FR, BE, DE, ES, IT, NL, ...)
+  | 'pii-phone'         // phone numbers FR / E.164 international
+  | 'pii-credit-card';  // Visa/MC/Amex/Discover with Luhn check
 
 export interface PrivacyMatch {
   kind: PrivacyMatchKind;
@@ -94,7 +98,62 @@ const PATTERNS: Array<{
       /(?:\/home\/[a-zA-Z0-9._-]+|\/Users\/[a-zA-Z0-9._-]+|C:\\Users\\[a-zA-Z0-9._-]+)/g,
     highConfidence: false,
   },
+  // PII — US Social Security Numbers (xxx-xx-xxxx, not all-zero blocks).
+  // Word-boundary anchored so it doesn't fire on arbitrary digit groups.
+  {
+    kind: 'pii-ssn',
+    regex: /\b(?!000|666|9\d{2})\d{3}-(?!00)\d{2}-(?!0000)\d{4}\b/g,
+    highConfidence: true,
+  },
+  // PII — IBAN (2 letters country + 2 check digits + up to 30 alnum).
+  // Accepted spellings: contiguous or grouped in 4. We normalise away
+  // spaces below in the test, the regex matches both forms.
+  {
+    kind: 'pii-iban',
+    regex:
+      /\b[A-Z]{2}\d{2}(?:\s?[A-Z0-9]{4}){2,7}(?:\s?[A-Z0-9]{1,4})?\b/g,
+    highConfidence: false,
+  },
+  // PII — phone numbers. E.164 (+ then 8-15 digits, optional spaces),
+  // or French national format (0[1-9] + 8 digits with optional spaces).
+  {
+    kind: 'pii-phone',
+    regex:
+      /(?:\+\d{1,3}[\s.-]?(?:\d[\s.-]?){7,14}\d|\b0[1-9](?:[\s.-]?\d{2}){4}\b)/g,
+    highConfidence: false,
+  },
+  // PII — credit card numbers (Visa/MC/Amex/Discover/JCB/Diners). Luhn
+  // check applied after the regex matches to reduce false positives on
+  // arbitrary 13-19 digit strings.
+  {
+    kind: 'pii-credit-card',
+    regex:
+      /\b(?:4\d{12}(?:\d{3})?|5[1-5]\d{14}|3[47]\d{13}|6(?:011|5\d{2})\d{12}|(?:2131|1800|35\d{3})\d{11})\b/g,
+    highConfidence: true,
+  },
 ];
+
+/**
+ * Luhn (mod 10) checksum — used to validate that a digit run looks
+ * like a real credit card before we flag it. Returns true on valid
+ * cards. Keeps the credit-card pattern from drowning users in false
+ * positives on long alphanumeric strings that happen to start with 4 / 5.
+ */
+function luhnValid(digits: string): boolean {
+  let sum = 0;
+  let alt = false;
+  for (let i = digits.length - 1; i >= 0; i--) {
+    let n = digits.charCodeAt(i) - 48;
+    if (n < 0 || n > 9) return false;
+    if (alt) {
+      n *= 2;
+      if (n > 9) n -= 9;
+    }
+    sum += n;
+    alt = !alt;
+  }
+  return sum % 10 === 0;
+}
 
 /**
  * Scan a prompt for secrets. Returns matches with previews.
@@ -111,8 +170,14 @@ export function scanForSecrets(prompt: string): PrivacyLintResult {
     while ((m = regex.exec(prompt)) !== null) {
       const start = m.index;
       const end = start + m[0].length;
+      const matched = m[0];
       // Skip if this range overlaps with an earlier (higher priority) match.
       if (seen.some(([s, e]) => start < e && end > s)) continue;
+      // Credit-card pattern: filter through Luhn to drop arbitrary
+      // digit runs that just happened to start with 4 or 5.
+      if (kind === 'pii-credit-card' && !luhnValid(matched.replace(/\D/g, ''))) {
+        continue;
+      }
       seen.push([start, end]);
       if (hc) highConfidence = true;
       matches.push({
