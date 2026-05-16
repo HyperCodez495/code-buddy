@@ -353,9 +353,10 @@ export class PromptBuilder {
           if (peerCount > 0) {
             systemPrompt +=
               `\n\n<fleet>Connected fleet peers: ${peerCount}. ` +
-              `Use list_peers({includeCapabilities:true}) when choosing ` +
-              `between providers/models, or list_peers() for a quick status. ` +
-              `then peer_delegate to ask a peer a question. The peer answers ` +
+              `Use route_peer to choose the best peer/model for a task, ` +
+              `list_peers({includeCapabilities:true}) when you need raw ` +
+              `provider status, or list_peers() for a quick status. Then ` +
+              `peer_delegate can ask the chosen peer a question. The peer answers ` +
               `independently with its own model and the response is fed back ` +
               `into your context. Useful for delegating heavy compute, asking a ` +
               `peer with different domain knowledge, or coordinating across ` +

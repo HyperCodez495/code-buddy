@@ -601,6 +601,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     priority: 5,
     description: 'List connected fleet peers with status, last-seen, peer chat availability, and optional provider/model capabilities'
   },
+  {
+    name: 'route_peer',
+    category: 'utility' as ToolCategory,
+    keywords: ['peer', 'route', 'fleet', 'model', 'provider', 'capability', 'delegate', 'multi-ai', 'orchestrate', 'select'],
+    priority: 7,
+    description: 'Choose the best connected fleet peer and model for a prompt using peer.describe capabilities and Fleet TaskRouter'
+  },
 
   // AskUserQuestion (structured multi-option mid-task questions)
   {

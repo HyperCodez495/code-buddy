@@ -77,4 +77,55 @@ export const LIST_PEERS_TOOL_DEF: CodeBuddyTool = {
   },
 };
 
-export const FLEET_TOOLS: CodeBuddyTool[] = [PEER_DELEGATE_TOOL_DEF, LIST_PEERS_TOOL_DEF];
+export const ROUTE_PEER_TOOL_DEF: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'route_peer',
+    description:
+      'Choose the best connected fleet peer and model for a prompt using peer.describe capabilities and Fleet TaskRouter. ' +
+      'Use this before peer_delegate when multiple peers or providers are available.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description:
+            'The task or question that will later be delegated. Used for classification and routing.',
+        },
+        privacyTag: {
+          type: 'string',
+          enum: ['sensitive', 'public'],
+          description:
+            'Use sensitive to veto cloud-egress peers; use public to allow cloud providers.',
+        },
+        maxCostUsd: {
+          type: 'number',
+          description: 'Optional per-task cost cap in USD.',
+        },
+        maxLatencyMs: {
+          type: 'number',
+          description: 'Optional max expected peer/model latency in milliseconds.',
+        },
+        parallelism: {
+          type: 'number',
+          description: 'Optional number of parallel lanes to recommend.',
+        },
+        estimatedTokens: {
+          type: 'number',
+          description: 'Optional estimated input token count for context-window filtering.',
+        },
+        timeoutMs: {
+          type: 'number',
+          description: 'Per-peer peer.describe timeout in milliseconds. Default 5000.',
+        },
+      },
+      required: ['prompt'],
+    },
+  },
+};
+
+export const FLEET_TOOLS: CodeBuddyTool[] = [
+  PEER_DELEGATE_TOOL_DEF,
+  LIST_PEERS_TOOL_DEF,
+  ROUTE_PEER_TOOL_DEF,
+];

@@ -16,6 +16,7 @@ import type {
 } from './types.js';
 import { executePeerDelegate } from '../peer-delegate-tool.js';
 import { executeListPeers } from '../list-peers-tool.js';
+import { executeRoutePeer } from '../route-peer-tool.js';
 
 export class PeerDelegateTool implements ITool {
   readonly name = 'peer_delegate';
@@ -174,8 +175,118 @@ export class ListPeersTool implements ITool {
   }
 }
 
+export class RoutePeerTool implements ITool {
+  readonly name = 'route_peer';
+  readonly description =
+    'Choose the best connected fleet peer and model for a prompt using peer.describe capabilities and Fleet TaskRouter. ' +
+    'Use this before peer_delegate when multiple peers or providers are available.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    return executeRoutePeer({
+      prompt: typeof input.prompt === 'string' ? input.prompt : '',
+      privacyTag:
+        input.privacyTag === 'sensitive' || input.privacyTag === 'public'
+          ? input.privacyTag
+          : undefined,
+      maxCostUsd: typeof input.maxCostUsd === 'number' ? input.maxCostUsd : undefined,
+      maxLatencyMs: typeof input.maxLatencyMs === 'number' ? input.maxLatencyMs : undefined,
+      parallelism: typeof input.parallelism === 'number' ? input.parallelism : undefined,
+      estimatedTokens: typeof input.estimatedTokens === 'number' ? input.estimatedTokens : undefined,
+      timeoutMs: typeof input.timeoutMs === 'number' ? input.timeoutMs : undefined,
+    });
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description:
+              'The task or question that will later be delegated. Used for classification and routing.',
+          },
+          privacyTag: {
+            type: 'string',
+            enum: ['sensitive', 'public'],
+            description:
+              'Use sensitive to veto cloud-egress peers; use public to allow cloud providers.',
+          },
+          maxCostUsd: {
+            type: 'number',
+            description: 'Optional per-task cost cap in USD.',
+          },
+          maxLatencyMs: {
+            type: 'number',
+            description: 'Optional max expected peer/model latency in milliseconds.',
+          },
+          parallelism: {
+            type: 'number',
+            description: 'Optional number of parallel lanes to recommend for ensemble/redundancy.',
+          },
+          estimatedTokens: {
+            type: 'number',
+            description: 'Optional estimated input token count for context-window filtering.',
+          },
+          timeoutMs: {
+            type: 'number',
+            description: 'Per-peer peer.describe timeout in milliseconds. Default 5000.',
+          },
+        },
+        required: ['prompt'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const inp = input as Record<string, unknown>;
+    const errors: string[] = [];
+    if (typeof inp.prompt !== 'string' || !inp.prompt) errors.push('prompt is required (string)');
+    if (
+      inp.privacyTag !== undefined &&
+      inp.privacyTag !== 'sensitive' &&
+      inp.privacyTag !== 'public'
+    ) {
+      errors.push('privacyTag must be "sensitive" or "public"');
+    }
+    return errors.length === 0 ? { valid: true } : { valid: false, errors };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'utility' as ToolCategoryType,
+      keywords: [
+        'peer',
+        'route',
+        'fleet',
+        'model',
+        'provider',
+        'capability',
+        'delegate',
+        'multi-ai',
+        'orchestrate',
+      ],
+      priority: 7,
+      modifiesFiles: false,
+      makesNetworkRequests: true,
+      fleetSafe: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
 export function createFleetTools(): ITool[] {
-  return [new PeerDelegateTool(), new ListPeersTool()];
+  return [new PeerDelegateTool(), new ListPeersTool(), new RoutePeerTool()];
 }
 
 export function resetFleetToolInstances(): void {

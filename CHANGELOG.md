@@ -49,6 +49,10 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     peers with `peer.describe` provider/model summaries so the LLM can
     choose between ChatGPT OAuth, Ollama, Gemini CLI, and paid APIs before
     calling `peer_delegate`.
+  - New `route_peer` LLM tool wraps Fleet `TaskRouter`: it classifies a
+    prompt, gathers peer capabilities via `peer.describe`, applies privacy
+    and cost/latency constraints, and returns the recommended peer/model
+    plus a ready `peer_delegate` next call.
   - New module `src/fleet/peer-tool-bridge.ts` (~280 LOC,
     standalone executors using `fs/promises` + `@vscode/ripgrep`).
     18 unit tests in `tests/server/peer-tool-bridge.test.ts`.

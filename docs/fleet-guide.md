@@ -616,6 +616,11 @@ Two new tools registered on every Code Buddy:
   (`chatgpt-oauth`, `ollama`, `gemini-cli`, strengths, egress, etc.).
   Requires `peer:invoke` on the fleet key; peers that refuse are still
   listed with `describeError`.
+- `route_peer({ "prompt": "..." })` — semantic routing helper. Calls
+  `peer.describe`, classifies the prompt, runs Fleet `TaskRouter`, and
+  returns a recommended peer/model plus a ready `peer_delegate` call.
+  Use `privacyTag: "sensitive"` to veto cloud-egress peers for private
+  code or secret-bearing prompts.
 - `peer_delegate(peer, prompt, [systemPrompt], [model], [timeoutMs])` —
   wraps `peer.chat`. Returns the peer's text response, usage, traceId.
 
@@ -629,7 +634,7 @@ can autonomously decide to delegate without a copy-paste step:
 
 ```
 User: ask the darkstar peer how it would index a 50M-row table
-LLM: [calls list_peers({includeCapabilities:true}), sees darkstar has ollama/qwen, calls peer_delegate({peer: 'darkstar', ...})]
+LLM: [calls route_peer({prompt: '...'}), gets darkstar/qwen, calls peer_delegate({peer: 'darkstar', model: 'qwen3.6:35b', ...})]
 LLM (continuing with peer's answer in context): "darkstar suggests …"
 ```
 

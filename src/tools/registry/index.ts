@@ -251,10 +251,11 @@ export {
   resetAdvisorConfigProvider,
 } from './advisor-tools.js';
 
-// Tool Adapters - Fleet (peer_delegate, list_peers) — Phase (d).17
+// Tool Adapters - Fleet (peer_delegate, list_peers, route_peer)
 export {
   PeerDelegateTool,
   ListPeersTool,
+  RoutePeerTool,
   createFleetTools,
   resetFleetToolInstances,
 } from './fleet-tools.js';
