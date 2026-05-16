@@ -47,6 +47,8 @@ streaming chunks.
   one peer has routable capabilities, while saga rows expose a compact
   peer/model execution trace. Peer detail now surfaces status, load,
   last activity, last errors, and a targeted capability refresh action.
+  Successful dispatches now show the new saga id plus the effective
+  privacy tag and any privacy-lint adjustment.
 
 ### Fixed — Cowork-on-core migration
 

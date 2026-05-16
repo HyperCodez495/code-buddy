@@ -58,6 +58,14 @@ interface FleetRefreshResult {
   error?: string;
 }
 
+interface FleetDispatchResult {
+  ok: boolean;
+  sagaId?: string;
+  error?: string;
+  privacyTag?: 'public' | 'sensitive';
+  lintWarning?: string;
+}
+
 interface FleetApiBridge {
   list?: () => Promise<FleetPeer[]>;
   refreshCapabilities?: (peerId?: string) => Promise<FleetRefreshResult>;
@@ -95,6 +103,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [dispatching, setDispatching] = useState(false);
   const [refreshingPeerId, setRefreshingPeerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [dispatchFeedback, setDispatchFeedback] = useState<FleetDispatchResult | null>(null);
   const [parallelism, setParallelism] = useState(1);
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
   const runningSagas = useMemo(
@@ -197,6 +206,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     if (!goalText.trim() || dispatching || routablePeers.length === 0) return;
     setDispatching(true);
     setError(null);
+    setDispatchFeedback(null);
     try {
       const api = (
         window as unknown as {
@@ -206,7 +216,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 goal: string;
                 parallelism?: number;
                 privacyTag?: 'public' | 'sensitive';
-              }) => Promise<{ ok: boolean; sagaId?: string; error?: string }>;
+              }) => Promise<FleetDispatchResult>;
             };
           };
         }
@@ -224,6 +234,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
         setError(result.error ?? 'dispatch failed');
         return;
       }
+      setDispatchFeedback(result);
       setGoalText('');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
@@ -411,6 +422,22 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <div className="mt-2 p-2 bg-error/10 border border-error/30 rounded text-error text-[11px] flex items-start gap-1.5">
                   <AlertCircle size={11} className="mt-0.5 shrink-0" />
                   <span>{error}</span>
+                </div>
+              )}
+              {!error && dispatchFeedback?.sagaId && (
+                <div className="mt-2 rounded border border-success/30 bg-success/10 p-2 text-[11px] text-success">
+                  <div className="flex items-center gap-1.5">
+                    <CheckCircle2 size={11} className="shrink-0" />
+                    <span className="min-w-0 truncate">
+                      Saga {shortId(dispatchFeedback.sagaId)} started · privacy{' '}
+                      {dispatchFeedback.privacyTag ?? privacyTag}
+                    </span>
+                  </div>
+                  {dispatchFeedback.lintWarning && (
+                    <div className="mt-1 text-warning">
+                      {dispatchFeedback.lintWarning}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -807,4 +834,9 @@ function formatPeerSeenAt(lastSeenAt?: number): string {
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m ago`;
   if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h ago`;
   return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
+}
+
+function shortId(id: string): string {
+  if (id.length <= 10) return id;
+  return id.slice(0, 8);
 }
