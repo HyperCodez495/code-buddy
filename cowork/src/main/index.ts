@@ -1908,7 +1908,7 @@ registerSubAgentIpcHandlers(subAgentBridge);
 registerOrchestratorIpcHandlers(orchestratorBridge);
 
 // ── Fleet IPC handlers (GAP 3 — multi-host Code Buddy listener) ──────
-registerFleetIpcHandlers(fleetBridge);
+registerFleetIpcHandlers(fleetBridge, activityFeed);
 
 // ── Team IPC handlers (Phase 4 layer 9 — Agent Teams observability) ──
 registerTeamIpcHandlers(teamBridge);

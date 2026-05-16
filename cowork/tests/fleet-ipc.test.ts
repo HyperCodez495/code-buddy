@@ -109,6 +109,7 @@ describe('registerFleetIpcHandlers', () => {
 
   it('dispatches a Fleet saga using peer.describe capability slots', async () => {
     const modules = installDispatchCoreModules();
+    const activityFeed = { record: vi.fn() };
     const capability = {
       egress: 'cloud',
       models: [
@@ -124,7 +125,7 @@ describe('registerFleetIpcHandlers', () => {
       listPeers: vi.fn(async () => [{ id: 'ministar-linux', capability }]),
     } as unknown as FleetBridge;
 
-    registerFleetIpcHandlers(bridge);
+    registerFleetIpcHandlers(bridge, activityFeed as never);
 
     const handler = electronMock.handlers.get('fleet.dispatch');
     expect(handler).toBeDefined();
@@ -148,6 +149,19 @@ describe('registerFleetIpcHandlers', () => {
     );
     expect(sagaRunnerMock.instances[0].start).toHaveBeenCalledWith('saga-1');
     expect(result).toMatchObject({ ok: true, sagaId: 'saga-1', privacyTag: 'public' });
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.dispatch',
+        title: 'Fleet saga started',
+        description: 'Audit the CLI',
+        metadata: expect.objectContaining({
+          sagaId: 'saga-1',
+          peerCount: 1,
+          privacyTag: 'public',
+          parallelism: 2,
+        }),
+      }),
+    );
   });
 });
 

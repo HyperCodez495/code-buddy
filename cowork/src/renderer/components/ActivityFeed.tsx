@@ -23,6 +23,7 @@ import {
   CheckCircle2,
   GitCommit,
   Trash2,
+  Network,
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
@@ -57,6 +58,7 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   'project.deleted': FolderKanban,
   'workflow.run': Activity,
   'memory.added': Brain,
+  'fleet.dispatch': Network,
 };
 
 function groupByDay(entries: ActivityEntry[]): Array<[string, ActivityEntry[]]> {

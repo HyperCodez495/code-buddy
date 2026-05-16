@@ -48,7 +48,8 @@ streaming chunks.
   peer/model execution trace. Peer detail now surfaces status, load,
   last activity, last errors, and a targeted capability refresh action.
   Successful dispatches now show the new saga id plus the effective
-  privacy tag and any privacy-lint adjustment.
+  privacy tag and any privacy-lint adjustment, and are recorded in the
+  Activity Feed for later operator review.
 
 ### Fixed — Cowork-on-core migration
 

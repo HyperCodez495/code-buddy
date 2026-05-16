@@ -23,7 +23,8 @@ export type ActivityType =
   | 'project.created'
   | 'project.deleted'
   | 'workflow.run'
-  | 'memory.added';
+  | 'memory.added'
+  | 'fleet.dispatch';
 
 export interface ActivityEntry {
   id: number;

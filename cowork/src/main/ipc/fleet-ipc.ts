@@ -4,8 +4,12 @@ import type { FleetBridge } from '../fleet/fleet-bridge';
 import { loadCoreModule } from '../utils/core-loader';
 import { SagaRunner } from '../fleet/saga-runner';
 import { sendToRenderer } from '../ipc-main-bridge';
+import type { ActivityFeed } from '../activity/activity-feed';
 
-export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
+export function registerFleetIpcHandlers(
+  fleetBridge: FleetBridge | null,
+  activityFeed: ActivityFeed | null = null,
+) {
   const sagaRunner = fleetBridge ? new SagaRunner(fleetBridge, sendToRenderer) : null;
   ipcMain.handle('fleet.list', async () => {
     if (!fleetBridge) return [];
@@ -193,6 +197,18 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
         log('[fleet.dispatch] saga created — handing off to runner', {
           sagaId: saga.id,
         });
+        activityFeed?.record({
+          type: 'fleet.dispatch',
+          title: 'Fleet saga started',
+          description: truncateActivityText(input.goal, 140),
+          metadata: {
+            sagaId: saga.id,
+            peerCount: peerSlots.length,
+            privacyTag: effectivePrivacyTag ?? 'public',
+            parallelism: input.parallelism ?? 1,
+            lintWarning,
+          },
+        });
 
         // (W1+W3) Hand off to SagaRunner — fires peer.dispatch, polls
         // status, finalises via aggregator.
@@ -245,4 +261,9 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
       return [];
     }
   });
+}
+
+function truncateActivityText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }
