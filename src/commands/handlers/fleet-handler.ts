@@ -43,6 +43,17 @@ import {
   type ActiveListenerEntry,
 } from '../../fleet/fleet-registry.js';
 
+// eslint-disable-next-line no-control-regex -- Fleet stream chunks may contain terminal control bytes from remote peers.
+const ANSI_ESCAPE_PATTERN = /\x1B\[[0-?]*[ -/]*[@-~]/g;
+// eslint-disable-next-line no-control-regex -- Keep human line breaks, strip the rest before writing to the operator TTY.
+const UNSAFE_CONTROL_CHARS_PATTERN = /[\x00-\x08\x0B\x0C\x0E-\x1F\x7F]/g;
+
+function sanitizeFleetStreamChunk(delta: string): string {
+  return delta
+    .replace(ANSI_ESCAPE_PATTERN, '')
+    .replace(UNSAFE_CONTROL_CHARS_PATTERN, '');
+}
+
 const HELP = `Usage: /fleet <action> [args]
 
 Actions:
@@ -1178,7 +1189,7 @@ async function handleTool(rest: string[]): Promise<CommandHandlerResult> {
           // Best-effort live print. In a TUI session this gives the
           // operator immediate feedback without waiting for the final
           // peer:response. Errors writing to stdout are non-fatal.
-          try { process.stdout.write(delta); } catch { /* ignore */ }
+          try { process.stdout.write(sanitizeFleetStreamChunk(delta)); } catch { /* ignore */ }
         },
         { timeoutMs },
       );

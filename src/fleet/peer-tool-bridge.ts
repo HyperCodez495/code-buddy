@@ -93,14 +93,27 @@ async function assertPathInsideWorkspace(p: string): Promise<string> {
     );
   }
   const absolute = path.isAbsolute(p) ? p : path.resolve(root, p);
+  const rootResolved = await fs.realpath(root).catch(() => root);
   const resolved = await realpathFollowingExistingAncestors(absolute);
-  const sep = path.sep;
-  if (resolved !== root && !resolved.startsWith(root + sep)) {
+  if (!isPathInsideOrEqual(resolved, rootResolved)) {
     throw new Error(
-      `PATH_OUTSIDE_PEER_WORKSPACE: ${p} resolves to ${resolved}, outside ${root}`,
+      `PATH_OUTSIDE_PEER_WORKSPACE: ${p} resolves to ${resolved}, outside ${rootResolved}`,
     );
   }
   return resolved;
+}
+
+function normalizePathForContainment(p: string): string {
+  const resolved = path.resolve(p);
+  return process.platform === 'win32' ? resolved.toLowerCase() : resolved;
+}
+
+function isPathInsideOrEqual(candidate: string, root: string): boolean {
+  const candidateForCheck = normalizePathForContainment(candidate);
+  const rootForCheck = normalizePathForContainment(root);
+  if (candidateForCheck === rootForCheck) return true;
+  const rootPrefix = rootForCheck.endsWith(path.sep) ? rootForCheck : rootForCheck + path.sep;
+  return candidateForCheck.startsWith(rootPrefix);
 }
 
 /**
@@ -123,6 +136,8 @@ async function realpathFollowingExistingAncestors(absolute: string): Promise<str
       const real = await fs.realpath(cur);
       return tail.length === 0 ? real : path.join(real, ...tail.reverse());
     } catch {
+      const symlinkTarget = await resolveDanglingSymlink(cur, tail);
+      if (symlinkTarget) return symlinkTarget;
       const parent = path.dirname(cur);
       if (parent === cur) {
         // Reached the filesystem root without finding a real ancestor —
@@ -137,14 +152,44 @@ async function realpathFollowingExistingAncestors(absolute: string): Promise<str
   return absolute;
 }
 
+async function resolveDanglingSymlink(cur: string, tail: string[]): Promise<string | null> {
+  try {
+    const stat = await fs.lstat(cur);
+    if (!stat.isSymbolicLink()) return null;
+    const target = await fs.readlink(cur);
+    const parent = path.dirname(cur);
+    const resolvedTarget = path.isAbsolute(target)
+      ? path.resolve(target)
+      : path.resolve(parent, target);
+    return tail.length === 0
+      ? resolvedTarget
+      : path.join(resolvedTarget, ...tail.slice().reverse());
+  } catch {
+    return null;
+  }
+}
+
 // ──────────────────────────────────────────────────────────────────
 // Standalone executors (read-only V1)
 // ──────────────────────────────────────────────────────────────────
 
 const READ_TRUNCATE_BYTES = 10 * 1024 * 1024; // 10 MB cap per Read
 const READ_STREAM_CHUNK = 16 * 1024;          // 16 KB per emitChunk in stream mode
+const LIST_DIRECTORY_MAX_ENTRIES = 1_000;
 const SEARCH_TIMEOUT_MS = 30_000;
 const SEARCH_MAX_RESULTS = 200;
+
+async function readFilePrefix(filePath: string, limit: number): Promise<string> {
+  if (limit <= 0) return '';
+  const handle = await fs.open(filePath, 'r');
+  try {
+    const buffer = Buffer.allocUnsafe(limit);
+    const { bytesRead } = await handle.read(buffer, 0, limit, 0);
+    return buffer.subarray(0, bytesRead).toString('utf-8');
+  } finally {
+    await handle.close();
+  }
+}
 
 async function execViewFile({ args, emitChunk }: ExecArgs): Promise<{ output: string; truncated: boolean }> {
   const filePath = args.file_path ?? args.path;
@@ -177,12 +222,11 @@ async function execViewFile({ args, emitChunk }: ExecArgs): Promise<{ output: st
     });
   }
 
-  const buf = await fs.readFile(resolved, { encoding: 'utf-8' });
-  const output = truncated ? buf.slice(0, READ_TRUNCATE_BYTES) : buf;
+  const output = await readFilePrefix(resolved, limit);
   return { output, truncated };
 }
 
-async function execListDirectory({ args }: ExecArgs): Promise<{ output: string }> {
+async function execListDirectory({ args }: ExecArgs): Promise<{ output: string; truncated: boolean }> {
   const dirPath = args.path ?? args.directory ?? '.';
   if (typeof dirPath !== 'string') {
     throw new Error('list_directory: path must be a string');
@@ -195,7 +239,12 @@ async function execListDirectory({ args }: ExecArgs): Promise<{ output: string }
       return `${tag}  ${e.name}`;
     })
     .sort();
-  return { output: lines.join('\n') };
+  const truncated = lines.length > LIST_DIRECTORY_MAX_ENTRIES;
+  const visible = truncated ? lines.slice(0, LIST_DIRECTORY_MAX_ENTRIES) : lines;
+  if (truncated) {
+    visible.push(`... truncated after ${LIST_DIRECTORY_MAX_ENTRIES} entries (${lines.length} total)`);
+  }
+  return { output: visible.join('\n'), truncated };
 }
 
 async function execSearch({ args, emitChunk }: ExecArgs): Promise<{ output: string; truncated: boolean }> {

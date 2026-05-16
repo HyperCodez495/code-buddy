@@ -302,6 +302,32 @@ describe('peer-tool-bridge — Phase (d).23 V1.3', () => {
       expect(payload.output).toContain('hello.txt');
       expect(payload.output).toContain('sub');
     });
+
+    it('caps large directory listings and marks payload truncated', async () => {
+      const largeDir = path.join(tmpRoot, 'large');
+      await fs.mkdir(largeDir);
+      await Promise.all(
+        Array.from({ length: 1_005 }, (_, i) =>
+          fs.writeFile(path.join(largeDir, `entry-${String(i).padStart(4, '0')}.txt`), ''),
+        ),
+      );
+
+      wirePeerToolBridge();
+      const r = await dispatchPeerRequest(
+        {
+          id: 'p8b',
+          method: 'peer.tool.invoke',
+          params: { tool: 'list_directory', args: { path: 'large' } },
+        },
+        baseCtx,
+      );
+      expect(r.ok).toBe(true);
+      const payload = r.payload as { output: string; truncated: boolean };
+      expect(payload.truncated).toBe(true);
+      expect(payload.output).toContain('entry-0000.txt');
+      expect(payload.output).not.toContain('entry-1004.txt');
+      expect(payload.output).toContain('truncated after 1000 entries (1005 total)');
+    });
   });
 
   describe('happy path — search (ripgrep)', () => {

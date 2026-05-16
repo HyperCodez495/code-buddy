@@ -37,6 +37,7 @@ function isProcessAlive(pid: number): boolean {
 export class SessionLock {
   private lockPath: string;
   private acquired = false;
+  private cleanupHandler: (() => void) | null = null;
 
   constructor(sessionFilePath: string) {
     this.lockPath = sessionFilePath + '.lock';
@@ -98,6 +99,7 @@ export class SessionLock {
 
       // Cleanup on process exit
       const cleanup = () => this.release();
+      this.cleanupHandler = cleanup;
       process.once('exit', cleanup);
       process.once('SIGINT', cleanup);
       process.once('SIGTERM', cleanup);
@@ -131,6 +133,15 @@ export class SessionLock {
     }
 
     this.acquired = false;
+    this.removeProcessCleanupHandlers();
+  }
+
+  private removeProcessCleanupHandlers(): void {
+    if (!this.cleanupHandler) return;
+    process.removeListener('exit', this.cleanupHandler);
+    process.removeListener('SIGINT', this.cleanupHandler);
+    process.removeListener('SIGTERM', this.cleanupHandler);
+    this.cleanupHandler = null;
   }
 
   /**

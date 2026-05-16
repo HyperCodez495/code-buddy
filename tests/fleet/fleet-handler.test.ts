@@ -738,13 +738,41 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
 
     it('--stream uses invokeToolStream and renders summary line with byte count', async () => {
       await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
-      const r = await handleFleet([
-        'tool', 'peer:3000', 'view_file', '{"file_path":"big.txt"}', '--stream',
-      ]);
-      expect(fleetListenerMock.invokeToolStreamMock).toHaveBeenCalled();
-      // Default mock streams 'chunk-A' + 'chunk-B' = 14 bytes total.
-      expect(r.entry?.content).toContain('view_file (stream) OK');
-      expect(r.entry?.content).toContain('14 bytes');
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        const r = await handleFleet([
+          'tool', 'peer:3000', 'view_file', '{"file_path":"big.txt"}', '--stream',
+        ]);
+        expect(fleetListenerMock.invokeToolStreamMock).toHaveBeenCalled();
+        expect(writeSpy).toHaveBeenCalledWith('chunk-A');
+        expect(writeSpy).toHaveBeenCalledWith('chunk-B');
+        // Default mock streams 'chunk-A' + 'chunk-B' = 14 bytes total.
+        expect(r.entry?.content).toContain('view_file (stream) OK');
+        expect(r.entry?.content).toContain('14 bytes');
+      } finally {
+        writeSpy.mockRestore();
+      }
+    });
+
+    it('--stream strips ANSI and unsafe control bytes before live stdout writes', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      fleetListenerMock.invokeToolStreamMock.mockImplementationOnce(async (toolName, _args, onChunk) => {
+        onChunk('\x1b[31mred\x1b[0m\x00\nok\t');
+        return { tool: toolName, output: 'red\nok\t', durationMs: 8 };
+      });
+      const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+      try {
+        await handleFleet([
+          'tool', 'peer:3000', 'view_file', '{"file_path":"colors.txt"}', '--stream',
+        ]);
+        const written = writeSpy.mock.calls.map((call) => String(call[0])).join('');
+        expect(written).toContain('red\nok\t');
+        expect(written).not.toContain('\x1b');
+        expect(written).not.toContain('\x00');
+        expect(written).not.toContain('[31m');
+      } finally {
+        writeSpy.mockRestore();
+      }
     });
 
     it('renders [truncated] tag when payload signals truncation', async () => {

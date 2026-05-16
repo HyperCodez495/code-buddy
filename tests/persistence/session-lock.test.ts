@@ -158,6 +158,23 @@ describe('SessionLock', () => {
       expect(fs.existsSync(lockPath)).toBe(false);
     });
 
+    it('should remove process cleanup listeners after normal release', () => {
+      const beforeExit = process.listenerCount('exit');
+      const beforeSigint = process.listenerCount('SIGINT');
+      const beforeSigterm = process.listenerCount('SIGTERM');
+
+      const lock = new SessionLock(sessionFilePath);
+      expect(lock.acquire()).toBe(true);
+      expect(process.listenerCount('exit')).toBe(beforeExit + 1);
+      expect(process.listenerCount('SIGINT')).toBe(beforeSigint + 1);
+      expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm + 1);
+
+      lock.release();
+      expect(process.listenerCount('exit')).toBe(beforeExit);
+      expect(process.listenerCount('SIGINT')).toBe(beforeSigint);
+      expect(process.listenerCount('SIGTERM')).toBe(beforeSigterm);
+    });
+
     it('should be safe to release lock multiple times', () => {
       const lock = new SessionLock(sessionFilePath);
       lock.acquire();
