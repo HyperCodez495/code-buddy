@@ -49,7 +49,9 @@ streaming chunks.
   last activity, last errors, and a targeted capability refresh action.
   Successful dispatches now show the new saga id plus the effective
   privacy tag and any privacy-lint adjustment, and are recorded in the
-  Activity Feed for later operator review.
+  Activity Feed for later operator review. Saga completion and failure
+  are also recorded with step counts, privacy tag, and result/error
+  previews.
 
 ### Fixed — Cowork-on-core migration
 

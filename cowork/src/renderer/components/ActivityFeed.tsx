@@ -59,6 +59,8 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   'workflow.run': Activity,
   'memory.added': Brain,
   'fleet.dispatch': Network,
+  'fleet.saga.completed': Network,
+  'fleet.saga.failed': Network,
 };
 
 function groupByDay(entries: ActivityEntry[]): Array<[string, ActivityEntry[]]> {

@@ -24,7 +24,9 @@ export type ActivityType =
   | 'project.deleted'
   | 'workflow.run'
   | 'memory.added'
-  | 'fleet.dispatch';
+  | 'fleet.dispatch'
+  | 'fleet.saga.completed'
+  | 'fleet.saga.failed';
 
 export interface ActivityEntry {
   id: number;

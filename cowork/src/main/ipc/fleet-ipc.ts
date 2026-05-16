@@ -10,7 +10,9 @@ export function registerFleetIpcHandlers(
   fleetBridge: FleetBridge | null,
   activityFeed: ActivityFeed | null = null,
 ) {
-  const sagaRunner = fleetBridge ? new SagaRunner(fleetBridge, sendToRenderer) : null;
+  const sagaRunner = fleetBridge
+    ? new SagaRunner(fleetBridge, sendToRenderer, activityFeed)
+    : null;
   ipcMain.handle('fleet.list', async () => {
     if (!fleetBridge) return [];
     return fleetBridge.listPeers();

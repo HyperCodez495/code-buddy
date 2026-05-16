@@ -25,6 +25,7 @@ import { log, logError, logWarn } from '../utils/logger';
 import { loadCoreModule } from '../utils/core-loader';
 import type { FleetBridge } from './fleet-bridge';
 import type { ServerEvent } from '../../renderer/types';
+import type { ActivityFeed } from '../activity/activity-feed';
 
 // Wide types — the core fleet modules don't ship typings reachable
 // from Cowork's tsconfig. Each shape mirrors the relevant exported
@@ -58,6 +59,9 @@ interface SagaShape {
   steps: SagaStepShape[];
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   finalResult?: string;
+  metadata?: Record<string, unknown>;
+  createdAt: number;
+  completedAt?: number;
 }
 
 interface SagaStoreShape {
@@ -97,6 +101,7 @@ export class SagaRunner {
   constructor(
     private readonly fleetBridge: FleetBridge,
     private readonly sendToRenderer: (event: ServerEvent) => void,
+    private readonly activityFeed: ActivityFeed | null = null,
   ) {}
 
   /**
@@ -140,6 +145,7 @@ export class SagaRunner {
     }
 
     await this.maybeFinalise(store, sagaId);
+    await this.recordTerminalActivity(store, sagaId);
   }
 
   private async runParallel(store: SagaStoreShape, saga: SagaShape): Promise<void> {
@@ -317,8 +323,58 @@ export class SagaRunner {
       payload: { sagaId },
     });
   }
+
+  private async recordTerminalActivity(
+    store: SagaStoreShape,
+    sagaId: string,
+  ): Promise<void> {
+    if (!this.activityFeed) return;
+
+    const saga = await store.load(sagaId);
+    if (!saga) return;
+    if (
+      saga.status !== 'completed' &&
+      saga.status !== 'failed' &&
+      saga.status !== 'cancelled'
+    ) {
+      return;
+    }
+
+    const completedSteps = saga.steps.filter((step) => step.status === 'completed').length;
+    const failedSteps = saga.steps.filter((step) => step.status === 'failed').length;
+    const errorSummary = saga.steps
+      .filter((step) => step.status === 'failed' && step.error)
+      .map((step) => `${step.peerId}: ${step.error}`)
+      .join('; ');
+    const terminalType =
+      saga.status === 'completed' ? 'fleet.saga.completed' : 'fleet.saga.failed';
+
+    this.activityFeed.record({
+      type: terminalType,
+      title: saga.status === 'completed' ? 'Fleet saga completed' : 'Fleet saga failed',
+      description: truncateActivityText(saga.goal, 140),
+      metadata: {
+        sagaId: saga.id,
+        status: saga.status,
+        completedSteps,
+        failedSteps,
+        totalSteps: saga.steps.length,
+        privacyTag: saga.metadata?.privacyTag,
+        durationMs: saga.completedAt ? Math.max(0, saga.completedAt - saga.createdAt) : undefined,
+        finalResultPreview: saga.finalResult
+          ? truncateActivityText(saga.finalResult, 180)
+          : undefined,
+        errorSummary: errorSummary ? truncateActivityText(errorSummary, 180) : undefined,
+      },
+    });
+  }
 }
 
 function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function truncateActivityText(text: string, maxLength: number): string {
+  if (text.length <= maxLength) return text;
+  return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
 }

@@ -31,6 +31,9 @@ const state = vi.hoisted(() => {
     steps: SagaStep[];
     status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
     finalResult?: string;
+    metadata?: Record<string, unknown>;
+    createdAt?: number;
+    completedAt?: number;
   };
   return {
     sagas: new Map<string, Saga>(),
@@ -60,6 +63,8 @@ vi.mock('../src/main/utils/core-loader', () => ({
             if (!cur) return null;
             cur.steps[idx].status = 'completed';
             cur.steps[idx].result = result;
+            cur.status = 'completed';
+            cur.completedAt = Date.now();
             return cur;
           },
           failStep: async (id: string, idx: number, error: string) => {
@@ -67,6 +72,8 @@ vi.mock('../src/main/utils/core-loader', () => ({
             if (!cur) return null;
             cur.steps[idx].status = 'failed';
             cur.steps[idx].error = error;
+            cur.status = 'failed';
+            cur.completedAt = Date.now();
             return cur;
           },
           finalise: async (id: string, finalResult: string) => {
@@ -74,6 +81,7 @@ vi.mock('../src/main/utils/core-loader', () => ({
             if (!cur) return null;
             cur.finalResult = finalResult;
             cur.status = 'completed';
+            cur.completedAt = Date.now();
             return cur;
           },
         }),
@@ -86,8 +94,13 @@ vi.mock('../src/main/utils/core-loader', () => ({
           return 'AGGREGATED';
         }),
         finaliseFromSingle: vi.fn((saga: unknown) => {
-          state.finaliseFromSingleCalls.push(saga as never);
-          return 'SINGLE_FINAL';
+          const typedSaga = saga as { steps: SagaStep[] };
+          state.finaliseFromSingleCalls.push(typedSaga as never);
+          const primary = typedSaga.steps.find((step) => step.lane === 'primary');
+          if (primary?.status === 'completed' && primary.result) return primary.result;
+          const fallback = typedSaga.steps.find((step) => step.lane === 'fallback');
+          if (fallback?.status === 'completed' && fallback.result) return fallback.result;
+          return null;
         }),
       };
     }
@@ -145,27 +158,88 @@ describe('SagaRunner — sequential primary success', () => {
       plan: { primary: { peerId: 'peer-a', model: 'm1' } },
       steps: [{ peerId: 'peer-a', model: 'm1', lane: 'primary', status: 'pending' }],
       status: 'pending',
+      metadata: { privacyTag: 'public' },
+      createdAt: Date.now() - 5_000,
     });
 
     const sendToRenderer = vi.fn();
+    const activityFeed = { record: vi.fn() };
     const fleetBridge = makeFleetBridgeMock({
       'peer.dispatch': async () => ({ runId: 'run-1' }),
       'peer.dispatchStatus': async () => ({ found: true, status: 'completed', result: 'OK' }),
     });
 
-    const runner = new SagaRunner(fleetBridge as never, sendToRenderer);
+    const runner = new SagaRunner(fleetBridge as never, sendToRenderer, activityFeed as never);
     runner.start('saga_seq_ok');
 
     await waitFor(() => state.sagas.get('saga_seq_ok')?.status === 'completed');
+    await waitFor(() => activityFeed.record.mock.calls.length > 0);
 
     const saga = state.sagas.get('saga_seq_ok')!;
     expect(saga.steps[0].status).toBe('completed');
     expect(saga.steps[0].runId).toBe('run-1');
-    expect(saga.finalResult).toBe('SINGLE_FINAL');
+    expect(saga.finalResult).toBe('OK');
     expect(state.finaliseFromSingleCalls.length).toBe(1);
     expect(state.aggregateCalls.length).toBe(0);
     expect(sendToRenderer).toHaveBeenCalledWith(
       expect.objectContaining({ type: 'fleet.saga.update' }),
+    );
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.saga.completed',
+        title: 'Fleet saga completed',
+        description: 'hello',
+        metadata: expect.objectContaining({
+          sagaId: 'saga_seq_ok',
+          status: 'completed',
+          completedSteps: 1,
+          totalSteps: 1,
+          privacyTag: 'public',
+          finalResultPreview: 'OK',
+        }),
+      }),
+    );
+  });
+});
+
+describe('SagaRunner — terminal failure activity', () => {
+  it('records a failed Fleet saga when no lane succeeds', async () => {
+    state.sagas.set('saga_seq_fail', {
+      id: 'saga_seq_fail',
+      goal: 'doomed',
+      plan: { primary: { peerId: 'peer-a', model: 'm1' } },
+      steps: [{ peerId: 'peer-a', model: 'm1', lane: 'primary', status: 'pending' }],
+      status: 'pending',
+      metadata: { privacyTag: 'sensitive' },
+      createdAt: Date.now() - 1_000,
+    });
+
+    const activityFeed = { record: vi.fn() };
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async () => {
+        throw new Error('peer-a unavailable');
+      },
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn(), activityFeed as never);
+    runner.start('saga_seq_fail');
+
+    await waitFor(() => activityFeed.record.mock.calls.length > 0);
+
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.saga.failed',
+        title: 'Fleet saga failed',
+        description: 'doomed',
+        metadata: expect.objectContaining({
+          sagaId: 'saga_seq_fail',
+          status: 'failed',
+          completedSteps: 0,
+          failedSteps: 1,
+          totalSteps: 1,
+          privacyTag: 'sensitive',
+        }),
+      }),
     );
   });
 });
