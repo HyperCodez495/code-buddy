@@ -42,7 +42,9 @@ streaming chunks.
   `peer.describe` snapshots for connected peers so the Command Center
   can display provider/model metadata, force-refresh snapshots from the
   header, route with real capability data, and guide operators toward
-  the required `fleet:listen` + `peer:invoke` key scopes.
+  the required `fleet:listen` + `peer:invoke` key scopes. The cockpit
+  now also shows Fleet readiness and disables dispatch until at least
+  one peer has routable capabilities.
 
 ### Fixed — Cowork-on-core migration
 

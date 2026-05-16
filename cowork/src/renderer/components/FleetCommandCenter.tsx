@@ -77,6 +77,14 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const setFleetPeers = useAppStore((s) => s.setFleetPeers);
   const upsertFleetPeer = useAppStore((s) => s.upsertFleetPeer);
   const peers = useMemo(() => Object.values(fleetPeers), [fleetPeers]);
+  const routablePeers = useMemo(
+    () => peers.filter((p) => Boolean(p.capability?.models.length)),
+    [peers],
+  );
+  const onlinePeers = useMemo(
+    () => peers.filter((p) => p.status === 'authenticated' || p.status === 'connected'),
+    [peers],
+  );
   // Wiring W7 — bumped on every fleet.saga.update event so we re-fetch
   // sagas reactively instead of waiting for the 3s polling cycle.
   const sagaUpdateToken = useAppStore((s) => s.fleetSagaUpdateToken);
@@ -89,6 +97,11 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [parallelism, setParallelism] = useState(1);
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
+  const runningSagas = useMemo(
+    () => sagas.filter((s) => s.status === 'pending' || s.status === 'running').length,
+    [sagas],
+  );
+  const readiness = getFleetReadiness(peers.length, onlinePeers.length, routablePeers.length);
 
   // ESC closes
   useEffect(() => {
@@ -180,7 +193,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   };
 
   const handleDispatch = async () => {
-    if (!goalText.trim() || dispatching) return;
+    if (!goalText.trim() || dispatching || routablePeers.length === 0) return;
     setDispatching(true);
     setError(null);
     try {
@@ -217,6 +230,8 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       setDispatching(false);
     }
   };
+
+  const dispatchDisabled = !goalText.trim() || dispatching || routablePeers.length === 0;
 
   if (!isOpen) return null;
 
@@ -299,6 +314,38 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
           {/* Center — dispatch + sagas */}
           <div className="w-[40%] flex flex-col min-h-0">
             <div className="px-4 py-3 border-b border-zinc-800">
+              <div
+                className={`mb-3 flex items-center justify-between gap-3 border-l-2 pl-3 py-2 ${readiness.borderClass}`}
+              >
+                <div className="min-w-0">
+                  <div className={`text-[11px] font-medium ${readiness.textClass}`}>
+                    {t(readiness.titleKey, readiness.title)}
+                  </div>
+                  <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-[10px] text-zinc-500">
+                    <span>
+                      {routablePeers.length}/{peers.length} {t('fleet.routable', 'routable')}
+                    </span>
+                    <span>
+                      {onlinePeers.length} {t('fleet.online', 'online')}
+                    </span>
+                    <span>
+                      {runningSagas} {t('fleet.running', 'running')}
+                    </span>
+                  </div>
+                </div>
+                {readiness.action === 'refresh' && (
+                  <button
+                    type="button"
+                    onClick={() => void handleRefreshPeers()}
+                    disabled={refreshingPeers}
+                    className="shrink-0 rounded border border-zinc-700 px-2 py-1 text-[10px] text-zinc-300 hover:border-zinc-500 hover:text-zinc-100 disabled:opacity-50"
+                  >
+                    {refreshingPeers
+                      ? t('fleet.refreshing', 'Refreshing')
+                      : t('fleet.refresh', 'Refresh')}
+                  </button>
+                )}
+              </div>
               <label className="block text-[10px] uppercase tracking-wider text-zinc-500 mb-1.5">
                 {t('fleet.dispatchGoal', 'Dispatch a goal to the fleet')}
               </label>
@@ -348,7 +395,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <button
                   type="button"
                   onClick={() => void handleDispatch()}
-                  disabled={!goalText.trim() || dispatching || peers.length === 0}
+                  disabled={dispatchDisabled}
                   className="ml-auto flex items-center gap-1 px-3 py-1 text-xs rounded bg-accent text-background hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   {dispatching ? (
@@ -403,6 +450,40 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     </div>
   );
 };
+
+function getFleetReadiness(totalPeers: number, onlinePeers: number, routablePeers: number): {
+  action: 'none' | 'refresh';
+  borderClass: string;
+  textClass: string;
+  title: string;
+  titleKey: string;
+} {
+  if (totalPeers === 0) {
+    return {
+      action: 'none',
+      borderClass: 'border-zinc-700',
+      textClass: 'text-zinc-400',
+      title: 'No peers configured',
+      titleKey: 'fleet.readiness.none',
+    };
+  }
+  if (routablePeers === 0) {
+    return {
+      action: 'refresh',
+      borderClass: 'border-warning/70',
+      textClass: 'text-warning',
+      title: onlinePeers > 0 ? 'Waiting for capabilities' : 'Peers offline',
+      titleKey: onlinePeers > 0 ? 'fleet.readiness.waiting' : 'fleet.readiness.offline',
+    };
+  }
+  return {
+    action: 'none',
+    borderClass: 'border-success/70',
+    textClass: 'text-success',
+    title: 'Ready to dispatch',
+    titleKey: 'fleet.readiness.ready',
+  };
+}
 
 const PeerRow: React.FC<{
   peer: FleetPeer;
