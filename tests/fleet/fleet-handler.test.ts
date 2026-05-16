@@ -524,6 +524,88 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
     });
   });
 
+  describe('describe action', () => {
+    it('reports no listeners when none active', async () => {
+      const r = await handleFleet(['describe']);
+      expect(r.entry?.content).toContain('No fleet listeners active');
+    });
+
+    it('defaults to the only active peer and renders a capability summary', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k', '--name', 'ministar']);
+      fleetListenerMock.requestMock.mockResolvedValueOnce({
+        hostname: 'ministar-linux',
+        pid: 42,
+        methods: ['peer.describe', 'peer.chat', 'peer.tool.invoke'],
+        apiVersion: 'd.21',
+        role: 'hub',
+        maxDepth: 3,
+        peerChatProvider: {
+          provider: 'chatgpt-oauth',
+          model: 'gpt-5.1-codex',
+          isLocal: false,
+        },
+        capabilities: {
+          egress: 'cloud',
+          machineLabel: 'ministar',
+          models: [
+            {
+              id: 'gpt-5.1-codex',
+              provider: 'chatgpt-oauth',
+              contextWindow: 200_000,
+              strengths: ['reasoning'],
+            },
+          ],
+        },
+      });
+
+      const r = await handleFleet(['describe']);
+      const out = r.entry?.content ?? '';
+      expect(out).toContain('Fleet peer "ministar"');
+      expect(out).toContain('Hostname:      ministar-linux');
+      expect(out).toContain('Peer chat:     chatgpt-oauth / gpt-5.1-codex');
+      expect(out).toContain('Capabilities: 1 model(s), egress=cloud');
+      expect(out).toContain('Top models:   gpt-5.1-codex');
+      expect(fleetListenerMock.requestMock).toHaveBeenCalledWith(
+        'peer.describe',
+        {},
+        { timeoutMs: 5_000 },
+      );
+    });
+
+    it('--json returns the raw peer.describe payload', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k', '--name', 'ministar']);
+      fleetListenerMock.requestMock.mockResolvedValueOnce({
+        hostname: 'ministar-linux',
+        methods: ['peer.describe'],
+      });
+
+      const r = await handleFleet(['describe', 'ministar', '--json']);
+      const parsed = JSON.parse(r.entry?.content ?? '{}');
+      expect(parsed).toMatchObject({
+        hostname: 'ministar-linux',
+        methods: ['peer.describe'],
+      });
+    });
+
+    it('requires a peer name when several listeners are active', async () => {
+      await handleFleet(['listen', 'ws://peerA:3000/ws', '--api-key', 'k1', '--name', 'a']);
+      await handleFleet(['listen', 'ws://peerB:3000/ws', '--api-key', 'k2', '--name', 'b']);
+      const r = await handleFleet(['describe']);
+      expect(r.entry?.content).toContain('Multiple fleet listeners active');
+      expect(r.entry?.content).toContain('Specify a peer name');
+    });
+
+    it('honors --timeout override', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k']);
+      await handleFleet(['describe', '--timeout', '750']);
+      expect(fleetListenerMock.requestMock).toHaveBeenCalledWith(
+        'peer.describe',
+        {},
+        { timeoutMs: 750 },
+      );
+    });
+  });
+
   describe('stop action', () => {
     it('reports nothing to stop when idle', async () => {
       const r = await handleFleet(['stop']);

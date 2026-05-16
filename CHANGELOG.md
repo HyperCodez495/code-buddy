@@ -56,6 +56,8 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
   - New `/fleet route <prompt>` command exposes the same router to the
     human CLI, with privacy/cost/latency/context filters, `--json`, and
     `--delegate` for a one-shot routed `peer.chat` call.
+  - New `/fleet describe [peer]` command wraps `peer.describe` with a
+    compact human summary plus `--json` for scripts.
   - Reprise operator checklists added under `docs/reprise/` for CLI
     smoke validation and the minimal Fleet scenario Patrice can replay.
   - New module `src/fleet/peer-tool-bridge.ts` (~280 LOC,

@@ -86,6 +86,9 @@ Actions:
                                       (e.g. "fleet:agent:tool*"). --json
                                       emits raw event records as JSON
                                       for pipe-to-jq workflows.
+  describe [peer] [--timeout <ms>]    Human wrapper around peer.describe.
+            [--json]                  Defaults to the only active peer when
+                                      exactly one listener is connected.
   send <peer> <method> [json-params]  (Phase (d).13) Invoke a peer RPC
             [--timeout <ms>]          method synchronously and print the
                                       response. Method names are dotted,
@@ -173,6 +176,13 @@ interface ParsedHistoryArgs {
   type: string | null;
   /** `true` when `--json` was passed — render as JSON array instead of text. */
   json: boolean;
+}
+
+interface ParsedDescribeArgs {
+  peerName: string | null;
+  timeoutMs: number;
+  json: boolean;
+  error?: string;
 }
 
 interface ParsedRouteArgs {
@@ -342,6 +352,28 @@ function parseHistoryArgs(rest: string[]): ParsedHistoryArgs {
     }
   }
   return { count, peer, type, json };
+}
+
+function parseDescribeArgs(rest: string[]): ParsedDescribeArgs {
+  let peerName: string | null = null;
+  let timeoutMs = 5_000;
+  let json = false;
+
+  for (let i = 0; i < rest.length; i++) {
+    const arg = rest[i];
+    if (arg === '--timeout') {
+      const parsed = parsePositiveIntegerFlag(arg, rest[i + 1]);
+      if (parsed.error) return { peerName, timeoutMs, json, error: parsed.error };
+      timeoutMs = parsed.value ?? timeoutMs;
+      i++;
+    } else if (arg === '--json') {
+      json = true;
+    } else if (!peerName) {
+      peerName = arg;
+    }
+  }
+
+  return { peerName, timeoutMs, json };
 }
 
 function parsePositiveNumberFlag(flag: string, raw: string | undefined): {
@@ -1153,6 +1185,10 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
     return textResult(lines.join('\n'));
   }
 
+  if (action === 'describe') {
+    return await handleDescribe(rest);
+  }
+
   if (action === 'send') {
     if (getFleetRegistry().size() === 0) {
       return textResult('No fleet listeners active. Connect with /fleet listen first.');
@@ -1237,6 +1273,137 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
   }
 
   return textResult(`Unknown fleet action: ${args[0]}\n\n${HELP}`);
+}
+
+interface PeerDescribeCommandPayload {
+  hostname?: unknown;
+  pid?: unknown;
+  methods?: unknown;
+  apiVersion?: unknown;
+  role?: unknown;
+  maxDepth?: unknown;
+  peerChatProvider?: unknown;
+  capabilities?: unknown;
+}
+
+interface PeerCapabilitiesSummary {
+  egress: string;
+  modelCount: number;
+  providers: string[];
+  topModels: string[];
+  machineLabel?: string;
+}
+
+function summarizePeerCapabilities(raw: unknown): PeerCapabilitiesSummary | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const cap = raw as {
+    egress?: unknown;
+    machineLabel?: unknown;
+    models?: unknown;
+  };
+  if (!Array.isArray(cap.models)) return null;
+  const providers = new Set<string>();
+  const topModels: string[] = [];
+  for (const model of cap.models) {
+    if (!model || typeof model !== 'object') continue;
+    const m = model as { id?: unknown; provider?: unknown };
+    if (typeof m.provider === 'string') providers.add(m.provider);
+    if (typeof m.id === 'string' && topModels.length < 5) topModels.push(m.id);
+  }
+  return {
+    egress: typeof cap.egress === 'string' ? cap.egress : 'unknown',
+    modelCount: cap.models.length,
+    providers: [...providers].sort(),
+    topModels,
+    ...(typeof cap.machineLabel === 'string' ? { machineLabel: cap.machineLabel } : {}),
+  };
+}
+
+function formatPeerChatProvider(raw: unknown): string {
+  if (!raw || typeof raw !== 'object') return 'none';
+  const provider = (raw as { provider?: unknown }).provider;
+  const model = (raw as { model?: unknown }).model;
+  const local = (raw as { isLocal?: unknown }).isLocal;
+  if (typeof provider !== 'string' || typeof model !== 'string') return 'unknown';
+  return `${provider} / ${model}${local === true ? ' [local]' : ''}`;
+}
+
+function formatDescribePayload(peerName: string, payload: PeerDescribeCommandPayload): string {
+  const methods = Array.isArray(payload.methods)
+    ? payload.methods.filter((m): m is string => typeof m === 'string')
+    : [];
+  const capabilities = summarizePeerCapabilities(payload.capabilities);
+  const lines = [
+    `Fleet peer "${peerName}"`,
+    `  Hostname:      ${typeof payload.hostname === 'string' ? payload.hostname : 'unknown'}`,
+    `  PID:           ${typeof payload.pid === 'number' ? payload.pid : 'unknown'}`,
+    `  API version:   ${typeof payload.apiVersion === 'string' ? payload.apiVersion : 'unknown'}`,
+    `  Role:          ${typeof payload.role === 'string' ? payload.role : 'unknown'}`,
+    `  Max depth:     ${typeof payload.maxDepth === 'number' ? payload.maxDepth : 'unknown'}`,
+    `  Peer chat:     ${formatPeerChatProvider(payload.peerChatProvider)}`,
+    `  Methods:       ${methods.length > 0 ? methods.join(', ') : '(none)'}`,
+  ];
+  if (capabilities) {
+    lines.push(
+      `  Capabilities: ${capabilities.modelCount} model(s), egress=${capabilities.egress}`,
+    );
+    if (capabilities.machineLabel) {
+      lines.push(`  Machine:      ${capabilities.machineLabel}`);
+    }
+    lines.push(
+      `  Providers:    ${capabilities.providers.length > 0 ? capabilities.providers.join(', ') : '(none)'}`,
+    );
+    lines.push(
+      `  Top models:   ${capabilities.topModels.length > 0 ? capabilities.topModels.join(', ') : '(none)'}`,
+    );
+  } else {
+    lines.push('  Capabilities: none advertised');
+  }
+  return lines.join('\n');
+}
+
+async function handleDescribe(rest: string[]): Promise<CommandHandlerResult> {
+  if (getFleetRegistry().size() === 0) {
+    return textResult('No fleet listeners active. Connect with /fleet listen first.');
+  }
+
+  const parsed = parseDescribeArgs(rest);
+  if (parsed.error) {
+    return textResult(parsed.error);
+  }
+
+  let target: ActiveListener | null = null;
+  if (parsed.peerName) {
+    target = getFleetRegistry().get(parsed.peerName) ?? null;
+    if (!target) {
+      return textResult(
+        `No fleet peer named "${parsed.peerName}". Active peers: ${getFleetRegistry().ids().join(', ')}`,
+      );
+    }
+  } else {
+    target = pickDefaultPeer();
+    if (!target) {
+      return textResult(
+        `Multiple fleet listeners active (${getFleetRegistry().size()}). ` +
+          `Specify a peer name. Active: ${getFleetRegistry().ids().join(', ')}`,
+      );
+    }
+  }
+
+  try {
+    const result = (await target.listener.request(
+      'peer.describe',
+      {},
+      { timeoutMs: parsed.timeoutMs },
+    )) as PeerDescribeCommandPayload;
+    if (parsed.json) {
+      return textResult(JSON.stringify(result, null, 2));
+    }
+    return textResult(formatDescribePayload(target.id, result));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    return textResult(`Peer "${target.id}" → peer.describe FAILED:\n  ${message}`);
+  }
 }
 
 function getClassificationComplexity(classification: unknown): string {

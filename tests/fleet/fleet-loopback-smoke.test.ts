@@ -59,17 +59,20 @@ describe('Fleet loopback smoke', () => {
   let previousWorkspaceRoot: string | undefined;
   let previousAuthPath: string | undefined;
   let previousChatGptModel: string | undefined;
+  let previousPeerProvider: string | undefined;
 
   beforeEach(async () => {
     previousWorkspaceRoot = process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
     previousAuthPath = process.env.CODEBUDDY_CODEX_AUTH_PATH;
     previousChatGptModel = process.env.CHATGPT_MODEL;
+    previousPeerProvider = process.env.CODEBUDDY_PEER_PROVIDER;
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-loopback-'));
     tmpRoot = await fs.realpath(tmpRoot);
     await fs.writeFile(path.join(tmpRoot, 'hello.txt'), 'hello from loopback\n');
     process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT = tmpRoot;
     process.env.CODEBUDDY_CODEX_AUTH_PATH = path.join(tmpRoot, 'codex-auth.json');
     process.env.CHATGPT_MODEL = 'gpt-5.1-codex';
+    process.env.CODEBUDDY_PEER_PROVIDER = 'chatgpt-oauth';
     await fs.writeFile(
       process.env.CODEBUDDY_CODEX_AUTH_PATH,
       JSON.stringify({ tokens: { access_token: 'test-oauth-token' } }),
@@ -104,6 +107,11 @@ describe('Fleet loopback smoke', () => {
       delete process.env.CHATGPT_MODEL;
     } else {
       process.env.CHATGPT_MODEL = previousChatGptModel;
+    }
+    if (previousPeerProvider === undefined) {
+      delete process.env.CODEBUDDY_PEER_PROVIDER;
+    } else {
+      process.env.CODEBUDDY_PEER_PROVIDER = previousPeerProvider;
     }
     resetCapabilityCache();
     await fs.rm(tmpRoot, { recursive: true, force: true });
@@ -201,5 +209,17 @@ describe('Fleet loopback smoke', () => {
     expect(out).toContain('Fleet route recommendation');
     expect(out).toContain('Primary: loopback / gpt-5.1-codex');
     expect(out).toContain('peer_delegate');
+  });
+
+  it('renders /fleet describe from a real loopback peer.describe response', async () => {
+    await connectLoopbackPeer();
+
+    const result = await handleFleet(['describe', 'loopback', '--timeout', '2000']);
+
+    const out = result.entry?.content ?? '';
+    expect(out).toContain('Fleet peer "loopback"');
+    expect(out).toContain('Peer chat:     chatgpt-oauth / gpt-5.1-codex');
+    expect(out).toContain('Capabilities:');
+    expect(out).toContain('Top models:   gpt-5.1-codex');
   });
 });

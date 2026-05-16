@@ -65,7 +65,7 @@ Resultat attendu:
 ## 3. Decrire les capacites
 
 ```text
-/fleet send ministar-linux peer.describe
+/fleet describe ministar-linux
 ```
 
 Resultat attendu:
@@ -74,7 +74,7 @@ Resultat attendu:
   `peer.chat` si un provider est cable, et `peer.tool.invoke`.
 - `capabilities.models` liste les providers disponibles
   (`chatgpt-oauth`, `ollama`, `gemini-cli`, etc.).
-- `peerChatProvider` indique le provider effectivement cable pour
+- `Peer chat` indique le provider effectivement cable pour
   `peer.chat`, ou `null` si aucun LLM n'est disponible.
 
 ## 4. Router une tache

@@ -141,6 +141,21 @@ response.
 JSON params must be a JSON object (not an array, not a primitive).
 Default timeout 30s. `--timeout` overrides per call.
 
+### `/fleet describe [peer] [--timeout <ms>] [--json]`
+
+Human wrapper around `peer.describe`. When only one listener is active,
+the peer name can be omitted. Use this before routing or delegating to
+see methods, `peer.chat` provider status, and advertised model
+capabilities.
+
+```bash
+/fleet describe ministar-linux
+# -> Hostname, role, methods, peer chat provider, providers, top models
+
+/fleet describe --json
+# -> Raw peer.describe payload for scripts
+```
+
 ### `/fleet tool <peer> <name> [json-args] [--timeout <ms>] [--stream]`
 
 UX wrapper around `peer.tool.invoke` for the read-only remote tools.
