@@ -1441,6 +1441,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         lastError?: string;
         lastSeenAt?: number;
         lastEventType?: string;
+        peerChatProvider?: unknown;
+        capability?: unknown;
       }>
     > => ipcRenderer.invoke('fleet.list'),
     addPeer: (input: {
@@ -2973,6 +2975,8 @@ declare global {
             lastError?: string;
             lastSeenAt?: number;
             lastEventType?: string;
+            peerChatProvider?: unknown;
+            capability?: unknown;
           }>
         >;
         addPeer: (input: {

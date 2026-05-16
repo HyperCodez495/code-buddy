@@ -372,6 +372,12 @@ const PeerDetail: React.FC<{ peer?: FleetPeer }> = ({ peer }) => {
         <>
           <div className="flex items-center gap-1.5 text-[11px]">
             <EgressChip egress={cap.egress} />
+            {peer.peerChatProvider && (
+              <span className="min-w-0 truncate text-zinc-400">
+                {peer.peerChatProvider.provider} / {peer.peerChatProvider.model}
+                {peer.peerChatProvider.isLocal ? ' local' : ''}
+              </span>
+            )}
             {cap.machineSpec?.gpu && (
               <span className="text-zinc-400">{cap.machineSpec.gpu}</span>
             )}

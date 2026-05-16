@@ -525,6 +525,11 @@ export interface FleetPeer {
   lastError?: string;
   lastSeenAt?: number;
   lastEventType?: string;
+  peerChatProvider?: {
+    provider: string;
+    model: string;
+    isLocal: boolean;
+  } | null;
   /**
    * Latest capability snapshot from `peer.describe` (Fleet P2). Lets
    * the UI display which models the peer can route to and the

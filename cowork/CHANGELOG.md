@@ -38,6 +38,9 @@ streaming chunks.
 - **README runner section** (P6) — documented the embedded Code Buddy
   core engine default, pi fallback, titlebar badge, Settings override,
   and active-turn queue semantics.
+- **Fleet cockpit capabilities** — the Cowork Fleet bridge now refreshes
+  `peer.describe` snapshots for connected peers so the Command Center
+  can display provider/model metadata and route with real capability data.
 
 ### Fixed — Cowork-on-core migration
 

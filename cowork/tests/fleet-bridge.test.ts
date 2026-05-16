@@ -42,6 +42,31 @@ class FakeFleetListener extends EventEmitter {
     this.connected = false;
     this.emit('disconnected');
   }
+
+  async request(method: string): Promise<unknown> {
+    if (method !== 'peer.describe') {
+      throw new Error(`unexpected method: ${method}`);
+    }
+    return {
+      peerChatProvider: {
+        provider: 'chatgpt-oauth',
+        model: 'gpt-5.1-codex',
+        isLocal: false,
+      },
+      capabilities: {
+        egress: 'cloud',
+        machineLabel: 'Ministar Linux',
+        models: [
+          {
+            id: 'gpt-5.1-codex',
+            contextWindow: 200_000,
+            strengths: ['reasoning', 'thinking', 'code'],
+            provider: 'chatgpt-oauth',
+          },
+        ],
+      },
+    };
+  }
 }
 
 vi.mock('../src/main/utils/core-loader', () => ({
@@ -91,6 +116,45 @@ describe('FleetBridge', () => {
     const parsed = JSON.parse(raw);
     expect(parsed.peers[0].url).toBe('ws://100.98.18.76:3000/ws');
     expect(parsed.peers[0].apiKey).toBe('test-key');
+  });
+
+  it('refreshes peer.describe capabilities for Cowork routing and display', async () => {
+    const events: ServerEvent[] = [];
+    const bridge = new FleetBridge((e) => events.push(e));
+    await bridge.init();
+
+    const result = await bridge.addPeer({
+      url: 'ws://100.98.18.76:3000/ws',
+      apiKey: 'test-key',
+      label: 'Ministar Linux',
+    });
+    expect(result.success).toBe(true);
+
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    const peers = await bridge.listPeers();
+    expect(peers[0].peerChatProvider).toEqual({
+      provider: 'chatgpt-oauth',
+      model: 'gpt-5.1-codex',
+      isLocal: false,
+    });
+    expect(peers[0].capability).toMatchObject({
+      egress: 'cloud',
+      machineLabel: 'Ministar Linux',
+      models: [
+        {
+          id: 'gpt-5.1-codex',
+          provider: 'chatgpt-oauth',
+        },
+      ],
+    });
+
+    const updates = events.filter((e) => e.type === 'fleet.peer.update');
+    expect(
+      updates.some((e) => Boolean(e.payload.peer.capability?.models.length)),
+    ).toBe(true);
   });
 
   it('forwards fleet:event payloads as fleet.event ServerEvents', async () => {

@@ -23,7 +23,7 @@ import {
   AlertCircle,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-import type { FleetPeerStatus } from '../types';
+import type { FleetPeer, FleetPeerStatus } from '../types';
 
 const STATUS_TOKEN: Record<FleetPeerStatus, string> = {
   connecting: 'text-warning',
@@ -89,6 +89,8 @@ export function FleetPanel() {
           lastError: p.lastError,
           lastSeenAt: p.lastSeenAt,
           lastEventType: p.lastEventType,
+          peerChatProvider: p.peerChatProvider as FleetPeer['peerChatProvider'],
+          capability: p.capability as FleetPeer['capability'],
         }))
       );
     });

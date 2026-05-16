@@ -30,6 +30,9 @@ import type {
   FleetEventRecord,
 } from '../../renderer/types';
 
+type FleetCapability = NonNullable<FleetPeer['capability']>;
+type FleetPeerChatProvider = NonNullable<FleetPeer['peerChatProvider']>;
+
 interface CoreFleetListener {
   connect(): Promise<void>;
   disconnect(): Promise<void> | void;
@@ -75,6 +78,8 @@ interface PersistedFile {
 }
 
 const EVENT_RING_CAPACITY = 200;
+const CAPABILITY_REFRESH_INTERVAL_MS = 60_000;
+const PEER_DESCRIBE_TIMEOUT_MS = 5_000;
 
 function sanitizeId(value: string): string {
   return value
@@ -103,6 +108,7 @@ export class FleetBridge {
   private readonly sendToRenderer: (event: ServerEvent) => void;
   private peers: Map<string, PeerEntry> = new Map();
   private events: FleetEventRecord[] = [];
+  private capabilityRefreshedAt: Map<string, number> = new Map();
   private loaded = false;
 
   constructor(sendToRenderer: (event: ServerEvent) => void) {
@@ -174,6 +180,51 @@ export class FleetBridge {
     this.sendToRenderer({ type: 'fleet.peer.update', payload: { peer: { ...entry.meta } } });
   }
 
+  private emitPeerUpdate(peerId: string): void {
+    const entry = this.peers.get(peerId);
+    if (!entry) return;
+    this.sendToRenderer({ type: 'fleet.peer.update', payload: { peer: { ...entry.meta } } });
+  }
+
+  private async refreshPeerCapabilities(
+    peerId: string,
+    options: { force?: boolean } = {},
+  ): Promise<void> {
+    const entry = this.peers.get(peerId);
+    if (!entry?.listener) return;
+    const now = Date.now();
+    const last = this.capabilityRefreshedAt.get(peerId) ?? 0;
+    if (!options.force && now - last < CAPABILITY_REFRESH_INTERVAL_MS) return;
+
+    try {
+      const raw = (await entry.listener.request(
+        'peer.describe',
+        {},
+        { timeoutMs: PEER_DESCRIBE_TIMEOUT_MS },
+      )) as { capabilities?: unknown; peerChatProvider?: unknown };
+      entry.meta.capability = normalizeCapability(raw.capabilities);
+      entry.meta.peerChatProvider = normalizePeerChatProvider(raw.peerChatProvider);
+      entry.meta.lastError = undefined;
+      this.capabilityRefreshedAt.set(peerId, now);
+      this.emitPeerUpdate(peerId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      entry.meta.lastError = `peer.describe failed: ${message}`;
+      this.emitPeerUpdate(peerId);
+      logWarn(`[FleetBridge] peer.describe failed for ${peerId}:`, message);
+    }
+  }
+
+  private async refreshAllCapabilities(): Promise<void> {
+    await Promise.all(
+      Array.from(this.peers.keys()).map((id) =>
+        this.refreshPeerCapabilities(id).catch((err) =>
+          logWarn(`[FleetBridge] refreshPeerCapabilities(${id}) failed:`, err),
+        ),
+      ),
+    );
+  }
+
   private async connectPeer(peerId: string): Promise<void> {
     const entry = this.peers.get(peerId);
     if (!entry) return;
@@ -203,10 +254,16 @@ export class FleetBridge {
     this.updateStatus(peerId, 'connecting');
 
     listener.on('connected', () => this.updateStatus(peerId, 'connected'));
-    listener.on('authenticated', () => this.updateStatus(peerId, 'authenticated'));
+    listener.on('authenticated', () => {
+      this.updateStatus(peerId, 'authenticated');
+      void this.refreshPeerCapabilities(peerId, { force: true });
+    });
     listener.on('disconnected', () => this.updateStatus(peerId, 'disconnected'));
     listener.on('reconnecting', () => this.updateStatus(peerId, 'reconnecting'));
-    listener.on('reconnected', () => this.updateStatus(peerId, 'authenticated'));
+    listener.on('reconnected', () => {
+      this.updateStatus(peerId, 'authenticated');
+      void this.refreshPeerCapabilities(peerId, { force: true });
+    });
     listener.on('error', (...args: unknown[]) => {
       const err = args[0];
       const msg = err instanceof Error ? err.message : String(err ?? 'unknown error');
@@ -249,6 +306,7 @@ export class FleetBridge {
   }
 
   async listPeers(): Promise<FleetPeer[]> {
+    await this.refreshAllCapabilities();
     return Array.from(this.peers.values()).map((e) => ({ ...e.meta }));
   }
 
@@ -296,6 +354,7 @@ export class FleetBridge {
       }
     }
     this.peers.delete(peerId);
+    this.capabilityRefreshedAt.delete(peerId);
     this.events = this.events.filter((e) => e.peerId !== peerId);
     await this.save();
     return { success: true };
@@ -351,6 +410,54 @@ export class FleetBridge {
       }
     }
   }
+}
+
+function normalizePeerChatProvider(raw: unknown): FleetPeerChatProvider | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const candidate = raw as {
+    provider?: unknown;
+    model?: unknown;
+    isLocal?: unknown;
+  };
+  if (
+    typeof candidate.provider !== 'string' ||
+    typeof candidate.model !== 'string' ||
+    typeof candidate.isLocal !== 'boolean'
+  ) {
+    return null;
+  }
+  return {
+    provider: candidate.provider,
+    model: candidate.model,
+    isLocal: candidate.isLocal,
+  };
+}
+
+function normalizeCapability(raw: unknown): FleetCapability | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const candidate = raw as Partial<FleetCapability>;
+  if (!Array.isArray(candidate.models)) return undefined;
+  const models = candidate.models.filter((model): model is FleetCapability['models'][number] => (
+    Boolean(model) &&
+    typeof model.id === 'string' &&
+    typeof model.contextWindow === 'number' &&
+    Array.isArray(model.strengths) &&
+    typeof model.provider === 'string'
+  ));
+  if (models.length === 0) return undefined;
+  const egress = candidate.egress === 'lan' || candidate.egress === 'cloud'
+    ? candidate.egress
+    : 'local';
+  return {
+    egress,
+    machineLabel: typeof candidate.machineLabel === 'string'
+      ? candidate.machineLabel
+      : '',
+    machineSpec: candidate.machineSpec,
+    maxConcurrency: candidate.maxConcurrency,
+    activeRequests: candidate.activeRequests,
+    models,
+  };
 }
 
 let singleton: FleetBridge | null = null;
