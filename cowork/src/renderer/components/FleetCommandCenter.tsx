@@ -93,7 +93,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [goalText, setGoalText] = useState('');
   const [sagas, setSagas] = useState<SagaSummary[]>([]);
   const [dispatching, setDispatching] = useState(false);
-  const [refreshingPeers, setRefreshingPeers] = useState(false);
+  const [refreshingPeerId, setRefreshingPeerId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [parallelism, setParallelism] = useState(1);
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
@@ -101,6 +101,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     () => sagas.filter((s) => s.status === 'pending' || s.status === 'running').length,
     [sagas],
   );
+  const refreshingPeers = refreshingPeerId !== null;
   const readiness = getFleetReadiness(peers.length, onlinePeers.length, routablePeers.length);
 
   // ESC closes
@@ -161,9 +162,9 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     };
   }, [isOpen, sagaUpdateToken]);
 
-  const handleRefreshPeers = async () => {
-    if (refreshingPeers) return;
-    setRefreshingPeers(true);
+  const handleRefreshPeers = async (peerId?: string) => {
+    if (refreshingPeerId) return;
+    setRefreshingPeerId(peerId ?? 'all');
     setError(null);
     try {
       const api = getFleetApi();
@@ -173,7 +174,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       }
 
       if (api.refreshCapabilities) {
-        const result = await api.refreshCapabilities();
+        const result = await api.refreshCapabilities(peerId);
         if (!result.success) {
           setError(result.error ?? 'capability refresh failed');
           return;
@@ -188,7 +189,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setRefreshingPeers(false);
+      setRefreshingPeerId(null);
     }
   };
 
@@ -442,7 +443,13 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 {t('fleet.selectPeerHint', 'Sélectionne un peer pour voir ses modèles.')}
               </div>
             ) : (
-              <PeerDetail peer={fleetPeers[selectedPeerId]} />
+              <PeerDetail
+                peer={fleetPeers[selectedPeerId]}
+                onRefreshCapabilities={(peerId) => void handleRefreshPeers(peerId)}
+                refreshing={
+                  refreshingPeerId === 'all' || refreshingPeerId === selectedPeerId
+                }
+              />
             )}
           </div>
         </div>
@@ -526,9 +533,19 @@ const PeerRow: React.FC<{
   );
 };
 
-const PeerDetail: React.FC<{ peer?: FleetPeer }> = ({ peer }) => {
+const PeerDetail: React.FC<{
+  peer?: FleetPeer;
+  onRefreshCapabilities: (peerId: string) => void;
+  refreshing: boolean;
+}> = ({ peer, onRefreshCapabilities, refreshing }) => {
   if (!peer) return null;
   const cap = peer.capability;
+  const load =
+    cap && cap.maxConcurrency
+      ? `${cap.activeRequests ?? 0}/${cap.maxConcurrency}`
+      : cap?.activeRequests !== undefined
+        ? String(cap.activeRequests)
+        : null;
   return (
     <div className="p-4 space-y-3 text-xs">
       <div>
@@ -537,6 +554,17 @@ const PeerDetail: React.FC<{ peer?: FleetPeer }> = ({ peer }) => {
         </div>
         <div className="text-zinc-500 text-[11px] truncate">{peer.url}</div>
       </div>
+      <div className="grid grid-cols-2 gap-2 text-[10px]">
+        <PeerStat label="Status" value={peer.status} tone={peerStatusTone(peer.status)} />
+        <PeerStat label="Load" value={load ?? '-'} />
+        <PeerStat label="Last seen" value={formatPeerSeenAt(peer.lastSeenAt)} />
+        <PeerStat label="Last event" value={peer.lastEventType ?? '-'} />
+      </div>
+      {peer.lastError && (
+        <div className="rounded border border-error/30 bg-error/10 px-2 py-1.5 text-[11px] text-error">
+          {peer.lastError}
+        </div>
+      )}
       {cap && (
         <>
           <div className="flex items-center gap-1.5 text-[11px]">
@@ -590,13 +618,39 @@ const PeerDetail: React.FC<{ peer?: FleetPeer }> = ({ peer }) => {
         </>
       )}
       {!cap && (
-        <div className="text-zinc-500 italic">
-          Capabilities not yet received from this peer.
+        <div className="rounded border border-warning/30 bg-warning/10 px-3 py-2">
+          <div className="text-[11px] text-warning">
+            Capabilities not yet received from this peer.
+          </div>
+          <button
+            type="button"
+            onClick={() => onRefreshCapabilities(peer.id)}
+            disabled={refreshing}
+            className="mt-2 inline-flex items-center gap-1 rounded border border-warning/40 px-2 py-1 text-[10px] text-warning hover:bg-warning/10 disabled:opacity-50"
+          >
+            {refreshing ? (
+              <Loader2 size={10} className="animate-spin" />
+            ) : (
+              <RefreshCw size={10} />
+            )}
+            Refresh this peer
+          </button>
         </div>
       )}
     </div>
   );
 };
+
+const PeerStat: React.FC<{
+  label: string;
+  value: string;
+  tone?: string;
+}> = ({ label, value, tone }) => (
+  <div className="rounded border border-zinc-800 bg-zinc-800/40 px-2 py-1.5">
+    <div className="uppercase tracking-wide text-zinc-600">{label}</div>
+    <div className={`mt-0.5 truncate ${tone ?? 'text-zinc-300'}`}>{value}</div>
+  </div>
+);
 
 const SagaRow: React.FC<{ saga: SagaSummary }> = ({ saga }) => {
   const total = saga.steps.length;
@@ -737,4 +791,20 @@ function formatSagaAge(createdAt: number): string {
   if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m`;
   if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h`;
   return `${Math.floor(elapsedMs / 86_400_000)}d`;
+}
+
+function peerStatusTone(status: FleetPeer['status']): string {
+  if (status === 'authenticated' || status === 'connected') return 'text-success';
+  if (status === 'connecting' || status === 'reconnecting') return 'text-warning';
+  if (status === 'disconnected' || status === 'error') return 'text-error';
+  return 'text-zinc-300';
+}
+
+function formatPeerSeenAt(lastSeenAt?: number): string {
+  if (!lastSeenAt || !Number.isFinite(lastSeenAt)) return '-';
+  const elapsedMs = Math.max(0, Date.now() - lastSeenAt);
+  if (elapsedMs < 60_000) return 'now';
+  if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m ago`;
+  if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h ago`;
+  return `${Math.floor(elapsedMs / 86_400_000)}d ago`;
 }
