@@ -40,7 +40,8 @@ streaming chunks.
   and active-turn queue semantics.
 - **Fleet cockpit capabilities** — the Cowork Fleet bridge now refreshes
   `peer.describe` snapshots for connected peers so the Command Center
-  can display provider/model metadata and route with real capability data.
+  can display provider/model metadata, force-refresh snapshots from the
+  header, and route with real capability data.
 
 ### Fixed — Cowork-on-core migration
 

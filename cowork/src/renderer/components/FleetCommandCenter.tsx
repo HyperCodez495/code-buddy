@@ -27,6 +27,7 @@ import {
   CheckCircle2,
   CircleDashed,
   XCircle,
+  RefreshCw,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import type { FleetPeer } from '../types';
@@ -50,9 +51,31 @@ interface SagaSummary {
   createdAt: number;
 }
 
+interface FleetRefreshResult {
+  success: boolean;
+  peer?: FleetPeer;
+  peers?: FleetPeer[];
+  error?: string;
+}
+
+interface FleetApiBridge {
+  list?: () => Promise<FleetPeer[]>;
+  refreshCapabilities?: (peerId?: string) => Promise<FleetRefreshResult>;
+}
+
+function getFleetApi(): FleetApiBridge | undefined {
+  return (
+    window as unknown as {
+      electronAPI?: { fleet?: FleetApiBridge };
+    }
+  ).electronAPI?.fleet;
+}
+
 export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
   const fleetPeers = useAppStore((s) => s.fleetPeers);
+  const setFleetPeers = useAppStore((s) => s.setFleetPeers);
+  const upsertFleetPeer = useAppStore((s) => s.upsertFleetPeer);
   const peers = useMemo(() => Object.values(fleetPeers), [fleetPeers]);
   // Wiring W7 — bumped on every fleet.saga.update event so we re-fetch
   // sagas reactively instead of waiting for the 3s polling cycle.
@@ -62,6 +85,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [goalText, setGoalText] = useState('');
   const [sagas, setSagas] = useState<SagaSummary[]>([]);
   const [dispatching, setDispatching] = useState(false);
+  const [refreshingPeers, setRefreshingPeers] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [parallelism, setParallelism] = useState(1);
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
@@ -78,6 +102,23 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [isOpen, onClose]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    let cancelled = false;
+    const loadPeers = async () => {
+      try {
+        const list = await getFleetApi()?.list?.();
+        if (!cancelled && list) setFleetPeers(list);
+      } catch {
+        /* snapshot refresh is opportunistic */
+      }
+    };
+    void loadPeers();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, setFleetPeers]);
 
   // Refresh sagas every 3s while open.
   useEffect(() => {
@@ -106,6 +147,37 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       clearInterval(id);
     };
   }, [isOpen, sagaUpdateToken]);
+
+  const handleRefreshPeers = async () => {
+    if (refreshingPeers) return;
+    setRefreshingPeers(true);
+    setError(null);
+    try {
+      const api = getFleetApi();
+      if (!api) {
+        setError(t('fleet.bridgeUnavailable', 'Fleet IPC bridge unavailable'));
+        return;
+      }
+
+      if (api.refreshCapabilities) {
+        const result = await api.refreshCapabilities();
+        if (!result.success) {
+          setError(result.error ?? 'capability refresh failed');
+          return;
+        }
+        if (result.peers) setFleetPeers(result.peers);
+        if (result.peer) upsertFleetPeer(result.peer);
+        return;
+      }
+
+      const list = await api.list?.();
+      if (list) setFleetPeers(list);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setRefreshingPeers(false);
+    }
+  };
 
   const handleDispatch = async () => {
     if (!goalText.trim() || dispatching) return;
@@ -171,13 +243,29 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
               {peers.length} {t('fleet.peers', 'peers')}
             </span>
           </div>
-          <button
-            onClick={onClose}
-            className="text-zinc-500 hover:text-zinc-300 transition-colors"
-            aria-label={t('common.close', 'Close')}
-          >
-            <X size={16} />
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => void handleRefreshPeers()}
+              disabled={refreshingPeers}
+              className="text-zinc-500 hover:text-zinc-300 disabled:opacity-50 transition-colors"
+              aria-label={t('fleet.refreshCapabilities', 'Refresh peer capabilities')}
+              title={t('fleet.refreshCapabilities', 'Refresh peer capabilities')}
+            >
+              {refreshingPeers ? (
+                <Loader2 size={15} className="animate-spin" />
+              ) : (
+                <RefreshCw size={15} />
+              )}
+            </button>
+            <button
+              onClick={onClose}
+              className="text-zinc-500 hover:text-zinc-300 transition-colors"
+              aria-label={t('common.close', 'Close')}
+            >
+              <X size={16} />
+            </button>
+          </div>
         </div>
 
         {/* Body */}

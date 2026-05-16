@@ -215,10 +215,10 @@ export class FleetBridge {
     }
   }
 
-  private async refreshAllCapabilities(): Promise<void> {
+  private async refreshAllCapabilities(options: { force?: boolean } = {}): Promise<void> {
     await Promise.all(
       Array.from(this.peers.keys()).map((id) =>
-        this.refreshPeerCapabilities(id).catch((err) =>
+        this.refreshPeerCapabilities(id, options).catch((err) =>
           logWarn(`[FleetBridge] refreshPeerCapabilities(${id}) failed:`, err),
         ),
       ),
@@ -308,6 +308,30 @@ export class FleetBridge {
   async listPeers(): Promise<FleetPeer[]> {
     await this.refreshAllCapabilities();
     return Array.from(this.peers.values()).map((e) => ({ ...e.meta }));
+  }
+
+  async refreshCapabilities(peerId?: string): Promise<{
+    success: boolean;
+    peer?: FleetPeer;
+    peers?: FleetPeer[];
+    error?: string;
+  }> {
+    if (peerId) {
+      if (!this.peers.has(peerId)) {
+        return { success: false, error: `Unknown peer: ${peerId}` };
+      }
+      await this.refreshPeerCapabilities(peerId, { force: true });
+      const entry = this.peers.get(peerId);
+      return entry
+        ? { success: true, peer: { ...entry.meta } }
+        : { success: false, error: `Unknown peer: ${peerId}` };
+    }
+
+    await this.refreshAllCapabilities({ force: true });
+    return {
+      success: true,
+      peers: Array.from(this.peers.values()).map((e) => ({ ...e.meta })),
+    };
   }
 
   async addPeer(input: {

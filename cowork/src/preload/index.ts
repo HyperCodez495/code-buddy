@@ -1456,6 +1456,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('fleet.removePeer', peerId),
     reconnect: (peerId: string): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('fleet.reconnect', peerId),
+    refreshCapabilities: (
+      peerId?: string
+    ): Promise<{ success: boolean; peer?: unknown; peers?: unknown[]; error?: string }> =>
+      ipcRenderer.invoke('fleet.refreshCapabilities', peerId),
     getEvents: (
       peerId?: string,
       limit?: number
@@ -2987,6 +2991,9 @@ declare global {
         }) => Promise<{ success: boolean; peer?: unknown; error?: string }>;
         removePeer: (peerId: string) => Promise<{ success: boolean }>;
         reconnect: (peerId: string) => Promise<{ success: boolean; error?: string }>;
+        refreshCapabilities: (
+          peerId?: string
+        ) => Promise<{ success: boolean; peer?: unknown; peers?: unknown[]; error?: string }>;
         getEvents: (
           peerId?: string,
           limit?: number

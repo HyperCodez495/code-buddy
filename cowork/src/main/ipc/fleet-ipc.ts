@@ -33,6 +33,11 @@ export function registerFleetIpcHandlers(fleetBridge: FleetBridge | null) {
     return fleetBridge.reconnectPeer(peerId);
   });
 
+  ipcMain.handle('fleet.refreshCapabilities', async (_event, peerId?: string) => {
+    if (!fleetBridge) return { success: false, error: 'FleetBridge not initialized' };
+    return fleetBridge.refreshCapabilities(peerId);
+  });
+
   ipcMain.handle(
     'fleet.events',
     async (_event, peerId?: string, limit?: number) => {

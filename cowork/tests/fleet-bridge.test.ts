@@ -23,6 +23,7 @@ class FakeFleetListener extends EventEmitter {
   static instances: FakeFleetListener[] = [];
   options: { url: string; apiKey?: string };
   connected = false;
+  requestCount = 0;
 
   constructor(options: { url: string; apiKey?: string }) {
     super();
@@ -47,6 +48,7 @@ class FakeFleetListener extends EventEmitter {
     if (method !== 'peer.describe') {
       throw new Error(`unexpected method: ${method}`);
     }
+    this.requestCount += 1;
     return {
       peerChatProvider: {
         provider: 'chatgpt-oauth',
@@ -155,6 +157,13 @@ describe('FleetBridge', () => {
     expect(
       updates.some((e) => Boolean(e.payload.peer.capability?.models.length)),
     ).toBe(true);
+
+    const listener = FakeFleetListener.instances[0];
+    const requestCountBeforeManualRefresh = listener.requestCount;
+    const refreshed = await bridge.refreshCapabilities(peers[0].id);
+    expect(refreshed.success).toBe(true);
+    expect(refreshed.peer?.capability?.models[0].id).toBe('gpt-5.1-codex');
+    expect(listener.requestCount).toBe(requestCountBeforeManualRefresh + 1);
   });
 
   it('forwards fleet:event payloads as fleet.event ServerEvents', async () => {
