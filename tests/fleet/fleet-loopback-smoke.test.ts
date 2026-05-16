@@ -1,0 +1,161 @@
+/**
+ * Fleet loopback smoke test.
+ *
+ * Starts a real Gateway WebSocket on localhost, authenticates a real
+ * FleetListener with a scoped API key, registers it in the slash-command
+ * registry, then invokes `/fleet tool` through the same handler the CLI uses.
+ */
+
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import type { AddressInfo } from 'net';
+import * as fs from 'fs/promises';
+import * as os from 'os';
+import * as path from 'path';
+
+import { startServer, stopServer } from '../../src/server/index.js';
+import { createApiKey } from '../../src/server/auth/api-keys.js';
+import { FleetListener } from '../../src/fleet/fleet-listener.js';
+import { getFleetRegistry } from '../../src/fleet/fleet-registry.js';
+import {
+  handleFleet,
+  _resetFleetHandlerForTests,
+} from '../../src/commands/handlers/fleet-handler.js';
+import { ToolRegistry } from '../../src/tools/registry.js';
+import type { CodeBuddyTool } from '../../src/codebuddy/client.js';
+
+type ServerHandle = Awaited<ReturnType<typeof startServer>>;
+
+function mockTool(name: string): CodeBuddyTool {
+  return {
+    type: 'function',
+    function: {
+      name,
+      description: `loopback ${name}`,
+      parameters: { type: 'object', properties: {}, required: [] },
+    },
+  };
+}
+
+function seedFleetSafeRegistry(): void {
+  const registry = ToolRegistry.getInstance();
+  registry.clear();
+  for (const name of ['view_file', 'list_directory', 'search']) {
+    registry.registerTool(mockTool(name), {
+      name,
+      category: 'file_read',
+      keywords: [],
+      priority: 5,
+      description: name,
+      fleetSafe: true,
+    });
+  }
+}
+
+describe('Fleet loopback smoke', () => {
+  let tmpRoot = '';
+  let serverHandle: ServerHandle | null = null;
+  let listener: FleetListener | null = null;
+  let previousWorkspaceRoot: string | undefined;
+
+  beforeEach(async () => {
+    previousWorkspaceRoot = process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
+    tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-loopback-'));
+    tmpRoot = await fs.realpath(tmpRoot);
+    await fs.writeFile(path.join(tmpRoot, 'hello.txt'), 'hello from loopback\n');
+    process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT = tmpRoot;
+    seedFleetSafeRegistry();
+    _resetFleetHandlerForTests();
+  });
+
+  afterEach(async () => {
+    _resetFleetHandlerForTests();
+    if (listener) {
+      await listener.disconnect().catch(() => undefined);
+      listener = null;
+    }
+    if (serverHandle) {
+      await stopServer(serverHandle.server).catch(() => undefined);
+      serverHandle = null;
+    }
+    ToolRegistry.getInstance().clear();
+    if (previousWorkspaceRoot === undefined) {
+      delete process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
+    } else {
+      process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT = previousWorkspaceRoot;
+    }
+    await fs.rm(tmpRoot, { recursive: true, force: true });
+  });
+
+  async function connectLoopbackPeer(): Promise<void> {
+    const { key } = createApiKey({
+      name: 'loopback-smoke',
+      userId: 'test-loopback',
+      scopes: ['fleet:listen', 'peer:invoke'],
+    });
+    serverHandle = await startServer({
+      port: 0,
+      host: '127.0.0.1',
+      authEnabled: true,
+      websocketEnabled: true,
+      rateLimit: false,
+      logging: false,
+      docsEnabled: false,
+      securityHeaders: { enabled: false },
+    });
+    const address = serverHandle.server.address() as AddressInfo;
+    listener = new FleetListener({
+      url: `ws://127.0.0.1:${address.port}/ws`,
+      apiKey: key,
+      connectTimeoutMs: 2_000,
+      authTimeoutMs: 2_000,
+    });
+    await listener.connect();
+    getFleetRegistry().register({
+      id: 'loopback',
+      url: `ws://127.0.0.1:${address.port}/ws`,
+      startedAt: new Date(),
+      eventCount: 0,
+      autoReconnect: false,
+      maxAttempts: 0,
+      listener,
+    });
+  }
+
+  it('routes /fleet tool through a real loopback peer.tool.invoke', async () => {
+    await connectLoopbackPeer();
+
+    const result = await handleFleet([
+      'tool',
+      'loopback',
+      'view_file',
+      '{"file_path":"hello.txt"}',
+      '--timeout',
+      '2000',
+    ]);
+
+    expect(result.entry?.content).toContain('Peer "loopback" → view_file OK');
+    expect(result.entry?.content).toContain('hello from loopback');
+  });
+
+  it('routes /fleet tool --stream chunks through the real loopback websocket', async () => {
+    await connectLoopbackPeer();
+    const writeSpy = vi.spyOn(process.stdout, 'write').mockImplementation(() => true);
+    try {
+      const result = await handleFleet([
+        'tool',
+        'loopback',
+        'view_file',
+        '{"file_path":"hello.txt"}',
+        '--stream',
+        '--timeout',
+        '2000',
+      ]);
+
+      const written = writeSpy.mock.calls.map((call) => String(call[0])).join('');
+      expect(written).toContain('hello from loopback');
+      expect(result.entry?.content).toContain('Peer "loopback" → view_file (stream) OK');
+    } finally {
+      writeSpy.mockRestore();
+    }
+  });
+});
