@@ -3,28 +3,39 @@
  *
  * Builds a `CodeBuddyClient` for the `peer.chat` bridge by auto-detecting
  * which provider keys are present in the environment. The fleet can host
- * any one of: Ollama (local), Grok (xAI), Claude (Anthropic), Gemini
- * (Google), or GPT (OpenAI).
+ * any one of: Ollama (local), ChatGPT subscription OAuth, Gemini CLI
+ * subscription, Grok (xAI), Claude (Anthropic), Gemini (Google), or GPT
+ * (OpenAI).
  *
- * Priority order (local first to spare cloud quotas):
+ * Priority order (local/subscription first to spare cloud quotas):
  *   1. CODEBUDDY_PEER_PROVIDER explicit override
  *   2. OLLAMA_HOST set        → ollama (local, no cap)
- *   3. GROK_API_KEY           → grok
- *   4. ANTHROPIC_API_KEY      → anthropic
- *   5. GOOGLE_API_KEY|GEMINI_API_KEY → gemini
- *   6. OPENAI_API_KEY         → openai
- *   7. nothing                → null (peer.chat → CLIENT_UNAVAILABLE)
+ *   3. ChatGPT OAuth file     → chatgpt-oauth (subscription)
+ *   4. gemini binary          → gemini-cli (subscription)
+ *   5. GROK_API_KEY           → grok
+ *   6. ANTHROPIC_API_KEY      → anthropic
+ *   7. GOOGLE_API_KEY|GEMINI_API_KEY → gemini
+ *   8. OPENAI_API_KEY         → openai
+ *   9. nothing                → null (peer.chat → CLIENT_UNAVAILABLE)
  *
  * Override the model with CODEBUDDY_PEER_MODEL.
  */
 
 import * as fs from 'node:fs';
+import * as os from 'node:os';
 import * as path from 'node:path';
-import { CodeBuddyClient, GEMINI_CLI_SENTINEL, GEMINI_CLI_BASE_URL } from '../codebuddy/client.js';
+import {
+  CodeBuddyClient,
+  CHATGPT_OAUTH_SENTINEL,
+  CHATGPT_RESPONSES_BASE_URL,
+  GEMINI_CLI_SENTINEL,
+  GEMINI_CLI_BASE_URL,
+} from '../codebuddy/client.js';
 import { logger } from '../utils/logger.js';
 
 export type PeerChatProviderId =
   | 'ollama'
+  | 'chatgpt-oauth'
   | 'gemini-cli'
   | 'grok'
   | 'anthropic'
@@ -66,6 +77,23 @@ const SPECS: Record<PeerChatProviderId, ProviderSpec> = {
       if (!/^https?:\/\//i.test(baseUrl)) baseUrl = `http://${baseUrl}`;
       if (!baseUrl.endsWith('/v1')) baseUrl = baseUrl.replace(/\/+$/, '') + '/v1';
       return { apiKey: 'ollama', baseUrl };
+    },
+  },
+  // ChatGPT subscription provider — uses the same OAuth file written by
+  // `/login chatgpt` and the Codex Responses backend. Marginal token cost
+  // is zero for the user, but isLocal remains false because egress goes
+  // to chatgpt.com.
+  'chatgpt-oauth': {
+    id: 'chatgpt-oauth',
+    defaultModel: 'gpt-5.5',
+    defaultBaseUrl: CHATGPT_RESPONSES_BASE_URL,
+    isLocal: false,
+    resolve: () => {
+      if (!hasChatGptOAuthCredentials()) return null;
+      return {
+        apiKey: CHATGPT_OAUTH_SENTINEL,
+        baseUrl: CHATGPT_RESPONSES_BASE_URL,
+      };
     },
   },
   // Gemini CLI subprocess — uses the user's Gemini Ultra subscription via
@@ -134,19 +162,42 @@ const SPECS: Record<PeerChatProviderId, ProviderSpec> = {
   },
 };
 
-/** Detection priority: local first to spare cloud quotas.
+/** Detection priority: local/subscription first to spare cloud quotas.
+ *
+ * `chatgpt-oauth` sits above paid API keys so Patrice's ChatGPT plan is
+ * used before metered providers.
  *
  * `gemini-cli` sits above `gemini` (API key) so a user with both will
  * always burn the Ultra subscription (zero marginal cost) before
  * tapping a paid AI Studio quota. */
 const AUTO_DETECT_ORDER: PeerChatProviderId[] = [
   'ollama',
+  'chatgpt-oauth',
   'gemini-cli',
   'grok',
   'anthropic',
   'gemini',
   'openai',
 ];
+
+function hasChatGptOAuthCredentials(): boolean {
+  const explicitPath = process.env.CODEBUDDY_CODEX_AUTH_PATH?.trim();
+  const authPath =
+    explicitPath || path.join(os.homedir(), '.codebuddy', 'codex-auth.json');
+
+  try {
+    if (!fs.existsSync(authPath)) return false;
+    const raw = fs.readFileSync(authPath, 'utf-8').trim();
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as {
+      tokens?: { access_token?: unknown };
+    };
+    return typeof parsed.tokens?.access_token === 'string' &&
+      parsed.tokens.access_token.length > 0;
+  } catch {
+    return false;
+  }
+}
 
 /**
  * Locate the `gemini` binary on the host. Honours `GEMINI_CLI_PATH` if
@@ -203,7 +254,10 @@ function buildOne(id: PeerChatProviderId): { client: CodeBuddyClient; info: Peer
   const spec = SPECS[id];
   const resolved = spec.resolve();
   if (!resolved) return null;
-  const model = process.env.CODEBUDDY_PEER_MODEL || spec.defaultModel;
+  const model =
+    process.env.CODEBUDDY_PEER_MODEL ||
+    (id === 'chatgpt-oauth' ? process.env.CHATGPT_MODEL : undefined) ||
+    spec.defaultModel;
   try {
     const client = new CodeBuddyClient(resolved.apiKey, model, resolved.baseUrl);
     return {

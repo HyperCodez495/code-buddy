@@ -41,6 +41,10 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
     `list_directory` caps entries and reports truncation, stream output
     is sanitized before live terminal display, and the WebSocket
     loopback path is covered by `tests/fleet/fleet-loopback-smoke.test.ts`.
+  - Fleet provider routing now detects `/login chatgpt` OAuth credentials
+    as `chatgpt-oauth`, advertises Codex subscription models at zero
+    marginal cost, and lets `peer.chat` use the ChatGPT Codex Responses
+    backend before falling back to paid API providers.
   - New module `src/fleet/peer-tool-bridge.ts` (~280 LOC,
     standalone executors using `fs/promises` + `@vscode/ripgrep`).
     18 unit tests in `tests/server/peer-tool-bridge.test.ts`.

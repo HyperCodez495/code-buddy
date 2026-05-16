@@ -8,12 +8,13 @@
  *
  * Detection layers, in order:
  *   1. Explicit `CODEBUDDY_FLEET_*` env vars (machineLabel, gpu, ram)
- *   2. Configured cloud keys (`process.env.ANTHROPIC_API_KEY`,
+ *   2. ChatGPT Codex OAuth credentials (`buddy login chatgpt`)
+ *   3. Configured cloud keys (`process.env.ANTHROPIC_API_KEY`,
  *      `OPENAI_API_KEY`, `GEMINI_API_KEY`, `GROK_API_KEY`,
  *      `MISTRAL_API_KEY`)
- *   3. Local Ollama daemon — best-effort `GET http://127.0.0.1:11434/api/tags`
+ *   4. Local Ollama daemon — best-effort `GET http://127.0.0.1:11434/api/tags`
  *      (fails silently when Ollama isn't running)
- *   4. Local LM Studio — best-effort `GET http://127.0.0.1:1234/v1/models`
+ *   5. Local LM Studio — best-effort `GET http://127.0.0.1:1234/v1/models`
  *
  * The registry is **opportunistic** — it only advertises providers
  * that are actually reachable at boot time. A 5-min refresh keeps
@@ -82,7 +83,14 @@ async function buildCapabilitySnapshot(): Promise<PeerCapability> {
 
   const models: FleetModelDescriptor[] = [];
 
-  // Layer 1 — cloud keys. Each detection adds 1-3 representative model
+  // Layer 1 — ChatGPT subscription auth. This is not the OpenAI API:
+  // it routes through chatgpt.com/backend-api/codex and should be priced
+  // as zero marginal cost for the fleet router.
+  if (hasChatGptOAuthCredentials()) {
+    models.push(...buildChatGptOAuthCatalog());
+  }
+
+  // Layer 2 — cloud keys. Each detection adds 1-3 representative model
   // descriptors (we don't enumerate every Anthropic model, just a
   // handful that the router can route to).
   if (process.env.ANTHROPIC_API_KEY || process.env.ANTHROPIC_AUTH_TOKEN) {
@@ -104,11 +112,11 @@ async function buildCapabilitySnapshot(): Promise<PeerCapability> {
     models.push(...buildMistralCatalog());
   }
 
-  // Layer 2 — local Ollama probe.
+  // Layer 3 — local Ollama probe.
   const ollamaModels = await probeOllama();
   models.push(...ollamaModels);
 
-  // Layer 3 — local LM Studio probe.
+  // Layer 4 — local LM Studio probe.
   const lmStudioModels = await probeLmStudio();
   models.push(...lmStudioModels);
 
@@ -151,6 +159,25 @@ function isCloudProvider(p: FleetProvider): boolean {
     p === 'mistral' ||
     p === 'chatgpt-oauth'
   );
+}
+
+function hasChatGptOAuthCredentials(): boolean {
+  const explicitPath = process.env.CODEBUDDY_CODEX_AUTH_PATH?.trim();
+  const authPath =
+    explicitPath || path.join(os.homedir(), '.codebuddy', 'codex-auth.json');
+
+  try {
+    if (!fs.existsSync(authPath)) return false;
+    const raw = fs.readFileSync(authPath, 'utf-8').trim();
+    if (!raw) return false;
+    const parsed = JSON.parse(raw) as {
+      tokens?: { access_token?: unknown };
+    };
+    return typeof parsed.tokens?.access_token === 'string' &&
+      parsed.tokens.access_token.length > 0;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -237,6 +264,25 @@ function buildOpenAICatalog(): FleetModelDescriptor[] {
     costInputUsdPerMtok: id.includes('mini') ? 0.4 : 5,
     costOutputUsdPerMtok: id.includes('mini') ? 1.6 : 20,
     provider: 'openai',
+  }));
+}
+
+function buildChatGptOAuthCatalog(): FleetModelDescriptor[] {
+  const preferred = process.env.CHATGPT_MODEL || 'gpt-5.5';
+  const ids = [
+    preferred,
+    'gpt-5.1-codex',
+    'gpt-5.1-codex-max',
+    'gpt-5-codex',
+  ].filter((id, index, all) => all.indexOf(id) === index);
+
+  return ids.map((id) => ({
+    id,
+    contextWindow: 200_000,
+    strengths: deriveStrengths(id, 'chatgpt-oauth'),
+    costInputUsdPerMtok: 0,
+    costOutputUsdPerMtok: 0,
+    provider: 'chatgpt-oauth',
   }));
 }
 

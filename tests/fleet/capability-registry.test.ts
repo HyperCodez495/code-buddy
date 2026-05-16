@@ -8,6 +8,9 @@
  * are mocked via `global.fetch` so the test doesn't depend on what's
  * actually running on the machine.
  */
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 vi.mock('../../src/utils/logger.js', () => ({
@@ -26,6 +29,7 @@ import {
 
 const originalEnv = { ...process.env };
 const originalFetch = global.fetch;
+let tempAuthDir: string | null = null;
 
 function clearProviderEnv() {
   for (const k of [
@@ -36,6 +40,8 @@ function clearProviderEnv() {
     'GOOGLE_API_KEY',
     'GROK_API_KEY',
     'MISTRAL_API_KEY',
+    'CHATGPT_MODEL',
+    'CODEBUDDY_CODEX_AUTH_PATH',
     'CODEBUDDY_FLEET_HOSTNAME',
     'CODEBUDDY_FLEET_MACHINE_LABEL',
     'CODEBUDDY_FLEET_GPU',
@@ -49,6 +55,8 @@ function clearProviderEnv() {
 beforeEach(() => {
   clearProviderEnv();
   resetCapabilityCache();
+  tempAuthDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-cap-auth-'));
+  process.env.CODEBUDDY_CODEX_AUTH_PATH = path.join(tempAuthDir, 'missing-codex-auth.json');
   // Disable gemini-cli auto-detect by default (a real `gemini` binary
   // installed on the test host would otherwise produce 2 extra models
   // and break "no env vars" assertions). Tests that exercise gemini-cli
@@ -61,6 +69,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (tempAuthDir) {
+    fs.rmSync(tempAuthDir, { recursive: true, force: true });
+    tempAuthDir = null;
+  }
   process.env = { ...originalEnv };
   global.fetch = originalFetch;
 });
@@ -88,6 +100,25 @@ describe('capability-registry — env-based detection', () => {
     const ids = cap.models.map((m) => m.id);
     expect(ids).toContain('gpt-5-codex');
     expect(cap.models.find((m) => m.id === 'gpt-5-codex')?.strengths).toContain('code');
+  });
+
+  it('detects ChatGPT OAuth credentials as zero-marginal-cost Codex models', async () => {
+    const authPath = path.join(tempAuthDir!, 'codex-auth.json');
+    process.env.CODEBUDDY_CODEX_AUTH_PATH = authPath;
+    process.env.CHATGPT_MODEL = 'gpt-5.1-codex';
+    fs.writeFileSync(
+      authPath,
+      JSON.stringify({ tokens: { access_token: 'tok_test' } }),
+      'utf-8',
+    );
+
+    const cap = await getLocalCapabilities();
+    const chatgptModels = cap.models.filter((m) => m.provider === 'chatgpt-oauth');
+    expect(chatgptModels.map((m) => m.id)).toContain('gpt-5.1-codex');
+    expect(chatgptModels.find((m) => m.id === 'gpt-5.1-codex')?.strengths).toContain('code');
+    expect(chatgptModels.every((m) => m.costInputUsdPerMtok === 0)).toBe(true);
+    expect(chatgptModels.every((m) => m.costOutputUsdPerMtok === 0)).toBe(true);
+    expect(cap.egress).toBe('cloud');
   });
 
   it('Gemini detection uses GEMINI_API_KEY or GOOGLE_API_KEY', async () => {

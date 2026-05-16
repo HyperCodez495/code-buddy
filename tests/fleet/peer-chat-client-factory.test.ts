@@ -6,6 +6,9 @@
  * env is empty or override is unknown.
  */
 
+import * as fs from 'node:fs';
+import * as os from 'node:os';
+import * as path from 'node:path';
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 
 import {
@@ -17,6 +20,8 @@ import {
 const ENV_KEYS_TO_PRESERVE = [
   'CODEBUDDY_PEER_PROVIDER',
   'CODEBUDDY_PEER_MODEL',
+  'CHATGPT_MODEL',
+  'CODEBUDDY_CODEX_AUTH_PATH',
   'OLLAMA_HOST',
   'GROK_API_KEY',
   'GROK_BASE_URL',
@@ -28,6 +33,7 @@ const ENV_KEYS_TO_PRESERVE = [
 ];
 
 let originalEnv: Record<string, string | undefined>;
+let tempAuthDir: string | null = null;
 
 beforeEach(() => {
   originalEnv = {};
@@ -35,6 +41,8 @@ beforeEach(() => {
     originalEnv[key] = process.env[key];
     delete process.env[key];
   }
+  tempAuthDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cb-peer-chat-auth-'));
+  process.env.CODEBUDDY_CODEX_AUTH_PATH = path.join(tempAuthDir, 'missing-codex-auth.json');
   // Disable gemini-cli auto-detect by default so tests that don't
   // explicitly opt-in aren't influenced by a real `gemini` binary
   // installed on the test host. A non-existent path short-circuits
@@ -43,6 +51,10 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  if (tempAuthDir) {
+    fs.rmSync(tempAuthDir, { recursive: true, force: true });
+    tempAuthDir = null;
+  }
   for (const key of ENV_KEYS_TO_PRESERVE) {
     if (originalEnv[key] === undefined) delete process.env[key];
     else process.env[key] = originalEnv[key];
@@ -51,9 +63,10 @@ afterEach(() => {
 
 describe('peer-chat-client-factory — Phase (d).16a', () => {
   describe('detection order constant', () => {
-    it('exposes the documented priority order (local first)', () => {
+    it('exposes the documented priority order (local/subscription first)', () => {
       expect(_getDetectionOrderForTests()).toEqual([
         'ollama',
+        'chatgpt-oauth',
         'gemini-cli',
         'grok',
         'anthropic',
@@ -98,6 +111,7 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
   describe('auto-detection priority order', () => {
     it('Ollama beats every cloud provider when OLLAMA_HOST is set', () => {
       process.env.OLLAMA_HOST = 'localhost:11434';
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = writeChatGptAuthFile();
       process.env.GROK_API_KEY = 'grok-x';
       process.env.ANTHROPIC_API_KEY = 'sk-ant-x';
       process.env.GOOGLE_API_KEY = 'AIza-x';
@@ -105,6 +119,26 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
       const result = createPeerChatClientFromEnv();
       expect(result!.info.provider).toBe('ollama');
       expect(result!.info.isLocal).toBe(true);
+    });
+
+    it('ChatGPT OAuth beats paid API providers when Ollama is not set', () => {
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = writeChatGptAuthFile();
+      process.env.GROK_API_KEY = 'grok-x';
+      process.env.ANTHROPIC_API_KEY = 'sk-ant-x';
+      process.env.GOOGLE_API_KEY = 'AIza-x';
+      process.env.OPENAI_API_KEY = 'sk-x';
+      const result = createPeerChatClientFromEnv();
+      expect(result!.info.provider).toBe('chatgpt-oauth');
+      expect(result!.info.model).toBe('gpt-5.5');
+      expect(result!.info.isLocal).toBe(false);
+    });
+
+    it('CHATGPT_MODEL overrides the ChatGPT OAuth default model', () => {
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = writeChatGptAuthFile();
+      process.env.CHATGPT_MODEL = 'gpt-5.1-codex';
+      const result = createPeerChatClientFromEnv();
+      expect(result!.info.provider).toBe('chatgpt-oauth');
+      expect(result!.info.model).toBe('gpt-5.1-codex');
     });
 
     it('Grok beats Anthropic + Gemini + OpenAI when ollama not set', () => {
@@ -188,6 +222,10 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
       expect(createPeerChatClientFromEnv()!.info.isLocal).toBe(true);
 
       delete process.env.OLLAMA_HOST;
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = writeChatGptAuthFile();
+      expect(createPeerChatClientFromEnv()!.info.isLocal).toBe(false);
+
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = path.join(tempAuthDir!, 'missing-codex-auth.json');
       process.env.GROK_API_KEY = 'x';
       expect(createPeerChatClientFromEnv()!.info.isLocal).toBe(false);
 
@@ -252,3 +290,13 @@ describe('peer-chat-client-factory — Phase (d).16a', () => {
     });
   });
 });
+
+function writeChatGptAuthFile(): string {
+  const authPath = path.join(tempAuthDir!, 'codex-auth.json');
+  fs.writeFileSync(
+    authPath,
+    JSON.stringify({ tokens: { access_token: 'tok_test' } }),
+    'utf-8',
+  );
+  return authPath;
+}
