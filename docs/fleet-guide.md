@@ -993,6 +993,9 @@ Ministar Linux
 Branche OpenClaw quand tu veux les canaux externes — c'est un
 add-on, pas un remplacement.
 
+Pour rejouer le chemin minimal sans lire toute cette page, utilise
+[`docs/reprise/fleet-minimal.md`](reprise/fleet-minimal.md).
+
 ### Topologie quand les deux tournent (Phase (e).7)
 
 ```

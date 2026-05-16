@@ -56,6 +56,8 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
   - New `/fleet route <prompt>` command exposes the same router to the
     human CLI, with privacy/cost/latency/context filters, `--json`, and
     `--delegate` for a one-shot routed `peer.chat` call.
+  - Reprise operator checklists added under `docs/reprise/` for CLI
+    smoke validation and the minimal Fleet scenario Patrice can replay.
   - New module `src/fleet/peer-tool-bridge.ts` (~280 LOC,
     standalone executors using `fs/promises` + `@vscode/ripgrep`).
     18 unit tests in `tests/server/peer-tool-bridge.test.ts`.
