@@ -16,6 +16,7 @@ import { startServer, stopServer } from '../../src/server/index.js';
 import { createApiKey } from '../../src/server/auth/api-keys.js';
 import { FleetListener } from '../../src/fleet/fleet-listener.js';
 import { getFleetRegistry } from '../../src/fleet/fleet-registry.js';
+import { resetCapabilityCache } from '../../src/fleet/capability-registry.js';
 import {
   handleFleet,
   _resetFleetHandlerForTests,
@@ -56,13 +57,24 @@ describe('Fleet loopback smoke', () => {
   let serverHandle: ServerHandle | null = null;
   let listener: FleetListener | null = null;
   let previousWorkspaceRoot: string | undefined;
+  let previousAuthPath: string | undefined;
+  let previousChatGptModel: string | undefined;
 
   beforeEach(async () => {
     previousWorkspaceRoot = process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
+    previousAuthPath = process.env.CODEBUDDY_CODEX_AUTH_PATH;
+    previousChatGptModel = process.env.CHATGPT_MODEL;
     tmpRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-loopback-'));
     tmpRoot = await fs.realpath(tmpRoot);
     await fs.writeFile(path.join(tmpRoot, 'hello.txt'), 'hello from loopback\n');
     process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT = tmpRoot;
+    process.env.CODEBUDDY_CODEX_AUTH_PATH = path.join(tmpRoot, 'codex-auth.json');
+    process.env.CHATGPT_MODEL = 'gpt-5.1-codex';
+    await fs.writeFile(
+      process.env.CODEBUDDY_CODEX_AUTH_PATH,
+      JSON.stringify({ tokens: { access_token: 'test-oauth-token' } }),
+    );
+    resetCapabilityCache();
     seedFleetSafeRegistry();
     _resetFleetHandlerForTests();
   });
@@ -83,6 +95,17 @@ describe('Fleet loopback smoke', () => {
     } else {
       process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT = previousWorkspaceRoot;
     }
+    if (previousAuthPath === undefined) {
+      delete process.env.CODEBUDDY_CODEX_AUTH_PATH;
+    } else {
+      process.env.CODEBUDDY_CODEX_AUTH_PATH = previousAuthPath;
+    }
+    if (previousChatGptModel === undefined) {
+      delete process.env.CHATGPT_MODEL;
+    } else {
+      process.env.CHATGPT_MODEL = previousChatGptModel;
+    }
+    resetCapabilityCache();
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
 
@@ -157,5 +180,26 @@ describe('Fleet loopback smoke', () => {
     } finally {
       writeSpy.mockRestore();
     }
+  });
+
+  it('routes /fleet route through real loopback peer.describe capabilities', async () => {
+    await connectLoopbackPeer();
+
+    const result = await handleFleet([
+      'route',
+      'think',
+      'deeply',
+      'about',
+      'fleet',
+      '--privacy',
+      'public',
+      '--timeout',
+      '2000',
+    ]);
+
+    const out = result.entry?.content ?? '';
+    expect(out).toContain('Fleet route recommendation');
+    expect(out).toContain('Primary: loopback / gpt-5.1-codex');
+    expect(out).toContain('peer_delegate');
   });
 });
