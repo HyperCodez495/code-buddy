@@ -83,6 +83,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   const [loading, setLoading] = useState(false);
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
+  const setShowFleetCommandCenter = useAppStore((s) => s.setShowFleetCommandCenter);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -120,6 +121,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   const handleClick = (entry: ActivityEntry) => {
     if (entry.projectId) setActiveProjectId(entry.projectId);
     if (entry.sessionId) setActiveSession(entry.sessionId);
+    if (isFleetActivity(entry)) setShowFleetCommandCenter(true);
     onClose();
   };
 
