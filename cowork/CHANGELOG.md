@@ -44,7 +44,8 @@ streaming chunks.
   header, route with real capability data, and guide operators toward
   the required `fleet:listen` + `peer:invoke` key scopes. The cockpit
   now also shows Fleet readiness and disables dispatch until at least
-  one peer has routable capabilities.
+  one peer has routable capabilities, while saga rows expose a compact
+  peer/model execution trace.
 
 ### Fixed — Cowork-on-core migration
 

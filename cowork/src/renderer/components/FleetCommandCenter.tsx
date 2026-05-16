@@ -603,14 +603,17 @@ const SagaRow: React.FC<{ saga: SagaSummary }> = ({ saga }) => {
   const done = saga.steps.filter((s) => s.status === 'completed').length;
   const failed = saga.steps.filter((s) => s.status === 'failed').length;
   const running = saga.steps.filter((s) => s.status === 'running').length;
+  const age = formatSagaAge(saga.createdAt);
   return (
     <li className="p-2 rounded border border-zinc-800 bg-zinc-800/30">
       <div className="flex items-center gap-2">
         <SagaStatusIcon status={saga.status} />
         <span className="text-xs text-zinc-200 truncate flex-1">{saga.goal}</span>
-        <span className="text-[10px] text-zinc-500 tabular-nums">
-          {done}/{total}
-        </span>
+        <div className="flex items-center gap-1.5 text-[10px] text-zinc-500 tabular-nums">
+          <span>{saga.status}</span>
+          {age && <span>{age}</span>}
+          <span>{done}/{total}</span>
+        </div>
       </div>
       <div className="mt-1.5 h-1 bg-zinc-800 rounded overflow-hidden flex">
         <div
@@ -626,6 +629,32 @@ const SagaRow: React.FC<{ saga: SagaSummary }> = ({ saga }) => {
           style={{ width: `${(failed / Math.max(1, total)) * 100}%` }}
         />
       </div>
+      {total > 0 && (
+        <details className="mt-1.5">
+          <summary className="text-[10px] text-zinc-500 cursor-pointer hover:text-zinc-300">
+            Trace ({total})
+          </summary>
+          <ol className="mt-1 space-y-1">
+            {saga.steps.map((step, index) => (
+              <li
+                key={`${step.peerId}-${step.model}-${step.lane}-${index}`}
+                className="flex items-center gap-2 rounded bg-zinc-900/70 px-2 py-1 text-[10px]"
+              >
+                <StepStatusIcon status={step.status} />
+                <span className={`shrink-0 uppercase tracking-wide ${laneClass(step.lane)}`}>
+                  {step.lane}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-zinc-300">
+                  {step.peerId}
+                </span>
+                <span className="min-w-0 max-w-[42%] truncate font-mono text-zinc-500">
+                  {step.model}
+                </span>
+              </li>
+            ))}
+          </ol>
+        </details>
+      )}
       {saga.finalResult && (
         <details className="mt-1.5">
           <summary className="text-[10px] text-zinc-500 cursor-pointer hover:text-zinc-300">
@@ -676,3 +705,36 @@ const SagaStatusIcon: React.FC<{ status: SagaSummary['status'] }> = ({ status })
   }
   return <CircleDashed size={11} className="text-zinc-500 shrink-0" />;
 };
+
+const StepStatusIcon: React.FC<{ status: SagaSummary['steps'][number]['status'] }> = ({
+  status,
+}) => {
+  if (status === 'running') {
+    return <Loader2 size={10} className="text-accent animate-spin shrink-0" />;
+  }
+  if (status === 'completed') {
+    return <CheckCircle2 size={10} className="text-success shrink-0" />;
+  }
+  if (status === 'failed') {
+    return <XCircle size={10} className="text-error shrink-0" />;
+  }
+  if (status === 'skipped') {
+    return <CircleDashed size={10} className="text-zinc-600 shrink-0" />;
+  }
+  return <CircleDashed size={10} className="text-zinc-500 shrink-0" />;
+};
+
+function laneClass(lane: SagaSummary['steps'][number]['lane']): string {
+  if (lane === 'primary') return 'text-success';
+  if (lane === 'fallback') return 'text-warning';
+  return 'text-accent';
+}
+
+function formatSagaAge(createdAt: number): string {
+  if (!Number.isFinite(createdAt) || createdAt <= 0) return '';
+  const elapsedMs = Math.max(0, Date.now() - createdAt);
+  if (elapsedMs < 60_000) return 'now';
+  if (elapsedMs < 3_600_000) return `${Math.floor(elapsedMs / 60_000)}m`;
+  if (elapsedMs < 86_400_000) return `${Math.floor(elapsedMs / 3_600_000)}h`;
+  return `${Math.floor(elapsedMs / 86_400_000)}d`;
+}
