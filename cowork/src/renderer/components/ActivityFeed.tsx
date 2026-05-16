@@ -81,6 +81,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   const { i18n, t } = useTranslation();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
+  const [filter, setFilter] = useState<'all' | 'fleet'>('all');
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
   const setShowFleetCommandCenter = useAppStore((s) => s.setShowFleetCommandCenter);
@@ -116,7 +117,14 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
     return () => window.removeEventListener('keydown', handler);
   }, [open, onClose]);
 
-  const grouped = useMemo(() => groupByDay(entries), [entries, i18n.resolvedLanguage]);
+  const visibleEntries = useMemo(
+    () => (filter === 'fleet' ? entries.filter(isFleetActivity) : entries),
+    [entries, filter],
+  );
+  const grouped = useMemo(
+    () => groupByDay(visibleEntries),
+    [visibleEntries, i18n.resolvedLanguage],
+  );
 
   const handleClick = (entry: ActivityEntry) => {
     if (entry.projectId) setActiveProjectId(entry.projectId);
@@ -145,10 +153,34 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
             {t('activity.title')}
           </span>
           <span className="text-[10px] text-text-muted">
-            {t('activity.count', { count: entries.length })}
+            {t('activity.count', { count: visibleEntries.length })}
           </span>
         </div>
         <div className="flex items-center gap-1">
+          <div className="mr-1 flex overflow-hidden rounded-md border border-border-muted">
+            <button
+              type="button"
+              onClick={() => setFilter('all')}
+              className={`px-2 py-1 text-[10px] transition-colors ${
+                filter === 'all'
+                  ? 'bg-accent text-background'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {t('activity.filterAll', 'All')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('fleet')}
+              className={`px-2 py-1 text-[10px] transition-colors ${
+                filter === 'fleet'
+                  ? 'bg-accent text-background'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+            >
+              Fleet
+            </button>
+          </div>
           <button
             onClick={handleClear}
             className="p-1.5 text-text-muted hover:text-error transition-colors"
@@ -175,10 +207,14 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
           </div>
         )}
 
-        {!loading && entries.length === 0 && (
+        {!loading && visibleEntries.length === 0 && (
           <div className="text-center py-12">
             <Activity size={28} className="mx-auto text-text-muted opacity-30 mb-2" />
-            <div className="text-xs text-text-muted">{t('activity.empty')}</div>
+            <div className="text-xs text-text-muted">
+              {filter === 'fleet'
+                ? t('activity.emptyFleet', 'No Fleet activity yet')
+                : t('activity.empty')}
+            </div>
           </div>
         )}
 

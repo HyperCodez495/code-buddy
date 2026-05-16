@@ -53,7 +53,8 @@ streaming chunks.
   are also recorded with step counts, privacy tag, and result/error
   previews. Fleet entries render compact chips for saga id, privacy,
   parallelism, peers, step counts, failures, and duration. Clicking a
-  Fleet activity entry opens the Fleet Command Center for follow-up.
+  Fleet activity entry opens the Fleet Command Center for follow-up,
+  and the Activity Feed can be filtered to Fleet-only events.
 
 ### Fixed — Cowork-on-core migration
 
