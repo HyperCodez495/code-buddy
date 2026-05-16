@@ -207,6 +207,9 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
                           {entry.description}
                         </div>
                       )}
+                      {isFleetActivity(entry) && (
+                        <FleetActivityMeta metadata={entry.metadata} />
+                      )}
                     </div>
                     <span className="text-[10px] text-text-muted shrink-0">{time}</span>
                   </button>
@@ -218,3 +221,60 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
     </div>
   );
 };
+
+const FleetActivityMeta: React.FC<{ metadata?: Record<string, unknown> }> = ({ metadata }) => {
+  if (!metadata) return null;
+  const chips = buildFleetActivityChips(metadata);
+  if (chips.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded border border-border-muted bg-surface px-1.5 py-0.5 text-[10px] text-text-muted"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
+};
+
+function isFleetActivity(entry: ActivityEntry): boolean {
+  return entry.type === 'fleet.dispatch' || entry.type.startsWith('fleet.saga.');
+}
+
+function buildFleetActivityChips(metadata: Record<string, unknown>): string[] {
+  const chips: string[] = [];
+  if (typeof metadata.sagaId === 'string') chips.push(`saga ${shortId(metadata.sagaId)}`);
+  if (typeof metadata.privacyTag === 'string') chips.push(metadata.privacyTag);
+  if (typeof metadata.parallelism === 'number' && metadata.parallelism > 1) {
+    chips.push(`parallel ${metadata.parallelism}`);
+  }
+  if (typeof metadata.peerCount === 'number') chips.push(`${metadata.peerCount} peers`);
+  if (
+    typeof metadata.completedSteps === 'number' &&
+    typeof metadata.totalSteps === 'number'
+  ) {
+    chips.push(`${metadata.completedSteps}/${metadata.totalSteps} done`);
+  }
+  if (typeof metadata.failedSteps === 'number' && metadata.failedSteps > 0) {
+    chips.push(`${metadata.failedSteps} failed`);
+  }
+  if (typeof metadata.durationMs === 'number') {
+    chips.push(formatDuration(metadata.durationMs));
+  }
+  return chips;
+}
+
+function shortId(id: string): string {
+  if (id.length <= 10) return id;
+  return id.slice(0, 8);
+}
+
+function formatDuration(durationMs: number): string {
+  if (!Number.isFinite(durationMs) || durationMs < 0) return '0s';
+  if (durationMs < 60_000) return `${Math.max(1, Math.round(durationMs / 1000))}s`;
+  if (durationMs < 3_600_000) return `${Math.round(durationMs / 60_000)}m`;
+  return `${Math.round(durationMs / 3_600_000)}h`;
+}

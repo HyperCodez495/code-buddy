@@ -51,7 +51,8 @@ streaming chunks.
   privacy tag and any privacy-lint adjustment, and are recorded in the
   Activity Feed for later operator review. Saga completion and failure
   are also recorded with step counts, privacy tag, and result/error
-  previews.
+  previews. Fleet entries render compact chips for saga id, privacy,
+  parallelism, peers, step counts, failures, and duration.
 
 ### Fixed — Cowork-on-core migration
 
