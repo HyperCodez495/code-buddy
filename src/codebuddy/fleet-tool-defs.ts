@@ -56,8 +56,24 @@ export const LIST_PEERS_TOOL_DEF: CodeBuddyTool = {
     name: 'list_peers',
     description:
       'List all connected fleet peers with their status (last seen, compacting, ' +
-      'peer chat availability). Use this before peer_delegate to discover peer IDs.',
-    parameters: { type: 'object', properties: {}, required: [] },
+      'peer chat availability). Use this before peer_delegate to discover peer IDs. ' +
+      'Set includeCapabilities=true when choosing between providers/models.',
+    parameters: {
+      type: 'object',
+      properties: {
+        includeCapabilities: {
+          type: 'boolean',
+          description:
+            'When true, call peer.describe on each peer and include provider/model capability summaries. Requires peer:invoke.',
+        },
+        timeoutMs: {
+          type: 'number',
+          description:
+            'Per-peer peer.describe timeout in milliseconds when includeCapabilities is true. Default 5000.',
+        },
+      },
+      required: [],
+    },
   },
 };
 
