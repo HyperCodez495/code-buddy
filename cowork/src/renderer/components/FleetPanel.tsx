@@ -110,7 +110,7 @@ export function FleetPanel() {
       return;
     }
     if (!addApiKey.trim()) {
-      setAddError('API key required (must have fleet:listen scope)');
+      setAddError('API key required (must have fleet:listen and peer:invoke scopes)');
       return;
     }
     const result = await window.electronAPI.fleet.addPeer({
@@ -184,7 +184,7 @@ export function FleetPanel() {
                 type="password"
                 value={addApiKey}
                 onChange={(e) => setAddApiKey(e.target.value)}
-                placeholder="API key (with fleet:listen scope)"
+                placeholder="API key (fleet:listen + peer:invoke)"
                 className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
               />
               <input
@@ -221,7 +221,8 @@ export function FleetPanel() {
             {peers.length === 0 && (
               <li className="px-4 py-3 text-xs text-text-muted">
                 No peers configured. Add a Code Buddy instance running on your Tailscale mesh
-                (e.g. <code className="font-mono text-text-secondary">ws://100.98.18.76:3000/ws</code>).
+                (e.g. <code className="font-mono text-text-secondary">ws://100.98.18.76:3000/ws</code>)
+                with a key scoped for fleet:listen and peer:invoke.
               </li>
             )}
             {peers.map((peer) => {
