@@ -11,7 +11,11 @@
 import { spawnSync } from 'child_process';
 import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
-import { getLessonsTracker } from '../../agent/lessons-tracker.js';
+import {
+  getLessonsTracker,
+  renderLessonConceptGraph,
+} from '../../agent/lessons-tracker.js';
+import type { LessonGraphRenderFormat } from '../../agent/lessons-tracker.js';
 import type { LessonCategory } from '../../agent/lessons-tracker.js';
 
 // ============================================================================
@@ -282,6 +286,105 @@ export class LessonsListTool implements ITool {
 }
 
 // ============================================================================
+// LessonsGraphTool
+// ============================================================================
+
+export class LessonsGraphTool implements ITool {
+  readonly name = 'lessons_graph';
+  readonly description = [
+    'Build a mini-Obsidian concept graph from persistent lessons.md.',
+    'Keeps Markdown as the source of truth and derives concepts from [[wiki links]], Markdown links, #tags, context, related/tags metadata, and keywords.',
+    'Use this to find nearby lessons and connected notions before similar work.',
+  ].join(' ');
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const query = input.query as string | undefined;
+    const concept = input.concept as string | undefined;
+    const category = input.category as LessonCategory | undefined;
+    const includeKeywords = input.includeKeywords !== false;
+    const limit = Number(input.limit ?? 50);
+    const format = (input.format as LessonGraphRenderFormat | undefined) ?? 'summary';
+
+    try {
+      const tracker = getLessonsTracker(process.cwd());
+      const graph = tracker.buildConceptGraph({ query, concept, category, includeKeywords, limit });
+      return { success: true, output: renderLessonConceptGraph(graph, format) };
+    } catch (err) {
+      return {
+        success: false,
+        error: `lessons_graph failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          query: {
+            type: 'string',
+            description: 'Optional text filter before graphing lessons',
+          },
+          concept: {
+            type: 'string',
+            description: 'Only graph lessons linked to this concept slug, label, wiki link, or Markdown target',
+          },
+          category: {
+            type: 'string',
+            enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'],
+            description: 'Optional category filter',
+          },
+          limit: {
+            type: 'number',
+            description: 'Maximum lessons to graph (default: 50, max: 200)',
+          },
+          includeKeywords: {
+            type: 'boolean',
+            description: 'Whether to include fallback keyword concepts. Set false for a cleaner explicit-link/tag graph.',
+          },
+          format: {
+            type: 'string',
+            enum: ['summary', 'json', 'markdown', 'mermaid'],
+            description: 'Return a concise Markdown summary, the full graph JSON, an Obsidian-friendly Markdown index, or a Mermaid diagram',
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
+  validate(input: Record<string, unknown>): IValidationResult {
+    const validCats = ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'];
+    if (input.category && !validCats.includes(input.category as string)) {
+      return { valid: false, errors: [`category must be one of: ${validCats.join(', ')}`] };
+    }
+    if (input.format && !['summary', 'json', 'markdown', 'mermaid'].includes(input.format as string)) {
+      return { valid: false, errors: ['format must be summary, json, markdown, or mermaid'] };
+    }
+    return { valid: true, errors: [] };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'planning' as ToolCategoryType,
+      keywords: ['lessons', 'graph', 'obsidian', 'concepts', 'related', 'wiki', 'self-improvement'],
+      priority: 80,
+      version: '1.0.0',
+      author: 'Code Buddy',
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+// ============================================================================
 // TaskVerifyTool
 // ============================================================================
 
@@ -422,6 +525,7 @@ export function createLessonsTools(): ITool[] {
     new LessonsAddTool(),
     new LessonsSearchTool(),
     new LessonsListTool(),
+    new LessonsGraphTool(),
     new TaskVerifyTool(),
   ];
 }

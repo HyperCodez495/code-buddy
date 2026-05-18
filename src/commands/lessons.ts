@@ -5,13 +5,18 @@
  * Lessons are automatically injected before every LLM turn (before the
  * todo suffix) so the agent internalises learned patterns across sessions.
  *
- * Subcommands: list, add, search, clear
+ * Subcommands: list, add, search, graph, clear
  */
 
 import * as fs from 'fs';
+import * as path from 'path';
 import { Command } from 'commander';
-import { getLessonsTracker } from '../agent/lessons-tracker.js';
-import type { LessonCategory } from '../agent/lessons-tracker.js';
+import {
+  getLessonsTracker,
+  renderLessonConceptGraph,
+  renderLessonConceptVaultFiles,
+} from '../agent/lessons-tracker.js';
+import type { LessonCategory, LessonGraphRenderFormat } from '../agent/lessons-tracker.js';
 
 const VALID_CATEGORIES: LessonCategory[] = ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'];
 
@@ -99,6 +104,62 @@ export function createLessonsCommand(): Command {
         const ctx = item.context ? ` (${item.context})` : '';
         console.log(`  [${item.id}] ${item.category}${ctx}: ${item.content}`);
       }
+    });
+
+  // ---- graph ---------------------------------------------------------------
+  cmd
+    .command('graph')
+    .description('Build a mini-Obsidian concept graph from lessons')
+    .option('-q, --query <query>', 'Optional text filter before graphing')
+    .option('--concept <concept>', 'Only graph lessons linked to a concept slug, label, wiki link, or Markdown target')
+    .option('-c, --category <cat>', `Filter by category: ${VALID_CATEGORIES.join('|')}`)
+    .option('-n, --limit <n>', 'Max lessons to graph', '50')
+    .option('--json', 'Print full graph JSON')
+    .option('--markdown', 'Print an Obsidian-friendly Markdown index')
+    .option('--mermaid', 'Print Mermaid graph diagram')
+    .option('--no-keywords', 'Exclude fallback keyword concepts and keep only explicit links, tags, context, and related metadata')
+    .option('--graph-output <file>', 'Write graph output to a file')
+    .option('--vault <dir>', 'Write an Obsidian-style lessons vault directory')
+    .action((opts) => {
+      const cat = opts.category?.toUpperCase() as LessonCategory | undefined;
+      if (cat && !VALID_CATEGORIES.includes(cat)) {
+        console.error(`Invalid category: ${cat}`);
+        process.exit(1);
+      }
+      const limit = parseInt(opts.limit, 10) || 50;
+      const tracker = getLessonsTracker(process.cwd());
+      const graph = tracker.buildConceptGraph({
+        query: opts.query,
+        concept: opts.concept,
+        category: cat,
+        includeKeywords: opts.keywords !== false,
+        limit,
+      });
+      const format: LessonGraphRenderFormat = opts.json
+        ? 'json'
+        : opts.markdown
+          ? 'markdown'
+          : opts.mermaid
+            ? 'mermaid'
+            : inferGraphOutputFormat(opts.graphOutput);
+      const output = renderLessonConceptGraph(graph, format);
+
+      if (opts.vault) {
+        const files = renderLessonConceptVaultFiles(graph);
+        writeLessonVault(opts.vault, files);
+        console.log(`Lessons vault exported to ${opts.vault} (${files.length} files)`);
+        return;
+      }
+
+      if (opts.graphOutput) {
+        const outputDir = path.dirname(path.resolve(opts.graphOutput));
+        fs.mkdirSync(outputDir, { recursive: true });
+        fs.writeFileSync(opts.graphOutput, output, 'utf-8');
+        console.log(`Graph exported to ${opts.graphOutput}`);
+        return;
+      }
+
+      console.log(output);
     });
 
   // ---- clear ---------------------------------------------------------------
@@ -191,4 +252,28 @@ export function createLessonsCommand(): Command {
     });
 
   return cmd;
+}
+
+function inferGraphOutputFormat(outputPath?: string): LessonGraphRenderFormat {
+  if (!outputPath) return 'summary';
+
+  const ext = path.extname(outputPath).toLowerCase();
+  if (ext === '.json') return 'json';
+  if (ext === '.md' || ext === '.markdown') return 'markdown';
+  if (ext === '.mmd' || ext === '.mermaid') return 'mermaid';
+  return 'summary';
+}
+
+function writeLessonVault(root: string, files: { path: string; content: string }[]): void {
+  const rootPath = path.resolve(root);
+  fs.mkdirSync(rootPath, { recursive: true });
+
+  for (const file of files) {
+    const target = path.resolve(rootPath, file.path);
+    if (target !== rootPath && !target.startsWith(rootPath + path.sep)) {
+      throw new Error(`Refusing to write outside vault: ${file.path}`);
+    }
+    fs.mkdirSync(path.dirname(target), { recursive: true });
+    fs.writeFileSync(target, file.content, 'utf-8');
+  }
 }

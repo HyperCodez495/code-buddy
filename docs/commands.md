@@ -54,7 +54,7 @@
 | Command | Description |
 |:--------|:------------|
 | `/memory` | Memory management |
-| `/lessons list\|add\|search\|stats` | Lessons management |
+| `/lessons list\|add\|search\|graph\|stats` | Lessons management |
 | `/tools [list\|info]` | List available tools |
 
 ### Voice
@@ -120,9 +120,21 @@ buddy flow "<goal>" [--max-retries N] [--verbose]
 
 ```bash
 buddy knowledge list | show | search | add | remove | context
-buddy lessons list | add | search | stats | clear | context
+buddy lessons list | add | search | graph [--concept concept] [--no-keywords] [--json|--markdown|--mermaid] [--graph-output file] [--vault dir] | stats | clear | context
 buddy todo list | add | done | update | remove | clear-done | context
 ```
+
+`buddy lessons graph --graph-output` infers `json`, `markdown`, or
+`mermaid` output from `.json`, `.md`, `.mmd`, or `.mermaid` extensions
+when no explicit format flag is provided.
+`--vault <dir>` writes an Obsidian-style folder with `index.md`,
+`_concepts.md`, `_lessons.md`, `concepts/*.md`, `lessons/*.md`,
+`graph.json`, `graph.mmd`, and `manifest.json`.
+Vault pages include YAML frontmatter so Obsidian/plugins and future
+Code Buddy UI surfaces can read page type, concepts, backlinks, and
+graph metadata without reparsing prose.
+`manifest.json` lists stable entrypoints and generated files for UI
+loading, plus concept-to-file and lesson-to-file maps.
 
 ### Infrastructure
 

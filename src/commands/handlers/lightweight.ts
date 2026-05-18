@@ -12,7 +12,8 @@
  */
 
 import type { CommandHandlerResult } from './branch-handlers.js';
-import { getLessonsTracker } from '../../agent/lessons-tracker.js';
+import { getLessonsTracker, renderLessonConceptGraph } from '../../agent/lessons-tracker.js';
+import type { LessonGraphRenderFormat } from '../../agent/lessons-tracker.js';
 import { getTrackCommands } from '../../tracks/track-commands.js';
 
 // ─── /quota ──────────────────────────────────────────────────────────────────
@@ -34,7 +35,7 @@ export async function handleQuota(): Promise<CommandHandlerResult> {
 
 export function handleLessonsCommand(args: string): CommandHandlerResult {
   const tracker = getLessonsTracker(process.cwd());
-  const parts = args.trim().split(/\s+/);
+  const parts = tokenizeSlashArgs(args);
   const sub = parts[0] ?? 'list';
 
   if (sub === 'list' || sub === '') {
@@ -87,14 +88,80 @@ export function handleLessonsCommand(args: string): CommandHandlerResult {
     };
   }
 
+  if (sub === 'graph') {
+    const { query, concept, format, includeKeywords } = parseLessonsGraphSlashArgs(parts.slice(1));
+    const graph = tracker.buildConceptGraph({ query, concept, includeKeywords });
+    return {
+      handled: true,
+      entry: { type: 'assistant', content: renderLessonConceptGraph(graph, format), timestamp: new Date() },
+    };
+  }
+
   // Unknown sub-command → show help
   return {
     handled: true,
     entry: {
       type: 'assistant',
-      content: 'Usage: /lessons [list|add <content>|search <query>|stats]',
+      content: 'Usage: /lessons [list|add <content>|search <query>|graph [query] [--concept <concept>] [--no-keywords] [--json|--markdown|--mermaid]|stats]',
       timestamp: new Date(),
     },
+  };
+}
+
+function tokenizeSlashArgs(args: string): string[] {
+  const tokens: string[] = [];
+  for (const match of args.trim().matchAll(/"([^"]*)"|'([^']*)'|(\S+)/g)) {
+    tokens.push(match[1] ?? match[2] ?? match[3] ?? '');
+  }
+  return tokens;
+}
+
+function parseLessonsGraphSlashArgs(tokens: string[]): {
+  query?: string;
+  concept?: string;
+  format: LessonGraphRenderFormat;
+  includeKeywords: boolean;
+} {
+  const queryParts: string[] = [];
+  let concept: string | undefined;
+  let format: LessonGraphRenderFormat = 'summary';
+  let includeKeywords = true;
+
+  for (let i = 0; i < tokens.length; i++) {
+    const token = tokens[i];
+    if (token === '--json') {
+      format = 'json';
+      continue;
+    }
+    if (token === '--markdown') {
+      format = 'markdown';
+      continue;
+    }
+    if (token === '--mermaid') {
+      format = 'mermaid';
+      continue;
+    }
+    if (token === '--no-keywords') {
+      includeKeywords = false;
+      continue;
+    }
+    if (token === '--concept') {
+      concept = tokens[i + 1];
+      i++;
+      continue;
+    }
+    if (token.startsWith('--concept=')) {
+      concept = token.slice('--concept='.length) || undefined;
+      continue;
+    }
+    queryParts.push(token);
+  }
+
+  return {
+    query: queryParts.join(' ') || undefined,
+    concept,
+    format,
+    includeKeywords,
   };
 }
 

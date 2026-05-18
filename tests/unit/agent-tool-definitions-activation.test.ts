@@ -23,6 +23,24 @@ describe('Agent tool activation in LLM schemas', () => {
     expect(names.has('forget')).toBe(true);
   });
 
+  it('exposes the lessons concept graph to the LLM tool list', () => {
+    const names = new Set(AGENT_TOOLS.map((tool) => tool.function.name));
+
+    expect(names.has('lessons_graph')).toBe(true);
+  });
+
+  it('exposes browser proof-loop actions to the LLM schema', () => {
+    const browserTool = BROWSER_TOOLS.find((tool) => tool.function.name === 'browser');
+    expect(browserTool).toBeDefined();
+
+    const actionEnum = browserTool!.function.parameters.properties.action.enum;
+    expect(actionEnum).toContain('observe');
+    expect(actionEnum).toContain('extract');
+    expect(actionEnum).toContain('assert_text');
+    expect(browserTool!.function.parameters.properties.query).toBeDefined();
+    expect(browserTool!.function.parameters.properties.expectedText).toBeDefined();
+  });
+
   it('provides metadata entries for all built-in tool definitions', () => {
     const allToolDefs = [
       ...CORE_TOOLS,
@@ -42,5 +60,19 @@ describe('Agent tool activation in LLM schemas', () => {
     const missing = Array.from(definitionNames).filter((name) => !metadataNames.has(name));
 
     expect(missing).toEqual([]);
+  });
+
+  it('makes Hermes Fleet dispatch tools discoverable through metadata keywords', () => {
+    const metadataByName = new Map(TOOL_METADATA.map((item) => [item.name, item]));
+
+    expect(metadataByName.get('route_peer')?.keywords).toEqual(
+      expect.arrayContaining(['hermes', 'dispatch', 'dispatchProfile', 'toolset', 'policy']),
+    );
+    expect(metadataByName.get('peer_delegate')?.keywords).toEqual(
+      expect.arrayContaining(['hermes', 'dispatch', 'toolset', 'policy']),
+    );
+    expect(metadataByName.get('list_peers')?.keywords).toEqual(
+      expect.arrayContaining(['capabilities', 'routing', 'hermes']),
+    );
   });
 });

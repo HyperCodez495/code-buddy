@@ -9,7 +9,15 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs-extra';
-import { getLessonsTracker, LessonsTracker } from '../../src/agent/lessons-tracker.js';
+import {
+  getLessonsTracker,
+  LessonsTracker,
+  renderLessonConceptGraph,
+  renderLessonConceptGraphMarkdown,
+  renderLessonConceptGraphMermaid,
+  renderLessonConceptGraphSummary,
+  renderLessonConceptVaultFiles,
+} from '../../src/agent/lessons-tracker.js';
 
 // Mock os.homedir so global ~/.codebuddy/lessons.md never contaminates tests.
 // The module-level variable is updated per-test in beforeEach.
@@ -137,6 +145,204 @@ describe('LessonsTracker', () => {
       const tracker = getLessonsTracker(tmpDir);
       tracker.add('INSIGHT', 'something unrelated', 'manual');
       expect(tracker.search('nonexistent_xyz')).toHaveLength(0);
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // buildConceptGraph()
+  // --------------------------------------------------------------------------
+
+  describe('buildConceptGraph()', () => {
+    it('should derive a mini knowledge graph from wiki links, tags, context, and keywords', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      const first = tracker.add(
+        'PATTERN',
+        'Use [[contact-discovery]] before broad scraping. tags: lead-scout, public-data',
+        'manual',
+        'Lead Scout',
+      );
+      const second = tracker.add(
+        'INSIGHT',
+        'For architect enrichment, follow website links before guessing phones. related: contact-discovery',
+        'manual',
+        'Lead Scout',
+      );
+
+      const graph = tracker.buildConceptGraph();
+      const contactDiscovery = graph.concepts.find(concept => concept.id === 'contact-discovery');
+      const leadScout = graph.concepts.find(concept => concept.id === 'lead-scout');
+
+      expect(graph.schemaVersion).toBe(1);
+      expect(graph.filters).toEqual({ includeKeywords: true, limit: 50 });
+      expect(contactDiscovery).toBeDefined();
+      expect(contactDiscovery!.lessonIds).toEqual(expect.arrayContaining([first.id, second.id]));
+      expect(graph.backlinks['contact-discovery']).toEqual(expect.arrayContaining([first.id, second.id]));
+      expect(leadScout).toBeDefined();
+      expect(leadScout!.lessonIds).toEqual(expect.arrayContaining([first.id, second.id]));
+      expect(graph.lessonConcepts[first.id].some(concept => concept.slug === 'public-data')).toBe(true);
+      expect(graph.relatedLessons.some(edge => edge.from === first.id && edge.to === second.id)).toBe(true);
+    });
+
+    it('should filter graph lessons by query and category', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      tracker.add('PATTERN', 'Lead Scout should verify public sources. tags: lead-scout', 'manual');
+      tracker.add('RULE', 'Always run tests before done. tags: verification', 'manual');
+
+      const graph = tracker.buildConceptGraph({ query: 'Lead Scout', category: 'PATTERN' });
+
+      expect(graph.lessons).toHaveLength(1);
+      expect(graph.filters).toEqual({
+        query: 'Lead Scout',
+        category: 'PATTERN',
+        includeKeywords: true,
+        limit: 50,
+      });
+      expect(graph.lessons[0].category).toBe('PATTERN');
+      expect(graph.concepts.some(concept => concept.id === 'lead-scout')).toBe(true);
+      expect(graph.concepts.some(concept => concept.id === 'verification')).toBe(false);
+    });
+
+    it('should filter graph lessons by concept slug, label, or Markdown target', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      const linked = tracker.add(
+        'PATTERN',
+        'Use [[concepts/contact-discovery.md|contact page discovery]] with [sandbox scripts](concepts/sandbox-scripts.md).',
+        'manual',
+      );
+      tracker.add('RULE', 'Always verify generated scripts. tags: verification', 'manual');
+
+      const byLabel = tracker.buildConceptGraph({ concept: 'contact page discovery' });
+      const byTarget = tracker.buildConceptGraph({ concept: 'concepts/sandbox-scripts.md' });
+
+      expect(byLabel.lessons.map(lesson => lesson.id)).toEqual([linked.id]);
+      expect(byLabel.concepts.some(concept => concept.id === 'contact-discovery')).toBe(true);
+      expect(byTarget.lessons.map(lesson => lesson.id)).toEqual([linked.id]);
+      expect(byTarget.concepts.some(concept => concept.id === 'verification')).toBe(false);
+    });
+
+    it('should clamp invalid graph limits and render Mermaid output', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      tracker.add('PATTERN', 'Use [[contact-discovery]] before broad scraping. tags: lead-scout', 'manual');
+
+      const graph = tracker.buildConceptGraph({ limit: Number.NaN });
+      const mermaid = renderLessonConceptGraphMermaid(graph);
+      const summary = renderLessonConceptGraphSummary(graph);
+
+      expect(graph.lessons).toHaveLength(1);
+      expect(mermaid).toContain('graph TD');
+      expect(mermaid).toContain('contact-discovery');
+      expect(summary).toContain('## Backlinks');
+      expect(summary).toContain('contact-discovery');
+    });
+
+    it('should render an Obsidian-friendly Markdown graph index', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      tracker.add(
+        'PATTERN',
+        'Use [[contact-discovery]] before broad scraping. tags: lead-scout',
+        'manual',
+      );
+
+      const graph = tracker.buildConceptGraph();
+      const markdown = renderLessonConceptGraphMarkdown(graph);
+
+      expect(renderLessonConceptGraph(graph, 'markdown')).toBe(markdown);
+      expect(markdown).toContain('# Lessons Graph');
+      expect(markdown).toContain('Filters: query=any; concept=any; category=any; includeKeywords=true; limit=50');
+      expect(markdown).toContain('### [[contact-discovery|contact-discovery]]');
+      expect(markdown).toContain('## Related Lessons');
+    });
+
+    it('should optionally exclude fallback keyword concepts for cleaner indexes', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      tracker.add(
+        'PATTERN',
+        'Use [[contact-discovery]] before broad scraping. tags: lead-scout',
+        'manual',
+      );
+
+      const graph = tracker.buildConceptGraph({ includeKeywords: false });
+
+      expect(graph.filters.includeKeywords).toBe(false);
+      expect(graph.concepts.some(concept => concept.id === 'contact-discovery')).toBe(true);
+      expect(graph.concepts.some(concept => concept.id === 'lead-scout')).toBe(true);
+      expect(graph.concepts.some(concept => concept.id === 'broad')).toBe(false);
+      expect(graph.concepts.some(concept => concept.sources.includes('keyword'))).toBe(false);
+    });
+
+    it('should render an Obsidian-style vault file set', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      const item = tracker.add(
+        'PATTERN',
+        'Use [[contact-discovery]] before broad scraping. tags: lead-scout',
+        'manual',
+      );
+
+      const graph = tracker.buildConceptGraph({ includeKeywords: false });
+      const files = renderLessonConceptVaultFiles(graph);
+      const index = files.find(file => file.path === 'index.md');
+      const conceptIndex = files.find(file => file.path === '_concepts.md');
+      const lessonIndex = files.find(file => file.path === '_lessons.md');
+      const concept = files.find(file => file.path === 'concepts/contact-discovery.md');
+      const lesson = files.find(file => file.path === `lessons/${item.id}.md`);
+
+      expect(index?.content).toContain('type: "lessons-vault-index"');
+      expect(index?.content).toContain('[[_concepts|Concept index]]');
+      expect(index?.content).toContain('[[_lessons|Lesson index]]');
+      expect(index?.content).toContain('[[concepts/contact-discovery|contact-discovery]]');
+      expect(conceptIndex?.content).toContain('type: "lessons-vault-concepts-index"');
+      expect(conceptIndex?.content).toContain('[[concepts/contact-discovery|contact-discovery]]');
+      expect(lessonIndex?.content).toContain('type: "lessons-vault-lessons-index"');
+      expect(lessonIndex?.content).toContain(`[[lessons/${item.id}|PATTERN: Use contact-discovery`);
+      expect(concept?.content).toContain('type: "lesson-concept"');
+      expect(concept?.content).toContain(`  - "${item.id}"`);
+      expect(concept?.content).toContain(`[[lessons/${item.id}|PATTERN: Use contact-discovery`);
+      expect(lesson?.content).toContain('type: "lesson"');
+      expect(lesson?.content).toContain('concepts:');
+      expect(lesson?.content).toContain('  - "contact-discovery"');
+      expect(lesson?.content).toContain('[[concepts/contact-discovery|contact-discovery]]');
+      expect(files.some(file => file.path === 'graph.json')).toBe(true);
+      expect(files.some(file => file.path === 'graph.mmd')).toBe(true);
+      const manifest = files.find(file => file.path === 'manifest.json');
+      expect(manifest).toBeDefined();
+      const parsedManifest = JSON.parse(manifest!.content);
+      expect(parsedManifest.vaultSchemaVersion).toBe(1);
+      expect(parsedManifest.entrypoints.conceptsIndex).toBe('_concepts.md');
+      expect(parsedManifest.counts.files).toBe(files.length);
+      expect(parsedManifest.concepts).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: 'contact-discovery',
+          path: 'concepts/contact-discovery.md',
+          lessonIds: [item.id],
+        }),
+      ]));
+      expect(parsedManifest.lessons).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          id: item.id,
+          path: `lessons/${item.id}.md`,
+          conceptIds: expect.arrayContaining(['contact-discovery', 'lead-scout']),
+        }),
+      ]));
+      expect(parsedManifest.files).toContain('manifest.json');
+    });
+
+    it('should understand Obsidian aliases and Markdown links as graph concepts', () => {
+      const tracker = getLessonsTracker(tmpDir);
+      const item = tracker.add(
+        'PATTERN',
+        'Use [[concepts/contact-discovery.md|contact page discovery]] with [sandbox scripts](concepts/sandbox-scripts.md).',
+        'manual',
+      );
+
+      const graph = tracker.buildConceptGraph();
+      const contactDiscovery = graph.concepts.find(concept => concept.id === 'contact-discovery');
+      const sandboxScripts = graph.concepts.find(concept => concept.id === 'sandbox-scripts');
+
+      expect(contactDiscovery?.label).toBe('contact page discovery');
+      expect(contactDiscovery?.sources).toContain('wiki_link');
+      expect(sandboxScripts?.label).toBe('sandbox scripts');
+      expect(sandboxScripts?.sources).toContain('markdown_link');
+      expect(graph.backlinks['sandbox-scripts']).toEqual([item.id]);
     });
   });
 

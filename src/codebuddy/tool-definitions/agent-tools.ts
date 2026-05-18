@@ -12,7 +12,8 @@
  * - device_manage
  * - spawn_parallel_agents
  * - remember / recall / forget
- * - lessons_add / lessons_search / lessons_list
+ * - lead_scout_plan / lead_scout_run / lead_scout_enrichment_plan / lead_scout_lesson_candidates
+ * - lessons_add / lessons_search / lessons_list / lessons_graph
  * - task_verify
  */
 
@@ -389,6 +390,390 @@ export const FORGET_TOOL: CodeBuddyTool = {
 };
 
 // ============================================================================
+// Relationship Intelligence
+// ============================================================================
+
+export const RELATIONSHIP_CONTEXT_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'relationship_context',
+    description:
+      'Build a safe relationship/world-memory context card for a person, organization, place, or concept. Uses public facts, relationship memory, evidence, confidence, and permissions without performing web search or identification by itself.',
+    parameters: {
+      type: 'object',
+      properties: {
+        subject: {
+          type: 'string',
+          description: 'Name or label of the entity being discussed.',
+        },
+        subjectType: {
+          type: 'string',
+          enum: ['public_person', 'known_person', 'unknown_person', 'organization', 'place', 'concept'],
+          description: 'Relationship class. Defaults to unknown_person when omitted.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['general', 'robot_conversation', 'prospecting'],
+          description: 'Use-case posture for the context card.',
+        },
+        confidence: {
+          type: 'number',
+          description: 'Recognition confidence from 0 to 1.',
+        },
+        publicFacts: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Public or encyclopedic facts safe to use when permitted.',
+        },
+        relationshipFacts: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Private relationship memory, used only for confirmed known people.',
+        },
+        sensitiveFacts: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Sensitive facts withheld unless explicitly permitted.',
+        },
+        visibleSignals: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Visible, non-identifying context such as badge text or current setting.',
+        },
+        evidence: {
+          type: 'array',
+          description: 'Evidence attached to public facts or recognition.',
+          items: {
+            type: 'object',
+            properties: {
+              sourceType: {
+                type: 'string',
+                enum: ['public_web', 'user_provided', 'local_memory', 'perception', 'conversation', 'manual'],
+                description: 'Where this evidence came from.',
+              },
+              label: { type: 'string', description: 'Short source label.' },
+              url: { type: 'string', description: 'Source URL, if public.' },
+              excerpt: { type: 'string', description: 'Short source excerpt.' },
+              observedAt: { type: 'string', description: 'ISO timestamp or human-readable time.' },
+              confidence: { type: 'number', description: 'Evidence confidence from 0 to 1.' },
+            },
+            required: ['sourceType'],
+          },
+        },
+        permissions: {
+          type: 'object',
+          description: 'Explicit permissions controlling what context may be used.',
+          properties: {
+            usePublicKnowledge: { type: 'boolean' },
+            useRelationshipMemory: { type: 'boolean' },
+            identifyUnknownPeople: { type: 'boolean' },
+            persistNewMemory: { type: 'boolean' },
+            useSensitiveFacts: { type: 'boolean' },
+          },
+        },
+      },
+      required: ['subject'],
+    },
+  },
+};
+
+// ============================================================================
+// Lead Scout
+// ============================================================================
+
+export const LEAD_SCOUT_PLAN_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lead_scout_plan',
+    description:
+      'Build a safe B2B lead-discovery plan for public professional data: sources, schema, scoring, script recipe, evidence requirements, and human-review gates.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'Prospecting objective, e.g. find architects near a city for a renovation offer.',
+        },
+        target: {
+          type: 'string',
+          enum: [
+            'architectes',
+            'syndics',
+            'agences_immobilieres',
+            'maitres_oeuvre',
+            'promoteurs',
+            'bureaux_etudes',
+            'custom',
+          ],
+          description: 'Lead category. Use custom with customTarget for another B2B target.',
+        },
+        customTarget: {
+          type: 'string',
+          description: 'Custom B2B lead category label when target is custom.',
+        },
+        zone: {
+          type: 'string',
+          description: 'Geographic scope such as city, postal code, department, region, or radius text.',
+        },
+        offer: {
+          type: 'string',
+          description: 'Offer or service to qualify leads against.',
+        },
+        maxProspects: {
+          type: 'number',
+          description: 'Maximum lead budget for review. Defaults to 50; tool validation accepts 1 to 500.',
+        },
+        sources: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['local_dataset', 'sirene', 'rnc', 'official_directory', 'public_website', 'web_search'],
+          },
+          description: 'Optional source strategy. Defaults depend on target.',
+        },
+        exportFormats: {
+          type: 'array',
+          items: { type: 'string', enum: ['csv', 'json', 'markdown'] },
+          description: 'Desired review output formats. Defaults to csv and json.',
+        },
+        localDatasetPaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Existing CSV/JSON lead datasets to import before web discovery.',
+        },
+        requireHumanApprovalBeforeContact: {
+          type: 'boolean',
+          description: 'Whether a human must approve source evidence and outreach before contact. Defaults true.',
+        },
+      },
+      required: ['goal'],
+    },
+  },
+};
+
+export const LEAD_SCOUT_RUN_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lead_scout_run',
+    description:
+      'Run a local-first B2B lead discovery pipeline over JSON/CSV datasets: normalize, dedupe, score, draft optional outreach, and optionally export a human review queue. Does not browse or send emails.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'Prospecting objective, e.g. rank architects near a city for a renovation offer.',
+        },
+        localDatasetPaths: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'JSON or CSV datasets to load. This runner is local-first and does not browse by itself.',
+        },
+        target: {
+          type: 'string',
+          enum: [
+            'architectes',
+            'syndics',
+            'agences_immobilieres',
+            'maitres_oeuvre',
+            'promoteurs',
+            'bureaux_etudes',
+            'custom',
+          ],
+          description: 'Lead category. Use custom with customTarget for another B2B target.',
+        },
+        customTarget: {
+          type: 'string',
+          description: 'Custom B2B lead category label when target is custom.',
+        },
+        zone: {
+          type: 'string',
+          description: 'Geographic scope such as city, postal code, department, region, or radius text.',
+        },
+        offer: {
+          type: 'string',
+          description: 'Offer or service to qualify leads against.',
+        },
+        maxProspects: {
+          type: 'number',
+          description: 'Maximum lead budget for review. Defaults to 50; tool validation accepts 1 to 500.',
+        },
+        minScore: {
+          type: 'number',
+          description: 'Minimum score to keep in the review queue. Defaults to 0; tool validation accepts 0 to 100.',
+        },
+        includeOutreachDrafts: {
+          type: 'boolean',
+          description: 'Include draft-only outreach text. It never sends email. Defaults true.',
+        },
+        outputFormat: {
+          type: 'string',
+          enum: ['csv', 'json', 'markdown'],
+          description: 'Format to write when path is provided. Defaults from path extension.',
+        },
+        path: {
+          type: 'string',
+          description: 'Optional output file path (.json, .csv, or .md). Omit to return results without writing.',
+        },
+        requireHumanApprovalBeforeContact: {
+          type: 'boolean',
+          description: 'Whether a human must approve source evidence and outreach before contact. Defaults true.',
+        },
+      },
+      required: ['goal', 'localDatasetPaths'],
+    },
+  },
+};
+
+export const LEAD_SCOUT_ENRICHMENT_PLAN_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lead_scout_enrichment_plan',
+    description:
+      'Plan a multi-hop public B2B enrichment job: profile page -> official website -> contact/legal/about pages -> phone/email/contact URL, with principles, evidence chain, and a protected run_script contract.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'Enrichment objective, e.g. find architect phones by following official website links.',
+        },
+        target: {
+          type: 'string',
+          enum: [
+            'architectes',
+            'syndics',
+            'agences_immobilieres',
+            'maitres_oeuvre',
+            'promoteurs',
+            'bureaux_etudes',
+            'custom',
+          ],
+          description: 'Lead category. Defaults to custom.',
+        },
+        sourceUrlField: {
+          type: 'string',
+          description: 'Field containing the seed profile/directory URL. Defaults to source_url.',
+        },
+        websiteField: {
+          type: 'string',
+          description: 'Field containing or receiving the official website URL. Defaults to site_web.',
+        },
+        nameField: {
+          type: 'string',
+          description: 'Field containing the business/person name. Defaults to nom.',
+        },
+        missingFields: {
+          type: 'array',
+          items: { type: 'string', enum: ['email', 'telephone', 'site_web', 'contact_url'] },
+          description: 'Fields to enrich. Defaults to email, telephone, and site_web.',
+        },
+        maxHops: {
+          type: 'number',
+          description: 'Maximum evidence hops from source profile to official site/contact pages. Defaults to 3.',
+        },
+        pageBudget: {
+          type: 'number',
+          description: 'Maximum public pages per lead for the generated script. Defaults to 8; validation accepts 1 to 30.',
+        },
+        delayMs: {
+          type: 'number',
+          description: 'Delay between requests in the generated script. Defaults to 1500ms.',
+        },
+        allowedDomains: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional domain allowlist. Empty means public web except ignored domains.',
+        },
+        ignoredDomains: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Additional domains to treat as generic portals or off-limits.',
+        },
+        allowGeneratedScript: {
+          type: 'boolean',
+          description: 'Include the generated Python script in the output. Defaults true.',
+        },
+      },
+      required: ['goal'],
+    },
+  },
+};
+
+export const LEAD_SCOUT_LESSON_CANDIDATES_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lead_scout_lesson_candidates',
+    description:
+      'Generate reviewed lesson candidates from Lead Scout runs or sandboxed enrichment scripts. Returns lessons_add payloads but does not persist them automatically.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description: 'Lead Scout task or run goal that produced observations.',
+        },
+        context: {
+          type: 'string',
+          description: 'Optional lesson context label, e.g. "Lead Scout architect enrichment".',
+        },
+        stats: {
+          type: 'object',
+          description: 'Run stats such as processed, enriched, skipped, blocked, selectedLeads, needsPublicEnrichment, and contact coverage.',
+          properties: {
+            processed: { type: 'number', description: 'Rows or leads processed.' },
+            enriched: { type: 'number', description: 'Rows enriched.' },
+            skipped: { type: 'number', description: 'Rows skipped.' },
+            blocked: { type: 'number', description: 'Rows blocked by safety/access stops.' },
+            selectedLeads: { type: 'number', description: 'Leads selected in review queue.' },
+            needsPublicEnrichment: { type: 'number', description: 'Selected leads with no email, phone, or website.' },
+            leadsWithEmail: { type: 'number', description: 'Selected leads with email.' },
+            leadsWithPhone: { type: 'number', description: 'Selected leads with phone.' },
+            leadsWithWebsite: { type: 'number', description: 'Selected leads with website.' },
+          },
+        },
+        warnings: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Warnings from a Lead Scout run.',
+        },
+        blockers: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Safety or access blockers observed, such as captcha, login, 403, 429.',
+        },
+        successfulPatterns: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Patterns that worked and may be reusable.',
+        },
+        failedPatterns: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Patterns that failed and should not be retried blindly.',
+        },
+        contactPathsThatWorked: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Same-domain contact paths that yielded public contact data.',
+        },
+        domainsToIgnore: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Generic or non-official domains to ignore in future enrichment.',
+        },
+        scriptChanges: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Potential generated-script improvements observed during the run.',
+        },
+      },
+      required: ['goal'],
+    },
+  },
+};
+
+// ============================================================================
 // Lessons & Verification Tools
 // ============================================================================
 
@@ -474,6 +859,46 @@ export const LESSONS_LIST_TOOL: CodeBuddyTool = {
   },
 };
 
+export const LESSONS_GRAPH_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lessons_graph',
+    description: 'Build a mini-Obsidian concept graph over lessons.md. Derives concepts from [[wiki links]], Markdown links, #tags, context, related/tags metadata, and keywords, then returns nearby lessons and connected notions.',
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Optional text filter before graphing lessons',
+        },
+        concept: {
+          type: 'string',
+          description: 'Only graph lessons linked to this concept slug, label, wiki link, or Markdown target',
+        },
+        category: {
+          type: 'string',
+          enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'],
+          description: 'Filter by lesson category',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum lessons to graph (default: 50, max: 200)',
+        },
+        includeKeywords: {
+          type: 'boolean',
+          description: 'Whether to include fallback keyword concepts. Set false for a cleaner explicit-link/tag graph.',
+        },
+        format: {
+          type: 'string',
+          enum: ['summary', 'json', 'markdown', 'mermaid'],
+          description: 'Return concise Markdown summary, full graph JSON, Obsidian-friendly Markdown index, or Mermaid diagram text',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 export const TASK_VERIFY_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -514,8 +939,14 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   REMEMBER_TOOL,
   RECALL_TOOL,
   FORGET_TOOL,
+  RELATIONSHIP_CONTEXT_TOOL,
+  LEAD_SCOUT_PLAN_TOOL,
+  LEAD_SCOUT_RUN_TOOL,
+  LEAD_SCOUT_ENRICHMENT_PLAN_TOOL,
+  LEAD_SCOUT_LESSON_CANDIDATES_TOOL,
   LESSONS_ADD_TOOL,
   LESSONS_SEARCH_TOOL,
   LESSONS_LIST_TOOL,
+  LESSONS_GRAPH_TOOL,
   TASK_VERIFY_TOOL,
 ];

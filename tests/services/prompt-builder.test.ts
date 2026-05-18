@@ -64,6 +64,11 @@ import {
   PromptBuilder,
   type PromptBuilderConfig,
 } from '../../src/services/prompt-builder.js';
+import {
+  _resetFleetRegistryForTests,
+  getFleetRegistry,
+  type ActiveListenerEntry,
+} from '../../src/fleet/fleet-registry.js';
 
 // ---- helpers ---------------------------------------------------------
 
@@ -124,10 +129,39 @@ function buildBuilder(opts: {
   return { builder, cacheSystemPrompt };
 }
 
+function registerFleetPeer(): void {
+  const listener: ActiveListenerEntry['listener'] = {
+    disconnect: vi.fn(async () => undefined),
+    getReconnectAttempts: () => 0,
+    isReconnecting: () => false,
+    request: vi.fn(async () => ({})),
+    getLastSeen: () => ({ at: Date.now(), reason: 'test', ageMs: 0 }),
+    isStale: () => false,
+    getPeerCompactionState: () => ({
+      active: false,
+      startedAt: null,
+      ageMs: null,
+      lastResult: null,
+    }),
+    getEventHistory: () => [],
+  };
+
+  getFleetRegistry().register({
+    id: 'hermes-peer',
+    url: 'http://127.0.0.1:3999',
+    startedAt: new Date(),
+    eventCount: 0,
+    autoReconnect: false,
+    maxAttempts: 0,
+    listener,
+  });
+}
+
 // ---- tests -----------------------------------------------------------
 
 describe('PromptBuilder — Phase T4', () => {
   beforeEach(() => {
+    _resetFleetRegistryForTests();
     promptMocks.getSystemPromptForModeMock
       .mockReset()
       .mockImplementation(() => 'LEGACY_PROMPT_BODY');
@@ -377,8 +411,12 @@ describe('PromptBuilder — Phase T4', () => {
       // Tool names + actionable triggers
       expect(finalPrompt).toContain('`lessons_add`');
       expect(finalPrompt).toContain('`lessons_search`');
+      expect(finalPrompt).toContain('`lessons_graph`');
       expect(finalPrompt).toContain('Manus AI');
       expect(finalPrompt).toMatch(/After the user corrects your approach/i);
+      expect(finalPrompt).toMatch(/mini-Obsidian|lesson graph/i);
+      expect(finalPrompt).toContain('format: "markdown"');
+      expect(finalPrompt).toContain('includeKeywords: false');
       // Phase d.25: lessons_add should also fire after a bug-finding /
       // audit / code-review task, so the LLM captures the underlying
       // pattern as an actionable rule for next time.
@@ -479,6 +517,36 @@ describe('PromptBuilder — Phase T4', () => {
       expect(finalPrompt).toContain('<auto_memory_directive>');
       expect(finalPrompt).toContain('<lessons_directive>');
       expect(finalPrompt).toContain('<writing_rules>');
+    });
+  });
+
+  describe('fleet nudge', () => {
+    it('injects the Hermes dispatch profile guide when peers are connected', async () => {
+      registerFleetPeer();
+      const { builder } = buildBuilder();
+
+      const prompt = await builder.buildSystemPrompt(undefined, 'grok-3', null, {
+        includeBootstrap: false,
+        includePersona: false,
+        includeKnowledge: false,
+        includeProjectDocs: false,
+        includeRules: false,
+        includeSkills: false,
+        includeIdentity: false,
+        includeFleet: true,
+        includeMemoryDirective: false,
+        includeLessonsDirective: false,
+        includeWritingRules: false,
+        includeCodingStyle: false,
+        includeWorkflowRules: false,
+        includeVariation: false,
+      });
+
+      expect(prompt).toContain('<fleet>Connected fleet peers: 1.');
+      expect(prompt).toContain('using this guide: balanced: general delegation');
+      expect(prompt).toContain('review: read-first code review');
+      expect(prompt).toContain('safe: high-risk');
+      expect(prompt).toContain('reuse the dispatchProfile returned by route_peer');
     });
   });
 

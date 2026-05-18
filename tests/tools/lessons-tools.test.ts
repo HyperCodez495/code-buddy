@@ -13,6 +13,7 @@ import * as os from 'os';
 import * as fs from 'fs-extra';
 import {
   LessonsAddTool,
+  LessonsGraphTool,
   LessonsSearchTool,
   LessonsListTool,
   TaskVerifyTool,
@@ -212,6 +213,129 @@ describe('Lessons Tool Adapters', () => {
   });
 
   // ==========================================================================
+  // LessonsGraphTool
+  // ==========================================================================
+
+  describe('LessonsGraphTool', () => {
+    let addTool: LessonsAddTool;
+    let graphTool: LessonsGraphTool;
+
+    beforeEach(() => {
+      addTool = new LessonsAddTool();
+      graphTool = new LessonsGraphTool();
+    });
+
+    it('should have schema name "lessons_graph"', () => {
+      expect(graphTool.getSchema().name).toBe('lessons_graph');
+    });
+
+    it('should return a concept graph summary for linked lessons', async () => {
+      await addTool.execute({
+        category: 'PATTERN',
+        content: 'Use [[contact-discovery]] and [sandbox scripts](concepts/sandbox-scripts.md) before broad scraping. tags: lead-scout',
+        context: 'Lead Scout',
+      });
+      await addTool.execute({
+        category: 'INSIGHT',
+        content: 'Architecture enrichment should reuse contact pages. related: contact-discovery',
+        context: 'Lead Scout',
+      });
+
+      const result = await graphTool.execute({});
+
+      expect(result.success).toBe(true);
+      expect(result.output).toContain('Lesson graph: 2 lesson(s)');
+      expect(result.output).toContain('contact-discovery');
+      expect(result.output).toContain('sandbox scripts');
+      expect(result.output).toContain('Backlinks');
+      expect(result.output).toContain('Related Lessons');
+    });
+
+    it('should return full graph JSON when requested', async () => {
+      await addTool.execute({
+        category: 'RULE',
+        content: 'Always verify learned patterns. tags: verification',
+      });
+
+      const result = await graphTool.execute({ format: 'json' });
+      const parsed = JSON.parse(result.output ?? '{}');
+
+      expect(result.success).toBe(true);
+      expect(parsed.schemaVersion).toBe(1);
+      expect(parsed.lessons).toHaveLength(1);
+      expect(parsed.filters).toEqual({ includeKeywords: true, limit: 50 });
+      expect(parsed.concepts.some((concept: { id: string }) => concept.id === 'verification')).toBe(true);
+      expect(parsed.backlinks.verification).toEqual([parsed.lessons[0].id]);
+    });
+
+    it('should filter graph JSON by concept when requested', async () => {
+      await addTool.execute({
+        category: 'PATTERN',
+        content: 'Use [[contact-discovery]] before broad scraping.',
+      });
+      await addTool.execute({
+        category: 'RULE',
+        content: 'Always run typecheck. tags: verification',
+      });
+
+      const result = await graphTool.execute({ concept: 'contact-discovery', format: 'json' });
+      const parsed = JSON.parse(result.output ?? '{}');
+
+      expect(result.success).toBe(true);
+      expect(parsed.lessons).toHaveLength(1);
+      expect(parsed.lessons[0].content).toContain('contact-discovery');
+      expect(parsed.concepts.some((concept: { id: string }) => concept.id === 'verification')).toBe(false);
+    });
+
+    it('should return Mermaid graph text when requested', async () => {
+      await addTool.execute({
+        category: 'PATTERN',
+        content: 'Use [[contact-discovery]] before broad scraping.',
+      });
+
+      const result = await graphTool.execute({ format: 'mermaid' });
+
+      expect(result.success).toBe(true);
+      expect(result.output).toContain('graph TD');
+      expect(result.output).toContain('contact-discovery');
+    });
+
+    it('should return an Obsidian-friendly Markdown index when requested', async () => {
+      await addTool.execute({
+        category: 'PATTERN',
+        content: 'Use [[contact-discovery]] before broad scraping.',
+      });
+
+      const result = await graphTool.execute({ format: 'markdown' });
+
+      expect(result.success).toBe(true);
+      expect(result.output).toContain('# Lessons Graph');
+      expect(result.output).toContain('[[contact-discovery|contact-discovery]]');
+    });
+
+    it('should omit fallback keyword concepts when includeKeywords is false', async () => {
+      await addTool.execute({
+        category: 'PATTERN',
+        content: 'Use [[contact-discovery]] before broad scraping.',
+      });
+
+      const result = await graphTool.execute({ format: 'json', includeKeywords: false });
+      const parsed = JSON.parse(result.output ?? '{}');
+
+      expect(result.success).toBe(true);
+      expect(parsed.filters.includeKeywords).toBe(false);
+      expect(parsed.concepts.some((concept: { id: string }) => concept.id === 'contact-discovery')).toBe(true);
+      expect(parsed.concepts.some((concept: { id: string }) => concept.id === 'broad')).toBe(false);
+    });
+
+    it('should validate category and format inputs', () => {
+      expect(graphTool.validate({ category: 'BAD' }).valid).toBe(false);
+      expect(graphTool.validate({ format: 'xml' }).valid).toBe(false);
+      expect(graphTool.validate({ category: 'RULE', format: 'markdown' }).valid).toBe(true);
+    });
+  });
+
+  // ==========================================================================
   // TaskVerifyTool
   // ==========================================================================
 
@@ -251,12 +375,13 @@ describe('Lessons Tool Adapters', () => {
   // ==========================================================================
 
   describe('createLessonsTools()', () => {
-    it('should return 4 tools with the correct names', () => {
+    it('should return 5 tools with the correct names', () => {
       const tools = createLessonsTools();
       const names = tools.map(t => t.name);
       expect(names).toContain('lessons_add');
       expect(names).toContain('lessons_search');
       expect(names).toContain('lessons_list');
+      expect(names).toContain('lessons_graph');
       expect(names).toContain('task_verify');
     });
   });

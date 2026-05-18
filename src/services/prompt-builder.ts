@@ -351,12 +351,20 @@ export class PromptBuilder {
           const { getFleetRegistry } = await import('../fleet/fleet-registry.js');
           const peerCount = getFleetRegistry().size();
           if (peerCount > 0) {
+            const {
+              FLEET_DISPATCH_PROFILE_GUIDANCE_TEXT,
+            } = await import('../fleet/dispatch-profile.js');
             systemPrompt +=
               `\n\n<fleet>Connected fleet peers: ${peerCount}. ` +
               `Use route_peer to choose the best peer/model for a task, ` +
+              `pass dispatchProfile when the task has a clear posture ` +
+              `(research, code, review, safe, or balanced), ` +
+              `using this guide: ${FLEET_DISPATCH_PROFILE_GUIDANCE_TEXT}. ` +
               `list_peers({includeCapabilities:true}) when you need raw ` +
               `provider status, or list_peers() for a quick status. Then ` +
-              `peer_delegate can ask the chosen peer a question. The peer answers ` +
+              `peer_delegate can ask the chosen peer a question; reuse the ` +
+              `dispatchProfile returned by route_peer so the peer receives ` +
+              `matching guidance. The peer answers ` +
               `independently with its own model and the response is fed back ` +
               `into your context. Useful for delegating heavy compute, asking a ` +
               `peer with different domain knowledge, or coordinating across ` +
@@ -400,13 +408,13 @@ Call \`remember\` proactively when you learn something worth remembering — don
 
       // Lessons directive — Manus AI-inspired self-improvement loop
       // (`src/agent/lessons-tracker.ts`). The LessonsTracker, lessons_add /
-      // lessons_search tools, and per-turn `<lessons_context>` injection
+      // lessons_search / lessons_graph tools, and per-turn `<lessons_context>` injection
       // were all shipped — but the LLM never proactively called the tools
       // because no system directive told it WHEN. This block fixes that
       // (mirror of the auto-memory directive above).
       if (this.config.memoryEnabled && this.persistentMemory && gates.includeLessonsDirective) {
         systemPrompt += `\n\n<lessons_directive>
-Code Buddy maintains a self-improvement loop via the \`lessons_add\` and \`lessons_search\` tools (Manus AI-inspired pattern). Lessons persist to .codebuddy/lessons.md (project-scoped) and ~/.codebuddy/lessons.md (global, all projects). They differ from \`remember\` by capturing actionable patterns rather than facts.
+Code Buddy maintains a self-improvement loop via the \`lessons_add\`, \`lessons_search\`, and \`lessons_graph\` tools (Manus AI-inspired pattern). Lessons persist to .codebuddy/lessons.md (project-scoped) and ~/.codebuddy/lessons.md (global, all projects). They differ from \`remember\` by capturing actionable patterns rather than facts.
 
 Four categories — pick the right one:
 - **RULE**: invariants to follow ("Never commit .env files", "Use vi.hoisted() for mock factories in this repo")
@@ -425,6 +433,12 @@ When to call \`lessons_search\` (BEFORE acting on a related task):
 - Before implementing a feature similar to one the user previously corrected
 - Before running tests if a previous lesson noted flakiness in the area
 - When the task domain matches a category — e.g. before any auth work, search "auth"
+
+When to call \`lessons_graph\`:
+- When a task touches a recurring concept and nearby lessons may be connected by wiki links, Markdown links, tags, or related metadata
+- When the user asks for "linked", "nearby", "related", "mini-Obsidian", or "lesson graph" memory
+- Prefer \`format: "summary"\` for normal chat, \`format: "json"\` for UI/workflow consumption, \`format: "markdown"\` for Obsidian-style index artifacts, and \`format: "mermaid"\` for visual graph artifacts
+- Use \`includeKeywords: false\` when you need a cleaner graph based only on explicit links, tags, context, and related metadata
 
 What NOT to add:
 - Things derivable from code, git log, or package.json

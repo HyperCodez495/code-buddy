@@ -7,6 +7,9 @@
  */
 
 import { Command } from 'commander';
+import * as os from 'os';
+import * as path from 'path';
+import * as fs from 'fs-extra';
 import { createLessonsCommand } from '../../src/commands/lessons.js';
 
 // ============================================================================
@@ -20,12 +23,33 @@ const mockTracker = {
   remove: jest.fn(),
   clearByCategory: jest.fn(),
   buildContextBlock: jest.fn(),
+  buildConceptGraph: jest.fn(),
   load: jest.fn(),
   save: jest.fn(),
 };
 
 jest.mock('../../src/agent/lessons-tracker.js', () => ({
   getLessonsTracker: jest.fn(function() { return mockTracker; }),
+  renderLessonConceptGraphMermaid: jest.fn(function() { return 'graph TD\n  L0["PATTERN: Use contact-discovery"]\n  L0 --> C0\n  C0(("contact-discovery"))'; }),
+  renderLessonConceptGraphSummary: jest.fn(function() { return 'Lesson graph: 1 lesson(s), 1 concept(s), 0 relation(s).\n\n## Backlinks\n- contact-discovery: [l1]'; }),
+  renderLessonConceptGraph: jest.fn(function(_graph, format = 'summary') {
+    if (format === 'json') return '{\n  "generatedAt": 123\n}';
+    if (format === 'markdown') return '# Lessons Graph\n\n### [[contact-discovery|contact-discovery]]';
+    if (format === 'mermaid') return 'graph TD\n  L0["PATTERN: Use contact-discovery"]\n  L0 --> C0\n  C0(("contact-discovery"))';
+    return 'Lesson graph: 1 lesson(s), 1 concept(s), 0 relation(s).\n\n## Backlinks\n- contact-discovery: [l1]';
+  }),
+  renderLessonConceptVaultFiles: jest.fn(function() {
+    return [
+      { path: 'index.md', content: '# Lessons Vault\n\n- [[concepts/contact-discovery|contact-discovery]]' },
+      { path: '_concepts.md', content: '# Concept Index' },
+      { path: '_lessons.md', content: '# Lesson Index' },
+      { path: 'concepts/contact-discovery.md', content: '# contact-discovery' },
+      { path: 'lessons/l1.md', content: '# PATTERN: l1' },
+      { path: 'graph.json', content: '{ "schemaVersion": 1 }' },
+      { path: 'graph.mmd', content: 'graph TD' },
+      { path: 'manifest.json', content: '{ "vaultSchemaVersion": 1 }' },
+    ];
+  }),
 }));
 
 // ============================================================================
@@ -68,6 +92,14 @@ describe('createLessonsCommand', () => {
     mockTracker.search.mockReturnValue([]);
     mockTracker.clearByCategory.mockReturnValue(0);
     mockTracker.buildContextBlock.mockReturnValue(null);
+    mockTracker.buildConceptGraph.mockReturnValue({
+      generatedAt: Date.now(),
+      lessons: [],
+      concepts: [],
+      lessonConcepts: {},
+      backlinks: {},
+      relatedLessons: [],
+    });
 
     consoleSpy = jest.spyOn(console, 'log').mockImplementation(function() {});
     consoleErrSpy = jest.spyOn(console, 'error').mockImplementation(function() {});
@@ -95,12 +127,13 @@ describe('createLessonsCommand', () => {
     expect(cmd.description().length).toBeGreaterThan(0);
   });
 
-  it('should have subcommands: list, add, search, clear, context', () => {
+  it('should have subcommands: list, add, search, graph, clear, context', () => {
     const cmd = createLessonsCommand();
     const names = cmd.commands.map(c => c.name());
     expect(names).toContain('list');
     expect(names).toContain('add');
     expect(names).toContain('search');
+    expect(names).toContain('graph');
     expect(names).toContain('clear');
     expect(names).toContain('context');
   });
@@ -175,6 +208,146 @@ describe('createLessonsCommand', () => {
       ]);
       await program.parseAsync(['node', 'buddy', 'lessons', 'search', 'tsc']);
       expect(getLogOutput(consoleSpy)).toContain('Found 1');
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // graph subcommand
+  // --------------------------------------------------------------------------
+
+  describe('graph', () => {
+    it('should call tracker.buildConceptGraph() and print a graph summary', async () => {
+      mockTracker.buildConceptGraph.mockReturnValue({
+        generatedAt: Date.now(),
+        lessons: [{ id: 'l1', category: 'PATTERN', content: 'x', createdAt: 0, source: 'manual' }],
+        concepts: [{ id: 'contact-discovery', label: 'contact-discovery', lessonIds: ['l1'], sources: ['wiki_link'], weight: 1 }],
+        lessonConcepts: {},
+        backlinks: { 'contact-discovery': ['l1'] },
+        relatedLessons: [],
+      });
+
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--query', 'contact']);
+
+      expect(mockTracker.buildConceptGraph).toHaveBeenCalledWith({
+        query: 'contact',
+        concept: undefined,
+        category: undefined,
+        includeKeywords: true,
+        limit: 50,
+      });
+      expect(getLogOutput(consoleSpy)).toContain('Lesson graph: 1 lesson(s)');
+      expect(getLogOutput(consoleSpy)).toContain('contact-discovery');
+      expect(getLogOutput(consoleSpy)).toContain('Backlinks');
+    });
+
+    it('should pass --concept to tracker.buildConceptGraph()', async () => {
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--concept', 'contact-discovery']);
+
+      expect(mockTracker.buildConceptGraph).toHaveBeenCalledWith({
+        query: undefined,
+        concept: 'contact-discovery',
+        category: undefined,
+        includeKeywords: true,
+        limit: 50,
+      });
+    });
+
+    it('should pass --no-keywords to tracker.buildConceptGraph()', async () => {
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--no-keywords']);
+
+      expect(mockTracker.buildConceptGraph).toHaveBeenCalledWith({
+        query: undefined,
+        concept: undefined,
+        category: undefined,
+        includeKeywords: false,
+        limit: 50,
+      });
+    });
+
+    it('should print JSON when --json is provided', async () => {
+      mockTracker.buildConceptGraph.mockReturnValue({
+        generatedAt: 123,
+        lessons: [],
+        concepts: [],
+        lessonConcepts: {},
+        backlinks: {},
+        relatedLessons: [],
+      });
+
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--json']);
+
+      expect(getLogOutput(consoleSpy)).toContain('"generatedAt": 123');
+    });
+
+    it('should print Mermaid output when --mermaid is provided', async () => {
+      mockTracker.buildConceptGraph.mockReturnValue({
+        generatedAt: 123,
+        lessons: [{ id: 'l1', category: 'PATTERN', content: 'Use [[contact-discovery]]', createdAt: 0, source: 'manual' }],
+        concepts: [{ id: 'contact-discovery', label: 'contact-discovery', lessonIds: ['l1'], sources: ['wiki_link'], weight: 1 }],
+        lessonConcepts: { l1: [{ slug: 'contact-discovery', label: 'contact-discovery', sources: ['wiki_link'] }] },
+        backlinks: { 'contact-discovery': ['l1'] },
+        relatedLessons: [],
+      });
+
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--mermaid']);
+
+      expect(getLogOutput(consoleSpy)).toContain('graph TD');
+      expect(getLogOutput(consoleSpy)).toContain('contact-discovery');
+    });
+
+    it('should print Markdown index output when --markdown is provided', async () => {
+      await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--markdown']);
+
+      expect(getLogOutput(consoleSpy)).toContain('# Lessons Graph');
+      expect(getLogOutput(consoleSpy)).toContain('[[contact-discovery|contact-discovery]]');
+    });
+
+    it('should write graph output when --graph-output is provided', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lessons-command-graph-'));
+      const outputPath = path.join(tmpDir, '.codebuddy', 'lessons.graph.json');
+
+      try {
+        await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--json', '--graph-output', outputPath]);
+
+        expect(await fs.readFile(outputPath, 'utf-8')).toContain('"generatedAt": 123');
+        expect(getLogOutput(consoleSpy)).toContain('Graph exported to');
+      } finally {
+        await fs.remove(tmpDir);
+      }
+    });
+
+    it('should infer graph output format from the file extension', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lessons-command-graph-'));
+      const outputPath = path.join(tmpDir, '.codebuddy', 'lessons.index.md');
+
+      try {
+        await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--graph-output', outputPath]);
+
+        expect(await fs.readFile(outputPath, 'utf-8')).toContain('# Lessons Graph');
+      } finally {
+        await fs.remove(tmpDir);
+      }
+    });
+
+    it('should write an Obsidian-style vault when --vault is provided', async () => {
+      const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lessons-command-vault-'));
+      const vaultPath = path.join(tmpDir, '.codebuddy', 'lessons-vault');
+
+      try {
+        await program.parseAsync(['node', 'buddy', 'lessons', 'graph', '--vault', vaultPath]);
+
+        expect(await fs.readFile(path.join(vaultPath, 'index.md'), 'utf-8')).toContain('# Lessons Vault');
+        expect(await fs.pathExists(path.join(vaultPath, '_concepts.md'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, '_lessons.md'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, 'concepts', 'contact-discovery.md'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, 'lessons', 'l1.md'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, 'graph.json'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, 'graph.mmd'))).toBe(true);
+        expect(await fs.pathExists(path.join(vaultPath, 'manifest.json'))).toBe(true);
+        expect(getLogOutput(consoleSpy)).toContain('Lessons vault exported');
+      } finally {
+        await fs.remove(tmpDir);
+      }
     });
   });
 
