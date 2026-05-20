@@ -138,7 +138,42 @@ async function buildCapabilitySnapshot(): Promise<PeerCapability> {
     maxConcurrency: parseConcurrency(
       process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY,
     ),
+    roles: deriveRolesForPeer(models),
   };
+}
+
+/**
+ * Build the Hermes-style role tags advertised by this peer. Env var
+ * `CODEBUDDY_FLEET_ROLES` (CSV) is the operator override and wins
+ * outright; otherwise we infer from model strengths so a peer with a
+ * Codex-class model auto-claims the `code` role, a Claude/Opus-class
+ * one claims `review`+`research`, and a cheap/fast peer claims `safe`.
+ */
+function deriveRolesForPeer(models: FleetModelDescriptor[]): string[] {
+  const explicit = process.env.CODEBUDDY_FLEET_ROLES?.trim();
+  if (explicit) {
+    const list = explicit
+      .split(',')
+      .map((r) => r.trim())
+      .filter((r) => r.length > 0);
+    if (list.length > 0) return Array.from(new Set(list));
+  }
+  const set = new Set<string>();
+  for (const m of models) {
+    for (const s of m.strengths) {
+      if (s === 'code') set.add('code');
+      if (s === 'reasoning' || s === 'thinking') {
+        set.add('review');
+        set.add('research');
+      }
+      if (s === 'cheap' || s === 'fast') {
+        set.add('safe');
+      }
+      if (s === 'long-context') set.add('research');
+    }
+  }
+  if (set.size === 0) set.add('balanced');
+  return Array.from(set);
 }
 
 function emptyCapability(): PeerCapability {
@@ -271,6 +306,8 @@ function buildChatGptOAuthCatalog(): FleetModelDescriptor[] {
   const preferred = process.env.CHATGPT_MODEL || 'gpt-5.5';
   const ids = [
     preferred,
+    'gpt-5.5',
+    'gpt-5.2',
     'gpt-5.1-codex',
     'gpt-5.1-codex-max',
     'gpt-5-codex',

@@ -32,6 +32,10 @@ import type {
   ModelStrength,
   PeerCapability,
 } from './types.js';
+import {
+  normalizeDispatchProfile,
+  type FleetDispatchProfile,
+} from './dispatch-profile.js';
 
 /** A single dispatch lane: which peer × which model. */
 export interface DispatchLane {
@@ -46,6 +50,12 @@ export interface DispatchLane {
     load: number;
     latency: number;
   };
+  /**
+   * Hermes-style role hint. Required for chain lanes (Draft→Review→Test),
+   * optional everywhere else. Values are dispatch-profile names:
+   * `'code' | 'review' | 'research' | 'safe' | 'balanced'`.
+   */
+  role?: string;
 }
 
 /** What the router returns. */
@@ -56,6 +66,13 @@ export interface DispatchPlan {
   fallback?: DispatchLane;
   /** When set, run all listed lanes in parallel (ensemble / voting). */
   parallel?: DispatchLane[];
+  /**
+   * Sequential collaboration chain (Hermes-style). When set, lanes run
+   * in order — each step starts only after the previous one completes.
+   * Mutually exclusive with `parallel` semantically (the SagaStore
+   * branches on `chain` first when building initial steps).
+   */
+  chain?: DispatchLane[];
   /** Human-readable summary, useful in UI tooltips and logs. */
   rationale: string;
 }
@@ -75,11 +92,22 @@ export interface DispatchConstraints {
   maxLatencyMs?: number;
   /** When set, force-include this many parallel lanes for redundancy. */
   parallelism?: number;
+  /** Optional hard allow-list of peer ids for operator-selected targets. */
+  targetPeerIds?: string[];
+  /** Hermes-style operating posture selected by the Fleet operator. */
+  dispatchProfile?: FleetDispatchProfile;
   /**
    * Estimated max input tokens — used to drop models whose
    * `contextWindow` is too small. Defaults to `taskClassification.estimatedTokens`.
    */
   estimatedTokens?: number;
+  /**
+   * Hermes-style required role. When set, peers tagged with this role
+   * (in `PeerCapability.roles`) get a match-score bonus, so a
+   * review-tagged peer wins a `review` task even if a cheaper peer
+   * scores higher on cost alone.
+   */
+  requiredRole?: string;
 }
 
 /** A peer entry as seen by the router (cap snapshot + dynamic load info). */
@@ -102,15 +130,24 @@ export class TaskRouter {
     peers: PeerSlot[],
     constraints: DispatchConstraints = {},
   ): DispatchPlan {
-    const requiredStrengths = inferRequiredStrengths(classification);
+    const dispatchProfile = normalizeDispatchProfile(constraints.dispatchProfile);
+    const requiredStrengths = inferRequiredStrengths(
+      classification,
+      dispatchProfile,
+    );
     const minContextWindow =
       constraints.estimatedTokens ?? classification.estimatedTokens ?? 0;
+    const targetPeerIds = normalizeTargetPeerIds(constraints.targetPeerIds);
 
     // 1. Enumerate every (peer, model) candidate.
     const candidates: DispatchLane[] = [];
     const budget = constraints.maxCostUsd ?? DEFAULT_BUDGET_USD;
 
     for (const slot of peers) {
+      if (targetPeerIds && !targetPeerIds.has(slot.peerId)) {
+        continue;
+      }
+
       const cap = slot.capability;
 
       // Privacy veto.
@@ -141,7 +178,13 @@ export class TaskRouter {
           continue;
         }
 
-        const breakdown = scoreCandidate(model, cap, requiredStrengths, budget);
+        const breakdown = scoreCandidate(
+          model,
+          cap,
+          requiredStrengths,
+          budget,
+          constraints.requiredRole,
+        );
         const score =
           0.4 * breakdown.match +
           0.3 * breakdown.cost +
@@ -162,7 +205,8 @@ export class TaskRouter {
         `No peer can satisfy the task (sensitive=${
           constraints.privacyTag === 'sensitive'
         }, requiresVision=${classification.requiresVision}, ` +
-          `requiresLongContext=${classification.requiresLongContext}).`,
+          `requiresLongContext=${classification.requiresLongContext}, ` +
+          `targetedPeers=${targetPeerIds?.size ?? 0}).`,
       );
     }
 
@@ -175,7 +219,13 @@ export class TaskRouter {
     const plan: DispatchPlan = {
       primary,
       fallback,
-      rationale: buildRationale(primary, fallback, requiredStrengths, classification),
+      rationale: buildRationale(
+        primary,
+        fallback,
+        requiredStrengths,
+        classification,
+        dispatchProfile,
+      ),
     };
 
     if (constraints.parallelism && constraints.parallelism > 1) {
@@ -209,13 +259,29 @@ export class TaskRouter {
 
 // ─────────── Scoring internals ───────────
 
+function normalizeTargetPeerIds(peerIds: string[] | undefined): Set<string> | null {
+  if (!Array.isArray(peerIds)) return null;
+  const normalized = peerIds
+    .map((peerId) => peerId.trim())
+    .filter(Boolean);
+  return normalized.length > 0 ? new Set(normalized) : null;
+}
+
 function scoreCandidate(
   model: FleetModelDescriptor,
   cap: PeerCapability,
   requiredStrengths: ModelStrength[],
   budgetUsd: number,
+  requiredRole?: string,
 ): DispatchLane['breakdown'] {
-  const match = scoreMatch(model.strengths, requiredStrengths);
+  let match = scoreMatch(model.strengths, requiredStrengths);
+  // Hermes role bonus — multiply match by 1.25 (cap at 1.0) when the
+  // caller asked for a specific role and the peer advertises it. This
+  // lets a `review`-tagged peer win a review chain step even if a
+  // cheaper peer scores higher on cost alone.
+  if (requiredRole && cap.roles && cap.roles.includes(requiredRole)) {
+    match = Math.min(1, match * 1.25);
+  }
   const cost = scoreCost(model, budgetUsd);
   const load = scoreLoad(cap);
   const latency = scoreLatency(model);
@@ -288,7 +354,10 @@ function scoreLatency(model: FleetModelDescriptor): number {
  * we'd rather the router pick a slightly oversized model than miss
  * a critical capability.
  */
-function inferRequiredStrengths(c: TaskClassification): ModelStrength[] {
+function inferRequiredStrengths(
+  c: TaskClassification,
+  dispatchProfile: FleetDispatchProfile = 'balanced',
+): ModelStrength[] {
   const set: Set<ModelStrength> = new Set();
   if (c.requiresVision) set.add('vision');
   if (c.requiresReasoning || c.complexity === 'reasoning_heavy') {
@@ -296,6 +365,16 @@ function inferRequiredStrengths(c: TaskClassification): ModelStrength[] {
     if (c.complexity === 'reasoning_heavy') set.add('thinking');
   }
   if (c.requiresLongContext) set.add('long-context');
+  if (dispatchProfile === 'research') {
+    set.add('long-context');
+  }
+  if (
+    dispatchProfile === 'code' ||
+    dispatchProfile === 'review' ||
+    dispatchProfile === 'safe'
+  ) {
+    set.add('reasoning');
+  }
   // Only nudge towards cheap+fast when no specialized strength was
   // already required — otherwise a "simple" vision task would lose
   // to a vision-less cheap model just on cheap+fast hits.
@@ -315,6 +394,7 @@ function buildRationale(
   fallback: DispatchLane | undefined,
   required: ModelStrength[],
   c: TaskClassification,
+  dispatchProfile: FleetDispatchProfile = 'balanced',
 ): string {
   const reqStr =
     required.length > 0 ? required.join(', ') : 'no specific strength';
@@ -322,6 +402,7 @@ function buildRationale(
     `Primary: ${primary.peerId} ${primary.model} (score ${primary.score.toFixed(3)})`,
     `Required: ${reqStr}`,
     `Complexity: ${c.complexity}`,
+    `Profile: ${dispatchProfile}`,
   ];
   if (fallback) {
     parts.push(`Fallback: ${fallback.peerId} ${fallback.model}`);
@@ -334,4 +415,57 @@ export class NoPeerAvailableError extends Error {
     super(message);
     this.name = 'NoPeerAvailableError';
   }
+}
+
+/**
+ * Compose a Hermes-style chain `DispatchPlan` — one lane per requested
+ * role, each routed independently so the best-suited peer wins for
+ * every stage (Draft→Review→Test by default).
+ *
+ * Each role gets its own router invocation with `requiredRole` set, so
+ * the role-bonus tilt from {@link scoreCandidate} steers Draft to a
+ * `code`-tagged peer, Review to a `review`-tagged peer, etc. When no
+ * peer advertises the role, the bonus is a no-op and the router falls
+ * back to its standard match/cost/load/latency scoring — so the chain
+ * still resolves end-to-end on a single-peer fleet.
+ *
+ * Throws `NoPeerAvailableError` for the FIRST role that can't be
+ * satisfied (privacy veto, no capable model, etc.). The caller can
+ * catch and fall back to a non-chain plan.
+ *
+ * Returns a plan with both `chain: DispatchLane[]` populated **and**
+ * `primary` set to the first lane (for back-compat with code that
+ * reads `plan.primary` for rationale chips, etc.). The SagaStore
+ * branches on `chain` first when building initial steps, so the
+ * primary lane is ignored at execution time when chain is set.
+ */
+export function planChainDispatch(
+  classification: TaskClassification,
+  peers: PeerSlot[],
+  options: {
+    chainRoles: string[];
+    constraints?: Omit<DispatchConstraints, 'requiredRole'>;
+  },
+): DispatchPlan {
+  if (options.chainRoles.length === 0) {
+    throw new Error('planChainDispatch requires at least one role');
+  }
+  const router = new TaskRouter();
+  const chain: DispatchLane[] = [];
+  for (const role of options.chainRoles) {
+    const sub = router.plan(classification, peers, {
+      ...(options.constraints ?? {}),
+      requiredRole: role,
+    });
+    chain.push({ ...sub.primary, role });
+  }
+  const head = chain[0]!;
+  const rationale =
+    `Chain dispatch: ${options.chainRoles.join(' → ')}. ` +
+    chain.map((lane) => `${lane.role}=${lane.peerId}`).join(', ');
+  return {
+    primary: head,
+    chain,
+    rationale,
+  };
 }

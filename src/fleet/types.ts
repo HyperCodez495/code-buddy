@@ -102,4 +102,20 @@ export interface PeerCapability {
   maxConcurrency?: number;
   /** Currently in-flight requests — populated dynamically (not from describe). */
   activeRequests?: number;
+  /**
+   * Hermes-style role tags this peer self-advertises. Values mirror
+   * dispatch profile names (`'code' | 'review' | 'research' | 'safe' | 'balanced'`).
+   *
+   * Populated by `capability-registry.ts`:
+   *   1. explicit `CODEBUDDY_FLEET_ROLES` env (CSV) when set, or
+   *   2. heuristic from model strengths: `code` strength → `'code'`,
+   *      `reasoning` → `'review'` + `'research'`, `cheap`/`fast` → `'safe'`,
+   *      default → `'balanced'`.
+   *
+   * The task router (`task-router.ts`) applies a match-score bonus when
+   * a `DispatchConstraints.requiredRole` overlaps with this peer's
+   * roles — that's how a `Draft → Review → Test` chain steers each
+   * step to the peer best suited for it without hard-coding peer ids.
+   */
+  roles?: string[];
 }

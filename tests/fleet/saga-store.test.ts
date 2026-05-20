@@ -19,11 +19,24 @@ vi.mock('../../src/utils/logger.js', () => ({
   },
 }));
 
+// Mock persistent-memory so finalise()'s skill writeback hook doesn't
+// touch the real user memory files during tests. Tests that exercise
+// the writeback path read these mocks to assert behaviour.
+const rememberMock = vi.fn(async () => {});
+const initializeMock = vi.fn(async () => {});
+vi.mock('../../src/memory/persistent-memory.js', () => ({
+  getMemoryManager: () => ({
+    initialize: initializeMock,
+    remember: rememberMock,
+  }),
+}));
+
 import {
   SagaStore,
   deriveSagaStatus,
   type SagaRecord,
 } from '../../src/fleet/saga-store';
+import { logger } from '../../src/utils/logger.js';
 import {
   aggregateParallelResults,
   finaliseFromSingle,
@@ -77,8 +90,48 @@ function makePlan(parallel = false): DispatchPlan {
   };
 }
 
+function makeChainPlan(): DispatchPlan {
+  return {
+    primary: {
+      peerId: 'drafter',
+      model: 'm-draft',
+      score: 0.9,
+      breakdown: { match: 1, cost: 1, load: 1, latency: 1 },
+      role: 'code',
+    },
+    chain: [
+      {
+        peerId: 'drafter',
+        model: 'm-draft',
+        score: 0.9,
+        breakdown: { match: 1, cost: 1, load: 1, latency: 1 },
+        role: 'code',
+      },
+      {
+        peerId: 'reviewer',
+        model: 'm-review',
+        score: 0.85,
+        breakdown: { match: 1, cost: 0.9, load: 1, latency: 0.8 },
+        role: 'review',
+      },
+      {
+        peerId: 'tester',
+        model: 'm-test',
+        score: 0.8,
+        breakdown: { match: 1, cost: 0.9, load: 1, latency: 0.7 },
+        role: 'safe',
+      },
+    ],
+    rationale: 'chain test',
+  };
+}
+
 beforeEach(() => {
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'saga-store-test-'));
+  rememberMock.mockClear();
+  initializeMock.mockClear();
+  rememberMock.mockImplementation(async () => {});
+  initializeMock.mockImplementation(async () => {});
 });
 
 afterEach(() => {
@@ -116,6 +169,24 @@ describe('SagaStore — create + load', () => {
   it('returns null when loading a non-existent saga', async () => {
     const store = new SagaStore({ storeDir: tmpDir });
     expect(await store.load('saga_nope')).toBeNull();
+  });
+
+  it('uses CODEBUDDY_HOME for the default saga directory', async () => {
+    const previousCodeBuddyHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = tmpDir;
+
+    try {
+      const store = new SagaStore();
+      const saga = await store.create({ goal: 'home scoped', plan: makePlan(false) });
+
+      expect(fs.existsSync(path.join(tmpDir, 'sagas', `${saga.id}.json`))).toBe(true);
+    } finally {
+      if (previousCodeBuddyHome === undefined) {
+        delete process.env.CODEBUDDY_HOME;
+      } else {
+        process.env.CODEBUDDY_HOME = previousCodeBuddyHome;
+      }
+    }
   });
 });
 
@@ -222,6 +293,127 @@ describe('deriveSagaStatus', () => {
       updatedAt: 0,
     };
     expect(deriveSagaStatus(saga)).toBe('pending');
+  });
+});
+
+describe('SagaStore — finalise() skill writeback (Phase E)', () => {
+  it('appends a lesson to persistent memory on successful finalise', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(true) });
+    await store.completeStep(saga.id, 0, 'r1');
+    await store.completeStep(saga.id, 1, 'r2');
+    await store.finalise(saga.id, 'synthesised answer');
+    expect(initializeMock).toHaveBeenCalled();
+    expect(rememberMock).toHaveBeenCalledWith(
+      `fleet-saga-${saga.id}`,
+      expect.stringContaining('synthesised answer'),
+      expect.objectContaining({ scope: 'project', category: 'context' }),
+    );
+  });
+
+  it('warning-only: saga still finalises when memory writeback throws', async () => {
+    rememberMock.mockImplementationOnce(async () => {
+      throw new Error('memory file locked');
+    });
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(true) });
+    await store.completeStep(saga.id, 0, 'r1');
+    await store.completeStep(saga.id, 1, 'r2');
+    const finalised = await store.finalise(saga.id, 'still works');
+    expect(finalised?.status).toBe('completed');
+    expect(finalised?.finalResult).toBe('still works');
+    expect(logger.warn).toHaveBeenCalledWith(
+      expect.stringContaining('skill writeback failed'),
+      expect.objectContaining({ sagaId: saga.id }),
+    );
+  });
+
+  it('truncates the outcome to 500 chars to keep memory entries scannable', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'g', plan: makePlan(true) });
+    await store.completeStep(saga.id, 0, 'r1');
+    await store.completeStep(saga.id, 1, 'r2');
+    const longResult = 'X'.repeat(2000);
+    await store.finalise(saga.id, longResult);
+    const captured = rememberMock.mock.calls[0]?.[1] as string;
+    // Goal + "Outcome: " prefix + up to 500 chars of result.
+    expect(captured.length).toBeLessThanOrEqual('Goal: g\n\nOutcome: '.length + 500);
+    expect(captured).toContain('X'.repeat(500));
+    expect(captured).not.toContain('X'.repeat(501));
+  });
+});
+
+describe('SagaStore — chain mode (Hermes-style sequential collab)', () => {
+  it('builds chain steps with role + dependsOn metadata', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    expect(saga.steps).toHaveLength(3);
+    expect(saga.steps.every((s) => s.lane === 'chain')).toBe(true);
+    expect(saga.steps[0].role).toBe('code');
+    expect(saga.steps[1].role).toBe('review');
+    expect(saga.steps[2].role).toBe('safe');
+    expect(saga.steps[0].dependsOn).toBeUndefined();
+    expect(saga.steps[1].dependsOn).toBe(0);
+    expect(saga.steps[2].dependsOn).toBe(1);
+    expect(saga.steps.every((s) => s.status === 'pending')).toBe(true);
+  });
+
+  it('advanceChain flips step 0 to running when no predecessor', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    const advanced = await store.advanceChain(saga.id);
+    expect(advanced?.steps[0].status).toBe('running');
+    expect(advanced?.steps[0].startedAt).toBeTypeOf('number');
+    expect(advanced?.steps[1].status).toBe('pending');
+    expect(advanced?.status).toBe('running');
+  });
+
+  it('advanceChain refuses to flip step 1 until step 0 completes', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    await store.advanceChain(saga.id); // step 0 → running
+    const stillPending = await store.advanceChain(saga.id);
+    // Step 0 already running, step 1 still blocked.
+    expect(stillPending?.steps[0].status).toBe('running');
+    expect(stillPending?.steps[1].status).toBe('pending');
+  });
+
+  it('advanceChain promotes step 1 once step 0 is completed', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    await store.advanceChain(saga.id);
+    await store.completeStep(saga.id, 0, 'drafted');
+    const advanced = await store.advanceChain(saga.id);
+    expect(advanced?.steps[1].status).toBe('running');
+    expect(advanced?.steps[0].result).toBe('drafted');
+    expect(advanced?.status).toBe('running');
+  });
+
+  it('chain saga is completed only when the LAST step finishes', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    await store.advanceChain(saga.id);
+    await store.completeStep(saga.id, 0, 'r0');
+    // After step 0 completes, status should still be running (chain advancing).
+    const mid = await store.load(saga.id);
+    expect(mid?.status).toBe('running');
+    await store.advanceChain(saga.id);
+    await store.completeStep(saga.id, 1, 'r1');
+    await store.advanceChain(saga.id);
+    const final = await store.completeStep(saga.id, 2, 'r2');
+    expect(final?.status).toBe('completed');
+  });
+
+  it('chain saga fails when any step fails (chain breaks)', async () => {
+    const store = new SagaStore({ storeDir: tmpDir });
+    const saga = await store.create({ goal: 'chain', plan: makeChainPlan() });
+    await store.advanceChain(saga.id);
+    const failed = await store.failStep(saga.id, 0, 'review-rejected');
+    expect(failed?.status).toBe('failed');
+    // advanceChain after a failure finds no eligible step.
+    const after = await store.advanceChain(saga.id);
+    expect(after?.steps[1].status).toBe('pending');
+    expect(after?.status).toBe('failed');
   });
 });
 

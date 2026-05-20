@@ -10,6 +10,7 @@
  */
 
 import crypto from 'crypto';
+import os from 'os';
 import { createRequire } from 'module';
 import express, { Application } from 'express';
 import cors from 'cors';
@@ -33,6 +34,10 @@ import {
 import { chatRoutes, toolsRoutes, sessionsRoutes, memoryRoutes, healthRoutes, metricsRoutes, createWorkflowApiRouter, createA2AProtocolRoutes, createACPRoutes, createK8sHealthAliases, createDashboardRouter, createCloudTaskRoutes, createWebhookRoutes } from './routes/index.js';
 import { setupWebSocket, closeAllConnections, getConnectionStats } from './websocket/index.js';
 import { startFleetHeartbeat, stopFleetHeartbeat } from '../fleet/heartbeat-broadcaster.js';
+import {
+  startAutonomousTick,
+  stopAutonomousTick,
+} from '../fleet/autonomous-tick-broadcaster.js';
 import { startApiHeartbeatMonitor, stopApiHeartbeatMonitor } from './heartbeat-monitor.js';
 import { wireCompactionBridge, unwireCompactionBridge } from '../fleet/compaction-bridge.js';
 import { wirePeerChatBridge, unwirePeerChatBridge } from '../fleet/peer-chat-bridge.js';
@@ -41,6 +46,7 @@ import { wirePeerToolBridge, unwirePeerToolBridge } from '../fleet/peer-tool-bri
 import { logger } from '../utils/logger.js';
 import { initMetrics, getMetrics as _getMetrics } from '../metrics/index.js';
 import { CSRFProtection } from '../security/csrf-protection.js';
+import { initializeDatabase } from '../database/database-manager.js';
 import type { InboundMessage } from '../channels/index.js';
 import { SERVER_CONFIG, TIMEOUT_CONFIG, LIMIT_CONFIG } from '../config/constants.js';
 
@@ -79,6 +85,18 @@ function getJwtSecret(): string {
     'Set JWT_SECRET environment variable for production use.'
   );
   return crypto.randomBytes(64).toString('hex');
+}
+
+export function getServerBaseUrl(server: HttpServer, config: ServerConfig): string {
+  const address = server.address();
+  const port = typeof address === 'object' && address ? address.port : config.port;
+  const publicHost = config.host === '0.0.0.0' || config.host === '::'
+    ? '127.0.0.1'
+    : config.host;
+  const host = publicHost.includes(':') && !publicHost.startsWith('[')
+    ? `[${publicHost}]`
+    : publicHost;
+  return `http://${host}:${port}`;
 }
 
 // Default configuration
@@ -135,7 +153,7 @@ function createApp(config: ServerConfig): Application {
       origin: isWildcard ? true : config.corsOrigins,
       credentials: !isWildcard,
       methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID'],
+      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-CSRF-Token'],
     }));
   }
 
@@ -147,9 +165,6 @@ function createApp(config: ServerConfig): Application {
   if (config.rateLimit) {
     app.use(createRateLimitMiddleware(config));
   }
-
-  // Authentication (always applied — enables both enforcing and disabling auth)
-  app.use(createAuthMiddleware(config));
 
   // Health routes (no auth required)
   app.use('/api/health', healthRoutes);
@@ -163,12 +178,15 @@ function createApp(config: ServerConfig): Application {
   // Also expose at /metrics for Prometheus compatibility
   app.use('/metrics', metricsRoutes);
 
+  // Authentication (applied after public health/metrics endpoints)
+  app.use(createAuthMiddleware(config));
+
   // A2A routes (auth-based, exempt from CSRF) — must be mounted BEFORE CSRF middleware
   app.use('/api/a2a', createA2AProtocolRoutes());
 
   // CSRF protection for state-changing endpoints (POST/PUT/DELETE)
   // Applied AFTER A2A routes so they are never touched by CSRF middleware
-  if (process.env.CSRF_PROTECTION !== 'false') {
+  if (config.authEnabled && process.env.CSRF_PROTECTION !== 'false') {
     const csrfProtection = new CSRFProtection({
       secure: process.env.NODE_ENV === 'production',
     });
@@ -786,6 +804,15 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
 }> {
   const config: ServerConfig = { ...DEFAULT_CONFIG, ...userConfig };
 
+  try {
+    await initializeDatabase();
+    logger.debug('Database initialized for API server');
+  } catch (error) {
+    logger.warn('Database initialization failed; API server will start with degraded health', {
+      error: error instanceof Error ? error.message : String(error),
+    });
+  }
+
   // Initialize metrics collector
   initMetrics({
     consoleExport: process.env.METRICS_CONSOLE === 'true',
@@ -808,6 +835,52 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
   const app = createApp(config);
   const server = createServer(app);
 
+  const startChannelBridge = async (baseUrl: string): Promise<void> => {
+    try {
+      const { getChannelManager } = await import('../channels/index.js');
+      const { loadChannelConfig, instantiateChannel } = await import(
+        '../commands/handlers/channel-handlers.js'
+      );
+      const { startChannelA2ABridge } = await import('./channel-a2a-bridge.js');
+
+      const manager = getChannelManager();
+      const cfg = loadChannelConfig();
+      if (!cfg || cfg.channels.length === 0) {
+        logger.info('[channel-a2a-bridge] no .codebuddy/channels.json found, skipping channel boot');
+      } else {
+        for (const chCfg of cfg.channels) {
+          if (!chCfg.enabled) continue;
+          try {
+            const channel = await instantiateChannel(chCfg);
+            if (channel) {
+              manager.registerChannel(channel);
+              await channel.connect();
+              logger.info(`[channel-a2a-bridge] ${chCfg.type} channel started`);
+            }
+          } catch (err) {
+            logger.warn(`[channel-a2a-bridge] ${chCfg.type} failed to start`, {
+              error: err instanceof Error ? err.message : String(err),
+            });
+          }
+        }
+      }
+
+      const bridge = startChannelA2ABridge({
+        hubBaseUrl: baseUrl,
+        channelManager: manager,
+        defaultSkill: process.env.A2A_BRIDGE_DEFAULT_SKILL || 'ollama-qwen3-4b',
+        defaultModel: process.env.A2A_BRIDGE_DEFAULT_MODEL || 'qwen3:4b',
+        defaultAgent: process.env.A2A_BRIDGE_DEFAULT_AGENT,
+      });
+      // Stash on the http server for graceful shutdown.
+      (server as unknown as { _channelA2ABridge?: { stop: () => void } })._channelA2ABridge = bridge;
+    } catch (err) {
+      logger.warn('[channel-a2a-bridge] init failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  };
+
   // Setup WebSocket if enabled
   if (config.websocketEnabled) {
     await setupWebSocket(server, config);
@@ -816,6 +889,18 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
     // fleet:peer:heartbeat events let remote FleetListener clients flag
     // a peer as stale when they stop arriving. Idempotent + unref'd.
     startFleetHeartbeat();
+    // Hermes-style autonomous tick daemon. Wakes the proven
+    // `fleet-tick-handler.runFleetTick()` (Phase (d).18) as an
+    // in-process timer when `CODEBUDDY_FLEET_REPO_PATH` is set —
+    // otherwise it logs `daemon inactive` and stays opt-in.
+    startAutonomousTick({
+      repoPath: process.env.CODEBUDDY_FLEET_REPO_PATH,
+      host:
+        process.env.CODEBUDDY_FLEET_HOSTNAME ||
+        process.env.CODEBUDDY_FLEET_MACHINE_LABEL ||
+        os.hostname(),
+      intervalMs: Number(process.env.CODEBUDDY_FLEET_TICK_INTERVAL_MS) || undefined,
+    });
     // /api/health apiHeartbeat — periodically pings the configured LLM
     // base URL so the dashboard shows a live latency + reachability
     // status instead of `lastCheck: null`.
@@ -857,71 +942,28 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
       }
     })().catch(() => { /* unhandled-rejection guard */ });
 
-    // Channel -> A2A bridge. Auto-loads .codebuddy/channels.json (or the
-    // user-scoped equivalent), boots every enabled channel, and registers
-    // a single handler that forwards inbound messages to the hub's task
-    // router. Skipping this block is fine — the hub still serves A2A
-    // tasks, just without channel ingress (Telegram, Discord, ...).
-    (async () => {
-      try {
-        const { getChannelManager } = await import('../channels/index.js');
-        const { loadChannelConfig, instantiateChannel } = await import(
-          '../commands/handlers/channel-handlers.js'
-        );
-        const { startChannelA2ABridge } = await import('./channel-a2a-bridge.js');
-
-        const manager = getChannelManager();
-        const cfg = loadChannelConfig();
-        if (!cfg || cfg.channels.length === 0) {
-          logger.info('[channel-a2a-bridge] no .codebuddy/channels.json found, skipping channel boot');
-        } else {
-          for (const chCfg of cfg.channels) {
-            if (!chCfg.enabled) continue;
-            try {
-              const channel = await instantiateChannel(chCfg);
-              if (channel) {
-                manager.registerChannel(channel);
-                await channel.connect();
-                logger.info(`[channel-a2a-bridge] ${chCfg.type} channel started`);
-              }
-            } catch (err) {
-              logger.warn(`[channel-a2a-bridge] ${chCfg.type} failed to start`, {
-                error: err instanceof Error ? err.message : String(err),
-              });
-            }
-          }
-        }
-
-        const baseUrl = `http://127.0.0.1:${config.port}`;
-        const bridge = startChannelA2ABridge({
-          hubBaseUrl: baseUrl,
-          channelManager: manager,
-          defaultSkill: process.env.A2A_BRIDGE_DEFAULT_SKILL || 'ollama-qwen3-4b',
-          defaultModel: process.env.A2A_BRIDGE_DEFAULT_MODEL || 'qwen3:4b',
-          defaultAgent: process.env.A2A_BRIDGE_DEFAULT_AGENT,
-        });
-        // Stash on the http server for graceful shutdown.
-        (server as unknown as { _channelA2ABridge?: { stop: () => void } })._channelA2ABridge = bridge;
-      } catch (err) {
-        logger.warn('[channel-a2a-bridge] init failed', {
-          error: err instanceof Error ? err.message : String(err),
-        });
-      }
-    })().catch(() => { /* unhandled-rejection guard */ });
   }
 
   return new Promise((resolve, reject) => {
     server.listen(config.port, config.host, async () => {
-      logger.info(`API Server started on http://${config.host}:${config.port}`);
-      logger.info(`Health: http://${config.host}:${config.port}/api/health`);
-      logger.info(`Metrics: http://${config.host}:${config.port}/api/metrics`);
-      logger.info(`Dashboard: http://${config.host}:${config.port}/__codebuddy__/dashboard/`);
-      logger.info(`Metrics Dashboard: http://${config.host}:${config.port}/api/metrics/dashboard`);
-      logger.info(`Docs: http://${config.host}:${config.port}/api/docs`);
+      const baseUrl = getServerBaseUrl(server, config);
+
+      logger.info(`API Server started on ${baseUrl}`);
+      logger.info(`Health: ${baseUrl}/api/health`);
+      logger.info(`Metrics: ${baseUrl}/api/metrics`);
+      logger.info(`Dashboard: ${baseUrl}/__codebuddy__/dashboard/`);
+      logger.info(`Metrics Dashboard: ${baseUrl}/api/metrics/dashboard`);
+      logger.info(`Docs: ${baseUrl}/api/docs`);
       logger.info(`WebSocket: ${config.websocketEnabled ? 'Enabled (/ws)' : 'Disabled'}`);
       logger.info(`Auth: ${config.authEnabled ? 'Enabled' : 'Disabled'}`);
       logger.info(`Rate Limit: ${config.rateLimit ? `${config.rateLimitMax} req/${config.rateLimitWindow / 1000}s` : 'Disabled'}`);
       logger.info(`Security Headers: ${config.securityHeaders?.enabled !== false ? 'Enabled (CSP, X-Frame-Options, HSTS, etc.)' : 'Disabled'}`);
+
+      if (config.websocketEnabled) {
+        // Channel -> A2A bridge needs the actual bound port when callers use
+        // port 0 for ephemeral smoke/integration servers.
+        startChannelBridge(baseUrl).catch(() => { /* unhandled-rejection guard */ });
+      }
 
       // Log peer routing stats
       try {
@@ -947,6 +989,8 @@ export async function stopServer(server: HttpServer): Promise<void> {
     // Phase (d).9 — cancel the heartbeat timer so it doesn't keep
     // emitting against a half-shut server. Idempotent.
     stopFleetHeartbeat();
+    // Stop the autonomous tick daemon (no-op when never started).
+    stopAutonomousTick();
     stopApiHeartbeatMonitor();
     // Phase (d).10 — detach the compaction-event bridge so the
     // SmartCompactionEngine doesn't retain dangling listener refs.

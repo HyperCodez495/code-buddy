@@ -14,9 +14,28 @@ const state = vi.hoisted(() => {
   type SagaStep = {
     peerId: string;
     model: string;
-    lane: 'primary' | 'fallback' | 'parallel';
+    lane: 'primary' | 'fallback' | 'parallel' | 'chain';
+    role?: string;
+    dependsOn?: number;
     runId?: string;
     status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+    toolPolicy?: {
+      profile?: string;
+      policyProfile?: string;
+      defaultAction?: string;
+      summary?: string;
+    };
+    toolDecisions?: Array<{
+      tool: string;
+      action: string;
+      matchedGroup?: string;
+    }>;
+    toolset?: {
+      toolsetId?: string;
+      deniedTools?: string[];
+      allowedTools?: string[];
+      confirmTools?: string[];
+    };
     result?: string;
     error?: string;
   };
@@ -63,8 +82,23 @@ vi.mock('../src/main/utils/core-loader', () => ({
             if (!cur) return null;
             cur.steps[idx].status = 'completed';
             cur.steps[idx].result = result;
-            cur.status = 'completed';
-            cur.completedAt = Date.now();
+            // For chain sagas, only mark the whole saga complete when
+            // the LAST step finishes — otherwise the runner's chain
+            // loop would exit early. Mirrors core deriveSagaStatus.
+            const isChain =
+              cur.steps.length > 0 && cur.steps.every((s) => s.lane === 'chain');
+            if (isChain) {
+              const last = cur.steps[cur.steps.length - 1];
+              if (last && last.status === 'completed') {
+                cur.status = 'completed';
+                cur.completedAt = Date.now();
+              } else {
+                cur.status = 'running';
+              }
+            } else {
+              cur.status = 'completed';
+              cur.completedAt = Date.now();
+            }
             return cur;
           },
           failStep: async (id: string, idx: number, error: string) => {
@@ -82,6 +116,26 @@ vi.mock('../src/main/utils/core-loader', () => ({
             cur.finalResult = finalResult;
             cur.status = 'completed';
             cur.completedAt = Date.now();
+            return cur;
+          },
+          advanceChain: async (id: string) => {
+            // Mirrors core SagaStore.advanceChain — flips the first
+            // pending chain step whose predecessor is completed (or has
+            // no predecessor) into 'running'.
+            const cur = state.sagas.get(id);
+            if (!cur) return null;
+            for (let i = 0; i < cur.steps.length; i++) {
+              const step = cur.steps[i];
+              if (step.lane !== 'chain') continue;
+              if (step.status !== 'pending') continue;
+              if (step.dependsOn !== undefined) {
+                const pred = cur.steps[step.dependsOn];
+                if (!pred || pred.status !== 'completed') continue;
+              }
+              step.status = 'running';
+              cur.status = 'running';
+              return cur;
+            }
             return cur;
           },
         }),
@@ -158,15 +212,72 @@ describe('SagaRunner — sequential primary success', () => {
       plan: { primary: { peerId: 'peer-a', model: 'm1' } },
       steps: [{ peerId: 'peer-a', model: 'm1', lane: 'primary', status: 'pending' }],
       status: 'pending',
-      metadata: { privacyTag: 'public' },
+      metadata: {
+        privacyTag: 'public',
+        dispatchProfile: 'code',
+        hermesPlanId: 'hermes-integration-plan',
+        hermesPlanProfile: 'safe',
+        hermesPlanSurface: 'cowork',
+        agentRunId: 'run-terminal123456',
+        agentRunSchemaVersion: 1,
+        parentRunId: 'run-parent123456',
+        outcomeId: 'outcome-abcdef123456',
+        scheduleTaskId: 'task-abcdef123456',
+        sourceSessionId: 'session-source123456',
+        deliveryChannel: 'cowork-schedule',
+        memoryCount: 2,
+        targetPeerIds: ['peer-a'],
+        targetPeerLabels: ['Peer A'],
+        internetProofPlan: {
+          steps: [
+            {
+              id: 'discover',
+              tool: 'web_search',
+              evidence: 'discovery',
+              required: true,
+            },
+            {
+              id: 'assert',
+              tool: 'browser',
+              action: 'assert_text',
+              evidence: 'assertion',
+              required: true,
+            },
+          ],
+        },
+      },
       createdAt: Date.now() - 5_000,
     });
 
     const sendToRenderer = vi.fn();
     const activityFeed = { record: vi.fn() };
+    const dispatchParams: Record<string, unknown>[] = [];
     const fleetBridge = makeFleetBridgeMock({
-      'peer.dispatch': async () => ({ runId: 'run-1' }),
-      'peer.dispatchStatus': async () => ({ found: true, status: 'completed', result: 'OK' }),
+      'peer.dispatch': async (params) => {
+        dispatchParams.push(params);
+        return { runId: 'run-1' };
+      },
+      'peer.dispatchStatus': async () => ({
+        found: true,
+        status: 'completed',
+        result: 'OK',
+        toolPolicy: {
+          profile: 'code',
+          policyProfile: 'coding',
+          defaultAction: 'confirm',
+          summary: 'Code posture',
+        },
+        toolDecisions: [
+          { tool: 'view_file', action: 'allow', matchedGroup: 'group:fs:read' },
+          { tool: 'bash', action: 'confirm', matchedGroup: 'group:runtime:shell' },
+        ],
+        toolset: {
+          toolsetId: 'fleet.hermes.code',
+          allowedTools: ['view_file'],
+          confirmTools: ['bash'],
+          deniedTools: [],
+        },
+      }),
     });
 
     const runner = new SagaRunner(fleetBridge as never, sendToRenderer, activityFeed as never);
@@ -179,6 +290,21 @@ describe('SagaRunner — sequential primary success', () => {
     expect(saga.steps[0].status).toBe('completed');
     expect(saga.steps[0].runId).toBe('run-1');
     expect(saga.finalResult).toBe('OK');
+    expect(dispatchParams[0]).toMatchObject({
+      prompt: 'hello',
+      model: 'm1',
+      dispatchProfile: 'code',
+    });
+    expect(saga.steps[0].toolPolicy).toMatchObject({
+      profile: 'code',
+      policyProfile: 'coding',
+      summary: 'Code posture',
+    });
+    expect(saga.steps[0].toolDecisions).toEqual([
+      { tool: 'view_file', action: 'allow', matchedGroup: 'group:fs:read' },
+      { tool: 'bash', action: 'confirm', matchedGroup: 'group:runtime:shell' },
+    ]);
+    expect(saga.steps[0].toolset?.toolsetId).toBe('fleet.hermes.code');
     expect(state.finaliseFromSingleCalls.length).toBe(1);
     expect(state.aggregateCalls.length).toBe(0);
     expect(sendToRenderer).toHaveBeenCalledWith(
@@ -193,8 +319,47 @@ describe('SagaRunner — sequential primary success', () => {
           sagaId: 'saga_seq_ok',
           status: 'completed',
           completedSteps: 1,
+          toolDecisionCount: 2,
+          toolAllowCount: 1,
+          toolConfirmCount: 1,
+          toolDenyCount: 0,
+          toolsetId: 'fleet.hermes.code',
+          toolsetIds: ['fleet.hermes.code'],
+          internetProofStepCount: 2,
+          internetProofRequiredCount: 2,
+          internetProofAssertionCount: 1,
+          internetProofTools: ['web_search', 'browser'],
+          internetProofSteps: [
+            {
+              id: 'discover',
+              tool: 'web_search',
+              evidence: 'discovery',
+              required: true,
+            },
+            {
+              id: 'assert',
+              tool: 'browser',
+              action: 'assert_text',
+              evidence: 'assertion',
+              required: true,
+            },
+          ],
           totalSteps: 1,
           privacyTag: 'public',
+          dispatchProfile: 'code',
+          hermesPlanId: 'hermes-integration-plan',
+          hermesPlanProfile: 'safe',
+          hermesPlanSurface: 'cowork',
+          agentRunId: 'run-terminal123456',
+          agentRunSchemaVersion: 1,
+          parentRunId: 'run-parent123456',
+          outcomeId: 'outcome-abcdef123456',
+          scheduleTaskId: 'task-abcdef123456',
+          sourceSessionId: 'session-source123456',
+          deliveryChannel: 'cowork-schedule',
+          memoryCount: 2,
+          targetPeerIds: ['peer-a'],
+          targetPeerLabels: ['Peer A'],
           finalResultPreview: 'OK',
         }),
       }),
@@ -203,6 +368,66 @@ describe('SagaRunner — sequential primary success', () => {
 });
 
 describe('SagaRunner — terminal failure activity', () => {
+  it('persists accepted dispatch toolset metadata before the first status poll', async () => {
+    state.sagas.set('saga_accept_meta', {
+      id: 'saga_accept_meta',
+      goal: 'review safely',
+      plan: { primary: { peerId: 'peer-a', model: 'reviewer' } },
+      steps: [{ peerId: 'peer-a', model: 'reviewer', lane: 'primary', status: 'pending' }],
+      status: 'pending',
+      metadata: { dispatchProfile: 'review' },
+      createdAt: Date.now() - 1_000,
+    });
+
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async () => ({
+        runId: 'run-accept-meta',
+        dispatchProfile: 'review',
+        toolPolicy: {
+          profile: 'review',
+          policyProfile: 'minimal',
+          defaultAction: 'confirm',
+          summary: 'Review posture',
+        },
+        toolDecisions: [
+          { tool: 'view_file', action: 'allow', matchedGroup: 'group:fs:read' },
+          { tool: 'create_file', action: 'deny', matchedGroup: 'group:fs:write' },
+        ],
+        toolset: {
+          toolsetId: 'fleet.hermes.review',
+          allowedTools: ['view_file'],
+          deniedTools: ['create_file'],
+        },
+      }),
+      'peer.dispatchStatus': async () => {
+        const step = state.sagas.get('saga_accept_meta')?.steps[0];
+        expect(step?.runId).toBe('run-accept-meta');
+        expect(step?.toolPolicy).toMatchObject({
+          profile: 'review',
+          policyProfile: 'minimal',
+        });
+        expect(step?.toolDecisions).toEqual([
+          { tool: 'view_file', action: 'allow', matchedGroup: 'group:fs:read' },
+          { tool: 'create_file', action: 'deny', matchedGroup: 'group:fs:write' },
+        ]);
+        expect(step?.toolset?.toolsetId).toBe('fleet.hermes.review');
+        return {
+          found: true,
+          status: 'completed',
+          result: 'ACCEPTED_META_OK',
+        };
+      },
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn());
+    runner.start('saga_accept_meta');
+
+    await waitFor(() => state.sagas.get('saga_accept_meta')?.status === 'completed');
+
+    const step = state.sagas.get('saga_accept_meta')?.steps[0];
+    expect(step?.toolset?.deniedTools).toEqual(['create_file']);
+  });
+
   it('records a failed Fleet saga when no lane succeeds', async () => {
     state.sagas.set('saga_seq_fail', {
       id: 'saga_seq_fail',
@@ -210,7 +435,7 @@ describe('SagaRunner — terminal failure activity', () => {
       plan: { primary: { peerId: 'peer-a', model: 'm1' } },
       steps: [{ peerId: 'peer-a', model: 'm1', lane: 'primary', status: 'pending' }],
       status: 'pending',
-      metadata: { privacyTag: 'sensitive' },
+      metadata: { privacyTag: 'sensitive', dispatchProfile: 'safe' },
       createdAt: Date.now() - 1_000,
     });
 
@@ -238,6 +463,7 @@ describe('SagaRunner — terminal failure activity', () => {
           failedSteps: 1,
           totalSteps: 1,
           privacyTag: 'sensitive',
+          dispatchProfile: 'safe',
         }),
       }),
     );
@@ -285,6 +511,188 @@ describe('SagaRunner — parallel all success', () => {
     expect(saga.steps.every((s) => s.status === 'completed')).toBe(true);
     expect(saga.finalResult).toBe('AGGREGATED');
     expect(state.aggregateCalls.length).toBe(1);
+  });
+});
+
+describe('SagaRunner — Hermes-style chain (Draft → Review → Test)', () => {
+  it('runs chain steps in order, advancing each via advanceChain and threading prior results into prompts', async () => {
+    state.sagas.set('saga_chain', {
+      id: 'saga_chain',
+      goal: 'Fix the off-by-one bug',
+      plan: {
+        primary: { peerId: 'drafter', model: 'm-draft' },
+        chain: [
+          { peerId: 'drafter', model: 'm-draft', role: 'code' },
+          { peerId: 'reviewer', model: 'm-review', role: 'review' },
+          { peerId: 'tester', model: 'm-test', role: 'safe' },
+        ],
+      },
+      steps: [
+        {
+          peerId: 'drafter',
+          model: 'm-draft',
+          lane: 'chain',
+          role: 'code',
+          status: 'pending',
+        },
+        {
+          peerId: 'reviewer',
+          model: 'm-review',
+          lane: 'chain',
+          role: 'review',
+          dependsOn: 0,
+          status: 'pending',
+        },
+        {
+          peerId: 'tester',
+          model: 'm-test',
+          lane: 'chain',
+          role: 'safe',
+          dependsOn: 1,
+          status: 'pending',
+        },
+      ],
+      status: 'pending',
+    });
+
+    const dispatchParams: Record<string, unknown>[] = [];
+    let runCounter = 0;
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async (params) => {
+        dispatchParams.push(params);
+        runCounter += 1;
+        return { runId: `chain-run-${runCounter}` };
+      },
+      'peer.dispatchStatus': async (params) => {
+        const runId = String(params.runId ?? '');
+        // Each step returns a distinguishable result so we can assert
+        // that the next step's prompt actually inherited the predecessor.
+        const result =
+          runId === 'chain-run-1'
+            ? 'DRAFT_OK'
+            : runId === 'chain-run-2'
+              ? 'REVIEW_OK'
+              : 'TEST_OK';
+        return { found: true, status: 'completed', result };
+      },
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn());
+    runner.start('saga_chain');
+
+    await waitFor(
+      () => state.sagas.get('saga_chain')?.finalResult !== undefined,
+      5_000,
+    );
+
+    const saga = state.sagas.get('saga_chain')!;
+    // All three chain steps ran to completion.
+    expect(saga.steps.map((s) => s.status)).toEqual([
+      'completed',
+      'completed',
+      'completed',
+    ]);
+    // Chain final result is the LAST step's result (no LLM aggregation).
+    expect(saga.finalResult).toBe('TEST_OK');
+    expect(saga.status).toBe('completed');
+    // Dispatch fired three times — once per chain step.
+    expect(dispatchParams).toHaveLength(3);
+    // Step 0 (Draft) uses the bare goal + 'code' profile.
+    expect(dispatchParams[0]).toMatchObject({
+      prompt: 'Fix the off-by-one bug',
+      model: 'm-draft',
+      dispatchProfile: 'code',
+    });
+    // Step 1 (Review) inherits the draft output + 'review' profile.
+    expect(dispatchParams[1]).toMatchObject({
+      model: 'm-review',
+      dispatchProfile: 'review',
+    });
+    expect(String(dispatchParams[1].prompt)).toContain('DRAFT_OK');
+    expect(String(dispatchParams[1].prompt)).toContain('Review this draft');
+    // Step 2 (Test) inherits the reviewer's output + 'safe' profile.
+    expect(dispatchParams[2]).toMatchObject({
+      model: 'm-test',
+      dispatchProfile: 'safe',
+    });
+    expect(String(dispatchParams[2].prompt)).toContain('REVIEW_OK');
+    expect(String(dispatchParams[2].prompt)).toContain('Write tests');
+    // Aggregator NOT called for chain sagas.
+    expect(state.aggregateCalls.length).toBe(0);
+    expect(state.finaliseFromSingleCalls.length).toBe(0);
+  });
+
+  it('breaks the chain on the first failed step (subsequent steps stay pending)', async () => {
+    state.sagas.set('saga_chain_break', {
+      id: 'saga_chain_break',
+      goal: 'will fail at review',
+      plan: {
+        primary: { peerId: 'drafter', model: 'm-draft' },
+        chain: [
+          { peerId: 'drafter', model: 'm-draft', role: 'code' },
+          { peerId: 'reviewer', model: 'm-review', role: 'review' },
+          { peerId: 'tester', model: 'm-test', role: 'safe' },
+        ],
+      },
+      steps: [
+        {
+          peerId: 'drafter',
+          model: 'm-draft',
+          lane: 'chain',
+          role: 'code',
+          status: 'pending',
+        },
+        {
+          peerId: 'reviewer',
+          model: 'm-review',
+          lane: 'chain',
+          role: 'review',
+          dependsOn: 0,
+          status: 'pending',
+        },
+        {
+          peerId: 'tester',
+          model: 'm-test',
+          lane: 'chain',
+          role: 'safe',
+          dependsOn: 1,
+          status: 'pending',
+        },
+      ],
+      status: 'pending',
+    });
+
+    let runCounter = 0;
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async () => {
+        runCounter += 1;
+        return { runId: `break-run-${runCounter}` };
+      },
+      'peer.dispatchStatus': async (params) => {
+        const runId = String(params.runId ?? '');
+        if (runId === 'break-run-2') {
+          return { found: true, status: 'failed', error: 'review_rejected' };
+        }
+        return { found: true, status: 'completed', result: 'DRAFT_OK' };
+      },
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn());
+    runner.start('saga_chain_break');
+
+    await waitFor(
+      () => state.sagas.get('saga_chain_break')?.steps[1].status === 'failed',
+      5_000,
+    );
+
+    const saga = state.sagas.get('saga_chain_break')!;
+    expect(saga.steps[0].status).toBe('completed');
+    expect(saga.steps[1].status).toBe('failed');
+    expect(saga.steps[1].error).toContain('review_rejected');
+    // Tester step never fires — chain broke.
+    expect(saga.steps[2].status).toBe('pending');
+    // Only 2 dispatches happened (no run on the tester).
+    expect(runCounter).toBe(2);
   });
 });
 

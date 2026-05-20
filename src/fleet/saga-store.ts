@@ -23,9 +23,10 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
-import * as os from 'os';
 import { withSessionLock } from '../persistence/session-lock.js';
 import { logger } from '../utils/logger.js';
+import { getCodeBuddyPath } from '../utils/codebuddy-home.js';
+import type { FleetHermesToolsetDescriptor } from './dispatch-profile.js';
 import type { DispatchPlan } from './task-router.js';
 
 export type SagaStepStatus =
@@ -46,11 +47,50 @@ export type SagaStatus =
 export interface SagaStep {
   peerId: string;
   model: string;
-  /** Lane this step belongs to. Used to route results to the aggregator. */
-  lane: 'primary' | 'fallback' | 'parallel';
+  /**
+   * Lane this step belongs to. `chain` is the Hermes-style sequential
+   * collaboration lane (Draft→Review→Test) — chain steps run in order
+   * and each waits for its `dependsOn` predecessor to complete.
+   */
+  lane: 'primary' | 'fallback' | 'parallel' | 'chain';
+  /**
+   * Hermes role hint — only meaningful for `chain` lanes. Values
+   * mirror dispatch profile names (`'code'|'review'|'research'|'safe'|'balanced'`).
+   * Used by the SagaRunner to build the per-step system prompt and by
+   * the Cowork Kanban to bucket the saga into Draft/Review/Test columns.
+   */
+  role?: string;
+  /**
+   * Predecessor step index in the same saga. Only set for `chain`
+   * steps (index 0 has no predecessor). The runner consults this via
+   * `SagaStore.advanceChain()` to decide when a pending chain step is
+   * eligible to start.
+   */
+  dependsOn?: number;
   /** RunId returned by `peer.dispatch` on the target peer. */
   runId?: string;
   status: SagaStepStatus;
+  /** Snapshot of the remote dispatch tool-policy hint used for this lane. */
+  toolPolicy?: {
+    profile?: string;
+    policyProfile?: string;
+    defaultAction?: string;
+    allowGroups?: string[];
+    confirmGroups?: string[];
+    denyGroups?: string[];
+    summary?: string;
+  };
+  /** Per-tool allow/confirm/deny preview returned by the remote dispatch. */
+  toolDecisions?: Array<{
+    tool: string;
+    groups?: string[];
+    action: string;
+    source?: string;
+    reason?: string;
+    matchedGroup?: string;
+  }>;
+  /** Hermes-style descriptor returned when the remote peer accepted the dispatch. */
+  toolset?: FleetHermesToolsetDescriptor;
   startedAt?: number;
   completedAt?: number;
   result?: string;
@@ -210,15 +250,67 @@ export class SagaStore {
     });
   }
 
-  /** Set the aggregator output. Marks the saga `completed`. */
+  /**
+   * Set the aggregator output. Marks the saga `completed` and triggers
+   * Hermes-style skill writeback — the goal + truncated finalResult
+   * are appended to the project's persistent memory so future agents
+   * can recall what the fleet learned from this run.
+   *
+   * Writeback is **warning-only**: a memory-system failure (locked
+   * file, missing dir, mock module in tests) logs a warning and
+   * returns the finalised saga unchanged. The golden path is the
+   * saga finalisation itself — capture is best-effort.
+   */
   async finalise(
     sagaId: string,
     finalResult: string,
   ): Promise<SagaRecord | null> {
-    return this.update(sagaId, (saga) => {
+    const updated = await this.update(sagaId, (saga) => {
       saga.finalResult = finalResult;
       saga.status = 'completed';
       saga.completedAt = Date.now();
+      return saga;
+    });
+    if (updated && updated.finalResult) {
+      await appendSagaLesson(updated).catch((err) => {
+        logger.warn?.('[saga-store] skill writeback failed (ignored)', {
+          sagaId: updated.id,
+          err: err instanceof Error ? err.message : String(err),
+        });
+      });
+    }
+    return updated;
+  }
+
+  /**
+   * Advance a chain saga (Hermes-style sequential collaboration).
+   *
+   * Scans steps in order, finds the first `chain` step still `pending`
+   * whose `dependsOn` predecessor is `completed` (or has no
+   * predecessor), and flips it to `running`. Idempotent: if no step is
+   * ready (chain stalled or every chain step already running/done),
+   * returns the saga unchanged.
+   *
+   * Called by SagaRunner after each chain step completes so the next
+   * one can pick up. Failure of any chain step short-circuits — this
+   * method then finds no eligible step and the saga settles into
+   * `failed` via `deriveSagaStatus`.
+   */
+  async advanceChain(sagaId: string): Promise<SagaRecord | null> {
+    return this.update(sagaId, (saga) => {
+      for (let i = 0; i < saga.steps.length; i++) {
+        const step = saga.steps[i];
+        if (step.lane !== 'chain') continue;
+        if (step.status !== 'pending') continue;
+        if (step.dependsOn !== undefined) {
+          const pred = saga.steps[step.dependsOn];
+          if (!pred || pred.status !== 'completed') continue;
+        }
+        step.status = 'running';
+        step.startedAt = Date.now();
+        saga.status = deriveSagaStatus(saga);
+        return saga;
+      }
       return saga;
     });
   }
@@ -273,8 +365,7 @@ export class SagaStore {
   // ─────────── Internals ───────────
 
   private defaultDir(): string {
-    const home = process.env.HOME || process.env.USERPROFILE || os.homedir();
-    return path.join(home, '.codebuddy', 'sagas');
+    return getCodeBuddyPath('sagas');
   }
 
   private ensureDir(): void {
@@ -303,6 +394,20 @@ export class SagaStore {
 
   private buildInitialSteps(plan: DispatchPlan): SagaStep[] {
     const steps: SagaStep[] = [];
+    // Chain takes precedence — Hermes-style sequential collaboration.
+    if (plan.chain && plan.chain.length > 0) {
+      plan.chain.forEach((lane, idx) => {
+        steps.push({
+          peerId: lane.peerId,
+          model: lane.model,
+          lane: 'chain',
+          role: lane.role,
+          dependsOn: idx > 0 ? idx - 1 : undefined,
+          status: 'pending',
+        });
+      });
+      return steps;
+    }
     if (plan.parallel && plan.parallel.length > 0) {
       // Pure parallel dispatch — each lane is independent.
       for (const lane of plan.parallel) {
@@ -342,6 +447,25 @@ export class SagaStore {
 export function deriveSagaStatus(saga: SagaRecord): SagaStatus {
   if (saga.steps.length === 0) return 'pending';
 
+  // Chain saga — Hermes-style sequential collaboration. The chain
+  // breaks at the first failed step; completes when the LAST step
+  // finishes; reports `running` whenever the chain is advancing
+  // (some step active, or completed predecessors with pending heirs).
+  const isChainSaga = saga.steps.every((s) => s.lane === 'chain');
+  if (isChainSaga) {
+    if (saga.steps.some((s) => s.status === 'failed')) return 'failed';
+    if (saga.steps.some((s) => s.status === 'running')) return 'running';
+    const hasCompleted = saga.steps.some((s) => s.status === 'completed');
+    const hasPending = saga.steps.some((s) => s.status === 'pending');
+    // Mid-chain handoff window: some completed, some pending — saga is
+    // logically running even if no step is `running` for the instant
+    // between `completeStep` and `advanceChain`.
+    if (hasCompleted && hasPending) return 'running';
+    const last = saga.steps[saga.steps.length - 1];
+    if (last && last.status === 'completed') return 'completed';
+    return 'pending';
+  }
+
   // Parallel-only sagas: at-least-one-success == saga success once
   // every step is in a terminal state.
   const isParallelSaga = saga.steps.every((s) => s.lane === 'parallel');
@@ -372,6 +496,30 @@ export function deriveSagaStatus(saga: SagaRecord): SagaStatus {
     return 'pending';
   }
   return 'pending';
+}
+
+/**
+ * Append a saga's finalised outcome to the project persistent memory.
+ * Used by `finalise()` so an autonomous Draft→Review→Test chain leaves
+ * a Hermes-style "learned skill" trace future agents can recall.
+ *
+ * Lazy-imports the memory module so saga-store stays import-light for
+ * tests that only exercise the in-memory store. Truncates `finalResult`
+ * to 500 chars — the goal of writeback is a discoverable summary, not
+ * a full transcript dump.
+ */
+async function appendSagaLesson(saga: SagaRecord): Promise<void> {
+  const { getMemoryManager } = await import('../memory/persistent-memory.js');
+  const manager = getMemoryManager();
+  await manager.initialize();
+  const truncated = (saga.finalResult ?? '').slice(0, 500);
+  const key = `fleet-saga-${saga.id}`;
+  const value = `Goal: ${saga.goal}\n\nOutcome: ${truncated}`;
+  await manager.remember(key, value, {
+    scope: 'project',
+    category: 'context',
+    tags: ['fleet', 'saga', `id:${saga.id}`],
+  });
 }
 
 let cachedStore: SagaStore | null = null;

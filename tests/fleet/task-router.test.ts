@@ -11,6 +11,7 @@ import { describe, expect, it } from 'vitest';
 import {
   TaskRouter,
   NoPeerAvailableError,
+  planChainDispatch,
   type PeerSlot,
 } from '../../src/fleet/task-router';
 import type {
@@ -171,6 +172,46 @@ describe('TaskRouter — privacy veto', () => {
   });
 });
 
+describe('TaskRouter — target peers', () => {
+  it('limits routing candidates to requested target peers', () => {
+    const peers: PeerSlot[] = [
+      peer('alpha', {
+        models: [model('local-small', { provider: 'ollama', strengths: ['cheap'] })],
+      }),
+      peer('beta', {
+        egress: 'cloud',
+        models: [
+          model('cloud-reasoner', {
+            provider: 'openai',
+            strengths: ['reasoning', 'thinking'],
+          }),
+        ],
+      }),
+    ];
+
+    const plan = router.plan(
+      classify({ complexity: 'reasoning_heavy', requiresReasoning: true }),
+      peers,
+      { targetPeerIds: [' alpha ', '', 'missing'] },
+    );
+
+    expect(plan.primary.peerId).toBe('alpha');
+    expect(plan.fallback).toBeUndefined();
+  });
+
+  it('throws when requested target peers cannot satisfy the task', () => {
+    const peers: PeerSlot[] = [
+      peer('alpha', {
+        models: [model('local-small', { provider: 'ollama' })],
+      }),
+    ];
+
+    expect(() =>
+      router.plan(classify(), peers, { targetPeerIds: ['beta'] }),
+    ).toThrow(NoPeerAvailableError);
+  });
+});
+
 describe('TaskRouter — context window filter', () => {
   it('drops models whose contextWindow is too small', () => {
     const peers: PeerSlot[] = [
@@ -273,6 +314,50 @@ describe('TaskRouter — load scoring', () => {
   });
 });
 
+describe('TaskRouter — dispatch profiles', () => {
+  it('nudges review dispatches toward reasoning models', () => {
+    const peers: PeerSlot[] = [
+      peer('cloud', {
+        models: [
+          model('cheap-fast', {
+            provider: 'openai',
+            strengths: ['cheap', 'fast'],
+          }),
+          model('reviewer', {
+            provider: 'openai',
+            strengths: ['reasoning'],
+          }),
+        ],
+      }),
+    ];
+
+    const plan = router.plan(classify(), peers, { dispatchProfile: 'review' });
+    expect(plan.primary.model).toBe('reviewer');
+    expect(plan.rationale).toContain('Profile: review');
+  });
+
+  it('nudges research dispatches toward long-context models', () => {
+    const peers: PeerSlot[] = [
+      peer('cloud', {
+        models: [
+          model('short-fast', {
+            provider: 'openai',
+            strengths: ['cheap', 'fast'],
+          }),
+          model('research-long-context', {
+            provider: 'openai',
+            strengths: ['long-context'],
+          }),
+        ],
+      }),
+    ];
+
+    const plan = router.plan(classify(), peers, { dispatchProfile: 'research' });
+    expect(plan.primary.model).toBe('research-long-context');
+    expect(plan.rationale).toContain('Profile: research');
+  });
+});
+
 describe('TaskRouter — parallelism', () => {
   it('emits N parallel lanes across distinct peers when parallelism set', () => {
     const peers: PeerSlot[] = [
@@ -323,5 +408,173 @@ describe('TaskRouter — rationale text', () => {
     );
     expect(plan.rationale).toContain('ministar');
     expect(plan.rationale).toContain('qwen3.6:35b');
+  });
+});
+
+describe('planChainDispatch — Hermes chain composition', () => {
+  it('builds a chain lane per requested role, routing each role to its peer', () => {
+    // All three peers share the same model strengths and identical
+    // cost — only their `roles` tag differs. The chain composer should
+    // pick each role's home peer via the role bonus. We use a
+    // reasoning_heavy classification so the match score has headroom
+    // (1 strength matched out of 2 required) for the bonus to tilt.
+    const shared = {
+      strengths: ['reasoning'] as const,
+      costInputUsdPerMtok: 2,
+      costOutputUsdPerMtok: 8,
+    };
+    const peers: PeerSlot[] = [
+      peer('coder', {
+        egress: 'cloud',
+        roles: ['code'],
+        models: [model('cm', { provider: 'openai', ...shared })],
+      }),
+      peer('reviewer', {
+        egress: 'cloud',
+        roles: ['review'],
+        models: [model('rm', { provider: 'anthropic', ...shared })],
+      }),
+      peer('tester', {
+        egress: 'cloud',
+        roles: ['safe'],
+        models: [model('tm', { provider: 'openai', ...shared })],
+      }),
+    ];
+    const plan = planChainDispatch(
+      classify({ requiresReasoning: true, complexity: 'reasoning_heavy' }),
+      peers,
+      { chainRoles: ['code', 'review', 'safe'] },
+    );
+    expect(plan.chain).toBeDefined();
+    expect(plan.chain).toHaveLength(3);
+    expect(plan.chain![0].peerId).toBe('coder');
+    expect(plan.chain![0].role).toBe('code');
+    expect(plan.chain![1].peerId).toBe('reviewer');
+    expect(plan.chain![1].role).toBe('review');
+    expect(plan.chain![2].peerId).toBe('tester');
+    expect(plan.chain![2].role).toBe('safe');
+    expect(plan.primary).toEqual(plan.chain![0]);
+    expect(plan.rationale).toContain('code → review → safe');
+  });
+
+  it('falls back gracefully when no peer carries the requested role', () => {
+    const peers: PeerSlot[] = [
+      peer('only-peer', {
+        models: [model('m', { provider: 'ollama', strengths: ['reasoning'] })],
+      }),
+    ];
+    const plan = planChainDispatch(classify({ requiresReasoning: true }), peers, {
+      chainRoles: ['code', 'review'],
+    });
+    // Same peer wins both roles when nothing else is available.
+    expect(plan.chain![0].peerId).toBe('only-peer');
+    expect(plan.chain![1].peerId).toBe('only-peer');
+  });
+
+  it('throws when an intermediate role cannot be satisfied', () => {
+    // privacyTag=sensitive vetoes cloud peers; this peer can't run the chain.
+    const peers: PeerSlot[] = [
+      peer('cloud-only', {
+        egress: 'cloud',
+        roles: ['code', 'review'],
+        models: [model('m', { provider: 'anthropic', strengths: ['reasoning'] })],
+      }),
+    ];
+    expect(() =>
+      planChainDispatch(classify({ requiresReasoning: true }), peers, {
+        chainRoles: ['code', 'review'],
+        constraints: { privacyTag: 'sensitive' },
+      }),
+    ).toThrow(NoPeerAvailableError);
+  });
+
+  it('throws when chainRoles is empty', () => {
+    expect(() =>
+      planChainDispatch(classify(), [], { chainRoles: [] }),
+    ).toThrow(/at least one role/);
+  });
+});
+
+describe('TaskRouter — Hermes role bonus', () => {
+  it('tilts the choice toward the review-tagged peer when other terms are similar', () => {
+    // Two cloud peers with identical cost / load / latency / model
+    // strengths. The only difference is their role tag. Without
+    // requiredRole, neither peer has an advantage — the first scored
+    // candidate wins. With requiredRole='review', the role bonus
+    // multiplies the reviewer's match score and it overtakes.
+    const sharedModelOpts = {
+      provider: 'openai' as const,
+      strengths: ['reasoning'] as const,
+      costInputUsdPerMtok: 2,
+      costOutputUsdPerMtok: 8,
+    };
+    const peers: PeerSlot[] = [
+      peer('coder', {
+        egress: 'cloud',
+        roles: ['code'],
+        models: [model('coder-model', { ...sharedModelOpts })],
+      }),
+      peer('reviewer', {
+        egress: 'cloud',
+        roles: ['review'],
+        models: [model('reviewer-model', { ...sharedModelOpts })],
+      }),
+    ];
+
+    // Reasoning-heavy task → required strengths includes 'reasoning'
+    // and 'thinking'. Both peers only have 'reasoning' (partial match),
+    // leaving headroom for the role bonus to tip the result.
+    const planWithRole = router.plan(
+      classify({ complexity: 'reasoning_heavy', requiresReasoning: true }),
+      peers,
+      { requiredRole: 'review' },
+    );
+    expect(planWithRole.primary.peerId).toBe('reviewer');
+
+    // Same task without requiredRole — role tags ignored, the choice
+    // is now driven purely by score (which is a tie here, falling
+    // back to insertion order).
+    const planNoRole = router.plan(
+      classify({ complexity: 'reasoning_heavy', requiresReasoning: true }),
+      peers,
+    );
+    // Either peer is a valid outcome; the important property is that
+    // the bonus changed nothing because no requiredRole was passed.
+    expect(['coder', 'reviewer']).toContain(planNoRole.primary.peerId);
+  });
+
+  it('requiredRole has no effect when no peer advertises the role', () => {
+    const peers: PeerSlot[] = [
+      peer('untagged-1', {
+        models: [model('m1', { strengths: ['reasoning'] })],
+      }),
+      peer('untagged-2', {
+        models: [model('m2', { strengths: ['reasoning'] })],
+      }),
+    ];
+    const plan = router.plan(
+      classify({ requiresReasoning: true }),
+      peers,
+      { requiredRole: 'review' },
+    );
+    // Should still return a plan, no error.
+    expect(plan.primary).toBeDefined();
+  });
+
+  it('caps the role bonus at 1.0 (no overflow)', () => {
+    const peers: PeerSlot[] = [
+      peer('perfect-match', {
+        roles: ['review'],
+        models: [
+          model('m', { strengths: ['reasoning', 'thinking', 'long-context'] }),
+        ],
+      }),
+    ];
+    const plan = router.plan(
+      classify({ complexity: 'reasoning_heavy', requiresReasoning: true }),
+      peers,
+      { dispatchProfile: 'review', requiredRole: 'review' },
+    );
+    expect(plan.primary.breakdown.match).toBeLessThanOrEqual(1);
   });
 });

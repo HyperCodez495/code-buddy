@@ -47,6 +47,7 @@ function clearProviderEnv() {
     'CODEBUDDY_FLEET_GPU',
     'CODEBUDDY_FLEET_RAM_GB',
     'CODEBUDDY_FLEET_MAX_CONCURRENCY',
+    'CODEBUDDY_FLEET_ROLES',
   ]) {
     delete process.env[k];
   }
@@ -241,6 +242,45 @@ describe('capability-registry — strength derivation', () => {
     expect(haiku?.strengths).toContain('cheap');
     expect(haiku?.strengths).toContain('fast');
     expect(mini?.strengths).toContain('cheap');
+  });
+});
+
+describe('capability-registry — Hermes role tags', () => {
+  it('defaults to ["balanced"] when no models and no env override', async () => {
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toEqual(['balanced']);
+  });
+
+  it('CODEBUDDY_FLEET_ROLES env wins over heuristic', async () => {
+    process.env.OPENAI_API_KEY = 'k'; // would normally pick code role
+    process.env.CODEBUDDY_FLEET_ROLES = 'review,research';
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toEqual(['review', 'research']);
+  });
+
+  it('infers "code" from a Codex-class model', async () => {
+    process.env.OPENAI_API_KEY = 'k';
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toContain('code');
+  });
+
+  it('infers "review" + "research" from reasoning-class models', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k';
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toContain('review');
+    expect(cap.roles).toContain('research');
+  });
+
+  it('infers "safe" from cheap + fast models', async () => {
+    process.env.ANTHROPIC_API_KEY = 'k'; // includes haiku → cheap+fast
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toContain('safe');
+  });
+
+  it('trims and deduplicates explicit role list', async () => {
+    process.env.CODEBUDDY_FLEET_ROLES = ' review , review ,  research,, code';
+    const cap = await getLocalCapabilities();
+    expect(cap.roles).toEqual(['review', 'research', 'code']);
   });
 });
 

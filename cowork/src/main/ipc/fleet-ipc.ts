@@ -5,15 +5,103 @@ import { loadCoreModule } from '../utils/core-loader';
 import { SagaRunner } from '../fleet/saga-runner';
 import { sendToRenderer } from '../ipc-main-bridge';
 import type { ActivityFeed } from '../activity/activity-feed';
+import {
+  buildFleetInternetProofPlan,
+  buildInternetProofSummaryMetadata,
+  summarizeInternetProofPlan,
+  type InternetProofPlanBuilder,
+} from '../../shared/internet-proof-metadata';
+
+const FLEET_DISPATCH_PROFILES = ['balanced', 'research', 'code', 'review', 'safe'] as const;
+export type FleetDispatchProfile = (typeof FLEET_DISPATCH_PROFILES)[number];
+type FleetBridgeSource = FleetBridge | null | (() => FleetBridge | null);
+type ActivityFeedSource = ActivityFeed | null | (() => ActivityFeed | null);
+export interface FleetDispatchInput {
+  goal: string;
+  parallelism?: number;
+  privacyTag?: 'public' | 'sensitive';
+  dispatchProfile?: FleetDispatchProfile;
+  agentRunId?: string;
+  agentRunSchemaVersion?: number;
+  parentRunId?: string;
+  outcomeId?: string;
+  scheduleTaskId?: string;
+  sourceSessionId?: string;
+  deliveryChannel?: string;
+  memoryCount?: number;
+  hermesPlanId?: string;
+  hermesPlanProfile?: string;
+  hermesPlanSurface?: string;
+  maxCostUsd?: number;
+  estimatedCostUsd?: number;
+  targetPeerIds?: string[];
+  targetPeerLabels?: string[];
+  /**
+   * Hermes-style sequential chain. When set, the dispatch builds one
+   * lane per role (in order) using `planChainDispatch` instead of the
+   * standard parallel/sequential plan. Common pattern:
+   *   `['code', 'review', 'safe']` → Draft → Review → Test.
+   * Mutually exclusive with `parallelism`.
+   */
+  chainRoles?: string[];
+}
+
+export interface FleetDispatchResult {
+  ok: boolean;
+  sagaId?: string;
+  error?: string;
+  privacyTag?: 'public' | 'sensitive';
+  dispatchProfile?: FleetDispatchProfile;
+  lintWarning?: string;
+}
+
+export interface FleetSagaRunnerLike {
+  start(sagaId: string): void;
+}
+
+export interface FleetDispatchDependencies {
+  fleetBridge: FleetBridge | null;
+  sagaRunner: FleetSagaRunnerLike | null;
+  activityFeed?: ActivityFeed | null;
+}
+
+function isFleetDispatchProfile(value: unknown): value is FleetDispatchProfile {
+  return typeof value === 'string' && FLEET_DISPATCH_PROFILES.includes(value as FleetDispatchProfile);
+}
 
 export function registerFleetIpcHandlers(
-  fleetBridge: FleetBridge | null,
-  activityFeed: ActivityFeed | null = null,
+  fleetBridgeSource: FleetBridgeSource,
+  activityFeedSource: ActivityFeedSource = null,
 ) {
-  const sagaRunner = fleetBridge
-    ? new SagaRunner(fleetBridge, sendToRenderer, activityFeed)
-    : null;
+  let sagaRunner:
+    | {
+        bridge: FleetBridge;
+        activityFeed: ActivityFeed | null;
+        runner: SagaRunner;
+      }
+    | null = null;
+  const getFleetBridge = () => resolveSource(fleetBridgeSource);
+  const getActivityFeed = () => resolveSource(activityFeedSource);
+  const getSagaRunner = () => {
+    const bridge = getFleetBridge();
+    if (!bridge) return null;
+    const currentActivityFeed = getActivityFeed();
+    if (
+      !sagaRunner ||
+      sagaRunner.bridge !== bridge ||
+      sagaRunner.activityFeed !== currentActivityFeed
+    ) {
+      sagaRunner = {
+        bridge,
+        activityFeed: currentActivityFeed,
+        runner: new SagaRunner(bridge, sendToRenderer, currentActivityFeed),
+      };
+    }
+    return sagaRunner.runner;
+  };
+
   ipcMain.handle('fleet.list', async () => {
+    const fleetBridge = getFleetBridge();
     if (!fleetBridge) return [];
     return fleetBridge.listPeers();
   });
@@ -24,22 +112,26 @@ export function registerFleetIpcHandlers(
       _event,
       input: { url: string; apiKey?: string; jwt?: string; label?: string }
     ) => {
+      const fleetBridge = getFleetBridge();
       if (!fleetBridge) return { success: false, error: 'FleetBridge not initialized' };
       return fleetBridge.addPeer(input);
     }
   );
 
   ipcMain.handle('fleet.removePeer', async (_event, peerId: string) => {
+    const fleetBridge = getFleetBridge();
     if (!fleetBridge) return { success: false };
     return fleetBridge.removePeer(peerId);
   });
 
   ipcMain.handle('fleet.reconnect', async (_event, peerId: string) => {
+    const fleetBridge = getFleetBridge();
     if (!fleetBridge) return { success: false, error: 'FleetBridge not initialized' };
     return fleetBridge.reconnectPeer(peerId);
   });
 
   ipcMain.handle('fleet.refreshCapabilities', async (_event, peerId?: string) => {
+    const fleetBridge = getFleetBridge();
     if (!fleetBridge) return { success: false, error: 'FleetBridge not initialized' };
     return fleetBridge.refreshCapabilities(peerId);
   });
@@ -47,6 +139,7 @@ export function registerFleetIpcHandlers(
   ipcMain.handle(
     'fleet.events',
     async (_event, peerId?: string, limit?: number) => {
+      const fleetBridge = getFleetBridge();
       if (!fleetBridge) return [];
       return fleetBridge.getRecentEvents(peerId, limit);
     }
@@ -66,167 +159,13 @@ export function registerFleetIpcHandlers(
     'fleet.dispatch',
     async (
       _event,
-      input: {
-        goal: string;
-        parallelism?: number;
-        privacyTag?: 'public' | 'sensitive';
-        maxCostUsd?: number;
-        estimatedCostUsd?: number;
-      },
+      input: FleetDispatchInput,
     ) => {
-      if (!fleetBridge || !sagaRunner) {
-        return { ok: false, error: 'FleetBridge not initialized' };
-      }
-      try {
-        type ClassificationLike = Record<string, unknown>;
-        type RouterMod = {
-          TaskRouter: new () => {
-            plan: (
-              cls: ClassificationLike,
-              peers: Array<{ peerId: string; capability: unknown }>,
-              constraints?: unknown,
-            ) => unknown;
-          };
-        };
-        type ClsMod = {
-          classifyTaskComplexity: (msg: string) => ClassificationLike;
-        };
-        type SagaMod = {
-          getSagaStore: () => {
-            create: (input: {
-              goal: string;
-              plan: unknown;
-              metadata?: Record<string, unknown>;
-            }) => Promise<{ id: string }>;
-          };
-        };
-        type LintMod = {
-          scanForSecrets: (
-            prompt: string,
-          ) => { hasSecrets: boolean; highConfidence: boolean; matches: unknown[] };
-        };
-        type CostMod = {
-          getCostTracker: () => {
-            canSpend: (
-              estimated: number,
-              sagaId: string | undefined,
-            ) => Promise<{ ok: boolean; reason?: string; remainingUsd?: number }>;
-          };
-        };
-
-        const [routerMod, clsMod, sagaMod, lintMod, costMod] = await Promise.all([
-          loadCoreModule<RouterMod>('fleet/task-router.js'),
-          loadCoreModule<ClsMod>('optimization/model-routing.js'),
-          loadCoreModule<SagaMod>('fleet/saga-store.js'),
-          loadCoreModule<LintMod>('fleet/privacy-lint.js'),
-          loadCoreModule<CostMod>('fleet/cost-tracker.js'),
-        ]);
-        if (!routerMod || !clsMod || !sagaMod) {
-          return { ok: false, error: 'core fleet modules unavailable' };
-        }
-
-        // (W4) Privacy lint — auto-bump to 'sensitive' if secrets detected
-        // unless caller explicitly set 'public' (in which case we refuse).
-        let effectivePrivacyTag = input.privacyTag;
-        let lintWarning: string | undefined;
-        if (lintMod) {
-          const lint = lintMod.scanForSecrets(input.goal);
-          if (lint.hasSecrets) {
-            if (input.privacyTag === 'public') {
-              return {
-                ok: false,
-                error: `Privacy lint blocked dispatch — secrets detected (${lint.matches.length} match(es)) but caller forced privacyTag='public'. Remove the secret or drop privacyTag.`,
-              };
-            }
-            if (effectivePrivacyTag !== 'sensitive') {
-              effectivePrivacyTag = 'sensitive';
-              lintWarning = `auto-bumped to sensitive (${lint.matches.length} match(es))`;
-              logWarn('[fleet.dispatch] privacy lint auto-bumped privacyTag', {
-                matches: lint.matches.length,
-                highConfidence: lint.highConfidence,
-              });
-            }
-          }
-        }
-
-        // (W5) Cost cap pre-dispatch.
-        if (costMod && typeof input.estimatedCostUsd === 'number') {
-          const tracker = costMod.getCostTracker();
-          const check = await tracker.canSpend(input.estimatedCostUsd, undefined);
-          if (!check.ok) {
-            return {
-              ok: false,
-              error: `Cost cap reached — ${check.reason ?? 'unknown reason'}`,
-            };
-          }
-        }
-
-        const peers = (await Promise.resolve(fleetBridge.listPeers())) as Array<
-          { id: string; capability?: unknown }
-        >;
-        const peerSlots = peers
-          .filter((p) => Boolean(p.capability))
-          .map((p) => ({
-            peerId: p.id,
-            capability: p.capability as unknown,
-          }));
-        if (peerSlots.length === 0) {
-          return {
-            ok: false,
-            error:
-              'No peer with known capabilities — use the Command Center refresh button, then verify the peer key has both fleet:listen and peer:invoke scopes.',
-          };
-        }
-
-        const classification = clsMod.classifyTaskComplexity(input.goal);
-        const router = new routerMod.TaskRouter();
-        const plan = router.plan(classification, peerSlots, {
-          parallelism: input.parallelism,
-          privacyTag: effectivePrivacyTag,
-          maxCostUsd: input.maxCostUsd,
-        });
-
-        const saga = await sagaMod.getSagaStore().create({
-          goal: input.goal,
-          plan,
-          metadata: {
-            privacyTag: effectivePrivacyTag,
-            parallelism: input.parallelism,
-            requestedAt: Date.now(),
-            lintWarning,
-          },
-        });
-        log('[fleet.dispatch] saga created — handing off to runner', {
-          sagaId: saga.id,
-        });
-        activityFeed?.record({
-          type: 'fleet.dispatch',
-          title: 'Fleet saga started',
-          description: truncateActivityText(input.goal, 140),
-          metadata: {
-            sagaId: saga.id,
-            peerCount: peerSlots.length,
-            privacyTag: effectivePrivacyTag ?? 'public',
-            parallelism: input.parallelism ?? 1,
-            lintWarning,
-          },
-        });
-
-        // (W1+W3) Hand off to SagaRunner — fires peer.dispatch, polls
-        // status, finalises via aggregator.
-        sagaRunner.start(saga.id);
-
-        return {
-          ok: true,
-          sagaId: saga.id,
-          privacyTag: effectivePrivacyTag,
-          lintWarning,
-        };
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        logError('[fleet.dispatch] failed:', message);
-        return { ok: false, error: message };
-      }
+      return dispatchFleetSaga(input, {
+        fleetBridge: getFleetBridge(),
+        sagaRunner: getSagaRunner(),
+        activityFeed: getActivityFeed(),
+      });
     },
   );
 
@@ -234,6 +173,7 @@ export function registerFleetIpcHandlers(
   // the Tailscale tailnet and via the manual YAML fallback that aren't
   // already paired in the FleetBridge.
   ipcMain.handle('fleet.discoverPeers', async () => {
+    const fleetBridge = getFleetBridge();
     if (!fleetBridge) return { ok: false, error: 'FleetBridge not initialized', peers: [] };
     try {
       const { discoverPeers } = await import('../fleet/discovery');
@@ -265,7 +205,288 @@ export function registerFleetIpcHandlers(
   });
 }
 
+export async function dispatchFleetSaga(
+  input: FleetDispatchInput,
+  dependencies: FleetDispatchDependencies,
+): Promise<FleetDispatchResult> {
+  const { fleetBridge, sagaRunner, activityFeed = null } = dependencies;
+  if (!fleetBridge || !sagaRunner) {
+    return { ok: false, error: 'FleetBridge not initialized' };
+  }
+  if (
+    input.dispatchProfile !== undefined &&
+    !isFleetDispatchProfile(input.dispatchProfile)
+  ) {
+    return {
+      ok: false,
+      error: `dispatchProfile must be one of ${FLEET_DISPATCH_PROFILES.join(', ')}`,
+    };
+  }
+  const targetPeerIds = normalizeStringList(input.targetPeerIds);
+  const targetPeerLabels = normalizeStringList(input.targetPeerLabels);
+  const runLineageMetadata = buildDispatchRunLineageMetadata(input, targetPeerLabels);
+  try {
+    type ClassificationLike = Record<string, unknown>;
+    type RouterMod = {
+      TaskRouter: new () => {
+        plan: (
+          cls: ClassificationLike,
+          peers: Array<{ peerId: string; capability: unknown }>,
+          constraints?: unknown,
+        ) => unknown;
+      };
+      planChainDispatch?: (
+        cls: ClassificationLike,
+        peers: Array<{ peerId: string; capability: unknown }>,
+        opts: { chainRoles: string[]; constraints?: unknown },
+      ) => unknown;
+    };
+    type ClsMod = {
+      classifyTaskComplexity: (msg: string) => ClassificationLike;
+    };
+    type SagaMod = {
+      getSagaStore: () => {
+        create: (input: {
+          goal: string;
+          plan: unknown;
+          metadata?: Record<string, unknown>;
+        }) => Promise<{ id: string }>;
+      };
+    };
+    type LintMod = {
+      scanForSecrets: (
+        prompt: string,
+      ) => { hasSecrets: boolean; highConfidence: boolean; matches: unknown[] };
+    };
+    type CostMod = {
+      getCostTracker: () => {
+        canSpend: (
+          estimated: number,
+          sagaId: string | undefined,
+        ) => Promise<{ ok: boolean; reason?: string; remainingUsd?: number }>;
+      };
+    };
+    const [routerMod, clsMod, sagaMod, lintMod, costMod, proofPlanMod] = await Promise.all([
+      loadCoreModule<RouterMod>('fleet/task-router.js'),
+      loadCoreModule<ClsMod>('optimization/model-routing.js'),
+      loadCoreModule<SagaMod>('fleet/saga-store.js'),
+      loadCoreModule<LintMod>('fleet/privacy-lint.js'),
+      loadCoreModule<CostMod>('fleet/cost-tracker.js'),
+      loadCoreModule<InternetProofPlanBuilder>('browser-automation/internet-proof-plan.js'),
+    ]);
+    if (!routerMod || !clsMod || !sagaMod) {
+      return { ok: false, error: 'core fleet modules unavailable' };
+    }
+
+    // (W4) Privacy lint — auto-bump to 'sensitive' if secrets detected
+    // unless caller explicitly set 'public' (in which case we refuse).
+    let effectivePrivacyTag = input.privacyTag;
+    let lintWarning: string | undefined;
+    if (lintMod) {
+      const lint = lintMod.scanForSecrets(input.goal);
+      if (lint.hasSecrets) {
+        if (input.privacyTag === 'public') {
+          return {
+            ok: false,
+            error: `Privacy lint blocked dispatch — secrets detected (${lint.matches.length} match(es)) but caller forced privacyTag='public'. Remove the secret or drop privacyTag.`,
+          };
+        }
+        if (effectivePrivacyTag !== 'sensitive') {
+          effectivePrivacyTag = 'sensitive';
+          lintWarning = `auto-bumped to sensitive (${lint.matches.length} match(es))`;
+          logWarn('[fleet.dispatch] privacy lint auto-bumped privacyTag', {
+            matches: lint.matches.length,
+            highConfidence: lint.highConfidence,
+          });
+        }
+      }
+    }
+
+    // (W5) Cost cap pre-dispatch.
+    if (costMod && typeof input.estimatedCostUsd === 'number') {
+      const tracker = costMod.getCostTracker();
+      const check = await tracker.canSpend(input.estimatedCostUsd, undefined);
+      if (!check.ok) {
+        return {
+          ok: false,
+          error: `Cost cap reached — ${check.reason ?? 'unknown reason'}`,
+        };
+      }
+    }
+
+    const peers = (await Promise.resolve(fleetBridge.listPeers())) as Array<
+      { id: string; capability?: unknown }
+    >;
+    const peerSlots = peers
+      .filter((p) => Boolean(p.capability))
+      .map((p) => ({
+        peerId: p.id,
+        capability: p.capability as unknown,
+      }));
+    if (peerSlots.length === 0) {
+      return {
+        ok: false,
+        error:
+          'No peer with known capabilities — use the Command Center refresh button, then verify the peer key has both fleet:listen and peer:invoke scopes.',
+      };
+    }
+
+    const classification = clsMod.classifyTaskComplexity(input.goal);
+    const router = new routerMod.TaskRouter();
+    const chainRoles = (input.chainRoles ?? [])
+      .map((r) => r.trim())
+      .filter((r) => r.length > 0);
+    let plan: unknown;
+    if (chainRoles.length > 0) {
+      // Hermes-style chain dispatch (Draft→Review→Test). Mutually
+      // exclusive with parallelism — chain takes precedence.
+      if (typeof routerMod.planChainDispatch !== 'function') {
+        return {
+          ok: false,
+          error: 'core router missing planChainDispatch — upgrade Code Buddy',
+        };
+      }
+      plan = routerMod.planChainDispatch(classification, peerSlots, {
+        chainRoles,
+        constraints: {
+          privacyTag: effectivePrivacyTag,
+          dispatchProfile: input.dispatchProfile,
+          maxCostUsd: input.maxCostUsd,
+          targetPeerIds: targetPeerIds.length > 0 ? targetPeerIds : undefined,
+        },
+      });
+    } else {
+      plan = router.plan(classification, peerSlots, {
+        parallelism: input.parallelism,
+        privacyTag: effectivePrivacyTag,
+        dispatchProfile: input.dispatchProfile,
+        maxCostUsd: input.maxCostUsd,
+        targetPeerIds: targetPeerIds.length > 0 ? targetPeerIds : undefined,
+      });
+    }
+    const internetProofPlan = buildFleetInternetProofPlan(input.goal, proofPlanMod, (err) => {
+      logWarn('[fleet.dispatch] failed to build core internet proof plan', {
+        error: err instanceof Error ? err.message : String(err),
+      });
+    });
+    const internetProofSummary = summarizeInternetProofPlan(internetProofPlan);
+
+    const saga = await sagaMod.getSagaStore().create({
+      goal: input.goal,
+      plan,
+      metadata: {
+        privacyTag: effectivePrivacyTag,
+        dispatchProfile: input.dispatchProfile ?? 'balanced',
+        parallelism: input.parallelism,
+        ...(input.hermesPlanId ? { hermesPlanId: input.hermesPlanId } : {}),
+        ...(input.hermesPlanProfile ? { hermesPlanProfile: input.hermesPlanProfile } : {}),
+        ...(input.hermesPlanSurface ? { hermesPlanSurface: input.hermesPlanSurface } : {}),
+        requestedAt: Date.now(),
+        lintWarning,
+        ...runLineageMetadata,
+        ...(targetPeerIds.length > 0 ? { targetPeerIds } : {}),
+        ...(internetProofPlan ? { internetProofPlan } : {}),
+      },
+    });
+    log('[fleet.dispatch] saga created — handing off to runner', {
+      sagaId: saga.id,
+    });
+    activityFeed?.record({
+      type: 'fleet.dispatch',
+      title: 'Fleet saga started',
+      description: truncateActivityText(input.goal, 140),
+      metadata: {
+        sagaId: saga.id,
+        peerCount: peerSlots.length,
+        privacyTag: effectivePrivacyTag ?? 'public',
+        dispatchProfile: input.dispatchProfile ?? 'balanced',
+        parallelism: input.parallelism ?? 1,
+        ...runLineageMetadata,
+        ...(input.hermesPlanId ? { hermesPlanId: input.hermesPlanId } : {}),
+        ...(input.hermesPlanProfile ? { hermesPlanProfile: input.hermesPlanProfile } : {}),
+        ...(input.hermesPlanSurface ? { hermesPlanSurface: input.hermesPlanSurface } : {}),
+        lintWarning,
+        ...(targetPeerIds.length > 0
+          ? { targetPeerIds, targetPeerCount: targetPeerIds.length }
+          : {}),
+        ...buildInternetProofSummaryMetadata(internetProofSummary),
+      },
+    });
+
+    // (W1+W3) Hand off to SagaRunner — fires peer.dispatch, polls
+    // status, finalises via aggregator.
+    sagaRunner.start(saga.id);
+
+    return {
+      ok: true,
+      sagaId: saga.id,
+      privacyTag: effectivePrivacyTag,
+      dispatchProfile: input.dispatchProfile ?? 'balanced',
+      lintWarning,
+    };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    logError('[fleet.dispatch] failed:', message);
+    return { ok: false, error: message };
+  }
+}
+
 function truncateActivityText(text: string, maxLength: number): string {
   if (text.length <= maxLength) return text;
   return `${text.slice(0, Math.max(0, maxLength - 3))}...`;
+}
+
+function buildDispatchRunLineageMetadata(
+  input: FleetDispatchInput,
+  targetPeerLabels: string[],
+): Record<string, unknown> {
+  const metadata: Record<string, unknown> = {};
+  setOptionalMetadataString(metadata, 'agentRunId', input.agentRunId);
+  setOptionalMetadataString(metadata, 'parentRunId', input.parentRunId);
+  setOptionalMetadataString(metadata, 'outcomeId', input.outcomeId);
+  setOptionalMetadataString(metadata, 'scheduleTaskId', input.scheduleTaskId);
+  setOptionalMetadataString(metadata, 'sourceSessionId', input.sourceSessionId);
+  setOptionalMetadataString(metadata, 'deliveryChannel', input.deliveryChannel);
+  if (
+    typeof input.agentRunSchemaVersion === 'number' &&
+    Number.isFinite(input.agentRunSchemaVersion)
+  ) {
+    metadata.agentRunSchemaVersion = input.agentRunSchemaVersion;
+  }
+  if (typeof input.memoryCount === 'number' && Number.isFinite(input.memoryCount)) {
+    metadata.memoryCount = input.memoryCount;
+  }
+  if (targetPeerLabels.length > 0) {
+    metadata.targetPeerLabels = targetPeerLabels;
+  }
+  return metadata;
+}
+
+function setOptionalMetadataString(
+  metadata: Record<string, unknown>,
+  key: string,
+  value: unknown,
+): void {
+  if (typeof value !== 'string') return;
+  const trimmed = value.trim();
+  if (!trimmed) return;
+  metadata[key] = trimmed;
+}
+
+function resolveSource<T>(source: T | null | (() => T | null)): T | null {
+  return typeof source === 'function' ? (source as () => T | null)() : source;
+}
+
+function normalizeStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of value) {
+    if (typeof item !== 'string') continue;
+    const trimmed = item.trim();
+    if (!trimmed || seen.has(trimmed)) continue;
+    seen.add(trimmed);
+    normalized.push(trimmed);
+  }
+  return normalized;
 }
