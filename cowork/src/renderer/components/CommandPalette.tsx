@@ -12,6 +12,11 @@ import {
   Sun,
   Moon,
   Clock3,
+  ShieldAlert,
+  Bot,
+  Zap,
+  Brain,
+  Scissors,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -31,6 +36,12 @@ interface CommandPaletteProps {
   onToggleTheme: () => void;
   onShowShortcuts: () => void;
   isDark: boolean;
+  // P4.5 — extended actions for unified palette
+  onShowDiagnostics?: () => void;
+  onShowSubAgents?: () => void;
+  onShowBtw?: () => void;
+  onToggleYolo?: () => void;
+  onShowPlugins?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -41,6 +52,11 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onToggleTheme,
   onShowShortcuts,
   isDark,
+  onShowDiagnostics,
+  onShowSubAgents,
+  onShowBtw,
+  onToggleYolo,
+  onShowPlugins,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -97,8 +113,79 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
           /* handled by sidebar */
         },
       },
+      ...(onShowDiagnostics
+        ? [
+            {
+              id: 'diagnostics',
+              label: t('commandPalette.diagnostics', 'Security diagnostics'),
+              description: t('commandPalette.diagnosticsDesc', 'Vulns, secrets, licenses scans'),
+              icon: <ShieldAlert size={14} />,
+              action: onShowDiagnostics,
+              shortcut: 'Ctrl+Shift+D',
+            },
+          ]
+        : []),
+      ...(onShowSubAgents
+        ? [
+            {
+              id: 'subagents',
+              label: t('commandPalette.subAgents', 'Sub-agents dashboard'),
+              description: t('commandPalette.subAgentsDesc', 'View spawned sub-agents'),
+              icon: <Bot size={14} />,
+              action: onShowSubAgents,
+              shortcut: 'Ctrl+Shift+A',
+            },
+          ]
+        : []),
+      ...(onShowBtw
+        ? [
+            {
+              id: 'btw',
+              label: t('commandPalette.btw', 'Quick ask (BTW)'),
+              description: t('commandPalette.btwDesc', 'One-shot question without touching session'),
+              icon: <Brain size={14} />,
+              action: onShowBtw,
+              shortcut: 'Ctrl+Shift+/',
+            },
+          ]
+        : []),
+      ...(onToggleYolo
+        ? [
+            {
+              id: 'yolo',
+              label: t('commandPalette.yolo', 'Toggle YOLO mode'),
+              description: t('commandPalette.yoloDesc', 'Auto-approve everything (with budget cap)'),
+              icon: <Zap size={14} />,
+              action: onToggleYolo,
+            },
+          ]
+        : []),
+      ...(onShowPlugins
+        ? [
+            {
+              id: 'plugins',
+              label: t('commandPalette.plugins', 'Open Plugins manager'),
+              description: t('commandPalette.pluginsDesc', 'Browse, install, toggle plugins'),
+              icon: <Scissors size={14} />,
+              action: onShowPlugins,
+            },
+          ]
+        : []),
     ],
-    [onNewSession, onResumeSession, onOpenSettings, onToggleTheme, onShowShortcuts, isDark, t]
+    [
+      onNewSession,
+      onResumeSession,
+      onOpenSettings,
+      onToggleTheme,
+      onShowShortcuts,
+      isDark,
+      t,
+      onShowDiagnostics,
+      onShowSubAgents,
+      onShowBtw,
+      onToggleYolo,
+      onShowPlugins,
+    ]
   );
 
   const filtered = useMemo(() => {

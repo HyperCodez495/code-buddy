@@ -109,8 +109,10 @@ export function SettingsSandbox() {
     }
   }
 
-  // TODO: Re-enable when sandbox debugging is complete
-  // async function handleToggleSandbox() { ... }
+  // P6.5 — Sandbox debug toggle was removed when the panel shipped
+  // half-wired; the debug pane will be rebuilt in a follow-up. For now the
+  // status check button below refreshes the underlying WSL/Lima provision
+  // state, which is what the toggle would have driven.
 
   async function handleCheckStatus() {
     if (isChecking) return; // Prevent double-click

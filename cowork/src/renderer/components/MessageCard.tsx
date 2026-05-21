@@ -2,7 +2,7 @@
 // Delegates block rendering to ContentBlockView and its sub-components.
 import { useState, useCallback, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Clock, XCircle, Code2, Star } from 'lucide-react';
+import { Copy, Check, Clock, XCircle, Code2, Star, Pencil, RefreshCw } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
 import { detectArtifacts } from '../utils/artifact-detector';
@@ -12,12 +12,18 @@ interface MessageCardProps {
   message: Message;
   isStreaming?: boolean;
   searchMatchState?: 'none' | 'match' | 'active';
+  /** Called when user clicks the Edit button on their own message. */
+  onEdit?: (message: Message, text: string) => void;
+  /** Called when user clicks Regenerate on an assistant message. */
+  onRegenerate?: (message: Message) => void;
 }
 
 export const MessageCard = memo(function MessageCard({
   message,
   isStreaming,
   searchMatchState = 'none',
+  onEdit,
+  onRegenerate,
 }: MessageCardProps) {
   const { t } = useTranslation();
   const isUser = message.role === 'user';
@@ -142,10 +148,21 @@ export const MessageCard = memo(function MessageCard({
             )}
           </div>
           <div className="mt-1 flex flex-col gap-1 flex-shrink-0">
+            {onEdit && (
+              <button
+                onClick={() => onEdit(message, getTextContent())}
+                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
+                title={t('messageCard.editMessage', 'Edit & resend')}
+                data-testid={`message-edit-${message.id}`}
+              >
+                <Pencil className="w-3 h-3 text-text-muted" />
+              </button>
+            )}
             <button
               onClick={handleCopy}
               className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
               title={t('messageCard.copyMessage')}
+              data-testid={`message-copy-${message.id}`}
             >
               {copied ? (
                 <Check className="w-3 h-3 text-success" />
@@ -173,21 +190,47 @@ export const MessageCard = memo(function MessageCard({
       ) : (
         // Assistant message — no bubble, direct content (Claude style)
         <div className="space-y-1.5 group/assistant relative">
-          <button
-            onClick={handleToggleBookmark}
-            className={`absolute -left-8 top-0 w-6 h-6 flex items-center justify-center rounded-md transition-all ${
-              isBookmarked
-                ? 'bg-warning/20 opacity-100'
-                : 'bg-surface-muted hover:bg-surface-active opacity-0 group-hover/assistant:opacity-100'
-            }`}
-            title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
-          >
-            <Star
-              className={`w-3 h-3 ${
-                isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
+          <div className="absolute -left-8 top-0 flex flex-col gap-1">
+            <button
+              onClick={handleToggleBookmark}
+              className={`w-6 h-6 flex items-center justify-center rounded-md transition-all ${
+                isBookmarked
+                  ? 'bg-warning/20 opacity-100'
+                  : 'bg-surface-muted hover:bg-surface-active opacity-0 group-hover/assistant:opacity-100'
               }`}
-            />
-          </button>
+              title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
+            >
+              <Star
+                className={`w-3 h-3 ${
+                  isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
+                }`}
+              />
+            </button>
+            {!isStreaming && (
+              <button
+                onClick={handleCopy}
+                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
+                title={t('messageCard.copyMessage')}
+                data-testid={`message-copy-${message.id}`}
+              >
+                {copied ? (
+                  <Check className="w-3 h-3 text-success" />
+                ) : (
+                  <Copy className="w-3 h-3 text-text-muted" />
+                )}
+              </button>
+            )}
+            {onRegenerate && !isStreaming && (
+              <button
+                onClick={() => onRegenerate(message)}
+                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
+                title={t('messageCard.regenerate', 'Regenerate response')}
+                data-testid={`message-regenerate-${message.id}`}
+              >
+                <RefreshCw className="w-3 h-3 text-text-muted" />
+              </button>
+            )}
+          </div>
           {contentBlocks.map((block, index) => {
             // Skip tool_result blocks that are merged into their tool_use card
             if (

@@ -731,6 +731,8 @@
     "emptyMessage": "Message vide",
     "emptyText": "(texte vide)",
     "copyMessage": "Copier le message",
+    "editMessage": "Modifier et renvoyer",
+    "regenerate": "Régénérer la réponse",
     "revealInFolder": "Révéler dans le dossier",
     "pastedContentAlt": "Contenu collé",
     "taskProgress": "Progression de la tâche",

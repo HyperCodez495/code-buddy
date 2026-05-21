@@ -1499,11 +1499,31 @@ ${hints.join('\n')}
       // pi-ai handles auth and model routing natively — no proxy, no env overrides needed.
       logCtx('[ClaudeAgentRunner] Using pi-ai native routing for:', piModel.provider, piModel.id);
 
-      // Resolve thinking level early — needed for session reuse check below
-      const enableThinking = configStore.get('enableThinking') ?? false;
-      logCtx('[ClaudeAgentRunner] Enable thinking mode:', enableThinking);
+      // Resolve thinking level early — needed for session reuse check below.
+      // P1.3: prefer explicit `thinkingLevel` from config when set; otherwise
+      // fall back to the legacy boolean `enableThinking`.
       type PiThinkingLevel = 'off' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
-      const thinkingLevel: PiThinkingLevel = enableThinking ? 'medium' : 'off';
+      const VALID_LEVELS: PiThinkingLevel[] = [
+        'off',
+        'minimal',
+        'low',
+        'medium',
+        'high',
+        'xhigh',
+      ];
+      // `thinkingLevel` is a P1.3 addition not yet in the AppConfig type
+      // (lives in the runtime config store). Cast via unknown to read it.
+      const explicitLevel = (configStore as unknown as { get: (k: string) => unknown }).get(
+        'thinkingLevel'
+      ) as PiThinkingLevel | undefined;
+      const enableThinking = configStore.get('enableThinking') ?? false;
+      const thinkingLevel: PiThinkingLevel =
+        explicitLevel && VALID_LEVELS.includes(explicitLevel)
+          ? explicitLevel
+          : enableThinking
+            ? 'medium'
+            : 'off';
+      logCtx('[ClaudeAgentRunner] Thinking level resolved:', thinkingLevel);
       const sessionRuntimeSignature = buildPiSessionRuntimeSignature({
         configProvider: runtimeConfig.provider,
         customProtocol: runtimeConfig.customProtocol,

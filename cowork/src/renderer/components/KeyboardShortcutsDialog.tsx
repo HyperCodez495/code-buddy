@@ -96,6 +96,14 @@ export const KeyboardShortcutsDialog: React.FC<KeyboardShortcutsDialogProps> = (
         title: t('shortcutsDialog.multiAgent', 'Multi-agent & workflow'),
         shortcuts: [
           { keys: `${mod}+${shift}+M`, description: t('shortcutsDialog.openOrchestratorLauncher', 'Open multi-agent orchestrator launcher') },
+          { keys: `${mod}+${shift}+A`, description: t('shortcutsDialog.openSubAgentDashboard', 'Open sub-agent dashboard') },
+        ],
+      },
+      {
+        title: t('shortcutsDialog.diagnostics', 'Diagnostics & one-shots'),
+        shortcuts: [
+          { keys: `${mod}+${shift}+D`, description: t('shortcutsDialog.openDiagnostics', 'Open security diagnostics (vulns/secrets/licenses)') },
+          { keys: `${mod}+${shift}+/`, description: t('shortcutsDialog.btwQuickAsk', 'One-shot quick question (BTW)') },
         ],
       },
       {

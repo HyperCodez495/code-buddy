@@ -13,8 +13,10 @@
  */
 import { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { Scissors } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useCurrentSession } from '../store/selectors';
+import { CompactStrategyDialog } from './CompactStrategyDialog';
 
 interface ModelCapabilities {
   contextWindow: number;
@@ -34,6 +36,7 @@ export function ContextWindowGauge() {
   const sessionState = session ? sessionStates[session.id] : null;
   const tokensUsed = sessionState?.contextWindow ?? 0;
   const [capabilities, setCapabilities] = useState<ModelCapabilities | null>(null);
+  const [showCompactDialog, setShowCompactDialog] = useState(false);
 
   useEffect(() => {
     if (!session?.model || !window.electronAPI?.model?.capabilities) {
@@ -74,19 +77,36 @@ export function ContextWindowGauge() {
   const tooltip = `${formatTokens(tokensUsed)} / ${formatTokens(limit)} ${t('contextGauge.tokens', 'tokens')} (${pct.toFixed(1)}%)`;
 
   return (
-    <div
-      className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-hover transition-colors cursor-help"
-      title={tooltip}
-    >
-      <div className="relative w-16 h-1.5 bg-surface rounded-full overflow-hidden">
-        <div
-          className={`absolute inset-y-0 left-0 ${colorClass} transition-all`}
-          style={{ width: `${pct}%` }}
-        />
+    <>
+      <div
+        className="flex items-center gap-1.5 px-2 py-1 rounded-md hover:bg-surface-hover transition-colors cursor-help group"
+        title={tooltip}
+      >
+        <div className="relative w-16 h-1.5 bg-surface rounded-full overflow-hidden">
+          <div
+            className={`absolute inset-y-0 left-0 ${colorClass} transition-all`}
+            style={{ width: `${pct}%` }}
+          />
+        </div>
+        <span className={`text-[10px] font-medium tabular-nums ${textClass}`}>
+          {formatTokens(tokensUsed)}
+        </span>
+        <button
+          type="button"
+          onClick={() => setShowCompactDialog(true)}
+          className={`opacity-0 group-hover:opacity-100 transition-opacity w-4 h-4 flex items-center justify-center rounded ${pct > 70 ? 'opacity-100' : ''}`}
+          title={t('compact.runNow', 'Compact now')}
+          data-testid="context-gauge-compact-btn"
+        >
+          <Scissors className={`w-3 h-3 ${pct > 90 ? 'text-error' : pct > 70 ? 'text-warning' : 'text-text-muted'}`} />
+        </button>
       </div>
-      <span className={`text-[10px] font-medium tabular-nums ${textClass}`}>
-        {formatTokens(tokensUsed)}
-      </span>
-    </div>
+      {showCompactDialog && session && (
+        <CompactStrategyDialog
+          sessionId={session.id}
+          onClose={() => setShowCompactDialog(false)}
+        />
+      )}
+    </>
   );
 }

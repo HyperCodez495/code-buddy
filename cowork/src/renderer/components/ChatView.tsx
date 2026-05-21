@@ -26,19 +26,28 @@ import { VoiceOutputToggle, speakText } from './VoiceOutputToggle';
 import { MemoryEditCard } from './MemoryEditCard';
 import { FileAttachmentChip } from './FileAttachmentChip';
 import { ContextWindowGauge } from './ContextWindowGauge';
+import { LiveBudgetMeter } from './LiveBudgetMeter';
+import { ReasoningLevelPicker } from './ReasoningLevelPicker';
+import { YoloModeToggle } from './YoloModeToggle';
 import type { ExecutionMode } from '../types';
 import { usePermissionMode, useSearchState } from '../store/selectors';
 import type { Message, ContentBlock, ScheduleCreateInput, ScheduleWeekday } from '../types';
-import { findMessageSearchMatches } from '../utils/session-search';
-import { Send, Square, Plus, Loader2, Plug, X, Clock, Eye } from 'lucide-react';
-
-type AttachedFile = {
-  name: string;
-  path: string;
-  size: number;
-  type: string;
-  inlineDataBase64?: string;
-};
+import {
+  clampSearchMatchIndex,
+  findMessageSearchMatches,
+  getActiveSearchMatchId,
+} from '../utils/session-search';
+import {
+  buildAttachmentFromDroppedFile,
+  buildAttachmentFromPath,
+  buildComposerContentBlocks,
+  buildDocumentWorkshopPrompt,
+  getDroppedFilePath,
+  hasDocumentWorkshopAttachment,
+  isDroppedFolderCandidate,
+  type AttachedFile,
+} from '../utils/file-attachment-helpers';
+import { Send, Square, Plus, Loader2, Plug, X, Clock, Eye, FileSearch } from 'lucide-react';
 
 function toScheduleCreateInput(
   input: {
@@ -136,6 +145,14 @@ export function ChatView() {
   const pendingCount = pendingTurns.length;
   const isSessionRunning = activeSession?.status === 'running';
   const canStop = isSessionRunning || hasActiveTurn || pendingCount > 0;
+  const documentWorkshopPrompt = useMemo(
+    () => buildDocumentWorkshopPrompt(attachedFiles),
+    [attachedFiles]
+  );
+  const shouldShowDocumentWorkshopAction = useMemo(
+    () => attachedFiles.some(hasDocumentWorkshopAttachment) && prompt.trim().length === 0,
+    [attachedFiles, prompt]
+  );
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
@@ -174,6 +191,14 @@ export function ChatView() {
     () => findMessageSearchMatches(displayedMessages, searchQuery),
     [displayedMessages, searchQuery]
   );
+  const visibleSearchMatchIndex = useMemo(
+    () => clampSearchMatchIndex(currentSearchMatch, searchMatches.length),
+    [currentSearchMatch, searchMatches.length]
+  );
+  const activeSearchMatchId = useMemo(
+    () => getActiveSearchMatchId(searchMatches, currentSearchMatch),
+    [currentSearchMatch, searchMatches]
+  );
 
   useEffect(() => {
     if (!focusedMessageTarget || focusedMessageTarget.sessionId !== activeSessionId) {
@@ -200,10 +225,11 @@ export function ChatView() {
 
   useEffect(() => {
     if (!searchActive || searchMatches.length === 0) return;
-    const targetId = searchMatches[Math.min(currentSearchMatch, searchMatches.length - 1)];
+    const targetId = activeSearchMatchId;
+    if (!targetId) return;
     const element = document.getElementById(`message-${targetId}`);
     element?.scrollIntoView({ behavior: 'smooth', block: 'center' });
-  }, [currentSearchMatch, searchActive, searchMatches]);
+  }, [activeSearchMatchId, searchActive, searchMatches.length]);
 
   const goToNextSearchMatch = useCallback(() => {
     if (searchMatches.length === 0) return;
@@ -571,6 +597,16 @@ export function ChatView() {
     });
   };
 
+  const applyDocumentWorkshopPrompt = useCallback(() => {
+    setPrompt(documentWorkshopPrompt);
+    if (textareaRef.current) {
+      textareaRef.current.value = documentWorkshopPrompt;
+      textareaRef.current.focus();
+      const end = documentWorkshopPrompt.length;
+      textareaRef.current.setSelectionRange(end, end);
+    }
+  }, [documentWorkshopPrompt]);
+
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
       console.log('[ChatView] Not in Electron, file selection not available');
@@ -581,17 +617,7 @@ export function ChatView() {
       const filePaths = await window.electronAPI.selectFiles();
       if (filePaths.length === 0) return;
 
-      // Get file info for each selected file
-      const newFiles = filePaths.map((filePath) => {
-        const fileName = filePath.split(/[/\\]/).pop() || 'unknown';
-        return {
-          name: fileName,
-          path: filePath,
-          size: 0, // Will be set by backend when copying
-          type: 'application/octet-stream',
-        };
-      });
-
+      const newFiles = filePaths.map(buildAttachmentFromPath);
       setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[ChatView] Error selecting files:', error);
@@ -619,16 +645,9 @@ export function ChatView() {
     const files = Array.from(e.dataTransfer.files);
 
     // Detect folder drops — switch working directory
-    const folderFiles = files.filter((file) => {
-      const filePath =
-        'path' in file && typeof (file as File & { path?: string }).path === 'string'
-          ? (file as File & { path?: string }).path
-          : '';
-      // Folders have empty type and a path
-      return !file.type && filePath && !file.name.includes('.');
-    });
+    const folderFiles = files.filter(isDroppedFolderCandidate);
     if (folderFiles.length > 0) {
-      const folderPath = (folderFiles[0] as File & { path?: string }).path;
+      const folderPath = getDroppedFilePath(folderFiles[0]);
       if (folderPath && window.electronAPI) {
         window.electronAPI.send({
           type: 'workdir.set',
@@ -672,18 +691,7 @@ export function ChatView() {
     // Process other files
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
-        otherFiles.map(async (file) => {
-          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
-          const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
-
-          return {
-            name: file.name,
-            path: droppedPath,
-            size: file.size,
-            type: file.type || 'application/octet-stream',
-            inlineDataBase64,
-          };
-        })
+        otherFiles.map((file) => buildAttachmentFromDroppedFile(file, blobToBase64))
       );
 
       setAttachedFiles((prev) => [...prev, ...newFiles]);
@@ -841,39 +849,11 @@ export function ChatView() {
       }
 
       // Build content blocks
-      const contentBlocks: ContentBlock[] = [];
-
-      // Add images first
-      pastedImages.forEach((img) => {
-        contentBlocks.push({
-          type: 'image',
-          source: {
-            type: 'base64',
-            media_type: img.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-            data: img.base64,
-          },
-        });
-      });
-
-      // Add file attachments
-      attachedFiles.forEach((file) => {
-        contentBlocks.push({
-          type: 'file_attachment',
-          filename: file.name,
-          relativePath: file.path, // Will be processed by backend to copy to .tmp
-          size: file.size,
-          mimeType: file.type,
-          inlineDataBase64: file.inlineDataBase64,
-        });
-      });
-
-      // Add text if present
-      if (currentPrompt.trim()) {
-        contentBlocks.push({
-          type: 'text',
-          text: currentPrompt.trim(),
-        });
-      }
+      const contentBlocks = buildComposerContentBlocks(
+        currentPrompt,
+        attachedFiles,
+        pastedImages
+      );
 
       // Send message with content blocks
       await continueSession(activeSessionId, contentBlocks);
@@ -896,6 +876,49 @@ export function ChatView() {
       stopSession(activeSessionId);
     }
   };
+
+  // P1.1 — Edit a user message: prefill the textarea and focus it.
+  // Non-destructive: original message stays in history; the user resubmits
+  // a new turn with the edited text.
+  const handleEditMessage = useCallback(
+    (_msg: Message, text: string) => {
+      setPrompt(text);
+      requestAnimationFrame(() => {
+        const ta = textareaRef.current;
+        if (ta) {
+          ta.value = text;
+          ta.focus();
+          const end = text.length;
+          ta.setSelectionRange(end, end);
+        }
+      });
+    },
+    []
+  );
+
+  // P1.1 — Regenerate an assistant response by re-submitting the most
+  // recent preceding user message verbatim via continueSession.
+  // Non-destructive: appends a new turn rather than mutating history.
+  const handleRegenerateMessage = useCallback(
+    async (assistantMsg: Message) => {
+      if (!activeSessionId || canStop) return;
+      const idx = displayedMessages.findIndex((m) => m.id === assistantMsg.id);
+      if (idx <= 0) return;
+      let userMsg: Message | undefined;
+      for (let i = idx - 1; i >= 0; i--) {
+        if (displayedMessages[i].role === 'user') {
+          userMsg = displayedMessages[i];
+          break;
+        }
+      }
+      if (!userMsg) return;
+      const blocks = Array.isArray(userMsg.content)
+        ? (userMsg.content as ContentBlock[])
+        : [{ type: 'text' as const, text: String(userMsg.content ?? '') }];
+      await continueSession(activeSessionId, blocks);
+    },
+    [activeSessionId, canStop, displayedMessages, continueSession]
+  );
 
   if (!activeSession) {
     return (
@@ -949,6 +972,9 @@ export function ChatView() {
         {/* Model switcher and permission mode */}
         <div className="flex items-center gap-1.5 justify-self-end">
           <ContextWindowGauge />
+          <LiveBudgetMeter />
+          <ReasoningLevelPicker />
+          <YoloModeToggle />
           {appConfig?.model && (
             <ModelSwitcher
               currentModel={appConfig.model}
@@ -995,7 +1021,7 @@ export function ChatView() {
           onQueryChange={(q) => useAppStore.getState().setSearchQuery(q)}
           onClose={() => useAppStore.getState().setSearchActive(false)}
           matchCount={searchMatches.length}
-          currentMatch={currentSearchMatch}
+          currentMatch={visibleSearchMatchIndex}
           onNext={goToNextSearchMatch}
           onPrev={goToPreviousSearchMatch}
         />
@@ -1050,11 +1076,13 @@ export function ChatView() {
                     isStreaming={isStreaming}
                     searchMatchState={
                       searchMatches.includes(message.id)
-                        ? searchMatches[currentSearchMatch] === message.id
+                        ? activeSearchMatchId === message.id
                           ? 'active'
                           : 'match'
                         : 'none'
                     }
+                    onEdit={handleEditMessage}
+                    onRegenerate={handleRegenerateMessage}
                   />
                 </div>
               );
@@ -1160,7 +1188,7 @@ export function ChatView() {
 
             {/* File attachments (Phase 3 step 15: chips with preview) */}
             {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mb-3">
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
                 {attachedFiles.map((file, index) => (
                   <FileAttachmentChip
                     key={file.path || `attached-file-${index}`}
@@ -1173,6 +1201,18 @@ export function ChatView() {
                     }}
                   />
                 ))}
+                {shouldShowDocumentWorkshopAction && (
+                  <button
+                    type="button"
+                    onClick={applyDocumentWorkshopPrompt}
+                    data-testid="chat-document-workshop-action"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/35 bg-accent/10 text-xs font-medium text-accent hover:bg-accent/15 transition-colors"
+                    title={t('chat.documentWorkshopActionTitle', 'Prepare a Word workshop prompt')}
+                  >
+                    <FileSearch className="w-3.5 h-3.5" />
+                    <span>{t('chat.documentWorkshopAction', 'Atelier Word')}</span>
+                  </button>
+                )}
               </div>
             )}
 
@@ -1191,6 +1231,7 @@ export function ChatView() {
               <button
                 type="button"
                 onClick={handleFileSelect}
+                data-testid="chat-attach-files"
                 className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
                 title={t('welcome.attachFiles')}
               >
@@ -1199,6 +1240,7 @@ export function ChatView() {
 
               <textarea
                 ref={textareaRef}
+                data-testid="chat-prompt-input"
                 value={prompt}
                 onChange={(e) => {
                   const newValue = e.target.value;

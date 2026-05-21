@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   X,
   Settings,
@@ -23,6 +23,8 @@ import {
   Blocks,
   ServerCog,
   Cpu,
+  Search,
+  Sparkles,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import { useWindowSize } from '../hooks/useWindowSize';
@@ -49,6 +51,8 @@ import { SettingsServer } from './settings/SettingsServer';
 import { SettingsCoreEngine } from './settings/SettingsCoreEngine';
 import { SettingsCustomize } from './settings/SettingsCustomize';
 import { SettingsProjects } from './settings/SettingsProjects';
+import { SettingsPlugins } from './settings/SettingsPlugins';
+import { SettingsTelemetry } from './settings/SettingsTelemetry';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -72,6 +76,8 @@ interface SettingsPanelProps {
     | 'workspacePresets'
     | 'hooks'
     | 'a2a'
+    | 'plugins'
+    | 'telemetry'
     | 'general';
 }
 
@@ -95,6 +101,8 @@ type TabId =
   | 'workspacePresets'
   | 'hooks'
   | 'a2a'
+  | 'plugins'
+  | 'telemetry'
   | 'server'
   | 'coreEngine'
   | 'general';
@@ -119,6 +127,8 @@ const VALID_TABS = new Set<TabId>([
   'workspacePresets',
   'hooks',
   'a2a',
+  'plugins',
+  'telemetry',
   'server',
   'coreEngine',
   'general',
@@ -139,6 +149,10 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // Track which tabs have been viewed at least once (for lazy loading)
   const [viewedTabs, setViewedTabs] = useState<Set<TabId>>(new Set([resolvedInitial]));
   const [appVersion, setAppVersion] = useState('');
+  // P1.5 — Settings search filter
+  const [searchQuery, setSearchQuery] = useState('');
+  // Tabs recommended for first-time users (shown with a "★ Start here" badge)
+  const BEGINNER_TABS = useMemo<Set<TabId>>(() => new Set(['api', 'sandbox', 'skills']), []);
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -280,6 +294,18 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       description: t('a2a.hint', 'Register and invoke remote A2A agents'),
     },
     {
+      id: 'plugins' as TabId,
+      label: t('plugins.title', 'Plugins'),
+      icon: Package,
+      description: t('plugins.tabHint', 'Install and toggle plugin components'),
+    },
+    {
+      id: 'telemetry' as TabId,
+      label: t('telemetry.title', 'Telemetry & diagnostics'),
+      icon: AlertCircle,
+      description: t('telemetry.tabHint', 'Opt-in crash reporting, OTel traces, usage stats'),
+    },
+    {
       id: 'server' as TabId,
       label: t('settingsServer.title', 'Embedded server'),
       icon: ServerCog,
@@ -300,6 +326,17 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   ];
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab);
 
+  // P1.5 — filter tabs by search query (case-insensitive over label + description)
+  const filteredTabs = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return tabs;
+    return tabs.filter((tab) => {
+      const label = (tab.label ?? '').toString().toLowerCase();
+      const desc = (tab.description ?? '').toString().toLowerCase();
+      return label.includes(q) || desc.includes(q) || tab.id.toLowerCase().includes(q);
+    });
+  }, [tabs, searchQuery]);
+
   return (
     <div className="flex h-full w-full overflow-hidden bg-background" data-testid="settings-panel">
       {/* Sidebar */}
@@ -317,8 +354,28 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
             <p className="mt-1 text-[11px] leading-4 text-text-muted">{t('settings.panelDesc')}</p>
           </div>
         )}
-        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'}`}>
-          {tabs.map((tab) => (
+        {!compactSidebar && (
+          <div className="px-3 pt-3">
+            <div className="relative">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder={t('settings.searchPlaceholder', 'Search settings…')}
+                className="w-full pl-8 pr-2 py-1.5 text-xs rounded-md bg-background border border-border-subtle focus:outline-none focus:border-accent placeholder:text-text-muted"
+                data-testid="settings-search-input"
+              />
+            </div>
+          </div>
+        )}
+        <div className={`flex-1 ${compactSidebar ? 'p-1.5 space-y-1' : 'p-3 space-y-1.5'} overflow-y-auto`}>
+          {filteredTabs.length === 0 && !compactSidebar && (
+            <p className="px-2 py-3 text-[11px] text-text-muted italic">
+              {t('settings.searchNoResults', 'No settings match your search.')}
+            </p>
+          )}
+          {filteredTabs.map((tab) => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id)}
@@ -333,7 +390,18 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
               {!compactSidebar && (
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{tab.label}</p>
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium truncate">{tab.label}</p>
+                    {BEGINNER_TABS.has(tab.id) && (
+                      <span
+                        title={t('settings.recommendedForBeginners', 'Recommended for beginners')}
+                        className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium bg-accent/15 text-accent"
+                      >
+                        <Sparkles className="w-2.5 h-2.5" />
+                        {t('settings.startHere', 'Start here')}
+                      </span>
+                    )}
+                  </div>
                   <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
                     {tab.description}
                   </p>
@@ -459,6 +527,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'a2a' ? '' : 'hidden'}>
                 {viewedTabs.has('a2a') && <SettingsA2AAgents />}
+              </div>
+              <div className={activeTab === 'plugins' ? '' : 'hidden'}>
+                {viewedTabs.has('plugins') && <SettingsPlugins />}
+              </div>
+              <div className={activeTab === 'telemetry' ? '' : 'hidden'}>
+                {viewedTabs.has('telemetry') && <SettingsTelemetry />}
               </div>
               <div className={activeTab === 'server' ? '' : 'hidden'}>
                 {viewedTabs.has('server') && <SettingsServer />}

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useEffect, useRef, useCallback } from 'react';
+import { Suspense, lazy, useEffect, useRef, useCallback, useState } from 'react';
 import { useAppStore } from './store';
 import {
   useActiveSessionId,
@@ -53,6 +53,10 @@ import { OrchestratorLauncher } from './components/OrchestratorLauncher';
 import { FleetPanel } from './components/FleetPanel';
 import { FleetCommandCenter } from './components/FleetCommandCenter';
 import { TeamPanel } from './components/TeamPanel';
+import { OnboardingWizard } from './components/OnboardingWizard';
+import { SubAgentDashboard } from './components/SubAgentDashboard';
+import { DiagnosticsPanel } from './components/DiagnosticsPanel';
+import { BtwQuickAsk } from './components/BtwQuickAsk';
 import { PresenceService } from './services/presence/PresenceService';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
@@ -148,6 +152,22 @@ function App() {
   useTabPinPersistence();
   const initialized = useRef(false);
   const sidebarBeforeSettings = useRef(false);
+  // P1.6 — first-run onboarding wizard. Shows when no provider key is set
+  // and the user hasn't already completed (or skipped) onboarding.
+  const [showOnboarding, setShowOnboarding] = useState(false);
+  // P2.6 — Sub-agent dashboard (Cmd+Shift+A)
+  const [showSubAgentDashboard, setShowSubAgentDashboard] = useState(false);
+  // P3.4 — security diagnostics panel
+  const [showDiagnostics, setShowDiagnostics] = useState(false);
+  // P3.9 — /btw quick ask popup (Cmd+Shift+/)
+  const [showBtwQuickAsk, setShowBtwQuickAsk] = useState(false);
+  useEffect(() => {
+    if (!appConfig) return;
+    const config = appConfig as unknown as { onboardingCompleted?: boolean; apiKey?: string };
+    if (!config.onboardingCompleted && !config.apiKey && !isConfigured) {
+      setShowOnboarding(true);
+    }
+  }, [appConfig, isConfigured]);
 
   useEffect(() => {
     // Only run once on mount
@@ -291,6 +311,18 @@ function App() {
         // Multi-agent orchestrator launcher
         e.preventDefault();
         setShowOrchestratorLauncher(true);
+      } else if (mod && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        // P2.6 — sub-agent dashboard
+        e.preventDefault();
+        setShowSubAgentDashboard((v) => !v);
+      } else if (mod && e.shiftKey && (e.key === 'd' || e.key === 'D')) {
+        // P3.4 — security diagnostics
+        e.preventDefault();
+        setShowDiagnostics((v) => !v);
+      } else if (mod && e.shiftKey && e.key === '?') {
+        // P3.9 — /btw quick ask
+        e.preventDefault();
+        setShowBtwQuickAsk((v) => !v);
       } else if (mod && e.shiftKey && (e.key === 'i' || e.key === 'I')) {
         e.preventDefault();
         setShowSessionInsights(true);
@@ -422,6 +454,28 @@ function App() {
       {/* Sudo Password Dialog */}
       {pendingSudoPassword && <SudoPasswordDialog request={pendingSudoPassword} />}
 
+      {/* Onboarding Wizard (P1.6) — first-run only */}
+      {showOnboarding && (
+        <OnboardingWizard
+          onClose={() => setShowOnboarding(false)}
+          onOpenApiSettings={() => {
+            setShowOnboarding(false);
+            setShowConfigModal(true);
+          }}
+        />
+      )}
+
+      {/* Sub-agent dashboard (P2.6) — Cmd+Shift+A */}
+      {showSubAgentDashboard && (
+        <SubAgentDashboard onClose={() => setShowSubAgentDashboard(false)} />
+      )}
+
+      {/* Security diagnostics panel (P3.4) — Cmd+Shift+D */}
+      {showDiagnostics && <DiagnosticsPanel onClose={() => setShowDiagnostics(false)} />}
+
+      {/* /btw quick-ask popup (P3.9) — Cmd+Shift+/ */}
+      {showBtwQuickAsk && <BtwQuickAsk onClose={() => setShowBtwQuickAsk(false)} />}
+
       {/* Config Modal */}
       <PanelErrorBoundary name="ConfigModal" fallback={null}>
         <Suspense fallback={null}>
@@ -478,6 +532,23 @@ function App() {
           }}
           onShowShortcuts={() => setShowShortcutsDialog(true)}
           isDark={isDark}
+          onShowDiagnostics={() => {
+            setShowCommandPalette(false);
+            setShowDiagnostics(true);
+          }}
+          onShowSubAgents={() => {
+            setShowCommandPalette(false);
+            setShowSubAgentDashboard(true);
+          }}
+          onShowBtw={() => {
+            setShowCommandPalette(false);
+            setShowBtwQuickAsk(true);
+          }}
+          onShowPlugins={() => {
+            setShowCommandPalette(false);
+            useAppStore.getState().setSettingsTab('plugins');
+            setShowSettings(true);
+          }}
         />
       )}
 
