@@ -452,7 +452,10 @@ The gap is mainly product integration and durability:
       durable local SQLite FTS5 index (`artifact-index.sqlite`) when saved, and
       `RunStore.searchRuns()` consults that index before falling back to the
       file scan. A regression proves artifact recall survives a store restart
-      even when the original artifact file is no longer present.
+      even when the original artifact file is no longer present. Historical
+      run folders can now be backfilled with
+      `buddy run index-artifacts [--source ...] [--json]`, so copied or
+      pre-index runs become searchable without replaying the original work.
 
 22. Add context compression lineage.
     - When a session compresses or forks, record parent/child links.
@@ -674,8 +677,8 @@ The gap is mainly product integration and durability:
 3. Add Browser Operator consent/action-log UX on top of the current
    browser proof primitives.
 4. Add hook lifecycle before scheduled delivery and memory writeback.
-5. Expand the artifact FTS index with migration/backfill tooling for
-   historical run folders.
+5. Add index health/repair reporting for stale artifact FTS rows whose
+   source run folders were pruned or moved.
 
 ## Non-goals
 

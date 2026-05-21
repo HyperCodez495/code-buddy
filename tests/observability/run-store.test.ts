@@ -340,6 +340,53 @@ describe('RunStore', () => {
         reopened.dispose();
       }
     });
+
+    it('backfills the artifact index for historical run folders', async () => {
+      const runId = startRun('Historical operator handoff', {
+        channel: 'cowork',
+        tags: ['fleet'],
+      });
+      const artifactPath = path.join(tmpDir, runId, 'artifacts', 'legacy-handoff.md');
+      fs.writeFileSync(
+        artifactPath,
+        '# Legacy handoff\nHistorical browser proof telemetry should remain searchable.',
+        'utf-8',
+      );
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 50));
+
+      const backfill = store.backfillArtifactIndex({
+        limit: 5,
+        sources: ['cowork'],
+      });
+      expect(backfill).toEqual(expect.objectContaining({
+        artifactCount: 1,
+        failedCount: 0,
+        indexedCount: 1,
+        runCount: 1,
+        sources: ['cowork', 'desktop'],
+        unavailable: false,
+      }));
+      store.dispose();
+
+      fs.rmSync(artifactPath, { force: true });
+      const reopened = new RunStore(tmpDir);
+      try {
+        const hits = reopened.searchRuns('browser proof telemetry', {
+          includeEvents: false,
+          limit: 5,
+          sources: ['cowork'],
+        });
+        expect(hits[0]).toMatchObject({
+          runId,
+          matched: 'artifact',
+          artifact: 'legacy-handoff.md',
+        });
+      } finally {
+        reopened.dispose();
+      }
+    });
   });
 
   describe('pruning', () => {

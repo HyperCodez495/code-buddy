@@ -110,6 +110,23 @@ export interface RunSearchResult {
   source?: string;
 }
 
+export interface RunArtifactIndexBackfillOptions {
+  limit?: number;
+  sources?: string[];
+}
+
+export interface RunArtifactIndexBackfillResult {
+  artifactCount: number;
+  failedCount: number;
+  indexedCount: number;
+  limit: number;
+  runCount: number;
+  runIds: string[];
+  skippedCount: number;
+  sources: string[];
+  unavailable: boolean;
+}
+
 const MAX_RUNS = 30;
 const MAX_ARTIFACT_SEARCH_BYTES = 200_000;
 const ARTIFACT_INDEX_DB = 'artifact-index.sqlite';
@@ -547,9 +564,8 @@ export class RunStore {
   /**
    * Search recent run summaries, event payloads, and text artifacts.
    *
-   * This is the lightweight artifact-recall path used before a full SQLite
-   * artifact FTS table exists. It keeps generated scripts, plans, summaries,
-   * and command logs discoverable from the CLI without loading chat history.
+   * This keeps generated scripts, plans, summaries, and command logs
+   * discoverable from the CLI without loading chat history.
    */
   searchRuns(query: string, options: RunSearchOptions = {}): RunSearchResult[] {
     const terms = normalizeSearchTerms(query);
@@ -648,6 +664,53 @@ export class RunStore {
       .slice(0, limit);
   }
 
+  /**
+   * Populate the durable artifact FTS index for existing run folders.
+   *
+   * New artifacts are indexed when saved. This backfill is for historical run
+   * folders created before the index existed, or for repaired/copied stores.
+   */
+  backfillArtifactIndex(options: RunArtifactIndexBackfillOptions = {}): RunArtifactIndexBackfillResult {
+    const limit = Math.min(Math.max(options.limit ?? 100, 1), 1000);
+    const sources = normalizeSearchFilterValues(options.sources);
+    const db = this.getArtifactIndexDb();
+    const selectedRuns = this.listRuns(limit).filter((summary) =>
+      matchesRunSearchSources(summary, sources),
+    );
+    const result: RunArtifactIndexBackfillResult = {
+      artifactCount: 0,
+      failedCount: 0,
+      indexedCount: 0,
+      limit,
+      runCount: selectedRuns.length,
+      runIds: selectedRuns.map((summary) => summary.runId),
+      skippedCount: 0,
+      sources,
+      unavailable: db === null,
+    };
+
+    if (!db) {
+      result.skippedCount = selectedRuns.reduce((count, summary) =>
+        count + (this.getRun(summary.runId)?.artifacts.length ?? 0), 0);
+      return result;
+    }
+
+    for (const summary of selectedRuns) {
+      const record = this.getRun(summary.runId);
+      for (const artifact of record?.artifacts ?? []) {
+        result.artifactCount += 1;
+        const artifactText = this.readArtifactForSearch(summary.runId, artifact);
+        if (this.indexArtifactForSearch(summary.runId, artifact, artifactText)) {
+          result.indexedCount += 1;
+        } else {
+          result.failedCount += 1;
+        }
+      }
+    }
+
+    return result;
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────────────────────
@@ -707,9 +770,9 @@ export class RunStore {
     }
   }
 
-  private indexArtifactForSearch(runId: string, name: string, content: string): void {
+  private indexArtifactForSearch(runId: string, name: string, content: string): boolean {
     const db = this.getArtifactIndexDb();
-    if (!db) return;
+    if (!db) return false;
     const searchContent = `${name}\n${content}`.slice(0, MAX_ARTIFACT_SEARCH_BYTES);
     try {
       db.prepare(`
@@ -719,12 +782,14 @@ export class RunStore {
           content = excluded.content,
           updated_at = excluded.updated_at
       `).run(runId, name, searchContent, Date.now());
+      return true;
     } catch (err) {
       logger.debug('RunStore: failed to index artifact for search', {
         runId,
         artifact: name,
         err: err instanceof Error ? err.message : String(err),
       });
+      return false;
     }
   }
 

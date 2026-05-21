@@ -97,7 +97,7 @@ script.
 | Inspectable handoff | Codex/Manus make continuation obvious | Recall packs exist; Cowork handoff was copy-only | P0 |
 | Enforced profile contracts | Claude subagents expose tools/permissions/isolation | Profile inspection exists; full schema patch/enforcement still partial | P0 |
 | Browser operator consent | Manus separates local logged-in browser from sandbox cloud work | Browser proof tools exist; consent/session UX is not complete | P1 |
-| Durable artifacts index | Hermes/Codex recall task evidence across sessions | Run search exists; artifact FTS is still missing | P1 |
+| Durable artifacts index | Hermes/Codex recall task evidence across sessions | Run/artifact FTS exists; historical backfill now has a CLI surface | P1 |
 | Hook lifecycle | Claude/Hermes let teams wire guardrails without editing core | Policy resolver exists; generic hooks are still missing | P1 |
 | Remote supervision | Hermes gateway and Codex remote control support supervision away from the laptop | Fleet/Cowork local first; mobile-safe gateway is still a plan | P1 |
 | Skill lifecycle UI | Hermes/Claude make skills visible and portable | Skills/lessons exist; Cowork package manager is missing | P2 |
@@ -133,7 +133,7 @@ Code Buddy should become:
 
 1. Make every long-running CLI/Cowork action create or link an
    `AgentRun` and visible work item.
-2. Add durable artifact FTS and snippet search on top of `RunStore`.
+2. Add artifact-index health/repair reporting for stale or moved run folders.
 3. Finish dynamic schema patching so disabled tools disappear from
    model-facing schemas.
 4. Add a Cowork profile permission inspector for the exact next run,

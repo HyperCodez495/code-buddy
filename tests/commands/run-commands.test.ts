@@ -118,6 +118,64 @@ describe('Run CLI commands', () => {
     ]);
   });
 
+  it('prints JSON artifact index backfill stats for historical runs', async () => {
+    const runId = startRun('Historical Cowork handoff', {
+      channel: 'cowork',
+      tags: ['fleet'],
+    });
+    fs.writeFileSync(
+      path.join(tempDir, runId, 'artifacts', 'legacy-summary.md'),
+      'Legacy Cowork operator handoff with durable proof snippets.',
+      'utf-8',
+    );
+    store.endRun(runId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== runId);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const program = createProgram();
+    registerRunCommands(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'run',
+      'index-artifacts',
+      '--json',
+      '--source',
+      'cowork',
+      '--limit',
+      '5',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      artifactCount: number;
+      failedCount: number;
+      filters: {
+        limit: number;
+        sources: string[];
+      };
+      generatedAt: string;
+      indexedCount: number;
+      runCount: number;
+      schemaVersion: number;
+      unavailable: boolean;
+    };
+
+    expect(output).toMatchObject({
+      artifactCount: 1,
+      failedCount: 0,
+      filters: {
+        limit: 5,
+        sources: ['cowork', 'desktop'],
+      },
+      indexedCount: 1,
+      runCount: 1,
+      schemaVersion: 1,
+      unavailable: false,
+    });
+    expect(new Date(output.generatedAt).toString()).not.toBe('Invalid Date');
+  });
+
   it('prints JSON recall packs for agent handoffs', async () => {
     const runId = startRun('Hermes architect lead discovery', {
       channel: 'cowork',

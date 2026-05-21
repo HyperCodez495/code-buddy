@@ -5,6 +5,7 @@
  *   buddy run list [--limit N]    → list recent runs
  *   buddy run show <runId>        → full timeline + metrics + artifacts
  *   buddy run search <query>      → search run summaries, events, artifacts
+ *   buddy run index-artifacts     → backfill artifact search for old runs
  *   buddy run recall-pack <query> → build compact context from matching runs
  *   buddy run trajectory-export <runId> → export redacted run trajectory
  *   buddy run golden-evals [fixtureId] [runId] → list/evaluate golden workflows
@@ -57,6 +58,18 @@ export function registerRunCommands(program: Command): void {
     .action(async (queryParts: string[], opts: { json?: boolean; limit: string; source: string[] }) => {
       const { searchRuns } = await import('../../observability/run-viewer.js');
       searchRuns(queryParts.join(' '), parseInt(opts.limit, 10), opts.source, opts.json === true);
+    });
+
+  // ── buddy run index-artifacts ─────────────────────────────────
+  run
+    .command('index-artifacts')
+    .description('Backfill the durable artifact search index for historical run folders')
+    .option('-n, --limit <n>', 'number of recent runs to scan', '100')
+    .option('--source <source>', 'filter by source/channel/tag (repeatable: cli, cowork, fleet, scheduled, mobile)', collectOption, [])
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean; limit: string; source: string[] }) => {
+      const { indexRunArtifacts } = await import('../../observability/run-viewer.js');
+      indexRunArtifacts(parseInt(opts.limit, 10), opts.source, opts.json === true);
     });
 
   // ── buddy run recall-pack ─────────────────────────────────────

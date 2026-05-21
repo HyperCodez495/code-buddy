@@ -372,6 +372,39 @@ export function searchRuns(query: string, limit = 20, sources: string[] = [], js
 }
 
 /**
+ * Backfill the durable artifact search index for historical run folders.
+ */
+export function indexRunArtifacts(limit = 100, sources: string[] = [], json = false): void {
+  const store = RunStore.getInstance();
+  const result = store.backfillArtifactIndex({ limit, sources });
+  const payload = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    filters: {
+      limit: result.limit,
+      sources: result.sources,
+    },
+    ...result,
+  };
+
+  if (json) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  const sourceText = result.sources.length > 0 ? ` sources=${result.sources.join(',')}` : '';
+  if (result.unavailable) {
+    console.log(`Artifact index unavailable${sourceText}; skipped ${result.skippedCount} artifacts from ${result.runCount} runs.`);
+    return;
+  }
+
+  console.log(`Artifact index backfill${sourceText}: indexed ${result.indexedCount}/${result.artifactCount} artifacts from ${result.runCount} runs.`);
+  if (result.failedCount > 0) {
+    console.log(`Failed artifacts: ${result.failedCount}`);
+  }
+}
+
+/**
  * Build a compact recall pack for feeding relevant run evidence back into an
  * agent or UI handoff.
  */
