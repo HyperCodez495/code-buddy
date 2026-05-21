@@ -14,8 +14,13 @@ import fs from 'fs';
 import fsPromises from 'fs/promises';
 import path from 'path';
 import TOML from '@iarna/toml';
+import {
+  normalizeDispatchProfile,
+  type FleetDispatchProfile,
+} from '../../fleet/dispatch-profile.js';
 import { getAgentsDir } from '../../utils/codebuddy-home.js';
 import { logger } from '../../utils/logger.js';
+import { buildHermesAgentSystemPrompt } from '../hermes-agent-profile.js';
 
 // ============================================================================
 // Types
@@ -36,6 +41,10 @@ export interface CustomAgentConfig {
   tools?: string[];
   /** Tools this agent cannot use */
   disabledTools?: string[];
+  /** Default Fleet dispatch profile to use when agent delegates work */
+  fleetDispatchProfile?: FleetDispatchProfile;
+  /** Whether this agent should make delegated Fleet profile selection explicit */
+  requireExplicitDispatchProfile?: boolean;
   /** Temperature for responses (0-2) */
   temperature?: number;
   /** Maximum tokens for response */
@@ -120,6 +129,42 @@ Be constructive and explain the "why" behind each suggestion.
 """
 `;
 
+const BUILT_IN_AGENTS: CustomAgentFile[] = [
+  {
+    path: 'builtin:hermes',
+    format: 'toml',
+    modifiedAt: new Date(0),
+    config: {
+      id: 'hermes',
+      name: 'Hermes Agent',
+      description:
+        'Hermes-inspired autonomous Code Buddy profile for toolset-aware Fleet work, skills, memory, session search, scheduling, and delegation.',
+      systemPrompt: buildHermesAgentSystemPrompt('balanced'),
+      disabledTools: ['git_push', 'delete_file'],
+      fleetDispatchProfile: 'balanced',
+      requireExplicitDispatchProfile: true,
+      streaming: true,
+      triggers: [
+        'hermes agent',
+        'hermes-style',
+        'self improving agent',
+        'toolset-aware agent',
+      ],
+      tags: [
+        'builtin',
+        'hermes',
+        'fleet',
+        'toolsets',
+        'memory',
+        'skills',
+        'delegation',
+      ],
+      version: '1.0.0',
+      author: 'Code Buddy',
+    },
+  },
+];
+
 // ============================================================================
 // Agent Loader
 // ============================================================================
@@ -174,17 +219,16 @@ export class CustomAgentLoader {
       return Array.from(this.cache.values());
     }
 
-    this.cache.clear();
+    this.resetCacheToBuiltIns();
     this.lastScan = now;
 
     try {
       await fsPromises.access(this.agentsDir);
     } catch {
-      return [];
+      return Array.from(this.cache.values());
     }
 
     const files = await fsPromises.readdir(this.agentsDir);
-    const agents: CustomAgentFile[] = [];
 
     for (const file of files) {
       // Skip example files
@@ -212,7 +256,6 @@ export class CustomAgentLoader {
             config,
             modifiedAt: stats.mtime,
           };
-          agents.push(agentFile);
           this.cache.set(config.id, agentFile);
         }
       } catch (error) {
@@ -220,7 +263,7 @@ export class CustomAgentLoader {
       }
     }
 
-    return agents;
+    return Array.from(this.cache.values());
   }
 
   /**
@@ -234,15 +277,14 @@ export class CustomAgentLoader {
       return Array.from(this.cache.values());
     }
 
-    this.cache.clear();
+    this.resetCacheToBuiltIns();
     this.lastScan = now;
 
     if (!fs.existsSync(this.agentsDir)) {
-      return [];
+      return Array.from(this.cache.values());
     }
 
     const files = fs.readdirSync(this.agentsDir);
-    const agents: CustomAgentFile[] = [];
 
     for (const file of files) {
       // Skip example files
@@ -270,7 +312,6 @@ export class CustomAgentLoader {
             config,
             modifiedAt: stats.mtime,
           };
-          agents.push(agentFile);
           this.cache.set(config.id, agentFile);
         }
       } catch (error) {
@@ -278,7 +319,24 @@ export class CustomAgentLoader {
       }
     }
 
-    return agents;
+    return Array.from(this.cache.values());
+  }
+
+  private resetCacheToBuiltIns(): void {
+    this.cache.clear();
+    for (const agent of BUILT_IN_AGENTS) {
+      this.cache.set(agent.config.id, {
+        ...agent,
+        config: {
+          ...agent.config,
+          triggers: agent.config.triggers ? [...agent.config.triggers] : undefined,
+          tags: agent.config.tags ? [...agent.config.tags] : undefined,
+          tools: agent.config.tools ? [...agent.config.tools] : undefined,
+          disabledTools: agent.config.disabledTools ? [...agent.config.disabledTools] : undefined,
+          variables: agent.config.variables ? { ...agent.config.variables } : undefined,
+        },
+      });
+    }
   }
 
   /**
@@ -342,6 +400,13 @@ export class CustomAgentLoader {
       model: parsed.model ? String(parsed.model) : undefined,
       tools: Array.isArray(parsed.tools) ? parsed.tools.map(String) : undefined,
       disabledTools: Array.isArray(parsed.disabledTools) ? parsed.disabledTools.map(String) : undefined,
+      fleetDispatchProfile: typeof parsed.fleetDispatchProfile === 'string'
+        ? normalizeDispatchProfile(parsed.fleetDispatchProfile)
+        : undefined,
+      requireExplicitDispatchProfile:
+        typeof parsed.requireExplicitDispatchProfile === 'boolean'
+          ? parsed.requireExplicitDispatchProfile
+          : undefined,
       temperature: typeof parsed.temperature === 'number' ? parsed.temperature : undefined,
       maxTokens: typeof parsed.maxTokens === 'number' ? parsed.maxTokens : undefined,
       streaming: typeof parsed.streaming === 'boolean' ? parsed.streaming : true,
@@ -498,7 +563,7 @@ Example file: ${path.join(this.agentsDir, '_example.toml')}
 Use /agent create <name> to create a new agent interactively.`;
     }
 
-    const lines = ['Custom Agents:', '─'.repeat(50)];
+    const lines = ['Available Agents:', '─'.repeat(50)];
 
     for (const agent of agents) {
       const tags = agent.tags?.length ? ` [${agent.tags.join(', ')}]` : '';

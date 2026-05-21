@@ -23,6 +23,13 @@ External reference snapshot:
 - Public docs checked again on 2026-05-17 for this pass: the immediate
   Code Buddy translation is not another runtime, but a Hermes-style
   visible TODO/work-queue loop inside Cowork workflows.
+- Competitor parity checked on 2026-05-18 against Hermes Agent,
+  Claude Code, Codex Windows/CLI and Manus Browser Operator. The
+  detailed audit lives in
+  [`docs/cowork-competitor-audit.md`](cowork-competitor-audit.md). The
+  practical conclusion is that Code Buddy needs one unified operator
+  loop: visible runs, handoffs, artifacts, lessons, memory and next
+  actions across CLI, Cowork and Fleet.
 - Browser automation docs checked on 2026-05-17: Stagehand's useful
   transfer is the `observe` / `act` / `extract` posture on top of
   Playwright, not an immediate dependency swap. Mem0's useful transfer is
@@ -40,6 +47,9 @@ Internet automation references:
 
 These are the bounded items to implement without changing the stack:
 
+For the broader architecture study and power-parity backlog, see
+[`docs/hermes-agent-power-todo.md`](hermes-agent-power-todo.md).
+
 1. **Visible workflow TODOs in Cowork** — every long-running workshop
    should expose the next useful actions, not only a completed/pending
    progress rail. Status: implemented first for the Word-workshop panel.
@@ -56,7 +66,40 @@ These are the bounded items to implement without changing the stack:
    built-in `hermes` custom-agent profile (`buddy --agent hermes`) plus
    `buddy hermes profile` / `buddy hermes doctor` diagnostics, and
    custom-agent `tools` / `disabledTools` now feed the runtime tool
-   filter. The active custom-agent runtime now also carries Hermes'
+   filter. Custom agents with `fleetDispatchProfile` now also compile the
+   selected dispatch profile into an effective `ToolFilterConfig` against
+   the real Code Buddy tool list, and `buddy hermes doctor <profile>
+   --json` reports the requested profile's allowed/denied tool patterns.
+   `buddy tools profile <profile>` is the first general inspector for the
+   same effective tool posture: JSON/text output can show real built-in
+   tools or a provided subset, with allow/deny filters and per-tool
+   decisions before a run. Cowork now mirrors that posture in the Fleet
+   Command Center through a compact Tool Profile strip that shows the
+   active `fleet.hermes.<profile>` descriptor, allow/confirm/deny counts,
+   the policy summary and per-tool preview decisions before dispatch.
+   Direct runtime calls to `route_peer` and `peer_delegate` reject unknown
+   explicit `dispatchProfile` values before peer discovery/delegation, so
+   profile mistakes fail closed instead of silently becoming `balanced`.
+   Safe/review custom-agent tests now also run those profile-derived filters
+   through the same `filterTools()` path used by model-facing schemas, proving
+   that mutation and execution tools are hidden before the LLM sees them.
+   Peer-side `peer.dispatch` acceptance responses now immediately return the
+   resolved profile, tool policy, tool decisions, Hermes toolset id and trace
+   id, so asynchronous work can be logged with the same policy posture before
+   a status poll completes.
+   The shared `ToolHandler` now also enforces the active tool filter at
+   execution time, including streaming `bash`, so hidden mutation/execution
+   tools cannot run through a stale or malformed tool call after schema
+   patching removed them. Those filter blocks now emit run telemetry as
+   policy decisions plus failed tool results without emitting a `tool_call`,
+   so policy evals can prove the tool did not actually execute while still
+   preserving the blocked attempt for review exports. Cowork's Audit Log
+   policy eval summary now carries and renders `toolFilterBlocks`, showing the
+   count and blocked tool names directly beside the read-only/no-replay
+   guardrails. Run recall packs now also include deduplicated active-filter
+   policy blocks in the agent-ready prompt context, so Fleet handoffs preserve
+   "requested but blocked" evidence without treating the hidden tool as used.
+   The active custom-agent runtime now also carries Hermes'
    default Fleet dispatch profile into `route_peer` and `peer_delegate`,
    so delegated calls keep a concrete `fleet.hermes.<profile>` posture
    even when the model omits the optional argument. Peer chat and
@@ -65,8 +108,27 @@ These are the bounded items to implement without changing the stack:
    the selected Hermes toolset posture. The same dispatch-profile
    selection guide now feeds the Hermes prompt, Fleet tool schemas, CLI
    diagnostics and docs, reducing drift between what operators see and
-   what the model is told to choose. Deeper peer-side execution
-   enforcement remains future work.
+   what the model is told to choose. `buddy hermes plan <profile>`
+   now turns that profile into a short integration checklist covering
+   profile inspection, doctor diagnostics, lessons vault export, and
+   running `buddy --agent hermes`, with JSON output for UI consumers.
+   The JSON plan includes schema version, generation time, compact
+   summary, recommended next command, involved surface ids and checklist
+   items so Cowork can render a handoff panel without parsing prose.
+   Checklist items carry kind/risk metadata for read-only inspection,
+   local artifact writes and interactive execution handoffs, plus
+   expected artifact paths when a step writes files and acceptance
+   criteria for UI checklist rendering. The
+   same plan can render as Markdown for handoff notes and PR summaries,
+   and `--plan-output` writes JSON/Markdown/text artifacts while
+   creating parent folders. The plan now also declares `cli`, `cowork`
+   and `shared-json` interaction surfaces, and Cowork's Fleet Command
+   Center renders a compact Hermes plan strip that can seed the selected
+   plan as a dispatch-ready Fleet goal. `buddy hermes hooks [--json]`
+   now exposes the Hermes-style lifecycle contract for guardrails and
+   observability, covering tool calls, memory writes, run completion and
+   scheduled delivery without adding a second hook runtime.
+   Deeper peer-side execution enforcement remains future work.
 4. **Portable skills** — keep `SKILL.md` packages as the durable
    procedural-memory boundary. Status: telemetry exists; install/update
    ergonomics remain future work. The lessons store now also has a
@@ -87,16 +149,84 @@ These are the bounded items to implement without changing the stack:
    `manifest.json`, including YAML frontmatter for page type, backlinks
    and concepts. The manifest also maps concept and lesson ids to their
    generated files so UI consumers can load the vault without directory
-   scanning, while keeping `lessons.md` canonical.
+   scanning, while keeping `lessons.md` canonical. Cowork now has a
+   read-only Lessons Vault strip in the Fleet Command Center that loads
+   the same manifest/graph through IPC, shows counts and top concept
+   pages, and can seed a review-profile Fleet goal for vault refresh
+   without auto-writing lessons. Fleet outcome details now have a separate
+   operator-triggered "Save as lesson" action that
+   writes a procedural Markdown lesson with outcome, saga, AgentRun,
+   Hermes, target-peer, proof and verification context, while keeping
+   factual memory promotion as a separate action.
 5. **Scheduled autonomous work** — keep scheduled dispatches visible in
    Cowork and Activity Feed. Status: first cockpit pass exists; delivery
-   channels remain future work.
+   channels remain future work. Hermes-origin scheduled dispatches now
+   keep a lightweight lineage (`hermesPlanId`, `hermesPlanProfile`,
+   `hermesPlanSurface`) across Cowork schedule drafts, scheduled-work
+   chips, Activity Feed chips, terminal Fleet outcomes, follow-up goals
+   and saved Fleet outcome memories. The scheduled-work run-now action
+   also names Fleet/Hermes lineage in its accessible label and keeps that
+   lineage while the spinner is running, so icon-only controls remain
+   inspectable without changing the compact layout. Recent outcome strip
+   buttons now do the same for completed Hermes/Fleet runs, carrying the
+   selected outcome, status, targets, delivery channel, memory count and
+   web-proof burden in their accessible label/title. Detail-panel copy,
+   reuse-as-goal and save-as-memory actions carry the same lineage. Reusing
+   an outcome as a goal now passes through a small tested dispatch preset
+   helper so only supported privacy/profile metadata can steer the next run.
+   The first canonical `AgentRun` contract now exists and Cowork scheduled
+   Fleet dispatch drafts embed it as `metadata.agentRun`, alongside flat
+   `agentRunId` and `agentRunSchemaVersion` fields for future CLI/Cowork
+   recall surfaces. Fleet outcome reuse also creates a draft `AgentRun`
+   at click time; when that follow-up is scheduled, the scheduled draft
+   inherits `parentRunId`, `outcomeId`, saga and Hermes plan lineage.
+   That compact run lineage now continues through scheduled task Activity
+   Feed entries, `dispatchFleetSaga`, Fleet saga metadata and terminal
+   Fleet activity records, with Cowork chips for run, parent run and
+   outcome ids. The dispatch composer also shows a follow-up AgentRun
+   draft preview before immediate dispatch so an operator can inspect the
+   inherited run, parent, outcome, Hermes, privacy, target, memory, proof
+   and toolset context before launching work.
 6. **Internet automation and self-tests** — use the current Playwright
    browser layer as the Stagehand-like boundary: observe a page before
    acting, extract structured evidence, assert the expected page state,
    then promote only proven facts to memory. Status: first CLI/browser
    actions `observe`, `extract` and `assert_text` exist without adding a
-   new dependency.
+   new dependency. Generated public-data research scripts now also have a
+   first typed artifact envelope (`ResearchScriptJobArtifact`) that records
+   manifest/script/input/output/log paths, command, sandbox policy,
+   allowed/ignored domains, assertions, cleanup expectations and an
+   `AgentRun` script artifact pointer. Lead Scout enrichment plans embed
+   this shape so the script can become an inspectable run artifact instead
+   of only an inline chat payload. `materializeResearchScriptJobArtifact`
+   can now create the reviewable artifact folder locally without executing
+   the script: manifest, README, script, input, `not_run` output, empty
+   logs and summary, with path-escape and overwrite guards. The paired
+   `runMaterializedResearchScriptJob` runner executes only local
+   materialized jobs for now, uses spawn without shell, captures stdout,
+   stderr and summary artifacts, enforces timeout/executable checks, and
+   refuses network-enabled policies unless the caller explicitly opts in.
+   Repeatedly successful jobs can now produce a review-only SKILL.md
+   candidate through `buildResearchScriptSkillCandidate`, keeping script
+   patterns reusable without silently installing new capabilities.
+   `materializeResearchScriptSkillCandidate` writes the candidate plus
+   `candidate-review.json`, and `buddy tools skill-candidate
+   list/inspect/install` lets an operator find, review and install it into the
+   workspace skills directory only with explicit `--approved-by` approval.
+   Cowork's Fleet `research` profile now surfaces the same review posture
+   through the read-only `tools.skillCandidate.list` bridge and
+   `SkillCandidateReviewQueueStrip`: eligible candidates, human-approval
+   and no-auto-install chips, CLI review commands, and a goal handoff for
+   inspecting the queue before any install.
+   The main Lead Scout plan now also embeds a `LeadDiscoveryWorkflowTemplate`: public-only
+   inputs, search ->
+   site-discovery -> page-extraction -> contact-field extraction ->
+   dedupe -> evidence -> export stages, review-only contact policy,
+   expected artifacts and the linked research-script job artifact. Cowork
+   now surfaces a compact public-data Lead Scout workflow preview under the
+   Fleet `research` profile, with stage/artifact/review-only chips plus
+   actions to seed the current Fleet goal or schedule the workflow with
+   public-data metadata.
 
 ## Decision
 
@@ -152,9 +282,106 @@ personal operating system, not just a chat wrapper.
    documented and locked in this note.
 2. Add a small session-search milestone. Status: first pass implemented
    in SQLite with FTS5-backed message search and CLI match snippets.
+   Run/artifact recall also has a first CLI/store pass through
+   `RunStore.searchRuns()` and `buddy run search`, covering run summaries,
+   event payloads and capped text artifacts with ranked snippets. Artifacts are
+   now also written to a durable local SQLite FTS5 index when saved, and
+   `RunStore.searchRuns()` queries that index before falling back to file scans,
+   so newly generated plans/scripts/summaries remain searchable across store
+   restarts.
+   `buddy run search --source` now filters by channel/tag/source aliases
+   such as `cli`, `cowork`, `fleet`, `scheduled` and `mobile`, and
+   `buddy run search --json` exposes the same ranked matches as stable
+   JSON for future Cowork/Manus UI consumers, including `schemaVersion`,
+   `generatedAt` and effective `filters` metadata. Cowork now mirrors that
+   recall path in the Audit Log through a read-only `audit.searchRuns` bridge
+   and a source-aware search field that renders matching summary/event/artifact
+   snippets. The same source filter also applies to the normal Audit Log run
+   list and CSV export. `buildRunRecallPack()` and
+   `buddy run recall-pack <query> [--source ...] [--json]` now turn those ranked
+   matches into a compact cited `promptContext` for follow-up agents, and Cowork
+   can request the same bundle through the read-only `audit.buildRecallPack`
+   IPC/preload bridge. The Audit Log also exposes a copy action that turns the
+   current search into an agent-ready handoff prompt and passes the active
+   workspace path for read-only lesson recall. `buddy run recall-pack` can
+   include matching `lessons.md` entries with `--lessons --max-lessons <n>`,
+   reusing the existing LessonsTracker rather than adding another memory store.
+   The same recall pack now supports saved session snippets with
+   `--sessions --max-sessions <n>`, and Cowork's copy action requests sessions
+   by default so a handoff can carry recent conversation continuity alongside
+   run/artifact/lesson evidence. Recall packs also support read-only persistent
+   memory recall with `--memories --max-memories <n>`, scanning existing
+   `CODEBUDDY_MEMORY.md`, project `MEMORY.md` and user memory files without
+   creating new memory state. CLI users can use `--all-context` as a shortcut
+   for lessons, memories and sessions together. Cowork's Audit Log can now
+   send that same recall pack directly to Fleet as a `research` / `public`
+   draft goal with outreach disabled by default; it is a handoff surface, not
+   an automatic dispatch.
    - FTS5 virtual table for messages.
    - `buddy --search-sessions` command with parent lineage and snippet
      metadata.
+   - `buddy run search <query> [--source cowork|fleet|scheduled|cli|mobile]`
+     for recent run summaries, events and text artifacts.
+  - `buddy run recall-pack <query> [--lessons] [--sessions] [--memories] [--all-context]` for an agent-ready cited context bundle.
+  - `buddy run trajectory-export <run-id> [--json]` for a redacted,
+    review-only trajectory envelope with prompt sources, selected context,
+    tool calls/results, artifact metadata and final-answer evidence. Cowork's
+    Audit Log mirrors it from an expanded run as a copy-only action.
+  - `buddy run golden-evals [fixture-id] [run-id] [--json]` for the first
+    repeatable workflow fixture manifest and trajectory-based pass/fail
+    assertions. Cowork's Audit Log mirrors this from an expanded run as a
+    copy-only `golden_workflow_eval_report` and can review it in-place through
+    a local pass/fail summary panel without using the clipboard. The manifest
+    now includes `recall-handoff`, which proves a recall-pack Fleet handoff
+    keeps `Policy blocks:` / `active_tool_filter` evidence visible while
+    staying outreach-free.
+  - `buddy run policy-evals [policy-id] [run-id] [--json]` for behavior-level
+    safety assertions: safe/review no-mutation and public-data source URL
+    preservation. Cowork's Audit Log mirrors this from an expanded run as a
+    copy-only `policy_eval_report`, sharing the same read-only summary panel.
+  - `buddy run mobile-snapshot <query> [--source ...] [--json]` for a
+     redacted, review-only supervision payload that can later back a phone
+     UI without exposing execution controls.
+   - `buddy run mobile-gateway-contract <query> [--json] [--no-snapshot]`
+     for the future gateway route contract: local-first transport,
+     short-lived auth, read/draft-only endpoints and deny-by-default blocked
+     operations. Cowork's Audit Log mirrors this through a read-only bridge
+     and "Copy mobile contract" action. This is a contract artifact, not a
+     network listener.
+   - `buddy run mobile-gateway-check <query> --action <action> --method
+     GET|POST --path <path> [--local-operator]` for testing one future
+     gateway request against the same contract before a listener exists.
+     Draft-only actions stay blocked until the local-operator flag is present;
+     execute/mutate/send actions stay denied.
+   - `buddy run mobile-gateway-review-draft <query> --action <action>
+     --method GET|POST --path <path>` for creating the local-only operator
+     review envelope a phone/Cowork UI can later render before any approval
+     endpoint mutates state. Cowork's Audit Log now mirrors this with a
+     "Copy review draft" action for the current search, still clipboard-only
+     and local-operator gated.
+   - `buddy run mobile-gateway-listener-shell <query>` for rendering the
+     disabled loopback listener shell that a future implementation can fill:
+     planned route handlers, auth posture, acceptance checks and blocked
+     operation stubs, with `serverStarted=false`. Cowork's Audit Log mirrors
+     the same artifact as a copy-only action from the current search.
+  - `buddy run mobile-pairing-state <query> [--device-label ...] [--ttl ...]`
+    for generating preview-only pairing state from the disabled shell. It
+    includes a local code, fingerprint, expiry and operator checklist, while
+    keeping token issuance, persistence and listener acceptance disabled.
+    Cowork's Audit Log exposes the same state as a copy-only action.
+  - `buddy run mobile-pairing-acceptance-plan <query> [--device-label ...]
+    [--operator-label ...]` for documenting the next mutation boundary before
+    it exists: POST `/api/mobile/pairing/accept`, required evidence, disabled
+    token/session mutations and safety flags all remain no-network and
+    non-executable. Cowork's Audit Log mirrors the same envelope with a
+    "Review acceptance" panel and copy-only "Copy acceptance plan" action
+    for the current search.
+  - `buddy run mobile-approval-queue <query>` for producing the local review
+    queue that separates ready read-only routes, pending draft approvals and
+    blocked operations. Cowork exposes the same queue as copy-only JSON and
+     as a visible local review panel with ready/pending/blocked counts. Pending
+     items can be copied as standalone local operator review drafts; no approval
+     mutation endpoint is enabled yet.
    - tests for query sanitization and result ranking.
 3. Add session lineage. Status: first pass implemented in SQLite with
    `parent_session_id`, plus clone/branch metadata persistence.
@@ -308,6 +535,20 @@ personal operating system, not just a chat wrapper.
       through the LLM-facing `route_peer` result and peer chat/session
       metadata so downstream callers can key on `fleet.hermes.<profile>`
       instead of reverse-engineering policy groups.
+      Multi-turn peer chat sessions now keep that profile immutable after
+      start: `continue` and `continue-stream` reject unknown, late-added or
+      changed `dispatchProfile` values before any peer LLM call is made.
+      Safe/review model-facing schema tests now cover the runtime filter path
+      for custom agents, including removal of `create_file`, `bash` and
+      `git_push`.
+      Peer-side asynchronous `peer.dispatch` acceptance now preserves the RPC
+      frame trace id when params omit one and echoes profile/toolset metadata
+      immediately, making the runtime boundary visible at queue time. Cowork
+      saga execution now persists that accepted tool policy/toolset snapshot
+      before the first status poll and carries the toolset id into terminal
+      Activity Feed metadata. The `ToolHandler` active-filter guard now blocks
+      hidden tools before registry execution in both normal and streaming paths.
+      activity metadata.
       Code Buddy now also has a built-in custom-agent profile named
       `hermes`: it loads without a user TOML file, uses the native
       Hermes Agent system prompt, and can be inspected with

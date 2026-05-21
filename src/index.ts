@@ -2257,6 +2257,12 @@ addLazyCommandGroup(program, 'hub', 'Skills marketplace (search, install, publis
   registerHubCommands(program);
 });
 
+// Hermes — native Hermes-inspired Code Buddy agent profile diagnostics
+addLazyCommandGroup(program, 'hermes', 'Inspect the native Hermes-inspired Code Buddy agent profile', async () => {
+  const { registerHermesCommands } = await import('./commands/cli/hermes-commands.js');
+  registerHermesCommands(program);
+});
+
 addLazyCommandGroup(program, 'device', 'Manage paired device nodes (SSH, ADB, local)', async () => {
   const { registerDeviceCommands } = await import('./commands/cli/device-commands.js');
   registerDeviceCommands(program);
