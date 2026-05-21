@@ -166,10 +166,10 @@ export class FeishuChannel extends ChannelBase {
   /**
    * Handle incoming webhook request
    */
-  handleWebhook(
+  async handleWebhook(
     _headers: Record<string, string>,
     body: string
-  ): { status: number; data: Record<string, unknown> } {
+  ): Promise<{ status: number; data: Record<string, unknown> }> {
     log('[Feishu] Received webhook request');
 
     // Verify webhook signature — always required
@@ -224,11 +224,32 @@ export class FeishuChannel extends ChannelBase {
         return { status: 200, data: { code: 0 } };
       }
 
-      // Verify request if encryption is enabled
+      // P6.2 — Decrypt encrypted webhook bodies per the Lark Open
+      // Platform spec: AES-256-CBC with key = SHA256(encrypt_key), IV =
+      // first 16 bytes of the ciphertext, body = base64(IV || ciphertext).
       if (this.config.encryptKey && data.encrypt) {
-        log('[Feishu] Encrypted message received, decryption not yet implemented');
-        // TODO: Implement message decryption
-        return { status: 501, data: { code: 1, msg: 'Encrypted webhook not yet supported' } };
+        try {
+          const crypto = await import('crypto');
+          const key = crypto.createHash('sha256').update(this.config.encryptKey).digest();
+          const blob = Buffer.from(data.encrypt as string, 'base64');
+          const iv = blob.subarray(0, 16);
+          const ciphertext = blob.subarray(16);
+          const decipher = crypto.createDecipheriv('aes-256-cbc', key, iv);
+          const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+          const parsed = JSON.parse(decrypted.toString('utf8'));
+          // Re-enter the same path with the decrypted body
+          if (parsed?.type === 'url_verification') {
+            return { status: 200, data: { challenge: parsed.challenge } };
+          }
+          const innerType = parsed?.header?.event_type ?? parsed?.event?.type;
+          if (innerType === 'im.message.receive_v1' || innerType === 'message') {
+            this.handleMessageEvent(parsed.event);
+          }
+          return { status: 200, data: { code: 0 } };
+        } catch (err) {
+          logError('[Feishu] Decryption failed:', err);
+          return { status: 401, data: { code: 1, msg: 'Decryption failed' } };
+        }
       }
 
       log('[Feishu] Unknown webhook format, returning OK');

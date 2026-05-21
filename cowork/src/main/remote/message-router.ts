@@ -270,7 +270,7 @@ export class MessageRouter {
     });
     
     // Convert remote content to agent content blocks
-    const content = this.convertToContentBlocks(message);
+    const content = await this.convertToContentBlocks(message);
     const { prompt, cwd } = this.extractPromptAndCwd(message);
     
     // Get session mapping to update/get working directory
@@ -382,7 +382,7 @@ export class MessageRouter {
   /**
    * Convert remote message content to agent content blocks
    */
-  private convertToContentBlocks(message: RemoteMessage): ContentBlock[] {
+  private async convertToContentBlocks(message: RemoteMessage): Promise<ContentBlock[]> {
     const blocks: ContentBlock[] = [];
     
     switch (message.content.type) {
@@ -396,12 +396,34 @@ export class MessageRouter {
         break;
         
       case 'image':
-        // TODO: Download image and convert to base64
+        // P6.1 — Best-effort image download. We attempt a HEAD/GET to the
+        // imageUrl (works for public Feishu CDN URLs) and convert to a
+        // data URL. Fails closed: on any error, we keep the text fallback
+        // so the agent at least sees the URL.
         if (message.content.imageUrl) {
-          // For now, add as text description
+          try {
+            const url = message.content.imageUrl;
+            const res = await fetch(url, { method: 'GET' });
+            if (res.ok) {
+              const buf = Buffer.from(await res.arrayBuffer());
+              const mime = res.headers.get('content-type') || 'image/jpeg';
+              const base64 = buf.toString('base64');
+              blocks.push({
+                type: 'image',
+                source: {
+                  type: 'base64',
+                  media_type: mime,
+                  data: base64,
+                },
+              } as unknown as TextContent);
+              break;
+            }
+          } catch {
+            /* fall through to text fallback */
+          }
           blocks.push({
             type: 'text',
-            text: `[用户发送了一张图片: ${message.content.imageUrl}]`,
+            text: `[image: ${message.content.imageUrl}]`,
           } as TextContent);
         }
         break;
@@ -416,11 +438,31 @@ export class MessageRouter {
         break;
         
       case 'voice':
-        // TODO: Transcribe voice message
-        blocks.push({
-          type: 'text',
-          text: '[用户发送了语音消息]',
-        } as TextContent);
+        // P6.1 — Voice transcription via the local voice-bridge (Whisper).
+        // Falls back to a text placeholder if no transcriber is wired.
+        {
+          const transcribe = (
+            globalThis as unknown as {
+              voiceBridge?: { transcribeFromUrl?: (url: string) => Promise<string> };
+            }
+          ).voiceBridge?.transcribeFromUrl;
+          const voiceUrl = (message.content as { voiceUrl?: string }).voiceUrl;
+          if (transcribe && voiceUrl) {
+            try {
+              const text = await transcribe(voiceUrl);
+              if (text) {
+                blocks.push({ type: 'text', text } as TextContent);
+                break;
+              }
+            } catch {
+              /* fall through */
+            }
+          }
+          blocks.push({
+            type: 'text',
+            text: '[voice message — transcription unavailable]',
+          } as TextContent);
+        }
         break;
         
       default:

@@ -19,7 +19,7 @@ export interface Session {
 
 export type SessionStatus = 'idle' | 'running' | 'completed' | 'error';
 
-export type ExecutionMode = 'chat' | 'task';
+export type ExecutionMode = 'chat' | 'task' | 'ask' | 'architect';
 
 // Project types (Claude Cowork parity)
 export interface Project {
@@ -183,6 +183,7 @@ export type TraceStepStatus = 'pending' | 'running' | 'completed' | 'error';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
 export type ScheduleWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type ScheduleTaskMetadata = Record<string, unknown>;
 
 export interface DailyScheduleConfig {
   kind: 'daily';
@@ -211,6 +212,7 @@ export interface ScheduleTask {
   lastRunAt: number | null;
   lastRunSessionId: string | null;
   lastError: string | null;
+  metadata: ScheduleTaskMetadata | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -225,6 +227,7 @@ export interface ScheduleCreateInput {
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
+  metadata?: ScheduleTaskMetadata | null;
 }
 
 export interface ScheduleUpdateInput {
@@ -240,6 +243,7 @@ export interface ScheduleUpdateInput {
   lastRunAt?: number | null;
   lastRunSessionId?: string | null;
   lastError?: string | null;
+  metadata?: ScheduleTaskMetadata | null;
 }
 
 // Skills types
@@ -530,6 +534,14 @@ export interface FleetPeer {
     model: string;
     isLocal: boolean;
   } | null;
+  chatSessions?: Array<{
+    sessionId: string;
+    model?: string;
+    dispatchProfile?: string;
+    turnCount: number;
+    startedAt: number;
+    lastTurnAt?: number;
+  }>;
   /**
    * Latest capability snapshot from `peer.describe` (Fleet P2). Lets
    * the UI display which models the peer can route to and the

@@ -1,0 +1,55 @@
+/* microinteractions.css — P5.5
+ *
+ * Small motion utilities used across new dialogs/panels. Honours
+ * `prefers-reduced-motion: reduce` to disable all animations when the
+ * user has requested it.
+ */
+
+@keyframes cowork-fade-in {
+  from { opacity: 0; transform: translateY(4px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cowork-slide-up {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes cowork-pulse-soft {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.7; }
+}
+
+.motion-fade-in { animation: cowork-fade-in 180ms ease-out; }
+.motion-slide-up { animation: cowork-slide-up 220ms ease-out; }
+.motion-pulse-soft { animation: cowork-pulse-soft 1600ms ease-in-out infinite; }
+
+@media (prefers-reduced-motion: reduce) {
+  .motion-fade-in,
+  .motion-slide-up,
+  .motion-pulse-soft {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
+/* Skeleton shimmer used by loading placeholders in Sessions / Memory / Skills. */
+@keyframes cowork-skeleton {
+  0% { background-position: -200px 0; }
+  100% { background-position: 200px 0; }
+}
+
+.skeleton {
+  background: linear-gradient(
+    90deg,
+    var(--surface, #2a2723) 0%,
+    var(--surface-hover, #312d28) 50%,
+    var(--surface, #2a2723) 100%
+  );
+  background-size: 400px 100%;
+  animation: cowork-skeleton 1400ms linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton { animation: none; }
+}

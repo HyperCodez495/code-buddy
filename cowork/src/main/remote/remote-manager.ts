@@ -1071,12 +1071,12 @@ export class RemoteManager extends EventEmitter {
       // Set up webhook handler
       this.gateway.on(
         'webhook:feishu',
-        (data: {
+        async (data: {
           headers: Record<string, string>;
           body: string;
           respond: (status: number, responseData: unknown) => void;
         }) => {
-          const result = feishuChannel.handleWebhook(data.headers, data.body);
+          const result = await feishuChannel.handleWebhook(data.headers, data.body);
           data.respond(result.status, result.data);
         }
       );

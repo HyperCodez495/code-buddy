@@ -4,7 +4,7 @@
  */
 import React, { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ChevronDown, MessageSquare, Zap } from 'lucide-react';
+import { ChevronDown, MessageSquare, Zap, HelpCircle, Building2 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 import type { ExecutionMode } from '../types';
 
@@ -35,6 +35,20 @@ const MODES: ModeOption[] = [
     descriptionKey: 'taskMode.taskTooltip',
     icon: Zap,
     color: 'text-warning',
+  },
+  {
+    value: 'ask',
+    labelKey: 'taskMode.ask',
+    descriptionKey: 'taskMode.askTooltip',
+    icon: HelpCircle,
+    color: 'text-info',
+  },
+  {
+    value: 'architect',
+    labelKey: 'taskMode.architect',
+    descriptionKey: 'taskMode.architectTooltip',
+    icon: Building2,
+    color: 'text-success',
   },
 ];
 

@@ -997,9 +997,12 @@ export function ChatView() {
               onChange={(newMode) => {
                 // Optimistic local update
                 useAppStore.getState().updateSession(activeSession.id, { executionMode: newMode });
-                // Persist to DB
+                // Persist to DB. The preload typing only knows the legacy
+                // 'chat'|'task' values; new modes (ask, architect) are
+                // forwarded as-is — the main process round-trips the
+                // string verbatim into SQLite.
                 void window.electronAPI?.session?.updateSettings?.(activeSession.id, {
-                  executionMode: newMode,
+                  executionMode: newMode as unknown as 'chat' | 'task',
                 });
                 // If switching to task mode, auto-enable dontAsk permission mode
                 if (newMode === 'task') {
