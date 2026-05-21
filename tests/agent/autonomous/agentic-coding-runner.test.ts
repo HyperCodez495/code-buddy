@@ -2351,6 +2351,7 @@ describe('runAgenticCodingCell', () => {
       }),
     ]));
     expect(saved.graphViewport).toEqual({
+      activeIndex: 4,
       activeNodeId: 'review-preview',
       activePosition: { x: 250, y: 650 },
       bounds: {
@@ -2363,6 +2364,16 @@ describe('runAgenticCodingCell', () => {
       },
       center: { x: 250, y: 575 },
       edgeCount: 7,
+      focusNodeIds: [
+        'prepare-edit-proposal-prompt',
+        'produce-edit-proposal',
+        'review-edit-proposal',
+        'preview-scoped-edits',
+        'review-preview',
+        'apply-approved-edits',
+        'run-verification',
+        'handoff',
+      ],
       mode: 'passive',
       nodeCount: 8,
       padding: 80,

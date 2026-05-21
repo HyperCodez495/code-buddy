@@ -642,6 +642,8 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     };
     center: { x: number; y: number };
     edgeCount: number;
+    activeIndex?: number;
+    focusNodeIds: string[];
     mode: 'passive';
     nodeCount: number;
     padding: number;
@@ -5445,8 +5447,17 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
       const activeNode = graph.activeNodeId
         ? graph.nodes.find((node) => node.id === graph.activeNodeId)
         : undefined;
+      const focusNodeIds = [...graph.nodes]
+        .sort((left, right) =>
+          left.position.y - right.position.y
+          || left.position.x - right.position.x
+          || left.id.localeCompare(right.id)
+        )
+        .map((node) => node.id);
+      const activeIndex = activeNode ? focusNodeIds.indexOf(activeNode.id) : -1;
       return {
         ...(graph.activeNodeId ? { activeNodeId: graph.activeNodeId } : {}),
+        ...(activeIndex >= 0 ? { activeIndex } : {}),
         ...(activeNode ? { activePosition: activeNode.position } : {}),
         bounds: {
           height: maxY - minY + padding * 2,
@@ -5461,6 +5472,7 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
           y: Math.round((minY + maxY) / 2),
         },
         edgeCount: graph.edgeCount,
+        focusNodeIds,
         mode: 'passive',
         nodeCount: graph.nodeCount,
         padding,

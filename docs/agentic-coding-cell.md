@@ -274,9 +274,10 @@ This lets Cowork render a stable legend for the graph mini-map without
 reinterpreting graph data as execution authority.
 
 The workspace also includes a passive `graphViewport`: graph bounds, center,
-padding, active node position, node count, and edge count. This lets Cowork
-frame the graph mini-map consistently without recalculating layout or treating
-the viewport as execution state.
+padding, active node position, active index, focus node order, node count, and
+edge count. This lets Cowork frame the graph mini-map consistently and support
+future keyboard focus without recalculating layout or treating the viewport as
+execution state.
 
 The workspace also includes a passive `commands` object copied from the same
 loop packet. It lists each step that has a `buddy` command, its status, safety

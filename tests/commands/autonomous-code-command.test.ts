@@ -1371,11 +1371,13 @@ describe('autonomous-code CLI command', () => {
         statuses: Array<{ count: number; id: string; tone: string }>;
       };
       graphViewport: {
+        activeIndex: number;
         activeNodeId: string;
         activePosition: { x: number; y: number };
         bounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
         center: { x: number; y: number };
         edgeCount: number;
+        focusNodeIds: string[];
         mode: string;
         nodeCount: number;
         padding: number;
@@ -1853,6 +1855,7 @@ describe('autonomous-code CLI command', () => {
       }),
     ]));
     expect(saved.graphViewport).toEqual(expect.objectContaining({
+      activeIndex: 4,
       activeNodeId: 'review-preview',
       activePosition: { x: 250, y: 650 },
       bounds: {
@@ -1865,6 +1868,16 @@ describe('autonomous-code CLI command', () => {
       },
       center: { x: 250, y: 575 },
       edgeCount: 7,
+      focusNodeIds: [
+        'prepare-edit-proposal-prompt',
+        'produce-edit-proposal',
+        'review-edit-proposal',
+        'preview-scoped-edits',
+        'review-preview',
+        'apply-approved-edits',
+        'run-verification',
+        'handoff',
+      ],
       mode: 'passive',
       nodeCount: 8,
       padding: 80,
