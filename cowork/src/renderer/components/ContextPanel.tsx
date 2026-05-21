@@ -4,13 +4,26 @@ import { useAppStore } from '../store';
 import { resolveArtifactPath } from '../utils/artifact-path';
 import {
   extractFilePathFromToolInput,
-  extractFilePathFromToolOutput,
+  extractFilePathsFromToolOutput,
 } from '../utils/tool-output-path';
 import {
+  getArtifactDisplayRole,
+  getArtifactDisplayRoleLabel,
+  getArtifactDisplayRolePriority,
   getArtifactLabel,
   getArtifactIconComponent,
   getArtifactSteps,
+  getDocxValidationEvidence,
+  getDocxValidationEvidenceDisplay,
+  type ArtifactDisplayRole,
+  type DocxValidationEvidence,
 } from '../utils/artifact-steps';
+import {
+  buildDocumentWorkshopEvidenceChips,
+  buildDocumentWorkshopMemoryContent,
+  getDocumentWorkshopProgress,
+  getDocumentWorkshopReadiness,
+} from '../utils/document-workshop-progress';
 import { useIPC } from '../hooks/useIPC';
 import { useCheckpointTimeline } from '../store/selectors';
 import { CheckpointPanel } from './CheckpointPanel';
@@ -44,6 +57,7 @@ import {
   Cpu,
   Copy,
   Layers,
+  Brain,
 } from 'lucide-react';
 import type { TraceStep, MCPServerInfo, DiffEntry, CheckpointSnapshot } from '../types';
 
@@ -54,6 +68,14 @@ interface CheckpointCompareState {
   to: CheckpointSnapshot;
   diffs: DiffEntry[];
 }
+
+type MemoryApiBridge = {
+  add?: (
+    category: 'preference' | 'pattern' | 'context' | 'decision',
+    content: string,
+    projectId?: string,
+  ) => Promise<{ success: boolean; error?: string }>;
+};
 
 function CheckpointSection({ cwd }: { cwd: string | null }) {
   const { t } = useTranslation();
@@ -166,6 +188,7 @@ export function ContextPanel() {
   const sessions = useAppStore((s) => s.sessions);
   const sessionStates = useAppStore((s) => s.sessionStates);
   const appConfig = useAppStore((s) => s.appConfig);
+  const setPreviewFilePath = useAppStore((s) => s.setPreviewFilePath);
   const contextPanelCollapsed = useAppStore((s) => s.contextPanelCollapsed);
   const toggleContextPanel = useAppStore((s) => s.toggleContextPanel);
   const workingDir = useAppStore((s) => s.workingDir);
@@ -178,6 +201,11 @@ export function ContextPanel() {
   const [expandedConnector, setExpandedConnector] = useState<string | null>(null);
   const [mcpServers, setMcpServers] = useState<MCPServerInfo[]>([]);
   const [copiedPath, setCopiedPath] = useState(false);
+  const [copiedArtifactPath, setCopiedArtifactPath] = useState<string | null>(null);
+  const [workshopMemoryStatus, setWorkshopMemoryStatus] = useState<
+    'idle' | 'saving' | 'saved' | 'error'
+  >('idle');
+  const [workshopMemoryError, setWorkshopMemoryError] = useState<string | null>(null);
   const [isChangingDir, setIsChangingDir] = useState(false);
   const [recentWorkspaceFiles, setRecentWorkspaceFiles] = useState<
     Array<{
@@ -203,6 +231,72 @@ export function ContextPanel() {
     }
   };
 
+  const revealArtifact = async (artifactPath: string) => {
+    if (!artifactPath || !window.electronAPI?.showItemInFolder) {
+      return;
+    }
+
+    const revealed = await window.electronAPI.showItemInFolder(
+      artifactPath,
+      currentWorkingDir ?? undefined
+    );
+    if (!revealed) {
+      setGlobalNotice({
+        id: `artifact-reveal-failed-${Date.now()}`,
+        type: 'warning',
+        message: t('context.revealFailed'),
+      });
+    }
+  };
+
+  const handleCopyArtifactPath = async (artifactPath: string) => {
+    try {
+      await navigator.clipboard.writeText(artifactPath);
+      setCopiedArtifactPath(artifactPath);
+      setTimeout(() => setCopiedArtifactPath(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy artifact path:', err);
+    }
+  };
+
+  const openArtifact = async (artifactPath: string) => {
+    if (!artifactPath) {
+      return;
+    }
+
+    if (canPreviewArtifact) {
+      setPreviewFilePath(artifactPath);
+      return;
+    }
+
+    await revealArtifact(artifactPath);
+  };
+
+  const handleSaveWorkshopMemory = async () => {
+    const addMemory = getMemoryApi()?.add;
+    if (!addMemory || workshopMemoryStatus === 'saving') {
+      return;
+    }
+
+    setWorkshopMemoryStatus('saving');
+    setWorkshopMemoryError(null);
+
+    try {
+      const result = await addMemory('context', documentWorkshopMemoryContent);
+      if (result.success) {
+        setWorkshopMemoryStatus('saved');
+        return;
+      }
+      setWorkshopMemoryStatus('error');
+      setWorkshopMemoryError(
+        result.error ?? t('context.documentWorkshop.saveMemoryFailed')
+      );
+    } catch (err) {
+      setWorkshopMemoryStatus('error');
+      setWorkshopMemoryError(err instanceof Error ? err.message : String(err));
+    }
+  };
+
   const ss = activeSessionId ? sessionStates[activeSessionId] : undefined;
   const steps = ss?.traceSteps ?? EMPTY_STEPS;
   const activeSession = activeSessionId ? sessions.find((s) => s.id === activeSessionId) : null;
@@ -210,6 +304,8 @@ export function ContextPanel() {
   const { displayArtifactSteps } = getArtifactSteps(steps);
   const canShowItemInFolder =
     typeof window !== 'undefined' && !!window.electronAPI?.showItemInFolder;
+  const canPreviewArtifact =
+    typeof window !== 'undefined' && !!window.electronAPI?.preview?.get;
 
   // Session info computations
   const messages = useMemo(
@@ -306,27 +402,40 @@ export function ContextPanel() {
 
   const displayArtifacts = useMemo(() => {
     const seenPaths = new Set<string>();
-    const items: Array<{ label: string; path: string }> = [];
+    const items: Array<{
+      label: string;
+      path: string;
+      role: ArtifactDisplayRole;
+      evidence?: DocxValidationEvidence | null;
+    }> = [];
 
     for (const step of displayArtifactSteps) {
-      const fallbackPath =
-        extractFilePathFromToolOutput(step.toolOutput) ||
-        extractFilePathFromToolInput(step.toolInput);
-      if (!fallbackPath) {
+      const outputPaths = extractFilePathsFromToolOutput(step.toolOutput);
+      const inputPath = extractFilePathFromToolInput(step.toolInput);
+      const candidatePaths = outputPaths.length > 0
+        ? outputPaths
+        : inputPath
+          ? [inputPath]
+          : [];
+      if (candidatePaths.length === 0) {
         continue;
       }
 
-      const resolvedPath = resolveArtifactPath(fallbackPath, currentWorkingDir);
-      const key = resolvedPath.trim();
-      if (!key || seenPaths.has(key)) {
-        continue;
-      }
+      for (const fallbackPath of candidatePaths) {
+        const resolvedPath = resolveArtifactPath(fallbackPath, currentWorkingDir);
+        const key = resolvedPath.trim();
+        if (!key || seenPaths.has(key)) {
+          continue;
+        }
 
-      seenPaths.add(key);
-      items.push({
-        label: getArtifactLabel(fallbackPath),
-        path: resolvedPath,
-      });
+        seenPaths.add(key);
+        items.push({
+          label: getArtifactLabel(fallbackPath),
+          path: resolvedPath,
+          role: getArtifactDisplayRole(step, fallbackPath),
+          evidence: getDocxValidationEvidence(step, fallbackPath),
+        });
+      }
     }
 
     for (const file of recentWorkspaceFiles) {
@@ -340,11 +449,40 @@ export function ContextPanel() {
       items.push({
         label: getArtifactLabel(file.path),
         path: resolvedPath,
+        role: getArtifactDisplayRole(null),
       });
     }
 
-    return items;
+    return items.sort(
+      (a, b) => getArtifactDisplayRolePriority(a.role) - getArtifactDisplayRolePriority(b.role)
+    );
   }, [currentWorkingDir, displayArtifactSteps, recentWorkspaceFiles]);
+  const documentWorkshopProgress = useMemo(
+    () => getDocumentWorkshopProgress(messages, steps, displayArtifacts.length),
+    [displayArtifacts.length, messages, steps]
+  );
+  const documentWorkshopMemoryContent = useMemo(
+    () => buildDocumentWorkshopMemoryContent(documentWorkshopProgress, displayArtifacts),
+    [displayArtifacts, documentWorkshopProgress]
+  );
+  const documentWorkshopEvidenceChips = useMemo(
+    () => buildDocumentWorkshopEvidenceChips(documentWorkshopProgress),
+    [documentWorkshopProgress]
+  );
+  const documentWorkshopReadiness = useMemo(
+    () => getDocumentWorkshopReadiness(documentWorkshopProgress, displayArtifacts),
+    [displayArtifacts, documentWorkshopProgress]
+  );
+  const canSaveDocumentWorkshopMemory = Boolean(
+    documentWorkshopProgress.visible &&
+    documentWorkshopProgress.completedCount > 0 &&
+    getMemoryApi()?.add
+  );
+
+  useEffect(() => {
+    setWorkshopMemoryStatus('idle');
+    setWorkshopMemoryError(null);
+  }, [activeSessionId]);
 
   useEffect(() => {
     if (contextPanelCollapsed) {
@@ -459,6 +597,193 @@ export function ContextPanel() {
         </div>
       )}
 
+      {/* Document Workshop */}
+      {documentWorkshopProgress.visible && (
+        <div
+          data-testid="context-document-workshop"
+          className="px-4 py-3 border-b border-border-muted space-y-2.5"
+        >
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <FileText className="w-3.5 h-3.5 text-accent shrink-0" />
+              <span className="text-xs font-medium text-text-muted uppercase tracking-wider truncate">
+                {t('context.documentWorkshop.title')}
+              </span>
+            </div>
+            <span
+              data-testid="context-document-workshop-progress"
+              className="text-[10px] text-text-muted shrink-0"
+            >
+              {t('context.documentWorkshop.progress', {
+                done: documentWorkshopProgress.completedCount,
+                total: documentWorkshopProgress.totalCount,
+              })}
+            </span>
+          </div>
+          <div className="space-y-1.5">
+            {documentWorkshopProgress.steps.map((step) => {
+              const isDone = step.status === 'done';
+              const isActive = step.status === 'active';
+
+              return (
+                <div
+                  key={step.id}
+                  data-testid={`context-document-workshop-step-${step.id}`}
+                  className="flex items-center gap-2 text-xs text-text-secondary"
+                >
+                  <span className="w-3.5 h-3.5 flex items-center justify-center shrink-0">
+                    {isDone ? (
+                      <Check className="w-3 h-3 text-success" />
+                    ) : isActive ? (
+                      <Loader2 className="w-3 h-3 text-accent animate-spin" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full border border-border-muted" />
+                    )}
+                  </span>
+                  <span className={isDone ? 'text-text-primary' : isActive ? 'text-accent' : ''}>
+                    {t(`context.documentWorkshop.step.${step.id}`)}
+                  </span>
+                </div>
+              );
+            })}
+          </div>
+          {documentWorkshopProgress.todos.length > 0 && (
+            <div
+              data-testid="context-document-workshop-todos"
+              className="rounded-md border border-border-muted bg-surface/30 px-2.5 py-2"
+            >
+              <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                {t('context.documentWorkshop.todoTitle')}
+              </div>
+              <div className="mt-1.5 space-y-1">
+                {documentWorkshopProgress.todos.map((todo) => (
+                  <div
+                    key={todo.id}
+                    data-testid={`context-document-workshop-todo-${todo.id}`}
+                    className="flex items-center gap-1.5 text-xs text-text-secondary"
+                  >
+                    {todo.status === 'active' ? (
+                      <Loader2 className="w-3 h-3 text-accent animate-spin shrink-0" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full border border-border-muted shrink-0" />
+                    )}
+                    <span className={todo.status === 'active' ? 'text-accent' : ''}>
+                      {t(`context.documentWorkshop.step.${todo.id}`)}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+          <div
+            data-testid="context-document-workshop-traceability"
+            className="rounded-md border border-border-muted bg-surface/30 px-2.5 py-2"
+          >
+            <div className="flex items-center justify-between gap-2">
+              <div className="text-[10px] font-medium text-text-muted uppercase tracking-wider">
+                {t('context.documentWorkshop.traceTitle')}
+              </div>
+              <div
+                data-testid="context-document-workshop-traceability-progress"
+                className="text-[10px] text-text-muted"
+              >
+                {t('context.documentWorkshop.progress', {
+                  done: documentWorkshopProgress.traceCompletedCount,
+                  total: documentWorkshopProgress.traceTotalCount,
+                })}
+              </div>
+            </div>
+            <div className="mt-1.5 space-y-1">
+              {documentWorkshopProgress.traceLinks.map((link) => {
+                const isDone = link.status === 'done';
+                const isActive = link.status === 'active';
+
+                return (
+                  <div
+                    key={link.id}
+                    data-testid={`context-document-workshop-trace-${link.id}`}
+                    className="flex items-center gap-1.5 text-xs text-text-secondary"
+                  >
+                    {isDone ? (
+                      <Check className="w-3 h-3 text-success shrink-0" />
+                    ) : isActive ? (
+                      <Loader2 className="w-3 h-3 text-accent animate-spin shrink-0" />
+                    ) : (
+                      <span className="w-2 h-2 rounded-full border border-border-muted shrink-0" />
+                    )}
+                    <span className={isDone ? 'text-text-primary' : isActive ? 'text-accent' : ''}>
+                      {t(`context.documentWorkshop.trace.${link.id}`)}
+                    </span>
+                  </div>
+                );
+              })}
+            </div>
+            <div
+              data-testid="context-document-workshop-trace-evidence"
+              className="mt-2 flex flex-wrap gap-1"
+            >
+              {documentWorkshopEvidenceChips.map((chip) => (
+                <span
+                  key={chip.id}
+                  data-testid={`context-document-workshop-trace-evidence-${chip.id}`}
+                  data-observed={chip.observed ? 'true' : 'false'}
+                  className={`rounded border px-1.5 py-0.5 text-[10px] ${
+                    chip.observed
+                      ? 'border-success/30 bg-success/10 text-success'
+                      : 'border-border-muted bg-background/50 text-text-muted'
+                  }`}
+                >
+                  {t(`context.documentWorkshop.evidence.${chip.id}`, { count: chip.count })}
+                </span>
+              ))}
+            </div>
+            <div
+              data-testid="context-document-workshop-readiness"
+              data-status={documentWorkshopReadiness.status}
+              className={`mt-2 rounded border px-2 py-1 text-[10px] ${
+                documentWorkshopReadiness.status === 'ready'
+                  ? 'border-success/30 bg-success/10 text-success'
+                  : documentWorkshopReadiness.status === 'inProgress'
+                    ? 'border-accent/30 bg-accent/10 text-accent'
+                    : 'border-border-muted bg-background/50 text-text-muted'
+              }`}
+            >
+              {t(`context.documentWorkshop.readiness.${documentWorkshopReadiness.status}`)}
+            </div>
+          </div>
+          {canSaveDocumentWorkshopMemory && (
+            <div className="flex flex-col gap-1.5">
+              <button
+                type="button"
+                data-testid="context-document-workshop-save-memory"
+                onClick={() => void handleSaveWorkshopMemory()}
+                disabled={workshopMemoryStatus === 'saving'}
+                className="inline-flex w-fit items-center gap-1 rounded-md border border-success/50 px-2 py-1 text-[10px] text-success transition-colors hover:bg-success/10 disabled:opacity-60"
+              >
+                {workshopMemoryStatus === 'saving' ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Brain className="w-3 h-3" />
+                )}
+                {workshopMemoryStatus === 'saving'
+                  ? t('context.documentWorkshop.savingMemory')
+                  : workshopMemoryStatus === 'saved'
+                    ? t('context.documentWorkshop.savedMemory')
+                    : t('context.documentWorkshop.saveMemory')}
+              </button>
+              {workshopMemoryStatus === 'error' && workshopMemoryError && (
+                <div
+                  data-testid="context-document-workshop-save-memory-error"
+                  className="rounded border border-error/30 bg-error/10 px-2 py-1 text-[10px] text-error"
+                >
+                  {t('context.documentWorkshop.saveMemoryFailed')}: {workshopMemoryError}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Artifacts Section */}
       <div className="border-b border-border-muted">
         <button
@@ -487,7 +812,20 @@ export function ContextPanel() {
                 {displayArtifacts.map((artifact, index) => {
                   const label = artifact.label || t('context.fileCreated');
                   const artifactPath = artifact.path;
-                  const canClick = Boolean(artifactPath && canShowItemInFolder);
+                  const roleLabel = t(
+                    `context.artifactRole.${artifact.role}`,
+                    getArtifactDisplayRoleLabel(artifact.role)
+                  );
+                  const evidenceDisplay = getDocxValidationEvidenceDisplay(artifact.evidence);
+                  const evidenceLabel = evidenceDisplay
+                    ? t(evidenceDisplay.labelKey, evidenceDisplay.labelValues)
+                    : null;
+                  const evidenceTitle = evidenceDisplay
+                    ? t(evidenceDisplay.titleKey, evidenceDisplay.titleValues)
+                    : undefined;
+                  const canClick = Boolean(
+                    artifactPath && (canPreviewArtifact || canShowItemInFolder)
+                  );
                   const iconComponent = getArtifactIconComponent(label);
                   const IconComponent =
                     iconComponent === 'presentation'
@@ -513,25 +851,58 @@ export function ContextPanel() {
                   return (
                     <div
                       key={artifact.path || artifact.label || `artifact-${index}`}
+                      data-testid={`context-artifact-row-${index}`}
                       className={`flex items-center gap-2 px-4 py-1.5 transition-colors ${canClick ? 'cursor-pointer hover:bg-surface-hover' : ''}`}
                       onClick={async () => {
                         if (!canClick) return;
-                        const revealed = await window.electronAPI.showItemInFolder(
-                          artifactPath,
-                          currentWorkingDir ?? undefined
-                        );
-                        if (!revealed) {
-                          setGlobalNotice({
-                            id: `artifact-reveal-failed-${Date.now()}`,
-                            type: 'warning',
-                            message: t('context.revealFailed'),
-                          });
-                        }
+                        await openArtifact(artifactPath);
                       }}
                       title={artifactPath || undefined}
                     >
                       <IconComponent className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                      <span className="text-xs text-text-primary truncate">{label}</span>
+                      <div className="min-w-0 flex-1">
+                        <div className="text-xs text-text-primary truncate">{label}</div>
+                        {evidenceLabel && (
+                          <div className="text-[10px] text-success truncate" title={evidenceTitle}>
+                            {evidenceLabel}
+                          </div>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        <span className="text-[10px] text-text-muted uppercase tracking-wide">
+                          {roleLabel}
+                        </span>
+                        {artifactPath && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void handleCopyArtifactPath(artifactPath);
+                            }}
+                            className="w-6 h-6 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                            title={t('context.copyPath')}
+                            aria-label={`${t('context.copyPath')}: ${label}`}
+                          >
+                            {copiedArtifactPath === artifactPath ? (
+                              <Check className="w-3 h-3 text-success" />
+                            ) : (
+                              <Copy className="w-3 h-3" />
+                            )}
+                          </button>
+                        )}
+                        {artifactPath && canShowItemInFolder && (
+                          <button
+                            onClick={(event) => {
+                              event.stopPropagation();
+                              void revealArtifact(artifactPath);
+                            }}
+                            className="w-6 h-6 rounded-md flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                            title={t('context.openInFileManager')}
+                            aria-label={`${t('context.openInFileManager')}: ${label}`}
+                          >
+                            <FolderOpen className="w-3 h-3" />
+                          </button>
+                        )}
+                      </div>
                     </div>
                   );
                 })}
@@ -819,4 +1190,12 @@ function formatTokenCount(n: number): string {
   if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (n >= 1_000) return `${(n / 1_000).toFixed(1)}k`;
   return String(n);
+}
+
+function getMemoryApi(): MemoryApiBridge | undefined {
+  return (
+    window as unknown as {
+      electronAPI?: { memory?: MemoryApiBridge };
+    }
+  ).electronAPI?.memory;
 }

@@ -18,7 +18,9 @@ export interface SessionInsightSummary {
   totalExecutionTimeMs: number;
   transcriptPreview: string;
   matchSnippet?: string;
+  matchRole?: string;
   matchCount?: number;
+  matchMessageId?: string;
 }
 
 export interface SessionInsightDetail {
@@ -327,9 +329,13 @@ export class SessionInsightsBridge {
       const traceSteps = this.source.getTraceSteps(session.id);
       const summary = buildSessionInsightSummary(session, messages, traceSteps);
       const transcriptEntries = messages
-        .map((message) => flattenMessageText(message))
-        .filter(Boolean);
-      const fullTranscript = transcriptEntries.join('\n\n');
+        .map((message) => ({
+          messageId: message.id,
+          role: message.role,
+          text: flattenMessageText(message),
+        }))
+        .filter((entry) => Boolean(entry.text));
+      const fullTranscript = transcriptEntries.map((entry) => entry.text).join('\n\n');
       const metadataHaystack = [summary.title, summary.model, summary.cwd]
         .filter(Boolean)
         .join('\n')
@@ -341,16 +347,18 @@ export class SessionInsightsBridge {
         continue;
       }
 
-      const matchCount = transcriptEntries.filter((entry) =>
-        entry.toLowerCase().includes(normalizedQuery)
-      ).length;
+      const matchingEntries = transcriptEntries.filter((entry) =>
+        entry.text.toLowerCase().includes(normalizedQuery)
+      );
 
       results.push({
         ...summary,
         matchSnippet: transcriptMatch
           ? buildMatchSnippet(fullTranscript, normalizedQuery)
           : undefined,
-        matchCount,
+        matchRole: matchingEntries[0]?.role,
+        matchCount: matchingEntries.length,
+        matchMessageId: matchingEntries[0]?.messageId,
       });
     }
 

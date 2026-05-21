@@ -6,6 +6,7 @@
  *   - text:    plain text + line count for code/markdown/config files
  *   - image:   base64 data URI inline (capped at 5MB)
  *   - pdf:     extracted text via core PDFTool (lazy loaded)
+ *   - document: extracted Office/CSV text via core DocumentTool (lazy loaded)
  *   - binary:  metadata only (size, mime), no content
  *
  * Used by IPC handler `preview.get(path)` to power FilePreviewPane.
@@ -18,7 +19,7 @@ import * as path from 'path';
 import { log, logWarn } from '../utils/logger';
 import { loadCoreModule } from '../utils/core-loader';
 
-export type PreviewKind = 'text' | 'image' | 'pdf' | 'binary' | 'error';
+export type PreviewKind = 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
 
 export interface PreviewResult {
   kind: PreviewKind;
@@ -40,12 +41,24 @@ export interface PreviewResult {
   pdfText?: string;
   /** Number of pages for PDF previews */
   pdfPages?: number;
+  /** Extracted Office/CSV text for document previews */
+  documentText?: string;
+  /** Normalized document type from the extractor (docx/xlsx/pptx/csv/rtf) */
+  documentType?: string;
+  /** Lightweight document counts surfaced in the header */
+  documentStats?: {
+    wordCount?: number;
+    embeddedImageCount?: number;
+    sheetCount?: number;
+    slideCount?: number;
+  };
   /** Error message when kind === 'error' */
   error?: string;
 }
 
 const MAX_TEXT_BYTES = 2 * 1024 * 1024; // 2 MB cap for text previews
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB cap for inlined images
+const MAX_DOCUMENT_TEXT_CHARS = 200_000; // cap extracted Office text in the preview pane
 
 const TEXT_EXTENSIONS = new Set<string>([
   '.txt', '.md', '.markdown', '.rst', '.adoc', '.org',
@@ -66,6 +79,10 @@ const TEXT_EXTENSIONS = new Set<string>([
 
 const IMAGE_EXTENSIONS = new Set<string>([
   '.png', '.jpg', '.jpeg', '.gif', '.webp', '.bmp', '.ico', '.avif',
+]);
+
+const DOCUMENT_EXTENSIONS = new Set<string>([
+  '.docx', '.xlsx', '.pptx', '.rtf',
 ]);
 
 const SVG_AS_IMAGE_TOO = true; // SVG is also previewable as text
@@ -94,6 +111,9 @@ const LANGUAGE_MAP: Record<string, string> = {
 };
 
 const MIME_MAP: Record<string, string> = {
+  '.csv': 'text/csv',
+  '.doc': 'application/msword',
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -104,14 +124,20 @@ const MIME_MAP: Record<string, string> = {
   '.avif': 'image/avif',
   '.svg': 'image/svg+xml',
   '.pdf': 'application/pdf',
+  '.ppt': 'application/vnd.ms-powerpoint',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
   '.json': 'application/json',
   '.html': 'text/html',
   '.css': 'text/css',
+  '.tsv': 'text/tab-separated-values',
   '.txt': 'text/plain',
   '.md': 'text/markdown',
+  '.xls': 'application/vnd.ms-excel',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.zip': 'application/zip',
 };
 
-function detectMime(ext: string): string {
+export function detectPreviewMime(ext: string): string {
   if (MIME_MAP[ext]) return MIME_MAP[ext];
   if (TEXT_EXTENSIONS.has(ext)) return 'text/plain';
   return 'application/octet-stream';
@@ -135,8 +161,31 @@ interface CorePdfModule {
   };
 }
 
+interface CoreDocumentModule {
+  DocumentTool: new () => {
+    readDocument: (
+      filePath: string
+    ) => Promise<{
+      success: boolean;
+      output?: string;
+      error?: string;
+      data?: {
+        text: string;
+        type: string;
+        metadata?: {
+          wordCount?: number;
+          embeddedImageCount?: number;
+          sheetCount?: number;
+          slideCount?: number;
+        };
+      };
+    }>;
+  };
+}
+
 export class PreviewService {
   private pdfModule: CorePdfModule | null = null;
+  private documentModule: CoreDocumentModule | null = null;
 
   async getPreview(filePath: string): Promise<PreviewResult> {
     const name = path.basename(filePath);
@@ -165,12 +214,17 @@ export class PreviewService {
       }
 
       const ext = path.extname(filePath).toLowerCase();
-      const mime = detectMime(ext);
+      const mime = detectPreviewMime(ext);
       const size = stat.size;
 
       // PDF preview
       if (ext === '.pdf') {
         return await this.getPdfPreview(filePath, name, size, mime);
+      }
+
+      // Office/CSV document preview via core DocumentTool
+      if (DOCUMENT_EXTENSIONS.has(ext)) {
+        return await this.getDocumentPreview(filePath, name, size, mime);
       }
 
       // Image preview (cap by size)
@@ -353,6 +407,73 @@ export class PreviewService {
         size,
         mime,
         error: (err as Error).message ?? 'PDF extraction failed',
+      };
+    }
+  }
+
+  private async getDocumentPreview(
+    filePath: string,
+    name: string,
+    size: number,
+    mime: string
+  ): Promise<PreviewResult> {
+    try {
+      if (!this.documentModule) {
+        try {
+          this.documentModule = await loadCoreModule<CoreDocumentModule>('tools/document-tool.js');
+        } catch {
+          log('[PreviewService] core Document tool unavailable, returning binary fallback');
+        }
+      }
+      if (!this.documentModule) {
+        return {
+          kind: 'binary',
+          path: filePath,
+          name,
+          size,
+          mime,
+          error: 'Document text extraction unavailable',
+        };
+      }
+
+      const tool = new this.documentModule.DocumentTool();
+      const result = await tool.readDocument(filePath);
+      if (!result.success) {
+        return {
+          kind: 'binary',
+          path: filePath,
+          name,
+          size,
+          mime,
+          error: result.error ?? 'Document extraction failed',
+        };
+      }
+
+      const extractedText = result.data?.text ?? result.output ?? '';
+      const documentText =
+        extractedText.length > MAX_DOCUMENT_TEXT_CHARS
+          ? `${extractedText.slice(0, MAX_DOCUMENT_TEXT_CHARS)}\n...`
+          : extractedText;
+
+      return {
+        kind: 'document',
+        path: filePath,
+        name,
+        size,
+        mime,
+        documentText,
+        documentType: result.data?.type,
+        documentStats: result.data?.metadata,
+      };
+    } catch (err) {
+      logWarn('[PreviewService] Document extraction failed:', err);
+      return {
+        kind: 'binary',
+        path: filePath,
+        name,
+        size,
+        mime,
+        error: (err as Error).message ?? 'Document extraction failed',
       };
     }
   }

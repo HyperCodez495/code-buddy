@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import type { TraceStep } from '../src/renderer/types';
-import { getArtifactSteps, getArtifactLabel } from '../src/renderer/utils/artifact-steps';
+import {
+  getArtifactDisplayRole,
+  getArtifactDisplayRolePriority,
+  getArtifactSteps,
+  getArtifactLabel,
+  getDocxValidationEvidence,
+  getDocxValidationEvidenceDisplay,
+} from '../src/renderer/utils/artifact-steps';
 
 describe('getArtifactSteps', () => {
   it('includes completed Write tool calls as file steps when no artifacts exist', () => {
@@ -254,6 +261,114 @@ describe('getArtifactSteps', () => {
     expect(displayArtifactSteps[0].toolName).toBe('screenshot');
   });
 
+  it('includes generated documents as file artifact steps', () => {
+    const steps: TraceStep[] = [
+      {
+        id: 'docx_1',
+        type: 'tool_result',
+        status: 'completed',
+        title: 'generate_document',
+        toolName: 'generate_document',
+        toolOutput: 'Created DOCX: D:\\Reports\\atelier-word\\livrable-final.docx',
+        timestamp: Date.now(),
+      },
+    ];
+
+    const { fileSteps, displayArtifactSteps } = getArtifactSteps(steps);
+
+    expect(fileSteps).toHaveLength(1);
+    expect(displayArtifactSteps).toHaveLength(1);
+    expect(displayArtifactSteps[0].toolName).toBe('generate_document');
+  });
+
+  it('includes generated document adapter aliases as file artifact steps', () => {
+    const steps: TraceStep[] = [
+      {
+        id: 'docx_alias_1',
+        type: 'tool_result',
+        status: 'completed',
+        title: 'document_generator',
+        toolName: 'document_generator',
+        toolInput: { type: 'docx' },
+        toolOutput: [
+          'Created DOCX: D:\\Reports\\atelier-word\\livrable-final.docx',
+          'DOCX validation:',
+          '- relationships: 34',
+          '- embedded image relationships: 27',
+          '- media files: 28',
+        ].join('\n'),
+        timestamp: Date.now(),
+      },
+    ];
+
+    const { fileSteps, displayArtifactSteps } = getArtifactSteps(steps);
+
+    expect(fileSteps).toHaveLength(1);
+    expect(displayArtifactSteps).toHaveLength(1);
+    expect(getArtifactDisplayRole(displayArtifactSteps[0], 'D:\\Reports\\atelier-word\\livrable-final.docx'))
+      .toBe('generated');
+    expect(getDocxValidationEvidence(
+      displayArtifactSteps[0],
+      'D:\\Reports\\atelier-word\\livrable-final.docx'
+    )).toEqual({
+      relationshipCount: 34,
+      embeddedImageCount: 27,
+      mediaFileCount: 28,
+    });
+  });
+
+  it('includes extracted DOCX images as file artifact steps', () => {
+    const steps: TraceStep[] = [
+      {
+        id: 'doc_images_1',
+        type: 'tool_result',
+        status: 'completed',
+        title: 'document',
+        toolName: 'document',
+        toolInput: {
+          operation: 'extract_images',
+          path: 'questions.docx',
+          output_dir: 'screens',
+        },
+        toolOutput: [
+          'Extracted 2 embedded image(s) to D:\\Reports\\atelier-word\\screens',
+          '- D:\\Reports\\atelier-word\\screens\\image1.png (9 bytes)',
+          '- D:\\Reports\\atelier-word\\screens\\image2.jpeg (10 bytes)',
+        ].join('\n'),
+        timestamp: Date.now(),
+      },
+    ];
+
+    const { fileSteps, displayArtifactSteps } = getArtifactSteps(steps);
+
+    expect(fileSteps).toHaveLength(1);
+    expect(displayArtifactSteps).toHaveLength(1);
+    expect(displayArtifactSteps[0].toolName).toBe('document');
+  });
+
+  it('does not treat document read input paths as generated artifacts', () => {
+    const steps: TraceStep[] = [
+      {
+        id: 'doc_read_1',
+        type: 'tool_result',
+        status: 'completed',
+        title: 'document',
+        toolName: 'document',
+        toolInput: {
+          operation: 'read',
+          path: 'questions.docx',
+        },
+        toolOutput: 'Document: questions.docx',
+        timestamp: Date.now(),
+      },
+    ];
+
+    const { fileSteps, displayArtifactSteps } = getArtifactSteps(steps);
+
+    expect(fileSteps).toHaveLength(0);
+    expect(displayArtifactSteps).toHaveLength(0);
+  });
+
   it('does not show artifact summaries by themselves in the artifacts panel list', () => {
     const steps: TraceStep[] = [
       {
@@ -319,5 +434,130 @@ describe('getArtifactSteps', () => {
 
   it('prefers basename over translated name', () => {
     expect(getArtifactLabel('/Users/haoqing/tmp/simple.pptx', '简单PPT演示文稿')).toBe('simple.pptx');
+  });
+
+  it('orders generated deliverables before extracted and recent evidence', () => {
+    expect([
+      getArtifactDisplayRolePriority('generated'),
+      getArtifactDisplayRolePriority('extracted'),
+      getArtifactDisplayRolePriority('file'),
+      getArtifactDisplayRolePriority('recent'),
+    ]).toEqual([0, 1, 2, 3]);
+  });
+
+  it('extracts DOCX validation evidence from generated document output', () => {
+    const step: TraceStep = {
+      id: 'docx_validated',
+      type: 'tool_result',
+      status: 'completed',
+      title: 'generate_document',
+      toolName: 'generate_document',
+      toolOutput: [
+        'Created DOCX: D:\\Reports\\atelier-word\\livrable-final.docx',
+        'DOCX validation:',
+        '- relationships: 34',
+        '- embedded image relationships: 27',
+        '- media files: 28',
+      ].join('\n'),
+      timestamp: Date.now(),
+    };
+
+    expect(getDocxValidationEvidence(step, 'D:\\Reports\\atelier-word\\livrable-final.docx'))
+      .toEqual({
+        relationshipCount: 34,
+        embeddedImageCount: 27,
+        mediaFileCount: 28,
+      });
+  });
+
+  it('extracts DOCX validation evidence from JSON tool output text', () => {
+    const step: TraceStep = {
+      id: 'docx_validated_json_output',
+      type: 'tool_result',
+      status: 'completed',
+      title: 'generate_document',
+      toolName: 'generate_document',
+      toolOutput: JSON.stringify({
+        success: true,
+        output: [
+          'Created DOCX: D:\\Reports\\atelier-word\\livrable-final.docx',
+          'DOCX validation:',
+          '- relationships: 34',
+          '- embedded image relationships: 27',
+          '- media files: 28',
+        ].join('\n'),
+      }),
+      timestamp: Date.now(),
+    };
+
+    expect(getDocxValidationEvidence(step, 'D:\\Reports\\atelier-word\\livrable-final.docx'))
+      .toEqual({
+        relationshipCount: 34,
+        embeddedImageCount: 27,
+        mediaFileCount: 28,
+      });
+  });
+
+  it('does not attach DOCX validation evidence to generated image artifacts', () => {
+    const step: TraceStep = {
+      id: 'docx_validated',
+      type: 'tool_result',
+      status: 'completed',
+      title: 'generate_document',
+      toolName: 'generate_document',
+      toolOutput: JSON.stringify({
+        data: {
+          outputPath: 'D:\\Reports\\atelier-word\\livrable-final.docx',
+          embeddedImages: [{ path: 'D:\\Reports\\atelier-word\\screens\\image1.png' }],
+          docxValidation: {
+            relationshipCount: 34,
+            embeddedRelationshipCount: 27,
+            mediaFileCount: 28,
+          },
+        },
+      }),
+      timestamp: Date.now(),
+    };
+
+    expect(getDocxValidationEvidence(step, 'D:\\Reports\\atelier-word\\screens\\image1.png'))
+      .toBeNull();
+  });
+
+  it('builds a compact visible label for DOCX validation with image and media counts', () => {
+    expect(getDocxValidationEvidenceDisplay({
+      relationshipCount: 34,
+      embeddedImageCount: 27,
+      mediaFileCount: 28,
+    })).toEqual({
+      labelKey: 'context.docxValidationEvidenceWithMedia',
+      labelValues: { images: 27, media: 28 },
+      titleKey: 'context.docxValidationEvidenceTitle',
+      titleValues: { relationships: 34, media: 28 },
+    });
+  });
+
+  it('falls back to the image-only DOCX validation label when media count is unavailable', () => {
+    expect(getDocxValidationEvidenceDisplay({
+      relationshipCount: 12,
+      embeddedImageCount: 3,
+    })).toEqual({
+      labelKey: 'context.docxValidationEvidence',
+      labelValues: { count: 3 },
+      titleKey: 'context.docxValidationEvidenceTitle',
+      titleValues: { relationships: 12, media: 0 },
+    });
+  });
+
+  it('falls back to a plain DOCX validation label when no image count is available', () => {
+    expect(getDocxValidationEvidenceDisplay({
+      relationshipCount: 7,
+      mediaFileCount: 0,
+    })).toEqual({
+      labelKey: 'context.docxValidationEvidenceNoImages',
+      labelValues: {},
+      titleKey: 'context.docxValidationEvidenceTitle',
+      titleValues: { relationships: 7, media: 0 },
+    });
+    expect(getDocxValidationEvidenceDisplay(null)).toBeNull();
   });
 });

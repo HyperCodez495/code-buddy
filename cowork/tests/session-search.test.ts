@@ -1,7 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import {
+  clampSearchMatchIndex,
   extractMessageSearchText,
   findMessageSearchMatches,
+  getActiveSearchMatchId,
 } from '../src/renderer/utils/session-search';
 import type { Message } from '../src/renderer/types';
 
@@ -50,5 +52,17 @@ describe('session search utilities', () => {
     expect(findMessageSearchMatches(messages, 'auth bug')).toEqual(['m2']);
     expect(findMessageSearchMatches(messages, 'stale token')).toEqual(['m3']);
     expect(findMessageSearchMatches(messages, 'src/auth.ts')).toEqual(['m2']);
+  });
+
+  it('clamps active match indexes for display, scroll, and highlighting', () => {
+    expect(clampSearchMatchIndex(4, 2)).toBe(1);
+    expect(clampSearchMatchIndex(-3, 2)).toBe(0);
+    expect(clampSearchMatchIndex(Number.NaN, 2)).toBe(0);
+    expect(clampSearchMatchIndex(1.8, 3)).toBe(1);
+    expect(clampSearchMatchIndex(3, 0)).toBe(0);
+
+    expect(getActiveSearchMatchId(['m1', 'm2'], 8)).toBe('m2');
+    expect(getActiveSearchMatchId(['m1', 'm2'], -1)).toBe('m1');
+    expect(getActiveSearchMatchId([], 1)).toBeNull();
   });
 });

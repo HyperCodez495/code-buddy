@@ -23,3 +23,14 @@ export function findMessageSearchMatches(messages: Message[], query: string): st
     .filter((message) => extractMessageSearchText(message).toLowerCase().includes(normalizedQuery))
     .map((message) => message.id);
 }
+
+export function clampSearchMatchIndex(index: number, matchCount: number): number {
+  if (matchCount <= 0) return 0;
+  if (!Number.isFinite(index)) return 0;
+  return Math.min(Math.max(Math.trunc(index), 0), matchCount - 1);
+}
+
+export function getActiveSearchMatchId(matches: string[], index: number): string | null {
+  if (matches.length === 0) return null;
+  return matches[clampSearchMatchIndex(index, matches.length)] ?? null;
+}

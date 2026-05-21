@@ -39,6 +39,11 @@ describe('SettingsPanel schedule tab entry', () => {
     expect(settingsPanelContent).toContain("setError({ key: 'schedule.futureTimeRequired' })");
   });
 
+  it('refreshes scheduled tasks after failed runNow attempts', () => {
+    expect(settingsPanelContent).toContain("setError(err instanceof Error ? { text: err.message } : { key: 'schedule.runNowFailed' })");
+    expect(settingsPanelContent).toContain("await loadTasks({ silent: true })");
+  });
+
   it('shows model-generated title hints and only regenerates on prompt change', () => {
     expect(settingsPanelContent).toContain("t('schedule.autoTitleLabel')");
     expect(settingsPanelContent).toContain('previewTitle');
@@ -54,6 +59,21 @@ describe('SettingsPanel schedule tab entry', () => {
     expect(settingsPanelContent).toContain("t('schedule.lastRun', { value: formatTime(task.lastRunAt) })");
     expect(settingsPanelContent).toContain('{task.title}');
     expect(settingsPanelContent).toContain("t('schedule.recentSession', { value: task.lastRunSessionId })");
+  });
+
+  it('surfaces Fleet metadata chips on scheduled tasks created from Fleet dispatch', () => {
+    expect(settingsPanelContent).toContain('ScheduleMetadataChips');
+    expect(settingsPanelContent).toContain('ScheduleMetadataDraftChips');
+    expect(settingsPanelContent).toContain('buildScheduleMetadataChips');
+    expect(settingsPanelContent).toContain('buildScheduleMetadataChipsFromMetadata');
+    expect(settingsPanelContent).toContain("safeMetadata.source === 'fleet-command-center'");
+    expect(settingsPanelContent).toContain("t('schedule.sourceFleet')");
+    expect(settingsPanelContent).toContain("t('schedule.hermesPlanChip'");
+    expect(settingsPanelContent).toContain("t('schedule.profileChip'");
+    expect(settingsPanelContent).toContain("t('schedule.privacyChip'");
+    expect(settingsPanelContent).toContain("t('schedule.parallelismChip'");
+    expect(settingsPanelContent).toContain("t('schedule.peerCountChip'");
+    expect(settingsPanelContent).toContain("t('schedule.memoryChip'");
   });
 
   it('supports daily and weekly multi-slot schedule editing', () => {

@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { getArtifactIconKey, getArtifactIconComponent } from '../src/renderer/utils/artifact-steps';
+import {
+  getArtifactDisplayRole,
+  getArtifactDisplayRoleLabel,
+  getArtifactIconComponent,
+  getArtifactIconKey,
+} from '../src/renderer/utils/artifact-steps';
 
 describe('getArtifactIconKey', () => {
   it('returns type icon key for known extensions', () => {
@@ -26,5 +31,24 @@ describe('getArtifactIconComponent', () => {
   it('maps presentations and documents to visual components', () => {
     expect(getArtifactIconComponent('deck.pptx')).toBe('presentation');
     expect(getArtifactIconComponent('doc.docx')).toBe('document');
+  });
+});
+
+describe('artifact display role', () => {
+  it('marks generated documents and extracted source images distinctly', () => {
+    expect(getArtifactDisplayRole({ toolName: 'generate_document' })).toBe('generated');
+    expect(getArtifactDisplayRole({
+      toolName: 'document',
+      toolInput: { operation: 'extract_images' },
+    })).toBe('extracted');
+    expect(getArtifactDisplayRole(null)).toBe('recent');
+    expect(getArtifactDisplayRole({ toolName: 'Write' })).toBe('file');
+  });
+
+  it('returns compact labels for artifact roles', () => {
+    expect(getArtifactDisplayRoleLabel('generated')).toBe('Generated');
+    expect(getArtifactDisplayRoleLabel('extracted')).toBe('Extracted');
+    expect(getArtifactDisplayRoleLabel('recent')).toBe('Recent');
+    expect(getArtifactDisplayRoleLabel('file')).toBe('File');
   });
 });

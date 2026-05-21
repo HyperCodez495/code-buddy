@@ -24,21 +24,23 @@ import {
   GitCommit,
   Trash2,
   Network,
+  CalendarClock,
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { formatAppDate, formatAppTime } from '../utils/i18n-format';
-
-interface ActivityEntry {
-  id: number;
-  type: string;
-  title: string;
-  description?: string;
-  sessionId?: string;
-  projectId?: string;
-  metadata?: Record<string, unknown>;
-  timestamp: number;
-}
+import {
+  buildFleetActivityChips,
+  buildFleetInternetProofStepLabels,
+  buildScheduledTaskActivityChips,
+  filterActivityEntries,
+  shouldRenderFleetActivityMeta,
+  shouldRenderScheduledTaskActivityMeta,
+  shouldOpenFleetCommandCenter,
+  shouldOpenScheduleSettings,
+  type ActivityEntry,
+  type ActivityFilter,
+} from './activity-feed-helpers';
 
 interface ActivityFeedProps {
   open: boolean;
@@ -58,9 +60,14 @@ const TYPE_ICONS: Record<string, LucideIcon> = {
   'project.deleted': FolderKanban,
   'workflow.run': Activity,
   'memory.added': Brain,
+  'scheduledTask.started': CalendarClock,
+  'scheduledTask.failed': CalendarClock,
   'fleet.dispatch': Network,
   'fleet.saga.completed': Network,
   'fleet.saga.failed': Network,
+  'fleet.chatSession.started': Network,
+  'fleet.chatSession.turn': Network,
+  'fleet.chatSession.ended': Network,
 };
 
 function groupByDay(entries: ActivityEntry[]): Array<[string, ActivityEntry[]]> {
@@ -81,10 +88,12 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   const { i18n, t } = useTranslation();
   const [entries, setEntries] = useState<ActivityEntry[]>([]);
   const [loading, setLoading] = useState(false);
-  const [filter, setFilter] = useState<'all' | 'fleet'>('all');
+  const [filter, setFilter] = useState<ActivityFilter>('all');
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
   const setShowFleetCommandCenter = useAppStore((s) => s.setShowFleetCommandCenter);
+  const setShowSettings = useAppStore((s) => s.setShowSettings);
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -118,7 +127,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   }, [open, onClose]);
 
   const visibleEntries = useMemo(
-    () => (filter === 'fleet' ? entries.filter(isFleetActivity) : entries),
+    () => filterActivityEntries(entries, filter),
     [entries, filter],
   );
   const grouped = useMemo(
@@ -129,7 +138,12 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   const handleClick = (entry: ActivityEntry) => {
     if (entry.projectId) setActiveProjectId(entry.projectId);
     if (entry.sessionId) setActiveSession(entry.sessionId);
-    if (isFleetActivity(entry)) setShowFleetCommandCenter(true);
+    if (shouldOpenScheduleSettings(entry)) {
+      setSettingsTab('schedule');
+      setShowSettings(true);
+    } else if (shouldOpenFleetCommandCenter(entry)) {
+      setShowFleetCommandCenter(true);
+    }
     onClose();
   };
 
@@ -178,7 +192,18 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
                   : 'text-text-muted hover:text-text-primary'
               }`}
             >
-              Fleet
+              {t('activity.filterFleet', 'Fleet')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setFilter('scheduled')}
+              className={`px-2 py-1 text-[10px] transition-colors ${
+                filter === 'scheduled'
+                  ? 'bg-accent text-background'
+                  : 'text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {t('activity.filterScheduled', 'Scheduled')}
             </button>
           </div>
           <button
@@ -213,6 +238,8 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
             <div className="text-xs text-text-muted">
               {filter === 'fleet'
                 ? t('activity.emptyFleet', 'No Fleet activity yet')
+                : filter === 'scheduled'
+                  ? t('activity.emptyScheduled', 'No scheduled activity yet')
                 : t('activity.empty')}
             </div>
           </div>
@@ -245,8 +272,11 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
                           {entry.description}
                         </div>
                       )}
-                      {isFleetActivity(entry) && (
+                      {shouldRenderFleetActivityMeta(entry) && (
                         <FleetActivityMeta metadata={entry.metadata} />
+                      )}
+                      {shouldRenderScheduledTaskActivityMeta(entry) && (
+                        <ScheduledTaskActivityMeta metadata={entry.metadata} />
                       )}
                     </div>
                     <span className="text-[10px] text-text-muted shrink-0">{time}</span>
@@ -263,56 +293,65 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
 const FleetActivityMeta: React.FC<{ metadata?: Record<string, unknown> }> = ({ metadata }) => {
   if (!metadata) return null;
   const chips = buildFleetActivityChips(metadata);
-  if (chips.length === 0) return null;
+  const proofSteps = buildFleetInternetProofStepLabels(metadata);
+  if (chips.length === 0 && proofSteps.length === 0) return null;
   return (
-    <div className="mt-1 flex flex-wrap gap-1">
-      {chips.map((chip) => (
-        <span
-          key={chip}
-          className="rounded border border-border-muted bg-surface px-1.5 py-0.5 text-[10px] text-text-muted"
-        >
-          {chip}
-        </span>
-      ))}
+    <div className="mt-1">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded border border-border-muted bg-surface px-1.5 py-0.5 text-[10px] text-text-muted"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+      {proofSteps.length > 0 && (
+        <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-text-muted">
+          {proofSteps.map((step) => (
+            <div key={step} className="truncate">
+              {step}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 };
 
-function isFleetActivity(entry: ActivityEntry): boolean {
-  return entry.type === 'fleet.dispatch' || entry.type.startsWith('fleet.saga.');
-}
-
-function buildFleetActivityChips(metadata: Record<string, unknown>): string[] {
-  const chips: string[] = [];
-  if (typeof metadata.sagaId === 'string') chips.push(`saga ${shortId(metadata.sagaId)}`);
-  if (typeof metadata.privacyTag === 'string') chips.push(metadata.privacyTag);
-  if (typeof metadata.parallelism === 'number' && metadata.parallelism > 1) {
-    chips.push(`parallel ${metadata.parallelism}`);
-  }
-  if (typeof metadata.peerCount === 'number') chips.push(`${metadata.peerCount} peers`);
-  if (
-    typeof metadata.completedSteps === 'number' &&
-    typeof metadata.totalSteps === 'number'
-  ) {
-    chips.push(`${metadata.completedSteps}/${metadata.totalSteps} done`);
-  }
-  if (typeof metadata.failedSteps === 'number' && metadata.failedSteps > 0) {
-    chips.push(`${metadata.failedSteps} failed`);
-  }
-  if (typeof metadata.durationMs === 'number') {
-    chips.push(formatDuration(metadata.durationMs));
-  }
-  return chips;
-}
-
-function shortId(id: string): string {
-  if (id.length <= 10) return id;
-  return id.slice(0, 8);
-}
-
-function formatDuration(durationMs: number): string {
-  if (!Number.isFinite(durationMs) || durationMs < 0) return '0s';
-  if (durationMs < 60_000) return `${Math.max(1, Math.round(durationMs / 1000))}s`;
-  if (durationMs < 3_600_000) return `${Math.round(durationMs / 60_000)}m`;
-  return `${Math.round(durationMs / 3_600_000)}h`;
-}
+const ScheduledTaskActivityMeta: React.FC<{ metadata?: Record<string, unknown> }> = ({
+  metadata,
+}) => {
+  if (!metadata) return null;
+  const chips = buildScheduledTaskActivityChips(metadata);
+  const proofSteps = buildFleetInternetProofStepLabels(metadata);
+  if (chips.length === 0 && proofSteps.length === 0) return null;
+  return (
+    <div className="mt-1">
+      {chips.length > 0 && (
+        <div className="flex flex-wrap gap-1">
+          {chips.map((chip) => (
+            <span
+              key={chip}
+              className="rounded border border-border-muted bg-surface px-1.5 py-0.5 text-[10px] text-text-muted"
+            >
+              {chip}
+            </span>
+          ))}
+        </div>
+      )}
+      {proofSteps.length > 0 && (
+        <div className="mt-1 space-y-0.5 text-[10px] leading-4 text-text-muted">
+          {proofSteps.map((step) => (
+            <div key={step} className="truncate">
+              {step}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+};

@@ -23,6 +23,7 @@ import os from 'os';
 import { app } from 'electron';
 import { log, logError, logWarn } from '../utils/logger';
 import { loadCoreModule } from '../utils/core-loader';
+import type { ActivityFeed } from '../activity/activity-feed';
 import type {
   ServerEvent,
   FleetPeer,
@@ -110,13 +111,19 @@ export class FleetBridge {
   private events: FleetEventRecord[] = [];
   private capabilityRefreshedAt: Map<string, number> = new Map();
   private loaded = false;
+  private activityFeed: ActivityFeed | null = null;
 
-  constructor(sendToRenderer: (event: ServerEvent) => void) {
+  constructor(sendToRenderer: (event: ServerEvent) => void, activityFeed: ActivityFeed | null = null) {
     this.sendToRenderer = sendToRenderer;
+    this.activityFeed = activityFeed;
     const userData = app.isReady()
       ? app.getPath('userData')
       : path.join(os.homedir(), '.codebuddy-cowork');
     this.registryPath = path.join(userData, 'fleet-peers.json');
+  }
+
+  setActivityFeed(activityFeed: ActivityFeed | null): void {
+    this.activityFeed = activityFeed;
   }
 
   /** Load persisted peers and connect each one. Safe to call multiple times. */
@@ -290,6 +297,7 @@ export class FleetBridge {
       if (peerMeta) {
         peerMeta.lastSeenAt = record.receivedAt;
         peerMeta.lastEventType = record.type;
+        this.applyChatSessionEvent(peerMeta, record);
         this.sendToRenderer({ type: 'fleet.peer.update', payload: { peer: { ...peerMeta } } });
       }
       this.sendToRenderer({ type: 'fleet.event', payload: record });
@@ -308,6 +316,102 @@ export class FleetBridge {
   async listPeers(): Promise<FleetPeer[]> {
     await this.refreshAllCapabilities();
     return Array.from(this.peers.values()).map((e) => ({ ...e.meta }));
+  }
+
+  private applyChatSessionEvent(peer: FleetPeer, record: FleetEventRecord): void {
+    if (!record.type.startsWith('fleet:chat-session:')) return;
+    const payload = record.payload;
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
+    if (!sessionId) return;
+    this.recordChatSessionActivity(peer, record);
+
+    if (record.type === 'fleet:chat-session:end') {
+      peer.chatSessions = (peer.chatSessions ?? []).filter((s) => s.sessionId !== sessionId);
+      return;
+    }
+
+    const existing = (peer.chatSessions ?? []).find((s) => s.sessionId === sessionId);
+    const model = typeof payload.model === 'string' ? payload.model : existing?.model;
+    const dispatchProfile =
+      typeof payload.dispatchProfile === 'string'
+        ? payload.dispatchProfile
+        : existing?.dispatchProfile;
+    const turnCount =
+      typeof payload.turnCount === 'number' && Number.isFinite(payload.turnCount)
+        ? Math.max(0, Math.floor(payload.turnCount))
+        : existing?.turnCount ?? 0;
+    const next = {
+      sessionId,
+      model,
+      dispatchProfile,
+      turnCount,
+      startedAt: existing?.startedAt ?? record.receivedAt,
+      lastTurnAt:
+        record.type === 'fleet:chat-session:turn'
+          ? record.receivedAt
+          : existing?.lastTurnAt,
+    };
+
+    const withoutCurrent = (peer.chatSessions ?? []).filter((s) => s.sessionId !== sessionId);
+    peer.chatSessions = [...withoutCurrent, next].slice(-8);
+  }
+
+  private recordChatSessionActivity(peer: FleetPeer, record: FleetEventRecord): void {
+    if (!this.activityFeed) return;
+    if (!record.type.startsWith('fleet:chat-session:')) return;
+    const payload = record.payload;
+    const sessionId = typeof payload.sessionId === 'string' ? payload.sessionId : '';
+    if (!sessionId) return;
+
+    const peerLabel = peer.label || peer.id;
+    const dispatchProfile =
+      typeof payload.dispatchProfile === 'string' ? payload.dispatchProfile : undefined;
+    const model = typeof payload.model === 'string' ? payload.model : undefined;
+    const turnCount =
+      typeof payload.turnCount === 'number' && Number.isFinite(payload.turnCount)
+        ? Math.max(0, Math.floor(payload.turnCount))
+        : undefined;
+    const reason = typeof payload.reason === 'string' ? payload.reason : undefined;
+    const source = payload.source as { hostname?: unknown; agentId?: unknown } | undefined;
+    const baseMetadata = {
+      peerId: record.peerId,
+      peerLabel,
+      sessionId,
+      sessionShortId: shortSessionId(sessionId),
+      ...(dispatchProfile ? { dispatchProfile } : {}),
+      ...(model ? { model } : {}),
+      ...(turnCount !== undefined ? { turnCount } : {}),
+      ...(reason ? { reason } : {}),
+      ...(typeof source?.hostname === 'string' ? { hostname: source.hostname } : {}),
+      ...(typeof source?.agentId === 'string' ? { agentId: source.agentId } : {}),
+    };
+
+    if (record.type === 'fleet:chat-session:start') {
+      this.activityFeed.record({
+        type: 'fleet.chatSession.started',
+        title: 'Fleet chat session opened',
+        description: `${peerLabel} · ${shortSessionId(sessionId)}`,
+        metadata: baseMetadata,
+      });
+      return;
+    }
+    if (record.type === 'fleet:chat-session:turn') {
+      this.activityFeed.record({
+        type: 'fleet.chatSession.turn',
+        title: 'Fleet chat turn completed',
+        description: `${peerLabel} · turn ${turnCount ?? '?'}`,
+        metadata: baseMetadata,
+      });
+      return;
+    }
+    if (record.type === 'fleet:chat-session:end') {
+      this.activityFeed.record({
+        type: 'fleet.chatSession.ended',
+        title: 'Fleet chat session closed',
+        description: `${peerLabel} · ${reason ?? 'end'}`,
+        metadata: baseMetadata,
+      });
+    }
   }
 
   async refreshCapabilities(peerId?: string): Promise<{
@@ -486,12 +590,21 @@ function normalizeCapability(raw: unknown): FleetCapability | undefined {
 
 let singleton: FleetBridge | null = null;
 
-export function getFleetBridge(sendToRenderer?: (event: ServerEvent) => void): FleetBridge {
+function shortSessionId(sessionId: string): string {
+  return sessionId.length <= 12 ? sessionId : sessionId.slice(0, 12);
+}
+
+export function getFleetBridge(
+  sendToRenderer?: (event: ServerEvent) => void,
+  activityFeed?: ActivityFeed | null,
+): FleetBridge {
   if (!singleton) {
     if (!sendToRenderer) {
       throw new Error('FleetBridge requires sendToRenderer on first init');
     }
-    singleton = new FleetBridge(sendToRenderer);
+    singleton = new FleetBridge(sendToRenderer, activityFeed ?? null);
+  } else if (activityFeed !== undefined) {
+    singleton.setActivityFeed(activityFeed);
   }
   return singleton;
 }

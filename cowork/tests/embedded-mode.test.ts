@@ -188,7 +188,7 @@ describe('resolveEnginePathWithDiagnostic', () => {
       path: path.resolve('/repo/cowork/dist-electron/main', '..', '..', '..', 'dist'),
       layer: 'dev-from-bundle',
     });
-    // sanity — the result is /repo/dist regardless of what appPath was
+    // sanity - the result is the repo dist dir regardless of what appPath was
     expect(
       resolveEnginePathWithDiagnostic({
         isPackaged: false,
@@ -196,7 +196,7 @@ describe('resolveEnginePathWithDiagnostic', () => {
         appPath: '/somewhere/wrong',
         mainBundleDir: '/repo/cowork/dist-electron/main',
       }).path,
-    ).toBe('/repo/dist');
+    ).toBe(path.resolve('/repo/cowork/dist-electron/main', '..', '..', '..', 'dist'));
   });
 
   it("env-override wins over mainBundleDir even when both are present", () => {

@@ -1,9 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
-import type { TFunction } from 'i18next';
 import { useTranslation } from 'react-i18next';
 import { AlertCircle, CheckCircle, ChevronDown, Plus, X, Check } from 'lucide-react';
 import type {
-  ScheduleConfig,
   ScheduleTask,
   ScheduleRepeatUnit,
   ScheduleWeekday,
@@ -11,9 +9,25 @@ import type {
   ScheduleUpdateInput,
 } from '../../types';
 import { useAppStore } from '../../store';
-import { formatAppDateTime, joinAppList } from '../../utils/i18n-format';
+import { joinAppList } from '../../utils/i18n-format';
 import { renderLocalizedBannerMessage, getWeekdayOptions, getScheduleModeOptions } from './shared';
 import type { LocalizedBanner, ScheduleFormMode } from './shared';
+import {
+  buildScheduleConfigFromForm,
+  buildScheduleMetadataChips,
+  buildScheduleMetadataChipsFromMetadata,
+  buildSchedulePreview,
+  buildScheduleSignatureFromForm,
+  buildScheduleSignatureFromTask,
+  computeNextScheduledRun,
+  detectScheduleMode,
+  formatScheduleRule,
+  formatTime,
+  isValidTimeValue,
+  toLocalDateTimeInput,
+  toggleTimeValue,
+  toggleWeekdayValue,
+} from './schedule-helpers';
 
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
@@ -53,6 +67,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   const [enabled, setEnabled] = useState(true);
   const [repeatEvery, setRepeatEvery] = useState(1);
   const [repeatUnit, setRepeatUnit] = useState<ScheduleRepeatUnit>('day');
+  const [metadata, setMetadata] = useState<Record<string, unknown> | null>(null);
   const weekdayOptions = getWeekdayOptions(t);
   const scheduleModeOptions = getScheduleModeOptions(t);
   const promptChangedWhileEditing = Boolean(
@@ -97,6 +112,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setEditingTaskSnapshot(null);
     setPrompt(scheduleDraft.prompt || '');
     setCwd(scheduleDraft.cwd || workingDir || '');
+    setMetadata(scheduleDraft.metadata ?? null);
     setScheduleMode(scheduleDraft.scheduleMode);
     setEnabled(scheduleDraft.enabled ?? true);
 
@@ -250,6 +266,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           enabled,
           repeatEvery: scheduleMode === 'legacy-interval' ? repeatEvery : null,
           repeatUnit: scheduleMode === 'legacy-interval' ? repeatUnit : null,
+          metadata,
         };
         await window.electronAPI.schedule.create(payload);
         setSuccess({ key: 'schedule.created' });
@@ -296,6 +313,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
       await loadTasks();
     } catch (err) {
       setError(err instanceof Error ? { text: err.message } : { key: 'schedule.runNowFailed' });
+      await loadTasks({ silent: true });
     } finally {
       setIsLoading(false);
     }
@@ -359,6 +377,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setCwd(task.cwd);
     setRunAt(toLocalDateTimeInput(task.nextRunAt ?? task.runAt));
     setEnabled(task.enabled);
+    setMetadata(task.metadata);
     setScheduleMode(detectScheduleMode(task));
     setSelectedTimes(task.scheduleConfig?.times ?? ['08:00']);
     setSelectedWeekdays(
@@ -383,6 +402,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
     setEnabled(true);
     setRepeatEvery(1);
     setRepeatUnit('day');
+    setMetadata(null);
   }
 
   return (
@@ -404,6 +424,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         <h4 className="text-sm font-medium text-text-primary">
           {editingId ? t('schedule.editTitle') : t('schedule.createTitle')}
         </h4>
+        <ScheduleMetadataDraftChips metadata={metadata} />
         <div className="rounded-lg border border-border bg-background px-3 py-2">
           <div className="text-xs text-text-muted mb-1">{t('schedule.autoTitleLabel')}</div>
           <div className="text-sm text-text-primary break-all">{previewTitle}</div>
@@ -576,6 +597,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
                           {task.title}
                         </div>
                         <div className="text-xs text-text-muted truncate">{task.prompt}</div>
+                        <ScheduleMetadataChips task={task} />
                       </div>
                       <span
                         className={`text-xs px-2 py-1 rounded ${task.enabled ? 'bg-success/10 text-success' : 'bg-surface-hover text-text-muted'}`}
@@ -671,205 +693,42 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   );
 }
 
-// ==================== Schedule Helpers ====================
+// ==================== Schedule UI Helpers ====================
 
-function toLocalDateTimeInput(timestamp: number): string {
-  const date = new Date(timestamp);
-  const pad = (value: number) => String(value).padStart(2, '0');
-  const year = date.getFullYear();
-  const month = pad(date.getMonth() + 1);
-  const day = pad(date.getDate());
-  const hour = pad(date.getHours());
-  const minute = pad(date.getMinutes());
-  return `${year}-${month}-${day}T${hour}:${minute}`;
+function ScheduleMetadataChips({ task }: { task: ScheduleTask }) {
+  const { t } = useTranslation();
+  const chips = buildScheduleMetadataChips(task, t);
+  if (chips.length === 0) return null;
+  return (
+    <div className="mt-1 flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded border border-border-muted bg-surface-hover px-1.5 py-0.5 text-[10px] text-text-muted"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
 }
 
-function formatTime(timestamp: number): string {
-  return formatAppDateTime(timestamp);
-}
-
-function formatScheduleRule(
-  task: ScheduleTask,
-  t: TFunction,
-  weekdayOptions: Array<{ value: ScheduleWeekday; label: string }>
-): string {
-  if (task.scheduleConfig?.kind === 'daily') {
-    return t('schedule.ruleDaily', { times: joinAppList(task.scheduleConfig.times) });
-  }
-  if (task.scheduleConfig?.kind === 'weekly') {
-    const weekdays = task.scheduleConfig.weekdays.map(
-      (weekday) =>
-        weekdayOptions.find((option) => option.value === weekday)?.label ??
-        t('schedule.unknownWeekday')
-    );
-    return t('schedule.ruleWeekly', {
-      weekdays: joinAppList(weekdays),
-      times: joinAppList(task.scheduleConfig.times),
-    });
-  }
-  if (!task.repeatEvery || !task.repeatUnit) {
-    return t('schedule.ruleOnce');
-  }
-  if (task.repeatUnit === 'minute') {
-    return t('schedule.repeatEveryMinute', { count: task.repeatEvery });
-  }
-  if (task.repeatUnit === 'hour') {
-    return t('schedule.repeatEveryHour', { count: task.repeatEvery });
-  }
-  return t('schedule.repeatEveryDay', { count: task.repeatEvery });
-}
-
-function detectScheduleMode(task: ScheduleTask): ScheduleFormMode {
-  if (task.scheduleConfig?.kind === 'daily') {
-    return 'daily';
-  }
-  if (task.scheduleConfig?.kind === 'weekly') {
-    return 'weekly';
-  }
-  if (task.repeatEvery && task.repeatUnit) {
-    return 'legacy-interval';
-  }
-  return 'once';
-}
-
-function buildScheduleConfigFromForm(
-  mode: ScheduleFormMode,
-  times: string[],
-  weekdays: ScheduleWeekday[]
-): ScheduleConfig | null {
-  const normalizedTimes = Array.from(new Set(times)).sort();
-  if (mode === 'daily' && normalizedTimes.length > 0) {
-    return { kind: 'daily', times: normalizedTimes };
-  }
-  if (mode === 'weekly' && normalizedTimes.length > 0 && weekdays.length > 0) {
-    return {
-      kind: 'weekly',
-      weekdays: Array.from(new Set(weekdays)).sort((left, right) => left - right),
-      times: normalizedTimes,
-    };
-  }
-  return null;
-}
-
-function buildScheduleSignatureFromTask(task: ScheduleTask): string {
-  if (task.scheduleConfig) {
-    return JSON.stringify(task.scheduleConfig);
-  }
-  if (task.repeatEvery && task.repeatUnit) {
-    return JSON.stringify({
-      mode: 'legacy-interval',
-      runAt: toLocalDateTimeInput(task.nextRunAt ?? task.runAt),
-      repeatEvery: task.repeatEvery,
-      repeatUnit: task.repeatUnit,
-    });
-  }
-  return JSON.stringify({
-    mode: 'once',
-    runAt: toLocalDateTimeInput(task.nextRunAt ?? task.runAt),
-  });
-}
-
-function buildScheduleSignatureFromForm(
-  mode: ScheduleFormMode,
-  runAt: string,
-  times: string[],
-  weekdays: ScheduleWeekday[],
-  repeatEvery: number,
-  repeatUnit: ScheduleRepeatUnit
-): string {
-  if (mode === 'daily' || mode === 'weekly') {
-    return JSON.stringify(buildScheduleConfigFromForm(mode, times, weekdays));
-  }
-  if (mode === 'legacy-interval') {
-    return JSON.stringify({ mode, runAt, repeatEvery, repeatUnit });
-  }
-  return JSON.stringify({ mode, runAt });
-}
-
-function buildSchedulePreview(
-  mode: ScheduleFormMode,
-  runAt: string,
-  scheduleConfig: ScheduleConfig | null,
-  t: TFunction
-): string {
-  if (mode === 'once' || mode === 'legacy-interval') {
-    const timestamp = new Date(runAt).getTime();
-    return Number.isFinite(timestamp)
-      ? t('schedule.previewNextRun', { value: formatTime(timestamp) })
-      : t('schedule.previewSelectValidTime');
-  }
-  const nextRunAt = computeNextScheduledRun(scheduleConfig, Date.now());
-  return nextRunAt === null
-    ? t('schedule.previewSelectAtLeastOne')
-    : t('schedule.previewAutoFind', { value: formatTime(nextRunAt) });
-}
-
-function computeNextScheduledRun(
-  scheduleConfig: ScheduleConfig | null,
-  now: number
-): number | null {
-  if (!scheduleConfig || scheduleConfig.times.length === 0) {
-    return null;
-  }
-  const allowedWeekdays =
-    scheduleConfig.kind === 'weekly' ? new Set(scheduleConfig.weekdays) : null;
-  const nowDate = new Date(now);
-
-  for (let dayOffset = 0; dayOffset <= 14; dayOffset += 1) {
-    const candidateDate = new Date(
-      nowDate.getFullYear(),
-      nowDate.getMonth(),
-      nowDate.getDate() + dayOffset,
-      0,
-      0,
-      0,
-      0
-    );
-    if (allowedWeekdays && !allowedWeekdays.has(candidateDate.getDay() as ScheduleWeekday)) {
-      continue;
-    }
-    for (const time of scheduleConfig.times) {
-      const [hour, minute] = time.split(':').map(Number);
-      const candidate = new Date(
-        candidateDate.getFullYear(),
-        candidateDate.getMonth(),
-        candidateDate.getDate(),
-        hour,
-        minute,
-        0,
-        0
-      ).getTime();
-      if (candidate > now) {
-        return candidate;
-      }
-    }
-  }
-
-  return null;
-}
-
-function toggleTimeValue(current: string[], target: string): string[] {
-  if (!isValidTimeValue(target)) {
-    return current;
-  }
-  const next = current.includes(target)
-    ? current.filter((value) => value !== target)
-    : [...current, target];
-  return next.sort();
-}
-
-function toggleWeekdayValue(
-  current: ScheduleWeekday[],
-  target: ScheduleWeekday
-): ScheduleWeekday[] {
-  const next = current.includes(target)
-    ? current.filter((value) => value !== target)
-    : [...current, target];
-  return next.sort((left, right) => left - right);
-}
-
-function isValidTimeValue(value: string): boolean {
-  return /^([01]\d|2[0-3]):([0-5]\d)$/.test(value);
+function ScheduleMetadataDraftChips({ metadata }: { metadata: Record<string, unknown> | null }) {
+  const { t } = useTranslation();
+  const chips = buildScheduleMetadataChipsFromMetadata(metadata, t);
+  if (chips.length === 0) return null;
+  return (
+    <div className="flex flex-wrap gap-1">
+      {chips.map((chip) => (
+        <span
+          key={chip}
+          className="rounded border border-accent/30 bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent"
+        >
+          {chip}
+        </span>
+      ))}
+    </div>
+  );
 }
 
 // ==================== Schedule UI Sub-components ====================

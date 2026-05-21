@@ -31,4 +31,35 @@ describe('WelcomeView submit guards', () => {
     expect(source).toContain("message: `${t('welcome.selectWorkingFolderFailed')}: ${result.error}`");
     expect(source).toContain(": t('welcome.selectWorkingFolderFailed')");
   });
+
+  it('uses the shared attachment chip and opens preview paths from the welcome composer', () => {
+    const source = fs.readFileSync(welcomeViewPath, 'utf8');
+
+    expect(source).toContain("import { FileAttachmentChip } from './FileAttachmentChip';");
+    expect(source).toContain('const setPreviewFilePath = useAppStore((state) => state.setPreviewFilePath);');
+    expect(source).toContain('<FileAttachmentChip');
+    expect(source).toContain('setPreviewFilePath(candidate.path)');
+  });
+
+  it('offers the Word-workshop prompt action for document attachments', () => {
+    const source = fs.readFileSync(welcomeViewPath, 'utf8');
+
+    expect(source).toContain('buildDocumentWorkshopPrompt');
+    expect(source).toContain('buildComposerContentBlocks');
+    expect(source).toContain('hasDocumentWorkshopAttachment');
+    expect(source).toContain('shouldShowDocumentWorkshopAction');
+    expect(source).toContain("t('welcome.documentWorkshopAction', 'Atelier Word')");
+    expect(source).toContain('data-testid="welcome-document-workshop-action"');
+    expect(source).toContain('data-testid="welcome-prompt-input"');
+    expect(source).toContain('data-testid="welcome-attach-files"');
+  });
+
+  it('submits a document-workshop prompt automatically for blank document-only starts', () => {
+    const source = fs.readFileSync(welcomeViewPath, 'utf8');
+
+    expect(source).toContain('const contentBlocks = buildComposerContentBlocks(');
+    expect(source).toContain('currentPrompt,');
+    expect(source).toContain('attachedFiles,');
+    expect(source).toContain('pastedImages');
+  });
 });

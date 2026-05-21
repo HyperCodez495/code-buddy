@@ -53,9 +53,35 @@ import {
   getDefaultTitleFromPrompt,
   normalizeGeneratedTitle,
 } from './session-title-utils';
+import {
+  buildAttachedFilesPromptContext,
+  buildAttachmentOnlyPrompt,
+} from './file-attachment-context';
 import { generateTitleWithClaudeSdk } from '../claude/claude-sdk-one-shot';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 import { CodeBuddyEngineRunner } from '../engine/codebuddy-engine-runner';
+
+export { formatFileAttachmentPromptLine } from './file-attachment-context';
+
+export function createUniqueAttachmentFilename(
+  filename: string,
+  usedFilenames: Set<string>,
+  isUnavailable: (candidate: string) => boolean = () => false,
+): string {
+  const basename = path.basename(filename) || `attachment-${Date.now()}`;
+  const extension = path.extname(basename);
+  const stem = path.basename(basename, extension) || 'attachment';
+  let candidate = basename;
+  let index = 2;
+
+  while (usedFilenames.has(candidate.toLowerCase()) || isUnavailable(candidate)) {
+    candidate = `${stem}-${index}${extension}`;
+    index += 1;
+  }
+
+  usedFilenames.add(candidate.toLowerCase());
+  return candidate;
+}
 
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
@@ -693,6 +719,9 @@ export class SessionManager {
         allowedTools,
         memoryEnabled: row.memory_enabled === 1,
         model: row.model || undefined,
+        projectId: row.project_id ?? null,
+        isBackground: row.is_background === 1,
+        executionMode: (row.execution_mode as 'chat' | 'task' | null) ?? undefined,
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -863,6 +892,7 @@ export class SessionManager {
     content: ContentBlock[]
   ): Promise<ContentBlock[]> {
     const processedContent: ContentBlock[] = [];
+    const usedAttachmentFilenames = new Set<string>();
 
     for (const block of content) {
       if (block.type === 'file_attachment') {
@@ -880,7 +910,11 @@ export class SessionManager {
           const sourcePath = (fileBlock.relativePath || '').trim(); // This is the full path from Electron
           // IMPORTANT: Use path.basename() to extract only the filename, not the full path
           const fallbackFilename = fileBlock.filename || sourcePath || `attachment-${Date.now()}`;
-          const destFilename = path.basename(fallbackFilename);
+          const destFilename = createUniqueAttachmentFilename(
+            fallbackFilename,
+            usedAttachmentFilenames,
+            (candidate) => fs.existsSync(path.join(tmpDir, candidate))
+          );
           if (!destFilename) continue;
           const destPath = path.join(tmpDir, destFilename);
           let actualSize = 0;
@@ -1018,17 +1052,19 @@ export class SessionManager {
         );
 
         // Build enhanced prompt with file information
-        let enhancedPrompt = prompt;
         const fileAttachments = messageContent.filter(
           (c) => c.type === 'file_attachment'
         ) as FileAttachmentContent[];
+        const promptForAgent =
+          prompt.trim() || buildAttachmentOnlyPrompt(fileAttachments) || prompt;
+        let enhancedPrompt = promptForAgent;
         if (fileAttachments.length > 0) {
-          const fileInfo = fileAttachments
-            .map(
-              (f) => `- ${f.filename} (${(f.size / 1024).toFixed(1)} KB) at path: ${f.relativePath}`
-            )
-            .join('\n');
-          enhancedPrompt = `${prompt}\n\n[Attached files - use Read tool to access them]:\n${fileInfo}`;
+          const fileContext = await buildAttachedFilesPromptContext(
+            fileAttachments,
+            session.cwd,
+            promptForAgent
+          );
+          enhancedPrompt = `${promptForAgent}\n\n${fileContext}`;
           logCtx('[SessionManager] Enhanced prompt with file info:', enhancedPrompt);
         }
 
@@ -1067,7 +1103,7 @@ export class SessionManager {
         if (this.icmIntegration?.isAvailable()) {
           try {
             const memories = await this.icmIntegration.searchRelevantMemories(
-              prompt,
+              promptForAgent,
               projectId ?? undefined,
               5
             );
@@ -1118,7 +1154,7 @@ export class SessionManager {
         if (this.icmIntegration?.isAvailable()) {
           void this.icmIntegration
             .storeEpisode(
-              `User asked: ${prompt.slice(0, 500)}`,
+              `User asked: ${promptForAgent.slice(0, 500)}`,
               {
                 sessionId: session.id,
                 projectId: projectId ?? undefined,
@@ -1167,7 +1203,7 @@ export class SessionManager {
         }
 
         // 标题生成不再与首轮对话并发，避免与主请求竞争同一上游配额/通道导致体感变慢。
-        this.runSessionTitleGeneration(session, prompt, existingMessages).catch((err) =>
+        this.runSessionTitleGeneration(session, promptForAgent, existingMessages).catch((err) =>
           logCtxError('[SessionManager] Title generation failed:', err)
         );
       } catch (error) {

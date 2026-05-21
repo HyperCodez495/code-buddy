@@ -55,6 +55,7 @@ export interface ScheduleDraft {
   selectedTimes?: string[];
   selectedWeekdays?: number[];
   enabled?: boolean;
+  metadata?: Record<string, unknown> | null;
   nonce: number;
 }
 
@@ -73,6 +74,15 @@ export interface PermissionRuleDraft {
 export interface FocusedMessageTarget {
   sessionId: string;
   messageId: string;
+}
+
+export type FleetGoalDraftProfile = 'balanced' | 'research' | 'code' | 'review' | 'safe';
+
+export interface FleetGoalDraft {
+  goal: string;
+  dispatchProfile?: FleetGoalDraftProfile;
+  privacyTag?: 'public' | 'sensitive';
+  nonce: number;
 }
 
 // Unified per-session state that replaces 8 parallel xxxBySession Maps
@@ -343,6 +353,7 @@ interface AppState {
    * stream, the command center is the dispatch UI.
    */
   showFleetCommandCenter: boolean;
+  fleetGoalDraft: FleetGoalDraft | null;
 
   // A2A active tasks (GAP 1)
   a2aTasks: Record<string, A2ATask>;
@@ -584,6 +595,7 @@ interface AppState {
   dismissFleetDiscoveredPeer: (url: string) => void;
   setShowFleetPanel: (show: boolean) => void;
   setShowFleetCommandCenter: (show: boolean) => void;
+  setFleetGoalDraft: (draft: Omit<FleetGoalDraft, 'nonce'> | null) => void;
 
   // A2A task actions
   upsertA2ATask: (task: A2ATask) => void;
@@ -761,6 +773,7 @@ export const useAppStore = create<AppState>((set) => ({
   fleetDiscoveredPeers: [],
   showFleetPanel: false,
   showFleetCommandCenter: false,
+  fleetGoalDraft: null,
   a2aTasks: {},
   team: null,
   teamMembers: {},
@@ -1650,6 +1663,15 @@ export const useAppStore = create<AppState>((set) => ({
     })),
   setShowFleetPanel: (show) => set({ showFleetPanel: show }),
   setShowFleetCommandCenter: (show) => set({ showFleetCommandCenter: show }),
+  setFleetGoalDraft: (draft) =>
+    set({
+      fleetGoalDraft: draft
+        ? {
+            ...draft,
+            nonce: Date.now(),
+          }
+        : null,
+    }),
 
   // A2A task actions (GAP 1)
   upsertA2ATask: (task) =>

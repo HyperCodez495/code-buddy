@@ -30,8 +30,8 @@ export interface DatabaseInstance {
     delete: (id: string) => void;
     deleteBySessionId: (sessionId: string) => void;
     /**
-     * Cross-session content search. Returns the most recent `limit`
-     * messages whose `content` contains the (case-insensitive) substring.
+     * Cross-session content search. Prefers the optional FTS5 message
+     * index, then falls back to a case-insensitive substring scan.
      * The result is enriched with the parent session's title and
      * project_id for direct rendering in the global search overlay.
      */
@@ -145,6 +145,7 @@ export interface ScheduledTaskRow {
   last_run_at: number | null;
   last_run_session_id: string | null;
   last_error: string | null;
+  metadata: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -327,6 +328,8 @@ function initializeSchema(database: Database.Database): void {
     ON messages(session_id, timestamp)
   `);
 
+    initializeMessageSearchIndex(database);
+
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_trace_steps_session_id
     ON trace_steps(session_id)
@@ -377,11 +380,13 @@ function initializeSchema(database: Database.Database): void {
       last_run_at INTEGER,
       last_run_session_id TEXT,
       last_error TEXT,
+      metadata TEXT,
       created_at INTEGER NOT NULL,
       updated_at INTEGER NOT NULL
     )
   `);
     ensureColumn(database, 'scheduled_tasks', 'schedule_config', 'schedule_config TEXT');
+    ensureColumn(database, 'scheduled_tasks', 'metadata', 'metadata TEXT');
 
     database.exec(`
     CREATE INDEX IF NOT EXISTS idx_scheduled_tasks_next_run
@@ -465,6 +470,65 @@ function ensureColumn(
   database.exec(`ALTER TABLE ${table} ADD COLUMN ${safeDefinition}`);
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function buildMessageFtsQuery(query: string): string | null {
+  const tokens = query
+    .normalize('NFKC')
+    .match(/[\p{L}\p{N}_]+/gu)
+    ?.map((token) => token.toLowerCase())
+    .filter(Boolean)
+    .slice(0, 16);
+
+  if (!tokens || tokens.length === 0) {
+    return null;
+  }
+
+  return tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' AND ');
+}
+
+function initializeMessageSearchIndex(database: Database.Database): void {
+  try {
+    database.exec(`
+      CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
+        content,
+        message_id UNINDEXED,
+        session_id UNINDEXED,
+        role UNINDEXED
+      );
+
+      CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN
+        INSERT INTO messages_fts(content, message_id, session_id, role)
+        VALUES (new.content, new.id, new.session_id, new.role);
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_ad AFTER DELETE ON messages BEGIN
+        DELETE FROM messages_fts WHERE message_id = old.id;
+      END;
+
+      CREATE TRIGGER IF NOT EXISTS messages_au
+      AFTER UPDATE OF content, session_id, role ON messages BEGIN
+        DELETE FROM messages_fts WHERE message_id = old.id;
+        INSERT INTO messages_fts(content, message_id, session_id, role)
+        VALUES (new.content, new.id, new.session_id, new.role);
+      END;
+    `);
+
+    database.exec(`
+      INSERT INTO messages_fts(content, message_id, session_id, role)
+      SELECT m.content, m.id, m.session_id, m.role
+        FROM messages m
+       WHERE NOT EXISTS (
+         SELECT 1 FROM messages_fts f WHERE f.message_id = m.id
+       )
+    `);
+  } catch (error) {
+    logWarn('[Database] Message FTS index unavailable; using LIKE fallback:', error);
+  }
+}
+
 /**
  * Initialize the database
  */
@@ -533,12 +597,7 @@ export function initDatabase(): DatabaseInstance {
     DELETE FROM messages WHERE session_id = ?
   `);
 
-  // Cross-session content search (Phase 3 — global search "Messages" tab).
-  // Uses a `LIKE` substring scan rather than FTS5 to keep schema migrations
-  // out of the V1 release. The dataset is bounded (≤ ~50k messages per
-  // user), so a sequential scan is sub-50ms in practice. Joins sessions
-  // to expose the title/cwd/project_id needed by the renderer.
-  const searchMessagesByContentStmt = rawDb.prepare(`
+  const searchMessagesByLikeStmt = rawDb.prepare(`
     SELECT m.id AS message_id,
            m.session_id,
            m.role,
@@ -548,10 +607,31 @@ export function initDatabase(): DatabaseInstance {
            s.project_id
       FROM messages m
       JOIN sessions s ON s.id = m.session_id
-     WHERE LOWER(m.content) LIKE LOWER(?)
+     WHERE LOWER(m.content) LIKE LOWER(?) ESCAPE '\\'
      ORDER BY m.timestamp DESC
      LIMIT ?
   `);
+
+  let searchMessagesByFtsStmt: Database.Statement | null = null;
+  try {
+    searchMessagesByFtsStmt = rawDb.prepare(`
+      SELECT f.message_id,
+             f.session_id,
+             f.role,
+             f.content,
+             m.timestamp,
+             s.title AS session_title,
+             s.project_id
+        FROM messages_fts f
+        JOIN messages m ON m.id = f.message_id
+        JOIN sessions s ON s.id = f.session_id
+       WHERE messages_fts MATCH ?
+       ORDER BY bm25(messages_fts), m.timestamp DESC
+       LIMIT ?
+    `);
+  } catch (error) {
+    logWarn('[Database] Message FTS statement unavailable; using LIKE fallback:', error);
+  }
 
   const insertTraceStep = rawDb.prepare(`
     INSERT OR REPLACE INTO trace_steps (
@@ -570,9 +650,9 @@ export function initDatabase(): DatabaseInstance {
 
   const insertScheduledTask = rawDb.prepare(`
     INSERT OR REPLACE INTO scheduled_tasks (
-      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, created_at, updated_at
+      id, title, prompt, cwd, run_at, next_run_at, schedule_config, repeat_every, repeat_unit, enabled, last_run_at, last_run_session_id, last_error, metadata, created_at, updated_at
     )
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getScheduledTaskStmt = rawDb.prepare(`
@@ -698,13 +778,24 @@ export function initDatabase(): DatabaseInstance {
       searchContent: (query: string, limit: number): MessageSearchHit[] => {
         const trimmed = query.trim();
         if (trimmed.length === 0) return [];
-        // Escape SQL LIKE wildcards in the user's query — without this,
-        // a literal `_` or `%` in the search would match anything.
-        const escaped = trimmed.replace(/[\\%_]/g, (c) => `\\${c}`);
+
+        const cappedLimit = Math.max(1, Math.min(limit, 200));
+        const ftsQuery = buildMessageFtsQuery(trimmed);
+        if (searchMessagesByFtsStmt && ftsQuery) {
+          try {
+            return searchMessagesByFtsStmt.all(ftsQuery, cappedLimit) as MessageSearchHit[];
+          } catch (error) {
+            logWarn('[Database] Message FTS search failed; using LIKE fallback:', error);
+          }
+        }
+
+        // Escape SQL LIKE wildcards so literal `_` and `%` do not match
+        // arbitrary messages when the FTS tokenizer cannot build a query.
+        const escaped = escapeLikePattern(trimmed);
         const pattern = `%${escaped}%`;
-        return searchMessagesByContentStmt.all(
+        return searchMessagesByLikeStmt.all(
           pattern,
-          Math.max(1, Math.min(limit, 200))
+          cappedLimit
         ) as MessageSearchHit[];
       },
     },
@@ -771,6 +862,7 @@ export function initDatabase(): DatabaseInstance {
           task.last_run_at,
           task.last_run_session_id,
           task.last_error,
+          task.metadata,
           task.created_at,
           task.updated_at
         );

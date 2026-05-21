@@ -21,7 +21,11 @@ import { config } from 'dotenv';
 import { registerProjectIpcHandlers } from './ipc/project-ipc';
 import { registerSubAgentIpcHandlers } from './ipc/subagent-ipc';
 import { registerOrchestratorIpcHandlers } from './ipc/orchestrator-ipc';
-import { registerFleetIpcHandlers } from './ipc/fleet-ipc';
+import {
+  dispatchFleetSaga,
+  registerFleetIpcHandlers,
+  type FleetDispatchInput,
+} from './ipc/fleet-ipc';
 import { setMainWindow, setTray } from './window-management';
 import { registerTeamIpcHandlers } from './ipc/team-ipc';
 import { registerMentionIpcHandlers } from './ipc/mention-ipc';
@@ -43,6 +47,12 @@ import { ProjectMemoryService } from './project/project-memory';
 import { SubAgentBridge } from './agent/sub-agent-bridge';
 import { OrchestratorBridge } from './agent/orchestrator-bridge';
 import { FleetBridge } from './fleet/fleet-bridge';
+import { SagaRunner } from './fleet/saga-runner';
+import {
+  buildFleetInternetProofPlan,
+  buildInternetProofSummaryMetadata,
+  summarizeInternetProofPlan,
+} from '../shared/internet-proof-metadata';
 import { TeamBridge } from './agent/team-bridge';
 import { MentionProcessor } from './input/mention-processor';
 import { SlashCommandBridge } from './commands/slash-command-bridge';
@@ -109,7 +119,9 @@ import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/t
 import { startNavServer, stopNavServer } from './nav-server';
 import {
   ScheduledTaskManager,
+  type ScheduledTask,
   type ScheduledTaskCreateInput,
+  type ScheduledTaskMetadata,
   type ScheduledTaskUpdateInput,
 } from './schedule/scheduled-task-manager';
 import { createScheduledTaskStore } from './schedule/scheduled-task-store';
@@ -139,6 +151,8 @@ import {
 } from './utils/logger';
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
+import { listSkillCandidatesForReview } from './tools/skill-candidate-review-bridge';
+import { buildLessonsVaultPreview } from './tools/lessons-vault-bridge';
 import { getGeminiOauthTokens, clearGeminiCredentials } from '../../../src/providers/gemini-oauth';
 import {
   loginInteractive as codexLoginInteractive,
@@ -178,6 +192,13 @@ let projectManager: ProjectManager | null = null;
 let subAgentBridge: SubAgentBridge | null = null;
 let orchestratorBridge: OrchestratorBridge | null = null;
 let fleetBridge: FleetBridge | null = null;
+let scheduledFleetSagaRunner:
+  | {
+      bridge: FleetBridge;
+      activityFeed: ActivityFeed | null;
+      runner: SagaRunner;
+    }
+  | null = null;
 let teamBridge: TeamBridge | null = null;
 let mentionProcessor: MentionProcessor | null = null;
 let slashCommandBridge: SlashCommandBridge | null = null;
@@ -236,6 +257,246 @@ async function resolveScheduledTaskTitle(
     logWarn('[Schedule] Failed to generate title via session title flow, using fallback', error);
     return fallback;
   }
+}
+
+function buildScheduledTaskActivityMetadata(
+  task: ScheduledTask,
+  extra: Record<string, unknown> = {}
+): Record<string, unknown> {
+  return {
+    taskId: task.id,
+    taskTitle: task.title,
+    cwd: task.cwd,
+    scheduleKind: getScheduledTaskKind(task),
+    nextRunAt: task.nextRunAt,
+    ...buildScheduledTaskFleetMetadata(task.metadata),
+    ...extra,
+  };
+}
+
+function buildScheduledTaskFleetMetadata(
+  metadata: ScheduledTask['metadata']
+): Record<string, unknown> {
+  if (!metadata) return {};
+  const result: Record<string, unknown> = {};
+  if (typeof metadata.source === 'string') result.source = metadata.source;
+  if (metadata.agentRun && typeof metadata.agentRun === 'object' && !Array.isArray(metadata.agentRun)) {
+    result.agentRun = metadata.agentRun;
+  }
+  if (typeof metadata.agentRunId === 'string' && metadata.agentRunId.trim()) {
+    result.agentRunId = metadata.agentRunId.trim();
+  }
+  if (typeof metadata.agentRunSchemaVersion === 'number' && Number.isFinite(metadata.agentRunSchemaVersion)) {
+    result.agentRunSchemaVersion = metadata.agentRunSchemaVersion;
+  }
+  if (typeof metadata.parentRunId === 'string' && metadata.parentRunId.trim()) {
+    result.parentRunId = metadata.parentRunId.trim();
+  }
+  if (typeof metadata.outcomeId === 'string' && metadata.outcomeId.trim()) {
+    result.outcomeId = metadata.outcomeId.trim();
+  }
+  if (typeof metadata.scheduleTaskId === 'string' && metadata.scheduleTaskId.trim()) {
+    result.scheduleTaskId = metadata.scheduleTaskId.trim();
+  }
+  if (typeof metadata.sourceSessionId === 'string' && metadata.sourceSessionId.trim()) {
+    result.sourceSessionId = metadata.sourceSessionId.trim();
+  }
+  if (typeof metadata.dispatchProfile === 'string') {
+    result.dispatchProfile = metadata.dispatchProfile;
+  }
+  if (typeof metadata.privacyTag === 'string') result.privacyTag = metadata.privacyTag;
+  if (typeof metadata.parallelism === 'number') result.parallelism = metadata.parallelism;
+  if (typeof metadata.peerCount === 'number') result.peerCount = metadata.peerCount;
+  const targetPeerIds = metadataStringList(metadata.targetPeerIds);
+  if (targetPeerIds.length > 0) result.targetPeerIds = targetPeerIds;
+  if (typeof metadata.hermesPlanId === 'string' && metadata.hermesPlanId.trim()) {
+    result.hermesPlanId = metadata.hermesPlanId.trim();
+  }
+  if (typeof metadata.hermesPlanProfile === 'string' && metadata.hermesPlanProfile.trim()) {
+    result.hermesPlanProfile = metadata.hermesPlanProfile.trim();
+  }
+  if (typeof metadata.hermesPlanSurface === 'string' && metadata.hermesPlanSurface.trim()) {
+    result.hermesPlanSurface = metadata.hermesPlanSurface.trim();
+  }
+  const targetPeerLabels = metadataStringList(metadata.targetPeerLabels);
+  if (targetPeerLabels.length > 0) result.targetPeerLabels = targetPeerLabels;
+  if (typeof metadata.deliveryChannel === 'string' && metadata.deliveryChannel.trim()) {
+    result.deliveryChannel = metadata.deliveryChannel.trim();
+  }
+  if (typeof metadata.includeMemoryContext === 'boolean') {
+    result.includeMemoryContext = metadata.includeMemoryContext;
+  }
+  if (typeof metadata.memoryCount === 'number') result.memoryCount = metadata.memoryCount;
+  if (typeof metadata.internetProofStepCount === 'number') {
+    result.internetProofStepCount = metadata.internetProofStepCount;
+  }
+  if (typeof metadata.internetProofRequiredCount === 'number') {
+    result.internetProofRequiredCount = metadata.internetProofRequiredCount;
+  }
+  if (typeof metadata.internetProofAssertionCount === 'number') {
+    result.internetProofAssertionCount = metadata.internetProofAssertionCount;
+  }
+  if (Array.isArray(metadata.internetProofTools)) {
+    result.internetProofTools = metadata.internetProofTools;
+  }
+  if (Array.isArray(metadata.internetProofSteps)) {
+    result.internetProofSteps = metadata.internetProofSteps;
+  }
+  return result;
+}
+
+function metadataStringList(value: unknown): string[] {
+  if (!Array.isArray(value)) return [];
+  return value
+    .map((item) => (typeof item === 'string' ? item.trim() : ''))
+    .filter(Boolean);
+}
+
+function buildScheduledTaskCreateMetadata(
+  prompt: string,
+  metadata: ScheduledTask['metadata'] | undefined
+): ScheduledTask['metadata'] {
+  if (!metadata || metadata.source !== 'fleet-command-center') {
+    return metadata ?? null;
+  }
+  if (typeof metadata.internetProofStepCount === 'number') {
+    return metadata;
+  }
+
+  const proofPlan = buildFleetInternetProofPlan(prompt);
+  const proofSummary = summarizeInternetProofPlan(proofPlan);
+  if (!proofSummary) return metadata;
+
+  return {
+    ...metadata,
+    ...buildInternetProofSummaryMetadata(proofSummary),
+  };
+}
+
+function getScheduledFleetSagaRunner(): SagaRunner | null {
+  if (!fleetBridge) return null;
+  if (
+    !scheduledFleetSagaRunner ||
+    scheduledFleetSagaRunner.bridge !== fleetBridge ||
+    scheduledFleetSagaRunner.activityFeed !== activityFeed
+  ) {
+    scheduledFleetSagaRunner = {
+      bridge: fleetBridge,
+      activityFeed,
+      runner: new SagaRunner(fleetBridge, sendToRenderer, activityFeed),
+    };
+  }
+  return scheduledFleetSagaRunner.runner;
+}
+
+function buildScheduledFleetDispatchInput(task: ScheduledTask): FleetDispatchInput | null {
+  const metadata = task.metadata;
+  if (!metadata || metadata.source !== 'fleet-command-center') return null;
+
+  const goal = scheduledMetadataString(metadata, 'dispatchGoal')
+    ?? extractScheduledFleetGoal(task.prompt);
+  if (!goal) return null;
+
+  const profile = normalizeScheduledDispatchProfile(
+    scheduledMetadataString(metadata, 'dispatchProfile'),
+  );
+  const privacyTag = normalizeScheduledPrivacyTag(
+    scheduledMetadataString(metadata, 'privacyTag'),
+  );
+  const parallelism = scheduledMetadataNumber(metadata, 'parallelism');
+  const targetPeerIds = metadataStringList(metadata.targetPeerIds);
+  const targetPeerLabels = metadataStringList(metadata.targetPeerLabels);
+  const memoryCount = scheduledMetadataNumber(metadata, 'memoryCount');
+  const agentRunSchemaVersion = scheduledMetadataNumber(metadata, 'agentRunSchemaVersion');
+
+  return {
+    goal,
+    dispatchProfile: profile,
+    privacyTag,
+    parallelism: parallelism !== null && parallelism > 1 ? parallelism : undefined,
+    agentRunId: scheduledMetadataString(metadata, 'agentRunId') ?? undefined,
+    agentRunSchemaVersion: agentRunSchemaVersion ?? undefined,
+    parentRunId: scheduledMetadataString(metadata, 'parentRunId') ?? undefined,
+    outcomeId: scheduledMetadataString(metadata, 'outcomeId') ?? undefined,
+    scheduleTaskId: scheduledMetadataString(metadata, 'scheduleTaskId') ?? undefined,
+    sourceSessionId: scheduledMetadataString(metadata, 'sourceSessionId') ?? undefined,
+    deliveryChannel: scheduledMetadataString(metadata, 'deliveryChannel') ?? undefined,
+    memoryCount: memoryCount ?? undefined,
+    hermesPlanId: scheduledMetadataString(metadata, 'hermesPlanId') ?? undefined,
+    hermesPlanProfile: scheduledMetadataString(metadata, 'hermesPlanProfile') ?? undefined,
+    hermesPlanSurface: scheduledMetadataString(metadata, 'hermesPlanSurface') ?? undefined,
+    targetPeerIds: targetPeerIds.length > 0 ? targetPeerIds : undefined,
+    targetPeerLabels: targetPeerLabels.length > 0 ? targetPeerLabels : undefined,
+  };
+}
+
+function extractScheduledFleetGoal(prompt: string): string | null {
+  const normalizedLines = prompt.replace(/\r\n/g, '\n').split('\n');
+  for (let index = normalizedLines.length - 1; index >= 0; index -= 1) {
+    const line = normalizedLines[index].trim();
+    const normalized = line
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase();
+    if (/^(goal|objectif|objet|目标|目標)\s*:/.test(normalized)) {
+      const sameLineGoal = line.slice(line.indexOf(':') + 1).trim();
+      const followingGoal = normalizedLines
+        .slice(index + 1)
+        .join('\n')
+        .trim();
+      return sameLineGoal || followingGoal || null;
+    }
+  }
+  return prompt.trim() || null;
+}
+
+function scheduledMetadataString(
+  metadata: ScheduledTaskMetadata,
+  key: string
+): string | null {
+  const value = metadata[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function scheduledMetadataNumber(
+  metadata: ScheduledTaskMetadata,
+  key: string
+): number | null {
+  const value = metadata[key];
+  return typeof value === 'number' && Number.isFinite(value) ? value : null;
+}
+
+function normalizeScheduledDispatchProfile(
+  value: string | null
+): FleetDispatchInput['dispatchProfile'] {
+  if (
+    value === 'balanced' ||
+    value === 'research' ||
+    value === 'code' ||
+    value === 'review' ||
+    value === 'safe'
+  ) {
+    return value;
+  }
+  return undefined;
+}
+
+function normalizeScheduledPrivacyTag(value: string | null): FleetDispatchInput['privacyTag'] {
+  if (value === 'public' || value === 'sensitive') {
+    return value;
+  }
+  return undefined;
+}
+
+function getScheduledTaskKind(task: ScheduledTask): string {
+  if (task.scheduleConfig?.kind === 'daily') return 'daily';
+  if (task.scheduleConfig?.kind === 'weekly') return 'weekly';
+  if (task.repeatEvery && task.repeatUnit) return `every-${task.repeatUnit}`;
+  return 'once';
+}
+
+function shortActivityId(id: string): string {
+  return id.length <= 10 ? id : id.slice(0, 8);
 }
 
 async function waitForDevServer(url: string, maxAttempts = 30, intervalMs = 500): Promise<boolean> {
@@ -1268,6 +1529,7 @@ app
 
     // Activity feed — cross-project event log persisted in SQLite
     activityFeed = new ActivityFeed(db);
+    fleetBridge?.setActivityFeed(activityFeed);
 
     // Phase 3 step 4: bookmarks service (starred messages)
     bookmarksService = new BookmarksService(db);
@@ -1404,6 +1666,18 @@ app
     scheduledTaskManager = new ScheduledTaskManager({
       store: scheduledTaskStore,
       executeTask: async (task) => {
+        const scheduledFleetDispatch = buildScheduledFleetDispatchInput(task);
+        if (scheduledFleetDispatch) {
+          const result = await dispatchFleetSaga(scheduledFleetDispatch, {
+            fleetBridge,
+            sagaRunner: getScheduledFleetSagaRunner(),
+            activityFeed,
+          });
+          if (!result.ok || !result.sagaId) {
+            throw new Error(result.error ?? 'Scheduled Fleet dispatch failed');
+          }
+          return { sessionId: result.sagaId, sagaId: result.sagaId };
+        }
         if (!sessionManager) {
           throw new Error('Session manager not initialized');
         }
@@ -1427,7 +1701,34 @@ app
         });
         return { sessionId: started.id };
       },
+      onTaskComplete: (task, result) => {
+        activityFeed?.record({
+          type: 'scheduledTask.started',
+          title: 'Scheduled task started',
+          description: task.title,
+          sessionId: result.sessionId,
+          metadata: buildScheduledTaskActivityMetadata(task, {
+            sessionId: result.sessionId,
+            sessionShortId: shortActivityId(result.sessionId),
+            ...(result.sagaId
+              ? {
+                  sagaId: result.sagaId,
+                  sagaShortId: shortActivityId(result.sagaId),
+                }
+              : {}),
+          }),
+        });
+      },
       onTaskError: (taskId, error) => {
+        const task = scheduledTaskStore.get(taskId);
+        activityFeed?.record({
+          type: 'scheduledTask.failed',
+          title: 'Scheduled task failed',
+          description: task?.title ?? taskId,
+          metadata: task
+            ? buildScheduledTaskActivityMetadata(task, { error })
+            : { taskId, error },
+        });
         sendToRenderer({
           type: 'scheduled-task.error',
           payload: { taskId, error },
@@ -1833,9 +2134,10 @@ ipcMain.handle('config.geminiOauthLogin', async () => {
   try {
     const tokens = await getGeminiOauthTokens(true);
     return { success: true, tokens };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logError('[IPC] Gemini OAuth Login failed:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: message };
   }
 });
 
@@ -1843,9 +2145,10 @@ ipcMain.handle('config.geminiOauthClear', async () => {
   try {
     await clearGeminiCredentials();
     return { success: true };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logError('[IPC] Gemini OAuth Clear failed:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: message };
   }
 });
 
@@ -1859,9 +2162,10 @@ ipcMain.handle('config.codexOauthLogin', async () => {
       account_id: auth.account_id ?? null,
       is_fedramp: auth.is_fedramp,
     };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logError('[IPC] Codex OAuth Login failed:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: message };
   }
 });
 
@@ -1869,9 +2173,10 @@ ipcMain.handle('config.codexOauthClear', async () => {
   try {
     clearCodexCredentials();
     return { success: true };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logError('[IPC] Codex OAuth Clear failed:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: message };
   }
 });
 
@@ -1892,9 +2197,10 @@ ipcMain.handle('config.codexOauthStatus', async () => {
       account_id: auth.account_id ?? null,
       is_fedramp: auth.is_fedramp,
     };
-  } catch (err: any) {
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
     logError('[IPC] Codex OAuth Status failed:', err);
-    return { success: false, error: err.message };
+    return { success: false, error: message };
   }
 });
 
@@ -1908,7 +2214,7 @@ registerSubAgentIpcHandlers(subAgentBridge);
 registerOrchestratorIpcHandlers(orchestratorBridge);
 
 // ── Fleet IPC handlers (GAP 3 — multi-host Code Buddy listener) ──────
-registerFleetIpcHandlers(fleetBridge, activityFeed);
+registerFleetIpcHandlers(() => fleetBridge, () => activityFeed);
 
 // ── Team IPC handlers (Phase 4 layer 9 — Agent Teams observability) ──
 registerTeamIpcHandlers(teamBridge);
@@ -2028,6 +2334,51 @@ ipcMain.handle('memory.delete', async (_event, entryIndex: number, projectId?: s
   if (!id) return { success: false, error: 'No active project' };
   return projectMemoryServiceRef.deleteMemoryEntry(id, entryIndex);
 });
+
+// ── Lessons capture (operator-approved procedural memory) ─────────────
+ipcMain.handle(
+  'lessons.add',
+  async (
+    _event,
+    category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT',
+    content: string,
+    projectId?: string,
+  ) => {
+    const trimmed = content.trim();
+    if (!trimmed) return { success: false, error: 'Lesson content is empty' };
+
+    try {
+      const { loadCoreModule } = await import('./utils/core-loader');
+      const lessonsMod = await loadCoreModule<{
+        getLessonsTracker: (workDir?: string) => {
+          add: (
+            category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT',
+            content: string,
+            source?: 'user_correction' | 'self_observed' | 'manual',
+          ) => { id: string };
+        };
+      }>('agent/lessons-tracker.js');
+      if (!lessonsMod) {
+        return { success: false, error: 'Lessons tracker unavailable' };
+      }
+      const tracker = lessonsMod.getLessonsTracker(resolveLessonsWorkspace(projectId));
+      const item = tracker.add(category, trimmed, 'manual');
+      return { success: true, lessonId: item.id };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[IPC] Lessons add failed:', err);
+      return { success: false, error: message };
+    }
+  },
+);
+
+function resolveLessonsWorkspace(projectId?: string): string {
+  if (projectManager) {
+    const project = projectId ? projectManager.get(projectId) : projectManager.getActive();
+    if (project?.workspacePath) return project.workspacePath;
+  }
+  return process.cwd();
+}
 
 // ── Session export IPC handler ────────────────────────────────────────
 ipcMain.handle('session.export', async (_event, sessionId: string, format: 'md' | 'json') => {
@@ -3220,6 +3571,56 @@ ipcMain.handle('tools.list', async () => {
   }
 });
 
+ipcMain.handle('tools.skillCandidate.list', async (_event, payload?: {
+  cwd?: string;
+  eligibleOnly?: boolean;
+  limit?: number;
+  skillRoot?: string;
+}) => {
+  try {
+    const payloadCwd = typeof payload?.cwd === 'string' && isAbsolute(payload.cwd)
+      ? payload.cwd
+      : null;
+    return await listSkillCandidatesForReview({
+      rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+      eligibleOnly: payload?.eligibleOnly,
+      limit: payload?.limit,
+      skillRoot: payload?.skillRoot,
+    });
+  } catch (err) {
+    logWarn('[tools.skillCandidate.list] failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('tools.lessonsVault.preview', async (_event, payload?: {
+  category?: string;
+  concept?: string;
+  cwd?: string;
+  includeKeywords?: boolean;
+  limit?: number;
+  query?: string;
+  vaultDir?: string;
+}) => {
+  try {
+    const payloadCwd = typeof payload?.cwd === 'string' && isAbsolute(payload.cwd)
+      ? payload.cwd
+      : null;
+    return await buildLessonsVaultPreview({
+      category: payload?.category,
+      concept: payload?.concept,
+      includeKeywords: payload?.includeKeywords,
+      limit: payload?.limit,
+      query: payload?.query,
+      rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+      vaultDir: payload?.vaultDir,
+    });
+  } catch (err) {
+    logWarn('[tools.lessonsVault.preview] failed:', err);
+    return null;
+  }
+});
+
 // Project templates — Claude Cowork parity Phase 2 step 12
 ipcMain.handle('template.list', async () => {
   if (!templateService) return [];
@@ -3310,7 +3711,7 @@ ipcMain.handle(
 ipcMain.handle('workspacePresets.delete', async (_event, id: string) => {
   try {
     return getWorkspacePresetsService().delete(id);
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3348,7 +3749,7 @@ ipcMain.handle('a2a.remove', async (_event, id: string) => {
   try {
     const { getA2ABridge } = await import('./a2a/a2a-bridge');
     return await getA2ABridge().remove(id);
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3416,7 +3817,7 @@ ipcMain.handle('reasoning.clear', async () => {
     const { getReasoningBridge } = await import('./reasoning/reasoning-bridge');
     getReasoningBridge().clear();
     return { success: true };
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3532,7 +3933,7 @@ ipcMain.handle('test.cancel', async () => {
     const { getTestRunnerBridge } = await import('./testing/test-runner-bridge');
     getTestRunnerBridge().cancel();
     return { success: true };
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3541,7 +3942,7 @@ ipcMain.handle('test.getState', async () => {
   try {
     const { getTestRunnerBridge } = await import('./testing/test-runner-bridge');
     return getTestRunnerBridge().getState();
-  } catch (err) {
+  } catch (_err) {
     return null;
   }
 });
@@ -3601,7 +4002,7 @@ ipcMain.handle('identity.getActive', async () => {
   try {
     const { getIdentityBridge } = await import('./identity/identity-bridge');
     return getIdentityBridge().getActive();
-  } catch (err) {
+  } catch (_err) {
     return null;
   }
 });
@@ -3624,6 +4025,434 @@ ipcMain.handle('audit.getRunDetail', async (_event, runId: string) => {
   } catch (err) {
     logError('[audit.getRunDetail] failed:', err);
     return null;
+  }
+});
+
+ipcMain.handle('audit.searchRuns', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { searchRuns } = await import('./observability/audit-bridge');
+    return await searchRuns(filter as never);
+  } catch (err) {
+    logError('[audit.searchRuns] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      query: '',
+      filters: { limit: 20, sources: [] },
+      count: 0,
+      results: [],
+    };
+  }
+});
+
+ipcMain.handle('audit.buildRecallPack', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildRecallPack } = await import('./observability/audit-bridge');
+    return await buildRecallPack(filter as never);
+  } catch (err) {
+    logError('[audit.buildRecallPack] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      query: '',
+      filters: {
+        limit: 20,
+        maxMemories: 5,
+        maxMatchesPerRun: 3,
+        maxLessons: 5,
+        maxSessions: 3,
+        sources: [],
+      },
+      count: 0,
+      lessonCount: 0,
+      lessons: [],
+      memories: [],
+      memoryCount: 0,
+      runCount: 0,
+      results: [],
+      runs: [],
+      sessionCount: 0,
+      sessions: [],
+      promptContext: '# Run recall pack\nQuery: (empty)\n\nNo matching runs were found.',
+    };
+  }
+});
+
+ipcMain.handle('audit.buildTrajectoryExport', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildTrajectoryExport } = await import('./observability/audit-bridge');
+    return await buildTrajectoryExport(filter as never);
+  } catch (err) {
+    logError('[audit.buildTrajectoryExport] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('audit.buildPolicyEvalReport', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildPolicyEvalReport } = await import('./observability/audit-bridge');
+    return await buildPolicyEvalReport(filter as never);
+  } catch (err) {
+    logError('[audit.buildPolicyEvalReport] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('audit.buildGoldenWorkflowEvalReport', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildGoldenWorkflowEvalReport } = await import('./observability/audit-bridge');
+    return await buildGoldenWorkflowEvalReport(filter as never);
+  } catch (err) {
+    logError('[audit.buildGoldenWorkflowEvalReport] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('audit.buildMobileSnapshot', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobileSnapshot } = await import('./observability/audit-bridge');
+    return await buildMobileSnapshot(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobileSnapshot] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      mode: 'review_only',
+      query: '',
+      safety: {
+        autoDispatch: false,
+        localApprovalRequired: true,
+        outreachDisabled: true,
+        remoteExecutionDisabled: true,
+        redaction: 'secrets-redacted',
+      },
+      allowedActions: ['view_run_summary', 'open_artifact', 'copy_recall_pack', 'draft_followup_prompt'],
+      blockedActions: ['execute_tool', 'modify_files', 'send_email', 'approve_sensitive_operation', 'read_secret_values', 'push_changes'],
+      redactionCount: 0,
+      recallPack: {
+        count: 0,
+        filters: {
+          limit: 20,
+          maxMemories: 5,
+          maxMatchesPerRun: 3,
+          maxLessons: 5,
+          maxSessions: 3,
+          sources: [],
+        },
+        lessonCount: 0,
+        memoryCount: 0,
+        promptContext: '# Run recall pack\nQuery: (empty)\n\nNo matching runs were found.',
+        runCount: 0,
+        schemaVersion: 1,
+        sessionCount: 0,
+      },
+      runs: [],
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobileGatewayContract', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobileGatewayContract } = await import('./observability/audit-bridge');
+    return await buildMobileGatewayContract(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobileGatewayContract] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      mode: 'contract_only',
+      basePath: '/api/mobile',
+      query: '',
+      auth: {
+        required: true,
+        scheme: 'bearer_or_pairing_code',
+        scopes: ['mobile:read', 'mobile:draft'],
+        ttlSeconds: 900,
+      },
+      transport: {
+        exposure: 'local_first',
+        offDeviceTlsRequired: true,
+        remoteExecution: 'disabled',
+      },
+      endpoints: [],
+      blockedOperations: [
+        'execute_tool',
+        'modify_files',
+        'send_email',
+        'approve_sensitive_operation',
+        'read_secret_values',
+        'push_changes',
+      ].map((action) => ({
+        action,
+        policy: {
+          action,
+          allowed: false,
+          requiresLocalOperator: true,
+          reason: 'Blocked because mobile supervision disables remote execution and requires local operator approval.',
+        },
+      })),
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobileGatewayReviewDraft', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobileGatewayReviewDraft } = await import('./observability/audit-bridge');
+    return await buildMobileGatewayReviewDraft(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobileGatewayReviewDraft] failed:', err);
+    const method = String(filter?.method ?? 'GET').toUpperCase() === 'POST' ? 'POST' : 'GET';
+    const action = String(filter?.action ?? 'view_run_summary').trim() || 'view_run_summary';
+    const path = String(filter?.path ?? '/api/mobile/snapshot').trim() || '/api/mobile/snapshot';
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      query: String(filter?.query ?? '').trim(),
+      draftId: `mobile-review-${method.toLowerCase()}-${action}`,
+      contract: {
+        schemaVersion: 1,
+        generatedAt: new Date().toISOString(),
+        mode: 'contract_only',
+        basePath: '/api/mobile',
+        query: String(filter?.query ?? '').trim(),
+        auth: {
+          required: true,
+          scheme: 'bearer_or_pairing_code',
+          scopes: ['mobile:read', 'mobile:draft'],
+          ttlSeconds: 900,
+        },
+        transport: {
+          exposure: 'local_first',
+          offDeviceTlsRequired: true,
+          remoteExecution: 'disabled',
+        },
+        endpoints: [],
+        blockedOperations: [],
+      },
+      request: { action, method, path },
+      decision: {
+        action,
+        allowed: false,
+        method,
+        path,
+        reason: 'Review draft builder failed; blocked for local operator review.',
+        requiresLocalOperator: true,
+        sideEffects: 'none',
+      },
+      status: 'blocked',
+      operatorActions: ['reject'],
+      safety: {
+        autoDispatch: false,
+        localOnly: true,
+        outreachDisabled: true,
+        remoteExecutionDisabled: true,
+      },
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobileGatewayListenerShell', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobileGatewayListenerShell } = await import('./observability/audit-bridge');
+    return await buildMobileGatewayListenerShell(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobileGatewayListenerShell] failed:', err);
+    const query = String(filter?.query ?? '').trim();
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      kind: 'mobile_gateway_listener_shell',
+      query,
+      mode: 'disabled_shell',
+      basePath: '/api/mobile',
+      bind: {
+        host: '127.0.0.1',
+        networkExposure: 'loopback_only',
+        port: 0,
+        status: 'not_started',
+      },
+      auth: {
+        required: true,
+        scheme: 'bearer_or_pairing_code',
+        scopes: ['mobile:read', 'mobile:draft'],
+        ttlSeconds: 900,
+      },
+      transport: {
+        exposure: 'local_first',
+        offDeviceTlsRequired: true,
+        remoteExecution: 'disabled',
+        listener: 'not_started',
+      },
+      safety: {
+        localOperatorRequiredForDrafts: true,
+        mutationRoutesDisabled: true,
+        outreachDisabled: true,
+        remoteExecutionDisabled: true,
+        serverStarted: false,
+      },
+      routes: [],
+      blockedRoutes: [],
+      acceptanceChecks: ['No HTTP server is started by this shell.'],
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobilePairingState', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobilePairingState } = await import('./observability/audit-bridge');
+    return await buildMobilePairingState(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobilePairingState] failed:', err);
+    const rawTtlSeconds = Number(filter?.ttlSeconds);
+    const ttlSeconds = Number.isFinite(rawTtlSeconds) ? rawTtlSeconds : 300;
+    const generatedAt = new Date();
+    return {
+      schemaVersion: 1,
+      generatedAt: generatedAt.toISOString(),
+      kind: 'mobile_supervision_pairing_state',
+      mode: 'local_pairing_plan',
+      query: String(filter?.query ?? '').trim(),
+      basePath: '/api/mobile',
+      pairing: {
+        acceptedByListener: false,
+        codeFingerprint: 'unavailable',
+        deviceLabel: String(filter?.deviceLabel ?? 'cowork-mobile-supervisor').trim() || 'cowork-mobile-supervisor',
+        expiresAt: new Date(generatedAt.getTime() + ttlSeconds * 1000).toISOString(),
+        persisted: false,
+        previewCode: '000000',
+        scopes: ['mobile:read', 'mobile:draft'],
+        status: 'preview_only',
+        tokenIssued: false,
+        ttlSeconds,
+      },
+      listener: {
+        bindStatus: 'not_started',
+        listenerStatus: 'not_started',
+        networkExposure: 'loopback_only',
+        serverStarted: false,
+      },
+      safety: {
+        approvalMutationsDisabled: true,
+        notAcceptedByAnyServer: true,
+        pairingRequiresLocalOperator: true,
+        remoteExecutionDisabled: true,
+        secretMaterialPersisted: false,
+      },
+      operatorChecklist: ['No listener accepts this preview code.'],
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobilePairingAcceptancePlan', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobilePairingAcceptancePlan } = await import('./observability/audit-bridge');
+    return await buildMobilePairingAcceptancePlan(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobilePairingAcceptancePlan] failed:', err);
+    const query = String(filter?.query ?? '').trim();
+    const deviceLabel = String(filter?.deviceLabel ?? 'cowork-mobile-supervisor').trim() || 'cowork-mobile-supervisor';
+    const localOperatorLabel = String(filter?.localOperatorLabel ?? 'cowork-local-operator').trim() || 'cowork-local-operator';
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      kind: 'mobile_supervision_pairing_acceptance_plan',
+      mode: 'acceptance_plan_only',
+      query,
+      basePath: '/api/mobile',
+      pairing: {
+        acceptedByListener: false,
+        codeFingerprint: 'unavailable',
+        deviceLabel,
+        expiresAt: new Date(Date.now() + 300_000).toISOString(),
+        scopes: ['mobile:read', 'mobile:draft'],
+        status: 'preview_only',
+        tokenIssued: false,
+      },
+      acceptance: {
+        canAcceptNow: false,
+        localOperatorLabel,
+        requestId: 'mobile-pairing-acceptance-unavailable',
+        status: 'blocked_until_listener_exists',
+        endpoint: {
+          action: 'accept_pairing_code',
+          enabled: false,
+          method: 'POST',
+          path: '/api/mobile/pairing/accept',
+        },
+        requiredEvidence: [
+          'local_operator_confirmed_code',
+          'loopback_listener_started_explicitly',
+          'device_label_matches_pairing_request',
+          'pairing_code_not_expired',
+        ],
+      },
+      preconditions: [
+        {
+          id: 'loopback_listener_running',
+          label: 'A real loopback listener is running.',
+          passed: false,
+          evidence: 'Fallback artifact; listener is not started.',
+        },
+      ],
+      plannedMutations: [
+        {
+          id: 'mint_short_lived_mobile_token',
+          enabled: false,
+          description: 'Mint a short-lived bearer token scoped to mobile read/draft actions.',
+        },
+      ],
+      safety: {
+        approvalMutationEndpointEnabled: false,
+        autoAccept: false,
+        localOnly: true,
+        remoteExecutionDisabled: true,
+        secretMaterialPersisted: false,
+        serverStarted: false,
+        tokenIssued: false,
+      },
+      operatorChecklist: ['No pairing acceptance endpoint is enabled by this fallback artifact.'],
+    };
+  }
+});
+
+ipcMain.handle('audit.buildMobileApprovalQueue', async (_event, filter?: Record<string, unknown>) => {
+  try {
+    const { buildMobileApprovalQueue } = await import('./observability/audit-bridge');
+    return await buildMobileApprovalQueue(filter as never);
+  } catch (err) {
+    logError('[audit.buildMobileApprovalQueue] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      kind: 'mobile_supervision_approval_queue',
+      mode: 'local_review_queue',
+      query: String(filter?.query ?? '').trim(),
+      basePath: '/api/mobile',
+      pairing: {
+        acceptedByListener: false,
+        deviceLabel: 'cowork-mobile-supervisor',
+        status: 'preview_only',
+        tokenIssued: false,
+      },
+      listener: {
+        listenerStatus: 'not_started',
+        serverStarted: false,
+      },
+      counts: {
+        blocked: 0,
+        pending: 0,
+        ready: 0,
+        total: 0,
+      },
+      items: [],
+      safety: {
+        approvalMutationEndpointEnabled: false,
+        autoDispatch: false,
+        localOnly: true,
+        outreachDisabled: true,
+        remoteExecutionDisabled: true,
+      },
+    };
   }
 });
 
@@ -3679,7 +4508,7 @@ ipcMain.handle('snippets.list', async () => {
 ipcMain.handle('snippets.get', async (_event, id: string) => {
   try {
     return getSnippetsService().get(id);
-  } catch (err) {
+  } catch (_err) {
     return null;
   }
 });
@@ -3749,7 +4578,7 @@ ipcMain.handle('bookmarks.forSession', async (_event, sessionId: string) => {
   try {
     if (!bookmarksService) return [];
     return bookmarksService.getBookmarkedMessageIds(sessionId);
-  } catch (err) {
+  } catch (_err) {
     return [];
   }
 });
@@ -3758,7 +4587,7 @@ ipcMain.handle('bookmarks.updateNote', async (_event, id: number, note: string) 
   try {
     if (!bookmarksService) return { success: false };
     return { success: bookmarksService.updateNote(id, note) };
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3767,7 +4596,7 @@ ipcMain.handle('bookmarks.remove', async (_event, id: number) => {
   try {
     if (!bookmarksService) return { success: false };
     return { success: bookmarksService.remove(id) };
-  } catch (err) {
+  } catch (_err) {
     return { success: false };
   }
 });
@@ -3845,7 +4674,7 @@ ipcMain.handle('git.commit', async (_event, cwd: string, message: string, amend?
 ipcMain.handle('git.suggestMessage', async (_event, cwd: string) => {
   try {
     return { message: getGitBridge().suggestMessage(cwd) ?? '' };
-  } catch (err) {
+  } catch (_err) {
     return { message: '' };
   }
 });
@@ -4723,10 +5552,12 @@ ipcMain.handle('schedule.create', async (_event, payload: ScheduledTaskCreateInp
   }
   const normalizedPrompt = payload.prompt.trim();
   const title = await resolveScheduledTaskTitle(normalizedPrompt, payload.cwd, payload.title);
+  const metadata = buildScheduledTaskCreateMetadata(normalizedPrompt, payload.metadata);
   return scheduledTaskManager.create({
     ...payload,
     prompt: normalizedPrompt,
     title,
+    metadata,
   });
 });
 

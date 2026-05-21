@@ -81,6 +81,41 @@ function extractSnippet(text: string, query: string, maxLen = 140): string {
   return (start > 0 ? '…' : '') + snippet + (end < text.length ? '…' : '');
 }
 
+function escapeLikePattern(value: string): string {
+  return value.replace(/[\\%_]/g, (char) => `\\${char}`);
+}
+
+function extractMessageContentText(content: string): string {
+  try {
+    const parsed = JSON.parse(content);
+    if (!Array.isArray(parsed)) return content;
+    return parsed
+      .map((block: unknown) => {
+        if (!block || typeof block !== 'object') return '';
+        const entry = block as {
+          type?: string;
+          text?: string;
+          thinking?: string;
+          content?: string;
+          name?: string;
+          input?: unknown;
+          filename?: string;
+        };
+        if (entry.type === 'text') return entry.text ?? '';
+        if (entry.type === 'thinking') return entry.thinking ?? '';
+        if (entry.type === 'tool_result') return entry.content ?? '';
+        if (entry.type === 'tool_use') return `${entry.name ?? ''} ${JSON.stringify(entry.input ?? {})}`;
+        if (entry.type === 'file_attachment') return entry.filename ?? '';
+        return '';
+      })
+      .filter(Boolean)
+      .join(' ')
+      .trim();
+  } catch {
+    return content;
+  }
+}
+
 export interface GlobalSearchDeps {
   db: DatabaseInstance;
   projectManager?: ProjectManager | null;
@@ -179,11 +214,11 @@ export class GlobalSearchService {
       .prepare(
         `SELECT id, title, cwd, created_at
          FROM sessions
-         WHERE LOWER(title) LIKE ?
+         WHERE LOWER(title) LIKE ? ESCAPE '\\'
          ORDER BY created_at DESC
          LIMIT ?`
       )
-      .all(`%${query.toLowerCase()}%`, limit) as Array<{
+      .all(`%${escapeLikePattern(query.toLowerCase())}%`, limit) as Array<{
       id: string;
       title: string;
       cwd: string | null;
@@ -209,11 +244,11 @@ export class GlobalSearchService {
       .prepare(
         `SELECT id, session_id, content, timestamp
          FROM messages
-         WHERE LOWER(content) LIKE ?
+         WHERE LOWER(content) LIKE ? ESCAPE '\\'
          ORDER BY timestamp DESC
          LIMIT ?`
       )
-      .all(`%${query.toLowerCase()}%`, limit) as Array<{
+      .all(`%${escapeLikePattern(query.toLowerCase())}%`, limit) as Array<{
       id: string;
       session_id: string;
       content: string;
@@ -221,19 +256,7 @@ export class GlobalSearchService {
     }>;
 
     return rows.map((row) => {
-      // content column is JSON of ContentBlock[]
-      let text = row.content;
-      try {
-        const parsed = JSON.parse(row.content);
-        if (Array.isArray(parsed)) {
-          text = parsed
-            .filter((b: { type?: string; text?: string }) => b.type === 'text')
-            .map((b: { text?: string }) => b.text ?? '')
-            .join(' ');
-        }
-      } catch {
-        /* plain string */
-      }
+      const text = extractMessageContentText(row.content);
       return {
         source: 'message' as const,
         id: row.id,

@@ -34,6 +34,7 @@ interface SessionInsightSummary {
   transcriptPreview: string;
   matchSnippet?: string;
   matchCount?: number;
+  matchMessageId?: string;
 }
 
 interface SessionInsightDetail {

@@ -960,12 +960,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
         title: string;
         snippet: string;
         score: number;
-        context: {
-          sessionId?: string;
-          projectId?: string;
-          messageIndex?: number;
-          path?: string;
-        };
+          context: {
+            sessionId?: string;
+            projectId?: string;
+            messageIndex?: number;
+            messageId?: string;
+            path?: string;
+          };
       }>;
       totalByCategory: Record<'session' | 'message' | 'memory' | 'knowledge' | 'file', number>;
     }> => ipcRenderer.invoke('search.global', query, limit),
@@ -1189,6 +1190,58 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tools: {
     list: (): Promise<Array<{ name: string; description: string; category: string }>> =>
       ipcRenderer.invoke('tools.list'),
+    skillCandidate: {
+      list: (options?: {
+        cwd?: string;
+        eligibleOnly?: boolean;
+        limit?: number;
+        skillRoot?: string;
+      }): Promise<Array<{
+        eligible: boolean;
+        id: string;
+        reason: string;
+        skillName: string;
+        skillPath: string;
+        sourceJobId: string;
+        successfulRunCount: number;
+        title: string;
+      }>> => ipcRenderer.invoke('tools.skillCandidate.list', options ?? {}),
+    },
+    lessonsVault: {
+      preview: (options?: {
+        category?: string;
+        concept?: string;
+        cwd?: string;
+        includeKeywords?: boolean;
+        limit?: number;
+        query?: string;
+        vaultDir?: string;
+      }): Promise<{
+        commands: {
+          exportVault: string;
+          graphJson: string;
+          graphMarkdown: string;
+        };
+        concepts: Array<{
+          id: string;
+          label: string;
+          lessonCount: number;
+          path: string;
+          sources: string[];
+        }>;
+        counts: {
+          concepts: number;
+          files: number;
+          lessons: number;
+          relations: number;
+        };
+        generatedAt: string;
+        kind: 'lessons_vault_preview';
+        rootDir: string;
+        schemaVersion: 1;
+        vaultDir: string;
+      } | null> => ipcRenderer.invoke('tools.lessonsVault.preview', options ?? {}),
+    },
   },
 
   /**
@@ -1268,7 +1321,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     get: (
       filePath: string
     ): Promise<{
-      kind: 'text' | 'image' | 'pdf' | 'binary' | 'error';
+      kind: 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
       path: string;
       name: string;
       size: number;
@@ -1280,6 +1333,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       dimensions?: { width: number; height: number };
       pdfText?: string;
       pdfPages?: number;
+      documentText?: string;
+      documentType?: string;
+      documentStats?: {
+        wordCount?: number;
+        embeddedImageCount?: number;
+        sheetCount?: number;
+        slideCount?: number;
+      };
       error?: string;
     }> => ipcRenderer.invoke('preview.get', filePath),
   },
@@ -1482,8 +1543,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       goal: string;
       parallelism?: number;
       privacyTag?: 'public' | 'sensitive';
+      dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
       maxCostUsd?: number;
-    }): Promise<{ ok: boolean; sagaId?: string; error?: string }> =>
+      targetPeerIds?: string[];
+    }): Promise<{
+      ok: boolean;
+      sagaId?: string;
+      error?: string;
+      dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
+    }> =>
       ipcRenderer.invoke('fleet.dispatch', input),
     /** List currently-tracked sagas (active + recent). */
     listSagas: (): Promise<
@@ -1496,6 +1564,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
           model: string;
           lane: 'primary' | 'fallback' | 'parallel';
           status: 'pending' | 'running' | 'completed' | 'failed' | 'skipped';
+          toolPolicy?: {
+            profile?: string;
+            policyProfile?: string;
+            defaultAction?: string;
+            summary?: string;
+          };
         }>;
         finalResult?: string;
         createdAt: number;
@@ -1615,6 +1689,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       status?: 'running' | 'completed' | 'failed' | 'cancelled';
       sessionId?: string;
       sinceTs?: number;
+      sources?: string[];
       untilTs?: number;
     }): Promise<
       Array<{
@@ -1628,6 +1703,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
         artifactCount: number;
         channel?: string;
         sessionId?: string;
+        source?: string;
+        platform?: string;
+        origin?: string;
         userId?: string;
         tags?: string[];
         totalCost?: number;
@@ -1637,6 +1715,232 @@ contextBridge.exposeInMainWorld('electronAPI', {
     > => ipcRenderer.invoke('audit.listRuns', filter),
     getRunDetail: (runId: string): Promise<unknown | null> =>
       ipcRenderer.invoke('audit.getRunDetail', runId),
+    searchRuns: (filter?: {
+      query?: string;
+      limit?: number;
+      sources?: string[];
+    }): Promise<{
+      schemaVersion: 1;
+      generatedAt: string;
+      query: string;
+      filters: { limit: number; sources: string[] };
+      count: number;
+      results: Array<{
+        runId: string;
+        objective: string;
+        status: 'running' | 'completed' | 'failed' | 'cancelled';
+        startedAt: number;
+        matched: 'artifact' | 'event' | 'summary';
+        score: number;
+        snippet: string;
+        artifact?: string;
+        eventType?: string;
+        source?: string;
+      }>;
+    }> => ipcRenderer.invoke('audit.searchRuns', filter),
+    buildRecallPack: (filter?: {
+      cwd?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxMatchesPerRun?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+    }): Promise<{
+      schemaVersion: 1;
+      generatedAt: string;
+      query: string;
+      filters: {
+        limit: number;
+        maxMemories: number;
+        maxMatchesPerRun: number;
+        maxLessons: number;
+        maxSessions: number;
+        sources: string[];
+      };
+      count: number;
+      lessonCount: number;
+      lessons: Array<{
+        category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT';
+        content: string;
+        context?: string;
+        createdAt: number;
+        id: string;
+        source: 'user_correction' | 'self_observed' | 'manual';
+      }>;
+      memories: Array<{
+        category?: string;
+        content: string;
+        file: string;
+        key?: string;
+        line: number;
+        scope: 'project' | 'project-memory' | 'user' | 'custom';
+        score: number;
+        sourceSessionId?: string;
+      }>;
+      memoryCount: number;
+      runCount: number;
+      results: Array<{
+        runId: string;
+        objective: string;
+        status: 'running' | 'completed' | 'failed' | 'cancelled';
+        startedAt: number;
+        matched: 'artifact' | 'event' | 'summary';
+        score: number;
+        snippet: string;
+        artifact?: string;
+        eventType?: string;
+        source?: string;
+      }>;
+      runs: Array<{
+        artifactCount: number;
+        channel?: string;
+        eventCount: number;
+        matches: Array<{
+          artifact?: string;
+          eventType?: string;
+          matched: 'artifact' | 'event' | 'summary';
+          score: number;
+          snippet: string;
+        }>;
+        objective: string;
+        runId: string;
+        source?: string;
+        startedAt: number;
+        status: 'running' | 'completed' | 'failed' | 'cancelled';
+        tags: string[];
+      }>;
+      sessionCount: number;
+      sessions: Array<{
+        id: string;
+        lastAccessedAt: string;
+        messageId?: number;
+        name: string;
+        parentSessionId?: string;
+        role?: string;
+        score?: number;
+        snippet?: string;
+        workingDirectory: string;
+      }>;
+      promptContext: string;
+    }> => ipcRenderer.invoke('audit.buildRecallPack', filter),
+    buildTrajectoryExport: (filter?: {
+      includeArtifactContent?: boolean;
+      maxArtifactBytes?: number;
+      maxEventValueBytes?: number;
+      runId?: string;
+    }): Promise<unknown | null> => ipcRenderer.invoke('audit.buildTrajectoryExport', filter),
+    buildPolicyEvalReport: (filter?: {
+      maxArtifactBytes?: number;
+      policyIds?: string[];
+      runId?: string;
+    }): Promise<unknown | null> => ipcRenderer.invoke('audit.buildPolicyEvalReport', filter),
+    buildGoldenWorkflowEvalReport: (filter?: {
+      fixtureIds?: string[];
+      maxArtifactBytes?: number;
+      runId?: string;
+    }): Promise<unknown | null> => ipcRenderer.invoke('audit.buildGoldenWorkflowEvalReport', filter),
+    buildMobileSnapshot: (filter?: {
+      cwd?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobileSnapshot', filter),
+    buildMobileGatewayContract: (filter?: {
+      cwd?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      includeSnapshot?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobileGatewayContract', filter),
+    buildMobileGatewayReviewDraft: (filter?: {
+      action?: string;
+      cwd?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      includeSnapshot?: boolean;
+      localOperator?: boolean;
+      method?: 'GET' | 'POST' | string;
+      path?: string;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobileGatewayReviewDraft', filter),
+    buildMobileGatewayListenerShell: (filter?: {
+      cwd?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobileGatewayListenerShell', filter),
+    buildMobilePairingState: (filter?: {
+      cwd?: string;
+      deviceLabel?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+      ttlSeconds?: number;
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobilePairingState', filter),
+    buildMobilePairingAcceptancePlan: (filter?: {
+      cwd?: string;
+      deviceLabel?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      localOperatorLabel?: string;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+      ttlSeconds?: number;
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobilePairingAcceptancePlan', filter),
+    buildMobileApprovalQueue: (filter?: {
+      cwd?: string;
+      deviceLabel?: string;
+      includeLessons?: boolean;
+      includeMemories?: boolean;
+      includeSessions?: boolean;
+      query?: string;
+      limit?: number;
+      maxMemories?: number;
+      maxLessons?: number;
+      maxSessions?: number;
+      sources?: string[];
+      ttlSeconds?: number;
+    }): Promise<unknown> => ipcRenderer.invoke('audit.buildMobileApprovalQueue', filter),
     exportCsv: (filter?: Record<string, unknown>): Promise<string> =>
       ipcRenderer.invoke('audit.exportCsv', filter),
   },
@@ -1922,6 +2226,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       projectId?: string
     ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('memory.delete', entryIndex, projectId),
+  },
+
+  lessons: {
+    add: (
+      category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT',
+      content: string,
+      projectId?: string
+    ): Promise<{ success: boolean; error?: string; lessonId?: string }> =>
+      ipcRenderer.invoke('lessons.add', category, content, projectId),
   },
 
   // Knowledge base (Claude Cowork parity)
@@ -2588,6 +2901,7 @@ declare global {
               sessionId?: string;
               projectId?: string;
               messageIndex?: number;
+              messageId?: string;
               path?: string;
             };
           }>;
@@ -2790,6 +3104,58 @@ declare global {
       };
       tools: {
         list: () => Promise<Array<{ name: string; description: string; category: string }>>;
+        skillCandidate: {
+          list: (options?: {
+            cwd?: string;
+            eligibleOnly?: boolean;
+            limit?: number;
+            skillRoot?: string;
+          }) => Promise<Array<{
+            eligible: boolean;
+            id: string;
+            reason: string;
+            skillName: string;
+            skillPath: string;
+            sourceJobId: string;
+            successfulRunCount: number;
+            title: string;
+          }>>;
+        };
+        lessonsVault: {
+          preview: (options?: {
+            category?: string;
+            concept?: string;
+            cwd?: string;
+            includeKeywords?: boolean;
+            limit?: number;
+            query?: string;
+            vaultDir?: string;
+          }) => Promise<{
+            commands: {
+              exportVault: string;
+              graphJson: string;
+              graphMarkdown: string;
+            };
+            concepts: Array<{
+              id: string;
+              label: string;
+              lessonCount: number;
+              path: string;
+              sources: string[];
+            }>;
+            counts: {
+              concepts: number;
+              files: number;
+              lessons: number;
+              relations: number;
+            };
+            generatedAt: string;
+            kind: 'lessons_vault_preview';
+            rootDir: string;
+            schemaVersion: 1;
+            vaultDir: string;
+          } | null>;
+        };
       };
       server: {
         status: () => Promise<{
@@ -2853,7 +3219,7 @@ declare global {
       };
       preview: {
         get: (filePath: string) => Promise<{
-          kind: 'text' | 'image' | 'pdf' | 'binary' | 'error';
+          kind: 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
           path: string;
           name: string;
           size: number;
@@ -2865,6 +3231,14 @@ declare global {
           dimensions?: { width: number; height: number };
           pdfText?: string;
           pdfPages?: number;
+          documentText?: string;
+          documentType?: string;
+          documentStats?: {
+            wordCount?: number;
+            embeddedImageCount?: number;
+            sheetCount?: number;
+            slideCount?: number;
+          };
           error?: string;
         }>;
       };
@@ -3011,8 +3385,15 @@ declare global {
           goal: string;
           parallelism?: number;
           privacyTag?: 'public' | 'sensitive';
+          dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
           maxCostUsd?: number;
-        }) => Promise<{ ok: boolean; sagaId?: string; error?: string }>;
+          targetPeerIds?: string[];
+        }) => Promise<{
+          ok: boolean;
+          sagaId?: string;
+          error?: string;
+          dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
+        }>;
         listSagas: () => Promise<
           Array<{
             id: string;
@@ -3154,6 +3535,7 @@ declare global {
           status?: 'running' | 'completed' | 'failed' | 'cancelled';
           sessionId?: string;
           sinceTs?: number;
+          sources?: string[];
           untilTs?: number;
         }) => Promise<
           Array<{
@@ -3167,6 +3549,9 @@ declare global {
             artifactCount: number;
             channel?: string;
             sessionId?: string;
+            source?: string;
+            platform?: string;
+            origin?: string;
             userId?: string;
             tags?: string[];
             totalCost?: number;
@@ -3175,6 +3560,232 @@ declare global {
           }>
         >;
         getRunDetail: (runId: string) => Promise<unknown | null>;
+        searchRuns: (filter?: {
+          query?: string;
+          limit?: number;
+          sources?: string[];
+        }) => Promise<{
+          schemaVersion: 1;
+          generatedAt: string;
+          query: string;
+          filters: { limit: number; sources: string[] };
+          count: number;
+          results: Array<{
+            runId: string;
+            objective: string;
+            status: 'running' | 'completed' | 'failed' | 'cancelled';
+            startedAt: number;
+            matched: 'artifact' | 'event' | 'summary';
+            score: number;
+            snippet: string;
+            artifact?: string;
+            eventType?: string;
+            source?: string;
+          }>;
+        }>;
+        buildRecallPack: (filter?: {
+          cwd?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxMatchesPerRun?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+        }) => Promise<{
+          schemaVersion: 1;
+          generatedAt: string;
+          query: string;
+          filters: {
+            limit: number;
+            maxMemories: number;
+            maxMatchesPerRun: number;
+            maxLessons: number;
+            maxSessions: number;
+            sources: string[];
+          };
+          count: number;
+          lessonCount: number;
+          lessons: Array<{
+            category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT';
+            content: string;
+            context?: string;
+            createdAt: number;
+            id: string;
+            source: 'user_correction' | 'self_observed' | 'manual';
+          }>;
+          memories: Array<{
+            category?: string;
+            content: string;
+            file: string;
+            key?: string;
+            line: number;
+            scope: 'project' | 'project-memory' | 'user' | 'custom';
+            score: number;
+            sourceSessionId?: string;
+          }>;
+          memoryCount: number;
+          runCount: number;
+          results: Array<{
+            runId: string;
+            objective: string;
+            status: 'running' | 'completed' | 'failed' | 'cancelled';
+            startedAt: number;
+            matched: 'artifact' | 'event' | 'summary';
+            score: number;
+            snippet: string;
+            artifact?: string;
+            eventType?: string;
+            source?: string;
+          }>;
+          runs: Array<{
+            artifactCount: number;
+            channel?: string;
+            eventCount: number;
+            matches: Array<{
+              artifact?: string;
+              eventType?: string;
+              matched: 'artifact' | 'event' | 'summary';
+              score: number;
+              snippet: string;
+            }>;
+            objective: string;
+            runId: string;
+            source?: string;
+            startedAt: number;
+            status: 'running' | 'completed' | 'failed' | 'cancelled';
+            tags: string[];
+          }>;
+          sessionCount: number;
+          sessions: Array<{
+            id: string;
+            lastAccessedAt: string;
+            messageId?: number;
+            name: string;
+            parentSessionId?: string;
+            role?: string;
+            score?: number;
+            snippet?: string;
+            workingDirectory: string;
+          }>;
+          promptContext: string;
+        }>;
+        buildTrajectoryExport: (filter?: {
+          includeArtifactContent?: boolean;
+          maxArtifactBytes?: number;
+          maxEventValueBytes?: number;
+          runId?: string;
+        }) => Promise<unknown | null>;
+        buildPolicyEvalReport: (filter?: {
+          maxArtifactBytes?: number;
+          policyIds?: string[];
+          runId?: string;
+        }) => Promise<unknown | null>;
+        buildGoldenWorkflowEvalReport: (filter?: {
+          fixtureIds?: string[];
+          maxArtifactBytes?: number;
+          runId?: string;
+        }) => Promise<unknown | null>;
+        buildMobileSnapshot: (filter?: {
+          cwd?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+        }) => Promise<unknown>;
+        buildMobileGatewayContract: (filter?: {
+          cwd?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          includeSnapshot?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+        }) => Promise<unknown>;
+        buildMobileGatewayReviewDraft: (filter?: {
+          action?: string;
+          cwd?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          includeSnapshot?: boolean;
+          localOperator?: boolean;
+          method?: 'GET' | 'POST' | string;
+          path?: string;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+        }) => Promise<unknown>;
+        buildMobileGatewayListenerShell: (filter?: {
+          cwd?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+        }) => Promise<unknown>;
+        buildMobilePairingState: (filter?: {
+          cwd?: string;
+          deviceLabel?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+          ttlSeconds?: number;
+        }) => Promise<unknown>;
+        buildMobilePairingAcceptancePlan: (filter?: {
+          cwd?: string;
+          deviceLabel?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          localOperatorLabel?: string;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+          ttlSeconds?: number;
+        }) => Promise<unknown>;
+        buildMobileApprovalQueue: (filter?: {
+          cwd?: string;
+          deviceLabel?: string;
+          includeLessons?: boolean;
+          includeMemories?: boolean;
+          includeSessions?: boolean;
+          query?: string;
+          limit?: number;
+          maxMemories?: number;
+          maxLessons?: number;
+          maxSessions?: number;
+          sources?: string[];
+          ttlSeconds?: number;
+        }) => Promise<unknown>;
         exportCsv: (filter?: Record<string, unknown>) => Promise<string>;
       };
       customCommands: {
@@ -3419,6 +4030,13 @@ declare global {
           entryIndex: number,
           projectId?: string
         ) => Promise<{ success: boolean; error?: string }>;
+      };
+      lessons: {
+        add: (
+          category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT',
+          content: string,
+          projectId?: string
+        ) => Promise<{ success: boolean; error?: string; lessonId?: string }>;
       };
       knowledge: {
         list: (projectId?: string) => Promise<Array<Record<string, unknown>>>;

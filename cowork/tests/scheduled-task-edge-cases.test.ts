@@ -21,6 +21,7 @@ function createTask(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
     lastRunAt: null,
     lastRunSessionId: null,
     lastError: null,
+    metadata: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -41,6 +42,7 @@ function createStore(initialTasks: ScheduledTask[]): ScheduledTaskStore {
         lastRunAt: null,
         lastRunSessionId: null,
         lastError: null,
+        metadata: input.metadata ?? null,
         createdAt,
         updatedAt: createdAt,
       };

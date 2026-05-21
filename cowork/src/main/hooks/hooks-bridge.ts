@@ -32,6 +32,9 @@ export type UserHookEvent =
   | 'FileChanged'
   | 'PreCompact'
   | 'PostCompact'
+  | 'BeforeMemoryWrite'
+  | 'AfterRunComplete'
+  | 'BeforeScheduledDelivery'
   | 'SubagentStart'
   | 'SubagentStop'
   | 'TaskCreated'
@@ -50,6 +53,9 @@ export const HOOK_EVENTS: UserHookEvent[] = [
   'FileChanged',
   'PreCompact',
   'PostCompact',
+  'BeforeMemoryWrite',
+  'AfterRunComplete',
+  'BeforeScheduledDelivery',
   'SubagentStart',
   'SubagentStop',
   'TaskCreated',

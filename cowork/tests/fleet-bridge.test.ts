@@ -195,6 +195,91 @@ describe('FleetBridge', () => {
     expect(fleetEvents[0].payload.hostname).toBe('ministar');
   });
 
+  it('tracks chat-session metadata on the peer without adding content to peer state', async () => {
+    const events: ServerEvent[] = [];
+    const activityFeed = { record: vi.fn() };
+    const bridge = new FleetBridge((e) => events.push(e), activityFeed as never);
+    await bridge.init();
+
+    await bridge.addPeer({
+      url: 'ws://example/ws',
+      apiKey: 'k',
+      label: 'spoke-1',
+    });
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    const listener = FakeFleetListener.instances[0];
+    listener.emit('fleet:event', {
+      type: 'fleet:chat-session:start',
+      payload: {
+        sessionId: 'sess_review_123456',
+        model: 'gpt-5.1-codex',
+        dispatchProfile: 'review',
+        source: { hostname: 'ministar' },
+      },
+    });
+    listener.emit('fleet:event', {
+      type: 'fleet:chat-session:turn',
+      payload: {
+        sessionId: 'sess_review_123456',
+        turnCount: 2,
+        prompt: 'must not be kept',
+        content: 'must not be kept either',
+        source: { hostname: 'ministar' },
+      },
+    });
+
+    await new Promise((r) => setImmediate(r));
+
+    const peers = await bridge.listPeers();
+    expect(peers[0].chatSessions).toEqual([
+      expect.objectContaining({
+        sessionId: 'sess_review_123456',
+        model: 'gpt-5.1-codex',
+        dispatchProfile: 'review',
+        turnCount: 2,
+      }),
+    ]);
+    expect(JSON.stringify(peers[0].chatSessions)).not.toContain('must not be kept');
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.chatSession.started',
+        metadata: expect.objectContaining({
+          peerId: 'spoke-1',
+          sessionId: 'sess_review_123456',
+          dispatchProfile: 'review',
+          model: 'gpt-5.1-codex',
+        }),
+      }),
+    );
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.chatSession.turn',
+        metadata: expect.objectContaining({
+          turnCount: 2,
+        }),
+      }),
+    );
+    expect(JSON.stringify(activityFeed.record.mock.calls)).not.toContain('must not be kept');
+
+    listener.emit('fleet:event', {
+      type: 'fleet:chat-session:end',
+      payload: { sessionId: 'sess_review_123456', reason: 'end' },
+    });
+    await new Promise((r) => setImmediate(r));
+    const afterEnd = await bridge.listPeers();
+    expect(afterEnd[0].chatSessions).toEqual([]);
+    expect(activityFeed.record).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'fleet.chatSession.ended',
+        metadata: expect.objectContaining({
+          reason: 'end',
+        }),
+      }),
+    );
+  });
+
   it('removePeer disconnects listener and clears persisted entry', async () => {
     const events: ServerEvent[] = [];
     const bridge = new FleetBridge((e) => events.push(e));

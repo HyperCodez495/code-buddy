@@ -2,8 +2,17 @@ import { useState, useRef, useEffect } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
-import type { ContentBlock } from '../types';
 import { getInitialSessionTitle } from '../../shared/session-title';
+import {
+  buildAttachmentFromDroppedFile,
+  buildAttachmentFromPath,
+  buildComposerContentBlocks,
+  buildDocumentWorkshopPrompt,
+  getDroppedFilePath,
+  hasDocumentWorkshopAttachment,
+  isDroppedFolderCandidate,
+  type AttachedFile,
+} from '../utils/file-attachment-helpers';
 import {
   FileText,
   BarChart3,
@@ -18,14 +27,7 @@ import {
   Brain,
 } from 'lucide-react';
 import { ProjectSelector } from './ProjectSelector';
-
-type AttachedFile = {
-  name: string;
-  path: string;
-  size: number;
-  type: string;
-  inlineDataBase64?: string;
-};
+import { FileAttachmentChip } from './FileAttachmentChip';
 
 import welcomeLogoSrc from '../assets/logo.png';
 
@@ -51,7 +53,10 @@ export function WelcomeView() {
   const setShowSettings = useAppStore((state) => state.setShowSettings);
   const setShowResumeChooser = useAppStore((state) => state.setShowResumeChooser);
   const setSettingsTab = useAppStore((state) => state.setSettingsTab);
+  const setPreviewFilePath = useAppStore((state) => state.setPreviewFilePath);
   const canSubmit = prompt.trim().length > 0 || pastedImages.length > 0 || attachedFiles.length > 0;
+  const shouldShowDocumentWorkshopAction =
+    attachedFiles.some(hasDocumentWorkshopAttachment) && prompt.trim().length === 0;
 
   const handleSelectFolder = async () => {
     try {
@@ -225,16 +230,7 @@ export function WelcomeView() {
       const filePaths = await window.electronAPI.selectFiles();
       if (filePaths.length === 0) return;
 
-      const newFiles = filePaths.map((filePath) => {
-        const fileName = filePath.split(/[/\\]/).pop() || 'unknown';
-        return {
-          name: fileName,
-          path: filePath,
-          size: 0,
-          type: 'application/octet-stream',
-        };
-      });
-
+      const newFiles = filePaths.map(buildAttachmentFromPath);
       setAttachedFiles((prev) => [...prev, ...newFiles]);
     } catch (error) {
       console.error('[WelcomeView] Error selecting files:', error);
@@ -262,15 +258,9 @@ export function WelcomeView() {
     const files = Array.from(e.dataTransfer.files);
 
     // Detect folder drops — switch working directory
-    const folderFiles = files.filter((file) => {
-      const filePath =
-        'path' in file && typeof (file as File & { path?: string }).path === 'string'
-          ? (file as File & { path?: string }).path
-          : '';
-      return !file.type && filePath && !file.name.includes('.');
-    });
+    const folderFiles = files.filter(isDroppedFolderCandidate);
     if (folderFiles.length > 0) {
-      const folderPath = (folderFiles[0] as File & { path?: string }).path;
+      const folderPath = getDroppedFilePath(folderFiles[0]);
       if (folderPath && window.electronAPI) {
         window.electronAPI.send({
           type: 'workdir.set',
@@ -307,18 +297,7 @@ export function WelcomeView() {
 
     if (otherFiles.length > 0) {
       const newFiles = await Promise.all(
-        otherFiles.map(async (file) => {
-          const droppedPath = 'path' in file && typeof file.path === 'string' ? file.path : '';
-          const inlineDataBase64 = droppedPath ? undefined : await blobToBase64(file);
-
-          return {
-            name: file.name,
-            path: droppedPath,
-            size: file.size,
-            type: file.type || 'application/octet-stream',
-            inlineDataBase64,
-          };
-        })
+        otherFiles.map((file) => buildAttachmentFromDroppedFile(file, blobToBase64))
       );
 
       setAttachedFiles((prev) => [...prev, ...newFiles]);
@@ -338,39 +317,11 @@ export function WelcomeView() {
       return;
 
     // Build content blocks
-    const contentBlocks: ContentBlock[] = [];
-
-    // Add images first
-    pastedImages.forEach((img) => {
-      contentBlocks.push({
-        type: 'image',
-        source: {
-          type: 'base64',
-          media_type: img.mediaType as 'image/jpeg' | 'image/png' | 'image/gif' | 'image/webp',
-          data: img.base64,
-        },
-      });
-    });
-
-    // Add file attachments
-    attachedFiles.forEach((file) => {
-      contentBlocks.push({
-        type: 'file_attachment',
-        filename: file.name,
-        relativePath: file.path,
-        size: file.size,
-        mimeType: file.type,
-        inlineDataBase64: file.inlineDataBase64,
-      });
-    });
-
-    // Add text if present
-    if (currentPrompt.trim()) {
-      contentBlocks.push({
-        type: 'text',
-        text: currentPrompt.trim(),
-      });
-    }
+    const contentBlocks = buildComposerContentBlocks(
+      currentPrompt,
+      attachedFiles,
+      pastedImages
+    );
 
     // Use the global working directory (always available after app startup)
     setIsSubmitting(true);
@@ -421,6 +372,20 @@ export function WelcomeView() {
       textarea.style.height = `${newHeight}px`;
       // Show scrollbar if content exceeds max height
       textarea.style.overflowY = textarea.scrollHeight > maxHeight ? 'auto' : 'hidden';
+    }
+  };
+
+  const applyDocumentWorkshopPrompt = () => {
+    const workshopPrompt = buildDocumentWorkshopPrompt(attachedFiles);
+    setPrompt(workshopPrompt);
+    if (textareaRef.current) {
+      textareaRef.current.value = workshopPrompt;
+      textareaRef.current.focus();
+      requestAnimationFrame(() => {
+        const end = workshopPrompt.length;
+        textareaRef.current?.setSelectionRange(end, end);
+        adjustTextareaHeight();
+      });
     }
   };
 
@@ -601,30 +566,38 @@ export function WelcomeView() {
 
           {/* File attachments */}
           {attachedFiles.length > 0 && (
-            <div className="space-y-2 mb-3">
+            <div className="flex flex-wrap items-center gap-1.5 mb-3">
               {attachedFiles.map((file, index) => (
-                <div
-                  key={index}
-                  className="flex items-center gap-2 px-3 py-2 rounded-lg bg-surface-muted border border-border group"
-                >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm text-text-primary truncate">{file.name}</p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => removeFile(index)}
-                    className="w-6 h-6 rounded-full bg-error/10 hover:bg-error/20 text-error flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3.5 h-3.5" />
-                  </button>
-                </div>
+                <FileAttachmentChip
+                  key={file.path || `welcome-attached-file-${index}`}
+                  file={file}
+                  onRemove={() => removeFile(index)}
+                  onPreview={(candidate) => {
+                    if (candidate.path) {
+                      setPreviewFilePath(candidate.path);
+                    }
+                  }}
+                />
               ))}
+              {shouldShowDocumentWorkshopAction && (
+                <button
+                  type="button"
+                  onClick={applyDocumentWorkshopPrompt}
+                  data-testid="welcome-document-workshop-action"
+                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/35 bg-accent/10 text-xs font-medium text-accent hover:bg-accent/15 transition-colors"
+                  title={t('welcome.documentWorkshopActionTitle', 'Prepare a Word workshop prompt')}
+                >
+                  <FileSearch className="w-3.5 h-3.5" />
+                  <span>{t('welcome.documentWorkshopAction', 'Atelier Word')}</span>
+                </button>
+              )}
             </div>
           )}
 
           {/* Text Input - Auto-resizing */}
           <textarea
             ref={textareaRef}
+            data-testid="welcome-prompt-input"
             value={prompt}
             onChange={(e) => {
               setPrompt(e.target.value);
@@ -692,6 +665,7 @@ export function WelcomeView() {
                 <button
                   type="button"
                   onClick={handleFileSelect}
+                  data-testid="welcome-attach-files"
                   className="flex items-center gap-2 text-sm text-text-secondary hover:text-text-primary transition-colors"
                 >
                   <Paperclip className="w-4 h-4" />

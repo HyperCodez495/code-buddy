@@ -3,7 +3,7 @@
  *
  * Slide-out panel from the right edge that previews any file from the
  * workspace. Renders code with syntax highlighting (via existing
- * MessageMarkdown), images inline, PDF text, or binary metadata.
+ * MessageMarkdown), images inline, PDF/Office text, or binary metadata.
  *
  * Driven by the global store: setting `previewFilePath` opens the panel,
  * setting it to null closes it.
@@ -26,7 +26,7 @@ import {
 import { useAppStore } from '../store';
 
 interface PreviewResult {
-  kind: 'text' | 'image' | 'pdf' | 'binary' | 'error';
+  kind: 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
   path: string;
   name: string;
   size: number;
@@ -37,6 +37,14 @@ interface PreviewResult {
   dataUri?: string;
   pdfText?: string;
   pdfPages?: number;
+  documentText?: string;
+  documentType?: string;
+  documentStats?: {
+    wordCount?: number;
+    embeddedImageCount?: number;
+    sheetCount?: number;
+    slideCount?: number;
+  };
   error?: string;
 }
 
@@ -103,9 +111,11 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
   const handleClose = () => setPreviewFilePath(null);
 
   const handleCopy = async () => {
-    if (!preview?.text && !preview?.pdfText) return;
+    if (!preview?.text && !preview?.pdfText && !preview?.documentText) return;
     try {
-      await navigator.clipboard.writeText(preview.text ?? preview.pdfText ?? '');
+      await navigator.clipboard.writeText(
+        preview.text ?? preview.pdfText ?? preview.documentText ?? ''
+      );
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
     } catch (err) {
@@ -133,6 +143,8 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
       <ImageIcon size={14} className="text-accent" />
     ) : preview?.kind === 'pdf' ? (
       <FileText size={14} className="text-accent" />
+    ) : preview?.kind === 'document' ? (
+      <FileText size={14} className="text-accent" />
     ) : preview?.kind === 'text' ? (
       <FileCode size={14} className="text-accent" />
     ) : preview?.kind === 'error' ? (
@@ -155,7 +167,7 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
     : 'fixed right-0 top-0 bottom-0 w-[480px] max-w-[90vw] bg-background border-l border-border shadow-elevated z-40 flex flex-col';
 
   return (
-    <div className={containerClasses}>
+    <div className={containerClasses} data-testid="file-preview-pane">
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-muted shrink-0">
         <div className="flex items-center gap-2 min-w-0">
@@ -169,12 +181,20 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
                 {preview.kind} · {formatBytes(preview.size)}
                 {preview.lineCount !== undefined && ` · ${preview.lineCount} ${t('preview.lines')}`}
                 {preview.pdfPages !== undefined && ` · ${preview.pdfPages} ${t('preview.pages')}`}
+                {preview.documentStats?.wordCount !== undefined &&
+                  ` · ${preview.documentStats.wordCount} ${t('preview.words')}`}
+                {preview.documentStats?.embeddedImageCount !== undefined &&
+                  ` · ${preview.documentStats.embeddedImageCount} ${t('preview.images')}`}
+                {preview.documentStats?.sheetCount !== undefined &&
+                  ` · ${preview.documentStats.sheetCount} ${t('preview.sheets')}`}
+                {preview.documentStats?.slideCount !== undefined &&
+                  ` · ${preview.documentStats.slideCount} ${t('preview.slides')}`}
               </div>
             )}
           </div>
         </div>
         <div className="flex items-center gap-1 shrink-0">
-          {(preview?.text || preview?.pdfText) && (
+          {(preview?.text || preview?.pdfText || preview?.documentText) && (
             <button
               onClick={handleCopy}
               className="p-1.5 text-text-muted hover:text-text-primary hover:bg-surface-hover rounded transition-colors"
@@ -244,6 +264,20 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
             ) : (
               <div className="text-center text-xs text-text-muted py-8">
                 {preview.error ?? t('preview.noPdfText')}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!loading && preview?.kind === 'document' && (
+          <div className="p-4">
+            {preview.documentText ? (
+              <pre className="text-[11px] leading-relaxed text-text-primary whitespace-pre-wrap break-words">
+                {preview.documentText}
+              </pre>
+            ) : (
+              <div className="text-center text-xs text-text-muted py-8">
+                {preview.error ?? t('preview.noDocumentText')}
               </div>
             )}
           </div>

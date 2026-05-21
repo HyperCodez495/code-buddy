@@ -1,3 +1,6 @@
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
+import { tmpdir } from 'os';
+import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseInstance } from '../src/main/db/database';
 
@@ -47,7 +50,11 @@ vi.mock('../src/main/mcp/mcp-config-store', () => ({
   },
 }));
 
-import { SessionManager } from '../src/main/session/session-manager';
+import {
+  SessionManager,
+  createUniqueAttachmentFilename,
+  formatFileAttachmentPromptLine,
+} from '../src/main/session/session-manager';
 
 // Shared minimal DB factory used across tests
 function makeDb(overrides: Partial<DatabaseInstance> = {}): DatabaseInstance {
@@ -98,6 +105,9 @@ describe('SessionManager.listSessions', () => {
       allowed_tools: JSON.stringify(['read', 'write']),
       memory_enabled: 0,
       model: 'claude-3-5-sonnet',
+      project_id: 'project-1',
+      is_background: 1,
+      execution_mode: 'task',
       created_at: 1000,
       updated_at: 2000,
     };
@@ -123,6 +133,9 @@ describe('SessionManager.listSessions', () => {
     expect(s.allowedTools).toEqual(['read', 'write']);
     expect(s.memoryEnabled).toBe(false);
     expect(s.model).toBe('claude-3-5-sonnet');
+    expect(s.projectId).toBe('project-1');
+    expect(s.isBackground).toBe(true);
+    expect(s.executionMode).toBe('task');
     expect(s.createdAt).toBe(1000);
     expect(s.updatedAt).toBe(2000);
   });
@@ -450,5 +463,131 @@ describe('SessionManager.searchMessageContent', () => {
     const [hit] = manager.searchMessageContent('needle');
     expect(hit.snippet).toContain('needle');
     expect(hit.projectId).toBeNull();
+  });
+});
+
+describe('formatFileAttachmentPromptLine', () => {
+  it('includes MIME type context when available for document attachments', () => {
+    expect(
+      formatFileAttachmentPromptLine({
+        filename: 'questions.docx',
+        relativePath: '.tmp/questions.docx',
+        size: 2048,
+        mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      })
+    ).toBe(
+      '- questions.docx (2.0 KB, type: application/vnd.openxmlformats-officedocument.wordprocessingml.document) at path: .tmp/questions.docx'
+    );
+  });
+
+  it('keeps the existing compact line when MIME type is unknown', () => {
+    expect(
+      formatFileAttachmentPromptLine({
+        filename: 'notes.bin',
+        relativePath: '.tmp/notes.bin',
+        size: 512,
+      })
+    ).toBe('- notes.bin (0.5 KB) at path: .tmp/notes.bin');
+  });
+});
+
+describe('createUniqueAttachmentFilename', () => {
+  it('keeps duplicate attachment basenames from overwriting each other', () => {
+    const used = new Set<string>();
+
+    expect(createUniqueAttachmentFilename('questions.docx', used)).toBe('questions.docx');
+    expect(createUniqueAttachmentFilename('questions.docx', used)).toBe('questions-2.docx');
+    expect(
+      createUniqueAttachmentFilename('questions.docx', used, (candidate) => candidate === 'questions-3.docx')
+    ).toBe('questions-4.docx');
+  });
+});
+
+describe('SessionManager file attachment processing', () => {
+  it('copies duplicate attachment filenames to unique .tmp paths', async () => {
+    const root = mkdtempSync(join(tmpdir(), 'cowork-session-attachments-'));
+    const firstDir = join(root, 'first');
+    const secondDir = join(root, 'second');
+    mkdirSync(firstDir);
+    mkdirSync(secondDir);
+    const firstSource = join(firstDir, 'questions.docx');
+    const secondSource = join(secondDir, 'questions.docx');
+    writeFileSync(firstSource, 'first');
+    writeFileSync(secondSource, 'second');
+
+    try {
+      const manager = new SessionManager(makeDb(), vi.fn());
+      const processed = await (manager as any).processFileAttachments(
+        { id: 'session-attachments', cwd: root },
+        [
+          {
+            type: 'file_attachment',
+            filename: 'questions.docx',
+            relativePath: firstSource,
+            size: 5,
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          },
+          {
+            type: 'file_attachment',
+            filename: 'questions.docx',
+            relativePath: secondSource,
+            size: 6,
+            mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+          },
+        ]
+      );
+
+      expect(processed.map((block: any) => block.relativePath)).toEqual([
+        join('.tmp', 'questions.docx'),
+        join('.tmp', 'questions-2.docx'),
+      ]);
+      expect(readFileSync(join(root, '.tmp', 'questions.docx'), 'utf8')).toBe('first');
+      expect(readFileSync(join(root, '.tmp', 'questions-2.docx'), 'utf8')).toBe('second');
+      expect(existsSync(join(root, '.tmp', 'questions-3.docx'))).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it('routes attachment-only Word documents through the workshop prompt', async () => {
+    const db = makeDb();
+    const manager = new SessionManager(db, vi.fn());
+    const run = vi.fn(async () => undefined);
+    (manager as any).agentRunner = { run, cancel: vi.fn() };
+    (manager as any).ensureSandboxInitialized = vi.fn(async () => undefined);
+    (manager as any).processFileAttachments = vi.fn(async (_session: unknown, content: unknown) => content);
+    (manager as any).runSessionTitleGeneration = vi.fn(async () => undefined);
+
+    await (manager as any).processPrompt(
+      {
+        id: 'session-word-workshop',
+        title: 'Word workshop',
+        status: 'idle',
+        cwd: 'D:\\Workspace',
+        mountedPaths: [],
+        allowedTools: [],
+        memoryEnabled: false,
+        model: 'test-model',
+        createdAt: 1,
+        updatedAt: 1,
+      },
+      '',
+      [
+        {
+          type: 'file_attachment',
+          filename: 'questions.docx',
+          relativePath: '.tmp/questions.docx',
+          size: 2048,
+          mimeType: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        },
+      ]
+    );
+
+    expect(run).toHaveBeenCalledTimes(1);
+    const enhancedPrompt = run.mock.calls[0][1] as string;
+    expect(enhancedPrompt).toContain('Analyze the attached document(s): questions.docx');
+    expect(enhancedPrompt).toContain('[Document workshop guidance]');
+    expect(enhancedPrompt).toContain('[Document workshop path hints]');
+    expect(enhancedPrompt).toContain('questions-livrable.docx');
   });
 });

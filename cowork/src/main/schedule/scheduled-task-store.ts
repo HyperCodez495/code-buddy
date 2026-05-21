@@ -30,6 +30,7 @@ export function createScheduledTaskStore(db: DatabaseInstance): ScheduledTaskSto
         last_run_at: null,
         last_run_session_id: null,
         last_error: null,
+        metadata: serializeTaskMetadata(input.metadata),
         created_at: now,
         updated_at: now,
       };
@@ -66,6 +67,7 @@ function mapRowToTask(row: ScheduledTaskRow): ScheduledTask {
     lastRunAt: row.last_run_at,
     lastRunSessionId: row.last_run_session_id,
     lastError: row.last_error,
+    metadata: parseTaskMetadata(row.metadata),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -87,6 +89,7 @@ function mapTaskUpdatesToRow(updates: ScheduledTaskUpdateInput): Partial<Schedul
   if (updates.lastRunAt !== undefined) mapped.last_run_at = updates.lastRunAt;
   if (updates.lastRunSessionId !== undefined) mapped.last_run_session_id = updates.lastRunSessionId;
   if (updates.lastError !== undefined) mapped.last_error = updates.lastError;
+  if (updates.metadata !== undefined) mapped.metadata = serializeTaskMetadata(updates.metadata);
   return mapped;
 }
 
@@ -96,6 +99,28 @@ function parseScheduleConfig(value: string | null): ScheduledTask['scheduleConfi
   }
   try {
     return JSON.parse(value) as ScheduledTask['scheduleConfig'];
+  } catch {
+    return null;
+  }
+}
+
+function serializeTaskMetadata(value: ScheduledTask['metadata'] | undefined): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    return null;
+  }
+  return JSON.stringify(value);
+}
+
+function parseTaskMetadata(value: string | null): ScheduledTask['metadata'] {
+  if (!value) {
+    return null;
+  }
+  try {
+    const parsed: unknown = JSON.parse(value);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return parsed as ScheduledTask['metadata'];
   } catch {
     return null;
   }

@@ -135,7 +135,9 @@ describe('SessionInsightsBridge', () => {
     expect(results).toHaveLength(1);
     expect(results[0]?.sessionId).toBe('s1');
     expect(results[0]?.matchSnippet).toContain('hidden needle');
+    expect(results[0]?.matchRole).toBe('assistant');
     expect(results[0]?.matchCount).toBe(1);
+    expect(results[0]?.matchMessageId).toBe('m-long');
   });
 
   it('returns detailed transcript data for a session', () => {

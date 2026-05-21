@@ -2,54 +2,17 @@ import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Clock3, FolderTree, Loader2, Search, X, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../store';
-import type { Message, TraceStep } from '../types';
-
-interface SessionResumeSummary {
-  sessionId: string;
-  title: string;
-  status: 'idle' | 'running' | 'completed' | 'error';
-  model?: string;
-  cwd?: string;
-  createdAt: number;
-  updatedAt: number;
-  messageCount: number;
-  userMessageCount: number;
-  assistantMessageCount: number;
-  toolCallCount: number;
-  tokenInput: number;
-  tokenOutput: number;
-  totalTokens: number;
-  totalExecutionTimeMs: number;
-  transcriptPreview: string;
-}
-
-interface SessionResumeDetail {
-  summary: SessionResumeSummary;
-  messages: Message[];
-  traceSteps: TraceStep[];
-}
+import {
+  buildFocusedMessageTarget,
+  formatRelativeTime,
+  groupByWorkspace,
+  type SessionResumeDetail,
+  type SessionResumeSummary,
+} from './session-resume-helpers';
 
 interface SessionResumeDialogProps {
   open: boolean;
   onClose: () => void;
-}
-
-function formatRelativeTime(timestamp: number): string {
-  const delta = Date.now() - timestamp;
-  if (delta < 60_000) return 'just now';
-  if (delta < 3_600_000) return `${Math.round(delta / 60_000)}m ago`;
-  if (delta < 86_400_000) return `${Math.round(delta / 3_600_000)}h ago`;
-  return `${Math.round(delta / 86_400_000)}d ago`;
-}
-
-function groupByWorkspace(items: SessionResumeSummary[]): Array<[string, SessionResumeSummary[]]> {
-  const groups = new Map<string, SessionResumeSummary[]>();
-  for (const item of items) {
-    const key = item.cwd || 'No workspace';
-    if (!groups.has(key)) groups.set(key, []);
-    groups.get(key)!.push(item);
-  }
-  return Array.from(groups.entries());
 }
 
 export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, onClose }) => {
@@ -57,6 +20,7 @@ export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, 
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setMessages = useAppStore((s) => s.setMessages);
   const setTraceSteps = useAppStore((s) => s.setTraceSteps);
+  const setFocusedMessageTarget = useAppStore((s) => s.setFocusedMessageTarget);
   const [query, setQuery] = useState('');
   const [items, setItems] = useState<SessionResumeSummary[]>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
@@ -107,6 +71,10 @@ export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, 
   }, [open, selectedId]);
 
   const grouped = useMemo(() => groupByWorkspace(items), [items]);
+  const selectedSummary = useMemo(
+    () => items.find((item) => item.sessionId === selectedId) ?? null,
+    [items, selectedId]
+  );
 
   const handleResume = useCallback(async () => {
     if (!detail) return;
@@ -114,12 +82,25 @@ export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, 
     try {
       setMessages(detail.summary.sessionId, detail.messages);
       setTraceSteps(detail.summary.sessionId, detail.traceSteps);
+      const focusedTarget = buildFocusedMessageTarget(selectedSummary, query);
+      if (focusedTarget) {
+        setFocusedMessageTarget(focusedTarget);
+      }
       setActiveSession(detail.summary.sessionId);
       onClose();
     } finally {
       setResuming(false);
     }
-  }, [detail, onClose, setActiveSession, setMessages, setTraceSteps]);
+  }, [
+    detail,
+    onClose,
+    query,
+    selectedSummary,
+    setActiveSession,
+    setFocusedMessageTarget,
+    setMessages,
+    setTraceSteps,
+  ]);
 
   if (!open) return null;
 
@@ -209,12 +190,20 @@ export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, 
                       <div className="text-[11px] text-text-muted mt-0.5 truncate">
                         {item.model || t('sessionResume.unknownModel', 'Unknown model')}
                       </div>
+                      {query.trim() && item.matchSnippet && (
+                        <div className="mt-1 text-[11px] text-text-secondary line-clamp-2">
+                          {item.matchSnippet}
+                        </div>
+                      )}
                       <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
                         <span className="inline-flex items-center gap-1">
                           <Clock3 size={10} />
                           {formatRelativeTime(item.updatedAt)}
                         </span>
                         <span>{item.messageCount} msg</span>
+                        {query.trim() && typeof item.matchCount === 'number' && item.matchCount > 0 && (
+                          <span>{t('sessionResume.matches', { count: item.matchCount })}</span>
+                        )}
                       </div>
                     </button>
                   ))}
@@ -269,13 +258,26 @@ export const SessionResumeDialog: React.FC<SessionResumeDialogProps> = ({ open, 
                   )}
 
                   {!loadingDetail && (
-                    <div className="rounded-xl border border-border-muted bg-surface/30 p-3">
-                      <div className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-2">
-                        {t('sessionResume.preview', 'Transcript preview')}
-                      </div>
-                      <div className="text-xs text-text-secondary whitespace-pre-wrap break-words">
-                        {detail?.summary.transcriptPreview ||
-                          t('sessionResume.noPreview', 'No transcript preview available')}
+                    <div className="space-y-3">
+                      {query.trim() && selectedSummary?.matchSnippet && (
+                        <div className="rounded-xl border border-accent/30 bg-accent/10 p-3">
+                          <div className="text-[11px] font-medium text-accent uppercase tracking-wide mb-2">
+                            {t('sessionResume.searchMatch', 'Search match')}
+                            {selectedSummary.matchRole ? ` (${selectedSummary.matchRole})` : ''}
+                          </div>
+                          <div className="text-xs text-text-secondary whitespace-pre-wrap break-words">
+                            {selectedSummary.matchSnippet}
+                          </div>
+                        </div>
+                      )}
+                      <div className="rounded-xl border border-border-muted bg-surface/30 p-3">
+                        <div className="text-[11px] font-medium text-text-muted uppercase tracking-wide mb-2">
+                          {t('sessionResume.preview', 'Transcript preview')}
+                        </div>
+                        <div className="text-xs text-text-secondary whitespace-pre-wrap break-words">
+                          {detail?.summary.transcriptPreview ||
+                            t('sessionResume.noPreview', 'No transcript preview available')}
+                        </div>
                       </div>
                     </div>
                   )}

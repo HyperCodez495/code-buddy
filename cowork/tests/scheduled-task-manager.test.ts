@@ -23,6 +23,7 @@ function createTask(overrides: Partial<ScheduledTask> = {}): ScheduledTask {
     lastRunAt: null,
     lastRunSessionId: null,
     lastError: null,
+    metadata: null,
     createdAt: now,
     updatedAt: now,
     ...overrides,
@@ -61,6 +62,7 @@ function createStore(initialTasks: ScheduledTask[]): ScheduledTaskStore {
         lastRunAt: null,
         lastRunSessionId: null,
         lastError: null,
+        metadata: input.metadata ?? null,
         createdAt,
         updatedAt: createdAt,
       };
@@ -98,14 +100,24 @@ describe('ScheduledTaskManager', () => {
       }),
     ]);
     const executeTask = vi.fn().mockResolvedValue({ sessionId: 'session-1' });
+    const onTaskComplete = vi.fn();
 
-    const manager = new ScheduledTaskManager({ store, executeTask, now: () => Date.now() });
+    const manager = new ScheduledTaskManager({
+      store,
+      executeTask,
+      onTaskComplete,
+      now: () => Date.now(),
+    });
     manager.start();
 
     await vi.advanceTimersByTimeAsync(1000);
 
     const after = store.get('once');
     expect(executeTask).toHaveBeenCalledTimes(1);
+    expect(onTaskComplete).toHaveBeenCalledWith(
+      expect.objectContaining({ id: 'once', title: 'Daily reminder' }),
+      { sessionId: 'session-1' }
+    );
     expect(after?.enabled).toBe(false);
     expect(after?.lastRunSessionId).toBe('session-1');
   });
@@ -352,6 +364,32 @@ describe('ScheduledTaskManager', () => {
     });
 
     expect(created.title).toBe(buildScheduledTaskTitle('需要汇总论文'));
+  });
+
+  it('preserves lightweight Fleet metadata when creating tasks', () => {
+    const now = Date.now();
+    const store = createStore([]);
+    const executeTask = vi.fn().mockResolvedValue({ sessionId: 'session-metadata' });
+    const manager = new ScheduledTaskManager({ store, executeTask, now: () => Date.now() });
+
+    const created = manager.create({
+      title: 'Fleet dispatch',
+      prompt: 'dispatch to fleet',
+      cwd: '/tmp/project',
+      runAt: now + 60 * 1000,
+      enabled: true,
+      metadata: {
+        source: 'fleet-command-center',
+        dispatchProfile: 'review',
+        privacyTag: 'sensitive',
+      },
+    });
+
+    expect(created.metadata).toEqual({
+      source: 'fleet-command-center',
+      dispatchProfile: 'review',
+      privacyTag: 'sensitive',
+    });
   });
 
   it('keeps existing title when prompt changes without explicit title update', () => {

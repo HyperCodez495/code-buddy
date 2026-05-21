@@ -19,6 +19,7 @@ import { log, logError } from '../utils/logger';
 
 export type ScheduleRepeatUnit = 'minute' | 'hour' | 'day';
 export type ScheduledTaskWeekday = 0 | 1 | 2 | 3 | 4 | 5 | 6;
+export type ScheduledTaskMetadata = Record<string, unknown>;
 
 export interface ScheduledTaskDailyScheduleConfig {
   kind: 'daily';
@@ -49,6 +50,7 @@ export interface ScheduledTask {
   lastRunAt: number | null;
   lastRunSessionId: string | null;
   lastError: string | null;
+  metadata: ScheduledTaskMetadata | null;
   createdAt: number;
   updatedAt: number;
 }
@@ -63,6 +65,7 @@ export interface ScheduledTaskCreateInput {
   repeatEvery?: number | null;
   repeatUnit?: ScheduleRepeatUnit | null;
   enabled?: boolean;
+  metadata?: ScheduledTaskMetadata | null;
 }
 
 export interface ScheduledTaskUpdateInput {
@@ -78,6 +81,7 @@ export interface ScheduledTaskUpdateInput {
   lastRunAt?: number | null;
   lastRunSessionId?: string | null;
   lastError?: string | null;
+  metadata?: ScheduledTaskMetadata | null;
 }
 
 export interface ScheduledTaskStore {
@@ -90,6 +94,7 @@ export interface ScheduledTaskStore {
 
 export interface ScheduledTaskRunResult {
   sessionId: string;
+  sagaId?: string;
 }
 
 const MAX_TIMER_DELAY_MS = 2_147_483_647;
@@ -103,6 +108,7 @@ interface ScheduledTaskExecutionRecord {
 interface ScheduledTaskManagerOptions {
   store: ScheduledTaskStore;
   executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  onTaskComplete?: (task: ScheduledTask, result: ScheduledTaskRunResult) => void;
   onTaskError?: (taskId: string, error: string) => void;
   now?: () => number;
 }
@@ -110,6 +116,7 @@ interface ScheduledTaskManagerOptions {
 export class ScheduledTaskManager {
   private readonly store: ScheduledTaskStore;
   private readonly executeTask: (task: ScheduledTask) => Promise<ScheduledTaskRunResult>;
+  private readonly onTaskComplete?: (task: ScheduledTask, result: ScheduledTaskRunResult) => void;
   private readonly onTaskError?: (taskId: string, error: string) => void;
   private readonly now: () => number;
   private readonly timers = new Map<string, NodeJS.Timeout>();
@@ -119,6 +126,7 @@ export class ScheduledTaskManager {
   constructor(options: ScheduledTaskManagerOptions) {
     this.store = options.store;
     this.executeTask = options.executeTask;
+    this.onTaskComplete = options.onTaskComplete;
     this.onTaskError = options.onTaskError;
     this.now = options.now ?? (() => Date.now());
   }
@@ -373,6 +381,7 @@ export class ScheduledTaskManager {
       } catch (error) {
         logError('[ScheduledTaskManager] Failed to update store:', error);
       }
+      this.emitTaskComplete(task, result);
       return { success: true, sessionId: result.sessionId };
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -387,6 +396,14 @@ export class ScheduledTaskManager {
       }
       this.onTaskError?.(task.id, message);
       return { success: false, error: message };
+    }
+  }
+
+  private emitTaskComplete(task: ScheduledTask, result: ScheduledTaskRunResult): void {
+    try {
+      this.onTaskComplete?.(task, result);
+    } catch (error) {
+      logError('[ScheduledTaskManager] onTaskComplete callback failed:', error);
     }
   }
 

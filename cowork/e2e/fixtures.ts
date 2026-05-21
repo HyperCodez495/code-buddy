@@ -5,7 +5,7 @@ import {
   type ElectronApplication,
   type Page,
 } from '@playwright/test';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import electronBinary from 'electron';
 import os from 'node:os';
 import path from 'node:path';
@@ -23,6 +23,10 @@ export const test = base.extend<CoworkFixtures>({
     rmSync(tempDir, { recursive: true, force: true });
   },
   electronApp: async ({ userDataDir }, use) => {
+    const modelPath = path.join(userDataDir, 'models', 'buffalo_s.onnx');
+    mkdirSync(path.dirname(modelPath), { recursive: true });
+    writeFileSync(modelPath, '');
+
     const electronApp = await electron.launch({
       executablePath: electronBinary,
       cwd: process.cwd(),

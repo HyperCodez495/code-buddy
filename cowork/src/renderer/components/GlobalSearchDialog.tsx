@@ -22,29 +22,14 @@ import {
   type LucideIcon,
 } from 'lucide-react';
 import { useAppStore } from '../store';
-
-type SearchSource = 'session' | 'message' | 'memory' | 'knowledge' | 'file';
-
-interface GlobalSearchHit {
-  source: SearchSource;
-  id: string;
-  title: string;
-  snippet: string;
-  score: number;
-  context: {
-    sessionId?: string;
-    projectId?: string;
-    messageIndex?: number;
-    path?: string;
-  };
-}
-
-interface GlobalSearchResults {
-  hits: GlobalSearchHit[];
-  totalByCategory: Record<SearchSource, number>;
-}
-
-const SOURCE_ORDER: SearchSource[] = ['session', 'message', 'memory', 'knowledge', 'file'];
+import {
+  SOURCE_ORDER,
+  buildGlobalSearchFocusedMessageTarget,
+  groupGlobalSearchHits,
+  type GlobalSearchHit,
+  type GlobalSearchResults,
+  type SearchSource,
+} from './global-search-helpers';
 
 const SOURCE_ICONS: Record<SearchSource, LucideIcon> = {
   session: Hash,
@@ -71,6 +56,7 @@ export const GlobalSearchDialog: React.FC<GlobalSearchDialogProps> = ({ open, on
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setActiveProjectId = useAppStore((s) => s.setActiveProjectId);
   const setPreviewFilePath = useAppStore((s) => s.setPreviewFilePath);
+  const setFocusedMessageTarget = useAppStore((s) => s.setFocusedMessageTarget);
 
   // Reset state on open and focus the input
   useEffect(() => {
@@ -123,17 +109,7 @@ export const GlobalSearchDialog: React.FC<GlobalSearchDialogProps> = ({ open, on
   const flatHits = useMemo(() => results?.hits ?? [], [results]);
 
   const groupedHits = useMemo(() => {
-    const groups: Record<SearchSource, GlobalSearchHit[]> = {
-      session: [],
-      message: [],
-      memory: [],
-      knowledge: [],
-      file: [],
-    };
-    for (const hit of flatHits) {
-      groups[hit.source].push(hit);
-    }
-    return groups;
+    return groupGlobalSearchHits(flatHits);
   }, [flatHits]);
 
   const navigateToHit = useCallback(
@@ -144,13 +120,17 @@ export const GlobalSearchDialog: React.FC<GlobalSearchDialogProps> = ({ open, on
       if (hit.context.sessionId) {
         setActiveSession(hit.context.sessionId);
       }
+      const focusedTarget = buildGlobalSearchFocusedMessageTarget(hit);
+      if (focusedTarget) {
+        setFocusedMessageTarget(focusedTarget);
+      }
       if (hit.source === 'file' && hit.context.path) {
         // Phase 2 step 9: open the file preview pane on file hits.
         setPreviewFilePath(hit.context.path);
       }
       onClose();
     },
-    [setActiveProjectId, setActiveSession, setPreviewFilePath, onClose]
+    [setActiveProjectId, setActiveSession, setFocusedMessageTarget, setPreviewFilePath, onClose]
   );
 
   const handleKeyDown = useCallback(
