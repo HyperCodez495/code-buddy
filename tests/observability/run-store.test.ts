@@ -35,6 +35,7 @@ describe('RunStore', () => {
     for (const runId of activeRunIds) {
       try { store.endRun(runId, 'cancelled'); } catch { /* ignore */ }
     }
+    store.dispose();
     // Give streams time to flush and close
     await new Promise(r => setTimeout(r, 80));
     cleanDir(tmpDir);
@@ -225,6 +226,119 @@ describe('RunStore', () => {
     it('should return null for missing artifact', () => {
       const runId = startRun('missing artifact test');
       expect(store.getArtifact(runId, 'nonexistent.md')).toBeNull();
+    });
+  });
+
+  describe('searchRuns', () => {
+    it('finds runs by objective, event payload, and artifact content', async () => {
+      const runId = startRun('Lead Scout architect enrichment');
+      store.emit(runId, {
+        type: 'decision',
+        data: {
+          description: 'Use public directory evidence before contacting architect leads.',
+        },
+      });
+      store.saveArtifact(
+        runId,
+        'summary.md',
+        '# Summary\nPublic architecte evidence chain found telephone and website fields.',
+      );
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 50));
+
+      const artifactHits = store.searchRuns('telephone website', { limit: 5 });
+      expect(artifactHits[0]).toMatchObject({
+        runId,
+        matched: 'artifact',
+        artifact: 'summary.md',
+        status: 'completed',
+      });
+      expect(artifactHits[0]?.snippet).toContain('telephone and website');
+
+      const eventHits = store.searchRuns('public directory evidence', { includeArtifacts: false });
+      expect(eventHits.some((hit) => hit.matched === 'event' && hit.eventType === 'decision')).toBe(true);
+
+      const summaryHits = store.searchRuns('architect enrichment', {
+        includeArtifacts: false,
+        includeEvents: false,
+      });
+      expect(summaryHits).toEqual([
+        expect.objectContaining({ runId, matched: 'summary' }),
+      ]);
+    });
+
+    it('returns no hits for empty or missing queries', () => {
+      startRun('unrelated run');
+
+      expect(store.searchRuns('   ')).toEqual([]);
+      expect(store.searchRuns('not-present')).toEqual([]);
+    });
+
+    it('filters recall hits by source channel and tags', async () => {
+      const coworkRun = startRun('Architect discovery follow-up', {
+        channel: 'cowork',
+        tags: ['fleet', 'scheduled'],
+      });
+      const cliRun = startRun('Architect discovery command-line check', {
+        channel: 'terminal',
+        tags: ['local'],
+      });
+      store.saveArtifact(coworkRun, 'summary.md', 'Cowork Fleet architect workflow artifact.');
+      store.saveArtifact(cliRun, 'summary.md', 'CLI architect workflow artifact.');
+      store.endRun(coworkRun, 'completed');
+      store.endRun(cliRun, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== coworkRun && id !== cliRun);
+      await new Promise(r => setTimeout(r, 50));
+
+      const coworkHits = store.searchRuns('architect workflow', { sources: ['cowork'] });
+      expect(coworkHits).toEqual([
+        expect.objectContaining({ runId: coworkRun, source: 'cowork' }),
+      ]);
+
+      const fleetHits = store.searchRuns('architect workflow', { sources: ['fleet'] });
+      expect(fleetHits.map((hit) => hit.runId)).toEqual([coworkRun]);
+
+      const cliHits = store.searchRuns('architect workflow', { sources: ['cli'] });
+      expect(cliHits).toEqual([
+        expect.objectContaining({ runId: cliRun, source: 'terminal' }),
+      ]);
+    });
+
+    it('persists artifact recall in the durable FTS index across store instances', async () => {
+      const runId = startRun('Browser Operator parity audit', {
+        channel: 'cowork',
+        tags: ['fleet'],
+      });
+      store.saveArtifact(
+        runId,
+        'operator-audit.md',
+        '# Audit\nManus browser operator telemetry needs a visible action log.',
+      );
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 50));
+      store.dispose();
+
+      fs.rmSync(path.join(tmpDir, runId, 'artifacts', 'operator-audit.md'), { force: true });
+
+      const reopened = new RunStore(tmpDir);
+      try {
+        const hits = reopened.searchRuns('browser telemetry', {
+          includeEvents: false,
+          limit: 5,
+          sources: ['cowork'],
+        });
+        expect(hits[0]).toMatchObject({
+          runId,
+          matched: 'artifact',
+          artifact: 'operator-audit.md',
+          source: 'cowork',
+        });
+        expect(hits[0]?.snippet).toContain('browser operator telemetry');
+      } finally {
+        reopened.dispose();
+      }
     });
   });
 

@@ -264,14 +264,94 @@ loop packet as execution authority.
 
 The workspace also includes a passive `graph` object copied from
 `proposal-loop.json`: active node id, node and edge counts, approval node ids,
-blocked node ids, compact nodes, compact edges, and status counts. This lets
-Cowork render a graph mini-map without opening the full canvas as an execution
-surface.
+blocked node ids, compact nodes, compact edges, status counts, deterministic
+node positions, icon names, and canvas node types. This lets Cowork render a
+graph mini-map without opening the full canvas as an execution surface.
+
+The workspace also includes a passive `graphLegend`: status rows, node-type
+rows, icon names, canvas types, node count, edge count, and active node id.
+This lets Cowork render a stable legend for the graph mini-map without
+reinterpreting graph data as execution authority.
 
 The workspace also includes a passive `commands` object copied from the same
 loop packet. It lists each step that has a `buddy` command, its status, safety
 notes, input/output artifacts, and a display-only `commandText`. This gives
 Cowork a command palette without making the workspace export a command runner.
+
+The workspace also includes passive `navigation` data: active panel,
+recommended panel, tab rows, panel availability counts, required counts, and
+logical groups (`workflow`, `review`, `producer`, `evidence`). This lets Cowork
+open the right cockpit view and render tabs without reinterpreting the import
+manifest as an execution plan.
+
+The workspace also includes passive `guardrails` data: approval state, whether
+a command can run, command counts, missing required artifacts, read-only tools,
+disallowed actions, safety notes, and whether human review or an approval
+decision is still needed. This gives Cowork a safety banner without turning
+guardrail text into permission to run anything.
+
+The workspace also includes passive `supervision` data: whether a human review
+is required, the current supervision state, the panel to open, the next action
+type, and the approval or producer review state that explains the request. This
+lets Cowork route Patrice to the right review surface without approving,
+running, or applying anything.
+
+The workspace also includes a passive `reviewChecklist`: affected files, a
+next checklist item, and review steps such as opening the review panel,
+inspecting the preview, confirming guardrails, and writing an approval decision.
+This gives Cowork a human-review checklist without making checklist completion
+an approval or execution signal.
+
+The workspace also includes a passive `reviewRoute`: ordered review steps with
+the target panel, target region, target artifact path, suggested UI action,
+status, and safety note for each step. This lets Cowork render a guided review
+wizard without treating route progress as approval or execution authority.
+
+The workspace also includes passive `badges`: compact status rows for
+workspace readiness, approval state, supervision, artifact availability,
+command readiness, and the review checklist. This lets Cowork render a
+first-glance cockpit strip without recomputing state or treating badges as
+actions.
+
+The workspace also includes passive `layout` data: a compact top badge strip
+and stable cockpit regions for workflow map, operator review, producer handoff,
+and evidence. This lets Cowork arrange panels predictably without deriving a
+new execution plan from panel order.
+
+The workspace also includes a passive `artifactShelf`: artifact totals and
+per-region artifact groups with available, required, unavailable, primary panel,
+and primary artifact path metadata. This lets Cowork render an artifact tray
+without opening files as commands or treating artifact presence as approval.
+
+The workspace also includes passive `focus` data: active panel, active region,
+recommended panel, attention badge ids, and the supervision reason. This lets
+Cowork highlight the current review surface without treating focus as an
+approval, command, or priority signal.
+
+The workspace also includes passive `panelStates`: one row per import panel
+with availability, active/recommended flags, region id, attention badge ids,
+and attention tone. This lets Cowork render panel chrome without joining the
+manifest, navigation, layout, and focus objects itself.
+
+The workspace also includes a passive `decisionForm` descriptor for the
+approval panel. It lists the `agentic-coding-approval-decision` artifact kind,
+allowed decisions, required fields, affected files, and conservative safety
+notes, but it never creates or validates the decision artifact on its own.
+
+The workspace also includes a passive `actionRail`: suggested UI controls for
+opening the active panel, filling the approval decision, inspecting guardrails,
+or copying the next command when it is safe. These entries are button metadata
+only; the workspace export still does not execute, approve, or apply anything.
+
+The workspace also includes a passive `operatorBrief`: a one-line headline,
+body, severity, recommended panel/action, and compact evidence strings for the
+current operator state. This lets Cowork show a stable cockpit summary without
+reconstructing status from the lower-level objects.
+
+The workspace also includes a passive `operatorHandoff`: title, summary,
+target panel, target region, target artifact path, suggested action, evidence,
+and safety notes. This gives Cowork one compact handoff card without granting
+permission to execute, approve, or apply anything.
 
 When the events artifact exists, the workspace includes a passive `activity`
 object copied from `workflow-events.json`: `activeEventId`, `activeNodeId`,
@@ -651,9 +731,12 @@ The first pure core module is intentionally small:
   canvas exports, compact next-action snapshots with Cowork UI action hints,
   non-writing artifact bundles with `coworkImport` panel manifests, standalone
   Cowork import manifests, passive import availability checks, Cowork workspace
-  summaries with passive queue, stepper, graph, command catalog, activity,
-  approval, producer request, producer dispatch/review, evidence, and manifest
-  hints,
+  summaries with passive queue, stepper, graph, graph legend, command catalog,
+  navigation, guardrails, supervision, review checklist, review route, badges,
+  layout, artifact shelf, focus, panel
+  states, decision form, action rail, operator brief, operator handoff,
+  activity, approval, producer request, producer dispatch/review, evidence, and
+  manifest hints,
   edit-proposal request envelopes, data-only producer dispatch artifacts, and
   review artifacts, consumes approval-decision snapshots before approved
   writes, writes compact workflow event timelines, or reports.
@@ -678,9 +761,12 @@ The first pure core module is intentionally small:
   edit-proposal request export, producer dispatch export, producer-output review
   export, bundle and standalone `coworkImport` manifests, and next-action
   snapshot export with UI action hints, plus passive Cowork import checks and
-  workspace summaries with queue, stepper, graph, command catalog, activity,
-  approval, producer request/dispatch/review hints, evidence, and manifest
-  hints.
+  workspace summaries with queue, stepper, graph, graph legend, command
+  catalog, navigation, guardrails, supervision, review checklist, review route,
+  badges, layout, artifact shelf, focus, panel
+  states, decision form, action rail, operator brief, operator handoff,
+  activity, approval, producer
+  request/dispatch/review hints, evidence, and manifest hints.
 - `tests/commands/autonomous-code-command.test.ts` covers the CLI JSON path and
   explicit verification path, plus `--report-file`, `--preview-edits`,
   `--apply-edits`, `--require-preview`, `--edit-proposal-file`,

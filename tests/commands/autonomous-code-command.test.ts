@@ -1281,6 +1281,33 @@ describe('autonomous-code CLI command', () => {
       status: string;
     };
     const saved = JSON.parse(await fs.readFile(output.proposalLoopCoworkWorkspacePath, 'utf8')) as {
+      actionRail: {
+        actions: Array<{
+          disabledReason?: string;
+          enabled: boolean;
+          id: string;
+          panelId: string;
+          type: string;
+        }>;
+        mode: string;
+        primaryActionId: string;
+      };
+      artifactShelf: {
+        availableArtifactCount: number;
+        groups: Array<{
+          availableArtifactCount: number;
+          id: string;
+          panelIds: string[];
+          primaryPanelId: string;
+          requiredArtifactCount: number;
+          totalArtifactCount: number;
+          unavailableArtifactCount: number;
+        }>;
+        missingRequiredCount: number;
+        mode: string;
+        requiredArtifactCount: number;
+        totalArtifactCount: number;
+      };
       activity: {
         activeEventId: string;
         counts: { total: number; warning: number };
@@ -1294,11 +1321,23 @@ describe('autonomous-code CLI command', () => {
         sourceActiveNodeId: string;
         state: string;
       };
+      badges: Array<{ id: string; tone: string; value: string }>;
       commands: {
         commandCount: number;
         commands: Array<{ commandText: string; id: string; status: string }>;
         readyCommandCount: number;
         validationErrors: string[];
+      };
+      decisionForm: {
+        affectedFiles: string[];
+        allowedDecisions: string[];
+        artifactKind: string;
+        defaultDecision: string;
+        panelId: string;
+        reason: string;
+        required: boolean;
+        requiredFields: string[];
+        safetyNotes: string[];
       };
       evidence: {
         approvalState: string;
@@ -1313,8 +1352,59 @@ describe('autonomous-code CLI command', () => {
         approvalNodeIds: string[];
         edgeCount: number;
         nodeCount: number;
+        nodes: Array<{
+          active: boolean;
+          canvasType: string;
+          iconName: string;
+          id: string;
+          position: { x: number; y: number };
+        }>;
         statusCounts: { completed: number; ready: number; total: number };
         validationErrors: string[];
+      };
+      graphLegend: {
+        activeNodeId: string;
+        edgeCount: number;
+        mode: string;
+        nodeCount: number;
+        nodeTypes: Array<{ canvasTypes: string[]; count: number; iconNames: string[]; id: string }>;
+        statuses: Array<{ count: number; id: string; tone: string }>;
+      };
+      focus: {
+        activeBadgeIds: string[];
+        activePanelId: string;
+        activeRegionId: string;
+        reason: string;
+        recommendedPanelId: string;
+        supervisionState: string;
+      };
+      guardrails: {
+        approvalState: string;
+        canRunCommand: boolean;
+        commandCount: number;
+        disallowedActions: string[];
+        missingRequiredCount: number;
+        needsApprovalDecision: boolean;
+        needsHumanReview: boolean;
+        producerMode: string;
+        readOnlyTools: string[];
+        readyCommandCount: number;
+        requiredBeforeApply: boolean;
+        safetyNotes: string[];
+        validationErrors: string[];
+      };
+      layout: {
+        badgeStrip: { badgeIds: string[]; placement: string };
+        density: string;
+        regions: Array<{
+          active: boolean;
+          availablePanelIds: string[];
+          id: string;
+          panelIds: string[];
+          primaryPanelId: string;
+          required: boolean;
+          unavailablePanelIds: string[];
+        }>;
       };
       manifest: {
         coworkImport: { panelCount: number; requiredArtifactCount: number };
@@ -1323,7 +1413,50 @@ describe('autonomous-code CLI command', () => {
         source: { activeStepId: string; status: string };
         validationErrors: string[];
       };
+      navigation: {
+        activePanelId: string;
+        availableCount: number;
+        groups: Array<{ availablePanelIds: string[]; id: string; panelIds: string[] }>;
+        missingRequiredCount: number;
+        panelCount: number;
+        recommendedPanelId: string;
+        requiredCount: number;
+        tabs: Array<{ active: boolean; available: boolean; id: string; recommended: boolean; required: boolean }>;
+      };
       openPanelId: string;
+      operatorBrief: {
+        body: string;
+        evidence: string[];
+        headline: string;
+        nextActionId: string;
+        panelId: string;
+        severity: string;
+        state: string;
+      };
+      operatorHandoff: {
+        actionId: string;
+        artifactPath: string;
+        evidence: string[];
+        mode: string;
+        panelId: string;
+        regionId: string;
+        required: boolean;
+        safetyNotes: string[];
+        state: string;
+        summary: string;
+        title: string;
+      };
+      panelStates: Array<{
+        active: boolean;
+        attentionBadgeIds: string[];
+        attentionTone: string;
+        available: boolean;
+        id: string;
+        recommended: boolean;
+        regionId: string;
+        required: boolean;
+        view: string;
+      }>;
       producer: {
         request: {
           editProposalFile: string;
@@ -1352,11 +1485,40 @@ describe('autonomous-code CLI command', () => {
         runState: string;
         uiPrimaryAction: { enabled: boolean; type: string };
       };
+      reviewChecklist: {
+        affectedFiles: string[];
+        items: Array<{ id: string; panelId: string; status: string }>;
+        nextItemId: string;
+        required: boolean;
+        status: string;
+      };
+      reviewRoute: {
+        mode: string;
+        nextStepId: string;
+        required: boolean;
+        steps: Array<{
+          actionId?: string;
+          active: boolean;
+          artifactPath?: string;
+          id: string;
+          panelId?: string;
+          regionId?: string;
+          status: string;
+        }>;
+      };
       status: string;
       stepper: {
         activeStepId: string;
         counts: { completed: number; ready: number; total: number };
         steps: Array<{ active: boolean; id: string; status: string }>;
+      };
+      supervision: {
+        actionType: string;
+        approvalState: string;
+        panelId: string;
+        reason: string;
+        required: boolean;
+        state: string;
       };
       ui: { primaryAction: { enabled: boolean; panelId: string; type: string }; statusText: string };
       unavailablePanelIds: string[];
@@ -1373,6 +1535,205 @@ describe('autonomous-code CLI command', () => {
       type: 'open_panel',
     }));
     expect(saved.ui.statusText).toBe('Workspace ready: 9/9 panels available.');
+    expect(saved.badges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'workspace-status',
+        tone: 'success',
+        value: 'ready',
+      }),
+      expect.objectContaining({
+        id: 'approval-state',
+        tone: 'warning',
+        value: 'needs_approval',
+      }),
+      expect.objectContaining({
+        id: 'supervision-state',
+        tone: 'warning',
+        value: 'human_review_required',
+      }),
+      expect.objectContaining({
+        id: 'review-checklist',
+        tone: 'warning',
+        value: 'pending',
+      }),
+    ]));
+    expect(saved.layout).toEqual(expect.objectContaining({
+      density: 'compact',
+    }));
+    expect(saved.layout.badgeStrip).toEqual(expect.objectContaining({
+      badgeIds: [
+        'workspace-status',
+        'approval-state',
+        'supervision-state',
+        'artifact-availability',
+        'command-readiness',
+        'review-checklist',
+      ],
+      placement: 'top',
+    }));
+    expect(saved.layout.regions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        availablePanelIds: ['approval', 'producer-review'],
+        id: 'operator-review',
+        panelIds: ['approval', 'producer-review'],
+        primaryPanelId: 'approval',
+        required: true,
+        unavailablePanelIds: [],
+      }),
+      expect.objectContaining({
+        active: false,
+        availablePanelIds: ['producer-request', 'producer-dispatch'],
+        id: 'producer-handoff',
+        panelIds: ['producer-request', 'producer-dispatch'],
+        primaryPanelId: 'producer-request',
+      }),
+    ]));
+    expect(saved.artifactShelf).toEqual(expect.objectContaining({
+      availableArtifactCount: 9,
+      missingRequiredCount: 0,
+      mode: 'passive',
+      requiredArtifactCount: 4,
+      totalArtifactCount: 9,
+    }));
+    expect(saved.artifactShelf.groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        availableArtifactCount: 2,
+        id: 'operator-review',
+        panelIds: ['approval', 'producer-review'],
+        primaryPanelId: 'approval',
+        requiredArtifactCount: 1,
+        totalArtifactCount: 2,
+        unavailableArtifactCount: 0,
+      }),
+      expect.objectContaining({
+        availableArtifactCount: 2,
+        id: 'producer-handoff',
+        panelIds: ['producer-request', 'producer-dispatch'],
+        primaryPanelId: 'producer-request',
+        requiredArtifactCount: 0,
+        totalArtifactCount: 2,
+        unavailableArtifactCount: 0,
+      }),
+    ]));
+    expect(saved.focus).toEqual(expect.objectContaining({
+      activeBadgeIds: ['approval-state', 'supervision-state', 'review-checklist'],
+      activePanelId: 'approval',
+      activeRegionId: 'operator-review',
+      recommendedPanelId: 'approval',
+      supervisionState: 'human_review_required',
+    }));
+    expect(saved.focus.reason).toBe('Scoped edit preview is ready for human or Cowork approval before applying.');
+    expect(saved.decisionForm).toEqual(expect.objectContaining({
+      affectedFiles: ['docs/note.md'],
+      allowedDecisions: ['approved', 'rejected'],
+      artifactKind: 'agentic-coding-approval-decision',
+      defaultDecision: 'rejected',
+      panelId: 'approval',
+      required: true,
+      requiredFields: ['kind', 'reviewer', 'decision', 'reason'],
+    }));
+    expect(saved.decisionForm.safetyNotes).toEqual(expect.arrayContaining([
+      'Decision form is a passive UI descriptor.',
+      'The runner validates the approval-decision JSON before applying edits.',
+    ]));
+    expect(saved.actionRail).toEqual(expect.objectContaining({
+      mode: 'passive',
+      primaryActionId: 'open-active-panel',
+    }));
+    expect(saved.actionRail.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        enabled: true,
+        id: 'open-active-panel',
+        panelId: 'approval',
+        type: 'open_panel',
+      }),
+      expect.objectContaining({
+        enabled: true,
+        id: 'fill-approval-decision',
+        panelId: 'approval',
+        type: 'fill_form',
+      }),
+      expect.objectContaining({
+        enabled: false,
+        id: 'copy-next-command',
+        panelId: 'next-action',
+        type: 'copy_command',
+      }),
+    ]));
+    expect(saved.operatorBrief).toEqual(expect.objectContaining({
+      body: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      evidence: ['9/9 panels available', '0/5 commands ready', 'checklist pending'],
+      headline: 'Review needed: approval',
+      nextActionId: 'open-active-panel',
+      panelId: 'approval',
+      severity: 'warning',
+      state: 'human_review_required',
+    }));
+    expect(saved.operatorHandoff).toEqual(expect.objectContaining({
+      actionId: 'open-active-panel',
+      artifactPath: path.join(proposalLoopArtifactsDir, 'approval-state.json'),
+      evidence: ['9/9 panels available', '0/5 commands ready', 'checklist pending'],
+      mode: 'passive',
+      panelId: 'approval',
+      regionId: 'operator-review',
+      required: true,
+      state: 'human_review_required',
+      summary: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      title: 'Review needed: approval',
+    }));
+    expect(saved.operatorHandoff.safetyNotes).toEqual(expect.arrayContaining([
+      'Operator handoff is display metadata only.',
+      'The runner still validates approval and preview artifacts before any write.',
+    ]));
+    expect(saved.panelStates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        attentionBadgeIds: ['approval-state', 'supervision-state', 'review-checklist'],
+        attentionTone: 'warning',
+        available: true,
+        id: 'approval',
+        recommended: true,
+        regionId: 'operator-review',
+        required: true,
+        view: 'review',
+      }),
+      expect.objectContaining({
+        active: false,
+        attentionBadgeIds: [],
+        attentionTone: 'neutral',
+        available: true,
+        id: 'producer-request',
+        recommended: false,
+        regionId: 'producer-handoff',
+        required: false,
+        view: 'prompt',
+      }),
+    ]));
+    expect(saved.navigation).toEqual(expect.objectContaining({
+      activePanelId: 'approval',
+      availableCount: 9,
+      missingRequiredCount: 0,
+      panelCount: 9,
+      recommendedPanelId: 'approval',
+      requiredCount: 4,
+    }));
+    expect(saved.navigation.tabs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        available: true,
+        id: 'approval',
+        recommended: true,
+        required: true,
+      }),
+    ]));
+    expect(saved.navigation.groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        availablePanelIds: ['canvas', 'next-action', 'events'],
+        id: 'workflow',
+        panelIds: ['canvas', 'next-action', 'events'],
+      }),
+    ]));
     expect(saved.queue).toEqual(expect.objectContaining({
       nextActionType: 'review_preview',
       runState: 'human_input_required',
@@ -1447,6 +1808,108 @@ describe('autonomous-code CLI command', () => {
       ready: 1,
       total: 8,
     }));
+    expect(saved.graph.nodes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        canvasType: 'logic',
+        iconName: 'ClipboardCheck',
+        id: 'review-preview',
+        position: { x: 250, y: 650 },
+      }),
+    ]));
+    expect(saved.graphLegend).toEqual(expect.objectContaining({
+      activeNodeId: 'review-preview',
+      edgeCount: 7,
+      mode: 'passive',
+      nodeCount: 8,
+    }));
+    expect(saved.graphLegend.statuses).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        count: 4,
+        id: 'completed',
+        tone: 'success',
+      }),
+      expect.objectContaining({
+        count: 1,
+        id: 'ready',
+        tone: 'warning',
+      }),
+    ]));
+    expect(saved.graphLegend.nodeTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        canvasTypes: ['logic'],
+        iconNames: ['ClipboardCheck'],
+        id: 'approval',
+      }),
+    ]));
+    expect(saved.guardrails).toEqual(expect.objectContaining({
+      approvalState: 'needs_approval',
+      canRunCommand: false,
+      commandCount: 5,
+      missingRequiredCount: 0,
+      needsApprovalDecision: true,
+      needsHumanReview: true,
+      producerMode: 'data_only_edit_proposal',
+      readyCommandCount: 0,
+      requiredBeforeApply: false,
+      validationErrors: [],
+    }));
+    expect(saved.guardrails.disallowedActions).toEqual(expect.arrayContaining(['apply_patch', 'push', 'deploy']));
+    expect(saved.guardrails.readOnlyTools).toEqual(['file_read', 'git_status', 'rg']);
+    expect(saved.guardrails.safetyNotes).toEqual(expect.arrayContaining([
+      'Does not modify repository files.',
+      'Requires an approved decision file.',
+    ]));
+    expect(saved.supervision).toEqual(expect.objectContaining({
+      actionType: 'review_preview',
+      approvalState: 'needs_approval',
+      panelId: 'approval',
+      reason: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      required: true,
+      state: 'human_review_required',
+    }));
+    expect(saved.reviewChecklist).toEqual(expect.objectContaining({
+      affectedFiles: ['docs/note.md'],
+      nextItemId: 'open-review-panel',
+      required: true,
+      status: 'pending',
+    }));
+    expect(saved.reviewChecklist.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'open-review-panel',
+        panelId: 'approval',
+        status: 'pending',
+      }),
+      expect.objectContaining({
+        id: 'confirm-guardrails',
+        panelId: 'manifest',
+        status: 'completed',
+      }),
+    ]));
+    expect(saved.reviewRoute).toEqual(expect.objectContaining({
+      mode: 'passive',
+      nextStepId: 'open-review-panel',
+      required: true,
+    }));
+    expect(saved.reviewRoute.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actionId: 'open-active-panel',
+        active: true,
+        artifactPath: path.join(proposalLoopArtifactsDir, 'approval-state.json'),
+        id: 'open-review-panel',
+        panelId: 'approval',
+        regionId: 'operator-review',
+        status: 'pending',
+      }),
+      expect.objectContaining({
+        actionId: 'inspect-guardrails',
+        artifactPath: path.join(proposalLoopArtifactsDir, 'artifact-bundle.json'),
+        id: 'confirm-guardrails',
+        panelId: 'manifest',
+        regionId: 'evidence-strip',
+        status: 'completed',
+      }),
+    ]));
     expect(saved.producer.request).toEqual(expect.objectContaining({
       editProposalFile: path.join(proposalLoopArtifactsDir, 'edit-proposal.json'),
       instructionCount: 5,

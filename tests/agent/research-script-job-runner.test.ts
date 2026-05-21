@@ -1,0 +1,106 @@
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { buildResearchScriptJobArtifact } from '../../src/agent/research-script-job-artifact.js';
+import { materializeResearchScriptJobArtifact } from '../../src/agent/research-script-job-materializer.js';
+import { runMaterializedResearchScriptJob } from '../../src/agent/research-script-job-runner.js';
+
+describe('research script job runner', () => {
+  let tempDir: string;
+
+  beforeEach(() => {
+    tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'research-script-runner-'));
+  });
+
+  afterEach(() => {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('runs a materialized local script with disabled network and captures artifacts', async () => {
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-runner-demo',
+      goal: 'Transform a local input fixture',
+      title: 'Local fixture transform',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input fixture.' },
+      outputContract: { OUTPUT_JSON: 'Output fixture.' },
+      sandboxPolicy: {
+        network: 'disabled',
+        provider: 'local',
+        timeoutMs: 5000,
+      },
+    });
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      inputData: { leads: [{ name: 'Atelier Demo' }] },
+      scriptSource: [
+        'const fs = require("fs");',
+        'const input = JSON.parse(fs.readFileSync(process.env.INPUT_JSON, "utf8"));',
+        'fs.writeFileSync(process.env.OUTPUT_JSON, JSON.stringify({ ok: true, input }, null, 2));',
+        'console.log("processed", input.leads.length);',
+      ].join('\n'),
+    });
+
+    const result = await runMaterializedResearchScriptJob(job, { rootDir: tempDir });
+
+    expect(result.status).toBe('completed');
+    expect(result.exitCode).toBe(0);
+    expect(result.timedOut).toBe(false);
+    expect(fs.readFileSync(result.stdoutPath, 'utf8')).toContain('processed 1');
+    expect(JSON.parse(fs.readFileSync(result.outputPath, 'utf8'))).toMatchObject({
+      ok: true,
+      input: { leads: [{ name: 'Atelier Demo' }] },
+    });
+    expect(fs.readFileSync(result.summaryPath, 'utf8')).toContain('Status: completed');
+  });
+
+  it('refuses network-enabled jobs unless the caller opts in', async () => {
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-network',
+      goal: 'Network guard',
+      title: 'Network guard',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+    });
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      scriptSource: 'console.log("should not run");',
+    });
+
+    await expect(runMaterializedResearchScriptJob(job, { rootDir: tempDir }))
+      .rejects
+      .toThrow('requires network policy');
+  });
+
+  it('marks long-running scripts as timed out and writes logs', async () => {
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-timeout',
+      goal: 'Timeout guard',
+      title: 'Timeout guard',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+      sandboxPolicy: {
+        network: 'disabled',
+        provider: 'local',
+        timeoutMs: 100,
+      },
+    });
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      scriptSource: 'console.log("started"); setTimeout(() => {}, 5000);',
+    });
+
+    const result = await runMaterializedResearchScriptJob(job, {
+      rootDir: tempDir,
+      timeoutMs: 100,
+    });
+
+    expect(result.status).toBe('timed_out');
+    expect(result.timedOut).toBe(true);
+    expect(fs.readFileSync(result.stdoutPath, 'utf8')).toContain('started');
+    expect(fs.readFileSync(result.summaryPath, 'utf8')).toContain('Status: timed_out');
+  });
+});

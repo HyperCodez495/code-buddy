@@ -1,0 +1,279 @@
+import { describe, expect, it } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
+import { buildResearchScriptJobArtifact } from '../../src/agent/research-script-job-artifact.js';
+import {
+  buildResearchScriptSkillCandidate,
+  installResearchScriptSkillCandidate,
+  listMaterializedResearchScriptSkillCandidates,
+  materializeResearchScriptSkillCandidate,
+} from '../../src/agent/research-script-skill-candidate.js';
+import type { ResearchScriptJobRunResult } from '../../src/agent/research-script-job-runner.js';
+import { SkillRegistry } from '../../src/skills/registry.js';
+
+function runResult(overrides: Partial<ResearchScriptJobRunResult> = {}): ResearchScriptJobRunResult {
+  return {
+    commandPreview: 'node script.js',
+    durationMs: 25,
+    exitCode: 0,
+    jobId: 'research-script-demo',
+    outputPath: 'research-scripts/demo/output.json',
+    signal: null,
+    status: 'completed',
+    stderrPath: 'research-scripts/demo/stderr.log',
+    stdoutPath: 'research-scripts/demo/stdout.log',
+    summaryPath: 'research-scripts/demo/summary.md',
+    timedOut: false,
+    ...overrides,
+  };
+}
+
+describe('research script skill candidate', () => {
+  it('builds an eligible SKILL.md candidate after repeated successful runs', () => {
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-demo',
+      goal: 'Find public architect contact details with evidence.',
+      title: 'Architect public enrichment',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input leads.' },
+      outputContract: { OUTPUT_JSON: 'Enriched leads.' },
+      sandboxPolicy: {
+        network: 'disabled',
+      },
+    });
+
+    const candidate = buildResearchScriptSkillCandidate(job, [
+      runResult(),
+      runResult({ durationMs: 40 }),
+    ]);
+
+    expect(candidate).toMatchObject({
+      eligible: true,
+      skillName: 'research-architect-public-enrichment',
+      skillPath: '.codebuddy/skill-candidates/research-architect-public-enrichment/SKILL.md',
+      sourceJobId: job.id,
+      successfulRunCount: 2,
+    });
+    expect(candidate.markdown).toContain('name: research-architect-public-enrichment');
+    expect(candidate.markdown).toContain('version: 0.1.0');
+    expect(candidate.markdown).toContain('tags: [research-script, generated-candidate, public-data]');
+    expect(candidate.markdown).toContain('Status: eligible for human review');
+    expect(candidate.markdown).toContain('Find public architect contact details with evidence.');
+    expect(candidate.markdown).toContain('The workflow would send emails');
+    expect(candidate.markdown).toContain('Preserve the no-contact-action assertion');
+  });
+
+  it('keeps a script as not eligible until it proves repeatable', () => {
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-single',
+      goal: 'Single run only.',
+      title: 'Single run',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+      sandboxPolicy: {
+        network: 'disabled',
+      },
+    });
+
+    const candidate = buildResearchScriptSkillCandidate(job, [
+      runResult({ jobId: job.id }),
+      runResult({ jobId: job.id, status: 'failed', exitCode: 1 }),
+    ]);
+
+    expect(candidate.eligible).toBe(false);
+    expect(candidate.reason).toContain('1/2 successful runs');
+    expect(candidate.markdown).toContain('Status: not eligible yet');
+  });
+
+  it('materializes a review manifest beside the SKILL.md candidate', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-candidate-'));
+    try {
+      const job = buildResearchScriptJobArtifact({
+        id: 'research-script-materialize',
+        goal: 'Materialize a public workflow candidate.',
+        title: 'Materialized workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const candidate = buildResearchScriptSkillCandidate(job, [
+        runResult({ jobId: job.id }),
+        runResult({ jobId: job.id }),
+      ]);
+
+      const materialized = await materializeResearchScriptSkillCandidate(candidate, {
+        generatedAt: '2026-05-18T17:40:00.000Z',
+        rootDir,
+      });
+
+      expect(materialized).toMatchObject({
+        candidateId: candidate.id,
+        eligible: true,
+        reviewManifestPath: '.codebuddy/skill-candidates/research-materialized-workflow/candidate-review.json',
+        skillName: 'research-materialized-workflow',
+        skillPath: '.codebuddy/skill-candidates/research-materialized-workflow/SKILL.md',
+      });
+      await expect(fs.readFile(materialized.absoluteSkillPath, 'utf8')).resolves.toContain(
+        'Status: eligible for human review',
+      );
+      const reviewManifest = JSON.parse(
+        await fs.readFile(materialized.absoluteReviewManifestPath, 'utf8'),
+      ) as { approvalRequired: boolean; status: string; generatedAt: string };
+      expect(reviewManifest).toMatchObject({
+        approvalRequired: true,
+        generatedAt: '2026-05-18T17:40:00.000Z',
+        status: 'awaiting_human_approval',
+      });
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('requires explicit approval before installing an eligible candidate as a workspace skill', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-install-'));
+    try {
+      const job = buildResearchScriptJobArtifact({
+        id: 'research-script-install',
+        goal: 'Install a reviewed public workflow.',
+        title: 'Reviewed workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const candidate = buildResearchScriptSkillCandidate(job, [
+        runResult({ jobId: job.id }),
+        runResult({ jobId: job.id }),
+      ]);
+      const materialized = await materializeResearchScriptSkillCandidate(candidate, { rootDir });
+      await fs.writeFile(
+        materialized.absoluteSkillPath,
+        `${candidate.markdown.trimEnd()}\n\n## Reviewer Edit\n- Preserve this edit in the installed skill.\n`,
+        'utf8',
+      );
+
+      await expect(
+        installResearchScriptSkillCandidate(candidate, { rootDir }),
+      ).rejects.toThrow('Human approval is required');
+
+      const installed = await installResearchScriptSkillCandidate(candidate, {
+        approvedAt: '2026-05-18T17:45:00.000Z',
+        approvedBy: 'Patrice',
+        rootDir,
+      });
+
+      expect(installed).toMatchObject({
+        approvedAt: '2026-05-18T17:45:00.000Z',
+        approvedBy: 'Patrice',
+        installedPath: '.codebuddy/skills/research-reviewed-workflow/SKILL.md',
+        skillName: 'research-reviewed-workflow',
+        sourceCandidatePath: candidate.skillPath,
+      });
+      const installedMarkdown = await fs.readFile(installed.absoluteInstalledPath, 'utf8');
+      expect(installedMarkdown).toContain('## Reviewer Edit');
+      expect(installedMarkdown).toContain('## Human Approval');
+      expect(installedMarkdown).toContain('- Approved by: Patrice');
+
+      const registry = new SkillRegistry({
+        bundledPath: '',
+        cacheEnabled: false,
+        managedPath: '',
+        watchEnabled: false,
+        workspacePath: path.join(rootDir, '.codebuddy', 'skills'),
+      });
+      await registry.load();
+      expect(registry.get(candidate.skillName)?.sourcePath).toBe(installed.absoluteInstalledPath);
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('lists materialized candidates in a stable review order', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-list-'));
+    try {
+      const alphaJob = buildResearchScriptJobArtifact({
+        id: 'research-script-alpha',
+        goal: 'Review alpha workflow.',
+        title: 'Alpha workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const zuluJob = buildResearchScriptJobArtifact({
+        id: 'research-script-zulu',
+        goal: 'Review zulu workflow.',
+        title: 'Zulu workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+
+      await materializeResearchScriptSkillCandidate(
+        buildResearchScriptSkillCandidate(zuluJob, [
+          runResult({ jobId: zuluJob.id }),
+          runResult({ jobId: zuluJob.id }),
+        ]),
+        { rootDir },
+      );
+      await materializeResearchScriptSkillCandidate(
+        buildResearchScriptSkillCandidate(alphaJob, [
+          runResult({ jobId: alphaJob.id }),
+        ]),
+        { rootDir },
+      );
+
+      const candidates = await listMaterializedResearchScriptSkillCandidates({ rootDir });
+
+      expect(candidates.map((candidate) => candidate.skillName)).toEqual([
+        'research-alpha-workflow',
+        'research-zulu-workflow',
+      ]);
+      expect(candidates.map((candidate) => candidate.eligible)).toEqual([false, true]);
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('refuses to install candidates that are not yet eligible', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-ineligible-'));
+    try {
+      const job = buildResearchScriptJobArtifact({
+        id: 'research-script-ineligible',
+        goal: 'One run is not enough.',
+        title: 'Ineligible workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const candidate = buildResearchScriptSkillCandidate(job, [
+        runResult({ jobId: job.id }),
+      ]);
+      await materializeResearchScriptSkillCandidate(candidate, { rootDir });
+
+      await expect(
+        installResearchScriptSkillCandidate(candidate, {
+          approvedBy: 'Patrice',
+          rootDir,
+        }),
+      ).rejects.toThrow('not eligible for install');
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+});

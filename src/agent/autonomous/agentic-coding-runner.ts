@@ -597,13 +597,51 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     nodeCount: number;
     nodes: Array<{
       active: boolean;
+      canvasType: 'trigger' | 'action' | 'logic';
       id: string;
+      iconName: string;
       label: string;
+      position: { x: number; y: number };
       status: AgenticCodingPlanStepStatus;
       type: AgenticCodingWorkflowNodeType;
     }>;
     resolvedArtifactPath: string;
     statusCounts: AgenticCodingProposalLoopSnapshot['counts'];
+    validationErrors: string[];
+  };
+  graphLegend?: {
+    activeNodeId?: string;
+    edgeCount: number;
+    mode: 'passive';
+    nodeCount: number;
+    nodeTypes: Array<{
+      canvasTypes: Array<'trigger' | 'action' | 'logic'>;
+      count: number;
+      iconNames: string[];
+      id: AgenticCodingWorkflowNodeType;
+      label: string;
+    }>;
+    safetyNote: string;
+    statuses: Array<{
+      count: number;
+      id: AgenticCodingPlanStepStatus;
+      label: string;
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+  };
+  guardrails: {
+    approvalState?: AgenticCodingApprovalState;
+    canRunCommand?: boolean;
+    commandCount: number;
+    disallowedActions: string[];
+    missingRequiredCount: number;
+    needsApprovalDecision: boolean;
+    needsHumanReview: boolean;
+    producerMode?: 'data_only_edit_proposal';
+    readOnlyTools: string[];
+    readyCommandCount: number;
+    requiredBeforeApply?: boolean;
+    safetyNotes: string[];
     validationErrors: string[];
   };
   manifest?: {
@@ -680,12 +718,135 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     };
     validationErrors: string[];
   };
+  actionRail: {
+    actions: Array<{
+      badgeIds: string[];
+      disabledReason?: string;
+      enabled: boolean;
+      id: 'open-active-panel' | 'fill-approval-decision' | 'inspect-guardrails' | 'copy-next-command';
+      label: string;
+      panelId?: string;
+      safetyNote: string;
+      type: 'open_panel' | 'fill_form' | 'copy_command';
+    }>;
+    mode: 'passive';
+    primaryActionId?: string;
+  };
+  artifactShelf: {
+    availableArtifactCount: number;
+    groups: Array<{
+      availableArtifactCount: number;
+      id: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+      label: string;
+      panelIds: string[];
+      primaryArtifactPath?: string;
+      primaryPanelId?: string;
+      requiredArtifactCount: number;
+      totalArtifactCount: number;
+      unavailableArtifactCount: number;
+    }>;
+    missingRequiredCount: number;
+    mode: 'passive';
+    requiredArtifactCount: number;
+    totalArtifactCount: number;
+  };
   availablePanelIds: string[];
+  badges: Array<{
+    detail?: string;
+    id: string;
+    label: string;
+    tone: 'neutral' | 'success' | 'warning' | 'danger';
+    value: string;
+  }>;
   defaultPanelId?: string;
+  decisionForm: {
+    affectedFiles: string[];
+    allowedDecisions: Array<'approved' | 'rejected'>;
+    artifactKind: 'agentic-coding-approval-decision';
+    defaultDecision: 'rejected';
+    panelId: 'approval';
+    reason: string;
+    required: boolean;
+    requiredFields: Array<'kind' | 'reviewer' | 'decision' | 'reason'>;
+    safetyNotes: string[];
+  };
+  focus: {
+    activeBadgeIds: string[];
+    activePanelId?: string;
+    activeRegionId?: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+    reason: string;
+    recommendedPanelId?: string;
+    supervisionState: 'human_review_required' | 'ready_for_command' | 'blocked' | 'idle';
+  };
   generatedAt: string;
   kind: 'agentic-coding-proposal-loop-cowork-workspace';
   missingRequiredArtifactPaths: string[];
+  navigation: {
+    activePanelId?: string;
+    availableCount: number;
+    defaultPanelId?: string;
+    groups: Array<{
+      availablePanelIds: string[];
+      id: 'workflow' | 'review' | 'producer' | 'evidence';
+      label: string;
+      panelIds: string[];
+      unavailablePanelIds: string[];
+    }>;
+    missingRequiredCount: number;
+    panelCount: number;
+    recommendedPanelId?: string;
+    requiredCount: number;
+    tabs: Array<{
+      active: boolean;
+      available: boolean;
+      disabledReason?: string;
+      id: string;
+      recommended: boolean;
+      required: boolean;
+      title: string;
+      view: AgenticCodingProposalLoopCoworkPanelView;
+    }>;
+  };
+  layout: {
+    badgeStrip: {
+      badgeIds: string[];
+      placement: 'top';
+    };
+    density: 'compact';
+    regions: Array<{
+      active: boolean;
+      availablePanelIds: string[];
+      id: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+      label: string;
+      panelIds: string[];
+      primaryPanelId?: string;
+      required: boolean;
+      unavailablePanelIds: string[];
+    }>;
+  };
   openPanelId?: string;
+  operatorBrief: {
+    body: string;
+    evidence: string[];
+    headline: string;
+    nextActionId?: AgenticCodingProposalLoopCoworkWorkspace['actionRail']['actions'][number]['id'];
+    panelId?: string;
+    severity: 'info' | 'success' | 'warning' | 'danger';
+    state: AgenticCodingProposalLoopCoworkWorkspace['supervision']['state'];
+  };
+  operatorHandoff: {
+    actionId?: AgenticCodingProposalLoopCoworkWorkspace['actionRail']['actions'][number]['id'];
+    artifactPath?: string;
+    evidence: string[];
+    mode: 'passive';
+    panelId?: string;
+    regionId?: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+    required: boolean;
+    safetyNotes: string[];
+    state: AgenticCodingProposalLoopCoworkWorkspace['supervision']['state'];
+    summary: string;
+    title: string;
+  };
   panels: Array<{
     artifactPath: string;
     available: boolean;
@@ -693,6 +854,19 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     required: boolean;
     resolvedArtifactPath: string;
     role: string;
+    title: string;
+    view: AgenticCodingProposalLoopCoworkPanelView;
+  }>;
+  panelStates: Array<{
+    active: boolean;
+    attentionBadgeIds: string[];
+    attentionTone: 'neutral' | 'warning' | 'danger';
+    available: boolean;
+    disabledReason?: string;
+    id: string;
+    recommended: boolean;
+    regionId?: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+    required: boolean;
     title: string;
     view: AgenticCodingProposalLoopCoworkPanelView;
   }>;
@@ -707,6 +881,34 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     uiPrimaryAction?: AgenticCodingProposalLoopNextActionUi['primaryAction'];
     validationErrors: string[];
   };
+  reviewChecklist: {
+    affectedFiles: string[];
+    items: Array<{
+      id: string;
+      label: string;
+      panelId?: string;
+      status: 'pending' | 'completed' | 'blocked';
+    }>;
+    nextItemId?: string;
+    required: boolean;
+    status: 'pending' | 'completed' | 'blocked';
+  };
+  reviewRoute: {
+    mode: 'passive';
+    nextStepId?: string;
+    required: boolean;
+    steps: Array<{
+      actionId?: AgenticCodingProposalLoopCoworkWorkspace['actionRail']['actions'][number]['id'];
+      active: boolean;
+      artifactPath?: string;
+      id: string;
+      label: string;
+      panelId?: string;
+      regionId?: 'workflow-map' | 'operator-review' | 'producer-handoff' | 'evidence-strip';
+      safetyNote: string;
+      status: 'pending' | 'completed' | 'blocked';
+    }>;
+  };
   schemaVersion: 1;
   source: {
     checkStatus: AgenticCodingProposalLoopCoworkImportCheckStatus;
@@ -714,6 +916,16 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     summary?: string;
   };
   status: AgenticCodingProposalLoopCoworkWorkspaceStatus;
+  supervision: {
+    actionType?: string;
+    approvalState?: AgenticCodingApprovalState;
+    panelId?: string;
+    producerReviewState?: AgenticCodingEditProposalReviewState;
+    reason: string;
+    required: boolean;
+    state: 'human_review_required' | 'ready_for_command' | 'blocked' | 'idle';
+    stepId?: string;
+  };
   stepper?: {
     activeStepId?: string;
     artifactPath: string;
@@ -1823,10 +2035,16 @@ async function buildAgenticCodingProposalLoopCoworkWorkspaceGraph(
         return [];
       }
 
+      const canvasType: 'trigger' | 'action' | 'logic' =
+        index === 0 ? 'trigger' : nodeInput.type === 'approval' ? 'logic' : 'action';
+
       return [{
         active: nodeInput.id === activeNodeId,
+        canvasType,
         id: nodeInput.id,
+        iconName: workflowNodeIcon({ type: nodeInput.type }),
         label: nodeInput.label,
+        position: { x: 250, y: 50 + index * 150 },
         status: nodeInput.status,
         type: nodeInput.type,
       }];
@@ -5148,38 +5366,579 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
     : status === 'needs_artifacts'
       ? `Workspace missing ${check.missingRequiredArtifactPaths.length} required artifact(s).`
       : 'Import manifest invalid.';
-
-  return {
-    ...(activity ? { activity } : {}),
-    ...(approval ? { approval } : {}),
-    availablePanelIds,
-    ...(commands ? { commands } : {}),
-    defaultPanelId: check.defaultPanelId,
-    ...(evidence ? { evidence } : {}),
-    generatedAt: check.generatedAt,
-    ...(graph ? { graph } : {}),
-    kind: 'agentic-coding-proposal-loop-cowork-workspace',
-    ...(manifest ? { manifest } : {}),
-    missingRequiredArtifactPaths: check.missingRequiredArtifactPaths,
-    ...(openPanelId ? { openPanelId } : {}),
-    panels: check.panels.map((panel) => ({
-      artifactPath: panel.artifactPath,
-      available: panel.exists,
+  const workspacePanels = check.panels.map((panel) => ({
+    artifactPath: panel.artifactPath,
+    available: panel.exists,
+    id: panel.id,
+    required: panel.required,
+    resolvedArtifactPath: panel.resolvedArtifactPath,
+    role: panel.role,
+    title: panel.title,
+    view: panel.view,
+  }));
+  const graphLegend: AgenticCodingProposalLoopCoworkWorkspace['graphLegend'] | undefined = graph
+    ? (() => {
+      const statusOrder: AgenticCodingPlanStepStatus[] = ['completed', 'ready', 'blocked', 'pending', 'skipped'];
+      const statusTone = (status: AgenticCodingPlanStepStatus): 'neutral' | 'success' | 'warning' | 'danger' => {
+        if (status === 'completed') return 'success';
+        if (status === 'ready') return 'warning';
+        if (status === 'blocked') return 'danger';
+        return 'neutral';
+      };
+      const typeOrder: AgenticCodingWorkflowNodeType[] = ['gate', 'analysis', 'approval', 'edit', 'verification', 'handoff'];
+      return {
+        ...(graph.activeNodeId ? { activeNodeId: graph.activeNodeId } : {}),
+        edgeCount: graph.edgeCount,
+        mode: 'passive',
+        nodeCount: graph.nodeCount,
+        nodeTypes: typeOrder
+          .map((type) => {
+            const nodes = graph.nodes.filter((node) => node.type === type);
+            return {
+              canvasTypes: [...new Set(nodes.map((node) => node.canvasType))].sort(),
+              count: nodes.length,
+              iconNames: [...new Set(nodes.map((node) => node.iconName))].sort(),
+              id: type,
+              label: type,
+            };
+          })
+          .filter((entry) => entry.count > 0),
+        safetyNote: 'Graph legend is display metadata only.',
+        statuses: statusOrder
+          .map((status) => ({
+            count: graph.nodes.filter((node) => node.status === status).length,
+            id: status,
+            label: status,
+            tone: statusTone(status),
+          }))
+          .filter((entry) => entry.count > 0),
+      };
+    })()
+    : undefined;
+  const navigationGroupDefinitions: Array<{
+    id: 'workflow' | 'review' | 'producer' | 'evidence';
+    label: string;
+    panelIds: string[];
+  }> = [
+    { id: 'workflow', label: 'Workflow', panelIds: ['canvas', 'next-action', 'events'] },
+    { id: 'review', label: 'Review', panelIds: ['approval', 'producer-review'] },
+    { id: 'producer', label: 'Producer', panelIds: ['producer-request', 'producer-dispatch'] },
+    { id: 'evidence', label: 'Evidence', panelIds: ['seed-report', 'manifest'] },
+  ];
+  const navigation = {
+    ...(openPanelId ? { activePanelId: openPanelId } : {}),
+    availableCount: availablePanelIds.length,
+    ...(check.defaultPanelId ? { defaultPanelId: check.defaultPanelId } : {}),
+    groups: navigationGroupDefinitions.map((group) => {
+      const panelIds = group.panelIds.filter((panelId) => workspacePanels.some((panel) => panel.id === panelId));
+      return {
+        availablePanelIds: panelIds.filter((panelId) => availablePanelIds.includes(panelId)),
+        id: group.id,
+        label: group.label,
+        panelIds,
+        unavailablePanelIds: panelIds.filter((panelId) => unavailablePanelIds.includes(panelId)),
+      };
+    }),
+    missingRequiredCount: check.missingRequiredArtifactPaths.length,
+    panelCount: check.panels.length,
+    ...(check.suggestedFocusPanelId ? { recommendedPanelId: check.suggestedFocusPanelId } : {}),
+    requiredCount: workspacePanels.filter((panel) => panel.required).length,
+    tabs: workspacePanels.map((panel) => ({
+      active: panel.id === openPanelId,
+      available: panel.available,
+      ...(!panel.available ? { disabledReason: 'Artifact is missing.' } : {}),
       id: panel.id,
+      recommended: panel.id === check.suggestedFocusPanelId,
       required: panel.required,
-      resolvedArtifactPath: panel.resolvedArtifactPath,
-      role: panel.role,
       title: panel.title,
       view: panel.view,
     })),
+  };
+  const guardrails = {
+    ...(approval?.state ? { approvalState: approval.state } : {}),
+    ...(typeof queue?.canRunCommand === 'boolean' ? { canRunCommand: queue.canRunCommand } : {}),
+    commandCount: commands?.commandCount ?? 0,
+    disallowedActions: [...new Set(producer?.dispatch?.disallowedActions ?? [])].sort(),
+    missingRequiredCount: check.missingRequiredArtifactPaths.length,
+    needsApprovalDecision: approval?.state === 'needs_approval',
+    needsHumanReview: queue?.runState === 'human_input_required'
+      || approval?.state === 'needs_approval'
+      || producer?.review?.state === 'missing',
+    ...(producer?.dispatch?.mode ? { producerMode: producer.dispatch.mode } : {}),
+    readOnlyTools: [...new Set(producer?.dispatch?.allowedTools ?? [])].sort(),
+    readyCommandCount: commands?.readyCommandCount ?? 0,
+    ...(typeof approval?.requiredBeforeApply === 'boolean' ? { requiredBeforeApply: approval.requiredBeforeApply } : {}),
+    safetyNotes: [...new Set([
+      ...(commands?.commands.flatMap((command) => command.safety) ?? []),
+      ...(producer?.request?.safety ?? []),
+      ...(manifest?.materialized.map((artifact) => artifact.safety) ?? []),
+    ])].sort(),
+    validationErrors: [
+      ...(queue?.validationErrors ?? []),
+      ...(approval?.validationErrors ?? []),
+      ...(commands?.validationErrors ?? []),
+      ...(producer?.validationErrors ?? []),
+    ],
+  };
+  const supervision = (() => {
+    if (status === 'invalid') {
+      return {
+        panelId: 'manifest',
+        reason: 'Import manifest is invalid.',
+        required: true,
+        state: 'blocked' as const,
+      };
+    }
+
+    if (status === 'needs_artifacts') {
+      return {
+        panelId: 'manifest',
+        reason: 'Required artifacts are missing.',
+        required: true,
+        state: 'blocked' as const,
+      };
+    }
+
+    if (approval?.state === 'needs_approval') {
+      return {
+        ...(approval.nextAction ? { actionType: approval.nextAction.type } : {}),
+        approvalState: approval.state,
+        panelId: 'approval',
+        reason: approval.reason ?? 'Approval decision is needed before applying edits.',
+        required: true,
+        state: 'human_review_required' as const,
+      };
+    }
+
+    if (producer?.review?.state === 'missing') {
+      return {
+        ...(producer.review.nextAction ? { actionType: producer.review.nextAction.type } : {}),
+        panelId: 'producer-review',
+        producerReviewState: producer.review.state,
+        reason: 'Producer output review is missing.',
+        required: true,
+        state: 'human_review_required' as const,
+      };
+    }
+
+    if (queue?.runState === 'human_input_required') {
+      return {
+        ...(queue.nextActionType ? { actionType: queue.nextActionType } : {}),
+        ...(queue.activeStepId ? { stepId: queue.activeStepId } : {}),
+        panelId: openPanelId ?? 'approval',
+        reason: queue.uiPrimaryAction?.disabledReason ?? 'Human review is required before the next command.',
+        required: true,
+        state: 'human_review_required' as const,
+      };
+    }
+
+    if (queue?.runState === 'ready_command') {
+      return {
+        ...(queue.nextActionType ? { actionType: queue.nextActionType } : {}),
+        ...(queue.activeStepId ? { stepId: queue.activeStepId } : {}),
+        panelId: 'next-action',
+        reason: 'Next command is ready for review.',
+        required: false,
+        state: 'ready_for_command' as const,
+      };
+    }
+
+    if (queue?.runState === 'blocked') {
+      return {
+        ...(queue.nextActionType ? { actionType: queue.nextActionType } : {}),
+        ...(queue.activeStepId ? { stepId: queue.activeStepId } : {}),
+        panelId: 'events',
+        reason: queue.uiPrimaryAction?.disabledReason ?? 'The proposal loop is blocked.',
+        required: true,
+        state: 'blocked' as const,
+      };
+    }
+
+    return {
+      reason: 'No human supervision is currently requested.',
+      required: false,
+    state: 'idle' as const,
+    };
+  })();
+  const supervisionPanelId = 'panelId' in supervision ? supervision.panelId : undefined;
+  const reviewChecklistItems = [
+    {
+      id: 'open-review-panel',
+      label: `Open ${supervisionPanelId ?? openPanelId ?? 'review'} panel`,
+      ...(supervisionPanelId ?? openPanelId ? { panelId: supervisionPanelId ?? openPanelId } : {}),
+      status: supervision.required ? 'pending' as const : 'completed' as const,
+    },
+    {
+      id: 'inspect-preview',
+      label: 'Inspect preview, affected files, and proposed changes',
+      panelId: 'approval',
+      status: approval?.state === 'approved' || approval?.state === 'not_required'
+        ? 'completed' as const
+        : approval?.state === 'rejected'
+          ? 'blocked' as const
+          : 'pending' as const,
+    },
+    {
+      id: 'confirm-guardrails',
+      label: 'Confirm guardrails before any command or write',
+      panelId: 'manifest',
+      status: guardrails.validationErrors.length > 0 ? 'blocked' as const : 'completed' as const,
+    },
+    {
+      id: 'write-approval-decision',
+      label: 'Write an approval decision artifact after review',
+      panelId: 'approval',
+      status: approval?.state === 'approved'
+        ? 'completed' as const
+        : approval?.state === 'needs_approval'
+          ? 'pending' as const
+          : approval?.state === 'rejected'
+            ? 'blocked' as const
+            : 'pending' as const,
+    },
+  ];
+  const reviewChecklistStatus: 'pending' | 'completed' | 'blocked' = reviewChecklistItems.some((item) => item.status === 'blocked')
+    ? 'blocked'
+    : reviewChecklistItems.some((item) => item.status === 'pending')
+      ? 'pending'
+      : 'completed';
+  const reviewChecklistNextItemId = reviewChecklistItems.find((item) => item.status === 'pending')?.id;
+  const reviewChecklist = {
+    affectedFiles: approval?.affectedFiles ?? producer?.review?.affectedFiles ?? [],
+    items: reviewChecklistItems,
+    ...(reviewChecklistNextItemId ? { nextItemId: reviewChecklistNextItemId } : {}),
+    required: reviewChecklistStatus !== 'completed',
+    status: reviewChecklistStatus,
+  };
+  const decisionForm: AgenticCodingProposalLoopCoworkWorkspace['decisionForm'] = {
+    affectedFiles: approval?.affectedFiles ?? [],
+    allowedDecisions: ['approved', 'rejected'],
+    artifactKind: 'agentic-coding-approval-decision',
+    defaultDecision: 'rejected',
+    panelId: 'approval',
+    reason: approval?.reason ?? supervision.reason,
+    required: approval?.state === 'needs_approval',
+    requiredFields: ['kind', 'reviewer', 'decision', 'reason'],
+    safetyNotes: [
+      'Decision form is a passive UI descriptor.',
+      'The runner validates the approval-decision JSON before applying edits.',
+      'Use rejected unless the preview is fully inspected and acceptable.',
+    ],
+  };
+  const badges: AgenticCodingProposalLoopCoworkWorkspace['badges'] = [
+    {
+      detail: statusText,
+      id: 'workspace-status',
+      label: 'Workspace',
+      tone: status === 'ready' ? 'success' : status === 'needs_artifacts' ? 'warning' : 'danger',
+      value: status,
+    },
+    {
+      ...(approval?.reason ? { detail: approval.reason } : {}),
+      id: 'approval-state',
+      label: 'Approval',
+      tone: approval?.state === 'approved' || approval?.state === 'not_required'
+        ? 'success'
+        : approval?.state === 'rejected'
+          ? 'danger'
+          : approval?.state === 'needs_approval'
+            ? 'warning'
+            : 'neutral',
+      value: approval?.state ?? 'unknown',
+    },
+    {
+      detail: supervision.reason,
+      id: 'supervision-state',
+      label: 'Supervision',
+      tone: supervision.state === 'blocked'
+        ? 'danger'
+        : supervision.state === 'human_review_required'
+          ? 'warning'
+          : supervision.state === 'ready_for_command'
+            ? 'success'
+            : 'neutral',
+      value: supervision.state,
+    },
+    {
+      detail: `${availablePanelIds.length}/${check.panels.length} panels available.`,
+      id: 'artifact-availability',
+      label: 'Artifacts',
+      tone: check.missingRequiredArtifactPaths.length > 0 ? 'warning' : 'success',
+      value: `${check.missingRequiredArtifactPaths.length} missing`,
+    },
+    {
+      detail: `${commands?.commandCount ?? 0} command(s) prepared for display only.`,
+      id: 'command-readiness',
+      label: 'Commands',
+      tone: (commands?.readyCommandCount ?? 0) > 0 ? 'success' : 'neutral',
+      value: `${commands?.readyCommandCount ?? 0}/${commands?.commandCount ?? 0} ready`,
+    },
+    {
+      detail: reviewChecklistNextItemId ? `Next: ${reviewChecklistNextItemId}` : 'All checklist items completed.',
+      id: 'review-checklist',
+      label: 'Checklist',
+      tone: reviewChecklist.status === 'blocked'
+        ? 'danger'
+        : reviewChecklist.status === 'pending'
+          ? 'warning'
+          : 'success',
+      value: reviewChecklist.status,
+    },
+  ];
+  const layoutRegionDefinitions: Array<{
+    id: AgenticCodingProposalLoopCoworkWorkspace['layout']['regions'][number]['id'];
+    label: string;
+    panelIds: string[];
+    primaryPanelId: string;
+  }> = [
+    { id: 'workflow-map', label: 'Workflow map', panelIds: ['canvas', 'next-action', 'events'], primaryPanelId: 'canvas' },
+    { id: 'operator-review', label: 'Operator review', panelIds: ['approval', 'producer-review'], primaryPanelId: 'approval' },
+    { id: 'producer-handoff', label: 'Producer handoff', panelIds: ['producer-request', 'producer-dispatch'], primaryPanelId: 'producer-request' },
+    { id: 'evidence-strip', label: 'Evidence strip', panelIds: ['seed-report', 'manifest'], primaryPanelId: 'seed-report' },
+  ];
+  const layout: AgenticCodingProposalLoopCoworkWorkspace['layout'] = {
+    badgeStrip: {
+      badgeIds: badges.map((badge) => badge.id),
+      placement: 'top',
+    },
+    density: 'compact',
+    regions: layoutRegionDefinitions.map((region) => {
+      const panelIds = region.panelIds.filter((panelId) => workspacePanels.some((panel) => panel.id === panelId));
+      const primaryPanelId = panelIds.includes(region.primaryPanelId)
+        ? region.primaryPanelId
+        : panelIds.find((panelId) => availablePanelIds.includes(panelId));
+      return {
+        active: panelIds.some((panelId) => panelId === openPanelId),
+        availablePanelIds: panelIds.filter((panelId) => availablePanelIds.includes(panelId)),
+        id: region.id,
+        label: region.label,
+        panelIds,
+        ...(primaryPanelId ? { primaryPanelId } : {}),
+        required: workspacePanels.some((panel) => panelIds.includes(panel.id) && panel.required),
+        unavailablePanelIds: panelIds.filter((panelId) => unavailablePanelIds.includes(panelId)),
+      };
+    }),
+  };
+  const artifactShelfGroups: AgenticCodingProposalLoopCoworkWorkspace['artifactShelf']['groups'] = layout.regions.map((region) => {
+    const panels = workspacePanels.filter((panel) => region.panelIds.includes(panel.id));
+    const primaryPanel = panels.find((panel) => panel.id === region.primaryPanelId)
+      ?? panels.find((panel) => panel.available)
+      ?? panels[0];
+    return {
+      availableArtifactCount: panels.filter((panel) => panel.available).length,
+      id: region.id,
+      label: region.label,
+      panelIds: panels.map((panel) => panel.id),
+      ...(primaryPanel ? { primaryArtifactPath: primaryPanel.resolvedArtifactPath, primaryPanelId: primaryPanel.id } : {}),
+      requiredArtifactCount: panels.filter((panel) => panel.required).length,
+      totalArtifactCount: panels.length,
+      unavailableArtifactCount: panels.filter((panel) => !panel.available).length,
+    };
+  });
+  const artifactShelf: AgenticCodingProposalLoopCoworkWorkspace['artifactShelf'] = {
+    availableArtifactCount: workspacePanels.filter((panel) => panel.available).length,
+    groups: artifactShelfGroups,
+    missingRequiredCount: check.missingRequiredArtifactPaths.length,
+    mode: 'passive',
+    requiredArtifactCount: workspacePanels.filter((panel) => panel.required).length,
+    totalArtifactCount: workspacePanels.length,
+  };
+  const activeRegionId = layout.regions.find((region) => region.active)?.id;
+  const activeBadgeIds = badges
+    .filter((badge) => badge.tone === 'danger' || badge.tone === 'warning')
+    .map((badge) => badge.id);
+  const focus: AgenticCodingProposalLoopCoworkWorkspace['focus'] = {
+    activeBadgeIds,
+    ...(openPanelId ? { activePanelId: openPanelId } : {}),
+    ...(activeRegionId ? { activeRegionId } : {}),
+    reason: supervision.reason,
+    ...(check.suggestedFocusPanelId ? { recommendedPanelId: check.suggestedFocusPanelId } : {}),
+    supervisionState: supervision.state,
+  };
+  const panelStates: AgenticCodingProposalLoopCoworkWorkspace['panelStates'] = workspacePanels.map((panel) => {
+    const regionId = layout.regions.find((region) => region.panelIds.includes(panel.id))?.id;
+    const attentionBadgeIds = panel.id === openPanelId ? activeBadgeIds : [];
+    const attentionBadgeTones = badges
+      .filter((badge) => attentionBadgeIds.includes(badge.id))
+      .map((badge) => badge.tone);
+    const attentionTone = attentionBadgeTones.includes('danger')
+      ? 'danger' as const
+      : attentionBadgeTones.includes('warning')
+        ? 'warning' as const
+        : 'neutral' as const;
+    return {
+      active: panel.id === openPanelId,
+      attentionBadgeIds,
+      attentionTone,
+      available: panel.available,
+      ...(!panel.available ? { disabledReason: 'Artifact is missing.' } : {}),
+      id: panel.id,
+      recommended: panel.id === check.suggestedFocusPanelId,
+      ...(regionId ? { regionId } : {}),
+      required: panel.required,
+      title: panel.title,
+      view: panel.view,
+    };
+  });
+  const actionRail: AgenticCodingProposalLoopCoworkWorkspace['actionRail'] = {
+    actions: [
+      {
+        badgeIds: activeBadgeIds,
+        ...(!openPanelId ? { disabledReason: 'No available panel is selected.' } : {}),
+        enabled: Boolean(openPanelId),
+        id: 'open-active-panel',
+        label: openPanelId ? `Open ${openPanelId}` : 'Open workspace panel',
+        ...(openPanelId ? { panelId: openPanelId } : {}),
+        safetyNote: 'Opens an existing Cowork panel only.',
+        type: 'open_panel',
+      },
+      {
+        badgeIds: decisionForm.required ? ['approval-state', 'supervision-state'] : [],
+        ...(!decisionForm.required ? { disabledReason: 'No approval decision is currently requested.' } : {}),
+        enabled: decisionForm.required,
+        id: 'fill-approval-decision',
+        label: 'Fill approval decision',
+        panelId: decisionForm.panelId,
+        safetyNote: 'Produces a user-authored decision artifact; the runner still validates it before apply.',
+        type: 'fill_form',
+      },
+      {
+        badgeIds: guardrails.validationErrors.length > 0 ? ['artifact-availability'] : [],
+        enabled: true,
+        id: 'inspect-guardrails',
+        label: 'Inspect guardrails',
+        panelId: 'manifest',
+        safetyNote: 'Displays safety constraints without changing repository state.',
+        type: 'open_panel',
+      },
+      {
+        badgeIds: queue?.canRunCommand ? ['command-readiness'] : [],
+        ...(!queue?.canRunCommand ? { disabledReason: queue?.uiPrimaryAction?.disabledReason ?? 'No command is ready to copy.' } : {}),
+        enabled: queue?.canRunCommand === true,
+        id: 'copy-next-command',
+        label: 'Copy next command',
+        panelId: 'next-action',
+        safetyNote: 'Copies command text for review; it does not execute the command.',
+        type: 'copy_command',
+      },
+    ],
+    mode: 'passive',
+    ...(openPanelId ? { primaryActionId: 'open-active-panel' as const } : {}),
+  };
+  const operatorBriefSeverity: AgenticCodingProposalLoopCoworkWorkspace['operatorBrief']['severity'] =
+    supervision.state === 'blocked'
+      ? 'danger'
+      : supervision.state === 'human_review_required'
+        ? 'warning'
+        : supervision.state === 'ready_for_command'
+          ? 'success'
+          : 'info';
+  const operatorBriefPanelId = supervisionPanelId ?? openPanelId;
+  const operatorBrief: AgenticCodingProposalLoopCoworkWorkspace['operatorBrief'] = {
+    body: supervision.reason,
+    evidence: [
+      `${availablePanelIds.length}/${check.panels.length} panels available`,
+      `${commands?.readyCommandCount ?? 0}/${commands?.commandCount ?? 0} commands ready`,
+      `checklist ${reviewChecklist.status}`,
+    ],
+    headline: supervision.required
+      ? `Review needed: ${operatorBriefPanelId ?? 'workspace'}`
+      : supervision.state === 'ready_for_command'
+        ? 'Command ready for review'
+        : 'Workspace ready',
+    ...(actionRail.primaryActionId ? { nextActionId: actionRail.primaryActionId as AgenticCodingProposalLoopCoworkWorkspace['operatorBrief']['nextActionId'] } : {}),
+    ...(operatorBriefPanelId ? { panelId: operatorBriefPanelId } : {}),
+    severity: operatorBriefSeverity,
+    state: supervision.state,
+  };
+  const operatorHandoffPanelId = operatorBriefPanelId;
+  const operatorHandoffPanel = operatorHandoffPanelId
+    ? workspacePanels.find((panel) => panel.id === operatorHandoffPanelId)
+    : undefined;
+  const operatorHandoffRegionId = operatorHandoffPanelId
+    ? panelStates.find((panel) => panel.id === operatorHandoffPanelId)?.regionId
+    : activeRegionId;
+  const operatorHandoff: AgenticCodingProposalLoopCoworkWorkspace['operatorHandoff'] = {
+    ...(actionRail.primaryActionId ? { actionId: actionRail.primaryActionId as AgenticCodingProposalLoopCoworkWorkspace['operatorHandoff']['actionId'] } : {}),
+    ...(operatorHandoffPanel ? { artifactPath: operatorHandoffPanel.resolvedArtifactPath } : {}),
+    evidence: operatorBrief.evidence,
+    mode: 'passive',
+    ...(operatorHandoffPanelId ? { panelId: operatorHandoffPanelId } : {}),
+    ...(operatorHandoffRegionId ? { regionId: operatorHandoffRegionId } : {}),
+    required: supervision.required,
+    safetyNotes: [
+      'Operator handoff is display metadata only.',
+      'The runner still validates approval and preview artifacts before any write.',
+    ],
+    state: supervision.state,
+    summary: operatorBrief.body,
+    title: operatorBrief.headline,
+  };
+  const reviewRouteActionByStepId: Partial<Record<string, AgenticCodingProposalLoopCoworkWorkspace['actionRail']['actions'][number]['id']>> = {
+    'confirm-guardrails': 'inspect-guardrails',
+    'open-review-panel': 'open-active-panel',
+    'write-approval-decision': 'fill-approval-decision',
+  };
+  const reviewRoute: AgenticCodingProposalLoopCoworkWorkspace['reviewRoute'] = {
+    mode: 'passive',
+    ...(reviewChecklist.nextItemId ? { nextStepId: reviewChecklist.nextItemId } : {}),
+    required: reviewChecklist.required,
+    steps: reviewChecklist.items.map((item) => {
+      const actionId = reviewRouteActionByStepId[item.id];
+      const panel = item.panelId ? workspacePanels.find((workspacePanel) => workspacePanel.id === item.panelId) : undefined;
+      const panelState = item.panelId ? panelStates.find((workspacePanel) => workspacePanel.id === item.panelId) : undefined;
+      const action = actionId ? actionRail.actions.find((candidate) => candidate.id === actionId) : undefined;
+      return {
+        ...(actionId ? { actionId } : {}),
+        active: item.id === reviewChecklist.nextItemId,
+        ...(panel ? { artifactPath: panel.resolvedArtifactPath } : {}),
+        id: item.id,
+        label: item.label,
+        ...(item.panelId ? { panelId: item.panelId } : {}),
+        ...(panelState?.regionId ? { regionId: panelState.regionId } : {}),
+        safetyNote: action?.safetyNote ?? 'Display this review step only; do not execute repository actions.',
+        status: item.status,
+      };
+    }),
+  };
+
+  return {
+    ...(activity ? { activity } : {}),
+    actionRail,
+    ...(approval ? { approval } : {}),
+    artifactShelf,
+    availablePanelIds,
+    badges,
+    ...(commands ? { commands } : {}),
+    decisionForm,
+    defaultPanelId: check.defaultPanelId,
+    ...(evidence ? { evidence } : {}),
+    focus,
+    generatedAt: check.generatedAt,
+    ...(graph ? { graph } : {}),
+    ...(graphLegend ? { graphLegend } : {}),
+    guardrails,
+    kind: 'agentic-coding-proposal-loop-cowork-workspace',
+    ...(manifest ? { manifest } : {}),
+    missingRequiredArtifactPaths: check.missingRequiredArtifactPaths,
+    layout,
+    navigation,
+    ...(openPanelId ? { openPanelId } : {}),
+    operatorBrief,
+    operatorHandoff,
+    panels: workspacePanels,
+    panelStates,
     ...(producer ? { producer } : {}),
     ...(queue ? { queue } : {}),
+    reviewChecklist,
+    reviewRoute,
     schemaVersion: 1,
     source: {
       ...check.source,
       checkStatus: check.status,
     },
     status,
+    supervision,
     ...(stepper ? { stepper } : {}),
     suggestedFocusPanelId: check.suggestedFocusPanelId,
     ui: {

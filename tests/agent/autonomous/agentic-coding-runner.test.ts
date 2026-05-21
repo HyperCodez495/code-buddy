@@ -1406,6 +1406,15 @@ describe('runAgenticCodingCell', () => {
           type: string;
         };
       };
+      graphLegend: {
+        activeNodeId: string;
+        edgeCount: number;
+        mode: string;
+        nodeCount: number;
+        nodeTypes: Array<{ canvasTypes: string[]; count: number; iconNames: string[]; id: string }>;
+        safetyNote: string;
+        statuses: Array<{ count: number; id: string; tone: string }>;
+      };
     };
     const loop = JSON.parse(await fs.readFile(saved.artifacts.proposalLoopFile, 'utf8')) as { activeStepId: string; kind: string };
     const canvas = JSON.parse(await fs.readFile(saved.artifacts.proposalLoopCanvasFile, 'utf8')) as { activeNodeId: string; kind: string };
@@ -1720,6 +1729,245 @@ describe('runAgenticCodingCell', () => {
       type: 'open_panel',
     }));
     expect(workspace.ui.statusText).toBe('Workspace ready: 9/9 panels available.');
+    expect(workspace.navigation).toEqual(expect.objectContaining({
+      activePanelId: 'approval',
+      availableCount: 9,
+      defaultPanelId: 'canvas',
+      missingRequiredCount: 0,
+      panelCount: 9,
+      recommendedPanelId: 'approval',
+      requiredCount: 4,
+    }));
+    expect(workspace.navigation.tabs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        available: true,
+        id: 'approval',
+        recommended: true,
+        required: true,
+        view: 'review',
+      }),
+      expect.objectContaining({
+        active: false,
+        available: true,
+        id: 'canvas',
+        recommended: false,
+        required: true,
+        view: 'canvas',
+      }),
+    ]));
+    expect(workspace.navigation.groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        availablePanelIds: ['canvas', 'next-action', 'events'],
+        id: 'workflow',
+        panelIds: ['canvas', 'next-action', 'events'],
+        unavailablePanelIds: [],
+      }),
+      expect.objectContaining({
+        id: 'producer',
+        panelIds: ['producer-request', 'producer-dispatch'],
+      }),
+    ]));
+    expect(saved.badges).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'workspace-status',
+        tone: 'success',
+        value: 'ready',
+      }),
+      expect.objectContaining({
+        id: 'approval-state',
+        tone: 'warning',
+        value: 'needs_approval',
+      }),
+      expect.objectContaining({
+        id: 'supervision-state',
+        tone: 'warning',
+        value: 'human_review_required',
+      }),
+      expect.objectContaining({
+        id: 'artifact-availability',
+        tone: 'success',
+        value: '0 missing',
+      }),
+      expect.objectContaining({
+        id: 'command-readiness',
+        tone: 'neutral',
+        value: '0/5 ready',
+      }),
+      expect.objectContaining({
+        id: 'review-checklist',
+        tone: 'warning',
+        value: 'pending',
+      }),
+    ]));
+    expect(saved.layout).toEqual(expect.objectContaining({
+      density: 'compact',
+    }));
+    expect(saved.layout.badgeStrip).toEqual({
+      badgeIds: [
+        'workspace-status',
+        'approval-state',
+        'supervision-state',
+        'artifact-availability',
+        'command-readiness',
+        'review-checklist',
+      ],
+      placement: 'top',
+    });
+    expect(saved.layout.regions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        availablePanelIds: ['approval', 'producer-review'],
+        id: 'operator-review',
+        panelIds: ['approval', 'producer-review'],
+        primaryPanelId: 'approval',
+        required: true,
+        unavailablePanelIds: [],
+      }),
+      expect.objectContaining({
+        active: false,
+        availablePanelIds: ['canvas', 'next-action', 'events'],
+        id: 'workflow-map',
+        panelIds: ['canvas', 'next-action', 'events'],
+        primaryPanelId: 'canvas',
+        required: true,
+        unavailablePanelIds: [],
+      }),
+    ]));
+    expect(saved.artifactShelf).toEqual(expect.objectContaining({
+      availableArtifactCount: 9,
+      missingRequiredCount: 0,
+      mode: 'passive',
+      requiredArtifactCount: 4,
+      totalArtifactCount: 9,
+    }));
+    expect(saved.artifactShelf.groups).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        availableArtifactCount: 3,
+        id: 'workflow-map',
+        panelIds: ['canvas', 'next-action', 'events'],
+        primaryPanelId: 'canvas',
+        requiredArtifactCount: 3,
+        totalArtifactCount: 3,
+        unavailableArtifactCount: 0,
+      }),
+      expect.objectContaining({
+        availableArtifactCount: 2,
+        id: 'operator-review',
+        panelIds: ['approval', 'producer-review'],
+        primaryPanelId: 'approval',
+        requiredArtifactCount: 1,
+        totalArtifactCount: 2,
+        unavailableArtifactCount: 0,
+      }),
+    ]));
+    expect(saved.focus).toEqual(expect.objectContaining({
+      activeBadgeIds: ['approval-state', 'supervision-state', 'review-checklist'],
+      activePanelId: 'approval',
+      activeRegionId: 'operator-review',
+      recommendedPanelId: 'approval',
+      supervisionState: 'human_review_required',
+    }));
+    expect(saved.focus.reason).toBe('Scoped edit preview is ready for human or Cowork approval before applying.');
+    expect(saved.decisionForm).toEqual(expect.objectContaining({
+      affectedFiles: ['docs/note.md'],
+      allowedDecisions: ['approved', 'rejected'],
+      artifactKind: 'agentic-coding-approval-decision',
+      defaultDecision: 'rejected',
+      panelId: 'approval',
+      required: true,
+      requiredFields: ['kind', 'reviewer', 'decision', 'reason'],
+    }));
+    expect(saved.decisionForm.reason).toBe('Scoped edit preview is ready for human or Cowork approval before applying.');
+    expect(saved.decisionForm.safetyNotes).toEqual(expect.arrayContaining([
+      'Decision form is a passive UI descriptor.',
+      'Use rejected unless the preview is fully inspected and acceptable.',
+    ]));
+    expect(saved.actionRail).toEqual(expect.objectContaining({
+      mode: 'passive',
+      primaryActionId: 'open-active-panel',
+    }));
+    expect(saved.actionRail.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        enabled: true,
+        id: 'open-active-panel',
+        panelId: 'approval',
+        type: 'open_panel',
+      }),
+      expect.objectContaining({
+        badgeIds: ['approval-state', 'supervision-state'],
+        enabled: true,
+        id: 'fill-approval-decision',
+        panelId: 'approval',
+        type: 'fill_form',
+      }),
+      expect.objectContaining({
+        enabled: true,
+        id: 'inspect-guardrails',
+        panelId: 'manifest',
+        type: 'open_panel',
+      }),
+      expect.objectContaining({
+        disabledReason: 'Review the scoped edit preview and write an approval decision JSON file.',
+        enabled: false,
+        id: 'copy-next-command',
+        panelId: 'next-action',
+        type: 'copy_command',
+      }),
+    ]));
+    expect(saved.operatorBrief).toEqual(expect.objectContaining({
+      body: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      headline: 'Review needed: approval',
+      nextActionId: 'open-active-panel',
+      panelId: 'approval',
+      severity: 'warning',
+      state: 'human_review_required',
+    }));
+    expect(saved.operatorBrief.evidence).toEqual([
+      '9/9 panels available',
+      '0/5 commands ready',
+      'checklist pending',
+    ]);
+    expect(saved.operatorHandoff).toEqual(expect.objectContaining({
+      actionId: 'open-active-panel',
+      artifactPath: path.join(bundleDir, 'approval-state.json'),
+      evidence: ['9/9 panels available', '0/5 commands ready', 'checklist pending'],
+      mode: 'passive',
+      panelId: 'approval',
+      regionId: 'operator-review',
+      required: true,
+      state: 'human_review_required',
+      summary: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      title: 'Review needed: approval',
+    }));
+    expect(saved.operatorHandoff.safetyNotes).toEqual(expect.arrayContaining([
+      'Operator handoff is display metadata only.',
+      'The runner still validates approval and preview artifacts before any write.',
+    ]));
+    expect(saved.panelStates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        active: true,
+        attentionBadgeIds: ['approval-state', 'supervision-state', 'review-checklist'],
+        attentionTone: 'warning',
+        available: true,
+        id: 'approval',
+        recommended: true,
+        regionId: 'operator-review',
+        required: true,
+        view: 'review',
+      }),
+      expect.objectContaining({
+        active: false,
+        attentionBadgeIds: [],
+        attentionTone: 'neutral',
+        available: true,
+        id: 'canvas',
+        recommended: false,
+        regionId: 'workflow-map',
+        required: true,
+        view: 'canvas',
+      }),
+    ]));
     expect(workspace.panels).toEqual(expect.arrayContaining([
       expect.objectContaining({
         available: true,
@@ -1729,6 +1977,93 @@ describe('runAgenticCodingCell', () => {
     ]));
     expect(writtenPath).toBe(workspaceFile);
     expect(saved.openPanelId).toBe('approval');
+    expect(saved.guardrails).toEqual(expect.objectContaining({
+      approvalState: 'needs_approval',
+      canRunCommand: false,
+      commandCount: 5,
+      missingRequiredCount: 0,
+      needsApprovalDecision: true,
+      needsHumanReview: true,
+      producerMode: 'data_only_edit_proposal',
+      readyCommandCount: 0,
+      requiredBeforeApply: false,
+      validationErrors: [],
+    }));
+    expect(saved.guardrails.disallowedActions).toEqual(expect.arrayContaining([
+      'apply_patch',
+      'deploy',
+      'file_write',
+      'push',
+      'shell_exec',
+    ]));
+    expect(saved.guardrails.readOnlyTools).toEqual(['file_read', 'git_status', 'rg']);
+    expect(saved.guardrails.safetyNotes).toEqual(expect.arrayContaining([
+      'Does not modify repository files.',
+      'Requires an approved decision file.',
+      'Visualizes the safe route for Cowork; does not grant write authority.',
+    ]));
+    expect(saved.supervision).toEqual(expect.objectContaining({
+      actionType: 'review_preview',
+      approvalState: 'needs_approval',
+      panelId: 'approval',
+      reason: 'Scoped edit preview is ready for human or Cowork approval before applying.',
+      required: true,
+      state: 'human_review_required',
+    }));
+    expect(saved.reviewChecklist).toEqual(expect.objectContaining({
+      affectedFiles: ['docs/note.md'],
+      nextItemId: 'open-review-panel',
+      required: true,
+      status: 'pending',
+    }));
+    expect(saved.reviewChecklist.items).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        id: 'open-review-panel',
+        panelId: 'approval',
+        status: 'pending',
+      }),
+      expect.objectContaining({
+        id: 'confirm-guardrails',
+        panelId: 'manifest',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        id: 'write-approval-decision',
+        panelId: 'approval',
+        status: 'pending',
+      }),
+    ]));
+    expect(saved.reviewRoute).toEqual(expect.objectContaining({
+      mode: 'passive',
+      nextStepId: 'open-review-panel',
+      required: true,
+    }));
+    expect(saved.reviewRoute.steps).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        actionId: 'open-active-panel',
+        active: true,
+        artifactPath: path.join(bundleDir, 'approval-state.json'),
+        id: 'open-review-panel',
+        panelId: 'approval',
+        regionId: 'operator-review',
+        status: 'pending',
+      }),
+      expect.objectContaining({
+        actionId: 'inspect-guardrails',
+        active: false,
+        artifactPath: path.join(bundleDir, 'artifact-bundle.json'),
+        id: 'confirm-guardrails',
+        panelId: 'manifest',
+        regionId: 'evidence-strip',
+        status: 'completed',
+      }),
+      expect.objectContaining({
+        actionId: 'fill-approval-decision',
+        id: 'write-approval-decision',
+        panelId: 'approval',
+        status: 'pending',
+      }),
+    ]));
   });
 
   it('adds passive queue details to the Cowork workspace summary', async () => {
@@ -1928,7 +2263,15 @@ describe('runAgenticCodingCell', () => {
         edgeCount: number;
         edges: Array<{ source: string; target: string }>;
         nodeCount: number;
-        nodes: Array<{ active: boolean; id: string; status: string; type: string }>;
+        nodes: Array<{
+          active: boolean;
+          canvasType: string;
+          iconName: string;
+          id: string;
+          position: { x: number; y: number };
+          status: string;
+          type: string;
+        }>;
         statusCounts: { completed: number; ready: number; total: number };
         validationErrors: string[];
       };
@@ -1951,9 +2294,49 @@ describe('runAgenticCodingCell', () => {
     expect(saved.graph.nodes).toEqual(expect.arrayContaining([
       expect.objectContaining({
         active: true,
+        canvasType: 'logic',
+        iconName: 'ClipboardCheck',
         id: 'review-preview',
+        position: { x: 250, y: 650 },
         status: 'ready',
         type: 'approval',
+      }),
+    ]));
+    expect(saved.graphLegend).toEqual(expect.objectContaining({
+      activeNodeId: 'review-preview',
+      edgeCount: 7,
+      mode: 'passive',
+      nodeCount: 8,
+      safetyNote: 'Graph legend is display metadata only.',
+    }));
+    expect(saved.graphLegend.statuses).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        count: 4,
+        id: 'completed',
+        tone: 'success',
+      }),
+      expect.objectContaining({
+        count: 1,
+        id: 'ready',
+        tone: 'warning',
+      }),
+      expect.objectContaining({
+        count: 3,
+        id: 'pending',
+        tone: 'neutral',
+      }),
+    ]));
+    expect(saved.graphLegend.nodeTypes).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        canvasTypes: ['logic'],
+        count: 1,
+        iconNames: ['ClipboardCheck'],
+        id: 'approval',
+      }),
+      expect.objectContaining({
+        canvasTypes: ['action'],
+        count: 2,
+        id: 'edit',
       }),
     ]));
     expect(saved.graph.edges).toEqual(expect.arrayContaining([

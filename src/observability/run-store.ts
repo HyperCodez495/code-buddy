@@ -14,7 +14,9 @@ import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import { randomBytes } from 'crypto';
+import Database from 'better-sqlite3';
 import { logger } from '../utils/logger.js';
+import { executeHermesLifecycleHook } from '../hooks/hermes-lifecycle-hooks.js';
 
 // ──────────────────────────────────────────────────────────────────
 // Types
@@ -88,7 +90,36 @@ export interface RunRecord {
   artifacts: string[]; // file paths relative to run dir
 }
 
+export interface RunSearchOptions {
+  includeArtifacts?: boolean;
+  includeEvents?: boolean;
+  limit?: number;
+  sources?: string[];
+}
+
+export interface RunSearchResult {
+  runId: string;
+  objective: string;
+  status: RunSummary['status'];
+  startedAt: number;
+  matched: 'artifact' | 'event' | 'summary';
+  score: number;
+  snippet: string;
+  artifact?: string;
+  eventType?: RunEventType;
+  source?: string;
+}
+
 const MAX_RUNS = 30;
+const MAX_ARTIFACT_SEARCH_BYTES = 200_000;
+const ARTIFACT_INDEX_DB = 'artifact-index.sqlite';
+
+interface ArtifactIndexRow {
+  runId: string;
+  artifact: string;
+  content: string;
+  rank: number;
+}
 
 // ──────────────────────────────────────────────────────────────────
 // RunStore
@@ -111,6 +142,10 @@ export class RunStore {
   private summaries: Map<string, RunSummary> = new Map();
   /** The currently active run ID (set by startRun, cleared by endRun) */
   private _currentRunId: string | null = null;
+  /** Durable FTS5 index for text artifacts. Opened lazily. */
+  private artifactIndexDb: Database.Database | null = null;
+  /** If SQLite/FTS is unavailable, keep run search on the file-scan fallback. */
+  private artifactIndexUnavailable = false;
 
   constructor(runsDir?: string) {
     this.runsDir = runsDir || path.join(os.homedir(), '.codebuddy', 'runs');
@@ -132,6 +167,28 @@ export class RunStore {
   appendEvent(type: RunEventType, data: Record<string, unknown>): void {
     if (this._currentRunId) {
       this.emit(this._currentRunId, { type, data });
+    }
+  }
+
+  dispose(): void {
+    for (const ws of this.handles.values()) {
+      try {
+        ws.destroy();
+      } catch {
+        // Ignore dispose-time stream errors.
+      }
+    }
+    this.handles.clear();
+    if (this.artifactIndexDb) {
+      try {
+        this.artifactIndexDb.close();
+      } catch {
+        // Ignore dispose-time SQLite errors.
+      }
+      this.artifactIndexDb = null;
+    }
+    if (_activeStore === this) {
+      setActiveRunStore(null);
     }
   }
 
@@ -166,6 +223,12 @@ export class RunStore {
     const eventsPath = path.join(runDir, 'events.jsonl');
     fs.writeFileSync(eventsPath, '', { flag: 'a' }); // ensure file exists
     const ws = fs.createWriteStream(eventsPath, { flags: 'a', encoding: 'utf-8' });
+    ws.on('error', (err) => {
+      logger.debug('RunStore: event stream error', {
+        runId,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    });
     this.handles.set(runId, ws);
 
     // Emit run_start event
@@ -293,6 +356,17 @@ export class RunStore {
       setActiveRunStore(null);
     }
 
+    executeHermesLifecycleHook(process.cwd(), 'after_run_complete', {
+      runId,
+      runStatus: status,
+      runObjective: summary?.objective,
+      runMetadata: summary?.metadata,
+      endedAt: summary?.endedAt,
+    }).catch((err) => logger.debug('RunStore: AfterRunComplete hook failed', {
+      runId,
+      error: err instanceof Error ? err.message : String(err),
+    }));
+
     logger.debug(`RunStore: ended run ${runId} with status ${status}`);
   }
 
@@ -309,6 +383,7 @@ export class RunStore {
 
     const filePath = path.join(artifactsDir, name);
     fs.writeFileSync(filePath, content, 'utf-8');
+    this.indexArtifactForSearch(runId, name, content);
 
     const summary = this.summaries.get(runId);
     if (summary) {
@@ -469,12 +544,257 @@ export class RunStore {
     }
   }
 
+  /**
+   * Search recent run summaries, event payloads, and text artifacts.
+   *
+   * This is the lightweight artifact-recall path used before a full SQLite
+   * artifact FTS table exists. It keeps generated scripts, plans, summaries,
+   * and command logs discoverable from the CLI without loading chat history.
+   */
+  searchRuns(query: string, options: RunSearchOptions = {}): RunSearchResult[] {
+    const terms = normalizeSearchTerms(query);
+    if (terms.length === 0) return [];
+
+    const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
+    const includeArtifacts = options.includeArtifacts !== false;
+    const includeEvents = options.includeEvents !== false;
+    const sources = normalizeSearchFilterValues(options.sources);
+    const results: RunSearchResult[] = [];
+    const indexedArtifacts = new Set<string>();
+
+    if (includeArtifacts) {
+      const artifactHits = this.searchArtifactsWithIndex(terms, limit, sources);
+      for (const hit of artifactHits) {
+        if (hit.artifact) {
+          indexedArtifacts.add(`${hit.runId}\u0000${hit.artifact}`);
+        }
+        results.push(hit);
+      }
+    }
+
+    for (const summary of this.listRuns(100)) {
+      if (!matchesRunSearchSources(summary, sources)) {
+        continue;
+      }
+      const source = inferRunSearchSource(summary, sources);
+      const summaryText = [
+        summary.runId,
+        summary.objective,
+        summary.status,
+        JSON.stringify(summary.metadata ?? {}),
+      ].join(' ');
+      const summaryScore = scoreSearchText(summaryText, terms);
+      if (summaryScore > 0) {
+        results.push({
+          runId: summary.runId,
+          objective: summary.objective,
+          status: summary.status,
+          startedAt: summary.startedAt,
+          matched: 'summary',
+          score: summaryScore + 20,
+          snippet: buildSearchSnippet(summaryText, terms),
+          source,
+        });
+      }
+
+      if (includeEvents) {
+        for (const event of this.getEvents(summary.runId)) {
+          const eventText = `${event.type} ${safeStringify(event.data)}`;
+          const eventScore = scoreSearchText(eventText, terms);
+          if (eventScore > 0) {
+            results.push({
+              runId: summary.runId,
+              objective: summary.objective,
+              status: summary.status,
+              startedAt: summary.startedAt,
+              matched: 'event',
+              eventType: event.type,
+              score: eventScore + 10,
+              snippet: buildSearchSnippet(eventText, terms),
+              source,
+            });
+          }
+        }
+      }
+
+      if (includeArtifacts) {
+        const record = this.getRun(summary.runId);
+        for (const artifact of record?.artifacts ?? []) {
+          if (indexedArtifacts.has(`${summary.runId}\u0000${artifact}`)) {
+            continue;
+          }
+          const artifactText = this.readArtifactForSearch(summary.runId, artifact);
+          const artifactScore = scoreSearchText(`${artifact} ${artifactText}`, terms);
+          if (artifactScore > 0) {
+            this.indexArtifactForSearch(summary.runId, artifact, artifactText);
+            results.push({
+              runId: summary.runId,
+              objective: summary.objective,
+              status: summary.status,
+              startedAt: summary.startedAt,
+              matched: 'artifact',
+              artifact,
+              score: artifactScore + 30,
+              snippet: buildSearchSnippet(artifactText || artifact, terms),
+              source,
+            });
+          }
+        }
+      }
+    }
+
+    return results
+      .sort((a, b) => b.score - a.score || b.startedAt - a.startedAt)
+      .slice(0, limit);
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────────────────────
 
   private runDir(runId: string): string {
     return path.join(this.runsDir, runId);
+  }
+
+  private getArtifactIndexDb(): Database.Database | null {
+    if (this.artifactIndexUnavailable) {
+      return null;
+    }
+    if (this.artifactIndexDb) {
+      return this.artifactIndexDb;
+    }
+    try {
+      const db = new Database(path.join(this.runsDir, ARTIFACT_INDEX_DB));
+      db.pragma('journal_mode = WAL');
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS artifact_index (
+          run_id TEXT NOT NULL,
+          artifact TEXT NOT NULL,
+          content TEXT NOT NULL,
+          updated_at INTEGER NOT NULL,
+          PRIMARY KEY (run_id, artifact)
+        );
+        CREATE VIRTUAL TABLE IF NOT EXISTS artifact_index_fts USING fts5(
+          run_id UNINDEXED,
+          artifact UNINDEXED,
+          content,
+          content='artifact_index',
+          content_rowid='rowid'
+        );
+        CREATE TRIGGER IF NOT EXISTS artifact_index_ai AFTER INSERT ON artifact_index BEGIN
+          INSERT INTO artifact_index_fts(rowid, run_id, artifact, content)
+          VALUES (new.rowid, new.run_id, new.artifact, new.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS artifact_index_ad AFTER DELETE ON artifact_index BEGIN
+          INSERT INTO artifact_index_fts(artifact_index_fts, rowid, run_id, artifact, content)
+          VALUES ('delete', old.rowid, old.run_id, old.artifact, old.content);
+        END;
+        CREATE TRIGGER IF NOT EXISTS artifact_index_au AFTER UPDATE ON artifact_index BEGIN
+          INSERT INTO artifact_index_fts(artifact_index_fts, rowid, run_id, artifact, content)
+          VALUES ('delete', old.rowid, old.run_id, old.artifact, old.content);
+          INSERT INTO artifact_index_fts(rowid, run_id, artifact, content)
+          VALUES (new.rowid, new.run_id, new.artifact, new.content);
+        END;
+      `);
+      this.artifactIndexDb = db;
+      return db;
+    } catch (err) {
+      this.artifactIndexUnavailable = true;
+      logger.debug('RunStore: artifact FTS index unavailable, falling back to file scan', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return null;
+    }
+  }
+
+  private indexArtifactForSearch(runId: string, name: string, content: string): void {
+    const db = this.getArtifactIndexDb();
+    if (!db) return;
+    const searchContent = `${name}\n${content}`.slice(0, MAX_ARTIFACT_SEARCH_BYTES);
+    try {
+      db.prepare(`
+        INSERT INTO artifact_index (run_id, artifact, content, updated_at)
+        VALUES (?, ?, ?, ?)
+        ON CONFLICT(run_id, artifact) DO UPDATE SET
+          content = excluded.content,
+          updated_at = excluded.updated_at
+      `).run(runId, name, searchContent, Date.now());
+    } catch (err) {
+      logger.debug('RunStore: failed to index artifact for search', {
+        runId,
+        artifact: name,
+        err: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  private searchArtifactsWithIndex(
+    terms: string[],
+    limit: number,
+    sources: string[],
+  ): RunSearchResult[] {
+    const db = this.getArtifactIndexDb();
+    const query = buildFtsQuery(terms);
+    if (!db || !query) return [];
+
+    try {
+      const rows = db.prepare(`
+        SELECT
+          run_id AS runId,
+          artifact,
+          content,
+          bm25(artifact_index_fts) AS rank
+        FROM artifact_index_fts
+        WHERE artifact_index_fts MATCH ?
+        ORDER BY rank
+        LIMIT ?
+      `).all(query, Math.max(limit * 5, 25)) as ArtifactIndexRow[];
+
+      const hits: RunSearchResult[] = [];
+      for (const row of rows) {
+        const summary = this.summaries.get(row.runId);
+        if (!summary || !matchesRunSearchSources(summary, sources)) {
+          continue;
+        }
+        const score = scoreSearchText(row.content, terms);
+        hits.push({
+          runId: summary.runId,
+          objective: summary.objective,
+          status: summary.status,
+          startedAt: summary.startedAt,
+          matched: 'artifact',
+          artifact: row.artifact,
+          score: (score > 0 ? score : 1) + 35,
+          snippet: buildSearchSnippet(row.content, terms),
+          source: inferRunSearchSource(summary, sources),
+        });
+      }
+      return hits;
+    } catch (err) {
+      logger.debug('RunStore: artifact FTS search failed, falling back to file scan', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return [];
+    }
+  }
+
+  private readArtifactForSearch(runId: string, name: string): string {
+    const filePath = path.join(this.runDir(runId), 'artifacts', name);
+    try {
+      const stat = fs.statSync(filePath);
+      if (!stat.isFile()) return '';
+      const fd = fs.openSync(filePath, 'r');
+      try {
+        const length = Math.min(stat.size, MAX_ARTIFACT_SEARCH_BYTES);
+        const buffer = Buffer.alloc(length);
+        fs.readSync(fd, buffer, 0, length, 0);
+        return buffer.toString('utf-8');
+      } finally {
+        fs.closeSync(fd);
+      }
+    } catch {
+      return '';
+    }
   }
 
   private ensureDir(dir: string): void {
@@ -556,5 +876,128 @@ export class RunStore {
         }
       }, 20);
     }
+  }
+}
+
+function normalizeSearchTerms(query: string): string[] {
+  return query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function buildFtsQuery(terms: string[]): string {
+  return terms
+    .map((term) => term.replace(/"/g, '""').trim())
+    .filter(Boolean)
+    .map((term) => `"${term}"`)
+    .join(' ');
+}
+
+function normalizeSearchFilterValues(values: string[] | undefined): string[] {
+  if (!Array.isArray(values)) {
+    return [];
+  }
+  return [...new Set(
+    values
+      .flatMap((value) => value.split(','))
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean)
+      .flatMap((value) => expandRunSourceAliases(value)),
+  )];
+}
+
+function matchesRunSearchSources(summary: RunSummary, sources: string[]): boolean {
+  if (sources.length === 0) {
+    return true;
+  }
+  const candidates = new Set(runSearchSourceCandidates(summary).flatMap((value) => expandRunSourceAliases(value)));
+  return sources.some((source) => candidates.has(source));
+}
+
+function inferRunSearchSource(summary: RunSummary, requestedSources: string[]): string | undefined {
+  const candidates = runSearchSourceCandidates(summary);
+  if (candidates.length === 0) {
+    return undefined;
+  }
+  if (requestedSources.length === 0) {
+    return candidates[0];
+  }
+  return candidates.find((candidate) =>
+    expandRunSourceAliases(candidate).some((alias) => requestedSources.includes(alias)),
+  ) ?? candidates[0];
+}
+
+function runSearchSourceCandidates(summary: RunSummary): string[] {
+  const metadata = summary.metadata as (RunMetadata & Record<string, unknown>) | undefined;
+  const candidates = [
+    metadata?.channel,
+    metadata?.source,
+    metadata?.platform,
+    metadata?.origin,
+    ...(Array.isArray(metadata?.tags) ? metadata.tags : []),
+  ];
+  return [...new Set(
+    candidates
+      .filter((value): value is string => typeof value === 'string')
+      .map((value) => value.trim().toLowerCase())
+      .filter(Boolean),
+  )];
+}
+
+function expandRunSourceAliases(value: string): string[] {
+  switch (value) {
+    case 'cli':
+    case 'terminal':
+      return ['cli', 'terminal'];
+    case 'cowork':
+    case 'desktop':
+      return ['cowork', 'desktop'];
+    case 'scheduled':
+    case 'schedule':
+    case 'cron':
+      return ['scheduled', 'schedule', 'cron'];
+    case 'phone':
+    case 'mobile':
+      return ['mobile', 'phone'];
+    default:
+      return [value];
+  }
+}
+
+function scoreSearchText(text: string, terms: string[]): number {
+  const lower = text.toLowerCase();
+  if (!terms.every((term) => lower.includes(term))) {
+    return 0;
+  }
+
+  return terms.reduce((score, term) => {
+    const index = lower.indexOf(term);
+    return score + 10 + Math.max(0, 20 - Math.floor(index / 20));
+  }, 0);
+}
+
+function buildSearchSnippet(text: string, terms: string[], maxLength = 180): string {
+  const compact = text.replace(/\s+/g, ' ').trim();
+  if (compact.length <= maxLength) {
+    return compact;
+  }
+
+  const lower = compact.toLowerCase();
+  const indexes = terms
+    .map((term) => lower.indexOf(term))
+    .filter((index) => index >= 0);
+  const first = indexes.length > 0 ? Math.min(...indexes) : 0;
+  const start = Math.max(0, first - 50);
+  const end = Math.min(compact.length, start + maxLength);
+  return `${start > 0 ? '...' : ''}${compact.slice(start, end)}${end < compact.length ? '...' : ''}`;
+}
+
+function safeStringify(value: unknown): string {
+  try {
+    return JSON.stringify(value);
+  } catch {
+    return String(value);
   }
 }

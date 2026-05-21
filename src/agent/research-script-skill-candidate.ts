@@ -1,0 +1,529 @@
+import fs from 'fs/promises';
+import path from 'path';
+import type { Dirent } from 'fs';
+import { parseSkillFile, validateSkill } from '../skills/parser.js';
+import type { ResearchScriptJobArtifact } from './research-script-job-artifact.js';
+import type { ResearchScriptJobRunResult } from './research-script-job-runner.js';
+
+export const RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
+
+export interface ResearchScriptSkillCandidate {
+  eligible: boolean;
+  id: string;
+  reason: string;
+  skillName: string;
+  skillPath: string;
+  sourceJobId: string;
+  successfulRunCount: number;
+  title: string;
+  markdown: string;
+}
+
+export interface BuildResearchScriptSkillCandidateOptions {
+  minSuccessfulRuns?: number;
+  skillRoot?: string;
+}
+
+export interface ResearchScriptSkillCandidateReviewManifest {
+  approvalRequired: true;
+  candidateId: string;
+  eligible: boolean;
+  generatedAt: string;
+  schemaVersion: typeof RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION;
+  skillName: string;
+  sourceJobId: string;
+  status: 'awaiting_human_approval' | 'not_eligible';
+  successfulRunCount: number;
+}
+
+export interface MaterializeResearchScriptSkillCandidateOptions {
+  generatedAt?: Date | number | string;
+  overwrite?: boolean;
+  rootDir: string;
+}
+
+export interface MaterializedResearchScriptSkillCandidate {
+  absoluteReviewManifestPath: string;
+  absoluteSkillPath: string;
+  candidateId: string;
+  eligible: boolean;
+  reviewManifest: ResearchScriptSkillCandidateReviewManifest;
+  reviewManifestPath: string;
+  skillName: string;
+  skillPath: string;
+}
+
+export interface InstallResearchScriptSkillCandidateOptions {
+  approvedAt?: Date | number | string;
+  approvedBy?: string;
+  overwrite?: boolean;
+  rootDir: string;
+  workspaceSkillRoot?: string;
+}
+
+export interface ReadMaterializedResearchScriptSkillCandidateOptions {
+  rootDir: string;
+}
+
+export interface ListMaterializedResearchScriptSkillCandidatesOptions {
+  rootDir: string;
+  skillRoot?: string;
+}
+
+export interface InstalledResearchScriptSkillCandidate {
+  absoluteInstalledPath: string;
+  approvedAt: string;
+  approvedBy: string;
+  candidateId: string;
+  installedPath: string;
+  skillName: string;
+  sourceCandidatePath: string;
+}
+
+interface RawResearchScriptSkillCandidateReviewManifest {
+  approvalRequired?: unknown;
+  candidateId?: unknown;
+  eligible?: unknown;
+  generatedAt?: unknown;
+  schemaVersion?: unknown;
+  skillName?: unknown;
+  sourceJobId?: unknown;
+  status?: unknown;
+  successfulRunCount?: unknown;
+}
+
+export function buildResearchScriptSkillCandidate(
+  job: ResearchScriptJobArtifact,
+  runs: ResearchScriptJobRunResult[],
+  options: BuildResearchScriptSkillCandidateOptions = {},
+): ResearchScriptSkillCandidate {
+  const minSuccessfulRuns = normalizeMinSuccessfulRuns(options.minSuccessfulRuns);
+  const successfulRuns = runs.filter((run) => run.status === 'completed' && run.exitCode === 0);
+  const skillName = `research-${slugify(job.title)}`;
+  const skillRoot = normalizeSkillRoot(options.skillRoot);
+  const skillPath = `${skillRoot}/${skillName}/SKILL.md`;
+  const eligible = successfulRuns.length >= minSuccessfulRuns;
+  const reason = eligible
+    ? `${successfulRuns.length} successful runs met the promotion threshold.`
+    : `${successfulRuns.length}/${minSuccessfulRuns} successful runs; keep as a script job until it proves repeatable.`;
+
+  const candidate = {
+    eligible,
+    id: `skill-candidate-${stableHash([job.id, skillName].join('|'))}`,
+    reason,
+    skillName,
+    skillPath,
+    sourceJobId: job.id,
+    successfulRunCount: successfulRuns.length,
+    title: `${job.title} skill candidate`,
+  };
+
+  return {
+    ...candidate,
+    markdown: renderResearchScriptSkillCandidateMarkdown(job, successfulRuns, candidate),
+  };
+}
+
+export async function materializeResearchScriptSkillCandidate(
+  candidate: ResearchScriptSkillCandidate,
+  options: MaterializeResearchScriptSkillCandidateOptions,
+): Promise<MaterializedResearchScriptSkillCandidate> {
+  const rootDir = path.resolve(options.rootDir);
+  const absoluteSkillPath = resolvePathInsideRoot(rootDir, candidate.skillPath);
+  const reviewManifestPath = buildReviewManifestPath(candidate.skillPath);
+  const absoluteReviewManifestPath = resolvePathInsideRoot(rootDir, reviewManifestPath);
+  const writeFlag = options.overwrite ? 'w' : 'wx';
+  const reviewManifest = buildResearchScriptSkillCandidateReviewManifest(candidate, options.generatedAt);
+
+  await Promise.all([
+    fs.mkdir(path.dirname(absoluteSkillPath), { recursive: true }),
+    fs.mkdir(path.dirname(absoluteReviewManifestPath), { recursive: true }),
+  ]);
+  await Promise.all([
+    fs.writeFile(absoluteSkillPath, `${candidate.markdown.trimEnd()}\n`, {
+      encoding: 'utf8',
+      flag: writeFlag,
+    }),
+    fs.writeFile(absoluteReviewManifestPath, `${JSON.stringify(reviewManifest, null, 2)}\n`, {
+      encoding: 'utf8',
+      flag: writeFlag,
+    }),
+  ]);
+
+  return {
+    absoluteReviewManifestPath,
+    absoluteSkillPath,
+    candidateId: candidate.id,
+    eligible: candidate.eligible,
+    reviewManifest,
+    reviewManifestPath,
+    skillName: candidate.skillName,
+    skillPath: candidate.skillPath,
+  };
+}
+
+export async function readMaterializedResearchScriptSkillCandidate(
+  candidatePath: string,
+  options: ReadMaterializedResearchScriptSkillCandidateOptions,
+): Promise<ResearchScriptSkillCandidate> {
+  const rootDir = path.resolve(options.rootDir);
+  const absoluteSkillPath = resolveCandidateSkillPath(rootDir, candidatePath);
+  const skillPath = toRootRelativePath(rootDir, absoluteSkillPath);
+  const absoluteReviewManifestPath = resolvePathInsideRoot(rootDir, buildReviewManifestPath(skillPath));
+  const [markdown, manifestRaw] = await Promise.all([
+    fs.readFile(absoluteSkillPath, 'utf8'),
+    fs.readFile(absoluteReviewManifestPath, 'utf8'),
+  ]);
+  const manifest = parseReviewManifest(manifestRaw);
+
+  return {
+    eligible: manifest.eligible,
+    id: manifest.candidateId,
+    reason: extractMarkdownField(markdown, 'Reason') || reviewStatusReason(manifest),
+    skillName: manifest.skillName,
+    skillPath,
+    sourceJobId: manifest.sourceJobId,
+    successfulRunCount: manifest.successfulRunCount,
+    title: extractMarkdownTitle(markdown) || `${manifest.skillName} skill candidate`,
+    markdown,
+  };
+}
+
+export async function listMaterializedResearchScriptSkillCandidates(
+  options: ListMaterializedResearchScriptSkillCandidatesOptions,
+): Promise<ResearchScriptSkillCandidate[]> {
+  const rootDir = path.resolve(options.rootDir);
+  const skillRoot = normalizeSkillRoot(options.skillRoot ?? '.codebuddy/skill-candidates');
+  const absoluteSkillRoot = resolvePathInsideRoot(rootDir, skillRoot);
+  const reviewManifestPaths = await findReviewManifestPaths(absoluteSkillRoot);
+  const candidates = await Promise.all(
+    reviewManifestPaths.map((reviewManifestPath) => readMaterializedResearchScriptSkillCandidate(
+      path.dirname(reviewManifestPath),
+      { rootDir },
+    )),
+  );
+
+  return candidates.sort((left, right) => left.skillName.localeCompare(right.skillName));
+}
+
+export async function installResearchScriptSkillCandidate(
+  candidate: ResearchScriptSkillCandidate,
+  options: InstallResearchScriptSkillCandidateOptions,
+): Promise<InstalledResearchScriptSkillCandidate> {
+  if (!candidate.eligible) {
+    throw new Error(`Research script skill candidate is not eligible for install: ${candidate.reason}`);
+  }
+
+  const approvedBy = normalizeApproval(options.approvedBy);
+  if (!approvedBy) {
+    throw new Error('Human approval is required before installing a research script skill candidate.');
+  }
+
+  const rootDir = path.resolve(options.rootDir);
+  const sourceCandidatePath = candidate.skillPath;
+  const absoluteCandidatePath = resolvePathInsideRoot(rootDir, sourceCandidatePath);
+  const installedPath = buildWorkspaceSkillPath(candidate.skillName, options.workspaceSkillRoot);
+  const absoluteInstalledPath = resolvePathInsideRoot(rootDir, installedPath);
+  const approvedAt = normalizeCreatedAt(options.approvedAt);
+  let reviewedMarkdown = '';
+
+  try {
+    reviewedMarkdown = await fs.readFile(absoluteCandidatePath, 'utf8');
+  } catch {
+    throw new Error(`Materialized candidate not found: ${sourceCandidatePath}`);
+  }
+
+  const installMarkdown = renderApprovedSkillMarkdown(
+    { ...candidate, markdown: reviewedMarkdown },
+    approvedBy,
+    approvedAt,
+  );
+  const parsedSkill = parseSkillFile(installMarkdown, installedPath, 'workspace');
+  const validation = validateSkill(parsedSkill);
+  if (!validation.valid) {
+    throw new Error(`Research script skill candidate is not a valid SKILL.md: ${validation.errors.join(', ')}`);
+  }
+
+  await fs.mkdir(path.dirname(absoluteInstalledPath), { recursive: true });
+  await fs.writeFile(absoluteInstalledPath, installMarkdown, {
+    encoding: 'utf8',
+    flag: options.overwrite ? 'w' : 'wx',
+  });
+
+  return {
+    absoluteInstalledPath,
+    approvedAt,
+    approvedBy,
+    candidateId: candidate.id,
+    installedPath,
+    skillName: candidate.skillName,
+    sourceCandidatePath,
+  };
+}
+
+function renderResearchScriptSkillCandidateMarkdown(
+  job: ResearchScriptJobArtifact,
+  successfulRuns: ResearchScriptJobRunResult[],
+  candidate: Omit<ResearchScriptSkillCandidate, 'markdown'>,
+): string {
+  const lines = [
+    '---',
+    `name: ${candidate.skillName}`,
+    'version: 0.1.0',
+    `description: Reusable workflow candidate promoted from ${job.title}.`,
+    'tags: [research-script, generated-candidate, public-data]',
+    '---',
+    '',
+    `# ${candidate.title}`,
+    '',
+    `Status: ${candidate.eligible ? 'eligible for human review' : 'not eligible yet'}`,
+    `Reason: ${candidate.reason}`,
+    `Source job: ${candidate.sourceJobId}`,
+    `Successful runs: ${candidate.successfulRunCount}`,
+    '',
+    '## Use When',
+    `- ${job.goal}`,
+    '- The operator wants a repeatable public-data workflow with saved artifacts.',
+    '- The task can follow the same input/output contract and sandbox policy.',
+    '',
+    '## Do Not Use When',
+    '- The task would bypass login walls, paywalls, captcha, rate limits, or access controls.',
+    '- The workflow would send emails, submit forms, call phone numbers, or contact leads automatically.',
+    '- The data source is private, personal, or outside the declared public-data scope.',
+    '',
+    '## Input Contract',
+    ...recordLines(job.inputContract),
+    '',
+    '## Output Contract',
+    ...recordLines(job.outputContract),
+    '',
+    '## Sandbox Policy',
+    `- Provider: ${job.sandboxPolicy.provider}`,
+    `- Network: ${job.sandboxPolicy.network}`,
+    `- Writes: ${job.sandboxPolicy.writes}`,
+    `- Timeout: ${job.sandboxPolicy.timeoutMs}ms`,
+    `- Page budget: ${job.sandboxPolicy.pageBudget}`,
+    `- Stop on: ${job.sandboxPolicy.stopOn.join(', ')}`,
+    '',
+    '## Successful Run Evidence',
+    ...successfulRuns.map((run) => `- ${run.jobId}: output ${run.outputPath}, summary ${run.summaryPath}, duration ${run.durationMs}ms`),
+    '',
+    '## Candidate Installation Notes',
+    `- Review and edit this candidate before copying it to ${candidate.skillPath}.`,
+    `- Keep the original script manifest at ${job.files.manifest} linked from the final skill docs.`,
+    '- Preserve the no-contact-action assertion unless a human explicitly changes the workflow boundary.',
+    '',
+  ];
+
+  return lines.join('\n');
+}
+
+function buildResearchScriptSkillCandidateReviewManifest(
+  candidate: ResearchScriptSkillCandidate,
+  generatedAt: Date | number | string | undefined,
+): ResearchScriptSkillCandidateReviewManifest {
+  return {
+    approvalRequired: true,
+    candidateId: candidate.id,
+    eligible: candidate.eligible,
+    generatedAt: normalizeCreatedAt(generatedAt),
+    schemaVersion: RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
+    skillName: candidate.skillName,
+    sourceJobId: candidate.sourceJobId,
+    status: candidate.eligible ? 'awaiting_human_approval' : 'not_eligible',
+    successfulRunCount: candidate.successfulRunCount,
+  };
+}
+
+function renderApprovedSkillMarkdown(
+  candidate: ResearchScriptSkillCandidate,
+  approvedBy: string,
+  approvedAt: string,
+): string {
+  return [
+    candidate.markdown.trimEnd(),
+    '',
+    '## Human Approval',
+    `- Candidate id: ${candidate.id}`,
+    `- Source job: ${candidate.sourceJobId}`,
+    `- Approved by: ${approvedBy}`,
+    `- Approved at: ${approvedAt}`,
+    '- Installation boundary: workspace skill; review before editing generated commands or source policies.',
+    '',
+  ].join('\n');
+}
+
+function buildReviewManifestPath(skillPath: string): string {
+  return `${skillPath.replace(/\\/g, '/').replace(/\/?SKILL\.md$/i, '')}/candidate-review.json`;
+}
+
+function parseReviewManifest(raw: string): ResearchScriptSkillCandidateReviewManifest {
+  const parsed = JSON.parse(raw) as RawResearchScriptSkillCandidateReviewManifest;
+  if (parsed.schemaVersion !== RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION) {
+    throw new Error(`Unsupported research script skill candidate review schema: ${String(parsed.schemaVersion)}`);
+  }
+  if (parsed.approvalRequired !== true) {
+    throw new Error('Research script skill candidate review manifest must require approval.');
+  }
+  if (typeof parsed.candidateId !== 'string' || parsed.candidateId.trim().length === 0) {
+    throw new Error('Research script skill candidate review manifest is missing candidateId.');
+  }
+  if (typeof parsed.skillName !== 'string' || parsed.skillName.trim().length === 0) {
+    throw new Error('Research script skill candidate review manifest is missing skillName.');
+  }
+  if (typeof parsed.sourceJobId !== 'string' || parsed.sourceJobId.trim().length === 0) {
+    throw new Error('Research script skill candidate review manifest is missing sourceJobId.');
+  }
+  if (typeof parsed.successfulRunCount !== 'number' || !Number.isFinite(parsed.successfulRunCount)) {
+    throw new Error('Research script skill candidate review manifest is missing successfulRunCount.');
+  }
+  if (typeof parsed.eligible !== 'boolean') {
+    throw new Error('Research script skill candidate review manifest is missing eligible.');
+  }
+
+  return {
+    approvalRequired: true,
+    candidateId: parsed.candidateId.trim(),
+    eligible: parsed.eligible,
+    generatedAt: typeof parsed.generatedAt === 'string' ? parsed.generatedAt : '',
+    schemaVersion: RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
+    skillName: parsed.skillName.trim(),
+    sourceJobId: parsed.sourceJobId.trim(),
+    status: parsed.eligible ? 'awaiting_human_approval' : 'not_eligible',
+    successfulRunCount: Math.trunc(parsed.successfulRunCount),
+  };
+}
+
+async function findReviewManifestPaths(absoluteDirectory: string): Promise<string[]> {
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(absoluteDirectory, { withFileTypes: true });
+  } catch (error) {
+    if (typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT') {
+      return [];
+    }
+    throw error;
+  }
+
+  const reviewManifestPaths: string[] = [];
+  for (const entry of entries) {
+    const absoluteEntryPath = path.join(absoluteDirectory, entry.name);
+    if (entry.isDirectory()) {
+      reviewManifestPaths.push(...await findReviewManifestPaths(absoluteEntryPath));
+    } else if (entry.isFile() && entry.name === 'candidate-review.json') {
+      reviewManifestPaths.push(absoluteEntryPath);
+    }
+  }
+  return reviewManifestPaths;
+}
+
+function reviewStatusReason(manifest: ResearchScriptSkillCandidateReviewManifest): string {
+  return manifest.eligible
+    ? `${manifest.successfulRunCount} successful runs met the promotion threshold.`
+    : `${manifest.successfulRunCount} successful runs; candidate is not eligible yet.`;
+}
+
+function extractMarkdownTitle(markdown: string): string {
+  return markdown.match(/^#\s+(.+)$/m)?.[1]?.trim() ?? '';
+}
+
+function extractMarkdownField(markdown: string, fieldName: string): string {
+  const escaped = fieldName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return markdown.match(new RegExp(`^${escaped}:\\s*(.+)$`, 'm'))?.[1]?.trim() ?? '';
+}
+
+function buildWorkspaceSkillPath(skillName: string, workspaceSkillRoot: string | undefined): string {
+  const root = normalizeSkillRoot(workspaceSkillRoot ?? '.codebuddy/skills');
+  return `${root}/${skillName}/SKILL.md`;
+}
+
+function recordLines(record: Record<string, string>): string[] {
+  const entries = Object.entries(record);
+  if (entries.length === 0) {
+    return ['- none'];
+  }
+  return entries.map(([key, value]) => `- ${key}: ${value}`);
+}
+
+function normalizeMinSuccessfulRuns(value: number | undefined): number {
+  if (!Number.isFinite(value)) {
+    return 2;
+  }
+  return Math.min(10, Math.max(1, Math.trunc(value as number)));
+}
+
+function normalizeSkillRoot(value: string | undefined): string {
+  return value?.trim().replace(/\\/g, '/').replace(/\/+$/g, '') || '.codebuddy/skill-candidates';
+}
+
+function normalizeApproval(value: string | undefined): string {
+  return typeof value === 'string' ? value.trim().replace(/\s+/g, ' ') : '';
+}
+
+function resolvePathInsideRoot(rootDir: string, relativePath: string): string {
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedPath = path.resolve(resolvedRoot, normalizeRelativePath(relativePath));
+  assertPathInsideRoot(resolvedRoot, resolvedPath, relativePath);
+  return resolvedPath;
+}
+
+function resolveCandidateSkillPath(rootDir: string, candidatePath: string): string {
+  const resolvedRoot = path.resolve(rootDir);
+  const candidateSkillPath = candidatePath.trim().replace(/\\/g, '/').endsWith('/SKILL.md')
+    ? candidatePath
+    : path.join(candidatePath, 'SKILL.md');
+  const resolvedPath = path.isAbsolute(candidateSkillPath)
+    ? path.resolve(candidateSkillPath)
+    : path.resolve(resolvedRoot, normalizeRelativePath(candidateSkillPath));
+  assertPathInsideRoot(resolvedRoot, resolvedPath, candidatePath);
+  return resolvedPath;
+}
+
+function assertPathInsideRoot(rootDir: string, absolutePath: string, originalPath: string): void {
+  const normalizedRoot = normalizeForCompare(path.resolve(rootDir));
+  const normalizedPath = normalizeForCompare(path.resolve(absolutePath));
+  if (normalizedPath !== normalizedRoot && !normalizedPath.startsWith(`${normalizedRoot}${path.sep}`)) {
+    throw new Error(`Research script skill candidate path escapes root: ${originalPath}`);
+  }
+}
+
+function toRootRelativePath(rootDir: string, absolutePath: string): string {
+  return path.relative(path.resolve(rootDir), absolutePath).replace(/\\/g, '/');
+}
+
+function normalizeRelativePath(value: string): string {
+  return value
+    .trim()
+    .replace(/\\/g, '/')
+    .replace(/^\/+/, '')
+    .replace(/\/+/g, '/');
+}
+
+function normalizeForCompare(value: string): string {
+  return process.platform === 'win32' ? value.toLowerCase() : value;
+}
+
+function normalizeCreatedAt(value: Date | number | string | undefined): string {
+  if (value instanceof Date) return value.toISOString();
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return new Date().toISOString();
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'script';
+}
+
+function stableHash(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let index = 0; index < value.length; index++) {
+    hash ^= value.charCodeAt(index);
+    hash = Math.imul(hash, 0x01000193);
+  }
+  return (hash >>> 0).toString(36).padStart(7, '0');
+}

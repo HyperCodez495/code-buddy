@@ -7,9 +7,59 @@
  *   replayRun()  — show timeline then re-execute test steps
  */
 
-import fs from 'fs';
-import path from 'path';
 import { RunStore, RunEvent, RunSummary, RunMetrics } from './run-store.js';
+import { buildRunRecallPack, buildRunRecallPackAsync } from './run-recall-pack.js';
+import {
+  buildRunTrajectoryExport,
+  renderRunTrajectoryExport,
+} from './run-trajectory-export.js';
+import {
+  buildGoldenWorkflowEvalManifest,
+  evaluateGoldenWorkflowRun,
+  getGoldenWorkflowEvalFixture,
+  renderGoldenWorkflowEvalManifest,
+  renderGoldenWorkflowEvalResult,
+} from './golden-workflow-evals.js';
+import {
+  buildPolicyEvalManifest,
+  evaluatePolicyEvalRun,
+  getPolicyEval,
+  renderPolicyEvalManifest,
+  renderPolicyEvalResult,
+} from './policy-evals.js';
+import {
+  buildMobileSupervisionSnapshot,
+  renderMobileSupervisionSnapshot,
+} from './mobile-supervision-snapshot.js';
+import {
+  buildMobileSupervisionGatewayContract,
+  renderMobileSupervisionGatewayContract,
+} from './mobile-supervision-gateway-contract.js';
+import {
+  buildMobileSupervisionGatewayListenerShell,
+  renderMobileSupervisionGatewayListenerShell,
+} from './mobile-supervision-gateway-listener-shell.js';
+import {
+  buildMobileSupervisionGatewayReviewDraft,
+  evaluateMobileSupervisionGatewayRequest,
+  renderMobileSupervisionGatewayReviewDraft,
+  renderMobileSupervisionGatewayRequestDecision,
+  type MobileSupervisionGatewayRequest,
+} from './mobile-supervision-gateway-policy.js';
+import {
+  buildMobileSupervisionPairingState,
+  renderMobileSupervisionPairingState,
+} from './mobile-supervision-pairing-state.js';
+import {
+  buildMobileSupervisionPairingAcceptancePlan,
+  renderMobileSupervisionPairingAcceptancePlan,
+} from './mobile-supervision-pairing-acceptance-plan.js';
+import {
+  buildMobileSupervisionApprovalQueue,
+  renderMobileSupervisionApprovalQueue,
+} from './mobile-supervision-approval-queue.js';
+
+export const RUN_SEARCH_JSON_SCHEMA_VERSION = 1;
 
 // ──────────────────────────────────────────────────────────────────
 // Formatting helpers
@@ -275,4 +325,485 @@ export function listRuns(limit = 20): void {
     console.log(`  ${statusLabel(r.status)} ${r.runId}  ${formatTs(r.startedAt)}  (${dur})  ${obj}`);
   }
   console.log('');
+}
+
+/**
+ * Search run summaries, events, and text artifacts.
+ */
+export function searchRuns(query: string, limit = 20, sources: string[] = [], json = false): void {
+  const store = RunStore.getInstance();
+  const results = store.searchRuns(query, { limit, sources });
+
+  if (json) {
+    console.log(JSON.stringify({
+      schemaVersion: RUN_SEARCH_JSON_SCHEMA_VERSION,
+      generatedAt: new Date().toISOString(),
+      query,
+      filters: {
+        limit,
+        sources,
+      },
+      count: results.length,
+      results,
+    }, null, 2));
+    return;
+  }
+
+  if (results.length === 0) {
+    const sourceText = sources.length > 0 ? ` in sources: ${sources.join(', ')}` : '';
+    console.log(`No runs found matching: ${query}${sourceText}`);
+    return;
+  }
+
+  const sourceText = sources.length > 0 ? ` sources=${sources.join(',')}` : '';
+  console.log(`Run search results for "${query}"${sourceText} (${results.length}):`);
+  console.log('');
+  for (const result of results) {
+    const matched = result.artifact
+      ? `${result.matched}:${result.artifact}`
+      : result.eventType
+        ? `${result.matched}:${result.eventType}`
+        : result.matched;
+    const source = result.source ? ` source:${result.source}` : '';
+    console.log(`  ${result.runId} ${statusLabel(result.status)} ${matched}${source}`);
+    console.log(`    ${result.objective}`);
+    console.log(`    ${result.snippet}`);
+  }
+}
+
+/**
+ * Build a compact recall pack for feeding relevant run evidence back into an
+ * agent or UI handoff.
+ */
+export async function showRunRecallPack(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+): Promise<void> {
+  const options = {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  };
+  const pack = includeSessions
+    ? await buildRunRecallPackAsync(query, options)
+    : buildRunRecallPack(query, options);
+  if (json) {
+    console.log(JSON.stringify(pack, null, 2));
+    return;
+  }
+  console.log(pack.promptContext);
+}
+
+/**
+ * Export a redacted run trajectory for debugging, evals, or operator review.
+ * This is read-only: it does not replay tools or mutate local state.
+ */
+export async function showRunTrajectoryExport(
+  runId: string,
+  json = false,
+  includeArtifactContent = false,
+  maxArtifactBytes = 4_000,
+): Promise<void> {
+  const exported = buildRunTrajectoryExport(runId, {
+    includeArtifactContent,
+    maxArtifactBytes,
+  });
+
+  if (!exported) {
+    console.error(`Run not found: ${runId}`);
+    process.exit(1);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(exported, null, 2));
+    return;
+  }
+
+  console.log(renderRunTrajectoryExport(exported));
+}
+
+/**
+ * Print the golden workflow eval manifest, or evaluate one run against one
+ * fixture. This is read-only and uses the redacted trajectory export as the
+ * evidence boundary.
+ */
+export async function showGoldenWorkflowEvals(
+  fixtureId?: string,
+  runId?: string,
+  json = false,
+): Promise<void> {
+  if (!fixtureId || !runId) {
+    const manifest = buildGoldenWorkflowEvalManifest();
+    if (json) {
+      console.log(JSON.stringify(manifest, null, 2));
+      return;
+    }
+    console.log(renderGoldenWorkflowEvalManifest(manifest));
+    return;
+  }
+
+  if (!getGoldenWorkflowEvalFixture(fixtureId)) {
+    console.error(`Golden workflow fixture not found: ${fixtureId}`);
+    process.exit(1);
+  }
+
+  const result = evaluateGoldenWorkflowRun(fixtureId, runId);
+  if (!result) {
+    console.error(`Run not found: ${runId}`);
+    process.exit(1);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(renderGoldenWorkflowEvalResult(result));
+}
+
+/**
+ * Print trajectory policy evals, or evaluate one run against one policy.
+ * This is read-only and converts supervision safety expectations into
+ * repeatable assertions over the redacted trajectory envelope.
+ */
+export async function showPolicyEvals(
+  policyId?: string,
+  runId?: string,
+  json = false,
+): Promise<void> {
+  if (!policyId || !runId) {
+    const manifest = buildPolicyEvalManifest();
+    if (json) {
+      console.log(JSON.stringify(manifest, null, 2));
+      return;
+    }
+    console.log(renderPolicyEvalManifest(manifest));
+    return;
+  }
+
+  if (!getPolicyEval(policyId)) {
+    console.error(`Policy eval not found: ${policyId}`);
+    process.exit(1);
+  }
+
+  const result = evaluatePolicyEvalRun(policyId, runId);
+  if (!result) {
+    console.error(`Run not found: ${runId}`);
+    process.exit(1);
+  }
+
+  if (json) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+  console.log(renderPolicyEvalResult(result));
+}
+
+/**
+ * Build a review-only, redacted snapshot suitable for a future mobile
+ * supervision surface. This does not expose a server or execute actions.
+ */
+export async function showMobileSupervisionSnapshot(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+): Promise<void> {
+  const snapshot = await buildMobileSupervisionSnapshot(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+
+  if (json) {
+    console.log(JSON.stringify(snapshot, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionSnapshot(snapshot));
+}
+
+/**
+ * Build the review-only gateway contract for a future mobile supervision
+ * surface. This intentionally describes safe routes without opening a server.
+ */
+export async function showMobileSupervisionGatewayContract(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+  includeSnapshot = true,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    includeSnapshot,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+
+  if (json) {
+    console.log(JSON.stringify(contract, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionGatewayContract(contract));
+}
+
+/**
+ * Evaluate a hypothetical mobile gateway request against the review-only
+ * contract. This gives future server/mobile work a tested policy boundary
+ * before any listener exists.
+ */
+export async function showMobileSupervisionGatewayDecision(
+  query: string,
+  request: MobileSupervisionGatewayRequest,
+  json = false,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    includeSnapshot: false,
+    limit: 1,
+  });
+  const decision = evaluateMobileSupervisionGatewayRequest(contract, request);
+
+  if (json) {
+    console.log(JSON.stringify(decision, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionGatewayRequestDecision(decision));
+}
+
+/**
+ * Build a local-only operator review draft for a hypothetical mobile gateway
+ * request. This models approval/cancel UI state without performing approval.
+ */
+export async function showMobileSupervisionGatewayReviewDraft(
+  query: string,
+  request: MobileSupervisionGatewayRequest,
+  json = false,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    includeSnapshot: false,
+    limit: 1,
+  });
+  const draft = buildMobileSupervisionGatewayReviewDraft(query, contract, request);
+
+  if (json) {
+    console.log(JSON.stringify(draft, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionGatewayReviewDraft(draft));
+}
+
+/**
+ * Build the disabled listener shell for the future mobile gateway. This is a
+ * route/readiness artifact only: no network server is started here.
+ */
+export async function showMobileSupervisionGatewayListenerShell(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    includeSnapshot: false,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+  const shell = buildMobileSupervisionGatewayListenerShell(contract);
+
+  if (json) {
+    console.log(JSON.stringify(shell, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionGatewayListenerShell(shell));
+}
+
+/**
+ * Build a preview-only local pairing state for the future mobile gateway. This
+ * does not persist credentials, mint tokens, accept pairings or start a server.
+ */
+export async function showMobileSupervisionPairingState(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+  deviceLabel?: string,
+  ttlSeconds?: number,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    includeSnapshot: false,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+  const shell = buildMobileSupervisionGatewayListenerShell(contract);
+  const state = buildMobileSupervisionPairingState(shell, {
+    deviceLabel,
+    ttlSeconds,
+  });
+
+  if (json) {
+    console.log(JSON.stringify(state, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionPairingState(state));
+}
+
+/**
+ * Build a no-network pairing acceptance plan for the future mobile gateway. This
+ * explains the mutation boundary without starting a listener or accepting codes.
+ */
+export async function showMobileSupervisionPairingAcceptancePlan(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+  deviceLabel?: string,
+  ttlSeconds?: number,
+  localOperatorLabel?: string,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    includeSnapshot: false,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+  const shell = buildMobileSupervisionGatewayListenerShell(contract);
+  const pairingState = buildMobileSupervisionPairingState(shell, {
+    deviceLabel,
+    ttlSeconds,
+  });
+  const plan = buildMobileSupervisionPairingAcceptancePlan(pairingState, {
+    localOperatorLabel,
+  });
+
+  if (json) {
+    console.log(JSON.stringify(plan, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionPairingAcceptancePlan(plan));
+}
+
+/**
+ * Build a local-only mobile approval queue for the future gateway. The queue
+ * describes read-only, pending and blocked requests without mutating state.
+ */
+export async function showMobileSupervisionApprovalQueue(
+  query: string,
+  limit = 20,
+  sources: string[] = [],
+  json = false,
+  includeLessons = false,
+  maxLessons = 5,
+  includeSessions = false,
+  maxSessions = 3,
+  includeMemories = false,
+  maxMemories = 5,
+  deviceLabel?: string,
+  ttlSeconds?: number,
+): Promise<void> {
+  const contract = await buildMobileSupervisionGatewayContract(query, {
+    cwd: includeLessons || includeMemories ? process.cwd() : undefined,
+    includeLessons,
+    includeMemories,
+    includeSessions,
+    includeSnapshot: false,
+    limit,
+    maxMemories,
+    maxLessons,
+    maxSessions,
+    sources,
+  });
+  const shell = buildMobileSupervisionGatewayListenerShell(contract);
+  const pairingState = buildMobileSupervisionPairingState(shell, {
+    deviceLabel,
+    ttlSeconds,
+  });
+  const queue = buildMobileSupervisionApprovalQueue(contract, pairingState);
+
+  if (json) {
+    console.log(JSON.stringify(queue, null, 2));
+    return;
+  }
+
+  console.log(renderMobileSupervisionApprovalQueue(queue));
 }
