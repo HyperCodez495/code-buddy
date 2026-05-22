@@ -180,6 +180,12 @@ export async function runVerificationAndSelfCorrectionLoop(
     };
   }
 
+  // Keep a copy of the messages history for self-correction turns
+  const messagesHistory: CodeBuddyMessage[] = [...dispatch.messages] as CodeBuddyMessage[];
+
+  let lastProposalFailedValidation = false;
+  let lastValidationError = '';
+
   if (currentContract.edits.length === 0) {
     try {
       const initialProposal = await generateEditProposal(dispatch, clientProxy);
@@ -258,41 +264,42 @@ export async function runVerificationAndSelfCorrectionLoop(
           reason: `Cost budget of $${costLimit.toFixed(2)} exceeded during initial edit proposal generation.`,
         };
       }
-      return {
-        status: 'verification_failed',
-        verification: currentVerification,
-        iterations: 0,
-        contract: currentContract,
-        reason: err instanceof Error ? err.message : String(err),
-      };
+      
+      // Instead of failing immediately, record validation error and let it self-correct in the loop
+      lastProposalFailedValidation = true;
+      lastValidationError = err instanceof Error ? err.message : String(err);
     }
   }
 
-  // Keep a copy of the messages history for self-correction turns
-  const messagesHistory: CodeBuddyMessage[] = [...dispatch.messages] as CodeBuddyMessage[];
-
   for (let iter = 0; iter < maxIterations; iter++) {
-    // 1. Get current git diff before rolling back
-    let diff = '';
-    try {
-      const diffResult = await execFileAsync('git', ['diff'], {
-        cwd: currentContract.repo,
-        windowsHide: true,
+    if (lastProposalFailedValidation) {
+      messagesHistory.push({
+        role: 'user',
+        content: `Your previous proposal failed validation or could not be applied: ${lastValidationError}. Please generate a new proposal that is valid JSON and contains at least one edit.`,
       });
-      diff = diffResult.stdout;
-    } catch {
-      // Fallback if git diff fails
-    }
+      lastProposalFailedValidation = false;
+    } else {
+      // 1. Get current git diff before rolling back
+      let diff = '';
+      try {
+        const diffResult = await execFileAsync('git', ['diff'], {
+          cwd: currentContract.repo,
+          windowsHide: true,
+        });
+        diff = diffResult.stdout;
+      } catch {
+        // Fallback if git diff fails
+      }
 
-    // 2. Format the failures and diff for the LLM
-    const failedDetails = currentVerification
-      .filter((v) => v.status !== 'passed')
-      .map((v) => {
-        return `Command: ${v.command}\nExit Code: ${v.exitCode}\nStdout:\n${v.stdout}\nStderr:\n${v.stderr}\nReason: ${v.reason ?? ''}`;
-      })
-      .join('\n\n');
+      // 2. Format the failures and diff for the LLM
+      const failedDetails = currentVerification
+        .filter((v) => v.status !== 'passed')
+        .map((v) => {
+          return `Command: ${v.command}\nExit Code: ${v.exitCode}\nStdout:\n${v.stdout}\nStderr:\n${v.stderr}\nReason: ${v.reason ?? ''}`;
+        })
+        .join('\n\n');
 
-    const promptContent = `Verification failed. Here are the details of the failures:
+      const promptContent = `Verification failed. Here are the details of the failures:
 
 ${failedDetails}
 
@@ -303,22 +310,23 @@ ${diff}
 
 Please analyze the failure and generate a new, corrected edit proposal to resolve the errors. Make sure the proposed changes fix the failing tests/checks and do not introduce new issues.`;
 
-    // 3. Construct message turns: previous assistant proposal + user feedback
-    const previousProposal = {
-      summary: `Attempt ${iter + 1} edits`,
-      edits: currentContract.edits,
-    };
-    const assistantContent = JSON.stringify(previousProposal, null, 2);
+      // 3. Construct message turns: previous assistant proposal + user feedback
+      const previousProposal = {
+        summary: `Attempt ${iter + 1} edits`,
+        edits: currentContract.edits,
+      };
+      const assistantContent = JSON.stringify(previousProposal, null, 2);
 
-    messagesHistory.push({
-      role: 'assistant',
-      content: `\`\`\`json\n${assistantContent}\n\`\`\``,
-    });
+      messagesHistory.push({
+        role: 'assistant',
+        content: `\`\`\`json\n${assistantContent}\n\`\`\``,
+      });
 
-    messagesHistory.push({
-      role: 'user',
-      content: promptContent,
-    });
+      messagesHistory.push({
+        role: 'user',
+        content: promptContent,
+      });
+    }
 
     // 4. Rollback files to restore baseline before applying corrected edits
     const filesToRestore = Array.from(new Set(currentContract.edits.map((e) => e.path)));
@@ -345,13 +353,11 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
           reason: `Cost budget of $${costLimit.toFixed(2)} exceeded during self-correction iteration ${iter + 1}.`,
         };
       }
-      return {
-        status: 'verification_failed',
-        verification: currentVerification,
-        iterations: iter + 1,
-        contract: currentContract,
-        reason: err instanceof Error ? err.message : String(err),
-      };
+      
+      // Record validation error and proceed to the next iteration
+      lastProposalFailedValidation = true;
+      lastValidationError = err instanceof Error ? err.message : String(err);
+      continue;
     }
 
     // 6. Apply the new proposal
@@ -366,26 +372,20 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
       if (failedPreviews.length > 0) {
         const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
         await rollbackFiles(currentContract.repo, pathsToRevert);
-        return {
-          status: 'verification_failed',
-          verification: currentVerification,
-          iterations: iter + 1,
-          contract: currentContract,
-          reason: 'Preview of self-corrected proposal failed.',
-        };
+        
+        lastProposalFailedValidation = true;
+        lastValidationError = `Preview of self-corrected proposal failed: ${failedPreviews.map(p => `${p.path} (${p.reason ?? p.status})`).join(', ')}`;
+        continue;
       }
 
       await applyDeclaredEdits(currentContract);
     } catch (err) {
       const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
       await rollbackFiles(currentContract.repo, pathsToRevert);
-      return {
-        status: 'verification_failed',
-        verification: currentVerification,
-        iterations: iter + 1,
-        contract: currentContract,
-        reason: err instanceof Error ? err.message : String(err),
-      };
+      
+      lastProposalFailedValidation = true;
+      lastValidationError = err instanceof Error ? err.message : String(err);
+      continue;
     }
 
     // 7. Re-run verification commands
@@ -444,11 +444,16 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
   const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
   await rollbackFiles(currentContract.repo, pathsToRevert);
 
+  let finalReason = `Maximum iterations (${maxIterations}) reached without passing verification.`;
+  if (lastProposalFailedValidation) {
+    finalReason += ` Last proposal validation error: ${lastValidationError}`;
+  }
+
   return {
     status: 'blocked',
     verification: currentVerification,
     iterations: maxIterations,
     contract: currentContract,
-    reason: `Maximum iterations (${maxIterations}) reached without passing verification.`,
+    reason: finalReason,
   };
 }

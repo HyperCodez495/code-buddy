@@ -260,4 +260,47 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
     const fileContent = await fs.readFile(testFile, 'utf8');
     expect(fileContent).toBe('Hello Wrong content');
   });
+
+  it('retries on proposal validation errors and returns blocked with reason when limit is reached', async () => {
+    // Write initial wrong greeting and commit it
+    await fs.writeFile(testFile, 'Hello Wrong content', 'utf8');
+    await execFileAsync('git', ['add', 'docs/example.md'], { cwd: repoPath });
+    await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoPath });
+
+    const contract = getContract(repoPath);
+    const dispatch = getDispatch(repoPath, taskFile);
+
+    // Mock client: returns an invalid JSON (non-JSON text) which fails validation
+    const mockClient = {
+      chat: vi.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: 'I am unable to fix this verification failure because it is a hardcoded error.',
+            },
+          },
+        ],
+      }),
+      getCurrentModel: () => 'gpt-4o',
+    } as unknown as CodeBuddyClient;
+
+    const result = await runVerificationAndSelfCorrectionLoop(
+      contract,
+      { taskFile },
+      dispatch,
+      mockClient,
+      2
+    );
+
+    expect(result.status).toBe('blocked');
+    expect(result.iterations).toBe(2);
+    expect(result.reason).toContain('Maximum iterations (2) reached');
+    expect(result.reason).toContain('Last proposal validation error');
+    expect(result.reason).toContain('Failed to parse LLM response as JSON');
+
+    // Verify files were rolled back
+    const fileContent = await fs.readFile(testFile, 'utf8');
+    expect(fileContent).toBe('Hello Wrong content');
+  });
 });
