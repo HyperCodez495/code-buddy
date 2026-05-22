@@ -3171,6 +3171,16 @@ function parseGitStatus(output: string, contract: AgenticCodingTaskContract | un
         path: filePath,
         status,
       };
+    })
+    .filter((file) => {
+      const isTransient =
+        file.path.startsWith('.codebuddy/agent-memory/') ||
+        file.path.startsWith('.codebuddy/cache/') ||
+        file.path.startsWith('.codebuddy/sync/') ||
+        file.path.startsWith('.codebuddy/tool-results/') ||
+        file.path.startsWith('.codebuddy/replays/') ||
+        file.path.startsWith('.codebuddy/lessons-vault/');
+      return !isTransient;
     });
 }
 

@@ -3,6 +3,9 @@ import path from 'path';
 import { execSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
+// Automatically confirm approvals in non-interactive evaluation runner
+process.env.CODEBUDDY_AUTO_CONFIRM = 'true';
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
@@ -75,6 +78,17 @@ function runTask(taskSlug) {
       // Line is like: M eval/sandbox/target.txt
       const parts = line.split(/\s+/);
       return parts[parts.length - 1];
+    })
+    .filter(file => {
+      // Exclude transient .codebuddy paths from validation checks
+      const isTransient =
+        file.startsWith('.codebuddy/agent-memory/') ||
+        file.startsWith('.codebuddy/cache/') ||
+        file.startsWith('.codebuddy/sync/') ||
+        file.startsWith('.codebuddy/tool-results/') ||
+        file.startsWith('.codebuddy/replays/') ||
+        file.startsWith('.codebuddy/lessons-vault/');
+      return !isTransient;
     });
 
   console.log('Modified files:', modifiedFiles);

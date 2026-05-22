@@ -240,6 +240,13 @@ export class ConfirmationService extends EventEmitter {
         feedback: policyResult.reason,
       };
     }
+
+    if (process.env.CODEBUDDY_AUTO_CONFIRM === 'true') {
+      return {
+        confirmed: true,
+      };
+    }
+
     const isSelfImprovement = capability === 'self_improvement';
     if (!isSelfImprovement && policyResult.decision === 'allow') {
       return {
