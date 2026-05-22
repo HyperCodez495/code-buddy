@@ -45,7 +45,7 @@ interface AutonomousCodeOptions {
   requirePreview?: boolean;
   reportFile?: string;
   runVerification?: boolean;
-  taskFile: string;
+  taskFile?: string;
   verificationTimeoutMs?: string;
   workflowBuilderPromptFile?: string;
   workflowBuilderProposalCanvasFile?: string;
@@ -53,6 +53,8 @@ interface AutonomousCodeOptions {
   workflowEventsFile?: string;
   workflowFile?: string;
   workflowProgressFile?: string;
+  resume?: string;
+  runId?: string;
 }
 
 function parseTimeout(value: string | undefined): number | undefined {
@@ -72,7 +74,9 @@ export function registerAutonomousCodeCommand(program: Command): void {
   program
     .command('autonomous-code')
     .description('Run a guarded Agentic Coding Cell task contract')
-    .requiredOption('--task-file <path>', 'path to an Agentic Coding Cell JSON task contract')
+    .option('--task-file <path>', 'path to an Agentic Coding Cell JSON task contract')
+    .option('--resume <runId>', 'resume a run from a checkpoint state')
+    .option('--run-id <runId>', 'unique run identifier for checkpointing')
     .option('--edit-proposal-file <path>', 'path to a controlled edit proposal JSON file')
     .option('--edit-proposal-producer-dispatch-file <path>', 'write a data-only dispatch artifact for a future edit-proposal producer')
     .option('--edit-proposal-review-file <path>', 'write a compact review snapshot for a controlled edit proposal')
@@ -103,6 +107,10 @@ export function registerAutonomousCodeCommand(program: Command): void {
     .option('--json', 'output JSON')
     .action(async (options: AutonomousCodeOptions) => {
       try {
+        if (!options.taskFile && !options.resume) {
+          throw new Error('Either --task-file or --resume must be provided.');
+        }
+
         const report = await runAgenticCodingCell({
           applyEdits: Boolean(options.applyEdits),
           approvalDecisionFile: options.approvalDecisionFile,
@@ -114,6 +122,8 @@ export function registerAutonomousCodeCommand(program: Command): void {
           taskFile: options.taskFile,
           verificationTimeoutMs: parseTimeout(options.verificationTimeoutMs),
           workflowBuilderProposalFile: options.workflowBuilderProposalFile,
+          resume: options.resume,
+          runId: options.runId,
         });
         const reportPath = options.reportFile
           ? await writeAgenticCodingRunReport(report, options.reportFile)

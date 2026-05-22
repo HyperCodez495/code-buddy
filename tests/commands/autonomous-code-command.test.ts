@@ -7,6 +7,7 @@ import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerAutonomousCodeCommand } from '../../src/commands/cli/autonomous-code-command.js';
+import { saveCheckpoint } from '../../src/agent/autonomous/checkpoint-manager.js';
 
 const execFileAsync = promisify(execFile);
 
@@ -44,13 +45,18 @@ async function createTaskFile(overrides: Record<string, unknown> = {}): Promise<
 }
 
 describe('autonomous-code CLI command', () => {
+  let oldHome: string | undefined;
+
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-autonomous-code-cli-'));
+    oldHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = tempRoot;
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     consoleErrorSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(async () => {
+    process.env.CODEBUDDY_HOME = oldHome;
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
     await fs.rm(tempRoot, { force: true, recursive: true });
@@ -1374,9 +1380,388 @@ describe('autonomous-code CLI command', () => {
         activeIndex: number;
         activeNodeId: string;
         activePosition: { x: number; y: number };
+        activeTrailEdgeIds: string[];
+        activeTrailNodeIds: string[];
+        activeTrailBounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+        activeTrailProgress: {
+          activeIndex: number;
+          activeOrdinal: number;
+          ratio: number;
+          totalEdgeCount: number;
+          totalNodeCount: number;
+          trailEdgeCount: number;
+          trailNodeCount: number;
+        };
+        activeTrailSegments: Array<{
+          edgeId: string;
+          source: string;
+          sourcePosition: { x: number; y: number };
+          target: string;
+          targetPosition: { x: number; y: number };
+        }>;
+        upcomingTrailEdgeIds: string[];
+        upcomingTrailNodeIds: string[];
+        upcomingTrailSegments: Array<{
+          edgeId: string;
+          source: string;
+          sourcePosition: { x: number; y: number };
+          target: string;
+          targetPosition: { x: number; y: number };
+        }>;
+        upcomingTrailBounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+        upcomingTrailProgress: {
+          remainingEdgeCount: number;
+          remainingNodeCount: number;
+          remainingRatio: number;
+          totalEdgeCount: number;
+          totalNodeCount: number;
+        };
+        trailProgressSummary: {
+          activeNodeId: string;
+          isAtEnd: boolean;
+          reachedEdgeCount: number;
+          reachedNodeCount: number;
+          reachedRatio: number;
+          remainingEdgeCount: number;
+          remainingNodeCount: number;
+          remainingRatio: number;
+          totalEdgeCount: number;
+          totalNodeCount: number;
+        };
         bounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
         center: { x: number; y: number };
         edgeCount: number;
+        statusBounds: Array<{
+          bounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+          count: number;
+          id: string;
+          label: string;
+          nodeIds: string[];
+          tone: string;
+        }>;
+        statusTransitions: Array<{
+          count: number;
+          edgeIds: string[];
+          from: string;
+          fromNodeIds: string[];
+          fromTone: string;
+          id: string;
+          isCrossStatus: boolean;
+          label: string;
+          to: string;
+          toNodeIds: string[];
+          toTone: string;
+        }>;
+        statusTransitionBridges: Array<{
+          count: number;
+          edgeIds: string[];
+          from: string;
+          fromBounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+          fromCenter: { x: number; y: number };
+          fromTone: string;
+          id: string;
+          isCrossStatus: true;
+          label: string;
+          to: string;
+          toBounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+          toCenter: { x: number; y: number };
+          toTone: string;
+        }>;
+        statusTransitionBridgeSummary: {
+          allBridgesCrossStatus: boolean;
+          bridgeCount: number;
+          bridgeEdgeCount: number;
+          bridgeIds: string[];
+          fromStatusIds: string[];
+          toStatusIds: string[];
+          tonePairs: Array<{
+            fromTone: string;
+            id: string;
+            toTone: string;
+          }>;
+        };
+        statusTransitionBridgeViewport: {
+          bounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+          bridgeCount: number;
+          bridgeEdgeCount: number;
+          bridgeIds: string[];
+          center: { x: number; y: number };
+          padding: number;
+        };
+        renderLayers: Array<{
+          id: string;
+          itemCount: number;
+          label: string;
+          mode: string;
+          order: number;
+          safetyNote: string;
+          visible: boolean;
+        }>;
+        renderLayerSummary: {
+          layerCount: number;
+          layerIds: string[];
+          mode: string;
+          safetyNote: string;
+          totalItemCount: number;
+          visibleLayerCount: number;
+          visibleLayerIds: string[];
+        };
+        renderLayerSafety: {
+          allLayersPassive: boolean;
+          canExecuteAny: false;
+          executableLayerCount: number;
+          layerCount: number;
+          mode: string;
+          safetyNote: string;
+        };
+        renderLayerGroups: Array<{
+          id: string;
+          label: string;
+          layerCount: number;
+          layerIds: string[];
+          mode: string;
+          order: number;
+          safetyNote: string;
+          totalItemCount: number;
+          visibleLayerCount: number;
+          visibleLayerIds: string[];
+        }>;
+        renderLayerGroupSummary: {
+          groupCount: number;
+          groupIds: string[];
+          mode: string;
+          safetyNote: string;
+          totalItemCount: number;
+          visibleGroupCount: number;
+          visibleGroupIds: string[];
+        };
+        renderLayerGroupSafety: {
+          allGroupsPassive: boolean;
+          canExecuteAny: false;
+          executableGroupCount: number;
+          groupCount: number;
+          mode: string;
+          safetyNote: string;
+        };
+        renderLayerGroupBadges: Array<{
+          accessibilityLabel: string;
+          countLabel: string;
+          groupId: string;
+          id: string;
+          itemCount: number;
+          label: string;
+          layerCount: number;
+          mode: string;
+          safetyNote: string;
+          tone: string;
+          visible: boolean;
+        }>;
+        renderLayerGroupBadgeSummary: {
+          badgeCount: number;
+          badgeIds: string[];
+          countLabels: string[];
+          mode: string;
+          safetyNote: string;
+          totalItemCount: number;
+          visibleBadgeCount: number;
+          visibleBadgeIds: string[];
+        };
+        renderLayerGroupBadgeAccessibilitySummary: {
+          accessibilityLabels: string[];
+          badgeCount: number;
+          badgeIds: string[];
+          labelCount: number;
+          mode: string;
+          safetyNote: string;
+        };
+        renderLayerGroupBadgeAccessibilityAudit: {
+          allLabelsPresent: boolean;
+          badgeCount: number;
+          duplicateLabelCount: number;
+          duplicateLabels: string[];
+          labelCount: number;
+          missingLabelCount: number;
+          mode: string;
+          safetyNote: string;
+        };
+        renderLayerGroupBadgeAccessibilityHealth: {
+          badgeCount: number;
+          duplicateLabelCount: number;
+          labelCount: number;
+          missingLabelCount: number;
+          mode: string;
+          safetyNote: string;
+          status: string;
+          summary: string;
+          tone: string;
+        };
+        renderLayerGroupBadgeAccessibilityChecklist: Array<{
+          badgeCount: number;
+          id: string;
+          issueCount: number;
+          label: string;
+          mode: string;
+          safetyNote: string;
+          status: string;
+          summary: string;
+          tone: string;
+        }>;
+        renderLayerGroupBadgeAccessibilityChecklistSummary: {
+          badgeCount: number;
+          checkCount: number;
+          checkIds: string[];
+          issueCount: number;
+          mode: string;
+          needsAttentionCheckCount: number;
+          readyCheckCount: number;
+          safetyNote: string;
+          status: string;
+          tone: string;
+        };
+        renderLayerGroupBadgeSafety: {
+          allBadgesPassive: boolean;
+          badgeCount: number;
+          canExecuteAny: false;
+          executableBadgeCount: number;
+          mode: string;
+          safetyNote: string;
+        };
+        renderLayerGroupBadgeToneSummary: {
+          badgeCount: number;
+          mode: string;
+          safetyNote: string;
+          toneIds: string[];
+          tonePairs: Array<{
+            badgeId: string;
+            tone: string;
+          }>;
+          uniqueToneCount: number;
+          uniqueToneIds: string[];
+        };
+        renderLayerGroupBadgeToneLegend: Array<{
+          badgeCount: number;
+          badgeIds: string[];
+          id: string;
+          label: string;
+          mode: string;
+          safetyNote: string;
+          tone: string;
+        }>;
+        renderLayerGroupBadgeToneLegendSummary: {
+          badgeCount: number;
+          labelIds: string[];
+          labels: string[];
+          legendCount: number;
+          mode: string;
+          safetyNote: string;
+          toneIds: string[];
+        };
+        statusTransitionSummary: {
+          crossStatusEdgeCount: number;
+          crossStatusTransitionCount: number;
+          crossStatusTransitionIds: string[];
+          sameStatusEdgeCount: number;
+          sameStatusTransitionCount: number;
+          sameStatusTransitionIds: string[];
+          totalEdgeCount: number;
+          trackedEdgeCount: number;
+          transitionCount: number;
+          untrackedEdgeCount: number;
+        };
+        focusWindowBounds: { height: number; maxX: number; maxY: number; minX: number; minY: number; width: number };
+        focusWindowRange: {
+          containsEnd: boolean;
+          containsStart: boolean;
+          endIndex: number;
+          nodeIds: string[];
+          size: number;
+          startIndex: number;
+          totalNodeCount: number;
+        };
+        focusWindowSegments: Array<{
+          edgeId: string;
+          source: string;
+          sourcePosition: { x: number; y: number };
+          target: string;
+          targetPosition: { x: number; y: number };
+        }>;
+        focusWindowStatuses: Array<{
+          count: number;
+          id: string;
+          label: string;
+          tone: string;
+        }>;
+        focusWindowSummary: {
+          currentIndex: number;
+          currentNodeId: string;
+          currentStatus: string;
+          currentTone: string;
+          endIndex: number;
+          hasNext: boolean;
+          hasPrevious: boolean;
+          nodeIds: string[];
+          segmentCount: number;
+          startIndex: number;
+          statusIds: string[];
+          totalNodeCount: number;
+          windowNodeCount: number;
+        };
+        focusWindowControls: Array<{
+          actionType: string;
+          canExecute: boolean;
+          disabledReason?: string;
+          enabled: boolean;
+          executionMode: string;
+          id: string;
+          isActive: boolean;
+          keyHint: string;
+          label: string;
+          safetyNote: string;
+          targetIndex?: number;
+          targetNodeId?: string;
+          targetPosition?: { x: number; y: number };
+          targetStatus?: string;
+          tone: string;
+        }>;
+        focusWindowControlSummary: {
+          activeControlId?: string;
+          controlCount: number;
+          disabledControlIds: string[];
+          enabledControlIds: string[];
+          keyHints: Array<{
+            actionType: string;
+            id: string;
+            keyHint: string;
+          }>;
+        };
+        focusWindowControlSafety: {
+          allControlsDisplayOnly: boolean;
+          canExecuteAny: boolean;
+          controlCount: number;
+          displayOnlyControlCount: number;
+          executableControlCount: number;
+          executionMode: string;
+          safetyNote: string;
+        };
+        focusWindow: {
+          current: {
+            id: string;
+            index: number;
+            position: { x: number; y: number };
+          };
+          hasNext: boolean;
+          hasPrevious: boolean;
+          next?: {
+            id: string;
+            index: number;
+            position: { x: number; y: number };
+          };
+          previous?: {
+            id: string;
+            index: number;
+            position: { x: number; y: number };
+          };
+        };
         focusNodeIds: string[];
         mode: string;
         nodeCount: number;
@@ -1858,6 +2243,126 @@ describe('autonomous-code CLI command', () => {
       activeIndex: 4,
       activeNodeId: 'review-preview',
       activePosition: { x: 250, y: 650 },
+      activeTrailEdgeIds: [
+        'proposal-loop-edge-prepare-edit-proposal-prompt-produce-edit-proposal',
+        'proposal-loop-edge-produce-edit-proposal-review-edit-proposal',
+        'proposal-loop-edge-review-edit-proposal-preview-scoped-edits',
+        'proposal-loop-edge-preview-scoped-edits-review-preview',
+      ],
+      activeTrailNodeIds: [
+        'prepare-edit-proposal-prompt',
+        'produce-edit-proposal',
+        'review-edit-proposal',
+        'preview-scoped-edits',
+        'review-preview',
+      ],
+      activeTrailBounds: {
+        height: 760,
+        maxX: 330,
+        maxY: 730,
+        minX: 170,
+        minY: -30,
+        width: 160,
+      },
+      activeTrailProgress: {
+        activeIndex: 4,
+        activeOrdinal: 5,
+        ratio: 0.625,
+        totalEdgeCount: 7,
+        totalNodeCount: 8,
+        trailEdgeCount: 4,
+        trailNodeCount: 5,
+      },
+      activeTrailSegments: [
+        {
+          edgeId: 'proposal-loop-edge-prepare-edit-proposal-prompt-produce-edit-proposal',
+          source: 'prepare-edit-proposal-prompt',
+          sourcePosition: { x: 250, y: 50 },
+          target: 'produce-edit-proposal',
+          targetPosition: { x: 250, y: 200 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-produce-edit-proposal-review-edit-proposal',
+          source: 'produce-edit-proposal',
+          sourcePosition: { x: 250, y: 200 },
+          target: 'review-edit-proposal',
+          targetPosition: { x: 250, y: 350 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-review-edit-proposal-preview-scoped-edits',
+          source: 'review-edit-proposal',
+          sourcePosition: { x: 250, y: 350 },
+          target: 'preview-scoped-edits',
+          targetPosition: { x: 250, y: 500 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-preview-scoped-edits-review-preview',
+          source: 'preview-scoped-edits',
+          sourcePosition: { x: 250, y: 500 },
+          target: 'review-preview',
+          targetPosition: { x: 250, y: 650 },
+        },
+      ],
+      trailProgressSummary: {
+        activeNodeId: 'review-preview',
+        isAtEnd: false,
+        reachedEdgeCount: 4,
+        reachedNodeCount: 5,
+        reachedRatio: 0.625,
+        remainingEdgeCount: 3,
+        remainingNodeCount: 3,
+        remainingRatio: 0.375,
+        totalEdgeCount: 7,
+        totalNodeCount: 8,
+      },
+      upcomingTrailEdgeIds: [
+        'proposal-loop-edge-review-preview-apply-approved-edits',
+        'proposal-loop-edge-apply-approved-edits-run-verification',
+        'proposal-loop-edge-run-verification-handoff',
+      ],
+      upcomingTrailNodeIds: [
+        'apply-approved-edits',
+        'run-verification',
+        'handoff',
+      ],
+      upcomingTrailBounds: {
+        height: 610,
+        maxX: 330,
+        maxY: 1180,
+        minX: 170,
+        minY: 570,
+        width: 160,
+      },
+      upcomingTrailProgress: {
+        remainingEdgeCount: 3,
+        remainingNodeCount: 3,
+        remainingRatio: 0.375,
+        totalEdgeCount: 7,
+        totalNodeCount: 8,
+      },
+      upcomingTrailSegments: [
+        {
+          edgeId: 'proposal-loop-edge-review-preview-apply-approved-edits',
+          source: 'review-preview',
+          sourcePosition: { x: 250, y: 650 },
+          target: 'apply-approved-edits',
+          targetPosition: { x: 250, y: 800 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-apply-approved-edits-run-verification',
+          source: 'apply-approved-edits',
+          sourcePosition: { x: 250, y: 800 },
+          target: 'run-verification',
+          targetPosition: { x: 250, y: 950 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-run-verification-handoff',
+          source: 'run-verification',
+          sourcePosition: { x: 250, y: 950 },
+          target: 'handoff',
+          targetPosition: { x: 250, y: 1100 },
+        },
+      ],
       bounds: {
         height: 1210,
         maxX: 330,
@@ -1868,6 +2373,840 @@ describe('autonomous-code CLI command', () => {
       },
       center: { x: 250, y: 575 },
       edgeCount: 7,
+      statusBounds: [
+        {
+          bounds: {
+            height: 610,
+            maxX: 330,
+            maxY: 580,
+            minX: 170,
+            minY: -30,
+            width: 160,
+          },
+          count: 4,
+          id: 'completed',
+          label: 'completed',
+          nodeIds: [
+            'prepare-edit-proposal-prompt',
+            'produce-edit-proposal',
+            'review-edit-proposal',
+            'preview-scoped-edits',
+          ],
+          tone: 'success',
+        },
+        {
+          bounds: {
+            height: 160,
+            maxX: 330,
+            maxY: 730,
+            minX: 170,
+            minY: 570,
+            width: 160,
+          },
+          count: 1,
+          id: 'ready',
+          label: 'ready',
+          nodeIds: ['review-preview'],
+          tone: 'warning',
+        },
+        {
+          bounds: {
+            height: 460,
+            maxX: 330,
+            maxY: 1180,
+            minX: 170,
+            minY: 720,
+            width: 160,
+          },
+          count: 3,
+          id: 'pending',
+          label: 'pending',
+          nodeIds: [
+            'apply-approved-edits',
+            'run-verification',
+            'handoff',
+          ],
+          tone: 'neutral',
+        },
+      ],
+      statusTransitions: [
+        {
+          count: 3,
+          edgeIds: [
+            'proposal-loop-edge-prepare-edit-proposal-prompt-produce-edit-proposal',
+            'proposal-loop-edge-produce-edit-proposal-review-edit-proposal',
+            'proposal-loop-edge-review-edit-proposal-preview-scoped-edits',
+          ],
+          from: 'completed',
+          fromNodeIds: [
+            'prepare-edit-proposal-prompt',
+            'produce-edit-proposal',
+            'review-edit-proposal',
+          ],
+          fromTone: 'success',
+          id: 'completed->completed',
+          isCrossStatus: false,
+          label: 'completed to completed',
+          to: 'completed',
+          toNodeIds: [
+            'produce-edit-proposal',
+            'review-edit-proposal',
+            'preview-scoped-edits',
+          ],
+          toTone: 'success',
+        },
+        {
+          count: 1,
+          edgeIds: ['proposal-loop-edge-preview-scoped-edits-review-preview'],
+          from: 'completed',
+          fromNodeIds: ['preview-scoped-edits'],
+          fromTone: 'success',
+          id: 'completed->ready',
+          isCrossStatus: true,
+          label: 'completed to ready',
+          to: 'ready',
+          toNodeIds: ['review-preview'],
+          toTone: 'warning',
+        },
+        {
+          count: 1,
+          edgeIds: ['proposal-loop-edge-review-preview-apply-approved-edits'],
+          from: 'ready',
+          fromNodeIds: ['review-preview'],
+          fromTone: 'warning',
+          id: 'ready->pending',
+          isCrossStatus: true,
+          label: 'ready to pending',
+          to: 'pending',
+          toNodeIds: ['apply-approved-edits'],
+          toTone: 'neutral',
+        },
+        {
+          count: 2,
+          edgeIds: [
+            'proposal-loop-edge-apply-approved-edits-run-verification',
+            'proposal-loop-edge-run-verification-handoff',
+          ],
+          from: 'pending',
+          fromNodeIds: [
+            'apply-approved-edits',
+            'run-verification',
+          ],
+          fromTone: 'neutral',
+          id: 'pending->pending',
+          isCrossStatus: false,
+          label: 'pending to pending',
+          to: 'pending',
+          toNodeIds: [
+            'run-verification',
+            'handoff',
+          ],
+          toTone: 'neutral',
+        },
+      ],
+      statusTransitionBridges: [
+        {
+          count: 1,
+          edgeIds: ['proposal-loop-edge-preview-scoped-edits-review-preview'],
+          from: 'completed',
+          fromBounds: {
+            height: 610,
+            maxX: 330,
+            maxY: 580,
+            minX: 170,
+            minY: -30,
+            width: 160,
+          },
+          fromCenter: { x: 250, y: 275 },
+          fromTone: 'success',
+          id: 'completed->ready',
+          isCrossStatus: true,
+          label: 'completed to ready',
+          to: 'ready',
+          toBounds: {
+            height: 160,
+            maxX: 330,
+            maxY: 730,
+            minX: 170,
+            minY: 570,
+            width: 160,
+          },
+          toCenter: { x: 250, y: 650 },
+          toTone: 'warning',
+        },
+        {
+          count: 1,
+          edgeIds: ['proposal-loop-edge-review-preview-apply-approved-edits'],
+          from: 'ready',
+          fromBounds: {
+            height: 160,
+            maxX: 330,
+            maxY: 730,
+            minX: 170,
+            minY: 570,
+            width: 160,
+          },
+          fromCenter: { x: 250, y: 650 },
+          fromTone: 'warning',
+          id: 'ready->pending',
+          isCrossStatus: true,
+          label: 'ready to pending',
+          to: 'pending',
+          toBounds: {
+            height: 460,
+            maxX: 330,
+            maxY: 1180,
+            minX: 170,
+            minY: 720,
+            width: 160,
+          },
+          toCenter: { x: 250, y: 950 },
+          toTone: 'neutral',
+        },
+      ],
+      statusTransitionBridgeSummary: {
+        allBridgesCrossStatus: true,
+        bridgeCount: 2,
+        bridgeEdgeCount: 2,
+        bridgeIds: [
+          'completed->ready',
+          'ready->pending',
+        ],
+        fromStatusIds: [
+          'completed',
+          'ready',
+        ],
+        toStatusIds: [
+          'ready',
+          'pending',
+        ],
+        tonePairs: [
+          {
+            fromTone: 'success',
+            id: 'completed->ready',
+            toTone: 'warning',
+          },
+          {
+            fromTone: 'warning',
+            id: 'ready->pending',
+            toTone: 'neutral',
+          },
+        ],
+      },
+      statusTransitionBridgeViewport: {
+        bounds: {
+          height: 835,
+          maxX: 330,
+          maxY: 1030,
+          minX: 170,
+          minY: 195,
+          width: 160,
+        },
+        bridgeCount: 2,
+        bridgeEdgeCount: 2,
+        bridgeIds: [
+          'completed->ready',
+          'ready->pending',
+        ],
+        center: { x: 250, y: 613 },
+        padding: 80,
+      },
+      statusTransitionSummary: {
+        crossStatusEdgeCount: 2,
+        crossStatusTransitionCount: 2,
+        crossStatusTransitionIds: [
+          'completed->ready',
+          'ready->pending',
+        ],
+        sameStatusEdgeCount: 5,
+        sameStatusTransitionCount: 2,
+        sameStatusTransitionIds: [
+          'completed->completed',
+          'pending->pending',
+        ],
+        totalEdgeCount: 7,
+        trackedEdgeCount: 7,
+        transitionCount: 4,
+        untrackedEdgeCount: 0,
+      },
+      renderLayers: [
+        {
+          id: 'status-regions',
+          itemCount: 3,
+          label: 'Status regions',
+          mode: 'passive',
+          order: 10,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+        {
+          id: 'status-bridges',
+          itemCount: 2,
+          label: 'Status bridges',
+          mode: 'passive',
+          order: 20,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+        {
+          id: 'active-trail',
+          itemCount: 4,
+          label: 'Active trail',
+          mode: 'passive',
+          order: 30,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+        {
+          id: 'upcoming-trail',
+          itemCount: 3,
+          label: 'Upcoming trail',
+          mode: 'passive',
+          order: 40,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+        {
+          id: 'focus-window',
+          itemCount: 2,
+          label: 'Focus window',
+          mode: 'passive',
+          order: 50,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+        {
+          id: 'focus-controls',
+          itemCount: 3,
+          label: 'Focus controls',
+          mode: 'passive',
+          order: 60,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: true,
+        },
+      ],
+      renderLayerSummary: {
+        layerCount: 6,
+        layerIds: [
+          'status-regions',
+          'status-bridges',
+          'active-trail',
+          'upcoming-trail',
+          'focus-window',
+          'focus-controls',
+        ],
+        mode: 'passive',
+        safetyNote: 'Render layers are display metadata only.',
+        totalItemCount: 17,
+        visibleLayerCount: 6,
+        visibleLayerIds: [
+          'status-regions',
+          'status-bridges',
+          'active-trail',
+          'upcoming-trail',
+          'focus-window',
+          'focus-controls',
+        ],
+      },
+      renderLayerSafety: {
+        allLayersPassive: true,
+        canExecuteAny: false,
+        executableLayerCount: 0,
+        layerCount: 6,
+        mode: 'passive',
+        safetyNote: 'Render layers are display metadata only.',
+      },
+      renderLayerGroups: [
+        {
+          id: 'regions',
+          label: 'Regions',
+          layerCount: 2,
+          layerIds: [
+            'status-regions',
+            'status-bridges',
+          ],
+          mode: 'passive',
+          order: 10,
+          safetyNote: 'Render layer group is display metadata only.',
+          totalItemCount: 5,
+          visibleLayerCount: 2,
+          visibleLayerIds: [
+            'status-regions',
+            'status-bridges',
+          ],
+        },
+        {
+          id: 'paths',
+          label: 'Paths',
+          layerCount: 2,
+          layerIds: [
+            'active-trail',
+            'upcoming-trail',
+          ],
+          mode: 'passive',
+          order: 20,
+          safetyNote: 'Render layer group is display metadata only.',
+          totalItemCount: 7,
+          visibleLayerCount: 2,
+          visibleLayerIds: [
+            'active-trail',
+            'upcoming-trail',
+          ],
+        },
+        {
+          id: 'focus',
+          label: 'Focus',
+          layerCount: 2,
+          layerIds: [
+            'focus-window',
+            'focus-controls',
+          ],
+          mode: 'passive',
+          order: 30,
+          safetyNote: 'Render layer group is display metadata only.',
+          totalItemCount: 5,
+          visibleLayerCount: 2,
+          visibleLayerIds: [
+            'focus-window',
+            'focus-controls',
+          ],
+        },
+      ],
+      renderLayerGroupSummary: {
+        groupCount: 3,
+        groupIds: [
+          'regions',
+          'paths',
+          'focus',
+        ],
+        mode: 'passive',
+        safetyNote: 'Render layer groups are display metadata only.',
+        totalItemCount: 17,
+        visibleGroupCount: 3,
+        visibleGroupIds: [
+          'regions',
+          'paths',
+          'focus',
+        ],
+      },
+      renderLayerGroupSafety: {
+        allGroupsPassive: true,
+        canExecuteAny: false,
+        executableGroupCount: 0,
+        groupCount: 3,
+        mode: 'passive',
+        safetyNote: 'Render layer groups are display metadata only.',
+      },
+      renderLayerGroupBadges: [
+        {
+          accessibilityLabel: 'Regions badge: 5 items, success tone.',
+          countLabel: '5 items',
+          groupId: 'regions',
+          id: 'regions-badge',
+          itemCount: 5,
+          label: 'Regions',
+          layerCount: 2,
+          mode: 'passive',
+          safetyNote: 'Render layer group badge is display metadata only.',
+          tone: 'success',
+          visible: true,
+        },
+        {
+          accessibilityLabel: 'Paths badge: 7 items, warning tone.',
+          countLabel: '7 items',
+          groupId: 'paths',
+          id: 'paths-badge',
+          itemCount: 7,
+          label: 'Paths',
+          layerCount: 2,
+          mode: 'passive',
+          safetyNote: 'Render layer group badge is display metadata only.',
+          tone: 'warning',
+          visible: true,
+        },
+        {
+          accessibilityLabel: 'Focus badge: 5 items, neutral tone.',
+          countLabel: '5 items',
+          groupId: 'focus',
+          id: 'focus-badge',
+          itemCount: 5,
+          label: 'Focus',
+          layerCount: 2,
+          mode: 'passive',
+          safetyNote: 'Render layer group badge is display metadata only.',
+          tone: 'neutral',
+          visible: true,
+        },
+      ],
+      renderLayerGroupBadgeSummary: {
+        badgeCount: 3,
+        badgeIds: [
+          'regions-badge',
+          'paths-badge',
+          'focus-badge',
+        ],
+        countLabels: [
+          '5 items',
+          '7 items',
+          '5 items',
+        ],
+        mode: 'passive',
+        safetyNote: 'Render layer group badges are display metadata only.',
+        totalItemCount: 17,
+        visibleBadgeCount: 3,
+        visibleBadgeIds: [
+          'regions-badge',
+          'paths-badge',
+          'focus-badge',
+        ],
+      },
+      renderLayerGroupBadgeAccessibilitySummary: {
+        accessibilityLabels: [
+          'Regions badge: 5 items, success tone.',
+          'Paths badge: 7 items, warning tone.',
+          'Focus badge: 5 items, neutral tone.',
+        ],
+        badgeCount: 3,
+        badgeIds: [
+          'regions-badge',
+          'paths-badge',
+          'focus-badge',
+        ],
+        labelCount: 3,
+        mode: 'passive',
+        safetyNote: 'Render layer group badge accessibility labels are display metadata only.',
+      },
+      renderLayerGroupBadgeAccessibilityAudit: {
+        allLabelsPresent: true,
+        badgeCount: 3,
+        duplicateLabelCount: 0,
+        duplicateLabels: [],
+        labelCount: 3,
+        missingLabelCount: 0,
+        mode: 'passive',
+        safetyNote: 'Render layer group badge accessibility audit is display metadata only.',
+      },
+      renderLayerGroupBadgeAccessibilityHealth: {
+        badgeCount: 3,
+        duplicateLabelCount: 0,
+        labelCount: 3,
+        missingLabelCount: 0,
+        mode: 'passive',
+        safetyNote: 'Render layer group badge accessibility health is display metadata only.',
+        status: 'ready',
+        summary: 'All render layer group badge accessibility labels are present and unique.',
+        tone: 'success',
+      },
+      renderLayerGroupBadgeAccessibilityChecklist: [
+        {
+          badgeCount: 3,
+          id: 'labels-present',
+          issueCount: 0,
+          label: 'Labels present',
+          mode: 'passive',
+          safetyNote: 'Render layer group badge accessibility checklist is display metadata only.',
+          status: 'ready',
+          summary: 'All render layer group badge accessibility labels are present.',
+          tone: 'success',
+        },
+        {
+          badgeCount: 3,
+          id: 'labels-unique',
+          issueCount: 0,
+          label: 'Labels unique',
+          mode: 'passive',
+          safetyNote: 'Render layer group badge accessibility checklist is display metadata only.',
+          status: 'ready',
+          summary: 'All render layer group badge accessibility labels are unique.',
+          tone: 'success',
+        },
+      ],
+      renderLayerGroupBadgeAccessibilityChecklistSummary: {
+        badgeCount: 3,
+        checkCount: 2,
+        checkIds: [
+          'labels-present',
+          'labels-unique',
+        ],
+        issueCount: 0,
+        mode: 'passive',
+        needsAttentionCheckCount: 0,
+        readyCheckCount: 2,
+        safetyNote: 'Render layer group badge accessibility checklist summary is display metadata only.',
+        status: 'ready',
+        tone: 'success',
+      },
+      renderLayerGroupBadgeSafety: {
+        allBadgesPassive: true,
+        badgeCount: 3,
+        canExecuteAny: false,
+        executableBadgeCount: 0,
+        mode: 'passive',
+        safetyNote: 'Render layer group badges are display metadata only.',
+      },
+      renderLayerGroupBadgeToneSummary: {
+        badgeCount: 3,
+        mode: 'passive',
+        safetyNote: 'Render layer group badge tones are display metadata only.',
+        toneIds: [
+          'success',
+          'warning',
+          'neutral',
+        ],
+        tonePairs: [
+          {
+            badgeId: 'regions-badge',
+            tone: 'success',
+          },
+          {
+            badgeId: 'paths-badge',
+            tone: 'warning',
+          },
+          {
+            badgeId: 'focus-badge',
+            tone: 'neutral',
+          },
+        ],
+        uniqueToneCount: 3,
+        uniqueToneIds: [
+          'success',
+          'warning',
+          'neutral',
+        ],
+      },
+      renderLayerGroupBadgeToneLegend: [
+        {
+          badgeCount: 1,
+          badgeIds: [
+            'regions-badge',
+          ],
+          id: 'success-badge-tone',
+          label: 'Success',
+          mode: 'passive',
+          safetyNote: 'Render layer group badge tone legend is display metadata only.',
+          tone: 'success',
+        },
+        {
+          badgeCount: 1,
+          badgeIds: [
+            'paths-badge',
+          ],
+          id: 'warning-badge-tone',
+          label: 'Warning',
+          mode: 'passive',
+          safetyNote: 'Render layer group badge tone legend is display metadata only.',
+          tone: 'warning',
+        },
+        {
+          badgeCount: 1,
+          badgeIds: [
+            'focus-badge',
+          ],
+          id: 'neutral-badge-tone',
+          label: 'Neutral',
+          mode: 'passive',
+          safetyNote: 'Render layer group badge tone legend is display metadata only.',
+          tone: 'neutral',
+        },
+      ],
+      renderLayerGroupBadgeToneLegendSummary: {
+        badgeCount: 3,
+        labelIds: [
+          'success-badge-tone',
+          'warning-badge-tone',
+          'neutral-badge-tone',
+        ],
+        labels: [
+          'Success',
+          'Warning',
+          'Neutral',
+        ],
+        legendCount: 3,
+        mode: 'passive',
+        safetyNote: 'Render layer group badge tone legend summary is display metadata only.',
+        toneIds: [
+          'success',
+          'warning',
+          'neutral',
+        ],
+      },
+      focusWindowBounds: {
+        height: 460,
+        maxX: 330,
+        maxY: 880,
+        minX: 170,
+        minY: 420,
+        width: 160,
+      },
+      focusWindowRange: {
+        containsEnd: false,
+        containsStart: false,
+        endIndex: 5,
+        nodeIds: [
+          'preview-scoped-edits',
+          'review-preview',
+          'apply-approved-edits',
+        ],
+        size: 3,
+        startIndex: 3,
+        totalNodeCount: 8,
+      },
+      focusWindowSegments: [
+        {
+          edgeId: 'proposal-loop-edge-preview-scoped-edits-review-preview',
+          source: 'preview-scoped-edits',
+          sourcePosition: { x: 250, y: 500 },
+          target: 'review-preview',
+          targetPosition: { x: 250, y: 650 },
+        },
+        {
+          edgeId: 'proposal-loop-edge-review-preview-apply-approved-edits',
+          source: 'review-preview',
+          sourcePosition: { x: 250, y: 650 },
+          target: 'apply-approved-edits',
+          targetPosition: { x: 250, y: 800 },
+        },
+      ],
+      focusWindowStatuses: [
+        {
+          count: 1,
+          id: 'completed',
+          label: 'completed',
+          tone: 'success',
+        },
+        {
+          count: 1,
+          id: 'ready',
+          label: 'ready',
+          tone: 'warning',
+        },
+        {
+          count: 1,
+          id: 'pending',
+          label: 'pending',
+          tone: 'neutral',
+        },
+      ],
+      focusWindowSummary: {
+        currentIndex: 4,
+        currentNodeId: 'review-preview',
+        currentStatus: 'ready',
+        currentTone: 'warning',
+        endIndex: 5,
+        hasNext: true,
+        hasPrevious: true,
+        nodeIds: [
+          'preview-scoped-edits',
+          'review-preview',
+          'apply-approved-edits',
+        ],
+        segmentCount: 2,
+        startIndex: 3,
+        statusIds: ['completed', 'ready', 'pending'],
+        totalNodeCount: 8,
+        windowNodeCount: 3,
+      },
+      focusWindowControls: [
+        {
+          actionType: 'focus_previous',
+          canExecute: false,
+          enabled: true,
+          executionMode: 'display_only',
+          id: 'previous',
+          isActive: false,
+          keyHint: 'ArrowUp',
+          label: 'Previous focus',
+          safetyNote: 'Focus controls are display metadata only.',
+          targetIndex: 3,
+          targetNodeId: 'preview-scoped-edits',
+          targetPosition: { x: 250, y: 500 },
+          targetStatus: 'completed',
+          tone: 'success',
+        },
+        {
+          actionType: 'focus_current',
+          canExecute: false,
+          enabled: true,
+          executionMode: 'display_only',
+          id: 'current',
+          isActive: true,
+          keyHint: 'Enter',
+          label: 'Current focus',
+          safetyNote: 'Focus controls are display metadata only.',
+          targetIndex: 4,
+          targetNodeId: 'review-preview',
+          targetPosition: { x: 250, y: 650 },
+          targetStatus: 'ready',
+          tone: 'warning',
+        },
+        {
+          actionType: 'focus_next',
+          canExecute: false,
+          enabled: true,
+          executionMode: 'display_only',
+          id: 'next',
+          isActive: false,
+          keyHint: 'ArrowDown',
+          label: 'Next focus',
+          safetyNote: 'Focus controls are display metadata only.',
+          targetIndex: 5,
+          targetNodeId: 'apply-approved-edits',
+          targetPosition: { x: 250, y: 800 },
+          targetStatus: 'pending',
+          tone: 'neutral',
+        },
+      ],
+      focusWindowControlSummary: {
+        activeControlId: 'current',
+        controlCount: 3,
+        disabledControlIds: [],
+        enabledControlIds: ['previous', 'current', 'next'],
+        keyHints: [
+          {
+            actionType: 'focus_previous',
+            id: 'previous',
+            keyHint: 'ArrowUp',
+          },
+          {
+            actionType: 'focus_current',
+            id: 'current',
+            keyHint: 'Enter',
+          },
+          {
+            actionType: 'focus_next',
+            id: 'next',
+            keyHint: 'ArrowDown',
+          },
+        ],
+      },
+      focusWindowControlSafety: {
+        allControlsDisplayOnly: true,
+        canExecuteAny: false,
+        controlCount: 3,
+        displayOnlyControlCount: 3,
+        executableControlCount: 0,
+        executionMode: 'display_only',
+        safetyNote: 'Focus controls are display metadata only.',
+      },
+      focusWindow: {
+        current: {
+          id: 'review-preview',
+          index: 4,
+          position: { x: 250, y: 650 },
+        },
+        hasNext: true,
+        hasPrevious: true,
+        next: {
+          id: 'apply-approved-edits',
+          index: 5,
+          position: { x: 250, y: 800 },
+        },
+        previous: {
+          id: 'preview-scoped-edits',
+          index: 3,
+          position: { x: 250, y: 500 },
+        },
+      },
       focusNodeIds: [
         'prepare-edit-proposal-prompt',
         'produce-edit-proposal',
@@ -2244,5 +3583,74 @@ describe('autonomous-code CLI command', () => {
       expect.objectContaining({ path: 'docs/note.md', status: 'applied' }),
     ]);
     expect(edited).toBe('after');
+  });
+
+  it('fails with an error if neither --task-file nor --resume is provided', async () => {
+    const program = createProgram();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('Either --task-file or --resume must be provided.');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0; // reset
+  });
+
+  it('can resume a run using --resume <runId>', async () => {
+    const program = createProgram();
+    const { repo } = await createTaskFile();
+    
+    // Save a completed/verified checkpoint to resume from
+    await saveCheckpoint({
+      runId: 'cli-resume-run-id',
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: { taskFile: 'task.json' },
+      contract: {
+        repo,
+        task: 'Do task',
+        allowedPaths: ['file.ts'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'none',
+      },
+    });
+
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--resume',
+      'cli-resume-run-id',
+      '--json',
+    ]);
+
+    const logOutput = getLogOutput();
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    if (errorOutput) {
+      console.log('--- CLI ERROR OUTPUT ---');
+      console.log(errorOutput);
+      console.log('------------------------');
+    }
+
+    const output = JSON.parse(logOutput) as {
+      status: string;
+      autoExecutable: boolean;
+    };
+
+    expect(output.status).toBe('verified');
+    expect(output.autoExecutable).toBe(true);
   });
 });

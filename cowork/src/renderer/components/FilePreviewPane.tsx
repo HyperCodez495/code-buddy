@@ -11,7 +11,7 @@
  * @module renderer/components/FilePreviewPane
  */
 
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import {
   X,
@@ -24,6 +24,7 @@ import {
   Check,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { AgenticHarnessStrip, parseAgenticHarnessArtifact } from './agentic-harness-strip';
 
 interface PreviewResult {
   kind: 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
@@ -134,6 +135,13 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [previewFilePath]);
 
+  const agenticHarness = useMemo(() => {
+    if (preview?.kind !== 'text' || !preview.text) {
+      return null;
+    }
+    return parseAgenticHarnessArtifact(preview.text);
+  }, [preview]);
+
   // In inline/split-pane mode, render an empty-state placeholder instead of null
   // so the split layout keeps its shape even when no file is selected.
   if (!previewFilePath && !inline) return null;
@@ -229,7 +237,13 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
           </div>
         )}
 
-        {!loading && preview?.kind === 'text' && preview.text && (
+        {!loading && preview?.kind === 'text' && preview.text && agenticHarness && (
+          <div className="p-4">
+            <AgenticHarnessStrip harness={agenticHarness} sourceKind={preview.name} />
+          </div>
+        )}
+
+        {!loading && preview?.kind === 'text' && preview.text && !agenticHarness && (
           <pre className="p-4 text-[11px] leading-relaxed font-mono text-text-primary whitespace-pre-wrap break-words">
             {preview.text}
           </pre>
@@ -289,9 +303,7 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
             <div className="text-xs text-text-muted">
               {preview.error ?? t('preview.binaryNoPreview')}
             </div>
-            <div className="text-[10px] text-text-muted opacity-70 mt-2">
-              {preview.mime}
-            </div>
+            <div className="text-[10px] text-text-muted opacity-70 mt-2">{preview.mime}</div>
           </div>
         )}
       </div>

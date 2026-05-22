@@ -128,29 +128,29 @@ describe('codex-oauth — id_token claim extraction', () => {
 describe('codex-oauth — /cancel hand-off (Axe L)', () => {
   it('pingCancelEndpoint silently swallows connection-refused (clean state)', async () => {
     // Pick a port unlikely to be bound. Promise must resolve, not throw.
-    await expect(__test.pingCancelEndpoint(59321)).resolves.toBeUndefined();
+    await expect(__test.pingCancelEndpoint(45321)).resolves.toBeUndefined();
   });
 
   it('pingCancelEndpoint silently swallows AbortSignal timeout', async () => {
     // We can't easily bind a slow server here; the connection-refused
     // case above already exercises the swallow path. Fast smoke check.
-    await expect(__test.pingCancelEndpoint(59322)).resolves.toBeUndefined();
+    await expect(__test.pingCancelEndpoint(45322)).resolves.toBeUndefined();
   });
 
   it('bindCallbackServer falls back to the secondary port when primary is taken', async () => {
     const http = await import('http');
-    // Hold port 59421 with a non-Codex server (no /cancel handler).
-    // The bind code will retry 10x@200ms, fail, then fallback to 59423.
+    // Hold port 45421 with a non-Codex server (no /cancel handler).
+    // The bind code will retry 10x@200ms, fail, then fallback to 45423.
     const blocker = http.createServer((_req, res) => {
       res.writeHead(404);
       res.end();
     });
-    await new Promise<void>((resolve) => blocker.listen(59421, '127.0.0.1', () => resolve()));
+    await new Promise<void>((resolve) => blocker.listen(45421, '127.0.0.1', () => resolve()));
 
     try {
       const noopHandler: import('http').RequestListener = (_, res) => res.end();
-      const result = await __test.bindCallbackServer([59421, 59423], noopHandler);
-      expect(result.port).toBe(59423);
+      const result = await __test.bindCallbackServer([45421, 45423], noopHandler);
+      expect(result.port).toBe(45423);
       result.server.close();
     } finally {
       blocker.close();
@@ -173,12 +173,12 @@ describe('codex-oauth — /cancel hand-off (Axe L)', () => {
         res.end();
       }
     });
-    await new Promise<void>((resolve) => zombie!.listen(59431, '127.0.0.1', () => resolve()));
+    await new Promise<void>((resolve) => zombie!.listen(45431, '127.0.0.1', () => resolve()));
 
     const noopHandler: import('http').RequestListener = (_, res) => res.end();
-    const result = await __test.bindCallbackServer([59431, 59433], noopHandler);
-    // Primary won — zombie shut down on /cancel and we bound 59431.
-    expect(result.port).toBe(59431);
+    const result = await __test.bindCallbackServer([45431, 45433], noopHandler);
+    // Primary won — zombie shut down on /cancel and we bound 45431.
+    expect(result.port).toBe(45431);
     result.server.close();
   }, 5000);
 });

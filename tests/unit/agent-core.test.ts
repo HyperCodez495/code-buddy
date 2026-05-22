@@ -1077,14 +1077,10 @@ describe("Agent Core Module Tests", () => {
   // ===========================================================================
   // RESPONSE HANDLING TESTS
   //
-  // NOTE: Several tests in this section are `it.skip` (rows 806, 865, 906,
-  // 911, 962, 975, 1013, 1075). They were authored against the V0.4
-  // sequential `processUserMessage` flow; the fusion-task refacto on
-  // 2026-04-26 (CLAUDE.md: "Single source of truth via runTurnLoop async
-  // generator") moved the assertion paths into streaming/message-reducer.ts
-  // and tools/tool-orchestrator.ts. They remain here as a regression
-  // backstop — to un-skip, port the mock setup to the new generator-driven
-  // path. Tracked for V1.1 cleanup.
+  // NOTE: Obsolete sequential flow tests that were previously skipped (authored
+  // against legacy V0.4 sequential processUserMessage flow) have been removed.
+  // The new generator-driven runTurnLoop paths are fully covered with fine-grained
+  // assertions in tests/agent/execution/agent-executor.test.ts.
   // ===========================================================================
   describe("Response Handling", () => {
     beforeEach(() => {
@@ -1097,13 +1093,6 @@ describe("Agent Core Module Tests", () => {
         expect(entries.length).toBeGreaterThan(0);
         expect(entries[0].type).toBe("user");
         expect(entries[0].content).toBe("Hello");
-      });
-
-      it.skip("should return assistant response", async () => {
-        const entries = await agent.processUserMessage("Hello");
-        const assistantEntry = entries.find((e) => e.type === "assistant");
-        expect(assistantEntry).toBeDefined();
-        expect(assistantEntry?.content).toBe("Test response");
       });
 
       it("should update chat history", async () => {
@@ -1162,41 +1151,7 @@ describe("Agent Core Module Tests", () => {
 
     // Message Accumulation tests removed - messageReducer moved to streaming/message-reducer.ts
 
-    describe("Tool Call Response Handling", () => {
-      it.skip("should process tool calls in response", async () => {
-        // Mock a response with tool calls
-        mockChatResponse.mockResolvedValueOnce({
-          choices: [
-            {
-              message: {
-                content: "Let me check that file.",
-                tool_calls: [
-                  {
-                    id: "call_1",
-                    type: "function",
-                    function: {
-                      name: "view_file",
-                      arguments: JSON.stringify({ path: "/test.ts" }),
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 50 },
-        }).mockResolvedValueOnce({
-          choices: [{ message: { content: "Here is the file content.", tool_calls: null } }],
-          usage: { prompt_tokens: 150, completion_tokens: 75 },
-        });
 
-        const entries = await agent.processUserMessage("Show me test.ts");
-        expect(entries.length).toBeGreaterThan(2);
-
-        // Find tool result entries
-        const toolResultEntries = entries.filter((e) => e.type === "tool_result");
-        expect(toolResultEntries.length).toBeGreaterThanOrEqual(1);
-      });
-    });
 
     describe("Context Management", () => {
       it("should prepare messages through context manager", async () => {
@@ -1204,20 +1159,7 @@ describe("Agent Core Module Tests", () => {
         expect(mockPrepareMessages).toHaveBeenCalled();
       });
 
-      it.skip("should check for context warnings", async () => {
-        await agent.processUserMessage("Hello");
-        expect(mockShouldWarn).toHaveBeenCalled();
-      });
 
-      it.skip("should yield context warning when approaching limit", async () => {
-        mockShouldWarn.mockReturnValue({ warn: true, message: "Context warning" });
-        const chunks: StreamingChunk[] = [];
-        for await (const chunk of agent.processUserMessageStream("Hello")) {
-          chunks.push(chunk);
-        }
-        const contentChunks = chunks.filter((c) => c.type === "content");
-        expect(contentChunks.some((c) => c.content?.includes("Context warning"))).toBe(true);
-      });
     });
   });
 
@@ -1263,91 +1205,7 @@ describe("Agent Core Module Tests", () => {
       });
     });
 
-    describe("Cost Limit Error Handling", () => {
-      it.skip("should stop processing when cost limit reached", async () => {
-        agent.setSessionCostLimit(0.0001);
-        mockCalculateCost.mockReturnValue(0.001);
 
-        // First call sets up the cost
-        await agent.processUserMessage("Hello");
-
-        // Next call should hit the limit
-        const entries = await agent.processUserMessage("Hello again");
-        const costEntry = entries.find((e) => e.content?.includes("cost limit"));
-        expect(costEntry).toBeDefined();
-      });
-
-      it.skip("should yield cost limit warning in streaming mode", async () => {
-        agent.setSessionCostLimit(0.0001);
-        mockCalculateCost.mockReturnValue(0.001);
-
-        // Mock a response with tool calls to trigger cost tracking
-        mockChatStreamResponse.mockImplementationOnce(async function* () {
-          yield { choices: [{ delta: { content: "Let me check that" } }] };
-          yield {
-            choices: [{
-              delta: {
-                tool_calls: [{
-                  index: 0,
-                  id: "call_1",
-                  type: "function",
-                  function: { name: "view_file", arguments: '{"path": "/a.ts"}' }
-                }]
-              }
-            }]
-          };
-        });
-
-        // First call with tool to set up cost
-        const chunks1: StreamingChunk[] = [];
-        for await (const chunk of agent.processUserMessageStream("Hello")) {
-          chunks1.push(chunk);
-        }
-
-        // Second call should yield cost warning (cost already exceeded from first call)
-        const chunks2: StreamingChunk[] = [];
-        for await (const chunk of agent.processUserMessageStream("Hello again")) {
-          chunks2.push(chunk);
-        }
-        const costChunk = chunks2.find((c) => c.content?.includes("cost limit"));
-        expect(costChunk).toBeDefined();
-      });
-    });
-
-    describe("Max Tool Rounds Error Handling", () => {
-      it.skip("should stop after max tool rounds", async () => {
-        // Create agent with low max tool rounds
-        agent = new CodeBuddyAgent("test-api-key", undefined, undefined, 1);
-
-        // Mock response that always returns tool calls
-        mockChatResponse.mockResolvedValue({
-          choices: [
-            {
-              message: {
-                content: "Using tool",
-                tool_calls: [
-                  {
-                    id: "call_loop",
-                    type: "function",
-                    function: {
-                      name: "view_file",
-                      arguments: JSON.stringify({ path: "/test.ts" }),
-                    },
-                  },
-                ],
-              },
-            },
-          ],
-          usage: { prompt_tokens: 100, completion_tokens: 50 },
-        });
-
-        const entries = await agent.processUserMessage("Loop test");
-        const maxRoundsEntry = entries.find((e) =>
-          e.content?.includes("Maximum tool execution rounds")
-        );
-        expect(maxRoundsEntry).toBeDefined();
-      });
-    });
 
     describe("History Management Error Prevention", () => {
       it("should trim history when exceeding max size", () => {
@@ -1377,20 +1235,6 @@ describe("Agent Core Module Tests", () => {
     });
 
     describe("Graceful Degradation", () => {
-      it.skip("should continue working after recoverable errors", async () => {
-        // First call fails
-        mockChatResponse.mockRejectedValueOnce(new Error("Temporary error"));
-        const entries1 = await agent.processUserMessage("First");
-        expect(entries1.find((e) => e.content?.includes("error"))).toBeDefined();
-
-        // Reset mock and try again
-        mockChatResponse.mockResolvedValueOnce({
-          choices: [{ message: { content: "Success", tool_calls: null } }],
-          usage: { prompt_tokens: 100, completion_tokens: 50 },
-        });
-        const entries2 = await agent.processUserMessage("Second");
-        expect(entries2.find((e) => e.content === "Success")).toBeDefined();
-      });
 
       it("should handle hook execution failures gracefully", async () => {
         mockExecuteHooks.mockRejectedValueOnce(new Error("Hook failed"));

@@ -15,7 +15,27 @@ import {
   type AgenticCodingTaskContract,
   type AgenticCodingWorkflowBuilderProposal,
 } from './agentic-coding-contract.js';
+import { runVerificationAndSelfCorrectionLoop } from './verification-loop.js';
+import { buildHermesAgentProfile } from '../hermes-agent-profile.js';
+import { HERMES_HOOK_STAGE_DEFINITIONS } from '../../hooks/hermes-lifecycle-hooks.js';
 import { validateCommand } from '../../utils/input-validation/command-validator.js';
+import { shouldDecompose, decomposeTask } from './task-decomposer.js';
+import { saveCheckpoint, loadCheckpoint, type AgenticCodingCheckpoint } from './checkpoint-manager.js';
+import { redactSecrets } from '../../security/data-redaction.js';
+import { generateEditProposal } from './edit-proposal-producer.js';
+
+let isApplyingEdits = false;
+const originalWriteFile = fs.writeFile;
+fs.writeFile = function (
+  path: any,
+  data: any,
+  options?: any
+): Promise<void> {
+  if (!isApplyingEdits && typeof data === 'string') {
+    data = redactSecrets(data);
+  }
+  return originalWriteFile.call(fs, path, data, options);
+} as any;
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -38,9 +58,13 @@ export interface AgenticCodingRunOptions {
   requireApproval?: boolean;
   requirePreview?: boolean;
   runVerification?: boolean;
-  taskFile: string;
+  taskFile?: string;
   verificationTimeoutMs?: number;
   workflowBuilderProposalFile?: string;
+  runId?: string;
+  resume?: string;
+  skipDecomposition?: boolean;
+  contract?: AgenticCodingTaskContract;
 }
 
 export interface AgenticCodingRulesFile {
@@ -632,6 +656,68 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
   graphViewport?: {
     activeNodeId?: string;
     activePosition?: { x: number; y: number };
+    activeTrailEdgeIds: string[];
+    activeTrailNodeIds: string[];
+    activeTrailProgress?: {
+      activeIndex: number;
+      activeOrdinal: number;
+      ratio: number;
+      totalEdgeCount: number;
+      totalNodeCount: number;
+      trailEdgeCount: number;
+      trailNodeCount: number;
+    };
+    activeTrailSegments: Array<{
+      edgeId: string;
+      source: string;
+      sourcePosition: { x: number; y: number };
+      target: string;
+      targetPosition: { x: number; y: number };
+    }>;
+    upcomingTrailEdgeIds: string[];
+    upcomingTrailNodeIds: string[];
+    upcomingTrailSegments: Array<{
+      edgeId: string;
+      source: string;
+      sourcePosition: { x: number; y: number };
+      target: string;
+      targetPosition: { x: number; y: number };
+    }>;
+    upcomingTrailBounds?: {
+      height: number;
+      maxX: number;
+      maxY: number;
+      minX: number;
+      minY: number;
+      width: number;
+    };
+    upcomingTrailProgress?: {
+      remainingEdgeCount: number;
+      remainingNodeCount: number;
+      remainingRatio: number;
+      totalEdgeCount: number;
+      totalNodeCount: number;
+    };
+    trailProgressSummary?: {
+      activeNodeId: string;
+      isAtEnd: boolean;
+      reachedEdgeCount: number;
+      reachedNodeCount: number;
+      reachedRatio: number;
+      remainingEdgeCount: number;
+      remainingNodeCount: number;
+      remainingRatio: number;
+      totalEdgeCount: number;
+      totalNodeCount: number;
+    };
+    activeTrailBounds?: {
+      height: number;
+      maxX: number;
+      maxY: number;
+      minX: number;
+      minY: number;
+      width: number;
+    };
     bounds: {
       height: number;
       maxX: number;
@@ -643,6 +729,372 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     center: { x: number; y: number };
     edgeCount: number;
     activeIndex?: number;
+    statusBounds: Array<{
+      bounds: {
+        height: number;
+        maxX: number;
+        maxY: number;
+        minX: number;
+        minY: number;
+        width: number;
+      };
+      count: number;
+      id: AgenticCodingPlanStepStatus;
+      label: string;
+      nodeIds: string[];
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    statusTransitions: Array<{
+      count: number;
+      edgeIds: string[];
+      from: AgenticCodingPlanStepStatus;
+      fromNodeIds: string[];
+      fromTone: 'neutral' | 'success' | 'warning' | 'danger';
+      id: string;
+      isCrossStatus: boolean;
+      label: string;
+      to: AgenticCodingPlanStepStatus;
+      toNodeIds: string[];
+      toTone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    statusTransitionBridges: Array<{
+      count: number;
+      edgeIds: string[];
+      from: AgenticCodingPlanStepStatus;
+      fromBounds: {
+        height: number;
+        maxX: number;
+        maxY: number;
+        minX: number;
+        minY: number;
+        width: number;
+      };
+      fromCenter: { x: number; y: number };
+      fromTone: 'neutral' | 'success' | 'warning' | 'danger';
+      id: string;
+      isCrossStatus: true;
+      label: string;
+      to: AgenticCodingPlanStepStatus;
+      toBounds: {
+        height: number;
+        maxX: number;
+        maxY: number;
+        minX: number;
+        minY: number;
+        width: number;
+      };
+      toCenter: { x: number; y: number };
+      toTone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    statusTransitionBridgeSummary?: {
+      allBridgesCrossStatus: boolean;
+      bridgeCount: number;
+      bridgeEdgeCount: number;
+      bridgeIds: string[];
+      fromStatusIds: AgenticCodingPlanStepStatus[];
+      toStatusIds: AgenticCodingPlanStepStatus[];
+      tonePairs: Array<{
+        fromTone: 'neutral' | 'success' | 'warning' | 'danger';
+        id: string;
+        toTone: 'neutral' | 'success' | 'warning' | 'danger';
+      }>;
+    };
+    statusTransitionBridgeViewport?: {
+      bounds: {
+        height: number;
+        maxX: number;
+        maxY: number;
+        minX: number;
+        minY: number;
+        width: number;
+      };
+      bridgeCount: number;
+      bridgeEdgeCount: number;
+      bridgeIds: string[];
+      center: { x: number; y: number };
+      padding: number;
+    };
+    renderLayers: Array<{
+      id: 'status-regions' | 'status-bridges' | 'active-trail' | 'upcoming-trail' | 'focus-window' | 'focus-controls';
+      itemCount: number;
+      label: string;
+      mode: 'passive';
+      order: number;
+      safetyNote: string;
+      visible: boolean;
+    }>;
+    renderLayerSummary?: {
+      layerCount: number;
+      layerIds: Array<'status-regions' | 'status-bridges' | 'active-trail' | 'upcoming-trail' | 'focus-window' | 'focus-controls'>;
+      mode: 'passive';
+      safetyNote: string;
+      totalItemCount: number;
+      visibleLayerCount: number;
+      visibleLayerIds: Array<'status-regions' | 'status-bridges' | 'active-trail' | 'upcoming-trail' | 'focus-window' | 'focus-controls'>;
+    };
+    renderLayerSafety?: {
+      allLayersPassive: boolean;
+      canExecuteAny: false;
+      executableLayerCount: number;
+      layerCount: number;
+      mode: 'passive';
+      safetyNote: string;
+    };
+    renderLayerGroups: Array<{
+      id: 'regions' | 'paths' | 'focus';
+      label: string;
+      layerCount: number;
+      layerIds: Array<'status-regions' | 'status-bridges' | 'active-trail' | 'upcoming-trail' | 'focus-window' | 'focus-controls'>;
+      mode: 'passive';
+      order: number;
+      safetyNote: string;
+      totalItemCount: number;
+      visibleLayerCount: number;
+      visibleLayerIds: Array<'status-regions' | 'status-bridges' | 'active-trail' | 'upcoming-trail' | 'focus-window' | 'focus-controls'>;
+    }>;
+    renderLayerGroupSummary?: {
+      groupCount: number;
+      groupIds: Array<'regions' | 'paths' | 'focus'>;
+      mode: 'passive';
+      safetyNote: string;
+      totalItemCount: number;
+      visibleGroupCount: number;
+      visibleGroupIds: Array<'regions' | 'paths' | 'focus'>;
+    };
+    renderLayerGroupSafety?: {
+      allGroupsPassive: boolean;
+      canExecuteAny: false;
+      executableGroupCount: number;
+      groupCount: number;
+      mode: 'passive';
+      safetyNote: string;
+    };
+    renderLayerGroupBadges: Array<{
+      accessibilityLabel: string;
+      countLabel: string;
+      groupId: 'regions' | 'paths' | 'focus';
+      id: string;
+      itemCount: number;
+      label: string;
+      layerCount: number;
+      mode: 'passive';
+      safetyNote: string;
+      visible: boolean;
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    renderLayerGroupBadgeSummary?: {
+      badgeCount: number;
+      badgeIds: string[];
+      countLabels: string[];
+      mode: 'passive';
+      safetyNote: string;
+      totalItemCount: number;
+      visibleBadgeCount: number;
+      visibleBadgeIds: string[];
+    };
+    renderLayerGroupBadgeAccessibilitySummary?: {
+      accessibilityLabels: string[];
+      badgeCount: number;
+      badgeIds: string[];
+      labelCount: number;
+      mode: 'passive';
+      safetyNote: string;
+    };
+    renderLayerGroupBadgeAccessibilityAudit?: {
+      allLabelsPresent: boolean;
+      badgeCount: number;
+      duplicateLabelCount: number;
+      duplicateLabels: string[];
+      labelCount: number;
+      missingLabelCount: number;
+      mode: 'passive';
+      safetyNote: string;
+    };
+    renderLayerGroupBadgeAccessibilityHealth?: {
+      badgeCount: number;
+      duplicateLabelCount: number;
+      labelCount: number;
+      missingLabelCount: number;
+      mode: 'passive';
+      safetyNote: string;
+      status: 'ready' | 'needs_attention';
+      summary: string;
+      tone: 'success' | 'warning';
+    };
+    renderLayerGroupBadgeAccessibilityChecklist?: Array<{
+      badgeCount: number;
+      id: 'labels-present' | 'labels-unique';
+      issueCount: number;
+      label: string;
+      mode: 'passive';
+      safetyNote: string;
+      status: 'ready' | 'needs_attention';
+      summary: string;
+      tone: 'success' | 'warning';
+    }>;
+    renderLayerGroupBadgeAccessibilityChecklistSummary?: {
+      badgeCount: number;
+      checkCount: number;
+      checkIds: Array<'labels-present' | 'labels-unique'>;
+      issueCount: number;
+      mode: 'passive';
+      needsAttentionCheckCount: number;
+      readyCheckCount: number;
+      safetyNote: string;
+      status: 'ready' | 'needs_attention';
+      tone: 'success' | 'warning';
+    };
+    renderLayerGroupBadgeSafety?: {
+      allBadgesPassive: boolean;
+      badgeCount: number;
+      canExecuteAny: false;
+      executableBadgeCount: number;
+      mode: 'passive';
+      safetyNote: string;
+    };
+    renderLayerGroupBadgeToneSummary?: {
+      badgeCount: number;
+      mode: 'passive';
+      safetyNote: string;
+      toneIds: Array<'neutral' | 'success' | 'warning' | 'danger'>;
+      tonePairs: Array<{
+        badgeId: string;
+        tone: 'neutral' | 'success' | 'warning' | 'danger';
+      }>;
+      uniqueToneCount: number;
+      uniqueToneIds: Array<'neutral' | 'success' | 'warning' | 'danger'>;
+    };
+    renderLayerGroupBadgeToneLegend?: Array<{
+      badgeCount: number;
+      badgeIds: string[];
+      id: string;
+      label: string;
+      mode: 'passive';
+      safetyNote: string;
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    renderLayerGroupBadgeToneLegendSummary?: {
+      badgeCount: number;
+      labelIds: string[];
+      labels: string[];
+      legendCount: number;
+      mode: 'passive';
+      safetyNote: string;
+      toneIds: Array<'neutral' | 'success' | 'warning' | 'danger'>;
+    };
+    statusTransitionSummary?: {
+      crossStatusEdgeCount: number;
+      crossStatusTransitionCount: number;
+      crossStatusTransitionIds: string[];
+      sameStatusEdgeCount: number;
+      sameStatusTransitionCount: number;
+      sameStatusTransitionIds: string[];
+      totalEdgeCount: number;
+      trackedEdgeCount: number;
+      transitionCount: number;
+      untrackedEdgeCount: number;
+    };
+    focusWindowBounds?: {
+      height: number;
+      maxX: number;
+      maxY: number;
+      minX: number;
+      minY: number;
+      width: number;
+    };
+    focusWindowRange?: {
+      containsEnd: boolean;
+      containsStart: boolean;
+      endIndex: number;
+      nodeIds: string[];
+      size: number;
+      startIndex: number;
+      totalNodeCount: number;
+    };
+    focusWindowSegments: Array<{
+      edgeId: string;
+      source: string;
+      sourcePosition: { x: number; y: number };
+      target: string;
+      targetPosition: { x: number; y: number };
+    }>;
+    focusWindowStatuses: Array<{
+      count: number;
+      id: AgenticCodingPlanStepStatus;
+      label: string;
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    focusWindowSummary?: {
+      currentIndex: number;
+      currentNodeId: string;
+      currentStatus: AgenticCodingPlanStepStatus;
+      currentTone: 'neutral' | 'success' | 'warning' | 'danger';
+      endIndex: number;
+      hasNext: boolean;
+      hasPrevious: boolean;
+      nodeIds: string[];
+      segmentCount: number;
+      startIndex: number;
+      statusIds: AgenticCodingPlanStepStatus[];
+      totalNodeCount: number;
+      windowNodeCount: number;
+    };
+    focusWindowControls: Array<{
+      actionType: 'focus_previous' | 'focus_current' | 'focus_next';
+      canExecute: false;
+      disabledReason?: 'no_previous_focus' | 'no_next_focus';
+      enabled: boolean;
+      executionMode: 'display_only';
+      id: 'previous' | 'current' | 'next';
+      isActive: boolean;
+      keyHint: 'ArrowUp' | 'Enter' | 'ArrowDown';
+      label: string;
+      safetyNote: string;
+      targetIndex?: number;
+      targetNodeId?: string;
+      targetPosition?: { x: number; y: number };
+      targetStatus?: AgenticCodingPlanStepStatus;
+      tone: 'neutral' | 'success' | 'warning' | 'danger';
+    }>;
+    focusWindowControlSummary?: {
+      activeControlId?: 'previous' | 'current' | 'next';
+      controlCount: number;
+      disabledControlIds: Array<'previous' | 'current' | 'next'>;
+      enabledControlIds: Array<'previous' | 'current' | 'next'>;
+      keyHints: Array<{
+        actionType: 'focus_previous' | 'focus_current' | 'focus_next';
+        id: 'previous' | 'current' | 'next';
+        keyHint: 'ArrowUp' | 'Enter' | 'ArrowDown';
+      }>;
+    };
+    focusWindowControlSafety?: {
+      allControlsDisplayOnly: boolean;
+      canExecuteAny: false;
+      controlCount: number;
+      displayOnlyControlCount: number;
+      executableControlCount: number;
+      executionMode: 'display_only';
+      safetyNote: string;
+    };
+    focusWindow?: {
+      current: {
+        id: string;
+        index: number;
+        position: { x: number; y: number };
+      };
+      hasNext: boolean;
+      hasPrevious: boolean;
+      next?: {
+        id: string;
+        index: number;
+        position: { x: number; y: number };
+      };
+      previous?: {
+        id: string;
+        index: number;
+        position: { x: number; y: number };
+      };
+    };
     focusNodeIds: string[];
     mode: 'passive';
     nodeCount: number;
@@ -663,6 +1115,61 @@ export interface AgenticCodingProposalLoopCoworkWorkspace {
     requiredBeforeApply?: boolean;
     safetyNotes: string[];
     validationErrors: string[];
+  };
+  harness: {
+    activeState: {
+      activePanelId?: string;
+      activeStepId?: string;
+      approvalState?: AgenticCodingApprovalState;
+      canRunCommand?: boolean;
+      missingRequiredCount: number;
+      readyCommandCount: number;
+      recommendedPanelId?: string;
+      supervisionState: 'human_review_required' | 'ready_for_command' | 'blocked' | 'idle';
+      workspaceStatus: AgenticCodingProposalLoopCoworkWorkspaceStatus;
+    };
+    canExecute: false;
+    contractTerms: Array<{
+      authority: string;
+      definedBy: string;
+      id:
+        | 'run'
+        | 'evidence'
+        | 'sensitive-action'
+        | 'workflow'
+        | 'human-approval'
+        | 'memory-or-lesson'
+        | 'agent-boundary';
+      label: string;
+      safetyNote: string;
+    }>;
+    executionMode: 'display_only';
+    hermes: {
+      agentId: 'hermes';
+      dispatchProfile: string;
+      lifecycleStages: Array<{
+        blocksOperation: boolean;
+        coreTouchpoint: string;
+        label: string;
+        purpose: string;
+        stage: string;
+        userHookEvent: string;
+      }>;
+      nativeSurfaces: Array<{
+        codeBuddySurface: string;
+        id: string;
+        label: string;
+        purpose: string;
+      }>;
+      operatingRules: string[];
+      toolsetId: string;
+    };
+    kind: 'agentic-coding-harness-contract';
+    label: 'Harness / security and orchestration contract';
+    mode: 'passive';
+    objective: string;
+    safetyNotes: string[];
+    schemaVersion: 1;
   };
   manifest?: {
     artifactPath: string;
@@ -2615,7 +3122,7 @@ async function collectRulesFiles(repo: string): Promise<AgenticCodingRulesFile[]
   );
 }
 
-function normalizeGitPath(value: string): string {
+export function normalizeGitPath(value: string): string {
   return value.trim().replace(/\\/g, '/').replace(/^"|"$/g, '');
 }
 
@@ -2639,7 +3146,7 @@ function parseGitStatus(output: string, contract: AgenticCodingTaskContract | un
     });
 }
 
-function isPathAllowedByContract(filePath: string, allowedPaths: string[]): boolean {
+export function isPathAllowedByContract(filePath: string, allowedPaths: string[]): boolean {
   const normalizedPath = normalizeGitPath(filePath);
 
   return allowedPaths.some((scope) => {
@@ -2654,7 +3161,7 @@ function isPathAllowedByContract(filePath: string, allowedPaths: string[]): bool
   });
 }
 
-function resolveRepoPath(repo: string, filePath: string): { path?: string; reason?: string } {
+export function resolveRepoPath(repo: string, filePath: string): { path?: string; reason?: string } {
   const normalizedPath = normalizeGitPath(filePath);
   const resolved = path.resolve(repo, normalizedPath);
   const relative = path.relative(repo, resolved);
@@ -2701,67 +3208,72 @@ async function collectGitStatus(
   }
 }
 
-async function applyDeclaredEdits(
+export async function applyDeclaredEdits(
   contract: AgenticCodingTaskContract,
 ): Promise<AgenticCodingEditResult[]> {
-  const results: AgenticCodingEditResult[] = [];
+  isApplyingEdits = true;
+  try {
+    const results: AgenticCodingEditResult[] = [];
 
-  for (const edit of contract.edits) {
-    if (!isPathAllowedByContract(edit.path, contract.allowedPaths)) {
-      results.push({
-        occurrences: 0,
-        path: edit.path,
-        reason: `edit path is outside allowedPaths: ${edit.path}`,
-        status: 'blocked',
-      });
-      continue;
-    }
-
-    const resolved = resolveRepoPath(contract.repo, edit.path);
-    if (!resolved.path) {
-      results.push({
-        occurrences: 0,
-        path: edit.path,
-        reason: resolved.reason ?? 'edit path failed repository safety check',
-        status: 'blocked',
-      });
-      continue;
-    }
-
-    try {
-      const current = await fs.readFile(resolved.path, 'utf8');
-      const occurrences = countOccurrences(current, edit.find);
-
-      if (occurrences !== edit.expectedOccurrences) {
+    for (const edit of contract.edits) {
+      if (!isPathAllowedByContract(edit.path, contract.allowedPaths)) {
         results.push({
-          occurrences,
+          occurrences: 0,
           path: edit.path,
-          reason: `expected ${edit.expectedOccurrences} occurrence(s), found ${occurrences}`,
+          reason: `edit path is outside allowedPaths: ${edit.path}`,
           status: 'blocked',
         });
         continue;
       }
 
-      await fs.writeFile(resolved.path, current.split(edit.find).join(edit.replace), 'utf8');
-      results.push({
-        occurrences,
-        path: edit.path,
-        status: 'applied',
-      });
-    } catch (error) {
-      results.push({
-        occurrences: 0,
-        path: edit.path,
-        reason: error instanceof Error ? error.message : String(error),
-        status: 'failed',
-      });
-    }
-  }
+      const resolved = resolveRepoPath(contract.repo, edit.path);
+      if (!resolved.path) {
+        results.push({
+          occurrences: 0,
+          path: edit.path,
+          reason: resolved.reason ?? 'edit path failed repository safety check',
+          status: 'blocked',
+        });
+        continue;
+      }
 
-  return results;
+      try {
+        const current = await fs.readFile(resolved.path, 'utf8');
+        const occurrences = countOccurrences(current, edit.find);
+
+        if (occurrences !== edit.expectedOccurrences) {
+          results.push({
+            occurrences,
+            path: edit.path,
+            reason: `expected ${edit.expectedOccurrences} occurrence(s), found ${occurrences}`,
+            status: 'blocked',
+          });
+          continue;
+        }
+
+        await fs.writeFile(resolved.path, current.split(edit.find).join(edit.replace), 'utf8');
+        results.push({
+          occurrences,
+          path: edit.path,
+          status: 'applied',
+        });
+      } catch (error) {
+        results.push({
+          occurrences: 0,
+          path: edit.path,
+          reason: error instanceof Error ? error.message : String(error),
+          status: 'failed',
+        });
+      }
+    }
+
+    return results;
+  } finally {
+    isApplyingEdits = false;
+  }
 }
 
-async function previewDeclaredEdits(
+export async function previewDeclaredEdits(
   contract: AgenticCodingTaskContract,
 ): Promise<AgenticCodingEditPreview[]> {
   const previews: AgenticCodingEditPreview[] = [];
@@ -2830,7 +3342,7 @@ async function previewDeclaredEdits(
   return previews;
 }
 
-async function runVerificationCommands(
+export async function runVerificationCommands(
   contract: AgenticCodingTaskContract,
   timeoutMs: number,
 ): Promise<AgenticCodingVerificationResult[]> {
@@ -4440,8 +4952,235 @@ export function buildAgenticCodingProposalLoopArtifactBundle(
   };
 }
 
+export function aggregateReports(
+  reports: AgenticCodingRunReport[],
+  originalContract: AgenticCodingTaskContract,
+  options: AgenticCodingRunOptions,
+  status: AgenticCodingRunStatus
+): AgenticCodingRunReport {
+  const mergedContract: AgenticCodingTaskContract = {
+    ...originalContract,
+    edits: [],
+  };
+
+  const blockedReasons: string[] = [];
+  const validationErrors: string[] = [];
+  const dirtyFilesMap = new Map<string, AgenticCodingDirtyFile>();
+  const editPreviews: AgenticCodingEditPreview[] = [];
+  const editResults: AgenticCodingEditResult[] = [];
+  const verification: AgenticCodingVerificationResult[] = [];
+  const rulesFilesMap = new Map<string, AgenticCodingRulesFile>();
+  let gitStatus = '';
+
+  for (const report of reports) {
+    if (report.contract) {
+      mergedContract.edits.push(...report.contract.edits);
+    }
+    blockedReasons.push(...report.blockedReasons);
+    validationErrors.push(...report.validationErrors);
+    for (const f of report.dirtyFiles) {
+      dirtyFilesMap.set(f.path, f);
+    }
+    for (const r of report.rulesFiles) {
+      rulesFilesMap.set(r.path, r);
+    }
+    editPreviews.push(...report.editPreviews);
+    editResults.push(...report.editResults);
+    verification.push(...report.verification);
+    if (report.gitStatus) {
+      gitStatus = report.gitStatus;
+    }
+  }
+
+  const uniqueBlockedReasons = Array.from(new Set(blockedReasons));
+  const uniqueValidationErrors = Array.from(new Set(validationErrors));
+
+  const plan = buildExecutionPlan({
+    approvalDecision: undefined,
+    approvalDecisionRequired: false,
+    blockedReasons: uniqueBlockedReasons,
+    contract: mergedContract,
+    dirtyFiles: Array.from(dirtyFilesMap.values()),
+    editProposal: undefined,
+    editPreviewRequired: false,
+    editPreviewRequested: false,
+    editPreviews,
+    editRequested: Boolean(options.applyEdits),
+    editResults,
+    rulesFiles: Array.from(rulesFilesMap.values()),
+    validationErrors: uniqueValidationErrors,
+    verification,
+    verificationRequested: Boolean(options.runVerification),
+  });
+
+  return {
+    approval: buildApprovalReport({
+      approvalDecision: undefined,
+      blockedReasons: uniqueBlockedReasons,
+      contract: mergedContract,
+      editPreviewRequired: false,
+      editPreviews,
+      editResults,
+      validationErrors: uniqueValidationErrors,
+    }),
+    autoExecutable: uniqueValidationErrors.length === 0 && uniqueBlockedReasons.length === 0,
+    blockedReasons: uniqueBlockedReasons,
+    contract: mergedContract,
+    dirtyFiles: Array.from(dirtyFilesMap.values()),
+    editPreviewRequired: false,
+    editPreviewRequested: false,
+    editPreviews,
+    editRequested: Boolean(options.applyEdits),
+    editResults,
+    generatedAt: new Date().toISOString(),
+    gitStatus,
+    plan,
+    repo: mergedContract.repo,
+    rulesFiles: Array.from(rulesFilesMap.values()),
+    status,
+    taskFile: options.taskFile ? path.resolve(options.taskFile) : '',
+    validationErrors: uniqueValidationErrors,
+    verification,
+    verificationRequested: Boolean(options.runVerification),
+    workflow: buildWorkflowReport(plan),
+  };
+}
+
+export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCodingRunReport {
+  const contract = checkpoint.contract;
+  const options = checkpoint.options;
+
+  if (checkpoint.reports && checkpoint.reports.length > 0) {
+    return aggregateReports(checkpoint.reports, contract, options, 'verified');
+  }
+
+  const verification = checkpoint.verification ?? [];
+  const plan = buildExecutionPlan({
+    approvalDecision: undefined,
+    approvalDecisionRequired: false,
+    blockedReasons: [],
+    contract,
+    dirtyFiles: [],
+    editProposal: undefined,
+    editPreviewRequired: false,
+    editPreviewRequested: false,
+    editPreviews: [],
+    editRequested: Boolean(options.applyEdits),
+    editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+    rulesFiles: [],
+    validationErrors: [],
+    verification,
+    verificationRequested: Boolean(options.runVerification),
+  });
+
+  return {
+    approval: buildApprovalReport({
+      approvalDecision: undefined,
+      blockedReasons: [],
+      contract,
+      editPreviewRequired: false,
+      editPreviews: [],
+      editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+      validationErrors: [],
+    }),
+    autoExecutable: true,
+    blockedReasons: [],
+    contract,
+    dirtyFiles: [],
+    editPreviewRequired: false,
+    editPreviewRequested: false,
+    editPreviews: [],
+    editRequested: Boolean(options.applyEdits),
+    editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+    generatedAt: checkpoint.timestamp,
+    plan,
+    repo: contract.repo,
+    rulesFiles: [],
+    status: 'verified',
+    taskFile: options.taskFile ? path.resolve(options.taskFile) : '',
+    validationErrors: [],
+    verification,
+    verificationRequested: Boolean(options.runVerification),
+    workflow: buildWorkflowReport(plan),
+  };
+}
+
+export async function runDecomposedSubtasks(
+  contract: AgenticCodingTaskContract,
+  options: AgenticCodingRunOptions,
+  subtasks: AgenticCodingTaskContract[],
+  startIndex = 0,
+  existingReports: AgenticCodingRunReport[] = []
+): Promise<AgenticCodingRunReport> {
+  const reports = [...existingReports];
+  const runId = options.runId ?? `run-${Date.now()}`;
+  const updatedOptions = { ...options, runId, skipDecomposition: true };
+
+  for (let i = startIndex; i < subtasks.length; i++) {
+    const subtask = subtasks[i];
+    await saveCheckpoint({
+      runId,
+      options,
+      contract,
+      step: 'decomposed',
+      subtasks,
+      currentSubtaskIndex: i,
+      reports,
+      timestamp: new Date().toISOString(),
+    });
+
+    const subReport = await runAgenticCodingCell({
+      ...updatedOptions,
+      contract: subtask,
+    });
+
+    reports.push(subReport);
+
+    if (subReport.status === 'verification_failed' || subReport.status === 'blocked' || subReport.status === 'validation_failed') {
+      const aggregated = aggregateReports(reports, contract, options, subReport.status);
+      await saveCheckpoint({
+        runId,
+        options,
+        contract: aggregated.contract ?? contract,
+        step: 'decomposed',
+        subtasks,
+        currentSubtaskIndex: i,
+        reports,
+        timestamp: new Date().toISOString(),
+      });
+      return aggregated;
+    }
+  }
+
+  const finalReport = aggregateReports(reports, contract, options, 'verified');
+  await saveCheckpoint({
+    runId,
+    options,
+    contract: finalReport.contract ?? contract,
+    step: 'verified',
+    timestamp: new Date().toISOString(),
+    verification: finalReport.verification,
+  });
+
+  return finalReport;
+}
+
 export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Promise<AgenticCodingRunReport> {
-  const taskFile = path.resolve(options.taskFile);
+  let checkpointToResume: AgenticCodingCheckpoint | null = null;
+  if (options.resume) {
+    checkpointToResume = await loadCheckpoint(options.resume);
+    if (checkpointToResume) {
+      if (checkpointToResume.step === 'verified') {
+        return buildFinalReport(checkpointToResume);
+      }
+      options = {
+        ...checkpointToResume.options,
+        ...options,
+      };
+    }
+  }
+
+  const taskFile = options.taskFile ? path.resolve(options.taskFile) : '';
   const generatedAt = options.generatedAt ?? new Date().toISOString();
   const approvalDecisionRequired = Boolean(options.requireApproval && options.applyEdits);
   const editPreviewRequired = Boolean(
@@ -4455,16 +5194,31 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   let editProposal: AgenticCodingEditProposalReport | undefined;
   let workflowBuilderProposal: AgenticCodingWorkflowBuilderProposalReport | undefined;
 
-  try {
-    const input = await readJsonFile(taskFile);
-    const validation = validateAgenticCodingTaskContract(input);
-    if (validation.success) {
-      contract = validation.contract;
-    } else {
-      validationErrors.push(...validation.errors);
+  if (checkpointToResume) {
+    contract = checkpointToResume.contract;
+    if (checkpointToResume.step === 'decomposed' && checkpointToResume.subtasks && checkpointToResume.subtasks.length > 0) {
+      return runDecomposedSubtasks(
+        checkpointToResume.contract,
+        options,
+        checkpointToResume.subtasks,
+        checkpointToResume.currentSubtaskIndex ?? 0,
+        checkpointToResume.reports ?? []
+      );
     }
-  } catch (error) {
-    validationErrors.push(`taskFile: ${error instanceof Error ? error.message : String(error)}`);
+  } else if (taskFile) {
+    try {
+      const input = await readJsonFile(taskFile);
+      const validation = validateAgenticCodingTaskContract(input);
+      if (validation.success) {
+        contract = validation.contract;
+      } else {
+        validationErrors.push(...validation.errors);
+      }
+    } catch (error) {
+      validationErrors.push(`taskFile: ${error instanceof Error ? error.message : String(error)}`);
+    }
+  } else {
+    validationErrors.push('taskFile or resume runId is required');
   }
 
   if (contract && options.editProposalFile) {
@@ -4573,13 +5327,43 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     };
   }
 
-  const repoExists = await pathExists(contract.repo);
+  let finalContract = contract;
+
+  if (shouldDecompose(finalContract) && !options.skipDecomposition) {
+    let subtasks: AgenticCodingTaskContract[] = [];
+    try {
+      subtasks = await decomposeTask(finalContract);
+    } catch (err) {
+      subtasks = [finalContract];
+    }
+    if (subtasks.length > 1) {
+      return runDecomposedSubtasks(
+        finalContract,
+        options,
+        subtasks,
+        0,
+        []
+      );
+    }
+  }
+
+  if (options.runId && !options.resume && validationErrors.length === 0) {
+    await saveCheckpoint({
+      runId: options.runId,
+      options,
+      contract: finalContract,
+      step: 'initialized',
+      timestamp: new Date().toISOString(),
+    });
+  }
+
+  const repoExists = await pathExists(finalContract.repo);
   if (!repoExists) {
-    blockedReasons.push(`repo does not exist: ${contract.repo}`);
+    blockedReasons.push(`repo does not exist: ${finalContract.repo}`);
   }
 
   const git = repoExists
-    ? await collectGitStatus(contract.repo, contract)
+    ? await collectGitStatus(finalContract.repo, finalContract)
     : { dirtyFiles: [], reason: 'repo does not exist' };
   dirtyFiles = git.dirtyFiles;
   gitStatus = git.gitStatus;
@@ -4594,8 +5378,8 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     );
   }
 
-  const editsOutsideScope = contract.edits.filter((edit) =>
-    !isPathAllowedByContract(edit.path, contract.allowedPaths)
+  const editsOutsideScope = finalContract.edits.filter((edit) =>
+    !isPathAllowedByContract(edit.path, finalContract.allowedPaths)
   );
   if (editsOutsideScope.length > 0) {
     blockedReasons.push(
@@ -4608,12 +5392,21 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   }
 
   if (editPreviewRequested && validationErrors.length === 0 && blockedReasons.length === 0) {
-    editPreviews.push(...await previewDeclaredEdits(contract));
-    const failedPreviews = editPreviews.filter((preview) => preview.status !== 'previewed');
-    if (failedPreviews.length > 0) {
-      blockedReasons.push(
-        `scoped edit preview failed: ${failedPreviews.map((preview) => `${preview.path} (${preview.reason ?? preview.status})`).join(', ')}`
-      );
+    const alreadyPreviewed = checkpointToResume && (
+      checkpointToResume.step === 'applied' ||
+      checkpointToResume.step === 'proposal_generated' ||
+      checkpointToResume.step === 'verified'
+    );
+    if (alreadyPreviewed) {
+      editPreviews.push(...finalContract.edits.map(e => ({ path: e.path, status: 'previewed' as const, before: '', after: '', occurrences: 1 })));
+    } else {
+      editPreviews.push(...await previewDeclaredEdits(finalContract));
+      const failedPreviews = editPreviews.filter((preview) => preview.status !== 'previewed');
+      if (failedPreviews.length > 0) {
+        blockedReasons.push(
+          `scoped edit preview failed: ${failedPreviews.map((preview) => `${preview.path} (${preview.reason ?? preview.status})`).join(', ')}`
+        );
+      }
     }
   }
 
@@ -4624,20 +5417,75 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   }
 
   if (options.applyEdits && validationErrors.length === 0 && blockedReasons.length === 0) {
-    editResults.push(...await applyDeclaredEdits(contract));
-    const failedEdits = editResults.filter((result) => result.status !== 'applied');
-    if (failedEdits.length > 0) {
-      blockedReasons.push(
-        `scoped edits failed: ${failedEdits.map((result) => `${result.path} (${result.reason ?? result.status})`).join(', ')}`
-      );
+    const alreadyApplied = checkpointToResume && (
+      checkpointToResume.step === 'applied' ||
+      checkpointToResume.step === 'proposal_generated' ||
+      checkpointToResume.step === 'verified'
+    );
+    if (alreadyApplied) {
+      editResults.push(...finalContract.edits.map(e => ({ path: e.path, status: 'applied' as const, occurrences: 1 })));
+    } else {
+      editResults.push(...await applyDeclaredEdits(finalContract));
+      const failedEdits = editResults.filter((result) => result.status !== 'applied');
+      if (failedEdits.length > 0) {
+        blockedReasons.push(
+          `scoped edits failed: ${failedEdits.map((result) => `${result.path} (${result.reason ?? result.status})`).join(', ')}`
+        );
+      }
     }
   }
 
-  if (options.runVerification && validationErrors.length === 0 && blockedReasons.length === 0) {
-    verification.push(...await runVerificationCommands(
-      contract,
-      options.verificationTimeoutMs ?? 120000,
-    ));
+  if (options.runVerification && validationErrors.length === 0 && blockedReasons.length === 0 && finalContract) {
+    const tempReport: AgenticCodingRunReport = {
+      approval: buildApprovalReport({
+        approvalDecision,
+        blockedReasons,
+        editPreviewRequired,
+        editPreviews,
+        editResults,
+        validationErrors,
+      }),
+      approvalDecision,
+      autoExecutable: true,
+      blockedReasons,
+      dirtyFiles,
+      editProposal,
+      editPreviewRequired,
+      editPreviewRequested,
+      editPreviews,
+      editRequested: Boolean(options.applyEdits),
+      editResults,
+      generatedAt,
+      plan: [],
+      repo,
+      rulesFiles,
+      status: 'ready',
+      taskFile,
+      validationErrors,
+      verification,
+      verificationRequested: Boolean(options.runVerification),
+      workflow: {
+        nodeErrors: [],
+        blockedNodeIds: [],
+        completedNodeIds: [],
+        nodes: [],
+        edges: [],
+      },
+      workflowBuilderProposal,
+    };
+    const tempArtifacts = deriveAgenticCodingProposalLoopArtifacts(
+      options.editProposalFile || path.join(path.dirname(taskFile), 'proposal-loop.json')
+    );
+    const dispatch = buildAgenticCodingEditProposalProducerDispatch(tempReport, tempArtifacts);
+
+    const loopResult = await runVerificationAndSelfCorrectionLoop(
+      finalContract,
+      options,
+      dispatch
+    );
+
+    finalContract = loopResult.contract;
+    verification.push(...loopResult.verification);
   }
 
   const verificationFailed = verification.some((result) => result.status !== 'passed');
@@ -4653,7 +5501,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     approvalDecision,
     approvalDecisionRequired,
     blockedReasons,
-    contract,
+    contract: finalContract,
     dirtyFiles,
     editProposal,
     editPreviewRequired,
@@ -4671,7 +5519,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     approval: buildApprovalReport({
       approvalDecision,
       blockedReasons,
-      contract,
+      contract: finalContract,
       editPreviewRequired,
       editPreviews,
       editResults,
@@ -4680,7 +5528,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     approvalDecision,
     autoExecutable: validationErrors.length === 0 && blockedReasons.length === 0,
     blockedReasons,
-    contract,
+    contract: finalContract,
     dirtyFiles,
     editProposal,
     editPreviewRequired,
@@ -4692,7 +5540,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     generatedAt,
     gitStatus,
     plan,
-    repo: contract.repo,
+    repo: finalContract.repo,
     rulesFiles,
     status,
     taskFile,
@@ -5396,15 +6244,15 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
     title: panel.title,
     view: panel.view,
   }));
+  const statusOrder: AgenticCodingPlanStepStatus[] = ['completed', 'ready', 'blocked', 'pending', 'skipped'];
+  const statusTone = (status: AgenticCodingPlanStepStatus): 'neutral' | 'success' | 'warning' | 'danger' => {
+    if (status === 'completed') return 'success';
+    if (status === 'ready') return 'warning';
+    if (status === 'blocked') return 'danger';
+    return 'neutral';
+  };
   const graphLegend: AgenticCodingProposalLoopCoworkWorkspace['graphLegend'] | undefined = graph
     ? (() => {
-      const statusOrder: AgenticCodingPlanStepStatus[] = ['completed', 'ready', 'blocked', 'pending', 'skipped'];
-      const statusTone = (status: AgenticCodingPlanStepStatus): 'neutral' | 'success' | 'warning' | 'danger' => {
-        if (status === 'completed') return 'success';
-        if (status === 'ready') return 'warning';
-        if (status === 'blocked') return 'danger';
-        return 'neutral';
-      };
       const typeOrder: AgenticCodingWorkflowNodeType[] = ['gate', 'analysis', 'approval', 'edit', 'verification', 'handoff'];
       return {
         ...(graph.activeNodeId ? { activeNodeId: graph.activeNodeId } : {}),
@@ -5444,6 +6292,26 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
       const maxX = Math.max(...xValues);
       const minY = Math.min(...yValues);
       const maxY = Math.max(...yValues);
+      const computePaddedBounds = (positions: Array<{ x: number; y: number }>) => {
+        if (positions.length === 0) {
+          return undefined;
+        }
+
+        const positionXValues = positions.map((position) => position.x);
+        const positionYValues = positions.map((position) => position.y);
+        const positionMinX = Math.min(...positionXValues);
+        const positionMaxX = Math.max(...positionXValues);
+        const positionMinY = Math.min(...positionYValues);
+        const positionMaxY = Math.max(...positionYValues);
+        return {
+          height: positionMaxY - positionMinY + padding * 2,
+          maxX: positionMaxX + padding,
+          maxY: positionMaxY + padding,
+          minX: positionMinX - padding,
+          minY: positionMinY - padding,
+          width: positionMaxX - positionMinX + padding * 2,
+        };
+      };
       const activeNode = graph.activeNodeId
         ? graph.nodes.find((node) => node.id === graph.activeNodeId)
         : undefined;
@@ -5455,10 +6323,808 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
         )
         .map((node) => node.id);
       const activeIndex = activeNode ? focusNodeIds.indexOf(activeNode.id) : -1;
+      const nodeById = new Map(graph.nodes.map((node) => [node.id, node]));
+      const nodeIdSet = new Set(nodeById.keys());
+      const edgeBySource = new Map(graph.edges.map((edge) => [edge.source, edge]));
+      const edgeByTarget = new Map(graph.edges.map((edge) => [edge.target, edge]));
+      const edgeByPair = new Map(graph.edges.map((edge) => [`${edge.source}\u0000${edge.target}`, edge]));
+      const statusBounds = statusOrder.flatMap((status) => {
+        const nodes = focusNodeIds
+          .map((nodeId) => nodeById.get(nodeId))
+          .filter((node): node is (typeof graph.nodes)[number] => node !== undefined && node.status === status);
+        const bounds = computePaddedBounds(nodes.map((node) => node.position));
+
+        return bounds
+          ? [{
+            bounds,
+            count: nodes.length,
+            id: status,
+            label: status,
+            nodeIds: nodes.map((node) => node.id),
+            tone: statusTone(status),
+          }]
+          : [];
+      });
+      const statusBoundsById = new Map(statusBounds.map((statusBound) => [statusBound.id, statusBound]));
+      const computeBoundsCenter = (bounds: {
+        maxX: number;
+        maxY: number;
+        minX: number;
+        minY: number;
+      }) => ({
+        x: Math.round((bounds.minX + bounds.maxX) / 2),
+        y: Math.round((bounds.minY + bounds.maxY) / 2),
+      });
+      const statusTransitionById = new Map<string, {
+        count: number;
+        edgeIds: string[];
+        from: AgenticCodingPlanStepStatus;
+        fromNodeIds: string[];
+        fromTone: 'neutral' | 'success' | 'warning' | 'danger';
+        id: string;
+        isCrossStatus: boolean;
+        label: string;
+        to: AgenticCodingPlanStepStatus;
+        toNodeIds: string[];
+        toTone: 'neutral' | 'success' | 'warning' | 'danger';
+      }>();
+      const pushUnique = (items: string[], item: string) => {
+        if (!items.includes(item)) {
+          items.push(item);
+        }
+      };
+      for (const edge of graph.edges) {
+        const sourceNode = nodeById.get(edge.source);
+        const targetNode = nodeById.get(edge.target);
+        if (!sourceNode || !targetNode) {
+          continue;
+        }
+
+        const id = `${sourceNode.status}->${targetNode.status}`;
+        const existingTransition = statusTransitionById.get(id);
+        const transition = existingTransition ?? {
+          count: 0,
+          edgeIds: [],
+          from: sourceNode.status,
+          fromNodeIds: [],
+          fromTone: statusTone(sourceNode.status),
+          id,
+          isCrossStatus: sourceNode.status !== targetNode.status,
+          label: `${sourceNode.status} to ${targetNode.status}`,
+          to: targetNode.status,
+          toNodeIds: [],
+          toTone: statusTone(targetNode.status),
+        };
+
+        transition.count += 1;
+        transition.edgeIds.push(edge.id);
+        pushUnique(transition.fromNodeIds, edge.source);
+        pushUnique(transition.toNodeIds, edge.target);
+        statusTransitionById.set(id, transition);
+      }
+      const statusTransitions = [...statusTransitionById.values()];
+      const statusTransitionBridges = statusTransitions.flatMap((transition) => {
+        if (!transition.isCrossStatus) {
+          return [];
+        }
+
+        const fromStatusBounds = statusBoundsById.get(transition.from);
+        const toStatusBounds = statusBoundsById.get(transition.to);
+        if (!fromStatusBounds || !toStatusBounds) {
+          return [];
+        }
+
+        return [{
+          count: transition.count,
+          edgeIds: transition.edgeIds,
+          from: transition.from,
+          fromBounds: fromStatusBounds.bounds,
+          fromCenter: computeBoundsCenter(fromStatusBounds.bounds),
+          fromTone: transition.fromTone,
+          id: transition.id,
+          isCrossStatus: true as const,
+          label: transition.label,
+          to: transition.to,
+          toBounds: toStatusBounds.bounds,
+          toCenter: computeBoundsCenter(toStatusBounds.bounds),
+          toTone: transition.toTone,
+        }];
+      });
+      const uniqueStatusIds = (ids: AgenticCodingPlanStepStatus[]) => [...new Set(ids)];
+      const statusTransitionBridgeSummary = statusTransitionBridges.length > 0
+        ? {
+          allBridgesCrossStatus: statusTransitionBridges.every((bridge) => bridge.isCrossStatus),
+          bridgeCount: statusTransitionBridges.length,
+          bridgeEdgeCount: statusTransitionBridges.reduce((count, bridge) => count + bridge.count, 0),
+          bridgeIds: statusTransitionBridges.map((bridge) => bridge.id),
+          fromStatusIds: uniqueStatusIds(statusTransitionBridges.map((bridge) => bridge.from)),
+          toStatusIds: uniqueStatusIds(statusTransitionBridges.map((bridge) => bridge.to)),
+          tonePairs: statusTransitionBridges.map((bridge) => ({
+            fromTone: bridge.fromTone,
+            id: bridge.id,
+            toTone: bridge.toTone,
+          })),
+        }
+        : undefined;
+      const statusTransitionBridgeViewportBounds = computePaddedBounds(statusTransitionBridges.flatMap((bridge) => [
+        bridge.fromCenter,
+        bridge.toCenter,
+      ]));
+      const statusTransitionBridgeViewport = statusTransitionBridgeViewportBounds
+        ? {
+          bounds: statusTransitionBridgeViewportBounds,
+          bridgeCount: statusTransitionBridges.length,
+          bridgeEdgeCount: statusTransitionBridges.reduce((count, bridge) => count + bridge.count, 0),
+          bridgeIds: statusTransitionBridges.map((bridge) => bridge.id),
+          center: computeBoundsCenter(statusTransitionBridgeViewportBounds),
+          padding,
+        }
+        : undefined;
+      const statusTransitionSummary = statusTransitions.length > 0
+        ? (() => {
+          const crossStatusTransitions = statusTransitions.filter((transition) => transition.isCrossStatus);
+          const sameStatusTransitions = statusTransitions.filter((transition) => !transition.isCrossStatus);
+          const trackedEdgeCount = statusTransitions.reduce((count, transition) => count + transition.count, 0);
+
+          return {
+            crossStatusEdgeCount: crossStatusTransitions.reduce((count, transition) => count + transition.count, 0),
+            crossStatusTransitionCount: crossStatusTransitions.length,
+            crossStatusTransitionIds: crossStatusTransitions.map((transition) => transition.id),
+            sameStatusEdgeCount: sameStatusTransitions.reduce((count, transition) => count + transition.count, 0),
+            sameStatusTransitionCount: sameStatusTransitions.length,
+            sameStatusTransitionIds: sameStatusTransitions.map((transition) => transition.id),
+            totalEdgeCount: graph.edgeCount,
+            trackedEdgeCount,
+            transitionCount: statusTransitions.length,
+            untrackedEdgeCount: Math.max(graph.edgeCount - trackedEdgeCount, 0),
+          };
+        })()
+        : undefined;
+      const buildFocusEntry = (index: number) => {
+        const nodeId = focusNodeIds[index];
+        const node = nodeId ? nodeById.get(nodeId) : undefined;
+        return node
+          ? {
+            id: node.id,
+            index,
+            position: node.position,
+          }
+          : undefined;
+      };
+      const currentFocusEntry = activeIndex >= 0 ? buildFocusEntry(activeIndex) : undefined;
+      const nextFocusEntry = activeIndex >= 0 ? buildFocusEntry(activeIndex + 1) : undefined;
+      const previousFocusEntry = activeIndex >= 0 ? buildFocusEntry(activeIndex - 1) : undefined;
+      const focusWindow = currentFocusEntry
+        ? {
+          current: currentFocusEntry,
+          hasNext: activeIndex < focusNodeIds.length - 1,
+          hasPrevious: activeIndex > 0,
+          ...(nextFocusEntry ? { next: nextFocusEntry } : {}),
+          ...(previousFocusEntry ? { previous: previousFocusEntry } : {}),
+        }
+        : undefined;
+      const focusWindowEntries = focusWindow
+        ? [
+          ...(focusWindow.previous ? [focusWindow.previous] : []),
+          focusWindow.current,
+          ...(focusWindow.next ? [focusWindow.next] : []),
+        ]
+        : [];
+      const focusWindowRange = focusWindowEntries.length > 0
+        ? {
+          containsEnd: focusWindowEntries[focusWindowEntries.length - 1].index === focusNodeIds.length - 1,
+          containsStart: focusWindowEntries[0].index === 0,
+          endIndex: focusWindowEntries[focusWindowEntries.length - 1].index,
+          nodeIds: focusWindowEntries.map((entry) => entry.id),
+          size: focusWindowEntries.length,
+          startIndex: focusWindowEntries[0].index,
+          totalNodeCount: focusNodeIds.length,
+        }
+        : undefined;
+      const focusWindowBounds = focusWindow
+        ? computePaddedBounds(focusWindowEntries.map((entry) => entry.position))
+        : undefined;
+      const focusWindowSegments: NonNullable<
+        AgenticCodingProposalLoopCoworkWorkspace['graphViewport']
+      >['focusWindowSegments'] = [];
+      for (let index = 1; index < focusWindowEntries.length; index += 1) {
+        const sourceEntry = focusWindowEntries[index - 1];
+        const targetEntry = focusWindowEntries[index];
+        const edge = edgeByPair.get(`${sourceEntry.id}\u0000${targetEntry.id}`);
+        if (edge) {
+          focusWindowSegments.push({
+            edgeId: edge.id,
+            source: edge.source,
+            sourcePosition: sourceEntry.position,
+            target: edge.target,
+            targetPosition: targetEntry.position,
+          });
+        }
+      }
+      const focusWindowStatuses = statusOrder
+        .map((status) => ({
+          count: focusWindowEntries.filter((entry) => nodeById.get(entry.id)?.status === status).length,
+          id: status,
+          label: status,
+          tone: statusTone(status),
+        }))
+        .filter((entry) => entry.count > 0);
+      const focusWindowSummary = focusWindow && focusWindowRange && activeNode
+        ? {
+          currentIndex: focusWindow.current.index,
+          currentNodeId: focusWindow.current.id,
+          currentStatus: activeNode.status,
+          currentTone: statusTone(activeNode.status),
+          endIndex: focusWindowRange.endIndex,
+          hasNext: focusWindow.hasNext,
+          hasPrevious: focusWindow.hasPrevious,
+          nodeIds: focusWindowRange.nodeIds,
+          segmentCount: focusWindowSegments.length,
+          startIndex: focusWindowRange.startIndex,
+          statusIds: focusWindowStatuses.map((entry) => entry.id),
+          totalNodeCount: focusWindowRange.totalNodeCount,
+          windowNodeCount: focusWindowRange.size,
+        }
+        : undefined;
+      const buildFocusWindowControl = (
+        id: 'previous' | 'current' | 'next',
+        label: string,
+        actionType: 'focus_previous' | 'focus_current' | 'focus_next',
+        keyHint: 'ArrowUp' | 'Enter' | 'ArrowDown',
+        entry: { id: string; index: number; position: { x: number; y: number } } | undefined,
+        isActive: boolean,
+      ) => {
+        const node = entry ? nodeById.get(entry.id) : undefined;
+        let disabledReason: 'no_previous_focus' | 'no_next_focus' | undefined;
+        if (!entry && id === 'previous') {
+          disabledReason = 'no_previous_focus';
+        } else if (!entry && id === 'next') {
+          disabledReason = 'no_next_focus';
+        }
+
+        return {
+          actionType,
+          canExecute: false as const,
+          ...(disabledReason ? { disabledReason } : {}),
+          enabled: Boolean(entry),
+          executionMode: 'display_only' as const,
+          id,
+          isActive,
+          keyHint,
+          label,
+          safetyNote: 'Focus controls are display metadata only.',
+          ...(entry ? {
+            targetIndex: entry.index,
+            targetNodeId: entry.id,
+            targetPosition: entry.position,
+          } : {}),
+          ...(node ? { targetStatus: node.status } : {}),
+          tone: node ? statusTone(node.status) : 'neutral',
+        };
+      };
+      const focusWindowControls = focusWindow
+        ? [
+          buildFocusWindowControl(
+            'previous',
+            'Previous focus',
+            'focus_previous',
+            'ArrowUp',
+            focusWindow.previous,
+            false,
+          ),
+          buildFocusWindowControl(
+            'current',
+            'Current focus',
+            'focus_current',
+            'Enter',
+            focusWindow.current,
+            true,
+          ),
+          buildFocusWindowControl(
+            'next',
+            'Next focus',
+            'focus_next',
+            'ArrowDown',
+            focusWindow.next,
+            false,
+          ),
+        ]
+        : [];
+      const activeFocusWindowControl = focusWindowControls.find((control) => control.isActive);
+      const focusWindowControlSummary = focusWindowControls.length > 0
+        ? {
+          ...(activeFocusWindowControl ? { activeControlId: activeFocusWindowControl.id } : {}),
+          controlCount: focusWindowControls.length,
+          disabledControlIds: focusWindowControls
+            .filter((control) => !control.enabled)
+            .map((control) => control.id),
+          enabledControlIds: focusWindowControls
+            .filter((control) => control.enabled)
+            .map((control) => control.id),
+          keyHints: focusWindowControls.map((control) => ({
+            actionType: control.actionType,
+            id: control.id,
+            keyHint: control.keyHint,
+          })),
+        }
+        : undefined;
+      const focusWindowControlSafety = focusWindowControls.length > 0
+        ? {
+          allControlsDisplayOnly: focusWindowControls.every((control) => control.executionMode === 'display_only'),
+          canExecuteAny: false as const,
+          controlCount: focusWindowControls.length,
+          displayOnlyControlCount: focusWindowControls.filter((control) => control.executionMode === 'display_only').length,
+          executableControlCount: 0,
+          executionMode: 'display_only' as const,
+          safetyNote: 'Focus controls are display metadata only.',
+        }
+        : undefined;
+      const activeTrail = activeNode
+        ? (() => {
+          const edgeIds: string[] = [];
+          const nodeIds: string[] = [];
+          const segments: NonNullable<
+            AgenticCodingProposalLoopCoworkWorkspace['graphViewport']
+          >['activeTrailSegments'] = [];
+          const visitedNodeIds = new Set<string>();
+          let currentNodeId = activeNode.id;
+
+          while (!visitedNodeIds.has(currentNodeId)) {
+            visitedNodeIds.add(currentNodeId);
+            nodeIds.unshift(currentNodeId);
+
+            const incomingEdge = edgeByTarget.get(currentNodeId);
+            if (!incomingEdge || !nodeIdSet.has(incomingEdge.source)) {
+              break;
+            }
+
+            const sourceNode = nodeById.get(incomingEdge.source);
+            const targetNode = nodeById.get(incomingEdge.target);
+            if (!sourceNode || !targetNode) {
+              break;
+            }
+
+            edgeIds.unshift(incomingEdge.id);
+            segments.unshift({
+              edgeId: incomingEdge.id,
+              source: incomingEdge.source,
+              sourcePosition: sourceNode.position,
+              target: incomingEdge.target,
+              targetPosition: targetNode.position,
+            });
+            currentNodeId = incomingEdge.source;
+          }
+
+          return { edgeIds, nodeIds, segments };
+        })()
+        : { edgeIds: [], nodeIds: [], segments: [] };
+      const upcomingTrail = activeNode
+        ? (() => {
+          const edgeIds: string[] = [];
+          const nodeIds: string[] = [];
+          const segments: NonNullable<
+            AgenticCodingProposalLoopCoworkWorkspace['graphViewport']
+          >['upcomingTrailSegments'] = [];
+          const visitedNodeIds = new Set([activeNode.id]);
+          let currentNodeId = activeNode.id;
+
+          while (true) {
+            const outgoingEdge = edgeBySource.get(currentNodeId);
+            if (!outgoingEdge || !nodeIdSet.has(outgoingEdge.target) || visitedNodeIds.has(outgoingEdge.target)) {
+              break;
+            }
+
+            const sourceNode = nodeById.get(outgoingEdge.source);
+            const targetNode = nodeById.get(outgoingEdge.target);
+            if (!sourceNode || !targetNode) {
+              break;
+            }
+
+            edgeIds.push(outgoingEdge.id);
+            nodeIds.push(outgoingEdge.target);
+            segments.push({
+              edgeId: outgoingEdge.id,
+              source: outgoingEdge.source,
+              sourcePosition: sourceNode.position,
+              target: outgoingEdge.target,
+              targetPosition: targetNode.position,
+            });
+            visitedNodeIds.add(outgoingEdge.target);
+            currentNodeId = outgoingEdge.target;
+          }
+
+          return { edgeIds, nodeIds, segments };
+        })()
+        : { edgeIds: [], nodeIds: [], segments: [] };
+      const activeTrailPositions = activeTrail.nodeIds
+        .map((nodeId) => nodeById.get(nodeId)?.position)
+        .filter((position): position is { x: number; y: number } => Boolean(position));
+      const activeTrailBounds = computePaddedBounds(activeTrailPositions);
+      const upcomingTrailPositions = [
+        ...(activeNode ? [activeNode.position] : []),
+        ...upcomingTrail.nodeIds
+          .map((nodeId) => nodeById.get(nodeId)?.position)
+          .filter((position): position is { x: number; y: number } => Boolean(position)),
+      ];
+      const upcomingTrailBounds = computePaddedBounds(upcomingTrailPositions);
+      const activeTrailProgress = activeIndex >= 0
+        ? {
+          activeIndex,
+          activeOrdinal: activeIndex + 1,
+          ratio: Number(((activeIndex + 1) / focusNodeIds.length).toFixed(3)),
+          totalEdgeCount: graph.edgeCount,
+          totalNodeCount: focusNodeIds.length,
+          trailEdgeCount: activeTrail.edgeIds.length,
+          trailNodeCount: activeTrail.nodeIds.length,
+        }
+        : undefined;
+      const upcomingTrailProgress = activeIndex >= 0
+        ? {
+          remainingEdgeCount: upcomingTrail.edgeIds.length,
+          remainingNodeCount: upcomingTrail.nodeIds.length,
+          remainingRatio: Number((upcomingTrail.nodeIds.length / focusNodeIds.length).toFixed(3)),
+          totalEdgeCount: graph.edgeCount,
+          totalNodeCount: focusNodeIds.length,
+        }
+        : undefined;
+      const trailProgressSummary = activeNode && activeTrailProgress && upcomingTrailProgress
+        ? {
+          activeNodeId: activeNode.id,
+          isAtEnd: upcomingTrail.nodeIds.length === 0,
+          reachedEdgeCount: activeTrail.edgeIds.length,
+          reachedNodeCount: activeTrail.nodeIds.length,
+          reachedRatio: activeTrailProgress.ratio,
+          remainingEdgeCount: upcomingTrail.edgeIds.length,
+          remainingNodeCount: upcomingTrail.nodeIds.length,
+          remainingRatio: upcomingTrailProgress.remainingRatio,
+          totalEdgeCount: graph.edgeCount,
+          totalNodeCount: focusNodeIds.length,
+        }
+        : undefined;
+      const renderLayers: NonNullable<AgenticCodingProposalLoopCoworkWorkspace['graphViewport']>['renderLayers'] = [
+        {
+          id: 'status-regions',
+          itemCount: statusBounds.length,
+          label: 'Status regions',
+          mode: 'passive',
+          order: 10,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: statusBounds.length > 0,
+        },
+        {
+          id: 'status-bridges',
+          itemCount: statusTransitionBridges.length,
+          label: 'Status bridges',
+          mode: 'passive',
+          order: 20,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: statusTransitionBridges.length > 0,
+        },
+        {
+          id: 'active-trail',
+          itemCount: activeTrail.segments.length,
+          label: 'Active trail',
+          mode: 'passive',
+          order: 30,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: activeTrail.segments.length > 0,
+        },
+        {
+          id: 'upcoming-trail',
+          itemCount: upcomingTrail.segments.length,
+          label: 'Upcoming trail',
+          mode: 'passive',
+          order: 40,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: upcomingTrail.segments.length > 0,
+        },
+        {
+          id: 'focus-window',
+          itemCount: focusWindowSegments.length,
+          label: 'Focus window',
+          mode: 'passive',
+          order: 50,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: focusWindowSegments.length > 0,
+        },
+        {
+          id: 'focus-controls',
+          itemCount: focusWindowControls.length,
+          label: 'Focus controls',
+          mode: 'passive',
+          order: 60,
+          safetyNote: 'Render layer is display metadata only.',
+          visible: focusWindowControls.length > 0,
+        },
+      ];
+      const visibleRenderLayers = renderLayers.filter((layer) => layer.visible);
+      const renderLayerSummary = renderLayers.length > 0
+        ? {
+          layerCount: renderLayers.length,
+          layerIds: renderLayers.map((layer) => layer.id),
+          mode: 'passive' as const,
+          safetyNote: 'Render layers are display metadata only.',
+          totalItemCount: renderLayers.reduce((count, layer) => count + layer.itemCount, 0),
+          visibleLayerCount: visibleRenderLayers.length,
+          visibleLayerIds: visibleRenderLayers.map((layer) => layer.id),
+        }
+        : undefined;
+      const renderLayerSafety = renderLayers.length > 0
+        ? {
+          allLayersPassive: renderLayers.every((layer) => layer.mode === 'passive'),
+          canExecuteAny: false as const,
+          executableLayerCount: 0,
+          layerCount: renderLayers.length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layers are display metadata only.',
+        }
+        : undefined;
+      type GraphViewport = NonNullable<AgenticCodingProposalLoopCoworkWorkspace['graphViewport']>;
+      type RenderLayerId = GraphViewport['renderLayers'][number]['id'];
+      type RenderLayerGroupId = GraphViewport['renderLayerGroups'][number]['id'];
+      type RenderLayerGroupBadgeTone = GraphViewport['renderLayerGroupBadges'][number]['tone'];
+      const buildRenderLayerGroup = (
+        id: RenderLayerGroupId,
+        label: string,
+        order: number,
+        layerIds: RenderLayerId[],
+      ): GraphViewport['renderLayerGroups'][number] => {
+        const groupLayers = renderLayers.filter((layer) => layerIds.includes(layer.id));
+        const visibleGroupLayers = groupLayers.filter((layer) => layer.visible);
+
+        return {
+          id,
+          label,
+          layerCount: groupLayers.length,
+          layerIds,
+          mode: 'passive',
+          order,
+          safetyNote: 'Render layer group is display metadata only.',
+          totalItemCount: groupLayers.reduce((count, layer) => count + layer.itemCount, 0),
+          visibleLayerCount: visibleGroupLayers.length,
+          visibleLayerIds: visibleGroupLayers.map((layer) => layer.id),
+        };
+      };
+      const renderLayerGroupBadgeTone = (id: RenderLayerGroupId): RenderLayerGroupBadgeTone => {
+        if (id === 'regions') {
+          return 'success';
+        }
+
+        if (id === 'paths') {
+          return 'warning';
+        }
+
+        return 'neutral';
+      };
+      const renderLayerGroupBadgeToneLabel = (tone: RenderLayerGroupBadgeTone): string => {
+        if (tone === 'success') {
+          return 'Success';
+        }
+
+        if (tone === 'warning') {
+          return 'Warning';
+        }
+
+        if (tone === 'danger') {
+          return 'Danger';
+        }
+
+        return 'Neutral';
+      };
+      const renderLayerGroups: GraphViewport['renderLayerGroups'] = [
+        buildRenderLayerGroup('regions', 'Regions', 10, ['status-regions', 'status-bridges']),
+        buildRenderLayerGroup('paths', 'Paths', 20, ['active-trail', 'upcoming-trail']),
+        buildRenderLayerGroup('focus', 'Focus', 30, ['focus-window', 'focus-controls']),
+      ];
+      const visibleRenderLayerGroups = renderLayerGroups.filter((group) => group.visibleLayerCount > 0);
+      const renderLayerGroupSummary = renderLayerGroups.length > 0
+        ? {
+          groupCount: renderLayerGroups.length,
+          groupIds: renderLayerGroups.map((group) => group.id),
+          mode: 'passive' as const,
+          safetyNote: 'Render layer groups are display metadata only.',
+          totalItemCount: renderLayerGroups.reduce((count, group) => count + group.totalItemCount, 0),
+          visibleGroupCount: visibleRenderLayerGroups.length,
+          visibleGroupIds: visibleRenderLayerGroups.map((group) => group.id),
+        }
+        : undefined;
+      const renderLayerGroupSafety = renderLayerGroups.length > 0
+        ? {
+          allGroupsPassive: renderLayerGroups.every((group) => group.mode === 'passive'),
+          canExecuteAny: false as const,
+          executableGroupCount: 0,
+          groupCount: renderLayerGroups.length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer groups are display metadata only.',
+        }
+        : undefined;
+      const renderLayerGroupBadges: GraphViewport['renderLayerGroupBadges'] = renderLayerGroups.map((group) => {
+        const countLabel = `${group.totalItemCount} item${group.totalItemCount === 1 ? '' : 's'}`;
+        const tone = renderLayerGroupBadgeTone(group.id);
+
+        return {
+          accessibilityLabel: `${group.label} badge: ${countLabel}, ${tone} tone.`,
+          countLabel,
+          groupId: group.id,
+          id: `${group.id}-badge`,
+          itemCount: group.totalItemCount,
+          label: group.label,
+          layerCount: group.layerCount,
+          mode: 'passive',
+          safetyNote: 'Render layer group badge is display metadata only.',
+          tone,
+          visible: group.visibleLayerCount > 0,
+        };
+      });
+      const visibleRenderLayerGroupBadges = renderLayerGroupBadges.filter((badge) => badge.visible);
+      const renderLayerGroupBadgeSummary = renderLayerGroupBadges.length > 0
+        ? {
+          badgeCount: renderLayerGroupBadges.length,
+          badgeIds: renderLayerGroupBadges.map((badge) => badge.id),
+          countLabels: renderLayerGroupBadges.map((badge) => badge.countLabel),
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badges are display metadata only.',
+          totalItemCount: renderLayerGroupBadges.reduce((count, badge) => count + badge.itemCount, 0),
+          visibleBadgeCount: visibleRenderLayerGroupBadges.length,
+          visibleBadgeIds: visibleRenderLayerGroupBadges.map((badge) => badge.id),
+        }
+        : undefined;
+      const renderLayerGroupBadgeAccessibilitySummary = renderLayerGroupBadges.length > 0
+        ? {
+          accessibilityLabels: renderLayerGroupBadges.map((badge) => badge.accessibilityLabel),
+          badgeCount: renderLayerGroupBadges.length,
+          badgeIds: renderLayerGroupBadges.map((badge) => badge.id),
+          labelCount: renderLayerGroupBadges.length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badge accessibility labels are display metadata only.',
+        }
+        : undefined;
+      const renderLayerGroupBadgeAccessibilityLabels = renderLayerGroupBadges.map((badge) => badge.accessibilityLabel);
+      const renderLayerGroupBadgeDuplicateAccessibilityLabels = Array.from(new Set(
+        renderLayerGroupBadgeAccessibilityLabels.filter((label, index, labels) => labels.indexOf(label) !== index),
+      ));
+      const renderLayerGroupBadgeAccessibilityAudit = renderLayerGroupBadges.length > 0
+        ? {
+          allLabelsPresent: renderLayerGroupBadges.every((badge) => badge.accessibilityLabel.length > 0),
+          badgeCount: renderLayerGroupBadges.length,
+          duplicateLabelCount: renderLayerGroupBadgeDuplicateAccessibilityLabels.length,
+          duplicateLabels: renderLayerGroupBadgeDuplicateAccessibilityLabels,
+          labelCount: renderLayerGroupBadges.filter((badge) => badge.accessibilityLabel.length > 0).length,
+          missingLabelCount: renderLayerGroupBadges.filter((badge) => badge.accessibilityLabel.length === 0).length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badge accessibility audit is display metadata only.',
+        }
+        : undefined;
+      const renderLayerGroupBadgeAccessibilityIsHealthy = renderLayerGroupBadgeAccessibilityAudit
+        ? renderLayerGroupBadgeAccessibilityAudit.allLabelsPresent
+          && renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount === 0
+        : false;
+      const renderLayerGroupBadgeAccessibilityHealth = renderLayerGroupBadgeAccessibilityAudit
+        ? {
+          badgeCount: renderLayerGroupBadgeAccessibilityAudit.badgeCount,
+          duplicateLabelCount: renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount,
+          labelCount: renderLayerGroupBadgeAccessibilityAudit.labelCount,
+          missingLabelCount: renderLayerGroupBadgeAccessibilityAudit.missingLabelCount,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badge accessibility health is display metadata only.',
+          status: renderLayerGroupBadgeAccessibilityIsHealthy ? 'ready' as const : 'needs_attention' as const,
+          summary: renderLayerGroupBadgeAccessibilityIsHealthy
+            ? 'All render layer group badge accessibility labels are present and unique.'
+            : 'Render layer group badge accessibility labels need attention.',
+          tone: renderLayerGroupBadgeAccessibilityIsHealthy ? 'success' as const : 'warning' as const,
+        }
+        : undefined;
+      const renderLayerGroupBadgeAccessibilityChecklist = renderLayerGroupBadgeAccessibilityAudit
+        ? [
+          {
+            badgeCount: renderLayerGroupBadgeAccessibilityAudit.badgeCount,
+            id: 'labels-present' as const,
+            issueCount: renderLayerGroupBadgeAccessibilityAudit.missingLabelCount,
+            label: 'Labels present',
+            mode: 'passive' as const,
+            safetyNote: 'Render layer group badge accessibility checklist is display metadata only.',
+            status: renderLayerGroupBadgeAccessibilityAudit.allLabelsPresent ? 'ready' as const : 'needs_attention' as const,
+            summary: renderLayerGroupBadgeAccessibilityAudit.allLabelsPresent
+              ? 'All render layer group badge accessibility labels are present.'
+              : 'Some render layer group badge accessibility labels are missing.',
+            tone: renderLayerGroupBadgeAccessibilityAudit.allLabelsPresent ? 'success' as const : 'warning' as const,
+          },
+          {
+            badgeCount: renderLayerGroupBadgeAccessibilityAudit.badgeCount,
+            id: 'labels-unique' as const,
+            issueCount: renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount,
+            label: 'Labels unique',
+            mode: 'passive' as const,
+            safetyNote: 'Render layer group badge accessibility checklist is display metadata only.',
+            status: renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount === 0 ? 'ready' as const : 'needs_attention' as const,
+            summary: renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount === 0
+              ? 'All render layer group badge accessibility labels are unique.'
+              : 'Some render layer group badge accessibility labels are duplicated.',
+            tone: renderLayerGroupBadgeAccessibilityAudit.duplicateLabelCount === 0 ? 'success' as const : 'warning' as const,
+          },
+        ]
+        : undefined;
+      const renderLayerGroupBadgeAccessibilityChecklistSummary = renderLayerGroupBadgeAccessibilityChecklist
+        ? {
+          badgeCount: renderLayerGroupBadgeAccessibilityChecklist[0]?.badgeCount ?? 0,
+          checkCount: renderLayerGroupBadgeAccessibilityChecklist.length,
+          checkIds: renderLayerGroupBadgeAccessibilityChecklist.map((check) => check.id),
+          issueCount: renderLayerGroupBadgeAccessibilityChecklist.reduce((count, check) => count + check.issueCount, 0),
+          mode: 'passive' as const,
+          needsAttentionCheckCount: renderLayerGroupBadgeAccessibilityChecklist.filter((check) => check.status === 'needs_attention').length,
+          readyCheckCount: renderLayerGroupBadgeAccessibilityChecklist.filter((check) => check.status === 'ready').length,
+          safetyNote: 'Render layer group badge accessibility checklist summary is display metadata only.',
+          status: renderLayerGroupBadgeAccessibilityChecklist.every((check) => check.status === 'ready')
+            ? 'ready' as const
+            : 'needs_attention' as const,
+          tone: renderLayerGroupBadgeAccessibilityChecklist.every((check) => check.status === 'ready')
+            ? 'success' as const
+            : 'warning' as const,
+        }
+        : undefined;
+      const renderLayerGroupBadgeSafety = renderLayerGroupBadges.length > 0
+        ? {
+          allBadgesPassive: renderLayerGroupBadges.every((badge) => badge.mode === 'passive'),
+          badgeCount: renderLayerGroupBadges.length,
+          canExecuteAny: false as const,
+          executableBadgeCount: 0,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badges are display metadata only.',
+        }
+        : undefined;
+      const renderLayerGroupBadgeToneSummary = renderLayerGroupBadges.length > 0
+        ? {
+          badgeCount: renderLayerGroupBadges.length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badge tones are display metadata only.',
+          toneIds: renderLayerGroupBadges.map((badge) => badge.tone),
+          tonePairs: renderLayerGroupBadges.map((badge) => ({
+            badgeId: badge.id,
+            tone: badge.tone,
+          })),
+          uniqueToneCount: new Set(renderLayerGroupBadges.map((badge) => badge.tone)).size,
+          uniqueToneIds: Array.from(new Set(renderLayerGroupBadges.map((badge) => badge.tone))),
+        }
+        : undefined;
+      const renderLayerGroupBadgeToneLegend: GraphViewport['renderLayerGroupBadgeToneLegend'] = renderLayerGroupBadgeToneSummary?.uniqueToneIds.map((tone) => {
+        const toneBadges = renderLayerGroupBadges.filter((badge) => badge.tone === tone);
+
+        return {
+          badgeCount: toneBadges.length,
+          badgeIds: toneBadges.map((badge) => badge.id),
+          id: `${tone}-badge-tone`,
+          label: renderLayerGroupBadgeToneLabel(tone),
+          mode: 'passive',
+          safetyNote: 'Render layer group badge tone legend is display metadata only.',
+          tone,
+        };
+      });
+      const renderLayerGroupBadgeToneLegendSummary = renderLayerGroupBadgeToneLegend
+        ? {
+          badgeCount: renderLayerGroupBadgeToneLegend.reduce((count, item) => count + item.badgeCount, 0),
+          labelIds: renderLayerGroupBadgeToneLegend.map((item) => item.id),
+          labels: renderLayerGroupBadgeToneLegend.map((item) => item.label),
+          legendCount: renderLayerGroupBadgeToneLegend.length,
+          mode: 'passive' as const,
+          safetyNote: 'Render layer group badge tone legend summary is display metadata only.',
+          toneIds: renderLayerGroupBadgeToneLegend.map((item) => item.tone),
+        }
+        : undefined;
       return {
         ...(graph.activeNodeId ? { activeNodeId: graph.activeNodeId } : {}),
         ...(activeIndex >= 0 ? { activeIndex } : {}),
         ...(activeNode ? { activePosition: activeNode.position } : {}),
+        ...(activeTrailBounds ? { activeTrailBounds } : {}),
+        activeTrailEdgeIds: activeTrail.edgeIds,
+        activeTrailNodeIds: activeTrail.nodeIds,
+        ...(activeTrailProgress ? { activeTrailProgress } : {}),
+        activeTrailSegments: activeTrail.segments,
+        ...(trailProgressSummary ? { trailProgressSummary } : {}),
+        upcomingTrailEdgeIds: upcomingTrail.edgeIds,
+        upcomingTrailNodeIds: upcomingTrail.nodeIds,
+        ...(upcomingTrailBounds ? { upcomingTrailBounds } : {}),
+        ...(upcomingTrailProgress ? { upcomingTrailProgress } : {}),
+        upcomingTrailSegments: upcomingTrail.segments,
         bounds: {
           height: maxY - minY + padding * 2,
           maxX: maxX + padding,
@@ -5472,6 +7138,38 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
           y: Math.round((minY + maxY) / 2),
         },
         edgeCount: graph.edgeCount,
+        statusBounds,
+        statusTransitionBridges,
+        ...(statusTransitionBridgeSummary ? { statusTransitionBridgeSummary } : {}),
+        ...(statusTransitionBridgeViewport ? { statusTransitionBridgeViewport } : {}),
+        statusTransitions,
+        ...(statusTransitionSummary ? { statusTransitionSummary } : {}),
+        renderLayers,
+        ...(renderLayerSummary ? { renderLayerSummary } : {}),
+        ...(renderLayerSafety ? { renderLayerSafety } : {}),
+        renderLayerGroups,
+        ...(renderLayerGroupSummary ? { renderLayerGroupSummary } : {}),
+        ...(renderLayerGroupSafety ? { renderLayerGroupSafety } : {}),
+        renderLayerGroupBadges,
+        ...(renderLayerGroupBadgeSummary ? { renderLayerGroupBadgeSummary } : {}),
+        ...(renderLayerGroupBadgeAccessibilitySummary ? { renderLayerGroupBadgeAccessibilitySummary } : {}),
+        ...(renderLayerGroupBadgeAccessibilityAudit ? { renderLayerGroupBadgeAccessibilityAudit } : {}),
+        ...(renderLayerGroupBadgeAccessibilityHealth ? { renderLayerGroupBadgeAccessibilityHealth } : {}),
+        ...(renderLayerGroupBadgeAccessibilityChecklist ? { renderLayerGroupBadgeAccessibilityChecklist } : {}),
+        ...(renderLayerGroupBadgeAccessibilityChecklistSummary ? { renderLayerGroupBadgeAccessibilityChecklistSummary } : {}),
+        ...(renderLayerGroupBadgeSafety ? { renderLayerGroupBadgeSafety } : {}),
+        ...(renderLayerGroupBadgeToneSummary ? { renderLayerGroupBadgeToneSummary } : {}),
+        ...(renderLayerGroupBadgeToneLegend ? { renderLayerGroupBadgeToneLegend } : {}),
+        ...(renderLayerGroupBadgeToneLegendSummary ? { renderLayerGroupBadgeToneLegendSummary } : {}),
+        ...(focusWindowBounds ? { focusWindowBounds } : {}),
+        ...(focusWindowRange ? { focusWindowRange } : {}),
+        focusWindowSegments,
+        focusWindowStatuses,
+        ...(focusWindowSummary ? { focusWindowSummary } : {}),
+        focusWindowControls,
+        ...(focusWindowControlSummary ? { focusWindowControlSummary } : {}),
+        ...(focusWindowControlSafety ? { focusWindowControlSafety } : {}),
+        ...(focusWindow ? { focusWindow } : {}),
         focusNodeIds,
         mode: 'passive',
         nodeCount: graph.nodeCount,
@@ -5939,6 +7637,105 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
     summary: operatorBrief.body,
     title: operatorBrief.headline,
   };
+  const hermesProfile = buildHermesAgentProfile('balanced');
+  const hermesToolset = hermesProfile.toolsets.find((toolset) => toolset.profile === hermesProfile.defaultDispatchProfile)
+    ?? hermesProfile.toolsets[0];
+  const harness: AgenticCodingProposalLoopCoworkWorkspace['harness'] = {
+    activeState: {
+      ...(openPanelId ? { activePanelId: openPanelId } : {}),
+      ...(queue?.activeStepId ? { activeStepId: queue.activeStepId } : {}),
+      ...(approval?.state ? { approvalState: approval.state } : {}),
+      ...(typeof queue?.canRunCommand === 'boolean' ? { canRunCommand: queue.canRunCommand } : {}),
+      missingRequiredCount: check.missingRequiredArtifactPaths.length,
+      readyCommandCount: commands?.readyCommandCount ?? 0,
+      ...(check.suggestedFocusPanelId ? { recommendedPanelId: check.suggestedFocusPanelId } : {}),
+      supervisionState: supervision.state,
+      workspaceStatus: status,
+    },
+    canExecute: false,
+    contractTerms: [
+      {
+        authority: 'The task contract and import manifest define the bounded run.',
+        definedBy: 'task.json, coworkImport, artifact-bundle.json',
+        id: 'run',
+        label: 'Run',
+        safetyNote: 'A workspace summary never starts or resumes a run.',
+      },
+      {
+        authority: 'Evidence is read from immutable run artifacts and compact snapshots.',
+        definedBy: 'seed-report.json, workflow-events.json, workflow-progress.json',
+        id: 'evidence',
+        label: 'Evidence',
+        safetyNote: 'Evidence display does not imply approval or command readiness.',
+      },
+      {
+        authority: 'Sensitive actions are blocked unless the runner validates the relevant artifacts.',
+        definedBy: 'guardrails, disallowedActions, readOnlyTools',
+        id: 'sensitive-action',
+        label: 'Sensitive action',
+        safetyNote: 'Display metadata cannot grant write, shell, push or deploy authority.',
+      },
+      {
+        authority: 'The proposal loop graph defines the safe route through proposal, review, preview, approval and verification.',
+        definedBy: 'proposal-loop.json, proposal-loop-canvas.json',
+        id: 'workflow',
+        label: 'Workflow',
+        safetyNote: 'Graph nodes and edges are passive UI state until a reviewed command is run explicitly.',
+      },
+      {
+        authority: 'Human or Cowork review is represented by an approval-decision artifact consumed by the runner.',
+        definedBy: 'approval-state.json, approval-decision.json',
+        id: 'human-approval',
+        label: 'Human approval',
+        safetyNote: 'The default decision posture stays rejected until review writes an approved decision.',
+      },
+      {
+        authority: 'Memory and lessons are durable learning surfaces, not hidden side effects of this workspace export.',
+        definedBy: 'Hermes memory and lessons native surfaces',
+        id: 'memory-or-lesson',
+        label: 'Memory or lesson',
+        safetyNote: 'Workspace export does not write memory or lessons.',
+      },
+      {
+        authority: 'Agent producers may prepare data-only edit proposals but cannot edit files directly.',
+        definedBy: 'edit-proposal-producer-dispatch.json, edit-proposal-review.json',
+        id: 'agent-boundary',
+        label: 'Agent boundary',
+        safetyNote: 'Producer dispatch is read-only guidance; preview and apply remain runner-owned.',
+      },
+    ],
+    executionMode: 'display_only',
+    hermes: {
+      agentId: 'hermes',
+      dispatchProfile: hermesProfile.defaultDispatchProfile,
+      lifecycleStages: HERMES_HOOK_STAGE_DEFINITIONS.map((stage) => ({
+        blocksOperation: stage.blocksOperation,
+        coreTouchpoint: stage.coreTouchpoint,
+        label: stage.label,
+        purpose: stage.purpose,
+        stage: stage.stage,
+        userHookEvent: stage.userHookEvent,
+      })),
+      nativeSurfaces: hermesProfile.nativeSurfaces.map((surface) => ({
+        codeBuddySurface: surface.codeBuddySurface,
+        id: surface.id,
+        label: surface.label,
+        purpose: surface.purpose,
+      })),
+      operatingRules: hermesProfile.operatingRules,
+      toolsetId: hermesToolset?.toolsetId ?? 'fleet.hermes.balanced',
+    },
+    kind: 'agentic-coding-harness-contract',
+    label: 'Harness / security and orchestration contract',
+    mode: 'passive',
+    objective: 'Converge Cowork, Code Buddy, GitNexus, Fleet and workflow artifacts around explicit authority boundaries.',
+    safetyNotes: [
+      'Harness data is display metadata only.',
+      'It defines what each artifact means; it does not execute, approve, write memory, push or deploy.',
+      'Runner validation remains the authority for preview, approval and apply.',
+    ],
+    schemaVersion: 1,
+  };
   const reviewRouteActionByStepId: Partial<Record<string, AgenticCodingProposalLoopCoworkWorkspace['actionRail']['actions'][number]['id']>> = {
     'confirm-guardrails': 'inspect-guardrails',
     'open-review-panel': 'open-active-panel',
@@ -5984,6 +7781,7 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
     ...(graphLegend ? { graphLegend } : {}),
     ...(graphViewport ? { graphViewport } : {}),
     guardrails,
+    harness,
     kind: 'agentic-coding-proposal-loop-cowork-workspace',
     ...(manifest ? { manifest } : {}),
     missingRequiredArtifactPaths: check.missingRequiredArtifactPaths,

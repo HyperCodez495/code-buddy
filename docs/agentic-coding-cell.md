@@ -275,9 +275,32 @@ reinterpreting graph data as execution authority.
 
 The workspace also includes a passive `graphViewport`: graph bounds, center,
 padding, active node position, active index, focus node order, node count, and
-edge count. This lets Cowork frame the graph mini-map consistently and support
-future keyboard focus without recalculating layout or treating the viewport as
-execution state.
+edge count. It also carries active trail node ids, edge ids, drawable segments,
+active trail bounds, active trail progress counts, and upcoming trail metadata
+(`upcomingTrailNodeIds`, `upcomingTrailEdgeIds`, `upcomingTrailSegments`,
+`upcomingTrailBounds`, `upcomingTrailProgress`) plus `trailProgressSummary`,
+`statusBounds`, `statusTransitions`, `statusTransitionBridges`,
+`statusTransitionBridgeSummary`, `statusTransitionBridgeViewport`,
+`statusTransitionSummary`, `renderLayers`, `renderLayerSummary`,
+`renderLayerSafety`, `renderLayerGroups`, `renderLayerGroupSummary`,
+`renderLayerGroupSafety`, `renderLayerGroupBadges`,
+`renderLayerGroupBadgeSummary`, `renderLayerGroupBadgeAccessibilitySummary`,
+`renderLayerGroupBadgeAccessibilityAudit`,
+`renderLayerGroupBadgeAccessibilityHealth`,
+`renderLayerGroupBadgeAccessibilityChecklist`,
+`renderLayerGroupBadgeAccessibilityChecklistSummary`,
+`renderLayerGroupBadgeSafety`,
+`renderLayerGroupBadgeToneSummary`, `renderLayerGroupBadgeToneLegend`,
+`renderLayerGroupBadgeToneLegendSummary`, `focusWindow`, `focusWindowBounds`,
+`focusWindowRange`, and
+`focusWindowSegments`, `focusWindowStatuses`, `focusWindowSummary`, and
+`focusWindowControls` plus `focusWindowControlSummary` and
+`focusWindowControlSafety` so Cowork can highlight, frame, navigate, summarize,
+color passive section badges, expose, audit, summarize, and checklist ready accessibility labels, and render local controls around the current node. Those controls carry
+passive `actionType` and `keyHint` values for UI display, plus
+`canExecute: false`, `executionMode: display_only`, and a safety note. This lets
+Cowork frame the graph mini-map consistently and support future keyboard focus
+without recalculating layout or treating the viewport as execution state.
 
 The workspace also includes a passive `commands` object copied from the same
 loop packet. It lists each step that has a `buddy` command, its status, safety
@@ -295,6 +318,19 @@ a command can run, command counts, missing required artifacts, read-only tools,
 disallowed actions, safety notes, and whether human review or an approval
 decision is still needed. This gives Cowork a safety banner without turning
 guardrail text into permission to run anything.
+
+The workspace also includes a passive `harness` contract inspired by the
+native Hermes Agent profile. It names the authority boundaries for run,
+evidence, sensitive action, workflow, human approval, memory/lessons, and
+agent-producer handoff; exposes the active workspace state; and lists the
+Hermes native surfaces plus lifecycle stages that may observe or block work in
+the wider system. This gives Cowork the missing "harnais" vocabulary without
+making the workspace export execute, approve, write memory, push, or deploy.
+Cowork renders this contract through the `AgenticHarnessStrip` when a JSON
+artifact is opened from an assistant message or from the file preview pane.
+The JSON artifact detector also labels workspace exports that contain this
+contract as an Agentic Cowork workspace harness, so the operator sees the
+authority boundary before inspecting the raw source.
 
 The workspace also includes passive `supervision` data: whether a human review
 is required, the current supervision state, the panel to open, the next action

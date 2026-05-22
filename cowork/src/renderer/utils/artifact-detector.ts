@@ -8,12 +8,7 @@
  * @module renderer/utils/artifact-detector
  */
 
-export type RenderableArtifactKind =
-  | 'html'
-  | 'svg'
-  | 'mermaid'
-  | 'react'
-  | 'json';
+export type RenderableArtifactKind = 'html' | 'svg' | 'mermaid' | 'react' | 'json';
 
 export interface RenderableArtifact {
   id: string;
@@ -75,7 +70,43 @@ function inferTitle(kind: RenderableArtifactKind, source: string): string | unde
     const compMatch = source.match(/(?:function|const)\s+([A-Z]\w*)/);
     return compMatch ? compMatch[1] : undefined;
   }
+  if (kind === 'json') {
+    return inferJsonTitle(source);
+  }
   return undefined;
+}
+
+function inferJsonTitle(source: string): string | undefined {
+  try {
+    const value = JSON.parse(source) as unknown;
+    if (!isRecord(value)) {
+      return undefined;
+    }
+
+    if (value.kind === 'agentic-coding-harness-contract') {
+      return 'Agentic harness contract';
+    }
+
+    if (
+      value.kind === 'agentic-coding-proposal-loop-cowork-workspace' &&
+      isRecord(value.harness) &&
+      value.harness.kind === 'agentic-coding-harness-contract'
+    ) {
+      return 'Agentic Cowork workspace harness';
+    }
+
+    if (typeof value.kind === 'string') {
+      return value.kind.slice(0, 60);
+    }
+  } catch {
+    return undefined;
+  }
+
+  return undefined;
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
 export function detectArtifacts(text: string): RenderableArtifact[] {

@@ -14,14 +14,12 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Code2, Eye, Copy, Check, Download } from 'lucide-react';
 import { useAppStore } from '../store';
+import { AgenticHarnessStrip, parseAgenticHarnessArtifact } from './agentic-harness-strip';
 
 type TabKey = 'preview' | 'source';
 
 function escapeHtml(input: string): string {
-  return input
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
+  return input.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -29,10 +27,7 @@ function escapeHtml(input: string): string {
  * Mermaid loads from a local copy bundled with the renderer (or CDN fallback
  * if not available — gated by CSP in the iframe).
  */
-function buildIframeDoc(
-  kind: 'html' | 'svg' | 'mermaid',
-  source: string
-): string {
+function buildIframeDoc(kind: 'html' | 'svg' | 'mermaid', source: string): string {
   if (kind === 'html') {
     // If the source is a full HTML document, use it as-is.
     if (/<html[\s>]/i.test(source)) return source;
@@ -125,6 +120,13 @@ export const ArtifactPanel: React.FC = () => {
     return '';
   }, [activeArtifact]);
 
+  const agenticHarness = useMemo(() => {
+    if (!activeArtifact || activeArtifact.kind !== 'json') {
+      return null;
+    }
+    return parseAgenticHarnessArtifact(activeArtifact.source);
+  }, [activeArtifact]);
+
   if (!activeArtifact) return null;
 
   const handleCopy = async () => {
@@ -162,7 +164,8 @@ export const ArtifactPanel: React.FC = () => {
   const canPreview =
     activeArtifact.kind === 'html' ||
     activeArtifact.kind === 'svg' ||
-    activeArtifact.kind === 'mermaid';
+    activeArtifact.kind === 'mermaid' ||
+    Boolean(agenticHarness);
 
   return (
     <div className="fixed right-0 top-0 bottom-0 w-[560px] max-w-[90vw] bg-background border-l border-border shadow-elevated z-40 flex flex-col">
@@ -234,7 +237,7 @@ export const ArtifactPanel: React.FC = () => {
 
       {/* Body */}
       <div className="flex-1 min-h-0 overflow-auto">
-        {canPreview && tab === 'preview' && (
+        {canPreview && tab === 'preview' && activeArtifact.kind !== 'json' && (
           <iframe
             key={activeArtifact.id}
             title="artifact-preview"
@@ -242,6 +245,14 @@ export const ArtifactPanel: React.FC = () => {
             srcDoc={iframeDoc}
             className="w-full h-full border-0 bg-white"
           />
+        )}
+        {agenticHarness && tab === 'preview' && (
+          <div className="p-4">
+            <AgenticHarnessStrip
+              harness={agenticHarness}
+              sourceKind={activeArtifact.title ?? activeArtifact.language}
+            />
+          </div>
         )}
         {(tab === 'source' || !canPreview) && (
           <pre className="p-4 text-[11px] leading-relaxed font-mono text-text-primary whitespace-pre-wrap break-words">
