@@ -3343,6 +3343,22 @@ export async function previewDeclaredEdits(
   return previews;
 }
 
+function isCommandNotFound(error: any, stderr: string): boolean {
+  if (error.code === 'ENOENT' || error.code === 127 || error.code === 9009) {
+    return true;
+  }
+  const msg = (error.message || '').toLowerCase();
+  const errText = stderr.toLowerCase();
+  return (
+    msg.includes('not found') ||
+    msg.includes('enoent') ||
+    msg.includes('not recognized') ||
+    errText.includes('not found') ||
+    errText.includes('enoent') ||
+    errText.includes('not recognized')
+  );
+}
+
 export async function runVerificationCommands(
   contract: AgenticCodingTaskContract,
   timeoutMs: number,
@@ -3382,12 +3398,14 @@ export async function runVerificationCommands(
         stderr?: string | Buffer;
         stdout?: string | Buffer;
       };
+      const stderrStr = String(commandError.stderr ?? '');
+      const isBlocked = isCommandNotFound(commandError, stderrStr);
       results.push({
         command,
         exitCode: typeof commandError.code === 'number' ? commandError.code : 1,
         reason: commandError.message,
-        status: 'failed',
-        stderr: truncateOutput(String(commandError.stderr ?? '')),
+        status: isBlocked ? 'blocked' : 'failed',
+        stderr: truncateOutput(stderrStr),
         stdout: truncateOutput(String(commandError.stdout ?? '')),
       });
     }
@@ -5390,6 +5408,10 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
 
   if (executionGate && !executionGate.autoExecutable) {
     blockedReasons.push(...executionGate.reasons);
+  }
+
+  if (options.maxCostUsd !== undefined && options.maxCostUsd < 0.01) {
+    blockedReasons.push(`Cost budget of $${options.maxCostUsd.toFixed(5)} is too low to safely run agent.`);
   }
 
   if (editPreviewRequested && validationErrors.length === 0 && blockedReasons.length === 0) {

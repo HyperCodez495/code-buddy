@@ -56,6 +56,16 @@ export async function runVerificationAndSelfCorrectionLoop(
   let cumulativeCostUsd = 0;
   const costLimit = options.maxCostUsd ?? 5.0;
 
+  if (costLimit < 0.01) {
+    return {
+      status: 'blocked',
+      verification: [],
+      iterations: 0,
+      contract: currentContract,
+      reason: `Cost budget of $${costLimit.toFixed(5)} is too low to run the agent.`,
+    };
+  }
+
   // 1. Resolve client
   let baseClient: CodeBuddyClient;
   if (customClient) {
