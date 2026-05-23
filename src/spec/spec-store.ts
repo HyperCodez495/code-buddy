@@ -34,6 +34,10 @@ export const SPEC_SCHEMA_VERSION = 1;
 
 export type SpecStoryStatus = 'draft' | 'approved' | 'in_progress' | 'done' | 'blocked';
 export type SpecPhase = 'prd' | 'architecture' | 'sharding' | 'implementation';
+export type SpecRiskLevel = 'low' | 'medium' | 'high';
+
+/** Top-level planning artifacts written by `buddy spec plan` (one per phase). */
+export type SpecArtifactName = 'prd' | 'architecture';
 
 export const SPEC_STORY_STATUSES: SpecStoryStatus[] = [
   'draft',
@@ -70,6 +74,16 @@ export interface SpecStory {
   /** Context-engineered narrative: the "why" + implementation guidance. */
   narrative: string;
   acceptanceCriteria: string[];
+  /**
+   * Runner-contract fields (the story IS the context-engineered contract). Optional
+   * on the foundation; populated by the `spec plan` sharding step so that
+   * `buddy spec next` (Commit 3) can build an AgenticCodingTaskContract without a
+   * translation gap. Bounded relative paths the implementing run may touch.
+   */
+  allowedPaths?: string[];
+  /** Commands proving the acceptance criteria are met (e.g. `npm test`). */
+  verification?: string[];
+  riskLevel?: SpecRiskLevel;
   reviewedBy?: string;
   /** Required to mark a story done — proof the acceptance criteria are met. */
   evidence?: string;
@@ -91,6 +105,11 @@ export interface SpecProject {
   id: string;
   title: string;
   phase: SpecPhase;
+  /**
+   * Per-phase human approval trail recorded by `buddy spec plan continue`. Optional
+   * so manifests written before the plan feature still load.
+   */
+  planApprovals?: Partial<Record<SpecPhase, { by: string; at: number }>>;
   createdAt: number;
   updatedAt: number;
 }
@@ -109,6 +128,9 @@ export interface AddStoryInput {
   epicId?: string;
   narrative?: string;
   acceptanceCriteria?: string[];
+  allowedPaths?: string[];
+  verification?: string[];
+  riskLevel?: SpecRiskLevel;
   lineage?: SpecStoryLineage;
 }
 
@@ -217,6 +239,38 @@ export class SpecStore {
     return project;
   }
 
+  /** Record that a human approved the artifact produced for `phase`. */
+  recordPlanApproval(projectId: string, phase: SpecPhase, by: string): SpecProject {
+    const reviewer = (by ?? '').trim();
+    if (!reviewer) throw new Error('Recording a plan approval requires a reviewer (by).');
+    const project = this.requireProject(projectId);
+    project.planApprovals = { ...project.planApprovals, [phase]: { by: reviewer, at: Date.now() } };
+    project.updatedAt = Date.now();
+    this.writeJson(this.projectManifestPath(projectId), { schemaVersion: SPEC_SCHEMA_VERSION, project });
+    return project;
+  }
+
+  // -- Planning artifacts (prd.md / architecture.md) -------------------------
+
+  /** Write a top-level planning artifact (`<project>/prd.md`, `architecture.md`). */
+  writeArtifact(projectId: string, name: SpecArtifactName, content: string): void {
+    this.requireProject(projectId);
+    this.ensureProjectDirs(projectId);
+    fs.writeFileSync(this.artifactPath(projectId, name), content ?? '', 'utf-8');
+  }
+
+  /** Read a planning artifact back (the human may have edited it); null if absent. */
+  readArtifact(projectId: string, name: SpecArtifactName): string | null {
+    const filePath = this.artifactPath(projectId, name);
+    if (!fs.existsSync(filePath)) return null;
+    try {
+      return fs.readFileSync(filePath, 'utf-8');
+    } catch (err) {
+      logger.warn('[spec] failed to read artifact', { filePath, error: String(err) });
+      return null;
+    }
+  }
+
   // -- Epics -----------------------------------------------------------------
 
   addEpic(projectId: string, input: { title: string; summary?: string }): SpecEpic {
@@ -253,6 +307,8 @@ export class SpecStore {
     const title = (input.title ?? '').trim();
     if (!title) throw new Error('Story title is required.');
     const now = Date.now();
+    const allowedPaths = cleanList(input.allowedPaths);
+    const verification = cleanList(input.verification);
     const story: SpecStory = {
       id: `st-${randomId()}`,
       projectId,
@@ -261,6 +317,9 @@ export class SpecStore {
       status: 'draft',
       narrative: (input.narrative ?? '').trim(),
       acceptanceCriteria: (input.acceptanceCriteria ?? []).map((c) => c.trim()).filter(Boolean),
+      ...(allowedPaths.length > 0 ? { allowedPaths } : {}),
+      ...(verification.length > 0 ? { verification } : {}),
+      ...(input.riskLevel ? { riskLevel: input.riskLevel } : {}),
       ...(input.lineage && hasLineage(input.lineage) ? { lineage: input.lineage } : {}),
       createdAt: now,
       updatedAt: now,
@@ -421,6 +480,9 @@ export class SpecStore {
   private storyPath(projectId: string, storyId: string): string {
     return path.join(this.storiesDir(projectId), `${storyId}.md`);
   }
+  private artifactPath(projectId: string, name: SpecArtifactName): string {
+    return path.join(this.projectDir(projectId), `${name}.md`);
+  }
 
   private readStoryFile(filePath: string): SpecStory | null {
     if (!fs.existsSync(filePath)) return null;
@@ -479,9 +541,26 @@ function renderStoryMarkdown(story: SpecStory): string {
     '',
     '## Narrative',
     story.narrative || '(no narrative yet)',
+    ...renderStoryContract(story),
     '',
   ].join('\n');
   return wrapFrontmatter(story, body);
+}
+
+/** The runner-contract section (only rendered when the plan populated it). */
+function renderStoryContract(story: SpecStory): string[] {
+  const lines: string[] = [];
+  if (story.riskLevel || (story.allowedPaths?.length ?? 0) > 0 || (story.verification?.length ?? 0) > 0) {
+    lines.push('', '## Contract');
+    if (story.riskLevel) lines.push(`Risk: **${story.riskLevel}**`);
+    if ((story.allowedPaths?.length ?? 0) > 0) {
+      lines.push('Allowed paths:', ...story.allowedPaths!.map((p) => `- ${p}`));
+    }
+    if ((story.verification?.length ?? 0) > 0) {
+      lines.push('Verification:', ...story.verification!.map((v) => `- \`${v}\``));
+    }
+  }
+  return lines;
 }
 
 function renderEpicMarkdown(epic: SpecEpic): string {
@@ -509,6 +588,21 @@ function parseFrontmatter(content: string): Record<string, unknown> | null {
 
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+/** Trim, drop blanks, and de-duplicate a string list (used for contract fields). */
+function cleanList(values?: string[]): string[] {
+  if (!Array.isArray(values)) return [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of values) {
+    const v = (raw ?? '').trim();
+    if (v && !seen.has(v)) {
+      seen.add(v);
+      out.push(v);
+    }
+  }
+  return out;
 }
 
 function hasLineage(lineage: SpecStoryLineage): boolean {

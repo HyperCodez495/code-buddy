@@ -188,4 +188,63 @@ describe('SpecStore', () => {
       expect(getSpecStore(tmpDir)).toBe(getSpecStore(tmpDir));
     });
   });
+
+  describe('planning artifacts (prd.md / architecture.md)', () => {
+    it('writes and reads back top-level artifacts in the project dir', () => {
+      const store = new SpecStore(tmpDir);
+      const p = store.createProject('p', 'prd');
+      expect(store.readArtifact(p.id, 'prd')).toBeNull();
+
+      store.writeArtifact(p.id, 'prd', '# PRD\nhello');
+      store.writeArtifact(p.id, 'architecture', '# Arch\nworld');
+
+      expect(fs.existsSync(path.join(tmpDir, '.codebuddy', 'specs', p.id, 'prd.md'))).toBe(true);
+      // survives a fresh store instance (read from disk)
+      const reloaded = new SpecStore(tmpDir);
+      expect(reloaded.readArtifact(p.id, 'prd')).toBe('# PRD\nhello');
+      expect(reloaded.readArtifact(p.id, 'architecture')).toBe('# Arch\nworld');
+    });
+  });
+
+  describe('plan approvals', () => {
+    it('records a per-phase reviewer and persists it on the manifest', () => {
+      const store = new SpecStore(tmpDir);
+      const p = store.createProject('p', 'prd');
+      store.recordPlanApproval(p.id, 'prd', 'Patrice');
+      expect(() => store.recordPlanApproval(p.id, 'architecture', '  ')).toThrow(/reviewer/i);
+
+      const reloaded = new SpecStore(tmpDir);
+      expect(reloaded.getProject(p.id)?.planApprovals?.prd?.by).toBe('Patrice');
+    });
+  });
+
+  describe('story contract fields (Commit 3 readiness)', () => {
+    it('round-trips allowedPaths / verification / riskLevel through markdown', () => {
+      const store = new SpecStore(tmpDir);
+      const p = store.createProject('p');
+      const s = store.addStory(p.id, {
+        title: 'Render radars',
+        acceptanceCriteria: ['shows radars'],
+        allowedPaths: ['src/radar', 'src/radar', '  '], // de-duped + blanks dropped
+        verification: ['npm test'],
+        riskLevel: 'medium',
+      });
+      expect(s.allowedPaths).toEqual(['src/radar']);
+      expect(s.verification).toEqual(['npm test']);
+      expect(s.riskLevel).toBe('medium');
+
+      const reloaded = new SpecStore(tmpDir).getStory(p.id, s.id);
+      expect(reloaded?.allowedPaths).toEqual(['src/radar']);
+      expect(reloaded?.riskLevel).toBe('medium');
+    });
+
+    it('omits the contract fields entirely when not provided (back-compat)', () => {
+      const store = new SpecStore(tmpDir);
+      const p = store.createProject('p');
+      const s = store.addStory(p.id, { title: 'plain', acceptanceCriteria: [] });
+      expect(s.allowedPaths).toBeUndefined();
+      expect(s.verification).toBeUndefined();
+      expect(s.riskLevel).toBeUndefined();
+    });
+  });
 });
