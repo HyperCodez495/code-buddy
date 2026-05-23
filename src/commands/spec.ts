@@ -14,6 +14,8 @@
 import { Command } from 'commander';
 import { getSpecStore, SPEC_STORY_STATUSES } from '../spec/spec-store.js';
 import type { SpecStory, SpecStoryStatus } from '../spec/spec-store.js';
+import { createPlanCommand } from './spec-plan.js';
+import { createNextCommand } from './spec-next.js';
 
 export function createSpecCommand(): Command {
   const cmd = new Command('spec');
@@ -80,6 +82,8 @@ export function createSpecCommand(): Command {
       }
     });
 
+  cmd.addCommand(createPlanCommand());
+  cmd.addCommand(createNextCommand());
   cmd.addCommand(createStoryCommand());
   cmd.addCommand(createEpicCommand());
 
