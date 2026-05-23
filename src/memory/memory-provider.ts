@@ -1,0 +1,147 @@
+/**
+ * Memory provider boundary.
+ *
+ * Hermes Agent supports pluggable memory providers (and user modeling à la
+ * Honcho). Code Buddy keeps local SQLite/markdown as the default and durable
+ * source of truth, but this boundary lets optional adapters (Mem0,
+ * Honcho-style modeling, Supermemory) be swapped in without the agent loop
+ * caring which implementation is active.
+ *
+ * Design rules (P3 acceptance: "changing provider does not affect the agent
+ * loop"):
+ *   - The default provider is `local`, wrapping the existing
+ *     `PersistentMemoryManager`. Nothing changes for current callers.
+ *   - The interface is async-friendly so a remote provider (network round-trip)
+ *     can implement it; the local provider resolves synchronously.
+ *   - Selection happens through the registry; the agent loop is untouched until
+ *     it opts in.
+ */
+
+import type { Memory, MemoryCategory, MemoryConfig } from './persistent-memory.js';
+import { getMemoryManager, PersistentMemoryManager } from './persistent-memory.js';
+import { logger } from '../utils/logger.js';
+
+export interface MemoryRememberOptions {
+  scope?: 'project' | 'user';
+  category?: MemoryCategory;
+  tags?: string[];
+}
+
+export interface MemoryProvider {
+  /** Stable id, e.g. `local`, `mem0`, `honcho`. */
+  readonly id: string;
+  initialize(): Promise<void>;
+  remember(key: string, value: string, options?: MemoryRememberOptions): Promise<void>;
+  recall(key: string, scope?: 'project' | 'user'): Promise<string | null>;
+  getRelevantMemories(query: string, limit?: number): Promise<Memory[]>;
+  getContextForPrompt(): Promise<string>;
+}
+
+/**
+ * Default provider: the existing local SQLite/markdown memory manager.
+ * Synchronous calls are wrapped in resolved promises to satisfy the async
+ * boundary without changing the underlying store.
+ */
+export class LocalMemoryProvider implements MemoryProvider {
+  readonly id = 'local';
+  private manager: PersistentMemoryManager;
+  private initialized = false;
+
+  constructor(config?: Partial<MemoryConfig>) {
+    this.manager = getMemoryManager(config);
+  }
+
+  async initialize(): Promise<void> {
+    if (this.initialized) return;
+    await this.manager.initialize();
+    this.initialized = true;
+  }
+
+  async remember(key: string, value: string, options: MemoryRememberOptions = {}): Promise<void> {
+    await this.manager.remember(key, value, options);
+  }
+
+  async recall(key: string, scope?: 'project' | 'user'): Promise<string | null> {
+    return this.manager.recall(key, scope);
+  }
+
+  async getRelevantMemories(query: string, limit = 5): Promise<Memory[]> {
+    return this.manager.getRelevantMemories(query, limit);
+  }
+
+  async getContextForPrompt(): Promise<string> {
+    return this.manager.getContextForPrompt();
+  }
+}
+
+/**
+ * Registry of memory providers. The agent and any caller resolve the active
+ * provider through here; swapping providers never touches the agent loop.
+ */
+export class MemoryProviderRegistry {
+  private providers = new Map<string, MemoryProvider>();
+  private activeId = 'local';
+
+  constructor() {
+    this.register(new LocalMemoryProvider());
+  }
+
+  register(provider: MemoryProvider): void {
+    if (!provider.id) {
+      throw new Error('MemoryProvider must have a non-empty id');
+    }
+    this.providers.set(provider.id, provider);
+  }
+
+  has(id: string): boolean {
+    return this.providers.has(id);
+  }
+
+  list(): string[] {
+    return Array.from(this.providers.keys());
+  }
+
+  /** Switch the active provider. Throws if the id was never registered. */
+  setActive(id: string): void {
+    if (!this.providers.has(id)) {
+      throw new Error(`Unknown memory provider: ${id}. Registered: ${this.list().join(', ')}`);
+    }
+    this.activeId = id;
+    logger.debug('MemoryProviderRegistry: active provider set', { id });
+  }
+
+  getActiveId(): string {
+    return this.activeId;
+  }
+
+  getActive(): MemoryProvider {
+    const provider = this.providers.get(this.activeId);
+    if (!provider) {
+      // Should never happen: 'local' is always registered.
+      throw new Error(`Active memory provider missing: ${this.activeId}`);
+    }
+    return provider;
+  }
+
+  get(id: string): MemoryProvider | undefined {
+    return this.providers.get(id);
+  }
+}
+
+let _registry: MemoryProviderRegistry | null = null;
+
+export function getMemoryProviderRegistry(): MemoryProviderRegistry {
+  if (!_registry) {
+    _registry = new MemoryProviderRegistry();
+  }
+  return _registry;
+}
+
+/** Convenience: the currently active provider (default `local`). */
+export function getActiveMemoryProvider(): MemoryProvider {
+  return getMemoryProviderRegistry().getActive();
+}
+
+export function resetMemoryProviderRegistry(): void {
+  _registry = null;
+}

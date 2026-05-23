@@ -20,6 +20,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { logger } from '../utils/logger.js';
+import { getLessonProvenanceIndex } from './lesson-provenance.js';
 
 // ============================================================================
 // Types
@@ -427,7 +428,8 @@ export class LessonsTracker {
     category: LessonCategory,
     content: string,
     source: LessonItem['source'] = 'manual',
-    context?: string
+    context?: string,
+    provenance?: { runId?: string; outcomeId?: string; sagaId?: string; note?: string }
   ): LessonItem {
     this.load();
     const item: LessonItem = {
@@ -441,6 +443,16 @@ export class LessonsTracker {
     this.items.push(item);
     this._cachedBlock = null;
     this.save();
+
+    // Record "created by" provenance in the side-car index when known.
+    if (provenance && (provenance.runId || provenance.outcomeId || provenance.sagaId)) {
+      try {
+        getLessonProvenanceIndex(this.workDir).recordCreated(item.id, provenance);
+      } catch {
+        // Provenance is best-effort; never fail a lesson write on it.
+      }
+    }
+
     return item;
   }
 

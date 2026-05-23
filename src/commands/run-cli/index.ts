@@ -6,6 +6,8 @@
  *   buddy run show <runId>        → full timeline + metrics + artifacts
  *   buddy run search <query>      → search run summaries, events, artifacts
  *   buddy run index-artifacts     → backfill artifact search for old runs
+ *   buddy run index-doctor        → report/repair stale artifact index rows
+ *   buddy run lineage <runId>     → show the fork family tree of a run
  *   buddy run recall-pack <query> → build compact context from matching runs
  *   buddy run trajectory-export <runId> → export redacted run trajectory
  *   buddy run golden-evals [fixtureId] [runId] → list/evaluate golden workflows
@@ -70,6 +72,32 @@ export function registerRunCommands(program: Command): void {
     .action(async (opts: { json?: boolean; limit: string; source: string[] }) => {
       const { indexRunArtifacts } = await import('../../observability/run-viewer.js');
       indexRunArtifacts(parseInt(opts.limit, 10), opts.source, opts.json === true);
+    });
+
+  // ── buddy run index-doctor ────────────────────────────────────
+  run
+    .command('index-doctor')
+    .description('Report (and optionally repair) stale artifact index rows whose run folders were pruned or moved')
+    .option('--repair', 'delete stale rows from the index')
+    .option('--include-orphans', 'also remove rows whose run folder exists but artifact file is gone')
+    .option('--json', 'output JSON')
+    .action(async (opts: { repair?: boolean; includeOrphans?: boolean; json?: boolean }) => {
+      const { runIndexDoctor } = await import('../../observability/run-viewer.js');
+      runIndexDoctor({
+        repair: opts.repair === true,
+        includeOrphans: opts.includeOrphans === true,
+        json: opts.json === true,
+      });
+    });
+
+  // ── buddy run lineage ─────────────────────────────────────────
+  run
+    .command('lineage <runId>')
+    .description('Show the fork family tree of a run (ancestors + descendants)')
+    .option('--json', 'output JSON')
+    .action(async (runId: string, opts: { json?: boolean }) => {
+      const { runLineage } = await import('../../observability/run-viewer.js');
+      runLineage(runId, opts.json === true);
     });
 
   // ── buddy run recall-pack ─────────────────────────────────────

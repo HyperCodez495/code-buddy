@@ -389,6 +389,149 @@ describe('RunStore', () => {
     });
   });
 
+  describe('artifact index doctor', () => {
+    it('reports a clean index as healthy with no stale rows', async () => {
+      const runId = startRun('Healthy run', { channel: 'cowork' });
+      store.saveArtifact(runId, 'note.md', '# Note\nSearchable content here.');
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 30));
+
+      const health = store.checkArtifactIndexHealth();
+      // Skip the assertion gracefully if the native SQLite layer is unavailable.
+      if (health.unavailable) return;
+
+      expect(health.totalRows).toBeGreaterThanOrEqual(1);
+      expect(health.staleRows).toBe(0);
+      expect(health.orphanedRows).toBe(0);
+      expect(health.healthyRows).toBe(health.totalRows);
+      expect(health.rows).toEqual([]);
+    });
+
+    it('flags a stale row when the run folder is removed', async () => {
+      const runId = startRun('Soon-to-be-pruned run', { channel: 'cowork' });
+      store.saveArtifact(runId, 'gone.md', '# Gone\nThis run folder will disappear.');
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 30));
+
+      const before = store.checkArtifactIndexHealth();
+      if (before.unavailable) return;
+      expect(before.staleRows).toBe(0);
+
+      // Simulate a pruned/moved run folder while the index keeps the row.
+      fs.rmSync(path.join(tmpDir, runId), { recursive: true, force: true });
+
+      const after = store.checkArtifactIndexHealth();
+      expect(after.staleRows).toBe(1);
+      expect(after.rows).toEqual([
+        expect.objectContaining({ runId, artifact: 'gone.md', reason: 'missing_run' }),
+      ]);
+    });
+
+    it('flags an orphaned row when only the artifact file is removed', async () => {
+      const runId = startRun('Orphan run', { channel: 'cowork' });
+      store.saveArtifact(runId, 'orphan.md', '# Orphan\nFile removed but folder kept.');
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 30));
+
+      const health0 = store.checkArtifactIndexHealth();
+      if (health0.unavailable) return;
+
+      fs.rmSync(path.join(tmpDir, runId, 'artifacts', 'orphan.md'), { force: true });
+
+      const health = store.checkArtifactIndexHealth();
+      expect(health.orphanedRows).toBe(1);
+      expect(health.staleRows).toBe(0);
+      expect(health.rows).toEqual([
+        expect.objectContaining({ runId, artifact: 'orphan.md', reason: 'missing_artifact' }),
+      ]);
+    });
+
+    it('repairs stale rows and leaves orphans unless includeOrphans is set', async () => {
+      const staleRunId = startRun('Stale run', { channel: 'cowork' });
+      store.saveArtifact(staleRunId, 'stale.md', '# Stale\nRemove the whole folder.');
+      store.endRun(staleRunId, 'completed');
+
+      const orphanRunId = startRun('Orphan run', { channel: 'cowork' });
+      store.saveArtifact(orphanRunId, 'orphan.md', '# Orphan\nRemove only the file.');
+      store.endRun(orphanRunId, 'completed');
+
+      activeRunIds = activeRunIds.filter(id => id !== staleRunId && id !== orphanRunId);
+      await new Promise(r => setTimeout(r, 30));
+
+      const baseline = store.checkArtifactIndexHealth();
+      if (baseline.unavailable) return;
+
+      fs.rmSync(path.join(tmpDir, staleRunId), { recursive: true, force: true });
+      fs.rmSync(path.join(tmpDir, orphanRunId, 'artifacts', 'orphan.md'), { force: true });
+
+      // Default repair removes only the stale (missing-run) row.
+      const repaired = store.repairArtifactIndex();
+      expect(repaired.repaired).toBe(true);
+      expect(repaired.includedOrphans).toBe(false);
+      expect(repaired.removedRows).toBe(1);
+
+      const afterStaleRepair = store.checkArtifactIndexHealth();
+      expect(afterStaleRepair.staleRows).toBe(0);
+      expect(afterStaleRepair.orphanedRows).toBe(1);
+
+      // Repair again including orphans removes the remaining row.
+      const repairedOrphans = store.repairArtifactIndex({ includeOrphans: true });
+      expect(repairedOrphans.removedRows).toBe(1);
+
+      const final = store.checkArtifactIndexHealth();
+      expect(final.staleRows).toBe(0);
+      expect(final.orphanedRows).toBe(0);
+    });
+  });
+
+  describe('getRunLineage', () => {
+    it('returns not found for an unknown run', () => {
+      const lineage = store.getRunLineage('does-not-exist');
+      expect(lineage.found).toBe(false);
+      expect(lineage.tree).toBeNull();
+      expect(lineage.familySize).toBe(0);
+    });
+
+    it('reports a single run as a root with no ancestors', () => {
+      const runId = startRun('Solo run');
+      const lineage = store.getRunLineage(runId);
+      expect(lineage.found).toBe(true);
+      expect(lineage.ancestors).toEqual([]);
+      expect(lineage.tree?.runId).toBe(runId);
+      expect(lineage.tree?.children).toEqual([]);
+      expect(lineage.familySize).toBe(1);
+    });
+
+    it('builds an ancestor chain and descendant subtree across forks', () => {
+      const root = startRun('Root objective');
+      const child = store.forkRun(root, 'retry');
+      activeRunIds.push(child);
+      const grandchild = store.forkRun(child, 'ab-variant-B');
+      activeRunIds.push(grandchild);
+      const sibling = store.forkRun(root, 'checkpoint-rollback');
+      activeRunIds.push(sibling);
+
+      // Lineage of the grandchild: root → child as ancestors.
+      const fromGrandchild = store.getRunLineage(grandchild);
+      expect(fromGrandchild.ancestors.map((a) => a.runId)).toEqual([root, child]);
+      expect(fromGrandchild.ancestors[1]?.forkReason).toBe('retry');
+      expect(fromGrandchild.tree?.runId).toBe(grandchild);
+      expect(fromGrandchild.tree?.forkReason).toBe('ab-variant-B');
+
+      // Lineage from the root: two children, one with a grandchild.
+      const fromRoot = store.getRunLineage(root);
+      expect(fromRoot.ancestors).toEqual([]);
+      expect(fromRoot.tree?.children).toHaveLength(2);
+      const childNode = fromRoot.tree?.children.find((c) => c.runId === child);
+      expect(childNode?.children.map((c) => c.runId)).toEqual([grandchild]);
+      // root + child + grandchild + sibling
+      expect(fromRoot.familySize).toBe(4);
+    });
+  });
+
   describe('pruning', () => {
     it('should not exceed 30 runs', () => {
       // Create 35 runs

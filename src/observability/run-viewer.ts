@@ -7,7 +7,7 @@
  *   replayRun()  — show timeline then re-execute test steps
  */
 
-import { RunStore, RunEvent, RunSummary, RunMetrics } from './run-store.js';
+import { RunStore, RunEvent, RunSummary, RunMetrics, ArtifactIndexRepairResult, RunLineageNode } from './run-store.js';
 import { buildRunRecallPack, buildRunRecallPackAsync } from './run-recall-pack.js';
 import {
   buildRunTrajectoryExport,
@@ -402,6 +402,123 @@ export function indexRunArtifacts(limit = 100, sources: string[] = [], json = fa
   if (result.failedCount > 0) {
     console.log(`Failed artifacts: ${result.failedCount}`);
   }
+}
+
+/**
+ * Report (and optionally repair) stale rows in the durable artifact FTS index.
+ *
+ * Stale rows accumulate when run folders are pruned (the 30-run cap) or moved,
+ * leaving search hits that point at nothing. This is the operator-facing
+ * health/repair surface for that drift.
+ */
+export function runIndexDoctor(
+  options: { repair?: boolean; includeOrphans?: boolean; json?: boolean } = {},
+): void {
+  const store = RunStore.getInstance();
+  const repair = options.repair === true;
+  const includeOrphans = options.includeOrphans === true;
+
+  const report = repair
+    ? store.repairArtifactIndex({ includeOrphans })
+    : store.checkArtifactIndexHealth();
+
+  const payload = {
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    mode: repair ? 'repair' : 'check',
+    includeOrphans,
+    ...report,
+  };
+
+  if (options.json === true) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  if (report.unavailable) {
+    console.log('Artifact index unavailable (SQLite/FTS layer could not be opened); nothing to inspect.');
+    return;
+  }
+
+  console.log('');
+  console.log(`Artifact index doctor (${repair ? 'repair' : 'check'})`);
+  console.log(`  indexed rows : ${report.totalRows}`);
+  console.log(`  healthy      : ${report.healthyRows}`);
+  console.log(`  stale (run gone)      : ${report.staleRows}`);
+  console.log(`  orphaned (file gone)  : ${report.orphanedRows}`);
+
+  if ('removedRows' in report) {
+    const repairResult = report as ArtifactIndexRepairResult;
+    const scope = repairResult.includedOrphans ? 'stale + orphaned' : 'stale';
+    console.log(`  removed (${scope}) : ${repairResult.removedRows}`);
+  } else if (report.staleRows > 0 || report.orphanedRows > 0) {
+    console.log('');
+    console.log('  Run with --repair to remove stale rows (add --include-orphans for missing files).');
+  }
+
+  if (!repair && report.rows.length > 0) {
+    console.log('');
+    const shown = report.rows.slice(0, 20);
+    for (const row of shown) {
+      console.log(`  - ${row.runId}/${row.artifact} (${row.reason})`);
+    }
+    if (report.rows.length > shown.length) {
+      console.log(`  … and ${report.rows.length - shown.length} more`);
+    }
+  }
+  console.log('');
+}
+
+/**
+ * Show the fork family tree of a run: ancestor chain plus descendant subtree.
+ */
+export function runLineage(runId: string, json = false): void {
+  const store = RunStore.getInstance();
+  const lineage = store.getRunLineage(runId);
+
+  if (json) {
+    console.log(JSON.stringify({
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      ...lineage,
+    }, null, 2));
+    return;
+  }
+
+  if (!lineage.found) {
+    console.log(`Run not found: ${runId}`);
+    return;
+  }
+
+  console.log('');
+  console.log(`Run lineage for ${runId} (family of ${lineage.familySize})`);
+  console.log('');
+
+  if (lineage.ancestors.length > 0) {
+    console.log('Ancestors (root → parent):');
+    lineage.ancestors.forEach((ancestor, depth) => {
+      const reason = ancestor.forkReason ? ` [${ancestor.forkReason}]` : '';
+      console.log(`  ${'  '.repeat(depth)}↳ ${ancestor.runId}${reason}  ${ancestor.objective.slice(0, 50)}`);
+    });
+    console.log('');
+  } else {
+    console.log('Ancestors: none (this is a root run)');
+    console.log('');
+  }
+
+  console.log('Subtree:');
+  const printNode = (node: RunLineageNode, depth: number): void => {
+    const reason = node.forkReason ? ` [${node.forkReason}]` : '';
+    const marker = depth === 0 ? '●' : '↳';
+    console.log(`  ${'  '.repeat(depth)}${marker} ${node.runId}${reason}  ${statusLabel(node.status)}  ${node.objective.slice(0, 50)}`);
+    for (const child of node.children) {
+      printNode(child, depth + 1);
+    }
+  };
+  if (lineage.tree) {
+    printNode(lineage.tree, 0);
+  }
+  console.log('');
 }
 
 /**

@@ -140,12 +140,15 @@ export function registerDaemonCommands(program: Command): void {
         if (apiKey) {
           const { getCronAgentBridge } = await import('../../daemon/cron-agent-bridge.js');
           const { getCronScheduler } = await import('../../scheduler/cron-scheduler.js');
+          const { RunStore } = await import('../../observability/run-store.js');
           const bridge = getCronAgentBridge({
             apiKey,
             baseURL: process.env.GROK_BASE_URL,
             model: process.env.GROK_MODEL || 'grok-3-latest',
             maxToolRounds: 20,
             jobTimeoutMs: 300000,
+            // Scheduled executions become first-class run records + artifacts.
+            runStore: RunStore.getInstance(),
           });
           const scheduler = getCronScheduler();
           scheduler.setTaskExecutor(bridge.createTaskExecutor());

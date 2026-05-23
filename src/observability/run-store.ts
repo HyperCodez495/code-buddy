@@ -127,9 +127,76 @@ export interface RunArtifactIndexBackfillResult {
   unavailable: boolean;
 }
 
+/**
+ * A single artifact FTS index row that no longer maps to live data on disk.
+ *
+ * `missing_run` — the whole run folder was pruned (MAX_RUNS) or moved, so the
+ * row can never be reconstructed and just bloats search results.
+ * `missing_artifact` — the run folder still exists but the artifact file was
+ * deleted; the indexed content is still searchable but no longer openable.
+ */
+export interface ArtifactIndexStaleRow {
+  runId: string;
+  artifact: string;
+  reason: 'missing_run' | 'missing_artifact';
+}
+
+export interface ArtifactIndexHealthReport {
+  /** True when the SQLite/FTS layer could not be opened (no DB to inspect). */
+  unavailable: boolean;
+  totalRows: number;
+  healthyRows: number;
+  /** Rows whose run folder is gone (the primary "stale" target). */
+  staleRows: number;
+  /** Rows whose run folder exists but the artifact file is gone. */
+  orphanedRows: number;
+  /** Detailed list, capped to avoid unbounded output. */
+  rows: ArtifactIndexStaleRow[];
+}
+
+export interface ArtifactIndexRepairResult extends ArtifactIndexHealthReport {
+  /** Whether a repair (delete) pass actually ran. */
+  repaired: boolean;
+  /** Whether orphaned rows were included in the repair, not only stale ones. */
+  includedOrphans: boolean;
+  /** Number of rows removed from the index. */
+  removedRows: number;
+}
+
+/** One node in a run family tree (a run plus its forked descendants). */
+export interface RunLineageNode {
+  runId: string;
+  objective: string;
+  status: RunSummary['status'];
+  startedAt: number;
+  forkReason?: string;
+  children: RunLineageNode[];
+}
+
+export interface RunLineageAncestor {
+  runId: string;
+  objective: string;
+  forkReason?: string;
+}
+
+export interface RunLineageResult {
+  /** The requested run id. */
+  runId: string;
+  /** Whether the requested run exists in the store. */
+  found: boolean;
+  /** Root → … → parent chain above the requested run. */
+  ancestors: RunLineageAncestor[];
+  /** The requested run as the root of its descendant subtree. */
+  tree: RunLineageNode | null;
+  /** Total runs in the family (ancestors + the requested subtree). */
+  familySize: number;
+}
+
 const MAX_RUNS = 30;
 const MAX_ARTIFACT_SEARCH_BYTES = 200_000;
 const ARTIFACT_INDEX_DB = 'artifact-index.sqlite';
+/** Cap the detail row list in health reports; counts stay accurate. */
+const ARTIFACT_INDEX_HEALTH_DETAIL_CAP = 500;
 
 interface ArtifactIndexRow {
   runId: string;
@@ -711,9 +778,210 @@ export class RunStore {
     return result;
   }
 
+  /**
+   * Inspect the durable artifact FTS index for rows that no longer map to live
+   * data on disk. Stale rows accumulate when run folders are pruned (MAX_RUNS)
+   * or moved, leaving search hits that point at nothing.
+   *
+   * Read-only: this never mutates the index. Pair it with repairArtifactIndex().
+   */
+  checkArtifactIndexHealth(): ArtifactIndexHealthReport {
+    const scan = this.scanArtifactIndex();
+    return this.toHealthReport(scan);
+  }
+
+  /**
+   * Remove stale artifact FTS rows (run folder gone). When includeOrphans is
+   * set, also remove rows whose run folder survived but whose artifact file was
+   * deleted. The FTS mirror stays in sync via the AFTER DELETE trigger.
+   */
+  repairArtifactIndex(options: { includeOrphans?: boolean } = {}): ArtifactIndexRepairResult {
+    const includeOrphans = options.includeOrphans === true;
+    const scan = this.scanArtifactIndex();
+    const report = this.toHealthReport(scan);
+    const base: ArtifactIndexRepairResult = {
+      ...report,
+      repaired: false,
+      includedOrphans: includeOrphans,
+      removedRows: 0,
+    };
+
+    const db = this.getArtifactIndexDb();
+    if (!db || scan.unavailable) {
+      return base;
+    }
+
+    const targets = scan.rows.filter((row) =>
+      row.reason === 'missing_run' || (includeOrphans && row.reason === 'missing_artifact'),
+    );
+    if (targets.length === 0) {
+      return { ...base, repaired: true };
+    }
+
+    try {
+      const stmt = db.prepare('DELETE FROM artifact_index WHERE run_id = ? AND artifact = ?');
+      const removeAll = db.transaction((rows: ArtifactIndexStaleRow[]) => {
+        let removed = 0;
+        for (const row of rows) {
+          removed += stmt.run(row.runId, row.artifact).changes;
+        }
+        return removed;
+      });
+      const removedRows = removeAll(targets);
+      return { ...base, repaired: true, removedRows };
+    } catch (err) {
+      logger.debug('RunStore: artifact index repair failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return base;
+    }
+  }
+
+  /**
+   * Reconstruct the fork family of a run: the ancestor chain above it (via
+   * `metadata.parentRolloutId`) and the descendant subtree below it. This is
+   * the data behind a "thread family tree" view — when a session is forked,
+   * compressed-and-rolled-back, or A/B varied, `forkRun` records the parent
+   * link, and this walks it both ways.
+   */
+  getRunLineage(runId: string): RunLineageResult {
+    const root = this.summaries.get(runId);
+    if (!root) {
+      return { runId, found: false, ancestors: [], tree: null, familySize: 0 };
+    }
+
+    // Walk ancestors upward, guarding against cycles and runaway depth.
+    const ancestors: RunLineageAncestor[] = [];
+    const seenUp = new Set<string>([runId]);
+    let cursor = root.metadata?.parentRolloutId;
+    while (cursor && !seenUp.has(cursor) && ancestors.length < 100) {
+      seenUp.add(cursor);
+      const parent = this.summaries.get(cursor);
+      if (!parent) {
+        // Parent was pruned; record the id so the chain isn't silently lost.
+        ancestors.unshift({ runId: cursor, objective: '(pruned)' });
+        break;
+      }
+      ancestors.unshift({
+        runId: parent.runId,
+        objective: parent.objective,
+        ...(parent.metadata?.forkReason ? { forkReason: parent.metadata.forkReason } : {}),
+      });
+      cursor = parent.metadata?.parentRolloutId;
+    }
+
+    // Index children by parent id for the descendant walk.
+    const childrenByParent = new Map<string, RunSummary[]>();
+    for (const summary of this.summaries.values()) {
+      const parentId = summary.metadata?.parentRolloutId;
+      if (parentId) {
+        const list = childrenByParent.get(parentId) ?? [];
+        list.push(summary);
+        childrenByParent.set(parentId, list);
+      }
+    }
+
+    const seenDown = new Set<string>();
+    const buildNode = (summary: RunSummary): RunLineageNode => {
+      seenDown.add(summary.runId);
+      const childSummaries = (childrenByParent.get(summary.runId) ?? [])
+        .filter((child) => !seenDown.has(child.runId))
+        .sort((a, b) => a.startedAt - b.startedAt);
+      return {
+        runId: summary.runId,
+        objective: summary.objective,
+        status: summary.status,
+        startedAt: summary.startedAt,
+        ...(summary.metadata?.forkReason ? { forkReason: summary.metadata.forkReason } : {}),
+        children: childSummaries.map(buildNode),
+      };
+    };
+
+    const tree = buildNode(root);
+    const familySize = ancestors.length + seenDown.size;
+    return { runId, found: true, ancestors, tree, familySize };
+  }
+
   // ──────────────────────────────────────────────────────────────
   // Private helpers
   // ──────────────────────────────────────────────────────────────
+
+  /**
+   * Walk every artifact index row and classify it against the filesystem.
+   * Returns the full (uncapped) set of stale rows so repair can act on all of
+   * them; the public report caps the detail list separately.
+   */
+  private scanArtifactIndex(): {
+    rows: ArtifactIndexStaleRow[];
+    totalRows: number;
+    healthyRows: number;
+    unavailable: boolean;
+  } {
+    const db = this.getArtifactIndexDb();
+    if (!db) {
+      return { rows: [], totalRows: 0, healthyRows: 0, unavailable: true };
+    }
+
+    let indexed: Array<{ run_id: string; artifact: string }> = [];
+    try {
+      indexed = db
+        .prepare('SELECT run_id, artifact FROM artifact_index')
+        .all() as Array<{ run_id: string; artifact: string }>;
+    } catch (err) {
+      logger.debug('RunStore: artifact index scan failed', {
+        err: err instanceof Error ? err.message : String(err),
+      });
+      return { rows: [], totalRows: 0, healthyRows: 0, unavailable: true };
+    }
+
+    const stale: ArtifactIndexStaleRow[] = [];
+    let healthy = 0;
+    for (const row of indexed) {
+      const runDir = this.runDir(row.run_id);
+      if (!fs.existsSync(runDir)) {
+        stale.push({ runId: row.run_id, artifact: row.artifact, reason: 'missing_run' });
+        continue;
+      }
+      const artifactPath = path.join(runDir, 'artifacts', row.artifact);
+      if (!fs.existsSync(artifactPath)) {
+        stale.push({ runId: row.run_id, artifact: row.artifact, reason: 'missing_artifact' });
+        continue;
+      }
+      healthy += 1;
+    }
+
+    return {
+      rows: stale,
+      totalRows: indexed.length,
+      healthyRows: healthy,
+      unavailable: false,
+    };
+  }
+
+  private toHealthReport(scan: {
+    rows: ArtifactIndexStaleRow[];
+    totalRows: number;
+    healthyRows: number;
+    unavailable: boolean;
+  }): ArtifactIndexHealthReport {
+    let staleRows = 0;
+    let orphanedRows = 0;
+    for (const row of scan.rows) {
+      if (row.reason === 'missing_run') {
+        staleRows += 1;
+      } else {
+        orphanedRows += 1;
+      }
+    }
+    return {
+      unavailable: scan.unavailable,
+      totalRows: scan.totalRows,
+      healthyRows: scan.healthyRows,
+      staleRows,
+      orphanedRows,
+      rows: scan.rows.slice(0, ARTIFACT_INDEX_HEALTH_DETAIL_CAP),
+    };
+  }
 
   private runDir(runId: string): string {
     return path.join(this.runsDir, runId);

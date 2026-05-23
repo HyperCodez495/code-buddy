@@ -9,6 +9,10 @@ import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import type { CronJob } from '../scheduler/cron-scheduler.js';
 import { executeHermesLifecycleHook } from '../hooks/hermes-lifecycle-hooks.js';
+import { evaluateCronPreCheck } from '../scheduler/pre-check-runner.js';
+import { runWatchdog } from '../scheduler/watchdog-handlers.js';
+import { collectDeliveryTargets, resolveDeliveryBody } from '../scheduler/scheduled-delivery.js';
+import type { RunStore, RunMetadata } from '../observability/run-store.js';
 
 // ============================================================================
 // Types
@@ -25,6 +29,13 @@ export interface BridgeConfig {
   maxToolRounds: number;
   /** Job execution timeout (ms) */
   jobTimeoutMs: number;
+  /**
+   * Optional observability store. When provided, each job execution creates a
+   * durable run record (events + an `output.md` artifact), so a schedule
+   * produces first-class runs instead of only a chat/session side effect.
+   * Left undefined, the bridge behaves exactly as before (no run records).
+   */
+  runStore?: RunStore;
 }
 
 export interface JobExecutionResult {
@@ -35,6 +46,12 @@ export interface JobExecutionResult {
   duration: number;
   delivered?: boolean;
   deliveryChannel?: string;
+  /** True when a pre-check decided the expensive task should be skipped. */
+  skipped?: boolean;
+  /** Pre-check evidence explaining a skip. */
+  skipReason?: string;
+  /** For watchdog jobs: false when any check produced an alert/error. */
+  watchdogOk?: boolean;
 }
 
 const DEFAULT_BRIDGE_CONFIG: Partial<BridgeConfig> = {
@@ -73,9 +90,48 @@ export class CronAgentBridge extends EventEmitter {
     this.activeJobs.set(job.id, abortController);
 
     this.emit('job:start', { jobId: job.id, jobName: job.name });
+    const recordedRunId = this.startRecordedRun(job);
 
     try {
+      // Pre-check gate: skip expensive LLM work when nothing changed.
+      // Watchdog jobs are non-LLM monitors, so they bypass the pre-check.
+      if (job.preCheck && job.task.type !== 'watchdog') {
+        const preCheckResult = await evaluateCronPreCheck(job.preCheck);
+        if (typeof preCheckResult.fingerprint === 'string') {
+          // Persisted by the scheduler's persistJobs() after this returns.
+          job.preCheck.lastFingerprint = preCheckResult.fingerprint;
+        }
+        this.emit('job:precheck', {
+          jobId: job.id,
+          shouldRun: preCheckResult.shouldRun,
+          reason: preCheckResult.reason,
+          evidence: preCheckResult.evidence,
+        });
+        if (!preCheckResult.shouldRun) {
+          const duration = Date.now() - startTime;
+          const skipOutput = `Skipped by pre-check: ${preCheckResult.reason}`;
+          this.recordRunEvent(recordedRunId, 'decision', {
+            kind: 'precheck_skip',
+            reason: preCheckResult.reason,
+          });
+          this.finishRecordedRun(recordedRunId, 'completed', skipOutput);
+          const result: JobExecutionResult = {
+            jobId: job.id,
+            runId: recordedRunId ?? `run-${Date.now()}`,
+            success: true,
+            output: skipOutput,
+            duration,
+            skipped: true,
+            skipReason: preCheckResult.reason,
+          };
+          this.emit('job:skipped', result);
+          this.emit('job:complete', result);
+          return result;
+        }
+      }
+
       let output: string;
+      let watchdogOk: boolean | undefined;
 
       switch (job.task.type) {
         case 'message': {
@@ -90,6 +146,12 @@ export class CronAgentBridge extends EventEmitter {
           output = await this.executeAgentTask(job);
           break;
         }
+        case 'watchdog': {
+          const watchdogResult = await this.executeWatchdogTask(job);
+          output = watchdogResult.output;
+          watchdogOk = watchdogResult.ok;
+          break;
+        }
         default:
           throw new Error(`Unknown task type: ${job.task.type}`);
       }
@@ -102,7 +164,8 @@ export class CronAgentBridge extends EventEmitter {
 
       if (job.delivery) {
         try {
-          const deliveryResult = await this.deliverResult(job, output);
+          const deliveryStatus = watchdogOk === undefined ? 'completed' : watchdogOk ? 'ok' : 'alert';
+          const deliveryResult = await this.deliverResult(job, output, deliveryStatus);
           delivered = deliveryResult.delivered;
           deliveryChannel = deliveryResult.channel;
         } catch (error) {
@@ -110,14 +173,23 @@ export class CronAgentBridge extends EventEmitter {
         }
       }
 
+      // The task ran, so the run is 'completed' even if a watchdog alerted;
+      // the alert is captured in the output artifact and `watchdogOk` flag.
+      this.finishRecordedRun(recordedRunId, 'completed', output, {
+        delivered,
+        deliveryChannel,
+        ...(watchdogOk !== undefined ? { watchdogOk } : {}),
+      });
+
       const result: JobExecutionResult = {
         jobId: job.id,
-        runId: `run-${Date.now()}`,
+        runId: recordedRunId ?? `run-${Date.now()}`,
         success: true,
         output,
         duration,
         delivered,
         deliveryChannel,
+        ...(watchdogOk !== undefined ? { watchdogOk } : {}),
       };
 
       this.emit('job:complete', result);
@@ -125,11 +197,14 @@ export class CronAgentBridge extends EventEmitter {
 
     } catch (error) {
       const duration = Date.now() - startTime;
+      const errorOutput = error instanceof Error ? error.message : String(error);
+      this.recordRunEvent(recordedRunId, 'error', { message: errorOutput });
+      this.finishRecordedRun(recordedRunId, 'failed', errorOutput);
       const result: JobExecutionResult = {
         jobId: job.id,
-        runId: `run-${Date.now()}`,
+        runId: recordedRunId ?? `run-${Date.now()}`,
         success: false,
-        output: error instanceof Error ? error.message : String(error),
+        output: errorOutput,
         duration,
       };
 
@@ -138,6 +213,68 @@ export class CronAgentBridge extends EventEmitter {
 
     } finally {
       this.activeJobs.delete(job.id);
+    }
+  }
+
+  /**
+   * Start a durable run record for a job execution, when an observability store
+   * is configured. Returns the run id, or undefined when recording is disabled
+   * or fails (recording must never break job execution).
+   */
+  private startRecordedRun(job: CronJob): string | undefined {
+    const store = this.config.runStore;
+    if (!store) return undefined;
+    try {
+      const metadata: RunMetadata = {
+        channel: 'scheduled',
+        tags: ['cron', job.task.type],
+        ...(job.resolvedSessionId ? { sessionId: job.resolvedSessionId } : {}),
+      };
+      const runId = store.startRun(`Cron: ${job.name}`, metadata);
+      store.emit(runId, {
+        type: 'decision',
+        data: { kind: 'cron_job_start', jobId: job.id, taskType: job.task.type },
+      });
+      return runId;
+    } catch (err) {
+      logger.debug('CronAgentBridge: failed to start recorded run', { error: String(err) });
+      return undefined;
+    }
+  }
+
+  private recordRunEvent(
+    runId: string | undefined,
+    type: 'decision' | 'error',
+    data: Record<string, unknown>,
+  ): void {
+    const store = this.config.runStore;
+    if (!runId || !store) return;
+    try {
+      store.emit(runId, { type, data });
+    } catch {
+      // Observability must never break job execution.
+    }
+  }
+
+  /**
+   * Persist the job output as a run artifact and close the run record.
+   */
+  private finishRecordedRun(
+    runId: string | undefined,
+    status: 'completed' | 'failed',
+    output: string,
+    artifactMeta?: Record<string, unknown>,
+  ): void {
+    const store = this.config.runStore;
+    if (!runId || !store) return;
+    try {
+      store.saveArtifact(runId, 'output.md', String(output).slice(0, 100_000));
+      if (artifactMeta && Object.keys(artifactMeta).length > 0) {
+        store.saveArtifact(runId, 'delivery.json', JSON.stringify(artifactMeta, null, 2));
+      }
+      store.endRun(runId, status);
+    } catch (err) {
+      logger.debug('CronAgentBridge: failed to finish recorded run', { error: String(err) });
     }
   }
 
@@ -203,12 +340,35 @@ export class CronAgentBridge extends EventEmitter {
   }
 
   /**
-   * Deliver job result to configured channels
+   * Execute a watchdog-type task — disk/http/repo/build monitors that run
+   * WITHOUT instantiating a CodeBuddyAgent or calling any model provider.
+   */
+  private async executeWatchdogTask(job: CronJob): Promise<{ output: string; ok: boolean }> {
+    if (!job.task.watchdog) {
+      throw new Error('Watchdog task requires watchdog configuration');
+    }
+    const result = await runWatchdog(job.task.watchdog);
+    this.emit('job:watchdog', {
+      jobId: job.id,
+      ok: result.ok,
+      alerts: result.alerts,
+      errors: result.errors,
+    });
+    return { output: result.summary, ok: result.ok };
+  }
+
+  /**
+   * Deliver job result to configured channels.
+   *
+   * Supports a single `delivery.channel` and/or multiple `delivery.targets`
+   * (`type:id` specs) fanned out in one pass, plus an optional mobile-safe
+   * `summary` body format that redacts secrets and truncates the output.
    */
   async deliverResult(
     job: CronJob,
-    output: string
-  ): Promise<{ delivered: boolean; channel?: string }> {
+    output: string,
+    status: string = 'completed',
+  ): Promise<{ delivered: boolean; channel?: string; channels?: string[] }> {
     if (!job.delivery) {
       return { delivered: false };
     }
@@ -245,22 +405,33 @@ export class CronAgentBridge extends EventEmitter {
       }
     }
 
-    // Channel delivery
-    if (job.delivery.channel) {
-      try {
-        const { getChannelManager } = await import('../channels/index.js');
-        const channelManager = getChannelManager();
-        // Parse channel spec as "type:id" (e.g., "telegram:chat-123") or just type
-        const [channelType, channelId] = job.delivery.channel.includes(':')
-          ? job.delivery.channel.split(':', 2)
-          : [job.delivery.channel, 'default'];
-        await channelManager.send(channelType as import('../channels/index.js').ChannelType, {
-          channelId,
-          content: `**Cron Job: ${job.name}**\n\n${output}`,
-        });
-        return { delivered: true, channel: job.delivery.channel };
-      } catch (error) {
-        logger.warn(`Channel delivery failed for job ${job.id}`, { error: String(error) });
+    // Channel delivery — single `channel` and/or multiple `targets`, fanned out.
+    const targets = collectDeliveryTargets(job.delivery);
+    if (targets.length > 0) {
+      const { content } = resolveDeliveryBody({
+        jobName: job.name,
+        output,
+        status,
+        format: job.delivery.format,
+      });
+      const { getChannelManager } = await import('../channels/index.js');
+      const channelManager = getChannelManager();
+      const delivered: string[] = [];
+      for (const target of targets) {
+        try {
+          await channelManager.send(target.channelType as import('../channels/index.js').ChannelType, {
+            channelId: target.channelId,
+            content,
+          });
+          delivered.push(target.spec);
+        } catch (error) {
+          logger.warn(`Channel delivery failed for job ${job.id} target ${target.spec}`, {
+            error: String(error),
+          });
+        }
+      }
+      if (delivered.length > 0) {
+        return { delivered: true, channel: delivered[0], channels: delivered };
       }
     }
 

@@ -212,6 +212,8 @@ buddy speak [text] [--voice <name>] [--list-voices] [--speed <n>]
 buddy run list                      # List recent runs (most recent first, 30-run prune)
 buddy run show <run-id>             # Show full event log for a run
 buddy run search <query> [--json]   # Search run summaries, events, artifacts
+buddy run index-doctor [--repair]   # Report/repair stale artifact index rows (pruned/moved runs)
+buddy run lineage <run-id>          # Show the fork family tree of a run (ancestors + descendants)
 buddy run recall-pack <query>       # Build a cited context handoff from runs
 buddy run trajectory-export <run-id> # Export a redacted run trajectory for audit/evals
 buddy run golden-evals [fixture-id] [run-id] # List/evaluate golden workflow fixtures

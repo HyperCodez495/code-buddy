@@ -232,6 +232,55 @@ export function createLessonsCommand(): Command {
       }
     });
 
+  // ---- provenance ----------------------------------------------------------
+  cmd
+    .command('provenance <lessonId>')
+    .description('Show what created a lesson and which runs have used it')
+    .option('--json', 'Output JSON')
+    .action(async (lessonId: string, opts: { json?: boolean }) => {
+      const { getLessonProvenanceIndex } = await import('../agent/lesson-provenance.js');
+      const record = getLessonProvenanceIndex(process.cwd()).getProvenance(lessonId);
+
+      if (opts.json) {
+        console.log(JSON.stringify(record ?? { lessonId, createdBy: undefined, usedBy: [] }, null, 2));
+        return;
+      }
+
+      if (!record) {
+        console.log(`No provenance recorded for lesson ${lessonId}.`);
+        return;
+      }
+      console.log(`\nProvenance for lesson ${lessonId}`);
+      if (record.createdBy) {
+        const c = record.createdBy;
+        const parts = [
+          c.runId ? `run ${c.runId}` : null,
+          c.outcomeId ? `outcome ${c.outcomeId}` : null,
+          c.sagaId ? `saga ${c.sagaId}` : null,
+        ].filter(Boolean).join(', ');
+        console.log(`  Created by: ${parts || '(unknown)'}${c.note ? ` — ${c.note}` : ''}`);
+        console.log(`              at ${new Date(c.at).toISOString()}`);
+      } else {
+        console.log('  Created by: (not recorded)');
+      }
+      console.log(`  Used by (${record.usedBy.length} run(s)):`);
+      for (const usage of record.usedBy.slice(-20)) {
+        console.log(`    - ${usage.runId}  ${new Date(usage.at).toISOString()}`);
+      }
+      console.log('');
+    });
+
+  // ---- use (record that a run loaded a lesson) -----------------------------
+  cmd
+    .command('use <lessonId>')
+    .description('Record that a run loaded a lesson (used-by provenance)')
+    .requiredOption('--run <runId>', 'The run that used the lesson')
+    .action(async (lessonId: string, opts: { run: string }) => {
+      const { getLessonProvenanceIndex } = await import('../agent/lesson-provenance.js');
+      getLessonProvenanceIndex(process.cwd()).recordUsage(lessonId, opts.run);
+      console.log(`Recorded usage: lesson ${lessonId} used by run ${opts.run}`);
+    });
+
   // ---- decay ---------------------------------------------------------------
   cmd
     .command('decay')

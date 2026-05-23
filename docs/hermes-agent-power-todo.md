@@ -182,10 +182,18 @@ The gap is mainly product integration and durability:
    - Record which run/outcome created each lesson.
    - Record which future runs loaded that lesson.
    - Acceptance: a lesson page can show "created by" and "used by".
-   - Status: partial. Fleet outcome lessons now include outcome id, saga
-     id, AgentRun id, parent AgentRun id, Hermes context, target peers,
-     delivery channel, proof context and verification notes in the lesson
-     body. Formal "created by" / "used by" indexes are still future work.
+   - Status: implemented via a side-car index. Fleet outcome lessons already
+     embed outcome/saga/AgentRun context in the lesson body.
+     `src/agent/lesson-provenance.ts` now adds a formal index
+     (`.codebuddy/lessons-provenance.json`) that keeps each lesson's "created
+     by" (run/outcome/saga) and "used by" (runs that loaded it) links without
+     touching the `lessons.md` format or the per-turn injection hot path.
+     `LessonsTracker.add()` accepts optional provenance and records "created
+     by"; `recordUsage(lessonId, runId)` is idempotent per pair. CLI:
+     `buddy lessons provenance <lessonId> [--json]` shows both sides, and
+     `buddy lessons use <lessonId> --run <runId>` records a usage link.
+     Auto-recording usage at lesson-injection time is the remaining optional
+     hot-path wire.
 
 6. Add a lessons cockpit in Cowork.
    - Load `buddy lessons graph --vault`.
@@ -401,13 +409,28 @@ The gap is mainly product integration and durability:
     - Telegram/Discord/email can come later through one delivery interface.
     - Acceptance: scheduled runs can deliver summaries without changing
       the agent loop.
+    - Status: implemented over the existing channel layer. `CronJob.delivery`
+      now supports multiple `type:id` `targets` (e.g. `telegram:123`,
+      `discord:456`, `email:ops@x.com`) in addition to the legacy single
+      `channel`, and `CronAgentBridge.deliverResult` fans out to all targets in
+      one pass through the existing `getChannelManager().send()`, surviving a
+      single channel failure and reporting the delivered `channels[]`.
+      `src/scheduler/scheduled-delivery.ts` holds the pure helpers
+      (`collectDeliveryTargets`, `resolveDeliveryBody`, `formatScheduledSummary`).
+      Delivery happens in the bridge, never in the agent loop, so the acceptance
+      holds. Webhook delivery is unchanged. The full set of platform channels
+      remains gated behind their own configuration/onboarding.
 
 17. Add mobile-safe notification payloads.
     - Include run title, status, risk level, requested approval and links.
     - Acceptance: no secrets or full prompts in push payloads.
     - Status: first payload shape implemented via the mobile snapshot:
       secrets are redacted before CLI JSON/text output, and the payload only
-      carries review summaries, artifact paths and recall context.
+      carries review summaries, artifact paths and recall context. Scheduled
+      deliveries now also support a `delivery.format: 'summary'` mobile-safe
+      body via `formatScheduledSummary`: a compact header (job name, status,
+      optional risk) plus a secrets-redacted, length-capped excerpt of the
+      output — never the original prompt.
 
 ### P2 - Cron and scheduled autonomy
 
@@ -416,18 +439,54 @@ The gap is mainly product integration and durability:
       contract for each scheduled execution.
     - Acceptance: a schedule creates run records and artifacts, not only a
       chat/session side effect.
-    - Status: partial. Scheduled Fleet dispatches now carry canonical
-      run identity and follow-up lineage into execution and Activity
-      Feed records. A durable run/artifact table is still future work.
+    - Status: implemented for cron execution. Scheduled Fleet dispatches
+      already carry canonical run identity and follow-up lineage into
+      execution and Activity Feed records. `CronAgentBridge` now also accepts a
+      `runStore` and, when wired (the `buddy daemon` cron loop passes
+      `RunStore.getInstance()`), each scheduled execution creates a durable run
+      record: a `Cron: <name>` run with `channel:'scheduled'` + `cron`/task-type
+      tags, a `cron_job_start` decision event, the output persisted as an
+      `output.md` artifact (plus a `delivery.json` artifact when delivered),
+      and a `completed`/`failed` close. Pre-check skips and watchdog runs are
+      recorded the same way, so a schedule produces inspectable runs/artifacts
+      (`buddy run list`/`show`/`search`/`lineage`) rather than only a
+      chat/session side effect. Recording is opt-in and fully guarded, so it
+      can never break job execution.
 
 19. Add pre-check scripts for scheduled tasks.
     - Similar to Hermes cron pre-checks.
     - Example: only run lead discovery if the seed source changed.
     - Acceptance: cron can skip expensive LLM work with evidence.
+    - Status: implemented. `src/scheduler/pre-check-runner.ts` evaluates a
+      non-LLM pre-check before a scheduled job. Two kinds: `file_changed`
+      (fingerprints one or more paths/dirs; runs only when the content
+      fingerprint differs from the previous run, first run always runs) and
+      `command` (spawns a bounded local guard without a shell, gating on
+      `exit_zero` / `exit_nonzero` / `stdout_changed`). `CronJob.preCheck`
+      carries the config plus a persisted `lastFingerprint`. `CronAgentBridge`
+      evaluates the pre-check before the task switch: when `shouldRun` is false
+      it returns a `skipped` result with evidence and never instantiates the
+      agent, and it always persists the new fingerprint back onto the job. The
+      runner fails open (runs the job) if the pre-check itself errors, so a
+      broken guard can never silently disable a schedule. Note: a skipped run
+      still counts toward the job's `runCount`/`maxRuns`, since the scheduler
+      treats a pre-check skip as a successful (cheap) evaluation rather than a
+      no-op. A persist->reload roundtrip test proves the recorded fingerprint
+      survives a scheduler restart and drives the next skip.
 
 20. Add no-agent watchdog jobs.
     - Disk checks, server pings, repo status, build status.
     - Acceptance: simple monitors do not burn LLM calls.
+    - Status: implemented. `src/scheduler/watchdog-handlers.ts` adds a
+      `watchdog` `CronJob.task.type` whose checks run directly — no
+      `CodeBuddyAgent`, no provider call. Four check kinds: `disk` (free
+      bytes/percent threshold via `fs.statfsSync`), `http` (GET probe with
+      timeout, alert on status >= threshold or unreachable), `repo`
+      (`git status --porcelain`, alert on dirty when `expectClean`), and
+      `build` (spawn an allowlisted build command, alert on non-zero exit).
+      Each check resolves to `ok` / `alert` / `error`; the aggregate
+      `watchdogOk` is false when any check alerts or errors. `CronAgentBridge`
+      dispatches the new `watchdog` case without touching the LLM paths.
 
 ### P2 - Context and session search
 
@@ -460,6 +519,14 @@ The gap is mainly product integration and durability:
 22. Add context compression lineage.
     - When a session compresses or forks, record parent/child links.
     - Acceptance: Cowork can show a thread family tree.
+    - Status: implemented for runs. `RunStore.forkRun` already records
+      `metadata.parentRolloutId` + `forkReason` when a run is forked (retry,
+      checkpoint-rollback, A/B variant). `RunStore.getRunLineage(runId)` now
+      reconstructs the full fork family: the ancestor chain upward (cycle- and
+      depth-guarded, with pruned parents flagged) and the descendant subtree
+      downward. `buddy run lineage <runId> [--json]` renders the family tree;
+      the JSON is the shape a Cowork "thread family tree" view consumes. Wiring
+      session compaction itself to emit a fork run is the remaining step.
 
 23. Add "recall pack" generation.
     - Summarize relevant sessions, lessons, memories and artifacts for a
@@ -495,6 +562,16 @@ The gap is mainly product integration and durability:
     - Optional adapters later: Mem0, Honcho-like user modeling,
       Supermemory-style external memory.
     - Acceptance: changing provider does not affect the agent loop.
+    - Status: memory-provider boundary implemented (context-engine boundary
+      already exists via `ContextEngine`/`registerContextEngine`).
+      `src/memory/memory-provider.ts` defines an async-friendly `MemoryProvider`
+      interface, a `LocalMemoryProvider` that wraps the existing
+      `PersistentMemoryManager` (so SQLite/markdown stays the default and source
+      of truth), and a `MemoryProviderRegistry` (`getMemoryProviderRegistry` /
+      `getActiveMemoryProvider`). The default active provider is `local`, so the
+      agent loop is unaffected until a caller explicitly registers and activates
+      an adapter (Mem0/Honcho/Supermemory). Those network adapters and the
+      Cowork selector remain future work.
 
 25. Add hook lifecycle.
     - Hooks: before tool call, after tool call, before memory write, after
@@ -679,6 +756,13 @@ The gap is mainly product integration and durability:
 4. Add hook lifecycle before scheduled delivery and memory writeback.
 5. Add index health/repair reporting for stale artifact FTS rows whose
    source run folders were pruned or moved.
+   - Status: implemented. `RunStore.checkArtifactIndexHealth()` classifies
+     every artifact index row against disk (`missing_run` when the whole run
+     folder was pruned/moved, `missing_artifact` when only the file is gone),
+     and `RunStore.repairArtifactIndex({ includeOrphans })` deletes stale rows
+     (and optionally orphans) in one transaction, with the FTS mirror kept in
+     sync by the existing AFTER DELETE trigger. Operator surface:
+     `buddy run index-doctor [--repair] [--include-orphans] [--json]`.
 
 ## Non-goals
 

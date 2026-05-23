@@ -14,6 +14,8 @@ import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { homedir } from 'os';
+import type { CronPreCheck } from './pre-check-runner.js';
+import type { CronWatchdog } from './watchdog-handlers.js';
 
 /** Exponential backoff delays in ms: 30s, 1m, 5m, 15m, 60m */
 const BACKOFF_DELAYS_MS = [30_000, 60_000, 300_000, 900_000, 3_600_000];
@@ -48,8 +50,8 @@ export interface CronJob {
   };
   /** Task to execute */
   task: {
-    /** Task type */
-    type: 'message' | 'tool' | 'agent';
+    /** Task type. `watchdog` runs a non-LLM monitor (no agent instantiation). */
+    type: 'message' | 'tool' | 'agent' | 'watchdog';
     /** Message content (for message type) */
     message?: string;
     /** Tool name and arguments (for tool type) */
@@ -61,13 +63,25 @@ export interface CronJob {
     agentId?: string;
     /** Model override */
     model?: string;
+    /** Watchdog config (for watchdog type) — disk/http/repo/build checks. */
+    watchdog?: CronWatchdog;
   };
+  /**
+   * Optional non-LLM pre-check. When present, it is evaluated before the task;
+   * if it decides nothing changed, the expensive task is skipped with evidence.
+   * `lastFingerprint` is updated and persisted across runs by the bridge.
+   */
+  preCheck?: CronPreCheck;
   /** Delivery options */
   delivery?: {
     /** Delivery mode: 'channel' (default), 'webhook', or 'none' (silent, no notification) */
     mode?: 'channel' | 'webhook' | 'none';
-    /** Channel to deliver to */
+    /** Channel to deliver to (single, kept for backward compatibility) */
     channel?: string;
+    /** Multiple `type:id` channel targets for fan-out delivery */
+    targets?: string[];
+    /** Body format: 'full' (default) or mobile-safe 'summary' (redacted + truncated) */
+    format?: 'full' | 'summary';
     /** Session key */
     sessionKey?: string;
     /** Webhook URL */
@@ -326,6 +340,7 @@ export class CronScheduler extends EventEmitter {
     staggerMs?: number;
     enabled?: boolean;
     sessionTarget?: CronJob['sessionTarget'];
+    preCheck?: CronJob['preCheck'];
   }): Promise<CronJob> {
     const id = crypto.randomUUID();
     const now = new Date();
@@ -346,6 +361,7 @@ export class CronScheduler extends EventEmitter {
       staggerMs: params.staggerMs,
       enabled: params.enabled ?? true,
       sessionTarget: params.sessionTarget,
+      preCheck: params.preCheck,
     };
 
     // Resolve 'current' session target to concrete session ID at creation time
@@ -372,7 +388,7 @@ export class CronScheduler extends EventEmitter {
    */
   async updateJob(
     jobId: string,
-    updates: Partial<Pick<CronJob, 'name' | 'description' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled'>>
+    updates: Partial<Pick<CronJob, 'name' | 'description' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled' | 'preCheck'>>
   ): Promise<CronJob | null> {
     const job = this.jobs.get(jobId);
     if (!job) return null;
