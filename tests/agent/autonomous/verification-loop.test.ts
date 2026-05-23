@@ -5,6 +5,7 @@ import * as os from 'node:os';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 import { runVerificationAndSelfCorrectionLoop } from '../../../src/agent/autonomous/verification-loop.js';
+import { loadCheckpoint } from '../../../src/agent/autonomous/checkpoint-manager.js';
 import type { AgenticCodingTaskContract } from '../../../src/agent/autonomous/agentic-coding-contract.js';
 import type { AgenticCodingEditProposalProducerDispatch } from '../../../src/agent/autonomous/agentic-coding-runner.js';
 import type { CodeBuddyClient } from '../../../src/codebuddy/client.js';
@@ -16,10 +17,13 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
   let repoPath: string;
   let testFile: string;
   let taskFile: string;
+  let oldCodeBuddyHome: string | undefined;
   const allowedPaths = ['docs/example.md'];
 
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-verification-loop-'));
+    oldCodeBuddyHome = process.env.CODEBUDDY_HOME;
+    process.env.CODEBUDDY_HOME = tempRoot;
     repoPath = path.join(tempRoot, 'repo');
     testFile = path.join(repoPath, 'docs/example.md');
     taskFile = path.join(tempRoot, 'task.json');
@@ -40,6 +44,7 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
   });
 
   afterEach(async () => {
+    process.env.CODEBUDDY_HOME = oldCodeBuddyHome;
     await fs.rm(tempRoot, { force: true, recursive: true });
   });
 
@@ -215,6 +220,101 @@ describe('runVerificationAndSelfCorrectionLoop', () => {
     // Verify files were rolled back
     const fileContent = await fs.readFile(testFile, 'utf8');
     expect(fileContent).toBe('Hello Wrong content');
+  });
+
+  it('saves a blocked checkpoint with resume reason when max iterations are exhausted', async () => {
+    await fs.writeFile(testFile, 'Hello Wrong content', 'utf8');
+    await execFileAsync('git', ['add', 'docs/example.md'], { cwd: repoPath });
+    await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoPath });
+
+    const contract = getContract(repoPath);
+    const dispatch = getDispatch(repoPath, taskFile);
+
+    const mockClient = {
+      chat: vi.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: '```json\n{\n  "summary": "Fix incorrectly again",\n  "edits": [\n    {\n      "type": "replace_text",\n      "path": "docs/example.md",\n      "find": "Hello Wrong",\n      "replace": "Hello Broken",\n      "expectedOccurrences": 1\n    }\n  ],\n  "risks": [],\n  "verificationNotes": []\n}\n```',
+            },
+          },
+        ],
+      }),
+      getCurrentModel: () => 'gpt-4o',
+    } as unknown as CodeBuddyClient;
+
+    const result = await runVerificationAndSelfCorrectionLoop(
+      contract,
+      { taskFile, runId: 'blocked-loop-run' },
+      dispatch,
+      mockClient,
+      1,
+    );
+
+    expect(result.status).toBe('blocked');
+    const checkpoint = await loadCheckpoint('blocked-loop-run');
+    expect(checkpoint?.step).toBe('blocked');
+    expect(checkpoint?.blockedReasons?.[0]).toContain('Maximum iterations (1) reached');
+    expect(checkpoint?.verification?.[0]).toEqual(expect.objectContaining({ status: 'failed' }));
+  });
+
+  it('uses options.maxIterations as the loop budget when provided', async () => {
+    await fs.writeFile(testFile, 'Hello Wrong content', 'utf8');
+    await execFileAsync('git', ['add', 'docs/example.md'], { cwd: repoPath });
+    await execFileAsync('git', ['commit', '-m', 'initial'], { cwd: repoPath });
+
+    const contract = getContract(repoPath);
+    const dispatch = getDispatch(repoPath, taskFile);
+
+    const mockClient = {
+      chat: vi.fn().mockResolvedValue({
+        choices: [
+          {
+            message: {
+              role: 'assistant',
+              content: '```json\n{\n  "summary": "Fix incorrectly again",\n  "edits": [\n    {\n      "type": "replace_text",\n      "path": "docs/example.md",\n      "find": "Hello Wrong",\n      "replace": "Hello Broken",\n      "expectedOccurrences": 1\n    }\n  ],\n  "risks": [],\n  "verificationNotes": []\n}\n```',
+            },
+          },
+        ],
+      }),
+      getCurrentModel: () => 'gpt-4o',
+    } as unknown as CodeBuddyClient;
+
+    const result = await runVerificationAndSelfCorrectionLoop(
+      contract,
+      { taskFile, maxIterations: 1 },
+      dispatch,
+      mockClient,
+    );
+
+    expect(result.status).toBe('blocked');
+    expect(result.iterations).toBe(1);
+    expect(result.reason).toContain('Maximum iterations (1) reached');
+  });
+
+  it('returns blocked before work starts when loop budget options are invalid', async () => {
+    const contract = getContract(repoPath);
+    const dispatch = getDispatch(repoPath, taskFile);
+
+    const invalidIterations = await runVerificationAndSelfCorrectionLoop(
+      contract,
+      { taskFile, maxIterations: 0, runId: 'invalid-iterations-run' },
+      dispatch,
+    );
+
+    expect(invalidIterations.status).toBe('blocked');
+    expect(invalidIterations.reason).toContain('maxIterations must be a positive integer');
+    expect((await loadCheckpoint('invalid-iterations-run'))?.step).toBe('blocked');
+
+    const invalidCost = await runVerificationAndSelfCorrectionLoop(
+      contract,
+      { taskFile, maxCostUsd: Number.NaN },
+      dispatch,
+    );
+
+    expect(invalidCost.status).toBe('blocked');
+    expect(invalidCost.reason).toContain('maxCostUsd must be a finite non-negative number');
   });
 
   it('returns blocked when cost limit is exceeded', async () => {

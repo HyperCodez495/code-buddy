@@ -71,6 +71,9 @@ describe('Agent tool activation in LLM schemas', () => {
     expect(metadataByName.get('peer_delegate')?.keywords).toEqual(
       expect.arrayContaining(['hermes', 'dispatch', 'toolset', 'policy']),
     );
+    expect(metadataByName.get('peer_chain')?.keywords).toEqual(
+      expect.arrayContaining(['hermes', 'chain', 'handoff', 'roles']),
+    );
     expect(metadataByName.get('list_peers')?.keywords).toEqual(
       expect.arrayContaining(['capabilities', 'routing', 'hermes']),
     );

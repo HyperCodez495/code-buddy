@@ -672,6 +672,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Delegate a one-shot question to a connected fleet peer Code Buddy and get its answer plus Hermes-style dispatch policy metadata back inline'
   },
   {
+    name: 'peer_chain',
+    category: 'utility' as ToolCategory,
+    keywords: ['peer', 'chain', 'fleet', 'delegate', 'multi-agent', 'collaborate', 'orchestrate', 'hermes', 'handoff', 'roles', 'review', 'safe', 'code'],
+    priority: 8,
+    description: 'Route and execute an ordered Fleet collaboration chain with handoff context between specialist peers'
+  },
+  {
     name: 'list_peers',
     category: 'utility' as ToolCategory,
     keywords: ['peers', 'fleet', 'connected', 'remote', 'claudes', 'list', 'discover', 'status', 'provider', 'model', 'capabilities', 'route', 'routing', 'hermes', 'dispatch'],
@@ -681,9 +688,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'route_peer',
     category: 'utility' as ToolCategory,
-    keywords: ['peer', 'route', 'fleet', 'model', 'provider', 'capability', 'delegate', 'multi-ai', 'orchestrate', 'select', 'hermes', 'dispatch', 'dispatchProfile', 'profile', 'toolset', 'toolsets', 'policy', 'safe', 'review', 'research', 'code'],
+    keywords: ['peer', 'route', 'fleet', 'model', 'provider', 'capability', 'delegate', 'multi-ai', 'orchestrate', 'select', 'hermes', 'dispatch', 'chain', 'roles', 'dispatchProfile', 'profile', 'toolset', 'toolsets', 'policy', 'safe', 'review', 'research', 'code'],
     priority: 7,
-    description: 'Choose the best connected fleet peer and model for a prompt using peer.describe capabilities, Fleet TaskRouter, and optional Hermes-style dispatch profile'
+    description: 'Choose the best connected fleet peer/model or ordered role chain for a prompt using peer.describe capabilities, Fleet TaskRouter, and optional Hermes-style dispatch profile'
   },
 
   // AskUserQuestion (structured multi-option mid-task questions)

@@ -213,6 +213,129 @@ describe('route_peer tool', () => {
     expect(data.rationale).toContain('Profile: review');
   });
 
+  it('preserves peer.describe role tags so profile routing can choose the right specialist', async () => {
+    const sharedModel = {
+      id: 'reasoner',
+      contextWindow: 32_000,
+      strengths: ['reasoning'],
+      provider: 'ollama' as const,
+    };
+    registerPeer(
+      'coder-box',
+      capability({
+        roles: ['code'],
+        models: [sharedModel],
+      }),
+    );
+    registerPeer(
+      'review-box',
+      capability({
+        roles: ['review'],
+        models: [sharedModel],
+      }),
+    );
+
+    const result = await executeRoutePeer({
+      prompt: 'review this patch for regressions',
+      dispatchProfile: 'review',
+    });
+
+    expect(result.success).toBe(true);
+    const data = result.data as {
+      recommendation: { peer: string; model: string; role?: string };
+      rationale: string;
+    };
+    expect(data.recommendation).toMatchObject({
+      peer: 'review-box',
+      model: 'reasoner',
+      role: 'review',
+    });
+    expect(data.rationale).toContain('Role hint: review');
+  });
+
+  it('returns an ordered peer_delegate chain when chainRoles are requested', async () => {
+    const sharedModel = {
+      id: 'reasoner',
+      contextWindow: 32_000,
+      strengths: ['reasoning'],
+      provider: 'ollama' as const,
+    };
+    registerPeer(
+      'code-box',
+      capability({
+        roles: ['code'],
+        models: [sharedModel],
+      }),
+    );
+    registerPeer(
+      'review-box',
+      capability({
+        roles: ['review'],
+        models: [sharedModel],
+      }),
+    );
+    registerPeer(
+      'safe-box',
+      capability({
+        roles: ['safe'],
+        models: [sharedModel],
+      }),
+    );
+
+    const result = await executeRoutePeer({
+      prompt: 'think deeply about implementing, reviewing, and testing this patch',
+      chainRoles: ['code', 'review', 'safe'],
+    });
+
+    expect(result.success).toBe(true);
+    const data = result.data as {
+      mode: string;
+      recommendation: { peer: string; role?: string };
+      chain: Array<{ peer: string; model: string; role?: string }>;
+      nextCall: { tool: string; args: { peer: string; dispatchProfile?: string } };
+      nextCalls: Array<{
+        tool: string;
+        args: { peer: string; model: string; dispatchProfile?: string };
+      }>;
+      rationale: string;
+    };
+    expect(data.mode).toBe('chain');
+    expect(data.recommendation).toMatchObject({ peer: 'code-box', role: 'code' });
+    expect(data.chain.map((lane) => [lane.peer, lane.role])).toEqual([
+      ['code-box', 'code'],
+      ['review-box', 'review'],
+      ['safe-box', 'safe'],
+    ]);
+    expect(data.nextCalls.map((call) => [call.args.peer, call.args.dispatchProfile])).toEqual([
+      ['code-box', 'code'],
+      ['review-box', 'review'],
+      ['safe-box', 'safe'],
+    ]);
+    expect(data.nextCall).toEqual(data.nextCalls[0]);
+    expect(data.rationale).toContain('Chain dispatch: code');
+  });
+
+  it('rejects invalid chainRoles before peer discovery', async () => {
+    const result = await executeRoutePeer({
+      prompt: 'review this patch',
+      chainRoles: ['code', 'chaos'],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('chainRoles must contain only');
+  });
+
+  it('rejects chainRoles combined with parallelism', async () => {
+    const result = await executeRoutePeer({
+      prompt: 'review this patch',
+      chainRoles: ['code', 'review'],
+      parallelism: 2,
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('mutually exclusive');
+  });
+
   it('propagates the active agent dispatch profile when omitted by the caller', async () => {
     setActiveCustomAgentRuntime({
       id: 'hermes',

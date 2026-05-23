@@ -37,6 +37,8 @@ import { logger } from '../utils/logger.js';
 import { getToolRegistry } from '../tools/registry.js';
 import { PolicyEngine } from '../security/policy-engine.js';
 import { ConfirmationService } from '../utils/confirmation-service.js';
+import { auditLogger } from '../security/audit-logger.js';
+import { assertPeerToolInvokeAllowed } from './permissions.js';
 
 // ──────────────────────────────────────────────────────────────────
 // Types
@@ -60,57 +62,17 @@ type Executor = (input: ExecArgs) => Promise<{ output: string; truncated?: boole
 // Allowlist & gates
 // ──────────────────────────────────────────────────────────────────
 
-const PEER_TOOL_ALLOWLIST_V1 = new Set(['view_file', 'list_directory', 'search']);
-
-function getAllowlist(): Set<string> {
-  const raw = process.env.CODEBUDDY_PEER_TOOL_ALLOWLIST;
-  if (!raw) return PEER_TOOL_ALLOWLIST_V1;
-  const items = raw.split(',').map((s) => s.trim()).filter(Boolean);
-  return items.length > 0 ? new Set(items) : PEER_TOOL_ALLOWLIST_V1;
-}
-
 function getWorkspaceRoot(): string | null {
   const raw = process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
   return raw ? path.resolve(raw) : null;
 }
 
 function assertToolAllowed(name: string, scopes?: string[]): void {
-  if (!getAllowlist().has(name)) {
-    throw new Error(
-      `TOOL_NOT_ALLOWED_FOR_PEER_INVOKE: tool "${name}" is not in the peer-invoke allowlist`,
-    );
-  }
-  if (!getToolRegistry().isFleetSafe(name)) {
-    throw new Error(
-      `TOOL_NOT_FLEET_SAFE: tool "${name}" lacks fleetSafe metadata`,
-    );
-  }
-
-  const peerScopes = scopes === undefined ? ['*'] : scopes;
-  if (peerScopes.length === 0) {
-    throw new Error(
-      `PEER_SCOPE_DENIED: peer has empty scopes list`,
-    );
-  }
-
-  const isAllowed = peerScopes.some(scope => {
-    return (
-      scope === '*' ||
-      scope === 'all' ||
-      scope === 'peer:invoke' ||
-      scope === 'peer:tool:invoke' ||
-      scope === name ||
-      scope === `tool:${name}` ||
-      scope === 'tool:*' ||
-      scope === 'tool:all'
-    );
+  assertPeerToolInvokeAllowed({
+    toolName: name,
+    scopes,
+    fleetSafe: getToolRegistry().isFleetSafe(name),
   });
-
-  if (!isAllowed) {
-    throw new Error(
-      `PEER_SCOPE_DENIED: peer scopes [${peerScopes.join(', ')}] do not permit invoking tool "${name}"`,
-    );
-  }
 }
 
 async function assertPathInsideWorkspace(p: string): Promise<string> {
@@ -209,7 +171,9 @@ const SEARCH_MAX_RESULTS = 200;
 
 function stripAnsi(text: string): string {
   if (typeof text !== 'string') return text;
-  const ansiRegex = /[\u001b\u009b][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqty=><]/g;
+  const esc = String.fromCharCode(27);
+  const csi = String.fromCharCode(155);
+  const ansiRegex = new RegExp(`[${esc}${csi}][[()#;?]*(?:[0-9]{1,4}(?:;[0-9]{0,4})*)?[0-9A-ORZcf-nqty=><]`, 'g');
   return text.replace(ansiRegex, '');
 }
 
@@ -488,6 +452,16 @@ function logAudit(input: {
   error?: string;
   start: number;
 }): void {
+  auditLogger.log({
+    action: 'tool_execution',
+    decision: input.ok ? 'allow' : 'block',
+    source: 'peer-tool-bridge',
+    target: input.tool,
+    details: input.error
+      ? `peer.tool.invoke ${input.stream ? 'stream' : 'call'} failed: ${input.error}`
+      : `peer.tool.invoke ${input.stream ? 'stream' : 'call'} succeeded for ${input.ctx.connectionId}`,
+    durationMs: Date.now() - input.start,
+  });
   logger.info('[fleet] peer.tool.invoke', {
     event: 'peer.tool.invoke',
     from: input.ctx.connectionId,

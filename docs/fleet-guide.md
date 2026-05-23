@@ -180,6 +180,10 @@ Human-facing wrapper around the same semantic router exposed to the LLM
 as `route_peer`. It calls `peer.describe` on connected peers, classifies
 the prompt, applies Fleet `TaskRouter` constraints, and prints the
 recommended peer/model before you delegate work.
+When a dispatch profile such as `review`, `code`, `research`, or `safe`
+is selected, the router also treats that profile as a role hint and
+prefers peers advertising the matching `roles` value in `peer.describe`
+when model capability scores are otherwise close.
 
 ```bash
 /fleet route "think deeply about this multi-agent architecture" --privacy public
@@ -198,6 +202,10 @@ Useful flags:
 - `--privacy public|sensitive` — sensitive tasks veto cloud-egress peers.
 - `--max-cost-usd <n>` / `--max-latency-ms <n>` — hard routing filters.
 - `--parallelism <n>` — ask the router for multiple lanes.
+- `route_peer` also accepts `chainRoles: ["code","review","safe"]`
+  for an ordered Hermes-style collaboration plan; it returns one
+  `peer_delegate` call per stage. Chain roles are mutually exclusive
+  with `parallelism`.
 - `--estimated-tokens <n>` — avoid peers with too-small context windows.
 - `--timeout <ms>` — per-peer `peer.describe` timeout.
 - `--delegate` — immediately run the recommended `peer.chat` lane.
@@ -692,6 +700,14 @@ Two new tools registered on every Code Buddy:
   code or secret-bearing prompts. Use `dispatchProfile` (`balanced`,
   `research`, `code`, `review`, `safe`) to nudge model selection and
   carry the same operating posture into the suggested delegate call.
+  Use `chainRoles: ["code","review","safe"]` when one autonomous task
+  should be split into ordered specialist stages; the tool returns
+  `chain` and `nextCalls` arrays so the caller can delegate each stage
+  with the right role-specific dispatch profile.
+- `peer_chain({ "prompt": "...", "chainRoles": ["code","review","safe"] })`
+  — route and execute an ordered specialist chain in one call. Each
+  stage receives earlier stage output as handoff context, so Review
+  can audit Code and Safe can verify the accumulated result.
 - `/fleet route "..."` — human-facing version of the same router.
   Add `--profile review` (or another dispatch profile) to select a
   posture, and `--delegate` to route and immediately perform one

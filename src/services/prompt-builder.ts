@@ -410,7 +410,10 @@ export class PromptBuilder {
               `provider status, or list_peers() for a quick status. Then ` +
               `peer_delegate can ask the chosen peer a question; reuse the ` +
               `dispatchProfile returned by route_peer so the peer receives ` +
-              `matching guidance. The peer answers ` +
+              `matching guidance. For ordered specialist collaboration, pass ` +
+              `chainRoles such as ["code","review","safe"] to route_peer and ` +
+              `then run the returned nextCalls in order, or call peer_chain ` +
+              `to route and execute the chain with stage handoffs. The peer answers ` +
               `independently with its own model and the response is fed back ` +
               `into your context. Useful for delegating heavy compute, asking a ` +
               `peer with different domain knowledge, or coordinating across ` +

@@ -151,7 +151,7 @@ Resultat attendu:
 
 Le test automatisé equivalent lance un vrai serveur WebSocket local,
 connecte un vrai `FleetListener`, puis exerce `/fleet tool` et
-`/fleet route`:
+`/fleet route`, `peer_delegate`, et `peer_chain`:
 
 ```bash
 npm test -- tests/fleet/fleet-loopback-smoke.test.ts
@@ -159,7 +159,8 @@ npm test -- tests/fleet/fleet-loopback-smoke.test.ts
 
 Ce smoke ne consomme pas d'API externe. Il utilise un fichier OAuth
 ChatGPT temporaire uniquement pour publier des capacites routables via
-`peer.describe`.
+`peer.describe`; les reponses `peer.chat` sont bouclees par un client
+mocke afin de valider la chaine multi-agent sans dependre du reseau.
 
 ## Checklist de sortie
 

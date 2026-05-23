@@ -286,10 +286,6 @@ export function assessAgenticCodingExecutionGate(
     reasons.push('V0 only auto-executes low-risk tasks');
   }
 
-  if (contract.fleetPolicy === 'delegated-slices') {
-    reasons.push('write delegation is not enabled in V0');
-  }
-
   if (contract.maxFilesChanged > 10) {
     reasons.push('maxFilesChanged exceeds the V0 default safety boundary');
   }

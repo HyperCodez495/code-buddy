@@ -6,7 +6,10 @@ import { promisify } from 'node:util';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { registerAutonomousCodeCommand } from '../../src/commands/cli/autonomous-code-command.js';
+import {
+  calculateCompletedSupervisionWindowMs,
+  registerAutonomousCodeCommand,
+} from '../../src/commands/cli/autonomous-code-command.js';
 import { saveCheckpoint } from '../../src/agent/autonomous/checkpoint-manager.js';
 
 const execFileAsync = promisify(execFile);
@@ -44,6 +47,45 @@ async function createTaskFile(overrides: Record<string, unknown> = {}): Promise<
   return { repo, taskFile };
 }
 
+function createProducerTrace(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    fleet: {
+      attemptedPeerChainCalls: 1,
+      attemptedRoutePeerCalls: 0,
+      completedPeerChainCalls: 1,
+      completedRoutePeerCalls: 0,
+      expectedCollaboration: true,
+      mode: 'data_only_delegated_slices',
+      policy: 'delegated-slices',
+      state: 'completed',
+    },
+    generatedAt: '2026-05-23T00:00:00.000Z',
+    kind: 'agentic-coding-edit-proposal-producer-trace',
+    maxToolRounds: 50,
+    messageRounds: 1,
+    schemaVersion: 1,
+    source: {
+      repo: 'repo',
+      taskFile: 'task.json',
+    },
+    toolCalls: [
+      {
+        allowed: true,
+        args: {
+          chainRoles: ['research', 'code', 'review', 'safe'],
+          privacyTag: 'sensitive',
+          promptLength: 42,
+        },
+        index: 1,
+        name: 'peer_chain',
+        resultSummary: 'returned 120 chars',
+        success: true,
+      },
+    ],
+    ...overrides,
+  };
+}
+
 describe('autonomous-code CLI command', () => {
   let oldHome: string | undefined;
 
@@ -56,6 +98,8 @@ describe('autonomous-code CLI command', () => {
   });
 
   afterEach(async () => {
+    vi.doUnmock('../../src/agent/autonomous/edit-proposal-producer.js');
+    vi.doUnmock('../../src/agent/autonomous/agentic-coding-runner.js');
     process.env.CODEBUDDY_HOME = oldHome;
     consoleLogSpy.mockRestore();
     consoleErrorSpy.mockRestore();
@@ -1096,6 +1140,11 @@ describe('autonomous-code CLI command', () => {
     ]);
 
     const output = JSON.parse(getLogOutput()) as {
+      fleet: {
+        chainRoles: string[];
+        mode: string;
+        policy: string;
+      };
       editProposalProducerDispatchPath: string;
       status: string;
     };
@@ -1131,6 +1180,497 @@ describe('autonomous-code CLI command', () => {
         role: 'user',
       }),
     ]));
+  });
+
+  it('includes Fleet peer-chain guidance in producer dispatches for delegated slices', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile({
+      fleetPolicy: 'delegated-slices',
+      task: 'Coordinate peers for a safe docs proposal.',
+    });
+    const dispatchFile = path.join(tempRoot, 'loop', 'fleet-edit-proposal-producer-dispatch.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--edit-proposal-producer-dispatch-file',
+      dispatchFile,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      editProposalProducerDispatchPath: string;
+      fleet: {
+        chainRoles: string[];
+        mode: string;
+        policy: string;
+      };
+      status: string;
+    };
+    const dispatch = JSON.parse(await fs.readFile(output.editProposalProducerDispatchPath, 'utf8')) as {
+      allowedTools: string[];
+      fleet: {
+        chainRoles: string[];
+        invocation: { tool: string };
+        mode: string;
+        policy: string;
+      };
+    };
+
+    expect(output.status).toBe('ready');
+    expect(output.fleet).toEqual(expect.objectContaining({
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      mode: 'data_only_delegated_slices',
+      policy: 'delegated-slices',
+    }));
+    expect(dispatch.allowedTools).toEqual(expect.arrayContaining(['route_peer', 'peer_chain']));
+    expect(dispatch.fleet).toEqual(expect.objectContaining({
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      invocation: expect.objectContaining({ tool: 'peer_chain' }),
+      mode: 'data_only_delegated_slices',
+      policy: 'delegated-slices',
+    }));
+  });
+
+  it('runs the data-only producer and writes a generated edit proposal when requested', async () => {
+    const generateEditProposalMock = vi.fn(async () => ({
+      proposal: {
+        summary: 'Generated docs update',
+        edits: [
+          {
+            type: 'replace_text' as const,
+            path: 'docs/readme.md',
+            find: 'old',
+            replace: 'new',
+            expectedOccurrences: 1,
+          },
+        ],
+        producer: 'mock-producer',
+        risks: [],
+        verificationNotes: ['Run declared verification after approval.'],
+      },
+      trace: createProducerTrace({
+        source: {
+          repo: 'mock-repo',
+          taskFile: 'task.json',
+        },
+      }),
+    }));
+    vi.doMock('../../src/agent/autonomous/edit-proposal-producer.js', () => ({
+      generateEditProposalWithTrace: generateEditProposalMock,
+    }));
+
+    const program = createProgram();
+    const { taskFile } = await createTaskFile({
+      fleetPolicy: 'delegated-slices',
+      task: 'Generate a controlled docs proposal with Fleet advice.',
+    });
+    const proposalFile = path.join(tempRoot, 'loop', 'generated-edit-proposal.json');
+    const dispatchFile = path.join(tempRoot, 'loop', 'generated-dispatch.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--generate-edit-proposal-file',
+      proposalFile,
+      '--edit-proposal-producer-dispatch-file',
+      dispatchFile,
+      '--require-fleet-collaboration',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      editProposalProducerDispatchPath: string;
+      editProposalProducerTracePath: string;
+      generatedEditProposalPath: string;
+      status: string;
+    };
+    const savedProposal = JSON.parse(await fs.readFile(output.generatedEditProposalPath, 'utf8')) as {
+      edits: Array<{ path: string }>;
+      producer: string;
+      summary: string;
+    };
+    const savedDispatch = JSON.parse(await fs.readFile(output.editProposalProducerDispatchPath, 'utf8')) as {
+      allowedTools: string[];
+      fleet: { chainRoles: string[]; mode: string };
+      messages: Array<{ content: string }>;
+    };
+    const savedTrace = JSON.parse(await fs.readFile(output.editProposalProducerTracePath, 'utf8')) as {
+      fleet: { completedPeerChainCalls: number; state: string };
+      kind: string;
+      toolCalls: Array<{ name: string; success: boolean }>;
+    };
+
+    expect(output.status).toBe('ready');
+    expect(output.generatedEditProposalPath).toBe(proposalFile);
+    expect(output.editProposalProducerDispatchPath).toBe(dispatchFile);
+    expect(output.editProposalProducerTracePath).toBe(path.join(path.dirname(proposalFile), 'edit-proposal-producer-trace.json'));
+    expect(savedProposal).toEqual(expect.objectContaining({
+      producer: 'mock-producer',
+      summary: 'Generated docs update',
+    }));
+    expect(savedProposal.edits[0]?.path).toBe('docs/readme.md');
+    expect(savedDispatch.allowedTools).toEqual(expect.arrayContaining(['route_peer', 'peer_chain']));
+    expect(savedDispatch.fleet).toEqual(expect.objectContaining({
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      mode: 'data_only_delegated_slices',
+    }));
+    expect(savedDispatch.messages[0]?.content).toContain('Fleet collaboration policy');
+    expect(savedTrace).toEqual(expect.objectContaining({
+      fleet: expect.objectContaining({
+        completedPeerChainCalls: 1,
+        state: 'completed',
+      }),
+      kind: 'agentic-coding-edit-proposal-producer-trace',
+      toolCalls: [expect.objectContaining({ name: 'peer_chain', success: true })],
+    }));
+    expect(generateEditProposalMock).toHaveBeenCalledWith(expect.objectContaining({
+      fleet: expect.objectContaining({ mode: 'data_only_delegated_slices' }),
+    }));
+  });
+
+  it('rejects generated proposals when required Fleet collaboration did not complete', async () => {
+    const generateEditProposalMock = vi.fn(async () => ({
+      proposal: {
+        summary: 'Generated without peer help',
+        edits: [
+          {
+            type: 'replace_text' as const,
+            path: 'docs/readme.md',
+            find: 'old',
+            replace: 'new',
+            expectedOccurrences: 1,
+          },
+        ],
+        producer: 'mock-producer',
+        risks: [],
+        verificationNotes: [],
+      },
+      trace: createProducerTrace({
+        fleet: {
+          attemptedPeerChainCalls: 1,
+          attemptedRoutePeerCalls: 0,
+          completedPeerChainCalls: 0,
+          completedRoutePeerCalls: 0,
+          expectedCollaboration: true,
+          mode: 'data_only_delegated_slices',
+          policy: 'delegated-slices',
+          state: 'attempted',
+        },
+        toolCalls: [
+          {
+            allowed: true,
+            args: { chainRoles: ['research', 'code', 'review', 'safe'], promptLength: 42 },
+            error: 'No fleet peers connected',
+            index: 1,
+            name: 'peer_chain',
+            resultSummary: 'Error: No fleet peers connected',
+            success: false,
+          },
+        ],
+      }),
+    }));
+    vi.doMock('../../src/agent/autonomous/edit-proposal-producer.js', () => ({
+      generateEditProposalWithTrace: generateEditProposalMock,
+    }));
+
+    const program = createProgram();
+    const { taskFile } = await createTaskFile({
+      fleetPolicy: 'delegated-slices',
+      task: 'Generate a controlled docs proposal with required Fleet help.',
+    });
+    const proposalFile = path.join(tempRoot, 'loop', 'rejected-generated-edit-proposal.json');
+    const traceFile = path.join(path.dirname(proposalFile), 'edit-proposal-producer-trace.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--generate-edit-proposal-file',
+      proposalFile,
+      '--require-fleet-collaboration',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const trace = JSON.parse(await fs.readFile(traceFile, 'utf8')) as {
+      fleet: { completedPeerChainCalls: number; state: string };
+      toolCalls: Array<{ name: string; success: boolean }>;
+    };
+
+    expect(errorOutput).toContain('--require-fleet-collaboration requires a generated proposal trace');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    expect(trace.fleet).toEqual(expect.objectContaining({
+      completedPeerChainCalls: 0,
+      state: 'attempted',
+    }));
+    expect(trace.toolCalls).toEqual([
+      expect.objectContaining({ name: 'peer_chain', success: false }),
+    ]);
+    await expect(fs.access(proposalFile)).rejects.toThrow();
+  });
+
+  it('can generate, preview, apply, and verify a proposal in one autonomous CLI run', async () => {
+    const generateEditProposalMock = vi.fn(async () => ({
+      proposal: {
+        summary: 'Generated autonomous docs update',
+        edits: [
+          {
+            type: 'replace_text' as const,
+            path: 'docs/readme.md',
+            find: 'old autonomous text',
+            replace: 'new autonomous text',
+            expectedOccurrences: 1,
+          },
+        ],
+        producer: 'mock-producer',
+        risks: [],
+        verificationNotes: ['Verified by the CLI run.'],
+      },
+      trace: createProducerTrace(),
+    }));
+    vi.doMock('../../src/agent/autonomous/edit-proposal-producer.js', () => ({
+      generateEditProposalWithTrace: generateEditProposalMock,
+    }));
+
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({
+      task: 'Generate and apply a controlled docs proposal autonomously.',
+    });
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old autonomous text\n', 'utf8');
+    const proposalFile = path.join(tempRoot, 'loop', 'generated-apply-proposal.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--generate-edit-proposal-file',
+      proposalFile,
+      '--apply-edits',
+      '--require-fleet-collaboration',
+      '--require-preview',
+      '--run-verification',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      editPreviews: Array<{ path: string; status: string }>;
+      editResults: Array<{ path: string; status: string }>;
+      generatedEditProposalPath: string;
+      status: string;
+      verification: Array<{ status: string }>;
+    };
+    const finalContent = await fs.readFile(path.join(repo, 'docs', 'readme.md'), 'utf8');
+
+    expect(output.status).toBe('verified');
+    expect(output.generatedEditProposalPath).toBe(proposalFile);
+    expect(output.editPreviews).toEqual([
+      expect.objectContaining({ path: 'docs/readme.md', status: 'previewed' }),
+    ]);
+    expect(output.editResults).toEqual([
+      expect.objectContaining({ path: 'docs/readme.md', status: 'applied' }),
+    ]);
+    expect(output.verification).toEqual([
+      expect.objectContaining({ status: 'passed' }),
+    ]);
+    expect(finalContent).toBe('new autonomous text\n');
+    expect(generateEditProposalMock).toHaveBeenCalledOnce();
+  });
+
+  it('stores generated proposals as the overnight manifest execution profile', async () => {
+    const generateEditProposalMock = vi.fn(async () => ({
+      proposal: {
+        summary: 'Generated overnight docs update',
+        edits: [
+          {
+            type: 'replace_text' as const,
+            path: 'docs/readme.md',
+            find: 'old overnight text',
+            replace: 'new overnight text',
+            expectedOccurrences: 1,
+          },
+        ],
+        producer: 'mock-producer',
+        risks: [],
+        verificationNotes: ['Verified by the overnight CLI run.'],
+      },
+      trace: createProducerTrace(),
+    }));
+    vi.doMock('../../src/agent/autonomous/edit-proposal-producer.js', () => ({
+      generateEditProposalWithTrace: generateEditProposalMock,
+    }));
+
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({
+      task: 'Generate and apply a controlled overnight docs proposal autonomously.',
+    });
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old overnight text\n', 'utf8');
+    const proposalFile = path.join(tempRoot, 'loop', 'generated-overnight-proposal.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--generate-edit-proposal-file',
+      proposalFile,
+      '--apply-edits',
+      '--require-fleet-collaboration',
+      '--require-preview',
+      '--run-verification',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      editProposalProducerTracePath: string;
+      generatedEditProposalPath: string;
+      overnightReadiness: {
+        completionProven: boolean;
+        configuredForOvernight: boolean;
+        fleetCollaborationProven: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      overnightManifestPath: string;
+      status: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(output.overnightManifestPath, 'utf8')) as {
+      auditCommand: string[];
+      artifacts: Record<string, string>;
+      executionProfile: {
+        applyEdits: boolean;
+        editProposalFile: string;
+        requireFleetCollaboration: boolean;
+        requirePreview: boolean;
+        runVerification: boolean;
+      };
+      overnightReadiness: {
+        completionProven: boolean;
+        configuredForOvernight: boolean;
+        fleetCollaborationProven: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      resumeCommand: string[];
+      superviseCommand: string[];
+    };
+
+    expect(output.status).toBe('verified');
+    expect(output.generatedEditProposalPath).toBe(proposalFile);
+    expect(output.editProposalProducerTracePath).toBe(path.join(path.dirname(proposalFile), 'edit-proposal-producer-trace.json'));
+    expect(manifest.artifacts.generatedEditProposalPath).toBe(proposalFile);
+    expect(manifest.artifacts.editProposalProducerTracePath).toBe(output.editProposalProducerTracePath);
+    expect(manifest.executionProfile).toEqual(expect.objectContaining({
+      applyEdits: true,
+      editProposalFile: proposalFile,
+      requireFleetCollaboration: true,
+      requirePreview: true,
+      runVerification: true,
+    }));
+    expect(output.overnightReadiness).toEqual(expect.objectContaining({
+      completionProven: false,
+      configuredForOvernight: true,
+      fleetCollaborationProven: true,
+      multiAgentReady: true,
+      ready: true,
+    }));
+    expect(manifest.overnightReadiness).toEqual(expect.objectContaining({
+      completionProven: false,
+      configuredForOvernight: true,
+      fleetCollaborationProven: true,
+      multiAgentReady: true,
+      ready: true,
+    }));
+    expect(manifest.resumeCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--resume-from-manifest',
+      output.overnightManifestPath,
+      '--edit-proposal-file',
+      proposalFile,
+      '--apply-edits',
+      '--require-preview',
+      '--require-fleet-collaboration',
+      '--run-verification',
+      '--json',
+    ]);
+    expect(manifest.auditCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--audit-overnight-manifest',
+      output.overnightManifestPath,
+      '--json',
+      '--require-overnight-completion',
+    ]);
+    expect(manifest.superviseCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      output.overnightManifestPath,
+      '--supervise-cycles',
+      '961',
+      '--supervise-sleep-ms',
+      '30000',
+      '--supervise-max-stalled-cycles',
+      '3',
+      '--supervise-max-error-cycles',
+      '3',
+      '--edit-proposal-file',
+      proposalFile,
+      '--apply-edits',
+      '--require-preview',
+      '--require-fleet-collaboration',
+      '--run-verification',
+      '--json',
+      '--require-overnight-readiness',
+      '--require-overnight-completion',
+    ]);
+  });
+
+  it('rejects ambiguous generated and pre-existing proposal inputs', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    const proposalFile = path.join(tempRoot, 'proposal.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--edit-proposal-file',
+      proposalFile,
+      '--generate-edit-proposal-file',
+      path.join(tempRoot, 'generated-proposal.json'),
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--generate-edit-proposal-file cannot be combined with --edit-proposal-file');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 
   it('writes a standalone proposal loop Cowork import manifest when requested', async () => {
@@ -3597,9 +4137,2401 @@ describe('autonomous-code CLI command', () => {
     ]);
 
     const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
-    expect(errorOutput).toContain('Either --task-file or --resume must be provided.');
+    expect(errorOutput).toContain('Either --task-file, --resume, or --resume-from-manifest must be provided.');
     expect(process.exitCode).toBe(1);
     process.exitCode = 0; // reset
+  });
+
+  it('fails fast for invalid budget flags', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--max-cost-usd',
+      'not-a-number',
+      '--json',
+    ]);
+
+    let errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--max-cost-usd must be a finite non-negative number');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    consoleErrorSpy.mockClear();
+
+    const iterationsProgram = createProgram();
+    registerAutonomousCodeCommand(iterationsProgram);
+
+    await iterationsProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--max-iterations',
+      '0',
+      '--json',
+    ]);
+
+    errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--max-iterations must be a positive integer');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it('applies overnight autonomy preset defaults', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      autonomyBudgets: {
+        maxCostUsd: number;
+        maxIterations: number;
+        verificationTimeoutMs: number;
+      };
+      autonomyPreset: string;
+      status: string;
+    };
+
+    expect(output.status).toBe('ready');
+    expect(output.autonomyPreset).toBe('overnight');
+    expect(output.autonomyBudgets).toEqual({
+      maxCostUsd: 10,
+      maxIterations: 16,
+      verificationTimeoutMs: 300000,
+    });
+  });
+
+  it('creates a resumable checkpoint for overnight runs without an explicit run id', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      checkpointPath: string;
+      overnightManifestPath: string;
+      reportPath: string;
+      runId: string;
+      status: string;
+      workflowEventsPath: string;
+      workflowProgressPath: string;
+    };
+    const checkpoint = JSON.parse(await fs.readFile(output.checkpointPath, 'utf8')) as {
+      runId: string;
+      step: string;
+      options: { runId?: string };
+    };
+    const manifest = JSON.parse(await fs.readFile(output.overnightManifestPath, 'utf8')) as {
+      auditCommand: string[];
+      autonomyBudgets: { maxCostUsd: number; maxIterations: number; verificationTimeoutMs: number };
+      artifacts: Record<string, string>;
+      checkpointPath: string;
+      fleet: { policy: string };
+      kind: string;
+      overnightReadiness: {
+        blockers: string[];
+        configuredForOvernight: boolean;
+        fleetCollaborationRequired: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      resumeCommand: string[];
+      runId: string;
+      status: string;
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+      superviseCommand: string[];
+    };
+    const savedReport = JSON.parse(await fs.readFile(output.reportPath, 'utf8')) as { status: string };
+    const savedProgress = JSON.parse(await fs.readFile(output.workflowProgressPath, 'utf8')) as { kind: string };
+    const savedEvents = JSON.parse(await fs.readFile(output.workflowEventsPath, 'utf8')) as { kind: string };
+
+    expect(output.status).toBe('ready');
+    expect(output.runId).toMatch(/^overnight-\d{8}T\d{9}Z-[a-z0-9]+$/);
+    expect(output.checkpointPath).toBe(path.join(tempRoot, 'runs', output.runId, 'state.json'));
+    expect(output.overnightManifestPath).toBe(path.join(tempRoot, 'runs', output.runId, 'overnight-manifest.json'));
+    expect(output.reportPath).toBe(path.join(tempRoot, 'runs', output.runId, 'report.json'));
+    expect(output.workflowProgressPath).toBe(path.join(tempRoot, 'runs', output.runId, 'workflow-progress.json'));
+    expect(output.workflowEventsPath).toBe(path.join(tempRoot, 'runs', output.runId, 'workflow-events.json'));
+    expect(checkpoint.runId).toBe(output.runId);
+    expect(checkpoint.options.runId).toBe(output.runId);
+    expect(checkpoint.step).toBe('initialized');
+    expect(manifest).toEqual(expect.objectContaining({
+      checkpointPath: output.checkpointPath,
+      kind: 'agentic-coding-overnight-manifest',
+      auditCommand: ['buddy', 'autonomous-code', '--audit-overnight-manifest', output.overnightManifestPath, '--json'],
+      resumeCommand: ['buddy', 'autonomous-code', '--resume-from-manifest', output.overnightManifestPath, '--json'],
+      runId: output.runId,
+      status: 'ready',
+      superviseCommand: [
+        'buddy',
+        'autonomous-code',
+        '--supervise-from-manifest',
+        output.overnightManifestPath,
+        '--supervise-cycles',
+        '961',
+        '--supervise-sleep-ms',
+        '30000',
+        '--supervise-max-stalled-cycles',
+        '3',
+        '--supervise-max-error-cycles',
+        '3',
+        '--json',
+      ],
+    }));
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 961,
+      sleepMs: 30000,
+    });
+    expect(manifest.overnightReadiness).toEqual(expect.objectContaining({
+      blockers: ['Fleet collaboration is not required by the execution profile.'],
+      configuredForOvernight: true,
+      fleetCollaborationRequired: false,
+      multiAgentReady: false,
+      ready: false,
+    }));
+    expect(manifest.autonomyBudgets).toEqual({
+      maxCostUsd: 10,
+      maxIterations: 16,
+      verificationTimeoutMs: 300000,
+    });
+    expect(manifest.artifacts).toEqual(expect.objectContaining({
+      reportPath: output.reportPath,
+      workflowEventsPath: output.workflowEventsPath,
+      workflowProgressPath: output.workflowProgressPath,
+    }));
+    expect(manifest.fleet.policy).toBe('none');
+    expect(savedReport.status).toBe('ready');
+    expect(savedProgress.kind).toBe('agentic-coding-workflow-progress');
+    expect(savedEvents.kind).toBe('agentic-coding-workflow-events');
+  });
+
+  it('keeps overnight manifest paths resumable under high-entropy home directories', async () => {
+    const program = createProgram();
+    process.env.CODEBUDDY_HOME = path.join(tempRoot, 'Ab3dEf9Gh2JkLm7No4PqRs8Tu5VwXy1Z');
+    const repo = path.join(process.env.CODEBUDDY_HOME, 'repo');
+    const taskFile = path.join(process.env.CODEBUDDY_HOME, 'task.json');
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await execFileAsync('git', ['init'], { cwd: repo });
+    const taskHandle = await fs.open(taskFile, 'w');
+    await taskHandle.writeFile(JSON.stringify({
+      repo,
+      task: 'Run CLI preflight.',
+      allowedPaths: ['docs/...'],
+      verification: ['node -e "console.log(123)"'],
+      riskLevel: 'low',
+    }), 'utf8');
+    await taskHandle.close();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      checkpointPath: string;
+      overnightManifestPath: string;
+      runId: string;
+      status: string;
+    };
+    const rawManifest = await fs.readFile(output.overnightManifestPath, 'utf8');
+    const manifest = JSON.parse(rawManifest) as {
+      checkpointPath: string;
+      resumeCommand: string[];
+      runId: string;
+    };
+    const checkpoint = JSON.parse(await fs.readFile(output.checkpointPath, 'utf8')) as {
+      contract: { repo: string };
+    };
+
+    expect(output.status).toBe('ready');
+    expect(manifest.checkpointPath).toBe(output.checkpointPath);
+    expect(manifest.checkpointPath).not.toContain('[REDACTED');
+    expect(manifest.resumeCommand).toEqual(['buddy', 'autonomous-code', '--resume-from-manifest', output.overnightManifestPath, '--json']);
+    expect(manifest.resumeCommand[3]).not.toContain('[REDACTED');
+    expect(manifest.runId).toBe(output.runId);
+    expect(checkpoint.contract.repo).toBe(repo);
+    expect(checkpoint.contract.repo).not.toContain('[REDACTED');
+  });
+
+  it('writes an overnight manifest to a custom path', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const manifestFile = path.join(tempRoot, 'ops', 'overnight.json');
+    const reportFile = path.join(tempRoot, 'ops', 'report.json');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--overnight-manifest-file',
+      manifestFile,
+      '--report-file',
+      reportFile,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      overnightManifestPath: string;
+      reportPath: string;
+      runId: string;
+      status: string;
+      workflowEventsPath: string;
+      workflowProgressPath: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(output.overnightManifestPath, 'utf8')) as {
+      artifacts: Record<string, string>;
+      fleet: { chainRoles: string[]; policy: string };
+      resumeCommand: string[];
+      runId: string;
+    };
+
+    expect(output.status).toBe('ready');
+    expect(output.overnightManifestPath).toBe(manifestFile);
+    expect(output.reportPath).toBe(reportFile);
+    expect(manifest.runId).toBe(output.runId);
+    expect(manifest.resumeCommand).toEqual(['buddy', 'autonomous-code', '--resume-from-manifest', manifestFile, '--json']);
+    expect(manifest.fleet).toEqual(expect.objectContaining({
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      policy: 'delegated-slices',
+    }));
+    expect(manifest.artifacts).toEqual(expect.objectContaining({
+      reportPath: reportFile,
+      workflowEventsPath: output.workflowEventsPath,
+      workflowProgressPath: output.workflowProgressPath,
+    }));
+  });
+
+  it('can resume from an overnight manifest and reuse its artifacts', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'manifest-resume-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'overnight.json');
+    const reportFile = path.join(tempRoot, 'ops', 'report.json');
+    const progressFile = path.join(tempRoot, 'ops', 'workflow-progress.json');
+    const eventsFile = path.join(tempRoot, 'ops', 'workflow-events.json');
+
+    await saveCheckpoint({
+      runId,
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: {
+        runId,
+        taskFile,
+        maxCostUsd: 4,
+        maxIterations: 9,
+        verificationTimeoutMs: 240000,
+      },
+      contract: {
+        repo,
+        task: 'Resume from manifest.',
+        allowedPaths: ['docs/...'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      autonomyBudgets: {
+        maxCostUsd: 4,
+        maxIterations: 9,
+        verificationTimeoutMs: 240000,
+      },
+      runId,
+      artifacts: {
+        reportPath: reportFile,
+        workflowEventsPath: eventsFile,
+        workflowProgressPath: progressFile,
+      },
+    }), 'utf8');
+
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--resume-from-manifest',
+      manifestFile,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      autonomyBudgets: { maxCostUsd: number; maxIterations: number; verificationTimeoutMs: number };
+      autonomyPreset: string;
+      overnightManifestPath: string;
+      reportPath: string;
+      runId: string;
+      status: string;
+      workflowEventsPath: string;
+      workflowProgressPath: string;
+    };
+    const updatedManifest = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as {
+      artifacts: Record<string, string>;
+      runId: string;
+      status: string;
+    };
+
+    expect(output.status).toBe('verified');
+    expect(output.runId).toBe(runId);
+    expect(output.autonomyPreset).toBe('overnight');
+    expect(output.autonomyBudgets).toEqual({
+      maxCostUsd: 4,
+      maxIterations: 9,
+      verificationTimeoutMs: 240000,
+    });
+    expect(output.overnightManifestPath).toBe(manifestFile);
+    expect(output.reportPath).toBe(reportFile);
+    expect(output.workflowProgressPath).toBe(progressFile);
+    expect(output.workflowEventsPath).toBe(eventsFile);
+    expect(updatedManifest).toEqual(expect.objectContaining({
+      runId,
+      status: 'verified',
+    }));
+    expect(updatedManifest.artifacts).toEqual(expect.objectContaining({
+      reportPath: reportFile,
+      workflowEventsPath: eventsFile,
+      workflowProgressPath: progressFile,
+    }));
+  });
+
+  it('replays the manifest execution profile when resuming without CLI action flags', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'manifest-execution-profile-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'profile-overnight.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'profile-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'edit-proposal-producer-trace.json');
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old profile text\n', 'utf8');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Manifest profile proposal',
+      edits: [
+        {
+          expectedOccurrences: 1,
+          find: 'old profile text',
+          path: 'docs/readme.md',
+          replace: 'new profile text',
+          type: 'replace_text',
+        },
+      ],
+      risks: [],
+      verificationNotes: ['Resume should apply and verify this proposal.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace()), 'utf8');
+
+    await saveCheckpoint({
+      runId,
+      step: 'initialized',
+      timestamp: new Date().toISOString(),
+      options: {
+        runId,
+        taskFile,
+      },
+      contract: {
+        repo,
+        task: 'Resume with manifest execution profile.',
+        allowedPaths: ['docs/...'],
+        verification: ['node -e "console.log(123)"'],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        applyEdits: true,
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+        requirePreview: true,
+        runVerification: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--resume-from-manifest',
+      manifestFile,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      editProposal?: { file: string };
+      editPreviews: Array<{ path: string; status: string }>;
+      editResults: Array<{ path: string; status: string }>;
+      overnightManifestPath: string;
+      status: string;
+      verification: Array<{ status: string }>;
+    };
+    const updatedManifest = JSON.parse(await fs.readFile(output.overnightManifestPath, 'utf8')) as {
+      executionProfile: {
+        applyEdits: boolean;
+        editProposalFile: string;
+        requireFleetCollaboration: boolean;
+        requirePreview: boolean;
+        runVerification: boolean;
+      };
+      resumeCommand: string[];
+    };
+    const finalContent = await fs.readFile(path.join(repo, 'docs', 'readme.md'), 'utf8');
+
+    expect(output.status).toBe('verified');
+    expect(output.editProposal?.file).toBe(proposalFile);
+    expect(output.editPreviews).toEqual([
+      expect.objectContaining({ path: 'docs/readme.md', status: 'previewed' }),
+    ]);
+    expect(output.editResults).toEqual([
+      expect.objectContaining({ path: 'docs/readme.md', status: 'applied' }),
+    ]);
+    expect(output.verification).toEqual([
+      expect.objectContaining({ status: 'passed' }),
+    ]);
+    expect(finalContent).toBe('new profile text\n');
+    expect(updatedManifest.executionProfile).toEqual({
+      applyEdits: true,
+      editProposalFile: proposalFile,
+      requireFleetCollaboration: true,
+      requirePreview: true,
+      runVerification: true,
+    });
+    expect(updatedManifest.resumeCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--resume-from-manifest',
+      manifestFile,
+      '--edit-proposal-file',
+      proposalFile,
+      '--apply-edits',
+      '--require-preview',
+      '--require-fleet-collaboration',
+      '--run-verification',
+      '--json',
+    ]);
+  });
+
+  it('rejects manifest resume when required Fleet collaboration is not proven by the trace', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'manifest-requires-fleet-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'require-fleet-overnight.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'require-fleet-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'edit-proposal-producer-trace.json');
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old required fleet text\n', 'utf8');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Manifest profile proposal without completed Fleet work',
+      edits: [
+        {
+          expectedOccurrences: 1,
+          find: 'old required fleet text',
+          path: 'docs/readme.md',
+          replace: 'new required fleet text',
+          type: 'replace_text',
+        },
+      ],
+      risks: [],
+      verificationNotes: ['This proposal must not apply without completed Fleet collaboration.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace({
+      fleet: {
+        attemptedPeerChainCalls: 1,
+        attemptedRoutePeerCalls: 0,
+        completedPeerChainCalls: 0,
+        completedRoutePeerCalls: 0,
+        expectedCollaboration: true,
+        mode: 'data_only_delegated_slices',
+        policy: 'delegated-slices',
+        state: 'attempted',
+      },
+      toolCalls: [
+        {
+          allowed: true,
+          args: { chainRoles: ['research', 'code', 'review', 'safe'], promptLength: 42 },
+          error: 'No fleet peers connected',
+          index: 1,
+          name: 'peer_chain',
+          resultSummary: 'Error: No fleet peers connected',
+          success: false,
+        },
+      ],
+    })), 'utf8');
+
+    await saveCheckpoint({
+      runId,
+      step: 'initialized',
+      timestamp: new Date().toISOString(),
+      options: {
+        runId,
+        taskFile,
+      },
+      contract: {
+        repo,
+        task: 'Resume should reject missing Fleet collaboration proof.',
+        allowedPaths: ['docs/...'],
+        verification: ['node -e "console.log(123)"'],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        applyEdits: true,
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+        requirePreview: true,
+        runVerification: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--resume-from-manifest',
+      manifestFile,
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const finalContent = await fs.readFile(path.join(repo, 'docs', 'readme.md'), 'utf8');
+
+    expect(errorOutput).toContain('--require-fleet-collaboration requires a generated proposal trace');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    expect(finalContent).toBe('old required fleet text\n');
+  });
+
+  it('records required Fleet collaboration proof in supervised manifest events', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'manifest-supervise-fleet-proof-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'proof-overnight.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'proof-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'edit-proposal-producer-trace.json');
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old proof text\n', 'utf8');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Manifest profile proposal with proven Fleet work',
+      edits: [
+        {
+          expectedOccurrences: 1,
+          find: 'old proof text',
+          path: 'docs/readme.md',
+          replace: 'new proof text',
+          type: 'replace_text',
+        },
+      ],
+      risks: [],
+      verificationNotes: ['Supervision should expose the Fleet proof.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace()), 'utf8');
+
+    await saveCheckpoint({
+      runId,
+      step: 'initialized',
+      timestamp: new Date().toISOString(),
+      options: {
+        runId,
+        taskFile,
+      },
+      contract: {
+        repo,
+        task: 'Supervise with manifest Fleet collaboration proof.',
+        allowedPaths: ['docs/...'],
+        verification: ['node -e "console.log(123)"'],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        applyEdits: true,
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+        requirePreview: true,
+        runVerification: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '1',
+      '--supervise-sleep-ms',
+      '0',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      status: string;
+      supervision: {
+        fleetCollaborationProof: {
+          completedPeerChainCalls: number;
+          completedRoutePeerCalls: number;
+          expectedCollaboration: boolean;
+          proven: boolean;
+          state: string;
+          tracePath: string;
+        };
+        stoppedReason: string;
+      };
+      overnightReadiness: {
+        configuredForOvernight: boolean;
+        fleetCollaborationProven: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      supervisionEventsPath: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as {
+      overnightReadiness: {
+        configuredForOvernight: boolean;
+        fleetCollaborationProven: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      supervision: {
+        fleetCollaborationProof: {
+          completedPeerChainCalls: number;
+          proven: boolean;
+          tracePath: string;
+        };
+      };
+    };
+    const eventLines = (await fs.readFile(output.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as {
+        fleetCollaborationProof: {
+          completedPeerChainCalls: number;
+          completedRoutePeerCalls: number;
+          expectedCollaboration: boolean;
+          proven: boolean;
+          state: string;
+          tracePath: string;
+        };
+      });
+    const finalContent = await fs.readFile(path.join(repo, 'docs', 'readme.md'), 'utf8');
+
+    expect(output.status).toBe('verified');
+    expect(output.supervision.stoppedReason).toBe('terminal_status');
+    expect(output.supervision.fleetCollaborationProof).toEqual({
+      completedPeerChainCalls: 1,
+      completedRoutePeerCalls: 0,
+      expectedCollaboration: true,
+      proven: true,
+      state: 'completed',
+      tracePath: traceFile,
+    });
+    expect(output.overnightReadiness).toEqual(expect.objectContaining({
+      configuredForOvernight: false,
+      fleetCollaborationProven: true,
+      multiAgentReady: true,
+      ready: false,
+    }));
+    expect(manifest.overnightReadiness).toEqual(expect.objectContaining({
+      configuredForOvernight: false,
+      fleetCollaborationProven: true,
+      multiAgentReady: true,
+      ready: false,
+    }));
+    expect(manifest.supervision.fleetCollaborationProof).toEqual(expect.objectContaining({
+      completedPeerChainCalls: 1,
+      proven: true,
+      tracePath: traceFile,
+    }));
+    expect(eventLines).toEqual([
+      expect.objectContaining({
+        fleetCollaborationProof: expect.objectContaining({
+          completedPeerChainCalls: 1,
+          completedRoutePeerCalls: 0,
+          expectedCollaboration: true,
+          proven: true,
+          tracePath: traceFile,
+        }),
+      }),
+    ]);
+    expect(finalContent).toBe('new proof text\n');
+  });
+
+  it('rejects supervised runs when overnight readiness is required but not satisfied', async () => {
+    const program = createProgram();
+    const manifestFile = path.join(tempRoot, 'ops', 'not-ready-overnight.json');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      autonomyPreset: 'overnight',
+      runId: 'not-ready-run-id',
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '2',
+      '--supervise-sleep-ms',
+      '0',
+      '--require-overnight-readiness',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--require-overnight-readiness failed');
+    expect(errorOutput).toContain('Supervision window is shorter than the minimum overnight window.');
+    expect(errorOutput).toContain('Fleet collaboration is not required by the execution profile.');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it('allows readiness-required supervised manifests with Fleet proof and the default overnight window', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'manifest-supervise-ready-proof-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'ready-proof-overnight.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'ready-proof-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'ready-proof-trace.json');
+    await fs.mkdir(path.join(repo, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(repo, 'docs', 'readme.md'), 'old ready proof text\n', 'utf8');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Readiness-gated Fleet proof proposal',
+      edits: [
+        {
+          expectedOccurrences: 1,
+          find: 'old ready proof text',
+          path: 'docs/readme.md',
+          replace: 'new ready proof text',
+          type: 'replace_text',
+        },
+      ],
+      risks: [],
+      verificationNotes: ['Supervision readiness gate should allow this run.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace()), 'utf8');
+
+    await saveCheckpoint({
+      runId,
+      step: 'initialized',
+      timestamp: new Date().toISOString(),
+      options: {
+        runId,
+        taskFile,
+      },
+      contract: {
+        repo,
+        task: 'Supervise with required overnight readiness.',
+        allowedPaths: ['docs/...'],
+        verification: ['node -e "console.log(123)"'],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        applyEdits: true,
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+        requirePreview: true,
+        runVerification: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--require-overnight-readiness',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      status: string;
+      overnightReadiness: {
+        completionProven: boolean;
+        configuredForOvernight: boolean;
+        fleetCollaborationProven: boolean;
+        multiAgentReady: boolean;
+        ready: boolean;
+      };
+      supervision: {
+        requestedCycles: number;
+        sleepMs: number;
+        stoppedReason: string;
+      };
+    };
+    const finalContent = await fs.readFile(path.join(repo, 'docs', 'readme.md'), 'utf8');
+
+    expect(output.status).toBe('verified');
+    expect(output.supervision).toEqual(expect.objectContaining({
+      requestedCycles: 961,
+      sleepMs: 30000,
+      stoppedReason: 'terminal_status',
+    }));
+    expect(output.overnightReadiness).toEqual(expect.objectContaining({
+      completionProven: false,
+      configuredForOvernight: true,
+      fleetCollaborationProven: true,
+      multiAgentReady: true,
+      ready: true,
+    }));
+    expect(finalContent).toBe('new ready proof text\n');
+  });
+
+  it('does not prove overnight completion when a ready watchdog stops on the first terminal cycle', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'early-terminal-ready-watchdog-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'early-terminal-ready-watchdog.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'early-terminal-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'early-terminal-trace.json');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Unused proposal for terminal checkpoint readiness proof',
+      edits: [],
+      risks: [],
+      verificationNotes: ['Terminal checkpoint should not prove overnight completion.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace()), 'utf8');
+    await saveCheckpoint({
+      runId,
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: { runId, taskFile },
+      contract: {
+        repo,
+        task: 'Terminal checkpoint should not prove overnight completion.',
+        allowedPaths: ['docs/...'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '2',
+      '--supervise-sleep-ms',
+      '28800000',
+      '--require-overnight-readiness',
+      '--json',
+    ]);
+
+    const outputText = getLogOutput();
+    if (!outputText) {
+      const manifestAfterFailure = await fs.readFile(created.overnightManifestPath, 'utf8').catch(() => '');
+      throw new Error([
+        consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n'),
+        manifestAfterFailure,
+      ].filter(Boolean).join('\n'));
+    }
+    const output = JSON.parse(outputText) as {
+      overnightReadiness: {
+        completedOvernightWindow: boolean;
+        completedWindowMs: number;
+        completionProven: boolean;
+        configuredForOvernight: boolean;
+        configuredWindowMs: number;
+        ready: boolean;
+      };
+      supervision: { completedCycles: number; stoppedReason: string };
+    };
+
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 1,
+      stoppedReason: 'terminal_status',
+    }));
+    expect(output.overnightReadiness).toEqual(expect.objectContaining({
+      completedOvernightWindow: false,
+      completedWindowMs: 0,
+      completionProven: false,
+      configuredForOvernight: true,
+      configuredWindowMs: 28800000,
+      ready: true,
+    }));
+  });
+
+  it('rejects required overnight completion when a ready watchdog stops before the full window', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    const runId = 'required-completion-early-terminal-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'required-completion-early-terminal.json');
+    const proposalFile = path.join(tempRoot, 'ops', 'required-completion-proposal.json');
+    const traceFile = path.join(tempRoot, 'ops', 'required-completion-trace.json');
+    await fs.mkdir(path.dirname(proposalFile), { recursive: true });
+    await fs.writeFile(proposalFile, JSON.stringify({
+      summary: 'Unused proposal for required overnight completion',
+      edits: [],
+      risks: [],
+      verificationNotes: ['Terminal checkpoint should not satisfy completion.'],
+    }), 'utf8');
+    await fs.writeFile(traceFile, JSON.stringify(createProducerTrace()), 'utf8');
+    await saveCheckpoint({
+      runId,
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: { runId, taskFile },
+      contract: {
+        repo,
+        task: 'Terminal checkpoint should fail required overnight completion.',
+        allowedPaths: ['docs/...'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'delegated-slices',
+      },
+    });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId,
+      artifacts: {
+        editProposalProducerTracePath: traceFile,
+      },
+      executionProfile: {
+        editProposalFile: proposalFile,
+        requireFleetCollaboration: true,
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '2',
+      '--supervise-sleep-ms',
+      '28800000',
+      '--require-overnight-completion',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as {
+      overnightReadiness: {
+        completedOvernightWindow: boolean;
+        completionProven: boolean;
+        configuredForOvernight: boolean;
+        ready: boolean;
+      };
+      supervision: { completedCycles: number; stoppedReason: string };
+    };
+
+    expect(errorOutput).toContain('--require-overnight-completion failed');
+    expect(errorOutput).toContain('Completed supervision window 0ms is shorter than minimum 28800000ms');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    expect(manifest.supervision).toEqual(expect.objectContaining({
+      completedCycles: 1,
+      stoppedReason: 'terminal_status',
+    }));
+    expect(manifest.overnightReadiness).toEqual(expect.objectContaining({
+      completedOvernightWindow: false,
+      completionProven: false,
+      configuredForOvernight: true,
+      ready: true,
+    }));
+  });
+
+  it('audits completed overnight manifests without running supervision', async () => {
+    const program = createProgram();
+    const manifestFile = path.join(tempRoot, 'ops', 'completed-audit-overnight.json');
+    const eventsFile = path.join(tempRoot, 'ops', 'completed-audit-events.jsonl');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    const cycles = [
+      {
+        consecutiveErrorCycles: 0,
+        index: 1,
+        progressSignature: 'ready-1',
+        runId: 'completed-audit-run-id',
+        stalledCycles: 1,
+        status: 'ready',
+        timestamp: '2026-05-23T00:00:00.000Z',
+      },
+      {
+        consecutiveErrorCycles: 0,
+        index: 2,
+        progressSignature: 'ready-2',
+        runId: 'completed-audit-run-id',
+        stalledCycles: 1,
+        status: 'ready',
+        timestamp: '2026-05-23T08:00:00.000Z',
+      },
+    ];
+    await fs.writeFile(eventsFile, cycles.map((cycle, index) => JSON.stringify({
+      kind: 'agentic-coding-supervision-cycle',
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      schemaVersion: 1,
+      cycle,
+      requestedCycles: 2,
+      sleepMs: 28800000,
+      sourceManifestPath: manifestFile,
+      stoppedReason: index === cycles.length - 1 ? 'cycle_limit' : undefined,
+    })).join('\n'), 'utf8');
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId: 'completed-audit-run-id',
+      artifacts: {
+        supervisionEventsPath: eventsFile,
+      },
+      executionProfile: {
+        requireFleetCollaboration: true,
+      },
+      supervision: {
+        completedCycles: 2,
+        cycles,
+        fleetCollaborationProof: {
+          completedPeerChainCalls: 1,
+          completedRoutePeerCalls: 0,
+          expectedCollaboration: true,
+          proven: true,
+          state: 'completed',
+          tracePath: path.join(tempRoot, 'ops', 'completed-audit-trace.json'),
+        },
+        maxErrorCycles: 3,
+        maxStalledCycles: 3,
+        requestedCycles: 2,
+        sleepMs: 28800000,
+        sourceManifestPath: manifestFile,
+        stoppedReason: 'cycle_limit',
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--audit-overnight-manifest',
+      manifestFile,
+      '--require-overnight-completion',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      evidence: { completedCycles: number; stoppedReason: string; supervisionEventsPath: string };
+      eventAudit: { eventCount: number; exists: boolean; matchesSupervision: boolean; path: string };
+      kind: string;
+      overnightReadiness: {
+        completedOvernightWindow: boolean;
+        completedWindowMs: number;
+        completionProven: boolean;
+        fleetCollaborationProven: boolean;
+        ready: boolean;
+      };
+      status: string;
+      supervision: { completedCycles: number; stoppedReason: string };
+    };
+
+    expect(output.kind).toBe('agentic-coding-overnight-audit');
+    expect(output.status).toBe('completion_proven');
+    expect(output.evidence).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      stoppedReason: 'cycle_limit',
+      supervisionEventsPath: eventsFile,
+    }));
+    expect(output.eventAudit).toEqual(expect.objectContaining({
+      eventCount: 2,
+      exists: true,
+      matchesSupervision: true,
+      path: eventsFile,
+    }));
+    expect(output.overnightReadiness).toEqual(expect.objectContaining({
+      completedOvernightWindow: true,
+      completedWindowMs: 28800000,
+      completionProven: true,
+      fleetCollaborationProven: true,
+      ready: true,
+    }));
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      stoppedReason: 'cycle_limit',
+    }));
+  });
+
+  it('rejects completed overnight manifest audits when supervision event evidence is missing', async () => {
+    const program = createProgram();
+    const manifestFile = path.join(tempRoot, 'ops', 'missing-events-audit-overnight.json');
+    const eventsFile = path.join(tempRoot, 'ops', 'missing-events-audit-events.jsonl');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId: 'missing-events-audit-run-id',
+      artifacts: {
+        supervisionEventsPath: eventsFile,
+      },
+      executionProfile: {
+        requireFleetCollaboration: true,
+      },
+      supervision: {
+        completedCycles: 2,
+        cycles: [
+          {
+            consecutiveErrorCycles: 0,
+            index: 1,
+            progressSignature: 'ready-1',
+            runId: 'missing-events-audit-run-id',
+            stalledCycles: 1,
+            status: 'ready',
+            timestamp: '2026-05-23T00:00:00.000Z',
+          },
+          {
+            consecutiveErrorCycles: 0,
+            index: 2,
+            progressSignature: 'ready-2',
+            runId: 'missing-events-audit-run-id',
+            stalledCycles: 1,
+            status: 'ready',
+            timestamp: '2026-05-23T08:00:00.000Z',
+          },
+        ],
+        fleetCollaborationProof: {
+          completedPeerChainCalls: 1,
+          completedRoutePeerCalls: 0,
+          expectedCollaboration: true,
+          proven: true,
+          state: 'completed',
+          tracePath: path.join(tempRoot, 'ops', 'missing-events-audit-trace.json'),
+        },
+        maxErrorCycles: 3,
+        maxStalledCycles: 3,
+        requestedCycles: 2,
+        sleepMs: 28800000,
+        sourceManifestPath: manifestFile,
+        stoppedReason: 'cycle_limit',
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--audit-overnight-manifest',
+      manifestFile,
+      '--require-overnight-completion',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--require-overnight-completion failed');
+    expect(errorOutput).toContain('Supervision event audit file is missing or unreadable');
+    expect(errorOutput).toContain(eventsFile);
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it('rejects overnight manifest audits when observed completion is missing', async () => {
+    const program = createProgram();
+    const manifestFile = path.join(tempRoot, 'ops', 'not-complete-audit-overnight.json');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      schemaVersion: 1,
+      autonomyPreset: 'overnight',
+      runId: 'not-complete-audit-run-id',
+      executionProfile: {
+        requireFleetCollaboration: true,
+      },
+      supervisionDefaults: {
+        maxErrorCycles: 3,
+        maxStalledCycles: 3,
+        requestedCycles: 2,
+        sleepMs: 28800000,
+      },
+      supervision: {
+        completedCycles: 1,
+        cycles: [
+          {
+            consecutiveErrorCycles: 0,
+            index: 1,
+            progressSignature: 'verified',
+            runId: 'not-complete-audit-run-id',
+            stalledCycles: 1,
+            status: 'verified',
+            timestamp: '2026-05-23T00:00:00.000Z',
+          },
+        ],
+        fleetCollaborationProof: {
+          completedPeerChainCalls: 1,
+          completedRoutePeerCalls: 0,
+          expectedCollaboration: true,
+          proven: true,
+          state: 'completed',
+          tracePath: path.join(tempRoot, 'ops', 'not-complete-audit-trace.json'),
+        },
+        maxErrorCycles: 3,
+        maxStalledCycles: 3,
+        requestedCycles: 2,
+        sleepMs: 28800000,
+        sourceManifestPath: manifestFile,
+        stoppedReason: 'terminal_status',
+      },
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--audit-overnight-manifest',
+      manifestFile,
+      '--require-overnight-completion',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--require-overnight-completion failed');
+    expect(errorOutput).toContain('Completed supervision window 0ms is shorter than minimum 28800000ms');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it('measures overnight completion from observed supervision timestamps', () => {
+    expect(calculateCompletedSupervisionWindowMs({
+      cycles: [
+        { timestamp: '2026-05-23T00:00:00.000Z' },
+        { timestamp: '2026-05-23T08:00:00.000Z' },
+      ],
+      stoppedReason: 'cycle_limit',
+    })).toBe(28800000);
+  });
+
+  it('can supervise repeated bounded resume cycles from an overnight manifest', async () => {
+    const createProgramInstance = createProgram();
+    const { taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    registerAutonomousCodeCommand(createProgramInstance);
+
+    await createProgramInstance.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const created = JSON.parse(getLogOutput()) as {
+      overnightManifestPath: string;
+      runId: string;
+    };
+    consoleLogSpy.mockClear();
+    const superviseProgram = createProgram();
+    registerAutonomousCodeCommand(superviseProgram);
+
+    await superviseProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      created.overnightManifestPath,
+      '--supervise-cycles',
+      '2',
+      '--supervise-sleep-ms',
+      '0',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      runId: string;
+      status: string;
+      supervision: {
+        completedCycles: number;
+        cycles: Array<{ index: number; nextCycleAt?: string; status: string }>;
+        requestedCycles: number;
+        sleepMs: number;
+        sourceManifestPath: string;
+        stoppedReason: string;
+      };
+      supervisionEventsPath: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(created.overnightManifestPath, 'utf8')) as {
+      artifacts: Record<string, string>;
+      supervision: {
+        completedCycles: number;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        stoppedReason: string;
+      };
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+      superviseCommand: string[];
+    };
+    const eventLines = (await fs.readFile(output.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as {
+        cycle: { index: number; nextCycleAt?: string; status: string };
+        fleet: {
+          chainRoles: string[];
+          expectedCollaboration: boolean;
+          mode: string;
+          policy: string;
+          state: string;
+        };
+        kind: string;
+        maxErrorCycles: number;
+        requestedCycles: number;
+        sourceManifestPath: string;
+        stoppedReason?: string;
+      });
+
+    expect(output.runId).toBe(created.runId);
+    expect(output.status).toBe('ready');
+    expect(output.supervisionEventsPath).toBe(
+      path.join(path.dirname(created.overnightManifestPath), 'supervision-events.jsonl'),
+    );
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 2,
+      sleepMs: 0,
+      sourceManifestPath: created.overnightManifestPath,
+      stoppedReason: 'cycle_limit',
+    }));
+    expect(output.supervision.cycles).toEqual([
+      expect.objectContaining({ index: 1, nextCycleAt: expect.any(String), status: 'ready' }),
+      expect.objectContaining({ index: 2, status: 'ready' }),
+    ]);
+    expect(output.supervision.cycles[1]?.nextCycleAt).toBeUndefined();
+    expect(manifest.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 2,
+      stoppedReason: 'cycle_limit',
+    }));
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 2,
+      sleepMs: 0,
+    });
+    expect(manifest.superviseCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      created.overnightManifestPath,
+      '--supervise-cycles',
+      '2',
+      '--supervise-sleep-ms',
+      '0',
+      '--supervise-max-stalled-cycles',
+      '3',
+      '--supervise-max-error-cycles',
+      '3',
+      '--json',
+      '--supervision-events-file',
+      manifest.artifacts.supervisionEventsPath,
+      '--supervision-recovery-file',
+      manifest.artifacts.supervisionRecoveryPath,
+      '--supervision-fleet-triage-file',
+      manifest.artifacts.supervisionFleetTriagePath,
+      '--supervision-fleet-triage-result-file',
+      manifest.artifacts.supervisionFleetTriageResultPath,
+    ]);
+    expect(manifest.artifacts.supervisionEventsPath).toBe(output.supervisionEventsPath);
+    expect(eventLines).toEqual([
+      expect.objectContaining({
+        cycle: expect.objectContaining({ index: 1, status: 'ready' }),
+        fleet: expect.objectContaining({
+          chainRoles: ['research', 'code', 'review', 'safe'],
+          expectedCollaboration: true,
+          mode: 'data_only_delegated_slices',
+          policy: 'delegated-slices',
+          state: 'delegated_chain_ready',
+        }),
+        kind: 'agentic-coding-supervision-cycle',
+        maxErrorCycles: 3,
+        requestedCycles: 2,
+        sourceManifestPath: created.overnightManifestPath,
+      }),
+      expect.objectContaining({
+        cycle: expect.objectContaining({ index: 2, status: 'ready' }),
+        fleet: expect.objectContaining({
+          state: 'delegated_chain_ready',
+        }),
+        kind: 'agentic-coding-supervision-cycle',
+        maxErrorCycles: 3,
+        requestedCycles: 2,
+        sourceManifestPath: created.overnightManifestPath,
+        stoppedReason: 'cycle_limit',
+      }),
+    ]);
+    expect(eventLines[0]?.cycle.nextCycleAt).toEqual(expect.any(String));
+    expect(eventLines[1]?.cycle.nextCycleAt).toBeUndefined();
+  });
+
+  it('stops overnight supervision when progress stalls across cycles', async () => {
+    const createProgramInstance = createProgram();
+    const { taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    registerAutonomousCodeCommand(createProgramInstance);
+
+    await createProgramInstance.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const created = JSON.parse(getLogOutput()) as {
+      overnightManifestPath: string;
+      runId: string;
+    };
+    consoleLogSpy.mockClear();
+    const superviseProgram = createProgram();
+    registerAutonomousCodeCommand(superviseProgram);
+
+    await superviseProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      created.overnightManifestPath,
+      '--supervise-cycles',
+      '5',
+      '--supervise-sleep-ms',
+      '0',
+      '--supervise-max-stalled-cycles',
+      '2',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      status: string;
+      supervision: {
+        completedCycles: number;
+        cycles: Array<{
+          index: number;
+          nextCycleAt?: string;
+          progressSignature: string;
+          stalledCycles: number;
+          status: string;
+        }>;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        stoppedReason: string;
+      };
+      supervisionEventsPath: string;
+      supervisionFleetTriagePath: string;
+      supervisionFleetTriageResultPath: string;
+      supervisionRecoveryPath: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(created.overnightManifestPath, 'utf8')) as {
+      artifacts: {
+        supervisionFleetTriagePath?: string;
+        supervisionFleetTriageResultPath?: string;
+        supervisionRecoveryPath?: string;
+      };
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+      superviseCommand: string[];
+    };
+    const recovery = JSON.parse(await fs.readFile(output.supervisionRecoveryPath, 'utf8')) as {
+      actions: Array<{ command?: string[]; invocation?: { tool: string }; path?: string; type: string }>;
+      artifacts: { supervisionFleetTriagePath?: string; supervisionFleetTriageResultPath?: string };
+      fleet: { state: string };
+      kind: string;
+      lastCycle: { stalledCycles: number; status: string };
+      sourceManifestPath: string;
+      stoppedReason: string;
+      summary: { completedCycles: number; maxStalledCycles: number };
+    };
+    const triage = JSON.parse(await fs.readFile(output.supervisionFleetTriagePath, 'utf8')) as {
+      artifacts: { supervisionEventsPath?: string; supervisionRecoveryPath?: string };
+      fleet: { state: string };
+      kind: string;
+      lastCycle: { stalledCycles: number; status: string };
+      peerChainCall: { chainRoles: string[]; prompt: string; tool: string };
+      recoveryPath: string;
+      sourceManifestPath: string;
+      stoppedReason: string;
+    };
+    const triageResult = JSON.parse(await fs.readFile(output.supervisionFleetTriageResultPath, 'utf8')) as {
+      error: string;
+      kind: string;
+      peerChainCall: { promptLength: number; stageTimeoutMs: number; tool: string };
+      success: boolean;
+      triagePath: string;
+    };
+    const eventLines = (await fs.readFile(output.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as {
+        cycle: { nextCycleAt?: string };
+        fleet: { expectedCollaboration: boolean; state: string };
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        stoppedReason?: string;
+      });
+
+    expect(output.status).toBe('ready');
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      maxErrorCycles: 3,
+      maxStalledCycles: 2,
+      requestedCycles: 5,
+      stoppedReason: 'stalled',
+    }));
+    expect(output.supervision.cycles).toEqual([
+      expect.objectContaining({ index: 1, nextCycleAt: expect.any(String), stalledCycles: 1, status: 'ready' }),
+      expect.objectContaining({ index: 2, stalledCycles: 2, status: 'ready' }),
+    ]);
+    expect(output.supervision.cycles[1]?.nextCycleAt).toBeUndefined();
+    expect(output.supervision.cycles[0]?.progressSignature).toBe(output.supervision.cycles[1]?.progressSignature);
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 3,
+      maxStalledCycles: 2,
+      requestedCycles: 5,
+      sleepMs: 0,
+    });
+    expect(manifest.artifacts.supervisionRecoveryPath).toBe(output.supervisionRecoveryPath);
+    expect(manifest.artifacts.supervisionFleetTriagePath).toBe(output.supervisionFleetTriagePath);
+    expect(manifest.artifacts.supervisionFleetTriageResultPath).toBe(output.supervisionFleetTriageResultPath);
+    expect(recovery).toEqual(expect.objectContaining({
+      artifacts: expect.objectContaining({
+        supervisionFleetTriagePath: output.supervisionFleetTriagePath,
+        supervisionFleetTriageResultPath: output.supervisionFleetTriageResultPath,
+      }),
+      fleet: expect.objectContaining({ state: 'delegated_chain_ready' }),
+      kind: 'agentic-coding-supervision-recovery',
+      lastCycle: expect.objectContaining({ stalledCycles: 2, status: 'ready' }),
+      sourceManifestPath: created.overnightManifestPath,
+      stoppedReason: 'stalled',
+      summary: expect.objectContaining({ completedCycles: 2, maxStalledCycles: 2 }),
+    }));
+    expect(recovery.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: output.supervisionEventsPath, type: 'inspect_supervision_events' }),
+      expect.objectContaining({
+        path: output.supervisionFleetTriageResultPath,
+        type: 'inspect_fleet_triage_result',
+      }),
+      expect.objectContaining({
+        command: ['buddy', 'autonomous-code', '--audit-overnight-manifest', created.overnightManifestPath, '--json'],
+        type: 'audit_overnight_manifest',
+      }),
+      expect.objectContaining({
+        invocation: expect.objectContaining({ tool: 'peer_chain' }),
+        path: output.supervisionFleetTriagePath,
+        type: 'ask_fleet_triage',
+      }),
+      expect.objectContaining({ command: expect.arrayContaining(['--resume-from-manifest']), type: 'resume_once' }),
+      expect.objectContaining({ command: expect.arrayContaining(['--supervise-from-manifest']), type: 'restart_supervision' }),
+    ]));
+    const restartCommand = recovery.actions.find((action) => action.type === 'restart_supervision')?.command ?? [];
+    expect(restartCommand).toEqual(expect.arrayContaining([
+      '--supervision-events-file',
+      output.supervisionEventsPath,
+      '--supervision-recovery-file',
+      output.supervisionRecoveryPath,
+      '--supervision-fleet-triage-file',
+      output.supervisionFleetTriagePath,
+      '--supervision-fleet-triage-result-file',
+      output.supervisionFleetTriageResultPath,
+    ]));
+    expect(manifest.superviseCommand).toEqual(expect.arrayContaining([
+      '--supervision-events-file',
+      output.supervisionEventsPath,
+      '--supervision-recovery-file',
+      output.supervisionRecoveryPath,
+      '--supervision-fleet-triage-file',
+      output.supervisionFleetTriagePath,
+      '--supervision-fleet-triage-result-file',
+      output.supervisionFleetTriageResultPath,
+    ]));
+    expect(triage).toEqual(expect.objectContaining({
+      artifacts: expect.objectContaining({
+        supervisionEventsPath: output.supervisionEventsPath,
+        supervisionRecoveryPath: output.supervisionRecoveryPath,
+      }),
+      fleet: expect.objectContaining({ state: 'delegated_chain_ready' }),
+      kind: 'agentic-coding-supervision-fleet-triage',
+      lastCycle: expect.objectContaining({ stalledCycles: 2, status: 'ready' }),
+      peerChainCall: expect.objectContaining({
+        chainRoles: ['research', 'code', 'review', 'safe'],
+        prompt: expect.stringContaining('Stopped reason: stalled'),
+        tool: 'peer_chain',
+      }),
+      recoveryPath: output.supervisionRecoveryPath,
+      sourceManifestPath: created.overnightManifestPath,
+      stoppedReason: 'stalled',
+    }));
+    expect(triage.peerChainCall.prompt).toContain(output.supervisionEventsPath);
+    expect(triageResult).toEqual(expect.objectContaining({
+      error: expect.stringContaining('No fleet peers connected'),
+      kind: 'agentic-coding-supervision-fleet-triage-result',
+      peerChainCall: expect.objectContaining({
+        promptLength: triage.peerChainCall.prompt.length,
+        stageTimeoutMs: 30000,
+        tool: 'peer_chain',
+      }),
+      success: false,
+      triagePath: output.supervisionFleetTriagePath,
+    }));
+    expect(eventLines).toEqual([
+      expect.objectContaining({
+        fleet: expect.objectContaining({ expectedCollaboration: true, state: 'delegated_chain_ready' }),
+        maxErrorCycles: 3,
+        maxStalledCycles: 2,
+      }),
+      expect.objectContaining({
+        fleet: expect.objectContaining({ expectedCollaboration: true, state: 'delegated_chain_ready' }),
+        maxErrorCycles: 3,
+        maxStalledCycles: 2,
+        stoppedReason: 'stalled',
+      }),
+    ]);
+    expect(eventLines[0]?.cycle.nextCycleAt).toEqual(expect.any(String));
+    expect(eventLines[1]?.cycle.nextCycleAt).toBeUndefined();
+  });
+
+  it('can restart overnight supervision directly from a recovery handoff', async () => {
+    const createProgramInstance = createProgram();
+    const { taskFile } = await createTaskFile({ fleetPolicy: 'delegated-slices' });
+    registerAutonomousCodeCommand(createProgramInstance);
+
+    await createProgramInstance.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--json',
+    ]);
+
+    const created = JSON.parse(getLogOutput()) as {
+      overnightManifestPath: string;
+      runId: string;
+    };
+    consoleLogSpy.mockClear();
+    const superviseProgram = createProgram();
+    registerAutonomousCodeCommand(superviseProgram);
+
+    await superviseProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      created.overnightManifestPath,
+      '--supervise-cycles',
+      '5',
+      '--supervise-sleep-ms',
+      '0',
+      '--supervise-max-stalled-cycles',
+      '2',
+      '--json',
+    ]);
+
+    const stopped = JSON.parse(getLogOutput()) as {
+      supervisionEventsPath: string;
+      supervisionRecoveryPath: string;
+    };
+    const initialEventCount = (await fs.readFile(stopped.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .length;
+    consoleLogSpy.mockClear();
+    const recoveryProgram = createProgram();
+    registerAutonomousCodeCommand(recoveryProgram);
+
+    await recoveryProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--recover-from-supervision',
+      stopped.supervisionRecoveryPath,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      overnightManifestPath: string;
+      runId: string;
+      supervision: {
+        completedCycles: number;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        sleepMs: number;
+        sourceManifestPath: string;
+        stoppedReason: string;
+      };
+      supervisionEventsPath: string;
+      supervisionFleetTriagePath: string;
+      supervisionFleetTriageResultPath: string;
+      supervisionRecoveryPath: string;
+      supervisionRecoverySourcePath: string;
+    };
+    const manifest = JSON.parse(await fs.readFile(created.overnightManifestPath, 'utf8')) as {
+      artifacts: {
+        supervisionEventsPath?: string;
+        supervisionFleetTriagePath?: string;
+        supervisionFleetTriageResultPath?: string;
+        supervisionRecoveryPath?: string;
+      };
+      supervision: {
+        completedCycles: number;
+        cycles: unknown[];
+        stoppedReason: string;
+      };
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+    };
+    const eventLines = (await fs.readFile(stopped.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { stoppedReason?: string });
+    consoleLogSpy.mockClear();
+    const auditProgram = createProgram();
+    registerAutonomousCodeCommand(auditProgram);
+
+    await auditProgram.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--audit-overnight-manifest',
+      created.overnightManifestPath,
+      '--json',
+    ]);
+
+    const audit = JSON.parse(getLogOutput()) as {
+      eventAudit: { eventCount: number; matchesSupervision: boolean };
+    };
+
+    expect(output.runId).toBe(created.runId);
+    expect(output.overnightManifestPath).toBe(created.overnightManifestPath);
+    expect(output.supervisionRecoverySourcePath).toBe(stopped.supervisionRecoveryPath);
+    expect(output.supervisionEventsPath).toBe(stopped.supervisionEventsPath);
+    expect(output.supervisionRecoveryPath).toBe(stopped.supervisionRecoveryPath);
+    expect(output.supervisionFleetTriagePath).toBe(path.join(path.dirname(stopped.supervisionRecoveryPath), 'supervision-fleet-triage.json'));
+    expect(output.supervisionFleetTriageResultPath).toBe(path.join(path.dirname(stopped.supervisionRecoveryPath), 'supervision-fleet-triage-result.json'));
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      maxErrorCycles: 3,
+      maxStalledCycles: 2,
+      requestedCycles: 5,
+      sleepMs: 0,
+      sourceManifestPath: created.overnightManifestPath,
+      stoppedReason: 'stalled',
+    }));
+    expect(manifest.artifacts.supervisionEventsPath).toBe(stopped.supervisionEventsPath);
+    expect(manifest.artifacts.supervisionRecoveryPath).toBe(stopped.supervisionRecoveryPath);
+    expect(manifest.artifacts.supervisionFleetTriagePath).toBe(output.supervisionFleetTriagePath);
+    expect(manifest.artifacts.supervisionFleetTriageResultPath).toBe(output.supervisionFleetTriageResultPath);
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 3,
+      maxStalledCycles: 2,
+      requestedCycles: 5,
+      sleepMs: 0,
+    });
+    expect(manifest.supervision).toEqual(expect.objectContaining({
+      completedCycles: initialEventCount + 2,
+      stoppedReason: 'stalled',
+    }));
+    expect(manifest.supervision.cycles).toHaveLength(initialEventCount + 2);
+    expect(eventLines).toHaveLength(initialEventCount + 2);
+    expect(eventLines.at(-1)).toEqual(expect.objectContaining({ stoppedReason: 'stalled' }));
+    expect(audit.eventAudit).toEqual(expect.objectContaining({
+      eventCount: initialEventCount + 2,
+      matchesSupervision: true,
+    }));
+  });
+
+  it('records supervised cycle errors and stops at the consecutive error limit', async () => {
+    vi.resetModules();
+    vi.doMock('../../src/agent/autonomous/agentic-coding-runner.js', async (importOriginal) => {
+      const actual = await importOriginal<typeof import('../../src/agent/autonomous/agentic-coding-runner.js')>();
+      return {
+        ...actual,
+        runAgenticCodingCell: vi.fn().mockRejectedValue(new Error('transient resume failure')),
+      };
+    });
+    const { registerAutonomousCodeCommand: registerWithThrowingRunner } = await import(
+      '../../src/commands/cli/autonomous-code-command.js'
+    );
+    const program = createProgram();
+    const runId = 'supervision-error-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'error-overnight.json');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      autonomyPreset: 'overnight',
+      runId,
+    }), 'utf8');
+    registerWithThrowingRunner(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '4',
+      '--supervise-sleep-ms',
+      '0',
+      '--supervise-max-error-cycles',
+      '2',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    const eventsPath = path.join(path.dirname(manifestFile), 'supervision-events.jsonl');
+    const eventLines = (await fs.readFile(eventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as {
+        cycle: {
+          consecutiveErrorCycles: number;
+          error: string;
+          index: number;
+          nextCycleAt?: string;
+          stalledCycles: number;
+          status: string;
+        };
+        fleet?: unknown;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        stoppedReason?: string;
+      });
+
+    expect(errorOutput).toContain('supervision failed before producing a report');
+    expect(errorOutput).toContain('transient resume failure');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as {
+      artifacts: { supervisionEventsPath?: string; supervisionRecoveryPath?: string };
+      supervision: {
+        completedCycles: number;
+        cycles: Array<{ consecutiveErrorCycles: number; nextCycleAt?: string; status: string }>;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        stoppedReason: string;
+      };
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+      superviseCommand: string[];
+    };
+    const recovery = JSON.parse(await fs.readFile(manifest.artifacts.supervisionRecoveryPath ?? '', 'utf8')) as {
+      actions: Array<{ command?: string[]; invocation?: unknown; path?: string; type: string }>;
+      artifacts: { supervisionEventsPath?: string; supervisionRecoveryPath?: string };
+      fleet?: unknown;
+      lastCycle: { consecutiveErrorCycles: number; error: string; status: string };
+      stoppedReason: string;
+    };
+    expect(manifest.artifacts.supervisionEventsPath).toBe(eventsPath);
+    expect(manifest.artifacts.supervisionRecoveryPath).toBe(path.join(path.dirname(manifestFile), 'supervision-recovery.json'));
+    expect(manifest.supervision).toEqual(expect.objectContaining({
+      completedCycles: 2,
+      maxErrorCycles: 2,
+      maxStalledCycles: 3,
+      requestedCycles: 4,
+      stoppedReason: 'cycle_error_limit',
+    }));
+    expect(manifest.supervision.cycles).toEqual([
+      expect.objectContaining({
+        consecutiveErrorCycles: 1,
+        nextCycleAt: expect.any(String),
+        status: 'cycle_error',
+      }),
+      expect.objectContaining({ consecutiveErrorCycles: 2, status: 'cycle_error' }),
+    ]);
+    expect(manifest.supervision.cycles[1]?.nextCycleAt).toBeUndefined();
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 2,
+      maxStalledCycles: 3,
+      requestedCycles: 4,
+      sleepMs: 0,
+    });
+    expect(manifest.superviseCommand).toEqual(expect.arrayContaining([
+      '--supervision-events-file',
+      eventsPath,
+      '--supervision-recovery-file',
+      path.join(path.dirname(manifestFile), 'supervision-recovery.json'),
+    ]));
+    expect(recovery).toEqual(expect.objectContaining({
+      artifacts: expect.objectContaining({
+        supervisionEventsPath: eventsPath,
+        supervisionRecoveryPath: path.join(path.dirname(manifestFile), 'supervision-recovery.json'),
+      }),
+      lastCycle: expect.objectContaining({
+        consecutiveErrorCycles: 2,
+        error: 'transient resume failure',
+        status: 'cycle_error',
+      }),
+      stoppedReason: 'cycle_error_limit',
+    }));
+    expect(recovery.fleet).toBeUndefined();
+    expect(recovery.actions).toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'inspect_supervision_events' }),
+      expect.objectContaining({
+        command: ['buddy', 'autonomous-code', '--audit-overnight-manifest', manifestFile, '--json'],
+        type: 'audit_overnight_manifest',
+      }),
+      expect.objectContaining({ command: expect.arrayContaining(['--resume-from-manifest']), type: 'resume_once' }),
+      expect.objectContaining({ command: expect.arrayContaining(['--supervise-from-manifest']), type: 'restart_supervision' }),
+    ]));
+    const restartCommand = recovery.actions.find((action) => action.type === 'restart_supervision')?.command ?? [];
+    expect(restartCommand).toEqual(expect.arrayContaining([
+      '--supervision-events-file',
+      eventsPath,
+      '--supervision-recovery-file',
+      path.join(path.dirname(manifestFile), 'supervision-recovery.json'),
+    ]));
+    expect(recovery.actions).not.toEqual(expect.arrayContaining([
+      expect.objectContaining({ type: 'ask_fleet_triage' }),
+    ]));
+    expect(eventLines).toEqual([
+      expect.objectContaining({
+        cycle: expect.objectContaining({
+          consecutiveErrorCycles: 1,
+          error: expect.any(String),
+          index: 1,
+          stalledCycles: 0,
+          status: 'cycle_error',
+        }),
+        maxErrorCycles: 2,
+        maxStalledCycles: 3,
+        requestedCycles: 4,
+      }),
+      expect.objectContaining({
+        cycle: expect.objectContaining({
+          consecutiveErrorCycles: 2,
+          error: expect.any(String),
+          index: 2,
+          stalledCycles: 0,
+          status: 'cycle_error',
+        }),
+        maxErrorCycles: 2,
+        maxStalledCycles: 3,
+        requestedCycles: 4,
+        stoppedReason: 'cycle_error_limit',
+      }),
+    ]);
+    expect(eventLines[0]?.cycle.nextCycleAt).toEqual(expect.any(String));
+    expect(eventLines[1]?.cycle.nextCycleAt).toBeUndefined();
+    expect(eventLines[0]?.fleet).toBeUndefined();
+    expect(eventLines[1]?.fleet).toBeUndefined();
+  });
+
+  it('stops overnight supervision when a terminal checkpoint status is reached', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile();
+    const runId = 'terminal-supervision-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'terminal-overnight.json');
+
+    await saveCheckpoint({
+      runId,
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: { runId, taskFile },
+      contract: {
+        repo,
+        task: 'Terminal supervision.',
+        allowedPaths: ['docs/...'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'none',
+      },
+    });
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      autonomyPreset: 'overnight',
+      runId,
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '3',
+      '--supervise-sleep-ms',
+      '0',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      status: string;
+      supervision: {
+        completedCycles: number;
+        maxErrorCycles: number;
+        requestedCycles: number;
+        stoppedReason: string;
+      };
+      supervisionEventsPath: string;
+    };
+    const eventLines = (await fs.readFile(output.supervisionEventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as {
+        cycle: { index: number; status: string };
+        fleet: { expectedCollaboration: boolean; state: string };
+        kind: string;
+        maxErrorCycles: number;
+        stoppedReason?: string;
+      });
+
+    expect(output.status).toBe('verified');
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 1,
+      maxErrorCycles: 3,
+      requestedCycles: 3,
+      stoppedReason: 'terminal_status',
+    }));
+    expect(eventLines).toEqual([
+      expect.objectContaining({
+        cycle: expect.objectContaining({ index: 1, status: 'verified' }),
+        fleet: expect.objectContaining({
+          expectedCollaboration: false,
+          state: 'disabled',
+        }),
+        kind: 'agentic-coding-supervision-cycle',
+        maxErrorCycles: 3,
+        stoppedReason: 'terminal_status',
+      }),
+    ]);
+  });
+
+  it('defaults manifest supervision to an eight-hour watchdog window', async () => {
+    const program = createProgram();
+    const { repo, taskFile } = await createTaskFile();
+    const runId = 'default-supervision-run-id';
+    const manifestFile = path.join(tempRoot, 'ops', 'default-supervision-overnight.json');
+
+    await saveCheckpoint({
+      runId,
+      step: 'verified',
+      timestamp: new Date().toISOString(),
+      options: { runId, taskFile },
+      contract: {
+        repo,
+        task: 'Default supervision.',
+        allowedPaths: ['docs/...'],
+        verification: [],
+        riskLevel: 'low',
+        edits: [],
+        maxFilesChanged: 5,
+        maxToolRounds: 5,
+        memoryPolicy: 'none',
+        fleetPolicy: 'none',
+      },
+    });
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      autonomyPreset: 'overnight',
+      runId,
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      supervision: {
+        completedCycles: number;
+        maxErrorCycles: number;
+        maxStalledCycles: number;
+        requestedCycles: number;
+        sleepMs: number;
+        stoppedReason: string;
+      };
+    };
+    const manifest = JSON.parse(await fs.readFile(manifestFile, 'utf8')) as {
+      supervisionDefaults: { maxErrorCycles: number; maxStalledCycles: number; requestedCycles: number; sleepMs: number };
+      superviseCommand: string[];
+    };
+
+    expect(output.supervision).toEqual(expect.objectContaining({
+      completedCycles: 1,
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 961,
+      sleepMs: 30000,
+      stoppedReason: 'terminal_status',
+    }));
+    expect(manifest.supervisionDefaults).toEqual({
+      maxErrorCycles: 3,
+      maxStalledCycles: 3,
+      requestedCycles: 961,
+      sleepMs: 30000,
+    });
+    expect(manifest.superviseCommand).toEqual([
+      'buddy',
+      'autonomous-code',
+      '--supervise-from-manifest',
+      manifestFile,
+      '--supervise-cycles',
+      '961',
+      '--supervise-sleep-ms',
+      '30000',
+      '--supervise-max-stalled-cycles',
+      '3',
+      '--supervise-max-error-cycles',
+      '3',
+      '--json',
+      '--supervision-events-file',
+      path.join(path.dirname(manifestFile), 'supervision-events.jsonl'),
+    ]);
+  });
+
+  it('rejects a manifest resume when --resume points at a different run id', async () => {
+    const program = createProgram();
+    const manifestFile = path.join(tempRoot, 'ops', 'overnight.json');
+    await fs.mkdir(path.dirname(manifestFile), { recursive: true });
+    await fs.writeFile(manifestFile, JSON.stringify({
+      kind: 'agentic-coding-overnight-manifest',
+      runId: 'manifest-run-id',
+    }), 'utf8');
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--resume',
+      'other-run-id',
+      '--resume-from-manifest',
+      manifestFile,
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--resume must match the runId stored in --resume-from-manifest');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
+  });
+
+  it('lets explicit budget flags override the overnight autonomy preset', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'overnight',
+      '--max-cost-usd',
+      '1.25',
+      '--max-iterations',
+      '7',
+      '--verification-timeout-ms',
+      '1500',
+      '--json',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      autonomyBudgets: {
+        maxCostUsd: number;
+        maxIterations: number;
+        verificationTimeoutMs: number;
+      };
+      autonomyPreset: string;
+      status: string;
+    };
+
+    expect(output.status).toBe('ready');
+    expect(output.autonomyPreset).toBe('overnight');
+    expect(output.autonomyBudgets).toEqual({
+      maxCostUsd: 1.25,
+      maxIterations: 7,
+      verificationTimeoutMs: 1500,
+    });
+  });
+
+  it('rejects unknown autonomy presets', async () => {
+    const program = createProgram();
+    const { taskFile } = await createTaskFile();
+    registerAutonomousCodeCommand(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'autonomous-code',
+      '--task-file',
+      taskFile,
+      '--autonomy-preset',
+      'marathon',
+      '--json',
+    ]);
+
+    const errorOutput = consoleErrorSpy.mock.calls.map((call) => call.join(' ')).join('\n');
+    expect(errorOutput).toContain('--autonomy-preset must be one of: standard, overnight');
+    expect(process.exitCode).toBe(1);
+    process.exitCode = 0;
   });
 
   it('can resume a run using --resume <runId>', async () => {

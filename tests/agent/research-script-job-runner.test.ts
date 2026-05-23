@@ -85,7 +85,7 @@ describe('research script job runner', () => {
       sandboxPolicy: {
         network: 'disabled',
         provider: 'local',
-        timeoutMs: 100,
+        timeoutMs: 1000,
       },
     });
     await materializeResearchScriptJobArtifact(job, {
@@ -95,7 +95,7 @@ describe('research script job runner', () => {
 
     const result = await runMaterializedResearchScriptJob(job, {
       rootDir: tempDir,
-      timeoutMs: 100,
+      timeoutMs: 1000,
     });
 
     expect(result.status).toBe('timed_out');

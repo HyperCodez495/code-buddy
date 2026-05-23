@@ -48,6 +48,31 @@ export async function runVerificationAndSelfCorrectionLoop(
   reason?: string;
 }> {
   let currentContract = { ...contract };
+  const requestedMaxIterations = options.maxIterations ?? maxIterations;
+  const saveEarlyBlockedCheckpoint = async (reason: string): Promise<void> => {
+    if (!options.runId) return;
+    await saveCheckpoint({
+      runId: options.runId,
+      options,
+      contract: currentContract,
+      step: 'blocked',
+      blockedReasons: [reason],
+      timestamp: new Date().toISOString(),
+      verification: [],
+    });
+  };
+  if (!Number.isInteger(requestedMaxIterations) || requestedMaxIterations < 1) {
+    const reason = `maxIterations must be a positive integer; received ${String(requestedMaxIterations)}.`;
+    await saveEarlyBlockedCheckpoint(reason);
+    return {
+      status: 'blocked',
+      verification: [],
+      iterations: 0,
+      contract: currentContract,
+      reason,
+    };
+  }
+  const effectiveMaxIterations = requestedMaxIterations;
   let checkpointToResume = null;
   if (options.resume) {
     checkpointToResume = await loadCheckpoint(options.resume);
@@ -55,14 +80,27 @@ export async function runVerificationAndSelfCorrectionLoop(
 
   let cumulativeCostUsd = 0;
   const costLimit = options.maxCostUsd ?? 5.0;
-
-  if (costLimit < 0.01) {
+  if (!Number.isFinite(costLimit) || costLimit < 0) {
+    const reason = `maxCostUsd must be a finite non-negative number; received ${String(costLimit)}.`;
+    await saveEarlyBlockedCheckpoint(reason);
     return {
       status: 'blocked',
       verification: [],
       iterations: 0,
       contract: currentContract,
-      reason: `Cost budget of $${costLimit.toFixed(5)} is too low to run the agent.`,
+      reason,
+    };
+  }
+
+  if (costLimit < 0.01) {
+    const reason = `Cost budget of $${costLimit.toFixed(5)} is too low to run the agent.`;
+    await saveEarlyBlockedCheckpoint(reason);
+    return {
+      status: 'blocked',
+      verification: [],
+      iterations: 0,
+      contract: currentContract,
+      reason,
     };
   }
 
@@ -114,6 +152,18 @@ export async function runVerificationAndSelfCorrectionLoop(
 
   let currentVerification: AgenticCodingVerificationResult[] = [];
   let hasFailed = false;
+  const saveBlockedCheckpoint = async (reason: string, verification = currentVerification): Promise<void> => {
+    if (!options.runId) return;
+    await saveCheckpoint({
+      runId: options.runId,
+      options,
+      contract: currentContract,
+      step: 'blocked',
+      blockedReasons: [reason],
+      timestamp: new Date().toISOString(),
+      verification,
+    });
+  };
 
   if (checkpointToResume && checkpointToResume.step === 'applied') {
     currentContract = checkpointToResume.contract;
@@ -152,12 +202,14 @@ export async function runVerificationAndSelfCorrectionLoop(
   if (hasBlocked) {
     const filesToRestore = Array.from(new Set(currentContract.edits.map((e) => e.path)));
     await rollbackFiles(currentContract.repo, filesToRestore);
+    const reason = 'Verification command blocked by safety policy check.';
+    await saveBlockedCheckpoint(reason, currentVerification);
     return {
       status: 'blocked',
       verification: currentVerification,
       iterations: 0,
       contract: currentContract,
-      reason: 'Verification command blocked by safety policy check.',
+      reason,
     };
   }
 
@@ -234,12 +286,14 @@ export async function runVerificationAndSelfCorrectionLoop(
       if (hasBlockedAfterInitial) {
         const filesToRestore = Array.from(new Set(currentContract.edits.map((e) => e.path)));
         await rollbackFiles(currentContract.repo, filesToRestore);
+        const reason = 'Verification command blocked by safety policy check after applying initial edits.';
+        await saveBlockedCheckpoint(reason, currentVerification);
         return {
           status: 'blocked',
           verification: currentVerification,
           iterations: 0,
           contract: currentContract,
-          reason: 'Verification command blocked by safety policy check after applying initial edits.',
+          reason,
         };
       }
 
@@ -266,12 +320,14 @@ export async function runVerificationAndSelfCorrectionLoop(
       const filesToRestore = Array.from(new Set(currentContract.edits.map((e) => e.path)));
       await rollbackFiles(currentContract.repo, filesToRestore);
       if (cumulativeCostUsd >= costLimit) {
+        const reason = `Cost budget of $${costLimit.toFixed(2)} exceeded during initial edit proposal generation.`;
+        await saveBlockedCheckpoint(reason, currentVerification);
         return {
           status: 'blocked',
           verification: currentVerification,
           iterations: 0,
           contract: currentContract,
-          reason: `Cost budget of $${costLimit.toFixed(2)} exceeded during initial edit proposal generation.`,
+          reason,
         };
       }
       
@@ -281,7 +337,7 @@ export async function runVerificationAndSelfCorrectionLoop(
     }
   }
 
-  for (let iter = 0; iter < maxIterations; iter++) {
+  for (let iter = 0; iter < effectiveMaxIterations; iter++) {
     if (lastProposalFailedValidation) {
       messagesHistory.push({
         role: 'user',
@@ -355,12 +411,14 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
       const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
       await rollbackFiles(currentContract.repo, pathsToRevert);
       if (cumulativeCostUsd >= costLimit) {
+        const reason = `Cost budget of $${costLimit.toFixed(2)} exceeded during self-correction iteration ${iter + 1}.`;
+        await saveBlockedCheckpoint(reason, currentVerification);
         return {
           status: 'blocked',
           verification: currentVerification,
           iterations: iter + 1,
           contract: currentContract,
-          reason: `Cost budget of $${costLimit.toFixed(2)} exceeded during self-correction iteration ${iter + 1}.`,
+          reason,
         };
       }
       
@@ -409,12 +467,14 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
     if (hasBlockedInLoop) {
       const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
       await rollbackFiles(currentContract.repo, pathsToRevert);
+      const reason = 'Verification command blocked by safety policy check during self-correction loop.';
+      await saveBlockedCheckpoint(reason, currentVerification);
       return {
         status: 'blocked',
         verification: currentVerification,
         iterations: iter + 1,
         contract: currentContract,
-        reason: 'Verification command blocked by safety policy check during self-correction loop.',
+        reason,
       };
     }
 
@@ -439,30 +499,20 @@ Please analyze the failure and generate a new, corrected edit proposal to resolv
     }
   }
 
-  if (options.runId) {
-    await saveCheckpoint({
-      runId: options.runId,
-      options,
-      contract: currentContract,
-      step: 'verified',
-      timestamp: new Date().toISOString(),
-      verification: currentVerification,
-    });
-  }
-
   // Rollback files when iteration limit is reached
   const pathsToRevert = Array.from(new Set(currentContract.edits.map((e) => e.path)));
   await rollbackFiles(currentContract.repo, pathsToRevert);
 
-  let finalReason = `Maximum iterations (${maxIterations}) reached without passing verification.`;
+  let finalReason = `Maximum iterations (${effectiveMaxIterations}) reached without passing verification.`;
   if (lastProposalFailedValidation) {
     finalReason += ` Last proposal validation error: ${lastValidationError}`;
   }
+  await saveBlockedCheckpoint(finalReason, currentVerification);
 
   return {
     status: 'blocked',
     verification: currentVerification,
-    iterations: maxIterations,
+    iterations: effectiveMaxIterations,
     contract: currentContract,
     reason: finalReason,
   };

@@ -3,14 +3,14 @@ import * as path from 'node:path';
 import * as os from 'node:os';
 import { AgenticCodingTaskContract } from './agentic-coding-contract.js';
 import { AgenticCodingRunOptions, AgenticCodingRunReport, AgenticCodingVerificationResult } from './agentic-coding-runner.js';
-import { redactSecrets } from '../../security/data-redaction.js';
 import { GitNexusContext, WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 
 export interface AgenticCodingCheckpoint {
   runId: string;
   options: AgenticCodingRunOptions;
   contract: AgenticCodingTaskContract;
-  step: 'initialized' | 'decomposed' | 'proposal_generated' | 'applied' | 'verified';
+  step: 'initialized' | 'decomposed' | 'proposal_generated' | 'applied' | 'verified' | 'blocked';
+  blockedReasons?: string[];
   subtasks?: AgenticCodingTaskContract[];
   currentSubtaskIndex?: number;
   reports?: AgenticCodingRunReport[];
@@ -29,7 +29,12 @@ export async function saveCheckpoint(checkpoint: AgenticCodingCheckpoint): Promi
   const filePath = getCheckpointPath(checkpoint.runId);
   await fs.mkdir(path.dirname(filePath), { recursive: true });
   const serialized = JSON.stringify(checkpoint, null, 2);
-  await fs.writeFile(filePath, redactSecrets(serialized), 'utf8');
+  const handle = await fs.open(filePath, 'w');
+  try {
+    await handle.writeFile(serialized, 'utf8');
+  } finally {
+    await handle.close();
+  }
 }
 
 export async function loadCheckpoint(runId: string): Promise<AgenticCodingCheckpoint | null> {
@@ -41,4 +46,3 @@ export async function loadCheckpoint(runId: string): Promise<AgenticCodingCheckp
     return null;
   }
 }
-

@@ -13,6 +13,8 @@ describe('ConfirmationService', () => {
     // Reset the singleton
     (ConfirmationService as unknown as { instance: ConfirmationService | undefined }).instance = undefined;
     service = ConfirmationService.getInstance();
+    delete process.env.CODEBUDDY_AUTO_CONFIRM;
+    delete process.env.CODEBUDDY_SELF_IMPROVEMENT;
   });
 
   afterEach(() => {
@@ -20,6 +22,8 @@ describe('ConfirmationService', () => {
       service.dispose();
     }
     (ConfirmationService as unknown as { instance: ConfirmationService | undefined }).instance = undefined;
+    delete process.env.CODEBUDDY_AUTO_CONFIRM;
+    delete process.env.CODEBUDDY_SELF_IMPROVEMENT;
   });
 
   describe('Singleton Pattern', () => {
@@ -170,6 +174,25 @@ describe('ConfirmationService', () => {
       }, 'file');
       expect(result.confirmed).toBe(false);
       expect(result.feedback).toContain('Kill switch engaged');
+    });
+
+    it('should not let auto-confirm bypass self-improvement approval', async () => {
+      process.env.CODEBUDDY_AUTO_CONFIRM = 'true';
+
+      const pending = service.requestConfirmation({
+        operation: 'self_improvement',
+        filename: 'D:/CascadeProjects/grok-cli-weekend',
+        riskLevel: 'high' as any,
+      }, 'file');
+
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(service.isPending()).toBe(true);
+
+      service.rejectOperation('manual approval required');
+      const result = await pending;
+
+      expect(result.confirmed).toBe(false);
+      expect(result.feedback).toBe('manual approval required');
     });
   });
 });

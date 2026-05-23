@@ -22,9 +22,9 @@ import { validateCommand } from '../../utils/input-validation/command-validator.
 import { shouldDecompose, decomposeTask } from './task-decomposer.js';
 import { saveCheckpoint, loadCheckpoint, type AgenticCodingCheckpoint } from './checkpoint-manager.js';
 import { redactSecrets } from '../../security/data-redaction.js';
-import { generateEditProposal } from './edit-proposal-producer.js';
 import { GitNexusTool, type GitNexusContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 import { evaluateScope } from '../scope-awareness.js';
+import type { FleetDispatchProfile } from '../../fleet/dispatch-profile.js';
 
 import { ConfirmationService } from '../../utils/confirmation-service.js';
 import { auditLogger } from '../../security/audit-logger.js';
@@ -91,6 +91,7 @@ export interface AgenticCodingRunOptions {
   skipDecomposition?: boolean;
   contract?: AgenticCodingTaskContract;
   maxCostUsd?: number;
+  maxIterations?: number;
 }
 
 export interface AgenticCodingRulesFile {
@@ -355,6 +356,7 @@ export interface AgenticCodingWorkflowProgressSnapshot {
     skipped: number;
     total: number;
   };
+  fleet: AgenticCodingFleetCollaborationPlan;
   generatedAt: string;
   kind: 'agentic-coding-workflow-progress';
   nextAction: {
@@ -372,6 +374,8 @@ export interface AgenticCodingWorkflowProgressSnapshot {
   }>;
   schemaVersion: 1;
   source: {
+    fleetMode: AgenticCodingFleetCollaborationMode;
+    fleetPolicy: AgenticCodingTaskContract['fleetPolicy'];
     repo: string;
     status: AgenticCodingRunStatus;
     taskFile: string;
@@ -1586,6 +1590,8 @@ export interface AgenticCodingProposalLoopSnapshot {
   source: {
     activeNodeId?: string;
     approvalState: AgenticCodingApprovalState;
+    fleetMode: AgenticCodingFleetCollaborationMode;
+    fleetPolicy: AgenticCodingTaskContract['fleetPolicy'];
     repo: string;
     status: AgenticCodingRunStatus;
     taskFile: string;
@@ -1688,6 +1694,28 @@ export interface AgenticCodingEditProposalRequest {
   };
 }
 
+export type AgenticCodingFleetCollaborationMode =
+  | 'disabled'
+  | 'read_only_help'
+  | 'data_only_delegated_slices';
+
+export interface AgenticCodingFleetCollaborationPlan {
+  allowedTools: string[];
+  chainRoles: FleetDispatchProfile[];
+  invocation?: {
+    args: {
+      chainRoles: FleetDispatchProfile[];
+      privacyTag: 'sensitive' | 'public';
+      prompt: string;
+      stageTimeoutMs: number;
+    };
+    tool: 'peer_chain';
+  };
+  mode: AgenticCodingFleetCollaborationMode;
+  policy: AgenticCodingTaskContract['fleetPolicy'];
+  safety: string[];
+}
+
 export interface AgenticCodingEditProposalProducerDispatch {
   allowedTools: string[];
   currentState: {
@@ -1702,6 +1730,7 @@ export interface AgenticCodingEditProposalProducerDispatch {
     repo: string;
     taskFile: string;
   };
+  fleet?: AgenticCodingFleetCollaborationPlan;
   kind: 'agentic-coding-edit-proposal-producer-dispatch';
   messages: Array<{
     content: string;
@@ -1757,6 +1786,7 @@ export interface AgenticCodingRunReport {
   editRequested: boolean;
   editResults: AgenticCodingEditResult[];
   executionGate?: AgenticCodingExecutionGate;
+  fleet: AgenticCodingFleetCollaborationPlan;
   generatedAt: string;
   gitStatus?: string;
   repo: string;
@@ -3993,6 +4023,7 @@ export function buildAgenticCodingWorkflowProgressSnapshot(
     blockedNodeIds: report.workflow.blockedNodeIds,
     completedNodeIds: report.workflow.completedNodeIds,
     counts: statusCounts,
+    fleet: report.fleet,
     generatedAt: report.generatedAt,
     kind: 'agentic-coding-workflow-progress',
     nextAction,
@@ -4008,6 +4039,8 @@ export function buildAgenticCodingWorkflowProgressSnapshot(
     })),
     schemaVersion: 1,
     source: {
+      fleetMode: report.fleet.mode,
+      fleetPolicy: report.fleet.policy,
       repo: report.repo,
       status: report.status,
       taskFile: report.taskFile,
@@ -4247,7 +4280,7 @@ function buildProposalLoopNextAction(
   };
 }
 
-function deriveAgenticCodingProposalLoopArtifacts(
+export function deriveAgenticCodingProposalLoopArtifacts(
   proposalLoopFile: string,
 ): AgenticCodingProposalLoopArtifacts {
   const baseDir = path.dirname(path.resolve(proposalLoopFile));
@@ -4544,6 +4577,8 @@ export function buildAgenticCodingProposalLoopSnapshot(
     source: {
       ...(report.workflow.activeNodeId ? { activeNodeId: report.workflow.activeNodeId } : {}),
       approvalState: report.approval.state,
+      fleetMode: report.fleet.mode,
+      fleetPolicy: report.fleet.policy,
       repo: report.repo,
       status: report.status,
       taskFile: report.taskFile,
@@ -4607,18 +4642,79 @@ function editProposalOutputSchema(): Record<string, unknown> {
   };
 }
 
+function buildAgenticCodingFleetCollaborationPlan(input: {
+  contract?: AgenticCodingTaskContract;
+  repo: string;
+  taskFile: string;
+}): AgenticCodingFleetCollaborationPlan {
+  const policy = input.contract?.fleetPolicy ?? 'none';
+
+  if (policy === 'none') {
+    return {
+      allowedTools: [],
+      chainRoles: [],
+      mode: 'disabled',
+      policy,
+      safety: [
+        'Fleet collaboration is disabled for this task contract.',
+      ],
+    };
+  }
+
+  const chainRoles: FleetDispatchProfile[] = policy === 'read-only-help'
+    ? ['research', 'review', 'safe']
+    : ['research', 'code', 'review', 'safe'];
+  const collaborationPrompt = [
+    'Agentic Coding Cell collaboration request.',
+    `Task: ${input.contract?.task ?? input.taskFile}`,
+    `Repo: ${input.repo}`,
+    `Allowed paths: ${input.contract?.allowedPaths.join(', ') ?? '(unknown)'}`,
+    `Verification commands: ${input.contract?.verification.join(' | ') ?? '(unknown)'}`,
+    '',
+    'Produce advisory output only. Do not modify files, run shell commands, push, deploy, or approve changes.',
+    'The local runner remains the only authority for validating proposals, previewing edits, applying edits, and running verification.',
+  ].join('\n');
+
+  return {
+    allowedTools: ['route_peer', 'peer_chain'],
+    chainRoles,
+    invocation: {
+      args: {
+        chainRoles,
+        privacyTag: 'sensitive',
+        prompt: collaborationPrompt,
+        stageTimeoutMs: 120_000,
+      },
+      tool: 'peer_chain',
+    },
+    mode: policy === 'read-only-help' ? 'read_only_help' : 'data_only_delegated_slices',
+    policy,
+    safety: [
+      'Fleet peers are advisory collaborators only.',
+      'Peer output must be converted into the controlled edit-proposal JSON schema before the runner can use it.',
+      'Preview, approval, apply, verification, push, deploy, and file writes stay runner-owned.',
+    ],
+  };
+}
+
 export function buildAgenticCodingEditProposalProducerDispatch(
   report: AgenticCodingRunReport,
   artifacts: AgenticCodingProposalLoopArtifacts,
 ): AgenticCodingEditProposalProducerDispatch {
   const loop = buildAgenticCodingProposalLoopSnapshot(report, artifacts);
   const maxToolRounds = report.contract?.maxToolRounds ?? 50;
+  const fleet = report.fleet ?? buildAgenticCodingFleetCollaborationPlan({
+    contract: report.contract,
+    repo: report.repo,
+    taskFile: report.taskFile,
+  });
 
   return {
     allowedTools: [
       'file_read',
       'rg',
       'git_status',
+      ...fleet.allowedTools,
     ],
     currentState: {
       ...(loop.activeStepId ? { activeStepId: loop.activeStepId } : {}),
@@ -4635,6 +4731,7 @@ export function buildAgenticCodingEditProposalProducerDispatch(
       'deploy',
     ],
     generatedAt: report.generatedAt,
+    fleet,
     input: {
       proposalPromptFile: artifacts.proposalPromptFile,
       repo: report.repo,
@@ -4647,6 +4744,15 @@ export function buildAgenticCodingEditProposalProducerDispatch(
           'You are Code Buddy\'s edit-proposal producer.',
           'Read the user prompt, inspect only the bounded repository context needed, and return data only.',
           'Do not modify files, run broad shell commands, push, deploy, or approve your own output.',
+          ...(fleet.mode !== 'disabled' ? [
+            '',
+            '=== Fleet collaboration policy ===',
+            `Policy: ${fleet.policy}`,
+            `Mode: ${fleet.mode}`,
+            `Recommended chain roles: ${fleet.chainRoles.join(' -> ')}`,
+            `Recommended tool call: ${fleet.invocation?.tool ?? 'none'} ${JSON.stringify(fleet.invocation?.args ?? {})}`,
+            ...fleet.safety.map((note) => `- ${note}`),
+          ] : []),
           ...(report.gitnexusEvidence ? [
             '',
             '=== GitNexus Context & Insights ===',
@@ -5104,6 +5210,11 @@ export function aggregateReports(
     editPreviews,
     editRequested: Boolean(options.applyEdits),
     editResults,
+    fleet: buildAgenticCodingFleetCollaborationPlan({
+      contract: mergedContract,
+      repo: mergedContract.repo,
+      taskFile: options.taskFile ? path.resolve(options.taskFile) : '',
+    }),
     generatedAt: new Date().toISOString(),
     gitStatus,
     plan,
@@ -5123,16 +5234,25 @@ export function aggregateReports(
 export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCodingRunReport {
   const contract = checkpoint.contract;
   const options = checkpoint.options;
+  const isBlockedCheckpoint = checkpoint.step === 'blocked';
+  const blockedReasons = isBlockedCheckpoint
+    ? checkpoint.blockedReasons && checkpoint.blockedReasons.length > 0
+      ? checkpoint.blockedReasons
+      : ['Run is blocked at the latest checkpoint.']
+    : [];
 
   if (checkpoint.reports && checkpoint.reports.length > 0) {
-    return aggregateReports(checkpoint.reports, contract, options, 'verified');
+    return aggregateReports(checkpoint.reports, contract, options, isBlockedCheckpoint ? 'blocked' : 'verified');
   }
 
   const verification = checkpoint.verification ?? [];
+  const editResults = isBlockedCheckpoint
+    ? []
+    : contract.edits.map(e => ({ path: e.path, status: 'applied' as const, occurrences: 1 }));
   const plan = buildExecutionPlan({
     approvalDecision: undefined,
     approvalDecisionRequired: false,
-    blockedReasons: [],
+    blockedReasons,
     contract,
     dirtyFiles: [],
     editProposal: undefined,
@@ -5140,7 +5260,7 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
     editPreviewRequested: false,
     editPreviews: [],
     editRequested: Boolean(options.applyEdits),
-    editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+    editResults,
     rulesFiles: [],
     validationErrors: [],
     verification,
@@ -5150,27 +5270,32 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
   return {
     approval: buildApprovalReport({
       approvalDecision: undefined,
-      blockedReasons: [],
+      blockedReasons,
       contract,
       editPreviewRequired: false,
       editPreviews: [],
-      editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+      editResults,
       validationErrors: [],
     }),
-    autoExecutable: true,
-    blockedReasons: [],
+    autoExecutable: !isBlockedCheckpoint,
+    blockedReasons,
     contract,
     dirtyFiles: [],
     editPreviewRequired: false,
     editPreviewRequested: false,
     editPreviews: [],
     editRequested: Boolean(options.applyEdits),
-    editResults: contract.edits.map(e => ({ path: e.path, status: 'applied', occurrences: 1 })),
+    editResults,
+    fleet: buildAgenticCodingFleetCollaborationPlan({
+      contract,
+      repo: contract.repo,
+      taskFile: options.taskFile ? path.resolve(options.taskFile) : '',
+    }),
     generatedAt: checkpoint.timestamp,
     plan,
     repo: contract.repo,
     rulesFiles: [],
-    status: 'verified',
+    status: isBlockedCheckpoint ? 'blocked' : 'verified',
     taskFile: options.taskFile ? path.resolve(options.taskFile) : '',
     validationErrors: [],
     verification,
@@ -5246,7 +5371,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   if (options.resume) {
     checkpointToResume = await loadCheckpoint(options.resume);
     if (checkpointToResume) {
-      if (checkpointToResume.step === 'verified') {
+      if (checkpointToResume.step === 'verified' || checkpointToResume.step === 'blocked') {
         return buildFinalReport(checkpointToResume);
       }
       options = {
@@ -5409,6 +5534,10 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       editPreviews,
       editRequested: Boolean(options.applyEdits),
       editResults,
+      fleet: buildAgenticCodingFleetCollaborationPlan({
+        repo,
+        taskFile,
+      }),
       generatedAt,
       plan,
       repo,
@@ -5431,7 +5560,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     let subtasks: AgenticCodingTaskContract[] = [];
     try {
       subtasks = await decomposeTask(finalContract);
-    } catch (err) {
+    } catch {
       subtasks = [finalContract];
     }
     if (subtasks.length > 1) {
@@ -5503,8 +5632,16 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     blockedReasons.push(...reasons);
   }
 
-  if (options.maxCostUsd !== undefined && options.maxCostUsd < 0.01) {
-    blockedReasons.push(`Cost budget of $${options.maxCostUsd.toFixed(5)} is too low to safely run agent.`);
+  if (options.maxCostUsd !== undefined) {
+    if (!Number.isFinite(options.maxCostUsd) || options.maxCostUsd < 0) {
+      blockedReasons.push(`maxCostUsd must be a finite non-negative number; received ${String(options.maxCostUsd)}.`);
+    } else if (options.maxCostUsd < 0.01) {
+      blockedReasons.push(`Cost budget of $${options.maxCostUsd.toFixed(5)} is too low to safely run agent.`);
+    }
+  }
+
+  if (options.maxIterations !== undefined && (!Number.isInteger(options.maxIterations) || options.maxIterations < 1)) {
+    blockedReasons.push(`maxIterations must be a positive integer; received ${String(options.maxIterations)}.`);
   }
 
   if (editPreviewRequested && validationErrors.length === 0 && blockedReasons.length === 0) {
@@ -5614,6 +5751,11 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
         editPreviews,
         editRequested: Boolean(options.applyEdits),
         editResults,
+        fleet: buildAgenticCodingFleetCollaborationPlan({
+          contract: finalContract,
+          repo,
+          taskFile,
+        }),
         generatedAt,
         plan: [],
         repo,
@@ -5755,6 +5897,11 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     editRequested: Boolean(options.applyEdits),
     editResults,
     executionGate,
+    fleet: buildAgenticCodingFleetCollaborationPlan({
+      contract: finalContract,
+      repo: finalContract.repo,
+      taskFile,
+    }),
     generatedAt,
     gitStatus,
     plan,
@@ -5964,6 +6111,11 @@ export function renderAgenticCodingRunReport(report: AgenticCodingRunReport): st
     lines.push(`Risk: ${report.contract.riskLevel}`);
     lines.push(`Allowed paths: ${report.contract.allowedPaths.join(', ')}`);
     lines.push(`Verification: ${report.contract.verification.join(' | ')}`);
+  }
+
+  lines.push(`Fleet: ${report.fleet.policy} (${report.fleet.mode})`);
+  if (report.fleet.chainRoles.length > 0) {
+    lines.push(`Fleet chain: ${report.fleet.chainRoles.join(' -> ')}`);
   }
 
   lines.push(`Approval: ${report.approval.state}`);

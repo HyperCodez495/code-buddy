@@ -2,9 +2,11 @@ import { describe, expect, it } from 'vitest';
 
 import {
   PEER_DELEGATE_TOOL_DEF,
+  PEER_CHAIN_TOOL_DEF,
   ROUTE_PEER_TOOL_DEF,
 } from '../../src/codebuddy/fleet-tool-defs.js';
 import {
+  PeerChainTool,
   PeerDelegateTool,
   RoutePeerTool,
 } from '../../src/tools/registry/fleet-tools.js';
@@ -20,6 +22,12 @@ describe('Fleet tool validation', () => {
     expect(new RoutePeerTool().validate({
       prompt: 'research this',
       dispatchProfile: 'research',
+      chainRoles: ['code', 'review', 'safe'],
+    })).toEqual({ valid: true });
+
+    expect(new PeerChainTool().validate({
+      prompt: 'implement then review',
+      chainRoles: ['code', 'review'],
     })).toEqual({ valid: true });
   });
 
@@ -38,6 +46,20 @@ describe('Fleet tool validation', () => {
     });
     expect(routePeer.valid).toBe(false);
     expect(routePeer.errors?.join('\n')).toContain('dispatchProfile must be one of');
+
+    const routePeerChain = new RoutePeerTool().validate({
+      prompt: 'review this',
+      chainRoles: ['code', 'chaos'],
+    });
+    expect(routePeerChain.valid).toBe(false);
+    expect(routePeerChain.errors?.join('\n')).toContain('chainRoles must contain only');
+
+    const peerChain = new PeerChainTool().validate({
+      prompt: 'review this',
+      chainRoles: ['code', 'chaos'],
+    });
+    expect(peerChain.valid).toBe(false);
+    expect(peerChain.errors?.join('\n')).toContain('chainRoles must contain only');
   });
 
   it('enforces unknown dispatch profiles in direct execute calls too', async () => {
@@ -55,6 +77,31 @@ describe('Fleet tool validation', () => {
     });
     expect(routePeer.success).toBe(false);
     expect(routePeer.error).toContain('dispatchProfile must be one of');
+
+    const routePeerChain = await new RoutePeerTool().execute({
+      prompt: 'review this',
+      chainRoles: ['code', 'chaos'],
+    });
+    expect(routePeerChain.success).toBe(false);
+    expect(routePeerChain.error).toContain('chainRoles must contain only');
+
+    const peerChain = await new PeerChainTool().execute({
+      prompt: 'review this',
+      chainRoles: ['code', 'chaos'],
+    });
+    expect(peerChain.success).toBe(false);
+    expect(peerChain.error).toContain('chainRoles must contain only');
+  });
+
+  it('rejects route_peer chain roles combined with parallelism', () => {
+    const routePeer = new RoutePeerTool().validate({
+      prompt: 'review this',
+      chainRoles: ['code', 'review'],
+      parallelism: 2,
+    });
+
+    expect(routePeer.valid).toBe(false);
+    expect(routePeer.errors?.join('\n')).toContain('chainRoles and parallelism');
   });
 
   it('documents dispatch profile selection in both fleet tool registries', () => {
@@ -81,14 +128,23 @@ describe('Fleet tool validation', () => {
     expect(
       ROUTE_PEER_TOOL_DEF.function.parameters.properties.dispatchProfile.description,
     ).toContain('code: implementation');
+    expect(
+      ROUTE_PEER_TOOL_DEF.function.parameters.properties.chainRoles.description,
+    ).toContain('sequential peer_delegate calls');
+    expect(
+      PEER_CHAIN_TOOL_DEF.function.parameters.properties.chainRoles.description,
+    ).toContain('Ordered Fleet dispatch profiles');
   });
 
   it('tags formal fleet tools for Hermes dispatch discovery', () => {
     expect(new RoutePeerTool().getMetadata().keywords).toEqual(
-      expect.arrayContaining(['hermes', 'dispatch', 'dispatchProfile', 'toolset', 'policy']),
+      expect.arrayContaining(['hermes', 'dispatch', 'chain', 'roles', 'toolset', 'policy']),
     );
     expect(new PeerDelegateTool().getMetadata().keywords).toEqual(
       expect.arrayContaining(['hermes', 'dispatch', 'toolsets', 'policy']),
+    );
+    expect(new PeerChainTool().getMetadata().keywords).toEqual(
+      expect.arrayContaining(['hermes', 'chain', 'handoff', 'roles']),
     );
   });
 });

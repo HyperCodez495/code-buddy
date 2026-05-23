@@ -336,6 +336,34 @@ describe('TaskRouter — dispatch profiles', () => {
     expect(plan.rationale).toContain('Profile: review');
   });
 
+  it('uses dispatch profile as a peer role hint when peers advertise specialties', () => {
+    const sharedModel = {
+      provider: 'openai' as const,
+      strengths: ['reasoning'] as const,
+      costInputUsdPerMtok: 2,
+      costOutputUsdPerMtok: 8,
+    };
+    const peers: PeerSlot[] = [
+      peer('coder', {
+        roles: ['code'],
+        models: [model('coder-model', { ...sharedModel })],
+      }),
+      peer('reviewer', {
+        roles: ['review'],
+        models: [model('reviewer-model', { ...sharedModel })],
+      }),
+    ];
+
+    const plan = router.plan(
+      classify({ complexity: 'reasoning_heavy', requiresReasoning: true }),
+      peers,
+      { dispatchProfile: 'review' },
+    );
+
+    expect(plan.primary.peerId).toBe('reviewer');
+    expect(plan.rationale).toContain('Role hint: review');
+  });
+
   it('nudges research dispatches toward long-context models', () => {
     const peers: PeerSlot[] = [
       peer('cloud', {

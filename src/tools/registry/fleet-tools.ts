@@ -15,6 +15,7 @@ import type {
   ToolCategoryType,
 } from './types.js';
 import { executePeerDelegate } from '../peer-delegate-tool.js';
+import { executePeerChain } from '../peer-chain-tool.js';
 import { executeListPeers } from '../list-peers-tool.js';
 import { executeRoutePeer } from '../route-peer-tool.js';
 import {
@@ -240,6 +241,7 @@ export class RoutePeerTool implements ITool {
       parallelism: typeof input.parallelism === 'number' ? input.parallelism : undefined,
       estimatedTokens: typeof input.estimatedTokens === 'number' ? input.estimatedTokens : undefined,
       dispatchProfile: typeof input.dispatchProfile === 'string' ? input.dispatchProfile : undefined,
+      chainRoles: input.chainRoles,
       timeoutMs: typeof input.timeoutMs === 'number' ? input.timeoutMs : undefined,
     });
   }
@@ -273,6 +275,15 @@ export class RoutePeerTool implements ITool {
           parallelism: {
             type: 'number',
             description: 'Optional number of parallel lanes to recommend for ensemble/redundancy.',
+          },
+          chainRoles: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: [...FLEET_DISPATCH_PROFILES],
+            },
+            description:
+              'Optional ordered Hermes chain roles. Example: ["code","review","safe"] returns sequential peer_delegate calls. Mutually exclusive with parallelism.',
           },
           estimatedTokens: {
             type: 'number',
@@ -310,6 +321,30 @@ export class RoutePeerTool implements ITool {
     if (inp.dispatchProfile !== undefined && !isFleetDispatchProfile(inp.dispatchProfile)) {
       errors.push(`dispatchProfile must be one of ${FLEET_DISPATCH_PROFILES.join(', ')}`);
     }
+    if (inp.chainRoles !== undefined) {
+      if (!Array.isArray(inp.chainRoles)) {
+        errors.push('chainRoles must be an array');
+      } else if (inp.chainRoles.length === 0) {
+        errors.push('chainRoles must include at least one profile');
+      } else {
+        const nonString = inp.chainRoles.some((role) => typeof role !== 'string');
+        if (nonString) {
+          errors.push('chainRoles must contain only strings');
+        }
+        const invalid = inp.chainRoles.filter((role) => !isFleetDispatchProfile(role));
+        if (invalid.length > 0) {
+          errors.push(`chainRoles must contain only ${FLEET_DISPATCH_PROFILES.join(', ')}`);
+        }
+      }
+    }
+    if (
+      Array.isArray(inp.chainRoles) &&
+      inp.chainRoles.length > 0 &&
+      typeof inp.parallelism === 'number' &&
+      inp.parallelism > 1
+    ) {
+      errors.push('chainRoles and parallelism are mutually exclusive');
+    }
     return errors.length === 0 ? { valid: true } : { valid: false, errors };
   }
 
@@ -330,6 +365,8 @@ export class RoutePeerTool implements ITool {
         'orchestrate',
         'hermes',
         'dispatch',
+        'chain',
+        'roles',
         'dispatchProfile',
         'profile',
         'toolset',
@@ -352,8 +389,150 @@ export class RoutePeerTool implements ITool {
   }
 }
 
+export class PeerChainTool implements ITool {
+  readonly name = 'peer_chain';
+  readonly description =
+    'Route and execute an ordered Fleet collaboration chain. ' +
+    'Use this when a task should move through specialist peers such as code, review, and safe. ' +
+    'Each stage receives prior stage output as handoff context.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    return executePeerChain({
+      prompt: typeof input.prompt === 'string' ? input.prompt : '',
+      chainRoles: input.chainRoles,
+      privacyTag:
+        input.privacyTag === 'sensitive' || input.privacyTag === 'public'
+          ? input.privacyTag
+          : undefined,
+      maxCostUsd: typeof input.maxCostUsd === 'number' ? input.maxCostUsd : undefined,
+      maxLatencyMs: typeof input.maxLatencyMs === 'number' ? input.maxLatencyMs : undefined,
+      estimatedTokens: typeof input.estimatedTokens === 'number' ? input.estimatedTokens : undefined,
+      describeTimeoutMs:
+        typeof input.describeTimeoutMs === 'number' ? input.describeTimeoutMs : undefined,
+      stageTimeoutMs: typeof input.stageTimeoutMs === 'number' ? input.stageTimeoutMs : undefined,
+    });
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description:
+              'The task that will be routed and executed through the ordered peer chain.',
+          },
+          chainRoles: {
+            type: 'array',
+            items: {
+              type: 'string',
+              enum: [...FLEET_DISPATCH_PROFILES],
+            },
+            description:
+              'Ordered Fleet dispatch profiles to execute. Example: ["code","review","safe"].',
+          },
+          privacyTag: {
+            type: 'string',
+            enum: ['sensitive', 'public'],
+            description:
+              'Use sensitive to veto cloud-egress peers during routing; use public to allow cloud providers.',
+          },
+          maxCostUsd: {
+            type: 'number',
+            description: 'Optional per-task route cost cap in USD.',
+          },
+          maxLatencyMs: {
+            type: 'number',
+            description: 'Optional max expected peer/model latency in milliseconds.',
+          },
+          estimatedTokens: {
+            type: 'number',
+            description: 'Optional estimated input token count for context-window filtering.',
+          },
+          describeTimeoutMs: {
+            type: 'number',
+            description: 'Per-peer peer.describe timeout in milliseconds. Default 5000.',
+          },
+          stageTimeoutMs: {
+            type: 'number',
+            description: 'Per-stage peer.chat timeout in milliseconds. Default 60000.',
+          },
+        },
+        required: ['prompt', 'chainRoles'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+    const inp = input as Record<string, unknown>;
+    const errors: string[] = [];
+    if (typeof inp.prompt !== 'string' || !inp.prompt) errors.push('prompt is required (string)');
+    if (!Array.isArray(inp.chainRoles)) {
+      errors.push('chainRoles must be an array');
+    } else if (inp.chainRoles.length === 0) {
+      errors.push('chainRoles must include at least one profile');
+    } else if (inp.chainRoles.length > 5) {
+      errors.push('chainRoles supports at most 5 stages');
+    } else {
+      const nonString = inp.chainRoles.some((role) => typeof role !== 'string');
+      if (nonString) {
+        errors.push('chainRoles must contain only strings');
+      }
+      const invalid = inp.chainRoles.filter((role) => !isFleetDispatchProfile(role));
+      if (invalid.length > 0) {
+        errors.push(`chainRoles must contain only ${FLEET_DISPATCH_PROFILES.join(', ')}`);
+      }
+    }
+    if (
+      inp.privacyTag !== undefined &&
+      inp.privacyTag !== 'sensitive' &&
+      inp.privacyTag !== 'public'
+    ) {
+      errors.push('privacyTag must be "sensitive" or "public"');
+    }
+    return errors.length === 0 ? { valid: true } : { valid: false, errors };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'utility' as ToolCategoryType,
+      keywords: [
+        'peer',
+        'chain',
+        'fleet',
+        'delegate',
+        'multi-agent',
+        'collaborate',
+        'orchestrate',
+        'hermes',
+        'handoff',
+        'roles',
+        'review',
+        'safe',
+        'code',
+      ],
+      priority: 8,
+      modifiesFiles: false,
+      makesNetworkRequests: true,
+      fleetSafe: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
 export function createFleetTools(): ITool[] {
-  return [new PeerDelegateTool(), new ListPeersTool(), new RoutePeerTool()];
+  return [new PeerDelegateTool(), new PeerChainTool(), new ListPeersTool(), new RoutePeerTool()];
 }
 
 export function resetFleetToolInstances(): void {

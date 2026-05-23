@@ -211,7 +211,7 @@ export class ConfirmationService extends EventEmitter {
     }
 
     // Policy Engine Check
-    const capability: Capability = process.env.CODEBUDDY_SELF_IMPROVEMENT === 'true'
+    const capability: Capability = process.env.CODEBUDDY_SELF_IMPROVEMENT === 'true' || options.operation === 'self_improvement'
       ? 'self_improvement'
       : (operationType === 'bash' ? 'shell:safe' : 'fs:write:scoped');
     let risk: 'low' | 'medium' | 'high' = 'medium';
@@ -241,13 +241,14 @@ export class ConfirmationService extends EventEmitter {
       };
     }
 
-    if (process.env.CODEBUDDY_AUTO_CONFIRM === 'true') {
+    const isSelfImprovement = capability === 'self_improvement';
+
+    if (!isSelfImprovement && process.env.CODEBUDDY_AUTO_CONFIRM === 'true') {
       return {
         confirmed: true,
       };
     }
 
-    const isSelfImprovement = capability === 'self_improvement';
     if (!isSelfImprovement && policyResult.decision === 'allow') {
       return {
         confirmed: true,

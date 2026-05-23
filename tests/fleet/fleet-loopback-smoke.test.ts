@@ -35,7 +35,9 @@ import {
   executePeerDelegate,
   _resetCallCounterForTests,
 } from '../../src/tools/peer-delegate-tool.js';
+import { executePeerChain } from '../../src/tools/peer-chain-tool.js';
 import { ToolRegistry } from '../../src/tools/registry.js';
+import { PolicyEngine } from '../../src/security/policy-engine.js';
 import type { CodeBuddyTool } from '../../src/codebuddy/client.js';
 
 type ServerHandle = Awaited<ReturnType<typeof startServer>>;
@@ -108,6 +110,10 @@ describe('Fleet loopback smoke', () => {
     );
     resetCapabilityCache();
     seedFleetSafeRegistry();
+    vi.spyOn(PolicyEngine.getInstance(), 'evaluate').mockReturnValue({
+      decision: 'allow',
+      reason: 'loopback smoke test permits peer invocation',
+    });
     _resetFleetHandlerForTests();
     _resetCallCounterForTests();
   });
@@ -145,6 +151,7 @@ describe('Fleet loopback smoke', () => {
     } else {
       process.env.CODEBUDDY_PEER_PROVIDER = previousPeerProvider;
     }
+    vi.restoreAllMocks();
     resetCapabilityCache();
     await fs.rm(tmpRoot, { recursive: true, force: true });
   });
@@ -312,6 +319,43 @@ describe('Fleet loopback smoke', () => {
         expect.objectContaining({ tool: 'bash', action: 'deny' }),
       ]),
     });
+  });
+
+  it('executes peer_chain stages through real loopback peer.chat', async () => {
+    const { client, chat } = makeMockPeerChatClient('loopback chain stage answer');
+    await connectLoopbackPeer(client);
+
+    const result = await executePeerChain({
+      prompt: 'coordinate a bounded docs edit',
+      chainRoles: ['research', 'review', 'safe'],
+      privacyTag: 'public',
+      describeTimeoutMs: loopbackTimeoutMs,
+      stageTimeoutMs: loopbackTimeoutMs,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('Fleet peer chain completed (3 stages).');
+    expect(result.output).toMatch(/1\. research: loopback\/\S+/);
+    expect(result.output).toMatch(/2\. review: loopback\/\S+/);
+    expect(result.output).toMatch(/3\. safe: loopback\/\S+/);
+    expect(result.output).toContain('loopback chain stage answer');
+    expect(result.data).toMatchObject({
+      mode: 'chain',
+      stages: [
+        expect.objectContaining({ peer: 'loopback', role: 'research' }),
+        expect.objectContaining({ peer: 'loopback', role: 'review' }),
+        expect.objectContaining({ peer: 'loopback', role: 'safe' }),
+      ],
+      finalText: 'loopback chain stage answer',
+    });
+
+    expect(chat).toHaveBeenCalledTimes(3);
+    const firstStageMessages = chat.mock.calls[0][0] as Array<{ content: string }>;
+    const secondStageMessages = chat.mock.calls[1][0] as Array<{ content: string }>;
+    expect(firstStageMessages[0].content).toContain('Prioritize context gathering');
+    expect(firstStageMessages[1].content).toContain('Fleet chain stage 1/3: research');
+    expect(secondStageMessages[1].content).toContain('Previous stage outputs:');
+    expect(secondStageMessages[1].content).toContain('loopback chain stage answer');
   });
 
   it('routes /fleet route --delegate --profile through real loopback peer.chat', async () => {

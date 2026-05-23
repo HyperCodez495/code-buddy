@@ -32,7 +32,7 @@ Contrat standard au format JSON Zod utilisé par `buddy autonomous-code` :
 ### `expected.json`
 Assertions de succès attendues :
 - `status` : Le statut final retourné par l'agent (`verified` ou `blocked`).
-- `args` : Arguments supplémentaires facultatifs à passer au CLI (ex. `["--max-cost-usd", "0.00001"]`).
+- `args` : Arguments supplémentaires facultatifs à passer au CLI (ex. `["--max-cost-usd", "0.00001"]` ou `["--max-iterations", "1"]`).
 - `maxFilesChanged` : Nombre maximal de fichiers autorisés à être modifiés par le run.
 - `mustTouchPaths` : Liste des fichiers qui doivent impérativement être modifiés.
 - `mustNotTouchOutside` : Boolean garantissant qu'aucun fichier en dehors de `allowedPaths` n'a été altéré.

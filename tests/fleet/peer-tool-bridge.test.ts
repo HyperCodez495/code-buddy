@@ -15,6 +15,7 @@ import {
 import { PolicyEngine } from '../../src/security/policy-engine.js';
 import { ConfirmationService } from '../../src/utils/confirmation-service.js';
 import { getToolRegistry } from '../../src/tools/registry.js';
+import { auditLogger } from '../../src/security/audit-logger.js';
 
 describe('PeerToolBridge', () => {
   let tempWorkspace: string;
@@ -28,6 +29,7 @@ describe('PeerToolBridge', () => {
 
     // Mock tool registry isFleetSafe
     vi.spyOn(getToolRegistry(), 'isFleetSafe').mockReturnValue(true);
+    auditLogger.clear();
 
     // Mock PolicyEngine evaluate to allow all peer invocations by default in tests
     vi.spyOn(PolicyEngine.getInstance(), 'evaluate').mockReturnValue({
@@ -112,6 +114,30 @@ describe('PeerToolBridge', () => {
     const res = await dispatchPeerRequest(frame, defaultCtx);
     expect(res.ok).toBe(false);
     expect(res.error?.message).toContain('TOOL_NOT_ALLOWED_FOR_PEER_INVOKE');
+  });
+
+  it('writes structured audit entries for peer tool invocations', async () => {
+    await fs.writeFile(path.join(tempWorkspace, 'test.txt'), 'hello');
+
+    const frame = {
+      id: 'req-audit-1',
+      method: 'peer.tool.invoke',
+      params: {
+        tool: 'view_file',
+        args: { file_path: 'test.txt' },
+      },
+    };
+
+    const res = await dispatchPeerRequest(frame, defaultCtx);
+
+    expect(res.ok).toBe(true);
+    expect(auditLogger.getEntriesByAction('tool_execution')).toEqual([
+      expect.objectContaining({
+        decision: 'allow',
+        source: 'peer-tool-bridge',
+        target: 'view_file',
+      }),
+    ]);
   });
 
   describe('scope validation', () => {

@@ -69,6 +69,40 @@ describe('runner checkpoint resume', () => {
     expect(report.status).toBe('verified');
   });
 
+  it('returns blocked report immediately when resuming from blocked state', async () => {
+    const repo = await createTempGitRepo();
+    const contract = getContract(repo);
+    const reason = 'Maximum iterations (2) reached without passing verification.';
+
+    await saveCheckpoint({
+      runId: 'resume-blocked-run',
+      step: 'blocked',
+      timestamp: new Date().toISOString(),
+      options: { taskFile: 'task.json', applyEdits: true, runVerification: true },
+      contract,
+      blockedReasons: [reason],
+      verification: [{
+        command: 'npm test -- tests/example.test.ts',
+        status: 'failed',
+        exitCode: 1,
+        stdout: '',
+        stderr: 'failed',
+      }],
+    });
+
+    const report = await runAgenticCodingCell({
+      resume: 'resume-blocked-run',
+    });
+
+    expect(report.status).toBe('blocked');
+    expect(report.autoExecutable).toBe(false);
+    expect(report.blockedReasons).toEqual([reason]);
+    expect(report.editResults).toEqual([]);
+    expect(report.verification).toEqual([
+      expect.objectContaining({ status: 'failed' }),
+    ]);
+  });
+
   it('skips edit application when resuming from applied state', async () => {
     const repo = await createTempGitRepo();
     const docPath = path.join(repo, 'docs');

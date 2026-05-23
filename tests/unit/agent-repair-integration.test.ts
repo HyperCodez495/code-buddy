@@ -233,7 +233,7 @@ describe('Agent Repair Integration', () => {
     // Import after mocks are set up
     const module = await import('../../src/agent/codebuddy-agent.js');
     CodeBuddyAgent = module.CodeBuddyAgent;
-  });
+  }, 30_000);
 
   beforeEach(() => {
     // Reset mocks

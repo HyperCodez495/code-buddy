@@ -9,6 +9,7 @@
 import {
   NoPeerAvailableError,
   TaskRouter,
+  planChainDispatch,
   type DispatchConstraints,
   type PeerSlot,
 } from '../fleet/task-router.js';
@@ -37,6 +38,7 @@ export interface RoutePeerParams {
   parallelism?: number;
   estimatedTokens?: number;
   dispatchProfile?: FleetDispatchProfile | string;
+  chainRoles?: unknown;
   timeoutMs?: number;
 }
 
@@ -50,6 +52,7 @@ interface PeerDescribePayload {
 }
 
 const DEFAULT_DESCRIBE_TIMEOUT_MS = 5_000;
+const MAX_CHAIN_ROLES = 6;
 
 export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolResult> {
   if (!params.prompt || typeof params.prompt !== 'string') {
@@ -62,6 +65,20 @@ export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolRes
     return {
       success: false,
       error: `route_peer: dispatchProfile must be one of ${FLEET_DISPATCH_PROFILES.join(', ')}.`,
+    };
+  }
+  const chainRolesResult = normalizeChainRoles(params.chainRoles);
+  if (chainRolesResult.error) {
+    return { success: false, error: chainRolesResult.error };
+  }
+  if (
+    chainRolesResult.roles &&
+    typeof params.parallelism === 'number' &&
+    params.parallelism > 1
+  ) {
+    return {
+      success: false,
+      error: 'route_peer: chainRoles and parallelism are mutually exclusive.',
     };
   }
 
@@ -139,24 +156,45 @@ export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolRes
 
   try {
     const router = new TaskRouter();
-    const plan = router.plan(classification, peers, constraints);
+    const plan = chainRolesResult.roles
+      ? planChainDispatch(classification, peers, {
+          chainRoles: chainRolesResult.roles,
+          constraints,
+        })
+      : router.plan(classification, peers, constraints);
+    const chainNextCalls = plan.chain?.map((lane) => buildPeerDelegateCall(
+      lane.peerId,
+      lane.model,
+      params.prompt,
+      lane.role,
+    ));
     const output = {
+      mode: plan.chain ? 'chain' : 'single',
       recommendation: {
         peer: plan.primary.peerId,
         model: plan.primary.model,
         score: plan.primary.score,
+        ...(plan.primary.role ? { role: plan.primary.role } : {}),
       },
       fallback: plan.fallback
         ? {
             peer: plan.fallback.peerId,
             model: plan.fallback.model,
             score: plan.fallback.score,
+            ...(plan.fallback.role ? { role: plan.fallback.role } : {}),
           }
         : null,
       parallel: plan.parallel?.map((lane) => ({
         peer: lane.peerId,
         model: lane.model,
         score: lane.score,
+        ...(lane.role ? { role: lane.role } : {}),
+      })),
+      chain: plan.chain?.map((lane) => ({
+        peer: lane.peerId,
+        model: lane.model,
+        score: lane.score,
+        ...(lane.role ? { role: lane.role } : {}),
       })),
       dispatchProfile,
       dispatchProfileSource: dispatchResolution.source,
@@ -173,9 +211,14 @@ export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolRes
           peer: plan.primary.peerId,
           prompt: params.prompt,
           model: plan.primary.model,
-          ...(shouldPropagateResolvedDispatchProfile(dispatchResolution) ? { dispatchProfile } : {}),
+          ...(plan.primary.role
+            ? { dispatchProfile: plan.primary.role }
+            : shouldPropagateResolvedDispatchProfile(dispatchResolution)
+              ? { dispatchProfile }
+              : {}),
         },
       },
+      ...(chainNextCalls ? { nextCalls: chainNextCalls } : {}),
     };
 
     return {
@@ -199,6 +242,65 @@ export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolRes
   }
 }
 
+function buildPeerDelegateCall(
+  peer: string,
+  model: string,
+  prompt: string,
+  dispatchProfile?: string,
+): {
+  tool: 'peer_delegate';
+  args: {
+    peer: string;
+    prompt: string;
+    model: string;
+    dispatchProfile?: string;
+  };
+} {
+  return {
+    tool: 'peer_delegate',
+    args: {
+      peer,
+      prompt,
+      model,
+      ...(dispatchProfile ? { dispatchProfile } : {}),
+    },
+  };
+}
+
+function normalizeChainRoles(raw: unknown): {
+  roles?: FleetDispatchProfile[];
+  error?: string;
+} {
+  if (raw === undefined) {
+    return {};
+  }
+  if (!Array.isArray(raw)) {
+    return { error: 'route_peer: chainRoles must be an array of dispatch profiles.' };
+  }
+  const hasNonString = raw.some((role) => typeof role !== 'string');
+  if (hasNonString) {
+    return { error: 'route_peer: chainRoles must contain only string dispatch profiles.' };
+  }
+  const roles = raw
+    .map((role) => role.trim())
+    .filter(Boolean);
+  if (roles.length === 0) {
+    return { error: 'route_peer: chainRoles must include at least one dispatch profile.' };
+  }
+  if (roles.length > MAX_CHAIN_ROLES) {
+    return { error: `route_peer: chainRoles supports at most ${MAX_CHAIN_ROLES} stages.` };
+  }
+  const invalid = roles.filter((role) => !isFleetDispatchProfile(role));
+  if (invalid.length > 0) {
+    return {
+      error:
+        `route_peer: chainRoles must contain only ${FLEET_DISPATCH_PROFILES.join(', ')}; ` +
+        `invalid: ${invalid.join(', ')}.`,
+    };
+  }
+  return { roles: roles as FleetDispatchProfile[] };
+}
+
 function normalizeCapability(raw: unknown): PeerCapability | null {
   if (!raw || typeof raw !== 'object') return null;
   const candidate = raw as Partial<PeerCapability>;
@@ -216,5 +318,8 @@ function normalizeCapability(raw: unknown): PeerCapability | null {
     machineSpec: candidate.machineSpec,
     maxConcurrency: candidate.maxConcurrency,
     activeRequests: candidate.activeRequests,
+    roles: Array.isArray(candidate.roles)
+      ? candidate.roles.filter((role): role is string => typeof role === 'string' && role.trim().length > 0)
+      : undefined,
   };
 }

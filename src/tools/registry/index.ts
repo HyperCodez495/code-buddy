@@ -277,6 +277,7 @@ export {
 // Tool Adapters - Fleet (peer_delegate, list_peers, route_peer)
 export {
   PeerDelegateTool,
+  PeerChainTool,
   ListPeersTool,
   RoutePeerTool,
   createFleetTools,

@@ -366,7 +366,7 @@ describe('agentic coding task contract', () => {
     });
   });
 
-  it('blocks write delegation in V0', () => {
+  it('allows delegated slices as data-only Fleet collaboration', () => {
     const result = validateAgenticCodingTaskContract({
       ...baseTask(),
       fleetPolicy: 'delegated-slices',
@@ -376,8 +376,8 @@ describe('agentic coding task contract', () => {
     if (!result.success) throw new Error(result.errors.join('\n'));
 
     expect(assessAgenticCodingExecutionGate(result.contract)).toEqual({
-      autoExecutable: false,
-      reasons: ['write delegation is not enabled in V0'],
+      autoExecutable: true,
+      reasons: [],
     });
   });
 });

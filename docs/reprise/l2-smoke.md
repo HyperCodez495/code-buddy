@@ -39,7 +39,8 @@ Ce document détaille les résultats de l'exécution des tests de fumée (smoke 
 * **Comportement** :
   - L'agent tente d'éditer le fichier.
   - La vérification échoue de manière programmée (`throw new Error(...)`).
-  - La boucle se répète jusqu'à la limite d'itérations (`maxIterations = 4`).
+  - La boucle se répète jusqu'à la limite d'itérations (`maxIterations = 4`
+    par défaut, configurable via `--max-iterations <count>`).
   - À l'issue des 4 essais infructueux, le runner effectue un rollback complet des fichiers modifiés (via git) et retourne le statut `blocked`.
 
 ### 3. Cost Limit

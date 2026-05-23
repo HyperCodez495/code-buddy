@@ -1,9 +1,20 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from 'vitest';
 import * as path from 'node:path';
 import * as fs from 'node:fs/promises';
-import { generateEditProposal, extractJson } from '../../../src/agent/autonomous/edit-proposal-producer.js';
-import type { AgenticCodingEditProposalProducerDispatch } from '../../../src/agent/autonomous/agentic-coding-runner.js';
-import type { CodeBuddyClient } from '../../../src/codebuddy/client.js';
+import {
+  extractJson,
+  generateEditProposal,
+  generateEditProposalWithTrace,
+} from '../../../src/agent/autonomous/edit-proposal-producer.js';
+import type {
+  AgenticCodingEditProposalProducerDispatch,
+  AgenticCodingWorkflowReport,
+} from '../../../src/agent/autonomous/agentic-coding-runner.js';
+import type {
+  CodeBuddyClient,
+  CodeBuddyMessage,
+  CodeBuddyTool,
+} from '../../../src/codebuddy/client.js';
 
 describe('extractJson', () => {
   it('extracts JSON code block', () => {
@@ -84,7 +95,7 @@ describe('generateEditProposal', () => {
     // Call 2: returning the final valid JSON
     let callCount = 0;
     const mockClient = {
-      chat: vi.fn().mockImplementation(async (messages, tools) => {
+      chat: vi.fn().mockImplementation(async (_messages: CodeBuddyMessage[], _tools?: CodeBuddyTool[]) => {
         callCount++;
         if (callCount === 1) {
           return {
@@ -141,7 +152,7 @@ describe('generateEditProposal', () => {
   it('rejects file reads outside allowedPaths', async () => {
     let callCount = 0;
     const mockClient = {
-      chat: vi.fn().mockImplementation(async (messages) => {
+      chat: vi.fn().mockImplementation(async (messages: CodeBuddyMessage[]) => {
         callCount++;
         if (callCount === 1) {
           return {
@@ -193,7 +204,7 @@ describe('generateEditProposal', () => {
             contract: {
               ...dispatch.currentState.workflow.contract,
               allowedPaths: ['docs/example.md'], // explicitly restrict
-            } as any,
+            } as AgenticCodingWorkflowReport & { contract: { allowedPaths: string[] } },
           },
         },
       },
@@ -206,7 +217,7 @@ describe('generateEditProposal', () => {
   it('handles git_status and ripgrep mock tool calls', async () => {
     let callCount = 0;
     const mockClient = {
-      chat: vi.fn().mockImplementation(async (messages) => {
+      chat: vi.fn().mockImplementation(async (messages: CodeBuddyMessage[]) => {
         callCount++;
         if (callCount === 1) {
           return {
@@ -238,7 +249,7 @@ describe('generateEditProposal', () => {
           };
         } else {
           // Ensure both tools got responses
-          const toolResponses = messages.filter((m: any) => m.role === 'tool');
+          const toolResponses = messages.filter((message) => message.role === 'tool');
           expect(toolResponses).toHaveLength(2);
           return {
             choices: [
@@ -256,6 +267,97 @@ describe('generateEditProposal', () => {
 
     const result = await generateEditProposal(dispatch, mockClient);
     expect(result.summary).toBe('Mocks complete');
+  });
+
+  it('exposes advisory peer_chain only when the producer dispatch allows Fleet tools', async () => {
+    let callCount = 0;
+    const fleetDispatch: AgenticCodingEditProposalProducerDispatch = {
+      ...dispatch,
+      allowedTools: ['file_read', 'peer_chain'],
+      fleet: {
+        allowedTools: ['peer_chain'],
+        chainRoles: ['research', 'review', 'safe'],
+        invocation: {
+          args: {
+            chainRoles: ['research', 'review', 'safe'],
+            privacyTag: 'sensitive',
+            prompt: 'Review this bounded docs task.',
+            stageTimeoutMs: 1000,
+          },
+          tool: 'peer_chain',
+        },
+        mode: 'read_only_help',
+        policy: 'read-only-help',
+        safety: ['Peers are advisory only.'],
+      },
+    };
+    const mockClient = {
+      chat: vi.fn().mockImplementation(async (messages: CodeBuddyMessage[], tools?: CodeBuddyTool[]) => {
+        callCount++;
+        if (callCount === 1) {
+          const toolNames = (tools ?? []).map((tool) => tool.function.name);
+          expect(toolNames).toEqual(['file_read', 'peer_chain']);
+          return {
+            choices: [
+              {
+                message: {
+                  role: 'assistant',
+                  tool_calls: [
+                    {
+                      id: 'call_peer_chain',
+                      type: 'function',
+                      function: {
+                        name: 'peer_chain',
+                        arguments: JSON.stringify({
+                          chainRoles: ['research', 'review', 'safe'],
+                          prompt: 'Review this bounded docs task.',
+                        }),
+                      },
+                    },
+                  ],
+                },
+              },
+            ],
+          };
+        }
+
+        const lastMsg = messages[messages.length - 1];
+        expect(lastMsg.role).toBe('tool');
+        expect(lastMsg.content).toContain('No fleet peers connected');
+        return {
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '```json\n{\n  "summary": "Fleet unavailable; produce local proposal",\n  "edits": [\n    {\n      "type": "replace_text",\n      "path": "docs/example.md",\n      "find": "a",\n      "replace": "b"\n    }\n  ]\n}\n```',
+              },
+            },
+          ],
+        };
+      }),
+    } as unknown as CodeBuddyClient;
+
+    const result = await generateEditProposalWithTrace(fleetDispatch, mockClient);
+    expect(result.proposal.summary).toBe('Fleet unavailable; produce local proposal');
+    expect(result.trace.fleet).toEqual(expect.objectContaining({
+      attemptedPeerChainCalls: 1,
+      completedPeerChainCalls: 0,
+      expectedCollaboration: true,
+      mode: 'read_only_help',
+      policy: 'read-only-help',
+      state: 'attempted',
+    }));
+    expect(result.trace.toolCalls).toEqual([
+      expect.objectContaining({
+        allowed: true,
+        args: expect.objectContaining({
+          chainRoles: ['research', 'review', 'safe'],
+          promptLength: 'Review this bounded docs task.'.length,
+        }),
+        name: 'peer_chain',
+        success: false,
+      }),
+    ]);
   });
 
   it('throws an error if final proposal schema is invalid', async () => {

@@ -69,7 +69,7 @@ describe('AgenticCodingRunner - Security and Self-Improvement', () => {
         repo: tempRepo,
         task: 'Fix the README formatting',
         allowedPaths: ['README.md'],
-        verification: ['node -e "console.log(\'verifying\')\"'],
+        verification: ['node -e "console.log(\'verifying\')"'],
         riskLevel: 'low',
         edits: [{
           type: 'replace_text',
@@ -117,7 +117,7 @@ describe('AgenticCodingRunner - Security and Self-Improvement', () => {
         repo: tempRepo,
         task: 'Fix the README formatting',
         allowedPaths: ['README.md'],
-        verification: ['node -e "process.exit(1)\"'], // failing verification command
+        verification: ['node -e "process.exit(1)"'], // failing verification command
         riskLevel: 'low',
         edits: [{
           type: 'replace_text',
@@ -171,7 +171,7 @@ describe('AgenticCodingRunner - Security and Self-Improvement', () => {
         repo: tempRepo,
         task: 'Fix the README formatting',
         allowedPaths: ['README.md'],
-        verification: ['node -e "console.log(\'all green\')\"'], // successful verification command
+        verification: ['node -e "console.log(\'all green\')"'], // successful verification command
         riskLevel: 'low',
         edits: [{
           type: 'replace_text',

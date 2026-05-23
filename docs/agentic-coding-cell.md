@@ -77,6 +77,11 @@ Optional fields:
 - `maxToolRounds`: default inherited from the active autonomy profile.
 - `memoryPolicy`: `none`, `handoff`, or `lessons`.
 - `fleetPolicy`: `none`, `read-only-help`, or `delegated-slices`.
+  `read-only-help` adds advisory `route_peer`/`peer_chain` access for
+  research, review, and safety input. `delegated-slices` adds a data-only
+  research -> code -> review -> safe peer chain; peers can suggest the
+  controlled proposal, but preview, approval, apply, and verification remain
+  runner-owned.
 - `edits`: guarded declarative edit operations. V0 supports only exact
   `replace_text` operations with an expected occurrence count.
 
@@ -126,6 +131,152 @@ messages, the current workflow state, read-only tool hints, forbidden actions,
 the target `edit-proposal.json`, and the review command that must run after a
 producer writes JSON. It is an invocation boundary only: it does not run an
 agent and does not grant permission for direct file edits.
+
+For autonomous producer execution, the runner can invoke that same data-only
+boundary and persist the controlled JSON proposal:
+
+```bash
+buddy autonomous-code --task-file task.json --generate-edit-proposal-file edit-proposal.json
+```
+
+When this is combined with `--edit-proposal-producer-dispatch-file`, the saved
+dispatch and generated proposal share the same Fleet policy and artifact
+directory. The generated proposal is still inert until a later run validates,
+previews, approves, applies, and verifies it.
+The same run also writes `edit-proposal-producer-trace.json` next to the
+generated proposal. That trace is machine-readable evidence of the data-only
+tools the producer actually called, including whether `route_peer` or
+`peer_chain` was attempted and whether any Fleet call completed. It records
+bounded metadata such as chain roles and prompt length, not full prompts or
+tool output.
+Add `--require-fleet-collaboration` when a Fleet-backed task must not proceed
+unless the producer trace shows at least one completed `route_peer` or
+`peer_chain` call. This turns missing peers or ignored Fleet guidance into a
+failed run while preserving the trace file for audit. Overnight manifests
+preserve this requirement in the execution profile; resume and supervise
+commands replay it by reading the manifest-linked trace or the default trace
+next to the generated proposal.
+If `--preview-edits`, `--apply-edits`, or `--run-verification` is supplied in
+the same invocation, the CLI feeds the generated proposal back into the runner
+immediately, so unattended runs can generate, preview, apply, and verify through
+one guarded command:
+
+```bash
+buddy autonomous-code --task-file task.json --generate-edit-proposal-file edit-proposal.json --apply-edits --require-preview --run-verification
+```
+
+For unattended long runs, use the explicit overnight preset:
+
+```bash
+buddy autonomous-code --task-file task.json --autonomy-preset overnight --generate-edit-proposal-file edit-proposal.json --apply-edits --require-preview --run-verification
+```
+
+`--autonomy-preset overnight` raises the default self-correction budget to 16
+iterations, the estimated LLM spend guard to $10, and the per-command
+verification timeout to 300000 ms. Explicit `--max-iterations`,
+`--max-cost-usd`, or `--verification-timeout-ms` flags still win, so operators
+can tighten or widen any guardrail per run.
+If no `--run-id` is supplied, the CLI creates an `overnight-*` run id, writes an
+initial checkpoint under `CODEBUDDY_HOME/runs/<runId>/state.json`, and includes
+`runId` plus `checkpointPath` in JSON output so the run can be resumed with
+`--resume <runId>`.
+The overnight preset also writes an `overnight-manifest.json` next to the
+checkpoint by default. That manifest records the run id, checkpoint path,
+budget guards, Fleet collaboration posture, artifact paths, the execution
+profile needed to continue the same apply/preview/verification flow, and a
+copyable `--resume-from-manifest` command plus a copyable
+`--supervise-from-manifest` watchdog command, and an `auditCommand` that can
+verify the persisted evidence later without starting another cycle. If the run
+generated a controlled proposal, the manifest stores that generated proposal as the resumable
+`editProposalFile` and links the producer trace as an audit artifact, so resume
+and supervision commands do not silently drop the edit/apply/verify intent and
+operators can prove whether Fleet collaboration was actually attempted. Use
+`--overnight-manifest-file <path>` to put it
+in an operations directory instead. A later process can resume from that file
+with `--resume-from-manifest <path>`; the CLI reuses the manifest run id,
+budgets, execution profile, and diagnostic artifact paths unless explicit flags
+override them.
+For unattended watchdog-style runs, use `--supervise-from-manifest <path>` with
+`--supervise-cycles <count>` and `--supervise-sleep-ms <ms>` to run repeated,
+bounded resume cycles from the same manifest. Without explicit overrides, the
+watchdog is sized for an eight-hour observed interval: 961 cycles at 30000 ms between
+cycles. It stops as `stalled` when the same progress signature repeats for
+3 cycles, and stops after 3 consecutive cycle errors without losing the JSONL
+audit trail; use `--supervise-max-stalled-cycles <count>` and
+`--supervise-max-error-cycles <count>` to tune those guards. Add
+`--supervision-events-file <path>` to choose the per-cycle JSONL audit log path;
+otherwise the CLI appends `supervision-events.jsonl` next to the manifest. The
+supervised run preserves the manifest run id and writes the final report,
+workflow diagnostics, manifest supervision summary, and per-cycle events. If
+every cycle errors before a report is produced, the manifest still records the
+error-only supervision summary, the JSONL event path, the recovery handoff path,
+and a copyable supervise command pinned to those audit artifacts. Each
+supervision event includes a compact Fleet snapshot (`policy`, `mode`,
+`chainRoles`, expected collaboration state, and the peer-chain invocation
+metadata without the full prompt). When `--require-fleet-collaboration` is
+replayed from the manifest, supervision summaries and JSONL events also include
+`fleetCollaborationProof` with the trace path, completed peer-call counts, and
+whether the proof was satisfied. Overnight manifests and JSON output include
+`overnightReadiness`, a compact verdict that combines the configured eight-hour
+watchdog window with the required Fleet proof, and separately marks whether an
+overnight window has actually completed. `completionProven` is only true after
+the supervised run reaches the cycle limit and the observed first-to-final
+cycle timestamps cover the minimum window; configured cycle count alone does
+not prove completion. Early terminal statuses do not count as an overnight
+completion. Add `--require-overnight-readiness`
+to a supervised manifest run to fail before the first cycle when the watchdog
+window is too short or required Fleet proof is missing. Generated manifests add
+that flag to the copyable supervise command only when the readiness verdict is
+already satisfied. Add `--require-overnight-completion` when the supervising
+process must fail unless the run actually observes the minimum overnight window
+and required Fleet proof; ready-but-early terminal statuses still fail this
+completion gate. Generated manifests add that completion gate to ready copyable
+supervise commands, so the command can serve as proof rather than only a launch
+recipe. After the process exits, use
+`--audit-overnight-manifest <path>` to recalculate readiness and completion
+from the persisted manifest without running another supervision cycle; combine
+it with `--require-overnight-completion` when the audit itself must fail unless
+the stored evidence proves the full overnight window and Fleet proof. The audit
+also reads the persisted supervision JSONL path from the manifest and requires
+the event count, cycle details, source manifest path, and final `stoppedReason`
+to match before it reports `completion_proven`. Non-final events include
+`nextCycleAt` so an external monitor can detect a missing follow-up cycle; the
+final event includes `stoppedReason` so an unattended run can be audited for
+multi-agent posture even when the terminal is gone. When
+supervision stops before a terminal status
+(`stalled`, `cycle_error_limit`, or non-terminal `cycle_limit`), the CLI also
+writes `supervision-recovery.json` next to the manifest unless
+`--supervision-recovery-file <path>` overrides it. That recovery handoff records
+the last cycle, relevant artifacts, an audit action, resume/supervise commands,
+readiness verdict, and the Fleet peer-chain invocation when available, so
+another agent can resume triage without terminal scrollback. The audit action
+recalculates the persisted readiness/completion verdict before any resume or
+restart. Restarts that reuse the same supervision JSONL path keep the manifest
+supervision summary cumulative, so the audit can compare the whole appended
+event trail rather than only the last watchdog segment. When Fleet is enabled
+and the stop is recoverable, the CLI also writes
+`supervision-fleet-triage.json`
+unless `--supervision-fleet-triage-file <path>` overrides it. That file contains
+the bounded `peer_chain` call, last-cycle summary, readiness blockers, and
+artifact paths needed for peers to diagnose the stop without editing the
+repository. The CLI also attempts that bounded peer-chain triage immediately and
+writes `supervision-fleet-triage-result.json` unless
+`--supervision-fleet-triage-result-file <path>` overrides it; unavailable peers
+are recorded as a failed triage result, not as a failed supervision run. The
+recovery handoff includes an `inspect_fleet_triage_result` action when that
+automatic attempt exists, so the next agent reads existing evidence before
+asking Fleet peers again. Its copyable `restart_supervision` command also pins
+the JSONL event, recovery, Fleet triage, and Fleet triage result paths when
+those artifacts exist, so restarting from the handoff keeps one continuous audit
+surface. Use `--recover-from-supervision <path>` to restart the watchdog
+directly from the recovery handoff; the CLI reuses the handoff's source
+manifest, supervision thresholds, JSONL event path, Fleet triage paths, and
+recovery path unless explicit flags override them.
+For the same preset, the CLI also writes `report.json`,
+`workflow-progress.json`, and `workflow-events.json` next to the checkpoint
+unless explicit `--report-file`, `--workflow-progress-file`, or
+`--workflow-events-file` paths are supplied. This keeps a post-run diagnostic
+surface available even if the terminal scrollback is gone.
 
 After a future agent writes `edit-proposal.json`, Cowork can ask the runner for
 a compact review before previewing:
@@ -438,6 +589,14 @@ apply.
 boundary. It packages the request as messages plus tool policy for a future
 agent runner, while still keeping all validation, preview, approval, and apply
 authority inside `buddy autonomous-code`.
+When `fleetPolicy` is not `none`, the dispatch also carries a `fleet` block
+with the recommended `peer_chain` invocation and the only Fleet tools the
+producer may call. Those tools are advisory: a peer can return research,
+implementation notes, review, or safety feedback, but it cannot write the
+repository or bypass the controlled edit-proposal schema.
+The main run report and workflow progress snapshots also expose `fleet.policy`,
+`fleet.mode`, and `fleet.chainRoles`, so long-running autonomous sessions can
+show their collaboration posture without opening the producer dispatch.
 
 When an autonomous loop is allowed to write, use `--require-preview` with
 `--apply-edits` so the runner must produce a successful preview in the same run
@@ -713,6 +872,49 @@ It currently:
   `--require-preview` is combined with `--apply-edits`;
 - optionally run declared verification commands only when `--run-verification`
   is provided and the preflight gate passes;
+- choose `--autonomy-preset overnight` for longer unattended runs while keeping
+  per-run overrides explicit;
+- auto-create a resumable `overnight-*` checkpoint id when the overnight preset
+  is used without `--run-id`;
+- write an overnight manifest with the checkpoint path, artifact paths, Fleet
+  posture, budget guards, resumable execution profile, resume command,
+  audit command, and eight-hour supervise command;
+- resume directly from that manifest with the stored run id, budgets, and
+  diagnostic artifact paths, while preserving the original apply/preview/verify
+  profile unless explicit CLI flags override it;
+- supervise repeated bounded resume cycles from the manifest for unattended
+  overnight watchdog runs, defaulting to 961 cycles at 30000 ms with a JSONL
+  event written after each cycle, a stalled-progress guard after 3 repeated
+  progress signatures, an error guard after 3 consecutive cycle failures, and
+  `nextCycleAt` on non-final events for stale-watchdog detection;
+- enforce the overnight watchdog window plus required Fleet proof up front with
+  `--require-overnight-readiness`;
+- enforce actual observed overnight completion with
+  `--require-overnight-completion`, measured from persisted supervision cycle
+  timestamps rather than configured cycle count;
+- audit a finished run with `--audit-overnight-manifest <path>` without
+  launching another cycle, and optionally apply the same readiness/completion
+  gates to the stored evidence, including JSONL event consistency checks;
+- write `supervision-recovery.json` for stalled, errored, or exhausted
+  non-terminal supervision runs;
+- write `supervision-fleet-triage.json` with a bounded `peer_chain` handoff
+  when recoverable supervision stops with Fleet enabled;
+- write `supervision-fleet-triage-result.json` with the attempted peer-chain
+  triage result, preserving evidence even when no Fleet peer is connected;
+- add an `inspect_fleet_triage_result` recovery action when that attempted
+  triage result already exists;
+- pin existing supervision artifact paths in copyable restart commands so
+  restarted watchdogs preserve the audit trail;
+- restart the watchdog from `supervision-recovery.json` with
+  `--recover-from-supervision`, preserving the source manifest, thresholds, and
+  diagnostic paths by default;
+- include compact Fleet collaboration telemetry in every supervision JSONL
+  event, making disabled, read-only, and delegated-slices runs distinguishable
+  during overnight audits;
+- auto-materialize overnight `report.json`, `workflow-progress.json`, and
+  `workflow-events.json` unless explicit artifact paths are supplied;
+- bound the self-correction loop with `--max-iterations <count>` and the
+  estimated LLM spend with `--max-cost-usd <usd>`;
 - write a final report to stdout;
 - output JSON with `--json`;
 - persist the JSON report with `--report-file <path>`;
@@ -723,6 +925,12 @@ It currently:
   `--proposal-loop-next-action-file <path>`;
 - persist a data-only edit-proposal producer dispatch with
   `--edit-proposal-producer-dispatch-file <path>`;
+- run the data-only edit-proposal producer and persist its controlled JSON with
+  `--generate-edit-proposal-file <path>`;
+- persist the matching producer trace next to the generated proposal so Fleet
+  tool attempts/completions are auditable after unattended runs;
+- fail generated-proposal runs with `--require-fleet-collaboration` when the
+  producer trace does not prove a completed Fleet peer call;
 - materialize a non-writing Cowork proposal loop artifact bundle with
   `--proposal-loop-artifacts-dir <path>`;
 - persist a standalone Cowork import manifest with
@@ -781,13 +989,17 @@ The first pure core module is intentionally small:
   manifest hints,
   edit-proposal request envelopes, data-only producer dispatch artifacts, and
   review artifacts, consumes approval-decision snapshots before approved
-  writes, writes compact workflow event timelines, or reports.
+  writes, writes compact workflow event timelines, includes advisory Fleet
+  collaboration plans in run reports, progress snapshots, proposal-loop
+  snapshots, and producer dispatches when `fleetPolicy` enables read-only help
+  or delegated slices, or reports.
 - `src/commands/cli/autonomous-code-command.ts` exposes the experimental
-  `buddy autonomous-code --task-file task.json` command.
+  `buddy autonomous-code --task-file task.json` command, including explicit
+  loop/cost budget flags for long-running runs.
 - `tests/agent/autonomous/agentic-coding-contract.test.ts` covers accepted
   defaults, unsafe scopes, missing verification, medium-risk blocking,
   high-risk path blocking, guarded edit validation, edit proposal validation,
-  and V0 write-delegation blocking.
+  and data-only Fleet delegated-slices gating.
 - `tests/agent/autonomous/agentic-coding-runner.test.ts` covers clean preflight,
   dirty outside-scope blocking, explicit verification, and dangerous command
   blocking, declared edit application, edit-scope blocking, ambiguous
@@ -821,10 +1033,12 @@ The first pure core module is intentionally small:
   `--proposal-loop-canvas-file`, `--proposal-loop-next-action-file`,
   `--proposal-loop-artifacts-dir`, `--proposal-loop-cowork-import-file`, and
   `--proposal-loop-cowork-import-check-file`,
-  `--proposal-loop-cowork-workspace-file`, and `--require-approval`.
+  `--proposal-loop-cowork-workspace-file`, `--require-approval`,
+  `--generate-edit-proposal-file`, and invalid budget flag handling.
 
-This gives the future implementation a stable input boundary before it invokes
-the full agent tool loop, applies patches, or appears in Cowork.
+This gives the implementation a stable data-only producer boundary before it
+applies patches or appears in Cowork. The producer may gather advisory Fleet
+input, but patch application remains a separate guarded runner step.
 
 ## V0 Acceptance Criteria
 

@@ -145,6 +145,7 @@ export class TaskRouter {
       classification,
       dispatchProfile,
     );
+    const roleHint = constraints.requiredRole ?? roleHintFromDispatchProfile(dispatchProfile);
     const minContextWindow =
       constraints.estimatedTokens ?? classification.estimatedTokens ?? 0;
     const targetPeerIds = normalizeTargetPeerIds(constraints.targetPeerIds);
@@ -197,7 +198,7 @@ export class TaskRouter {
           cap,
           requiredStrengths,
           budget,
-          constraints.requiredRole,
+          roleHint,
         );
         const score =
           0.4 * breakdown.match +
@@ -210,6 +211,7 @@ export class TaskRouter {
           model: model.id,
           score,
           breakdown,
+          role: roleHint && cap.roles?.includes(roleHint) ? roleHint : undefined,
         });
       }
     }
@@ -224,7 +226,11 @@ export class TaskRouter {
       );
     }
 
-    candidates.sort((a, b) => b.score - a.score);
+    candidates.sort((a, b) => {
+      const scoreDelta = b.score - a.score;
+      if (scoreDelta !== 0) return scoreDelta;
+      return Number(Boolean(b.role)) - Number(Boolean(a.role));
+    });
     const primary = candidates[0];
     const fallback = candidates.find(
       (c) => c.peerId !== primary.peerId,
@@ -239,6 +245,7 @@ export class TaskRouter {
         requiredStrengths,
         classification,
         dispatchProfile,
+        roleHint,
       ),
     };
 
@@ -279,6 +286,10 @@ function normalizeTargetPeerIds(peerIds: string[] | undefined): Set<string> | nu
     .map((peerId) => peerId.trim())
     .filter(Boolean);
   return normalized.length > 0 ? new Set(normalized) : null;
+}
+
+function roleHintFromDispatchProfile(profile: FleetDispatchProfile): string | undefined {
+  return profile === 'balanced' ? undefined : profile;
 }
 
 function scoreCandidate(
@@ -409,6 +420,7 @@ function buildRationale(
   required: ModelStrength[],
   c: TaskClassification,
   dispatchProfile: FleetDispatchProfile = 'balanced',
+  roleHint?: string,
 ): string {
   const reqStr =
     required.length > 0 ? required.join(', ') : 'no specific strength';
@@ -418,6 +430,9 @@ function buildRationale(
     `Complexity: ${c.complexity}`,
     `Profile: ${dispatchProfile}`,
   ];
+  if (roleHint) {
+    parts.push(`Role hint: ${roleHint}`);
+  }
   if (fallback) {
     parts.push(`Fallback: ${fallback.peerId} ${fallback.model}`);
   }

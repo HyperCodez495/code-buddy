@@ -92,6 +92,63 @@ export const LIST_PEERS_TOOL_DEF: CodeBuddyTool = {
   },
 };
 
+export const PEER_CHAIN_TOOL_DEF: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'peer_chain',
+    description:
+      'Route and execute an ordered Fleet collaboration chain. ' +
+      'Use this when a task should move through specialist peers such as code, review, and safe. ' +
+      'Each stage receives prior stage output as handoff context.',
+    parameters: {
+      type: 'object',
+      properties: {
+        prompt: {
+          type: 'string',
+          description:
+            'The task that will be routed and executed through the ordered peer chain.',
+        },
+        chainRoles: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['balanced', 'research', 'code', 'review', 'safe'],
+          },
+          description:
+            'Ordered Fleet dispatch profiles to execute. Example: ["code","review","safe"].',
+        },
+        privacyTag: {
+          type: 'string',
+          enum: ['sensitive', 'public'],
+          description:
+            'Use sensitive to veto cloud-egress peers during routing; use public to allow cloud providers.',
+        },
+        maxCostUsd: {
+          type: 'number',
+          description: 'Optional per-task route cost cap in USD.',
+        },
+        maxLatencyMs: {
+          type: 'number',
+          description: 'Optional max expected peer/model latency in milliseconds.',
+        },
+        estimatedTokens: {
+          type: 'number',
+          description: 'Optional estimated input token count for context-window filtering.',
+        },
+        describeTimeoutMs: {
+          type: 'number',
+          description: 'Per-peer peer.describe timeout in milliseconds. Default 5000.',
+        },
+        stageTimeoutMs: {
+          type: 'number',
+          description: 'Per-stage peer.chat timeout in milliseconds. Default 60000.',
+        },
+      },
+      required: ['prompt', 'chainRoles'],
+    },
+  },
+};
+
 export const ROUTE_PEER_TOOL_DEF: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -125,6 +182,15 @@ export const ROUTE_PEER_TOOL_DEF: CodeBuddyTool = {
           type: 'number',
           description: 'Optional number of parallel lanes to recommend.',
         },
+        chainRoles: {
+          type: 'array',
+          items: {
+            type: 'string',
+            enum: ['balanced', 'research', 'code', 'review', 'safe'],
+          },
+          description:
+            'Optional ordered Hermes chain roles. Example: ["code","review","safe"] returns sequential peer_delegate calls. Mutually exclusive with parallelism.',
+        },
         estimatedTokens: {
           type: 'number',
           description: 'Optional estimated input token count for context-window filtering.',
@@ -146,6 +212,7 @@ export const ROUTE_PEER_TOOL_DEF: CodeBuddyTool = {
 
 export const FLEET_TOOLS: CodeBuddyTool[] = [
   PEER_DELEGATE_TOOL_DEF,
+  PEER_CHAIN_TOOL_DEF,
   LIST_PEERS_TOOL_DEF,
   ROUTE_PEER_TOOL_DEF,
 ];

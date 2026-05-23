@@ -3809,6 +3809,80 @@ describe('runAgenticCodingCell', () => {
     ]));
   });
 
+  it('adds advisory Fleet collaboration tools to producer dispatches when requested', async () => {
+    const repo = await createTempGitRepo();
+    const taskFile = await writeTaskFile(taskFor(repo, {
+      fleetPolicy: 'delegated-slices',
+      task: 'Use peers to propose and review a docs edit.',
+    }));
+    const report = await runAgenticCodingCell({ taskFile });
+    const dispatchFile = path.join(tempRoot, 'dispatch', 'fleet-producer-dispatch.json');
+
+    const writtenPath = await writeAgenticCodingEditProposalProducerDispatch(report, dispatchFile);
+    const saved = JSON.parse(await fs.readFile(writtenPath, 'utf8')) as {
+      allowedTools: string[];
+      fleet: {
+        allowedTools: string[];
+        chainRoles: string[];
+        invocation: { args: { chainRoles: string[]; prompt: string }; tool: string };
+        mode: string;
+        policy: string;
+        safety: string[];
+      };
+      messages: Array<{ content: string; role: string }>;
+    };
+
+    expect(saved.allowedTools).toEqual(expect.arrayContaining(['route_peer', 'peer_chain']));
+    expect(saved.fleet).toEqual(expect.objectContaining({
+      allowedTools: ['route_peer', 'peer_chain'],
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      mode: 'data_only_delegated_slices',
+      policy: 'delegated-slices',
+    }));
+    expect(saved.fleet.invocation).toEqual(expect.objectContaining({
+      tool: 'peer_chain',
+      args: expect.objectContaining({
+        chainRoles: ['research', 'code', 'review', 'safe'],
+        prompt: expect.stringContaining('Use peers to propose and review a docs edit.'),
+      }),
+    }));
+    expect(saved.messages[0]?.content).toContain('Fleet collaboration policy');
+    expect(saved.messages[0]?.content).toContain('Recommended chain roles: research -> code -> review -> safe');
+    expect(saved.fleet.safety).toContain('Preview, approval, apply, verification, push, deploy, and file writes stay runner-owned.');
+
+    const progress = buildAgenticCodingWorkflowProgressSnapshot(report);
+    const loop = buildAgenticCodingProposalLoopSnapshot(
+      report,
+      {
+        applyReportFile: path.join(tempRoot, 'loop', 'apply-report.json'),
+        approvalDecisionFile: path.join(tempRoot, 'loop', 'approval-decision.json'),
+        approvalDecisionPromptFile: path.join(tempRoot, 'loop', 'approval-decision-prompt.md'),
+        approvalFile: path.join(tempRoot, 'loop', 'approval-state.json'),
+        editProposalFile: path.join(tempRoot, 'loop', 'edit-proposal.json'),
+        editProposalProducerDispatchFile: path.join(tempRoot, 'loop', 'edit-proposal-producer-dispatch.json'),
+        editProposalReviewFile: path.join(tempRoot, 'loop', 'edit-proposal-review.json'),
+        previewReportFile: path.join(tempRoot, 'loop', 'preview-report.json'),
+        proposalPromptFile: path.join(tempRoot, 'loop', 'edit-proposal-prompt.md'),
+        workflowEventsFile: path.join(tempRoot, 'loop', 'workflow-events.json'),
+        workflowProgressFile: path.join(tempRoot, 'loop', 'workflow-progress.json'),
+      },
+    );
+    expect(report.fleet).toEqual(expect.objectContaining({
+      chainRoles: ['research', 'code', 'review', 'safe'],
+      mode: 'data_only_delegated_slices',
+      policy: 'delegated-slices',
+    }));
+    expect(progress.fleet.mode).toBe('data_only_delegated_slices');
+    expect(progress.source).toEqual(expect.objectContaining({
+      fleetMode: 'data_only_delegated_slices',
+      fleetPolicy: 'delegated-slices',
+    }));
+    expect(loop.source).toEqual(expect.objectContaining({
+      fleetMode: 'data_only_delegated_slices',
+      fleetPolicy: 'delegated-slices',
+    }));
+  });
+
   it('renders a constrained prompt for future workflow builder generation', async () => {
     const repo = await createTempGitRepo();
     const taskFile = await writeTaskFile(taskFor(repo, {
