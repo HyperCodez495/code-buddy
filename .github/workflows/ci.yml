@@ -31,6 +31,10 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
+      env:
+        # Authenticate the @vscode/ripgrep prebuilt download to avoid GitHub API
+        # rate-limit 403s during postinstall on CI runners.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm ci
 
     - name: Run type check
@@ -67,6 +71,10 @@ jobs:
         node-version: '20.x'
 
     - name: Install dependencies
+      env:
+        # Authenticate the @vscode/ripgrep prebuilt download to avoid GitHub API
+        # rate-limit 403s during postinstall on CI runners.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm ci
 
     - name: Run security audit
@@ -91,6 +99,10 @@ jobs:
         cache: 'npm'
 
     - name: Install dependencies
+      env:
+        # Authenticate the @vscode/ripgrep prebuilt download to avoid GitHub API
+        # rate-limit 403s during postinstall on CI runners.
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: npm ci
 
     - name: Build
