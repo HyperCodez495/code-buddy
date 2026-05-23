@@ -15,7 +15,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, ListChecks, AlertCircle, FolderOpen, RefreshCw, Plus } from 'lucide-react';
+import { X, ListChecks, AlertCircle, FolderOpen, RefreshCw, Plus, Sparkles, ArrowRight } from 'lucide-react';
 import { useAppStore } from '../store';
 import { EmptyState } from './LessonCandidatePanel';
 import {
@@ -24,6 +24,7 @@ import {
   type SpecStory,
   type SpecStoryStatus,
   type SprintStatus,
+  type SpecPlanStatus,
 } from '../types/hermes';
 
 const STATUS_TOKEN: Record<SpecStoryStatus, string> = {
@@ -58,9 +59,20 @@ export function SpecPanel() {
   const [newStoryNarrative, setNewStoryNarrative] = useState('');
   const [showAddStory, setShowAddStory] = useState(false);
 
+  // Agentic planning (`spec plan`): one phase per "Continue", gated by a reviewer.
+  const [planStatus, setPlanStatus] = useState<SpecPlanStatus | null>(null);
+  const [planGoal, setPlanGoal] = useState('');
+  const [planReviewer, setPlanReviewer] = useState('');
+  const [showStartPlan, setShowStartPlan] = useState(false);
+  const [planning, setPlanning] = useState(false);
+
   // Inline action form (avoids window.prompt — unsupported in Electron).
   const [action, setAction] = useState<{ storyId: string; kind: ActionKind; value: string } | null>(null);
   const [busy, setBusy] = useState(false);
+
+  // Autonomous run (`spec next`) launched via the core CLI as a child process.
+  const [runningStory, setRunningStory] = useState<string | null>(null);
+  const [runOutput, setRunOutput] = useState<{ storyId: string; status: 'running' | 'ok' | 'error'; text: string } | null>(null);
 
   const loadProjects = useCallback(async () => {
     setLoading(true);
@@ -80,9 +92,10 @@ export function SpecPanel() {
 
   const loadStories = useCallback(async (specProjectId: string) => {
     setError(null);
-    const [storiesRes, sprintRes] = await Promise.all([
+    const [storiesRes, sprintRes, planRes] = await Promise.all([
       window.electronAPI.spec.listStories(specProjectId),
       window.electronAPI.spec.sprintStatus(specProjectId),
+      window.electronAPI.spec.planStatus(specProjectId),
     ]);
     if (!storiesRes.ok) {
       setError(storiesRes.error ?? 'Failed to load stories');
@@ -91,6 +104,7 @@ export function SpecPanel() {
     }
     setStories(storiesRes.stories);
     setSprint(sprintRes.ok ? sprintRes.status ?? null : null);
+    setPlanStatus(planRes.ok ? planRes.status ?? null : null);
   }, []);
 
   useEffect(() => {
@@ -127,6 +141,53 @@ export function SpecPanel() {
     setNewStoryNarrative('');
     setShowAddStory(false);
     await loadStories(activeId);
+  };
+
+  // ── Agentic planning ──────────────────────────────────────────────────────
+  const startPlan = async () => {
+    if (!planGoal.trim()) return;
+    setPlanning(true);
+    setError(null);
+    const res = await window.electronAPI.spec.planStart(planGoal.trim());
+    setPlanning(false);
+    if (!res.ok || !res.projectId) {
+      setError(res.error ?? 'Failed to start the plan');
+      return;
+    }
+    setPlanGoal('');
+    setShowStartPlan(false);
+    setActiveId(res.projectId);
+    await loadProjects();
+    await loadStories(res.projectId); // show the new PRD phase without a manual refresh
+  };
+
+  const continuePlan = async () => {
+    if (!activeId) return;
+    if (!planReviewer.trim()) {
+      setError('A reviewer is required to approve the current phase and continue.');
+      return;
+    }
+    setPlanning(true);
+    setError(null);
+    const res = await window.electronAPI.spec.planContinue(activeId, planReviewer.trim());
+    setPlanning(false);
+    if (!res.ok) {
+      setError(res.error ?? 'Failed to advance the plan');
+      return;
+    }
+    await loadStories(activeId);
+  };
+
+  // Run an approved story through the autonomous runner (CLI child process).
+  const runStory = async (story: SpecStory, dryRun: boolean) => {
+    if (!activeId) return;
+    setRunningStory(story.id);
+    setRunOutput({ storyId: story.id, status: 'running', text: dryRun ? 'Previewing the run contract…' : 'Running the autonomous runner…' });
+    const res = await window.electronAPI.spec.next({ storyId: story.id, dryRun });
+    setRunningStory(null);
+    const text = [res.stdout, res.stderr, res.error].filter(Boolean).join('\n').trim() || '(no output)';
+    setRunOutput({ storyId: story.id, status: res.ok ? 'ok' : 'error', text });
+    if (!dryRun) await loadStories(activeId); // story status may have changed (done / blocked / in_progress)
   };
 
   // Transitions that need no extra input.
@@ -264,6 +325,77 @@ export function SpecPanel() {
               )}
             </div>
 
+            {/* Agentic plan (spec plan): multi-agent PRD → architecture → stories */}
+            <div className="border-b border-border px-4 py-2 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Sparkles className="w-3.5 h-3.5 text-accent" />
+                  <span className="text-xs font-medium text-text-primary">Plan (agents)</span>
+                  {planStatus && <span className="text-[10px] text-text-muted">· phase {planStatus.phase}</span>}
+                </div>
+                <button
+                  onClick={() => setShowStartPlan((v) => !v)}
+                  className="text-[11px] text-accent hover:underline"
+                >
+                  {showStartPlan ? 'Cancel' : 'New plan from goal'}
+                </button>
+              </div>
+
+              {planStatus && !showStartPlan && (
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-text-muted">
+                  <span className={planStatus.prd ? 'text-success' : ''}>PRD {planStatus.prd ? '✓' : '–'}</span>
+                  <span className={planStatus.architecture ? 'text-success' : ''}>
+                    architecture {planStatus.architecture ? '✓' : '–'}
+                  </span>
+                  <span>{planStatus.stories} stories</span>
+                </div>
+              )}
+
+              {showStartPlan ? (
+                <div className="space-y-2">
+                  <textarea
+                    value={planGoal}
+                    onChange={(e) => setPlanGoal(e.target.value)}
+                    rows={2}
+                    placeholder="Goal — the agents draft a PRD → architecture → sharded stories, gated by your review"
+                    className="w-full resize-y rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                  />
+                  <div className="flex justify-end">
+                    <button
+                      disabled={planning || !planGoal.trim()}
+                      onClick={() => void startPlan()}
+                      className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      {planning ? 'Drafting PRD…' : 'Start plan'}
+                    </button>
+                  </div>
+                </div>
+              ) : planStatus && planStatus.phase !== 'implementation' ? (
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={planReviewer}
+                    onChange={(e) => setPlanReviewer(e.target.value)}
+                    placeholder="reviewer (approves this phase, then runs the next agent)"
+                    className="flex-1 rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
+                  />
+                  <button
+                    disabled={planning}
+                    onClick={() => void continuePlan()}
+                    className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
+                  >
+                    {planning ? 'Working…' : 'Continue'}
+                    {!planning && <ArrowRight className="w-3 h-3" />}
+                  </button>
+                </div>
+              ) : planStatus?.phase === 'implementation' ? (
+                <p className="text-[10px] text-text-muted">
+                  Plan complete — approve stories below, then implement (CLI: <code>buddy spec next</code>).
+                </p>
+              ) : null}
+            </div>
+
             {/* Add story */}
             {activeId && (
               <div className="border-b border-border px-4 py-2">
@@ -335,6 +467,23 @@ export function SpecPanel() {
                         {story.narrative}
                       </p>
                     )}
+                    {(story.riskLevel || story.allowedPaths?.length || story.verification?.length) && (
+                      <div className="flex flex-wrap gap-1.5 text-[10px] text-text-muted">
+                        {story.riskLevel && (
+                          <span className="rounded bg-surface/70 px-1.5 py-0.5">risk: {story.riskLevel}</span>
+                        )}
+                        {story.allowedPaths?.length ? (
+                          <span className="rounded bg-surface/70 px-1.5 py-0.5" title={story.allowedPaths.join(', ')}>
+                            {story.allowedPaths.length} path{story.allowedPaths.length === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
+                        {story.verification?.length ? (
+                          <span className="rounded bg-surface/70 px-1.5 py-0.5" title={story.verification.join(', ')}>
+                            {story.verification.length} check{story.verification.length === 1 ? '' : 's'}
+                          </span>
+                        ) : null}
+                      </div>
+                    )}
                     {story.blockedReason && (
                       <p className="text-[10px] text-error">blocked: {story.blockedReason}</p>
                     )}
@@ -376,17 +525,49 @@ export function SpecPanel() {
                     ) : (
                       <StoryActions
                         status={story.status}
+                        running={runningStory === story.id}
                         onApprove={() => setAction({ storyId: story.id, kind: 'approve', value: '' })}
                         onStart={() => void simpleTransition(story, 'start')}
                         onComplete={() => setAction({ storyId: story.id, kind: 'complete', value: '' })}
                         onBlock={() => setAction({ storyId: story.id, kind: 'block', value: '' })}
                         onReopen={() => void simpleTransition(story, 'reopen')}
+                        onPreviewRun={() => void runStory(story, true)}
+                        onRun={() => void runStory(story, false)}
                       />
                     )}
                   </div>
                 ))
               )}
             </div>
+
+            {/* Autonomous run output (`spec next` via the core CLI) */}
+            {runOutput && (
+              <div className="border-t border-border px-4 py-2">
+                <div className="mb-1 flex items-center justify-between">
+                  <span
+                    className={`text-[10px] uppercase tracking-wide ${
+                      runOutput.status === 'error'
+                        ? 'text-error'
+                        : runOutput.status === 'ok'
+                          ? 'text-success'
+                          : 'text-warning'
+                    }`}
+                  >
+                    spec next · {runOutput.status}
+                  </span>
+                  <button
+                    onClick={() => setRunOutput(null)}
+                    className="text-[10px] text-text-muted hover:text-text-primary"
+                  >
+                    clear
+                  </button>
+                </div>
+                <pre className="max-h-40 overflow-auto whitespace-pre-wrap rounded border border-border bg-background-secondary p-2 text-[10px] text-text-secondary">
+                  {runOutput.text}
+                </pre>
+                <p className="mt-1 text-[9px] text-text-muted">Output may contain file paths or key prefixes — review before sharing.</p>
+              </div>
+            )}
           </>
         )}
       </div>
@@ -396,20 +577,28 @@ export function SpecPanel() {
 
 function StoryActions({
   status,
+  running,
   onApprove,
   onStart,
   onComplete,
   onBlock,
   onReopen,
+  onPreviewRun,
+  onRun,
 }: {
   status: SpecStoryStatus;
+  running: boolean;
   onApprove: () => void;
   onStart: () => void;
   onComplete: () => void;
   onBlock: () => void;
   onReopen: () => void;
+  onPreviewRun: () => void;
+  onRun: () => void;
 }) {
-  const btn = 'rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface transition-colors';
+  const btn = 'rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface transition-colors disabled:opacity-50';
+  // Two-step confirm for Run ▸ (it spawns the autonomous runner + transitions the story).
+  const [armRun, setArmRun] = useState(false);
   return (
     <div className="flex flex-wrap justify-end gap-2">
       {status === 'draft' && (
@@ -422,6 +611,23 @@ function StoryActions({
         <>
           <button className={btn} onClick={onReopen}>Reopen</button>
           <button className={btn} onClick={onBlock}>Block</button>
+          <button className={btn} disabled={running} onClick={onPreviewRun} title="Preview the run contract (no changes)">Preview</button>
+          <button
+            className={`${btn} !text-warning`}
+            disabled={running}
+            onClick={() => {
+              if (armRun) {
+                setArmRun(false);
+                onRun();
+              } else {
+                setArmRun(true);
+              }
+            }}
+            onBlur={() => setArmRun(false)}
+            title="Run the autonomous coding runner for this story"
+          >
+            {running ? 'Running…' : armRun ? 'Confirm run?' : 'Run ▸'}
+          </button>
           <button className={`${btn} !text-accent`} onClick={onStart}>Start</button>
         </>
       )}

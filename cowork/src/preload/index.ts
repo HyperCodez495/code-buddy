@@ -2319,6 +2319,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
 
   spec: {
+    planStart: (goal: string, title?: string, coworkProjectId?: string) =>
+      ipcRenderer.invoke('spec.planStart', goal, title, coworkProjectId),
+    planContinue: (specProjectId: string, by: string, coworkProjectId?: string) =>
+      ipcRenderer.invoke('spec.planContinue', specProjectId, by, coworkProjectId),
+    planStatus: (specProjectId: string, coworkProjectId?: string) =>
+      ipcRenderer.invoke('spec.planStatus', specProjectId, coworkProjectId),
+    next: (
+      input: {
+        storyId?: string;
+        dryRun?: boolean;
+        fleet?: 'none' | 'read-only-help' | 'delegated-slices';
+        allowedPaths?: string[];
+        verify?: string[];
+        runVerification?: boolean;
+      },
+      coworkProjectId?: string,
+    ) => ipcRenderer.invoke('spec.next', input, coworkProjectId),
     listProjects: (coworkProjectId?: string) =>
       ipcRenderer.invoke('spec.listProjects', coworkProjectId),
     createProject: (title: string, coworkProjectId?: string) =>

@@ -22,6 +22,8 @@ import { resolveWorkDir, errorMessage, type ProjectManagerSource } from './ipc-w
 export type SpecStoryStatus = 'draft' | 'approved' | 'in_progress' | 'done' | 'blocked';
 export type SpecPhase = 'prd' | 'architecture' | 'sharding' | 'implementation';
 
+export type SpecRiskLevel = 'low' | 'medium' | 'high';
+
 export interface SpecStory {
   id: string;
   projectId: string;
@@ -30,6 +32,10 @@ export interface SpecStory {
   status: SpecStoryStatus;
   narrative: string;
   acceptanceCriteria: string[];
+  /** Runner-contract fields filled by `spec plan` sharding (for `spec next`). */
+  allowedPaths?: string[];
+  verification?: string[];
+  riskLevel?: SpecRiskLevel;
   reviewedBy?: string;
   evidence?: string;
   blockedReason?: string;
@@ -41,8 +47,34 @@ export interface SpecProject {
   id: string;
   title: string;
   phase: SpecPhase;
+  /** Per-phase human approval trail recorded by `spec plan continue`. */
+  planApprovals?: Partial<Record<SpecPhase, { by: string; at: number }>>;
   createdAt: number;
   updatedAt: number;
+}
+
+/** What a `spec plan continue` step produced (mirrors the core runner result). */
+export interface SpecPlanAdvanceResult {
+  phase: SpecPhase;
+  produced?: 'architecture' | 'stories';
+  storiesCreated?: number;
+  alreadyComplete?: boolean;
+}
+
+export interface SpecPlanStatus {
+  phase: SpecPhase;
+  prd: boolean;
+  architecture: boolean;
+  stories: number;
+  planApprovals?: SpecProject['planApprovals'] | null;
+}
+
+/** One-shot model call injected into the core planner personas. */
+type SpecLlmCall = (system: string, user: string) => Promise<string>;
+
+/** Minimal config surface (matches Cowork's `configStore`). */
+export interface SpecConfigSource {
+  getAll(): { apiKey?: string; model?: string; baseUrl?: string };
 }
 
 export interface SpecEpic {
@@ -85,11 +117,58 @@ interface SpecStoreLike {
   blockStory(projectId: string, storyId: string, reason: string): SpecStory;
   reopenStory(projectId: string, storyId: string): SpecStory;
   getSprintStatus(projectId: string): SprintStatus;
+  readArtifact(projectId: string, name: 'prd' | 'architecture'): string | null;
 }
 
 type SpecMod = {
   getSpecStore: (workDir?: string) => SpecStoreLike;
 };
+
+type ClientModule = {
+  CodeBuddyClient?: new (apiKey: string, model?: string, baseURL?: string) => {
+    chat: (messages: Array<{ role: string; content: string }>) => Promise<{
+      choices?: Array<{ message?: { content?: string | null } }>;
+    }>;
+  };
+};
+
+/** The UI-agnostic phase runner shared with the CLI (`src/spec/spec-plan-runner.ts`). */
+type SpecPlanRunnerMod = {
+  startSpecPlan?: (
+    store: SpecStoreLike,
+    llm: SpecLlmCall,
+    goal: string,
+    title?: string,
+  ) => Promise<{ projectId: string; title: string }>;
+  advanceSpecPlan?: (
+    store: SpecStoreLike,
+    llm: SpecLlmCall,
+    projectId: string,
+    by: string,
+  ) => Promise<SpecPlanAdvanceResult>;
+};
+
+/**
+ * Build the injected model call from Cowork's config (mirrors aggregator-wiring).
+ * Returns null when no API key is configured, so plan handlers fail with a clear
+ * message instead of throwing.
+ */
+async function buildSpecLlmCall(configSource?: SpecConfigSource): Promise<SpecLlmCall | null> {
+  if (!configSource) return null;
+  const cfg = configSource.getAll();
+  const key = cfg.apiKey || process.env.GROK_API_KEY || '';
+  if (!key) return null;
+  const clientMod = await loadCoreModule<ClientModule>('codebuddy/client.js');
+  if (!clientMod?.CodeBuddyClient) return null;
+  const client = new clientMod.CodeBuddyClient(key, cfg.model, cfg.baseUrl || process.env.GROK_BASE_URL);
+  return async (system: string, user: string): Promise<string> => {
+    const resp = await client.chat([
+      { role: 'system', content: system },
+      { role: 'user', content: user },
+    ]);
+    return resp?.choices?.[0]?.message?.content || '';
+  };
+}
 
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
 
@@ -123,7 +202,67 @@ async function withStore<T>(
   }
 }
 
-export function registerSpecIpcHandlers(projectManagerSource: ProjectManagerSource): void {
+export function registerSpecIpcHandlers(
+  projectManagerSource: ProjectManagerSource,
+  configSource?: SpecConfigSource,
+): void {
+  // ── Agentic planning (`buddy spec plan`) — multi-agent PRD → architecture →
+  // stories, one phase per call, gated by a human reviewer. Needs an LLM, built
+  // from Cowork config; without a key the handler returns a readable error.
+  ipcMain.handle('spec.planStart', async (_e, goal: string, title?: string, coworkProjectId?: string) => {
+    if (!goal?.trim()) return { ok: false as const, error: 'A goal is required to start a plan.' };
+    const { store, reason } = await getStore(projectManagerSource, coworkProjectId);
+    if (!store) return { ok: false as const, error: reason };
+    const llm = await buildSpecLlmCall(configSource);
+    if (!llm) return { ok: false as const, error: 'No API key configured. Set it in Settings → Embedded server.' };
+    const runner = await loadCoreModule<SpecPlanRunnerMod>('spec/spec-plan-runner.js');
+    if (!runner?.startSpecPlan) return { ok: false as const, error: 'core spec-plan-runner unavailable' };
+    try {
+      const res = await runner.startSpecPlan(store, llm, goal, title);
+      return { ok: true as const, ...res };
+    } catch (err) {
+      logError('[spec.planStart] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('spec.planContinue', async (_e, specProjectId: string, by: string, coworkProjectId?: string) => {
+    if (!by?.trim()) return { ok: false as const, error: 'a reviewer (by) is required to advance the plan.' };
+    const { store, reason } = await getStore(projectManagerSource, coworkProjectId);
+    if (!store) return { ok: false as const, error: reason };
+    const llm = await buildSpecLlmCall(configSource);
+    if (!llm) return { ok: false as const, error: 'No API key configured. Set it in Settings → Embedded server.' };
+    const runner = await loadCoreModule<SpecPlanRunnerMod>('spec/spec-plan-runner.js');
+    if (!runner?.advanceSpecPlan) return { ok: false as const, error: 'core spec-plan-runner unavailable' };
+    try {
+      const result = await runner.advanceSpecPlan(store, llm, specProjectId, by);
+      return { ok: true as const, result };
+    } catch (err) {
+      logError('[spec.planContinue] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('spec.planStatus', async (_e, specProjectId: string, coworkProjectId?: string) => {
+    const r = await withStore(
+      projectManagerSource,
+      coworkProjectId,
+      (s): SpecPlanStatus | null => {
+        const project = s.getProject(specProjectId);
+        if (!project) return null;
+        return {
+          phase: project.phase,
+          prd: Boolean(s.readArtifact(specProjectId, 'prd')),
+          architecture: Boolean(s.readArtifact(specProjectId, 'architecture')),
+          stories: s.listStories(specProjectId).length,
+          planApprovals: project.planApprovals ?? null,
+        };
+      },
+      'spec.planStatus',
+    );
+    return r.ok ? { ok: true as const, status: r.value } : r;
+  });
+
   // `coworkProjectId` (optional, last arg) selects the Cowork project whose repo
   // hosts `.codebuddy/specs/`. `specProjectId` is a spec project inside it.
   ipcMain.handle('spec.listProjects', async (_e, coworkProjectId?: string) => {

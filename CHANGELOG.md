@@ -15,6 +15,67 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
 [`docs/fleet-guide.md`](docs/fleet-guide.md). Backlog notes also under
 `## [0.5.1-fleet]`.
 
+### Added — Spec pipeline Commit 3 — `buddy spec next` (autonomous-runner bridge)
+
+- **`buddy spec next`** — the execution end of the BMAD-inspired pipeline. Takes the
+  next **approved** story and feeds it to the autonomous coding runner
+  (`runAgenticCodingCell`). The story's runner-contract fields (`allowedPaths`,
+  `verification`, `riskLevel`, filled by the Commit-2 sharding step) populate an
+  `AgenticCodingTaskContract` directly — no translation step. Durable lineage
+  **story → run → outcome**.
+  - Transitions `approved → in_progress` (recording `runId`) **only after** the contract
+    validates, so an insufficient story stays `approved`. Terminal mapping: `verified`
+    → `completeStory` (verification = evidence); `blocked`/`validation_failed`/
+    `verification_failed` → `blockStory`; scaffold-only (`ready`/`previewed`/`edited`)
+    leaves it `in_progress` with an explicit next step — never a false completion. A
+    thrown run is caught and blocks the story so it is never stranded `in_progress`.
+  - `--fleet <none|read-only-help|delegated-slices>` lets the per-story coding agent
+    delegate to fleet peers — collaboration compounds across the pipeline. Other flags:
+    `--story`, `--allowed-path`, `--verify`, `--risk`, `--edit-proposal-file`, `--apply`,
+    `--run-verification`, `--output`, `--dry-run`.
+  - Runner lazy-imported (286KB, never inflates boot). Per-run artifacts under
+    `.codebuddy/specs/<id>/runs/<runId>/` (`task.json` + `report.json`). 8 new tests.
+  - Note: when `repo === cwd` the runner forces `riskLevel: high` (self-improvement
+    guard), so in-repo `spec next` runs gate to scaffold/preview unless edits are
+    explicitly supplied (`--edit-proposal-file --apply`) and the gate clears.
+  - Completes the loop: **plan (multi-agent, gated) → approve → implement (autonomous,
+    fleet-collaborative) → verify → done.**
+  - **Launchable from Cowork:** an approved story's card gains **Preview** (`--dry-run`,
+    shows the contract) and **Run ▸** buttons. The `spec.next` IPC shells out to the
+    core CLI as a child process (`ELECTRON_RUN_AS_NODE`), buffers output, and reads the
+    run result on exit — the CLI stays the source of truth and the main loop never
+    blocks. Output + final status surface in the panel. 3 new Cowork tests.
+
+### Added — Spec pipeline Commit 2 — `buddy spec plan` (agentic, phased, review-gated)
+
+- **`buddy spec plan start / continue / status`** — the multi-agent planning layer
+  of the BMAD-inspired spec pipeline. Specialist personas hand work off to each
+  other (Analyst/PM draft the PRD → Architect designs `architecture.md` →
+  Scrum-Master shards into draft stories), with a **human review gate between each
+  phase**. State lives on the existing `SpecProject.phase` enum; each invocation
+  advances exactly one phase, writes its artifact under
+  `.codebuddy/specs/<id>/`, and exits for review.
+  - `continue --by <reviewer>` reads the (possibly human-edited) artifact back from
+    disk, records the approval (`SpecProject.planApprovals`), then runs the next
+    persona. `--auto` on `start` chains every phase non-interactively but still
+    requires `--by` (same gate, batched).
+  - Sharded stories carry **runner-contract fields** (`allowedPaths`,
+    `verification`, `riskLevel`) so the upcoming `buddy spec next` (Commit 3) can
+    build an `AgenticCodingTaskContract` with no translation step.
+  - Personas are LLM-agnostic (`src/spec/spec-planner.ts`, injected `SpecLlmCall`);
+    the CLI (`src/commands/spec-plan.ts`) builds the provider from settings,
+    mirroring `buddy flow`. Tolerant JSON parsing falls back to one coarse story so
+    the command never hard-crashes on model output.
+  - 19 new tests (store artifacts/approvals/story-fields, planner personas + parse
+    fallback, CLI phase lifecycle). See [`docs/spec-pipeline.md`](docs/spec-pipeline.md).
+  - **Administrable from Cowork:** the phase machine is extracted to a UI-agnostic
+    core runner (`src/spec/spec-plan-runner.ts`) shared by the CLI and a new
+    `spec.planStart` / `spec.planContinue` / `spec.planStatus` IPC. The Cowork
+    SpecPanel gains a "Plan (agents)" section — start a plan from a goal, see the
+    phase + artifact presence, and advance one phase with a reviewer — plus the new
+    story contract fields (risk / paths / checks) on each card. LLM client built from
+    Cowork config like the Fleet aggregator. 5 new Cowork IPC tests.
+
 ### Added — Fleet V1.3 partial (Phase d.23) — `peer.tool.invoke`
 
 - **`peer.tool.invoke` + `peer.tool.invoke.stream`** — read-only remote

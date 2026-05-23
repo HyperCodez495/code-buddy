@@ -110,7 +110,18 @@ export async function loadCoreModule<T = unknown>(relativePath: string): Promise
   return null;
 }
 
-/** Reset the cache (primarily for tests) */
-export function resetCoreLoaderCache(): void {
-  moduleCache.clear();
+/**
+ * Resolve the Code Buddy core CLI entry (`index.js`) for shelling out a command
+ * as a child process. Uses the same candidate roots as `loadCoreModule`, but only
+ * accepts a built `dist` entry (a `.ts` source can't be run by node directly).
+ * Returns null if no built CLI is found.
+ */
+export function resolveCoreEntry(): string | null {
+  for (const root of candidateRoots()) {
+    // Only the built dist entry is runnable by node; skip `src` (TypeScript) roots.
+    if (!root.endsWith('dist')) continue;
+    const entry = join(root, 'index.js');
+    if (existsSync(entry)) return entry;
+  }
+  return null;
 }

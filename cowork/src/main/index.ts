@@ -36,6 +36,7 @@ import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { registerLessonCandidateIpcHandlers } from './ipc/lessons-candidate-ipc';
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
+import { registerSpecNextIpcHandlers } from './ipc/spec-next-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -2247,7 +2248,8 @@ registerKnowledgeIpcHandlers(knowledgeService, projectManager);
 // projectManager getter (set during async boot, like fleetBridge above).
 registerLessonCandidateIpcHandlers(() => projectManager);
 registerUserModelIpcHandlers(() => projectManager);
-registerSpecIpcHandlers(() => projectManager);
+registerSpecIpcHandlers(() => projectManager, configStore);
+registerSpecNextIpcHandlers(() => projectManager);
 
 // ── Task dispatch IPC (mobile/remote → background session) ───────────
 ipcMain.handle('dispatch.task', async (_event, request: DispatchRequest) => {

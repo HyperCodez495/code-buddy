@@ -93,10 +93,13 @@ export interface UserModelAcceptInput {
 export type SpecStoryStatus = 'draft' | 'approved' | 'in_progress' | 'done' | 'blocked';
 export type SpecPhase = 'prd' | 'architecture' | 'sharding' | 'implementation';
 
+export type SpecRiskLevel = 'low' | 'medium' | 'high';
+
 export interface SpecProject {
   id: string;
   title: string;
   phase: SpecPhase;
+  planApprovals?: Partial<Record<SpecPhase, { by: string; at: number }>>;
   createdAt: number;
   updatedAt: number;
 }
@@ -117,6 +120,9 @@ export interface SpecStory {
   status: SpecStoryStatus;
   narrative: string;
   acceptanceCriteria: string[];
+  allowedPaths?: string[];
+  verification?: string[];
+  riskLevel?: SpecRiskLevel;
   reviewedBy?: string;
   evidence?: string;
   blockedReason?: string;
@@ -180,7 +186,47 @@ export interface UserModelApi {
   ) => Promise<{ ok: boolean; error?: string; observation?: UserObservation }>;
 }
 
+export interface SpecPlanAdvanceResult {
+  phase: SpecPhase;
+  produced?: 'architecture' | 'stories';
+  storiesCreated?: number;
+  alreadyComplete?: boolean;
+}
+
+export interface SpecPlanStatus {
+  phase: SpecPhase;
+  prd: boolean;
+  architecture: boolean;
+  stories: number;
+  planApprovals?: SpecProject['planApprovals'] | null;
+}
+
 export interface SpecApi {
+  planStart: (
+    goal: string,
+    title?: string,
+    coworkProjectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; projectId?: string; title?: string }>;
+  planContinue: (
+    specProjectId: string,
+    by: string,
+    coworkProjectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; result?: SpecPlanAdvanceResult }>;
+  planStatus: (
+    specProjectId: string,
+    coworkProjectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; status?: SpecPlanStatus | null }>;
+  next: (
+    input: {
+      storyId?: string;
+      dryRun?: boolean;
+      fleet?: 'none' | 'read-only-help' | 'delegated-slices';
+      allowedPaths?: string[];
+      verify?: string[];
+      runVerification?: boolean;
+    },
+    coworkProjectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; code?: number; stdout?: string; stderr?: string }>;
   listProjects: (coworkProjectId?: string) => Promise<{ ok: boolean; error?: string; projects: SpecProject[] }>;
   createProject: (title: string, coworkProjectId?: string) => Promise<{ ok: boolean; error?: string; project?: SpecProject }>;
   sprintStatus: (specProjectId?: string, coworkProjectId?: string) => Promise<{ ok: boolean; error?: string; status?: SprintStatus | null }>;
