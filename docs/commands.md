@@ -111,6 +111,7 @@ buddy cron list [--json] | show <id> | remove <id>
 buddy cron add <name> --every <ms>|--cron <expr>|--at <iso> \
   [--message <text>] [--watchdog <json|@file>] [--pre-check <json|@file>] \
   [--deliver <type:id>...] [--format full|summary]
+buddy skills list [--all] [--json] | usage [--json] | enable <name> | disable <name>
 ```
 
 `buddy cron` authors scheduled jobs for the daemon's CronScheduler, including

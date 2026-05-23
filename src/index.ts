@@ -2429,6 +2429,12 @@ addLazyCommandGroup(program, 'cron', 'Author and manage scheduled cron jobs', as
   registerCronCommands(program);
 });
 
+// Skills — browse, inspect telemetry, enable/disable installed SKILL.md packages
+addLazyCommandGroup(program, 'skills', 'Browse and manage installed skill packages', async () => {
+  const { registerSkillsCommands } = await import('./commands/skills-cli/index.js');
+  registerSkillsCommands(program);
+});
+
 // DM pairing — approve, revoke, list, pending
 addLazyCommand(
   program,

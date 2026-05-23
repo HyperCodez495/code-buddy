@@ -593,6 +593,13 @@ The gap is mainly product integration and durability:
     - See usage telemetry.
     - Enable/disable per profile.
     - Acceptance: skills feel like installed capabilities, not loose files.
+    - Status: CLI management surface implemented. `buddy skills list/usage/
+      enable/disable` browses installed packages, shows local usage telemetry
+      (invocations, success/fail, average duration) and toggles an `enabled`
+      flag on the SkillsHub lockfile (backward compatible — absent = enabled).
+      `SkillsHub.listEnabled()` is the set selection should consult. The Cowork
+      UI panel, per-profile scoping and selection-time enforcement (excluding
+      disabled packages from prompt injection) remain future work.
 
 ### P3 - Testing and training evidence
 
@@ -720,6 +727,10 @@ The gap is mainly product integration and durability:
     - Benchmark: Claude/Hermes visible skill ecosystems.
     - Acceptance: browse SKILL.md packages, inspect usage telemetry,
       enable/disable per profile and install only after review.
+    - Status: CLI surface implemented (see item 26): `buddy skills
+      list/usage/enable/disable`. Install-only-after-review already exists via
+      the skill-candidate queue (item 14, `buddy tools skill-candidate`). The
+      Cowork visual panel and per-profile scoping remain future work.
 
 37. Add trajectory export with privacy redaction.
     - Benchmark: Codex eval workflows and Hermes research trajectories.

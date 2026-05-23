@@ -73,6 +73,12 @@ export interface InstalledSkill {
   path: string;
   /** Lightweight local usage telemetry for skill curation */
   usage?: SkillUsageStats;
+  /**
+   * Whether the skill is active. Absent = enabled (backward compatible with
+   * lockfiles written before this field existed). Disabled skills stay
+   * installed but can be filtered out of selection via `listEnabled()`.
+   */
+  enabled?: boolean;
 }
 
 export interface SkillUsageStats {
@@ -828,6 +834,31 @@ export class SkillsHub extends EventEmitter {
    */
   list(): InstalledSkill[] {
     return Object.values(this.lockfile.skills);
+  }
+
+  /**
+   * List only enabled skills (absent `enabled` flag counts as enabled). This is
+   * the set selection/injection should use so a disabled package stays
+   * installed but inactive.
+   */
+  listEnabled(): InstalledSkill[] {
+    return this.list().filter((skill) => skill.enabled !== false);
+  }
+
+  /**
+   * Enable or disable an installed skill. Disabled skills remain installed
+   * (telemetry and files preserved) but should be excluded from selection.
+   */
+  setEnabled(skillName: string, enabled: boolean): InstalledSkill | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot toggle missing skill', { name: skillName });
+      return null;
+    }
+    installed.enabled = enabled;
+    this.writeLockfile();
+    this.emit('skill:enabled', { name: skillName, enabled });
+    return installed;
   }
 
   /**

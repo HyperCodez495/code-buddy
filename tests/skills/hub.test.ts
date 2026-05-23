@@ -186,6 +186,71 @@ describe('SkillsHub', () => {
   });
 
   // ==========================================================================
+  // Enable / Disable
+  // ==========================================================================
+
+  describe('enable/disable', () => {
+    function seedSkill(name: string, enabled?: boolean): void {
+      hub.shutdown();
+      const lock = {
+        version: 1,
+        updatedAt: new Date().toISOString(),
+        skills: {
+          [name]: {
+            name,
+            version: '1.0.0',
+            installedAt: Date.now(),
+            source: 'local',
+            checksum: 'x'.repeat(64),
+            path: join(tempDir, 'skills', name, 'SKILL.md'),
+            ...(enabled !== undefined ? { enabled } : {}),
+          },
+        },
+      };
+      writeFileSync(config.lockfilePath as string, JSON.stringify(lock), 'utf-8');
+      hub = new SkillsHub(config);
+    }
+
+    it('treats a skill without the enabled flag as enabled', () => {
+      seedSkill('alpha');
+      expect(hub.listEnabled().map((s) => s.name)).toEqual(['alpha']);
+    });
+
+    it('disables a skill, keeping it installed but out of listEnabled()', () => {
+      seedSkill('alpha');
+      expect(hub.setEnabled('alpha', false)?.enabled).toBe(false);
+      expect(hub.listEnabled()).toEqual([]);
+      // Management view still shows the disabled skill.
+      expect(hub.list().map((s) => s.name)).toEqual(['alpha']);
+    });
+
+    it('persists the disabled flag across hub reloads', () => {
+      seedSkill('alpha');
+      hub.setEnabled('alpha', false);
+
+      const reloaded = new SkillsHub(config);
+      try {
+        expect(reloaded.list()[0]?.enabled).toBe(false);
+        expect(reloaded.listEnabled()).toEqual([]);
+      } finally {
+        reloaded.shutdown();
+      }
+    });
+
+    it('re-enables a disabled skill', () => {
+      seedSkill('alpha', false);
+      expect(hub.listEnabled()).toEqual([]);
+      expect(hub.setEnabled('alpha', true)?.enabled).toBe(true);
+      expect(hub.listEnabled().map((s) => s.name)).toEqual(['alpha']);
+    });
+
+    it('returns null when toggling an unknown skill', () => {
+      seedSkill('alpha');
+      expect(hub.setEnabled('missing', false)).toBeNull();
+    });
+  });
+
+  // ==========================================================================
   // Version Comparison
   // ==========================================================================
 
