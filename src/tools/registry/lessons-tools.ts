@@ -2,8 +2,9 @@
  * Lessons Tool Adapters
  *
  * ITool-compliant adapters for the self-improvement loop:
- * - LessonsAddTool    (`lessons_add`)    — capture a lesson after a correction
- * - LessonsSearchTool (`lessons_search`) — find relevant lessons before a task
+ * - LessonsAddTool      (`lessons_add`)      — capture a lesson after a correction
+ * - LessonsProposeTool  (`lessons_propose`)  — propose a lesson for human review
+ * - LessonsSearchTool   (`lessons_search`)   — find relevant lessons before a task
  * - LessonsListTool   (`lessons_list`)   — list all lessons (with optional filter)
  * - TaskVerifyTool    (`task_verify`)    — run tsc/tests/lint verification contract
  */
@@ -120,6 +121,142 @@ export class LessonsAddTool implements ITool {
       category: 'planning' as ToolCategoryType,
       keywords: ['lessons', 'self-improvement', 'patterns', 'learning'],
       priority: 80,
+      version: '1.0.0',
+      author: 'Code Buddy',
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+// ============================================================================
+// LessonsProposeTool
+// ============================================================================
+
+export class LessonsProposeTool implements ITool {
+  readonly name = 'lessons_propose';
+  readonly description = [
+    'Propose a lesson candidate for human review instead of writing it directly.',
+    'Use this (not lessons_add) when YOU noticed a reusable pattern after a complex',
+    'successful task and no user correction prompted it — the candidate stays pending',
+    'until a human approves, edits, or discards it, so procedural memory is never',
+    'silently mutated. Categories: PATTERN/RULE/CONTEXT/INSIGHT.',
+  ].join(' ');
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const category = (input.category as LessonCategory) ?? 'INSIGHT';
+    const content = input.content as string;
+    const context = input.context as string | undefined;
+    const note = input.note as string | undefined;
+
+    if (!content) return { success: false, error: 'content is required' };
+
+    const validCats: LessonCategory[] = ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'];
+    if (!validCats.includes(category)) {
+      return { success: false, error: `category must be one of: ${validCats.join(', ')}` };
+    }
+
+    try {
+      const { getLessonCandidateQueue } = await import('../../agent/lesson-candidate-queue.js');
+      const queue = getLessonCandidateQueue(process.cwd());
+
+      // Tag provenance with the active run id when one is available.
+      let runId: string | undefined;
+      try {
+        const { getActiveRunStore } = await import('../../observability/run-store.js');
+        runId = getActiveRunStore()?.getCurrentRunId() ?? undefined;
+      } catch {
+        // RunStore may not be active — provenance is best-effort.
+      }
+
+      const { candidate, deduped } = queue.propose({
+        category,
+        content,
+        ...(context ? { context } : {}),
+        source: 'self_observed',
+        ...(runId || note
+          ? { provenance: { ...(runId ? { runId } : {}), ...(note ? { note } : {}) } }
+          : {}),
+      });
+
+      try {
+        const { getActiveRunStore } = await import('../../observability/run-store.js');
+        getActiveRunStore()?.appendEvent('lesson_candidate_proposed', {
+          id: candidate.id,
+          category,
+          content,
+          deduped,
+        });
+      } catch {
+        // non-fatal: RunStore may not be active
+      }
+
+      const verb = deduped ? 'Matched existing pending candidate' : 'Proposed lesson candidate';
+      return {
+        success: true,
+        output:
+          `${verb} [${candidate.id}] (${category}): ${content}\n` +
+          'It is awaiting human review and was NOT written to lessons.md. ' +
+          `Approve with: buddy lessons candidate approve ${candidate.id} --by <name>`,
+      };
+    } catch (err) {
+      return {
+        success: false,
+        error: `lessons_propose failed: ${err instanceof Error ? err.message : String(err)}`,
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          category: {
+            type: 'string',
+            enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'],
+            description: 'Lesson category',
+          },
+          content: {
+            type: 'string',
+            description: 'The proposed lesson. For PATTERN: "[what went wrong] → [correct behaviour]"',
+          },
+          context: {
+            type: 'string',
+            description: 'Optional domain context (e.g. "TypeScript", "bash", "React")',
+          },
+          note: {
+            type: 'string',
+            description: 'Optional provenance note, e.g. why this pattern is worth keeping',
+          },
+        },
+        required: ['content'],
+      },
+    };
+  }
+
+  validate(input: Record<string, unknown>): IValidationResult {
+    if (!input.content) {
+      return { valid: false, errors: ['content is required'] };
+    }
+    const validCats = ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'];
+    if (input.category && !validCats.includes(input.category as string)) {
+      return { valid: false, errors: [`category must be one of: ${validCats.join(', ')}`] };
+    }
+    return { valid: true, errors: [] };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'planning' as ToolCategoryType,
+      keywords: ['lessons', 'candidate', 'propose', 'review', 'self-improvement', 'learning'],
+      priority: 78,
       version: '1.0.0',
       author: 'Code Buddy',
     };
@@ -523,6 +660,7 @@ export class TaskVerifyTool implements ITool {
 export function createLessonsTools(): ITool[] {
   return [
     new LessonsAddTool(),
+    new LessonsProposeTool(),
     new LessonsSearchTool(),
     new LessonsListTool(),
     new LessonsGraphTool(),

@@ -17,8 +17,11 @@ import {
   renderLessonConceptVaultFiles,
 } from '../agent/lessons-tracker.js';
 import type { LessonCategory, LessonGraphRenderFormat } from '../agent/lessons-tracker.js';
+import { getLessonCandidateQueue } from '../agent/lesson-candidate-queue.js';
+import type { LessonCandidate, LessonCandidateStatus } from '../agent/lesson-candidate-queue.js';
 
 const VALID_CATEGORIES: LessonCategory[] = ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'];
+const VALID_CANDIDATE_STATUSES: LessonCandidateStatus[] = ['pending', 'approved', 'discarded'];
 
 export function createLessonsCommand(): Command {
   const cmd = new Command('lessons');
@@ -281,6 +284,9 @@ export function createLessonsCommand(): Command {
       console.log(`Recorded usage: lesson ${lessonId} used by run ${opts.run}`);
     });
 
+  // ---- candidate (review queue, Hermes parity item 7) ----------------------
+  cmd.addCommand(createLessonCandidateCommand());
+
   // ---- decay ---------------------------------------------------------------
   cmd
     .command('decay')
@@ -301,6 +307,162 @@ export function createLessonsCommand(): Command {
     });
 
   return cmd;
+}
+
+/**
+ * `buddy lessons candidate ...` — review queue for proposed lessons.
+ *
+ * The agent (or a human) PROPOSES lessons here; nothing is written into
+ * lessons.md until a reviewer explicitly approves a candidate. This is the
+ * "no silent procedural memory mutation" guarantee from the Hermes learning
+ * loop (parity TODO item 7).
+ */
+function createLessonCandidateCommand(): Command {
+  const cmd = new Command('candidate');
+  cmd.alias('candidates');
+  cmd.description('Review queue for proposed lessons (approve/edit/discard before they reach lessons.md)');
+
+  cmd
+    .command('propose <content>')
+    .description('Propose a lesson candidate (does NOT write lessons.md)')
+    .option('-c, --category <cat>', `Category: ${VALID_CATEGORIES.join('|')}`, 'INSIGHT')
+    .option('--context <ctx>', 'Optional domain context (e.g. TypeScript, React)')
+    .option('--run <runId>', 'Originating run id for provenance')
+    .option('--note <note>', 'Free-form provenance note')
+    .action((content: string, opts: { category: string; context?: string; run?: string; note?: string }) => {
+      const cat = opts.category.toUpperCase() as LessonCategory;
+      if (!VALID_CATEGORIES.includes(cat)) {
+        console.error(`Invalid category: ${cat}. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
+        process.exit(1);
+      }
+      try {
+        const queue = getLessonCandidateQueue(process.cwd());
+        const { candidate, deduped } = queue.propose({
+          category: cat,
+          content,
+          ...(opts.context ? { context: opts.context } : {}),
+          source: 'manual',
+          ...(opts.run || opts.note
+            ? { provenance: { ...(opts.run ? { runId: opts.run } : {}), ...(opts.note ? { note: opts.note } : {}) } }
+            : {}),
+        });
+        const prefix = deduped ? 'Matched existing pending candidate' : 'Proposed candidate';
+        console.log(`${prefix} [${candidate.id}] (${candidate.category}): ${candidate.content}`);
+        console.log('Approve it with: buddy lessons candidate approve ' + candidate.id + ' --by <name>');
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('list')
+    .alias('ls')
+    .description('List lesson candidates, optionally filtered by status')
+    .option('-s, --status <status>', `Filter: ${VALID_CANDIDATE_STATUSES.join('|')}`)
+    .option('--json', 'Output JSON')
+    .action((opts: { status?: string; json?: boolean }) => {
+      const status = opts.status?.toLowerCase() as LessonCandidateStatus | undefined;
+      if (status && !VALID_CANDIDATE_STATUSES.includes(status)) {
+        console.error(`Invalid status: ${status}. Must be one of: ${VALID_CANDIDATE_STATUSES.join(', ')}`);
+        process.exit(1);
+      }
+      const queue = getLessonCandidateQueue(process.cwd());
+      const items = queue.list(status);
+      if (opts.json) {
+        console.log(JSON.stringify(items, null, 2));
+        return;
+      }
+      if (items.length === 0) {
+        console.log(status ? `No ${status} lesson candidates.` : 'No lesson candidates yet.');
+        return;
+      }
+      for (const item of items) {
+        console.log(formatCandidateLine(item));
+      }
+    });
+
+  cmd
+    .command('show <id>')
+    .description('Show a single lesson candidate')
+    .option('--json', 'Output JSON')
+    .action((id: string, opts: { json?: boolean }) => {
+      const candidate = getLessonCandidateQueue(process.cwd()).get(id);
+      if (!candidate) {
+        console.error(`Lesson candidate not found: ${id}`);
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(candidate, null, 2));
+        return;
+      }
+      console.log(formatCandidateLine(candidate));
+      if (candidate.context) console.log(`  context: ${candidate.context}`);
+      if (candidate.provenance) console.log(`  provenance: ${JSON.stringify(candidate.provenance)}`);
+      if (candidate.reviewedBy) console.log(`  reviewed by: ${candidate.reviewedBy}`);
+      if (candidate.reviewNote) console.log(`  review note: ${candidate.reviewNote}`);
+      if (candidate.approvedLessonId) console.log(`  approved lesson: ${candidate.approvedLessonId}`);
+    });
+
+  cmd
+    .command('approve <id>')
+    .description('Approve a candidate — writes it into lessons.md (requires a reviewer)')
+    .requiredOption('--by <name>', 'Human reviewer approving the candidate')
+    .option('--content <content>', 'Edit the lesson content before writing')
+    .option('-c, --category <cat>', `Override category: ${VALID_CATEGORIES.join('|')}`)
+    .option('--context <ctx>', 'Override domain context')
+    .option('--note <note>', 'Reviewer note')
+    .action(async (
+      id: string,
+      opts: { by: string; content?: string; category?: string; context?: string; note?: string },
+    ) => {
+      const cat = opts.category?.toUpperCase() as LessonCategory | undefined;
+      if (cat && !VALID_CATEGORIES.includes(cat)) {
+        console.error(`Invalid category: ${cat}. Must be one of: ${VALID_CATEGORIES.join(', ')}`);
+        process.exit(1);
+      }
+      try {
+        const queue = getLessonCandidateQueue(process.cwd());
+        const { candidate, lesson } = await queue.approve(id, {
+          reviewedBy: opts.by,
+          ...(opts.content ? { content: opts.content } : {}),
+          ...(cat ? { category: cat } : {}),
+          ...(opts.context !== undefined ? { context: opts.context } : {}),
+          ...(opts.note ? { reviewNote: opts.note } : {}),
+        });
+        console.log(`Approved candidate ${candidate.id} → lesson [${lesson.id}] (${lesson.category}): ${lesson.content}`);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  cmd
+    .command('discard <id>')
+    .description('Discard a candidate (it will never reach lessons.md)')
+    .option('--by <name>', 'Reviewer discarding the candidate')
+    .option('--reason <reason>', 'Why it was discarded')
+    .action((id: string, opts: { by?: string; reason?: string }) => {
+      try {
+        const candidate = getLessonCandidateQueue(process.cwd()).discard(id, {
+          ...(opts.by ? { reviewedBy: opts.by } : {}),
+          ...(opts.reason ? { reason: opts.reason } : {}),
+        });
+        console.log(`Discarded candidate ${candidate.id}.`);
+      } catch (err) {
+        console.error(err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
+  return cmd;
+}
+
+function formatCandidateLine(item: LessonCandidate): string {
+  const ctx = item.context ? ` (${item.context})` : '';
+  const date = new Date(item.createdAt).toISOString().slice(0, 10);
+  return `[${item.id}] ${item.status.toUpperCase()} ${item.category}${ctx}: ${item.content}  — ${date}`;
 }
 
 function inferGraphOutputFormat(outputPath?: string): LessonGraphRenderFormat {

@@ -34,7 +34,8 @@ export type RunEventType =
   | 'decision'
   | 'error'
   | 'metric'
-  | 'lesson_added';
+  | 'lesson_added'
+  | 'lesson_candidate_proposed';
 
 export interface RunEvent {
   ts: number;
@@ -252,6 +253,11 @@ export class RunStore {
     if (this._currentRunId) {
       this.emit(this._currentRunId, { type, data });
     }
+  }
+
+  /** The id of the run currently being recorded, or null when idle. */
+  getCurrentRunId(): string | null {
+    return this._currentRunId;
   }
 
   dispose(): void {

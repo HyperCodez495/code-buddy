@@ -13,7 +13,7 @@
  * - spawn_parallel_agents
  * - remember / recall / forget
  * - lead_scout_plan / lead_scout_run / lead_scout_enrichment_plan / lead_scout_lesson_candidates
- * - lessons_add / lessons_search / lessons_list / lessons_graph
+ * - lessons_add / lessons_propose / lessons_search / lessons_list / lessons_graph
  * - task_verify
  */
 
@@ -809,6 +809,38 @@ export const LESSONS_ADD_TOOL: CodeBuddyTool = {
   },
 };
 
+export const LESSONS_PROPOSE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'lessons_propose',
+    description:
+      'Propose a lesson candidate for human review instead of writing it directly. Use this (not lessons_add) when you noticed a reusable pattern after a complex successful task without a user correction. The candidate stays pending until a human approves, edits, or discards it via "buddy lessons candidate", so procedural memory is never silently mutated.',
+    parameters: {
+      type: 'object',
+      properties: {
+        category: {
+          type: 'string',
+          enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'],
+          description: 'Lesson category',
+        },
+        content: {
+          type: 'string',
+          description: 'The proposed lesson content',
+        },
+        context: {
+          type: 'string',
+          description: 'Additional context or file path where this applies',
+        },
+        note: {
+          type: 'string',
+          description: 'Optional provenance note, e.g. why this pattern is worth keeping',
+        },
+      },
+      required: ['category', 'content'],
+    },
+  },
+};
+
 export const LESSONS_SEARCH_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -945,6 +977,7 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   LEAD_SCOUT_ENRICHMENT_PLAN_TOOL,
   LEAD_SCOUT_LESSON_CANDIDATES_TOOL,
   LESSONS_ADD_TOOL,
+  LESSONS_PROPOSE_TOOL,
   LESSONS_SEARCH_TOOL,
   LESSONS_LIST_TOOL,
   LESSONS_GRAPH_TOOL,

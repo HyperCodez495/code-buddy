@@ -211,11 +211,19 @@ The gap is mainly product integration and durability:
    - Agent proposes a lesson after complex successful runs.
    - Human approves, edits or discards.
    - Acceptance: no silent procedural memory mutation.
-   - Status: guarded first pass. Cowork can save a generated lesson from a
-     selected Fleet outcome, but only after an explicit operator click.
-     The general lesson candidate-review queue remains future work. A
-     narrower research-script SKILL candidate queue now has a CLI review
-     surface and a Cowork research-profile preview.
+   - Status: implemented. Cowork can save a generated lesson from a
+     selected Fleet outcome, but only after an explicit operator click. The
+     general lesson candidate-review queue now exists in
+     `src/agent/lesson-candidate-queue.ts`: the agent proposes lessons via the
+     `lessons_propose` tool (or `buddy lessons candidate propose`), candidates
+     persist to `.codebuddy/lesson-candidates.json` and are **never** written to
+     `lessons.md` until a human approves one. `buddy lessons candidate
+     list/show/approve/discard` is the CLI review surface; `approve` requires an
+     explicit `--by <reviewer>`, supports inline edits, routes the write through
+     `LessonsTracker.add` with provenance, and links the created lesson id back
+     onto the candidate. A narrower research-script SKILL candidate queue
+     (`buddy tools skill-candidate`) covers script promotion. The Cowork
+     candidate-review panel remains future work.
 
 ### P1 - Toolsets and policy enforcement
 

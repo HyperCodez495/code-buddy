@@ -13,12 +13,14 @@ import * as os from 'os';
 import * as fs from 'fs-extra';
 import {
   LessonsAddTool,
+  LessonsProposeTool,
   LessonsGraphTool,
   LessonsSearchTool,
   LessonsListTool,
   TaskVerifyTool,
   createLessonsTools,
 } from '../../src/tools/registry/lessons-tools.js';
+import { getLessonCandidateQueue, resetLessonCandidateQueues } from '../../src/agent/lesson-candidate-queue.js';
 
 // Mock os.homedir so global ~/.codebuddy/lessons.md never contaminates tests.
 let _fakeHome = '/tmp/lessons-tools-test-home-placeholder';
@@ -375,14 +377,56 @@ describe('Lessons Tool Adapters', () => {
   // ==========================================================================
 
   describe('createLessonsTools()', () => {
-    it('should return 5 tools with the correct names', () => {
+    it('should return the lessons tools with the correct names', () => {
       const tools = createLessonsTools();
       const names = tools.map(t => t.name);
       expect(names).toContain('lessons_add');
+      expect(names).toContain('lessons_propose');
       expect(names).toContain('lessons_search');
       expect(names).toContain('lessons_list');
       expect(names).toContain('lessons_graph');
       expect(names).toContain('task_verify');
+    });
+  });
+
+  // ==========================================================================
+  // LessonsProposeTool
+  // ==========================================================================
+
+  describe('LessonsProposeTool', () => {
+    let tool: LessonsProposeTool;
+
+    beforeEach(() => {
+      resetLessonCandidateQueues();
+      tool = new LessonsProposeTool();
+    });
+
+    it('should have schema name "lessons_propose"', () => {
+      expect(tool.getSchema().name).toBe('lessons_propose');
+    });
+
+    it('proposes a pending candidate without writing lessons.md', async () => {
+      const result = await tool.execute({
+        category: 'PATTERN',
+        content: 'Wire new ITools into the factory so the registry can dispatch them.',
+        context: 'tools',
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.output).toMatch(/awaiting human review/i);
+      // No silent mutation: lessons.md must not exist yet.
+      expect(await fs.pathExists(path.join(tmpDir, '.codebuddy', 'lessons.md'))).toBe(false);
+      // The candidate is queued and pending.
+      const pending = getLessonCandidateQueue(tmpDir).list('pending');
+      expect(pending).toHaveLength(1);
+      expect(pending[0].content).toContain('Wire new ITools');
+    });
+
+    it('rejects missing content and invalid category', async () => {
+      expect((await tool.execute({ category: 'RULE' })).success).toBe(false);
+      const bad = await tool.execute({ category: 'NOPE', content: 'x' });
+      expect(bad.success).toBe(false);
+      expect(bad.error).toMatch(/category must be one of/i);
     });
   });
 });

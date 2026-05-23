@@ -552,6 +552,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Capture a lesson learned'
   },
   {
+    name: 'lessons_propose',
+    category: 'utility',
+    keywords: ['lesson', 'propose', 'candidate', 'review', 'learn', 'self improvement', 'pattern'],
+    priority: 5,
+    description: 'Propose a lesson candidate for human review (no silent write)'
+  },
+  {
     name: 'lessons_search',
     category: 'utility',
     keywords: ['lesson', 'search', 'pattern', 'rule', 'past', 'history', 'mistake'],

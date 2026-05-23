@@ -96,11 +96,13 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   // wouldn't otherwise surface the memory tools (e.g. a pure code-edit query).
   // Paired with the auto-memory directive in `prompt-builder.ts`.
   //
-  // `lessons_add` and `lessons_search` are force-included for the same reason
-  // (Manus AI-inspired self-improvement loop) — paired with the lessons
-  // directive in `prompt-builder.ts`. `lessons_list` stays out (admin-style,
-  // not needed per-turn). Wakes the dormant feature shipped in lessons-tracker.ts.
-  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'lessons_add', 'lessons_search'],
+  // `lessons_add`, `lessons_propose`, and `lessons_search` are force-included for
+  // the same reason (Manus AI-inspired self-improvement loop) — paired with the
+  // lessons directive in `prompt-builder.ts`. `lessons_propose` is the Hermes-style
+  // "agent proposes, human approves" path, so the model must always see it (a
+  // RAG-gated propose tool would rarely surface). `lessons_list` stays out
+  // (admin-style, not needed per-turn). Wakes the dormant feature in lessons-tracker.ts.
+  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'lessons_add', 'lessons_propose', 'lessons_search'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes
