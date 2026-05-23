@@ -44,6 +44,14 @@ export interface FleetDispatchInput {
    * Mutually exclusive with `parallelism`.
    */
   chainRoles?: string[];
+  /**
+   * Council mode — fan the same goal out to ≥2 peers, then arbitrate
+   * with the consensus aggregator (cross-critique + agreement score)
+   * instead of the plain synthesis. Forces `parallelism ≥ 2` and tags
+   * the saga `metadata.aggregation = 'consensus'`. Ignored when
+   * `chainRoles` is set (chain takes precedence).
+   */
+  council?: boolean;
 }
 
 export interface FleetDispatchResult {
@@ -345,6 +353,13 @@ export async function dispatchFleetSaga(
     const chainRoles = (input.chainRoles ?? [])
       .map((r) => r.trim())
       .filter((r) => r.length > 0);
+    // Council mode needs ≥2 parallel lanes to deliberate. Chain takes
+    // precedence (mutually exclusive), so council only applies when no
+    // chainRoles were requested.
+    const councilMode = input.council === true && chainRoles.length === 0;
+    const effectiveParallelism = councilMode
+      ? Math.max(2, input.parallelism ?? 2)
+      : input.parallelism;
     let plan: unknown;
     if (chainRoles.length > 0) {
       // Hermes-style chain dispatch (Draft→Review→Test). Mutually
@@ -366,7 +381,7 @@ export async function dispatchFleetSaga(
       });
     } else {
       plan = router.plan(classification, peerSlots, {
-        parallelism: input.parallelism,
+        parallelism: effectiveParallelism,
         privacyTag: effectivePrivacyTag,
         dispatchProfile: input.dispatchProfile,
         maxCostUsd: input.maxCostUsd,
@@ -408,7 +423,8 @@ export async function dispatchFleetSaga(
       metadata: {
         privacyTag: effectivePrivacyTag,
         dispatchProfile: input.dispatchProfile ?? 'balanced',
-        parallelism: input.parallelism,
+        parallelism: effectiveParallelism,
+        ...(councilMode ? { aggregation: 'consensus' as const } : {}),
         ...(input.hermesPlanId ? { hermesPlanId: input.hermesPlanId } : {}),
         ...(input.hermesPlanProfile ? { hermesPlanProfile: input.hermesPlanProfile } : {}),
         ...(input.hermesPlanSurface ? { hermesPlanSurface: input.hermesPlanSurface } : {}),

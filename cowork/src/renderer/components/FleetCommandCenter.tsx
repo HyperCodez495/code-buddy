@@ -120,6 +120,12 @@ interface FleetDispatchRequest {
    * value: `['code', 'review', 'safe']`.
    */
   chainRoles?: string[];
+  /**
+   * Council mode — fan the same goal to ≥2 peers then arbitrate with the
+   * consensus aggregator (cross-critique + agreement score). Forces
+   * parallelism ≥ 2; ignored when `chainRoles` is set.
+   */
+  council?: boolean;
 }
 
 function buildInheritedRunMetadata(run: AgentRun | null): Record<string, unknown> {
@@ -268,6 +274,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [error, setError] = useState<string | null>(null);
   const [dispatchFeedback, setDispatchFeedback] = useState<FleetDispatchResult | null>(null);
   const [parallelism, setParallelism] = useState(1);
+  const [council, setCouncil] = useState(false);
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
   const [dispatchProfile, setDispatchProfile] = useState<FleetDispatchProfile>('balanced');
   const [goalRunDraft, setGoalRunDraft] = useState<AgentRun | null>(null);
@@ -555,11 +562,15 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
         id: peer.id,
         label: peer.label?.trim() || peer.capability?.machineLabel?.trim() || shortId(peer.id),
       }));
+      // Council needs ≥2 lanes to deliberate; force it so the toggle
+      // works even if the parallelism input was left at 1.
+      const effectiveParallelism = council ? Math.max(2, parallelism) : parallelism;
       const result = await api.fleet.dispatch({
         goal: dispatchGoal,
-        parallelism: parallelism > 1 ? parallelism : undefined,
+        parallelism: effectiveParallelism > 1 ? effectiveParallelism : undefined,
         privacyTag,
         dispatchProfile,
+        ...(council ? { council: true } : {}),
         targetPeerIds: dispatchPeerTargets.map((peer) => peer.id),
         targetPeerLabels: dispatchPeerTargets.map((peer) => peer.label),
         ...buildDispatchRunMetadata(goalRunDraft),
@@ -988,6 +999,25 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     </option>
                   ))}
                 </select>
+                <label
+                  className="ml-2 flex items-center gap-1 text-[10px] text-zinc-400 cursor-pointer select-none"
+                  title={t(
+                    'fleet.councilHint',
+                    'Ask the same question to ≥2 peers, then score their agreement and surface divergences. LLM arbitration of the final answer runs when an aggregator client is wired; otherwise the answers are concatenated.',
+                  )}
+                >
+                  <input
+                    type="checkbox"
+                    checked={council}
+                    onChange={(e) => {
+                      const next = e.target.checked;
+                      setCouncil(next);
+                      if (next && parallelism < 2) setParallelism(2);
+                    }}
+                    className="h-3 w-3 accent-accent"
+                  />
+                  {t('fleet.council', 'Council')}
+                </label>
                 <button
                   type="button"
                   onClick={handleScheduleDispatch}

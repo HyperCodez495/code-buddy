@@ -96,9 +96,34 @@ interface SagaStoreModule {
   getSagaStore: () => SagaStoreShape;
 }
 
+/**
+ * Deterministic agreement summary returned by the core council
+ * aggregator. Wide shape mirroring `ConsensusSummary` in
+ * `src/fleet/result-aggregator.ts` — Cowork's tsconfig can't reach the
+ * core typings, so we re-declare the surface we read.
+ */
+interface ConsensusSummaryShape {
+  score: number;
+  reached: boolean;
+  threshold: number;
+  agreeingCount: number;
+  total: number;
+  perSource: Array<{ peerId: string; model: string; agreement: number }>;
+  disagreements: Array<{ peerId: string; model: string; preview: string }>;
+}
+
 interface AggregatorModule {
   aggregateParallelResults: (saga: SagaShape) => Promise<string>;
   finaliseFromSingle: (saga: SagaShape) => string | null;
+  /**
+   * Council aggregation (consensus mode). Present on core since the
+   * fleet-council change; older cores omit it and the runner falls back
+   * to `aggregateParallelResults`.
+   */
+  aggregateWithConsensus?: (
+    saga: SagaShape,
+    options?: { threshold?: number },
+  ) => Promise<{ finalText: string; consensus: ConsensusSummaryShape }>;
 }
 
 interface DispatchStatusResponse {
@@ -580,7 +605,22 @@ export class SagaRunner {
           // Nothing to aggregate — leave saga in failed state.
           return;
         }
-        finalText = await aggMod.aggregateParallelResults(saga);
+        if (
+          saga.metadata?.aggregation === 'consensus' &&
+          typeof aggMod.aggregateWithConsensus === 'function'
+        ) {
+          // Council mode — arbitrate the N answers and persist the
+          // agreement summary so the Council viewer can render the gauge
+          // without recomputing it.
+          const { finalText: text, consensus } = await aggMod.aggregateWithConsensus(saga);
+          finalText = text;
+          await store.update(sagaId, (s) => {
+            s.metadata = { ...(s.metadata ?? {}), consensus };
+            return s;
+          });
+        } else {
+          finalText = await aggMod.aggregateParallelResults(saga);
+        }
       } else {
         finalText = aggMod.finaliseFromSingle(saga);
       }

@@ -68,6 +68,12 @@ export interface SagaSummary {
     /** Only set for chain steps — index of the predecessor step. */
     dependsOn?: number;
     status: SagaStepStatus;
+    /**
+     * The step's answer text. Present on completed steps (mirrors the
+     * core `SagaStep.result`). Surfaced so the Council viewer can show
+     * each peer's independent answer.
+     */
+    result?: string;
     toolPolicy?: {
       profile?: string;
       policyProfile?: string;

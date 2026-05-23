@@ -59,6 +59,7 @@ const state = vi.hoisted(() => {
   return {
     sagas: new Map<string, Saga>(),
     aggregateCalls: [] as Saga[],
+    consensusCalls: [] as Saga[],
     finaliseFromSingleCalls: [] as Saga[],
   };
 });
@@ -189,6 +190,24 @@ vi.mock('../src/main/utils/core-loader', () => ({
           state.aggregateCalls.push(saga as never);
           return 'AGGREGATED';
         }),
+        aggregateWithConsensus: vi.fn(async (saga: unknown) => {
+          state.consensusCalls.push(saga as never);
+          return {
+            finalText: 'COUNCIL_SYNTHESIS',
+            consensus: {
+              score: 0.82,
+              reached: true,
+              threshold: 0.7,
+              agreeingCount: 2,
+              total: 2,
+              perSource: [
+                { peerId: 'peer-a', model: 'm1', agreement: 0.82 },
+                { peerId: 'peer-b', model: 'm2', agreement: 0.82 },
+              ],
+              disagreements: [],
+            },
+          };
+        }),
         finaliseFromSingle: vi.fn((saga: unknown) => {
           const typedSaga = saga as { steps: SagaStep[] };
           state.finaliseFromSingleCalls.push(typedSaga as never);
@@ -243,6 +262,7 @@ function waitFor(predicate: () => boolean, timeoutMs = 2_000): Promise<void> {
 beforeEach(() => {
   state.sagas.clear();
   state.aggregateCalls.length = 0;
+  state.consensusCalls.length = 0;
   state.finaliseFromSingleCalls.length = 0;
   vi.useFakeTimers({ shouldAdvanceTime: true, toFake: ['setTimeout'] });
   vi.setConfig({ testTimeout: 10_000 });
@@ -555,6 +575,101 @@ describe('SagaRunner — parallel all success', () => {
     expect(saga.steps.every((s) => s.status === 'completed')).toBe(true);
     expect(saga.finalResult).toBe('AGGREGATED');
     expect(state.aggregateCalls.length).toBe(1);
+  });
+});
+
+describe('SagaRunner — council (consensus) mode', () => {
+  it('arbitrates via aggregateWithConsensus and persists the consensus summary', async () => {
+    state.sagas.set('saga_council', {
+      id: 'saga_council',
+      goal: 'compare X vs Y',
+      plan: {
+        primary: { peerId: 'peer-a', model: 'm1' },
+        parallel: [
+          { peerId: 'peer-a', model: 'm1' },
+          { peerId: 'peer-b', model: 'm2' },
+        ],
+      },
+      steps: [
+        { peerId: 'peer-a', model: 'm1', lane: 'parallel', status: 'pending' },
+        { peerId: 'peer-b', model: 'm2', lane: 'parallel', status: 'pending' },
+      ],
+      status: 'pending',
+      metadata: { aggregation: 'consensus' },
+    });
+
+    let dispatchCounter = 0;
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async () => ({ runId: `run-${++dispatchCounter}` }),
+      'peer.dispatchStatus': async (params) => ({
+        found: true,
+        status: 'completed',
+        result: `answer-${params.runId}`,
+      }),
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn());
+    runner.start('saga_council');
+
+    await waitFor(
+      () => state.sagas.get('saga_council')?.finalResult !== undefined,
+      5_000,
+    );
+
+    const saga = state.sagas.get('saga_council')!;
+    expect(saga.finalResult).toBe('COUNCIL_SYNTHESIS');
+    // Council path is used, not the plain aggregator.
+    expect(state.consensusCalls.length).toBe(1);
+    expect(state.aggregateCalls.length).toBe(0);
+    // Consensus summary persisted into metadata for the viewer.
+    const consensus = saga.metadata?.consensus as { score?: number; reached?: boolean } | undefined;
+    expect(consensus?.score).toBe(0.82);
+    expect(consensus?.reached).toBe(true);
+  });
+
+  it('falls back to plain aggregation when council metadata is absent', async () => {
+    // No metadata.aggregation → standard parallel aggregation, even
+    // though aggregateWithConsensus is available on the (mocked) core.
+    state.sagas.set('saga_par_plain', {
+      id: 'saga_par_plain',
+      goal: 'plain parallel',
+      plan: {
+        primary: { peerId: 'peer-a', model: 'm1' },
+        parallel: [
+          { peerId: 'peer-a', model: 'm1' },
+          { peerId: 'peer-b', model: 'm2' },
+        ],
+      },
+      steps: [
+        { peerId: 'peer-a', model: 'm1', lane: 'parallel', status: 'pending' },
+        { peerId: 'peer-b', model: 'm2', lane: 'parallel', status: 'pending' },
+      ],
+      status: 'pending',
+      metadata: {},
+    });
+
+    let dispatchCounter = 0;
+    const fleetBridge = makeFleetBridgeMock({
+      'peer.dispatch': async () => ({ runId: `run-${++dispatchCounter}` }),
+      'peer.dispatchStatus': async (params) => ({
+        found: true,
+        status: 'completed',
+        result: `answer-${params.runId}`,
+      }),
+    });
+
+    const runner = new SagaRunner(fleetBridge as never, vi.fn());
+    runner.start('saga_par_plain');
+
+    await waitFor(
+      () => state.sagas.get('saga_par_plain')?.finalResult !== undefined,
+      5_000,
+    );
+
+    const saga = state.sagas.get('saga_par_plain')!;
+    expect(saga.finalResult).toBe('AGGREGATED');
+    expect(state.aggregateCalls.length).toBe(1);
+    expect(state.consensusCalls.length).toBe(0);
   });
 });
 

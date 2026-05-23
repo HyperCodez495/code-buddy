@@ -10,6 +10,7 @@ import type { SagaSummary } from './fleet-command-center-helpers';
 import { buildFleetInternetProofStepLabels } from './activity-feed-helpers';
 import { PeerStat } from './fleet-peer-panel';
 import { StepStatusIcon } from './fleet-saga-board';
+import { FleetCouncilStrip } from './FleetCouncilStrip';
 
 export const SagaDetail: React.FC<{
   saga: SagaSummary;
@@ -56,6 +57,8 @@ export const SagaDetail: React.FC<{
               })}
         </div>
       )}
+
+      <FleetCouncilStrip saga={saga} peersById={peersById} />
 
       {proofSteps.length > 0 && (
         <div data-testid="fleet-saga-internet-proof-loop">

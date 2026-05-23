@@ -858,6 +858,30 @@ describe('/fleet slash handler — Phase (d).5 V0.4.1', () => {
       );
     });
 
+    it('--council marks the route as a consensus council (planning-only)', async () => {
+      await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k', '--name', 'chatgpt']);
+      fleetListenerMock.requestMock.mockImplementationOnce(async () => ({
+        capabilities: {
+          egress: 'cloud',
+          machineLabel: 'ChatGPT Pro laptop',
+          models: [
+            {
+              id: 'gpt-5.1-codex',
+              contextWindow: 200_000,
+              strengths: ['reasoning', 'thinking', 'code'],
+              provider: 'chatgpt-oauth',
+            },
+          ],
+        },
+      }));
+
+      const r = await handleFleet(['route', 'compare', 'X', 'vs', 'Y', '--council']);
+
+      const out = r.entry?.content ?? '';
+      expect(out).toContain('Fleet route recommendation');
+      expect(out).toContain('Council: consensus over');
+    });
+
     it('--json emits the structured route payload', async () => {
       await handleFleet(['listen', 'ws://peer:3000/ws', '--api-key', 'k', '--name', 'local']);
       fleetListenerMock.requestMock.mockImplementationOnce(async () => ({

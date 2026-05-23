@@ -122,6 +122,10 @@ Actions:
             [--timeout <ms>]
             [--delegate]
             [--delegate-timeout <ms>]
+            [--council]                Plan a consensus council: same
+                                      question to ≥2 peers + deterministic
+                                      agreement score. Planning-only at the
+                                      CLI — execute it from Cowork.
             [--json]
   chat start <peer>                   (V1.2.1) UX wrapper around
        [--system "<prompt>"]          peer.chat-session.* — opens a
@@ -201,6 +205,13 @@ interface ParsedRouteArgs {
   delegate: boolean;
   delegateTimeoutMs?: number;
   json: boolean;
+  /**
+   * Council mode (planning-only at the CLI). Forces parallelism ≥ 2 and
+   * marks the route summary as a consensus council. The CLI does not run
+   * the parallel saga to completion — that happens via Cowork's
+   * SagaRunner (`aggregation: 'consensus'`); the flag documents intent.
+   */
+  council?: boolean;
   error?: string;
 }
 
@@ -444,6 +455,7 @@ function parseRouteArgs(rest: string[]): ParsedRouteArgs {
   let delegate = false;
   let delegateTimeoutMs: number | undefined;
   let json = false;
+  let council = false;
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
@@ -497,11 +509,19 @@ function parseRouteArgs(rest: string[]): ParsedRouteArgs {
       i++;
     } else if (arg === '--delegate') {
       delegate = true;
+    } else if (arg === '--council') {
+      council = true;
     } else if (arg === '--json') {
       json = true;
     } else {
       promptParts.push(arg);
     }
+  }
+
+  // Council mode needs at least 2 lanes to deliberate; force it here so
+  // the planned route shows the parallel fan-out the council requires.
+  if (council) {
+    routeParams.parallelism = Math.max(2, routeParams.parallelism ?? 2);
   }
 
   return {
@@ -510,6 +530,7 @@ function parseRouteArgs(rest: string[]): ParsedRouteArgs {
     delegate,
     ...(delegateTimeoutMs !== undefined ? { delegateTimeoutMs } : {}),
     json,
+    council,
   };
 }
 
@@ -1534,7 +1555,7 @@ function formatLane(label: string, lane: RouteLaneSummary | null | undefined): s
   return `${label}: ${lane.peer} / ${lane.model} (score ${lane.score.toFixed(3)})`;
 }
 
-function formatRoutePeerCommandData(data: RoutePeerCommandData): string {
+function formatRoutePeerCommandData(data: RoutePeerCommandData, council = false): string {
   const lines: string[] = [
     'Fleet route recommendation',
     formatLane('  Primary', data.recommendation),
@@ -1546,6 +1567,15 @@ function formatRoutePeerCommandData(data: RoutePeerCommandData): string {
       `  Parallel: ${data.parallel
         .map((lane) => `${lane.peer}/${lane.model} (${lane.score.toFixed(3)})`)
         .join(', ')}`,
+    );
+  }
+
+  if (council) {
+    const laneCount = data.parallel?.length ?? 0;
+    lines.push(
+      `  Council: deterministic agreement score over ${laneCount} peer(s) — same question, ` +
+        'independent answers (LLM arbitration when an aggregator client is wired, else labeled ' +
+        'concat). Run via Cowork to execute.',
     );
   }
 
@@ -1626,7 +1656,7 @@ async function handleRoute(rest: string[]): Promise<CommandHandlerResult> {
     return textResult(
       parsed.json
         ? JSON.stringify(routeData, null, 2)
-        : formatRoutePeerCommandData(routeData),
+        : formatRoutePeerCommandData(routeData, parsed.council),
     );
   }
 
