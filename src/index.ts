@@ -2423,6 +2423,12 @@ addLazyCommandGroup(program, 'run', 'Inspect and replay agent runs (observabilit
   registerRunCommands(program);
 });
 
+// Cron — author and manage scheduled jobs (incl. watchdog + pre-check)
+addLazyCommandGroup(program, 'cron', 'Author and manage scheduled cron jobs', async () => {
+  const { registerCronCommands } = await import('./commands/cron-cli/index.js');
+  registerCronCommands(program);
+});
+
 // DM pairing — approve, revoke, list, pending
 addLazyCommand(
   program,

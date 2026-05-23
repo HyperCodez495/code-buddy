@@ -487,6 +487,9 @@ The gap is mainly product integration and durability:
       Each check resolves to `ok` / `alert` / `error`; the aggregate
       `watchdogOk` is false when any check alerts or errors. `CronAgentBridge`
       dispatches the new `watchdog` case without touching the LLM paths.
+      Authoring surface: `buddy cron add <name> --cron <expr> --watchdog
+      <json|@file>` (and `--pre-check` for item 19) — see `buddy cron
+      list/show/remove`.
 
 ### P2 - Context and session search
 

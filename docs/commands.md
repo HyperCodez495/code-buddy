@@ -107,7 +107,15 @@ buddy daemon start [--detach] [--install-daemon] [--foreground]
 buddy daemon stop | restart | status | logs [--lines N]
 buddy heartbeat start | stop | status | tick
 buddy trigger list | add | remove
+buddy cron list [--json] | show <id> | remove <id>
+buddy cron add <name> --every <ms>|--cron <expr>|--at <iso> \
+  [--message <text>] [--watchdog <json|@file>] [--pre-check <json|@file>] \
+  [--deliver <type:id>...] [--format full|summary]
 ```
+
+`buddy cron` authors scheduled jobs for the daemon's CronScheduler, including
+no-LLM `--watchdog` monitors (disk/http/repo/build) and `--pre-check` gates
+(file_changed/command) that skip expensive LLM runs when nothing changed.
 
 ### Research and Orchestration
 

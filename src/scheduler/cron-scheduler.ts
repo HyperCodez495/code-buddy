@@ -277,6 +277,18 @@ export class CronScheduler extends EventEmitter {
     this.taskExecutor = executor;
   }
 
+  /**
+   * Load persisted jobs into memory without starting the tick loop. Useful for
+   * one-shot CLI commands (`buddy cron list/add/remove`) that must see the
+   * existing job set before mutating it — otherwise a subsequent persist would
+   * overwrite the file with only the in-memory jobs.
+   */
+  async loadFromDisk(): Promise<void> {
+    if (this.jobs.size > 0) return;
+    await fs.mkdir(path.dirname(this.config.persistPath), { recursive: true });
+    await this.loadJobs();
+  }
+
   async start(taskExecutor?: (job: CronJob) => Promise<unknown>): Promise<void> {
     if (this.running) return;
 
@@ -705,6 +717,9 @@ export class CronScheduler extends EventEmitter {
 
   private async persistJobs(): Promise<void> {
     try {
+      // Ensure the persist directory exists — addJob can be called before
+      // start() (e.g. from the `buddy cron` CLI), which would otherwise fail.
+      await fs.mkdir(path.dirname(this.config.persistPath), { recursive: true });
       const jobs = Array.from(this.jobs.values());
       await fs.writeFile(this.config.persistPath, JSON.stringify(jobs, null, 2));
     } catch (error) {
