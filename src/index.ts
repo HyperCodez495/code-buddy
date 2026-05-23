@@ -2512,6 +2512,17 @@ addLazyCommand(
   },
 );
 
+// Spec — BMAD-inspired spec-driven, review-gated work pipeline
+addLazyCommandGroup(
+  program,
+  'spec',
+  'Spec-driven, review-gated work pipeline (durable stories; approve before implementing)',
+  async () => {
+    const { createSpecCommand } = await import('./commands/spec.js');
+    program.addCommand(createSpecCommand());
+  },
+);
+
 // User model — structured model of the user's working preferences (propose/review)
 addLazyCommand(
   program,
