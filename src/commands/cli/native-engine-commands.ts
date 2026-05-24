@@ -472,6 +472,25 @@ export function registerCompanionCommands(program: Command): void {
     });
 
   companion
+    .command('improve')
+    .description('Run Buddy companion self-improvement cycle: radar, missions, and next brief')
+    .option('--dry-run', 'Preview the cycle without syncing missions or writing percepts')
+    .option('--no-record', 'Do not write improvement-cycle percepts or safety events')
+    .option('--no-run-mission', 'Sync missions but do not prepare the next mission brief')
+    .action(async (opts: { dryRun?: boolean; record?: boolean; runMission?: boolean }) => {
+      const {
+        formatCompanionImprovementCycle,
+        runCompanionImprovementCycle,
+      } = await import('../../companion/improvement-cycle.js');
+      const cycle = await runCompanionImprovementCycle({
+        dryRun: Boolean(opts.dryRun),
+        recordSuggestions: opts.record !== false,
+        runMission: opts.runMission !== false,
+      });
+      console.log(formatCompanionImprovementCycle(cycle));
+    });
+
+  companion
     .command('impulses')
     .alias('brief')
     .description('Build Buddy companion proactive impulses from readiness, senses, missions, and safety state')

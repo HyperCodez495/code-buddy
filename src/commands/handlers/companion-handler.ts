@@ -29,6 +29,10 @@ import {
   formatCompanionCompetitiveRadar,
 } from '../../companion/competitive-radar.js';
 import {
+  formatCompanionImprovementCycle,
+  runCompanionImprovementCycle,
+} from '../../companion/improvement-cycle.js';
+import {
   buildCompanionImpulseBrief,
   formatCompanionImpulseBrief,
 } from '../../companion/impulses.js';
@@ -101,6 +105,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
         'Usage: /companion percepts recent [--limit <n>] [--modality <vision|hearing|screen|self|memory|tool|suggestion>]',
         '       /companion percepts stats',
         '       /companion evaluate [--no-record]',
+        '       /companion improve [--dry-run] [--no-record] [--no-run-mission]',
         '       /companion radar [--no-record]',
         '       /companion impulses [--no-record]',
         '       /companion check-in [--text <text>] [--preview]',
@@ -121,13 +126,25 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
     };
   }
 
-  if (action === 'evaluate' || action === 'eval' || action === 'improve') {
+  if (action === 'evaluate' || action === 'eval') {
     const evaluation = await evaluateCompanionSelf({
       recordSuggestions: !args.includes('--no-record'),
     });
     return {
       handled: true,
       entry: entry(formatCompanionSelfEvaluation(evaluation)),
+    };
+  }
+
+  if (action === 'improve' || action === 'improvement') {
+    const cycle = await runCompanionImprovementCycle({
+      dryRun: args.includes('--dry-run'),
+      recordSuggestions: !args.includes('--no-record'),
+      runMission: !args.includes('--no-run-mission'),
+    });
+    return {
+      handled: true,
+      entry: entry(formatCompanionImprovementCycle(cycle)),
     };
   }
 
@@ -380,6 +397,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion setup [--force] [--no-voice] [--no-set-model]',
       '       /companion self',
       '       /companion evaluate [--no-record]',
+      '       /companion improve [--dry-run] [--no-record] [--no-run-mission]',
       '       /companion radar [--no-record]',
       '       /companion impulses [--no-record]',
       '       /companion check-in [--text <text>] [--preview]',

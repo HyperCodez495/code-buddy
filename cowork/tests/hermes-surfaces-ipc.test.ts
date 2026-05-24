@@ -270,6 +270,34 @@ describe('companion IPC', () => {
     });
   });
 
+  it('runs the companion improvement cycle in the active workspace', async () => {
+    const runCompanionImprovementCycle = vi.fn(async () => ({
+      id: 'companion-improve-1',
+      radar: { id: 'radar-1' },
+      board: { missions: [] },
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ runCompanionImprovementCycle });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.improve');
+    const res = (await handler?.({}, {
+      dryRun: true,
+      recordSuggestions: false,
+      runMission: false,
+    })) as {
+      ok: boolean;
+      cycle?: { id: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.cycle?.id).toBe('companion-improve-1');
+    expect(runCompanionImprovementCycle).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      dryRun: true,
+      recordSuggestions: false,
+      runMission: false,
+    });
+  });
+
   it('builds companion impulses in the active workspace', async () => {
     const buildCompanionImpulseBrief = vi.fn(async () => ({
       id: 'companion-impulses-1',

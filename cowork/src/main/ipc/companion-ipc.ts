@@ -193,6 +193,21 @@ interface CompanionMissionRunResult {
   syncedBoard?: boolean;
 }
 
+interface CompanionImprovementCycle {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  dryRun: boolean;
+  recorded: boolean;
+  radar: CompanionCompetitiveRadar;
+  board: CompanionMissionBoard;
+  missionSync?: CompanionMissionBoardSyncResult;
+  missionRun?: CompanionMissionRunResult;
+  nextActions: string[];
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 interface CompanionSafetyEvent {
   id: string;
   timestamp: string;
@@ -478,6 +493,15 @@ type CompanionCompetitiveRadarMod = {
   }) => Promise<CompanionCompetitiveRadar>;
 };
 
+type CompanionImprovementCycleMod = {
+  runCompanionImprovementCycle: (options: {
+    cwd?: string;
+    dryRun?: boolean;
+    recordSuggestions?: boolean;
+    runMission?: boolean;
+  }) => Promise<CompanionImprovementCycle>;
+};
+
 type CompanionImpulsesMod = {
   buildCompanionImpulseBrief: (options: {
     cwd?: string;
@@ -613,6 +637,10 @@ async function loadSelfEvaluation(): Promise<CompanionSelfEvaluationMod | null> 
 
 async function loadCompetitiveRadar(): Promise<CompanionCompetitiveRadarMod | null> {
   return loadCoreModule<CompanionCompetitiveRadarMod>('companion/competitive-radar.js');
+}
+
+async function loadImprovementCycle(): Promise<CompanionImprovementCycleMod | null> {
+  return loadCoreModule<CompanionImprovementCycleMod>('companion/improvement-cycle.js');
 }
 
 async function loadImpulses(): Promise<CompanionImpulsesMod | null> {
@@ -817,6 +845,37 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.radar] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.improve',
+    async (_e, input?: {
+      projectId?: string;
+      dryRun?: boolean;
+      recordSuggestions?: boolean;
+      runMission?: boolean;
+    }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadImprovementCycle();
+        if (!mod?.runCompanionImprovementCycle) {
+          return { ok: false as const, error: 'core improvement-cycle module unavailable' };
+        }
+        return {
+          ok: true as const,
+          cycle: await mod.runCompanionImprovementCycle({
+            cwd,
+            dryRun: Boolean(input?.dryRun),
+            recordSuggestions: input?.recordSuggestions !== false,
+            runMission: input?.runMission !== false,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.improve] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

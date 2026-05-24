@@ -314,6 +314,21 @@ export interface CompanionMissionRunResult {
   syncedBoard?: boolean;
 }
 
+export interface CompanionImprovementCycle {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  dryRun: boolean;
+  recorded: boolean;
+  radar: CompanionCompetitiveRadar;
+  board: CompanionMissionBoard;
+  missionSync?: CompanionMissionBoardSyncResult;
+  missionRun?: CompanionMissionRunResult;
+  nextActions: string[];
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 export type CompanionSafetyEventKind = 'sense' | 'tool' | 'mission' | 'permission' | 'data';
 export type CompanionSafetyEventRisk = 'low' | 'medium' | 'high';
 export type CompanionSafetyEventStatus = 'planned' | 'allowed' | 'completed' | 'failed' | 'denied';

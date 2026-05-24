@@ -33,6 +33,7 @@ import type {
   CompanionMission,
   CompanionMissionBoard,
   CompanionMissionBoardSyncResult,
+  CompanionImprovementCycle,
   CompanionMissionRunResult,
   CompanionMissionStatus,
   CompanionSafetyEvent,
@@ -838,6 +839,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       recordSuggestions?: boolean;
     }): Promise<{ ok: boolean; radar?: CompanionCompetitiveRadar; error?: string }> =>
       ipcRenderer.invoke('companion.radar', input),
+    improve: (input?: {
+      projectId?: string;
+      dryRun?: boolean;
+      recordSuggestions?: boolean;
+      runMission?: boolean;
+    }): Promise<{ ok: boolean; cycle?: CompanionImprovementCycle; error?: string }> =>
+      ipcRenderer.invoke('companion.improve', input),
     impulses: (input?: {
       projectId?: string;
       recordSuggestions?: boolean;
@@ -3105,6 +3113,12 @@ declare global {
           projectId?: string;
           recordSuggestions?: boolean;
         }) => Promise<{ ok: boolean; radar?: CompanionCompetitiveRadar; error?: string }>;
+        improve: (input?: {
+          projectId?: string;
+          dryRun?: boolean;
+          recordSuggestions?: boolean;
+          runMission?: boolean;
+        }) => Promise<{ ok: boolean; cycle?: CompanionImprovementCycle; error?: string }>;
         impulses: (input?: {
           projectId?: string;
           recordSuggestions?: boolean;

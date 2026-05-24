@@ -40,6 +40,7 @@ import type {
   CompanionCheckInCue,
   CompanionGatewayMode,
   CompanionGatewayProfile,
+  CompanionImprovementCycle,
   CompanionImpulseBrief,
   CompanionMission,
   CompanionMissionRunResult,
@@ -431,6 +432,7 @@ export function CompanionPanel() {
   const [percepts, setPercepts] = useState<CompanionPercept[]>([]);
   const [evaluation, setEvaluation] = useState<CompanionSelfEvaluation | null>(null);
   const [radar, setRadar] = useState<CompanionCompetitiveRadar | null>(null);
+  const [improvementCycle, setImprovementCycle] = useState<CompanionImprovementCycle | null>(null);
   const [impulses, setImpulses] = useState<CompanionImpulseBrief | null>(null);
   const [checkIn, setCheckIn] = useState<CompanionCheckInCue | null>(null);
   const [missions, setMissions] = useState<CompanionMission[]>([]);
@@ -448,7 +450,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'evaluate' | 'radar' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CameraSnapshotInspectionResult | null>(null);
@@ -628,6 +630,25 @@ export function CompanionPanel() {
       return;
     }
     setRadar(res.radar ?? null);
+    await refresh();
+  };
+
+  const runImprovementCycle = async () => {
+    setBusyAction('improve');
+    setError(null);
+    const res = await window.electronAPI.companion.improve({
+      recordSuggestions: true,
+      runMission: true,
+    });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Improvement cycle failed');
+      return;
+    }
+    setImprovementCycle(res.cycle ?? null);
+    if (res.cycle?.radar) setRadar(res.cycle.radar);
+    if (res.cycle?.board) setMissions(res.cycle.board.missions);
+    if (res.cycle?.missionRun) setMissionRun(res.cycle.missionRun);
     await refresh();
   };
 
@@ -947,6 +968,14 @@ export function CompanionPanel() {
             </button>
             <button
               disabled={busyAction !== null}
+              onClick={() => void runImprovementCycle()}
+              className="inline-flex items-center gap-2 rounded border border-accent/50 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" />
+              {busyAction === 'improve' ? 'Improving...' : 'Improve loop'}
+            </button>
+            <button
+              disabled={busyAction !== null}
               onClick={() => void runImpulses()}
               className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
             >
@@ -1087,6 +1116,45 @@ export function CompanionPanel() {
                 {setupResult.selfPerceptError && (
                   <p className="mt-2 text-xs text-warning">{setupResult.selfPerceptError}</p>
                 )}
+              </div>
+            </section>
+          )}
+
+          {improvementCycle && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Improvement loop</h3>
+                <span className="text-[10px] text-text-muted">
+                  {improvementCycle.radar.score}/100 / {improvementCycle.board.missions.length} mission(s)
+                </span>
+              </div>
+              <div className="rounded border border-accent/30 bg-accent/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Sparkles className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-medium text-text-primary">
+                      {improvementCycle.missionRun?.mission
+                        ? improvementCycle.missionRun.mission.title
+                        : improvementCycle.missionRun?.message ?? 'Companion improvement cycle completed.'}
+                    </p>
+                    {improvementCycle.missionRun?.briefPath && (
+                      <button
+                        onClick={() => void window.electronAPI.showItemInFolder(improvementCycle.missionRun!.briefPath!)}
+                        className="mt-2 inline-flex max-w-full items-center gap-2 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{improvementCycle.missionRun.briefPath}</span>
+                      </button>
+                    )}
+                    {improvementCycle.nextActions.length > 0 && (
+                      <ul className="mt-3 space-y-1 text-xs text-text-secondary">
+                        {improvementCycle.nextActions.slice(0, 3).map((action) => (
+                          <li key={action} className="line-clamp-2">- {action}</li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                </div>
               </div>
             </section>
           )}
