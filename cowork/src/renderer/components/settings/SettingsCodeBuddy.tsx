@@ -15,11 +15,37 @@ interface CodeBuddyConfig {
 }
 
 interface HealthStatus {
-  status: 'unknown' | 'connected' | 'error';
+  status: 'unknown' | 'starting' | 'connected' | 'error';
   version?: string;
   models?: string[];
   tools?: number;
   message?: string;
+}
+
+interface ConnectionProbeSuccess {
+  version: string;
+  models: string[];
+  tools: number;
+}
+
+function parseLocalServerEndpoint(endpoint: string): { host: string; port: number } | null {
+  try {
+    const url = new URL(endpoint);
+    const hostname = url.hostname.toLowerCase();
+    if (!['localhost', '127.0.0.1', '::1'].includes(hostname)) return null;
+    const port = Number(url.port || (url.protocol === 'https:' ? 443 : 80));
+    if (!Number.isInteger(port) || port < 1 || port > 65535) return null;
+    return {
+      host: hostname === '::1' ? '::1' : '127.0.0.1',
+      port,
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function wait(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
 }
 
 export function SettingsCodeBuddy() {
@@ -51,55 +77,117 @@ export function SettingsCodeBuddy() {
     }).catch(() => {});
   }, []);
 
+  const probeConnection = useCallback(async (): Promise<ConnectionProbeSuccess> => {
+    const res = await fetch(`${config.endpoint}/api/health`, {
+      signal: AbortSignal.timeout(5000),
+      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+    });
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    }
+
+    const data = await res.json();
+    let models: string[] = [];
+    let tools = 0;
+    try {
+      const modelsRes = await fetch(`${config.endpoint}/v1/models`, {
+        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+      });
+      if (modelsRes.ok) {
+        const modelsData = await modelsRes.json();
+        models = modelsData.data?.map((m: { id: string }) => m.id) || [];
+      }
+    } catch { /* optional */ }
+    try {
+      const metricsRes = await fetch(`${config.endpoint}/api/metrics`, {
+        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+      });
+      if (metricsRes.ok) {
+        const metricsData = await metricsRes.json();
+        tools = metricsData.toolCount || metricsData.tools || 0;
+      }
+    } catch { /* optional */ }
+
+    return {
+      version: data.version || 'unknown',
+      models,
+      tools,
+    };
+  }, [config.endpoint, config.apiKey]);
+
+  const probeAfterStart = useCallback(async (): Promise<ConnectionProbeSuccess> => {
+    let lastError: unknown = null;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      try {
+        return await probeConnection();
+      } catch (err) {
+        lastError = err;
+        await wait(500);
+      }
+    }
+    throw lastError instanceof Error ? lastError : new Error('Code Buddy server did not become reachable.');
+  }, [probeConnection]);
+
   const testConnection = useCallback(async () => {
     setIsTesting(true);
     setHealth({ status: 'unknown' });
     try {
-      const res = await fetch(`${config.endpoint}/api/health`, {
-        signal: AbortSignal.timeout(5000),
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
+      const connected = await probeConnection();
+      setHealth({
+        status: 'connected',
+        version: connected.version,
+        models: connected.models,
+        tools: connected.tools,
       });
-      if (res.ok) {
-        const data = await res.json();
-        // Try to get models
-        let models: string[] = [];
-        let tools = 0;
-        try {
-          const modelsRes = await fetch(`${config.endpoint}/v1/models`, {
-            headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-          });
-          if (modelsRes.ok) {
-            const modelsData = await modelsRes.json();
-            models = modelsData.data?.map((m: { id: string }) => m.id) || [];
-          }
-        } catch { /* optional */ }
-        try {
-          const metricsRes = await fetch(`${config.endpoint}/api/metrics`, {
-            headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-          });
-          if (metricsRes.ok) {
-            const metricsData = await metricsRes.json();
-            tools = metricsData.toolCount || metricsData.tools || 0;
-          }
-        } catch { /* optional */ }
+    } catch (initialErr) {
+      const localEndpoint = parseLocalServerEndpoint(config.endpoint);
+      const serverApi = window.electronAPI?.server;
+      if (!localEndpoint || !serverApi?.start) {
+        setHealth({
+          status: 'error',
+          message: initialErr instanceof Error ? initialErr.message : 'Connection failed',
+        });
+        setIsTesting(false);
+        return;
+      }
+
+      setHealth({
+        status: 'starting',
+        message: 'Code Buddy is not responding; starting the local backend...',
+      });
+
+      const started = await serverApi.start({
+        host: localEndpoint.host,
+        port: localEndpoint.port,
+      });
+      if (!started.running) {
+        setHealth({
+          status: 'error',
+          message: started.error || 'Code Buddy backend failed to start.',
+        });
+        setIsTesting(false);
+        return;
+      }
+
+      try {
+        const connected = await probeAfterStart();
         setHealth({
           status: 'connected',
-          version: data.version || 'unknown',
-          models,
-          tools,
+          version: connected.version,
+          models: connected.models,
+          tools: connected.tools,
+          message: 'Started local Code Buddy backend automatically.',
         });
-      } else {
-        setHealth({ status: 'error', message: `HTTP ${res.status}: ${res.statusText}` });
+      } catch (err) {
+        setHealth({
+          status: 'error',
+          message: err instanceof Error ? err.message : 'Connection failed',
+        });
       }
-    } catch (err) {
-      setHealth({
-        status: 'error',
-        message: err instanceof Error ? err.message : 'Connection failed',
-      });
     } finally {
       setIsTesting(false);
     }
-  }, [config.endpoint, config.apiKey]);
+  }, [config.endpoint, probeConnection, probeAfterStart]);
 
   const saveConfig = useCallback(async () => {
     setIsSaving(true);
@@ -189,7 +277,7 @@ export function SettingsCodeBuddy() {
             className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
           />
           <p className="text-xs text-text-muted mt-1">
-            Start Code Buddy with: <code className="bg-surface-secondary px-1 rounded">buddy --server</code>
+            Start Code Buddy with: <code className="bg-surface-secondary px-1 rounded">buddy server</code>
           </p>
         </div>
 
@@ -289,15 +377,23 @@ export function SettingsCodeBuddy() {
         <div className={`p-4 rounded-lg border ${
           health.status === 'connected'
             ? 'bg-green-500/10 border-green-500/30'
+            : health.status === 'starting'
+              ? 'bg-accent/10 border-accent/30'
             : 'bg-red-500/10 border-red-500/30'
         }`}>
           <div className="flex items-center gap-2 mb-2">
             {health.status === 'connected'
               ? <CheckCircle className="w-5 h-5 text-green-400" />
+              : health.status === 'starting'
+                ? <Loader2 className="w-5 h-5 text-accent animate-spin" />
               : <XCircle className="w-5 h-5 text-red-400" />
             }
             <span className="font-medium text-sm text-text-primary">
-              {health.status === 'connected' ? 'Connected to Code Buddy' : 'Connection Failed'}
+              {health.status === 'connected'
+                ? 'Connected to Code Buddy'
+                : health.status === 'starting'
+                  ? 'Starting Code Buddy'
+                  : 'Connection Failed'}
             </span>
           </div>
           {health.status === 'connected' && (
@@ -308,6 +404,12 @@ export function SettingsCodeBuddy() {
                 <p>Models: {health.models.slice(0, 5).join(', ')}{health.models.length > 5 ? ` +${health.models.length - 5} more` : ''}</p>
               )}
             </div>
+          )}
+          {health.status === 'starting' && health.message && (
+            <p className="text-xs text-text-muted ml-7">{health.message}</p>
+          )}
+          {health.status === 'connected' && health.message && (
+            <p className="text-xs text-green-400 ml-7">{health.message}</p>
           )}
           {health.status === 'error' && health.message && (
             <p className="text-xs text-red-400 ml-7">{health.message}</p>
