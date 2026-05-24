@@ -1,4 +1,4 @@
-import { mkdtemp, rm } from 'fs/promises';
+import { mkdtemp, readFile, rm } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -12,12 +12,28 @@ import {
 
 describe('companion percept store', () => {
   let tempDir: string;
+  let encryptionKeyBackup: string | undefined;
+  let memoryKeyBackup: string | undefined;
 
   beforeEach(async () => {
     tempDir = await mkdtemp(path.join(os.tmpdir(), 'buddy-percepts-'));
+    encryptionKeyBackup = process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY;
+    memoryKeyBackup = process.env.CODEBUDDY_COMPANION_MEMORY_KEY;
+    delete process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY;
+    delete process.env.CODEBUDDY_COMPANION_MEMORY_KEY;
   });
 
   afterEach(async () => {
+    if (encryptionKeyBackup !== undefined) {
+      process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY = encryptionKeyBackup;
+    } else {
+      delete process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY;
+    }
+    if (memoryKeyBackup !== undefined) {
+      process.env.CODEBUDDY_COMPANION_MEMORY_KEY = memoryKeyBackup;
+    } else {
+      delete process.env.CODEBUDDY_COMPANION_MEMORY_KEY;
+    }
     await rm(tempDir, { recursive: true, force: true });
   });
 
@@ -80,5 +96,32 @@ describe('companion percept store', () => {
     expect(stats.exists).toBe(false);
     expect(stats.total).toBe(0);
     expect(formatCompanionPercepts([])).toContain('No companion percepts');
+  });
+
+  it('optionally encrypts percept summaries and payloads at rest', async () => {
+    process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY = 'local-test-key';
+    await recordCompanionPercept({
+      modality: 'memory',
+      source: 'privacy-test',
+      summary: 'Remember the private phrase',
+      payload: { secret: 'rose quartz' },
+      tags: ['privacy'],
+    }, { cwd: tempDir, now: new Date('2026-05-24T10:02:00Z') });
+
+    const raw = await readFile(getCompanionPerceptsPath(tempDir), 'utf8');
+    expect(raw).not.toContain('Remember the private phrase');
+    expect(raw).not.toContain('rose quartz');
+    expect(raw).toContain('"__encrypted":true');
+
+    const decrypted = await readRecentCompanionPercepts({ cwd: tempDir });
+    expect(decrypted[0]).toMatchObject({
+      summary: 'Remember the private phrase',
+      payload: { secret: 'rose quartz' },
+    });
+
+    delete process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY;
+    const locked = await readRecentCompanionPercepts({ cwd: tempDir });
+    expect(locked[0].summary).toContain('key unavailable');
+    expect(locked[0].payload).toMatchObject({ encrypted: true });
   });
 });

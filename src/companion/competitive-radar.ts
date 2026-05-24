@@ -120,6 +120,7 @@ function buildCurrentStrengths(evaluation: CompanionSelfEvaluation): string[] {
     'Companion skill curator can mine repeated missions/percepts into reviewed local routines.',
     'Companion gateway profile can map external channel messages into percepts and safety events.',
     'Typed companion cards can represent approvals, missions, camera frames, checklists, and tool output for Cowork.',
+    'Companion percept summaries and payloads can be encrypted at rest with a local memory key.',
     'Fleet, slash commands, CLI commands, MCP/plugin surface, and safety/permission plumbing already exist in the host system.',
   ];
 
@@ -205,10 +206,11 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
     {
       id: 'companion-encrypted-senses',
       dimension: 'memory',
-      severity: 'gap',
-      summary: 'The percept journal is project-local and explicit, but not encrypted at rest.',
-      recommendation: 'Add optional encryption for companion percepts and snapshots, with clear export/delete controls.',
+      severity: 'parity',
+      summary: 'The percept journal can encrypt summaries and payloads at rest when a companion memory key is configured.',
+      recommendation: 'Extend encryption/export/delete controls to camera snapshot files and any future binary sensory artifacts.',
       competitorRefs: ['uni', 'openclaw'],
+      command: 'set CODEBUDDY_COMPANION_ENCRYPTION_KEY',
       tags: ['memory', 'privacy', 'encryption'],
     },
     {

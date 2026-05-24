@@ -52,8 +52,17 @@ export interface CompanionPerceptStats {
   latestTimestamp?: string;
 }
 
+interface EncryptedCompanionPerceptPayload {
+  __encrypted: true;
+  algorithm: 'aes-256-gcm';
+  iv: string;
+  tag: string;
+  ciphertext: string;
+}
+
 const DEFAULT_RECENT_LIMIT = 10;
 const MAX_RECENT_LIMIT = 100;
+const ENCRYPTED_SUMMARY = '[encrypted companion percept]';
 
 function resolveCwd(cwd?: string): string {
   return cwd || process.cwd();
@@ -82,6 +91,72 @@ function createPerceptId(now: Date): string {
   return `percept-${stamp}-${crypto.randomBytes(4).toString('hex')}`;
 }
 
+function getEncryptionKey(): Buffer | null {
+  const raw = process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY
+    || process.env.CODEBUDDY_COMPANION_MEMORY_KEY;
+  if (!raw) return null;
+  return crypto.createHash('sha256').update(raw).digest();
+}
+
+function isEncryptedPayload(value: unknown): value is EncryptedCompanionPerceptPayload {
+  if (!value || typeof value !== 'object') return false;
+  const raw = value as Partial<EncryptedCompanionPerceptPayload>;
+  return raw.__encrypted === true
+    && raw.algorithm === 'aes-256-gcm'
+    && typeof raw.iv === 'string'
+    && typeof raw.tag === 'string'
+    && typeof raw.ciphertext === 'string';
+}
+
+function encryptPerceptFields(
+  summary: string,
+  payload: Record<string, unknown>,
+  key: Buffer,
+): { summary: string; payload: EncryptedCompanionPerceptPayload } {
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', key, iv);
+  const plaintext = JSON.stringify({ summary, payload });
+  const ciphertext = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
+  const tag = cipher.getAuthTag();
+  return {
+    summary: ENCRYPTED_SUMMARY,
+    payload: {
+      __encrypted: true,
+      algorithm: 'aes-256-gcm',
+      iv: iv.toString('base64'),
+      tag: tag.toString('base64'),
+      ciphertext: ciphertext.toString('base64'),
+    },
+  };
+}
+
+function decryptPerceptFields(
+  encrypted: EncryptedCompanionPerceptPayload,
+  key: Buffer,
+): { summary: string; payload: Record<string, unknown> } | null {
+  try {
+    const decipher = crypto.createDecipheriv(
+      'aes-256-gcm',
+      key,
+      Buffer.from(encrypted.iv, 'base64'),
+    );
+    decipher.setAuthTag(Buffer.from(encrypted.tag, 'base64'));
+    const plaintext = Buffer.concat([
+      decipher.update(Buffer.from(encrypted.ciphertext, 'base64')),
+      decipher.final(),
+    ]).toString('utf8');
+    const parsed = JSON.parse(plaintext) as { summary?: unknown; payload?: unknown };
+    return {
+      summary: typeof parsed.summary === 'string' ? parsed.summary : ENCRYPTED_SUMMARY,
+      payload: typeof parsed.payload === 'object' && parsed.payload !== null
+        ? parsed.payload as Record<string, unknown>
+        : {},
+    };
+  } catch {
+    return null;
+  }
+}
+
 function parsePercept(line: string): CompanionPercept | null {
   try {
     const parsed = JSON.parse(line) as Partial<CompanionPercept>;
@@ -94,16 +169,26 @@ function parsePercept(line: string): CompanionPercept | null {
     ) {
       return null;
     }
+    const rawPayload = typeof parsed.payload === 'object' && parsed.payload !== null
+      ? parsed.payload as Record<string, unknown>
+      : {};
+    let summary = parsed.summary;
+    let payload = rawPayload;
+    if (isEncryptedPayload(rawPayload)) {
+      const key = getEncryptionKey();
+      const decrypted = key ? decryptPerceptFields(rawPayload, key) : null;
+      summary = decrypted?.summary || '[encrypted companion percept: key unavailable]';
+      payload = decrypted?.payload || { encrypted: true, keyRequired: 'CODEBUDDY_COMPANION_ENCRYPTION_KEY' };
+    }
+
     return {
       id: parsed.id,
       modality: parsed.modality as CompanionPerceptModality,
       source: parsed.source,
       timestamp: parsed.timestamp,
       confidence: typeof parsed.confidence === 'number' ? parsed.confidence : 1,
-      summary: parsed.summary,
-      payload: typeof parsed.payload === 'object' && parsed.payload !== null
-        ? parsed.payload as Record<string, unknown>
-        : {},
+      summary,
+      payload,
       tags: Array.isArray(parsed.tags) ? parsed.tags.filter((tag): tag is string => typeof tag === 'string') : [],
     };
   } catch {
@@ -127,9 +212,16 @@ export async function recordCompanionPercept<TPayload extends Record<string, unk
     payload: input.payload || {} as TPayload,
     tags: normalizeTags(input.tags),
   };
+  const encryptionKey = getEncryptionKey();
+  const storedPercept = encryptionKey
+    ? {
+        ...percept,
+        ...encryptPerceptFields(percept.summary, percept.payload, encryptionKey),
+      }
+    : percept;
 
   await mkdir(path.dirname(storePath), { recursive: true });
-  await appendFile(storePath, `${JSON.stringify(percept)}\n`, 'utf8');
+  await appendFile(storePath, `${JSON.stringify(storedPercept)}\n`, 'utf8');
   return percept;
 }
 
