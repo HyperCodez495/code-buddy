@@ -47,18 +47,20 @@ test('voice IPC bridge is exposed to the renderer (Phase 8)', async ({ appPage }
   const exposed = await appPage.evaluate(() => {
     const api = (
       window as unknown as {
-        electronAPI?: { voice?: { transcribe?: unknown; status?: unknown } };
+        electronAPI?: { voice?: { transcribe?: unknown; status?: unknown; diagnostics?: unknown } };
       }
     ).electronAPI;
     return {
       hasVoice: typeof api?.voice === 'object',
       hasTranscribe: typeof api?.voice?.transcribe === 'function',
       hasStatus: typeof api?.voice?.status === 'function',
+      hasDiagnostics: typeof api?.voice?.diagnostics === 'function',
     };
   });
   expect(exposed.hasVoice).toBe(true);
   expect(exposed.hasTranscribe).toBe(true);
   expect(exposed.hasStatus).toBe(true);
+  expect(exposed.hasDiagnostics).toBe(true);
 });
 
 test('IPC liveness — voice.status round-trips successfully (mainWindow regression)', async ({
@@ -92,6 +94,34 @@ test('IPC liveness — voice.status round-trips successfully (mainWindow regress
   }
   // Sanity: the electron app is alive throughout the round-trip.
   expect(electronApp.windows().length).toBeGreaterThan(0);
+});
+
+test('IPC liveness — voice.diagnostics round-trips successfully', async ({ appPage }) => {
+  await appPage.waitForFunction(() => Boolean((window as { electronAPI?: unknown }).electronAPI), {
+    timeout: 10000,
+  });
+  const result = await appPage.evaluate(async () => {
+    const api = (
+      window as unknown as {
+        electronAPI?: { voice?: { diagnostics?: () => Promise<unknown> } };
+      }
+    ).electronAPI;
+    if (!api?.voice?.diagnostics) return { ok: false, reason: 'voice.diagnostics missing' };
+    try {
+      const r = await api.voice.diagnostics();
+      return { ok: true, response: r };
+    } catch (err) {
+      return { ok: false, reason: err instanceof Error ? err.message : String(err) };
+    }
+  });
+  expect(result.ok).toBe(true);
+  if (result.ok && 'response' in result) {
+    const resp = result.response as Record<string, unknown>;
+    expect(resp).toHaveProperty('ok', true);
+    expect(resp).toHaveProperty('stt');
+    expect(resp).toHaveProperty('tts');
+    expect(resp).toHaveProperty('kyutai');
+  }
 });
 
 test('Phase 3 — runner badge renders in titlebar with runner status', async ({ appPage }) => {

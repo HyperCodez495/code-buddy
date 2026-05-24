@@ -772,6 +772,45 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('voice.transcribe', { audio, language: options?.language }),
     status: (): Promise<{ available: boolean; bootError: string | null }> =>
       ipcRenderer.invoke('voice.status'),
+    diagnostics: (): Promise<{
+      ok: boolean;
+      checkedAt: string;
+      stt: {
+        provider: string;
+        available: boolean;
+        fallbackProvider: string;
+        fallbackAvailable: boolean;
+        bootError: string | null;
+      };
+      tts: {
+        provider: string;
+        available: boolean;
+        fallbackProvider: string;
+        fallbackAvailable: boolean;
+        bootError: string | null;
+      };
+      kyutai: {
+        sttEnabled: boolean;
+        ttsEnabled: boolean;
+        baseUrl: string;
+        apiKeyConfigured: boolean;
+        ffmpegBinary: string;
+        ffmpegFound: boolean;
+        ttsVoice: string;
+        sttProbe?: {
+          ok: boolean;
+          endpoint: string;
+          durationMs: number;
+          error?: string;
+        };
+        ttsProbe?: {
+          ok: boolean;
+          endpoint: string;
+          durationMs: number;
+          error?: string;
+        };
+      } | null;
+    }> => ipcRenderer.invoke('voice.diagnostics'),
     /**
      * Synthesise `text` to French speech via Piper. Returns a WAV
      * ArrayBuffer the renderer can wrap in a Blob and play through an
@@ -3074,6 +3113,45 @@ declare global {
           options?: { language?: string }
         ) => Promise<{ ok: boolean; text?: string; durationMs?: number; error?: string }>;
         status: () => Promise<{ available: boolean; bootError: string | null }>;
+        diagnostics: () => Promise<{
+          ok: boolean;
+          checkedAt: string;
+          stt: {
+            provider: string;
+            available: boolean;
+            fallbackProvider: string;
+            fallbackAvailable: boolean;
+            bootError: string | null;
+          };
+          tts: {
+            provider: string;
+            available: boolean;
+            fallbackProvider: string;
+            fallbackAvailable: boolean;
+            bootError: string | null;
+          };
+          kyutai: {
+            sttEnabled: boolean;
+            ttsEnabled: boolean;
+            baseUrl: string;
+            apiKeyConfigured: boolean;
+            ffmpegBinary: string;
+            ffmpegFound: boolean;
+            ttsVoice: string;
+            sttProbe?: {
+              ok: boolean;
+              endpoint: string;
+              durationMs: number;
+              error?: string;
+            };
+            ttsProbe?: {
+              ok: boolean;
+              endpoint: string;
+              durationMs: number;
+              error?: string;
+            };
+          } | null;
+        }>;
         speak: (
           text: string,
           options?: { lengthScale?: number },

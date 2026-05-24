@@ -22,15 +22,18 @@
 
 <br/>
 
-**A multi-AI terminal agent that writes code, runs commands, searches the web, talks to you, and manages your projects -- from your terminal, your phone, or running 24/7 in the background.**
+**A multi-AI coding agent, desktop cockpit, and personal companion that writes code, runs commands, searches the web, talks to you, sees opt-in camera context, and manages your projects -- from the terminal, Cowork, your phone, or a 24/7 background server.**
 
 **Now with a [Multi-AI Fleet Hub](docs/fleet-guide.md)** — multiple Code Buddy peers can observe each other's events live and invoke each other's LLMs via `/fleet send peer.chat`. Pilot local Ollama LLMs from any peer in your Tailscale network for free coding/reasoning. *(Phase (d).1 → (d).16a, May 2026.)*
+
+**Cowork + Buddy companion cockpit** — `buddy gui` / `buddy desktop` opens the Electron workspace powered by the same Code Buddy core engine. Buddy has a companion panel for ChatGPT-backed identity, voice, camera snapshots, MediaPipe face/hand/pose perception, self-evaluation, competitive radar, missions, routines, safety, and proactive check-ins.
 
 **Auto-memory writeback** — the agent persists what it learns (preferences, decisions, gotchas) to `.codebuddy/CODEBUDDY_MEMORY.md` across sessions. View with `/memory recent`. `buddy --init` also generates an `AGENTS.md` at the project root for cross-CLI compatibility (read by Claude Code, Gemini CLI, Cursor, Codex). *(rc.2, May 2026.)*
 
 <br/>
 
 [Quick Start](#quick-start) |
+[Cowork + Companion](#cowork-desktop--buddy-companion) |
 [Features](#features) |
 [Documentation](#documentation) |
 [Contributing](#contributing)
@@ -41,7 +44,7 @@
 
 ## What is Code Buddy?
 
-Code Buddy is an open-source multi-provider AI coding agent that runs in your terminal. It supports **15 LLM providers** with automatic failover and per-provider circuit breakers. It works as both a **development tool** (reads files, writes code, runs commands, creates PRs, plans complex tasks) and a **personal assistant** (voice conversation, memory, screen monitoring, push notifications via 20+ messaging channels, 24/7 background operation).
+Code Buddy is an open-source multi-provider AI coding agent with a terminal UI, HTTP/WebSocket server, and Cowork desktop app. It supports **15 LLM providers** with automatic failover and per-provider circuit breakers. It works as both a **development tool** (reads files, writes code, runs commands, creates PRs, plans complex tasks) and a **personal companion** (bidirectional voice conversation, durable memory, opt-in camera perception, screen/presence context, push notifications via 20+ messaging channels, and 24/7 background operation). With `buddy login`, a ChatGPT Plus / Pro subscription can become the flat-fee brain of the system without API-key metering.
 
 ---
 
@@ -95,6 +98,61 @@ See [Getting Started](docs/getting-started.md) for installation options, headles
 
 ---
 
+## Cowork Desktop + Buddy Companion
+
+Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, settings, permissions, models, MCP connectors, skills, artifacts, and companion controls all run against the same core agent as the CLI. The Code Buddy settings panel can probe the local backend, start it when needed, discover models, and route Cowork turns through the embedded engine or a configured server endpoint.
+
+```bash
+# First-time identity and flat-fee brain route
+buddy login
+buddy companion setup
+
+# Local backend for Cowork, Fleet, and OpenAI-compatible clients
+buddy server --port 3000
+
+# Launch the desktop app from an installed build
+buddy gui
+# or
+buddy desktop
+
+# Source checkout dev loop
+npm install
+npm run build
+npm run dev:gui
+```
+
+Buddy companion commands are available in both the CLI and Cowork panel:
+
+```bash
+buddy companion status
+buddy companion self
+buddy companion evaluate
+buddy companion radar
+buddy companion impulses
+buddy companion missions sync
+buddy companion missions run-next
+buddy companion safety recent
+buddy companion camera status
+buddy companion camera snapshot
+buddy companion percepts recent
+```
+
+The camera bridge is explicit and local: snapshots are opt-in, percepts are append-only under `.codebuddy/companion/`, and Cowork uses MediaPipe Tasks Vision for face, hand, finger-tip, and pose signals. Face enrollment/presence recognition lives in Cowork's presence bridge and uses the local MediaPipe/Buffalo_S pipeline.
+
+For low-latency voice experiments, Cowork can route STT/TTS through a local Kyutai DSM / `moshi-server` endpoint while keeping faster-whisper and Piper as fallbacks:
+
+```bash
+$env:COWORK_VOICE_PROVIDER='kyutai'
+$env:COWORK_KYUTAI_URL='ws://127.0.0.1:8080'
+npm run dev:gui
+```
+
+Use Buddy companion's **Inspect voice** action to probe the active route, Kyutai STT/TTS websocket reachability, `ffmpeg` availability, and the Piper/faster-whisper fallback state from the Electron app.
+
+From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still supports Node.js `>=18`.
+
+---
+
 ## Features
 
 | Category | Highlights | Docs |
@@ -102,6 +160,9 @@ See [Getting Started](docs/getting-started.md) for installation options, headles
 | **AI Providers** | 15 providers (Grok, Claude, GPT, Gemini, Ollama, LM Studio, AWS Bedrock, Azure, Groq, Together, Fireworks, OpenRouter, vLLM, Copilot, Mistral), circuit breaker, model pairs | [providers.md](docs/providers.md) |
 | **Tools** | ~110 tools with RAG selection, multi-strategy edit matching, Codex-style apply_patch, streaming, BM25 tool search, code exec sandbox | [tools-reference.md](docs/tools-reference.md) |
 | **Commands** | 190+ slash commands, CLI subcommands (`/dev`, `/pr`, `/lint`, `/switch`, `/think`, `/batch`, `/watch`, `/conflicts`, `/vulns`, `/replace`) | [commands.md](docs/commands.md) |
+| **Cowork Desktop** | Electron cockpit, embedded Code Buddy engine, backend health/start controls, model settings, permission rules, visual workflows, traces, artifacts, MCP/skills/plugin management | [cowork/README.md](cowork/README.md), [cowork/ARCHITECTURE.md](cowork/ARCHITECTURE.md) |
+| **Buddy Companion** | ChatGPT-backed identity, voice/TTS, proactive check-ins, self-evaluation, competitive radar, mission board, learned routines, safety ledger, local percept journal | [commands.md](docs/commands.md) |
+| **Vision & Presence** | Opt-in webcam snapshots, MediaPipe face/hand/pose/finger-tip analysis, local face enrollment, presence state for the agent | [cowork/ARCHITECTURE.md](cowork/ARCHITECTURE.md) |
 | **Agents** | Multi-agent orchestration (5-tool API), 8 specialized agents, SWE agent, planning flow, A2A protocol, batch decomposition, agent teams | [agents.md](docs/agents.md) |
 | **Reasoning** | Tree-of-Thought + MCTS (4 depth levels), extended thinking, auto-escalation, `/think` command | [reasoning.md](docs/reasoning.md) |
 | **Security** | Guardian Agent (AI risk scoring), OS/Docker/OpenShell sandbox, SSRF guard, secrets vault, write policy, exec policy, loop detection, omission detection, output sanitizer | [security.md](docs/security.md) |
@@ -113,7 +174,9 @@ See [Getting Started](docs/getting-started.md) for installation options, headles
 
 ### Additional Capabilities
 
-- **Voice**: 7 TTS providers, wake word detection, voice-to-code pipeline, hands-free conversation
+- **Voice**: 7 TTS providers, wake word detection, voice-to-code pipeline, hands-free companion conversation
+- **Companion Loop**: readiness checks, self-state snapshots, self-evaluation, competitive radar, impulses, missions, routines, and safety review
+- **Vision**: local camera snapshots, MediaPipe face/hand/pose/finger-tip percepts, face enrollment, and presence state for context-aware collaboration
 - **Memory**: Persistent + semantic + prospective + decision + coding style memory, ICM cross-session memory
 - **Knowledge**: Knowledge base injection, 40 bundled skills, self-authoring skills at runtime
 - **Git Workflow**: Auto-commit (Aider-style), `/pr` creation, merge conflict resolver, ghost snapshots
@@ -131,7 +194,9 @@ See [Getting Started](docs/getting-started.md) for installation options, headles
 | [Getting Started](docs/getting-started.md) | Prerequisites, install, first run, headless mode, session management |
 | [Providers](docs/providers.md) | All 15 providers, connection profiles, model pairs, circuit breaker |
 | [Tools Reference](docs/tools-reference.md) | Tool categories, RAG selection, edit matching, apply_patch, streaming |
-| [Commands](docs/commands.md) | All slash commands, CLI subcommands, global flags |
+| [Commands](docs/commands.md) | All slash commands, CLI subcommands, companion commands, global flags |
+| [Cowork README](cowork/README.md) | Desktop installation, features, source build, sandbox modes |
+| [Cowork Architecture](cowork/ARCHITECTURE.md) | Electron contexts, bridges, embedded engine, persistence, runner model |
 | [Agents](docs/agents.md) | Multi-agent orchestration, roles, SWE agent, planning flow, A2A |
 | [Reasoning](docs/reasoning.md) | Extended thinking, Tree-of-Thought, MCTS, /think command |
 | [Security](docs/security.md) | Permission modes, Guardian Agent, sandboxing, SSRF, secrets vault |
@@ -141,6 +206,26 @@ See [Getting Started](docs/getting-started.md) for installation options, headles
 | [Fleet Guide](docs/fleet-guide.md) | **Multi-AI hub** — `/fleet listen` + `/fleet send peer.chat`, env-driven multi-provider auto-detect, Tailscale lab examples |
 | [Configuration](docs/configuration.md) | Environment variables, TOML config, project settings, model limits |
 | [Development](docs/development.md) | Build, test, architecture, coding conventions, adding tools |
+
+---
+
+## Validation Snapshot
+
+Latest local verification for the Cowork + Buddy companion loop (2026-05-24):
+
+```bash
+npm run typecheck
+cd cowork && npm run typecheck
+cd cowork && npm run build:e2e
+cd cowork && npx vitest run tests/kyutai-bridge.test.ts tests/voice-bridge.test.ts tests/tts-bridge.test.ts
+cd cowork && npx playwright test e2e/cowork-smoke.spec.ts --reporter=line --workers=1
+cd cowork && npx playwright test e2e/companion-panel.spec.ts --reporter=line --workers=1
+cd cowork && npx playwright test e2e/recent-features-smoke.spec.ts e2e/companion-panel.spec.ts --workers=1
+cd cowork && npx playwright test e2e/codebuddy-settings.spec.ts e2e/recent-features-smoke.spec.ts e2e/companion-panel.spec.ts e2e/companion-live.spec.ts --reporter=line --workers=1
+cd cowork && npx vitest run
+```
+
+Result: root and Cowork typechecks passed, Vite E2E build passed with existing chunk/dynamic-import warnings, Kyutai/voice bridge unit tests passed (`31` tests), focused companion panel Playwright passed (`1` test), recent-features IPC smoke passed (`9` tests), Cowork smoke passed (`29` tests), focused companion/settings/recent-feature Playwright suite passed (`11` passed, `1` live hardware test skipped unless `COWORK_LIVE_COMPANION=1`), and Cowork Vitest passed (`205` files, `1318` tests).
 
 ---
 

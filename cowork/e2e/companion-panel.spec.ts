@@ -450,6 +450,11 @@ test('drives the Buddy companion cockpit from no project to improvement loop', a
     appPage.getByText('Camera frame inspected by deterministic e2e backend.'),
   ).toBeVisible();
 
+  await appPage.getByRole('button', { name: 'Inspect voice' }).click();
+  await expect(appPage.getByRole('heading', { name: 'Voice diagnostics' })).toBeVisible();
+  await expect(appPage.getByText('STT route')).toBeVisible();
+  await expect(appPage.getByText('TTS route')).toBeVisible();
+
   await appPage.getByRole('button', { name: 'Buddy check-in' }).click();
   await expect(appPage.getByRole('heading', { name: 'Check-in' })).toBeVisible();
   await expect(appPage.getByText('Je suis pret a continuer avec toi.')).toBeVisible();

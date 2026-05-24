@@ -216,6 +216,79 @@ function voiceConversationValue(snapshot: VoiceConversationSnapshot | null): str
   return `${snapshot.phase} / turn ${snapshot.turnId}${interruptions}`;
 }
 
+interface RuntimeVoiceStatus {
+  available: boolean;
+  provider?: string;
+  fallbackProvider?: string;
+  bootError?: string | null;
+  kyutai?: {
+    sttEnabled?: boolean;
+    ttsEnabled?: boolean;
+    baseUrl?: string;
+  };
+}
+
+interface VoiceDiagnosticProbe {
+  ok: boolean;
+  endpoint: string;
+  durationMs: number;
+  error?: string;
+}
+
+interface VoiceDiagnostics {
+  ok: boolean;
+  checkedAt: string;
+  stt: {
+    provider: string;
+    available: boolean;
+    fallbackProvider: string;
+    fallbackAvailable: boolean;
+    bootError: string | null;
+  };
+  tts: {
+    provider: string;
+    available: boolean;
+    fallbackProvider: string;
+    fallbackAvailable: boolean;
+    bootError: string | null;
+  };
+  kyutai: {
+    sttEnabled: boolean;
+    ttsEnabled: boolean;
+    baseUrl: string;
+    ffmpegBinary: string;
+    ffmpegFound: boolean;
+    ttsVoice: string;
+    sttProbe?: VoiceDiagnosticProbe;
+    ttsProbe?: VoiceDiagnosticProbe;
+  } | null;
+}
+
+function runtimeVoiceValue(
+  companionProvider: string,
+  runtime: RuntimeVoiceStatus | null,
+  kyutaiKey: 'sttEnabled' | 'ttsEnabled',
+): string {
+  const kyutaiActive = Boolean(runtime?.kyutai?.[kyutaiKey]);
+  if (kyutaiActive && runtime?.kyutai?.baseUrl) {
+    const provider = runtime?.provider || 'kyutai';
+    return `${provider} / ${runtime.kyutai.baseUrl.replace(/^wss?:\/\//, '')}`;
+  }
+  return companionProvider;
+}
+
+function routeDiagnosticValue(route: VoiceDiagnostics['stt']): string {
+  const fallback = route.fallbackAvailable ? route.fallbackProvider : `${route.fallbackProvider} unavailable`;
+  return `${ready(route.available)} / ${route.provider} / ${fallback}`;
+}
+
+function probeDiagnosticValue(enabled: boolean, probe: VoiceDiagnosticProbe | undefined): string {
+  if (!enabled) return 'Disabled';
+  if (!probe) return 'Not checked';
+  if (probe.ok) return `Online / ${probe.durationMs}ms`;
+  return `Offline / ${probe.error ?? 'connection failed'}`;
+}
+
 function StatusTile({
   icon: Icon,
   label,
@@ -233,7 +306,7 @@ function StatusTile({
         <Icon className={`h-4 w-4 ${ok ? 'text-accent' : 'text-warning'}`} />
         <span className="text-[11px] font-semibold uppercase text-text-muted">{label}</span>
       </div>
-      <div className="mt-1 text-sm font-medium text-text-primary">{value}</div>
+      <div className="mt-1 break-words text-sm font-medium text-text-primary">{value}</div>
     </div>
   );
 }
@@ -568,12 +641,15 @@ export function CompanionPanel() {
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
   const [voiceConversation, setVoiceConversation] = useState<VoiceConversationSnapshot | null>(null);
+  const [voiceRuntime, setVoiceRuntime] = useState<RuntimeVoiceStatus | null>(null);
+  const [ttsRuntime, setTtsRuntime] = useState<RuntimeVoiceStatus | null>(null);
+  const [voiceDiagnostics, setVoiceDiagnostics] = useState<VoiceDiagnostics | null>(null);
   const [privacyReport, setPrivacyReport] = useState<CompanionPrivacyReport | null>(null);
   const [privacyExport, setPrivacyExport] = useState<CompanionPrivacyExportResult | null>(null);
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CameraSnapshotInspectionResult | null>(null);
@@ -617,6 +693,8 @@ export function CompanionPanel() {
       gatewayRes,
       skillsRes,
       voiceConversationRes,
+      voiceRuntimeRes,
+      ttsRuntimeRes,
       privacyRes,
     ] = await Promise.all([
       window.electronAPI.companion.status(),
@@ -630,6 +708,8 @@ export function CompanionPanel() {
       window.electronAPI.companion.gatewayProfile(),
       window.electronAPI.companion.listSkillCandidates(),
       window.electronAPI.voice.conversationStatus().catch(() => null),
+      window.electronAPI.voice.status().catch(() => null),
+      window.electronAPI.voice.ttsStatus().catch(() => null),
       window.electronAPI.companion.privacyReport(),
     ]);
 
@@ -646,6 +726,8 @@ export function CompanionPanel() {
       setGateway(null);
       setSkillCandidates([]);
       setVoiceConversation(voiceConversationRes);
+      setVoiceRuntime(voiceRuntimeRes);
+      setTtsRuntime(ttsRuntimeRes);
       setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
@@ -664,6 +746,8 @@ export function CompanionPanel() {
     setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
     setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
     setVoiceConversation(voiceConversationRes);
+    setVoiceRuntime(voiceRuntimeRes);
+    setTtsRuntime(ttsRuntimeRes);
     setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
     if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok || !privacyRes.ok) {
       setError(recentRes.error
@@ -788,6 +872,20 @@ export function CompanionPanel() {
     setLastInspection(res.result ?? null);
     if (res.result?.snapshot) setLastSnapshot(res.result.snapshot);
     await refresh();
+  };
+
+  const inspectVoice = async () => {
+    setBusyAction('voiceDiagnostics');
+    setError(null);
+    try {
+      const res = await window.electronAPI.voice.diagnostics();
+      setVoiceDiagnostics(res);
+      if (!res.ok) setError('Voice diagnostics failed');
+    } catch (err) {
+      setError(`Voice diagnostics failed: ${cameraErrorMessage(err)}`);
+    } finally {
+      setBusyAction(null);
+    }
   };
 
   const runEvaluation = async () => {
@@ -1065,14 +1163,14 @@ export function CompanionPanel() {
                 <StatusTile
                   icon={Mic}
                   label="Voice input"
-                  value={`${ready(status.voice.enabled && status.voice.available)} / ${status.voice.provider}`}
-                  ok={status.voice.enabled && status.voice.available}
+                  value={`${ready(status.voice.enabled && (voiceRuntime?.available ?? status.voice.available))} / ${runtimeVoiceValue(status.voice.provider, voiceRuntime, 'sttEnabled')}`}
+                  ok={status.voice.enabled && (voiceRuntime?.available ?? status.voice.available)}
                 />
                 <StatusTile
                   icon={Volume2}
                   label="Voice output"
-                  value={`${ready(status.tts.enabled && status.tts.available)} / ${status.tts.provider}`}
-                  ok={status.tts.enabled && status.tts.available}
+                  value={`${ready(status.tts.enabled && (ttsRuntime?.available ?? status.tts.available))} / ${runtimeVoiceValue(status.tts.provider, ttsRuntime, 'ttsEnabled')}`}
+                  ok={status.tts.enabled && (ttsRuntime?.available ?? status.tts.available)}
                 />
                 <StatusTile
                   icon={Activity}
@@ -1138,6 +1236,14 @@ export function CompanionPanel() {
             >
               <Eye className="h-4 w-4" />
               {busyAction === 'cameraInspect' ? 'Inspecting...' : 'Inspect camera'}
+            </button>
+            <button
+              disabled={busyAction !== null}
+              onClick={() => void inspectVoice()}
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <Radio className="h-4 w-4" />
+              {busyAction === 'voiceDiagnostics' ? 'Checking...' : 'Inspect voice'}
             </button>
             <button
               disabled={busyAction !== null}
@@ -1213,6 +1319,59 @@ export function CompanionPanel() {
               </button>
             )}
           </section>
+
+          {voiceDiagnostics && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Voice diagnostics</h3>
+                <span className="text-[10px] text-text-muted">
+                  {new Date(voiceDiagnostics.checkedAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <StatusTile
+                  icon={Mic}
+                  label="STT route"
+                  value={routeDiagnosticValue(voiceDiagnostics.stt)}
+                  ok={voiceDiagnostics.stt.available}
+                />
+                <StatusTile
+                  icon={Volume2}
+                  label="TTS route"
+                  value={routeDiagnosticValue(voiceDiagnostics.tts)}
+                  ok={voiceDiagnostics.tts.available}
+                />
+                {voiceDiagnostics.kyutai && (
+                  <>
+                    <StatusTile
+                      icon={Radio}
+                      label="Kyutai STT"
+                      value={probeDiagnosticValue(
+                        voiceDiagnostics.kyutai.sttEnabled,
+                        voiceDiagnostics.kyutai.sttProbe,
+                      )}
+                      ok={!voiceDiagnostics.kyutai.sttEnabled || voiceDiagnostics.kyutai.sttProbe?.ok === true}
+                    />
+                    <StatusTile
+                      icon={Radio}
+                      label="Kyutai TTS"
+                      value={probeDiagnosticValue(
+                        voiceDiagnostics.kyutai.ttsEnabled,
+                        voiceDiagnostics.kyutai.ttsProbe,
+                      )}
+                      ok={!voiceDiagnostics.kyutai.ttsEnabled || voiceDiagnostics.kyutai.ttsProbe?.ok === true}
+                    />
+                    <StatusTile
+                      icon={Activity}
+                      label="Audio tooling"
+                      value={`${voiceDiagnostics.kyutai.ffmpegFound ? 'ffmpeg ready' : 'ffmpeg missing'} / ${voiceDiagnostics.kyutai.baseUrl.replace(/^wss?:\/\//, '')}`}
+                      ok={voiceDiagnostics.kyutai.ffmpegFound}
+                    />
+                  </>
+                )}
+              </div>
+            </section>
+          )}
 
           {checkIn && (
             <section className="space-y-3">

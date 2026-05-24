@@ -78,6 +78,7 @@ import { WorkflowBridge } from './workflows/workflow-bridge';
 import { VoiceConversationSession, type VoiceConversationEvent } from './voice/conversation-session';
 import { VoiceBridge } from './voice/voice-bridge';
 import { TTSBridge } from './voice/tts-bridge';
+import { KyutaiBridge } from './voice/kyutai-bridge';
 import { ClipboardWatcher } from './clipboard/clipboard-watcher';
 import { SessionExportService } from './session/session-export-service';
 import { SessionInsightsBridge } from './session/session-insights-bridge';
@@ -223,6 +224,7 @@ let workflowBridge: WorkflowBridge | null = null;
 let voiceConversation: VoiceConversationSession | null = null;
 let voiceBridge: VoiceBridge | null = null;
 let ttsBridge: TTSBridge | null = null;
+let kyutaiBridge: KyutaiBridge | null = null;
 let clipboardWatcher: ClipboardWatcher | null = null;
 let sessionExportService: SessionExportService | null = null;
 let sessionInsightsBridge: SessionInsightsBridge | null = null;
@@ -1521,6 +1523,10 @@ app
     // unaffected if the user never clicks the mic.
     voiceConversation = new VoiceConversationSession();
     voiceBridge = new VoiceBridge();
+    // Optional Kyutai DSM streaming voice path. It is inert unless
+    // COWORK_STT_PROVIDER / COWORK_TTS_PROVIDER / COWORK_VOICE_PROVIDER
+    // is set to "kyutai" (or "dsm"/"moshi").
+    kyutaiBridge = new KyutaiBridge();
     // TTS bridge — Piper + fr_FR voice. Boots fast (no model load
     // until first synthesize), so always-on is fine. Override paths
     // via COWORK_PIPER_BIN / COWORK_PIPER_VOICE env vars.
@@ -3423,6 +3429,8 @@ ipcMain.handle(
     ok: boolean;
     text?: string;
     durationMs?: number;
+    provider?: string;
+    fallbackFrom?: string;
     error?: string;
   }> => {
     if (!voiceBridge) {
@@ -3433,9 +3441,29 @@ ipcMain.handle(
       const buf = Buffer.isBuffer(payload.audio)
         ? payload.audio
         : Buffer.from(payload.audio as ArrayBuffer);
-      const { text, durationMs } = await voiceBridge.transcribe(buf, {
-        language: payload.language,
-      });
+      let provider = 'faster-whisper';
+      let fallbackFrom: string | undefined;
+      let result: { text: string; durationMs: number };
+      if (kyutaiBridge?.isSttEnabled()) {
+        try {
+          const kyutai = await kyutaiBridge.transcribe(buf, {
+            language: payload.language,
+          });
+          provider = 'kyutai';
+          result = { text: kyutai.text, durationMs: kyutai.durationMs };
+        } catch (kyutaiErr) {
+          fallbackFrom = 'kyutai';
+          logWarn('[voice.transcribe] Kyutai failed; falling back to faster-whisper:', kyutaiErr);
+          result = await voiceBridge.transcribe(buf, {
+            language: payload.language,
+          });
+        }
+      } else {
+        result = await voiceBridge.transcribe(buf, {
+          language: payload.language,
+        });
+      }
+      const { text, durationMs } = result;
       recordVoiceConversationEventFromMain({
         type: 'transcription_completed',
         transcript: text,
@@ -3448,12 +3476,14 @@ ipcMain.handle(
         payload: {
           language: payload.language || 'auto',
           durationMs,
+          provider,
+          fallbackFrom,
           textPreview: text.slice(0, 500),
           textLength: text.length,
         },
-        tags: ['voice', 'stt', 'hearing', 'cowork'],
+        tags: ['voice', 'stt', 'hearing', 'cowork', provider],
       });
-      return { ok: true, text, durationMs };
+      return { ok: true, text, durationMs, provider, fallbackFrom };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       recordVoiceConversationEventFromMain({
@@ -3470,10 +3500,68 @@ ipcMain.handle('voice.status', async () => {
   if (!voiceBridge) {
     return { available: false, error: 'bridge not initialized' };
   }
+  const kyutai = kyutaiBridge?.status();
+  const kyutaiActive = Boolean(kyutaiBridge?.isSttEnabled());
   return {
-    available: voiceBridge.isReady() || voiceBridge.getBootError() === null,
+    available: kyutaiActive || voiceBridge.isReady() || voiceBridge.getBootError() === null,
     bootError: voiceBridge.getBootError(),
+    provider: kyutaiActive ? 'kyutai' : 'faster-whisper',
+    fallbackProvider: 'faster-whisper',
+    kyutai,
   };
+});
+
+ipcMain.handle('voice.diagnostics', async () => {
+  const kyutai = kyutaiBridge
+    ? await kyutaiBridge.diagnostics({ timeoutMs: 750 })
+    : null;
+  const sttProvider = kyutai?.sttEnabled ? 'kyutai' : 'faster-whisper';
+  const ttsProvider = kyutai?.ttsEnabled ? 'kyutai' : 'piper';
+  const result = {
+    ok: true,
+    checkedAt: new Date().toISOString(),
+    stt: {
+      provider: sttProvider,
+      available: Boolean(kyutai?.sttEnabled) || Boolean(voiceBridge?.isReady()) || voiceBridge?.getBootError() === null,
+      fallbackProvider: 'faster-whisper',
+      fallbackAvailable: Boolean(voiceBridge?.isReady()) || voiceBridge?.getBootError() === null,
+      bootError: voiceBridge?.getBootError() ?? null,
+    },
+    tts: {
+      provider: ttsProvider,
+      available: Boolean(kyutai?.ttsEnabled) || Boolean(ttsBridge?.isReady()),
+      fallbackProvider: 'piper',
+      fallbackAvailable: Boolean(ttsBridge?.isReady()),
+      bootError: ttsBridge?.getBootError() ?? null,
+    },
+    kyutai,
+  };
+
+  const kyutaiStt = kyutai?.sttProbe
+    ? `Kyutai STT ${kyutai.sttProbe.ok ? 'online' : 'offline'}`
+    : kyutai?.sttEnabled
+      ? 'Kyutai STT not probed'
+      : 'Kyutai STT disabled';
+  const kyutaiTts = kyutai?.ttsProbe
+    ? `Kyutai TTS ${kyutai.ttsProbe.ok ? 'online' : 'offline'}`
+    : kyutai?.ttsEnabled
+      ? 'Kyutai TTS not probed'
+      : 'Kyutai TTS disabled';
+  void recordCompanionPerceptFromMain({
+    modality: 'tool',
+    source: 'cowork_voice_diagnostics',
+    summary: `Voice diagnostics: STT ${result.stt.provider} ${result.stt.available ? 'ready' : 'not ready'}; TTS ${result.tts.provider} ${result.tts.available ? 'ready' : 'not ready'}; ${kyutaiStt}; ${kyutaiTts}.`,
+    confidence: result.stt.available && result.tts.available ? 0.85 : 0.55,
+    payload: {
+      checkedAt: result.checkedAt,
+      stt: result.stt,
+      tts: result.tts,
+      kyutai,
+    },
+    tags: ['voice', 'diagnostics', 'cowork', sttProvider, ttsProvider],
+  });
+
+  return result;
 });
 
 /**
@@ -3491,15 +3579,39 @@ ipcMain.handle(
     audio?: ArrayBuffer;
     sampleRate?: number;
     durationMs?: number;
+    provider?: string;
+    fallbackFrom?: string;
     error?: string;
   }> => {
-    if (!ttsBridge) {
+    const kyutaiActive = Boolean(kyutaiBridge?.isTtsEnabled());
+    if (!ttsBridge && !kyutaiActive) {
       return { ok: false, error: 'tts bridge not initialized' };
     }
-    if (!ttsBridge.isReady()) {
+    if (!kyutaiActive && ttsBridge && !ttsBridge.isReady()) {
       return { ok: false, error: ttsBridge.getBootError() ?? 'tts not ready' };
     }
     try {
+      if (kyutaiActive && kyutaiBridge) {
+        try {
+          const result = await kyutaiBridge.synthesize(payload.text);
+          return {
+            ok: true,
+            audio: result.audio,
+            sampleRate: result.sampleRate,
+            durationMs: result.synthesisDurationMs,
+            provider: 'kyutai',
+          };
+        } catch (kyutaiErr) {
+          logWarn('[voice.speak] Kyutai failed; falling back to Piper:', kyutaiErr);
+          if (!ttsBridge || !ttsBridge.isReady()) {
+            const fallbackError = ttsBridge?.getBootError() ?? 'piper fallback not ready';
+            throw new Error(`${kyutaiErr instanceof Error ? kyutaiErr.message : String(kyutaiErr)}; ${fallbackError}`);
+          }
+        }
+      }
+      if (!ttsBridge) {
+        return { ok: false, error: 'tts bridge not initialized' };
+      }
       const result = await ttsBridge.synthesize(payload.text, {
         lengthScale: payload.lengthScale,
       });
@@ -3508,6 +3620,8 @@ ipcMain.handle(
         audio: result.audio,
         sampleRate: result.sampleRate,
         durationMs: result.synthesisDurationMs,
+        provider: 'piper',
+        fallbackFrom: kyutaiActive ? 'kyutai' : undefined,
       };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
@@ -3518,12 +3632,17 @@ ipcMain.handle(
 );
 
 ipcMain.handle('voice.ttsStatus', async () => {
-  if (!ttsBridge) {
+  const kyutai = kyutaiBridge?.status();
+  const kyutaiActive = Boolean(kyutaiBridge?.isTtsEnabled());
+  if (!ttsBridge && !kyutaiActive) {
     return { available: false, bootError: 'bridge not initialized' };
   }
   return {
-    available: ttsBridge.isReady(),
-    bootError: ttsBridge.getBootError(),
+    available: kyutaiActive || Boolean(ttsBridge?.isReady()),
+    bootError: ttsBridge?.getBootError() ?? null,
+    provider: kyutaiActive ? 'kyutai' : 'piper',
+    fallbackProvider: 'piper',
+    kyutai,
   };
 });
 
