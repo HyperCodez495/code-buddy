@@ -8,8 +8,10 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs-extra';
-import { LessonsTracker } from '../../src/agent/lessons-tracker';
-import { logger } from '../../src/utils/logger';
+import { LessonsTracker } from '../../src/agent/lessons-tracker.js';
+import { logger } from '../../src/utils/logger.js';
+import { getLessonProvenanceIndex, LessonProvenanceIndex, resetLessonProvenanceIndex } from '../../src/agent/lesson-provenance.js';
+import { RunStore } from '../../src/observability/run-store.js';
 
 // Mock os.homedir so global ~/.codebuddy/lessons.md never contaminates tests.
 let _fakeHome = '/tmp/lessons-gaps-placeholder';
@@ -331,6 +333,124 @@ describe('LessonsTracker (gap coverage)', () => {
 
       expect(warnSpy).not.toHaveBeenCalled();
       warnSpy.mockRestore();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // buildContextBlock() — GAP-2 auto-record lesson usage + 5s cache idempotency
+  // --------------------------------------------------------------------------
+
+  describe('buildContextBlock() usage recording (GAP-2)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+      resetLessonProvenanceIndex();
+    });
+
+    it('records usage(lessonId, activeRunId) once per injected lesson', async () => {
+      vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => 'run-gap2',
+      } as unknown as RunStore);
+      const recordUsage = vi.spyOn(LessonProvenanceIndex.prototype, 'recordUsage').mockImplementation(() => {});
+
+      const tracker = createTracker();
+      tracker.add('RULE', 'Always run the touched test file', 'manual');
+
+      const block = tracker.buildContextBlock();
+      expect(block).toContain('<lessons_context>');
+
+      // recording happens off the hot path in a background microtask
+      await vi.waitFor(() => expect(recordUsage).toHaveBeenCalled());
+      expect(recordUsage).toHaveBeenCalledTimes(1);
+      expect(recordUsage).toHaveBeenCalledWith(expect.any(String), 'run-gap2');
+    });
+
+    it('does not re-record on a second injection within the 5s cache window', async () => {
+      vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => 'run-gap2',
+      } as unknown as RunStore);
+      const recordUsage = vi.spyOn(LessonProvenanceIndex.prototype, 'recordUsage').mockImplementation(() => {});
+
+      const tracker = createTracker();
+      tracker.add('RULE', 'Prefer the dedicated tool over a shell command', 'manual');
+
+      // First build fires the background record.
+      tracker.buildContextBlock();
+      await vi.waitFor(() => expect(recordUsage).toHaveBeenCalledTimes(1));
+
+      recordUsage.mockClear();
+
+      // Second build inside the 5s cache window returns the cached block and must
+      // NOT fire recordUsage again (this is what makes per-turn injection cheap).
+      const cached = tracker.buildContextBlock();
+      expect(cached).toContain('<lessons_context>');
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(recordUsage).not.toHaveBeenCalled();
+    });
+
+    it('records nothing when there is no active run', async () => {
+      vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => null,
+      } as unknown as RunStore);
+      const recordUsage = vi.spyOn(LessonProvenanceIndex.prototype, 'recordUsage').mockImplementation(() => {});
+
+      const tracker = createTracker();
+      tracker.add('RULE', 'No run, no usage record', 'manual');
+      tracker.buildContextBlock();
+
+      await new Promise((resolve) => setTimeout(resolve, 20));
+      expect(recordUsage).not.toHaveBeenCalled();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // getConceptDetails()
+  // --------------------------------------------------------------------------
+
+  describe('getConceptDetails()', () => {
+    it('should return null for non-existent concept', () => {
+      const tracker = createTracker();
+      expect(tracker.getConceptDetails('NonExistentConcept')).toBeNull();
+    });
+
+    it('should return concept info, lessons, backlinks, and provenance', () => {
+      const tracker = createTracker();
+
+      // Create .codebuddy directory inside tmpDir
+      const cbDir = path.join(tmpDir, '.codebuddy');
+      fs.mkdirpSync(cbDir);
+
+      // Add lessons that share concepts. Wiki links [[concept]] or tag #tag.
+      tracker.add('RULE', 'Use [[TypeScript]] for strict type safety.', 'manual', 'Project A');
+      tracker.add('PATTERN', 'Prefer functional components in [[React]] and [[TypeScript]].', 'self_observed', 'Project A');
+      tracker.save();
+
+      // Setup provenance
+      const prov = getLessonProvenanceIndex(tmpDir);
+      const items = tracker.list();
+      const ruleItem = items.find(i => i.content.includes('Use'));
+      const patternItem = items.find(i => i.content.includes('Prefer'));
+
+      expect(ruleItem).toBeDefined();
+      expect(patternItem).toBeDefined();
+
+      prov.recordCreated(ruleItem!.id, { runId: 'run-123', outcomeId: 'outcome-456' });
+      prov.recordUsage(ruleItem!.id, 'run-789');
+
+      // Now query details for concept "TypeScript"
+      const details = tracker.getConceptDetails('TypeScript');
+      expect(details).not.toBeNull();
+      expect(details!.concept.label.toLowerCase()).toBe('typescript');
+      expect(details!.lessons).toHaveLength(2);
+
+      const detailsRule = details!.lessons.find(l => l.id === ruleItem!.id);
+      expect(detailsRule).toBeDefined();
+      expect(detailsRule!.createdBy).toBeDefined();
+      expect(detailsRule!.createdBy!.runId).toBe('run-123');
+      expect(detailsRule!.usedBy).toHaveLength(1);
+      expect(detailsRule!.usedBy![0]!.runId).toBe('run-789');
+
+      // Check backlinks/related concepts
+      expect(details!.backlinks.map(b => b.toLowerCase())).toContain('project a');
     });
   });
 });

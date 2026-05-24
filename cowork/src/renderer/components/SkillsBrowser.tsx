@@ -39,6 +39,7 @@ export const SkillsBrowser: React.FC = () => {
   const [query, setQuery] = useState('');
   const [loading, setLoading] = useState(false);
   const [executing, setExecuting] = useState<string | null>(null);
+  const [disabledSkills, setDisabledSkills] = useState<Set<string>>(new Set());
   const [lastResult, setLastResult] = useState<{
     skillName: string;
     success: boolean;
@@ -53,8 +54,23 @@ export const SkillsBrowser: React.FC = () => {
         setSkills([]);
         return;
       }
-      const result = await api.skillMd.list();
+      
+      const [result, hubList] = await Promise.all([
+        api.skillMd.list(),
+        api.skillsHub?.list ? api.skillsHub.list() : Promise.resolve([]),
+      ]);
+      
       setSkills(result as SkillMdSummary[]);
+      
+      const disabledSet = new Set<string>();
+      if (hubList && Array.isArray(hubList)) {
+        for (const item of hubList) {
+          if (item.enabled === false) {
+            disabledSet.add(item.name);
+          }
+        }
+      }
+      setDisabledSkills(disabledSet);
     } catch (err) {
       console.error('[SkillsBrowser] Failed to load skills:', err);
       setSkills([]);
@@ -72,11 +88,30 @@ export const SkillsBrowser: React.FC = () => {
     const lower = query.trim().toLowerCase();
     return skills.filter(
       (s) =>
-        s.name.toLowerCase().includes(lower) ||
-        s.description.toLowerCase().includes(lower) ||
-        (s.tags ?? []).some((tag) => tag.toLowerCase().includes(lower))
+         s.name.toLowerCase().includes(lower) ||
+         s.description.toLowerCase().includes(lower) ||
+         (s.tags ?? []).some((tag) => tag.toLowerCase().includes(lower))
     );
   }, [skills, query]);
+
+  const handleToggle = useCallback(async (skill: SkillMdSummary, enabled: boolean) => {
+    const api = window.electronAPI;
+    if (!api?.skillsHub) return;
+    try {
+      await api.skillsHub.setEnabled(skill.name, enabled, undefined, skill.filePath);
+      setDisabledSkills((prev) => {
+        const next = new Set(prev);
+        if (enabled) {
+          next.delete(skill.name);
+        } else {
+          next.add(skill.name);
+        }
+        return next;
+      });
+    } catch (err) {
+      console.error('[SkillsBrowser] Failed to toggle skill:', err);
+    }
+  }, []);
 
   const handleExecute = useCallback(async (skill: SkillMdSummary) => {
     const api = window.electronAPI;
@@ -148,13 +183,18 @@ export const SkillsBrowser: React.FC = () => {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
             {filtered.map((skill) => {
               const isExecuting = executing === skill.name;
+              const isEnabled = !disabledSkills.has(skill.name);
               return (
                 <div
                   key={skill.name}
-                  className="p-3 rounded-lg bg-surface/40 border border-border-muted hover:bg-surface-hover transition-colors flex flex-col"
+                  className={`p-3 rounded-lg border transition-all flex flex-col ${
+                    isEnabled
+                      ? 'bg-surface/40 border-border-muted hover:bg-surface-hover'
+                      : 'bg-surface/10 border-border-muted/30 opacity-60'
+                  }`}
                 >
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="text-xs font-semibold text-text-primary truncate flex-1">
+                    <span className={`text-xs font-semibold truncate flex-1 ${isEnabled ? 'text-text-primary' : 'text-text-muted line-through'}`}>
                       {skill.name}
                     </span>
                     <span
@@ -165,6 +205,15 @@ export const SkillsBrowser: React.FC = () => {
                     >
                       {TIER_LABELS[skill.tier] ?? skill.tier}
                     </span>
+                    {typeof window.electronAPI?.skillsHub?.setEnabled === 'function' && (
+                      <input
+                        type="checkbox"
+                        checked={isEnabled}
+                        onChange={(e) => void handleToggle(skill, e.target.checked)}
+                        className="w-3.5 h-3.5 shrink-0 accent-accent cursor-pointer rounded border-border"
+                        title={isEnabled ? t('skillsBrowser.disable', 'Disable skill') : t('skillsBrowser.enable', 'Enable skill')}
+                      />
+                    )}
                   </div>
                   <p className="text-[11px] text-text-secondary line-clamp-2 mb-2 flex-1">
                     {skill.description}

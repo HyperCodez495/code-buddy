@@ -36,6 +36,7 @@ function makeService(
                   session_id: 'session-1',
                   content: messageContent,
                   timestamp: 2,
+                  snippet: 'stale token',
                 },
               ];
             }

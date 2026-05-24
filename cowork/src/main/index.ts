@@ -37,6 +37,7 @@ import { registerLessonCandidateIpcHandlers } from './ipc/lessons-candidate-ipc'
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
 import { registerSpecNextIpcHandlers } from './ipc/spec-next-ipc';
+import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -94,6 +95,7 @@ import { TaskDispatch, type DispatchRequest } from './remote/task-dispatch';
 import { SkillsManager } from './skills/skills-manager';
 import { PluginCatalogService } from './skills/plugin-catalog-service';
 import { PluginRuntimeService } from './skills/plugin-runtime-service';
+import { loadCoreModule } from './utils/core-loader';
 import {
   configStore,
   getPiAiModelPresets,
@@ -2238,6 +2240,7 @@ registerCommandIpcHandlers(slashCommandBridge);
 
 // ── SKILL.md bridge IPC handlers (Claude Cowork parity Phase 2) ─────
 registerSkillMdIpcHandlers(skillMdBridge);
+registerSkillsHubIpcHandlers(() => projectManager);
 
 // ── Knowledge IPC handlers (Claude Cowork parity) ────────────────────
 registerKnowledgeIpcHandlers(knowledgeService, projectManager);
@@ -2353,6 +2356,46 @@ ipcMain.handle('memory.delete', async (_event, entryIndex: number, projectId?: s
   const id = projectId ?? projectManager.getActiveId();
   if (!id) return { success: false, error: 'No active project' };
   return projectMemoryServiceRef.deleteMemoryEntry(id, entryIndex);
+});
+
+// ── Pluggable memory provider selector (GAP-10) ─────────────────────────
+ipcMain.handle('memoryProvider.list', async () => {
+  try {
+    const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => any }>('memory/memory-provider.js');
+    if (!mod) throw new Error('Failed to load memory provider module');
+    return mod.getMemoryProviderRegistry().list();
+  } catch (err) {
+    logWarn('[memoryProvider.list] failed:', err);
+    return ['local', 'mem0', 'honcho', 'supermemory'];
+  }
+});
+
+ipcMain.handle('memoryProvider.getActive', async () => {
+  try {
+    return configStore.get('memoryProvider') || 'local';
+  } catch (err) {
+    logWarn('[memoryProvider.getActive] failed:', err);
+    return 'local';
+  }
+});
+
+ipcMain.handle('memoryProvider.setActive', async (_event, providerId: string) => {
+  try {
+    configStore.update({ memoryProvider: providerId });
+    configStore.applyToEnv();
+    try {
+      const mod = await loadCoreModule<{ getMemoryProviderRegistry: () => any }>('memory/memory-provider.js');
+      if (mod) {
+        mod.getMemoryProviderRegistry().setActive(providerId);
+      }
+    } catch {
+      // Ignored
+    }
+    return { success: true };
+  } catch (err) {
+    logWarn('[memoryProvider.setActive] failed:', err);
+    return { success: false, error: String(err) };
+  }
 });
 
 // ── Lessons capture (operator-approved procedural memory) ─────────────
@@ -3637,6 +3680,28 @@ ipcMain.handle('tools.lessonsVault.preview', async (_event, payload?: {
     });
   } catch (err) {
     logWarn('[tools.lessonsVault.preview] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('tools.lessonsVault.getConceptDetails', async (_event, payload?: {
+  conceptName: string;
+  cwd?: string;
+}) => {
+  try {
+    if (!payload?.conceptName) return null;
+    const payloadCwd = typeof payload?.cwd === 'string' && isAbsolute(payload.cwd)
+      ? payload.cwd
+      : null;
+    const rootDir = payloadCwd ?? getWorkingDir() ?? process.cwd();
+    const { loadCoreModule } = await import('./utils/core-loader');
+    const mod = await loadCoreModule<{ getLessonsTracker: (workDir: string) => any }>('agent/lessons-tracker.js');
+    if (!mod?.getLessonsTracker) return null;
+    const tracker = mod.getLessonsTracker(rootDir);
+    if (!tracker?.getConceptDetails) return null;
+    return tracker.getConceptDetails(payload.conceptName);
+  } catch (err) {
+    logWarn('[tools.lessonsVault.getConceptDetails] failed:', err);
     return null;
   }
 });

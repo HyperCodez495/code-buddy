@@ -27,6 +27,7 @@ import {
   type LegacySkill,
 } from './adapters/index.js';
 import { scanFile as scanSkillFile } from '../security/skill-scanner.js';
+import { getSkillsHub } from './hub.js';
 
 // ============================================================================
 // Skill Registry Class
@@ -203,6 +204,18 @@ export class SkillRegistry extends EventEmitter {
   list(options?: { tier?: SkillTier; tags?: string[]; enabled?: boolean }): Skill[] {
     let skills = Array.from(this.skills.values());
 
+    let disabledSkills = new Set<string>();
+    try {
+      disabledSkills = new Set(
+        getSkillsHub()
+          .list()
+          .filter((s) => s.enabled === false)
+          .map((s) => s.name)
+      );
+    } catch {
+      // Ignored
+    }
+
     if (options?.tier) {
       skills = skills.filter(s => s.tier === options.tier);
     }
@@ -214,7 +227,12 @@ export class SkillRegistry extends EventEmitter {
     }
 
     if (options?.enabled !== undefined) {
-      skills = skills.filter(s => s.enabled === options.enabled);
+      skills = skills.filter(s => {
+        const isHubEnabled = !disabledSkills.has(s.metadata.name);
+        const isSkillEnabled = s.enabled !== false;
+        const finalEnabled = isHubEnabled && isSkillEnabled;
+        return finalEnabled === options.enabled;
+      });
     }
 
     return skills;
@@ -254,7 +272,23 @@ export class SkillRegistry extends EventEmitter {
     const query = options.query.toLowerCase();
     const queryWords = query.split(/\s+/);
 
+    let disabledSkills = new Set<string>();
+    try {
+      disabledSkills = new Set(
+        getSkillsHub()
+          .list()
+          .filter((s) => s.enabled === false)
+          .map((s) => s.name)
+      );
+    } catch {
+      // Ignored
+    }
+
     for (const skill of this.skills.values()) {
+      if (disabledSkills.has(skill.metadata.name) && !options.includeDisabled) {
+        continue;
+      }
+
       if (!skill.enabled && !options.includeDisabled) {
         continue;
       }

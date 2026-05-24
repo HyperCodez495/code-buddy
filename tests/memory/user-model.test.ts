@@ -14,12 +14,14 @@
 import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs-extra';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   LocalUserModel,
   getUserModel,
   resetUserModels,
   screenUserModelContent,
   UserModelPrivacyError,
+  runUserDialecticInference,
 } from '../../src/memory/user-model.js';
 
 describe('LocalUserModel', () => {
@@ -196,6 +198,46 @@ describe('LocalUserModel', () => {
   describe('singleton accessor', () => {
     it('returns the same instance for the same workDir', () => {
       expect(getUserModel(tmpDir)).toBe(getUserModel(tmpDir));
+    });
+  });
+
+  describe('runUserDialecticInference', () => {
+    it('analyzes chat history and proposes observations', async () => {
+      const mockClient = {
+        chat: vi.fn().mockResolvedValue({
+          choices: [
+            {
+              message: {
+                content: JSON.stringify([
+                  { kind: 'preference', content: 'Prefers TypeScript over Javascript.', confidence: 0.9 },
+                  { kind: 'working-style', content: 'Likes running tests after code changes.', confidence: 0.8 },
+                  { kind: 'trait', content: 'Very descriptive commit messages.', confidence: 0.7 },
+                  { kind: 'expertise', content: 'Knows Docker and Kubernetes.', confidence: 0.65 },
+                  // Should be screened out by privacy screen
+                  { kind: 'trait', content: 'Discloses credit card details', confidence: 0.99 }
+                ])
+              }
+            }
+          ]
+        })
+      } as unknown as any;
+
+      const chatHistory = [
+        { type: 'user', content: 'I want to write a TypeScript service', timestamp: new Date() },
+        { type: 'assistant', content: 'Sure, I can help you write a TypeScript service', timestamp: new Date() }
+      ];
+
+      const proposed = await runUserDialecticInference(chatHistory as any, tmpDir, mockClient);
+
+      expect(proposed).toHaveLength(4);
+      expect(proposed[0]!.content).toBe('Prefers TypeScript over Javascript.');
+      expect(proposed[0]!.kind).toBe('preference');
+      expect(proposed[0]!.status).toBe('pending');
+
+      const model = new LocalUserModel(tmpDir);
+      const pending = model.list('pending');
+      expect(pending).toHaveLength(4);
+      expect(pending.map(p => p.content)).not.toContain('Discloses credit card details');
     });
   });
 });

@@ -129,3 +129,7 @@ export {
   renderInternetScoutRunResult,
   runInternetScout,
 } from './internet-scout-runner.js';
+
+export {
+  BrowserOperatorExecutor,
+} from './browser-operator-executor.js';

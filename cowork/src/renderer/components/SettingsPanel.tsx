@@ -53,6 +53,7 @@ import { SettingsCustomize } from './settings/SettingsCustomize';
 import { SettingsProjects } from './settings/SettingsProjects';
 import { SettingsPlugins } from './settings/SettingsPlugins';
 import { SettingsTelemetry } from './settings/SettingsTelemetry';
+import { SkillsBrowser } from './SkillsBrowser';
 
 interface SettingsPanelProps {
   onClose: () => void;
@@ -61,6 +62,7 @@ interface SettingsPanelProps {
     | 'sandbox'
     | 'connectors'
     | 'skills'
+    | 'skillsBrowser'
     | 'customize'
     | 'projects'
     | 'schedule'
@@ -87,6 +89,7 @@ type TabId =
   | 'sandbox'
   | 'connectors'
   | 'skills'
+  | 'skillsBrowser'
   | 'customize'
   | 'projects'
   | 'schedule'
@@ -113,6 +116,7 @@ const VALID_TABS = new Set<TabId>([
   'sandbox',
   'connectors',
   'skills',
+  'skillsBrowser',
   'customize',
   'projects',
   'schedule',
@@ -208,6 +212,12 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       label: t('settings.skills'),
       icon: Package,
       description: t('settings.skillsDesc'),
+    },
+    {
+      id: 'skillsBrowser' as TabId,
+      label: t('skillsBrowser.title', 'Skills Browser'),
+      icon: Sparkles,
+      description: t('skillsBrowser.desc', 'Browse and toggle natural language SKILL.md packages'),
     },
     {
       id: 'customize' as TabId,
@@ -475,6 +485,9 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
               </div>
               <div className={activeTab === 'skills' ? '' : 'hidden'}>
                 {viewedTabs.has('skills') && <SettingsSkills isActive={activeTab === 'skills'} />}
+              </div>
+              <div className={activeTab === 'skillsBrowser' ? '' : 'hidden'}>
+                {viewedTabs.has('skillsBrowser') && <SkillsBrowser />}
               </div>
               <div className={activeTab === 'customize' ? '' : 'hidden'}>
                 {viewedTabs.has('customize') && (

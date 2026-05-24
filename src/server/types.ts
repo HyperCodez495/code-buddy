@@ -34,6 +34,15 @@ export interface ServerConfig {
   jwtExpiration: string;
   /** Enable WebSocket */
   websocketEnabled: boolean;
+  /**
+   * Start configured inbound channels (Telegram/Discord/Slack/…) at server boot
+   * and wire the AI receiver loop, so inbound two-way messaging works without a
+   * separately-started `buddy channels` process (GAP-7). Opt-in (default false)
+   * to avoid surprise outbound connections; enable with
+   * `CODEBUDDY_SERVER_CHANNEL_INTAKE=true`. Per-channel enablement still comes
+   * from each channel's `enabled` flag in `channels.json`.
+   */
+  channelIntakeEnabled?: boolean;
   /** Max concurrent connections */
   maxConnections?: number;
   /** Request body size limit */

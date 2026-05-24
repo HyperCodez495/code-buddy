@@ -204,6 +204,7 @@ interface ArtifactIndexRow {
   artifact: string;
   content: string;
   rank: number;
+  snippet?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────
@@ -232,10 +233,14 @@ export class RunStore {
   /** If SQLite/FTS is unavailable, keep run search on the file-scan fallback. */
   private artifactIndexUnavailable = false;
 
-  constructor(runsDir?: string) {
+   constructor(runsDir?: string) {
     this.runsDir = runsDir || path.join(os.homedir(), '.codebuddy', 'runs');
     this.ensureDir(this.runsDir);
     this.loadSummaries();
+  }
+
+  getRunsDir(): string {
+    return this.runsDir;
   }
 
   static getInstance(): RunStore {
@@ -1003,6 +1008,27 @@ export class RunStore {
     try {
       const db = new Database(path.join(this.runsDir, ARTIFACT_INDEX_DB));
       db.pragma('journal_mode = WAL');
+
+      // Check if table exists and does NOT have tokenize='trigram'
+      let needsRebuild = false;
+      try {
+        const tableInfo = db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='artifact_index_fts'").get() as { sql: string } | undefined;
+        if (tableInfo && !tableInfo.sql.includes("tokenize='trigram'") && !tableInfo.sql.includes('tokenize="trigram"')) {
+          needsRebuild = true;
+        }
+      } catch {
+        // Table doesn't exist or tableInfo query failed
+      }
+
+      if (needsRebuild) {
+        db.exec(`
+          DROP TRIGGER IF EXISTS artifact_index_ai;
+          DROP TRIGGER IF EXISTS artifact_index_ad;
+          DROP TRIGGER IF EXISTS artifact_index_au;
+          DROP TABLE IF EXISTS artifact_index_fts;
+        `);
+      }
+
       db.exec(`
         CREATE TABLE IF NOT EXISTS artifact_index (
           run_id TEXT NOT NULL,
@@ -1016,7 +1042,8 @@ export class RunStore {
           artifact UNINDEXED,
           content,
           content='artifact_index',
-          content_rowid='rowid'
+          content_rowid='rowid',
+          tokenize='trigram'
         );
         CREATE TRIGGER IF NOT EXISTS artifact_index_ai AFTER INSERT ON artifact_index BEGIN
           INSERT INTO artifact_index_fts(rowid, run_id, artifact, content)
@@ -1033,6 +1060,11 @@ export class RunStore {
           VALUES (new.rowid, new.run_id, new.artifact, new.content);
         END;
       `);
+
+      if (needsRebuild) {
+        db.exec("INSERT INTO artifact_index_fts(artifact_index_fts) VALUES('rebuild');");
+      }
+
       this.artifactIndexDb = db;
       return db;
     } catch (err) {
@@ -1082,6 +1114,7 @@ export class RunStore {
           run_id AS runId,
           artifact,
           content,
+          snippet(artifact_index_fts, 2, '<mark>', '</mark>', '...', 25) AS snippet,
           bm25(artifact_index_fts) AS rank
         FROM artifact_index_fts
         WHERE artifact_index_fts MATCH ?
@@ -1104,7 +1137,7 @@ export class RunStore {
           matched: 'artifact',
           artifact: row.artifact,
           score: (score > 0 ? score : 1) + 35,
-          snippet: buildSearchSnippet(row.content, terms),
+          snippet: row.snippet || buildSearchSnippet(row.content, terms),
           source: inferRunSearchSource(summary, sources),
         });
       }
@@ -1320,17 +1353,28 @@ function scoreSearchText(text: string, terms: string[]): number {
 function buildSearchSnippet(text: string, terms: string[], maxLength = 180): string {
   const compact = text.replace(/\s+/g, ' ').trim();
   if (compact.length <= maxLength) {
-    return compact;
+    return highlightTerms(compact, terms);
   }
 
   const lower = compact.toLowerCase();
   const indexes = terms
-    .map((term) => lower.indexOf(term))
+    .map((term) => lower.indexOf(term.toLowerCase()))
     .filter((index) => index >= 0);
   const first = indexes.length > 0 ? Math.min(...indexes) : 0;
   const start = Math.max(0, first - 50);
   const end = Math.min(compact.length, start + maxLength);
-  return `${start > 0 ? '...' : ''}${compact.slice(start, end)}${end < compact.length ? '...' : ''}`;
+  const snippet = compact.slice(start, end);
+  const prefix = start > 0 ? '...' : '';
+  const suffix = end < compact.length ? '...' : '';
+  return prefix + highlightTerms(snippet, terms) + suffix;
+}
+
+function highlightTerms(text: string, terms: string[]): string {
+  if (terms.length === 0 || !text) return text;
+  const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
+  const escapedTerms = sortedTerms.map(t => t.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  return text.replace(regex, '<mark>$1</mark>');
 }
 
 function safeStringify(value: unknown): string {

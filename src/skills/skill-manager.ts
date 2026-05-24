@@ -4,6 +4,7 @@ import { EventEmitter } from "events";
 import type { UnifiedSkill } from './types.js';
 import { legacyToUnified } from './adapters/index.js';
 import { logger } from '../utils/logger.js';
+import { getSkillsHub } from './hub.js';
 
 export interface Skill {
   name: string;
@@ -343,8 +344,21 @@ export class SkillManager extends EventEmitter {
     const inputLower = input.toLowerCase();
     const matches: SkillMatch[] = [];
 
+    let disabledSkills = new Set<string>();
+    try {
+      disabledSkills = new Set(
+        getSkillsHub()
+          .list()
+          .filter((s) => s.enabled === false)
+          .map((s) => s.name)
+      );
+    } catch {
+      // Ignored
+    }
+
     for (const skill of this.skills.values()) {
       if (!skill.autoActivate) continue;
+      if (disabledSkills.has(skill.name)) continue;
 
       const matchedTriggers: string[] = [];
       let score = 0;
@@ -421,11 +435,24 @@ export class SkillManager extends EventEmitter {
     return this.activeSkill;
   }
 
-  /**
-   * Get system prompt enhancement from active skill
-   */
   getSkillPromptEnhancement(): string {
     if (!this.activeSkill) {
+      return "";
+    }
+
+    let disabledSkills = new Set<string>();
+    try {
+      disabledSkills = new Set(
+        getSkillsHub()
+          .list()
+          .filter((s) => s.enabled === false)
+          .map((s) => s.name)
+      );
+    } catch {
+      // Ignored
+    }
+
+    if (disabledSkills.has(this.activeSkill.name)) {
       return "";
     }
 

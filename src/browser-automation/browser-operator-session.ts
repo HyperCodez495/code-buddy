@@ -33,6 +33,7 @@ export interface BrowserOperatorActionLogEntry {
   requiresConsent: boolean;
   expectedArtifact: string;
   reason: string;
+  inputs?: Record<string, any>;
 }
 
 export interface BrowserOperatorSessionDraft {
@@ -168,6 +169,7 @@ function buildActionLogEntry(
     requiresConsent: stepRequiresConsent(step, consentRequired, mode),
     expectedArtifact: expectedArtifactForStep(step),
     reason: step.reason,
+    inputs: step.inputs,
   };
 }
 

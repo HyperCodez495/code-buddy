@@ -35,6 +35,25 @@ export function SettingsGeneral() {
     { value: 'system' as const, label: t('general.themeSystem', 'System') },
   ];
 
+  const [providers, setProviders] = useState<string[]>(['local', 'mem0', 'honcho', 'supermemory']);
+  const [activeProvider, setActiveProvider] = useState<string>('local');
+
+  useEffect(() => {
+    if (window.electronAPI?.memoryProvider) {
+      window.electronAPI.memoryProvider.list().then(setProviders).catch(() => {});
+      window.electronAPI.memoryProvider.getActive().then(setActiveProvider).catch(() => {});
+    }
+  }, []);
+
+  const handleProviderChange = async (providerId: string) => {
+    if (window.electronAPI?.memoryProvider) {
+      const res = await window.electronAPI.memoryProvider.setActive(providerId);
+      if (res.success) {
+        setActiveProvider(providerId);
+      }
+    }
+  };
+
   return (
     <div className="space-y-6">
       {/* Theme */}
@@ -75,6 +94,28 @@ export function SettingsGeneral() {
             </button>
           ))}
         </div>
+      </div>
+
+      {/* Memory Provider (GAP-10) */}
+      <div className="space-y-3 pt-4 border-t border-border">
+        <h4 className="text-sm font-medium text-text-primary">{t('general.memoryProvider', 'Memory Provider')}</h4>
+        <p className="text-xs text-text-muted">
+          {t(
+            'general.memoryProviderDesc',
+            'Select the active memory layer. Local SQLite is default; network providers are strictly opt-in.'
+          )}
+        </p>
+        <select
+          value={activeProvider}
+          onChange={(e) => handleProviderChange(e.target.value)}
+          className="w-full px-3 py-2 rounded-lg border-2 border-border bg-surface text-sm text-text-primary focus:border-accent outline-none"
+        >
+          {providers.map((p) => (
+            <option key={p} value={p}>
+              {p.toUpperCase()}
+            </option>
+          ))}
+        </select>
       </div>
 
       {/* Settings sync (Phase 2 step 19) */}

@@ -67,18 +67,50 @@ function scoreMatch(haystack: string, needle: string): number {
   return score;
 }
 
+function buildMessageFtsQuery(query: string): string | null {
+  const tokens = query
+    .normalize('NFKC')
+    .match(/[\p{L}\p{N}_]+/gu)
+    ?.map((token) => token.toLowerCase())
+    .filter(Boolean)
+    .slice(0, 16);
+
+  if (!tokens || tokens.length === 0) {
+    return null;
+  }
+
+  return tokens.map((token) => `"${token.replace(/"/g, '""')}"`).join(' AND ');
+}
+
 function extractSnippet(text: string, query: string, maxLen = 140): string {
   if (!text) return '';
   const lower = text.toLowerCase();
   const q = query.toLowerCase();
   const idx = lower.indexOf(q);
+  let snippetText = '';
+  let prefix = '';
+  let suffix = '';
   if (idx === -1) {
-    return text.slice(0, maxLen) + (text.length > maxLen ? '…' : '');
+    snippetText = text.slice(0, maxLen);
+    suffix = text.length > maxLen ? '…' : '';
+  } else {
+    const start = Math.max(0, idx - 40);
+    const end = Math.min(text.length, idx + query.length + 80);
+    snippetText = text.slice(start, end);
+    prefix = start > 0 ? '…' : '';
+    suffix = end < text.length ? '…' : '';
   }
-  const start = Math.max(0, idx - 40);
-  const end = Math.min(text.length, idx + query.length + 80);
-  const snippet = text.slice(start, end);
-  return (start > 0 ? '…' : '') + snippet + (end < text.length ? '…' : '');
+
+  // Safely escape and highlight query terms
+  const terms = query.split(/\s+/).filter(Boolean);
+  if (terms.length === 0) return prefix + snippetText + suffix;
+
+  const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
+  const escapedTerms = sortedTerms.map(t => t.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
+  const highlighted = snippetText.replace(regex, '<mark>$1</mark>');
+
+  return prefix + highlighted + suffix;
 }
 
 function escapeLikePattern(value: string): string {
@@ -237,9 +269,44 @@ export class GlobalSearchService {
 
   private searchMessages(query: string, limit: number): GlobalSearchHit[] {
     const database = this.deps.db.raw;
-    // The messages table uses `timestamp` (not `created_at` — that's
-    // sessions). Earlier code used the wrong column, which made the
-    // statement throw and silently zeroed out the message category.
+    try {
+      const ftsQuery = buildMessageFtsQuery(query);
+      if (ftsQuery) {
+        const rows = database
+          .prepare(
+            `SELECT f.message_id AS id, f.session_id, f.content, m.timestamp,
+                    snippet(messages_fts, 0, '<mark>', '</mark>', '...', 25) AS snippet
+             FROM messages_fts f
+             JOIN messages m ON m.id = f.message_id
+             WHERE messages_fts MATCH ?
+             ORDER BY bm25(messages_fts), m.timestamp DESC
+             LIMIT ?`
+          )
+          .all(ftsQuery, limit) as Array<{
+          id: string;
+          session_id: string;
+          content: string;
+          timestamp: number;
+          snippet: string;
+        }>;
+
+        return rows.map((row) => {
+          const text = extractMessageContentText(row.content);
+          return {
+            source: 'message' as const,
+            id: row.id,
+            title: text.slice(0, 60) + (text.length > 60 ? '…' : ''),
+            snippet: row.snippet,
+            score: scoreMatch(text, query),
+            context: { sessionId: row.session_id, messageId: row.id },
+          };
+        });
+      }
+    } catch (err) {
+      logWarn('[GlobalSearchService] message FTS search failed, falling back to LIKE:', err);
+    }
+
+    // Fallback using LIKE statement
     const rows = database
       .prepare(
         `SELECT id, session_id, content, timestamp

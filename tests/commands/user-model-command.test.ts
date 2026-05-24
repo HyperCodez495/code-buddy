@@ -104,4 +104,54 @@ describe('buddy user-model', () => {
     expect(parsed).toHaveLength(1);
     expect(parsed[0].status).toBe('pending');
   });
+
+  it('runs analyze on a session and proposes observations', async () => {
+    const { getSessionStore } = await import('../../src/persistence/session-store.js');
+    const sessionStore = getSessionStore();
+    const sessionId = 'test-session-123';
+    (sessionStore as any).currentSessionId = sessionId;
+
+    const loadSessionSpy = jest.spyOn(sessionStore, 'loadSession').mockResolvedValue({
+      id: sessionId,
+      name: 'test-session',
+      workingDirectory: tmpDir,
+      model: 'grok-3',
+      messages: [
+        { type: 'user', content: 'Prefers typescript', timestamp: new Date().toISOString() }
+      ],
+      createdAt: new Date(),
+      lastAccessedAt: new Date()
+    });
+
+    const providerDetector = await import('../../src/utils/provider-detector.js');
+    const detectSpy = jest.spyOn(providerDetector, 'detectProviderFromEnv').mockReturnValue({
+      apiKey: 'test-api-key',
+      defaultModel: 'test-model',
+      baseURL: 'http://test-base-url'
+    });
+
+    const { CodeBuddyClient } = await import('../../src/codebuddy/client.js');
+    const chatSpy = jest.spyOn(CodeBuddyClient.prototype, 'chat').mockResolvedValue({
+      choices: [
+        {
+          message: {
+            content: JSON.stringify([
+              { kind: 'preference', content: 'Prefers TypeScript', confidence: 0.9 }
+            ])
+          }
+        }
+      ]
+    } as any);
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'buddy', 'user-model', 'analyze']);
+
+    const output = getLogOutput(consoleSpy);
+    expect(output).toContain('Running LLM dialectic inference');
+    expect(output).toContain('Prefers TypeScript');
+
+    loadSessionSpy.mockRestore();
+    detectSpy.mockRestore();
+    chatSpy.mockRestore();
+  });
 });

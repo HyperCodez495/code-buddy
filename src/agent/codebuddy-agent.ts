@@ -1011,6 +1011,17 @@ export class CodeBuddyAgent extends BaseAgent {
     return this.toolHandler.bash.getCurrentDirectory();
   }
 
+  /**
+   * Set the working directory used to scope tool execution contexts. The
+   * Cowork embedded engine calls this with the active project's
+   * `workspacePath` so `.codebuddy/`-backed tools (`lessons_propose`,
+   * `user_model_observe`, …) target the project instead of the Electron
+   * process directory. `undefined` restores the `process.cwd()` default.
+   */
+  setWorkingDirectory(dir: string | undefined): void {
+    this.toolHandler.setWorkingDirectory(dir);
+  }
+
   async executeBashCommand(command: string): Promise<ToolResult> {
     return await this.toolHandler.bash.execute(command);
   }

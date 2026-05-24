@@ -14,7 +14,7 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import {
   getUserModel,
   USER_OBSERVATION_KINDS,
@@ -36,7 +36,7 @@ export class UserModelObserveTool implements ITool {
     'Scope is working preferences only — do NOT record health, finances, relationships, or credentials.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     const kind = (input.kind as UserObservationKind) ?? 'preference';
     const content = input.content as string;
     const note = input.note as string | undefined;
@@ -48,7 +48,7 @@ export class UserModelObserveTool implements ITool {
     }
 
     try {
-      const model = getUserModel(process.cwd());
+      const model = getUserModel(context?.cwd ?? process.cwd());
 
       let runId: string | undefined;
       try {
@@ -159,7 +159,7 @@ export class UserModelRecallTool implements ITool {
     'Read-only: this never proposes or writes observations.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     const kind = input.kind as UserObservationKind | undefined;
     const query = (input.query as string | undefined)?.toLowerCase().trim();
 
@@ -168,7 +168,7 @@ export class UserModelRecallTool implements ITool {
     }
 
     try {
-      const model = getUserModel(process.cwd());
+      const model = getUserModel(context?.cwd ?? process.cwd());
 
       if (!query) {
         const summary = model.summarize();

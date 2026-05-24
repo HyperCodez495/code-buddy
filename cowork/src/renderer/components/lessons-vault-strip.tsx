@@ -70,9 +70,10 @@ export function buildLessonsVaultGoal(preview?: LessonsVaultPreview | null): str
 export const LessonsVaultStrip: React.FC<{
   cwd?: string;
   error?: string | null;
+  onBrowse?: () => void;
   onUseAsGoal?: (goal: string) => void;
   preview?: LessonsVaultPreview | null;
-}> = ({ cwd, error = null, onUseAsGoal, preview }) => {
+}> = ({ cwd, error = null, onBrowse, onUseAsGoal, preview }) => {
   const { t } = useTranslation();
   const [loadedPreview, setLoadedPreview] = useState<LessonsVaultPreview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -196,16 +197,29 @@ export const LessonsVaultStrip: React.FC<{
         ))}
       </ul>
 
-      {onUseAsGoal && (
+      {(onUseAsGoal || onBrowse) && (
         <div className="mt-2 flex flex-wrap gap-1.5">
-          <button
-            type="button"
-            onClick={() => onUseAsGoal(goalDraft)}
-            className="flex items-center gap-1 rounded border border-cyan-900/80 px-2 py-1 text-[10px] text-cyan-100/80 transition-colors hover:border-cyan-400 hover:text-cyan-200"
-          >
-            <Route size={10} />
-            {t('fleet.lessonsVault.useAsGoal', 'Review vault as goal')}
-          </button>
+          {onBrowse && (
+            <button
+              type="button"
+              onClick={onBrowse}
+              className="flex items-center gap-1 rounded border border-cyan-900/80 px-2 py-1 text-[10px] text-cyan-100/80 transition-colors hover:border-cyan-400 hover:text-cyan-200"
+              data-testid="lessons-vault-browse"
+            >
+              <BookOpenText size={10} />
+              {t('fleet.lessonsVault.browse', 'Browse vault')}
+            </button>
+          )}
+          {onUseAsGoal && (
+            <button
+              type="button"
+              onClick={() => onUseAsGoal(goalDraft)}
+              className="flex items-center gap-1 rounded border border-cyan-900/80 px-2 py-1 text-[10px] text-cyan-100/80 transition-colors hover:border-cyan-400 hover:text-cyan-200"
+            >
+              <Route size={10} />
+              {t('fleet.lessonsVault.useAsGoal', 'Review vault as goal')}
+            </button>
+          )}
         </div>
       )}
     </section>

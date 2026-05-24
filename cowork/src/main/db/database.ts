@@ -491,12 +491,34 @@ function buildMessageFtsQuery(query: string): string | null {
 
 function initializeMessageSearchIndex(database: Database.Database): void {
   try {
+    // Check if table exists and does NOT have tokenize='trigram'
+    let needsRebuild = false;
+    try {
+      const tableInfo = database.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='messages_fts'").get() as { sql: string } | undefined;
+      if (tableInfo && !tableInfo.sql.includes("tokenize='trigram'") && !tableInfo.sql.includes('tokenize="trigram"')) {
+        needsRebuild = true;
+      }
+    } catch {
+      // Table doesn't exist or query failed
+    }
+
+    if (needsRebuild) {
+      log('[Database] Rebuilding messages_fts with trigram tokenizer...');
+      database.exec(`
+        DROP TRIGGER IF EXISTS messages_ai;
+        DROP TRIGGER IF EXISTS messages_ad;
+        DROP TRIGGER IF EXISTS messages_au;
+        DROP TABLE IF EXISTS messages_fts;
+      `);
+    }
+
     database.exec(`
       CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
         content,
         message_id UNINDEXED,
         session_id UNINDEXED,
-        role UNINDEXED
+        role UNINDEXED,
+        tokenize='trigram'
       );
 
       CREATE TRIGGER IF NOT EXISTS messages_ai AFTER INSERT ON messages BEGIN

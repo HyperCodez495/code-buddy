@@ -966,11 +966,13 @@ export class SessionStore {
         try {
           const raw = _fs.readFileSync(filePath, 'utf-8');
           const data = JSON.parse(raw);
-          sessions.push({
-            ...data,
-            createdAt: new Date(data.createdAt),
-            lastAccessedAt: new Date(data.lastAccessedAt),
-          });
+          if (data && typeof data.id === 'string') {
+            sessions.push({
+              ...data,
+              createdAt: new Date(data.createdAt),
+              lastAccessedAt: new Date(data.lastAccessedAt),
+            });
+          }
         } catch {
           // Skip malformed or inaccessible session files
         }

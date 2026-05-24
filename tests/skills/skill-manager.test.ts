@@ -2,22 +2,25 @@
  * Tests for SkillManager
  */
 
-import { SkillManager, Skill } from "../../src/skills/skill-manager";
+import { SkillManager, Skill } from "../../src/skills/skill-manager.js";
 import * as fs from "fs-extra";
 import * as path from "path";
 import * as os from "os";
+import { resetSkillsHub } from "../../src/skills/hub.js";
 
 describe("SkillManager", () => {
   let skillManager: SkillManager;
   let tempDir: string;
 
   beforeEach(async () => {
+    resetSkillsHub();
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "skill-test-"));
     skillManager = new SkillManager(tempDir);
     await skillManager.initialize();
   });
 
   afterEach(async () => {
+    resetSkillsHub();
     await fs.remove(tempDir);
   });
 
@@ -230,6 +233,62 @@ You are a custom assistant for testing.
       const result = skillManager.activateSkill("manual-only");
       expect(result).not.toBeNull();
       expect(result?.name).toBe("manual-only");
+    });
+  });
+
+  describe("Disabled Skills", () => {
+    it("should exclude disabled skills from matching", async () => {
+      // 1. Initialize the hub with the temp lockfile first (so getSkillsHub() uses it throughout this test)
+      const { getSkillsHub } = await import("../../src/skills/hub.js");
+      const hub = getSkillsHub({ lockfilePath: path.join(tempDir, "skills-lock.json") });
+
+      // Register custom skill we can disable
+      const skillName = "custom-disable-test";
+      skillManager.registerSkill({
+        name: skillName,
+        description: "To be disabled",
+        triggers: ["disabletrigger"],
+        systemPrompt: "Prompt",
+        autoActivate: true,
+      });
+
+      // Initially it should match
+      let matches = skillManager.matchSkills("disabletrigger test");
+      expect(matches.some(m => m.skill.name === skillName)).toBe(true);
+
+      // Disable the skill via the hub
+      hub.setEnabled(skillName, false, { path: path.join(tempDir, "dummy-path") });
+
+      // Now matching should ignore it
+      matches = skillManager.matchSkills("disabletrigger test");
+      expect(matches.some(m => m.skill.name === skillName)).toBe(false);
+    });
+
+    it("should exclude disabled skills from system prompt injection", async () => {
+      // 1. Initialize the hub with the temp lockfile first
+      const { getSkillsHub } = await import("../../src/skills/hub.js");
+      const hub = getSkillsHub({ lockfilePath: path.join(tempDir, "skills-lock.json") });
+
+      const skillName = "custom-prompt-disable-test";
+      skillManager.registerSkill({
+        name: skillName,
+        description: "To be disabled",
+        triggers: ["promptdisable"],
+        systemPrompt: "System Prompt content",
+        autoActivate: true,
+      });
+
+      // Activate the skill
+      skillManager.activateSkill(skillName);
+      let prompt = skillManager.getSkillPromptEnhancement();
+      expect(prompt).toContain("System Prompt content");
+
+      // Disable it via the hub
+      hub.setEnabled(skillName, false, { path: path.join(tempDir, "dummy-path") });
+
+      // System prompt should now be empty for the disabled skill
+      prompt = skillManager.getSkillPromptEnhancement();
+      expect(prompt).toBe("");
     });
   });
 });

@@ -17,6 +17,7 @@ import { CodeBuddyMessage } from '../codebuddy/client.js';
 import { createTokenCounter, TokenCounter } from './token-counter.js';
 import { logger } from '../utils/logger.js';
 import { getModelToolConfig } from '../config/model-tools.js';
+import { RunStore } from '../observability/run-store.js';
 import {
   EnhancedContextCompressor,
   EnhancedCompressionConfig,
@@ -223,11 +224,27 @@ export class ContextManagerV2 {
       return messages;
     }
 
+    let compacted: CodeBuddyMessage[];
     if (this.config.enableEnhancedCompression && this.enhancedCompressor) {
-      return this.prepareMessagesEnhanced(messages, stats);
+      compacted = this.prepareMessagesEnhanced(messages, stats);
+    } else {
+      compacted = this.prepareMessagesLegacy(messages, stats);
     }
 
-    return this.prepareMessagesLegacy(messages, stats);
+    const newStats = this.getStats(compacted);
+    if (newStats.totalTokens < stats.totalTokens) {
+      try {
+        const runStore = RunStore.getInstance();
+        const activeRunId = runStore.getCurrentRunId();
+        if (activeRunId) {
+          runStore.forkRun(activeRunId, 'compaction');
+        }
+      } catch (err) {
+        logger.warn('Failed to fork run on compaction:', { error: String(err) });
+      }
+    }
+
+    return compacted;
   }
 
   /**

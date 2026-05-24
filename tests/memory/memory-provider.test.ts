@@ -7,6 +7,11 @@ import {
   type MemoryProvider,
 } from '../../src/memory/memory-provider.js';
 import type { Memory } from '../../src/memory/persistent-memory.js';
+import {
+  Mem0MemoryProvider,
+  HonchoMemoryProvider,
+  SupermemoryMemoryProvider,
+} from '../../src/memory/adapters/network-memory-adapters.js';
 
 function fakeProvider(id: string): MemoryProvider {
   return {
@@ -80,5 +85,41 @@ describe('LocalMemoryProvider', () => {
     expect(typeof provider.recall).toBe('function');
     expect(typeof provider.getRelevantMemories).toBe('function');
     expect(typeof provider.getContextForPrompt).toBe('function');
+  });
+});
+
+describe('NetworkMemoryProviders Fallbacks', () => {
+  describe('Mem0MemoryProvider', () => {
+    it('falls back to LocalMemoryProvider when API key is missing', async () => {
+      const provider = new Mem0MemoryProvider({ apiKey: '' });
+      await provider.initialize();
+      expect(provider.id).toBe('mem0');
+      // Should write to fallback local provider and retrieve it
+      await provider.remember('test-key', 'test-value');
+      const val = await provider.recall('test-key');
+      expect(val).toBe('test-value');
+    });
+  });
+
+  describe('HonchoMemoryProvider', () => {
+    it('falls back to LocalMemoryProvider when API key is missing', async () => {
+      const provider = new HonchoMemoryProvider({ apiKey: '' });
+      await provider.initialize();
+      expect(provider.id).toBe('honcho');
+      await provider.remember('test-key', 'test-value');
+      const val = await provider.recall('test-key');
+      expect(val).toBe('test-value');
+    });
+  });
+
+  describe('SupermemoryMemoryProvider', () => {
+    it('falls back to LocalMemoryProvider when API key is missing', async () => {
+      const provider = new SupermemoryMemoryProvider({ apiKey: '' });
+      await provider.initialize();
+      expect(provider.id).toBe('supermemory');
+      await provider.remember('test-key', 'test-value');
+      const val = await provider.recall('test-key');
+      expect(val).toBe('test-value');
+    });
   });
 });

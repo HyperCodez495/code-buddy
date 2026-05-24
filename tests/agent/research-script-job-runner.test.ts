@@ -1,10 +1,35 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { buildResearchScriptJobArtifact } from '../../src/agent/research-script-job-artifact.js';
 import { materializeResearchScriptJobArtifact } from '../../src/agent/research-script-job-materializer.js';
 import { runMaterializedResearchScriptJob } from '../../src/agent/research-script-job-runner.js';
+
+vi.mock('child_process', async (importOriginal) => {
+  const original = await importOriginal<typeof import('child_process')>();
+  return {
+    ...original,
+    spawn: vi.fn((...args: any[]) => {
+      const command = args[0];
+      if (command === 'docker' || command === 'wsl') {
+        (globalThis as any).__lastSpawnArgs = args;
+        const mockChild: any = {
+          stdout: { setEncoding: vi.fn(), on: vi.fn() },
+          stderr: { setEncoding: vi.fn(), on: vi.fn() },
+          on: vi.fn((event, callback) => {
+            if (event === 'close') {
+              setTimeout(() => callback(0, null), 10);
+            }
+          }),
+          kill: vi.fn(),
+        };
+        return mockChild;
+      }
+      return original.spawn(args[0], args[1], args[2]);
+    }),
+  };
+});
 
 describe('research script job runner', () => {
   let tempDir: string;
@@ -102,5 +127,75 @@ describe('research script job runner', () => {
     expect(result.timedOut).toBe(true);
     expect(fs.readFileSync(result.stdoutPath, 'utf8')).toContain('started');
     expect(fs.readFileSync(result.summaryPath, 'utf8')).toContain('Status: timed_out');
+  });
+
+  it('translates command and arguments correctly for docker provider', async () => {
+    (globalThis as any).__lastSpawnArgs = null;
+
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-docker-test',
+      goal: 'Docker run test',
+      title: 'Docker run test',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+      sandboxPolicy: {
+        network: 'disabled',
+        provider: 'docker',
+        timeoutMs: 5000,
+      },
+    });
+
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      scriptSource: 'console.log("docker run");',
+    });
+
+    const result = await runMaterializedResearchScriptJob(job, { rootDir: tempDir });
+
+    const spawnCall = (globalThis as any).__lastSpawnArgs;
+    expect(spawnCall).toBeTruthy();
+    expect(spawnCall[0]).toBe('docker');
+    expect(spawnCall[1]).toContain('run');
+    expect(spawnCall[1]).toContain('--rm');
+    expect(spawnCall[1]).toContain('--network');
+    expect(spawnCall[1]).toContain('none');
+    expect(spawnCall[1]).toContain('node:20');
+
+    expect(result.status).toBe('completed');
+  });
+
+  it('translates command, paths, and arguments correctly for wsl provider', async () => {
+    (globalThis as any).__lastSpawnArgs = null;
+
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-wsl-test',
+      goal: 'WSL run test',
+      title: 'WSL run test',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+      sandboxPolicy: {
+        network: 'disabled',
+        provider: 'wsl',
+        timeoutMs: 5000,
+      },
+    });
+
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      scriptSource: 'console.log("wsl run");',
+    });
+
+    const result = await runMaterializedResearchScriptJob(job, { rootDir: tempDir });
+
+    const spawnCall = (globalThis as any).__lastSpawnArgs;
+    expect(spawnCall).toBeTruthy();
+    expect(spawnCall[0]).toBe('wsl');
+    expect(spawnCall[1]).toContain('--cd');
+    expect(spawnCall[1]).toContain('--exec');
+    expect(spawnCall[1]).toContain('env');
+
+    expect(result.status).toBe('completed');
   });
 });

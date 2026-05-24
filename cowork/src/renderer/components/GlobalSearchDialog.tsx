@@ -250,7 +250,7 @@ export const GlobalSearchDialog: React.FC<GlobalSearchDialogProps> = ({ open, on
                         </div>
                         {hit.snippet && (
                           <div className="text-[11px] text-text-muted truncate mt-0.5">
-                            {hit.snippet}
+                            {renderHighlightedText(hit.snippet)}
                           </div>
                         )}
                       </div>
@@ -290,3 +290,23 @@ export const GlobalSearchDialog: React.FC<GlobalSearchDialogProps> = ({ open, on
     </div>
   );
 };
+
+function renderHighlightedText(text: string): React.ReactNode {
+  if (!text) return null;
+  const parts = text.split(/(<mark>.*?<\/mark>)/g);
+  return (
+    <>
+      {parts.map((part, index) => {
+        if (part.startsWith('<mark>') && part.endsWith('</mark>')) {
+          const content = part.substring(6, part.length - 7);
+          return (
+            <mark key={index} className="bg-accent/20 text-accent font-medium rounded px-0.5 border-b border-accent/30">
+              {content}
+            </mark>
+          );
+        }
+        return <span key={index}>{part}</span>;
+      })}
+    </>
+  );
+}

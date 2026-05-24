@@ -8,6 +8,7 @@
 
 import { ContextManagerV2 } from '../../src/context/context-manager-v2';
 import type { CodeBuddyMessage } from '../../src/codebuddy/client';
+import { RunStore } from '../../src/observability/run-store';
 
 describe('ContextManagerV2 (gap coverage)', () => {
   // Helper: create a manager with small limits for fast tests
@@ -87,6 +88,80 @@ describe('ContextManagerV2 (gap coverage)', () => {
       const mgr = createManager();
       const formatted = mgr.formatMemoryMetrics();
       expect(formatted).toContain('Never');
+      mgr.dispose();
+    });
+  });
+
+  // --------------------------------------------------------------------------
+  // Compaction → fork-run lineage (GAP-3)
+  // --------------------------------------------------------------------------
+
+  describe('compaction fork lineage (GAP-3)', () => {
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('forks the active run with reason "compaction" when compaction reduces tokens', () => {
+      const forkRun = vi.fn().mockReturnValue('run-child');
+      vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => 'run-parent',
+        forkRun,
+      } as unknown as RunStore);
+
+      const mgr = createManager({
+        maxContextTokens: 600,
+        responseReserveTokens: 100,
+        recentMessagesCount: 3,
+        autoCompactThreshold: 300,
+      });
+      const msgs = makeMessages(40, 200); // ~2000 tokens, far above the ~475 effective limit
+
+      const before = mgr.getStats(msgs).totalTokens;
+      const out = mgr.prepareMessages(msgs);
+      const after = mgr.getStats(out).totalTokens;
+
+      // Compaction actually reduced tokens…
+      expect(after).toBeLessThan(before);
+      // …so a child run is forked for lineage tracking.
+      expect(forkRun).toHaveBeenCalledTimes(1);
+      expect(forkRun).toHaveBeenCalledWith('run-parent', 'compaction');
+      mgr.dispose();
+    });
+
+    it('does not fork when there is no active run', () => {
+      const forkRun = vi.fn();
+      vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => null,
+        forkRun,
+      } as unknown as RunStore);
+
+      const mgr = createManager({
+        maxContextTokens: 600,
+        responseReserveTokens: 100,
+        recentMessagesCount: 3,
+        autoCompactThreshold: 300,
+      });
+      mgr.prepareMessages(makeMessages(40, 200));
+
+      expect(forkRun).not.toHaveBeenCalled();
+      mgr.dispose();
+    });
+
+    it('does not fork when no compaction is needed', () => {
+      const forkRun = vi.fn();
+      const getInstance = vi.spyOn(RunStore, 'getInstance').mockReturnValue({
+        getCurrentRunId: () => 'run-parent',
+        forkRun,
+      } as unknown as RunStore);
+
+      const mgr = createManager({ maxContextTokens: 100000, autoCompactThreshold: 100000 });
+      const msgs = makeMessages(3, 50);
+      const out = mgr.prepareMessages(msgs);
+
+      expect(out.length).toBe(msgs.length);
+      expect(forkRun).not.toHaveBeenCalled();
+      // The fork path is skipped entirely when no compaction happens.
+      expect(getInstance).not.toHaveBeenCalled();
       mgr.dispose();
     });
   });

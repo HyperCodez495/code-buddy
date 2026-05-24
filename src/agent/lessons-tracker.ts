@@ -566,6 +566,65 @@ export class LessonsTracker {
     };
   }
 
+  getConceptDetails(conceptName: string): {
+    concept: { id: string; label: string; weight: number };
+    lessons: Array<{
+      id: string;
+      category: string;
+      content: string;
+      context?: string;
+      createdBy?: { runId?: string; outcomeId?: string; sagaId?: string; note?: string; at: number };
+      usedBy?: Array<{ runId: string; at: number }>;
+    }>;
+    backlinks: string[];
+  } | null {
+    const graph = this.buildConceptGraph({ includeKeywords: true, limit: 1000 });
+    const slug = conceptName.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const conceptNode = graph.concepts.find(c => c.id === slug || c.label.toLowerCase() === conceptName.toLowerCase());
+    if (!conceptNode) return null;
+
+    const provIndex = getLessonProvenanceIndex(this.workDir);
+
+    const lessons = graph.lessons
+      .filter(l => conceptNode.lessonIds.includes(l.id))
+      .map(l => {
+        const prov = provIndex.getProvenance(l.id);
+        return {
+          id: l.id,
+          category: l.category,
+          content: l.content,
+          context: l.context,
+          createdBy: prov?.createdBy,
+          usedBy: prov?.usedBy,
+        };
+      });
+
+    const backlinkIds = new Set<string>();
+    for (const rel of graph.relatedLessons) {
+      if (conceptNode.lessonIds.includes(rel.from) || conceptNode.lessonIds.includes(rel.to)) {
+        for (const c of rel.sharedConcepts) {
+          if (c !== conceptNode.id) {
+            backlinkIds.add(c);
+          }
+        }
+      }
+    }
+
+    const backlinks = Array.from(backlinkIds)
+      .map(id => graph.concepts.find(c => c.id === id)?.label)
+      .filter(Boolean) as string[];
+
+    return {
+      concept: {
+        id: conceptNode.id,
+        label: conceptNode.label,
+        weight: conceptNode.weight,
+      },
+      lessons,
+      backlinks,
+    };
+  }
+
   /**
    * Build the per-turn context block injected BEFORE the todo suffix.
    * Returns null when there are no lessons (avoids noisy injections).
@@ -576,6 +635,24 @@ export class LessonsTracker {
     }
     this.load();
     if (this.items.length === 0) return null;
+
+    // Record usage off the hot path
+    const workDir = this.workDir;
+    const lessonIds = this.items.map(item => item.id);
+    Promise.resolve().then(async () => {
+      try {
+        const { RunStore } = await import('../observability/run-store.js');
+        const activeRunId = RunStore.getInstance().getCurrentRunId();
+        if (activeRunId) {
+          const index = getLessonProvenanceIndex(workDir);
+          for (const id of lessonIds) {
+            index.recordUsage(id, activeRunId);
+          }
+        }
+      } catch (err) {
+        logger.debug('[lessons] failed to record usage in background', { error: String(err) });
+      }
+    });
 
     const lines = [
       '<lessons_context>',

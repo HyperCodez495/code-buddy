@@ -39,6 +39,46 @@ describe('User model tool adapters', () => {
     });
   });
 
+  // Regression: the Cowork embedded engine passes the active project's
+  // workspacePath as IToolExecutionContext.cwd. Tools must honor it over
+  // process.cwd() so observations land in the project the review panel reads.
+  describe('honors IToolExecutionContext.cwd', () => {
+    it('writes the observation to context.cwd, not process.cwd()', async () => {
+      const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'user-model-ctx-'));
+      try {
+        const result = await new UserModelObserveTool().execute(
+          { kind: 'preference', content: 'Prefers concise diffs.' },
+          { cwd: projectDir },
+        );
+        expect(result.success).toBe(true);
+        // Landed in the context (active-project) dir...
+        expect(getUserModel(projectDir).list('pending')).toHaveLength(1);
+        // ...and NOT in the spied process.cwd() dir.
+        expect(getUserModel(tmpDir).list('pending')).toHaveLength(0);
+      } finally {
+        await fs.remove(projectDir);
+      }
+    });
+
+    it('recalls accepted observations from context.cwd', async () => {
+      const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'user-model-ctx-recall-'));
+      try {
+        const model = getUserModel(projectDir);
+        const obs = model.observe({ kind: 'expertise', content: 'Strong in Rust.' }).observation;
+        model.accept(obs.id, { reviewedBy: 'r' });
+
+        const recalled = await new UserModelRecallTool().execute({}, { cwd: projectDir });
+        expect(recalled.output).toContain('Strong in Rust.');
+
+        // The process.cwd()-scoped model knows nothing about it.
+        const fromProc = await new UserModelRecallTool().execute({});
+        expect(fromProc.output).not.toContain('Strong in Rust.');
+      } finally {
+        await fs.remove(projectDir);
+      }
+    });
+  });
+
   describe('UserModelObserveTool', () => {
     it('proposes a pending observation not yet in the model', async () => {
       const tool = new UserModelObserveTool();

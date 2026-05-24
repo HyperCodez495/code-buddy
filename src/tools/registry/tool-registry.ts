@@ -321,7 +321,7 @@ export class FormalToolRegistry extends EventEmitter implements IToolRegistry {
     let toolResult: ToolResult;
 
     try {
-      toolResult = await entry.tool.execute(input);
+      toolResult = await entry.tool.execute(input, context);
     } catch (error) {
       const err = error instanceof Error ? error : new Error(String(error));
       const result: IToolExecutionResult = {

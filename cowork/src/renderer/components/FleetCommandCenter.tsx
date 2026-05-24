@@ -65,6 +65,7 @@ import {
   type SkillCandidateReviewQueueItem,
 } from './skill-candidate-review-queue-strip';
 import { LessonsVaultStrip } from './lessons-vault-strip';
+import { LessonsVaultGraph } from './LessonsVaultGraph';
 import { SagaBoard } from './fleet-saga-board';
 import { PeerDetail, PeerRow } from './fleet-peer-panel';
 import { SagaDetail } from './fleet-saga-detail';
@@ -278,6 +279,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
   const [dispatchProfile, setDispatchProfile] = useState<FleetDispatchProfile>('balanced');
   const [goalRunDraft, setGoalRunDraft] = useState<AgentRun | null>(null);
+  const [showLessonsGraph, setShowLessonsGraph] = useState(false);
   const runningSagas = useMemo(
     () => sagas.filter((s) => s.status === 'pending' || s.status === 'running').length,
     [sagas],
@@ -790,6 +792,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   if (!isOpen) return null;
 
   return (
+    <>
     <div
       className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/50 backdrop-blur-sm"
       onClick={onClose}
@@ -1073,6 +1076,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
               />
               <LessonsVaultStrip
                 cwd={activeWorkspaceCwd}
+                onBrowse={() => setShowLessonsGraph(true)}
                 onUseAsGoal={handleUseLessonsVaultAsGoal}
               />
               {dispatchProfile === 'research' && (
@@ -1168,6 +1172,8 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
         </div>
       </div>
     </div>
+    {showLessonsGraph && <LessonsVaultGraph onClose={() => setShowLessonsGraph(false)} />}
+    </>
   );
 };
 

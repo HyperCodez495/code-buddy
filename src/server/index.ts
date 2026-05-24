@@ -31,7 +31,7 @@ import {
   errorHandler,
   notFoundHandler,
 } from './middleware/index.js';
-import { chatRoutes, toolsRoutes, sessionsRoutes, memoryRoutes, healthRoutes, metricsRoutes, createWorkflowApiRouter, createA2AProtocolRoutes, createACPRoutes, createK8sHealthAliases, createDashboardRouter, createCloudTaskRoutes, createWebhookRoutes } from './routes/index.js';
+import { chatRoutes, toolsRoutes, sessionsRoutes, memoryRoutes, healthRoutes, metricsRoutes, createWorkflowApiRouter, createA2AProtocolRoutes, createACPRoutes, createK8sHealthAliases, createDashboardRouter, createCloudTaskRoutes, createWebhookRoutes, mobileRoutes } from './routes/index.js';
 import { setupWebSocket, closeAllConnections, getConnectionStats } from './websocket/index.js';
 import { startFleetHeartbeat, stopFleetHeartbeat } from '../fleet/heartbeat-broadcaster.js';
 import {
@@ -114,6 +114,7 @@ const DEFAULT_CONFIG: ServerConfig = {
   jwtSecret: getJwtSecret(),
   jwtExpiration: process.env.JWT_EXPIRATION || SERVER_CONFIG.DEFAULT_JWT_EXPIRATION,
   websocketEnabled: process.env.WS_ENABLED !== 'false',
+  channelIntakeEnabled: process.env.CODEBUDDY_SERVER_CHANNEL_INTAKE === 'true',
   logging: process.env.LOGGING !== 'false',
   maxRequestSize: process.env.MAX_REQUEST_SIZE || SERVER_CONFIG.DEFAULT_MAX_REQUEST_SIZE,
   // Security headers: enabled by default, can be disabled via SECURITY_HEADERS=false
@@ -178,7 +179,10 @@ function createApp(config: ServerConfig): Application {
   // Also expose at /metrics for Prometheus compatibility
   app.use('/metrics', metricsRoutes);
 
-  // Authentication (applied after public health/metrics endpoints)
+  // Mobile remote-supervision routes (custom pairing-token auth)
+  app.use('/api/mobile', mobileRoutes);
+
+  // Authentication (applied after public health/metrics/mobile endpoints)
   app.use(createAuthMiddleware(config));
 
   // A2A routes (auth-based, exempt from CSRF) — must be mounted BEFORE CSRF middleware
@@ -963,6 +967,28 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
         // Channel -> A2A bridge needs the actual bound port when callers use
         // port 0 for ephemeral smoke/integration servers.
         startChannelBridge(baseUrl).catch(() => { /* unhandled-rejection guard */ });
+      }
+
+      // Inbound channel intake (GAP-7): start enabled channels + wire the AI
+      // receiver loop so two-way messaging works without `buddy channels start`.
+      // Opt-in via CODEBUDDY_SERVER_CHANNEL_INTAKE to avoid surprise connections.
+      if (config.channelIntakeEnabled) {
+        try {
+          const { startConfiguredChannels } = await import('../commands/handlers/channel-handlers.js');
+          const result = await startConfiguredChannels();
+          if (result.noConfig) {
+            logger.info('Channel intake: enabled but no channels.json found — nothing started');
+          } else {
+            logger.info(
+              `Channel intake: started ${result.registered.length} channel(s)` +
+              `${result.registered.length ? ` (${result.registered.join(', ')})` : ''}` +
+              `${result.skipped.length ? `; skipped disabled: ${result.skipped.join(', ')}` : ''}` +
+              `${result.failed.length ? `; failed: ${result.failed.map((f) => f.type).join(', ')}` : ''}`,
+            );
+          }
+        } catch (err) {
+          logger.error('Channel intake failed to start', err as Error);
+        }
       }
 
       // Log peer routing stats

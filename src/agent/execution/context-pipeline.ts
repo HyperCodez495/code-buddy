@@ -22,6 +22,8 @@ import { repairToolCallPairs } from '../../context/transcript-repair.js';
 import { sanitizeModelOutput, stripInvisibleChars } from '../../utils/output-sanitizer.js';
 import { getLessonsTracker } from '../lessons-tracker.js';
 import { getTodoTracker } from '../todo-tracker.js';
+import { getUserModel } from '../../memory/user-model.js';
+import { isFeatureEnabled } from '../../config/feature-flags.js';
 import type { ContextInjectionLevel, QueryComplexity } from './query-classifier.js';
 
 /** Minimal shape of the ICM bridge that this pipeline consumes. */
@@ -87,6 +89,18 @@ export async function injectInitialContext(
         content: `<context type="lessons">\n${lessonsBlock}\n</context>`,
       });
     }
+  }
+
+  if (isFeatureEnabled('USER_MODEL_INJECTION')) {
+    try {
+      const userModelSummary = getUserModel(deps.cwd).summarize();
+      if (userModelSummary) {
+        preparedMessages.push({
+          role: 'system',
+          content: `<user_model_context>\n${userModelSummary}\n</user_model_context>`,
+        });
+      }
+    } catch { /* optional */ }
   }
 
   if (deps.ctxLevel.knowledgeGraph) {
@@ -201,6 +215,18 @@ export async function injectNextRoundContext(
       role: 'system',
       content: `<context type="lessons">\n${lessonsBlock}\n</context>`,
     });
+  }
+
+  if (isFeatureEnabled('USER_MODEL_INJECTION')) {
+    try {
+      const userModelSummary = getUserModel(deps.cwd).summarize();
+      if (userModelSummary) {
+        preparedMessages.push({
+          role: 'system',
+          content: `<user_model_context>\n${userModelSummary}\n</user_model_context>`,
+        });
+      }
+    } catch { /* optional */ }
   }
 
   // Knowledge graph stays gated on complexity — it can be large and is

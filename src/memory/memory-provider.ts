@@ -74,6 +74,8 @@ export class LocalMemoryProvider implements MemoryProvider {
   }
 }
 
+import { Mem0MemoryProvider, HonchoMemoryProvider, SupermemoryMemoryProvider } from './adapters/network-memory-adapters.js';
+
 /**
  * Registry of memory providers. The agent and any caller resolve the active
  * provider through here; swapping providers never touches the agent loop.
@@ -84,6 +86,15 @@ export class MemoryProviderRegistry {
 
   constructor() {
     this.register(new LocalMemoryProvider());
+    this.register(new Mem0MemoryProvider());
+    this.register(new HonchoMemoryProvider());
+    this.register(new SupermemoryMemoryProvider());
+
+    const envProvider = process.env.CODEBUDDY_MEMORY_PROVIDER;
+    if (envProvider && this.has(envProvider)) {
+      this.activeId = envProvider;
+      logger.debug(`MemoryProviderRegistry: active provider set from environment: ${envProvider}`);
+    }
   }
 
   register(provider: MemoryProvider): void {

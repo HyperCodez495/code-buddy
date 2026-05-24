@@ -134,9 +134,17 @@ export interface ITool {
   /**
    * Execute the tool with given input
    * @param input - Tool-specific input parameters
+   * @param context - Optional execution context (e.g. `cwd` for the active
+   *   project). Tools that resolve `.codebuddy/`-scoped state should prefer
+   *   `context?.cwd` over `process.cwd()` so the Cowork embedded engine can
+   *   target the active project instead of the Electron process directory.
+   *   Implementations may safely ignore it (the parameter is optional).
    * @returns Promise resolving to ToolResult
    */
-  execute(input: Record<string, unknown>): Promise<ToolResult>;
+  execute(
+    input: Record<string, unknown>,
+    context?: IToolExecutionContext,
+  ): Promise<ToolResult>;
 
   /**
    * Get the tool schema for LLM function calling

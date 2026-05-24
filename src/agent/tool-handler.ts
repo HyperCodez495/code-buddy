@@ -134,6 +134,14 @@ export class ToolHandler {
   /** Active run ID for RunStore observability (set by dev workflows) */
   private currentRunId: string | undefined;
 
+  /**
+   * Working directory for the active session. When set, it becomes the
+   * `cwd` of every tool's `IToolExecutionContext`, so `.codebuddy/`-scoped
+   * tools (lessons/user-model) target the active project instead of the
+   * process directory. `undefined` falls back to `process.cwd()` (CLI default).
+   */
+  private currentWorkingDirectory: string | undefined;
+
   constructor(private deps: ToolHandlerDependencies) {
     this.registry = getFormalToolRegistry();
     this.initializeRegistry();
@@ -162,6 +170,16 @@ export class ToolHandler {
    */
   setRunId(runId: string | undefined): void {
     this.currentRunId = runId;
+  }
+
+  /**
+   * Set the working directory for tool execution contexts. Cowork's embedded
+   * engine calls this with the active project's `workspacePath` so review-gated
+   * tools (`lessons_propose`, `user_model_observe`, …) read/write the project's
+   * `.codebuddy/` rather than the Electron process directory.
+   */
+  setWorkingDirectory(dir: string | undefined): void {
+    this.currentWorkingDirectory = dir;
   }
 
   /**
@@ -701,7 +719,7 @@ export class ToolHandler {
 
     const metadata = registeredTool.metadata;
     const context: IToolExecutionContext = {
-      cwd: process.cwd(),
+      cwd: this.currentWorkingDirectory ?? process.cwd(),
     };
 
     // Handle bash tool with hooks and auto-repair

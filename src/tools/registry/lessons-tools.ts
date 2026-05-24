@@ -11,7 +11,7 @@
 
 import { spawnSync } from 'child_process';
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import {
   getLessonsTracker,
   renderLessonConceptGraph,
@@ -34,7 +34,7 @@ export class LessonsAddTool implements ITool {
     'Call this immediately after any user correction to prevent the same mistake.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const category = (input.category as LessonCategory) ?? 'INSIGHT';
     const content = input.content as string;
     const context = input.context as string | undefined;
@@ -48,7 +48,7 @@ export class LessonsAddTool implements ITool {
     }
 
     try {
-      const tracker = getLessonsTracker(process.cwd());
+      const tracker = getLessonsTracker(execContext?.cwd ?? process.cwd());
       const item = tracker.add(category, content, source, context);
 
       // Emit lesson_added event to active RunStore if one is running (non-fatal)
@@ -145,7 +145,7 @@ export class LessonsProposeTool implements ITool {
     'silently mutated. Categories: PATTERN/RULE/CONTEXT/INSIGHT.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const category = (input.category as LessonCategory) ?? 'INSIGHT';
     const content = input.content as string;
     const context = input.context as string | undefined;
@@ -160,7 +160,7 @@ export class LessonsProposeTool implements ITool {
 
     try {
       const { getLessonCandidateQueue } = await import('../../agent/lesson-candidate-queue.js');
-      const queue = getLessonCandidateQueue(process.cwd());
+      const queue = getLessonCandidateQueue(execContext?.cwd ?? process.cwd());
 
       // Tag provenance with the active run id when one is available.
       let runId: string | undefined;
@@ -279,7 +279,7 @@ export class LessonsSearchTool implements ITool {
     'Returns matching lessons sorted by recency.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const query = input.query as string;
     const category = input.category as LessonCategory | undefined;
     const limit = Math.min(Number(input.limit ?? 10), 50);
@@ -287,7 +287,7 @@ export class LessonsSearchTool implements ITool {
     if (!query) return { success: false, error: 'query is required' };
 
     try {
-      const tracker = getLessonsTracker(process.cwd());
+      const tracker = getLessonsTracker(execContext?.cwd ?? process.cwd());
       const results = tracker.search(query, category).slice(0, limit);
       if (results.length === 0) {
         return { success: true, output: `No lessons found matching "${query}".` };
@@ -362,11 +362,11 @@ export class LessonsListTool implements ITool {
   readonly name = 'lessons_list';
   readonly description = 'List all lessons learned, optionally filtered by category (PATTERN|RULE|CONTEXT|INSIGHT).';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const category = input.category as LessonCategory | undefined;
 
     try {
-      const tracker = getLessonsTracker(process.cwd());
+      const tracker = getLessonsTracker(execContext?.cwd ?? process.cwd());
       const items = tracker.list(category);
       if (items.length === 0) {
         return { success: true, output: 'No lessons recorded yet.' };
@@ -434,7 +434,7 @@ export class LessonsGraphTool implements ITool {
     'Use this to find nearby lessons and connected notions before similar work.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const query = input.query as string | undefined;
     const concept = input.concept as string | undefined;
     const category = input.category as LessonCategory | undefined;
@@ -443,7 +443,7 @@ export class LessonsGraphTool implements ITool {
     const format = (input.format as LessonGraphRenderFormat | undefined) ?? 'summary';
 
     try {
-      const tracker = getLessonsTracker(process.cwd());
+      const tracker = getLessonsTracker(execContext?.cwd ?? process.cwd());
       const graph = tracker.buildConceptGraph({ query, concept, category, includeKeywords, limit });
       return { success: true, output: renderLessonConceptGraph(graph, format) };
     } catch (err) {
@@ -552,9 +552,9 @@ export class TaskVerifyTool implements ITool {
     'Call this before every task completion to satisfy the Verification Contract.',
   ].join(' ');
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, execContext?: IToolExecutionContext): Promise<ToolResult> {
     const checksInput = input.checks as VerifyCheck[] | undefined;
-    const workDir = (input.workDir as string) ?? process.cwd();
+    const workDir = (input.workDir as string) ?? execContext?.cwd ?? process.cwd();
 
     const checks: VerifyCheck[] = checksInput ?? ['typescript', 'tests'];
     const validChecks: VerifyCheck[] = ['typescript', 'tests', 'lint'];

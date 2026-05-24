@@ -1242,6 +1242,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
         schemaVersion: 1;
         vaultDir: string;
       } | null> => ipcRenderer.invoke('tools.lessonsVault.preview', options ?? {}),
+      getConceptDetails: (options: {
+        conceptName: string;
+        cwd?: string;
+      }): Promise<{
+        concept: { id: string; label: string; weight: number };
+        lessons: Array<{
+          id: string;
+          category: string;
+          content: string;
+          context?: string;
+          createdBy?: { runId?: string; outcomeId?: string; sagaId?: string; note?: string; at: number };
+          usedBy?: Array<{ runId: string; at: number }>;
+        }>;
+        backlinks: string[];
+      } | null> => ipcRenderer.invoke('tools.lessonsVault.getConceptDetails', options),
     },
   },
 
@@ -2372,6 +2387,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
       coworkProjectId?: string
     ) => ipcRenderer.invoke('spec.addEpic', specProjectId, input, coworkProjectId),
   },
+  skillsHub: {
+    list: (projectId?: string) => ipcRenderer.invoke('skillsHub.list', projectId),
+    listEnabled: (projectId?: string) => ipcRenderer.invoke('skillsHub.listEnabled', projectId),
+    setEnabled: (name: string, enabled: boolean, projectId?: string, filePath?: string) =>
+      ipcRenderer.invoke('skillsHub.setEnabled', name, enabled, projectId, filePath),
+  },
+  memoryProvider: {
+    list: () => ipcRenderer.invoke('memoryProvider.list'),
+    getActive: () => ipcRenderer.invoke('memoryProvider.getActive'),
+    setActive: (id: string) => ipcRenderer.invoke('memoryProvider.setActive', id),
+  },
 });
 
 // Type declaration for the renderer process
@@ -3258,6 +3284,21 @@ declare global {
             rootDir: string;
             schemaVersion: 1;
             vaultDir: string;
+          } | null>;
+          getConceptDetails: (options: {
+            conceptName: string;
+            cwd?: string;
+          }) => Promise<{
+            concept: { id: string; label: string; weight: number };
+            lessons: Array<{
+              id: string;
+              category: string;
+              content: string;
+              context?: string;
+              createdBy?: { runId?: string; outcomeId?: string; sagaId?: string; note?: string; at: number };
+              usedBy?: Array<{ runId: string; at: number }>;
+            }>;
+            backlinks: string[];
           } | null>;
         };
       };
@@ -4170,6 +4211,16 @@ declare global {
       lessonCandidate: LessonCandidateApi;
       userModel: UserModelApi;
       spec: SpecApi;
+      skillsHub: {
+        list: (projectId?: string) => Promise<any[]>;
+        listEnabled: (projectId?: string) => Promise<any[]>;
+        setEnabled: (name: string, enabled: boolean, projectId?: string, filePath?: string) => Promise<any>;
+      };
+      memoryProvider: {
+        list: () => Promise<string[]>;
+        getActive: () => Promise<string>;
+        setActive: (id: string) => Promise<{ success: boolean; error?: string }>;
+      };
     };
   }
 }

@@ -135,6 +135,9 @@ export interface AppConfig {
   // First run flag
   isConfigured: boolean;
 
+  // Pluggable memory provider selector (local, mem0, honcho, supermemory)
+  memoryProvider?: string;
+
   // Code Buddy backend adapter (opt-in, alongside direct provider configs)
   codebuddy?: {
     /** Whether the Code Buddy adapter is active */
@@ -311,6 +314,7 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
+  memoryProvider: 'local',
 };
 
 export const PROVIDER_PRESETS = API_PROVIDER_PRESETS;
@@ -964,6 +968,7 @@ export class ConfigStore {
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
+      memoryProvider: typeof raw.memoryProvider === 'string' ? raw.memoryProvider : defaultConfig.memoryProvider,
     };
     this.normalizeModelIds(result);
     return result;
@@ -1538,6 +1543,7 @@ export class ConfigStore {
     delete process.env.GEMINI_BASE_URL;
     delete process.env.CLAUDE_CODE_PATH;
     delete process.env.COWORK_WORKDIR;
+    delete process.env.CODEBUDDY_MEMORY_PROVIDER;
 
     const useOpenAI =
       projectedConfig.provider === 'openai' ||
@@ -1631,6 +1637,12 @@ export class ConfigStore {
 
     if (projectedConfig.defaultWorkdir) {
       process.env.COWORK_WORKDIR = projectedConfig.defaultWorkdir;
+    }
+
+    if (projectedConfig.memoryProvider) {
+      process.env.CODEBUDDY_MEMORY_PROVIDER = projectedConfig.memoryProvider;
+    } else {
+      process.env.CODEBUDDY_MEMORY_PROVIDER = 'local';
     }
 
     log('[Config] Applied env vars for provider:', projectedConfig.provider, {

@@ -845,17 +845,30 @@ export class SkillsHub extends EventEmitter {
     return this.list().filter((skill) => skill.enabled !== false);
   }
 
-  /**
-   * Enable or disable an installed skill. Disabled skills remain installed
-   * (telemetry and files preserved) but should be excluded from selection.
-   */
-  setEnabled(skillName: string, enabled: boolean): InstalledSkill | null {
-    const installed = this.lockfile.skills[skillName];
+  setEnabled(
+    skillName: string,
+    enabled: boolean,
+    options?: { path?: string; version?: string }
+  ): InstalledSkill | null {
+    let installed = this.lockfile.skills[skillName];
     if (!installed) {
-      logger.warn('Cannot toggle missing skill', { name: skillName });
-      return null;
+      if (!options?.path) {
+        logger.warn('Cannot toggle missing skill', { name: skillName });
+        return null;
+      }
+      installed = {
+        name: skillName,
+        version: options?.version || '0.0.0',
+        installedAt: Date.now(),
+        source: 'local',
+        checksum: '',
+        path: options.path,
+        enabled: enabled,
+      };
+      this.lockfile.skills[skillName] = installed;
+    } else {
+      installed.enabled = enabled;
     }
-    installed.enabled = enabled;
     this.writeLockfile();
     this.emit('skill:enabled', { name: skillName, enabled });
     return installed;

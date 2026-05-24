@@ -84,6 +84,13 @@ const DEFAULT_FEATURE_FLAGS: Record<string, FeatureFlag> = {
     envOverride: 'GROK_SELF_HEALING',
   },
 
+  USER_MODEL_INJECTION: {
+    name: 'USER_MODEL_INJECTION',
+    enabled: true,
+    description: 'Automatically inject the user model summary into the context pipeline',
+    category: 'ai',
+  },
+
   VOICE_CONTROL: {
     name: 'VOICE_CONTROL',
     enabled: false,

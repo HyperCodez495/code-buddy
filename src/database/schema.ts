@@ -13,7 +13,7 @@
 // Schema Version
 // ============================================================================
 
-export const SCHEMA_VERSION = 2;
+export const SCHEMA_VERSION = 3;
 
 // ============================================================================
 // Table Definitions
@@ -289,6 +289,42 @@ CREATE VIRTUAL TABLE IF NOT EXISTS messages_fts USING fts5(
   content='messages',
   content_rowid='id',
   tokenize='unicode61'
+);
+
+INSERT INTO messages_fts(messages_fts) VALUES('rebuild');
+
+DROP TRIGGER IF EXISTS messages_ai;
+DROP TRIGGER IF EXISTS messages_ad;
+DROP TRIGGER IF EXISTS messages_au;
+
+CREATE TRIGGER messages_ai AFTER INSERT ON messages BEGIN
+  INSERT INTO messages_fts(rowid, content, session_id, role)
+  VALUES (new.id, COALESCE(new.content, ''), new.session_id, new.role);
+END;
+
+CREATE TRIGGER messages_ad AFTER DELETE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+  VALUES ('delete', old.id, COALESCE(old.content, ''), old.session_id, old.role);
+END;
+
+CREATE TRIGGER messages_au AFTER UPDATE ON messages BEGIN
+  INSERT INTO messages_fts(messages_fts, rowid, content, session_id, role)
+  VALUES ('delete', old.id, COALESCE(old.content, ''), old.session_id, old.role);
+
+  INSERT INTO messages_fts(rowid, content, session_id, role)
+  VALUES (new.id, COALESCE(new.content, ''), new.session_id, new.role);
+END;
+`,
+  3: `
+DROP TABLE IF EXISTS messages_fts;
+
+CREATE VIRTUAL TABLE messages_fts USING fts5(
+  content,
+  session_id UNINDEXED,
+  role UNINDEXED,
+  content='messages',
+  content_rowid='id',
+  tokenize='trigram'
 );
 
 INSERT INTO messages_fts(messages_fts) VALUES('rebuild');

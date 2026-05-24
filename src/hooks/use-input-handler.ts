@@ -365,6 +365,13 @@ export function useInputHandler({
 
   const handleInputSubmit = async (userInput: string) => {
     if (userInput === "exit" || userInput === "quit") {
+      try {
+        logger.info('\n[user-model] Running post-session dialectic user preference analysis...');
+        const { runUserDialecticInference } = await import('../memory/user-model.js');
+        await runUserDialecticInference(chatHistory, process.cwd());
+      } catch (err) {
+        logger.debug('Failed to run user model dialectic inference', { error: String(err) });
+      }
       process.exit(0);
       return;
     }

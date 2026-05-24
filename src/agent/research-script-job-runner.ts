@@ -52,8 +52,9 @@ export async function runMaterializedResearchScriptJob(
   job: ResearchScriptJobArtifact,
   options: RunMaterializedResearchScriptJobOptions,
 ): Promise<ResearchScriptJobRunResult> {
-  if (job.sandboxPolicy.provider !== 'local') {
-    throw new Error(`Research script runner only supports local provider for now: ${job.sandboxPolicy.provider}`);
+  const provider = job.sandboxPolicy.provider;
+  if (provider !== 'local' && provider !== 'docker' && provider !== 'wsl') {
+    throw new Error(`Research script runner only supports local, docker, and wsl providers: ${provider}`);
   }
   if (job.sandboxPolicy.network !== 'disabled' && !options.allowNetwork) {
     throw new Error(`Research script job requires network policy ${job.sandboxPolicy.network}; pass allowNetwork to run it locally.`);
@@ -76,7 +77,62 @@ export async function runMaterializedResearchScriptJob(
     fs.mkdir(path.dirname(absoluteFiles.stderr), { recursive: true }),
   ]);
 
-  const result = await spawnAndCapture(job.command.executable, args, {
+  let spawnExecutable = job.command.executable;
+  let spawnArgs = args;
+
+  if (provider === 'docker') {
+    const cleanExec = path.basename(job.command.executable).replace(/\.(exe|cmd)$/i, '');
+    let image = 'node:20';
+    if (job.language === 'python') {
+      image = 'python:3';
+    } else if (job.language === 'shell') {
+      image = 'ubuntu:22.04';
+    }
+
+    spawnExecutable = 'docker';
+    spawnArgs = [
+      'run',
+      '--rm',
+      '-v', `${cwd}:/workspace`,
+      '-w', '/workspace',
+    ];
+    if (job.sandboxPolicy.network === 'disabled') {
+      spawnArgs.push('--network', 'none');
+    }
+    for (const [key, value] of Object.entries(env)) {
+      if (value !== undefined) {
+        spawnArgs.push('-e', `${key}=${value}`);
+      }
+    }
+    spawnArgs.push(image, cleanExec);
+    const normalizeDockerArg = (arg: string): string => {
+      const resolvedArg = path.resolve(arg);
+      if (resolvedArg.startsWith(cwd)) {
+        return resolvedArg.replace(cwd, '/workspace').replace(/\\/g, '/');
+      }
+      return arg;
+    };
+    spawnArgs.push(...args.map(normalizeDockerArg));
+  } else if (provider === 'wsl') {
+    const cleanExec = path.basename(job.command.executable).replace(/\.(exe|cmd)$/i, '');
+    const wslExecutable = job.command.executable.includes('\\') || job.command.executable.includes('/')
+      ? toWslPath(job.command.executable)
+      : cleanExec;
+
+    spawnExecutable = 'wsl';
+    spawnArgs = [
+      '--cd', cwd,
+      '--exec', 'env',
+    ];
+    for (const [key, value] of Object.entries(env)) {
+      if (value !== undefined) {
+        spawnArgs.push(`${key}=${toWslPath(value)}`);
+      }
+    }
+    spawnArgs.push(wslExecutable, ...args.map(toWslPath));
+  }
+
+  const result = await spawnAndCapture(spawnExecutable, spawnArgs, {
     cwd,
     env,
     timeoutMs,
@@ -277,4 +333,11 @@ function renderRunSummary(input: {
     ...input.job.assertions.map((assertion) => `- [${assertion.required ? 'required' : 'optional'}] ${assertion.description}`),
     '',
   ].join('\n');
+}
+
+function toWslPath(val: string): string {
+  if (typeof val !== 'string') return val;
+  let res = val.replace(/^([a-zA-Z]):[\\/]/, (_, drive) => `/mnt/${drive.toLowerCase()}/`);
+  res = res.replace(/\\/g, '/');
+  return res;
 }

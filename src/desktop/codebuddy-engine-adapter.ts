@@ -155,6 +155,14 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         this.agents.set(sessionId, agent);
       }
 
+      // Scope tool execution to the session's working directory (the active
+      // Cowork project). Without this the embedded agent's `.codebuddy/`-backed
+      // tools (lessons_propose, user_model_observe, …) wrote to the Electron
+      // process directory while the review panels read the project dir — the
+      // self-improvement review loop never closed. Re-applied every turn so a
+      // hot-swapped/reused cached agent always targets the current project.
+      agent.setWorkingDirectory(config.workingDirectory);
+
       // The last message must be the user's current prompt
       const lastMessage = messages[messages.length - 1];
       if (!lastMessage || lastMessage.role !== 'user') {

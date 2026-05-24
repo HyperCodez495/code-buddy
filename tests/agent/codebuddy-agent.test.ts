@@ -364,12 +364,16 @@ jest.mock('../../src/memory/index.js', () => ({
 jest.mock('../../src/security/tool-policy/index.js', () => ({
   getPolicyManager: jest.fn().mockReturnValue({
     evaluate: jest.fn().mockReturnValue({ allowed: true }),
+    checkTool: jest.fn().mockReturnValue({ action: 'allow' }),
+    isAllowed: jest.fn().mockReturnValue(true),
+    setSessionOverride: jest.fn(),
   }),
 }));
 
 jest.mock('../../src/security/trust-folders.js', () => ({
   getTrustFolderManager: jest.fn().mockReturnValue({
     isTrusted: jest.fn().mockReturnValue(true),
+    isEnforcementEnabled: jest.fn().mockReturnValue(false),
   }),
 }));
 
@@ -377,6 +381,10 @@ jest.mock('../../src/tools/hooks/index.js', () => ({
   getToolHooksManager: jest.fn().mockReturnValue({
     runBeforeHooks: jest.fn().mockResolvedValue({ proceed: true }),
     runAfterHooks: jest.fn().mockResolvedValue(undefined),
+    executeBeforeHooks: jest.fn().mockImplementation(async (ctx) => ctx),
+    executeAfterHooks: jest.fn().mockImplementation(async (_ctx, result) => result),
+    executeErrorHooks: jest.fn().mockResolvedValue(undefined),
+    executeDeniedHooks: jest.fn().mockResolvedValue(undefined),
   }),
   registerDefaultHooks: jest.fn(),
   setCurrentProvider: jest.fn(),
@@ -479,6 +487,83 @@ describe('CodeBuddyAgent', () => {
       const messages = (agent as any).messages;
       expect(messages.length).toBeGreaterThanOrEqual(1);
       expect(messages[0].role).toBe('system');
+    });
+  });
+
+  // =========================================================================
+  // Working Directory (Cowork project scoping)
+  // =========================================================================
+  // End-to-end proof of the embedded-engine cwd fix: setWorkingDirectory()
+  // must flow agent → ToolHandler → IToolExecutionContext.cwd → tool, so the
+  // agent's .codebuddy/-backed tools target the active project rather than the
+  // process directory. Uses lessons_propose (the Hermes self-improvement path).
+  describe('Working Directory (Cowork project scoping)', () => {
+    it('routes .codebuddy tools to setWorkingDirectory(), not process.cwd()', async () => {
+      const os = await import('os');
+      const path = await import('path');
+      const fs = await import('fs-extra');
+      const { getLessonCandidateQueue, resetLessonCandidateQueues } = await import(
+        '../../src/agent/lesson-candidate-queue.js'
+      );
+
+      const procDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-cwd-proc-'));
+      const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-cwd-project-'));
+      const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(procDir);
+      resetLessonCandidateQueues();
+      try {
+        agent = new CodeBuddyAgent('test-api-key');
+        const content = `Cowork cwd plumbing proof ${Date.now()}`;
+
+        agent.setWorkingDirectory(projectDir);
+        const result = await agent.executeToolByName('lessons_propose', {
+          category: 'INSIGHT',
+          content,
+        });
+        expect(result.success, `lessons_propose error: ${result.error}`).toBe(true);
+
+        // The proposal landed in the active project's .codebuddy/...
+        expect(
+          getLessonCandidateQueue(projectDir).list('pending').some((c) => c.content === content),
+        ).toBe(true);
+        // ...and not in the process directory.
+        expect(getLessonCandidateQueue(procDir).list('pending')).toHaveLength(0);
+      } finally {
+        cwdSpy.mockRestore();
+        resetLessonCandidateQueues();
+        await fs.remove(procDir);
+        await fs.remove(projectDir);
+      }
+    });
+
+    it('falls back to process.cwd() when no working directory is set', async () => {
+      const os = await import('os');
+      const path = await import('path');
+      const fs = await import('fs-extra');
+      const { getLessonCandidateQueue, resetLessonCandidateQueues } = await import(
+        '../../src/agent/lesson-candidate-queue.js'
+      );
+
+      const procDir = await fs.mkdtemp(path.join(os.tmpdir(), 'agent-cwd-fallback-'));
+      const cwdSpy = jest.spyOn(process, 'cwd').mockReturnValue(procDir);
+      resetLessonCandidateQueues();
+      try {
+        agent = new CodeBuddyAgent('test-api-key');
+        const content = `fallback proof ${Date.now()}`;
+
+        agent.setWorkingDirectory(undefined);
+        const result = await agent.executeToolByName('lessons_propose', {
+          category: 'INSIGHT',
+          content,
+        });
+        expect(result.success).toBe(true);
+        expect(
+          getLessonCandidateQueue(procDir).list('pending').some((c) => c.content === content),
+        ).toBe(true);
+      } finally {
+        cwdSpy.mockRestore();
+        resetLessonCandidateQueues();
+        await fs.remove(procDir);
+      }
     });
   });
 

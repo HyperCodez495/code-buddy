@@ -429,4 +429,39 @@ describe('Lessons Tool Adapters', () => {
       expect(bad.error).toMatch(/category must be one of/i);
     });
   });
+
+  // Regression: the Cowork embedded engine passes the active project's
+  // workspacePath as IToolExecutionContext.cwd. The proposal must be queued
+  // under that project's .codebuddy/, not the Electron process directory —
+  // otherwise the LessonCandidatePanel (which reads the project dir) never
+  // sees what the agent proposed and the self-improvement loop never closes.
+  describe('honors IToolExecutionContext.cwd', () => {
+    it('queues the proposal under context.cwd, not process.cwd()', async () => {
+      const projectDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lessons-ctx-'));
+      resetLessonCandidateQueues();
+      try {
+        const content = 'Scope embedded-engine cwd before writing .codebuddy state.';
+        const result = await new LessonsProposeTool().execute(
+          { category: 'PATTERN', content },
+          { cwd: projectDir },
+        );
+        expect(result.success).toBe(true);
+
+        // Landed in the context (active-project) dir...
+        const projectPending = getLessonCandidateQueue(projectDir).list('pending');
+        expect(projectPending.some((c) => c.content === content)).toBe(true);
+        // ...and NOT in the spied process.cwd() dir.
+        expect(getLessonCandidateQueue(tmpDir).list('pending')).toHaveLength(0);
+        expect(
+          await fs.pathExists(path.join(projectDir, '.codebuddy', 'lesson-candidates.json')),
+        ).toBe(true);
+        expect(
+          await fs.pathExists(path.join(tmpDir, '.codebuddy', 'lesson-candidates.json')),
+        ).toBe(false);
+      } finally {
+        resetLessonCandidateQueues();
+        await fs.remove(projectDir);
+      }
+    });
+  });
 });

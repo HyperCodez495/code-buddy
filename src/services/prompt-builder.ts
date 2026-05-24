@@ -53,6 +53,7 @@ export interface BuildOptions {
   includeFleet?: boolean;
   includeMemoryDirective?: boolean;
   includeLessonsDirective?: boolean;
+  includeUserModelDirective?: boolean;
   includeWritingRules?: boolean;
   includeCodingStyle?: boolean;
   includeWorkflowRules?: boolean;
@@ -70,6 +71,7 @@ const ALL_BLOCKS: Required<BuildOptions> = {
   includeFleet: true,
   includeMemoryDirective: true,
   includeLessonsDirective: true,
+  includeUserModelDirective: true,
   includeWritingRules: true,
   includeCodingStyle: true,
   includeWorkflowRules: true,
@@ -136,6 +138,7 @@ export class PromptBuilder {
     if (toolCfg.supportsToolCalls === false) {
       gates.includeMemoryDirective = false;
       gates.includeLessonsDirective = false;
+      gates.includeUserModelDirective = false;
       gates.includeWorkflowRules = false;
     }
     if (!isToolNameAllowed('remember', activeToolFilter)) {
@@ -145,6 +148,9 @@ export class PromptBuilder {
       isToolNameAllowed(toolName, activeToolFilter)
     )) {
       gates.includeLessonsDirective = false;
+    }
+    if (!isToolNameAllowed('user_model_observe', activeToolFilter)) {
+      gates.includeUserModelDirective = false;
     }
     try {
       let systemPrompt: string;
@@ -497,6 +503,28 @@ What NOT to add:
 Lessons complement \`remember\`: \`remember\` stores facts (preferences, decisions); \`lessons_add\` stores actionable patterns and rules. Use whichever fits — both persist across sessions.
 </lessons_directive>`;
         logger.debug('Injected lessons directive into system prompt');
+      }
+
+      if (this.config.memoryEnabled && gates.includeUserModelDirective) {
+        systemPrompt += `\n\n<user_model_directive>
+You have a persistent user model that builds a deepening profile of who you are, your traits, preferences, expertise, and working style.
+
+When you learn something about the user that is stable across sessions (such as preferred libraries, styling choices, expertise level, or working style), you MUST use the \`user_model_observe\` tool to propose a structured observation.
+
+Guidelines for calling \`user_model_observe\`:
+- **preference**: User's choices or settings (e.g. "User prefers single quotes", "User prefers Vitest for testing").
+- **trait**: General behavior or characteristics (e.g. "User values extreme code safety").
+- **expertise**: User's knowledge areas (e.g. "User is highly experienced in React but new to Electron").
+- **working-style**: How the user prefers to collaborate (e.g. "User prefers direct code modifications over lengthy explanations").
+
+Important Constraints:
+1. ONLY propose observations directly related to professional software development, coding preferences, and working style.
+2. NEVER propose sensitive personal data (health, finance, relationship status, passwords, credentials). Any such data will be blocked by the privacy screen.
+3. Observations you propose are NOT automatically added to the active model. They enter a review queue and must be accepted by the user.
+
+Use the \`user_model_observe\` tool proactively when you learn a stable coding preference or trait.
+</user_model_directive>`;
+        logger.debug('Injected user model directive into system prompt');
       }
 
       // Inject `<writing_rules>` directive — proactive output discipline.

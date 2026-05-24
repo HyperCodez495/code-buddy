@@ -111,6 +111,37 @@ describe('LessonsVaultStrip', () => {
     expect(goal).toContain('Do not auto-create lessons during vault export.');
   });
 
+  it('renders a Browse vault trigger and fires onBrowse when clicked (GAP-8)', () => {
+    const target = container();
+    const onBrowse = vi.fn();
+    root = createRoot(target);
+
+    act(() => {
+      root?.render(React.createElement(LessonsVaultStrip, { onBrowse, preview }));
+    });
+
+    const browse = target.querySelector('[data-testid="lessons-vault-browse"]');
+    expect(browse).not.toBeNull();
+    expect(browse?.textContent).toContain('Browse vault');
+
+    act(() => {
+      browse?.dispatchEvent(new MouseEvent('click', { bubbles: true }));
+    });
+
+    expect(onBrowse).toHaveBeenCalledTimes(1);
+  });
+
+  it('omits the Browse vault trigger when onBrowse is not provided', () => {
+    const target = container();
+    root = createRoot(target);
+
+    act(() => {
+      root?.render(React.createElement(LessonsVaultStrip, { preview }));
+    });
+
+    expect(target.querySelector('[data-testid="lessons-vault-browse"]')).toBeNull();
+  });
+
   it('keeps command and goal helpers aligned', () => {
     const commands = buildLessonsVaultCommands();
     const goal = buildLessonsVaultGoal(preview);

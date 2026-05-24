@@ -28,6 +28,58 @@ interface ChannelsConfig {
   channels: ChannelConfigEntry[];
 }
 
+export interface StartConfiguredChannelsResult {
+  /** Channel types successfully connected with the inbound handler wired. */
+  registered: string[];
+  /** Channel types present in config but disabled (`enabled: false`). */
+  skipped: string[];
+  /** Channel types that failed to start, with the error message. */
+  failed: Array<{ type: string; error: string }>;
+  /** True when no config file/entries were found at all. */
+  noConfig: boolean;
+}
+
+/**
+ * Start every enabled channel from config and wire the inbound AI receiver loop
+ * (`registerAIMessageHandler`). Shared by `buddy channels start` (CLI) and the
+ * `buddy server` startup intake (GAP-7), so inbound two-way messaging works
+ * without a separately-started `buddy channels` process.
+ *
+ * Per-channel enablement comes from `ChannelConfigEntry.enabled`; inbound auth
+ * is the DM-pairing gate inside `registerAIMessageHandler`. Never throws on a
+ * single channel failure — it collects the outcome per channel.
+ */
+export async function startConfiguredChannels(configPath?: string): Promise<StartConfiguredChannelsResult> {
+  const { getChannelManager } = await import('../../channels/index.js');
+  const manager = getChannelManager();
+  await registerAIMessageHandler(manager);
+
+  const result: StartConfiguredChannelsResult = { registered: [], skipped: [], failed: [], noConfig: false };
+  const config = loadChannelConfig(configPath);
+  if (!config || config.channels.length === 0) {
+    result.noConfig = true;
+    return result;
+  }
+
+  for (const chConfig of config.channels) {
+    if (!chConfig.enabled) {
+      result.skipped.push(chConfig.type);
+      continue;
+    }
+    try {
+      const channel = await instantiateChannel(chConfig);
+      if (channel) {
+        manager.registerChannel(channel);
+        await channel.connect();
+        result.registered.push(chConfig.type);
+      }
+    } catch (err) {
+      result.failed.push({ type: chConfig.type, error: err instanceof Error ? err.message : String(err) });
+    }
+  }
+  return result;
+}
+
 export function loadChannelConfig(configPath?: string): ChannelsConfig | null {
   const paths = configPath
     ? [configPath]
@@ -91,25 +143,17 @@ export async function handleChannels(action: string, options: ChannelOptions): P
 
       const channelType = options.type;
       if (!channelType) {
-        // Start all configured channels
-        const config = loadChannelConfig(options.config);
-        if (!config || config.channels.length === 0) {
+        // Start all configured channels (shared with `buddy server` intake)
+        const result = await startConfiguredChannels(options.config);
+        if (result.noConfig) {
           console.log('No channel configuration found. Create .codebuddy/channels.json or use --config.');
           return;
         }
-
-        for (const chConfig of config.channels) {
-          if (!chConfig.enabled) continue;
-          try {
-            const channel = await instantiateChannel(chConfig);
-            if (channel) {
-              manager.registerChannel(channel);
-              await channel.connect();
-              console.log(`[OK] ${chConfig.type} channel started`);
-            }
-          } catch (err) {
-            console.log(`[FAIL] ${chConfig.type}: ${err instanceof Error ? err.message : String(err)}`);
-          }
+        for (const t of result.registered) {
+          console.log(`[OK] ${t} channel started`);
+        }
+        for (const f of result.failed) {
+          console.log(`[FAIL] ${f.type}: ${f.error}`);
         }
       } else {
         // Start a specific channel
@@ -158,10 +202,20 @@ export async function handleChannels(action: string, options: ChannelOptions): P
 
 let aiHandlerRegistered = false;
 
+/** Reset the one-shot registration guard. Test-only — never call in production. */
+export function __resetChannelAIHandlerForTests(): void {
+  aiHandlerRegistered = false;
+}
+
 /**
- * Register a message handler that processes incoming messages through the AI agent
+ * Register a message handler that processes incoming messages through the AI agent.
+ *
+ * This is the inbound receiver loop (GAP-7): pairing gate → route resolution →
+ * agent instantiation → session resume → `processUserMessage` → reply. It is the
+ * single source of truth for inbound handling, shared by the CLI (`buddy
+ * channels start`) and the embedded server intake.
  */
-async function registerAIMessageHandler(manager: import('../../channels/index.js').ChannelManager): Promise<void> {
+export async function registerAIMessageHandler(manager: import('../../channels/index.js').ChannelManager): Promise<void> {
   if (aiHandlerRegistered) return;
   aiHandlerRegistered = true;
 
@@ -173,11 +227,68 @@ async function registerAIMessageHandler(manager: import('../../channels/index.js
         return;
       }
 
+      const { checkDMPairing, getDMPairing, resolveRoute, getRouteAgentConfig } = await import('../../channels/core.js');
+
+      // 1. Check DM pairing first
+      const pairingStatus = await checkDMPairing(message);
+      if (!pairingStatus.approved) {
+        if (pairingStatus.code) {
+          const pairing = getDMPairing();
+          const pairingMsg = pairing.getPairingMessage(pairingStatus);
+          await channel.send({
+            channelId: message.channel.id,
+            content: pairingMsg,
+            replyTo: message.id,
+          });
+        }
+        return;
+      }
+
+      // 2. Resolve route and config
+      const route = resolveRoute(message);
+      const agentConfig = getRouteAgentConfig(message);
+
+      // 3. Instantiate Agent with routed config
       const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
-      const agent = new CodeBuddyAgent(apiKey, process.env.GROK_BASE_URL, process.env.GROK_MODEL || 'grok-3-latest');
+      const model = agentConfig.model || process.env.GROK_MODEL || 'grok-3-latest';
+      const maxRounds = agentConfig.maxToolRounds;
+      const agent = new CodeBuddyAgent(apiKey, process.env.GROK_BASE_URL, model, maxRounds);
+
+      // 4. Resume/Initialize session history
+      const sessionKey = message.sessionKey || 'default-global';
+      const sessionStore = agent.getSessionStore();
+      let session = await sessionStore.loadSession(sessionKey);
+      if (!session) {
+        session = {
+          id: sessionKey,
+          name: `Channel session ${sessionKey}`,
+          model,
+          createdAt: new Date(),
+          lastAccessedAt: new Date(),
+          messages: [],
+          workingDirectory: process.cwd(),
+        };
+        await sessionStore.saveSession(session);
+      }
+
+      await sessionStore.resumeSession(sessionKey);
+
+      const activeSession = session!;
+      if (activeSession.messages && activeSession.messages.length > 0) {
+        const chatHistory = sessionStore.convertMessagesToChatEntries(activeSession.messages);
+        const messages = activeSession.messages.map(m => ({
+          role: m.type === 'user' ? 'user' as const : 'assistant' as const,
+          content: m.content
+        }));
+        (agent as any).historyManager.setChatHistory(chatHistory);
+        (agent as any).historyManager.setMessages(messages);
+      }
+
+      // 5. Run agent turn
       const entries = await agent.processUserMessage(message.content);
       const response = entries.length > 0 ? String(entries[entries.length - 1].content) : '';
 
+      // 6. Deliver reply
       await channel.send({
         channelId: message.channel.id,
         content: response,

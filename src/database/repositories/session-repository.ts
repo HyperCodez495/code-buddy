@@ -328,7 +328,7 @@ export class SessionRepository {
         m.tokens AS message_tokens,
         m.created_at AS message_created_at,
         m.metadata AS message_metadata,
-        snippet(messages_fts, 0, '[', ']', '...', 18) AS snippet,
+        snippet(messages_fts, 0, '<mark>', '</mark>', '...', 18) AS snippet,
         bm25(messages_fts) AS score
       FROM messages_fts
       JOIN messages m ON m.id = messages_fts.rowid

@@ -27,6 +27,9 @@
 import fs from 'fs';
 import path from 'path';
 import { logger } from '../utils/logger.js';
+import { CodeBuddyClient } from '../codebuddy/client.js';
+import { detectProviderFromEnv } from '../utils/provider-detector.js';
+import type { ChatEntry } from '../agent/types.js';
 
 export const USER_MODEL_SCHEMA_VERSION = 1;
 
@@ -411,4 +414,140 @@ function isValidObservation(value: unknown): value is UserObservation {
     USER_OBSERVATION_KINDS.includes(obs.kind as UserObservationKind) &&
     (obs.status === 'pending' || obs.status === 'accepted' || obs.status === 'discarded')
   );
+}
+
+/**
+ * Run dialectic inference on a session's chat history/transcript.
+ * This analyzes the transcript with an LLM and proposes candidate observations.
+ */
+export async function runUserDialecticInference(
+  chatHistory: ChatEntry[],
+  workDir: string = process.cwd(),
+  client?: CodeBuddyClient
+): Promise<UserObservation[]> {
+  if (!chatHistory || chatHistory.length === 0) {
+    logger.debug('[user-model] No chat history to run dialectic inference on.');
+    return [];
+  }
+
+  // 1. Resolve LLM client
+  let llmClient: CodeBuddyClient;
+  if (client) {
+    llmClient = client;
+  } else {
+    const detected = detectProviderFromEnv();
+    if (!detected) {
+      logger.warn('[user-model] No LLM provider configuration found. Skipping dialectic inference.');
+      return [];
+    }
+    llmClient = new CodeBuddyClient(detected.apiKey, detected.defaultModel, detected.baseURL);
+  }
+
+  // Format transcript for the prompt
+  const transcriptLines: string[] = [];
+  for (const entry of chatHistory) {
+    if (entry.type === 'user') {
+      transcriptLines.push(`User: ${entry.content}`);
+    } else if (entry.type === 'assistant') {
+      transcriptLines.push(`Assistant: ${entry.content}`);
+    } else if (entry.type === 'tool_result') {
+      const toolName = entry.toolCall?.function?.name || 'unknown';
+      const outputPreview = entry.content.length > 500 ? entry.content.slice(0, 500) + '...' : entry.content;
+      transcriptLines.push(`[Tool Result - ${toolName}]: ${outputPreview}`);
+    }
+  }
+  const transcript = transcriptLines.join('\n');
+
+  const systemPrompt = `You are the user-model dialectic engine for Code Buddy.
+Your task is to analyze the history of the conversation between the user and the AI assistant, and infer the user's working preferences, traits, expertise, or working style.
+
+Analyze the transcript and identify any clear, concrete preferences/traits/expertise/working style of the user.
+Follow these rules:
+1. ONLY return observations related to working preferences, traits, expertise, or working-style.
+2. DO NOT extract personal sensitive information like health, relationships, finances, credentials, religion, or politics.
+3. Be specific and concise (e.g. "Prefers typescript for backend projects", "Uses Vitest for testing").
+4. Rate your confidence from 0.0 to 1.0.
+5. You must output the result as a raw JSON array matching this TypeScript type:
+Array<{
+  kind: 'preference' | 'trait' | 'expertise' | 'working-style';
+  content: string;
+  confidence: number;
+}>
+
+Example output:
+[
+  {
+    "kind": "preference",
+    "content": "Prefers writing clean TypeScript and using ESM modules.",
+    "confidence": 0.9
+  }
+]`;
+
+  const userPrompt = `Here is the conversation transcript to analyze:\n\n${transcript}`;
+
+  try {
+    const response = await llmClient.chat([
+      { role: 'system', content: systemPrompt },
+      { role: 'user', content: userPrompt }
+    ]);
+
+    const reply = response.choices[0]?.message?.content || '';
+    const candidates = parseLLMResponse(reply);
+
+    const model = getUserModel(workDir);
+    const proposed: UserObservation[] = [];
+
+    for (const cand of candidates) {
+      const kind = cand.kind;
+      const content = (cand.content || '').trim();
+      const confidence = typeof cand.confidence === 'number' ? cand.confidence : 0.5;
+
+      if (!content || !['preference', 'trait', 'expertise', 'working-style'].includes(kind)) {
+        continue;
+      }
+
+      // Check privacy screen
+      if (screenUserModelContent(content)) {
+        logger.debug(`[user-model] Dialectic observation screened out: ${content}`);
+        continue;
+      }
+
+      try {
+        const { observation, deduped } = model.observe({
+          kind: kind as any,
+          content,
+          confidence,
+          source: 'self_observed',
+          provenance: {
+            note: 'Dialectic LLM inference'
+          }
+        });
+        if (!deduped) {
+          proposed.push(observation);
+          logger.info(`[user-model] Proposed dialectic observation: ${observation.content} (${observation.kind})`);
+        }
+      } catch (err) {
+        logger.debug('[user-model] Failed to propose observation', { error: String(err) });
+      }
+    }
+
+    return proposed;
+  } catch (err) {
+    logger.warn('[user-model] Dialectic inference LLM call failed', {
+      error: err instanceof Error ? err.message : String(err)
+    });
+    return [];
+  }
+}
+
+function parseLLMResponse(text: string): Array<{ kind: string; content: string; confidence: number }> {
+  const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
+  const jsonText = jsonMatch ? jsonMatch[1] : text;
+  try {
+    const parsed = JSON.parse(jsonText.trim());
+    if (Array.isArray(parsed)) return parsed;
+  } catch (err) {
+    logger.warn('[user-model] Failed to parse user dialectic JSON response', { text, error: String(err) });
+  }
+  return [];
 }

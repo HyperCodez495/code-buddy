@@ -246,6 +246,12 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain("t('fleet.scheduledWork.openSettings'");
     expect(source).toContain("t('fleet.scheduleDispatch'");
     expect(source).toContain("t('fleet.hermesPlan.schedule'");
+    // GAP-8: the lessons vault cockpit is reachable — the strip's Browse trigger
+    // toggles state that mounts the previously-dead LessonsVaultGraph modal.
+    expect(source).toContain("import { LessonsVaultGraph } from './LessonsVaultGraph'");
+    expect(source).toContain('showLessonsGraph');
+    expect(source).toContain('onBrowse={() => setShowLessonsGraph(true)}');
+    expect(source).toContain('<LessonsVaultGraph onClose={() => setShowLessonsGraph(false)} />');
   });
 
   it('builds a Cowork dispatch goal from the Hermes plan contract', () => {

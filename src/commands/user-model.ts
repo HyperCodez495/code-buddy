@@ -170,6 +170,63 @@ export function createUserModelCommand(): Command {
       console.log(`Cleared ${n} observation(s)${status ? ` (${status})` : ''}.`);
     });
 
+  // ---- analyze -------------------------------------------------------------
+  cmd
+    .command('analyze')
+    .description('Run LLM dialectic inference on a session to propose preferences')
+    .option('--session <id>', 'Specific session ID (defaults to latest)')
+    .action(async (opts: { session?: string }) => {
+      try {
+        const { getSessionStore } = await import('../persistence/session-store.js');
+        const sessionStore = getSessionStore();
+        let sessionId = opts.session;
+        if (!sessionId) {
+          sessionId = sessionStore.getCurrentSessionId() || undefined;
+        }
+        if (!sessionId) {
+          // Fallback to latest session in list
+          const sessions = sessionStore.listSessions();
+          if (sessions.length > 0) {
+            sessionId = sessions[0]!.id;
+          }
+        }
+
+        if (!sessionId) {
+          console.error('No session found to analyze.');
+          process.exit(1);
+        }
+
+        console.log(`Loading history for session: ${sessionId}...`);
+        const session = await sessionStore.loadSession(sessionId);
+        if (!session) {
+          console.error(`Session ${sessionId} not found.`);
+          process.exit(1);
+        }
+        const chatHistory = sessionStore.convertMessagesToChatEntries(session.messages);
+        if (!chatHistory || chatHistory.length === 0) {
+          console.error('Session has no chat history.');
+          process.exit(1);
+        }
+
+        console.log('Running LLM dialectic inference to detect preferences...');
+        const { runUserDialecticInference } = await import('../memory/user-model.js');
+        const proposed = await runUserDialecticInference(chatHistory, process.cwd());
+
+        if (proposed.length === 0) {
+          console.log('No new user preferences detected.');
+        } else {
+          console.log(`\nSuccessfully proposed ${proposed.length} new preference candidate(s):`);
+          for (const obs of proposed) {
+            console.log(`- [${obs.id}] (${obs.kind}): ${obs.content}`);
+          }
+          console.log('\nReview pending observations with: buddy user-model list --status pending');
+        }
+      } catch (err) {
+        console.error('Failed to run dialectic analysis:', err instanceof Error ? err.message : String(err));
+        process.exit(1);
+      }
+    });
+
   return cmd;
 }
 
