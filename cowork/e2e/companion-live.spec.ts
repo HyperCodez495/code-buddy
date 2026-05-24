@@ -98,6 +98,8 @@ test('validates Buddy companion against real core IPC and local hardware surface
       if (panelText.includes('Vision inspection')) return 'vision-ok';
       if (
         panelText.includes('Cannot capture camera snapshot') ||
+        panelText.includes('Renderer camera unavailable') ||
+        panelText.includes('Camera permission denied') ||
         panelText.includes('Camera inspection failed') ||
         panelText.includes('Camera snapshot failed') ||
         panelText.includes('core camera')

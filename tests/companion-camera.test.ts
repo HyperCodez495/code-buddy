@@ -1,5 +1,5 @@
 import { EventEmitter } from 'events';
-import { mkdtemp, rm, writeFile } from 'fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { vi } from 'vitest';
@@ -9,6 +9,7 @@ import {
   checkCameraAvailability,
   formatCameraSnapshotInspection,
   getDefaultCameraOutputPath,
+  importCameraSnapshot,
   inspectCameraSnapshot,
   type CameraRuntime,
 } from '../src/companion/camera.js';
@@ -141,6 +142,47 @@ describe('companion camera bridge', () => {
 
     expect(result.success).toBe(true);
     expect(result.path).toBe(path.join(tempDir, 'custom', 'scene.png'));
+  });
+
+  it('imports renderer camera snapshots without requiring ffmpeg', async () => {
+    const pngBytes = Buffer.from(
+      'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+      'base64',
+    );
+    const result = await importCameraSnapshot({
+      cwd: tempDir,
+      dataUrl: `data:image/png;base64,${pngBytes.toString('base64')}`,
+      width: 1,
+      height: 1,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.command).toBe('renderer-getUserMedia');
+    expect(result.path).toContain(path.join('.codebuddy', 'camera'));
+    await expect(readFile(result.path!)).resolves.toEqual(pngBytes);
+
+    const percepts = await readRecentCompanionPercepts({ cwd: tempDir });
+    expect(percepts[0]).toMatchObject({
+      modality: 'vision',
+      source: 'camera_snapshot',
+      payload: expect.objectContaining({
+        command: 'renderer-getUserMedia',
+        captureSource: 'electron_renderer',
+        width: 1,
+        height: 1,
+      }),
+    });
+
+    const safetyEvents = await readRecentCompanionSafetyEvents({ cwd: tempDir });
+    expect(safetyEvents[0]).toMatchObject({
+      action: 'camera_snapshot',
+      source: 'camera_snapshot',
+      artifactPath: result.path,
+      payload: expect.objectContaining({
+        command: 'renderer-getUserMedia',
+        captureSource: 'electron_renderer',
+      }),
+    });
   });
 
   it('inspects an existing camera image and records a vision percept', async () => {

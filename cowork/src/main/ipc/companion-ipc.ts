@@ -462,6 +462,15 @@ type CompanionPerceptsMod = {
 
 type CompanionCameraMod = {
   checkCameraAvailability: () => Promise<Record<string, unknown>>;
+  importCameraSnapshot: (options: {
+    cwd?: string;
+    outputPath?: string;
+    dataUrl?: string;
+    base64?: string;
+    mediaType?: string;
+    width?: number;
+    height?: number;
+  }) => Promise<CameraSnapshotResult>;
   captureCameraSnapshot: (options: {
     cwd?: string;
     outputPath?: string;
@@ -1355,6 +1364,47 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: false as const, error: errorMessage(err) };
     }
   });
+
+  ipcMain.handle(
+    'companion.camera.rendererSnapshot',
+    async (
+      _e,
+      input?: {
+        dataUrl?: string;
+        base64?: string;
+        mediaType?: string;
+        width?: number;
+        height?: number;
+        outputPath?: string;
+        projectId?: string;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadCamera();
+        if (!mod?.importCameraSnapshot) {
+          return { ok: false as const, error: 'core camera import module unavailable' };
+        }
+        const result = await mod.importCameraSnapshot({
+          cwd,
+          dataUrl: input?.dataUrl,
+          base64: input?.base64,
+          mediaType: input?.mediaType,
+          width: input?.width,
+          height: input?.height,
+          outputPath: input?.outputPath,
+        });
+        if (!result.success) {
+          return { ok: false as const, error: result.error ?? 'camera snapshot import failed', result };
+        }
+        return { ok: true as const, result };
+      } catch (err) {
+        logError('[companion.camera.rendererSnapshot] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
 
   ipcMain.handle(
     'companion.camera.snapshot',

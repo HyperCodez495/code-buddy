@@ -1,5 +1,5 @@
 import { spawn as nodeSpawn, execFile as nodeExecFile } from 'child_process';
-import { mkdir, stat } from 'fs/promises';
+import { mkdir, stat, writeFile } from 'fs/promises';
 import * as path from 'path';
 import { recordCompanionPercept } from './percepts.js';
 import { recordCompanionSafetyEvent } from './safety-ledger.js';
@@ -51,6 +51,17 @@ export interface CameraSnapshotOptions {
   timeoutMs?: number;
   runtime?: CameraRuntime;
   platform?: NodeJS.Platform;
+  recordPercept?: boolean;
+}
+
+export interface CameraRendererSnapshotOptions {
+  cwd?: string;
+  outputPath?: string;
+  dataUrl?: string;
+  base64?: string;
+  mediaType?: string;
+  width?: number;
+  height?: number;
   recordPercept?: boolean;
 }
 
@@ -110,6 +121,12 @@ function quoteArg(arg: string): string {
 
 function buildCommandPreview(args: string[]): string {
   return ['ffmpeg', ...args].map(quoteArg).join(' ');
+}
+
+function extensionForMediaType(mediaType: string | undefined): string {
+  if (mediaType === 'image/jpeg' || mediaType === 'image/jpg') return 'jpg';
+  if (mediaType === 'image/webp') return 'webp';
+  return 'png';
 }
 
 function defaultDeviceForPlatform(platform: NodeJS.Platform): string {
@@ -173,12 +190,16 @@ export function buildCameraSnapshotArgs(
   ];
 }
 
-export function getDefaultCameraOutputPath(cwd = process.cwd(), date = new Date()): string {
+export function getDefaultCameraOutputPath(
+  cwd = process.cwd(),
+  date = new Date(),
+  extension = 'png',
+): string {
   const stamp = date.toISOString()
     .replace(/[-:]/g, '')
     .replace(/\.\d{3}Z$/, '')
     .replace('T', '-');
-  return path.join(cwd, '.codebuddy', 'camera', `camera-${stamp}.png`);
+  return path.join(cwd, '.codebuddy', 'camera', `camera-${stamp}.${extension}`);
 }
 
 async function execFileResult(
@@ -237,6 +258,129 @@ async function fileExists(filePath: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+function decodeRendererImage(options: CameraRendererSnapshotOptions): {
+  buffer: Buffer;
+  mediaType: string;
+} {
+  if (options.dataUrl) {
+    const match = options.dataUrl.match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/=\s]+)$/);
+    if (!match) {
+      throw new Error('Renderer camera snapshot must be a base64 PNG, JPEG, or WEBP data URL.');
+    }
+    return {
+      mediaType: match[1] === 'image/jpg' ? 'image/jpeg' : match[1],
+      buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
+    };
+  }
+
+  if (!options.base64) {
+    throw new Error('Renderer camera snapshot requires dataUrl or base64 image data.');
+  }
+
+  const mediaType = options.mediaType === 'image/jpg' ? 'image/jpeg' : options.mediaType;
+  if (!mediaType || !['image/png', 'image/jpeg', 'image/webp'].includes(mediaType)) {
+    throw new Error('Renderer camera snapshot base64 data requires mediaType image/png, image/jpeg, or image/webp.');
+  }
+
+  return {
+    mediaType,
+    buffer: Buffer.from(options.base64.replace(/\s/g, ''), 'base64'),
+  };
+}
+
+export async function importCameraSnapshot(
+  options: CameraRendererSnapshotOptions,
+): Promise<CameraSnapshotResult> {
+  const cwd = options.cwd || process.cwd();
+  let decoded: { buffer: Buffer; mediaType: string };
+
+  try {
+    decoded = decodeRendererImage(options);
+  } catch (err) {
+    return {
+      success: false,
+      command: 'renderer-getUserMedia',
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+
+  if (decoded.buffer.length === 0) {
+    return {
+      success: false,
+      command: 'renderer-getUserMedia',
+      error: 'Renderer camera snapshot was empty.',
+    };
+  }
+
+  const extension = extensionForMediaType(decoded.mediaType);
+  const outputPath = path.resolve(
+    cwd,
+    options.outputPath || getDefaultCameraOutputPath(cwd, new Date(), extension),
+  );
+
+  await ensureParentDirectory(outputPath);
+  await writeFile(outputPath, decoded.buffer);
+
+  let perceptId: string | undefined;
+  let perceptPath: string | undefined;
+  if (options.recordPercept !== false) {
+    try {
+      const percept = await recordCompanionPercept({
+        modality: 'vision',
+        source: 'camera_snapshot',
+        summary: `Captured renderer camera snapshot to ${outputPath}`,
+        confidence: 1,
+        payload: {
+          path: outputPath,
+          command: 'renderer-getUserMedia',
+          mediaType: decoded.mediaType,
+          width: options.width,
+          height: options.height,
+          kind: 'image_snapshot',
+          captureSource: 'electron_renderer',
+        },
+        tags: ['camera', 'webcam', 'snapshot', 'vision', 'renderer'],
+      }, { cwd });
+      perceptId = percept.id;
+      perceptPath = path.join(cwd, '.codebuddy', 'companion', 'percepts.jsonl');
+    } catch {
+      // Snapshot success should not depend on the local percept journal.
+    }
+  }
+
+  try {
+    await recordCompanionSafetyEvent({
+      kind: 'sense',
+      risk: 'medium',
+      action: 'camera_snapshot',
+      reason: 'Captured an explicit Electron renderer webcam frame for Buddy vision.',
+      status: 'completed',
+      source: 'camera_snapshot',
+      artifactPath: outputPath,
+      payload: {
+        path: outputPath,
+        command: 'renderer-getUserMedia',
+        mediaType: decoded.mediaType,
+        width: options.width,
+        height: options.height,
+        captureSource: 'electron_renderer',
+      },
+      tags: ['camera', 'webcam', 'vision', 'renderer'],
+    }, { cwd });
+  } catch {
+    // Camera capture is complete; the percept journal still records the user-visible result.
+  }
+
+  return {
+    success: true,
+    path: outputPath,
+    command: 'renderer-getUserMedia',
+    output: `Saved renderer webcam snapshot to ${outputPath}`,
+    perceptId,
+    perceptPath,
+  };
 }
 
 async function runFfmpegSnapshot(

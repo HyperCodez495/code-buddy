@@ -136,6 +136,7 @@ async function mockCompanionBackend(electronApp: ElectronApplication, workspaceP
       'companion.privacy.report',
       'companion.camera.status',
       'companion.camera.snapshot',
+      'companion.camera.rendererSnapshot',
       'companion.camera.inspect',
     ];
     for (const channel of channels) ipcMain.removeHandler(channel);
@@ -322,6 +323,16 @@ async function mockCompanionBackend(electronApp: ElectronApplication, workspaceP
         perceptId: 'percept_e2e_camera',
       },
     }));
+    ipcMain.handle('companion.camera.rendererSnapshot', async () => ({
+      ok: true,
+      result: {
+        success: true,
+        path: `${cwd}/.codebuddy/companion/camera/e2e-renderer-frame.png`,
+        output: 'deterministic renderer camera frame captured',
+        command: 'renderer-getUserMedia',
+        perceptId: 'percept_e2e_renderer_camera',
+      },
+    }));
     ipcMain.handle('companion.camera.inspect', async () => ({
       ok: true,
       result: {
@@ -421,6 +432,17 @@ test('drives the Buddy companion cockpit from no project to improvement loop', a
   await appPage.getByRole('button', { name: 'Improve loop' }).click();
   await expect(appPage.getByText('Improvement loop')).toBeVisible();
   await expect(appPage.getByText('Review competitor delta')).toBeVisible();
+
+  await appPage.evaluate(() => {
+    Object.defineProperty(navigator, 'mediaDevices', {
+      configurable: true,
+      value: {
+        getUserMedia: async () => {
+          throw new DOMException('No deterministic camera device', 'NotFoundError');
+        },
+      },
+    });
+  });
 
   await appPage.getByRole('button', { name: 'Inspect camera' }).click();
   await expect(appPage.getByText('Vision inspection')).toBeVisible();

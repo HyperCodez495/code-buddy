@@ -82,6 +82,108 @@ const MODALITY_ICON: Record<CompanionPerceptModality, typeof Activity> = {
   suggestion: Sparkles,
 };
 
+interface RendererCameraFrame {
+  dataUrl: string;
+  mediaType: 'image/png';
+  width: number;
+  height: number;
+}
+
+function cameraErrorMessage(error: unknown): string {
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function isCameraPermissionDenied(error: unknown): boolean {
+  if (!error || typeof error !== 'object') return false;
+  const name = (error as { name?: unknown }).name;
+  return name === 'NotAllowedError' || name === 'SecurityError' || name === 'PermissionDeniedError';
+}
+
+function canUseRendererCamera(): boolean {
+  const mediaDevices = (navigator as Navigator & {
+    mediaDevices?: { getUserMedia?: unknown };
+  }).mediaDevices;
+  const companion = (window as Window & {
+    electronAPI?: { companion?: { cameraRendererSnapshot?: unknown } };
+  }).electronAPI?.companion;
+
+  return Boolean(
+    typeof mediaDevices?.getUserMedia === 'function'
+    && typeof companion?.cameraRendererSnapshot === 'function',
+  );
+}
+
+async function captureRendererCameraFrame(): Promise<RendererCameraFrame> {
+  const mediaDevices = (navigator as Navigator & {
+    mediaDevices?: { getUserMedia?: (constraints: MediaStreamConstraints) => Promise<MediaStream> };
+  }).mediaDevices;
+
+  if (typeof mediaDevices?.getUserMedia !== 'function') {
+    throw new Error('Renderer camera API is unavailable.');
+  }
+
+  const stream = await mediaDevices.getUserMedia({
+    video: {
+      width: { ideal: 640 },
+      height: { ideal: 480 },
+      facingMode: 'user',
+    },
+    audio: false,
+  });
+
+  const video = document.createElement('video');
+  video.muted = true;
+  video.playsInline = true;
+  video.srcObject = stream;
+
+  try {
+    await new Promise<void>((resolve, reject) => {
+      const timer = window.setTimeout(() => {
+        reject(new Error('Timed out waiting for the camera frame.'));
+      }, 10000);
+
+      video.onloadedmetadata = () => {
+        video.play()
+          .then(() => {
+            window.clearTimeout(timer);
+            resolve();
+          })
+          .catch((err: unknown) => {
+            window.clearTimeout(timer);
+            reject(err);
+          });
+      };
+      video.onerror = () => {
+        window.clearTimeout(timer);
+        reject(new Error('Camera video element failed to load.'));
+      };
+    });
+
+    if (video.videoWidth === 0 || video.videoHeight === 0) {
+      throw new Error('Camera stream did not expose a video frame.');
+    }
+
+    const canvas = document.createElement('canvas');
+    canvas.width = video.videoWidth;
+    canvas.height = video.videoHeight;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) throw new Error('Camera canvas context is unavailable.');
+
+    ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+    return {
+      dataUrl: canvas.toDataURL('image/png'),
+      mediaType: 'image/png',
+      width: canvas.width,
+      height: canvas.height,
+    };
+  } finally {
+    stream.getTracks().forEach((track) => track.stop());
+    video.srcObject = null;
+  }
+}
+
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
   const kb = bytes / 1024;
@@ -468,6 +570,21 @@ export function CompanionPanel() {
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CameraSnapshotInspectionResult | null>(null);
+  const rendererCameraCapable = canUseRendererCamera();
+
+  const captureRendererSnapshot = async (): Promise<CameraSnapshotResult> => {
+    const frame = await captureRendererCameraFrame();
+    const res = await window.electronAPI.companion.cameraRendererSnapshot({
+      dataUrl: frame.dataUrl,
+      mediaType: frame.mediaType,
+      width: frame.width,
+      height: frame.height,
+    });
+    if (!res.ok || !res.result) {
+      throw new Error(res.error ?? 'Renderer camera snapshot failed');
+    }
+    return res.result;
+  };
 
   const filteredStats = useMemo(() => {
     if (!stats) return [];
@@ -594,10 +711,33 @@ export function CompanionPanel() {
   const captureCamera = async () => {
     setBusyAction('camera');
     setError(null);
+    let rendererError: string | null = null;
+
+    if (rendererCameraCapable) {
+      try {
+        const snapshot = await captureRendererSnapshot();
+        setBusyAction(null);
+        setLastSnapshot(snapshot);
+        await refresh();
+        return;
+      } catch (err) {
+        if (isCameraPermissionDenied(err)) {
+          setBusyAction(null);
+          setError(`Camera permission denied: ${cameraErrorMessage(err)}`);
+          return;
+        }
+        rendererError = cameraErrorMessage(err);
+      }
+    }
+
     const res = await window.electronAPI.companion.cameraSnapshot({ timeoutMs: 10000 });
     setBusyAction(null);
     if (!res.ok) {
-      setError(res.error ?? 'Camera snapshot failed');
+      setError(
+        rendererError
+          ? `Renderer camera unavailable: ${rendererError}. ${res.error ?? 'Camera snapshot failed'}`
+          : res.error ?? 'Camera snapshot failed',
+      );
       return;
     }
     setLastSnapshot(res.result ?? null);
@@ -607,13 +747,34 @@ export function CompanionPanel() {
   const inspectCamera = async () => {
     setBusyAction('cameraInspect');
     setError(null);
+    let snapshot = lastSnapshot;
+    let rendererError: string | null = null;
+
+    if (!snapshot?.path && rendererCameraCapable) {
+      try {
+        snapshot = await captureRendererSnapshot();
+        setLastSnapshot(snapshot);
+      } catch (err) {
+        if (isCameraPermissionDenied(err)) {
+          setBusyAction(null);
+          setError(`Camera permission denied: ${cameraErrorMessage(err)}`);
+          return;
+        }
+        rendererError = cameraErrorMessage(err);
+      }
+    }
+
     const res = await window.electronAPI.companion.cameraInspect({
-      imagePath: lastSnapshot?.path,
+      imagePath: snapshot?.path,
       timeoutMs: 10000,
     });
     setBusyAction(null);
     if (!res.ok) {
-      setError(res.error ?? 'Camera inspection failed');
+      setError(
+        rendererError
+          ? `Renderer camera unavailable: ${rendererError}. ${res.error ?? 'Camera inspection failed'}`
+          : res.error ?? 'Camera inspection failed',
+      );
       return;
     }
     setLastInspection(res.result ?? null);
@@ -914,8 +1075,14 @@ export function CompanionPanel() {
                 <StatusTile
                   icon={Camera}
                   label="Camera"
-                  value={`${ready(status.camera.available)} / ${status.camera.platform}`}
-                  ok={status.camera.available}
+                  value={
+                    status.camera.available
+                      ? `${ready(true)} / ${status.camera.platform}`
+                      : rendererCameraCapable
+                        ? 'Renderer capture / browser'
+                        : `${ready(false)} / ${status.camera.platform}`
+                  }
+                  ok={status.camera.available || rendererCameraCapable}
                 />
                 <StatusTile
                   icon={Radio}

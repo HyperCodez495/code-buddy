@@ -958,6 +958,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       projectId?: string;
     }): Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }> =>
       ipcRenderer.invoke('companion.camera.snapshot', input),
+    cameraRendererSnapshot: (input: {
+      dataUrl?: string;
+      base64?: string;
+      mediaType?: string;
+      width?: number;
+      height?: number;
+      outputPath?: string;
+      projectId?: string;
+    }): Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }> =>
+      ipcRenderer.invoke('companion.camera.rendererSnapshot', input),
     cameraInspect: (input?: {
       imagePath?: string;
       outputPath?: string;
@@ -3209,6 +3219,15 @@ declare global {
           outputPath?: string;
           device?: string;
           timeoutMs?: number;
+          projectId?: string;
+        }) => Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }>;
+        cameraRendererSnapshot: (input: {
+          dataUrl?: string;
+          base64?: string;
+          mediaType?: string;
+          width?: number;
+          height?: number;
+          outputPath?: string;
           projectId?: string;
         }) => Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }>;
         cameraInspect: (input?: {
