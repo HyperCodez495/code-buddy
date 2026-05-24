@@ -964,6 +964,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
       mediaType?: string;
       width?: number;
       height?: number;
+      mediaPipe?: unknown;
       outputPath?: string;
       projectId?: string;
     }): Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }> =>
@@ -3227,6 +3228,7 @@ declare global {
           mediaType?: string;
           width?: number;
           height?: number;
+          mediaPipe?: unknown;
           outputPath?: string;
           projectId?: string;
         }) => Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }>;

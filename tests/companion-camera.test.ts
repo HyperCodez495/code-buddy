@@ -154,6 +154,27 @@ describe('companion camera bridge', () => {
       dataUrl: `data:image/png;base64,${pngBytes.toString('base64')}`,
       width: 1,
       height: 1,
+      mediaPipe: {
+        engine: 'mediapipe_tasks_vision',
+        models: ['face_detector_blaze_face_short_range', 'hand_landmarker', 'pose_landmarker_lite'],
+        runningMode: 'IMAGE',
+        status: 'ok',
+        faceCount: 1,
+        handCount: 1,
+        poseCount: 0,
+        faces: [{
+          boundingBox: { x: 0, y: 0, width: 1, height: 1 },
+          confidence: 0.9,
+          keypoints: [{ x: 0.5, y: 0.5 }],
+        }],
+        hands: [{
+          handedness: 'Right',
+          confidence: 0.8,
+          landmarks: [{ x: 0.1, y: 0.2 }],
+          fingerTips: { index: { x: 0.3, y: 0.4 } },
+        }],
+        poses: [],
+      },
     });
 
     expect(result.success).toBe(true);
@@ -170,7 +191,13 @@ describe('companion camera bridge', () => {
         captureSource: 'electron_renderer',
         width: 1,
         height: 1,
+        mediaPipe: expect.objectContaining({
+          engine: 'mediapipe_tasks_vision',
+          faceCount: 1,
+          handCount: 1,
+        }),
       }),
+      tags: expect.arrayContaining(['mediapipe', 'face']),
     });
 
     const safetyEvents = await readRecentCompanionSafetyEvents({ cwd: tempDir });
@@ -181,6 +208,10 @@ describe('companion camera bridge', () => {
       payload: expect.objectContaining({
         command: 'renderer-getUserMedia',
         captureSource: 'electron_renderer',
+        mediaPipe: expect.objectContaining({
+          engine: 'mediapipe_tasks_vision',
+          handCount: 1,
+        }),
       }),
     });
   });

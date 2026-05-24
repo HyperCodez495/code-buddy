@@ -470,6 +470,7 @@ type CompanionCameraMod = {
     mediaType?: string;
     width?: number;
     height?: number;
+    mediaPipe?: unknown;
   }) => Promise<CameraSnapshotResult>;
   captureCameraSnapshot: (options: {
     cwd?: string;
@@ -1375,6 +1376,7 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         mediaType?: string;
         width?: number;
         height?: number;
+        mediaPipe?: unknown;
         outputPath?: string;
         projectId?: string;
       },
@@ -1393,6 +1395,7 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
           mediaType: input?.mediaType,
           width: input?.width,
           height: input?.height,
+          mediaPipe: input?.mediaPipe,
           outputPath: input?.outputPath,
         });
         if (!result.success) {

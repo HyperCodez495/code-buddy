@@ -62,7 +62,52 @@ export interface CameraRendererSnapshotOptions {
   mediaType?: string;
   width?: number;
   height?: number;
+  mediaPipe?: CameraRendererMediaPipeAnalysis;
   recordPercept?: boolean;
+}
+
+export interface CameraRendererMediaPipePoint {
+  x: number;
+  y: number;
+  z?: number;
+}
+
+export interface CameraRendererMediaPipeFace {
+  boundingBox: {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+  };
+  confidence: number;
+  keypoints?: CameraRendererMediaPipePoint[];
+}
+
+export interface CameraRendererMediaPipeHand {
+  handedness?: string;
+  confidence?: number;
+  landmarks: CameraRendererMediaPipePoint[];
+  fingerTips: Partial<Record<'thumb' | 'index' | 'middle' | 'ring' | 'pinky', CameraRendererMediaPipePoint>>;
+}
+
+export interface CameraRendererMediaPipePose {
+  landmarkCount: number;
+  landmarks: CameraRendererMediaPipePoint[];
+}
+
+export interface CameraRendererMediaPipeAnalysis {
+  engine: 'mediapipe_tasks_vision';
+  models: string[];
+  runningMode: 'IMAGE' | 'VIDEO';
+  status: 'ok' | 'unavailable' | 'error';
+  faceCount: number;
+  handCount: number;
+  poseCount: number;
+  faces: CameraRendererMediaPipeFace[];
+  hands: CameraRendererMediaPipeHand[];
+  poses: CameraRendererMediaPipePose[];
+  elapsedMs?: number;
+  error?: string;
 }
 
 export interface CameraSnapshotResult {
@@ -323,6 +368,19 @@ export async function importCameraSnapshot(
   await ensureParentDirectory(outputPath);
   await writeFile(outputPath, decoded.buffer);
 
+  const mediaPipe = options.mediaPipe;
+  const mediaPipeTags = mediaPipe
+    ? [
+      'mediapipe',
+      mediaPipe.engine,
+      ...(mediaPipe.faceCount > 0 ? ['face'] : []),
+      `mediapipe-${mediaPipe.status}`,
+    ]
+    : [];
+  const mediaPipeSummary = mediaPipe
+    ? ` MediaPipe ${mediaPipe.status}: ${mediaPipe.faceCount} face${mediaPipe.faceCount === 1 ? '' : 's'}, ${mediaPipe.handCount} hand${mediaPipe.handCount === 1 ? '' : 's'}, ${mediaPipe.poseCount} pose${mediaPipe.poseCount === 1 ? '' : 's'}.`
+    : '';
+
   let perceptId: string | undefined;
   let perceptPath: string | undefined;
   if (options.recordPercept !== false) {
@@ -330,7 +388,7 @@ export async function importCameraSnapshot(
       const percept = await recordCompanionPercept({
         modality: 'vision',
         source: 'camera_snapshot',
-        summary: `Captured renderer camera snapshot to ${outputPath}`,
+        summary: `Captured renderer camera snapshot to ${outputPath}.${mediaPipeSummary}`,
         confidence: 1,
         payload: {
           path: outputPath,
@@ -340,8 +398,9 @@ export async function importCameraSnapshot(
           height: options.height,
           kind: 'image_snapshot',
           captureSource: 'electron_renderer',
+          ...(mediaPipe ? { mediaPipe } : {}),
         },
-        tags: ['camera', 'webcam', 'snapshot', 'vision', 'renderer'],
+        tags: ['camera', 'webcam', 'snapshot', 'vision', 'renderer', ...mediaPipeTags],
       }, { cwd });
       perceptId = percept.id;
       perceptPath = path.join(cwd, '.codebuddy', 'companion', 'percepts.jsonl');
@@ -366,8 +425,9 @@ export async function importCameraSnapshot(
         width: options.width,
         height: options.height,
         captureSource: 'electron_renderer',
+        ...(mediaPipe ? { mediaPipe } : {}),
       },
-      tags: ['camera', 'webcam', 'vision', 'renderer'],
+      tags: ['camera', 'webcam', 'vision', 'renderer', ...mediaPipeTags],
     }, { cwd });
   } catch {
     // Camera capture is complete; the percept journal still records the user-visible result.

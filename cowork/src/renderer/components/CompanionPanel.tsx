@@ -30,6 +30,10 @@ import {
   X,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import {
+  analyzeCompanionMediaPipeFrame,
+  type CompanionMediaPipeVisionAnalysis,
+} from '../services/companion/mediapipe-vision';
 import { speakText } from './VoiceOutputToggle';
 import type {
   CameraSnapshotInspectionResult,
@@ -87,6 +91,7 @@ interface RendererCameraFrame {
   mediaType: 'image/png';
   width: number;
   height: number;
+  mediaPipe?: CompanionMediaPipeVisionAnalysis;
 }
 
 function cameraErrorMessage(error: unknown): string {
@@ -171,12 +176,14 @@ async function captureRendererCameraFrame(): Promise<RendererCameraFrame> {
     if (!ctx) throw new Error('Camera canvas context is unavailable.');
 
     ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const mediaPipe = await analyzeCompanionMediaPipeFrame(canvas, { timeoutMs: 8000 });
 
     return {
       dataUrl: canvas.toDataURL('image/png'),
       mediaType: 'image/png',
       width: canvas.width,
       height: canvas.height,
+      mediaPipe,
     };
   } finally {
     stream.getTracks().forEach((track) => track.stop());
@@ -579,6 +586,7 @@ export function CompanionPanel() {
       mediaType: frame.mediaType,
       width: frame.width,
       height: frame.height,
+      mediaPipe: frame.mediaPipe,
     });
     if (!res.ok || !res.result) {
       throw new Error(res.error ?? 'Renderer camera snapshot failed');
