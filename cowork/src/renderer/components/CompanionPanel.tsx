@@ -50,6 +50,7 @@ import type {
   CompanionSkillCandidate,
   CompanionSkillCuratorResult,
   CompanionStatus,
+  VoiceConversationSnapshot,
 } from '../types';
 
 const MODALITIES: Array<{ key: CompanionPerceptModality | 'all'; label: string }> = [
@@ -425,6 +426,7 @@ export function CompanionPanel() {
   const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
+  const [voiceConversation, setVoiceConversation] = useState<VoiceConversationSnapshot | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | null>(null);
@@ -453,6 +455,7 @@ export function CompanionPanel() {
       cardsRes,
       gatewayRes,
       skillsRes,
+      voiceConversationRes,
     ] = await Promise.all([
       window.electronAPI.companion.status(),
       window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
@@ -464,6 +467,7 @@ export function CompanionPanel() {
       window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
       window.electronAPI.companion.gatewayProfile(),
       window.electronAPI.companion.listSkillCandidates(),
+      window.electronAPI.voice.conversationStatus().catch(() => null),
     ]);
 
     setLoading(false);
@@ -478,6 +482,7 @@ export function CompanionPanel() {
       setCards([]);
       setGateway(null);
       setSkillCandidates([]);
+      setVoiceConversation(voiceConversationRes);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
         : statusRes.error ?? 'Failed to load companion status');
@@ -494,6 +499,7 @@ export function CompanionPanel() {
     setCards(cardsRes.ok ? cardsRes.items : []);
     setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
     setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
+    setVoiceConversation(voiceConversationRes);
     if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok) {
       setError(recentRes.error
         ?? statsRes.error
@@ -756,6 +762,12 @@ export function CompanionPanel() {
                   label="Voice output"
                   value={`${ready(status.tts.enabled && status.tts.available)} / ${status.tts.provider}`}
                   ok={status.tts.enabled && status.tts.available}
+                />
+                <StatusTile
+                  icon={Activity}
+                  label="Dialogue"
+                  value={voiceConversation ? `${voiceConversation.phase} / turn ${voiceConversation.turnId}` : 'No voice session'}
+                  ok={Boolean(voiceConversation && voiceConversation.phase !== 'error')}
                 />
                 <StatusTile
                   icon={Camera}

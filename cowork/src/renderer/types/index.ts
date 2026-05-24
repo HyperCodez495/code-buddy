@@ -328,6 +328,49 @@ export interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+export type VoiceConversationPhase =
+  | 'idle'
+  | 'listening'
+  | 'transcribing'
+  | 'thinking'
+  | 'speaking'
+  | 'interrupted'
+  | 'error';
+
+export type VoiceConversationEventType =
+  | 'listening_started'
+  | 'listening_stopped'
+  | 'transcription_started'
+  | 'transcription_completed'
+  | 'transcription_failed'
+  | 'user_message_sent'
+  | 'assistant_speech_started'
+  | 'assistant_speech_finished'
+  | 'assistant_interrupted'
+  | 'reset';
+
+export interface VoiceConversationEvent {
+  type: VoiceConversationEventType;
+  timestamp?: number;
+  transcript?: string;
+  error?: string;
+  reason?: string;
+  hadPlayback?: boolean;
+}
+
+export interface VoiceConversationSnapshot {
+  phase: VoiceConversationPhase;
+  startedAt: number;
+  updatedAt: number;
+  lastEventType?: VoiceConversationEventType;
+  turnId: number;
+  interruptionCount: number;
+  lastTranscriptPreview?: string;
+  lastError?: string;
+  lastInterruptionReason?: string;
+  hadPlaybackDuringLastInterruption?: boolean;
+}
+
 export type CompanionCardKind =
   | 'status'
   | 'approval'

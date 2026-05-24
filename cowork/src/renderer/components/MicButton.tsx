@@ -12,6 +12,7 @@ import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Mic, MicOff } from 'lucide-react';
 import { interruptSpeech } from './VoiceOutputToggle';
+import type { VoiceConversationEvent } from '../types';
 
 interface MicButtonProps {
   onTranscript: (text: string) => void;
@@ -21,6 +22,10 @@ interface MicButtonProps {
 }
 
 type Status = 'idle' | 'recording' | 'transcribing' | 'unsupported' | 'error';
+
+function recordVoiceEvent(payload: VoiceConversationEvent) {
+  void window.electronAPI?.voice?.recordConversationEvent?.(payload).catch(() => undefined);
+}
 
 export const MicButton: React.FC<MicButtonProps> = ({
   onTranscript,
@@ -63,6 +68,7 @@ export const MicButton: React.FC<MicButtonProps> = ({
       return;
     }
     interruptSpeech('barge_in');
+    recordVoiceEvent({ type: 'listening_started' });
     // Optimistic UX — flip the button to 'recording' immediately so the
     // user gets visual confirmation of their click. We'll roll back on
     // permission denial / device error in the catch block below. Without
@@ -116,6 +122,7 @@ export const MicButton: React.FC<MicButtonProps> = ({
     if (status !== 'recording') return;
     const recorder = recorderRef.current;
     if (recorder && recorder.state === 'recording') {
+      recordVoiceEvent({ type: 'listening_stopped' });
       recorder.stop();
       setStatus('transcribing');
     } else {

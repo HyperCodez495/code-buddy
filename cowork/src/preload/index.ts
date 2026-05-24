@@ -49,6 +49,8 @@ import type {
   CompanionSkillCuratorResult,
   CompanionSkillPromotionResult,
   CameraSnapshotResult,
+  VoiceConversationEvent,
+  VoiceConversationSnapshot,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -785,6 +787,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       timestamp: number;
     }): Promise<{ ok: boolean; error?: string }> =>
       ipcRenderer.invoke('voice.interrupted', payload),
+    conversationStatus: (): Promise<VoiceConversationSnapshot> =>
+      ipcRenderer.invoke('voice.conversationStatus'),
+    recordConversationEvent: (
+      payload: VoiceConversationEvent,
+    ): Promise<{ ok: boolean; snapshot?: VoiceConversationSnapshot; error?: string }> =>
+      ipcRenderer.invoke('voice.conversationEvent', payload),
   },
 
   companion: {
@@ -3012,6 +3020,10 @@ declare global {
           hadPlayback: boolean;
           timestamp: number;
         }) => Promise<{ ok: boolean; error?: string }>;
+        conversationStatus: () => Promise<VoiceConversationSnapshot>;
+        recordConversationEvent: (
+          payload: VoiceConversationEvent,
+        ) => Promise<{ ok: boolean; snapshot?: VoiceConversationSnapshot; error?: string }>;
       };
       companion: {
         status: (projectId?: string) => Promise<{ ok: boolean; status?: CompanionStatus; error?: string }>;

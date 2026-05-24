@@ -15,6 +15,7 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX } from 'lucide-react';
+import type { VoiceConversationEvent } from '../types';
 
 const STORAGE_KEY = 'cowork.voice.tts.enabled';
 
@@ -41,6 +42,10 @@ declare global {
   interface WindowEventMap {
     'cowork:voice-interrupted': CustomEvent<VoiceInterruptedEventDetail>;
   }
+}
+
+function recordVoiceEvent(payload: VoiceConversationEvent) {
+  void window.electronAPI?.voice?.recordConversationEvent?.(payload).catch(() => undefined);
 }
 
 function cancelActivePlayback(): boolean {
@@ -117,11 +122,15 @@ async function speakViaPiper(text: string): Promise<boolean> {
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     activeAudio = audio;
+    recordVoiceEvent({ type: 'assistant_speech_started' });
     const cleanup = () => {
       URL.revokeObjectURL(url);
       if (activeAudio === audio) activeAudio = null;
     };
-    audio.addEventListener('ended', cleanup);
+    audio.addEventListener('ended', () => {
+      recordVoiceEvent({ type: 'assistant_speech_finished' });
+      cleanup();
+    });
     audio.addEventListener('error', cleanup);
     await audio.play();
     return true;
@@ -140,6 +149,8 @@ function speakViaBrowser(text: string): void {
     utterance.volume = 1.0;
     utterance.lang = 'fr-FR';
     interruptSpeech('new_speech');
+    recordVoiceEvent({ type: 'assistant_speech_started' });
+    utterance.onend = () => recordVoiceEvent({ type: 'assistant_speech_finished' });
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.warn('[VoiceOutputToggle] browser tts failed:', err);

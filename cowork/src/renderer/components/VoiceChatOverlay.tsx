@@ -34,6 +34,7 @@ import {
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 import { interruptSpeech, isTtsEnabled, speakText } from './VoiceOutputToggle';
+import type { VoiceConversationEvent } from '../types';
 
 interface Props {
   isOpen: boolean;
@@ -44,6 +45,10 @@ type RecState = 'idle' | 'recording' | 'transcribing' | 'error';
 
 const TTS_RATE_KEY = 'cowork.voice.ttsRate';
 const TTS_AUTO_KEY = 'cowork.voice.tts.enabled'; // shared with VoiceOutputToggle
+
+function recordVoiceEvent(payload: VoiceConversationEvent) {
+  void window.electronAPI?.voice?.recordConversationEvent?.(payload).catch(() => undefined);
+}
 
 export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const { t } = useTranslation();
@@ -138,6 +143,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     setBargeInNotice(interrupted
       ? t('voiceOverlay.bargeIn', 'Réponse interrompue. Je vous écoute.')
       : null);
+    recordVoiceEvent({ type: 'listening_started' });
     setRec('recording');
     setErrorMsg(null);
     try {
@@ -181,6 +187,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
     if (rec !== 'recording') return;
     const recorder = recorderRef.current;
     if (recorder && recorder.state === 'recording') {
+      recordVoiceEvent({ type: 'listening_stopped' });
       recorder.stop();
       setRec('transcribing');
     } else {
@@ -223,6 +230,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       } else {
         await startSession('Voix', message);
       }
+      recordVoiceEvent({ type: 'user_message_sent', transcript: message });
       setText('');
       onClose();
     } catch (err) {

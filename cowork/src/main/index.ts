@@ -75,6 +75,7 @@ import { getGitBridge } from './git/git-bridge';
 import { getModelCapabilities } from './config/model-capability-bridge';
 import { TemplateService } from './project/template-service';
 import { WorkflowBridge } from './workflows/workflow-bridge';
+import { VoiceConversationSession, type VoiceConversationEvent } from './voice/conversation-session';
 import { VoiceBridge } from './voice/voice-bridge';
 import { TTSBridge } from './voice/tts-bridge';
 import { ClipboardWatcher } from './clipboard/clipboard-watcher';
@@ -219,6 +220,7 @@ let globalSearchService: GlobalSearchService | null = null;
 let previewService: PreviewService | null = null;
 let templateService: TemplateService | null = null;
 let workflowBridge: WorkflowBridge | null = null;
+let voiceConversation: VoiceConversationSession | null = null;
 let voiceBridge: VoiceBridge | null = null;
 let ttsBridge: TTSBridge | null = null;
 let clipboardWatcher: ClipboardWatcher | null = null;
@@ -1517,6 +1519,7 @@ app
     // Voice bridge — lazy-spawned faster-whisper worker. The model is
     // loaded on first transcription, not at boot, so cold-start UX is
     // unaffected if the user never clicks the mic.
+    voiceConversation = new VoiceConversationSession();
     voiceBridge = new VoiceBridge();
     // TTS bridge — Piper + fr_FR voice. Boots fast (no model load
     // until first synthesize), so always-on is fine. Override paths
@@ -3377,6 +3380,33 @@ async function recordCompanionSafetyEventFromMain(input: CompanionSafetyEventInp
   }
 }
 
+function recordVoiceConversationEventFromMain(event: VoiceConversationEvent) {
+  if (!voiceConversation) {
+    voiceConversation = new VoiceConversationSession(event.timestamp);
+  }
+  return voiceConversation.record(event);
+}
+
+ipcMain.handle('voice.conversationStatus', async () => {
+  if (!voiceConversation) {
+    voiceConversation = new VoiceConversationSession();
+  }
+  return voiceConversation.snapshot();
+});
+
+ipcMain.handle(
+  'voice.conversationEvent',
+  async (_event, payload: VoiceConversationEvent) => {
+    try {
+      return { ok: true, snapshot: recordVoiceConversationEventFromMain(payload) };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[voice.conversationEvent] failed:', message);
+      return { ok: false, error: message };
+    }
+  },
+);
+
 /**
  * Voice → text transcription (Phase 8 — mic button in ChatView).
  * Accepts a Buffer of audio (webm/opus from MediaRecorder works out of
@@ -3399,11 +3429,16 @@ ipcMain.handle(
       return { ok: false, error: 'voice bridge not initialized' };
     }
     try {
+      recordVoiceConversationEventFromMain({ type: 'transcription_started' });
       const buf = Buffer.isBuffer(payload.audio)
         ? payload.audio
         : Buffer.from(payload.audio as ArrayBuffer);
       const { text, durationMs } = await voiceBridge.transcribe(buf, {
         language: payload.language,
+      });
+      recordVoiceConversationEventFromMain({
+        type: 'transcription_completed',
+        transcript: text,
       });
       void recordCompanionPerceptFromMain({
         modality: 'hearing',
@@ -3421,6 +3456,10 @@ ipcMain.handle(
       return { ok: true, text, durationMs };
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
+      recordVoiceConversationEventFromMain({
+        type: 'transcription_failed',
+        error: message,
+      });
       logError('[voice.transcribe] failed:', message);
       return { ok: false, error: message };
     }
@@ -3514,6 +3553,12 @@ ipcMain.handle(
           rendererTimestamp: payload.timestamp,
         },
         tags: ['voice', 'tts', 'interrupt', payload.reason || 'manual'],
+      });
+      recordVoiceConversationEventFromMain({
+        type: 'assistant_interrupted',
+        reason: payload.reason || 'manual',
+        hadPlayback: Boolean(payload.hadPlayback),
+        timestamp: payload.timestamp,
       });
       return { ok: true };
     } catch (err) {
