@@ -2,6 +2,7 @@ import { spawn as nodeSpawn, execFile as nodeExecFile } from 'child_process';
 import { mkdir, stat } from 'fs/promises';
 import * as path from 'path';
 import { recordCompanionPercept } from './percepts.js';
+import { recordCompanionSafetyEvent } from './safety-ledger.js';
 
 export interface CameraRuntime {
   execFile: (
@@ -319,6 +320,27 @@ export async function captureCameraSnapshot(
     } catch {
       // Snapshot success should not be lost if the local percept journal is unavailable.
     }
+  }
+
+  try {
+    await recordCompanionSafetyEvent({
+      kind: 'sense',
+      risk: 'medium',
+      action: 'camera_snapshot',
+      reason: 'Captured an explicit local webcam frame for Buddy vision.',
+      status: 'completed',
+      source: 'camera_snapshot',
+      artifactPath: outputPath,
+      payload: {
+        path: outputPath,
+        command,
+        device: options.device || undefined,
+        platform,
+      },
+      tags: ['camera', 'webcam', 'vision'],
+    }, { cwd });
+  } catch {
+    // Camera capture is complete; the percept journal still records the user-visible result.
   }
 
   return {

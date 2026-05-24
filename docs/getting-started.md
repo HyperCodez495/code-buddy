@@ -147,6 +147,8 @@ buddy companion self            # Record Buddy's current self-state as a percept
 buddy companion evaluate        # Score readiness and record self-improvement suggestions
 buddy companion radar           # Compare Buddy to Hermes, OpenClaw, Lisa, and UNI
 buddy companion missions sync   # Turn radar gaps into a local mission board
+buddy companion missions run-next # Prepare the next mission brief
+buddy companion safety recent   # Inspect sensitive companion events
 buddy companion camera snapshot # Capture one webcam frame into .codebuddy/camera/
 buddy companion percepts recent # Read Buddy's local sensory journal
 buddy speak "Bonjour"           # Speak text aloud through the configured TTS provider
@@ -173,7 +175,13 @@ compare itself against Hermes-style learning loops, OpenClaw-style always-on
 integrations, Lisa-style senses/workflows, and UNI-style real-time companion UX.
 Then run `buddy companion missions sync` to persist those gaps as a P0/P1/P2
 mission board in `.codebuddy/companion/missions.json`; Cowork can display the
-same board and mark missions started or done.
+same board, mark missions started or done, and run the next mission. `buddy
+companion missions run-next` selects the current or highest-priority open
+mission, marks it in progress, and writes a workspace-local brief under
+`.codebuddy/companion/mission-runs/` with safety notes plus verification steps.
+Camera snapshots and mission transitions also append to
+`.codebuddy/companion/safety-ledger.jsonl`; inspect it with `buddy companion
+safety recent` or from the Cowork companion panel.
 The companion identity is still bounded by the normal safety and verification
 rules; it makes Buddy more present and conversational without pretending to be
 literally conscious.

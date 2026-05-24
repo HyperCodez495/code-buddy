@@ -20,9 +20,11 @@ import {
   ListChecks,
   Mic,
   Monitor,
+  Play,
   Radio,
   Radar,
   RefreshCw,
+  ShieldCheck,
   Sparkles,
   Volume2,
   X,
@@ -32,10 +34,13 @@ import type {
   CameraSnapshotResult,
   CompanionCompetitiveRadar,
   CompanionMission,
+  CompanionMissionRunResult,
   CompanionMissionStatus,
   CompanionPercept,
   CompanionPerceptModality,
   CompanionPerceptStats,
+  CompanionSafetyEvent,
+  CompanionSafetyLedgerStats,
   CompanionSelfEvaluation,
   CompanionStatus,
 } from '../types';
@@ -137,6 +142,44 @@ function PerceptRow({ percept }: { percept: CompanionPercept }) {
   );
 }
 
+function SafetyEventRow({ event }: { event: CompanionSafetyEvent }) {
+  const artifact = event.artifactPath;
+  return (
+    <div className="rounded border border-border bg-surface/35 p-3" data-testid="companion-safety-event">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <ShieldCheck className={`h-4 w-4 ${event.risk === 'high' ? 'text-warning' : 'text-accent'}`} />
+            <span className="text-xs font-semibold text-text-primary">{event.action}</span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {event.kind}
+            </span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {event.risk}
+            </span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {event.status}
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-text-secondary whitespace-pre-wrap">{event.reason}</p>
+          {artifact && (
+            <button
+              onClick={() => void window.electronAPI?.showItemInFolder(artifact)}
+              className="mt-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{artifact}</span>
+            </button>
+          )}
+        </div>
+        <time className="shrink-0 text-[10px] text-text-muted">
+          {new Date(event.timestamp).toLocaleString()}
+        </time>
+      </div>
+    </div>
+  );
+}
+
 export function CompanionPanel() {
   const show = useAppStore((s) => s.showCompanionPanel);
   const setShow = useAppStore((s) => s.setShowCompanionPanel);
@@ -147,9 +190,12 @@ export function CompanionPanel() {
   const [evaluation, setEvaluation] = useState<CompanionSelfEvaluation | null>(null);
   const [radar, setRadar] = useState<CompanionCompetitiveRadar | null>(null);
   const [missions, setMissions] = useState<CompanionMission[]>([]);
+  const [missionRun, setMissionRun] = useState<CompanionMissionRunResult | null>(null);
+  const [safetyEvents, setSafetyEvents] = useState<CompanionSafetyEvent[]>([]);
+  const [safetyStats, setSafetyStats] = useState<CompanionSafetyLedgerStats | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'missions' | 'mission' | null>(null);
+  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'missions' | 'runNext' | 'mission' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
 
@@ -164,11 +210,13 @@ export function CompanionPanel() {
     setError(null);
 
     const selected = modality === 'all' ? undefined : modality;
-    const [statusRes, recentRes, statsRes, missionsRes] = await Promise.all([
+    const [statusRes, recentRes, statsRes, missionsRes, safetyRecentRes, safetyStatsRes] = await Promise.all([
       window.electronAPI.companion.status(),
       window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
       window.electronAPI.companion.perceptStats(),
       window.electronAPI.companion.listMissions(),
+      window.electronAPI.companion.recentSafetyEvents({ limit: 8 }),
+      window.electronAPI.companion.safetyStats(),
     ]);
 
     setLoading(false);
@@ -177,6 +225,8 @@ export function CompanionPanel() {
       setStats(null);
       setPercepts([]);
       setMissions([]);
+      setSafetyEvents([]);
+      setSafetyStats(null);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
         : statusRes.error ?? 'Failed to load companion status');
@@ -187,8 +237,15 @@ export function CompanionPanel() {
     setPercepts(recentRes.ok ? recentRes.items : []);
     setStats(statsRes.ok ? statsRes.stats ?? null : null);
     setMissions(missionsRes.ok ? missionsRes.items : []);
-    if (!recentRes.ok || !statsRes.ok || !missionsRes.ok) {
-      setError(recentRes.error ?? statsRes.error ?? missionsRes.error ?? 'Failed to load companion percepts');
+    setSafetyEvents(safetyRecentRes.ok ? safetyRecentRes.items : []);
+    setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
+    if (!recentRes.ok || !statsRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok) {
+      setError(recentRes.error
+        ?? statsRes.error
+        ?? missionsRes.error
+        ?? safetyRecentRes.error
+        ?? safetyStatsRes.error
+        ?? 'Failed to load companion state');
     }
   }, [modality]);
 
@@ -257,6 +314,19 @@ export function CompanionPanel() {
       return;
     }
     setMissions(res.result?.board.missions ?? []);
+    await refresh();
+  };
+
+  const runNextMission = async () => {
+    setBusyAction('runNext');
+    setError(null);
+    const res = await window.electronAPI.companion.runNextMission();
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Mission runner failed');
+      return;
+    }
+    setMissionRun(res.result ?? null);
     await refresh();
   };
 
@@ -402,6 +472,14 @@ export function CompanionPanel() {
               <ListChecks className="h-4 w-4" />
               {busyAction === 'missions' ? 'Syncing...' : 'Sync missions'}
             </button>
+            <button
+              disabled={busyAction !== null}
+              onClick={() => void runNextMission()}
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <Play className="h-4 w-4" />
+              {busyAction === 'runNext' ? 'Preparing...' : 'Run next mission'}
+            </button>
             {lastSnapshot?.path && (
               <button
                 onClick={() => void window.electronAPI.showItemInFolder(lastSnapshot.path!)}
@@ -412,6 +490,37 @@ export function CompanionPanel() {
               </button>
             )}
           </section>
+
+          {missionRun && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Mission run</h3>
+                <span className="text-[10px] text-text-muted">
+                  {missionRun.success ? 'prepared' : 'blocked'}
+                </span>
+              </div>
+              <div className="rounded border border-border bg-surface/35 p-3">
+                <div className="flex items-center gap-2">
+                  <Play className="h-4 w-4 text-accent" />
+                  <span className="text-sm font-semibold text-text-primary">{missionRun.message}</span>
+                </div>
+                {missionRun.mission && (
+                  <p className="mt-2 text-xs text-text-secondary">
+                    [{missionRun.mission.priority}] {missionRun.mission.title}
+                  </p>
+                )}
+                {missionRun.briefPath && (
+                  <button
+                    onClick={() => void window.electronAPI.showItemInFolder(missionRun.briefPath!)}
+                    className="mt-3 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{missionRun.briefPath}</span>
+                  </button>
+                )}
+              </div>
+            </section>
+          )}
 
           {evaluation && (
             <section className="space-y-3">
@@ -565,6 +674,35 @@ export function CompanionPanel() {
                       </div>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Safety ledger</h3>
+              <span className="text-[10px] text-text-muted">
+                {safetyStats ? `${safetyStats.total} event(s)` : 'No stats'}
+              </span>
+            </div>
+            {safetyStats?.ledgerPath && (
+              <button
+                onClick={() => void window.electronAPI.showItemInFolder(safetyStats.ledgerPath)}
+                className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{safetyStats.ledgerPath}</span>
+              </button>
+            )}
+            {safetyEvents.length === 0 ? (
+              <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
+                No safety events recorded yet.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {safetyEvents.map((event) => (
+                  <SafetyEventRow key={event.id} event={event} />
                 ))}
               </div>
             )}

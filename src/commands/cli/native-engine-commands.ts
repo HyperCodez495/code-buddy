@@ -505,6 +505,19 @@ export function registerCompanionCommands(program: Command): void {
     });
 
   missions
+    .command('run-next')
+    .description('Prepare an executable brief for the next open companion mission')
+    .option('--dry-run', 'Show the selected mission and brief without writing files or changing status')
+    .action(async (opts: { dryRun?: boolean }) => {
+      const {
+        formatCompanionMissionRun,
+        runNextCompanionMission,
+      } = await import('../../companion/mission-runner.js');
+      const result = await runNextCompanionMission({ dryRun: Boolean(opts.dryRun) });
+      console.log(formatCompanionMissionRun(result));
+    });
+
+  missions
     .command('start <id>')
     .description('Mark a companion mission in progress')
     .action(async (id: string) => {
@@ -529,6 +542,40 @@ export function registerCompanionCommands(program: Command): void {
       const { updateCompanionMissionStatus } = await import('../../companion/mission-board.js');
       const mission = await updateCompanionMissionStatus(id, 'dismissed');
       console.log(`Mission dismissed: ${mission.id}`);
+    });
+
+  const safety = companion
+    .command('safety')
+    .description('Inspect Buddy companion safety ledger events');
+
+  safety
+    .command('recent')
+    .description('Show recent companion safety ledger events')
+    .option('--limit <n>', 'Maximum events to print', '10')
+    .option('--kind <kind>', 'Filter by kind: sense, tool, mission, permission, data')
+    .option('--risk <risk>', 'Filter by risk: low, medium, high')
+    .action(async (opts: { limit: string; kind?: string; risk?: string }) => {
+      const {
+        formatCompanionSafetyEvents,
+        readRecentCompanionSafetyEvents,
+      } = await import('../../companion/safety-ledger.js');
+      const events = await readRecentCompanionSafetyEvents({
+        limit: parseInt(opts.limit, 10),
+        kind: opts.kind as 'sense' | 'tool' | 'mission' | 'permission' | 'data' | undefined,
+        risk: opts.risk as 'low' | 'medium' | 'high' | undefined,
+      });
+      console.log(formatCompanionSafetyEvents(events));
+    });
+
+  safety
+    .command('stats')
+    .description('Show companion safety ledger statistics')
+    .action(async () => {
+      const {
+        formatCompanionSafetyLedgerStats,
+        getCompanionSafetyLedgerStats,
+      } = await import('../../companion/safety-ledger.js');
+      console.log(formatCompanionSafetyLedgerStats(await getCompanionSafetyLedgerStats()));
     });
 
   const camera = companion

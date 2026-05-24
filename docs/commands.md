@@ -69,7 +69,8 @@
 | `/companion status\|setup` | Configure/check Buddy as a ChatGPT-backed voice companion |
 | `/companion evaluate` | Score Buddy's companion readiness and record self-improvement suggestions |
 | `/companion radar` | Compare Buddy against Hermes, OpenClaw, Lisa, and open companion systems |
-| `/companion missions sync\|list` | Turn radar gaps into a local companion mission board |
+| `/companion missions sync\|list\|run-next` | Turn radar gaps into a local companion mission board and prepare the next mission brief |
+| `/companion safety recent\|stats` | Inspect Buddy's local safety ledger for senses, missions, tools, and data actions |
 | `/companion camera status\|snapshot` | Check/capture the local webcam bridge for Buddy vision |
 | `/companion percepts recent\|stats` | Inspect Buddy's local sensory journal |
 
@@ -226,7 +227,10 @@ buddy companion evaluate [--no-record]
 buddy companion radar [--no-record]
 buddy companion missions sync [--no-record]
 buddy companion missions list [--status <open|in_progress|done|dismissed>]
+buddy companion missions run-next [--dry-run]
 buddy companion missions start|done|dismiss <id>
+buddy companion safety recent [--limit <n>] [--kind <sense|tool|mission|permission|data>] [--risk <low|medium|high>]
+buddy companion safety stats
 buddy companion camera status
 buddy companion camera snapshot [--output <path>] [--device <device>] [--timeout-ms <ms>]
 buddy companion percepts recent [--limit <n>] [--modality <name>]
@@ -267,6 +271,19 @@ priorities and `open`, `in_progress`, `done`, or `dismissed` statuses. Use
 `buddy companion missions list` to inspect it and `start`, `done`, or `dismiss`
 to update a mission. Cowork shows the same board and can sync/start/finish
 missions from the companion panel.
+
+`buddy companion missions run-next` is the bridge from backlog to action. It
+selects the current `in_progress` mission or the highest-priority open mission,
+marks it `in_progress`, and writes an executable brief under
+`.codebuddy/companion/mission-runs/`. The brief captures objective, competitor
+inspiration, implementation lane, safety notes, and verification checklist. Pass
+`--dry-run` to preview the selected mission and brief without writing files or
+changing mission status.
+
+`buddy companion safety recent` reads `.codebuddy/companion/safety-ledger.jsonl`,
+an append-only local ledger for sensitive companion events such as camera
+snapshots, mission transitions, and mission-run briefs. `safety stats` prints
+kind/risk/status counts so Buddy's growing autonomy stays inspectable.
 
 `buddy companion camera snapshot` captures one webcam frame into `.codebuddy/camera/`
 by default. It uses `ffmpeg` so it works without adding a new Node dependency; pass

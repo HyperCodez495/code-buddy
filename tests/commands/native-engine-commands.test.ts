@@ -83,6 +83,12 @@ const mockSyncCompanionMissionBoard = jest.fn();
 const mockReadCompanionMissionBoard = jest.fn();
 const mockUpdateCompanionMissionStatus = jest.fn();
 const mockFormatCompanionMissionBoard = jest.fn((board: unknown) => `missions:${JSON.stringify(board)}`);
+const mockRunNextCompanionMission = jest.fn();
+const mockFormatCompanionMissionRun = jest.fn((result: unknown) => `mission-run:${JSON.stringify(result)}`);
+const mockReadRecentCompanionSafetyEvents = jest.fn();
+const mockFormatCompanionSafetyEvents = jest.fn((events: unknown) => `safety:${JSON.stringify(events)}`);
+const mockGetCompanionSafetyLedgerStats = jest.fn();
+const mockFormatCompanionSafetyLedgerStats = jest.fn((stats: unknown) => `safety-stats:${JSON.stringify(stats)}`);
 
 jest.mock('../../src/companion/companion-mode.js', () => ({
   setupCompanionMode: mockSetupCompanionMode,
@@ -119,6 +125,18 @@ jest.mock('../../src/companion/mission-board.js', () => ({
   readCompanionMissionBoard: mockReadCompanionMissionBoard,
   updateCompanionMissionStatus: mockUpdateCompanionMissionStatus,
   formatCompanionMissionBoard: mockFormatCompanionMissionBoard,
+}));
+
+jest.mock('../../src/companion/mission-runner.js', () => ({
+  runNextCompanionMission: mockRunNextCompanionMission,
+  formatCompanionMissionRun: mockFormatCompanionMissionRun,
+}));
+
+jest.mock('../../src/companion/safety-ledger.js', () => ({
+  readRecentCompanionSafetyEvents: mockReadRecentCompanionSafetyEvents,
+  formatCompanionSafetyEvents: mockFormatCompanionSafetyEvents,
+  getCompanionSafetyLedgerStats: mockGetCompanionSafetyLedgerStats,
+  formatCompanionSafetyLedgerStats: mockFormatCompanionSafetyLedgerStats,
 }));
 
 const mockGroupSecurity = {
@@ -980,6 +998,17 @@ describe('Native Engine CLI Commands', () => {
         id: 'mission-1',
         status: 'done',
       });
+      mockRunNextCompanionMission.mockResolvedValue({
+        success: true,
+        dryRun: false,
+        message: 'Prepared companion mission mission-1.',
+        mission: { id: 'mission-1', priority: 'P0' },
+        briefPath: '/repo/.codebuddy/companion/mission-runs/mission-1.md',
+      });
+      mockReadRecentCompanionSafetyEvents.mockResolvedValue([
+        { id: 'safety-1', kind: 'mission', action: 'mission_status_update' },
+      ]);
+      mockGetCompanionSafetyLedgerStats.mockResolvedValue({ total: 1 });
     });
 
     describe('companion setup', () => {
@@ -1112,11 +1141,60 @@ describe('Native Engine CLI Commands', () => {
         });
       });
 
+      it('prepares the next mission run', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'run-next']);
+
+        expect(mockRunNextCompanionMission).toHaveBeenCalledWith({ dryRun: false });
+        expect(mockFormatCompanionMissionRun).toHaveBeenCalledWith({
+          success: true,
+          dryRun: false,
+          message: 'Prepared companion mission mission-1.',
+          mission: { id: 'mission-1', priority: 'P0' },
+          briefPath: '/repo/.codebuddy/companion/mission-runs/mission-1.md',
+        });
+        expect(getLogOutput()).toContain('mission-run:');
+      });
+
+      it('dry-runs the next mission run', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'run-next', '--dry-run']);
+
+        expect(mockRunNextCompanionMission).toHaveBeenCalledWith({ dryRun: true });
+      });
+
       it('updates mission state', async () => {
         await program.parseAsync(['node', 'test', 'companion', 'missions', 'done', 'mission-1']);
 
         expect(mockUpdateCompanionMissionStatus).toHaveBeenCalledWith('mission-1', 'done');
         expect(getLogOutput()).toContain('Mission completed: mission-1');
+      });
+    });
+
+    describe('companion safety', () => {
+      it('prints recent safety events with filters', async () => {
+        await program.parseAsync([
+          'node', 'test', 'companion', 'safety', 'recent',
+          '--limit', '5',
+          '--kind', 'mission',
+          '--risk', 'low',
+        ]);
+
+        expect(mockReadRecentCompanionSafetyEvents).toHaveBeenCalledWith({
+          limit: 5,
+          kind: 'mission',
+          risk: 'low',
+        });
+        expect(mockFormatCompanionSafetyEvents).toHaveBeenCalledWith([
+          { id: 'safety-1', kind: 'mission', action: 'mission_status_update' },
+        ]);
+        expect(getLogOutput()).toContain('safety:');
+      });
+
+      it('prints safety ledger stats', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'safety', 'stats']);
+
+        expect(mockGetCompanionSafetyLedgerStats).toHaveBeenCalled();
+        expect(mockFormatCompanionSafetyLedgerStats).toHaveBeenCalledWith({ total: 1 });
+        expect(getLogOutput()).toContain('safety-stats:');
       });
     });
 

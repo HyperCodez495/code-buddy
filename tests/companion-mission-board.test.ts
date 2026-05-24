@@ -7,6 +7,7 @@ import {
   syncCompanionMissionBoard,
   updateCompanionMissionStatus,
 } from '../src/companion/mission-board.js';
+import { readRecentCompanionSafetyEvents } from '../src/companion/safety-ledger.js';
 import { vi } from 'vitest';
 
 const mocks = vi.hoisted(() => ({
@@ -136,6 +137,13 @@ describe('companion mission board', () => {
       }),
       { cwd: tempDir },
     );
+
+    const events = await readRecentCompanionSafetyEvents({ cwd: tempDir, kind: 'mission' });
+    expect(events[0]).toMatchObject({
+      action: 'mission_status_update',
+      missionId: 'mission-companion-ui-cards',
+      source: 'companion_mission_board',
+    });
   });
 
   it('reads an empty board before sync and formats the board', async () => {

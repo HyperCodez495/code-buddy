@@ -260,6 +260,62 @@ describe('companion IPC', () => {
     expect(updateCompanionMissionStatus).toHaveBeenCalledWith('m1', 'in_progress', { cwd: '/tmp/proj' });
   });
 
+  it('runs the next companion mission in the active workspace', async () => {
+    const runNextCompanionMission = vi.fn(async () => ({
+      success: true,
+      mission: { id: 'm1' },
+      briefPath: '/tmp/proj/.codebuddy/companion/mission-runs/m1.md',
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ runNextCompanionMission });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.missions.runNext');
+    const res = (await handler?.({}, { dryRun: true })) as {
+      ok: boolean;
+      result?: { mission?: { id: string } };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.mission?.id).toBe('m1');
+    expect(runNextCompanionMission).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      dryRun: true,
+    });
+  });
+
+  it('returns recent companion safety events from the active workspace', async () => {
+    const readRecentCompanionSafetyEvents = vi.fn(async () => [
+      { id: 's1', kind: 'mission', action: 'mission_status_update' },
+    ]);
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ readRecentCompanionSafetyEvents });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.safety.recent');
+    const res = (await handler?.({}, { limit: 3, kind: 'mission', risk: 'low' })) as {
+      ok: boolean;
+      items: unknown[];
+    };
+    expect(res.ok).toBe(true);
+    expect(res.items).toHaveLength(1);
+    expect(readRecentCompanionSafetyEvents).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      limit: 3,
+      kind: 'mission',
+      risk: 'low',
+    });
+  });
+
+  it('returns companion safety ledger stats from the active workspace', async () => {
+    const getCompanionSafetyLedgerStats = vi.fn(async () => ({ total: 2 }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ getCompanionSafetyLedgerStats });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.safety.stats');
+    const res = (await handler?.({})) as { ok: boolean; stats?: { total: number } };
+    expect(res.ok).toBe(true);
+    expect(res.stats?.total).toBe(2);
+    expect(getCompanionSafetyLedgerStats).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('captures camera snapshots in the active workspace', async () => {
     const captureCameraSnapshot = vi.fn(async () => ({ success: true, path: '/tmp/proj/.codebuddy/camera/scene.png' }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ captureCameraSnapshot });

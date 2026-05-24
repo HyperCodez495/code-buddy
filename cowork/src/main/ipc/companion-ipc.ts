@@ -85,6 +85,9 @@ interface CompanionCompetitiveRadar {
 }
 
 type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
+type CompanionSafetyEventKind = 'sense' | 'tool' | 'mission' | 'permission' | 'data';
+type CompanionSafetyEventRisk = 'low' | 'medium' | 'high';
+type CompanionSafetyEventStatus = 'planned' | 'allowed' | 'completed' | 'failed' | 'denied';
 
 interface CompanionMission {
   id: string;
@@ -118,6 +121,45 @@ interface CompanionMissionBoardSyncResult {
   created: number;
   updated: number;
   unchanged: number;
+}
+
+interface CompanionMissionRunResult {
+  success: boolean;
+  dryRun: boolean;
+  message: string;
+  mission?: CompanionMission;
+  board?: CompanionMissionBoard;
+  brief?: string;
+  briefPath?: string;
+  perceptId?: string;
+  safetyEventId?: string;
+  syncedBoard?: boolean;
+}
+
+interface CompanionSafetyEvent {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  kind: CompanionSafetyEventKind;
+  risk: CompanionSafetyEventRisk;
+  action: string;
+  reason: string;
+  status: CompanionSafetyEventStatus;
+  source: string;
+  artifactPath?: string;
+  missionId?: string;
+  payload: Record<string, unknown>;
+  tags: string[];
+}
+
+interface CompanionSafetyLedgerStats {
+  ledgerPath: string;
+  exists: boolean;
+  total: number;
+  byKind: Partial<Record<CompanionSafetyEventKind, number>>;
+  byRisk: Partial<Record<CompanionSafetyEventRisk, number>>;
+  byStatus: Partial<Record<CompanionSafetyEventStatus, number>>;
+  latestTimestamp?: string;
 }
 
 interface CameraSnapshotResult {
@@ -181,6 +223,23 @@ type CompanionMissionBoardMod = {
   ) => Promise<CompanionMission>;
 };
 
+type CompanionMissionRunnerMod = {
+  runNextCompanionMission: (options: {
+    cwd?: string;
+    dryRun?: boolean;
+  }) => Promise<CompanionMissionRunResult>;
+};
+
+type CompanionSafetyLedgerMod = {
+  readRecentCompanionSafetyEvents: (options: {
+    cwd?: string;
+    limit?: number;
+    kind?: CompanionSafetyEventKind;
+    risk?: CompanionSafetyEventRisk;
+  }) => Promise<CompanionSafetyEvent[]>;
+  getCompanionSafetyLedgerStats: (options: { cwd?: string }) => Promise<CompanionSafetyLedgerStats>;
+};
+
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
 
 async function companionWorkDir(
@@ -214,6 +273,14 @@ async function loadCompetitiveRadar(): Promise<CompanionCompetitiveRadarMod | nu
 
 async function loadMissionBoard(): Promise<CompanionMissionBoardMod | null> {
   return loadCoreModule<CompanionMissionBoardMod>('companion/mission-board.js');
+}
+
+async function loadMissionRunner(): Promise<CompanionMissionRunnerMod | null> {
+  return loadCoreModule<CompanionMissionRunnerMod>('companion/mission-runner.js');
+}
+
+async function loadSafetyLedger(): Promise<CompanionSafetyLedgerMod | null> {
+  return loadCoreModule<CompanionSafetyLedgerMod>('companion/safety-ledger.js');
 }
 
 export function registerCompanionIpcHandlers(projectManagerSource: ProjectManagerSource): void {
@@ -406,6 +473,79 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       }
     },
   );
+
+  ipcMain.handle(
+    'companion.missions.runNext',
+    async (_e, input?: { projectId?: string; dryRun?: boolean }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadMissionRunner();
+        if (!mod?.runNextCompanionMission) {
+          return { ok: false as const, error: 'core mission runner module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.runNextCompanionMission({
+            cwd,
+            dryRun: Boolean(input?.dryRun),
+          }),
+        };
+      } catch (err) {
+        logError('[companion.missions.runNext] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.safety.recent',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        limit?: number;
+        kind?: CompanionSafetyEventKind;
+        risk?: CompanionSafetyEventRisk;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error, items: [] as CompanionSafetyEvent[] };
+      try {
+        const mod = await loadSafetyLedger();
+        if (!mod?.readRecentCompanionSafetyEvents) {
+          return { ok: false as const, error: 'core safety ledger module unavailable', items: [] as CompanionSafetyEvent[] };
+        }
+        return {
+          ok: true as const,
+          items: await mod.readRecentCompanionSafetyEvents({
+            cwd,
+            limit: input?.limit,
+            kind: input?.kind,
+            risk: input?.risk,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.safety.recent] failed:', err);
+        return { ok: false as const, error: errorMessage(err), items: [] as CompanionSafetyEvent[] };
+      }
+    },
+  );
+
+  ipcMain.handle('companion.safety.stats', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadSafetyLedger();
+      if (!mod?.getCompanionSafetyLedgerStats) {
+        return { ok: false as const, error: 'core safety ledger module unavailable' };
+      }
+      return { ok: true as const, stats: await mod.getCompanionSafetyLedgerStats({ cwd }) };
+    } catch (err) {
+      logError('[companion.safety.stats] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
 
   ipcMain.handle('companion.camera.status', async () => {
     try {

@@ -244,6 +244,49 @@ export interface CompanionMissionBoardSyncResult {
   unchanged: number;
 }
 
+export interface CompanionMissionRunResult {
+  success: boolean;
+  dryRun: boolean;
+  message: string;
+  mission?: CompanionMission;
+  board?: CompanionMissionBoard;
+  brief?: string;
+  briefPath?: string;
+  perceptId?: string;
+  safetyEventId?: string;
+  syncedBoard?: boolean;
+}
+
+export type CompanionSafetyEventKind = 'sense' | 'tool' | 'mission' | 'permission' | 'data';
+export type CompanionSafetyEventRisk = 'low' | 'medium' | 'high';
+export type CompanionSafetyEventStatus = 'planned' | 'allowed' | 'completed' | 'failed' | 'denied';
+
+export interface CompanionSafetyEvent {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  kind: CompanionSafetyEventKind;
+  risk: CompanionSafetyEventRisk;
+  action: string;
+  reason: string;
+  status: CompanionSafetyEventStatus;
+  source: string;
+  artifactPath?: string;
+  missionId?: string;
+  payload: Record<string, unknown>;
+  tags: string[];
+}
+
+export interface CompanionSafetyLedgerStats {
+  ledgerPath: string;
+  exists: boolean;
+  total: number;
+  byKind: Partial<Record<CompanionSafetyEventKind, number>>;
+  byRisk: Partial<Record<CompanionSafetyEventRisk, number>>;
+  byStatus: Partial<Record<CompanionSafetyEventStatus, number>>;
+  latestTimestamp?: string;
+}
+
 export interface CameraSnapshotResult {
   success: boolean;
   path?: string;

@@ -31,7 +31,12 @@ import type {
   CompanionMission,
   CompanionMissionBoard,
   CompanionMissionBoardSyncResult,
+  CompanionMissionRunResult,
   CompanionMissionStatus,
+  CompanionSafetyEvent,
+  CompanionSafetyEventKind,
+  CompanionSafetyEventRisk,
+  CompanionSafetyLedgerStats,
   CameraSnapshotResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
@@ -798,12 +803,26 @@ contextBridge.exposeInMainWorld('electronAPI', {
       status?: CompanionMissionStatus;
     }): Promise<{ ok: boolean; board?: CompanionMissionBoard; items: CompanionMission[]; error?: string }> =>
       ipcRenderer.invoke('companion.missions.list', input),
+    runNextMission: (input?: {
+      projectId?: string;
+      dryRun?: boolean;
+    }): Promise<{ ok: boolean; result?: CompanionMissionRunResult; error?: string }> =>
+      ipcRenderer.invoke('companion.missions.runNext', input),
     updateMission: (input: {
       projectId?: string;
       missionId: string;
       status: CompanionMissionStatus;
     }): Promise<{ ok: boolean; mission?: CompanionMission; error?: string }> =>
       ipcRenderer.invoke('companion.missions.update', input),
+    recentSafetyEvents: (input?: {
+      projectId?: string;
+      limit?: number;
+      kind?: CompanionSafetyEventKind;
+      risk?: CompanionSafetyEventRisk;
+    }): Promise<{ ok: boolean; items: CompanionSafetyEvent[]; error?: string }> =>
+      ipcRenderer.invoke('companion.safety.recent', input),
+    safetyStats: (projectId?: string): Promise<{ ok: boolean; stats?: CompanionSafetyLedgerStats; error?: string }> =>
+      ipcRenderer.invoke('companion.safety.stats', projectId),
     cameraStatus: (): Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }> =>
       ipcRenderer.invoke('companion.camera.status'),
     cameraSnapshot: (input?: {
@@ -2945,11 +2964,22 @@ declare global {
           projectId?: string;
           status?: CompanionMissionStatus;
         }) => Promise<{ ok: boolean; board?: CompanionMissionBoard; items: CompanionMission[]; error?: string }>;
+        runNextMission: (input?: {
+          projectId?: string;
+          dryRun?: boolean;
+        }) => Promise<{ ok: boolean; result?: CompanionMissionRunResult; error?: string }>;
         updateMission: (input: {
           projectId?: string;
           missionId: string;
           status: CompanionMissionStatus;
         }) => Promise<{ ok: boolean; mission?: CompanionMission; error?: string }>;
+        recentSafetyEvents: (input?: {
+          projectId?: string;
+          limit?: number;
+          kind?: CompanionSafetyEventKind;
+          risk?: CompanionSafetyEventRisk;
+        }) => Promise<{ ok: boolean; items: CompanionSafetyEvent[]; error?: string }>;
+        safetyStats: (projectId?: string) => Promise<{ ok: boolean; stats?: CompanionSafetyLedgerStats; error?: string }>;
         cameraStatus: () => Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }>;
         cameraSnapshot: (input?: {
           outputPath?: string;

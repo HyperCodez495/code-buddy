@@ -11,6 +11,7 @@ import {
   type CameraRuntime,
 } from '../src/companion/camera.js';
 import { readRecentCompanionPercepts } from '../src/companion/percepts.js';
+import { readRecentCompanionSafetyEvents } from '../src/companion/safety-ledger.js';
 
 function createRuntime(options: {
   ffmpegAvailable?: boolean;
@@ -116,6 +117,15 @@ describe('companion camera bridge', () => {
       modality: 'vision',
       source: 'camera_snapshot',
       summary: expect.stringContaining('Captured camera snapshot'),
+    });
+
+    const safetyEvents = await readRecentCompanionSafetyEvents({ cwd: tempDir });
+    expect(safetyEvents[0]).toMatchObject({
+      kind: 'sense',
+      risk: 'medium',
+      action: 'camera_snapshot',
+      source: 'camera_snapshot',
+      artifactPath: result.path,
     });
   });
 

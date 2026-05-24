@@ -6,6 +6,7 @@ import {
   type CompanionRadarDimension,
 } from './competitive-radar.js';
 import { recordCompanionPercept } from './percepts.js';
+import { recordCompanionSafetyEvent } from './safety-ledger.js';
 
 export type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
 export type CompanionMissionPriority = 'P0' | 'P1' | 'P2';
@@ -349,6 +350,26 @@ export async function updateCompanionMissionStatus(
       },
       tags: ['mission-board', 'status', status],
     }, { cwd: board.cwd });
+  }
+
+  try {
+    await recordCompanionSafetyEvent({
+      kind: 'mission',
+      risk: 'low',
+      action: 'mission_status_update',
+      reason: `Companion mission ${mission.id} was marked ${status}.`,
+      status: 'completed',
+      source: 'companion_mission_board',
+      missionId: mission.id,
+      payload: {
+        missionId: mission.id,
+        status,
+        storePath: board.storePath,
+      },
+      tags: ['mission-board', 'status', status],
+    }, { cwd: board.cwd, now });
+  } catch {
+    // Mission state already persisted; do not roll it back if audit append fails.
   }
 
   return mission;

@@ -33,6 +33,18 @@ import {
   updateCompanionMissionStatus,
   type CompanionMissionStatus,
 } from '../../companion/mission-board.js';
+import {
+  formatCompanionMissionRun,
+  runNextCompanionMission,
+} from '../../companion/mission-runner.js';
+import {
+  formatCompanionSafetyEvents,
+  formatCompanionSafetyLedgerStats,
+  getCompanionSafetyLedgerStats,
+  readRecentCompanionSafetyEvents,
+  type CompanionSafetyEventKind,
+  type CompanionSafetyEventRisk,
+} from '../../companion/safety-ledger.js';
 
 function entry(content: string): ChatEntry {
   return {
@@ -80,7 +92,8 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
         '       /companion percepts stats',
         '       /companion evaluate [--no-record]',
         '       /companion radar [--no-record]',
-        '       /companion missions sync|list|start|done|dismiss',
+        '       /companion missions sync|list|run-next|start|done|dismiss',
+        '       /companion safety recent|stats',
       ].join('\n')),
     };
   }
@@ -144,6 +157,16 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       };
     }
 
+    if (missionAction === 'run-next' || missionAction === 'next') {
+      const result = await runNextCompanionMission({
+        dryRun: args.includes('--dry-run'),
+      });
+      return {
+        handled: true,
+        entry: entry(formatCompanionMissionRun(result)),
+      };
+    }
+
     const missionId = args[2];
     const statusByAction: Record<string, CompanionMissionStatus> = {
       start: 'in_progress',
@@ -165,9 +188,42 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       entry: entry([
         'Usage: /companion missions sync [--no-record]',
         '       /companion missions list [--status <open|in_progress|done|dismissed>]',
+        '       /companion missions run-next [--dry-run]',
         '       /companion missions start <id>',
         '       /companion missions done <id>',
         '       /companion missions dismiss <id>',
+      ].join('\n')),
+    };
+  }
+
+  if (action === 'safety' || action === 'ledger') {
+    const safetyAction = args[1]?.toLowerCase() || 'recent';
+    if (safetyAction === 'recent' || safetyAction === 'list') {
+      const limit = flagValue(args, '--limit');
+      const kind = flagValue(args, '--kind') as CompanionSafetyEventKind | undefined;
+      const risk = flagValue(args, '--risk') as CompanionSafetyEventRisk | undefined;
+      return {
+        handled: true,
+        entry: entry(formatCompanionSafetyEvents(await readRecentCompanionSafetyEvents({
+          limit: limit ? parseInt(limit, 10) : undefined,
+          kind,
+          risk,
+        }))),
+      };
+    }
+
+    if (safetyAction === 'stats' || safetyAction === 'status') {
+      return {
+        handled: true,
+        entry: entry(formatCompanionSafetyLedgerStats(await getCompanionSafetyLedgerStats())),
+      };
+    }
+
+    return {
+      handled: true,
+      entry: entry([
+        'Usage: /companion safety recent [--limit <n>] [--kind <sense|tool|mission|permission|data>] [--risk <low|medium|high>]',
+        '       /companion safety stats',
       ].join('\n')),
     };
   }
@@ -268,7 +324,8 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion self',
       '       /companion evaluate [--no-record]',
       '       /companion radar [--no-record]',
-      '       /companion missions sync|list|start|done|dismiss',
+      '       /companion missions sync|list|run-next|start|done|dismiss',
+      '       /companion safety recent|stats',
       '       /companion camera status',
       '       /companion camera snapshot [--output <path>] [--device <device>]',
       '       /companion percepts recent [--limit <n>] [--modality <name>]',
