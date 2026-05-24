@@ -30,11 +30,13 @@ import {
   X,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { speakText } from './VoiceOutputToggle';
 import type {
   CameraSnapshotResult,
   CompanionCard,
   CompanionCardStatus,
   CompanionCompetitiveRadar,
+  CompanionCheckInCue,
   CompanionGatewayMode,
   CompanionGatewayProfile,
   CompanionImpulseBrief,
@@ -429,6 +431,7 @@ export function CompanionPanel() {
   const [evaluation, setEvaluation] = useState<CompanionSelfEvaluation | null>(null);
   const [radar, setRadar] = useState<CompanionCompetitiveRadar | null>(null);
   const [impulses, setImpulses] = useState<CompanionImpulseBrief | null>(null);
+  const [checkIn, setCheckIn] = useState<CompanionCheckInCue | null>(null);
   const [missions, setMissions] = useState<CompanionMission[]>([]);
   const [missionRun, setMissionRun] = useState<CompanionMissionRunResult | null>(null);
   const [safetyEvents, setSafetyEvents] = useState<CompanionSafetyEvent[]>([]);
@@ -444,7 +447,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
 
@@ -619,6 +622,20 @@ export function CompanionPanel() {
       return;
     }
     setImpulses(res.brief ?? null);
+    await refresh();
+  };
+
+  const runCheckIn = async () => {
+    setBusyAction('checkIn');
+    setError(null);
+    const res = await window.electronAPI.companion.checkIn();
+    setBusyAction(null);
+    if (!res.ok || !res.cue) {
+      setError(res.error ?? 'Companion check-in failed');
+      return;
+    }
+    setCheckIn(res.cue);
+    await speakText(res.cue.spokenText);
     await refresh();
   };
 
@@ -911,6 +928,14 @@ export function CompanionPanel() {
             </button>
             <button
               disabled={busyAction !== null}
+              onClick={() => void runCheckIn()}
+              className="inline-flex items-center gap-2 rounded border border-accent/50 px-3 py-2 text-xs font-medium text-accent hover:bg-accent/10 disabled:opacity-50"
+            >
+              <Volume2 className="h-4 w-4" />
+              {busyAction === 'checkIn' ? 'Checking in...' : 'Buddy check-in'}
+            </button>
+            <button
+              disabled={busyAction !== null}
               onClick={() => void syncMissions()}
               className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
             >
@@ -943,6 +968,42 @@ export function CompanionPanel() {
               </button>
             )}
           </section>
+
+          {checkIn && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Check-in</h3>
+                <span className="text-[10px] text-text-muted">{checkIn.mood} / {checkIn.priority}</span>
+              </div>
+              <div className="rounded border border-accent/30 bg-accent/5 p-3">
+                <div className="flex items-start gap-2">
+                  <Volume2 className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-text-primary">{checkIn.spokenText}</p>
+                    {checkIn.sourceImpulseTitle && (
+                      <p className="mt-1 text-[11px] text-text-muted">
+                        From {checkIn.sourceImpulseTitle}
+                      </p>
+                    )}
+                  </div>
+                </div>
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void speakText(checkIn.spokenText)}
+                    className="inline-flex items-center gap-2 rounded border border-border px-3 py-1.5 text-xs text-text-primary hover:bg-surface"
+                  >
+                    <Volume2 className="h-3.5 w-3.5" />
+                    Speak
+                  </button>
+                  {checkIn.suggestedCommand && (
+                    <span className="min-w-0 rounded bg-background px-2 py-1.5 text-[11px] text-text-muted">
+                      <span className="truncate">{checkIn.suggestedCommand}</span>
+                    </span>
+                  )}
+                </div>
+              </div>
+            </section>
+          )}
 
           {setupResult && (
             <section className="space-y-3">

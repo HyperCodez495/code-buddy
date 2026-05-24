@@ -485,6 +485,26 @@ export function registerCompanionCommands(program: Command): void {
       console.log(formatCompanionImpulseBrief(brief));
     });
 
+  companion
+    .command('check-in')
+    .alias('say')
+    .description('Prepare a short Buddy spoken check-in from local companion state')
+    .option('--text <text>', 'Optional user text to adapt the tone')
+    .option('--preview', 'Preview without writing percepts, cards, or safety events')
+    .action(async (opts: { text?: string; preview?: boolean }) => {
+      const {
+        buildCompanionCheckIn,
+        formatCompanionCheckIn,
+      } = await import('../../companion/check-in.js');
+      const cue = await buildCompanionCheckIn({
+        userText: opts.text,
+        recordPercept: !opts.preview,
+        createCard: !opts.preview,
+        recordSafety: !opts.preview,
+      });
+      console.log(formatCompanionCheckIn(cue));
+    });
+
   const missions = companion
     .command('missions')
     .description('Manage Buddy companion self-improvement missions');

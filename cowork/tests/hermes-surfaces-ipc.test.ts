@@ -291,6 +291,35 @@ describe('companion IPC', () => {
     });
   });
 
+  it('builds a companion check-in cue in the active workspace', async () => {
+    const buildCompanionCheckIn = vi.fn(async () => ({
+      id: 'companion-check-in-1',
+      spokenText: 'Je suis la.',
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ buildCompanionCheckIn });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.checkIn');
+    const res = (await handler?.({}, {
+      userText: 'je suis bloque',
+      recordPercept: false,
+      createCard: false,
+      recordSafety: false,
+    })) as {
+      ok: boolean;
+      cue?: { id: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.cue?.id).toBe('companion-check-in-1');
+    expect(buildCompanionCheckIn).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      userText: 'je suis bloque',
+      recordPercept: false,
+      createCard: false,
+      recordSafety: false,
+    });
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

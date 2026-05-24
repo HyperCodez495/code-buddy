@@ -28,6 +28,7 @@ import type {
   CompanionStatus,
   CompanionSelfEvaluation,
   CompanionCompetitiveRadar,
+  CompanionCheckInCue,
   CompanionImpulseBrief,
   CompanionMission,
   CompanionMissionBoard,
@@ -841,6 +842,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       recordSuggestions?: boolean;
     }): Promise<{ ok: boolean; brief?: CompanionImpulseBrief; error?: string }> =>
       ipcRenderer.invoke('companion.impulses', input),
+    checkIn: (input?: {
+      projectId?: string;
+      userText?: string;
+      recordPercept?: boolean;
+      createCard?: boolean;
+      recordSafety?: boolean;
+    }): Promise<{ ok: boolean; cue?: CompanionCheckInCue; error?: string }> =>
+      ipcRenderer.invoke('companion.checkIn', input),
     syncMissions: (input?: {
       projectId?: string;
       recordSuggestions?: boolean;
@@ -3089,6 +3098,13 @@ declare global {
           projectId?: string;
           recordSuggestions?: boolean;
         }) => Promise<{ ok: boolean; brief?: CompanionImpulseBrief; error?: string }>;
+        checkIn: (input?: {
+          projectId?: string;
+          userText?: string;
+          recordPercept?: boolean;
+          createCard?: boolean;
+          recordSafety?: boolean;
+        }) => Promise<{ ok: boolean; cue?: CompanionCheckInCue; error?: string }>;
         syncMissions: (input?: {
           projectId?: string;
           recordSuggestions?: boolean;

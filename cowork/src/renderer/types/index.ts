@@ -238,6 +238,32 @@ export interface CompanionImpulseBrief {
   };
 }
 
+export type CompanionCheckInMood = 'steady' | 'encouraging' | 'urgent' | 'curious';
+
+export interface CompanionCheckInEvidence {
+  label: string;
+  value: string;
+}
+
+export interface CompanionCheckInCue {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  mood: CompanionCheckInMood;
+  priority: CompanionImpulsePriority;
+  spokenText: string;
+  writtenText: string;
+  nextPrompt: string;
+  suggestedCommand?: string;
+  sourceImpulseId?: string;
+  sourceImpulseTitle?: string;
+  evidence: CompanionCheckInEvidence[];
+  brief: CompanionImpulseBrief;
+  percept?: CompanionPercept;
+  card?: CompanionCard;
+  safetyEvent?: CompanionSafetyEvent;
+}
+
 export type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
 export type CompanionMissionPriority = 'P0' | 'P1' | 'P2';
 

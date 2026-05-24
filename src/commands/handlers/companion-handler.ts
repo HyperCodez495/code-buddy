@@ -31,6 +31,10 @@ import {
   formatCompanionImpulseBrief,
 } from '../../companion/impulses.js';
 import {
+  buildCompanionCheckIn,
+  formatCompanionCheckIn,
+} from '../../companion/check-in.js';
+import {
   formatCompanionMissionBoard,
   readCompanionMissionBoard,
   syncCompanionMissionBoard,
@@ -97,6 +101,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
         '       /companion evaluate [--no-record]',
         '       /companion radar [--no-record]',
         '       /companion impulses [--no-record]',
+        '       /companion check-in [--text <text>] [--preview]',
         '       /companion missions sync|list|run-next|start|done|dismiss',
         '       /companion safety recent|stats',
       ].join('\n')),
@@ -134,7 +139,22 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
     };
   }
 
-  if (action === 'impulses' || action === 'brief' || action === 'check-in') {
+  if (action === 'check-in' || action === 'say') {
+    const preview = args.includes('--preview') || args.includes('--no-record');
+    const userText = flagValue(args, '--text');
+    const cue = await buildCompanionCheckIn({
+      userText,
+      recordPercept: !preview,
+      createCard: !preview,
+      recordSafety: !preview,
+    });
+    return {
+      handled: true,
+      entry: entry(formatCompanionCheckIn(cue)),
+    };
+  }
+
+  if (action === 'impulses' || action === 'brief') {
     const brief = await buildCompanionImpulseBrief({
       recordSuggestions: !args.includes('--no-record'),
     });
@@ -340,6 +360,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion evaluate [--no-record]',
       '       /companion radar [--no-record]',
       '       /companion impulses [--no-record]',
+      '       /companion check-in [--text <text>] [--preview]',
       '       /companion missions sync|list|run-next|start|done|dismiss',
       '       /companion safety recent|stats',
       '       /companion camera status',

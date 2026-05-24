@@ -115,6 +115,32 @@ interface CompanionImpulseBrief {
   };
 }
 
+type CompanionCheckInMood = 'steady' | 'encouraging' | 'urgent' | 'curious';
+
+interface CompanionCheckInEvidence {
+  label: string;
+  value: string;
+}
+
+interface CompanionCheckInCue {
+  id: string;
+  timestamp: string;
+  cwd: string;
+  mood: CompanionCheckInMood;
+  priority: CompanionImpulsePriority;
+  spokenText: string;
+  writtenText: string;
+  nextPrompt: string;
+  suggestedCommand?: string;
+  sourceImpulseId?: string;
+  sourceImpulseTitle?: string;
+  evidence: CompanionCheckInEvidence[];
+  brief: CompanionImpulseBrief;
+  percept?: CompanionPercept;
+  card?: CompanionCard;
+  safetyEvent?: CompanionSafetyEvent;
+}
+
 type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
 type CompanionSafetyEventKind = 'sense' | 'tool' | 'mission' | 'permission' | 'data';
 type CompanionSafetyEventRisk = 'low' | 'medium' | 'high';
@@ -431,6 +457,16 @@ type CompanionImpulsesMod = {
   }) => Promise<CompanionImpulseBrief>;
 };
 
+type CompanionCheckInMod = {
+  buildCompanionCheckIn: (options: {
+    cwd?: string;
+    userText?: string;
+    recordPercept?: boolean;
+    createCard?: boolean;
+    recordSafety?: boolean;
+  }) => Promise<CompanionCheckInCue>;
+};
+
 type CompanionMissionBoardMod = {
   syncCompanionMissionBoard: (options: {
     cwd?: string;
@@ -553,6 +589,10 @@ async function loadCompetitiveRadar(): Promise<CompanionCompetitiveRadarMod | nu
 
 async function loadImpulses(): Promise<CompanionImpulsesMod | null> {
   return loadCoreModule<CompanionImpulsesMod>('companion/impulses.js');
+}
+
+async function loadCheckIn(): Promise<CompanionCheckInMod | null> {
+  return loadCoreModule<CompanionCheckInMod>('companion/check-in.js');
 }
 
 async function loadMissionBoard(): Promise<CompanionMissionBoardMod | null> {
@@ -773,6 +813,39 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.impulses] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.checkIn',
+    async (_e, input?: {
+      projectId?: string;
+      userText?: string;
+      recordPercept?: boolean;
+      createCard?: boolean;
+      recordSafety?: boolean;
+    }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadCheckIn();
+        if (!mod?.buildCompanionCheckIn) {
+          return { ok: false as const, error: 'core companion check-in module unavailable' };
+        }
+        return {
+          ok: true as const,
+          cue: await mod.buildCompanionCheckIn({
+            cwd,
+            userText: input?.userText,
+            recordPercept: input?.recordPercept,
+            createCard: input?.createCard,
+            recordSafety: input?.recordSafety,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.checkIn] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },
