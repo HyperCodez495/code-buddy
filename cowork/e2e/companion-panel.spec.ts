@@ -134,6 +134,9 @@ async function mockCompanionBackend(electronApp: ElectronApplication, workspaceP
       'companion.gateway.profile',
       'companion.skills.list',
       'companion.privacy.report',
+      'companion.camera.status',
+      'companion.camera.snapshot',
+      'companion.camera.inspect',
     ];
     for (const channel of channels) ipcMain.removeHandler(channel);
 
@@ -301,6 +304,50 @@ async function mockCompanionBackend(electronApp: ElectronApplication, workspaceP
     }));
     ipcMain.handle('companion.skills.list', async () => ({ ok: true, items: [] }));
     ipcMain.handle('companion.privacy.report', async () => ({ ok: true, report: privacyReport }));
+    ipcMain.handle('companion.camera.status', async () => ({
+      ok: true,
+      status: {
+        available: true,
+        platform: 'e2e',
+        commandPreview: 'deterministic-camera-frame',
+      },
+    }));
+    ipcMain.handle('companion.camera.snapshot', async () => ({
+      ok: true,
+      result: {
+        success: true,
+        path: `${cwd}/.codebuddy/companion/camera/e2e-frame.png`,
+        output: 'deterministic camera frame captured',
+        command: 'deterministic-camera-frame',
+        perceptId: 'percept_e2e_camera',
+      },
+    }));
+    ipcMain.handle('companion.camera.inspect', async () => ({
+      ok: true,
+      result: {
+        success: true,
+        path: `${cwd}/.codebuddy/companion/camera/e2e-frame.png`,
+        snapshot: {
+          success: true,
+          path: `${cwd}/.codebuddy/companion/camera/e2e-frame.png`,
+          output: 'deterministic camera frame captured',
+          command: 'deterministic-camera-frame',
+          perceptId: 'percept_e2e_camera',
+        },
+        analysis: {
+          description: 'Deterministic e2e frame with the companion cockpit in view.',
+          labels: ['cockpit', 'camera', 'companion'],
+          dimensions: { width: 640, height: 360 },
+          format: 'png',
+          size: 4096,
+          channels: 4,
+        },
+        ocrText: 'Buddy companion',
+        summary: 'Camera frame inspected by deterministic e2e backend.',
+        perceptId: 'percept_e2e_camera',
+        safetyEventId: 'safety_e2e_camera',
+      },
+    }));
   }, workspacePath);
 }
 
@@ -374,4 +421,14 @@ test('drives the Buddy companion cockpit from no project to improvement loop', a
   await appPage.getByRole('button', { name: 'Improve loop' }).click();
   await expect(appPage.getByText('Improvement loop')).toBeVisible();
   await expect(appPage.getByText('Review competitor delta')).toBeVisible();
+
+  await appPage.getByRole('button', { name: 'Inspect camera' }).click();
+  await expect(appPage.getByText('Vision inspection')).toBeVisible();
+  await expect(
+    appPage.getByText('Camera frame inspected by deterministic e2e backend.'),
+  ).toBeVisible();
+
+  await appPage.getByRole('button', { name: 'Buddy check-in' }).click();
+  await expect(appPage.getByRole('heading', { name: 'Check-in' })).toBeVisible();
+  await expect(appPage.getByText('Je suis pret a continuer avec toi.')).toBeVisible();
 });
