@@ -369,6 +369,7 @@ interface AppState {
   showLessonCandidatePanel: boolean;
   showUserModelPanel: boolean;
   showSpecPanel: boolean;
+  showCompanionPanel: boolean;
 
   // Notifications (Claude Cowork parity)
   notifications: NotificationEntry[];
@@ -616,6 +617,7 @@ interface AppState {
   setShowLessonCandidatePanel: (show: boolean) => void;
   setShowUserModelPanel: (show: boolean) => void;
   setShowSpecPanel: (show: boolean) => void;
+  setShowCompanionPanel: (show: boolean) => void;
 
   // Notification actions
   addNotification: (notification: NotificationEntry) => void;
@@ -791,6 +793,7 @@ export const useAppStore = create<AppState>((set) => ({
   showLessonCandidatePanel: false,
   showUserModelPanel: false,
   showSpecPanel: false,
+  showCompanionPanel: false,
   notifications: [],
   showNotificationCenter: false,
 
@@ -1729,6 +1732,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowLessonCandidatePanel: (show) => set({ showLessonCandidatePanel: show }),
   setShowUserModelPanel: (show) => set({ showUserModelPanel: show }),
   setShowSpecPanel: (show) => set({ showSpecPanel: show }),
+  setShowCompanionPanel: (show) => set({ showCompanionPanel: show }),
   clearSubAgents: (sessionId) =>
     set((state) => {
       const { [sessionId]: _dropped, ...rest } = state.subAgents;

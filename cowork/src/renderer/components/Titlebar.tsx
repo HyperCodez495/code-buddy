@@ -1,4 +1,4 @@
-import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus, Sparkles, Network, Users, HelpCircle, Power, Loader2, ClipboardCopy, Headphones, Cpu, GraduationCap, UserCog, ListChecks } from 'lucide-react';
+import { Minus, Square, X, Copy, Bell, Activity, Star, BarChart3, Focus, Sparkles, Network, Users, HelpCircle, Power, Loader2, ClipboardCopy, Headphones, Cpu, GraduationCap, UserCog, ListChecks, Bot } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
@@ -170,6 +170,17 @@ export function Titlebar() {
 
       {/* Voice chat overlay (Lisa-derived) */}
       <VoiceOverlayButton />
+
+      {/* Companion senses — Lisa-inspired local sensory journal. */}
+      <button
+        onClick={() => useAppStore.getState().setShowCompanionPanel(true)}
+        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+        title="Buddy companion — senses and self-state"
+        aria-label="Open Buddy companion panel"
+        data-testid="companion-panel-button"
+      >
+        <Bot className="w-4 h-4 text-text-secondary" />
+      </button>
 
       {/* Code Buddy HTTP server toggle — boots `src/server/index.ts` in-process */}
       <ServerToggle />

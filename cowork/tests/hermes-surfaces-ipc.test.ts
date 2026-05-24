@@ -22,6 +22,7 @@ vi.mock('../src/main/utils/logger', () => ({ log: vi.fn(), logWarn: vi.fn(), log
 
 import { registerLessonCandidateIpcHandlers } from '../src/main/ipc/lessons-candidate-ipc';
 import { registerUserModelIpcHandlers } from '../src/main/ipc/user-model-ipc';
+import { registerCompanionIpcHandlers } from '../src/main/ipc/companion-ipc';
 import { registerSpecIpcHandlers } from '../src/main/ipc/spec-ipc';
 import { registerSpecNextIpcHandlers, buildSpecNextArgs } from '../src/main/ipc/spec-next-ipc';
 
@@ -127,6 +128,74 @@ describe('user-model IPC', () => {
     const res = (await handler?.({}, 'pending')) as { ok: boolean; items: unknown[] };
     expect(res.ok).toBe(true);
     expect(res.items).toHaveLength(1);
+  });
+});
+
+describe('companion IPC', () => {
+  it('loads companion status from the active project workspace', async () => {
+    const getCompanionStatus = vi.fn(async () => ({ cwd: '/tmp/proj', model: 'gpt-5.5' }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ getCompanionStatus });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.status');
+    const res = (await handler?.({})) as { ok: boolean; status?: { model: string } };
+    expect(res.ok).toBe(true);
+    expect(res.status?.model).toBe('gpt-5.5');
+    expect(getCompanionStatus).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
+  it('returns recent percepts from the active project journal', async () => {
+    const readRecentCompanionPercepts = vi.fn(async () => [
+      { id: 'p1', modality: 'vision', source: 'camera_snapshot' },
+    ]);
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ readRecentCompanionPercepts });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.percepts.recent');
+    const res = (await handler?.({}, { limit: 5, modality: 'vision' })) as { ok: boolean; items: unknown[] };
+    expect(res.ok).toBe(true);
+    expect(res.items).toHaveLength(1);
+    expect(readRecentCompanionPercepts).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      limit: 5,
+      modality: 'vision',
+    });
+  });
+
+  it('records companion self-state through the core module', async () => {
+    const recordCompanionSelfState = vi.fn(async () => ({ id: 'self-1', modality: 'self' }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ recordCompanionSelfState });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.self.record');
+    const res = (await handler?.({})) as { ok: boolean; percept?: { id: string } };
+    expect(res.ok).toBe(true);
+    expect(res.percept?.id).toBe('self-1');
+    expect(recordCompanionSelfState).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
+  it('captures camera snapshots in the active workspace', async () => {
+    const captureCameraSnapshot = vi.fn(async () => ({ success: true, path: '/tmp/proj/.codebuddy/camera/scene.png' }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ captureCameraSnapshot });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.camera.snapshot');
+    const res = (await handler?.({}, { timeoutMs: 5000 })) as { ok: boolean; result?: { path: string } };
+    expect(res.ok).toBe(true);
+    expect(res.result?.path).toContain('scene.png');
+    expect(captureCameraSnapshot).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      outputPath: undefined,
+      device: undefined,
+      timeoutMs: 5000,
+    });
+  });
+
+  it('returns NO_ACTIVE_PROJECT before loading core modules', async () => {
+    registerCompanionIpcHandlers(projectSource(null));
+    const handler = electronMock.handlers.get('companion.percepts.stats');
+    await expect(handler?.({})).resolves.toEqual({ ok: false, error: 'NO_ACTIVE_PROJECT' });
+    expect(coreLoaderMock.loadCoreModule).not.toHaveBeenCalled();
   });
 });
 

@@ -253,6 +253,9 @@ share, proactive suggestions, and self-state panels.
 `buddy companion self` writes Buddy's current model/auth/voice/camera readiness
 as a `self` percept, giving the companion a small, inspectable proprioception
 trail.
+Cowork exposes the same journal in the Buddy companion titlebar panel, including
+recent percept filters, self-state recording, and explicit camera snapshots for
+the active project.
 
 ### Observability
 

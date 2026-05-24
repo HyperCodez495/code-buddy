@@ -10,7 +10,8 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
+import { recordCompanionPercept } from '../../companion/percepts.js';
 import { ReasoningTool } from '../index.js';
 import { SkillDiscoveryTool } from '../skill-discovery-tool.js';
 import { DeviceTool } from '../device-tool.js';
@@ -374,9 +375,9 @@ export class ScreenshotExecuteTool implements ITool {
   readonly name = 'screenshot';
   readonly description = 'Capture screenshots of the screen, a window, or a region. Supports LLM-optimized output.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     const tool = await getScreenshot();
-    return await tool.capture({
+    const result = await tool.capture({
       fullscreen: input.fullscreen as boolean | undefined,
       region: input.region as { x: number; y: number; width: number; height: number } | undefined,
       window: input.window as string | undefined,
@@ -386,6 +387,33 @@ export class ScreenshotExecuteTool implements ITool {
       outputPath: input.outputPath as string | undefined,
       forLLM: input.forLLM as boolean | undefined,
     });
+
+    if (result.success) {
+      const data = result.data as { path?: string; width?: number; height?: number; size?: string } | undefined;
+      try {
+        await recordCompanionPercept({
+          modality: 'screen',
+          source: 'screenshot_tool',
+          summary: `Captured screen screenshot${data?.path ? ` to ${data.path}` : ''}`,
+          confidence: 1,
+          payload: {
+            path: data?.path,
+            width: data?.width,
+            height: data?.height,
+            size: data?.size,
+            fullscreen: input.fullscreen,
+            region: input.region,
+            window: input.window,
+            forLLM: input.forLLM,
+          },
+          tags: ['screen', 'screenshot', 'vision'],
+        }, { cwd: context?.cwd });
+      } catch {
+        // Screen capture succeeded; percept journaling is best-effort.
+      }
+    }
+
+    return result;
   }
 
   getSchema(): ToolSchema {

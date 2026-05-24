@@ -85,6 +85,89 @@ export interface NotificationEntry {
   actionLabel?: string;
 }
 
+export type CompanionPerceptModality =
+  | 'vision'
+  | 'hearing'
+  | 'screen'
+  | 'self'
+  | 'memory'
+  | 'tool'
+  | 'suggestion';
+
+export interface CompanionPercept {
+  id: string;
+  modality: CompanionPerceptModality;
+  source: string;
+  timestamp: string;
+  confidence: number;
+  summary: string;
+  payload: Record<string, unknown>;
+  tags: string[];
+}
+
+export interface CompanionPerceptStats {
+  storePath: string;
+  exists: boolean;
+  total: number;
+  byModality: Partial<Record<CompanionPerceptModality, number>>;
+  latestTimestamp?: string;
+}
+
+export interface CompanionStatus {
+  cwd: string;
+  authPath: string;
+  chatGptCredentialsPresent: boolean;
+  model: string;
+  identity: {
+    soulLoaded: boolean;
+    soulSource?: string;
+    soulIsCompanion: boolean;
+    bootLoaded: boolean;
+    bootSource?: string;
+    bootIsCompanion: boolean;
+  };
+  voice: {
+    enabled: boolean;
+    available: boolean;
+    reason?: string;
+    provider: string;
+    language?: string;
+    autoSend?: boolean;
+  };
+  wakeWord: {
+    available: boolean;
+    engine: 'porcupine' | 'text-match';
+    wakeWords: string[];
+    picovoiceAccessKeyPresent: boolean;
+  };
+  tts: {
+    enabled: boolean;
+    available: boolean;
+    reason?: string;
+    provider: string;
+    voice?: string;
+    autoSpeak?: boolean;
+  };
+  camera: {
+    available: boolean;
+    ffmpegAvailable: boolean;
+    platform: string;
+    commandPreview?: string;
+    reason?: string;
+  };
+  percepts: CompanionPerceptStats;
+}
+
+export interface CameraSnapshotResult {
+  success: boolean;
+  path?: string;
+  output?: string;
+  error?: string;
+  command?: string;
+  perceptId?: string;
+  perceptPath?: string;
+}
+
 export interface MountedPath {
   virtual: string;
   real: string;

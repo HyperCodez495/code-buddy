@@ -22,6 +22,11 @@ import type {
   Project,
   ProjectCreateInput,
   ProjectUpdateInput,
+  CompanionPercept,
+  CompanionPerceptModality,
+  CompanionPerceptStats,
+  CompanionStatus,
+  CameraSnapshotResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
 import type {
@@ -752,6 +757,30 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('voice.speak', { text, lengthScale: options?.lengthScale }),
     ttsStatus: (): Promise<{ available: boolean; bootError: string | null }> =>
       ipcRenderer.invoke('voice.ttsStatus'),
+  },
+
+  companion: {
+    status: (projectId?: string): Promise<{ ok: boolean; status?: CompanionStatus; error?: string }> =>
+      ipcRenderer.invoke('companion.status', projectId),
+    recentPercepts: (input?: {
+      limit?: number;
+      modality?: CompanionPerceptModality;
+      projectId?: string;
+    }): Promise<{ ok: boolean; items: CompanionPercept[]; error?: string }> =>
+      ipcRenderer.invoke('companion.percepts.recent', input),
+    perceptStats: (projectId?: string): Promise<{ ok: boolean; stats?: CompanionPerceptStats; error?: string }> =>
+      ipcRenderer.invoke('companion.percepts.stats', projectId),
+    recordSelf: (projectId?: string): Promise<{ ok: boolean; percept?: CompanionPercept; error?: string }> =>
+      ipcRenderer.invoke('companion.self.record', projectId),
+    cameraStatus: (): Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }> =>
+      ipcRenderer.invoke('companion.camera.status'),
+    cameraSnapshot: (input?: {
+      outputPath?: string;
+      device?: string;
+      timeoutMs?: number;
+      projectId?: string;
+    }): Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }> =>
+      ipcRenderer.invoke('companion.camera.snapshot', input),
   },
 
   // Auto-update
@@ -2858,6 +2887,23 @@ declare global {
           error?: string;
         }>;
         ttsStatus: () => Promise<{ available: boolean; bootError: string | null }>;
+      };
+      companion: {
+        status: (projectId?: string) => Promise<{ ok: boolean; status?: CompanionStatus; error?: string }>;
+        recentPercepts: (input?: {
+          limit?: number;
+          modality?: CompanionPerceptModality;
+          projectId?: string;
+        }) => Promise<{ ok: boolean; items: CompanionPercept[]; error?: string }>;
+        perceptStats: (projectId?: string) => Promise<{ ok: boolean; stats?: CompanionPerceptStats; error?: string }>;
+        recordSelf: (projectId?: string) => Promise<{ ok: boolean; percept?: CompanionPercept; error?: string }>;
+        cameraStatus: () => Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }>;
+        cameraSnapshot: (input?: {
+          outputPath?: string;
+          device?: string;
+          timeoutMs?: number;
+          projectId?: string;
+        }) => Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }>;
       };
       update: {
         check: () => Promise<unknown>;

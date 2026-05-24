@@ -160,7 +160,9 @@ For visual context, say or type a request such as "Buddy, regarde ceci" and use
 `/companion camera snapshot` or the `camera_snapshot` tool to capture a local frame.
 Successful snapshots append a `vision` percept to
 `.codebuddy/companion/percepts.jsonl`, which is the local sensory journal future
-Cowork panels and companion loops can reuse.
+Cowork panels and companion loops can reuse. Cowork also has a Buddy companion
+titlebar panel that shows readiness, recent percepts, self-state recording, and
+explicit camera snapshots for the active project.
 The companion identity is still bounded by the normal safety and verification
 rules; it makes Buddy more present and conversational without pretending to be
 literally conscious.

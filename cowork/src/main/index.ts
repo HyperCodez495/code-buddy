@@ -35,6 +35,7 @@ import { registerSkillMdIpcHandlers } from './ipc/skill-md-ipc';
 import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { registerLessonCandidateIpcHandlers } from './ipc/lessons-candidate-ipc';
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
+import { registerCompanionIpcHandlers } from './ipc/companion-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
 import { registerSpecNextIpcHandlers } from './ipc/spec-next-ipc';
 import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
@@ -2251,6 +2252,7 @@ registerKnowledgeIpcHandlers(knowledgeService, projectManager);
 // projectManager getter (set during async boot, like fleetBridge above).
 registerLessonCandidateIpcHandlers(() => projectManager);
 registerUserModelIpcHandlers(() => projectManager);
+registerCompanionIpcHandlers(() => projectManager);
 registerSpecIpcHandlers(() => projectManager, configStore);
 registerSpecNextIpcHandlers(() => projectManager);
 
@@ -3321,6 +3323,31 @@ ipcMain.handle('runner.status', async () => {
   return sessionManager.getRunnerStatus();
 });
 
+type CompanionPerceptInput = {
+  modality: 'vision' | 'hearing' | 'screen' | 'self' | 'memory' | 'tool' | 'suggestion';
+  source: string;
+  summary: string;
+  confidence?: number;
+  payload?: Record<string, unknown>;
+  tags?: string[];
+};
+
+async function recordCompanionPerceptFromMain(input: CompanionPerceptInput): Promise<void> {
+  try {
+    const activeProject = projectManager?.getActive();
+    const cwd = activeProject?.workspacePath || currentWorkingDir || process.cwd();
+    const mod = await loadCoreModule<{
+      recordCompanionPercept: (
+        input: CompanionPerceptInput,
+        options: { cwd?: string },
+      ) => Promise<unknown>;
+    }>('companion/percepts.js');
+    await mod?.recordCompanionPercept?.(input, { cwd });
+  } catch (err) {
+    logWarn('[companion.percept] failed to record percept:', err);
+  }
+}
+
 /**
  * Voice → text transcription (Phase 8 — mic button in ChatView).
  * Accepts a Buffer of audio (webm/opus from MediaRecorder works out of
@@ -3348,6 +3375,19 @@ ipcMain.handle(
         : Buffer.from(payload.audio as ArrayBuffer);
       const { text, durationMs } = await voiceBridge.transcribe(buf, {
         language: payload.language,
+      });
+      void recordCompanionPerceptFromMain({
+        modality: 'hearing',
+        source: 'cowork_voice_transcribe',
+        summary: `Transcribed voice input: ${text.slice(0, 160)}`,
+        confidence: text.trim() ? 0.9 : 0.2,
+        payload: {
+          language: payload.language || 'auto',
+          durationMs,
+          textPreview: text.slice(0, 500),
+          textLength: text.length,
+        },
+        tags: ['voice', 'stt', 'hearing', 'cowork'],
       });
       return { ok: true, text, durationMs };
     } catch (err) {
