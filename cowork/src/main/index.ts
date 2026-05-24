@@ -2222,7 +2222,7 @@ ipcMain.handle('config.codexOauthStatus', async () => {
 });
 
 // ── Project IPC handlers (Claude Cowork parity) ──────────────────────
-registerProjectIpcHandlers(projectManager, activityFeed);
+registerProjectIpcHandlers(() => projectManager, () => activityFeed);
 
 // ── Sub-agent IPC handlers (Claude Cowork parity) ────────────────────
 registerSubAgentIpcHandlers(subAgentBridge);
