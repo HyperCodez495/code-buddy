@@ -43,7 +43,35 @@ describe('VoiceConversationSession', () => {
       phase: 'interrupted',
       interruptionCount: 1,
       lastInterruptionReason: 'barge_in',
+      lastInterruptionAt: 1200,
+      interruptedTurnId: 0,
+      pendingInterruption: true,
+      resumedAfterInterruption: false,
+      resumeInstruction: 'Listen to the next user speech as a correction or higher-priority instruction before continuing.',
       hadPlaybackDuringLastInterruption: true,
+    });
+  });
+
+  it('marks the next listening turn as a resumed barge-in', () => {
+    const session = new VoiceConversationSession(1000);
+    session.record({ type: 'listening_started', timestamp: 1050 });
+    session.record({ type: 'transcription_completed', timestamp: 1100, transcript: 'Explique moi le plan.' });
+    session.record({ type: 'assistant_speech_started', timestamp: 1200 });
+    session.record({
+      type: 'assistant_interrupted',
+      reason: 'barge_in',
+      hadPlayback: true,
+      timestamp: 1300,
+    });
+    session.record({ type: 'listening_started', timestamp: 1400 });
+
+    expect(session.snapshot()).toMatchObject({
+      phase: 'listening',
+      turnId: 2,
+      pendingInterruption: false,
+      resumedAfterInterruption: true,
+      lastInterruptionReason: 'barge_in',
+      interruptedTurnId: 1,
     });
   });
 });

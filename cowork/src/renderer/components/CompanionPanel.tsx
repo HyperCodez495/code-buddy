@@ -93,6 +93,20 @@ function ready(ok: boolean): string {
   return ok ? 'Ready' : 'Needs attention';
 }
 
+function voiceConversationValue(snapshot: VoiceConversationSnapshot | null): string {
+  if (!snapshot) return 'No voice session';
+  const interruptions = snapshot.interruptionCount > 0
+    ? ` / ${snapshot.interruptionCount} interrupt${snapshot.interruptionCount === 1 ? '' : 's'}`
+    : '';
+  if (snapshot.pendingInterruption) {
+    return `interrupted / resume pending${interruptions}`;
+  }
+  if (snapshot.resumedAfterInterruption) {
+    return `listening after barge-in${interruptions}`;
+  }
+  return `${snapshot.phase} / turn ${snapshot.turnId}${interruptions}`;
+}
+
 function StatusTile({
   icon: Icon,
   label,
@@ -894,7 +908,7 @@ export function CompanionPanel() {
                 <StatusTile
                   icon={Activity}
                   label="Dialogue"
-                  value={voiceConversation ? `${voiceConversation.phase} / turn ${voiceConversation.turnId}` : 'No voice session'}
+                  value={voiceConversationValue(voiceConversation)}
                   ok={Boolean(voiceConversation && voiceConversation.phase !== 'error')}
                 />
                 <StatusTile

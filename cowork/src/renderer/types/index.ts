@@ -446,6 +446,11 @@ export interface VoiceConversationSnapshot {
   lastTranscriptPreview?: string;
   lastError?: string;
   lastInterruptionReason?: string;
+  lastInterruptionAt?: number;
+  interruptedTurnId?: number;
+  pendingInterruption?: boolean;
+  resumedAfterInterruption?: boolean;
+  resumeInstruction?: string;
   hadPlaybackDuringLastInterruption?: boolean;
 }
 

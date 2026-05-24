@@ -38,6 +38,11 @@ export interface VoiceConversationSnapshot {
   lastTranscriptPreview?: string;
   lastError?: string;
   lastInterruptionReason?: string;
+  lastInterruptionAt?: number;
+  interruptedTurnId?: number;
+  pendingInterruption?: boolean;
+  resumedAfterInterruption?: boolean;
+  resumeInstruction?: string;
   hadPlaybackDuringLastInterruption?: boolean;
 }
 
@@ -49,6 +54,19 @@ function preview(text: string | undefined): string | undefined {
   const compact = (text || '').replace(/\s+/g, ' ').trim();
   if (!compact) return undefined;
   return compact.length <= 240 ? compact : `${compact.slice(0, 237)}...`;
+}
+
+function interruptionInstruction(reason: string | undefined): string {
+  if (reason === 'barge_in') {
+    return 'Listen to the next user speech as a correction or higher-priority instruction before continuing.';
+  }
+  if (reason === 'new_speech') {
+    return 'Prefer the newest speech turn and avoid continuing stale playback.';
+  }
+  if (reason === 'stop') {
+    return 'Stay quiet until the user gives a new instruction.';
+  }
+  return 'Confirm the next user intent before resuming speech.';
 }
 
 export class VoiceConversationSession {
@@ -90,6 +108,8 @@ export class VoiceConversationSession {
 
     switch (event.type) {
       case 'listening_started':
+        next.resumedAfterInterruption = Boolean(next.pendingInterruption);
+        next.pendingInterruption = false;
         next.phase = 'listening';
         next.turnId += 1;
         next.lastError = undefined;
@@ -117,11 +137,18 @@ export class VoiceConversationSession {
         break;
       case 'assistant_speech_finished':
         next.phase = 'idle';
+        next.pendingInterruption = false;
+        next.resumedAfterInterruption = false;
         break;
       case 'assistant_interrupted':
         next.phase = 'interrupted';
         next.interruptionCount += 1;
         next.lastInterruptionReason = event.reason || 'manual';
+        next.lastInterruptionAt = timestamp;
+        next.interruptedTurnId = next.turnId;
+        next.pendingInterruption = true;
+        next.resumedAfterInterruption = false;
+        next.resumeInstruction = interruptionInstruction(event.reason);
         next.hadPlaybackDuringLastInterruption = Boolean(event.hadPlayback);
         break;
     }
