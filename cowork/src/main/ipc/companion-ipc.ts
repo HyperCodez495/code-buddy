@@ -84,6 +84,42 @@ interface CompanionCompetitiveRadar {
   sourceNotes: string[];
 }
 
+type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
+
+interface CompanionMission {
+  id: string;
+  title: string;
+  dimension: string;
+  status: CompanionMissionStatus;
+  priority: 'P0' | 'P1' | 'P2';
+  summary: string;
+  recommendation: string;
+  sourceGapId: string;
+  sourceRadarId?: string;
+  competitorRefs: string[];
+  command?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+interface CompanionMissionBoard {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  missions: CompanionMission[];
+}
+
+interface CompanionMissionBoardSyncResult {
+  board: CompanionMissionBoard;
+  radarId: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+}
+
 interface CameraSnapshotResult {
   success: boolean;
   path?: string;
@@ -132,6 +168,19 @@ type CompanionCompetitiveRadarMod = {
   }) => Promise<CompanionCompetitiveRadar>;
 };
 
+type CompanionMissionBoardMod = {
+  syncCompanionMissionBoard: (options: {
+    cwd?: string;
+    recordSuggestions?: boolean;
+  }) => Promise<CompanionMissionBoardSyncResult>;
+  readCompanionMissionBoard: (options: { cwd?: string }) => Promise<CompanionMissionBoard>;
+  updateCompanionMissionStatus: (
+    id: string,
+    status: CompanionMissionStatus,
+    options: { cwd?: string },
+  ) => Promise<CompanionMission>;
+};
+
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
 
 async function companionWorkDir(
@@ -161,6 +210,10 @@ async function loadSelfEvaluation(): Promise<CompanionSelfEvaluationMod | null> 
 
 async function loadCompetitiveRadar(): Promise<CompanionCompetitiveRadarMod | null> {
   return loadCoreModule<CompanionCompetitiveRadarMod>('companion/competitive-radar.js');
+}
+
+async function loadMissionBoard(): Promise<CompanionMissionBoardMod | null> {
+  return loadCoreModule<CompanionMissionBoardMod>('companion/mission-board.js');
 }
 
 export function registerCompanionIpcHandlers(projectManagerSource: ProjectManagerSource): void {
@@ -278,6 +331,77 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.radar] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.missions.sync',
+    async (_e, input?: { projectId?: string; recordSuggestions?: boolean }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadMissionBoard();
+        if (!mod?.syncCompanionMissionBoard) {
+          return { ok: false as const, error: 'core mission board module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.syncCompanionMissionBoard({
+            cwd,
+            recordSuggestions: input?.recordSuggestions !== false,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.missions.sync] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.missions.list',
+    async (_e, input?: { projectId?: string; status?: CompanionMissionStatus }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error, items: [] as CompanionMission[] };
+      try {
+        const mod = await loadMissionBoard();
+        if (!mod?.readCompanionMissionBoard) {
+          return { ok: false as const, error: 'core mission board module unavailable', items: [] as CompanionMission[] };
+        }
+        const board = await mod.readCompanionMissionBoard({ cwd });
+        return {
+          ok: true as const,
+          board,
+          items: board.missions.filter(mission => !input?.status || mission.status === input.status),
+        };
+      } catch (err) {
+        logError('[companion.missions.list] failed:', err);
+        return { ok: false as const, error: errorMessage(err), items: [] as CompanionMission[] };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.missions.update',
+    async (_e, input?: { projectId?: string; missionId?: string; status?: CompanionMissionStatus }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.missionId || !input.status) {
+        return { ok: false as const, error: 'missionId and status are required' };
+      }
+      try {
+        const mod = await loadMissionBoard();
+        if (!mod?.updateCompanionMissionStatus) {
+          return { ok: false as const, error: 'core mission board module unavailable' };
+        }
+        return {
+          ok: true as const,
+          mission: await mod.updateCompanionMissionStatus(input.missionId, input.status, { cwd }),
+        };
+      } catch (err) {
+        logError('[companion.missions.update] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

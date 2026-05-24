@@ -207,6 +207,43 @@ export interface CompanionCompetitiveRadar {
   sourceNotes: string[];
 }
 
+export type CompanionMissionStatus = 'open' | 'in_progress' | 'done' | 'dismissed';
+export type CompanionMissionPriority = 'P0' | 'P1' | 'P2';
+
+export interface CompanionMission {
+  id: string;
+  title: string;
+  dimension: string;
+  status: CompanionMissionStatus;
+  priority: CompanionMissionPriority;
+  summary: string;
+  recommendation: string;
+  sourceGapId: string;
+  sourceRadarId?: string;
+  competitorRefs: string[];
+  command?: string;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  completedAt?: string;
+}
+
+export interface CompanionMissionBoard {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  missions: CompanionMission[];
+}
+
+export interface CompanionMissionBoardSyncResult {
+  board: CompanionMissionBoard;
+  radarId: string;
+  created: number;
+  updated: number;
+  unchanged: number;
+}
+
 export interface CameraSnapshotResult {
   success: boolean;
   path?: string;

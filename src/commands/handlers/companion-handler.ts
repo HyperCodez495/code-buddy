@@ -26,6 +26,13 @@ import {
   buildCompanionCompetitiveRadar,
   formatCompanionCompetitiveRadar,
 } from '../../companion/competitive-radar.js';
+import {
+  formatCompanionMissionBoard,
+  readCompanionMissionBoard,
+  syncCompanionMissionBoard,
+  updateCompanionMissionStatus,
+  type CompanionMissionStatus,
+} from '../../companion/mission-board.js';
 
 function entry(content: string): ChatEntry {
   return {
@@ -73,6 +80,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
         '       /companion percepts stats',
         '       /companion evaluate [--no-record]',
         '       /companion radar [--no-record]',
+        '       /companion missions sync|list|start|done|dismiss',
       ].join('\n')),
     };
   }
@@ -105,6 +113,62 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
     return {
       handled: true,
       entry: entry(formatCompanionCompetitiveRadar(radar)),
+    };
+  }
+
+  if (action === 'missions' || action === 'mission-board' || action === 'board') {
+    const missionAction = args[1]?.toLowerCase() || 'list';
+    if (missionAction === 'sync') {
+      const result = await syncCompanionMissionBoard({
+        recordSuggestions: !args.includes('--no-record'),
+      });
+      return {
+        handled: true,
+        entry: entry([
+          `Mission board synced from ${result.radarId}.`,
+          `Created: ${result.created}, updated: ${result.updated}, unchanged: ${result.unchanged}`,
+          '',
+          formatCompanionMissionBoard(result.board),
+        ].join('\n')),
+      };
+    }
+
+    if (missionAction === 'list' || missionAction === 'status') {
+      const status = flagValue(args, '--status') as CompanionMissionStatus | undefined;
+      const board = await readCompanionMissionBoard();
+      return {
+        handled: true,
+        entry: entry(formatCompanionMissionBoard(status
+          ? { ...board, missions: board.missions.filter(mission => mission.status === status) }
+          : board)),
+      };
+    }
+
+    const missionId = args[2];
+    const statusByAction: Record<string, CompanionMissionStatus> = {
+      start: 'in_progress',
+      done: 'done',
+      complete: 'done',
+      dismiss: 'dismissed',
+    };
+    const nextStatus = statusByAction[missionAction];
+    if (nextStatus && missionId) {
+      const mission = await updateCompanionMissionStatus(missionId, nextStatus);
+      return {
+        handled: true,
+        entry: entry(`Mission ${mission.id} marked ${mission.status}.`),
+      };
+    }
+
+    return {
+      handled: true,
+      entry: entry([
+        'Usage: /companion missions sync [--no-record]',
+        '       /companion missions list [--status <open|in_progress|done|dismissed>]',
+        '       /companion missions start <id>',
+        '       /companion missions done <id>',
+        '       /companion missions dismiss <id>',
+      ].join('\n')),
     };
   }
 
@@ -204,6 +268,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion self',
       '       /companion evaluate [--no-record]',
       '       /companion radar [--no-record]',
+      '       /companion missions sync|list|start|done|dismiss',
       '       /companion camera status',
       '       /companion camera snapshot [--output <path>] [--device <device>]',
       '       /companion percepts recent [--limit <n>] [--modality <name>]',

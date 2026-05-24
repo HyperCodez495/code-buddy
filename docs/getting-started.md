@@ -146,6 +146,7 @@ buddy companion status          # Check ChatGPT auth, identity, voice, TTS, and 
 buddy companion self            # Record Buddy's current self-state as a percept
 buddy companion evaluate        # Score readiness and record self-improvement suggestions
 buddy companion radar           # Compare Buddy to Hermes, OpenClaw, Lisa, and UNI
+buddy companion missions sync   # Turn radar gaps into a local mission board
 buddy companion camera snapshot # Capture one webcam frame into .codebuddy/camera/
 buddy companion percepts recent # Read Buddy's local sensory journal
 buddy speak "Bonjour"           # Speak text aloud through the configured TTS provider
@@ -170,6 +171,9 @@ write concrete `suggestion` percepts for the next improvements it should pursue.
 Use `buddy companion radar` or the panel's radar button when you want Buddy to
 compare itself against Hermes-style learning loops, OpenClaw-style always-on
 integrations, Lisa-style senses/workflows, and UNI-style real-time companion UX.
+Then run `buddy companion missions sync` to persist those gaps as a P0/P1/P2
+mission board in `.codebuddy/companion/missions.json`; Cowork can display the
+same board and mark missions started or done.
 The companion identity is still bounded by the normal safety and verification
 rules; it makes Buddy more present and conversational without pretending to be
 literally conscious.

@@ -465,6 +465,72 @@ export function registerCompanionCommands(program: Command): void {
       console.log(formatCompanionCompetitiveRadar(radar));
     });
 
+  const missions = companion
+    .command('missions')
+    .description('Manage Buddy companion self-improvement missions');
+
+  missions
+    .command('sync')
+    .description('Sync the mission board from the competitive radar')
+    .option('--no-record', 'Do not write a mission-board percept')
+    .action(async (opts: { record?: boolean }) => {
+      const {
+        formatCompanionMissionBoard,
+        syncCompanionMissionBoard,
+      } = await import('../../companion/mission-board.js');
+      const result = await syncCompanionMissionBoard({ recordSuggestions: opts.record !== false });
+      console.log(`Mission board synced from ${result.radarId}.`);
+      console.log(`Created: ${result.created}, updated: ${result.updated}, unchanged: ${result.unchanged}`);
+      console.log('');
+      console.log(formatCompanionMissionBoard(result.board));
+    });
+
+  missions
+    .command('list')
+    .description('List companion self-improvement missions')
+    .option('--status <status>', 'Filter by status: open, in_progress, done, dismissed')
+    .action(async (opts: { status?: string }) => {
+      const {
+        formatCompanionMissionBoard,
+        readCompanionMissionBoard,
+      } = await import('../../companion/mission-board.js');
+      const board = await readCompanionMissionBoard();
+      const filtered = opts.status
+        ? {
+            ...board,
+            missions: board.missions.filter(mission => mission.status === opts.status),
+          }
+        : board;
+      console.log(formatCompanionMissionBoard(filtered));
+    });
+
+  missions
+    .command('start <id>')
+    .description('Mark a companion mission in progress')
+    .action(async (id: string) => {
+      const { updateCompanionMissionStatus } = await import('../../companion/mission-board.js');
+      const mission = await updateCompanionMissionStatus(id, 'in_progress');
+      console.log(`Mission started: ${mission.id}`);
+    });
+
+  missions
+    .command('done <id>')
+    .description('Mark a companion mission done')
+    .action(async (id: string) => {
+      const { updateCompanionMissionStatus } = await import('../../companion/mission-board.js');
+      const mission = await updateCompanionMissionStatus(id, 'done');
+      console.log(`Mission completed: ${mission.id}`);
+    });
+
+  missions
+    .command('dismiss <id>')
+    .description('Dismiss a companion mission')
+    .action(async (id: string) => {
+      const { updateCompanionMissionStatus } = await import('../../companion/mission-board.js');
+      const mission = await updateCompanionMissionStatus(id, 'dismissed');
+      console.log(`Mission dismissed: ${mission.id}`);
+    });
+
   const camera = companion
     .command('camera')
     .description('Manage the companion camera bridge');

@@ -28,6 +28,10 @@ import type {
   CompanionStatus,
   CompanionSelfEvaluation,
   CompanionCompetitiveRadar,
+  CompanionMission,
+  CompanionMissionBoard,
+  CompanionMissionBoardSyncResult,
+  CompanionMissionStatus,
   CameraSnapshotResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
@@ -784,6 +788,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       recordSuggestions?: boolean;
     }): Promise<{ ok: boolean; radar?: CompanionCompetitiveRadar; error?: string }> =>
       ipcRenderer.invoke('companion.radar', input),
+    syncMissions: (input?: {
+      projectId?: string;
+      recordSuggestions?: boolean;
+    }): Promise<{ ok: boolean; result?: CompanionMissionBoardSyncResult; error?: string }> =>
+      ipcRenderer.invoke('companion.missions.sync', input),
+    listMissions: (input?: {
+      projectId?: string;
+      status?: CompanionMissionStatus;
+    }): Promise<{ ok: boolean; board?: CompanionMissionBoard; items: CompanionMission[]; error?: string }> =>
+      ipcRenderer.invoke('companion.missions.list', input),
+    updateMission: (input: {
+      projectId?: string;
+      missionId: string;
+      status: CompanionMissionStatus;
+    }): Promise<{ ok: boolean; mission?: CompanionMission; error?: string }> =>
+      ipcRenderer.invoke('companion.missions.update', input),
     cameraStatus: (): Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }> =>
       ipcRenderer.invoke('companion.camera.status'),
     cameraSnapshot: (input?: {
@@ -2917,6 +2937,19 @@ declare global {
           projectId?: string;
           recordSuggestions?: boolean;
         }) => Promise<{ ok: boolean; radar?: CompanionCompetitiveRadar; error?: string }>;
+        syncMissions: (input?: {
+          projectId?: string;
+          recordSuggestions?: boolean;
+        }) => Promise<{ ok: boolean; result?: CompanionMissionBoardSyncResult; error?: string }>;
+        listMissions: (input?: {
+          projectId?: string;
+          status?: CompanionMissionStatus;
+        }) => Promise<{ ok: boolean; board?: CompanionMissionBoard; items: CompanionMission[]; error?: string }>;
+        updateMission: (input: {
+          projectId?: string;
+          missionId: string;
+          status: CompanionMissionStatus;
+        }) => Promise<{ ok: boolean; mission?: CompanionMission; error?: string }>;
         cameraStatus: () => Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }>;
         cameraSnapshot: (input?: {
           outputPath?: string;

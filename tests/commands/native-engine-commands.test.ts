@@ -79,6 +79,10 @@ const mockEvaluateCompanionSelf = jest.fn();
 const mockFormatCompanionSelfEvaluation = jest.fn((evaluation: unknown) => `evaluation:${JSON.stringify(evaluation)}`);
 const mockBuildCompanionCompetitiveRadar = jest.fn();
 const mockFormatCompanionCompetitiveRadar = jest.fn((radar: unknown) => `radar:${JSON.stringify(radar)}`);
+const mockSyncCompanionMissionBoard = jest.fn();
+const mockReadCompanionMissionBoard = jest.fn();
+const mockUpdateCompanionMissionStatus = jest.fn();
+const mockFormatCompanionMissionBoard = jest.fn((board: unknown) => `missions:${JSON.stringify(board)}`);
 
 jest.mock('../../src/companion/companion-mode.js', () => ({
   setupCompanionMode: mockSetupCompanionMode,
@@ -108,6 +112,13 @@ jest.mock('../../src/companion/self-evaluation.js', () => ({
 jest.mock('../../src/companion/competitive-radar.js', () => ({
   buildCompanionCompetitiveRadar: mockBuildCompanionCompetitiveRadar,
   formatCompanionCompetitiveRadar: mockFormatCompanionCompetitiveRadar,
+}));
+
+jest.mock('../../src/companion/mission-board.js', () => ({
+  syncCompanionMissionBoard: mockSyncCompanionMissionBoard,
+  readCompanionMissionBoard: mockReadCompanionMissionBoard,
+  updateCompanionMissionStatus: mockUpdateCompanionMissionStatus,
+  formatCompanionMissionBoard: mockFormatCompanionMissionBoard,
 }));
 
 const mockGroupSecurity = {
@@ -952,6 +963,23 @@ describe('Native Engine CLI Commands', () => {
         id: 'companion-radar-1',
         score: 64,
       });
+      mockSyncCompanionMissionBoard.mockResolvedValue({
+        radarId: 'companion-radar-1',
+        created: 2,
+        updated: 1,
+        unchanged: 0,
+        board: { missions: [{ id: 'mission-1', status: 'open' }] },
+      });
+      mockReadCompanionMissionBoard.mockResolvedValue({
+        missions: [
+          { id: 'mission-1', status: 'open' },
+          { id: 'mission-2', status: 'done' },
+        ],
+      });
+      mockUpdateCompanionMissionStatus.mockResolvedValue({
+        id: 'mission-1',
+        status: 'done',
+      });
     });
 
     describe('companion setup', () => {
@@ -1055,6 +1083,40 @@ describe('Native Engine CLI Commands', () => {
         await program.parseAsync(['node', 'test', 'companion', 'radar', '--no-record']);
 
         expect(mockBuildCompanionCompetitiveRadar).toHaveBeenCalledWith({ recordSuggestions: false });
+      });
+    });
+
+    describe('companion missions', () => {
+      it('syncs missions from the competitive radar', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'sync']);
+
+        expect(mockSyncCompanionMissionBoard).toHaveBeenCalledWith({ recordSuggestions: true });
+        expect(mockFormatCompanionMissionBoard).toHaveBeenCalledWith({
+          missions: [{ id: 'mission-1', status: 'open' }],
+        });
+        expect(getLogOutput()).toContain('Mission board synced from companion-radar-1.');
+      });
+
+      it('can sync missions without writing percepts', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'sync', '--no-record']);
+
+        expect(mockSyncCompanionMissionBoard).toHaveBeenCalledWith({ recordSuggestions: false });
+      });
+
+      it('lists missions with an optional status filter', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'list', '--status', 'open']);
+
+        expect(mockReadCompanionMissionBoard).toHaveBeenCalled();
+        expect(mockFormatCompanionMissionBoard).toHaveBeenCalledWith({
+          missions: [{ id: 'mission-1', status: 'open' }],
+        });
+      });
+
+      it('updates mission state', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'missions', 'done', 'mission-1']);
+
+        expect(mockUpdateCompanionMissionStatus).toHaveBeenCalledWith('mission-1', 'done');
+        expect(getLogOutput()).toContain('Mission completed: mission-1');
       });
     });
 

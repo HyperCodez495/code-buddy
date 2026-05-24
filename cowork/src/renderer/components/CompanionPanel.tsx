@@ -17,6 +17,7 @@ import {
   ClipboardCheck,
   Eye,
   FolderOpen,
+  ListChecks,
   Mic,
   Monitor,
   Radio,
@@ -30,6 +31,8 @@ import { useAppStore } from '../store';
 import type {
   CameraSnapshotResult,
   CompanionCompetitiveRadar,
+  CompanionMission,
+  CompanionMissionStatus,
   CompanionPercept,
   CompanionPerceptModality,
   CompanionPerceptStats,
@@ -143,9 +146,10 @@ export function CompanionPanel() {
   const [percepts, setPercepts] = useState<CompanionPercept[]>([]);
   const [evaluation, setEvaluation] = useState<CompanionSelfEvaluation | null>(null);
   const [radar, setRadar] = useState<CompanionCompetitiveRadar | null>(null);
+  const [missions, setMissions] = useState<CompanionMission[]>([]);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | null>(null);
+  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'missions' | 'mission' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
 
@@ -160,10 +164,11 @@ export function CompanionPanel() {
     setError(null);
 
     const selected = modality === 'all' ? undefined : modality;
-    const [statusRes, recentRes, statsRes] = await Promise.all([
+    const [statusRes, recentRes, statsRes, missionsRes] = await Promise.all([
       window.electronAPI.companion.status(),
       window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
       window.electronAPI.companion.perceptStats(),
+      window.electronAPI.companion.listMissions(),
     ]);
 
     setLoading(false);
@@ -171,6 +176,7 @@ export function CompanionPanel() {
       setStatus(null);
       setStats(null);
       setPercepts([]);
+      setMissions([]);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
         : statusRes.error ?? 'Failed to load companion status');
@@ -180,8 +186,9 @@ export function CompanionPanel() {
     setStatus(statusRes.status ?? null);
     setPercepts(recentRes.ok ? recentRes.items : []);
     setStats(statsRes.ok ? statsRes.stats ?? null : null);
-    if (!recentRes.ok || !statsRes.ok) {
-      setError(recentRes.error ?? statsRes.error ?? 'Failed to load companion percepts');
+    setMissions(missionsRes.ok ? missionsRes.items : []);
+    if (!recentRes.ok || !statsRes.ok || !missionsRes.ok) {
+      setError(recentRes.error ?? statsRes.error ?? missionsRes.error ?? 'Failed to load companion percepts');
     }
   }, [modality]);
 
@@ -237,6 +244,31 @@ export function CompanionPanel() {
       return;
     }
     setRadar(res.radar ?? null);
+    await refresh();
+  };
+
+  const syncMissions = async () => {
+    setBusyAction('missions');
+    setError(null);
+    const res = await window.electronAPI.companion.syncMissions({ recordSuggestions: true });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Mission sync failed');
+      return;
+    }
+    setMissions(res.result?.board.missions ?? []);
+    await refresh();
+  };
+
+  const updateMission = async (missionId: string, status: CompanionMissionStatus) => {
+    setBusyAction('mission');
+    setError(null);
+    const res = await window.electronAPI.companion.updateMission({ missionId, status });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Mission update failed');
+      return;
+    }
     await refresh();
   };
 
@@ -362,6 +394,14 @@ export function CompanionPanel() {
               <Radar className="h-4 w-4" />
               {busyAction === 'radar' ? 'Scanning...' : 'Competitive radar'}
             </button>
+            <button
+              disabled={busyAction !== null}
+              onClick={() => void syncMissions()}
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <ListChecks className="h-4 w-4" />
+              {busyAction === 'missions' ? 'Syncing...' : 'Sync missions'}
+            </button>
             {lastSnapshot?.path && (
               <button
                 onClick={() => void window.electronAPI.showItemInFolder(lastSnapshot.path!)}
@@ -473,6 +513,62 @@ export function CompanionPanel() {
               </div>
             </section>
           )}
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Mission board</h3>
+              <span className="text-[10px] text-text-muted">
+                {missions.length} mission(s)
+              </span>
+            </div>
+            {missions.length === 0 ? (
+              <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
+                Sync missions to turn the competitive radar into a working backlog.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {missions.slice(0, 5).map((mission) => (
+                  <div key={mission.id} className="rounded border border-border bg-surface/35 p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="rounded bg-background px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+                            {mission.priority}
+                          </span>
+                          <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                            {mission.status}
+                          </span>
+                          <span className="text-[10px] uppercase text-text-muted">{mission.dimension}</span>
+                        </div>
+                        <p className="mt-1 text-xs font-medium text-text-primary">{mission.title}</p>
+                        <p className="mt-1 text-xs text-text-secondary">{mission.recommendation}</p>
+                      </div>
+                      <div className="flex shrink-0 flex-col gap-1">
+                        {mission.status === 'open' && (
+                          <button
+                            disabled={busyAction !== null}
+                            onClick={() => void updateMission(mission.id, 'in_progress')}
+                            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+                          >
+                            Start
+                          </button>
+                        )}
+                        {mission.status === 'in_progress' && (
+                          <button
+                            disabled={busyAction !== null}
+                            onClick={() => void updateMission(mission.id, 'done')}
+                            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+                          >
+                            Done
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
 
           <section className="space-y-2">
             <div className="flex items-center justify-between">

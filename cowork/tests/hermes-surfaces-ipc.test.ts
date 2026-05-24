@@ -210,6 +210,56 @@ describe('companion IPC', () => {
     });
   });
 
+  it('syncs companion missions in the active workspace', async () => {
+    const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.missions.sync');
+    const res = (await handler?.({}, { recordSuggestions: false })) as {
+      ok: boolean;
+      result?: { radarId: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.radarId).toBe('radar-1');
+    expect(syncCompanionMissionBoard).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      recordSuggestions: false,
+    });
+  });
+
+  it('lists companion missions with a status filter', async () => {
+    const readCompanionMissionBoard = vi.fn(async () => ({
+      missions: [
+        { id: 'm1', status: 'open' },
+        { id: 'm2', status: 'done' },
+      ],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ readCompanionMissionBoard });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.missions.list');
+    const res = (await handler?.({}, { status: 'open' })) as { ok: boolean; items: unknown[] };
+    expect(res.ok).toBe(true);
+    expect(res.items).toEqual([{ id: 'm1', status: 'open' }]);
+    expect(readCompanionMissionBoard).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
+  it('updates companion mission state', async () => {
+    const updateCompanionMissionStatus = vi.fn(async () => ({ id: 'm1', status: 'in_progress' }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ updateCompanionMissionStatus });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.missions.update');
+    const res = (await handler?.({}, { missionId: 'm1', status: 'in_progress' })) as {
+      ok: boolean;
+      mission?: { id: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.mission?.id).toBe('m1');
+    expect(updateCompanionMissionStatus).toHaveBeenCalledWith('m1', 'in_progress', { cwd: '/tmp/proj' });
+  });
+
   it('captures camera snapshots in the active workspace', async () => {
     const captureCameraSnapshot = vi.fn(async () => ({ success: true, path: '/tmp/proj/.codebuddy/camera/scene.png' }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ captureCameraSnapshot });

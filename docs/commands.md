@@ -69,6 +69,7 @@
 | `/companion status\|setup` | Configure/check Buddy as a ChatGPT-backed voice companion |
 | `/companion evaluate` | Score Buddy's companion readiness and record self-improvement suggestions |
 | `/companion radar` | Compare Buddy against Hermes, OpenClaw, Lisa, and open companion systems |
+| `/companion missions sync\|list` | Turn radar gaps into a local companion mission board |
 | `/companion camera status\|snapshot` | Check/capture the local webcam bridge for Buddy vision |
 | `/companion percepts recent\|stats` | Inspect Buddy's local sensory journal |
 
@@ -223,6 +224,9 @@ buddy companion status
 buddy companion self
 buddy companion evaluate [--no-record]
 buddy companion radar [--no-record]
+buddy companion missions sync [--no-record]
+buddy companion missions list [--status <open|in_progress|done|dismissed>]
+buddy companion missions start|done|dismiss <id>
 buddy companion camera status
 buddy companion camera snapshot [--output <path>] [--device <device>] [--timeout-ms <ms>]
 buddy companion percepts recent [--limit <n>] [--modality <name>]
@@ -256,6 +260,13 @@ vision/hearing, multi-agent planning, checkpoints, and replayable computer
 skills; UNI for real-time interrupted voice, camera, UI cards, impulses, and
 local encrypted memory. The radar records the top gaps as `suggestion` percepts
 unless `--no-record` is passed.
+
+`buddy companion missions sync` converts the radar gaps into
+`.codebuddy/companion/missions.json`, a local mission board with P0/P1/P2
+priorities and `open`, `in_progress`, `done`, or `dismissed` statuses. Use
+`buddy companion missions list` to inspect it and `start`, `done`, or `dismiss`
+to update a mission. Cowork shows the same board and can sync/start/finish
+missions from the companion panel.
 
 `buddy companion camera snapshot` captures one webcam frame into `.codebuddy/camera/`
 by default. It uses `ffmpeg` so it works without adding a new Node dependency; pass
