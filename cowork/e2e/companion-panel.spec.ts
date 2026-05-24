@@ -431,7 +431,7 @@ test('drives the Buddy companion cockpit from no project to improvement loop', a
 
   await appPage.getByRole('button', { name: 'Improve loop' }).click();
   await expect(appPage.getByText('Improvement loop')).toBeVisible();
-  await expect(appPage.getByText('Review competitor delta')).toBeVisible();
+  await expect(appPage.getByText('[P1] Review competitor delta', { exact: true })).toBeVisible();
 
   await appPage.evaluate(() => {
     Object.defineProperty(navigator, 'mediaDevices', {
