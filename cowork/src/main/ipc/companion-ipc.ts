@@ -335,6 +335,46 @@ interface CompanionSkillPromotionResult {
   safetyEventId?: string;
 }
 
+type CompanionPrivacyKind =
+  | 'percepts'
+  | 'safety'
+  | 'cards'
+  | 'gateway'
+  | 'skills'
+  | 'camera';
+
+interface CompanionPrivacyStoreSummary {
+  kind: CompanionPrivacyKind;
+  path: string;
+  exists: boolean;
+  bytes: number;
+  entries: number;
+}
+
+interface CompanionPrivacyReport {
+  schemaVersion: 1;
+  cwd: string;
+  generatedAt: string;
+  stores: CompanionPrivacyStoreSummary[];
+  totalBytes: number;
+  totalEntries: number;
+}
+
+interface CompanionPrivacyExportResult {
+  exportDir: string;
+  manifestPath: string;
+  report: CompanionPrivacyReport;
+  copied: Array<{ kind: CompanionPrivacyKind; from: string; to: string }>;
+}
+
+interface CompanionPrivacyPurgeResult {
+  purgedAt: string;
+  cwd: string;
+  kinds: CompanionPrivacyKind[];
+  removed: Array<{ kind: CompanionPrivacyKind; path: string; existed: boolean }>;
+  backup?: CompanionPrivacyExportResult;
+}
+
 type CompanionModeMod = {
   setupCompanionMode: (options: {
     cwd?: string;
@@ -467,6 +507,19 @@ type CompanionSkillCuratorMod = {
   ) => Promise<CompanionSkillCandidate>;
 };
 
+type CompanionPrivacyMod = {
+  buildCompanionPrivacyReport: (options: { cwd?: string }) => Promise<CompanionPrivacyReport>;
+  exportCompanionPrivacyBundle: (options: {
+    cwd?: string;
+    kinds?: CompanionPrivacyKind[];
+  }) => Promise<CompanionPrivacyExportResult>;
+  purgeCompanionPrivacyData: (options: {
+    cwd?: string;
+    kinds?: CompanionPrivacyKind[];
+    backup?: boolean;
+  }) => Promise<CompanionPrivacyPurgeResult>;
+};
+
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
 
 async function companionWorkDir(
@@ -524,6 +577,10 @@ async function loadGateway(): Promise<CompanionGatewayMod | null> {
 
 async function loadSkillCurator(): Promise<CompanionSkillCuratorMod | null> {
   return loadCoreModule<CompanionSkillCuratorMod>('companion/skill-curator.js');
+}
+
+async function loadPrivacy(): Promise<CompanionPrivacyMod | null> {
+  return loadCoreModule<CompanionPrivacyMod>('companion/privacy.js');
 }
 
 export function registerCompanionIpcHandlers(projectManagerSource: ProjectManagerSource): void {
@@ -1057,6 +1114,70 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.skills.dismiss] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle('companion.privacy.report', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadPrivacy();
+      if (!mod?.buildCompanionPrivacyReport) {
+        return { ok: false as const, error: 'core companion privacy module unavailable' };
+      }
+      return { ok: true as const, report: await mod.buildCompanionPrivacyReport({ cwd }) };
+    } catch (err) {
+      logError('[companion.privacy.report] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle(
+    'companion.privacy.export',
+    async (_e, input?: { projectId?: string; kinds?: CompanionPrivacyKind[] }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadPrivacy();
+        if (!mod?.exportCompanionPrivacyBundle) {
+          return { ok: false as const, error: 'core companion privacy module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.exportCompanionPrivacyBundle({
+            cwd,
+            kinds: input?.kinds,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.privacy.export] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.privacy.purge',
+    async (_e, input?: { projectId?: string; kinds?: CompanionPrivacyKind[]; backup?: boolean }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadPrivacy();
+        if (!mod?.purgeCompanionPrivacyData) {
+          return { ok: false as const, error: 'core companion privacy module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.purgeCompanionPrivacyData({
+            cwd,
+            kinds: input?.kinds,
+            backup: input?.backup !== false,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.privacy.purge] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

@@ -503,6 +503,46 @@ export interface CompanionSkillPromotionResult {
   safetyEventId?: string;
 }
 
+export type CompanionPrivacyKind =
+  | 'percepts'
+  | 'safety'
+  | 'cards'
+  | 'gateway'
+  | 'skills'
+  | 'camera';
+
+export interface CompanionPrivacyStoreSummary {
+  kind: CompanionPrivacyKind;
+  path: string;
+  exists: boolean;
+  bytes: number;
+  entries: number;
+}
+
+export interface CompanionPrivacyReport {
+  schemaVersion: 1;
+  cwd: string;
+  generatedAt: string;
+  stores: CompanionPrivacyStoreSummary[];
+  totalBytes: number;
+  totalEntries: number;
+}
+
+export interface CompanionPrivacyExportResult {
+  exportDir: string;
+  manifestPath: string;
+  report: CompanionPrivacyReport;
+  copied: Array<{ kind: CompanionPrivacyKind; from: string; to: string }>;
+}
+
+export interface CompanionPrivacyPurgeResult {
+  purgedAt: string;
+  cwd: string;
+  kinds: CompanionPrivacyKind[];
+  removed: Array<{ kind: CompanionPrivacyKind; path: string; existed: boolean }>;
+  backup?: CompanionPrivacyExportResult;
+}
+
 export interface MountedPath {
   virtual: string;
   real: string;

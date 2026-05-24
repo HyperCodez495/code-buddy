@@ -44,6 +44,9 @@ import type {
   CompanionPercept,
   CompanionPerceptModality,
   CompanionPerceptStats,
+  CompanionPrivacyExportResult,
+  CompanionPrivacyPurgeResult,
+  CompanionPrivacyReport,
   CompanionSafetyEvent,
   CompanionSafetyLedgerStats,
   CompanionSelfEvaluation,
@@ -74,6 +77,13 @@ const MODALITY_ICON: Record<CompanionPerceptModality, typeof Activity> = {
   tool: Activity,
   suggestion: Sparkles,
 };
+
+function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} B`;
+  const kb = bytes / 1024;
+  if (kb < 1024) return `${kb.toFixed(1)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
+}
 
 function ready(ok: boolean): string {
   return ok ? 'Ready' : 'Needs attention';
@@ -429,9 +439,12 @@ export function CompanionPanel() {
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
   const [voiceConversation, setVoiceConversation] = useState<VoiceConversationSnapshot | null>(null);
+  const [privacyReport, setPrivacyReport] = useState<CompanionPrivacyReport | null>(null);
+  const [privacyExport, setPrivacyExport] = useState<CompanionPrivacyExportResult | null>(null);
+  const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
 
@@ -458,6 +471,7 @@ export function CompanionPanel() {
       gatewayRes,
       skillsRes,
       voiceConversationRes,
+      privacyRes,
     ] = await Promise.all([
       window.electronAPI.companion.status(),
       window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
@@ -470,6 +484,7 @@ export function CompanionPanel() {
       window.electronAPI.companion.gatewayProfile(),
       window.electronAPI.companion.listSkillCandidates(),
       window.electronAPI.voice.conversationStatus().catch(() => null),
+      window.electronAPI.companion.privacyReport(),
     ]);
 
     setLoading(false);
@@ -485,6 +500,7 @@ export function CompanionPanel() {
       setGateway(null);
       setSkillCandidates([]);
       setVoiceConversation(voiceConversationRes);
+      setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
         : statusRes.error ?? 'Failed to load companion status');
@@ -502,7 +518,8 @@ export function CompanionPanel() {
     setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
     setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
     setVoiceConversation(voiceConversationRes);
-    if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok) {
+    setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
+    if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok || !privacyRes.ok) {
       setError(recentRes.error
         ?? statsRes.error
         ?? impulsesRes.error
@@ -512,6 +529,7 @@ export function CompanionPanel() {
         ?? cardsRes.error
         ?? gatewayRes.error
         ?? skillsRes.error
+        ?? privacyRes.error
         ?? 'Failed to load companion state');
     }
   }, [modality]);
@@ -713,6 +731,37 @@ export function CompanionPanel() {
       setError(res.error ?? 'Skill dismissal failed');
       return;
     }
+    await refresh();
+  };
+
+  const exportPrivacy = async () => {
+    setBusyAction('privacyExport');
+    setError(null);
+    const res = await window.electronAPI.companion.exportPrivacy();
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Privacy export failed');
+      return;
+    }
+    setPrivacyExport(res.result ?? null);
+    await refresh();
+  };
+
+  const purgePrivacy = async () => {
+    const confirmed = window.confirm(
+      'Purge Buddy companion memory for this workspace? A local backup export will be created first.',
+    );
+    if (!confirmed) return;
+    setBusyAction('privacyPurge');
+    setError(null);
+    const res = await window.electronAPI.companion.purgePrivacy({ backup: true });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Privacy purge failed');
+      return;
+    }
+    setPrivacyPurge(res.result ?? null);
+    setPrivacyExport(res.result?.backup ?? privacyExport);
     await refresh();
   };
 
@@ -1266,6 +1315,73 @@ export function CompanionPanel() {
               <div className="space-y-2">
                 {safetyEvents.map((event) => (
                   <SafetyEventRow key={event.id} event={event} />
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Privacy</h3>
+              <span className="text-[10px] text-text-muted">
+                {privacyReport ? `${privacyReport.totalEntries} entries · ${formatBytes(privacyReport.totalBytes)}` : 'No report'}
+              </span>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              <button
+                disabled={busyAction !== null}
+                onClick={() => void exportPrivacy()}
+                className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+              >
+                <FolderOpen className="h-4 w-4" />
+                {busyAction === 'privacyExport' ? 'Exporting...' : 'Export memory'}
+              </button>
+              <button
+                disabled={busyAction !== null}
+                onClick={() => void purgePrivacy()}
+                className="inline-flex items-center gap-2 rounded border border-warning/40 px-3 py-2 text-xs font-medium text-warning hover:bg-warning/10 disabled:opacity-50"
+              >
+                <ShieldCheck className="h-4 w-4" />
+                {busyAction === 'privacyPurge' ? 'Purging...' : 'Purge with backup'}
+              </button>
+              {privacyExport?.exportDir && (
+                <button
+                  onClick={() => void window.electronAPI.showItemInFolder(privacyExport.exportDir)}
+                  className="inline-flex min-w-0 items-center gap-2 rounded border border-border px-3 py-2 text-xs text-text-secondary hover:bg-surface"
+                >
+                  <FolderOpen className="h-4 w-4 shrink-0" />
+                  <span className="truncate max-w-[260px]">{privacyExport.exportDir}</span>
+                </button>
+              )}
+            </div>
+            {privacyPurge && (
+              <div className="rounded border border-border bg-surface/35 p-3 text-xs text-text-secondary">
+                Purged {privacyPurge.removed.filter((item) => item.existed).length} store(s).
+                {privacyPurge.backup?.manifestPath && (
+                  <button
+                    onClick={() => void window.electronAPI.showItemInFolder(privacyPurge.backup!.manifestPath)}
+                    className="ml-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{privacyPurge.backup.manifestPath}</span>
+                  </button>
+                )}
+              </div>
+            )}
+            {privacyReport && (
+              <div className="grid grid-cols-2 gap-2">
+                {privacyReport.stores.map((store) => (
+                  <div key={store.kind} className="rounded border border-border bg-surface/35 px-3 py-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-xs font-semibold text-text-primary">{store.kind}</span>
+                      <span className={`text-[10px] ${store.exists ? 'text-accent' : 'text-text-muted'}`}>
+                        {store.exists ? 'stored' : 'empty'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-[11px] text-text-muted">
+                      {store.entries} entries · {formatBytes(store.bytes)}
+                    </p>
+                  </div>
                 ))}
               </div>
             )}

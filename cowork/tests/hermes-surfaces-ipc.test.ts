@@ -211,6 +211,29 @@ describe('companion IPC', () => {
     expect(recordCompanionSelfState).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('exposes companion privacy report, export, and purge through the active workspace', async () => {
+    const buildCompanionPrivacyReport = vi.fn(async () => ({ schemaVersion: 1, totalEntries: 3 }));
+    const exportCompanionPrivacyBundle = vi.fn(async () => ({ exportDir: '/tmp/proj/export' }));
+    const purgeCompanionPrivacyData = vi.fn(async () => ({ purgedAt: 'now', removed: [] }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      buildCompanionPrivacyReport,
+      exportCompanionPrivacyBundle,
+      purgeCompanionPrivacyData,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const report = (await electronMock.handlers.get('companion.privacy.report')?.({})) as { ok: boolean };
+    const exported = (await electronMock.handlers.get('companion.privacy.export')?.({}, { kinds: ['percepts'] })) as { ok: boolean };
+    const purged = (await electronMock.handlers.get('companion.privacy.purge')?.({}, { kinds: ['percepts'], backup: true })) as { ok: boolean };
+
+    expect(report.ok).toBe(true);
+    expect(exported.ok).toBe(true);
+    expect(purged.ok).toBe(true);
+    expect(buildCompanionPrivacyReport).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+    expect(exportCompanionPrivacyBundle).toHaveBeenCalledWith({ cwd: '/tmp/proj', kinds: ['percepts'] });
+    expect(purgeCompanionPrivacyData).toHaveBeenCalledWith({ cwd: '/tmp/proj', kinds: ['percepts'], backup: true });
+  });
+
   it('runs companion self-evaluation in the active workspace', async () => {
     const evaluateCompanionSelf = vi.fn(async () => ({ id: 'companion-eval-1', score: 80 }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ evaluateCompanionSelf });

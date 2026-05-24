@@ -49,6 +49,10 @@ import type {
   CompanionSkillCandidateStore,
   CompanionSkillCuratorResult,
   CompanionSkillPromotionResult,
+  CompanionPrivacyExportResult,
+  CompanionPrivacyKind,
+  CompanionPrivacyPurgeResult,
+  CompanionPrivacyReport,
   CameraSnapshotResult,
   VoiceConversationEvent,
   VoiceConversationSnapshot,
@@ -914,6 +918,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       candidateId: string;
     }): Promise<{ ok: boolean; candidate?: CompanionSkillCandidate; error?: string }> =>
       ipcRenderer.invoke('companion.skills.dismiss', input),
+    privacyReport: (projectId?: string): Promise<{ ok: boolean; report?: CompanionPrivacyReport; error?: string }> =>
+      ipcRenderer.invoke('companion.privacy.report', projectId),
+    exportPrivacy: (input?: {
+      projectId?: string;
+      kinds?: CompanionPrivacyKind[];
+    }): Promise<{ ok: boolean; result?: CompanionPrivacyExportResult; error?: string }> =>
+      ipcRenderer.invoke('companion.privacy.export', input),
+    purgePrivacy: (input?: {
+      projectId?: string;
+      kinds?: CompanionPrivacyKind[];
+      backup?: boolean;
+    }): Promise<{ ok: boolean; result?: CompanionPrivacyPurgeResult; error?: string }> =>
+      ipcRenderer.invoke('companion.privacy.purge', input),
     cameraStatus: (): Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }> =>
       ipcRenderer.invoke('companion.camera.status'),
     cameraSnapshot: (input?: {
@@ -3136,6 +3153,16 @@ declare global {
           projectId?: string;
           candidateId: string;
         }) => Promise<{ ok: boolean; candidate?: CompanionSkillCandidate; error?: string }>;
+        privacyReport: (projectId?: string) => Promise<{ ok: boolean; report?: CompanionPrivacyReport; error?: string }>;
+        exportPrivacy: (input?: {
+          projectId?: string;
+          kinds?: CompanionPrivacyKind[];
+        }) => Promise<{ ok: boolean; result?: CompanionPrivacyExportResult; error?: string }>;
+        purgePrivacy: (input?: {
+          projectId?: string;
+          kinds?: CompanionPrivacyKind[];
+          backup?: boolean;
+        }) => Promise<{ ok: boolean; result?: CompanionPrivacyPurgeResult; error?: string }>;
         cameraStatus: () => Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }>;
         cameraSnapshot: (input?: {
           outputPath?: string;
