@@ -10,6 +10,8 @@ import {
   captureCameraSnapshot,
   checkCameraAvailability,
   formatCameraStatus,
+  formatCameraSnapshotInspection,
+  inspectCameraSnapshot,
 } from '../../companion/camera.js';
 import {
   formatCompanionPercepts,
@@ -303,11 +305,31 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       };
     }
 
+    if (cameraAction === 'inspect' || cameraAction === 'look') {
+      const imagePath = flagValue(args, '--image') ?? flagValue(args, '--path');
+      const outputPath = flagValue(args, '--output') ?? flagValue(args, '--output-path');
+      const device = flagValue(args, '--device');
+      const timeout = flagValue(args, '--timeout-ms');
+      const result = await inspectCameraSnapshot({
+        imagePath,
+        outputPath,
+        device,
+        timeoutMs: timeout ? parseInt(timeout, 10) : undefined,
+        includeOcr: args.includes('--ocr'),
+        ocrLanguage: flagValue(args, '--language') || 'eng',
+      });
+      return {
+        handled: true,
+        entry: entry(formatCameraSnapshotInspection(result)),
+      };
+    }
+
     return {
       handled: true,
       entry: entry([
         'Usage: /companion camera status',
         '       /companion camera snapshot [--output <path>] [--device <device>] [--timeout-ms <ms>]',
+        '       /companion camera inspect [--image <path>] [--ocr] [--language <lang>]',
       ].join('\n')),
     };
   }
@@ -365,6 +387,7 @@ export async function handleCompanion(args: string[]): Promise<CommandHandlerRes
       '       /companion safety recent|stats',
       '       /companion camera status',
       '       /companion camera snapshot [--output <path>] [--device <device>]',
+      '       /companion camera inspect [--image <path>] [--ocr]',
       '       /companion percepts recent [--limit <n>] [--modality <name>]',
       '       /companion percepts stats',
       '',

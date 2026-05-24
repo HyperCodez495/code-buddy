@@ -64,6 +64,33 @@ export interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+export interface CameraSnapshotInspectionOptions extends CameraSnapshotOptions {
+  imagePath?: string;
+  includeOcr?: boolean;
+  ocrLanguage?: string;
+}
+
+export interface CameraImageAnalysis {
+  description: string;
+  labels: string[];
+  dimensions?: { width: number; height: number };
+  format?: string;
+  size?: number;
+  channels?: number;
+}
+
+export interface CameraSnapshotInspectionResult {
+  success: boolean;
+  path?: string;
+  snapshot?: CameraSnapshotResult;
+  analysis?: CameraImageAnalysis;
+  ocrText?: string;
+  summary?: string;
+  error?: string;
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 const DEFAULT_CAMERA_TIMEOUT_MS = 10000;
 
 const defaultRuntime: CameraRuntime = {
@@ -353,6 +380,131 @@ export async function captureCameraSnapshot(
   };
 }
 
+async function analyzeImage(imagePath: string): Promise<CameraImageAnalysis> {
+  const { ImageProcessorTool } = await import('../tools/vision/image-processor.js');
+  const processor = ImageProcessorTool.getInstance();
+  return processor.analyze(imagePath);
+}
+
+async function extractOcrText(imagePath: string, language: string): Promise<string> {
+  const { OcrTool } = await import('../tools/vision/ocr-tool.js');
+  const ocr = OcrTool.getInstance();
+  return ocr.extractText(imagePath, language);
+}
+
+function summarizeInspection(
+  imagePath: string,
+  analysis: CameraImageAnalysis,
+  ocrText: string | undefined,
+): string {
+  const dimensions = analysis.dimensions
+    ? `${analysis.dimensions.width}x${analysis.dimensions.height}`
+    : 'unknown dimensions';
+  const bits = [
+    `Inspected camera image ${path.basename(imagePath)} (${dimensions}, ${analysis.format || 'unknown format'})`,
+  ];
+  if (typeof analysis.size === 'number') bits.push(`${Math.round(analysis.size / 1024)} KB`);
+  if (ocrText && ocrText.trim()) bits.push(`OCR text: ${ocrText.trim().slice(0, 160)}`);
+  return bits.join('; ');
+}
+
+export async function inspectCameraSnapshot(
+  options: CameraSnapshotInspectionOptions = {},
+): Promise<CameraSnapshotInspectionResult> {
+  const cwd = options.cwd || process.cwd();
+  let imagePath = options.imagePath ? path.resolve(cwd, options.imagePath) : undefined;
+  let snapshot: CameraSnapshotResult | undefined;
+
+  if (!imagePath) {
+    snapshot = await captureCameraSnapshot({
+      ...options,
+      cwd,
+      recordPercept: false,
+    });
+    if (!snapshot.success || !snapshot.path) {
+      return {
+        success: false,
+        snapshot,
+        error: snapshot.error || 'camera snapshot failed before inspection',
+      };
+    }
+    imagePath = snapshot.path;
+  }
+
+  try {
+    const analysis = await analyzeImage(imagePath);
+    const ocrText = options.includeOcr
+      ? await extractOcrText(imagePath, options.ocrLanguage || 'eng')
+      : undefined;
+    const summary = summarizeInspection(imagePath, analysis, ocrText);
+
+    let perceptId: string | undefined;
+    if (options.recordPercept !== false) {
+      try {
+        const percept = await recordCompanionPercept({
+          modality: 'vision',
+          source: 'camera_inspection',
+          summary,
+          confidence: 0.9,
+          payload: {
+            path: imagePath,
+            analysis,
+            ocrTextPreview: ocrText?.slice(0, 1000),
+            includeOcr: Boolean(options.includeOcr),
+            snapshotPerceptId: snapshot?.perceptId,
+          },
+          tags: ['camera', 'vision', 'inspection', ...(analysis.labels || [])],
+        }, { cwd });
+        perceptId = percept.id;
+      } catch {
+        // Inspection result remains useful even if the percept journal is unavailable.
+      }
+    }
+
+    let safetyEventId: string | undefined;
+    try {
+      const event = await recordCompanionSafetyEvent({
+        kind: 'sense',
+        risk: 'medium',
+        action: 'camera_inspection',
+        reason: 'Inspected a local camera image for Buddy vision metadata.',
+        status: 'completed',
+        source: 'camera_inspection',
+        artifactPath: imagePath,
+        payload: {
+          path: imagePath,
+          includeOcr: Boolean(options.includeOcr),
+          perceptId,
+          dimensions: analysis.dimensions,
+          format: analysis.format,
+        },
+        tags: ['camera', 'vision', 'inspection'],
+      }, { cwd });
+      safetyEventId = event.id;
+    } catch {
+      // Do not fail a successful inspection if the audit append fails.
+    }
+
+    return {
+      success: true,
+      path: imagePath,
+      snapshot,
+      analysis,
+      ocrText,
+      summary,
+      perceptId,
+      safetyEventId,
+    };
+  } catch (err) {
+    return {
+      success: false,
+      path: imagePath,
+      snapshot,
+      error: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
 export function formatCameraStatus(status: CameraStatus): string {
   const state = status.available ? '[ok]' : '[todo]';
   const lines = [
@@ -366,5 +518,32 @@ export function formatCameraStatus(status: CameraStatus): string {
     lines.push(`Camera setup: ${status.reason}`);
   }
 
+  return lines.join('\n');
+}
+
+export function formatCameraSnapshotInspection(result: CameraSnapshotInspectionResult): string {
+  if (!result.success) {
+    return [
+      'Camera inspection failed.',
+      result.error || 'Unknown error.',
+      result.path ? `Image: ${result.path}` : '',
+    ].filter(Boolean).join('\n');
+  }
+
+  const dimensions = result.analysis?.dimensions
+    ? `${result.analysis.dimensions.width}x${result.analysis.dimensions.height}`
+    : 'unknown';
+  const lines = [
+    'Camera Inspection',
+    '='.repeat(50),
+    '',
+    `Image: ${result.path}`,
+    `Summary: ${result.summary}`,
+    `Dimensions: ${dimensions}`,
+    `Format: ${result.analysis?.format || 'unknown'}`,
+  ];
+  if (result.ocrText) lines.push('', 'OCR:', result.ocrText);
+  if (result.perceptId) lines.push('', `Percept: ${result.perceptId}`);
+  if (result.safetyEventId) lines.push(`Safety event: ${result.safetyEventId}`);
   return lines.join('\n');
 }

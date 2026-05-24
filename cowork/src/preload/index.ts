@@ -54,6 +54,7 @@ import type {
   CompanionPrivacyKind,
   CompanionPrivacyPurgeResult,
   CompanionPrivacyReport,
+  CameraSnapshotInspectionResult,
   CameraSnapshotResult,
   VoiceConversationEvent,
   VoiceConversationSnapshot,
@@ -949,6 +950,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
       projectId?: string;
     }): Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }> =>
       ipcRenderer.invoke('companion.camera.snapshot', input),
+    cameraInspect: (input?: {
+      imagePath?: string;
+      outputPath?: string;
+      device?: string;
+      timeoutMs?: number;
+      projectId?: string;
+      includeOcr?: boolean;
+      ocrLanguage?: string;
+    }): Promise<{ ok: boolean; result?: CameraSnapshotInspectionResult; error?: string }> =>
+      ipcRenderer.invoke('companion.camera.inspect', input),
   },
 
   // Auto-update
@@ -3186,6 +3197,15 @@ declare global {
           timeoutMs?: number;
           projectId?: string;
         }) => Promise<{ ok: boolean; result?: CameraSnapshotResult; error?: string }>;
+        cameraInspect: (input?: {
+          imagePath?: string;
+          outputPath?: string;
+          device?: string;
+          timeoutMs?: number;
+          projectId?: string;
+          includeOcr?: boolean;
+          ocrLanguage?: string;
+        }) => Promise<{ ok: boolean; result?: CameraSnapshotInspectionResult; error?: string }>;
       };
       update: {
         check: () => Promise<unknown>;

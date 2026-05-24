@@ -847,6 +847,39 @@ export function registerCompanionCommands(program: Command): void {
       process.exit(1);
     });
 
+  camera
+    .command('inspect')
+    .description('Inspect a camera image or capture a fresh frame and record a vision summary')
+    .option('--image <path>', 'Existing image path to inspect instead of capturing a new frame')
+    .option('--output <path>', 'Output path when capturing a fresh frame')
+    .option('--device <device>', 'Camera device name or index')
+    .option('--timeout-ms <ms>', 'Capture timeout in milliseconds', '10000')
+    .option('--ocr', 'Also run OCR on the image')
+    .option('--language <lang>', 'OCR language code', 'eng')
+    .action(async (opts: {
+      image?: string;
+      output?: string;
+      device?: string;
+      timeoutMs: string;
+      ocr?: boolean;
+      language: string;
+    }) => {
+      const {
+        formatCameraSnapshotInspection,
+        inspectCameraSnapshot,
+      } = await import('../../companion/camera.js');
+      const result = await inspectCameraSnapshot({
+        imagePath: opts.image,
+        outputPath: opts.output,
+        device: opts.device,
+        timeoutMs: parseInt(opts.timeoutMs, 10),
+        includeOcr: Boolean(opts.ocr),
+        ocrLanguage: opts.language,
+      });
+      console.log(formatCameraSnapshotInspection(result));
+      if (!result.success) process.exit(1);
+    });
+
   const percepts = companion
     .command('percepts')
     .description('Inspect Buddy companion percepts recorded from camera, voice, screen, tools, and self-state');

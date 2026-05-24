@@ -32,6 +32,7 @@ import {
 import { useAppStore } from '../store';
 import { speakText } from './VoiceOutputToggle';
 import type {
+  CameraSnapshotInspectionResult,
   CameraSnapshotResult,
   CompanionCard,
   CompanionCardStatus,
@@ -447,9 +448,10 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'evaluate' | 'radar' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
+  const [lastInspection, setLastInspection] = useState<CameraSnapshotInspectionResult | null>(null);
 
   const filteredStats = useMemo(() => {
     if (!stats) return [];
@@ -583,6 +585,23 @@ export function CompanionPanel() {
       return;
     }
     setLastSnapshot(res.result ?? null);
+    await refresh();
+  };
+
+  const inspectCamera = async () => {
+    setBusyAction('cameraInspect');
+    setError(null);
+    const res = await window.electronAPI.companion.cameraInspect({
+      imagePath: lastSnapshot?.path,
+      timeoutMs: 10000,
+    });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Camera inspection failed');
+      return;
+    }
+    setLastInspection(res.result ?? null);
+    if (res.result?.snapshot) setLastSnapshot(res.result.snapshot);
     await refresh();
   };
 
@@ -904,6 +923,14 @@ export function CompanionPanel() {
             </button>
             <button
               disabled={busyAction !== null}
+              onClick={() => void inspectCamera()}
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <Eye className="h-4 w-4" />
+              {busyAction === 'cameraInspect' ? 'Inspecting...' : 'Inspect camera'}
+            </button>
+            <button
+              disabled={busyAction !== null}
               onClick={() => void runEvaluation()}
               className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
             >
@@ -1000,6 +1027,37 @@ export function CompanionPanel() {
                       <span className="truncate">{checkIn.suggestedCommand}</span>
                     </span>
                   )}
+                </div>
+              </div>
+            </section>
+          )}
+
+          {lastInspection && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Vision inspection</h3>
+                <span className="text-[10px] text-text-muted">
+                  {lastInspection.analysis?.format || 'image'}
+                  {lastInspection.analysis?.dimensions
+                    ? ` / ${lastInspection.analysis.dimensions.width}x${lastInspection.analysis.dimensions.height}`
+                    : ''}
+                </span>
+              </div>
+              <div className="rounded border border-border bg-surface/35 p-3">
+                <div className="flex items-start gap-2">
+                  <Eye className="mt-0.5 h-4 w-4 shrink-0 text-accent" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm text-text-primary">{lastInspection.summary || 'Camera image inspected.'}</p>
+                    {lastInspection.path && (
+                      <button
+                        onClick={() => void window.electronAPI.showItemInFolder(lastInspection.path!)}
+                        className="mt-2 inline-flex max-w-full items-center gap-2 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+                      >
+                        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                        <span className="truncate">{lastInspection.path}</span>
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             </section>

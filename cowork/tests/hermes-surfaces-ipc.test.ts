@@ -443,6 +443,33 @@ describe('companion IPC', () => {
     });
   });
 
+  it('inspects camera snapshots in the active workspace', async () => {
+    const inspectCameraSnapshot = vi.fn(async () => ({
+      success: true,
+      path: '/tmp/proj/.codebuddy/camera/scene.png',
+      summary: 'Inspected camera image scene.png',
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ inspectCameraSnapshot });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.camera.inspect');
+    const res = (await handler?.({}, { imagePath: 'scene.png', includeOcr: true, ocrLanguage: 'fra' })) as {
+      ok: boolean;
+      result?: { summary: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.summary).toContain('Inspected');
+    expect(inspectCameraSnapshot).toHaveBeenCalledWith({
+      cwd: '/tmp/proj',
+      imagePath: 'scene.png',
+      outputPath: undefined,
+      device: undefined,
+      timeoutMs: undefined,
+      includeOcr: true,
+      ocrLanguage: 'fra',
+    });
+  });
+
   it('returns NO_ACTIVE_PROJECT before loading core modules', async () => {
     registerCompanionIpcHandlers(projectSource(null));
     const handler = electronMock.handlers.get('companion.percepts.stats');

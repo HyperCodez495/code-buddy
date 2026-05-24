@@ -229,6 +229,25 @@ interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+interface CameraSnapshotInspectionResult {
+  success: boolean;
+  path?: string;
+  snapshot?: CameraSnapshotResult;
+  analysis?: {
+    description: string;
+    labels: string[];
+    dimensions?: { width: number; height: number };
+    format?: string;
+    size?: number;
+    channels?: number;
+  };
+  ocrText?: string;
+  summary?: string;
+  error?: string;
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 interface CompanionSetupResult {
   cwd: string;
   wroteSoul: boolean;
@@ -434,6 +453,15 @@ type CompanionCameraMod = {
     device?: string;
     timeoutMs?: number;
   }) => Promise<CameraSnapshotResult>;
+  inspectCameraSnapshot: (options: {
+    cwd?: string;
+    imagePath?: string;
+    outputPath?: string;
+    device?: string;
+    timeoutMs?: number;
+    includeOcr?: boolean;
+    ocrLanguage?: string;
+  }) => Promise<CameraSnapshotInspectionResult>;
 };
 
 type CompanionSelfEvaluationMod = {
@@ -1294,6 +1322,47 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         return { ok: true as const, result };
       } catch (err) {
         logError('[companion.camera.snapshot] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.camera.inspect',
+    async (
+      _e,
+      input?: {
+        imagePath?: string;
+        outputPath?: string;
+        device?: string;
+        timeoutMs?: number;
+        projectId?: string;
+        includeOcr?: boolean;
+        ocrLanguage?: string;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadCamera();
+        if (!mod?.inspectCameraSnapshot) {
+          return { ok: false as const, error: 'core camera inspection module unavailable' };
+        }
+        const result = await mod.inspectCameraSnapshot({
+          cwd,
+          imagePath: input?.imagePath,
+          outputPath: input?.outputPath,
+          device: input?.device,
+          timeoutMs: input?.timeoutMs,
+          includeOcr: input?.includeOcr,
+          ocrLanguage: input?.ocrLanguage,
+        });
+        if (!result.success) {
+          return { ok: false as const, error: result.error ?? 'camera inspection failed', result };
+        }
+        return { ok: true as const, result };
+      } catch (err) {
+        logError('[companion.camera.inspect] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

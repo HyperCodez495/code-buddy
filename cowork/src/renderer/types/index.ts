@@ -354,6 +354,25 @@ export interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+export interface CameraSnapshotInspectionResult {
+  success: boolean;
+  path?: string;
+  snapshot?: CameraSnapshotResult;
+  analysis?: {
+    description: string;
+    labels: string[];
+    dimensions?: { width: number; height: number };
+    format?: string;
+    size?: number;
+    channels?: number;
+  };
+  ocrText?: string;
+  summary?: string;
+  error?: string;
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 export interface CompanionSetupResult {
   cwd: string;
   wroteSoul: boolean;

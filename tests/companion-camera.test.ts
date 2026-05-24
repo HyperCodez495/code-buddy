@@ -7,7 +7,9 @@ import {
   buildCameraSnapshotArgs,
   captureCameraSnapshot,
   checkCameraAvailability,
+  formatCameraSnapshotInspection,
   getDefaultCameraOutputPath,
+  inspectCameraSnapshot,
   type CameraRuntime,
 } from '../src/companion/camera.js';
 import { readRecentCompanionPercepts } from '../src/companion/percepts.js';
@@ -139,6 +141,44 @@ describe('companion camera bridge', () => {
 
     expect(result.success).toBe(true);
     expect(result.path).toBe(path.join(tempDir, 'custom', 'scene.png'));
+  });
+
+  it('inspects an existing camera image and records a vision percept', async () => {
+    const imagePath = path.join(tempDir, 'scene.png');
+    await writeFile(
+      imagePath,
+      Buffer.from(
+        'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=',
+        'base64',
+      ),
+    );
+
+    const result = await inspectCameraSnapshot({
+      cwd: tempDir,
+      imagePath: 'scene.png',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.analysis?.dimensions).toEqual({ width: 1, height: 1 });
+    expect(result.summary).toContain('Inspected camera image');
+    expect(formatCameraSnapshotInspection(result)).toContain('Camera Inspection');
+
+    const percepts = await readRecentCompanionPercepts({ cwd: tempDir });
+    expect(percepts[0]).toMatchObject({
+      modality: 'vision',
+      source: 'camera_inspection',
+      payload: expect.objectContaining({
+        path: imagePath,
+      }),
+    });
+
+    const safetyEvents = await readRecentCompanionSafetyEvents({ cwd: tempDir });
+    expect(safetyEvents[0]).toMatchObject({
+      kind: 'sense',
+      risk: 'medium',
+      action: 'camera_inspection',
+      artifactPath: imagePath,
+    });
   });
 
   it('returns actionable troubleshooting when ffmpeg cannot open a Windows camera', async () => {
