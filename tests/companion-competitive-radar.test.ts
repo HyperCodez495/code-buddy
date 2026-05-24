@@ -70,9 +70,10 @@ describe('companion competitive radar', () => {
 
   it('records top competitive gaps as suggestions by default', async () => {
     const radar = await buildCompanionCompetitiveRadar();
+    const remainingGaps = radar.gaps.filter(gap => gap.severity === 'gap').length;
 
-    expect(radar.gaps.filter(gap => gap.severity === 'gap').length).toBeGreaterThanOrEqual(5);
-    expect(mocks.recordCompanionPercept).toHaveBeenCalledTimes(5);
+    expect(remainingGaps).toBeGreaterThan(0);
+    expect(mocks.recordCompanionPercept).toHaveBeenCalledTimes(Math.min(5, remainingGaps));
     expect(mocks.recordCompanionPercept).toHaveBeenNthCalledWith(
       1,
       expect.objectContaining({

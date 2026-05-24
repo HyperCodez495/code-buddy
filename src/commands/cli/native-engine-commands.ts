@@ -7,6 +7,11 @@
 
 import type { Command } from 'commander';
 import type { ChannelType, ContentType } from '../../channels/core.js';
+import type {
+  CompanionCardKind,
+  CompanionCardPriority,
+  CompanionCardStatus,
+} from '../../companion/cards.js';
 
 // ============================================================================
 // Heartbeat commands
@@ -685,6 +690,69 @@ export function registerCompanionCommands(program: Command): void {
         contentType: opts.contentType as ContentType,
       });
       console.log(formatCompanionGatewayMessageResult(result));
+    });
+
+  const cards = companion
+    .command('cards')
+    .description('Create and inspect typed companion UI cards');
+
+  cards
+    .command('list')
+    .description('List companion cards')
+    .option('--status <status>', 'Filter by status: open, resolved, dismissed')
+    .option('--kind <kind>', 'Filter by kind: status, approval, camera, checklist, mission, timer, weather, tool')
+    .action(async (opts: { status?: string; kind?: string }) => {
+      const {
+        formatCompanionCards,
+        readCompanionCards,
+      } = await import('../../companion/cards.js');
+      const store = await readCompanionCards({
+        status: opts.status as CompanionCardStatus | undefined,
+        kind: opts.kind as CompanionCardKind | undefined,
+      });
+      console.log(formatCompanionCards(store));
+    });
+
+  cards
+    .command('create <kind> <title>')
+    .description('Create a companion card')
+    .option('--body <body>', 'Card body')
+    .option('--priority <priority>', 'Priority: low, medium, high', 'medium')
+    .option('--command <command>', 'Optional primary action command')
+    .action(async (kind: string, title: string, opts: { body?: string; priority: string; command?: string }) => {
+      const {
+        createCompanionCard,
+        formatCompanionCards,
+        readCompanionCards,
+      } = await import('../../companion/cards.js');
+      const card = await createCompanionCard({
+        kind: kind as CompanionCardKind,
+        title,
+        body: opts.body,
+        priority: opts.priority as CompanionCardPriority,
+        actions: opts.command ? [{ id: 'primary', label: 'Run', command: opts.command, style: 'primary' }] : [],
+      });
+      console.log(`Companion card created: ${card.id}`);
+      console.log('');
+      console.log(formatCompanionCards(await readCompanionCards({ status: 'open' })));
+    });
+
+  cards
+    .command('resolve <id>')
+    .description('Mark a companion card resolved')
+    .action(async (id: string) => {
+      const { updateCompanionCardStatus } = await import('../../companion/cards.js');
+      const card = await updateCompanionCardStatus(id, 'resolved');
+      console.log(`Companion card resolved: ${card.id}`);
+    });
+
+  cards
+    .command('dismiss <id>')
+    .description('Dismiss a companion card')
+    .action(async (id: string) => {
+      const { updateCompanionCardStatus } = await import('../../companion/cards.js');
+      const card = await updateCompanionCardStatus(id, 'dismissed');
+      console.log(`Companion card dismissed: ${card.id}`);
     });
 
   const safety = companion

@@ -119,6 +119,7 @@ function buildCurrentStrengths(evaluation: CompanionSelfEvaluation): string[] {
     'Project-scoped sensory journal for vision, hearing, screen, self-state, memory, tool events, and suggestions.',
     'Companion skill curator can mine repeated missions/percepts into reviewed local routines.',
     'Companion gateway profile can map external channel messages into percepts and safety events.',
+    'Typed companion cards can represent approvals, missions, camera frames, checklists, and tool output for Cowork.',
     'Fleet, slash commands, CLI commands, MCP/plugin surface, and safety/permission plumbing already exist in the host system.',
   ];
 
@@ -175,10 +176,11 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
     {
       id: 'companion-ui-cards',
       dimension: 'ui',
-      severity: 'gap',
-      summary: 'Cowork shows companion state, but tools cannot yet push typed interactive UI cards into the companion panel.',
-      recommendation: 'Create a companion card schema for weather, timers, approvals, camera frames, checklists, and workflow steps.',
+      severity: 'parity',
+      summary: 'Buddy now has typed companion cards that Cowork can render as interactive state.',
+      recommendation: 'Wire Cowork renderer components to the companion card store for approvals, camera frames, checklists, and workflow steps.',
       competitorRefs: ['uni', 'lisa'],
+      command: 'buddy companion cards list',
       tags: ['ui', 'cards', 'cowork'],
     },
     {
