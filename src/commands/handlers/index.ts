@@ -42,6 +42,11 @@ export {
   handleTTS,
 } from './voice-handlers.js';
 
+// Companion handler
+export {
+  handleCompanion,
+} from './companion-handler.js';
+
 // UI handlers
 export {
   handleTheme,

@@ -54,6 +54,7 @@ export class CodeBuddyAgent extends BaseAgent {
   private toolHandler: ToolHandler;
   private promptBuilder: PromptBuilder;
   private customSystemPromptOverride: string | null = null;
+  private systemPromptAppend: string | undefined;
   private streamingHandler: StreamingHandler;
   private executor: AgentExecutor;
 
@@ -87,9 +88,13 @@ export class CodeBuddyAgent extends BaseAgent {
     model?: string,
     maxToolRounds?: number,
     useRAGToolSelection: boolean = true,
-    systemPromptId?: string  // New: external prompt ID (default, minimal, secure, etc.)
+    systemPromptId?: string,  // New: external prompt ID (default, minimal, secure, etc.)
+    workingDirectory?: string,
+    systemPromptAppend?: string,
   ) {
     super();
+    this.systemPromptAppend = systemPromptAppend;
+    const initialWorkingDirectory = workingDirectory || process.cwd();
 
     // Determine model to use
     const manager = getSettingsManager();
@@ -230,6 +235,7 @@ export class CodeBuddyAgent extends BaseAgent {
       marketplace: this.marketplace,
       repairCoordinator: this.repairCoordinator
     });
+    this.toolHandler.setWorkingDirectory(workingDirectory);
 
     // Initialize Executor
     this.executor = new AgentExecutor({
@@ -254,12 +260,13 @@ export class CodeBuddyAgent extends BaseAgent {
           }
           if (!this.promptBuilder) return null;
           const customInstructions = loadCustomInstructions();
-          return await this.promptBuilder.buildForQuery(
+          const prompt = await this.promptBuilder.buildForQuery(
             msg,
             systemPromptId,
             this.getCurrentModel(),
             customInstructions,
           );
+          return this.applyRuntimeSystemPromptAppend(prompt);
         } catch (err) {
           logger.warn('rebuildSystemPromptForQuery failed', {
             error: err instanceof Error ? err.message : String(err),
@@ -360,7 +367,7 @@ export class CodeBuddyAgent extends BaseAgent {
       yoloMode: this.yoloMode,
       memoryEnabled: this.memoryEnabled,
       morphEditorEnabled: !!this.toolHandler.morphEditor,
-      cwd: process.cwd()
+      cwd: initialWorkingDirectory,
     }, this.promptCacheManager, this.memory, this.infrastructure.moltbotHooksManager, getMemoryManager());
 
     // Set up executors for the repair coordinator
@@ -410,7 +417,7 @@ export class CodeBuddyAgent extends BaseAgent {
     this.systemPromptReady = this.initializeAgentSystemPrompt(systemPromptId, modelToUse, customInstructions);
 
     // Fire SessionStart user hook (non-blocking)
-    getUserHooksManager(process.cwd()).executeHooks('SessionStart', {}).catch(
+    getUserHooksManager(initialWorkingDirectory).executeHooks('SessionStart', {}).catch(
       (err) => logger.debug(`[user-hooks] SessionStart error: ${err}`)
     );
   }
@@ -446,6 +453,8 @@ export class CodeBuddyAgent extends BaseAgent {
         // Non-fatal — repo profiling is best-effort
       }
 
+      systemPrompt = this.applyRuntimeSystemPromptAppend(systemPrompt);
+
       // Knowledge base is already injected by PromptBuilder.buildSystemPrompt() — skip duplicate injection here.
 
       this.messages.push({
@@ -460,6 +469,15 @@ export class CodeBuddyAgent extends BaseAgent {
         content: "You are a helpful AI coding assistant.",
       });
     }
+  }
+
+  private applyRuntimeSystemPromptAppend(systemPrompt: string): string {
+    const append = this.systemPromptAppend?.trim();
+    if (!append) {
+      return systemPrompt;
+    }
+
+    return `${systemPrompt}\n\n<runtime_persona>\n${append}\n</runtime_persona>`;
   }
 
   private isGrokModel(): boolean {
@@ -1020,6 +1038,11 @@ export class CodeBuddyAgent extends BaseAgent {
    */
   setWorkingDirectory(dir: string | undefined): void {
     this.toolHandler.setWorkingDirectory(dir);
+    this.promptBuilder.updateConfig({ cwd: dir || process.cwd() });
+  }
+
+  setSystemPromptAppend(append: string | undefined): void {
+    this.systemPromptAppend = append;
   }
 
   async executeBashCommand(command: string): Promise<ToolResult> {
@@ -1305,7 +1328,9 @@ export class CodeBuddyAgent extends BaseAgent {
     const customInstructions = loadCustomInstructions();
 
     this.systemPromptReady = (async () => {
-      const systemPrompt = await this.promptBuilder.buildSystemPrompt(undefined, this.getCurrentModel(), customInstructions);
+      const systemPrompt = this.applyRuntimeSystemPromptAppend(
+        await this.promptBuilder.buildSystemPrompt(undefined, this.getCurrentModel(), customInstructions)
+      );
 
       // Update the system message
       if (this.messages.length > 0 && this.messages[0].role === "system") {

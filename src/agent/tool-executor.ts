@@ -208,6 +208,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   spawn_subagent: 'codebase',
   // Media
   screenshot: 'media',
+  camera_snapshot: 'media',
   audio: 'media',
   video: 'media',
   ocr: 'media',

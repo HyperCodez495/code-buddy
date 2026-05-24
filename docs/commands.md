@@ -66,6 +66,9 @@
 | `/tts provider <name>` | Switch TTS provider |
 | `/tts voice <voice>` | Set voice |
 | `/voice-code` | Voice-to-code pipeline |
+| `/companion status\|setup` | Configure/check Buddy as a ChatGPT-backed voice companion |
+| `/companion camera status\|snapshot` | Check/capture the local webcam bridge for Buddy vision |
+| `/companion percepts recent\|stats` | Inspect Buddy's local sensory journal |
 
 ### Autonomy
 
@@ -81,7 +84,7 @@
 
 | Command | Description |
 |:--------|:------------|
-| `/persona list\|use\|info\|reset` | Manage AI personas |
+| `/persona list\|use\|info\|reset` | Manage AI personas; use `/persona use companion` for Buddy's partner/voice-friendly mode |
 | `/plugin <action>` | Owner-gated plugin management (local terminal only) |
 | `/quota` | Rate limit / quota display per provider |
 | `/telemetry on\|off\|errors-only` | Telemetry toggle |
@@ -182,7 +185,7 @@ loading, plus concept-to-file and lesson-to-file maps.
 buddy server --port 3000
 buddy hub search | install | uninstall | update | list | info | publish | sync
 buddy mcp add <server> | list
-buddy identity show | get | set | prompt
+buddy identity show | get | set | awaken | prompt
 buddy nodes list | pair | approve | describe | remove | invoke | pending
 buddy pairing status | list | pending | approve <code> | add <id> | revoke <id>
 buddy groups status | list | block | unblock
@@ -213,7 +216,43 @@ buddy backup create | verify | list | restore [--only-config] [--no-include-work
 buddy onboard          # Interactive setup wizard
 buddy doctor [--fix]   # Environment diagnostics (--fix for auto-migration)
 buddy speak [text] [--voice <name>] [--list-voices] [--speed <n>]
+buddy companion setup [--force] [--no-voice] [--no-set-model]
+buddy companion status
+buddy companion self
+buddy companion camera status
+buddy companion camera snapshot [--output <path>] [--device <device>] [--timeout-ms <ms>]
+buddy companion percepts recent [--limit <n>] [--modality <name>]
+buddy companion percepts stats
 ```
+
+`buddy identity awaken` installs the Buddy companion identity into the current project's
+`.codebuddy/SOUL.md` without overwriting an existing file unless `--force` is passed.
+Use it with `/persona use companion` and Cowork's mic / voice-output controls for a
+voice-first partner workflow.
+
+`buddy companion setup` is the one-command version: it installs `SOUL.md` and
+`BOOT.md`, configures voice input plus TTS defaults, and sets the current project
+model to the ChatGPT companion default when `buddy login` credentials are present.
+`buddy companion status` shows the readiness of the ChatGPT brain route, identity
+files, voice input, text-to-speech, the local camera bridge, and the
+companion percept journal.
+
+`buddy companion camera snapshot` captures one webcam frame into `.codebuddy/camera/`
+by default. It uses `ffmpeg` so it works without adding a new Node dependency; pass
+`--device` when your OS exposes the camera under a different name or index. The
+companion can also call the `camera_snapshot` tool when you ask Buddy to look,
+inspect, read, or react to a physical scene. Successful snapshots also append a
+`vision` percept to `.codebuddy/companion/percepts.jsonl`, so Buddy and Cowork can
+build a stable sense-memory over what was seen.
+
+`buddy companion percepts recent` prints the newest local sensory events, with
+optional `--modality vision|hearing|screen|self|memory|tool|suggestion`.
+`buddy companion percepts stats` shows the append-only store path and modality
+counts. This is the Lisa-inspired backbone for future continuous voice, screen
+share, proactive suggestions, and self-state panels.
+`buddy companion self` writes Buddy's current model/auth/voice/camera readiness
+as a `self` percept, giving the companion a small, inspectable proprioception
+trail.
 
 ### Observability
 

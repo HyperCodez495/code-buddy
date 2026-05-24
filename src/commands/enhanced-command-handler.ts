@@ -27,6 +27,8 @@ import {
   handleVoice,
   handleSpeak,
   handleTTS,
+  // Companion handler
+  handleCompanion,
   // UI handlers
   handleTheme,
   handleAvatar,
@@ -369,6 +371,7 @@ export class EnhancedCommandHandler {
     ['__VOICE__', (args) => handleVoice(args)],
     ['__SPEAK__', (args) => handleSpeak(args)],
     ['__TTS__', (args) => handleTTS(args)],
+    ['__COMPANION__', (args) => handleCompanion(args)],
 
     // Sessions & History
     ['__SESSIONS__', (args) => handleSessions(args)],

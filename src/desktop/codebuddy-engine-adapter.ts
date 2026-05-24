@@ -9,6 +9,7 @@
  */
 
 import { logger } from '../utils/logger.js';
+import { createHash } from 'node:crypto';
 import type {
   EngineAdapter,
   EngineStreamCallback,
@@ -99,7 +100,10 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // turn picks up the new config. Without this, switching model
       // mid-session in Cowork's Settings was a no-op until the user
       // manually closed the session.
-      const desiredIdentity = `${config.apiKey || ''}:${config.baseURL || ''}:${config.model || ''}`;
+      const promptAppendHash = config.systemPromptAppend
+        ? createHash('sha256').update(config.systemPromptAppend).digest('hex').slice(0, 12)
+        : '';
+      const desiredIdentity = `${config.apiKey || ''}:${config.baseURL || ''}:${config.model || ''}:${config.workingDirectory || ''}:${promptAppendHash}`;
       const cachedIdentity = this.agentIdentities.get(sessionId);
       let agent = this.agents.get(sessionId) as InstanceType<typeof CodeBuddyAgent> | undefined;
       if (agent && cachedIdentity !== desiredIdentity) {
@@ -124,6 +128,10 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           config.baseURL,
           config.model,
           config.maxToolRounds,
+          true,
+          undefined,
+          config.workingDirectory,
+          config.systemPromptAppend,
         );
 
         // Phase 9 — enforce LRU before insertion so we never exceed
@@ -162,6 +170,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       // self-improvement review loop never closed. Re-applied every turn so a
       // hot-swapped/reused cached agent always targets the current project.
       agent.setWorkingDirectory(config.workingDirectory);
+      agent.setSystemPromptAppend(config.systemPromptAppend);
 
       // The last message must be the user's current prompt
       const lastMessage = messages[messages.length - 1];

@@ -5,10 +5,10 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import { OcrTool } from '../vision/ocr-tool.js';
 import { ImageProcessorTool } from '../vision/image-processor.js';
-import * as path from 'path';
+import { captureCameraSnapshot } from '../../companion/camera.js';
 
 // ============================================================================
 // OcrExtractTool
@@ -135,6 +135,100 @@ export class ImageAnalyzeTool implements ITool {
 }
 
 // ============================================================================
+// CameraSnapshotTool
+// ============================================================================
+
+export class CameraSnapshotTool implements ITool {
+  readonly name = 'camera_snapshot';
+  readonly description = 'Capture one local webcam frame to an image file for Buddy companion vision. Requires ffmpeg and OS camera permission.';
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    const result = await captureCameraSnapshot({
+      cwd: context?.cwd,
+      outputPath: input.output_path as string | undefined,
+      device: input.device as string | undefined,
+      timeoutMs: input.timeout_ms as number | undefined,
+    });
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error || 'Camera snapshot failed',
+        output: result.command,
+      };
+    }
+
+    return {
+      success: true,
+      output: JSON.stringify({
+        path: result.path,
+        command: result.command,
+        percept_id: result.perceptId,
+        percept_store: result.perceptPath,
+        note: 'Use image analysis, OCR, or a multimodal model turn to inspect this frame.',
+      }, null, 2),
+    };
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          output_path: {
+            type: 'string',
+            description: 'Optional output image path. Defaults to .codebuddy/camera/camera-<timestamp>.png in the active workspace.',
+          },
+          device: {
+            type: 'string',
+            description: 'Optional ffmpeg camera device. Windows example: video=Integrated Camera; macOS example: 0; Linux example: /dev/video0.',
+          },
+          timeout_ms: {
+            type: 'number',
+            description: 'Capture timeout in milliseconds (default: 10000).',
+            minimum: 1000,
+            maximum: 60000,
+          },
+        },
+        required: [],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    const data = input as Record<string, unknown> | undefined;
+    if (!data || typeof data !== 'object') return { valid: true };
+    if (data.output_path !== undefined && typeof data.output_path !== 'string') {
+      return { valid: false, errors: ['output_path must be a string'] };
+    }
+    if (data.device !== undefined && typeof data.device !== 'string') {
+      return { valid: false, errors: ['device must be a string'] };
+    }
+    if (data.timeout_ms !== undefined && typeof data.timeout_ms !== 'number') {
+      return { valid: false, errors: ['timeout_ms must be a number'] };
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['camera', 'webcam', 'snapshot', 'photo', 'vision', 'see', 'look', 'companion'],
+      priority: 7,
+      modifiesFiles: true,
+      requiresConfirmation: true,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
 // Factory Function
 // ============================================================================
 
@@ -142,5 +236,6 @@ export function createVisionTools(): ITool[] {
   return [
     new OcrExtractTool(),
     new ImageAnalyzeTool(),
+    new CameraSnapshotTool(),
   ];
 }

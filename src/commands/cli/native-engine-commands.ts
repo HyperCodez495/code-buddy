@@ -1,8 +1,8 @@
 /**
  * Enterprise-grade CLI commands
  *
- * Registers heartbeat, hub (skills marketplace), identity, groups, and
- * auth-profile subcommands on the given program.
+ * Registers heartbeat, hub (skills marketplace), identity, companion, groups,
+ * and auth-profile subcommands on the given program.
  */
 
 import type { Command } from 'commander';
@@ -324,6 +324,29 @@ export function registerIdentityCommands(program: Command): void {
     });
 
   identity
+    .command('awaken')
+    .description('Install the Buddy companion identity in project .codebuddy/SOUL.md')
+    .option('--force', 'Overwrite an existing project SOUL.md')
+    .action(async (opts: { force?: boolean }) => {
+      const { getIdentityManager } = await import('../../identity/identity-manager.js');
+      const { BUDDY_COMPANION_SOUL_MD } = await import('../../identity/companion-identity.js');
+      const mgr = getIdentityManager();
+      await mgr.load(process.cwd());
+
+      const existing = mgr.get('SOUL.md');
+      if (existing && !opts.force) {
+        console.log('Project SOUL.md already exists.');
+        console.log('Run `buddy identity awaken --force` to replace it, or edit .codebuddy/SOUL.md manually.');
+        return;
+      }
+
+      await mgr.set('SOUL.md', BUDDY_COMPANION_SOUL_MD);
+      console.log('Buddy companion identity installed in .codebuddy/SOUL.md');
+      console.log('Use `/persona use companion` in chat for the matching built-in persona.');
+      console.log('In Cowork, use the titlebar voice overlay or the mic in the composer for voice input.');
+    });
+
+  identity
     .command('prompt')
     .description('Show the combined identity prompt injection')
     .action(async () => {
@@ -338,6 +361,147 @@ export function registerIdentityCommands(program: Command): void {
       console.log(`\n--- Identity Prompt ---\n`);
       console.log(prompt);
       console.log('');
+    });
+}
+
+// ============================================================================
+// Companion commands
+// ============================================================================
+
+export function registerCompanionCommands(program: Command): void {
+  const companion = program
+    .command('companion')
+    .description('Configure Buddy as a ChatGPT-backed voice companion');
+
+  companion
+    .command('setup')
+    .description('Install companion identity and configure voice-first defaults')
+    .option('--force', 'Overwrite existing SOUL.md and BOOT.md')
+    .option('--no-voice', 'Skip voice input and TTS configuration')
+    .option('--no-set-model', 'Do not set the project model to the ChatGPT companion default')
+    .option('--language <lang>', 'Voice language', 'fr')
+    .option('--stt-provider <provider>', 'Voice input provider (system, whisper-local, whisper-api)')
+    .option('--tts-provider <provider>', 'TTS provider (edge-tts, espeak, say, piper, audioreader)')
+    .option('--tts-voice <voice>', 'TTS voice name')
+    .option('--model <model>', 'ChatGPT model to use when OAuth credentials are present')
+    .action(async (opts: {
+      force?: boolean;
+      voice?: boolean;
+      setModel?: boolean;
+      language?: string;
+      sttProvider?: 'system' | 'whisper-local' | 'whisper-api';
+      ttsProvider?: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader';
+      ttsVoice?: string;
+      model?: string;
+    }) => {
+      const { setupCompanionMode, formatCompanionStatus } = await import('../../companion/companion-mode.js');
+      const result = await setupCompanionMode({
+        forceIdentity: opts.force,
+        configureVoice: opts.voice !== false,
+        configureModel: opts.setModel !== false,
+        language: opts.language,
+        sttProvider: opts.sttProvider,
+        ttsProvider: opts.ttsProvider,
+        ttsVoice: opts.ttsVoice,
+        model: opts.model,
+      });
+
+      console.log('Buddy companion setup complete.');
+      if (result.wroteSoul) console.log('Installed .codebuddy/SOUL.md');
+      if (result.wroteBoot) console.log('Installed .codebuddy/BOOT.md');
+      if (result.skippedSoul) console.log('Kept existing SOUL.md (use --force to replace).');
+      if (result.skippedBoot) console.log('Kept existing BOOT.md (use --force to replace).');
+      if (result.voiceConfigured) console.log('Voice input and TTS defaults configured.');
+      if (result.modelConfigured && result.model) {
+        console.log(`Project model set to ${result.model}.`);
+      } else {
+        console.log('Project model not changed; run `buddy login` to connect ChatGPT OAuth first.');
+      }
+      console.log('');
+      console.log(formatCompanionStatus(result.status));
+    });
+
+  companion
+    .command('status')
+    .description('Show companion readiness across ChatGPT auth, identity, voice, TTS, and camera')
+    .action(async () => {
+      const { getCompanionStatus, formatCompanionStatus } = await import('../../companion/companion-mode.js');
+      console.log(formatCompanionStatus(await getCompanionStatus()));
+    });
+
+  companion
+    .command('self')
+    .description('Record Buddy companion self-state into the local percept journal')
+    .action(async () => {
+      const { recordCompanionSelfState } = await import('../../companion/companion-mode.js');
+      const percept = await recordCompanionSelfState();
+      console.log(`Self-state percept recorded: ${percept.id}`);
+      console.log(percept.summary);
+    });
+
+  const camera = companion
+    .command('camera')
+    .description('Manage the companion camera bridge');
+
+  camera
+    .command('status')
+    .description('Show local camera snapshot readiness')
+    .action(async () => {
+      const { checkCameraAvailability, formatCameraStatus } = await import('../../companion/camera.js');
+      console.log(formatCameraStatus(await checkCameraAvailability()));
+    });
+
+  camera
+    .command('snapshot')
+    .description('Capture one webcam frame for Buddy vision')
+    .option('--output <path>', 'Output image path')
+    .option('--device <device>', 'Camera device name or index')
+    .option('--timeout-ms <ms>', 'Capture timeout in milliseconds', '10000')
+    .action(async (opts: { output?: string; device?: string; timeoutMs: string }) => {
+      const { captureCameraSnapshot } = await import('../../companion/camera.js');
+      const result = await captureCameraSnapshot({
+        outputPath: opts.output,
+        device: opts.device,
+        timeoutMs: parseInt(opts.timeoutMs, 10),
+      });
+
+      if (result.success) {
+        console.log(`Camera snapshot saved: ${result.path}`);
+        if (result.perceptId) console.log(`Percept recorded: ${result.perceptId}`);
+        if (result.command) console.log(`Command: ${result.command}`);
+        return;
+      }
+
+      console.error(result.error || 'Camera snapshot failed.');
+      if (result.command) console.error(`Command: ${result.command}`);
+      process.exit(1);
+    });
+
+  const percepts = companion
+    .command('percepts')
+    .description('Inspect Buddy companion percepts recorded from camera, voice, screen, tools, and self-state');
+
+  percepts
+    .command('recent')
+    .description('Show recent companion percepts')
+    .option('--limit <n>', 'Maximum percepts to print', '10')
+    .option('--modality <name>', 'Filter by modality: vision, hearing, screen, self, memory, tool, suggestion')
+    .action(async (opts: { limit: string; modality?: string }) => {
+      const { readRecentCompanionPercepts, formatCompanionPercepts } = await import('../../companion/percepts.js');
+      const modality = opts.modality as 'vision' | 'hearing' | 'screen' | 'self' | 'memory' | 'tool' | 'suggestion' | undefined;
+      const recent = await readRecentCompanionPercepts({
+        limit: parseInt(opts.limit, 10),
+        modality,
+      });
+      console.log(formatCompanionPercepts(recent));
+    });
+
+  percepts
+    .command('stats')
+    .description('Show companion percept store statistics')
+    .action(async () => {
+      const { getCompanionPerceptStats, formatCompanionPerceptStats } = await import('../../companion/percepts.js');
+      console.log(formatCompanionPerceptStats(await getCompanionPerceptStats()));
     });
 }
 

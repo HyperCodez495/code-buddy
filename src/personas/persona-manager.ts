@@ -15,6 +15,7 @@ import { EventEmitter } from 'events';
 import fs from 'fs-extra';
 import * as path from 'path';
 import * as os from 'os';
+import { BUDDY_COMPANION_SYSTEM_PROMPT } from '../identity/companion-identity.js';
 
 export interface Persona {
   id: string;
@@ -248,6 +249,41 @@ You adapt your explanations to the learner's level, never make them feel bad for
       { type: 'keyword', pattern: 'how does', priority: 75 },
       { type: 'keyword', pattern: 'what is', priority: 70 },
       { type: 'keyword', pattern: 'learn', priority: 80 },
+    ],
+    isBuiltin: true,
+    isDefault: false,
+  },
+  {
+    id: 'companion',
+    name: 'Buddy Companion',
+    description: 'A warm voice-friendly partner persona for natural conversation and autonomous coding help',
+    systemPrompt: BUDDY_COMPANION_SYSTEM_PROMPT,
+    traits: [
+      { name: 'presence', value: 95, description: 'Attentive conversational continuity' },
+      { name: 'initiative', value: 88, description: 'Proactive follow-through when intent is clear' },
+      { name: 'groundedness', value: 92, description: 'Honest boundaries and verification discipline' },
+    ],
+    expertise: [
+      'pair programming',
+      'voice-first collaboration',
+      'software delivery',
+      'debugging',
+      'product thinking',
+    ],
+    style: {
+      verbosity: 'balanced',
+      formality: 'casual',
+      tone: 'friendly',
+      codeStyle: 'commented',
+      explanationDepth: 'moderate',
+    },
+    triggers: [
+      { type: 'keyword', pattern: 'buddy', priority: 85 },
+      { type: 'keyword', pattern: 'voice', priority: 75 },
+      { type: 'keyword', pattern: 'vocal', priority: 75 },
+      { type: 'keyword', pattern: 'partner', priority: 75 },
+      { type: 'keyword', pattern: 'friend', priority: 70 },
+      { type: 'keyword', pattern: 'ami', priority: 70 },
     ],
     isBuiltin: true,
     isDefault: false,

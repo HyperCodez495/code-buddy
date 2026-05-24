@@ -1054,6 +1054,16 @@ const voiceCommands: SlashCommand[] = [
     arguments: [
       { name: 'action', description: 'on, off, auto, status, voices, or voice <name>', required: false }
     ]
+  },
+  {
+    name: 'companion',
+    description: 'Configure Buddy as a ChatGPT-backed voice, camera, and percept-aware companion',
+    prompt: '__COMPANION__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: 'status, setup, awaken, self, camera, percepts, or doctor', required: false }
+    ]
   }
 ];
 

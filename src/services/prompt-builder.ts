@@ -385,7 +385,7 @@ export class PromptBuilder {
           if (!systemPrompt.includes('## SOUL.md') && !systemPrompt.includes('## AGENTS.md')) {
             const { getIdentityManager } = await import('../identity/identity-manager.js');
             const identityMgr = getIdentityManager();
-            await identityMgr.load(process.cwd());
+            await identityMgr.load(this.config.cwd);
             const identityBlock = identityMgr.getPromptInjection();
             if (identityBlock) {
               systemPrompt += `\n\n<identity>\n${identityBlock}\n</identity>`;

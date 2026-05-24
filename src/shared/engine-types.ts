@@ -92,6 +92,8 @@ export interface EngineSessionConfig {
   model?: string;
   maxToolRounds?: number;
   workingDirectory?: string;
+  /** Runtime system prompt addition supplied by the host (for active Cowork personas). */
+  systemPromptAppend?: string;
   /** Environment variable that signals we're running inside Electron */
   embedded?: boolean;
 }

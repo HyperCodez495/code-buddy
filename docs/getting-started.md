@@ -140,12 +140,30 @@ buddy --vim                  # Launch with Vim keybindings
 # 4. Advanced modes
 buddy --model gemini-2.5-flash  # Switch AI model
 buddy --system-prompt architect # Use architect system prompt
-buddy speak                     # Voice conversation mode
+buddy identity awaken           # Install Buddy's companion identity for this project
+buddy companion setup           # Install companion identity + voice/TTS defaults
+buddy companion status          # Check ChatGPT auth, identity, voice, TTS, and camera readiness
+buddy companion self            # Record Buddy's current self-state as a percept
+buddy companion camera snapshot # Capture one webcam frame into .codebuddy/camera/
+buddy companion percepts recent # Read Buddy's local sensory journal
+buddy speak "Bonjour"           # Speak text aloud through the configured TTS provider
 buddy daemon start              # Run 24/7 in background
 buddy server --port 3000        # Expose REST/WebSocket API
 ```
 
 Code Buddy autonomously reads files, writes code, runs commands, and fixes errors -- typically 5-15 tool calls per task (up to 50, or 400 in YOLO mode). After each edit, it can auto-commit (Aider-style), run linters, and execute tests automatically.
+
+For a ChatGPT-subscription-backed companion flow, run `buddy login`, then
+`buddy companion setup`, then switch to `/persona use companion` in chat. In
+Cowork, use the mic button or the titlebar voice overlay and enable voice output.
+For visual context, say or type a request such as "Buddy, regarde ceci" and use
+`/companion camera snapshot` or the `camera_snapshot` tool to capture a local frame.
+Successful snapshots append a `vision` percept to
+`.codebuddy/companion/percepts.jsonl`, which is the local sensory journal future
+Cowork panels and companion loops can reuse.
+The companion identity is still bounded by the normal safety and verification
+rules; it makes Buddy more present and conversational without pretending to be
+literally conscious.
 
 ## Auto-memory
 

@@ -71,6 +71,15 @@ describe('PersonaManager', () => {
       expect(names).toContain('code-reviewer');
       expect(names).toContain('debugger');
       expect(names).toContain('teacher');
+      expect(names).toContain('companion');
+    });
+
+    it('should include the Buddy companion persona for voice-first collaboration', () => {
+      const companion = manager.getPersona('companion');
+      expect(companion).toBeDefined();
+      expect(companion?.systemPrompt).toContain('coding partner');
+      expect(companion?.systemPrompt).toContain('voice-first conversation');
+      expect(companion?.systemPrompt).toContain('do not claim literal consciousness');
     });
   });
 

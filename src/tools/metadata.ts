@@ -302,6 +302,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Capture screenshots'
   },
   {
+    name: 'camera_snapshot',
+    category: 'media',
+    keywords: ['camera', 'webcam', 'snapshot', 'photo', 'vision', 'see', 'look', 'companion', 'eyes'],
+    priority: 6,
+    description: 'Capture one local webcam frame and record a vision percept'
+  },
+  {
     name: 'audio',
     category: 'media',
     keywords: ['audio', 'sound', 'music', 'transcribe', 'speech', 'voice', 'mp3', 'wav'],
@@ -796,7 +803,7 @@ export const CATEGORY_KEYWORDS: Record<ToolCategory, string[]> = {
   git: ['git', 'commit', 'push', 'pull', 'branch', 'merge', 'diff', 'status', 'version control'],
   web: ['search online', 'google', 'web', 'internet', 'fetch url', 'website', 'documentation', 'latest', 'news', 'browser', 'automate', 'click', 'fill form', 'screenshot', 'scrape', 'headless', 'ui test', 'observe', 'extract from page', 'assert page', 'stagehand', 'weather', 'météo', 'meteo', 'forecast', 'temperature', 'actualité', 'actualite', 'current events', 'real time', 'real-time'],
   planning: ['plan', 'todo', 'task', 'organize', 'steps', 'breakdown'],
-  media: ['image', 'audio', 'video', 'screenshot', 'picture', 'photo', 'sound', 'music', 'capture'],
+  media: ['image', 'audio', 'video', 'screenshot', 'picture', 'photo', 'sound', 'music', 'capture', 'camera', 'webcam', 'vision'],
   document: ['pdf', 'document', 'docx', 'xlsx', 'word', 'excel', 'archive', 'zip'],
   utility: ['diagram', 'chart', 'export', 'qr', 'visualize', 'convert'],
   codebase: ['codebase', 'structure', 'architecture', 'analyze', 'overview', 'dependencies'],

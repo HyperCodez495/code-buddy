@@ -150,6 +150,7 @@ export class CodeBuddyEngineRunner {
 
     // Convert existing messages to engine format
     const engineMessages = this.convertMessages(existingMessages, prompt);
+    const systemPromptAppend = await this.resolveActivePersonaPrompt();
 
     let fullContent = '';
     const contentBlocks: ContentBlock[] = [];
@@ -357,6 +358,7 @@ export class CodeBuddyEngineRunner {
         {
           workingDirectory: session.cwd,
           model: session.model,
+          systemPromptAppend,
         }
       );
 
@@ -480,6 +482,34 @@ export class CodeBuddyEngineRunner {
     result.push({ role: 'user', content: currentPrompt });
 
     return result;
+  }
+
+  private async resolveActivePersonaPrompt(): Promise<string | undefined> {
+    try {
+      const { getIdentityBridge } = await import('../identity/identity-bridge');
+      const bridge = getIdentityBridge();
+      await bridge.list();
+      const active = bridge.getActive();
+      if (!active || active.kind !== 'persona') {
+        return undefined;
+      }
+      const detail = await bridge.getDetail(active.id);
+      if (!detail) {
+        return undefined;
+      }
+      const content = detail.content.trim();
+      if (!content) {
+        return undefined;
+      }
+      return [
+        `# Active Cowork Persona: ${detail.name}`,
+        `Source: ${detail.source} ${detail.kind}`,
+        '',
+        content,
+      ].join('\n');
+    } catch {
+      return undefined;
+    }
   }
 }
 

@@ -58,6 +58,18 @@ vi.mock('../../src/config/model-tools.js', () => ({
   getModelToolConfig: modelToolsMock.getModelToolConfigMock,
 }));
 
+const identityMock = vi.hoisted(() => ({
+  loadMock: vi.fn(async (_cwd: string) => []),
+  getPromptInjectionMock: vi.fn(() => ''),
+}));
+
+vi.mock('../../src/identity/identity-manager.js', () => ({
+  getIdentityManager: () => ({
+    load: identityMock.loadMock,
+    getPromptInjection: identityMock.getPromptInjectionMock,
+  }),
+}));
+
 // ---- imports under test (after mocks) --------------------------------
 
 import {
@@ -174,6 +186,8 @@ describe('PromptBuilder — Phase T4', () => {
     modelToolsMock.getModelToolConfigMock
       .mockReset()
       .mockReturnValue({ contextWindow: 128_000, maxOutputTokens: 8_000 });
+    identityMock.loadMock.mockReset().mockResolvedValue([]);
+    identityMock.getPromptInjectionMock.mockReset().mockReturnValue('');
   });
 
   afterEach(() => {
@@ -385,6 +399,36 @@ describe('PromptBuilder — Phase T4', () => {
         withIntroHook: new Error('intro boom'),
       });
       await expect(builder.buildSystemPrompt(undefined, 'grok-3', null)).resolves.toBeTruthy();
+    });
+  });
+
+  describe('identity injection', () => {
+    it('loads identity files from PromptBuilder cwd, not process.cwd()', async () => {
+      const { builder, cacheSystemPrompt } = buildBuilder({
+        config: { cwd: '/workspace/from-config' },
+      });
+      identityMock.getPromptInjectionMock.mockReturnValue('## SOUL.md\n\nProject Buddy identity');
+
+      await builder.buildSystemPrompt(undefined, 'grok-3', null, {
+        includeBootstrap: false,
+        includePersona: false,
+        includeKnowledge: false,
+        includeProjectDocs: false,
+        includeRules: false,
+        includeSkills: false,
+        includeIdentity: true,
+        includeFleet: false,
+        includeMemoryDirective: false,
+        includeLessonsDirective: false,
+        includeWritingRules: false,
+        includeCodingStyle: false,
+        includeWorkflowRules: false,
+        includeVariation: false,
+      });
+
+      expect(identityMock.loadMock).toHaveBeenCalledWith('/workspace/from-config');
+      const finalPrompt = cacheSystemPrompt.mock.calls[0][0] as string;
+      expect(finalPrompt).toContain('Project Buddy identity');
     });
   });
 

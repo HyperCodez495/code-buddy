@@ -14,6 +14,7 @@ import {
   registerHeartbeatCommands,
   registerHubCommands,
   registerIdentityCommands,
+  registerCompanionCommands,
   registerGroupCommands,
   registerAuthProfileCommands,
 } from '../../src/commands/cli/native-engine-commands';
@@ -61,6 +62,38 @@ const mockIdentityManager = {
 
 jest.mock('../../src/identity/identity-manager.js', () => ({
   getIdentityManager: jest.fn(function() { return mockIdentityManager; }),
+}));
+
+const mockSetupCompanionMode = jest.fn();
+const mockGetCompanionStatus = jest.fn();
+const mockFormatCompanionStatus = jest.fn((status: unknown) => `formatted:${JSON.stringify(status)}`);
+const mockRecordCompanionSelfState = jest.fn();
+const mockCheckCameraAvailability = jest.fn();
+const mockFormatCameraStatus = jest.fn((status: unknown) => `camera:${JSON.stringify(status)}`);
+const mockCaptureCameraSnapshot = jest.fn();
+const mockReadRecentCompanionPercepts = jest.fn();
+const mockFormatCompanionPercepts = jest.fn((percepts: unknown) => `percepts:${JSON.stringify(percepts)}`);
+const mockGetCompanionPerceptStats = jest.fn();
+const mockFormatCompanionPerceptStats = jest.fn((stats: unknown) => `percept-stats:${JSON.stringify(stats)}`);
+
+jest.mock('../../src/companion/companion-mode.js', () => ({
+  setupCompanionMode: mockSetupCompanionMode,
+  getCompanionStatus: mockGetCompanionStatus,
+  formatCompanionStatus: mockFormatCompanionStatus,
+  recordCompanionSelfState: mockRecordCompanionSelfState,
+}));
+
+jest.mock('../../src/companion/camera.js', () => ({
+  checkCameraAvailability: mockCheckCameraAvailability,
+  formatCameraStatus: mockFormatCameraStatus,
+  captureCameraSnapshot: mockCaptureCameraSnapshot,
+}));
+
+jest.mock('../../src/companion/percepts.js', () => ({
+  readRecentCompanionPercepts: mockReadRecentCompanionPercepts,
+  formatCompanionPercepts: mockFormatCompanionPercepts,
+  getCompanionPerceptStats: mockGetCompanionPerceptStats,
+  formatCompanionPerceptStats: mockFormatCompanionPerceptStats,
 }));
 
 const mockGroupSecurity = {
@@ -782,6 +815,52 @@ describe('Native Engine CLI Commands', () => {
       });
     });
 
+    describe('identity awaken', () => {
+      it('installs the Buddy companion SOUL.md when none exists', async () => {
+        mockIdentityManager.get.mockReturnValue(null);
+
+        await program.parseAsync(['node', 'test', 'identity', 'awaken']);
+
+        expect(mockIdentityManager.load).toHaveBeenCalledWith(process.cwd());
+        expect(mockIdentityManager.get).toHaveBeenCalledWith('SOUL.md');
+        expect(mockIdentityManager.set).toHaveBeenCalledWith(
+          'SOUL.md',
+          expect.stringContaining('Buddy Companion'),
+        );
+        expect(getLogOutput()).toContain('Buddy companion identity installed');
+      });
+
+      it('does not overwrite an existing SOUL.md unless --force is passed', async () => {
+        mockIdentityManager.get.mockReturnValue({
+          name: 'SOUL.md',
+          source: 'project',
+          path: '/project/.codebuddy/SOUL.md',
+          content: 'Existing identity',
+        });
+
+        await program.parseAsync(['node', 'test', 'identity', 'awaken']);
+
+        expect(mockIdentityManager.set).not.toHaveBeenCalled();
+        expect(getLogOutput()).toContain('Project SOUL.md already exists.');
+      });
+
+      it('overwrites an existing SOUL.md with --force', async () => {
+        mockIdentityManager.get.mockReturnValue({
+          name: 'SOUL.md',
+          source: 'project',
+          path: '/project/.codebuddy/SOUL.md',
+          content: 'Existing identity',
+        });
+
+        await program.parseAsync(['node', 'test', 'identity', 'awaken', '--force']);
+
+        expect(mockIdentityManager.set).toHaveBeenCalledWith(
+          'SOUL.md',
+          expect.stringContaining('Buddy Companion'),
+        );
+      });
+    });
+
     describe('identity prompt', () => {
       it('should display the combined identity prompt', async () => {
         mockIdentityManager.getPromptInjection.mockReturnValue('You are a helpful assistant.\nUser prefers TypeScript.');
@@ -810,6 +889,177 @@ describe('Native Engine CLI Commands', () => {
 
         // Empty string is falsy, so it should show "No identity content loaded."
         expect(getLogOutput()).toContain('No identity content loaded.');
+      });
+    });
+  });
+
+  // ==========================================================================
+  // Companion Commands
+  // ==========================================================================
+
+  describe('registerCompanionCommands', () => {
+    let program: Command;
+
+    beforeEach(() => {
+      program = createProgram();
+      registerCompanionCommands(program);
+      mockSetupCompanionMode.mockResolvedValue({
+        wroteSoul: true,
+        wroteBoot: true,
+        skippedSoul: false,
+        skippedBoot: false,
+        voiceConfigured: true,
+        modelConfigured: true,
+        model: 'gpt-5.5',
+        status: { ok: true },
+      });
+      mockGetCompanionStatus.mockResolvedValue({ ok: true });
+      mockRecordCompanionSelfState.mockResolvedValue({
+        id: 'percept-self-1',
+        summary: 'Buddy self-state recorded',
+      });
+      mockCheckCameraAvailability.mockResolvedValue({ available: true });
+      mockCaptureCameraSnapshot.mockResolvedValue({
+        success: true,
+        path: '/repo/.codebuddy/camera/scene.png',
+        command: 'ffmpeg ...',
+        perceptId: 'percept-1',
+      });
+      mockReadRecentCompanionPercepts.mockResolvedValue([
+        { id: 'percept-1', modality: 'vision', source: 'camera_snapshot' },
+      ]);
+      mockGetCompanionPerceptStats.mockResolvedValue({ total: 1 });
+    });
+
+    describe('companion setup', () => {
+      it('configures the companion mode with defaults', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'setup']);
+
+        expect(mockSetupCompanionMode).toHaveBeenCalledWith({
+          forceIdentity: undefined,
+          configureVoice: true,
+          configureModel: true,
+          language: 'fr',
+          sttProvider: undefined,
+          ttsProvider: undefined,
+          ttsVoice: undefined,
+          model: undefined,
+        });
+        const output = getLogOutput();
+        expect(output).toContain('Buddy companion setup complete.');
+        expect(output).toContain('Project model set to gpt-5.5.');
+        expect(output).toContain('formatted:{"ok":true}');
+      });
+
+      it('passes force, voice, provider, and model options', async () => {
+        await program.parseAsync([
+          'node', 'test', 'companion', 'setup',
+          '--force',
+          '--no-voice',
+          '--no-set-model',
+          '--language', 'en',
+          '--stt-provider', 'whisper-api',
+          '--tts-provider', 'audioreader',
+          '--tts-voice', 'ff_siwis',
+          '--model', 'gpt-5.2',
+        ]);
+
+        expect(mockSetupCompanionMode).toHaveBeenCalledWith({
+          forceIdentity: true,
+          configureVoice: false,
+          configureModel: false,
+          language: 'en',
+          sttProvider: 'whisper-api',
+          ttsProvider: 'audioreader',
+          ttsVoice: 'ff_siwis',
+          model: 'gpt-5.2',
+        });
+      });
+    });
+
+    describe('companion status', () => {
+      it('prints the formatted companion status', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'status']);
+
+        expect(mockGetCompanionStatus).toHaveBeenCalled();
+        expect(mockFormatCompanionStatus).toHaveBeenCalledWith({ ok: true });
+        expect(getLogOutput()).toContain('formatted:{"ok":true}');
+      });
+    });
+
+    describe('companion self', () => {
+      it('records a self-state percept', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'self']);
+
+        expect(mockRecordCompanionSelfState).toHaveBeenCalled();
+        expect(getLogOutput()).toContain('Self-state percept recorded: percept-self-1');
+      });
+    });
+
+    describe('companion camera', () => {
+      it('prints the camera status', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'camera', 'status']);
+
+        expect(mockCheckCameraAvailability).toHaveBeenCalled();
+        expect(mockFormatCameraStatus).toHaveBeenCalledWith({ available: true });
+        expect(getLogOutput()).toContain('camera:{"available":true}');
+      });
+
+      it('captures a camera snapshot with options', async () => {
+        await program.parseAsync([
+          'node', 'test', 'companion', 'camera', 'snapshot',
+          '--output', 'scene.png',
+          '--device', 'video=USB Camera',
+          '--timeout-ms', '5000',
+        ]);
+
+        expect(mockCaptureCameraSnapshot).toHaveBeenCalledWith({
+          outputPath: 'scene.png',
+          device: 'video=USB Camera',
+          timeoutMs: 5000,
+        });
+        expect(getLogOutput()).toContain('Camera snapshot saved: /repo/.codebuddy/camera/scene.png');
+        expect(getLogOutput()).toContain('Percept recorded: percept-1');
+      });
+
+      it('exits with an error when camera snapshot fails', async () => {
+        mockCaptureCameraSnapshot.mockResolvedValue({
+          success: false,
+          error: 'camera permission denied',
+          command: 'ffmpeg ...',
+        });
+
+        await program.parseAsync(['node', 'test', 'companion', 'camera', 'snapshot']);
+
+        expect(getErrorOutput()).toContain('camera permission denied');
+        expect(processExitSpy).toHaveBeenCalledWith(1);
+      });
+    });
+
+    describe('companion percepts', () => {
+      it('prints recent percepts with filters', async () => {
+        await program.parseAsync([
+          'node', 'test', 'companion', 'percepts', 'recent',
+          '--limit', '5',
+          '--modality', 'vision',
+        ]);
+
+        expect(mockReadRecentCompanionPercepts).toHaveBeenCalledWith({
+          limit: 5,
+          modality: 'vision',
+        });
+        expect(mockFormatCompanionPercepts).toHaveBeenCalledWith([
+          { id: 'percept-1', modality: 'vision', source: 'camera_snapshot' },
+        ]);
+        expect(getLogOutput()).toContain('percepts:');
+      });
+
+      it('prints percept store stats', async () => {
+        await program.parseAsync(['node', 'test', 'companion', 'percepts', 'stats']);
+
+        expect(mockGetCompanionPerceptStats).toHaveBeenCalled();
+        expect(mockFormatCompanionPerceptStats).toHaveBeenCalledWith({ total: 1 });
+        expect(getLogOutput()).toContain('percept-stats:');
       });
     });
   });

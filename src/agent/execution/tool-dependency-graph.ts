@@ -228,6 +228,13 @@ export const TOOL_METADATA: Record<string, Partial<ToolMetadata>> = {
     parallelSafe: true, // Different screenshots go to different files
     priority: 6,
   },
+  camera_snapshot: {
+    reads: [],
+    writes: ["file"],
+    hasSideEffects: true,
+    parallelSafe: false, // Single local camera device + explicit privacy boundary
+    priority: 6,
+  },
   diagram: {
     reads: [],
     writes: ["file"],

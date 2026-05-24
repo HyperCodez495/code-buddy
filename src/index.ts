@@ -2366,6 +2366,11 @@ addLazyCommandGroup(program, 'identity', 'Manage agent identity files (SOUL.md, 
   registerIdentityCommands(program);
 });
 
+addLazyCommandGroup(program, 'companion', 'Configure Buddy as a ChatGPT-backed voice companion', async () => {
+  const { registerCompanionCommands } = await import('./commands/cli/native-engine-commands.js');
+  registerCompanionCommands(program);
+});
+
 addLazyCommandGroup(program, 'groups', 'Manage group chat security', async () => {
   const { registerGroupCommands } = await import('./commands/cli/native-engine-commands.js');
   registerGroupCommands(program);

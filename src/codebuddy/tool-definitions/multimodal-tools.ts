@@ -177,6 +177,33 @@ export const SCREENSHOT_TOOL: CodeBuddyTool = {
   }
 };
 
+// Camera Snapshot Tool - Capture a local webcam frame
+export const CAMERA_SNAPSHOT_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "camera_snapshot",
+    description: "Capture one local webcam frame to an image file for Buddy companion vision and record a local vision percept. Requires ffmpeg and OS camera permission.",
+    parameters: {
+      type: "object",
+      properties: {
+        output_path: {
+          type: "string",
+          description: "Optional output image path. Defaults to .codebuddy/camera/camera-<timestamp>.png in the active workspace."
+        },
+        device: {
+          type: "string",
+          description: "Optional ffmpeg camera device. Windows example: video=Integrated Camera; macOS example: 0; Linux example: /dev/video0."
+        },
+        timeout_ms: {
+          type: "number",
+          description: "Capture timeout in milliseconds (default: 10000)."
+        }
+      },
+      required: []
+    }
+  }
+};
+
 // Clipboard Tool - System clipboard operations
 export const CLIPBOARD_TOOL: CodeBuddyTool = {
   type: "function",
@@ -601,6 +628,7 @@ export const MULTIMODAL_TOOLS: CodeBuddyTool[] = [
   AUDIO_TOOL,
   VIDEO_TOOL,
   SCREENSHOT_TOOL,
+  CAMERA_SNAPSHOT_TOOL,
   CLIPBOARD_TOOL,
   DOCUMENT_TOOL,
   OCR_TOOL,

@@ -112,6 +112,7 @@ export {
 export {
   OcrExtractTool,
   ImageAnalyzeTool,
+  CameraSnapshotTool,
   createVisionTools,
 } from './vision-tools.js';
 

@@ -6,7 +6,13 @@
  */
 import { describe, expect, it, vi, beforeEach } from 'vitest';
 
-let constructorCalls: Array<{ apiKey: string; baseURL?: string; model?: string }> = [];
+let constructorCalls: Array<{
+  apiKey: string;
+  baseURL?: string;
+  model?: string;
+  workingDirectory?: string;
+  systemPromptAppend?: string;
+}> = [];
 let disposedCount = 0;
 let processedPrompts: string[] = [];
 
@@ -14,12 +20,25 @@ class FakeCodeBuddyAgent {
   apiKey: string;
   baseURL?: string;
   model?: string;
+  workingDirectory?: string;
+  systemPromptAppend?: string;
   history: Array<{ role: string; content: string }> = [];
-  constructor(apiKey: string, baseURL?: string, model?: string) {
+  constructor(
+    apiKey: string,
+    baseURL?: string,
+    model?: string,
+    _maxToolRounds?: number,
+    _useRAGToolSelection?: boolean,
+    _systemPromptId?: string,
+    workingDirectory?: string,
+    systemPromptAppend?: string,
+  ) {
     this.apiKey = apiKey;
     this.baseURL = baseURL;
     this.model = model;
-    constructorCalls.push({ apiKey, baseURL, model });
+    this.workingDirectory = workingDirectory;
+    this.systemPromptAppend = systemPromptAppend;
+    constructorCalls.push({ apiKey, baseURL, model, workingDirectory, systemPromptAppend });
   }
   addToHistory(entry: { role: string; content: string }) {
     this.history.push(entry);
@@ -31,6 +50,12 @@ class FakeCodeBuddyAgent {
   }
   dispose() {
     disposedCount++;
+  }
+  setWorkingDirectory(dir: string | undefined) {
+    this.workingDirectory = dir;
+  }
+  setSystemPromptAppend(append: string | undefined) {
+    this.systemPromptAppend = append;
   }
 }
 
@@ -168,6 +193,28 @@ describe('CodeBuddyEngineAdapter — hot-swap on config change (Phase 8)', () =>
     );
     expect(disposedCount).toBe(1);
     expect(constructorCalls[1].apiKey).toBe('k2');
+  });
+
+  it('disposes when the active runtime persona prompt changes', async () => {
+    const adapter = new CodeBuddyEngineAdapter({ apiKey: 'k', model: 'm' });
+    await adapter.runSession(
+      'sess-1',
+      [{ role: 'user', content: 'hi' }],
+      () => undefined,
+      { systemPromptAppend: 'persona A' },
+    );
+    await adapter.runSession(
+      'sess-1',
+      [
+        { role: 'user', content: 'hi' },
+        { role: 'assistant', content: 'x' },
+        { role: 'user', content: 'again' },
+      ],
+      () => undefined,
+      { systemPromptAppend: 'persona B' },
+    );
+    expect(disposedCount).toBe(1);
+    expect(constructorCalls[1].systemPromptAppend).toBe('persona B');
   });
 
   it('clearSession drops the identity entry too', async () => {
