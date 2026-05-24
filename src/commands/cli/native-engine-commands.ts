@@ -558,6 +558,54 @@ export function registerCompanionCommands(program: Command): void {
       console.log(`Mission dismissed: ${mission.id}`);
     });
 
+  const skills = companion
+    .command('skills')
+    .description('Curate reviewed companion skills from repeated missions and percepts');
+
+  skills
+    .command('curate')
+    .description('Refresh companion skill candidates from missions and percept patterns')
+    .option('--no-record', 'Do not write a skill-curator percept')
+    .action(async (opts: { record?: boolean }) => {
+      const {
+        curateCompanionSkills,
+        formatCompanionSkillCuratorResult,
+      } = await import('../../companion/skill-curator.js');
+      const result = await curateCompanionSkills({ recordSuggestions: opts.record !== false });
+      console.log(formatCompanionSkillCuratorResult(result));
+    });
+
+  skills
+    .command('list')
+    .description('List companion skill candidates')
+    .action(async () => {
+      const {
+        formatCompanionSkillCandidates,
+        readCompanionSkillCandidates,
+      } = await import('../../companion/skill-curator.js');
+      console.log(formatCompanionSkillCandidates(await readCompanionSkillCandidates()));
+    });
+
+  skills
+    .command('promote <id>')
+    .description('Promote a companion skill candidate into a workspace-local skill artifact')
+    .action(async (id: string) => {
+      const {
+        formatCompanionSkillPromotion,
+        promoteCompanionSkillCandidate,
+      } = await import('../../companion/skill-curator.js');
+      console.log(formatCompanionSkillPromotion(await promoteCompanionSkillCandidate(id)));
+    });
+
+  skills
+    .command('dismiss <id>')
+    .description('Dismiss a companion skill candidate')
+    .action(async (id: string) => {
+      const { dismissCompanionSkillCandidate } = await import('../../companion/skill-curator.js');
+      const candidate = await dismissCompanionSkillCandidate(id);
+      console.log(`Companion skill candidate dismissed: ${candidate.id}`);
+    });
+
   const safety = companion
     .command('safety')
     .description('Inspect Buddy companion safety ledger events');

@@ -117,6 +117,7 @@ function buildCurrentStrengths(evaluation: CompanionSelfEvaluation): string[] {
     'ChatGPT-Pro-first companion route through the existing Code Buddy brain when OAuth is connected.',
     'Cowork companion cockpit with local status, percept filters, camera snapshots, and self-evaluation.',
     'Project-scoped sensory journal for vision, hearing, screen, self-state, memory, tool events, and suggestions.',
+    'Companion skill curator can mine repeated missions/percepts into reviewed local routines.',
     'Fleet, slash commands, CLI commands, MCP/plugin surface, and safety/permission plumbing already exist in the host system.',
   ];
 
@@ -144,11 +145,11 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
     {
       id: 'companion-skill-curator',
       dimension: 'learning',
-      severity: 'gap',
-      summary: 'Buddy records lessons and suggestions, but does not yet curate companion skills from repeated successful routines.',
-      recommendation: 'Add a companion skill curator that promotes repeated percept/suggestion patterns into reviewed skills, then prunes stale ones.',
+      severity: 'parity',
+      summary: 'Buddy records lessons and suggestions and can now curate companion skills from repeated routines.',
+      recommendation: 'Run the companion skill curator after meaningful missions so repeated percept/suggestion patterns become reviewed local skills.',
       competitorRefs: ['hermes-agent', 'openclaw', 'lisa'],
-      command: 'buddy companion radar',
+      command: 'buddy companion skills curate',
       tags: ['skills', 'learning-loop', 'curation'],
     },
     {
