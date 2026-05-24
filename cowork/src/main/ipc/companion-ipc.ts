@@ -203,6 +203,120 @@ interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+type CompanionCardKind =
+  | 'status'
+  | 'approval'
+  | 'camera'
+  | 'checklist'
+  | 'mission'
+  | 'timer'
+  | 'weather'
+  | 'tool';
+type CompanionCardPriority = 'low' | 'medium' | 'high';
+type CompanionCardStatus = 'open' | 'resolved' | 'dismissed';
+
+interface CompanionCardAction {
+  id: string;
+  label: string;
+  command?: string;
+  style?: 'primary' | 'secondary' | 'danger';
+}
+
+interface CompanionCard {
+  id: string;
+  kind: CompanionCardKind;
+  status: CompanionCardStatus;
+  priority: CompanionCardPriority;
+  title: string;
+  body: string;
+  actions: CompanionCardAction[];
+  payload: Record<string, unknown>;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  resolvedAt?: string;
+}
+
+interface CompanionCardStore {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  cards: CompanionCard[];
+}
+
+type CompanionGatewayMode = 'observe' | 'assist' | 'act';
+
+interface CompanionGatewayChannelConfig {
+  channel: string;
+  enabled: boolean;
+  mode: CompanionGatewayMode;
+  allowOutbound: boolean;
+  requireApprovalForTools: boolean;
+  recordPercepts: boolean;
+  tags: string[];
+}
+
+interface CompanionGatewayProfile {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  defaultMode: CompanionGatewayMode;
+  channels: CompanionGatewayChannelConfig[];
+}
+
+type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
+
+interface CompanionSkillEvidence {
+  kind: 'mission' | 'percept';
+  id: string;
+  summary: string;
+  timestamp?: string;
+  weight: number;
+}
+
+interface CompanionSkillCandidate {
+  id: string;
+  title: string;
+  status: CompanionSkillCandidateStatus;
+  score: number;
+  trigger: string;
+  routine: string[];
+  command?: string;
+  sourceTags: string[];
+  evidence: CompanionSkillEvidence[];
+  createdAt: string;
+  updatedAt: string;
+  promotedAt?: string;
+  artifactPath?: string;
+}
+
+interface CompanionSkillCandidateStore {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  candidates: CompanionSkillCandidate[];
+}
+
+interface CompanionSkillCuratorResult {
+  store: CompanionSkillCandidateStore;
+  created: number;
+  updated: number;
+  unchanged: number;
+  pruned: number;
+  perceptId?: string;
+}
+
+interface CompanionSkillPromotionResult {
+  candidate: CompanionSkillCandidate;
+  artifactPath: string;
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 type CompanionModeMod = {
   getCompanionStatus: (options: { cwd?: string }) => Promise<Record<string, unknown>>;
   recordCompanionSelfState: (options: { cwd?: string }) => Promise<CompanionPercept>;
@@ -278,6 +392,52 @@ type CompanionSafetyLedgerMod = {
   getCompanionSafetyLedgerStats: (options: { cwd?: string }) => Promise<CompanionSafetyLedgerStats>;
 };
 
+type CompanionCardsMod = {
+  readCompanionCards: (options: {
+    cwd?: string;
+    status?: CompanionCardStatus;
+    kind?: CompanionCardKind;
+    limit?: number;
+  }) => Promise<CompanionCardStore>;
+  updateCompanionCardStatus: (
+    cardId: string,
+    status: CompanionCardStatus,
+    options: { cwd?: string },
+  ) => Promise<CompanionCard>;
+};
+
+type CompanionGatewayMod = {
+  readCompanionGatewayProfile: (options: { cwd?: string }) => Promise<CompanionGatewayProfile>;
+  updateCompanionGatewayChannel: (
+    channel: string,
+    options: {
+      cwd?: string;
+      mode?: CompanionGatewayMode;
+      allowOutbound?: boolean;
+      requireApprovalForTools?: boolean;
+      recordPercepts?: boolean;
+      enabled?: boolean;
+      tags?: string[];
+    },
+  ) => Promise<CompanionGatewayProfile>;
+};
+
+type CompanionSkillCuratorMod = {
+  readCompanionSkillCandidates: (options: { cwd?: string }) => Promise<CompanionSkillCandidateStore>;
+  curateCompanionSkills: (options: {
+    cwd?: string;
+    recordSuggestions?: boolean;
+  }) => Promise<CompanionSkillCuratorResult>;
+  promoteCompanionSkillCandidate: (
+    candidateId: string,
+    options: { cwd?: string },
+  ) => Promise<CompanionSkillPromotionResult>;
+  dismissCompanionSkillCandidate: (
+    candidateId: string,
+    options: { cwd?: string },
+  ) => Promise<CompanionSkillCandidate>;
+};
+
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
 
 async function companionWorkDir(
@@ -323,6 +483,18 @@ async function loadMissionRunner(): Promise<CompanionMissionRunnerMod | null> {
 
 async function loadSafetyLedger(): Promise<CompanionSafetyLedgerMod | null> {
   return loadCoreModule<CompanionSafetyLedgerMod>('companion/safety-ledger.js');
+}
+
+async function loadCards(): Promise<CompanionCardsMod | null> {
+  return loadCoreModule<CompanionCardsMod>('companion/cards.js');
+}
+
+async function loadGateway(): Promise<CompanionGatewayMod | null> {
+  return loadCoreModule<CompanionGatewayMod>('companion/gateway.js');
+}
+
+async function loadSkillCurator(): Promise<CompanionSkillCuratorMod | null> {
+  return loadCoreModule<CompanionSkillCuratorMod>('companion/skill-curator.js');
 }
 
 export function registerCompanionIpcHandlers(projectManagerSource: ProjectManagerSource): void {
@@ -612,6 +784,203 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: false as const, error: errorMessage(err) };
     }
   });
+
+  ipcMain.handle(
+    'companion.cards.list',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        status?: CompanionCardStatus;
+        kind?: CompanionCardKind;
+        limit?: number;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error, items: [] as CompanionCard[] };
+      try {
+        const mod = await loadCards();
+        if (!mod?.readCompanionCards) {
+          return { ok: false as const, error: 'core companion cards module unavailable', items: [] as CompanionCard[] };
+        }
+        const store = await mod.readCompanionCards({
+          cwd,
+          status: input?.status,
+          kind: input?.kind,
+          limit: input?.limit,
+        });
+        return { ok: true as const, store, items: store.cards };
+      } catch (err) {
+        logError('[companion.cards.list] failed:', err);
+        return { ok: false as const, error: errorMessage(err), items: [] as CompanionCard[] };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.cards.update',
+    async (_e, input?: { projectId?: string; cardId?: string; status?: CompanionCardStatus }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.cardId || !input.status) {
+        return { ok: false as const, error: 'cardId and status are required' };
+      }
+      try {
+        const mod = await loadCards();
+        if (!mod?.updateCompanionCardStatus) {
+          return { ok: false as const, error: 'core companion cards module unavailable' };
+        }
+        return {
+          ok: true as const,
+          card: await mod.updateCompanionCardStatus(input.cardId, input.status, { cwd }),
+        };
+      } catch (err) {
+        logError('[companion.cards.update] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle('companion.gateway.profile', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadGateway();
+      if (!mod?.readCompanionGatewayProfile) {
+        return { ok: false as const, error: 'core companion gateway module unavailable' };
+      }
+      return { ok: true as const, profile: await mod.readCompanionGatewayProfile({ cwd }) };
+    } catch (err) {
+      logError('[companion.gateway.profile] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle(
+    'companion.gateway.update',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        channel?: string;
+        enabled?: boolean;
+        mode?: CompanionGatewayMode;
+        allowOutbound?: boolean;
+        requireApprovalForTools?: boolean;
+        recordPercepts?: boolean;
+        tags?: string[];
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.channel) return { ok: false as const, error: 'channel is required' };
+      try {
+        const mod = await loadGateway();
+        if (!mod?.updateCompanionGatewayChannel) {
+          return { ok: false as const, error: 'core companion gateway module unavailable' };
+        }
+        return {
+          ok: true as const,
+          profile: await mod.updateCompanionGatewayChannel(input.channel, {
+            cwd,
+            enabled: input.enabled,
+            mode: input.mode,
+            allowOutbound: input.allowOutbound,
+            requireApprovalForTools: input.requireApprovalForTools,
+            recordPercepts: input.recordPercepts,
+            tags: input.tags,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.gateway.update] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle('companion.skills.list', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error, items: [] as CompanionSkillCandidate[] };
+    try {
+      const mod = await loadSkillCurator();
+      if (!mod?.readCompanionSkillCandidates) {
+        return { ok: false as const, error: 'core companion skill curator module unavailable', items: [] as CompanionSkillCandidate[] };
+      }
+      const store = await mod.readCompanionSkillCandidates({ cwd });
+      return { ok: true as const, store, items: store.candidates };
+    } catch (err) {
+      logError('[companion.skills.list] failed:', err);
+      return { ok: false as const, error: errorMessage(err), items: [] as CompanionSkillCandidate[] };
+    }
+  });
+
+  ipcMain.handle(
+    'companion.skills.curate',
+    async (_e, input?: { projectId?: string; recordSuggestions?: boolean }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        const mod = await loadSkillCurator();
+        if (!mod?.curateCompanionSkills) {
+          return { ok: false as const, error: 'core companion skill curator module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.curateCompanionSkills({
+            cwd,
+            recordSuggestions: input?.recordSuggestions !== false,
+          }),
+        };
+      } catch (err) {
+        logError('[companion.skills.curate] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.skills.promote',
+    async (_e, input?: { projectId?: string; candidateId?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.candidateId) return { ok: false as const, error: 'candidateId is required' };
+      try {
+        const mod = await loadSkillCurator();
+        if (!mod?.promoteCompanionSkillCandidate) {
+          return { ok: false as const, error: 'core companion skill curator module unavailable' };
+        }
+        return {
+          ok: true as const,
+          result: await mod.promoteCompanionSkillCandidate(input.candidateId, { cwd }),
+        };
+      } catch (err) {
+        logError('[companion.skills.promote] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.skills.dismiss',
+    async (_e, input?: { projectId?: string; candidateId?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.candidateId) return { ok: false as const, error: 'candidateId is required' };
+      try {
+        const mod = await loadSkillCurator();
+        if (!mod?.dismissCompanionSkillCandidate) {
+          return { ok: false as const, error: 'core companion skill curator module unavailable' };
+        }
+        return {
+          ok: true as const,
+          candidate: await mod.dismissCompanionSkillCandidate(input.candidateId, { cwd }),
+        };
+      } catch (err) {
+        logError('[companion.skills.dismiss] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
 
   ipcMain.handle('companion.camera.status', async () => {
     try {

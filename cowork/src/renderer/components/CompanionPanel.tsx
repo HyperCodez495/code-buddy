@@ -32,7 +32,11 @@ import {
 import { useAppStore } from '../store';
 import type {
   CameraSnapshotResult,
+  CompanionCard,
+  CompanionCardStatus,
   CompanionCompetitiveRadar,
+  CompanionGatewayMode,
+  CompanionGatewayProfile,
   CompanionImpulseBrief,
   CompanionMission,
   CompanionMissionRunResult,
@@ -43,6 +47,8 @@ import type {
   CompanionSafetyEvent,
   CompanionSafetyLedgerStats,
   CompanionSelfEvaluation,
+  CompanionSkillCandidate,
+  CompanionSkillCuratorResult,
   CompanionStatus,
 } from '../types';
 
@@ -181,6 +187,226 @@ function SafetyEventRow({ event }: { event: CompanionSafetyEvent }) {
   );
 }
 
+function priorityColor(priority: 'low' | 'medium' | 'high'): string {
+  if (priority === 'high') return 'text-warning';
+  if (priority === 'medium') return 'text-accent';
+  return 'text-text-muted';
+}
+
+function CompanionCardRow({
+  card,
+  busy,
+  onStatus,
+}: {
+  card: CompanionCard;
+  busy: boolean;
+  onStatus: (cardId: string, status: CompanionCardStatus) => void;
+}) {
+  return (
+    <div className="rounded border border-border bg-surface/35 p-3" data-testid="companion-card">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <ListChecks className="h-4 w-4 text-accent" />
+            <span className={`text-[10px] font-semibold uppercase ${priorityColor(card.priority)}`}>
+              {card.priority}
+            </span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {card.kind}
+            </span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {card.status}
+            </span>
+          </div>
+          <p className="mt-1 text-xs font-medium text-text-primary">{card.title}</p>
+          {card.body && <p className="mt-1 text-xs text-text-secondary whitespace-pre-wrap">{card.body}</p>}
+          {card.actions.length > 0 && (
+            <div className="mt-2 space-y-1">
+              {card.actions.slice(0, 3).map((action) => (
+                <div key={action.id} className="rounded bg-background px-2 py-1">
+                  <span className="text-[11px] font-medium text-text-primary">{action.label}</span>
+                  {action.command && (
+                    <code className="mt-1 block truncate text-[10px] text-text-muted">{action.command}</code>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        {card.status === 'open' && (
+          <div className="flex shrink-0 flex-col gap-1">
+            <button
+              disabled={busy}
+              onClick={() => onStatus(card.id, 'resolved')}
+              className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+            >
+              Resolve
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => onStatus(card.id, 'dismissed')}
+              className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function GatewayChannelRow({
+  channel,
+  busy,
+  onUpdate,
+}: {
+  channel: CompanionGatewayProfile['channels'][number];
+  busy: boolean;
+  onUpdate: (
+    channel: string,
+    updates: {
+      enabled?: boolean;
+      mode?: CompanionGatewayMode;
+      allowOutbound?: boolean;
+      requireApprovalForTools?: boolean;
+    },
+  ) => void;
+}) {
+  return (
+    <div className="rounded border border-border bg-surface/35 p-3" data-testid="companion-gateway-channel">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Radio className={`h-4 w-4 ${channel.enabled ? 'text-accent' : 'text-text-muted'}`} />
+            <span className="text-xs font-semibold text-text-primary">{channel.channel}</span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {channel.enabled ? channel.mode : 'paused'}
+            </span>
+            {channel.allowOutbound && (
+              <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                outbound
+              </span>
+            )}
+          </div>
+          <p className="mt-1 text-[11px] text-text-muted">
+            {channel.requireApprovalForTools ? 'Tool approval on' : 'Tool approval off'} · {channel.recordPercepts ? 'percepts on' : 'percepts off'}
+          </p>
+        </div>
+        <div className="flex shrink-0 flex-wrap justify-end gap-1">
+          <button
+            disabled={busy}
+            onClick={() => onUpdate(channel.channel, {
+              enabled: true,
+              mode: 'observe',
+              allowOutbound: false,
+              requireApprovalForTools: true,
+            })}
+            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Observe
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onUpdate(channel.channel, {
+              enabled: true,
+              mode: 'assist',
+              allowOutbound: false,
+              requireApprovalForTools: true,
+            })}
+            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Assist
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onUpdate(channel.channel, {
+              enabled: true,
+              mode: 'act',
+              allowOutbound: true,
+              requireApprovalForTools: true,
+            })}
+            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Act
+          </button>
+          <button
+            disabled={busy}
+            onClick={() => onUpdate(channel.channel, { enabled: false })}
+            className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Pause
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SkillCandidateRow({
+  candidate,
+  busy,
+  onPromote,
+  onDismiss,
+}: {
+  candidate: CompanionSkillCandidate;
+  busy: boolean;
+  onPromote: (candidateId: string) => void;
+  onDismiss: (candidateId: string) => void;
+}) {
+  return (
+    <div className="rounded border border-border bg-surface/35 p-3" data-testid="companion-skill-candidate">
+      <div className="flex items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <Sparkles className="h-4 w-4 text-accent" />
+            <span className="text-xs font-semibold text-text-primary">{candidate.title}</span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {candidate.status}
+            </span>
+            <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+              {candidate.score}/100
+            </span>
+          </div>
+          <p className="mt-1 text-xs text-text-secondary">{candidate.trigger}</p>
+          {candidate.command && (
+            <code className="mt-2 block truncate rounded bg-background px-1.5 py-1 text-[10px] text-text-muted">
+              {candidate.command}
+            </code>
+          )}
+          {candidate.artifactPath && (
+            <button
+              onClick={() => void window.electronAPI.showItemInFolder(candidate.artifactPath!)}
+              className="mt-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface"
+            >
+              <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+              <span className="truncate">{candidate.artifactPath}</span>
+            </button>
+          )}
+        </div>
+        {candidate.status !== 'promoted' && candidate.status !== 'dismissed' && (
+          <div className="flex shrink-0 flex-col gap-1">
+            <button
+              disabled={busy}
+              onClick={() => onPromote(candidate.id)}
+              className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+            >
+              Promote
+            </button>
+            <button
+              disabled={busy}
+              onClick={() => onDismiss(candidate.id)}
+              className="rounded border border-border px-2 py-1 text-[10px] text-text-secondary hover:bg-surface disabled:opacity-50"
+            >
+              Dismiss
+            </button>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function CompanionPanel() {
   const show = useAppStore((s) => s.showCompanionPanel);
   const setShow = useAppStore((s) => s.setShowCompanionPanel);
@@ -195,9 +421,13 @@ export function CompanionPanel() {
   const [missionRun, setMissionRun] = useState<CompanionMissionRunResult | null>(null);
   const [safetyEvents, setSafetyEvents] = useState<CompanionSafetyEvent[]>([]);
   const [safetyStats, setSafetyStats] = useState<CompanionSafetyLedgerStats | null>(null);
+  const [cards, setCards] = useState<CompanionCard[]>([]);
+  const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
+  const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
+  const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | null>(null);
+  const [busyAction, setBusyAction] = useState<'self' | 'camera' | 'evaluate' | 'radar' | 'impulses' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
 
@@ -212,7 +442,18 @@ export function CompanionPanel() {
     setError(null);
 
     const selected = modality === 'all' ? undefined : modality;
-    const [statusRes, recentRes, statsRes, impulsesRes, missionsRes, safetyRecentRes, safetyStatsRes] = await Promise.all([
+    const [
+      statusRes,
+      recentRes,
+      statsRes,
+      impulsesRes,
+      missionsRes,
+      safetyRecentRes,
+      safetyStatsRes,
+      cardsRes,
+      gatewayRes,
+      skillsRes,
+    ] = await Promise.all([
       window.electronAPI.companion.status(),
       window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
       window.electronAPI.companion.perceptStats(),
@@ -220,6 +461,9 @@ export function CompanionPanel() {
       window.electronAPI.companion.listMissions(),
       window.electronAPI.companion.recentSafetyEvents({ limit: 8 }),
       window.electronAPI.companion.safetyStats(),
+      window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
+      window.electronAPI.companion.gatewayProfile(),
+      window.electronAPI.companion.listSkillCandidates(),
     ]);
 
     setLoading(false);
@@ -231,6 +475,9 @@ export function CompanionPanel() {
       setMissions([]);
       setSafetyEvents([]);
       setSafetyStats(null);
+      setCards([]);
+      setGateway(null);
+      setSkillCandidates([]);
       setError(statusRes.error === 'NO_ACTIVE_PROJECT'
         ? 'Select a project before opening Buddy companion senses.'
         : statusRes.error ?? 'Failed to load companion status');
@@ -244,13 +491,19 @@ export function CompanionPanel() {
     setMissions(missionsRes.ok ? missionsRes.items : []);
     setSafetyEvents(safetyRecentRes.ok ? safetyRecentRes.items : []);
     setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
-    if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok) {
+    setCards(cardsRes.ok ? cardsRes.items : []);
+    setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
+    setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
+    if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok) {
       setError(recentRes.error
         ?? statsRes.error
         ?? impulsesRes.error
         ?? missionsRes.error
         ?? safetyRecentRes.error
         ?? safetyStatsRes.error
+        ?? cardsRes.error
+        ?? gatewayRes.error
+        ?? skillsRes.error
         ?? 'Failed to load companion state');
     }
   }, [modality]);
@@ -356,6 +609,80 @@ export function CompanionPanel() {
     setBusyAction(null);
     if (!res.ok) {
       setError(res.error ?? 'Mission update failed');
+      return;
+    }
+    await refresh();
+  };
+
+  const updateCard = async (cardId: string, status: CompanionCardStatus) => {
+    setBusyAction('card');
+    setError(null);
+    const res = await window.electronAPI.companion.updateCard({ cardId, status });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Card update failed');
+      return;
+    }
+    await refresh();
+  };
+
+  const updateGatewayChannel = async (
+    channel: string,
+    updates: {
+      enabled?: boolean;
+      mode?: CompanionGatewayMode;
+      allowOutbound?: boolean;
+      requireApprovalForTools?: boolean;
+    },
+  ) => {
+    setBusyAction('gateway');
+    setError(null);
+    const res = await window.electronAPI.companion.updateGatewayChannel({
+      channel,
+      ...updates,
+    });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Gateway update failed');
+      return;
+    }
+    setGateway(res.profile ?? null);
+    await refresh();
+  };
+
+  const curateSkills = async () => {
+    setBusyAction('skills');
+    setError(null);
+    const res = await window.electronAPI.companion.curateSkills({ recordSuggestions: true });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Skill curation failed');
+      return;
+    }
+    setSkillCuratorResult(res.result ?? null);
+    setSkillCandidates(res.result?.store.candidates ?? []);
+    await refresh();
+  };
+
+  const promoteSkill = async (candidateId: string) => {
+    setBusyAction('skill');
+    setError(null);
+    const res = await window.electronAPI.companion.promoteSkillCandidate({ candidateId });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Skill promotion failed');
+      return;
+    }
+    await refresh();
+  };
+
+  const dismissSkill = async (candidateId: string) => {
+    setBusyAction('skill');
+    setError(null);
+    const res = await window.electronAPI.companion.dismissSkillCandidate({ candidateId });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Skill dismissal failed');
       return;
     }
     await refresh();
@@ -507,6 +834,14 @@ export function CompanionPanel() {
               <Play className="h-4 w-4" />
               {busyAction === 'runNext' ? 'Preparing...' : 'Run next mission'}
             </button>
+            <button
+              disabled={busyAction !== null}
+              onClick={() => void curateSkills()}
+              className="inline-flex items-center gap-2 rounded border border-border px-3 py-2 text-xs font-medium text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <Sparkles className="h-4 w-4" />
+              {busyAction === 'skills' ? 'Curating...' : 'Curate routines'}
+            </button>
             {lastSnapshot?.path && (
               <button
                 onClick={() => void window.electronAPI.showItemInFolder(lastSnapshot.path!)}
@@ -562,6 +897,59 @@ export function CompanionPanel() {
                   </div>
                 )}
               </div>
+            </section>
+          )}
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Companion cards</h3>
+              <span className="text-[10px] text-text-muted">{cards.length} open</span>
+            </div>
+            {cards.length === 0 ? (
+              <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
+                No open companion cards.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {cards.map((card) => (
+                  <CompanionCardRow
+                    key={card.id}
+                    card={card}
+                    busy={busyAction !== null}
+                    onStatus={(cardId, nextStatus) => void updateCard(cardId, nextStatus)}
+                  />
+                ))}
+              </div>
+            )}
+          </section>
+
+          {gateway && (
+            <section className="space-y-3">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway</h3>
+                <span className="text-[10px] text-text-muted">
+                  {gateway.channels.filter((channel) => channel.enabled).length}/{gateway.channels.length} enabled
+                </span>
+              </div>
+              <div className="space-y-2">
+                {gateway.channels.slice(0, 8).map((channel) => (
+                  <GatewayChannelRow
+                    key={channel.channel}
+                    channel={channel}
+                    busy={busyAction !== null}
+                    onUpdate={(name, updates) => void updateGatewayChannel(name, updates)}
+                  />
+                ))}
+              </div>
+              {gateway.storePath && (
+                <button
+                  onClick={() => void window.electronAPI.showItemInFolder(gateway.storePath)}
+                  className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{gateway.storePath}</span>
+                </button>
+              )}
             </section>
           )}
 
@@ -748,6 +1136,37 @@ export function CompanionPanel() {
                       </div>
                     </div>
                   </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          <section className="space-y-3">
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Learned routines</h3>
+              <span className="text-[10px] text-text-muted">
+                {skillCandidates.length} candidate(s)
+              </span>
+            </div>
+            {skillCuratorResult && (
+              <div className="rounded border border-border bg-surface/35 p-3 text-xs text-text-secondary">
+                {skillCuratorResult.created} created · {skillCuratorResult.updated} updated · {skillCuratorResult.pruned} pruned
+              </div>
+            )}
+            {skillCandidates.length === 0 ? (
+              <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
+                Curate routines after missions or percepts exist.
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {skillCandidates.slice(0, 5).map((candidate) => (
+                  <SkillCandidateRow
+                    key={candidate.id}
+                    candidate={candidate}
+                    busy={busyAction !== null}
+                    onPromote={(candidateId) => void promoteSkill(candidateId)}
+                    onDismiss={(candidateId) => void dismissSkill(candidateId)}
+                  />
                 ))}
               </div>
             )}

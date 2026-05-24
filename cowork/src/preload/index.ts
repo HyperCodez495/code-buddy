@@ -38,6 +38,16 @@ import type {
   CompanionSafetyEventKind,
   CompanionSafetyEventRisk,
   CompanionSafetyLedgerStats,
+  CompanionCard,
+  CompanionCardKind,
+  CompanionCardStatus,
+  CompanionCardStore,
+  CompanionGatewayMode,
+  CompanionGatewayProfile,
+  CompanionSkillCandidate,
+  CompanionSkillCandidateStore,
+  CompanionSkillCuratorResult,
+  CompanionSkillPromotionResult,
   CameraSnapshotResult,
 } from '../renderer/types';
 import type { DiagnosticInput, DiagnosticResult } from '../renderer/types';
@@ -835,6 +845,53 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('companion.safety.recent', input),
     safetyStats: (projectId?: string): Promise<{ ok: boolean; stats?: CompanionSafetyLedgerStats; error?: string }> =>
       ipcRenderer.invoke('companion.safety.stats', projectId),
+    listCards: (input?: {
+      projectId?: string;
+      status?: CompanionCardStatus;
+      kind?: CompanionCardKind;
+      limit?: number;
+    }): Promise<{ ok: boolean; store?: CompanionCardStore; items: CompanionCard[]; error?: string }> =>
+      ipcRenderer.invoke('companion.cards.list', input),
+    updateCard: (input: {
+      projectId?: string;
+      cardId: string;
+      status: CompanionCardStatus;
+    }): Promise<{ ok: boolean; card?: CompanionCard; error?: string }> =>
+      ipcRenderer.invoke('companion.cards.update', input),
+    gatewayProfile: (projectId?: string): Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.profile', projectId),
+    updateGatewayChannel: (input: {
+      projectId?: string;
+      channel: string;
+      enabled?: boolean;
+      mode?: CompanionGatewayMode;
+      allowOutbound?: boolean;
+      requireApprovalForTools?: boolean;
+      recordPercepts?: boolean;
+      tags?: string[];
+    }): Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.update', input),
+    listSkillCandidates: (projectId?: string): Promise<{
+      ok: boolean;
+      store?: CompanionSkillCandidateStore;
+      items: CompanionSkillCandidate[];
+      error?: string;
+    }> => ipcRenderer.invoke('companion.skills.list', projectId),
+    curateSkills: (input?: {
+      projectId?: string;
+      recordSuggestions?: boolean;
+    }): Promise<{ ok: boolean; result?: CompanionSkillCuratorResult; error?: string }> =>
+      ipcRenderer.invoke('companion.skills.curate', input),
+    promoteSkillCandidate: (input: {
+      projectId?: string;
+      candidateId: string;
+    }): Promise<{ ok: boolean; result?: CompanionSkillPromotionResult; error?: string }> =>
+      ipcRenderer.invoke('companion.skills.promote', input),
+    dismissSkillCandidate: (input: {
+      projectId?: string;
+      candidateId: string;
+    }): Promise<{ ok: boolean; candidate?: CompanionSkillCandidate; error?: string }> =>
+      ipcRenderer.invoke('companion.skills.dismiss', input),
     cameraStatus: (): Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }> =>
       ipcRenderer.invoke('companion.camera.status'),
     cameraSnapshot: (input?: {
@@ -3001,6 +3058,46 @@ declare global {
           risk?: CompanionSafetyEventRisk;
         }) => Promise<{ ok: boolean; items: CompanionSafetyEvent[]; error?: string }>;
         safetyStats: (projectId?: string) => Promise<{ ok: boolean; stats?: CompanionSafetyLedgerStats; error?: string }>;
+        listCards: (input?: {
+          projectId?: string;
+          status?: CompanionCardStatus;
+          kind?: CompanionCardKind;
+          limit?: number;
+        }) => Promise<{ ok: boolean; store?: CompanionCardStore; items: CompanionCard[]; error?: string }>;
+        updateCard: (input: {
+          projectId?: string;
+          cardId: string;
+          status: CompanionCardStatus;
+        }) => Promise<{ ok: boolean; card?: CompanionCard; error?: string }>;
+        gatewayProfile: (projectId?: string) => Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }>;
+        updateGatewayChannel: (input: {
+          projectId?: string;
+          channel: string;
+          enabled?: boolean;
+          mode?: CompanionGatewayMode;
+          allowOutbound?: boolean;
+          requireApprovalForTools?: boolean;
+          recordPercepts?: boolean;
+          tags?: string[];
+        }) => Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }>;
+        listSkillCandidates: (projectId?: string) => Promise<{
+          ok: boolean;
+          store?: CompanionSkillCandidateStore;
+          items: CompanionSkillCandidate[];
+          error?: string;
+        }>;
+        curateSkills: (input?: {
+          projectId?: string;
+          recordSuggestions?: boolean;
+        }) => Promise<{ ok: boolean; result?: CompanionSkillCuratorResult; error?: string }>;
+        promoteSkillCandidate: (input: {
+          projectId?: string;
+          candidateId: string;
+        }) => Promise<{ ok: boolean; result?: CompanionSkillPromotionResult; error?: string }>;
+        dismissSkillCandidate: (input: {
+          projectId?: string;
+          candidateId: string;
+        }) => Promise<{ ok: boolean; candidate?: CompanionSkillCandidate; error?: string }>;
         cameraStatus: () => Promise<{ ok: boolean; status?: Record<string, unknown>; error?: string }>;
         cameraSnapshot: (input?: {
           outputPath?: string;

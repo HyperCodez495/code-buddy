@@ -88,11 +88,26 @@ vi.mock('node:fs', async () => {
   };
 });
 
-import { VoiceBridge } from '../src/main/voice/voice-bridge';
+import { __test, VoiceBridge } from '../src/main/voice/voice-bridge';
+
+const { missingPythonMessage, resolveVoicePythonExecutable } = __test;
 
 describe('VoiceBridge protocol', () => {
   beforeEach(() => {
     lastSpawned = null;
+    delete process.env.COWORK_VOICE_PYTHON;
+    delete process.env.COWORK_VOICE_VENV;
+    delete process.env.COWORK_VOICE_ROOT;
+  });
+
+  it('honors an explicit Windows-friendly python executable override', () => {
+    process.env.COWORK_VOICE_PYTHON = 'C:\\voice\\.venv\\Scripts\\python.exe';
+    expect(resolveVoicePythonExecutable()).toBe('C:\\voice\\.venv\\Scripts\\python.exe');
+  });
+
+  it('explains how to configure the voice python runtime when missing', () => {
+    expect(missingPythonMessage('C:\\missing\\python.exe')).toContain('COWORK_VOICE_PYTHON');
+    expect(missingPythonMessage('C:\\missing\\python.exe')).toContain('COWORK_VOICE_VENV');
   });
 
   it('signals readiness on `boot:ok` and resolves a transcription request', async () => {

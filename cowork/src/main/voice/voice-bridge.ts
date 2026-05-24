@@ -33,8 +33,56 @@ interface WorkerResponse {
   device?: string;
 }
 
-const DEFAULT_VENV = '/home/patrice/DEV/ai-stack/voice/.venv';
 const WORKER_SCRIPT_BUNDLED = 'transcribe-worker.py';
+
+function voiceStackRoots(): string[] {
+  const explicit = process.env.COWORK_VOICE_ROOT;
+  return [
+    explicit,
+    path.join(os.homedir(), 'DEV', 'ai-stack', 'voice'),
+    path.join(os.homedir(), 'ai-stack', 'voice'),
+    path.join(os.homedir(), '.codebuddy', 'voice'),
+  ].filter((item): item is string => Boolean(item));
+}
+
+function pythonCandidatesForVenv(venv: string): string[] {
+  return process.platform === 'win32'
+    ? [
+        path.join(venv, 'Scripts', 'python.exe'),
+        path.join(venv, 'Scripts', 'python'),
+        path.join(venv, 'bin', 'python.exe'),
+        path.join(venv, 'bin', 'python'),
+      ]
+    : [
+        path.join(venv, 'bin', 'python'),
+        path.join(venv, 'bin', 'python3'),
+        path.join(venv, 'Scripts', 'python.exe'),
+      ];
+}
+
+function resolveVoicePythonExecutable(): string {
+  if (process.env.COWORK_VOICE_PYTHON) return process.env.COWORK_VOICE_PYTHON;
+
+  const venvs = [
+    process.env.COWORK_VOICE_VENV,
+    ...voiceStackRoots().map(root => path.join(root, '.venv')),
+  ].filter((item): item is string => Boolean(item));
+
+  for (const venv of venvs) {
+    const python = pythonCandidatesForVenv(venv).find(candidate => existsSync(candidate));
+    if (python) return python;
+  }
+
+  const fallbackVenv = venvs[0] ?? path.join(os.homedir(), '.codebuddy', 'voice', '.venv');
+  return pythonCandidatesForVenv(fallbackVenv)[0];
+}
+
+function missingPythonMessage(python: string): string {
+  return [
+    `voice python not found at ${python}`,
+    'Set COWORK_VOICE_PYTHON to python.exe, or COWORK_VOICE_VENV to a faster-whisper virtualenv.',
+  ].join('. ');
+}
 
 /**
  * Resolve the path of `transcribe-worker.py` regardless of whether
@@ -162,8 +210,10 @@ export class VoiceBridge {
       this.bootResolve = resolve;
       this.bootReject = reject;
       try {
-        const venv = process.env.COWORK_VOICE_VENV ?? DEFAULT_VENV;
-        const python = path.join(venv, 'bin', 'python');
+        const python = resolveVoicePythonExecutable();
+        if (!existsSync(python)) {
+          throw new Error(missingPythonMessage(python));
+        }
         const script = resolveWorkerScript();
         log(`[VoiceBridge] spawning worker ${python} ${script}`);
         this.worker = spawn(python, ['-u', script], {
@@ -201,6 +251,8 @@ export class VoiceBridge {
       } catch (err) {
         const message = err instanceof Error ? err.message : String(err);
         this.bootError = message;
+        this.bootReject = null;
+        this.bootResolve = null;
         reject(new Error(message));
       }
     }).finally(() => {
@@ -255,3 +307,5 @@ export class VoiceBridge {
     }
   }
 }
+
+export const __test = { resolveVoicePythonExecutable, missingPythonMessage };

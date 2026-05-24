@@ -328,6 +328,120 @@ export interface CameraSnapshotResult {
   perceptPath?: string;
 }
 
+export type CompanionCardKind =
+  | 'status'
+  | 'approval'
+  | 'camera'
+  | 'checklist'
+  | 'mission'
+  | 'timer'
+  | 'weather'
+  | 'tool';
+export type CompanionCardPriority = 'low' | 'medium' | 'high';
+export type CompanionCardStatus = 'open' | 'resolved' | 'dismissed';
+
+export interface CompanionCardAction {
+  id: string;
+  label: string;
+  command?: string;
+  style?: 'primary' | 'secondary' | 'danger';
+}
+
+export interface CompanionCard {
+  id: string;
+  kind: CompanionCardKind;
+  status: CompanionCardStatus;
+  priority: CompanionCardPriority;
+  title: string;
+  body: string;
+  actions: CompanionCardAction[];
+  payload: Record<string, unknown>;
+  tags: string[];
+  createdAt: string;
+  updatedAt: string;
+  expiresAt?: string;
+  resolvedAt?: string;
+}
+
+export interface CompanionCardStore {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  cards: CompanionCard[];
+}
+
+export type CompanionGatewayMode = 'observe' | 'assist' | 'act';
+
+export interface CompanionGatewayChannelConfig {
+  channel: string;
+  enabled: boolean;
+  mode: CompanionGatewayMode;
+  allowOutbound: boolean;
+  requireApprovalForTools: boolean;
+  recordPercepts: boolean;
+  tags: string[];
+}
+
+export interface CompanionGatewayProfile {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  defaultMode: CompanionGatewayMode;
+  channels: CompanionGatewayChannelConfig[];
+}
+
+export type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
+
+export interface CompanionSkillEvidence {
+  kind: 'mission' | 'percept';
+  id: string;
+  summary: string;
+  timestamp?: string;
+  weight: number;
+}
+
+export interface CompanionSkillCandidate {
+  id: string;
+  title: string;
+  status: CompanionSkillCandidateStatus;
+  score: number;
+  trigger: string;
+  routine: string[];
+  command?: string;
+  sourceTags: string[];
+  evidence: CompanionSkillEvidence[];
+  createdAt: string;
+  updatedAt: string;
+  promotedAt?: string;
+  artifactPath?: string;
+}
+
+export interface CompanionSkillCandidateStore {
+  schemaVersion: 1;
+  cwd: string;
+  storePath: string;
+  updatedAt: string;
+  candidates: CompanionSkillCandidate[];
+}
+
+export interface CompanionSkillCuratorResult {
+  store: CompanionSkillCandidateStore;
+  created: number;
+  updated: number;
+  unchanged: number;
+  pruned: number;
+  perceptId?: string;
+}
+
+export interface CompanionSkillPromotionResult {
+  candidate: CompanionSkillCandidate;
+  artifactPath: string;
+  perceptId?: string;
+  safetyEventId?: string;
+}
+
 export interface MountedPath {
   virtual: string;
   real: string;

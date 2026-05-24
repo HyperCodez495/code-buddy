@@ -16,7 +16,13 @@ vi.mock('electron', () => ({
 
 import { __test, TTSBridge } from '../src/main/voice/tts-bridge';
 
-const { sanitizeForSpeech, readWavSampleRate } = __test;
+const {
+  missingPiperMessage,
+  readWavSampleRate,
+  resolvePiperBinary,
+  resolvePiperVoice,
+  sanitizeForSpeech,
+} = __test;
 
 describe('TTSBridge — text sanitisation', () => {
   it('removes triple-backtick code fences (replaced with placeholder)', () => {
@@ -96,6 +102,22 @@ describe('TTSBridge — WAV header parsing', () => {
     const buf = makeWavHeader(22050);
     buf.write('AVI ', 8, 'ascii');
     expect(readWavSampleRate(buf)).toBeNull();
+  });
+});
+
+describe('TTSBridge — portable runtime resolution', () => {
+  it('honors explicit binary and voice overrides', () => {
+    process.env.COWORK_PIPER_BIN = 'C:\\voice\\piper.exe';
+    process.env.COWORK_PIPER_VOICE = 'C:\\voice\\voices\\fr.onnx';
+    expect(resolvePiperBinary()).toBe('C:\\voice\\piper.exe');
+    expect(resolvePiperVoice()).toBe('C:\\voice\\voices\\fr.onnx');
+    delete process.env.COWORK_PIPER_BIN;
+    delete process.env.COWORK_PIPER_VOICE;
+  });
+
+  it('reports the env var that fixes a missing Piper runtime', () => {
+    expect(missingPiperMessage('binary', 'C:\\missing\\piper.exe')).toContain('COWORK_PIPER_BIN');
+    expect(missingPiperMessage('voice', 'C:\\missing\\voice.onnx')).toContain('COWORK_PIPER_VOICE');
   });
 });
 

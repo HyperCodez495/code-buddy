@@ -20,10 +20,61 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { log, logWarn } from '../utils/logger';
 
-const DEFAULT_PIPER =
-  '/home/patrice/DEV/ai-stack/voice/piper/piper/piper';
-const DEFAULT_VOICE =
-  '/home/patrice/DEV/ai-stack/voice/voices/fr_FR-siwis-medium.onnx';
+const DEFAULT_VOICE_NAME = 'fr_FR-siwis-medium.onnx';
+
+function voiceStackRoots(): string[] {
+  const explicit = process.env.COWORK_VOICE_ROOT;
+  return [
+    explicit,
+    path.join(os.homedir(), 'DEV', 'ai-stack', 'voice'),
+    path.join(os.homedir(), 'ai-stack', 'voice'),
+    path.join(os.homedir(), '.codebuddy', 'voice'),
+  ].filter((item): item is string => Boolean(item));
+}
+
+function executableNames(base: string): string[] {
+  return process.platform === 'win32'
+    ? [`${base}.exe`, `${base}.cmd`, `${base}.bat`, base]
+    : [base];
+}
+
+function findOnPath(base: string): string | null {
+  const pathValue = process.env.PATH || '';
+  for (const dir of pathValue.split(path.delimiter).filter(Boolean)) {
+    for (const name of executableNames(base)) {
+      const candidate = path.join(dir, name);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
+function resolvePiperBinary(): string {
+  if (process.env.COWORK_PIPER_BIN) return process.env.COWORK_PIPER_BIN;
+  const candidates = [
+    ...voiceStackRoots().flatMap(root => [
+      path.join(root, 'piper', 'piper', process.platform === 'win32' ? 'piper.exe' : 'piper'),
+      path.join(root, 'piper', process.platform === 'win32' ? 'piper.exe' : 'piper'),
+    ]),
+    findOnPath('piper'),
+  ].filter((item): item is string => Boolean(item));
+  return candidates.find(candidate => existsSync(candidate))
+    ?? candidates[0]
+    ?? (process.platform === 'win32' ? 'piper.exe' : 'piper');
+}
+
+function resolvePiperVoice(): string {
+  if (process.env.COWORK_PIPER_VOICE) return process.env.COWORK_PIPER_VOICE;
+  const candidates = voiceStackRoots().map(root => path.join(root, 'voices', DEFAULT_VOICE_NAME));
+  return candidates.find(candidate => existsSync(candidate))
+    ?? candidates[0]
+    ?? path.join(os.homedir(), '.codebuddy', 'voice', 'voices', DEFAULT_VOICE_NAME);
+}
+
+function missingPiperMessage(kind: 'binary' | 'voice', filePath: string): string {
+  const envName = kind === 'binary' ? 'COWORK_PIPER_BIN' : 'COWORK_PIPER_VOICE';
+  return `${kind === 'binary' ? 'piper binary' : 'piper voice model'} not found at ${filePath}. Set ${envName} or COWORK_VOICE_ROOT to your local voice stack.`;
+}
 
 export interface TTSOptions {
   /** Override the Piper binary path. */
@@ -50,13 +101,13 @@ export class TTSBridge {
   private resolvedVoice: string;
 
   constructor(opts?: { binary?: string; voice?: string }) {
-    this.resolvedBinary = opts?.binary ?? process.env.COWORK_PIPER_BIN ?? DEFAULT_PIPER;
-    this.resolvedVoice = opts?.voice ?? process.env.COWORK_PIPER_VOICE ?? DEFAULT_VOICE;
+    this.resolvedBinary = opts?.binary ?? resolvePiperBinary();
+    this.resolvedVoice = opts?.voice ?? resolvePiperVoice();
     if (!existsSync(this.resolvedBinary)) {
-      this.bootError = `piper binary not found at ${this.resolvedBinary}`;
+      this.bootError = missingPiperMessage('binary', this.resolvedBinary);
       logWarn('[TTSBridge]', this.bootError);
     } else if (!existsSync(this.resolvedVoice)) {
-      this.bootError = `piper voice model not found at ${this.resolvedVoice}`;
+      this.bootError = missingPiperMessage('voice', this.resolvedVoice);
       logWarn('[TTSBridge]', this.bootError);
     } else {
       log(
@@ -206,4 +257,10 @@ function sanitizeForSpeech(text: string): string {
     .trim();
 }
 
-export const __test = { sanitizeForSpeech, readWavSampleRate };
+export const __test = {
+  sanitizeForSpeech,
+  readWavSampleRate,
+  resolvePiperBinary,
+  resolvePiperVoice,
+  missingPiperMessage,
+};
