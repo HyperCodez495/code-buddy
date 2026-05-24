@@ -6,6 +6,7 @@
  */
 
 import type { Command } from 'commander';
+import type { ChannelType, ContentType } from '../../channels/core.js';
 
 // ============================================================================
 // Heartbeat commands
@@ -604,6 +605,86 @@ export function registerCompanionCommands(program: Command): void {
       const { dismissCompanionSkillCandidate } = await import('../../companion/skill-curator.js');
       const candidate = await dismissCompanionSkillCandidate(id);
       console.log(`Companion skill candidate dismissed: ${candidate.id}`);
+    });
+
+  const gateway = companion
+    .command('gateway')
+    .description('Bridge external chat channels into the companion percept and safety model');
+
+  gateway
+    .command('profile')
+    .description('Show the companion gateway profile')
+    .action(async () => {
+      const {
+        formatCompanionGatewayProfile,
+        readCompanionGatewayProfile,
+      } = await import('../../companion/gateway.js');
+      console.log(formatCompanionGatewayProfile(await readCompanionGatewayProfile()));
+    });
+
+  gateway
+    .command('enable <channel>')
+    .description('Enable a companion gateway channel')
+    .option('--mode <mode>', 'Gateway mode: observe, assist, act', 'observe')
+    .option('--allow-outbound', 'Allow outbound messages for this channel')
+    .option('--no-approval', 'Do not require approval for tool-like actions from this channel')
+    .action(async (channel: string, opts: { mode: 'observe' | 'assist' | 'act'; allowOutbound?: boolean; approval?: boolean }) => {
+      const {
+        formatCompanionGatewayProfile,
+        updateCompanionGatewayChannel,
+      } = await import('../../companion/gateway.js');
+      const profile = await updateCompanionGatewayChannel(channel as ChannelType, {
+        enabled: true,
+        mode: opts.mode,
+        allowOutbound: Boolean(opts.allowOutbound),
+        requireApprovalForTools: opts.approval !== false,
+      });
+      console.log(formatCompanionGatewayProfile(profile));
+    });
+
+  gateway
+    .command('disable <channel>')
+    .description('Disable a companion gateway channel')
+    .action(async (channel: string) => {
+      const {
+        formatCompanionGatewayProfile,
+        updateCompanionGatewayChannel,
+      } = await import('../../companion/gateway.js');
+      const profile = await updateCompanionGatewayChannel(channel as ChannelType, {
+        enabled: false,
+      });
+      console.log(formatCompanionGatewayProfile(profile));
+    });
+
+  gateway
+    .command('ingest <channel> <text>')
+    .description('Record one external-channel message as a companion percept')
+    .option('--sender <id>', 'Sender id', 'manual')
+    .option('--sender-name <name>', 'Sender display name')
+    .option('--thread <id>', 'External thread id')
+    .option('--message-id <id>', 'External message id')
+    .option('--content-type <type>', 'Content type: text, image, audio, voice, file', 'text')
+    .action(async (channel: string, text: string, opts: {
+      sender: string;
+      senderName?: string;
+      thread?: string;
+      messageId?: string;
+      contentType: string;
+    }) => {
+      const {
+        formatCompanionGatewayMessageResult,
+        recordCompanionGatewayMessage,
+      } = await import('../../companion/gateway.js');
+      const result = await recordCompanionGatewayMessage({
+        channel: channel as ChannelType,
+        text,
+        senderId: opts.sender,
+        senderName: opts.senderName,
+        threadId: opts.thread,
+        messageId: opts.messageId,
+        contentType: opts.contentType as ContentType,
+      });
+      console.log(formatCompanionGatewayMessageResult(result));
     });
 
   const safety = companion

@@ -118,6 +118,7 @@ function buildCurrentStrengths(evaluation: CompanionSelfEvaluation): string[] {
     'Cowork companion cockpit with local status, percept filters, camera snapshots, and self-evaluation.',
     'Project-scoped sensory journal for vision, hearing, screen, self-state, memory, tool events, and suggestions.',
     'Companion skill curator can mine repeated missions/percepts into reviewed local routines.',
+    'Companion gateway profile can map external channel messages into percepts and safety events.',
     'Fleet, slash commands, CLI commands, MCP/plugin surface, and safety/permission plumbing already exist in the host system.',
   ];
 
@@ -136,10 +137,11 @@ function buildGaps(evaluation: CompanionSelfEvaluation): CompanionCompetitiveGap
     {
       id: 'companion-cross-channel-gateway',
       dimension: 'channels',
-      severity: 'gap',
-      summary: 'Buddy has Fleet/server foundations, but no dedicated always-on companion gateway across chat apps.',
-      recommendation: 'Create a companion gateway profile that maps Telegram/Discord/Signal/WhatsApp-style messages into the same project-scoped percept and approval model.',
+      severity: 'parity',
+      summary: 'Buddy now has a companion gateway profile and local ingestion path for external chat messages.',
+      recommendation: 'Wire live Telegram/Discord/Signal/WhatsApp transports into the companion gateway profile.',
       competitorRefs: ['hermes-agent', 'openclaw', 'uni'],
+      command: 'buddy companion gateway profile',
       tags: ['channels', 'gateway', 'always-on'],
     },
     {
