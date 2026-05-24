@@ -69,13 +69,13 @@ describe('server startup', () => {
     try {
       const address = started.server.address() as AddressInfo;
       const response = await fetch(`http://127.0.0.1:${address.port}/api/health`);
-      const body = await response.json() as { checks: { database: string } };
+      const body = (await response.json()) as { checks: { database: string } };
 
       expect(response.status).toBe(200);
       expect(body.checks.database).toBe('ok');
     } finally {
       await new Promise<void>((resolve, reject) => {
-        started.server.close((error) => error ? reject(error) : resolve());
+        started.server.close((error) => (error ? reject(error) : resolve()));
       });
     }
   });
@@ -99,12 +99,15 @@ describe('server startup', () => {
       const baseUrl = `http://127.0.0.1:${address.port}`;
 
       expect(infoSpy).toHaveBeenCalledWith(`API Server started on ${baseUrl}`);
-      await vi.waitFor(() => {
-        expect(infoSpy).toHaveBeenCalledWith(
-          '[channel-a2a-bridge] active',
-          expect.objectContaining({ hubBaseUrl: baseUrl })
-        );
-      }, { timeout: 10_000 });
+      await vi.waitFor(
+        () => {
+          expect(infoSpy).toHaveBeenCalledWith(
+            '[channel-a2a-bridge] active',
+            expect.objectContaining({ hubBaseUrl: baseUrl })
+          );
+        },
+        { timeout: 10_000 }
+      );
     } finally {
       await stopServer(started.server);
       infoSpy.mockRestore();
@@ -130,8 +133,12 @@ describe('server startup', () => {
     };
 
     expect(getServerBaseUrl(fakeServer, { ...baseConfig, host: '::1' })).toBe('http://[::1]:4567');
-    expect(getServerBaseUrl(fakeServer, { ...baseConfig, host: '::' })).toBe('http://127.0.0.1:4567');
-    expect(getServerBaseUrl(fakeServer, { ...baseConfig, host: '0.0.0.0' })).toBe('http://127.0.0.1:4567');
+    expect(getServerBaseUrl(fakeServer, { ...baseConfig, host: '::' })).toBe(
+      'http://127.0.0.1:4567'
+    );
+    expect(getServerBaseUrl(fakeServer, { ...baseConfig, host: '0.0.0.0' })).toBe(
+      'http://127.0.0.1:4567'
+    );
   });
 
   it('does not enforce CSRF when authentication is disabled', async () => {
@@ -157,7 +164,7 @@ describe('server startup', () => {
       expect(response.status).toBe(404);
     } finally {
       await new Promise<void>((resolve, reject) => {
-        started.server.close((error) => error ? reject(error) : resolve());
+        started.server.close((error) => (error ? reject(error) : resolve()));
       });
     }
   });
@@ -192,7 +199,7 @@ describe('server startup', () => {
       expect(chatResponse.status).toBe(401);
     } finally {
       await new Promise<void>((resolve, reject) => {
-        started.server.close((error) => error ? reject(error) : resolve());
+        started.server.close((error) => (error ? reject(error) : resolve()));
       });
     }
   });
@@ -218,7 +225,7 @@ describe('server startup', () => {
       const baseUrl = `http://127.0.0.1:${address.port}`;
 
       const apiReadyResponse = await fetch(`${baseUrl}/api/health/ready`);
-      const apiReadyBody = await apiReadyResponse.json() as {
+      const apiReadyBody = (await apiReadyResponse.json()) as {
         ready: boolean;
         checks: {
           provider: { ready: boolean };
@@ -233,7 +240,7 @@ describe('server startup', () => {
       expect(apiReadyBody.checks.memory.ready).toBe(true);
 
       const readyzResponse = await fetch(`${baseUrl}/readyz`);
-      const readyzBody = await readyzResponse.json() as {
+      const readyzBody = (await readyzResponse.json()) as {
         ready: boolean;
         checks: { provider: boolean; database: boolean; memory: boolean };
       };
@@ -244,7 +251,7 @@ describe('server startup', () => {
       expect(readyzBody.checks.memory).toBe(true);
 
       const modelsResponse = await fetch(`${baseUrl}/api/chat/models`);
-      const modelsBody = await modelsResponse.json() as {
+      const modelsBody = (await modelsResponse.json()) as {
         data: Array<{ id: string; owned_by: string }>;
       };
       expect(modelsResponse.status).toBe(200);
@@ -252,9 +259,22 @@ describe('server startup', () => {
         id: 'gpt-test-server',
         owned_by: 'openai',
       });
+
+      const openAiModelsResponse = await fetch(`${baseUrl}/v1/models`);
+      const openAiModelsBody = (await openAiModelsResponse.json()) as {
+        object: string;
+        data: Array<{ id: string; object: string; owned_by: string }>;
+      };
+      expect(openAiModelsResponse.status).toBe(200);
+      expect(openAiModelsBody.object).toBe('list');
+      expect(openAiModelsBody.data[0]).toMatchObject({
+        id: 'gpt-test-server',
+        object: 'model',
+        owned_by: 'openai',
+      });
     } finally {
       await new Promise<void>((resolve, reject) => {
-        started.server.close((error) => error ? reject(error) : resolve());
+        started.server.close((error) => (error ? reject(error) : resolve()));
       });
     }
   });

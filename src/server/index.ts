@@ -20,10 +20,13 @@ const _require = createRequire(import.meta.url);
 let SERVER_VERSION = '0.0.0';
 try {
   SERVER_VERSION = _require('../../package.json').version || SERVER_VERSION;
-} catch { /* ignore */ }
+} catch {
+  /* ignore */
+}
 import type { ServerConfig } from './types.js';
 import {
   createAuthMiddleware,
+  requireScope,
   createRateLimitMiddleware,
   createLoggingMiddleware,
   createSecurityHeadersMiddleware,
@@ -31,13 +34,25 @@ import {
   errorHandler,
   notFoundHandler,
 } from './middleware/index.js';
-import { chatRoutes, toolsRoutes, sessionsRoutes, memoryRoutes, healthRoutes, metricsRoutes, createWorkflowApiRouter, createA2AProtocolRoutes, createACPRoutes, createK8sHealthAliases, createDashboardRouter, createCloudTaskRoutes, createWebhookRoutes, mobileRoutes } from './routes/index.js';
+import {
+  chatRoutes,
+  toolsRoutes,
+  sessionsRoutes,
+  memoryRoutes,
+  healthRoutes,
+  metricsRoutes,
+  createWorkflowApiRouter,
+  createA2AProtocolRoutes,
+  createACPRoutes,
+  createK8sHealthAliases,
+  createDashboardRouter,
+  createCloudTaskRoutes,
+  createWebhookRoutes,
+  mobileRoutes,
+} from './routes/index.js';
 import { setupWebSocket, closeAllConnections, getConnectionStats } from './websocket/index.js';
 import { startFleetHeartbeat, stopFleetHeartbeat } from '../fleet/heartbeat-broadcaster.js';
-import {
-  startAutonomousTick,
-  stopAutonomousTick,
-} from '../fleet/autonomous-tick-broadcaster.js';
+import { startAutonomousTick, stopAutonomousTick } from '../fleet/autonomous-tick-broadcaster.js';
 import { startApiHeartbeatMonitor, stopApiHeartbeatMonitor } from './heartbeat-monitor.js';
 import { wireCompactionBridge, unwireCompactionBridge } from '../fleet/compaction-bridge.js';
 import { wirePeerChatBridge, unwirePeerChatBridge } from '../fleet/peer-chat-bridge.js';
@@ -49,6 +64,7 @@ import { CSRFProtection } from '../security/csrf-protection.js';
 import { initializeDatabase } from '../database/database-manager.js';
 import type { InboundMessage } from '../channels/index.js';
 import { SERVER_CONFIG, TIMEOUT_CONFIG, LIMIT_CONFIG } from '../config/constants.js';
+import { listServerModels } from './agent-adapter.js';
 
 // Lazy import to avoid circular dependency: channels/index.ts re-exports
 // TelegramChannel/DiscordChannel which import BaseChannel from channels/index.ts
@@ -75,14 +91,14 @@ function getJwtSecret(): string {
   if (process.env.NODE_ENV === 'production') {
     throw new Error(
       'SECURITY ERROR: JWT_SECRET environment variable must be set in production. ' +
-      'Generate one with: node -e "console.log(require(\'crypto\').randomBytes(64).toString(\'hex\'))"'
+        "Generate one with: node -e \"console.log(require('crypto').randomBytes(64).toString('hex'))\""
     );
   }
 
   // Development only: generate ephemeral secret (warning: tokens won't persist across restarts)
   logger.warn(
     'No JWT_SECRET set. Using ephemeral secret for development. ' +
-    'Set JWT_SECRET environment variable for production use.'
+      'Set JWT_SECRET environment variable for production use.'
   );
   return crypto.randomBytes(64).toString('hex');
 }
@@ -90,12 +106,9 @@ function getJwtSecret(): string {
 export function getServerBaseUrl(server: HttpServer, config: ServerConfig): string {
   const address = server.address();
   const port = typeof address === 'object' && address ? address.port : config.port;
-  const publicHost = config.host === '0.0.0.0' || config.host === '::'
-    ? '127.0.0.1'
-    : config.host;
-  const host = publicHost.includes(':') && !publicHost.startsWith('[')
-    ? `[${publicHost}]`
-    : publicHost;
+  const publicHost = config.host === '0.0.0.0' || config.host === '::' ? '127.0.0.1' : config.host;
+  const host =
+    publicHost.includes(':') && !publicHost.startsWith('[') ? `[${publicHost}]` : publicHost;
   return `http://${host}:${port}`;
 }
 
@@ -106,11 +119,18 @@ const DEFAULT_CONFIG: ServerConfig = {
   cors: true,
   corsOrigins: process.env.CORS_ORIGINS?.split(',') || ['*'],
   rateLimit: true,
-  rateLimitMax: parseInt(process.env.RATE_LIMIT_MAX || String(LIMIT_CONFIG.DEFAULT_RATE_LIMIT_MAX), 10),
-  rateLimitWindow: parseInt(process.env.RATE_LIMIT_WINDOW || String(TIMEOUT_CONFIG.DEFAULT_RATE_LIMIT_WINDOW), 10),
-  authEnabled: process.env.NODE_ENV === 'production'
-    ? true  // Auth is always enabled in production (fail-closed)
-    : process.env.AUTH_ENABLED !== 'false',
+  rateLimitMax: parseInt(
+    process.env.RATE_LIMIT_MAX || String(LIMIT_CONFIG.DEFAULT_RATE_LIMIT_MAX),
+    10
+  ),
+  rateLimitWindow: parseInt(
+    process.env.RATE_LIMIT_WINDOW || String(TIMEOUT_CONFIG.DEFAULT_RATE_LIMIT_WINDOW),
+    10
+  ),
+  authEnabled:
+    process.env.NODE_ENV === 'production'
+      ? true // Auth is always enabled in production (fail-closed)
+      : process.env.AUTH_ENABLED !== 'false',
   jwtSecret: getJwtSecret(),
   jwtExpiration: process.env.JWT_EXPIRATION || SERVER_CONFIG.DEFAULT_JWT_EXPIRATION,
   websocketEnabled: process.env.WS_ENABLED !== 'false',
@@ -150,12 +170,20 @@ function createApp(config: ServerConfig): Application {
   // CORS
   if (config.cors) {
     const isWildcard = config.corsOrigins?.includes('*');
-    app.use(cors({
-      origin: isWildcard ? true : config.corsOrigins,
-      credentials: !isWildcard,
-      methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
-      allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Request-ID', 'X-CSRF-Token'],
-    }));
+    app.use(
+      cors({
+        origin: isWildcard ? true : config.corsOrigins,
+        credentials: !isWildcard,
+        methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+        allowedHeaders: [
+          'Content-Type',
+          'Authorization',
+          'X-API-Key',
+          'X-Request-ID',
+          'X-CSRF-Token',
+        ],
+      })
+    );
   }
 
   // Body parsing
@@ -218,6 +246,12 @@ function createApp(config: ServerConfig): Application {
 
   // OpenAI-compatible alias
   app.use('/v1/chat', chatRoutes);
+  app.get('/v1/models', requireScope('chat'), (_req, res) => {
+    res.json({
+      object: 'list',
+      data: listServerModels(),
+    });
+  });
 
   // Peer routing stats endpoint
   app.get('/api/routing/stats', async (_req, res) => {
@@ -605,8 +639,12 @@ function createApp(config: ServerConfig): Application {
         res.status(400).json({ error: 'Request body must be a JSON object' });
         return;
       }
-      if (!profile.id || typeof profile.id !== 'string' ||
-          !profile.provider || typeof profile.provider !== 'string') {
+      if (
+        !profile.id ||
+        typeof profile.id !== 'string' ||
+        !profile.provider ||
+        typeof profile.provider !== 'string'
+      ) {
         res.status(400).json({ error: 'id (string) and provider (string) are required' });
         return;
       }
@@ -641,7 +679,8 @@ function createApp(config: ServerConfig): Application {
 
   app.post('/api/auth-profiles/reset', async (_req, res) => {
     try {
-      const { resetAuthProfileManager, getAuthProfileManager } = await import('../auth/profile-manager.js');
+      const { resetAuthProfileManager, getAuthProfileManager } =
+        await import('../auth/profile-manager.js');
       resetAuthProfileManager();
       const mgr = getAuthProfileManager();
       res.json({ success: true, profiles: mgr.getStatus() });
@@ -822,19 +861,25 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
     consoleExport: process.env.METRICS_CONSOLE === 'true',
     fileExport: process.env.METRICS_FILE === 'true',
     filePath: process.env.METRICS_PATH,
-    exportInterval: parseInt(process.env.METRICS_INTERVAL || String(TIMEOUT_CONFIG.DEFAULT_METRICS_INTERVAL), 10),
+    exportInterval: parseInt(
+      process.env.METRICS_INTERVAL || String(TIMEOUT_CONFIG.DEFAULT_METRICS_INTERVAL),
+      10
+    ),
   });
 
   // Initialize Prometheus exporter for advanced analytics metrics
   try {
-    const { getPrometheusExporter, createMetricsCollector } = await import('../analytics/prometheus-exporter.js');
+    const { getPrometheusExporter, createMetricsCollector } =
+      await import('../analytics/prometheus-exporter.js');
     const promExporter = getPrometheusExporter({
       prefix: 'codebuddy_',
       defaultLabels: { service: 'codebuddy-server' },
     });
     createMetricsCollector(promExporter);
     logger.debug('Prometheus exporter initialized');
-  } catch { /* prometheus exporter optional */ }
+  } catch {
+    /* prometheus exporter optional */
+  }
 
   const app = createApp(config);
   const server = createServer(app);
@@ -842,15 +887,16 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
   const startChannelBridge = async (baseUrl: string): Promise<void> => {
     try {
       const { getChannelManager } = await import('../channels/index.js');
-      const { loadChannelConfig, instantiateChannel } = await import(
-        '../commands/handlers/channel-handlers.js'
-      );
+      const { loadChannelConfig, instantiateChannel } =
+        await import('../commands/handlers/channel-handlers.js');
       const { startChannelA2ABridge } = await import('./channel-a2a-bridge.js');
 
       const manager = getChannelManager();
       const cfg = loadChannelConfig();
       if (!cfg || cfg.channels.length === 0) {
-        logger.info('[channel-a2a-bridge] no .codebuddy/channels.json found, skipping channel boot');
+        logger.info(
+          '[channel-a2a-bridge] no .codebuddy/channels.json found, skipping channel boot'
+        );
       } else {
         for (const chCfg of cfg.channels) {
           if (!chCfg.enabled) continue;
@@ -877,7 +923,8 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
         defaultAgent: process.env.A2A_BRIDGE_DEFAULT_AGENT,
       });
       // Stash on the http server for graceful shutdown.
-      (server as unknown as { _channelA2ABridge?: { stop: () => void } })._channelA2ABridge = bridge;
+      (server as unknown as { _channelA2ABridge?: { stop: () => void } })._channelA2ABridge =
+        bridge;
     } catch (err) {
       logger.warn('[channel-a2a-bridge] init failed', {
         error: err instanceof Error ? err.message : String(err),
@@ -924,18 +971,21 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
     // so remote Claudes know what they're talking to.
     (async () => {
       try {
-        const { createPeerChatClientFromEnv } = await import('../fleet/peer-chat-client-factory.js');
+        const { createPeerChatClientFromEnv } =
+          await import('../fleet/peer-chat-client-factory.js');
         const factory = createPeerChatClientFromEnv();
         if (factory) {
           wirePeerChatBridge(() => factory.client, factory.info);
           await wirePeerSessionBridge(() => factory.client);
           logger.info(
-            `[fleet] peer.chat wired: ${factory.info.provider} (${factory.info.model}${factory.info.isLocal ? ', local' : ''})`,
+            `[fleet] peer.chat wired: ${factory.info.provider} (${factory.info.model}${factory.info.isLocal ? ', local' : ''})`
           );
         } else {
           wirePeerChatBridge(() => null);
           await wirePeerSessionBridge(() => null);
-          logger.info('[fleet] peer.chat wired without provider — set GOOGLE_API_KEY / GROK_API_KEY / ... or OLLAMA_HOST to activate');
+          logger.info(
+            '[fleet] peer.chat wired without provider — set GOOGLE_API_KEY / GROK_API_KEY / ... or OLLAMA_HOST to activate'
+          );
         }
       } catch (err) {
         logger.warn('[fleet] peer.chat factory failed, falling back to null client', {
@@ -944,8 +994,9 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
         wirePeerChatBridge(() => null);
         await wirePeerSessionBridge(() => null);
       }
-    })().catch(() => { /* unhandled-rejection guard */ });
-
+    })().catch(() => {
+      /* unhandled-rejection guard */
+    });
   }
 
   return new Promise((resolve, reject) => {
@@ -960,13 +1011,19 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
       logger.info(`Docs: ${baseUrl}/api/docs`);
       logger.info(`WebSocket: ${config.websocketEnabled ? 'Enabled (/ws)' : 'Disabled'}`);
       logger.info(`Auth: ${config.authEnabled ? 'Enabled' : 'Disabled'}`);
-      logger.info(`Rate Limit: ${config.rateLimit ? `${config.rateLimitMax} req/${config.rateLimitWindow / 1000}s` : 'Disabled'}`);
-      logger.info(`Security Headers: ${config.securityHeaders?.enabled !== false ? 'Enabled (CSP, X-Frame-Options, HSTS, etc.)' : 'Disabled'}`);
+      logger.info(
+        `Rate Limit: ${config.rateLimit ? `${config.rateLimitMax} req/${config.rateLimitWindow / 1000}s` : 'Disabled'}`
+      );
+      logger.info(
+        `Security Headers: ${config.securityHeaders?.enabled !== false ? 'Enabled (CSP, X-Frame-Options, HSTS, etc.)' : 'Disabled'}`
+      );
 
       if (config.websocketEnabled) {
         // Channel -> A2A bridge needs the actual bound port when callers use
         // port 0 for ephemeral smoke/integration servers.
-        startChannelBridge(baseUrl).catch(() => { /* unhandled-rejection guard */ });
+        startChannelBridge(baseUrl).catch(() => {
+          /* unhandled-rejection guard */
+        });
       }
 
       // Inbound channel intake (GAP-7): start enabled channels + wire the AI
@@ -974,16 +1031,17 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
       // Opt-in via CODEBUDDY_SERVER_CHANNEL_INTAKE to avoid surprise connections.
       if (config.channelIntakeEnabled) {
         try {
-          const { startConfiguredChannels } = await import('../commands/handlers/channel-handlers.js');
+          const { startConfiguredChannels } =
+            await import('../commands/handlers/channel-handlers.js');
           const result = await startConfiguredChannels();
           if (result.noConfig) {
             logger.info('Channel intake: enabled but no channels.json found — nothing started');
           } else {
             logger.info(
               `Channel intake: started ${result.registered.length} channel(s)` +
-              `${result.registered.length ? ` (${result.registered.join(', ')})` : ''}` +
-              `${result.skipped.length ? `; skipped disabled: ${result.skipped.join(', ')}` : ''}` +
-              `${result.failed.length ? `; failed: ${result.failed.map((f) => f.type).join(', ')}` : ''}`,
+                `${result.registered.length ? ` (${result.registered.join(', ')})` : ''}` +
+                `${result.skipped.length ? `; skipped disabled: ${result.skipped.join(', ')}` : ''}` +
+                `${result.failed.length ? `; failed: ${result.failed.map((f) => f.type).join(', ')}` : ''}`
             );
           }
         } catch (err) {
@@ -995,7 +1053,9 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
       try {
         const peerRouter = await getPeerRouter();
         const routeStats = peerRouter.getStats();
-        logger.info(`Peer Routing: ${routeStats.totalRoutes} routes (${routeStats.activeRoutes} active)`);
+        logger.info(
+          `Peer Routing: ${routeStats.totalRoutes} routes (${routeStats.activeRoutes} active)`
+        );
       } catch {
         logger.info('Peer Routing: not initialized');
       }
@@ -1033,13 +1093,19 @@ export async function stopServer(server: HttpServer): Promise<void> {
     const bridgeStop = (server as unknown as { _channelA2ABridge?: { stop: () => void } })
       ._channelA2ABridge;
     if (bridgeStop) {
-      try { bridgeStop.stop(); } catch { /* ignore */ }
+      try {
+        bridgeStop.stop();
+      } catch {
+        /* ignore */
+      }
     }
     void (async () => {
       try {
         const { getChannelManager } = await import('../channels/index.js');
         await getChannelManager().shutdown();
-      } catch { /* shutdown is best-effort */ }
+      } catch {
+        /* shutdown is best-effort */
+      }
     })();
 
     // Close WebSocket connections
