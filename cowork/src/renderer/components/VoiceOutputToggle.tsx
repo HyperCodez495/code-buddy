@@ -29,9 +29,25 @@ export function isTtsEnabled(): boolean {
 /** Currently-playing audio element so subsequent speak() can interrupt. */
 let activeAudio: HTMLAudioElement | null = null;
 
-function cancelActivePlayback(): void {
+export type VoiceInterruptionReason = 'barge_in' | 'manual' | 'new_speech' | 'stop';
+
+interface VoiceInterruptedEventDetail {
+  reason: VoiceInterruptionReason;
+  hadPlayback: boolean;
+  timestamp: number;
+}
+
+declare global {
+  interface WindowEventMap {
+    'cowork:voice-interrupted': CustomEvent<VoiceInterruptedEventDetail>;
+  }
+}
+
+function cancelActivePlayback(): boolean {
+  let hadPlayback = false;
   if (activeAudio) {
     try {
+      hadPlayback = hadPlayback || !activeAudio.paused;
       activeAudio.pause();
       activeAudio.src = '';
     } catch {
@@ -41,11 +57,39 @@ function cancelActivePlayback(): void {
   }
   if (typeof window !== 'undefined' && window.speechSynthesis) {
     try {
+      hadPlayback = hadPlayback || window.speechSynthesis.speaking || window.speechSynthesis.pending;
       window.speechSynthesis.cancel();
     } catch {
       /* ignore */
     }
   }
+  return hadPlayback;
+}
+
+/**
+ * Stop any currently playing assistant voice. This is intentionally renderer-side:
+ * browsers own playback handles, so barge-in can happen immediately without an IPC round-trip.
+ */
+export function interruptSpeech(reason: VoiceInterruptionReason = 'manual'): boolean {
+  const hadPlayback = cancelActivePlayback();
+  const timestamp = Date.now();
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('cowork:voice-interrupted', {
+      detail: {
+        reason,
+        hadPlayback,
+        timestamp,
+      },
+    }));
+    if (hadPlayback || reason === 'barge_in' || reason === 'stop') {
+      void window.electronAPI?.voice?.recordInterruption?.({
+        reason,
+        hadPlayback,
+        timestamp,
+      }).catch(() => undefined);
+    }
+  }
+  return hadPlayback;
 }
 
 function cleanForSpeech(text: string): string {
@@ -68,7 +112,7 @@ async function speakViaPiper(text: string): Promise<boolean> {
       }
       return false;
     }
-    cancelActivePlayback();
+    interruptSpeech('new_speech');
     const blob = new Blob([result.audio], { type: 'audio/wav' });
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
@@ -95,7 +139,7 @@ function speakViaBrowser(text: string): void {
     utterance.pitch = 1.0;
     utterance.volume = 1.0;
     utterance.lang = 'fr-FR';
-    cancelActivePlayback();
+    interruptSpeech('new_speech');
     window.speechSynthesis.speak(utterance);
   } catch (err) {
     console.warn('[VoiceOutputToggle] browser tts failed:', err);
@@ -135,9 +179,7 @@ export const VoiceOutputToggle: React.FC = () => {
       } catch {
         /* ignore quota errors */
       }
-      if (!next && typeof window !== 'undefined' && window.speechSynthesis) {
-        window.speechSynthesis.cancel();
-      }
+      if (!next) interruptSpeech('manual');
       return next;
     });
   }, []);

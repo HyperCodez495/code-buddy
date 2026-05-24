@@ -22,7 +22,7 @@ import { SlashCommandPalette, type SlashCommandItem } from './SlashCommandPalett
 import { BranchSwitcher } from './BranchSwitcher';
 import { TaskModeToggle } from './TaskModeToggle';
 import { MicButton } from './MicButton';
-import { VoiceOutputToggle, speakText } from './VoiceOutputToggle';
+import { VoiceOutputToggle, interruptSpeech, speakText } from './VoiceOutputToggle';
 import { MemoryEditCard } from './MemoryEditCard';
 import { FileAttachmentChip } from './FileAttachmentChip';
 import { ContextWindowGauge } from './ContextWindowGauge';
@@ -872,6 +872,7 @@ export function ChatView() {
   };
 
   const handleStop = () => {
+    interruptSpeech('stop');
     if (activeSessionId) {
       stopSession(activeSessionId);
     }

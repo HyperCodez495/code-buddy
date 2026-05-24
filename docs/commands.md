@@ -240,7 +240,9 @@ buddy companion percepts stats
 `buddy identity awaken` installs the Buddy companion identity into the current project's
 `.codebuddy/SOUL.md` without overwriting an existing file unless `--force` is passed.
 Use it with `/persona use companion` and Cowork's mic / voice-output controls for a
-voice-first partner workflow.
+voice-first partner workflow. When voice output is enabled, clicking either
+Cowork mic control interrupts active assistant speech before recording, giving
+the companion a practical barge-in loop instead of a one-way monologue.
 
 `buddy companion setup` is the one-command version: it installs `SOUL.md` and
 `BOOT.md`, configures voice input plus TTS defaults, and sets the current project

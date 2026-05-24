@@ -33,7 +33,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
-import { isTtsEnabled, speakText } from './VoiceOutputToggle';
+import { interruptSpeech, isTtsEnabled, speakText } from './VoiceOutputToggle';
 
 interface Props {
   isOpen: boolean;
@@ -55,6 +55,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [elapsedSec, setElapsedSec] = useState(0);
   const [showSettings, setShowSettings] = useState(false);
+  const [bargeInNotice, setBargeInNotice] = useState<string | null>(null);
   const [autoSpeak, setAutoSpeak] = useState<boolean>(() => {
     try {
       return localStorage.getItem(TTS_AUTO_KEY) === '1';
@@ -103,6 +104,7 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       setText('');
       setRec('idle');
       setErrorMsg(null);
+      setBargeInNotice(null);
       setElapsedSec(0);
       setTimeout(() => textareaRef.current?.focus(), 50);
     }
@@ -132,6 +134,10 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
       setErrorMsg(t('voiceOverlay.unsupported', 'mediaDevices indisponible'));
       return;
     }
+    const interrupted = interruptSpeech('barge_in');
+    setBargeInNotice(interrupted
+      ? t('voiceOverlay.bargeIn', 'Réponse interrompue. Je vous écoute.')
+      : null);
     setRec('recording');
     setErrorMsg(null);
     try {
@@ -368,6 +374,11 @@ export const VoiceChatOverlay: React.FC<Props> = ({ isOpen, onClose }) => {
           {errorMsg && (
             <div className="w-full p-2 rounded bg-error/10 border border-error/30 text-error text-xs">
               {errorMsg}
+            </div>
+          )}
+          {bargeInNotice && (
+            <div className="w-full p-2 rounded bg-accent/10 border border-accent/30 text-accent text-xs">
+              {bargeInNotice}
             </div>
           )}
 

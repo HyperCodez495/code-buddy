@@ -768,6 +768,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
     }> => ipcRenderer.invoke('voice.speak', { text, lengthScale: options?.lengthScale }),
     ttsStatus: (): Promise<{ available: boolean; bootError: string | null }> =>
       ipcRenderer.invoke('voice.ttsStatus'),
+    recordInterruption: (payload: {
+      reason: 'barge_in' | 'manual' | 'new_speech' | 'stop';
+      hadPlayback: boolean;
+      timestamp: number;
+    }): Promise<{ ok: boolean; error?: string }> =>
+      ipcRenderer.invoke('voice.interrupted', payload),
   },
 
   companion: {
@@ -2938,6 +2944,11 @@ declare global {
           error?: string;
         }>;
         ttsStatus: () => Promise<{ available: boolean; bootError: string | null }>;
+        recordInterruption: (payload: {
+          reason: 'barge_in' | 'manual' | 'new_speech' | 'stop';
+          hadPlayback: boolean;
+          timestamp: number;
+        }) => Promise<{ ok: boolean; error?: string }>;
       };
       companion: {
         status: (projectId?: string) => Promise<{ ok: boolean; status?: CompanionStatus; error?: string }>;

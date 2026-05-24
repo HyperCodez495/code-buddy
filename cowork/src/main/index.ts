@@ -3332,6 +3332,19 @@ type CompanionPerceptInput = {
   tags?: string[];
 };
 
+type CompanionSafetyEventInput = {
+  kind: 'sense' | 'tool' | 'mission' | 'permission' | 'data';
+  risk?: 'low' | 'medium' | 'high';
+  action: string;
+  reason: string;
+  status?: 'planned' | 'allowed' | 'completed' | 'failed' | 'denied';
+  source: string;
+  artifactPath?: string;
+  missionId?: string;
+  payload?: Record<string, unknown>;
+  tags?: string[];
+};
+
 async function recordCompanionPerceptFromMain(input: CompanionPerceptInput): Promise<void> {
   try {
     const activeProject = projectManager?.getActive();
@@ -3345,6 +3358,22 @@ async function recordCompanionPerceptFromMain(input: CompanionPerceptInput): Pro
     await mod?.recordCompanionPercept?.(input, { cwd });
   } catch (err) {
     logWarn('[companion.percept] failed to record percept:', err);
+  }
+}
+
+async function recordCompanionSafetyEventFromMain(input: CompanionSafetyEventInput): Promise<void> {
+  try {
+    const activeProject = projectManager?.getActive();
+    const cwd = activeProject?.workspacePath || currentWorkingDir || process.cwd();
+    const mod = await loadCoreModule<{
+      recordCompanionSafetyEvent: (
+        input: CompanionSafetyEventInput,
+        options: { cwd?: string },
+      ) => Promise<unknown>;
+    }>('companion/safety-ledger.js');
+    await mod?.recordCompanionSafetyEvent?.(input, { cwd });
+  } catch (err) {
+    logWarn('[companion.safety] failed to record safety event:', err);
   }
 }
 
@@ -3458,6 +3487,42 @@ ipcMain.handle('voice.ttsStatus', async () => {
     bootError: ttsBridge.getBootError(),
   };
 });
+
+ipcMain.handle(
+  'voice.interrupted',
+  async (
+    _event,
+    payload: {
+      reason?: 'barge_in' | 'manual' | 'new_speech' | 'stop';
+      hadPlayback?: boolean;
+      timestamp?: number;
+    },
+  ): Promise<{ ok: boolean; error?: string }> => {
+    try {
+      await recordCompanionSafetyEventFromMain({
+        kind: 'permission',
+        risk: payload.hadPlayback ? 'medium' : 'low',
+        action: 'voice_playback_interrupted',
+        reason: payload.reason === 'barge_in'
+          ? 'User interrupted assistant speech to speak immediately.'
+          : `Assistant speech playback interruption: ${payload.reason || 'manual'}.`,
+        status: 'completed',
+        source: 'cowork_voice_playback',
+        payload: {
+          reason: payload.reason || 'manual',
+          hadPlayback: Boolean(payload.hadPlayback),
+          rendererTimestamp: payload.timestamp,
+        },
+        tags: ['voice', 'tts', 'interrupt', payload.reason || 'manual'],
+      });
+      return { ok: true };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[voice.interrupted] failed:', message);
+      return { ok: false, error: message };
+    }
+  },
+);
 
 /**
  * Clipboard summariser (Lisa-derived). One-shot summarise of the

@@ -11,6 +11,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Loader2, Mic, MicOff } from 'lucide-react';
+import { interruptSpeech } from './VoiceOutputToggle';
 
 interface MicButtonProps {
   onTranscript: (text: string) => void;
@@ -61,6 +62,7 @@ export const MicButton: React.FC<MicButtonProps> = ({
       setErrorMsg('mediaDevices unavailable');
       return;
     }
+    interruptSpeech('barge_in');
     // Optimistic UX — flip the button to 'recording' immediately so the
     // user gets visual confirmation of their click. We'll roll back on
     // permission denial / device error in the catch block below. Without

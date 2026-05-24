@@ -161,6 +161,9 @@ Code Buddy autonomously reads files, writes code, runs commands, and fixes error
 For a ChatGPT-subscription-backed companion flow, run `buddy login`, then
 `buddy companion setup`, then switch to `/persona use companion` in chat. In
 Cowork, use the mic button or the titlebar voice overlay and enable voice output.
+Starting a new recording now interrupts any assistant voice playback first, so
+you can cut in naturally when Buddy is speaking; the interruption is also
+recorded in the companion safety ledger when it actually affects the dialogue.
 For visual context, say or type a request such as "Buddy, regarde ceci" and use
 `/companion camera snapshot` or the `camera_snapshot` tool to capture a local frame.
 Successful snapshots append a `vision` percept to
