@@ -168,9 +168,7 @@ function App() {
   useEffect(() => {
     if (!appConfig) return;
     const config = appConfig as unknown as { onboardingCompleted?: boolean; apiKey?: string };
-    if (!config.onboardingCompleted && !config.apiKey && !isConfigured) {
-      setShowOnboarding(true);
-    }
+    setShowOnboarding(!config.onboardingCompleted && !config.apiKey && !isConfigured);
   }, [appConfig, isConfigured]);
 
   useEffect(() => {

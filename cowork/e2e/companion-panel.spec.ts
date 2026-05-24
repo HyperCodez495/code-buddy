@@ -430,7 +430,7 @@ test('drives the Buddy companion cockpit from no project to improvement loop', a
   await expect(appPage.getByText('Pilot the cockpit before release.')).toBeVisible();
 
   await appPage.getByRole('button', { name: 'Improve loop' }).click();
-  await expect(appPage.getByText('Improvement loop')).toBeVisible();
+  await expect(appPage.getByRole('heading', { name: 'Improvement loop' })).toBeVisible();
   await expect(appPage.getByText('[P1] Review competitor delta', { exact: true })).toBeVisible();
 
   await appPage.evaluate(() => {

@@ -24,7 +24,7 @@ describe('theme settings persistence', () => {
     const source = fs.readFileSync(useIPCPath, 'utf8');
 
     expect(source).toContain('const applyConfigSnapshot = (config: AppConfig, isConfigured: boolean) => {');
-    expect(source).toContain("store.setSettings({ theme: config.theme || 'light' });");
+    expect(source).toContain("store.setSettings({ theme: nextConfig.theme || 'light' });");
     expect(source).toContain('window.electronAPI.config.get()');
     expect(source).toContain('window.electronAPI.getSystemTheme()');
   });

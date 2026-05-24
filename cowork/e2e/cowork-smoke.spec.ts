@@ -100,6 +100,23 @@ async function dismissOptionalModelDialogs(appPage: Page) {
 }
 
 async function dismissOnboardingIfPresent(appPage: Page) {
+  await appPage.evaluate(async () => {
+    await window.electronAPI?.config?.save?.({ onboardingCompleted: true });
+
+    const store = (
+      window as unknown as {
+        useAppStore?: {
+          getState: () => {
+            appConfig?: Record<string, unknown> | null;
+            setAppConfig?: (config: Record<string, unknown>) => void;
+          };
+        };
+      }
+    ).useAppStore?.getState();
+
+    store?.setAppConfig?.({ ...(store.appConfig ?? {}), onboardingCompleted: true });
+  });
+
   const onboarding = appPage.getByTestId('onboarding-wizard');
   if (await onboarding.isVisible({ timeout: 3000 }).catch(() => false)) {
     await appPage.getByTestId('onboarding-skip').click();
@@ -338,6 +355,7 @@ test('fills the Word-workshop prompt from a selected DOCX in an active chat', as
   );
 
   await expect(appPage.getByTestId('chat-attach-files')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('chat-attach-files').click();
   await expect(appPage.getByText('Questions - Impacts.docx')).toBeVisible();
 
@@ -409,6 +427,7 @@ test('opens context artifacts in the file preview pane', async ({ appPage, userD
   );
 
   await expect(appPage.getByTestId('context-artifact-row-0')).toContainText('artifact-preview.txt');
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('context-artifact-row-0').click();
 
   await expect(appPage.getByTestId('file-preview-pane')).toBeVisible();
@@ -567,6 +586,7 @@ test('renders the complete Word-workshop progress rail from session evidence', a
 });
 
 test('opens Settings and renders the A2A registry tab', async ({ appPage }) => {
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('sidebar-settings-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
@@ -584,9 +604,12 @@ test('reviews Audit Log golden and policy eval summaries in-place', async ({
   await mockAuditEvalReviewHandlers(electronApp);
   await dismissOptionalModelDialogs(appPage);
 
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('sidebar-settings-button').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('settings-tab-logs').click();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByRole('button', { name: 'Audit log' }).click();
 
   await expect(appPage.getByRole('heading', { name: 'Audit log' })).toBeVisible();
@@ -608,6 +631,7 @@ test('reviews Audit Log golden and policy eval summaries in-place', async ({
 });
 
 test('switches the renderer language to French from Settings', async ({ appPage }) => {
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('sidebar-settings-button').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
   await dismissOnboardingIfPresent(appPage);
@@ -711,6 +735,7 @@ test('allows a permission request and opens permission rules with the edited all
   await appPage
     .getByTestId('permission-scoped-rule-draft-input')
     .fill('mcp__Chrome__navigate_page(https://example.com/account/*)');
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-allow-review-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();
@@ -753,6 +778,7 @@ test('saves a deny target rule and the next matching permission is pre-blocked b
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -812,6 +838,7 @@ test('saves an allow target rule and the next matching permission is pre-approve
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -870,6 +897,7 @@ test('saves a target-based gui deny rule and matches the next non-url permission
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -933,6 +961,7 @@ test('reviews a more specific deny rule from a covered target-based permission',
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -954,6 +983,7 @@ test('reviews a more specific deny rule from a covered target-based permission',
   await expect(appPage.getByTestId('permission-review-covered-rule-button')).toContainText(
     'Review a more specific deny rule'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-review-covered-rule-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();
@@ -993,6 +1023,7 @@ test('saves a target-based gui allow rule and matches the next non-url permissio
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1058,6 +1089,7 @@ test('saves a bash deny rule and the next matching command is pre-blocked', asyn
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Bash(npm *)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1122,6 +1154,7 @@ test('saves a bash allow rule and the next matching command is pre-approved', as
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Bash(git *)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1183,6 +1216,7 @@ test('reviews a more specific bash deny rule from a covered command', async ({
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1203,6 +1237,7 @@ test('reviews a more specific bash deny rule from a covered command', async ({
   await expect(appPage.getByTestId('permission-review-covered-rule-button')).toContainText(
     'Review a more specific deny rule'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-review-covered-rule-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();
@@ -1235,6 +1270,7 @@ test('reviews a more specific bash allow rule from a covered command', async ({
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1255,6 +1291,7 @@ test('reviews a more specific bash allow rule from a covered command', async ({
   await expect(appPage.getByTestId('permission-review-covered-rule-button')).toContainText(
     'Review a more specific allow rule'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-review-covered-rule-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();
@@ -1294,6 +1331,7 @@ test('saves an edit deny rule and the next matching file permission is pre-block
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Edit(src/components/Button.tsx)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-deny-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1349,6 +1387,7 @@ test('saves a write allow rule and the next matching file permission is pre-appr
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Write(docs/guide.md)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1404,10 +1443,12 @@ test('uses a folder-scoped file rule so a sibling file in the same directory als
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Write(docs/guide.md)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-use-folder-rule-button').click();
   await expect(appPage.getByTestId('permission-scoped-rule-draft-input')).toHaveValue(
     'Write(docs/*)'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1469,7 +1510,9 @@ test('reviews a more specific allow rule from a covered folder-scoped file permi
   });
 
   await expect(appPage.getByTestId('permission-dialog')).toBeVisible();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-use-folder-rule-button').click();
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-always-allow-target-button').click();
   await expect(appPage.getByTestId('permission-dialog')).toBeHidden();
 
@@ -1490,6 +1533,7 @@ test('reviews a more specific allow rule from a covered folder-scoped file permi
   await expect(appPage.getByTestId('permission-review-covered-rule-button')).toContainText(
     'Review a more specific allow rule'
   );
+  await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('permission-review-covered-rule-button').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();

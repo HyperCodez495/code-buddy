@@ -1375,6 +1375,7 @@ export interface AppConfig {
   sandboxEnabled?: boolean;
   enableThinking?: boolean;
   isConfigured: boolean;
+  onboardingCompleted: boolean;
   /** Embedded HTTP server settings — see config-store.ts for details. */
   server?: {
     port?: number;

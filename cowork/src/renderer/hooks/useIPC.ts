@@ -101,9 +101,13 @@ export function useIPC() {
     const applyConfigSnapshot = (config: AppConfig, isConfigured: boolean) => {
       const store = useAppStore.getState();
       const isInitialConfigStatus = !store.hasSeenInitialConfigStatus;
+      const nextConfig =
+        store.appConfig?.onboardingCompleted && !config.onboardingCompleted
+          ? { ...config, onboardingCompleted: true }
+          : config;
       store.setIsConfigured(isConfigured);
-      store.setAppConfig(config);
-      store.setSettings({ theme: config.theme || 'light' });
+      store.setAppConfig(nextConfig);
+      store.setSettings({ theme: nextConfig.theme || 'light' });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
       }

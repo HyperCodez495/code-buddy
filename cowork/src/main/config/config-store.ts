@@ -135,6 +135,9 @@ export interface AppConfig {
   // First run flag
   isConfigured: boolean;
 
+  // First-run onboarding is complete or skipped.
+  onboardingCompleted: boolean;
+
   // Pluggable memory provider selector (local, mem0, honcho, supermemory)
   memoryProvider?: string;
 
@@ -227,6 +230,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'sandboxEnabled',
   'enableThinking',
   'isConfigured',
+  'onboardingCompleted',
 ]);
 
 const defaultProfiles: Record<ProviderProfileKey, ProviderProfile> = {
@@ -314,6 +318,7 @@ const defaultConfig: AppConfig = {
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
+  onboardingCompleted: false,
   memoryProvider: 'local',
 };
 
@@ -968,7 +973,9 @@ export class ConfigStore {
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
-      memoryProvider: typeof raw.memoryProvider === 'string' ? raw.memoryProvider : defaultConfig.memoryProvider,
+      onboardingCompleted: toBoolean(raw.onboardingCompleted, defaultConfig.onboardingCompleted),
+      memoryProvider:
+        typeof raw.memoryProvider === 'string' ? raw.memoryProvider : defaultConfig.memoryProvider,
     };
     this.normalizeModelIds(result);
     return result;
@@ -1381,6 +1388,10 @@ export class ConfigStore {
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       isConfigured:
         updates.isConfigured !== undefined ? updates.isConfigured : current.isConfigured,
+      onboardingCompleted:
+        updates.onboardingCompleted !== undefined
+          ? updates.onboardingCompleted
+          : current.onboardingCompleted,
     });
   }
 
