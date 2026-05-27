@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>CodeBuddy Browser Fixture</title>
+</head>
+<body>
+  <h1>CodeBuddy Browser Fixture</h1>
+
+  <p>Message: <input id="msg" type="text" aria-label="Message" /></p>
+  <p><input id="companion" type="checkbox" aria-label="Enable companion" /> companion</p>
+  <p>Country:
+    <select id="country" aria-label="Country">
+      <option value="Canada">Canada</option>
+      <option value="France">France</option>
+      <option value="Japan">Japan</option>
+    </select>
+  </p>
+  <p><button id="apply" aria-label="Apply">Apply</button></p>
+  <p><a id="next" href="browser-fixture-2.html" aria-label="Go to page 2">Go to page 2</a></p>
+
+  <p id="status">Idle</p>
+
+  <script>
+    document.getElementById('apply').addEventListener('click', function () {
+      var msg = document.getElementById('msg').value;
+      var comp = document.getElementById('companion').checked;
+      var country = document.getElementById('country').value;
+      document.getElementById('status').textContent =
+        'Saved: msg=' + msg + ' companion=' + comp + ' country=' + country;
+    });
+  </script>
+</body>
+</html>

@@ -1,0 +1,48 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        x:Class="AvaloniaFixture.MainWindow"
+        Title="CodeBuddy Avalonia Fixture"
+        Width="700" Height="560" Topmost="True">
+  <Grid Margin="16" ColumnDefinitions="*,*" RowDefinitions="Auto,Auto,Auto">
+
+    <StackPanel Grid.Row="0" Grid.Column="0" Margin="0,0,8,10" Spacing="6">
+      <TextBlock Text="Message"/>
+      <TextBox x:Name="MessageBox" AutomationProperties.AutomationId="Message" AutomationProperties.Name="Message"/>
+      <TextBlock Text="Country"/>
+      <ComboBox x:Name="CountryCombo" Width="200" HorizontalAlignment="Left"
+                AutomationProperties.AutomationId="Country" AutomationProperties.Name="Country"/>
+      <CheckBox x:Name="CompanionCheck" Content="Enable companion mode"
+                AutomationProperties.AutomationId="Companion" AutomationProperties.Name="Enable companion mode"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="0" Grid.Column="1" Margin="8,0,0,10" Spacing="6">
+      <RadioButton x:Name="BasicRadio" GroupName="mode" Content="Basic mode" IsChecked="True"
+                   AutomationProperties.AutomationId="BasicMode" AutomationProperties.Name="Basic mode"/>
+      <RadioButton x:Name="ExpertRadio" GroupName="mode" Content="Expert mode"
+                   AutomationProperties.AutomationId="ExpertMode" AutomationProperties.Name="Expert mode"/>
+      <TextBlock Text="Zoom"/>
+      <Slider x:Name="ZoomSlider" Minimum="0" Maximum="100" Value="25"
+              AutomationProperties.AutomationId="Zoom" AutomationProperties.Name="Zoom"/>
+    </StackPanel>
+
+    <TabControl x:Name="ModeTabs" Grid.Row="1" Grid.Column="1" Height="90" Margin="8,0,0,10"
+                AutomationProperties.AutomationId="ModeTabs" AutomationProperties.Name="Mode tabs">
+      <TabItem Header="Overview"/>
+      <TabItem Header="Advanced"><TextBlock Text="Advanced panel" Margin="8"/></TabItem>
+    </TabControl>
+
+    <StackPanel Grid.Row="1" Grid.Column="0" Margin="0,0,8,10" Spacing="6">
+      <TextBlock Text="Big virtualized list (300 items)"/>
+      <ListBox x:Name="BigList" Height="150"
+               AutomationProperties.AutomationId="BigList" AutomationProperties.Name="BigList"/>
+    </StackPanel>
+
+    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Spacing="12">
+      <Button x:Name="ApplyButton" Content="Apply" Width="120"
+              AutomationProperties.AutomationId="Apply" AutomationProperties.Name="Apply"/>
+      <TextBlock x:Name="StatusText" Text="Idle" VerticalAlignment="Center"
+                 AutomationProperties.AutomationId="Status" AutomationProperties.Name="Status"/>
+    </StackPanel>
+
+  </Grid>
+</Window>
