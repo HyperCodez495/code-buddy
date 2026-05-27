@@ -182,6 +182,25 @@ import {
   getChatGptAuth,
   hasCodexCredentials,
 } from '../../../src/providers/codex-oauth';
+import Module from 'module';
+import { createRequire } from 'module';
+
+// Intercept Module resolution for better-sqlite3 to redirect from the root node_modules to cowork's node_modules.
+// Because the core database modules are resolved relative to the dist/ directory, Node's normal resolution walks up
+// to the root node_modules instead of using cowork's Electron-compiled version.
+const originalResolveFilename = (Module as any)._resolveFilename;
+(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+  if (request === 'better-sqlite3') {
+    try {
+      const coworkRequire = createRequire(import.meta.url);
+      const resolved = coworkRequire.resolve('better-sqlite3');
+      return resolved;
+    } catch (err) {
+      // Fall back to original resolve if resolution fails
+    }
+  }
+  return originalResolveFilename.apply(this, arguments);
+};
 
 const APP_NAME = 'Code Buddy Studio';
 

@@ -100,6 +100,12 @@ export class ServerBridge {
       /* ignore — fallback to defaults */
     }
 
+    // If the host is a local loopback IP, map it to 'localhost' so it binds to both IPv4 and IPv6 loopbacks,
+    // avoiding Windows IPv6/IPv4 lookup mismatch issues for clients fetching 'localhost:3000'.
+    if (userConfig.host === '127.0.0.1' || userConfig.host === '::1') {
+      userConfig.host = 'localhost';
+    }
+
     if (this.instance) {
       return this.status();
     }
