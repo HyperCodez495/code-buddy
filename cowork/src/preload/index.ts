@@ -288,6 +288,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       payload: { enabled: boolean },
     ): Promise<{ ok: boolean; reason?: string }> =>
       ipcRenderer.invoke('codebuddy:set-gemini-grounding', payload),
+    setVisionGrounding: (
+      payload: { enabled: boolean; model?: string },
+    ): Promise<{ ok: boolean; reason?: string }> =>
+      ipcRenderer.invoke('codebuddy:set-vision-grounding', payload),
   },
 
   // Config methods
@@ -2749,6 +2753,9 @@ declare global {
       codebuddy: {
         setGeminiGrounding: (
           payload: { enabled: boolean },
+        ) => Promise<{ ok: boolean; reason?: string }>;
+        setVisionGrounding: (
+          payload: { enabled: boolean; model?: string },
         ) => Promise<{ ok: boolean; reason?: string }>;
       };
       config: {

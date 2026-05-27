@@ -53,8 +53,8 @@ export async function runMaterializedResearchScriptJob(
   options: RunMaterializedResearchScriptJobOptions,
 ): Promise<ResearchScriptJobRunResult> {
   const provider = job.sandboxPolicy.provider;
-  if (provider !== 'local' && provider !== 'docker' && provider !== 'wsl') {
-    throw new Error(`Research script runner only supports local, docker, and wsl providers: ${provider}`);
+  if (provider !== 'local' && provider !== 'docker' && provider !== 'wsl' && provider !== 'remote') {
+    throw new Error(`Research script runner only supports local, docker, wsl, and remote providers: ${provider}`);
   }
   if (job.sandboxPolicy.network !== 'disabled' && !options.allowNetwork) {
     throw new Error(`Research script job requires network policy ${job.sandboxPolicy.network}; pass allowNetwork to run it locally.`);
@@ -130,6 +130,21 @@ export async function runMaterializedResearchScriptJob(
       }
     }
     spawnArgs.push(wslExecutable, ...args.map(toWslPath));
+  } else if (provider === 'remote') {
+    const cleanExec = path.basename(job.command.executable).replace(/\.(exe|cmd)$/i, '');
+    spawnExecutable = 'daytona';
+    spawnArgs = [
+      'exec',
+      '-w', job.id,
+      '--',
+      'env'
+    ];
+    for (const [key, value] of Object.entries(env)) {
+      if (value !== undefined) {
+        spawnArgs.push(`${key}=${value}`);
+      }
+    }
+    spawnArgs.push(cleanExec, ...args);
   }
 
   const result = await spawnAndCapture(spawnExecutable, spawnArgs, {

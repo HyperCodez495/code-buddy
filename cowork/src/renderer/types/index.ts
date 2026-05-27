@@ -1383,6 +1383,15 @@ export interface AppConfig {
     websocketEnabled?: boolean;
     jwtSecret?: string;
   };
+  codebuddy?: {
+    enabled: boolean;
+    endpoint: string;
+    apiKey?: string;
+    model?: string;
+    geminiGroundingEnabled?: boolean;
+    visionGroundingEnabled?: boolean;
+    visionGroundingModel?: string;
+  };
 }
 
 export interface ProviderPreset {

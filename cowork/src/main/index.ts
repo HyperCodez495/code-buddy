@@ -57,7 +57,7 @@ import {
   resolveEnginePathWithDiagnostic,
   shouldLoadEngine,
 } from './engine/embedded-mode';
-import { applyGroundingToggle } from './codebuddy/grounding-handler';
+import { applyGroundingToggle, applyVisionGroundingSetting } from './codebuddy/grounding-handler';
 import { ProjectManager } from './project/project-manager';
 import { ProjectMemoryService } from './project/project-memory';
 import { SubAgentBridge } from './agent/sub-agent-bridge';
@@ -1298,6 +1298,22 @@ app
           }
         }
 
+        // Apply the user's persisted "Visual Grounding Fallback" preference, if any.
+        if (apiConfig.codebuddy?.visionGroundingEnabled === true) {
+          const result = applyVisionGroundingSetting(
+            engineAdapter,
+            true,
+            apiConfig.codebuddy?.visionGroundingModel
+          );
+          if (result.ok) {
+            log('[Main] Visual grounding fallback enabled by user setting');
+          } else {
+            log(
+              `[Main] Visual grounding fallback saved but not applied (reason: ${result.reason ?? 'unknown'})`
+            );
+          }
+        }
+
         log('[Main] Code Buddy engine adapter initialized (embedded mode)');
       } catch (err) {
         if (classifyEngineLoadError(err) === 'missing') {
@@ -1340,6 +1356,14 @@ app
       'codebuddy:set-gemini-grounding',
       async (_event, payload: { enabled: boolean }) => {
         return applyGroundingToggle(engineAdapter, payload.enabled === true);
+      }
+    );
+
+    // Hot-apply IPC for visual grounding fallback toggle and model.
+    ipcMain.handle(
+      'codebuddy:set-vision-grounding',
+      async (_event, payload: { enabled: boolean; model?: string }) => {
+        return applyVisionGroundingSetting(engineAdapter, payload.enabled === true, payload.model);
       }
     );
 

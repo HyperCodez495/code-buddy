@@ -160,6 +160,15 @@ export interface AppConfig {
      * UX-level toggle, not a provider config.
      */
     geminiGroundingEnabled?: boolean;
+    /**
+     * Activate visual grounding fallback using a Set-of-Marks annotated
+     * screenshot and a multimodal LLM call when UI Automation fails.
+     */
+    visionGroundingEnabled?: boolean;
+    /**
+     * Specific model to use specifically for visual grounding fallback calls.
+     */
+    visionGroundingModel?: string;
   };
 
   /**

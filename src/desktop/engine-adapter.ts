@@ -121,6 +121,11 @@ export interface EngineAdapter {
   reloadSkills?(): Promise<void>;
 
   /**
+   * Set the default visual grounding fallback configuration.
+   */
+  setDefaultVisionGrounding?(enabled: boolean, model?: string): void;
+
+  /**
    * Release all resources. Called when the app is shutting down.
    */
   dispose(): void;

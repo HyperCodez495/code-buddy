@@ -66,6 +66,8 @@ export function FleetPanel() {
   const events = useAppStore((s) => s.fleetEvents);
   const setFleetPeers = useAppStore((s) => s.setFleetPeers);
   const removeFleetPeer = useAppStore((s) => s.removeFleetPeer);
+  const fleetDiscoveredPeers = useAppStore((s) => s.fleetDiscoveredPeers);
+  const dismissFleetDiscoveredPeer = useAppStore((s) => s.dismissFleetDiscoveredPeer);
 
   const [showAdd, setShowAdd] = useState(false);
   const [filterPeer, setFilterPeer] = useState<string | null>(null);
@@ -297,6 +299,55 @@ export function FleetPanel() {
               );
             })}
           </ul>
+
+          {fleetDiscoveredPeers.length > 0 && (
+            <div className="border-t border-border">
+              <div className="flex items-center justify-between px-4 py-2 bg-surface-secondary/40">
+                <span className="text-xs uppercase tracking-wide text-text-muted">
+                  Discovered on Tailscale ({fleetDiscoveredPeers.length})
+                </span>
+              </div>
+              <ul className="max-h-48 overflow-y-auto border-b border-border">
+                {fleetDiscoveredPeers.map((dp) => (
+                  <li
+                    key={dp.url}
+                    className="flex items-center justify-between gap-2 px-4 py-2 text-xs hover:bg-surface transition-colors"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="font-medium text-text-primary truncate">
+                        {dp.label}
+                      </div>
+                      <div className="truncate text-[10px] text-text-muted font-mono">
+                        {dp.url}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5 shrink-0">
+                      <button
+                        onClick={() => {
+                          setAddUrl(dp.url);
+                          setAddLabel(dp.label);
+                          setAddApiKey(dp.apiKey || '');
+                          setShowAdd(true);
+                        }}
+                        className="flex items-center gap-1 rounded bg-accent/20 hover:bg-accent/35 text-accent px-2 py-0.5 text-[10px] font-medium transition-colors"
+                        title="Pair discovered peer"
+                      >
+                        <Plus className="w-3 h-3" />
+                        <span>Pair</span>
+                      </button>
+                      <button
+                        onClick={() => dismissFleetDiscoveredPeer(dp.url)}
+                        className="rounded p-1 hover:bg-surface text-text-muted hover:text-error transition-colors"
+                        title="Dismiss"
+                      >
+                        <X className="w-3 h-3" />
+                      </button>
+                    </div>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
         </div>
 
         <div className="flex flex-1 flex-col overflow-hidden">

@@ -12,7 +12,7 @@ vi.mock('child_process', async (importOriginal) => {
     ...original,
     spawn: vi.fn((...args: any[]) => {
       const command = args[0];
-      if (command === 'docker' || command === 'wsl') {
+      if (command === 'docker' || command === 'wsl' || command === 'daytona') {
         (globalThis as any).__lastSpawnArgs = args;
         const mockChild: any = {
           stdout: { setEncoding: vi.fn(), on: vi.fn() },
@@ -194,6 +194,42 @@ describe('research script job runner', () => {
     expect(spawnCall[0]).toBe('wsl');
     expect(spawnCall[1]).toContain('--cd');
     expect(spawnCall[1]).toContain('--exec');
+    expect(spawnCall[1]).toContain('env');
+
+    expect(result.status).toBe('completed');
+  });
+
+  it('translates command and arguments correctly for remote provider (daytona)', async () => {
+    (globalThis as any).__lastSpawnArgs = null;
+
+    const job = buildResearchScriptJobArtifact({
+      id: 'research-script-remote-test',
+      goal: 'Remote run test',
+      title: 'Remote run test',
+      language: 'javascript',
+      inputContract: { INPUT_JSON: 'Input.' },
+      outputContract: { OUTPUT_JSON: 'Output.' },
+      sandboxPolicy: {
+        network: 'disabled',
+        provider: 'remote',
+        timeoutMs: 5000,
+      },
+    });
+
+    await materializeResearchScriptJobArtifact(job, {
+      rootDir: tempDir,
+      scriptSource: 'console.log("remote run");',
+    });
+
+    const result = await runMaterializedResearchScriptJob(job, { rootDir: tempDir });
+
+    const spawnCall = (globalThis as any).__lastSpawnArgs;
+    expect(spawnCall).toBeTruthy();
+    expect(spawnCall[0]).toBe('daytona');
+    expect(spawnCall[1]).toContain('exec');
+    expect(spawnCall[1]).toContain('-w');
+    expect(spawnCall[1]).toContain('research-script-remote-test');
+    expect(spawnCall[1]).toContain('--');
     expect(spawnCall[1]).toContain('env');
 
     expect(result.status).toBe('completed');

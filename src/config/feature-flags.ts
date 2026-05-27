@@ -91,6 +91,14 @@ const DEFAULT_FEATURE_FLAGS: Record<string, FeatureFlag> = {
     category: 'ai',
   },
 
+  USER_MODEL_DIALECTIC_ON_SESSION_END: {
+    name: 'USER_MODEL_DIALECTIC_ON_SESSION_END',
+    enabled: false,
+    description: 'Automatically run user model dialectic inference at session end to propose new preference candidates',
+    category: 'ai',
+    envOverride: 'USER_MODEL_DIALECTIC_ON_SESSION_END',
+  },
+
   VOICE_CONTROL: {
     name: 'VOICE_CONTROL',
     enabled: false,

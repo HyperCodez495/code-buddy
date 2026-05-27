@@ -26,7 +26,14 @@ export const PeerRow: React.FC<{
           <span className="text-xs text-text-primary font-medium truncate">
             {peer.label ?? cap?.machineLabel ?? peer.id}
           </span>
-          <StatusDot status={status} />
+          <div className="flex items-center gap-1.5 shrink-0">
+            {peer.lastSeenAt && (
+              <span className="text-[9px] text-text-muted">
+                {formatPeerSeenAt(peer.lastSeenAt)}
+              </span>
+            )}
+            <StatusDot status={status} />
+          </div>
         </div>
         <div className="flex items-center gap-1.5 mt-1 text-[10px] text-text-muted">
           <EgressChip egress={egress} />
@@ -218,7 +225,7 @@ export const PeerStat: React.FC<{
 const StatusDot: React.FC<{ status: FleetPeer['status'] }> = ({ status }) => {
   const color =
     status === 'authenticated' || status === 'connected'
-      ? 'bg-success'
+      ? 'bg-success shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse'
       : status === 'reconnecting' || status === 'connecting'
         ? 'bg-warning animate-pulse'
         : status === 'error' || status === 'disconnected'

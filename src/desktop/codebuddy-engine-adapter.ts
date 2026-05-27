@@ -134,6 +134,10 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           config.systemPromptAppend,
         );
 
+        if (typeof (agent as any).setVisionGroundingModel === 'function') {
+          (agent as any).setVisionGroundingModel(this.config.visionGroundingModel);
+        }
+
         // Phase 9 — enforce LRU before insertion so we never exceed
         // the cap. Evict the least-recently-used (head of the
         // insertion-ordered Map) until there's room.
@@ -503,6 +507,27 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
     this.agentIdentities.clear();
     this.permissionCallback = null;
     logger.info('[CodeBuddyEngineAdapter] disposed');
+  }
+
+  /**
+   * Set the default visual grounding fallback configuration.
+   */
+  setDefaultVisionGrounding(enabled: boolean, model?: string): void {
+    process.env.CODEBUDDY_VISION_GROUNDING = enabled ? '1' : '0';
+    if (model !== undefined) {
+      process.env.CODEBUDDY_VISION_GROUNDING_MODEL = model;
+      this.config.visionGroundingModel = model;
+    }
+    this.config.visionGroundingEnabled = enabled;
+
+    logger.info('[CodeBuddyEngineAdapter] setDefaultVisionGrounding', { enabled, model });
+
+    // Hot-apply to all currently active/cached agents
+    for (const agent of this.agents.values()) {
+      if (agent && typeof (agent as any).setVisionGroundingModel === 'function') {
+        (agent as any).setVisionGroundingModel(model);
+      }
+    }
   }
 
   /**

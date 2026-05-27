@@ -28,6 +28,7 @@ import { CostPredictor } from "../analytics/cost-predictor.js";
 import { BudgetAlertManager } from "../analytics/budget-alerts.js";
 import { initializeMemory, getMemoryManager } from "../memory/persistent-memory.js";
 import { getUserHooksManager } from "../hooks/user-hooks.js";
+import { isFeatureEnabled } from "../config/feature-flags.js";
 
 // Re-export types for backwards compatibility
 export type { ChatEntry, StreamingChunk } from "./types.js";
@@ -56,6 +57,7 @@ export class CodeBuddyAgent extends BaseAgent {
   private promptBuilder: PromptBuilder;
   private customSystemPromptOverride: string | null = null;
   private systemPromptAppend: string | undefined;
+  private visionGroundingModel: string | undefined;
   private streamingHandler: StreamingHandler;
   private executor: AgentExecutor;
 
@@ -95,6 +97,7 @@ export class CodeBuddyAgent extends BaseAgent {
   ) {
     super();
     this.systemPromptAppend = systemPromptAppend;
+    this.visionGroundingModel = process.env.CODEBUDDY_VISION_GROUNDING_MODEL || undefined;
     const initialWorkingDirectory = workingDirectory || process.cwd();
 
     // Determine model to use
@@ -421,10 +424,54 @@ export class CodeBuddyAgent extends BaseAgent {
     getUserHooksManager(initialWorkingDirectory).executeHooks('SessionStart', {}).catch(
       (err) => logger.debug(`[user-hooks] SessionStart error: ${err}`)
     );
+
+    // Wire visual grounding fallback provider into computer-control-tool
+    import('../tools/computer-control-tool.js').then(({ setVisionGroundingProvider }) => {
+      setVisionGroundingProvider(async (req) => {
+        try {
+          const prompt = `You are a visual grounding agent. Your task is to identify the unique [ref] number of the interactive element in the provided screenshot that matches the user's intent: "${req.intent}".${req.roleHint ? ` Expected role hint: "${req.roleHint}".` : ''}
+
+Here are the candidate elements present in the screenshot:
+${req.candidates.map(c => `[${c.ref}] role="${c.role}" name="${c.name}"`).join('\n')}
+
+Look at the screenshot and find the element matching the user's intent. Output only the reference number (e.g. 42) or "none" if no matching element can be found. Do not write any explanations or other text.`;
+
+          const response = await this.codebuddyClient.chat(
+            [
+              {
+                role: 'user',
+                content: [
+                  { type: 'text', text: prompt },
+                  { type: 'image_url', image_url: { url: `data:image/png;base64,${req.imageBase64}` } }
+                ]
+              }
+            ],
+            undefined,
+            this.visionGroundingModel ? { model: this.visionGroundingModel } : undefined
+          );
+          const reply = response.choices[0]?.message?.content?.trim();
+          if (!reply) return null;
+          const match = reply.match(/\b\d+\b/);
+          if (match) {
+            return parseInt(match[0], 10);
+          }
+        } catch (err) {
+          logger.error('Error in VisionGroundingProvider execution', { error: err });
+        }
+        return null;
+      });
+    }).catch((e) => { logger.debug('setVisionGroundingProvider setup failed', { error: String(e) }); });
   }
 
   /** Resolves when the system prompt has been loaded (or failed gracefully). */
   public systemPromptReady: Promise<void>;
+
+  /**
+   * Set the model override to use specifically for visual grounding fallback calls.
+   */
+  public setVisionGroundingModel(model: string | undefined): void {
+    this.visionGroundingModel = model;
+  }
 
   /**
    * Link tool executions to an observability run.
@@ -1648,6 +1695,23 @@ export class CodeBuddyAgent extends BaseAgent {
     getUserHooksManager(process.cwd()).executeHooks('SessionEnd', {}).catch(
       (err) => logger.warn(`[user-hooks] SessionEnd error: ${err instanceof Error ? err.message : String(err)}`)
     );
+    if (isFeatureEnabled('USER_MODEL_DIALECTIC_ON_SESSION_END')) {
+      const chatHistory = this.historyManager.getChatHistory();
+      if (chatHistory && chatHistory.length > 0) {
+        import('../memory/user-model.js')
+          .then(({ runUserDialecticInference }) => {
+            return runUserDialecticInference(chatHistory, process.cwd(), this.codebuddyClient);
+          })
+          .then((proposed) => {
+            if (proposed.length > 0) {
+              logger.info(`[user-model] Auto dialectic inference proposed ${proposed.length} new preference(s).`);
+            }
+          })
+          .catch((err) => {
+            logger.debug('[user-model] Dialectic session-end inference failed', { error: String(err) });
+          });
+      }
+    }
     // Remove only the forwarding listeners we attached (not other listeners)
     if (this.repairListeners.start) {
       this.repairCoordinator.off('repair:start', this.repairListeners.start);

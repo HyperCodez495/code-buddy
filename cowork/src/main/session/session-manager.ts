@@ -110,6 +110,10 @@ export interface EngineAdapterLike {
    */
   setDefaultGoogleSearch?: (enabled: boolean) => void;
   /**
+   * Toggle visual grounding fallback for this adapter.
+   */
+  setDefaultVisionGrounding?: (enabled: boolean, model?: string) => void;
+  /**
    * Push the host's view of the MCP server registry to the engine.
    * Optional — older bundles without the runtime sync hook simply
    * don't expose it. See `EngineAdapter.setMcpServers` (core).

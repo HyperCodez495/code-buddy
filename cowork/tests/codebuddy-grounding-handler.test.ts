@@ -7,7 +7,7 @@
  */
 
 import { describe, expect, it, vi } from 'vitest';
-import { applyGroundingToggle } from '../src/main/codebuddy/grounding-handler';
+import { applyGroundingToggle, applyVisionGroundingSetting } from '../src/main/codebuddy/grounding-handler';
 import type { EngineAdapterLike } from '../src/main/session/session-manager';
 
 function makeAdapter(overrides: Partial<EngineAdapterLike> = {}): EngineAdapterLike {
@@ -61,3 +61,34 @@ describe('applyGroundingToggle', () => {
     expect(() => applyGroundingToggle(adapter, true)).toThrowError('boom');
   });
 });
+
+describe('applyVisionGroundingSetting', () => {
+  it('returns ok=false with reason "no-adapter" when adapter is undefined', () => {
+    const result = applyVisionGroundingSetting(undefined, true);
+    expect(result).toEqual({ ok: false, reason: 'no-adapter' });
+  });
+
+  it('returns ok=false with reason "unsupported" when adapter has no setDefaultVisionGrounding', () => {
+    const adapter = makeAdapter();
+    const result = applyVisionGroundingSetting(adapter, true);
+    expect(result).toEqual({ ok: false, reason: 'unsupported' });
+  });
+
+  it('forwards the toggle and model to the adapter and returns ok=true when supported', () => {
+    const setDefaultVisionGrounding = vi.fn();
+    const adapter = makeAdapter({ setDefaultVisionGrounding });
+    const result = applyVisionGroundingSetting(adapter, true, 'gemini-2.5-flash');
+    expect(result).toEqual({ ok: true });
+    expect(setDefaultVisionGrounding).toHaveBeenCalledTimes(1);
+    expect(setDefaultVisionGrounding).toHaveBeenCalledWith(true, 'gemini-2.5-flash');
+  });
+
+  it('forwards `false` to the adapter (disabling vision grounding)', () => {
+    const setDefaultVisionGrounding = vi.fn();
+    const adapter = makeAdapter({ setDefaultVisionGrounding });
+    const result = applyVisionGroundingSetting(adapter, false);
+    expect(result).toEqual({ ok: true });
+    expect(setDefaultVisionGrounding).toHaveBeenCalledWith(false, undefined);
+  });
+});
+

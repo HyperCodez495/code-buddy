@@ -12,6 +12,15 @@ interface CodeBuddyConfig {
    * branch and hot-applied via IPC after save.
    */
   geminiGroundingEnabled: boolean;
+  /**
+   * Activate visual grounding fallback using a Set-of-Marks annotated
+   * screenshot and a multimodal LLM call when UI Automation fails.
+   */
+  visionGroundingEnabled: boolean;
+  /**
+   * Specific model to use specifically for visual grounding fallback calls.
+   */
+  visionGroundingModel?: string;
 }
 
 interface HealthStatus {
@@ -106,6 +115,8 @@ export function SettingsCodeBuddy() {
     apiKey: '',
     model: '',
     geminiGroundingEnabled: false,
+    visionGroundingEnabled: false,
+    visionGroundingModel: '',
   });
   const [health, setHealth] = useState<HealthStatus>({ status: 'unknown' });
   const [availableModels, setAvailableModels] = useState<string[]>([]);
@@ -126,6 +137,8 @@ export function SettingsCodeBuddy() {
           apiKey: cb.apiKey || '',
           model: cb.model || '',
           geminiGroundingEnabled: cb.geminiGroundingEnabled ?? false,
+          visionGroundingEnabled: cb.visionGroundingEnabled ?? false,
+          visionGroundingModel: cb.visionGroundingModel || '',
         });
       }
     }).catch(() => {});
@@ -285,6 +298,8 @@ export function SettingsCodeBuddy() {
           apiKey: config.apiKey || undefined,
           model: config.model || undefined,
           geminiGroundingEnabled: config.geminiGroundingEnabled,
+          visionGroundingEnabled: config.visionGroundingEnabled,
+          visionGroundingModel: config.visionGroundingModel || undefined,
         },
       } as Parameters<NonNullable<typeof window.electronAPI>['config']['save']>[0]);
 
@@ -295,6 +310,15 @@ export function SettingsCodeBuddy() {
       try {
         await window.electronAPI?.codebuddy?.setGeminiGrounding?.({
           enabled: config.geminiGroundingEnabled,
+        });
+      } catch {
+        /* hot-apply best-effort; persisted setting is the source of truth */
+      }
+
+      try {
+        await window.electronAPI?.codebuddy?.setVisionGrounding?.({
+          enabled: config.visionGroundingEnabled,
+          model: config.visionGroundingModel || undefined,
         });
       } catch {
         /* hot-apply best-effort; persisted setting is the source of truth */
@@ -312,6 +336,13 @@ export function SettingsCodeBuddy() {
   const modelChoices = config.model && !availableModels.includes(config.model)
     ? [config.model, ...availableModels]
     : availableModels;
+
+  const recommendedVisionModels = ['gemini-2.5-flash', 'gpt-4o-mini', 'gemini-1.5-flash', 'gpt-4o'];
+  const visionModelChoices = Array.from(new Set([
+    ...(config.visionGroundingModel ? [config.visionGroundingModel] : []),
+    ...availableModels,
+    ...recommendedVisionModels
+  ]));
 
   return (
     <div className="space-y-6" data-testid="settings-codebuddy">
@@ -503,6 +534,58 @@ export function SettingsCodeBuddy() {
                 }`}
               />
             </button>
+          </div>
+
+          <div className="p-4 rounded-lg bg-surface-secondary border border-border-muted space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex-1 min-w-0 mr-4">
+                <p className="text-sm font-medium text-text-primary">
+                  Visual Grounding Fallback
+                </p>
+                <p className="text-xs text-text-muted mt-0.5">
+                  When standard UI Automation fails to find a control (e.g. custom canvases or Skia),
+                  take an annotated screenshot (Set-of-Marks) and ask a multimodal vision model to locate it.
+                </p>
+              </div>
+              <button
+                onClick={() => setConfig(c => ({ ...c, visionGroundingEnabled: !c.visionGroundingEnabled }))}
+                className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${
+                  config.visionGroundingEnabled ? 'bg-accent' : 'bg-gray-400'
+                }`}
+                aria-label="Toggle Visual Grounding Fallback"
+                role="switch"
+                aria-checked={config.visionGroundingEnabled}
+              >
+                <span
+                  className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${
+                    config.visionGroundingEnabled ? 'translate-x-5' : ''
+                  }`}
+                />
+              </button>
+            </div>
+
+            {config.visionGroundingEnabled && (
+              <div className="pt-3 border-t border-border-muted">
+                <label className="block text-xs font-medium text-text-primary mb-1.5">
+                  Vision Grounding Model
+                </label>
+                <select
+                  value={config.visionGroundingModel || ''}
+                  onChange={e => setConfig(c => ({ ...c, visionGroundingModel: e.target.value }))}
+                  className="w-full px-3 py-1.5 rounded-lg bg-background border border-border-muted text-text-primary text-xs focus:outline-none focus:ring-2 focus:ring-accent/40"
+                >
+                  <option value="">Use server default</option>
+                  {visionModelChoices.map(model => (
+                    <option key={model} value={model}>
+                      {model} {recommendedVisionModels.includes(model) ? '(Recommended)' : ''}
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-text-muted mt-1">
+                  Fallback calls require a multimodal (vision-capable) model like Gemini Flash or GPT-4o-mini.
+                </p>
+              </div>
+            )}
           </div>
         </div>
       )}

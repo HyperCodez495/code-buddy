@@ -44,6 +44,25 @@ import {
 const execFileAsync = promisify(execFile);
 
 // ============================================================================
+// Vision Grounding Fallback (Set-of-Marks)
+// ============================================================================
+
+export interface VisionGroundingRequest {
+  imageBase64: string;
+  intent: string;
+  roleHint?: string;
+  candidates: { ref: number; role: string; name: string }[];
+}
+
+export type VisionGroundingProvider = (req: VisionGroundingRequest) => Promise<number | null>;
+
+let visionGroundingProvider: VisionGroundingProvider | null = null;
+
+export function setVisionGroundingProvider(p: VisionGroundingProvider | null): void {
+  visionGroundingProvider = p;
+}
+
+// ============================================================================
 // Types
 // ============================================================================
 
@@ -3704,7 +3723,7 @@ function Realize-VirtualItem($root, [string]$name, [bool]$exact, $types) {
   }
   # Universal fallback: scroll the vertically-scrollable container top-to-bottom, re-walking
   # ONLY that container's subtree each page (cheap, avoids whole-window walk timeout). Diag to
-  # %TEMP%\cb-realize-diag.txt: VerticalScrollPercent per page => timeout vs scroll-no-op in one run.
+  # %TEMP%\\cb-realize-diag.txt: VerticalScrollPercent per page => timeout vs scroll-no-op in one run.
   $scrollEl = Find-VScroll $root 0
   if ($null -ne $scrollEl) {
     $sp = $null
@@ -4606,6 +4625,54 @@ $value.SetValue($targetText)
     }
 
     if (elements.length === 0) {
+      // Try Visual Grounding Fallback if enabled and registered
+      const isGroundingEnabled = process.env.CODEBUDDY_VISION_GROUNDING === '1' || process.env.CODEBUDDY_REAL_COMPUTER_USE === '1';
+      if (isGroundingEnabled && visionGroundingProvider && !input.simulateOnly) {
+        try {
+          logger.info('Attempting visual grounding fallback for query', { query });
+          const ann = await this.snapshotManager.toAnnotatedScreenshot({ interactiveOnly: true, crop: true });
+          if (ann && ann.image) {
+            const currentSnap = this.snapshotManager.getCurrentSnapshot();
+            const candidates = (currentSnap?.elements ?? [])
+              .filter((e) => e.interactive)
+              .map((e) => ({
+                ref: e.ref,
+                role: e.role,
+                name: e.name,
+              }));
+
+            const matchedRef = await visionGroundingProvider({
+              imageBase64: ann.image,
+              intent: query,
+              roleHint: options.roles?.[0],
+              candidates,
+            });
+
+            if (matchedRef !== null && matchedRef !== undefined) {
+              const matchedEl = this.snapshotManager.getElement(matchedRef);
+              if (matchedEl) {
+                // Validate matched element role if options.roles is specified
+                if (options.roles && !options.roles.includes(matchedEl.role)) {
+                  logger.warn('Visual grounding matched element with invalid role', {
+                    matchedRef,
+                    matchedRole: matchedEl.role,
+                    expectedRoles: options.roles,
+                  });
+                } else {
+                  logger.info('Visual grounding fallback successfully matched element', { matchedRef, name: matchedEl.name });
+                  return {
+                    element: matchedEl,
+                    refreshed,
+                  };
+                }
+              }
+            }
+          }
+        } catch (err) {
+          logger.error('Failed executing visual grounding fallback', { error: err });
+        }
+      }
+
       const roleHint = options.roles?.length ? ` with role ${options.roles.join('|')}` : '';
       return {
         error: `No element${roleHint} found matching "${query}".`,

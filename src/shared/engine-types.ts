@@ -96,6 +96,10 @@ export interface EngineSessionConfig {
   systemPromptAppend?: string;
   /** Environment variable that signals we're running inside Electron */
   embedded?: boolean;
+  /** Activate visual grounding fallback using a Set-of-Marks annotated screenshot */
+  visionGroundingEnabled?: boolean;
+  /** Specific model to use for visual grounding fallback */
+  visionGroundingModel?: string;
 }
 
 // ── Session Result ─────────────────────────────────────────────────────

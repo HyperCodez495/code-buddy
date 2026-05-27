@@ -606,4 +606,45 @@ describe('ComputerControlTool semantic actions', () => {
     expect(mockAutomation.moveMouse).toHaveBeenCalledWith(145, 28);
     expect(mockAutomation.click).toHaveBeenCalledWith(undefined, undefined, { button: 'left' });
   });
+
+  it('triggers visual grounding fallback when UIA fails to match the element name', async () => {
+    const { ComputerControlTool, setVisionGroundingProvider } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    // Enable grounding fallback
+    process.env.CODEBUDDY_VISION_GROUNDING = '1';
+
+    // Mock annotated screenshot
+    mockSnapshotManager.toAnnotatedScreenshot.mockResolvedValue({ image: 'fake-base64-data' });
+
+    // Set up snapshot with an interactive element that UIA will not match by name
+    const element = makeElement({ ref: 99, role: 'button', name: 'Unmatched Button', interactive: true });
+    setCurrentSnapshot(makeSnapshot([element]));
+
+    // Register a stub grounding provider returning ref 99
+    const groundingProviderSpy = vi.fn().mockResolvedValue(99);
+    setVisionGroundingProvider(groundingProviderSpy);
+
+    const result = await tool.execute({
+      action: 'click_button',
+      name: 'Virtual Button', // Query name doesn't match 'Unmatched Button' in UIA
+    });
+
+    expect(result.success).toBe(true);
+    expect(groundingProviderSpy).toHaveBeenCalledWith(expect.objectContaining({
+      imageBase64: 'fake-base64-data',
+      intent: 'Virtual Button',
+      roleHint: 'button',
+      candidates: [
+        { ref: 99, role: 'button', name: 'Unmatched Button' }
+      ]
+    }));
+
+    // Verify click succeeded on the grounding-matched element
+    expect(mockAutomation.click).toHaveBeenCalledWith(element.center.x, element.center.y, { button: 'left' });
+
+    // Clean up
+    setVisionGroundingProvider(null);
+    delete process.env.CODEBUDDY_VISION_GROUNDING;
+  });
 });

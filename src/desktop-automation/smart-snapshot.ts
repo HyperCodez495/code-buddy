@@ -463,7 +463,9 @@ export class SmartSnapshotManager extends EventEmitter {
   /**
    * Generate annotated screenshot with ref badges overlaid on each element
    */
-  async toAnnotatedScreenshot(): Promise<AnnotatedScreenshot | null> {
+  async toAnnotatedScreenshot(
+    opts: { interactiveOnly?: boolean; crop?: boolean } = {},
+  ): Promise<AnnotatedScreenshot | null> {
     if (!this.currentSnapshot?.valid) {
       return null;
     }
@@ -481,19 +483,33 @@ export class SmartSnapshotManager extends EventEmitter {
       }
 
       const screenshotPath: string = captureData.path as string;
-      const elements = this.currentSnapshot.elements;
+      // Set-of-marks grounding needs a LEGIBLE image: badge only interactive elements
+      // (a full snapshot can be 80+ overlapping badges) and optionally crop to the
+      // window content region so a vision model isn't handed the whole desktop.
+      const allElements = this.currentSnapshot.elements;
+      const badgeElements = opts.interactiveOnly
+        ? allElements.filter((e) => e.interactive)
+        : allElements;
+      const cropRegion = opts.crop
+        ? this.computeContentBounds(
+            allElements,
+            24,
+            this.currentSnapshot.screenSize.width,
+            this.currentSnapshot.screenSize.height,
+          )
+        : null;
 
       // Try sharp first for compositing ref badges
       try {
-        const annotatedResult = await this.annotateWithSharp(screenshotPath, elements);
+        const annotatedResult = await this.annotateWithSharp(screenshotPath, badgeElements, cropRegion);
         if (annotatedResult) return annotatedResult;
       } catch (err) {
         logger.debug('sharp annotation failed, trying ffmpeg fallback', { error: err });
       }
 
-      // Fallback: ffmpeg drawtext filter
+      // Fallback: ffmpeg drawtext filter (no crop; badges only)
       try {
-        const annotatedResult = await this.annotateWithFFmpeg(screenshotPath, elements);
+        const annotatedResult = await this.annotateWithFFmpeg(screenshotPath, badgeElements);
         if (annotatedResult) return annotatedResult;
       } catch (err) {
         logger.debug('ffmpeg annotation also failed', { error: err });
@@ -515,9 +531,39 @@ export class SmartSnapshotManager extends EventEmitter {
     }
   }
 
+  /**
+   * Bounding box (with padding, clamped to the screen) that encloses every visible
+   * element — used to crop the annotated screenshot to the window content region so
+   * set-of-marks grounding isn't handed the whole desktop. Returns null when there
+   * is nothing visible to enclose.
+   */
+  private computeContentBounds(
+    elements: UIElement[],
+    pad: number,
+    imgWidth: number,
+    imgHeight: number,
+  ): { left: number; top: number; width: number; height: number } | null {
+    const visible = elements.filter((e) => e.visible && e.bounds.width > 0 && e.bounds.height > 0);
+    if (visible.length === 0) return null;
+    let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+    for (const e of visible) {
+      minX = Math.min(minX, e.bounds.x);
+      minY = Math.min(minY, e.bounds.y);
+      maxX = Math.max(maxX, e.bounds.x + e.bounds.width);
+      maxY = Math.max(maxY, e.bounds.y + e.bounds.height);
+    }
+    const left = Math.max(0, Math.floor(minX - pad));
+    const top = Math.max(0, Math.floor(minY - pad));
+    const width = Math.min(imgWidth - left, Math.ceil(maxX - minX + pad * 2));
+    const height = Math.min(imgHeight - top, Math.ceil(maxY - minY + pad * 2));
+    if (width <= 0 || height <= 0) return null;
+    return { left, top, width, height };
+  }
+
   private async annotateWithSharp(
     screenshotPath: string,
-    elements: UIElement[]
+    elements: UIElement[],
+    cropRegion: { left: number; top: number; width: number; height: number } | null = null,
   ): Promise<AnnotatedScreenshot | null> {
     const sharp = (await import('sharp')).default;
     const image = sharp(screenshotPath);
@@ -546,13 +592,31 @@ export class SmartSnapshotManager extends EventEmitter {
     svgParts.push('</svg>');
     const svgOverlay = Buffer.from(svgParts.join('\n'));
 
-    const outputBuffer = await image
+    const composited = await image
       .composite([{ input: svgOverlay, top: 0, left: 0 }])
       .png()
       .toBuffer();
 
+    // Optional crop to the content region (second pass so order is unambiguous).
+    if (cropRegion) {
+      const left = Math.max(0, Math.min(cropRegion.left, imgWidth - 1));
+      const top = Math.max(0, Math.min(cropRegion.top, imgHeight - 1));
+      const width = Math.min(cropRegion.width, imgWidth - left);
+      const height = Math.min(cropRegion.height, imgHeight - top);
+      if (width > 0 && height > 0) {
+        const cropped = await sharp(composited).extract({ left, top, width, height }).png().toBuffer();
+        return {
+          image: cropped.toString('base64'),
+          format: 'png',
+          width,
+          height,
+          snapshot: this.currentSnapshot!,
+        };
+      }
+    }
+
     return {
-      image: outputBuffer.toString('base64'),
+      image: composited.toString('base64'),
       format: 'png',
       width: imgWidth,
       height: imgHeight,

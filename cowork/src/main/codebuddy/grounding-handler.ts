@@ -51,3 +51,22 @@ export function applyGroundingToggle(
   adapter.setDefaultGoogleSearch(enabled);
   return { ok: true };
 }
+
+/**
+ * Forward a visual grounding fallback toggle and optional model override to the engine adapter.
+ */
+export function applyVisionGroundingSetting(
+  adapter: EngineAdapterLike | undefined,
+  enabled: boolean,
+  model?: string,
+): ApplyGroundingResult {
+  if (!adapter) {
+    return { ok: false, reason: 'no-adapter' };
+  }
+  if (typeof adapter.setDefaultVisionGrounding !== 'function') {
+    return { ok: false, reason: 'unsupported' };
+  }
+  adapter.setDefaultVisionGrounding(enabled, model);
+  return { ok: true };
+}
+

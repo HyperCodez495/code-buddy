@@ -518,7 +518,7 @@ export class BrowserManager extends EventEmitter {
         const ref = currentRef++;
         try {
           el.setAttribute('data-agent-ref', String(ref));
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
 
         const name = (el.getAttribute('aria-label') || (htmlEl as any).placeholder || el.textContent?.trim().slice(0, 100) || '').trim();
         const value = (htmlEl as HTMLInputElement).value || el.getAttribute('aria-valuetext') || '';
@@ -733,7 +733,7 @@ export class BrowserManager extends EventEmitter {
     } catch (_) {
       try {
         await page.mouse.move(element.center.x, element.center.y);
-      } catch (_) {}
+      } catch (_) { /* ignore */ }
     }
 
     // Try selector click first for robustness
@@ -804,7 +804,7 @@ export class BrowserManager extends EventEmitter {
       } catch (_) {
         try {
           await page.mouse.move(element.center.x, element.center.y);
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
       }
 
       await page.mouse.click(element.center.x, element.center.y);
@@ -1555,7 +1555,7 @@ export class BrowserManager extends EventEmitter {
           Object.defineProperty(navigator, 'webdriver', {
             get: () => false,
           });
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
 
         try {
           const getParameter = WebGLRenderingContext.prototype.getParameter;
@@ -1564,13 +1564,13 @@ export class BrowserManager extends EventEmitter {
             if (parameter === 37446) return 'Mesa DRI Intel(R) HD Graphics 620 (Skylake GT2)';
             return getParameter.call(this, parameter);
           };
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
 
         try {
           Object.defineProperty(navigator, 'languages', {
             get: () => ['fr-FR', 'fr', 'en-US', 'en'],
           });
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
 
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1580,7 +1580,7 @@ export class BrowserManager extends EventEmitter {
             csi: () => {},
             app: {},
           };
-        } catch (_) {}
+        } catch (_) { /* ignore */ }
       });
       logger.info('Applied stealth init scripts to context');
     } catch (error) {
