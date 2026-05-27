@@ -86,6 +86,10 @@ export class BrowserManager extends EventEmitter {
   private consoleBuffer: ConsoleEntry[] = [];
   private static readonly MAX_CONSOLE_ENTRIES = 500;
 
+  // Mouse position tracking for human-like movement
+  private lastMouseX = 0;
+  private lastMouseY = 0;
+
   // Lazy-loaded subsystems
   private _routeInterceptor: import('./route-interceptor.js').RouteInterceptor | null = null;
   private _profileManager: import('./profile-manager.js').BrowserProfileManager | null = null;
@@ -126,8 +130,10 @@ export class BrowserManager extends EventEmitter {
       this.context = await this.browser.newContext({
         viewport: this.config.viewport,
         ignoreHTTPSErrors: this.config.ignoreHTTPSErrors,
-        userAgent: this.config.proxy ? undefined : undefined,
+        userAgent: this.config.userAgent || (this.config.headless ? 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36' : undefined),
       });
+
+      await this.applyStealth(this.context);
 
       // Set up event listeners
       this.context.on('page', (page: Page) => {
@@ -163,6 +169,8 @@ export class BrowserManager extends EventEmitter {
       this.browser = await this.playwright.chromium.connectOverCDP(cdpUrl);
       const contexts = this.browser.contexts();
       this.context = contexts[0] || await this.browser.newContext();
+
+      await this.applyStealth(this.context);
 
       const pages = this.context.pages();
       for (const page of pages) {
@@ -497,23 +505,37 @@ export class BrowserManager extends EventEmitter {
     const interactiveSelector = 'a, button, input, select, textarea, [role="button"], [role="link"], [role="textbox"], [role="checkbox"], [role="radio"], [role="combobox"], [role="listbox"], [role="menuitem"], [role="tab"], [role="switch"], [role="slider"], [role="searchbox"], [contenteditable="true"]';
     const selector = options.interactiveOnly ? interactiveSelector : `${interactiveSelector}, h1, h2, h3, h4, h5, h6, p, img, li, td, th, label`;
 
-    const domNodes = await page.evaluate((sel: string) => {
+    const startRef = this.nextRef;
+
+    const domNodes = await page.evaluate(({ sel, start }: { sel: string, start: number }) => {
       const nodes = Array.from(document.querySelectorAll(sel));
+      let currentRef = start;
       return nodes.slice(0, 300).map((el: Element) => {
         const rect = el.getBoundingClientRect();
         const htmlEl = el as HTMLElement;
+
+        // Inject data-agent-ref for reliable selector-based action mapping
+        const ref = currentRef++;
+        try {
+          el.setAttribute('data-agent-ref', String(ref));
+        } catch (_) {}
+
+        const name = (el.getAttribute('aria-label') || (htmlEl as any).placeholder || el.textContent?.trim().slice(0, 100) || '').trim();
+        const value = (htmlEl as HTMLInputElement).value || el.getAttribute('aria-valuetext') || '';
+
         return {
+          ref,
           tagName: el.tagName.toLowerCase(),
           role: el.getAttribute('role') || '',
-          name: el.getAttribute('aria-label') || (htmlEl as HTMLInputElement).placeholder || el.textContent?.trim().slice(0, 100) || '',
-          value: (htmlEl as HTMLInputElement).value || el.getAttribute('aria-valuetext') || '',
+          name,
+          value,
           disabled: (htmlEl as HTMLButtonElement).disabled || el.getAttribute('aria-disabled') === 'true',
           focused: document.activeElement === el,
           checked: (htmlEl as HTMLInputElement).checked || false,
           x: rect.x, y: rect.y, width: rect.width, height: rect.height,
         };
       });
-    }, selector);
+    }, { sel: selector, start: startRef });
 
     const elements: WebElement[] = [];
     for (const node of domNodes) {
@@ -524,8 +546,13 @@ export class BrowserManager extends EventEmitter {
       const isInteractive = this.isInteractiveRole(role);
       if (options.interactiveOnly && !isInteractive) continue;
 
+      // Semantic Pruning: Skip non-interactive element if name and value are empty
+      if (!isInteractive && !node.name && !node.value) {
+        continue;
+      }
+
       elements.push({
-        ref: this.nextRef++,
+        ref: node.ref,
         tagName: node.tagName,
         role,
         name: node.name,
@@ -540,6 +567,9 @@ export class BrowserManager extends EventEmitter {
         ariaAttributes: {},
       });
     }
+
+    // Update nextRef
+    this.nextRef = startRef + domNodes.length;
 
     return elements;
   }
@@ -687,15 +717,41 @@ export class BrowserManager extends EventEmitter {
   // Interactions
   // ============================================================================
 
-  /**
-   * Click element by reference
-   */
   async click(ref: number, options: ClickOptions = {}): Promise<void> {
     const page = this.getCurrentPage();
     const element = this.getElement(ref);
 
     if (!element) {
       throw new Error(`Element [${ref}] not found. Take a new snapshot.`);
+    }
+
+    // Move mouse smoothly from last position to element center
+    try {
+      await this.moveMouseHumanLike(page, this.lastMouseX, this.lastMouseY, element.center.x, element.center.y);
+      this.lastMouseX = element.center.x;
+      this.lastMouseY = element.center.y;
+    } catch (_) {
+      try {
+        await page.mouse.move(element.center.x, element.center.y);
+      } catch (_) {}
+    }
+
+    // Try selector click first for robustness
+    try {
+      const selector = `[data-agent-ref="${ref}"]`;
+      const locator = page.locator(selector).first();
+      if (await locator.count() > 0 && await locator.isVisible()) {
+        await locator.click({
+          button: options.button || 'left',
+          clickCount: options.clickCount || 1,
+          delay: options.delay,
+          timeout: 2000,
+        });
+        logger.info(`Clicked element [${ref}] using selector ${selector}`);
+        return;
+      }
+    } catch (err) {
+      logger.debug(`Selector click failed for [${ref}], falling back to coordinates`, { error: err });
     }
 
     await page.mouse.click(element.center.x, element.center.y, {
@@ -716,17 +772,57 @@ export class BrowserManager extends EventEmitter {
       throw new Error(`Element [${ref}] not found. Take a new snapshot.`);
     }
 
-    // Click to focus
-    await page.mouse.click(element.center.x, element.center.y);
-
-    // Clear if requested
-    if (options.clear) {
-      await page.keyboard.press('Control+A');
-      await page.keyboard.press('Backspace');
+    let typedViaSelector = false;
+    try {
+      const selector = `[data-agent-ref="${ref}"]`;
+      const locator = page.locator(selector).first();
+      if (await locator.count() > 0 && await locator.isVisible()) {
+        if (options.clear) {
+          await locator.fill('');
+        }
+        
+        await locator.focus();
+        const baseDelay = options.delay || 50;
+        for (const char of text) {
+          await page.keyboard.type(char);
+          const jitterDelay = baseDelay * 0.5 + Math.random() * baseDelay;
+          await page.waitForTimeout(jitterDelay);
+        }
+        logger.info(`Typed into element [${ref}] using selector ${selector} with human-like jitter`);
+        typedViaSelector = true;
+      }
+    } catch (err) {
+      logger.debug(`Selector typing failed for [${ref}], falling back to coordinates`, { error: err });
     }
 
-    // Type text
-    await page.keyboard.type(text, { delay: options.delay || 50 });
+    if (!typedViaSelector) {
+      // Click to focus (includes smooth mouse movement)
+      try {
+        await this.moveMouseHumanLike(page, this.lastMouseX, this.lastMouseY, element.center.x, element.center.y);
+        this.lastMouseX = element.center.x;
+        this.lastMouseY = element.center.y;
+      } catch (_) {
+        try {
+          await page.mouse.move(element.center.x, element.center.y);
+        } catch (_) {}
+      }
+
+      await page.mouse.click(element.center.x, element.center.y);
+
+      // Clear if requested
+      if (options.clear) {
+        await page.keyboard.press('Control+A');
+        await page.keyboard.press('Backspace');
+      }
+
+      // Type text with human-like jitter
+      const baseDelay = options.delay || 50;
+      for (const char of text) {
+        await page.keyboard.type(char);
+        const jitterDelay = baseDelay * 0.5 + Math.random() * baseDelay;
+        await page.waitForTimeout(jitterDelay);
+      }
+    }
   }
 
   /**
@@ -840,7 +936,59 @@ export class BrowserManager extends EventEmitter {
       throw new Error(`Element [${ref}] not found.`);
     }
 
-    await page.mouse.move(element.center.x, element.center.y);
+    try {
+      await this.moveMouseHumanLike(page, this.lastMouseX, this.lastMouseY, element.center.x, element.center.y);
+      this.lastMouseX = element.center.x;
+      this.lastMouseY = element.center.y;
+    } catch (_) {
+      await page.mouse.move(element.center.x, element.center.y);
+    }
+  }
+
+  /**
+   * Move mouse dynamically using cubic Bezier curves to simulate human behavior
+   */
+  private async moveMouseHumanLike(page: Page, fromX: number, fromY: number, toX: number, toY: number): Promise<void> {
+    const distance = Math.hypot(toX - fromX, toY - fromY);
+    if (distance < 10) {
+      await page.mouse.move(toX, toY);
+      return;
+    }
+
+    const steps = Math.min(25, Math.max(10, Math.round(distance / 40)));
+
+    // Generate random control points for Bezier curve to simulate natural arm/wrist arc
+    const ctrlX1 = fromX + (toX - fromX) * 0.25 + (Math.random() - 0.5) * 150;
+    const ctrlY1 = fromY + (toY - fromY) * 0.25 + (Math.random() - 0.5) * 150;
+    const ctrlX2 = fromX + (toX - fromX) * 0.75 + (Math.random() - 0.5) * 150;
+    const ctrlY2 = fromY + (toY - fromY) * 0.75 + (Math.random() - 0.5) * 150;
+
+    for (let i = 1; i <= steps; i++) {
+      const t = i / steps;
+      // Cubic Bezier interpolation
+      const x = Math.round(
+        (1 - t) ** 3 * fromX +
+        3 * (1 - t) ** 2 * t * ctrlX1 +
+        3 * (1 - t) * t ** 2 * ctrlX2 +
+        t ** 3 * toX
+      );
+      const y = Math.round(
+        (1 - t) ** 3 * fromY +
+        3 * (1 - t) ** 2 * t * ctrlY1 +
+        3 * (1 - t) * t ** 2 * ctrlY2 +
+        t ** 3 * toY
+      );
+
+      const jitterX = x + (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.5);
+      const jitterY = y + (Math.random() > 0.5 ? 1 : -1) * (Math.random() * 1.5);
+
+      await page.mouse.move(Math.round(jitterX), Math.round(jitterY));
+      
+      const stepDelay = 8 + Math.random() * 7;
+      await page.waitForTimeout(stepDelay);
+    }
+
+    await page.mouse.move(toX, toY);
   }
 
   // ============================================================================
@@ -1394,6 +1542,49 @@ export class BrowserManager extends EventEmitter {
     if (this._routeInterceptor) {
       const page = this.getCurrentPage();
       await this._routeInterceptor.clearRules(page);
+    }
+  }
+
+  /**
+   * Apply stealth overrides to browser context
+   */
+  private async applyStealth(context: BrowserContext): Promise<void> {
+    try {
+      await context.addInitScript(() => {
+        try {
+          Object.defineProperty(navigator, 'webdriver', {
+            get: () => false,
+          });
+        } catch (_) {}
+
+        try {
+          const getParameter = WebGLRenderingContext.prototype.getParameter;
+          WebGLRenderingContext.prototype.getParameter = function (parameter) {
+            if (parameter === 37445) return 'Intel Open Source Technology Center';
+            if (parameter === 37446) return 'Mesa DRI Intel(R) HD Graphics 620 (Skylake GT2)';
+            return getParameter.call(this, parameter);
+          };
+        } catch (_) {}
+
+        try {
+          Object.defineProperty(navigator, 'languages', {
+            get: () => ['fr-FR', 'fr', 'en-US', 'en'],
+          });
+        } catch (_) {}
+
+        try {
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          (window as any).chrome = {
+            runtime: {},
+            loadTimes: () => {},
+            csi: () => {},
+            app: {},
+          };
+        } catch (_) {}
+      });
+      logger.info('Applied stealth init scripts to context');
+    } catch (error) {
+      logger.debug('Failed to apply stealth scripts', { error });
     }
   }
 

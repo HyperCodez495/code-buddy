@@ -418,6 +418,8 @@ export interface BrowserConfig {
   downloadsPath?: string;
   /** Ignore HTTPS errors */
   ignoreHTTPSErrors?: boolean;
+  /** Custom user agent */
+  userAgent?: string;
 }
 
 export const DEFAULT_BROWSER_CONFIG: BrowserConfig = {

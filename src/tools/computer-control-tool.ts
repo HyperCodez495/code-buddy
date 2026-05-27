@@ -638,6 +638,12 @@ export class ComputerControlTool {
   // ============================================================================
 
   private async takeSnapshot(input: ComputerControlInput): Promise<ToolResult> {
+    if (this.hasWindowMatcher(input)) {
+      const focusResult = await this.focusWindow(input);
+      if (!focusResult.success) return focusResult;
+      await this.delay(150);
+    }
+
     const snapshot = await this.snapshotManager.takeSnapshot({
       interactiveOnly: input.interactiveOnly ?? true,
     });
@@ -656,6 +662,12 @@ export class ComputerControlTool {
   }
 
   private async snapshotWithScreenshot(input: ComputerControlInput): Promise<ToolResult> {
+    if (this.hasWindowMatcher(input)) {
+      const focusResult = await this.focusWindow(input);
+      if (!focusResult.success) return focusResult;
+      await this.delay(150);
+    }
+
     // Take snapshot first
     const snapshot = await this.snapshotManager.takeSnapshot({
       interactiveOnly: input.interactiveOnly ?? true,
@@ -761,7 +773,20 @@ export class ComputerControlTool {
       requireInteractive: input.interactiveOnly ?? true,
       exactName: input.exactName,
     });
-    if (!match.element) return { success: false, error: match.error };
+    if (!match.element) {
+      const direct = await this.tryWindowsActivateNamedRole(
+        input,
+        ['checkbox'],
+        input.checked === undefined
+          ? 'Toggled checkbox'
+          : `Set checkbox to ${input.checked ? 'checked' : 'unchecked'}`
+      );
+      if (direct.success) return direct;
+      return {
+        success: false,
+        error: `${match.error} UIAutomation fallback: ${direct.error ?? direct.output ?? 'unavailable'}`,
+      };
+    }
 
     const clicked = await this.click({ ...input, ref: match.element.ref });
     if (!clicked.success) return clicked;
@@ -816,7 +841,16 @@ export class ComputerControlTool {
       requireInteractive: true,
       exactName: input.exactName,
     });
-    if (!match.element) return { success: false, error: match.error };
+    if (!match.element) {
+      const direct = await this.tryWindowsSetFocusedText(input, input.text);
+      if (direct.success) {
+        return {
+          ...direct,
+          output: `${direct.output} (targeted UIAutomation fallback used after snapshot lookup failed)`,
+        };
+      }
+      return { success: false, error: match.error };
+    }
 
     const clicked = await this.click({ ...input, ref: match.element.ref });
     if (!clicked.success) return clicked;
@@ -996,7 +1030,20 @@ export class ComputerControlTool {
       requireInteractive: true,
       exactName: input.exactName,
     });
-    if (!match.element) return { success: false, error: match.error };
+    if (!match.element) {
+      const direct = await this.tryWindowsActivateNamedRole(
+        input,
+        ['checkbox'],
+        input.checked === undefined
+          ? 'Toggled checkbox'
+          : `Set checkbox to ${input.checked ? 'checked' : 'unchecked'}`
+      );
+      if (direct.success) return direct;
+      return {
+        success: false,
+        error: `${match.error} UIAutomation fallback: ${direct.error ?? direct.output ?? 'unavailable'}`,
+      };
+    }
 
     const currentState = this.getElementCheckedState(match.element);
     if (input.checked !== undefined && currentState === input.checked) {
@@ -1373,6 +1420,8 @@ public static class CodeBuddyDialogMouse {
   public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")]
   public static extern void mouse_event(int dwFlags, int dx, int dy, int cButtons, int dwExtraInfo);
+  [DllImport("user32.dll")]
+  public static extern IntPtr SendMessage(IntPtr hWnd, int Msg, IntPtr wParam, IntPtr lParam);
 }
 '@
 $payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
@@ -1813,30 +1862,78 @@ if ($clickButtonName) {
       return { success: false, error: `Unknown app profile: ${input.appName ?? input.name ?? ''}` };
     }
 
-    const windows = await this.automation.getWindows();
-    const matches = windows.filter((win) => {
-      const process = win.processName.toLowerCase();
-      const title = win.title.toLowerCase();
-      return profile.processNames.some((name) => process === name.toLowerCase() || process.includes(name.toLowerCase()))
-        || profile.titleHints.some((hint) => title.includes(hint.toLowerCase()));
-    });
-
-    if (matches.length === 0) {
+    const targetInput = this.withDerivedAppWindowTarget(input, profile);
+    const selected = await this.waitForAppWindowFromInput(profile, targetInput);
+    if (!selected) {
       return { success: false, error: `No visible window found for ${profile.name}. Try open_app first.` };
     }
 
-    const selected = matches.find((win) => win.focused) ?? matches.sort((a, b) => {
-      const areaA = a.bounds.width * a.bounds.height;
-      const areaB = b.bounds.width * b.bounds.height;
-      return areaB - areaA;
-    })[0]!;
-
     await this.automation.focusWindow(selected.handle);
+    const matches = await this.findAppWindowCandidatesFromInput(profile, targetInput);
     return {
       success: true,
       output: `Focused ${profile.name}: "${selected.title}"`,
-      data: { profile, window: selected, matchedCount: matches.length },
+      data: { profile, window: selected, matchedCount: Math.max(1, matches.length) },
     };
+  }
+
+  private withDerivedAppWindowTarget(input: ComputerControlInput, profile: ApplicationProfile): ComputerControlInput {
+    const next: ComputerControlInput = { ...input };
+    if (profile.id === 'notepad' && input.filePath && !next.windowTitle && !next.windowTitleRegex) {
+      next.windowTitle = path.basename(input.filePath);
+      next.windowTitleMatch = 'contains';
+    }
+    return next;
+  }
+
+  private async findAppWindowCandidatesFromInput(
+    profile: ApplicationProfile,
+    input: ComputerControlInput
+  ): Promise<WindowInfo[]> {
+    const regex = this.parseTitleRegex(input);
+    if (input.windowTitleRegex && !regex) return [];
+
+    const wins = await this.automation.getWindows({ includeHidden: false });
+    return wins.filter((win) => {
+      return this.matchesApplicationProfileWindow(win, profile)
+        && this.matchesWindowInput(win, input, regex);
+    });
+  }
+
+  private async waitForAppWindowFromInput(
+    profile: ApplicationProfile,
+    input: ComputerControlInput
+  ): Promise<WindowInfo | null> {
+    const timeout = Math.max(0, Math.min(120_000, Math.round(this.toFiniteNumber(input.timeoutMs, 10000))));
+    const poll = Math.max(25, Math.min(5_000, Math.round(this.toFiniteNumber(input.pollIntervalMs, 250))));
+    const startedAt = Date.now();
+
+    while (Date.now() - startedAt <= timeout) {
+      const candidates = await this.findAppWindowCandidatesFromInput(profile, input);
+      const uniqueErr = this.buildUniqueWindowError(candidates, input);
+      if (uniqueErr) {
+        this.lastWindowMatchError = uniqueErr;
+        return null;
+      }
+
+      const selected = this.selectWindowCandidate(candidates, input);
+      if (selected) {
+        return selected;
+      }
+
+      await this.delay(poll);
+    }
+
+    return null;
+  }
+
+  private matchesApplicationProfileWindow(window: WindowInfo, profile: ApplicationProfile): boolean {
+    const process = window.processName.toLowerCase();
+    const title = window.title.toLowerCase();
+    return profile.processNames.some((name) => {
+      const normalized = name.toLowerCase();
+      return process === normalized || process.includes(normalized);
+    }) || profile.titleHints.some((hint) => title.includes(hint.toLowerCase()));
   }
 
   private async readAppText(input: ComputerControlInput): Promise<ToolResult> {
@@ -1978,11 +2075,26 @@ if ($clickButtonName) {
       return { success: false, error: point.browserError };
     }
 
+    let bufferBefore: Buffer | null = null;
+    if (input.visualContext) {
+      bufferBefore = await this.captureScreenBuffer();
+    }
+
     await this.automation.click(point.x, point.y, { button: input.button || 'left' });
+
+    let changeNotice = '';
+    if (input.visualContext) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const bufferAfter = await this.captureScreenBuffer();
+      if (bufferBefore && bufferAfter) {
+        const changed = !bufferBefore.equals(bufferAfter);
+        changeNotice = changed ? ' (visual change verified)' : ' (WARNING: no visual change detected)';
+      }
+    }
 
     return {
       success: true,
-      output: `Clicked at (${point.x}, ${point.y})`,
+      output: `Clicked at (${point.x}, ${point.y})${changeNotice}`,
     };
   }
 
@@ -1995,11 +2107,26 @@ if ($clickButtonName) {
       return { success: false, error: point.browserError };
     }
 
+    let bufferBefore: Buffer | null = null;
+    if (input.visualContext) {
+      bufferBefore = await this.captureScreenBuffer();
+    }
+
     await this.automation.doubleClick(point.x, point.y, 'left');
+
+    let changeNotice = '';
+    if (input.visualContext) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const bufferAfter = await this.captureScreenBuffer();
+      if (bufferBefore && bufferAfter) {
+        const changed = !bufferBefore.equals(bufferAfter);
+        changeNotice = changed ? ' (visual change verified)' : ' (WARNING: no visual change detected)';
+      }
+    }
 
     return {
       success: true,
-      output: `Double-clicked at (${point.x}, ${point.y})`,
+      output: `Double-clicked at (${point.x}, ${point.y})${changeNotice}`,
     };
   }
 
@@ -2012,11 +2139,26 @@ if ($clickButtonName) {
       return { success: false, error: point.browserError };
     }
 
+    let bufferBefore: Buffer | null = null;
+    if (input.visualContext) {
+      bufferBefore = await this.captureScreenBuffer();
+    }
+
     await this.automation.rightClick(point.x, point.y);
+
+    let changeNotice = '';
+    if (input.visualContext) {
+      await new Promise(resolve => setTimeout(resolve, 300));
+      const bufferAfter = await this.captureScreenBuffer();
+      if (bufferBefore && bufferAfter) {
+        const changed = !bufferBefore.equals(bufferAfter);
+        changeNotice = changed ? ' (visual change verified)' : ' (WARNING: no visual change detected)';
+      }
+    }
 
     return {
       success: true,
-      output: `Right-clicked at (${point.x}, ${point.y})`,
+      output: `Right-clicked at (${point.x}, ${point.y})${changeNotice}`,
     };
   }
 
@@ -2293,6 +2435,7 @@ if ($clickButtonName) {
     }
 
     await this.automation.focusWindow(win.handle);
+    await this.tryWindowsForceForeground(win);
 
     return {
       success: true,
@@ -2923,30 +3066,70 @@ if ($clickButtonName) {
       return null;
     }
 
-    // Phase 2: Handle screen scaling (Temporarily disabled due to missing bounds/scaleFactor in DisplayInfo)
-    /*
-    try {
-      const displays = await this.systemControl.getDisplays();
-      // Find the display containing the point, or default to primary
-      const display = displays.find(d =>
-        rawPoint!.x >= d.bounds.x && rawPoint!.x <= d.bounds.x + d.bounds.width &&
-        rawPoint!.y >= d.bounds.y && rawPoint!.y <= d.bounds.y + d.bounds.height
-      ) || displays.find(d => d.isPrimary) || displays[0];
+    let targetX = rawPoint.x;
+    let targetY = rawPoint.y;
 
-      if (display && display.scaleFactor && display.scaleFactor !== 1) {
-        // Logically adjust coordinates. Usually automation tools expect logical pixels
-        // whereas the screenshot gives native pixels.
-        return {
-          x: Math.round(rawPoint.x / display.scaleFactor),
-          y: Math.round(rawPoint.y / display.scaleFactor),
-        };
+    // Get screen info from desktop automation for bounds and scaling
+    try {
+      const screens = await this.automation.getScreens();
+      const primaryScreen = screens.find(s => s.primary) || screens[0];
+
+      const width = primaryScreen?.bounds?.width || 1920;
+      const height = primaryScreen?.bounds?.height || 1080;
+      const scaleFactor = primaryScreen?.scaleFactor || 1;
+
+      // Coordinate scaling logic (relative 0-1000 scale)
+      // Check if coordinates look normalized / relative
+      const isRelative = input.x !== undefined && input.y !== undefined &&
+        input.x >= 0 && input.x <= 1000 &&
+        input.y >= 0 && input.y <= 1000 &&
+        !(width <= 1000 && height <= 1000);
+
+      if (isRelative && input.x !== undefined && input.y !== undefined) {
+        targetX = Math.round((input.x / 1000) * width);
+        targetY = Math.round((input.y / 1000) * height);
+        logger.info(`Mapped relative coordinates (${input.x}, ${input.y}) to absolute (${targetX}, ${targetY}) on primary screen of size ${width}x${height}`);
+      }
+
+      // Adjust coordinates by scaleFactor if coordinates represent physical pixels (e.g. from screenshot)
+      if (scaleFactor !== 1) {
+        const targetScreen = screens.find(s =>
+          targetX >= s.bounds.x && targetX <= s.bounds.x + s.bounds.width &&
+          targetY >= s.bounds.y && targetY <= s.bounds.y + s.bounds.height
+        ) || primaryScreen || screens[0];
+
+        const targetScaleFactor = targetScreen?.scaleFactor || 1;
+        if (targetScaleFactor !== 1) {
+          logger.info(`Applying DPI scale factor of ${targetScaleFactor} to absolute coordinates (${targetX}, ${targetY})`);
+          targetX = Math.round(targetX / targetScaleFactor);
+          targetY = Math.round(targetY / targetScaleFactor);
+        }
       }
     } catch (err) {
-      logger.debug('Failed to get displays for scale factor', { error: err });
+      logger.debug('Failed to get screen info for coordinate scaling', { error: err });
     }
-    */
 
-    return rawPoint;
+    return { x: targetX, y: targetY };
+  }
+
+  /**
+   * Capture screenshot buffer for visual verification loops
+   */
+  private async captureScreenBuffer(): Promise<Buffer | null> {
+    try {
+      const { ScreenshotTool } = await import('./screenshot-tool.js');
+      const screenshotTool = new ScreenshotTool();
+      const captureResult = await screenshotTool.capture({ fullscreen: true, format: 'png' });
+      const captureData = captureResult.data as Record<string, unknown> | undefined;
+      if (captureResult.success && captureData?.path) {
+        const filePath = captureData.path as string;
+        const fs = await import('fs/promises');
+        return await fs.readFile(filePath);
+      }
+    } catch (err) {
+      logger.debug('Failed to capture screen buffer', { error: err });
+    }
+    return null;
   }
 
   private resolveAppProfileFromInput(input: ComputerControlInput): ApplicationProfile | undefined {
@@ -3324,6 +3507,7 @@ if ($first.Length -gt 0) {
     const payload = Buffer.from(JSON.stringify({
       targetName,
       exactName: input.exactName ?? false,
+      requestedChecked: input.checked,
       windowTitle: input.windowTitle,
       windowTitleMatch: input.windowTitleMatch ?? 'contains',
       processName: input.processName,
@@ -3337,6 +3521,12 @@ using System;
 using System.Runtime.InteropServices;
 public static class CodeBuddyMouse {
   [DllImport("user32.dll")]
+  public static extern bool ShowWindowAsync(IntPtr hWnd, int nCmdShow);
+  [DllImport("user32.dll")]
+  public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern bool SetForegroundWindow(IntPtr hWnd);
+  [DllImport("user32.dll")]
   public static extern bool SetCursorPos(int X, int Y);
   [DllImport("user32.dll")]
   public static extern void mouse_event(int dwFlags, int dx, int dy, int cButtons, int dwExtraInfo);
@@ -3345,6 +3535,8 @@ public static class CodeBuddyMouse {
 $payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
 $targetName = [string]$payload.targetName
 $exactName = [bool]$payload.exactName
+$hasRequestedChecked = $null -ne $payload.requestedChecked
+$requestedChecked = if ($hasRequestedChecked) { [bool]$payload.requestedChecked } else { $false }
 $windowTitle = [string]$payload.windowTitle
 $windowTitleMatch = [string]$payload.windowTitleMatch
 $processName = [string]$payload.processName
@@ -3364,7 +3556,7 @@ function Matches([string]$candidate, [string]$query, [bool]$exact) {
 }
 
 function Get-Nodes($element, [int]$depth) {
-  if ($null -eq $element -or $depth -gt 8) { return @() }
+  if ($null -eq $element -or $depth -gt 18) { return @() }
   $results = @()
   try {
     $rect = $element.Current.BoundingRectangle
@@ -3420,6 +3612,17 @@ function Resolve-Window {
 
 $window = Resolve-Window
 if ($null -eq $window) { throw 'No target window found for semantic activation.' }
+try {
+  $hwndValue = [int64]$window.Current.NativeWindowHandle
+  if ($hwndValue -ne 0) {
+    $hwnd = [IntPtr]::new($hwndValue)
+    [void][CodeBuddyMouse]::ShowWindowAsync($hwnd, 9)
+    Start-Sleep -Milliseconds 80
+    [void][CodeBuddyMouse]::BringWindowToTop($hwnd)
+    [void][CodeBuddyMouse]::SetForegroundWindow($hwnd)
+    Start-Sleep -Milliseconds 120
+  }
+} catch {}
 $nodes = @(Get-Nodes $window 0)
 $candidates = @($nodes | Where-Object {
   $_.Enabled -and
@@ -3429,9 +3632,116 @@ $candidates = @($nodes | Where-Object {
   ($controlTypes -contains $_.Role) -and
   (Matches $_.Name $targetName $exactName)
 })
+function Make-Node($el) {
+  try {
+    $rect = $el.Current.BoundingRectangle
+    return [pscustomobject]@{
+      Element = $el
+      Name = [string]$el.Current.Name
+      Role = [string]$el.Current.ControlType.ProgrammaticName
+      X = [double]$rect.X
+      Y = [double]$rect.Y
+      Width = [double]$rect.Width
+      Height = [double]$rect.Height
+      Enabled = [bool]$el.Current.IsEnabled
+      Offscreen = [bool]$el.Current.IsOffscreen
+    }
+  } catch { return $null }
+}
+
+function Find-ItemContainers($element, [int]$depth) {
+  if ($null -eq $element -or $depth -gt 8) { return @() }
+  $results = @()
+  try {
+    if ([bool]$element.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::IsItemContainerPatternAvailableProperty)) {
+      $results += $element
+    }
+  } catch {}
+  try {
+    $child = $walker.GetFirstChild($element)
+    while ($null -ne $child) {
+      $results += Find-ItemContainers $child ($depth + 1)
+      $child = $walker.GetNextSibling($child)
+    }
+  } catch {}
+  return $results
+}
+
+function Find-VScroll($element, [int]$depth) {
+  if ($null -eq $element -or $depth -gt 8) { return $null }
+  try {
+    if ([bool]$element.GetCurrentPropertyValue([System.Windows.Automation.AutomationElement]::IsScrollPatternAvailableProperty)) {
+      $sp = $element.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern)
+      if ($null -ne $sp -and $sp.Current.VerticallyScrollable) { return $element }
+    }
+  } catch {}
+  try {
+    $child = $walker.GetFirstChild($element)
+    while ($null -ne $child) {
+      $r = Find-VScroll $child ($depth + 1)
+      if ($null -ne $r) { return $r }
+      $child = $walker.GetNextSibling($child)
+    }
+  } catch {}
+  return $null
+}
+
+function Realize-VirtualItem($root, [string]$name, [bool]$exact, $types) {
+  # Primary path: ItemContainerPattern.FindItemByProperty (exact Name) -> Realize -> ScrollIntoView.
+  foreach ($c in (Find-ItemContainers $root 0)) {
+    try {
+      $icp = $c.GetCurrentPattern([System.Windows.Automation.ItemContainerPattern]::Pattern)
+      $found = $icp.FindItemByProperty($null, [System.Windows.Automation.AutomationElement]::NameProperty, $name)
+      if ($null -ne $found) {
+        try { $found.GetCurrentPattern([System.Windows.Automation.VirtualizedItemPattern]::Pattern).Realize() } catch {}
+        Start-Sleep -Milliseconds 130
+        try { $found.GetCurrentPattern([System.Windows.Automation.ScrollItemPattern]::Pattern).ScrollIntoView() } catch {}
+        Start-Sleep -Milliseconds 130
+        $node = Make-Node $found
+        if ($null -ne $node -and ($types -contains $node.Role)) { return $node }
+      }
+    } catch {}
+  }
+  # Universal fallback: scroll the vertically-scrollable container top-to-bottom, re-walking
+  # ONLY that container's subtree each page (cheap, avoids whole-window walk timeout). Diag to
+  # %TEMP%\cb-realize-diag.txt: VerticalScrollPercent per page => timeout vs scroll-no-op in one run.
+  $scrollEl = Find-VScroll $root 0
+  if ($null -ne $scrollEl) {
+    $sp = $null
+    try { $sp = $scrollEl.GetCurrentPattern([System.Windows.Automation.ScrollPattern]::Pattern) } catch {}
+    if ($null -ne $sp) {
+      $diagPath = Join-Path $env:TEMP 'cb-realize-diag.txt'
+      try { Set-Content -Path $diagPath -Value "target=$name" -ErrorAction SilentlyContinue } catch {}
+      try { $sp.SetScrollPercent([System.Windows.Automation.ScrollPattern]::NoScroll, 0); Start-Sleep -Milliseconds 150 } catch {}
+      $lastPct = -999.0
+      for ($p = 0; $p -lt 200; $p++) {
+        $nodes2 = @(Get-Nodes $scrollEl 0)
+        $hit = @($nodes2 | Where-Object {
+          $_.Enabled -and -not $_.Offscreen -and $_.Width -gt 0 -and $_.Height -gt 0 -and ($types -contains $_.Role) -and (Matches $_.Name $name $exact)
+        })
+        $vpct = -1.0
+        try { $vpct = [double]$sp.Current.VerticalScrollPercent } catch {}
+        try { Add-Content -Path $diagPath -Value "p=$p vpct=$([int]$vpct) nodes=$($nodes2.Count) hit=$($hit.Count)" -ErrorAction SilentlyContinue } catch {}
+        if ($hit.Count -gt 0) { return ($hit | Select-Object -First 1) }
+        if ($vpct -ge 100) { break }
+        if ([Math]::Abs($vpct - $lastPct) -lt 0.01 -and $p -gt 0) { break }
+        $lastPct = $vpct
+        try { $sp.Scroll([System.Windows.Automation.ScrollAmount]::NoAmount, [System.Windows.Automation.ScrollAmount]::LargeIncrement) } catch { break }
+        Start-Sleep -Milliseconds 150
+      }
+    }
+  }
+  return $null
+}
+
 if ($candidates.Count -eq 0) {
-  $available = @($nodes | Where-Object { $controlTypes -contains $_.Role } | Select-Object -First 12 | ForEach-Object { "$($_.Role):$($_.Name)" })
-  throw "No semantic target '$targetName'. Available: $($available -join '; ')"
+  $realized = Realize-VirtualItem $window $targetName $exactName $controlTypes
+  if ($null -ne $realized) {
+    $candidates = @($realized)
+  } else {
+    $available = @($nodes | Where-Object { $controlTypes -contains $_.Role } | Select-Object -First 12 | ForEach-Object { "$($_.Role):$($_.Name)" })
+    throw "No semantic target '$targetName'. Available: $($available -join '; ')"
+  }
 }
 
 $target = $candidates | Sort-Object @{ Expression = { [Math]::Abs($_.X) + [Math]::Abs($_.Y) } } | Select-Object -First 1
@@ -3442,17 +3752,27 @@ try {
 } catch {}
 
 try {
-  $select = $target.Element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
-  $select.Select()
-  $source = 'uia-selection'
-  if ($target.Role -eq 'ControlType.ListItem') {
-    $cx = [int]($target.X + ($target.Width / 2))
-    $cy = [int]($target.Y + ($target.Height / 2))
-    [CodeBuddyMouse]::SetCursorPos($cx, $cy) | Out-Null
-    Start-Sleep -Milliseconds 50
-    [CodeBuddyMouse]::mouse_event(0x0002, 0, 0, 0, 0)
-    [CodeBuddyMouse]::mouse_event(0x0004, 0, 0, 0, 0)
-    $source = 'uia-selection-mouse'
+  if ($target.Role -eq 'ControlType.CheckBox') {
+    $toggle = $target.Element.GetCurrentPattern([System.Windows.Automation.TogglePattern]::Pattern)
+    $before = [string]$toggle.Current.ToggleState
+    $isChecked = $before -eq 'On'
+    if ((-not $hasRequestedChecked) -or ($isChecked -ne $requestedChecked)) {
+      $toggle.Toggle()
+    }
+    $source = 'uia-toggle'
+  } else {
+    $select = $target.Element.GetCurrentPattern([System.Windows.Automation.SelectionItemPattern]::Pattern)
+    $select.Select()
+    $source = 'uia-selection'
+    if ($target.Role -eq 'ControlType.ListItem') {
+      $cx = [int]($target.X + ($target.Width / 2))
+      $cy = [int]($target.Y + ($target.Height / 2))
+      [CodeBuddyMouse]::SetCursorPos($cx, $cy) | Out-Null
+      Start-Sleep -Milliseconds 50
+      [CodeBuddyMouse]::mouse_event(0x0002, 0, 0, 0, 0)
+      [CodeBuddyMouse]::mouse_event(0x0004, 0, 0, 0, 0)
+      $source = 'uia-selection-mouse'
+    }
   }
 } catch {
   try {
@@ -3460,13 +3780,27 @@ try {
     $invoke.Invoke()
     $source = 'uia-invoke'
   } catch {
-    $cx = [int]($target.X + ($target.Width / 2))
-    $cy = [int]($target.Y + ($target.Height / 2))
-    [CodeBuddyMouse]::SetCursorPos($cx, $cy) | Out-Null
-    Start-Sleep -Milliseconds 50
-    [CodeBuddyMouse]::mouse_event(0x0002, 0, 0, 0, 0)
-    [CodeBuddyMouse]::mouse_event(0x0004, 0, 0, 0, 0)
-    $source = 'uia-mouse'
+    try {
+      $legacy = $target.Element.GetCurrentPattern([System.Windows.Automation.LegacyIAccessiblePattern]::Pattern)
+      $legacy.DoDefaultAction()
+      $source = 'uia-legacy'
+    } catch {
+      try {
+        $controlHwndValue = [int64]$target.Element.Current.NativeWindowHandle
+        if ($controlHwndValue -eq 0) { throw 'Target has no native window handle.' }
+        $controlHwnd = [IntPtr]::new($controlHwndValue)
+        [void][CodeBuddyMouse]::SendMessage($controlHwnd, 0x00F5, [IntPtr]::Zero, [IntPtr]::Zero)
+        $source = 'win32-bm-click'
+      } catch {
+        $cx = [int]($target.X + ($target.Width / 2))
+        $cy = [int]($target.Y + ($target.Height / 2))
+        [CodeBuddyMouse]::SetCursorPos($cx, $cy) | Out-Null
+        Start-Sleep -Milliseconds 50
+        [CodeBuddyMouse]::mouse_event(0x0002, 0, 0, 0, 0)
+        [CodeBuddyMouse]::mouse_event(0x0004, 0, 0, 0, 0)
+        $source = 'uia-mouse'
+      }
+    }
   }
 }
 
@@ -3484,7 +3818,7 @@ try {
 `;
 
     try {
-      const stdout = await this.runPowerShellEncoded(script, 10000);
+      const stdout = await this.runPowerShellEncoded(script, 30000);
       const data = JSON.parse(stdout || '{}') as {
         source?: string;
         name?: string;
@@ -3554,7 +3888,7 @@ function Matches([string]$candidate, [string]$query, [bool]$exact) {
 }
 
 function Get-Nodes($element, [int]$depth) {
-  if ($null -eq $element -or $depth -gt 8) { return @() }
+  if ($null -eq $element -or $depth -gt 18) { return @() }
   $results = @()
   try {
     $rect = $element.Current.BoundingRectangle
@@ -3710,7 +4044,7 @@ function Matches([string]$candidate, [string]$query, [bool]$exact) {
 }
 
 function Get-Nodes($element, [int]$depth) {
-  if ($null -eq $element -or $depth -gt 8) { return @() }
+  if ($null -eq $element -or $depth -gt 18) { return @() }
   $results = @()
   try {
     $rect = $element.Current.BoundingRectangle
@@ -3841,6 +4175,8 @@ $after = [string]$pattern.Current.ExpandCollapseState
           return ['ControlType.ListItem'];
         case 'slider':
           return ['ControlType.Slider'];
+        case 'checkbox':
+          return ['ControlType.CheckBox'];
         case 'tree':
           return ['ControlType.Tree'];
         case 'tree-item':
@@ -3892,7 +4228,7 @@ function Text-Matches([string]$candidate, [string]$query, [string]$mode) {
 }
 
 function Get-Nodes($element, [int]$depth) {
-  if ($null -eq $element -or $depth -gt 8) { return @() }
+  if ($null -eq $element -or $depth -gt 18) { return @() }
   $results = @()
   try {
     $rect = $element.Current.BoundingRectangle
@@ -4026,6 +4362,8 @@ $proc = Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
 
     const payload = Buffer.from(JSON.stringify({
       text,
+      targetName: input.name,
+      exactName: input.exactName,
       windowTitle: input.windowTitle,
       windowTitleMatch: input.windowTitleMatch ?? 'contains',
       processName: input.processName,
@@ -4035,6 +4373,8 @@ $proc = Get-Process -Id $window.Current.ProcessId -ErrorAction SilentlyContinue
 Add-Type -AssemblyName UIAutomationClient
 $payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
 $targetText = [string]$payload.text
+$targetName = [string]$payload.targetName
+$targetNameMatch = if ([bool]$payload.exactName) { 'equals' } else { 'contains' }
 $windowTitle = [string]$payload.windowTitle
 $windowTitleMatch = [string]$payload.windowTitleMatch
 $processName = [string]$payload.processName
@@ -4054,7 +4394,7 @@ function Text-Matches([string]$candidate, [string]$query, [string]$mode) {
 }
 
 function Get-Nodes($element, [int]$depth) {
-  if ($null -eq $element -or $depth -gt 8) { return @() }
+  if ($null -eq $element -or $depth -gt 18) { return @() }
   $results = @()
   try {
     $rect = $element.Current.BoundingRectangle
@@ -4109,13 +4449,18 @@ function Resolve-Window {
 $window = Resolve-Window
 if ($null -eq $window) { throw 'No target window found for text entry.' }
 $nodes = @(Get-Nodes $window 0)
-$editable = @($nodes | Where-Object {
+$allEditable = @($nodes | Where-Object {
   $_.Enabled -and
   -not $_.Offscreen -and
   $_.Width -gt 0 -and
   $_.Height -gt 0 -and
   ($_.Role -in @('ControlType.Edit', 'ControlType.Document'))
-} | Sort-Object @{ Expression = { $_.Width * $_.Height } } -Descending | Select-Object -First 1)
+})
+if ($targetName) {
+  $editable = @($allEditable | Where-Object { Text-Matches $_.Name $targetName $targetNameMatch } | Sort-Object @{ Expression = { $_.Width * $_.Height } } -Descending | Select-Object -First 1)
+} else {
+  $editable = @($allEditable | Sort-Object @{ Expression = { $_.Width * $_.Height } } -Descending | Select-Object -First 1)
+}
 if ($editable.Count -eq 0) { throw 'No editable control found in target window.' }
 
 $target = $editable[0]
@@ -4175,7 +4520,8 @@ $value.SetValue($targetText)
       forceRefresh?: boolean;
     },
   ): Promise<{ element?: UIElement; error?: string; refreshed: boolean }> {
-    if (this.hasWindowMatcher(input)) {
+    const hasTargetWindow = this.hasWindowMatcher(input);
+    if (hasTargetWindow) {
       const focusResult = await this.focusWindow(input);
       if (!focusResult.success) {
         return {
@@ -4183,7 +4529,7 @@ $value.SetValue($targetText)
           refreshed: false,
         };
       }
-      await this.delay(100);
+      await this.delay(150);
     }
 
     if (input.ref !== undefined) {
@@ -4221,7 +4567,7 @@ $value.SetValue($targetText)
       };
     }
 
-    if ((options.forceRefresh || elements.length === 0) && !input.simulateOnly) {
+    if ((options.forceRefresh || hasTargetWindow || elements.length === 0) && !input.simulateOnly) {
       await this.snapshotManager.takeSnapshot({
         interactiveOnly: input.interactiveOnly ?? options.requireInteractive,
       });
@@ -4233,6 +4579,29 @@ $value.SetValue($targetText)
           element: associated,
           refreshed,
         };
+      }
+
+      for (let attempt = 0; hasTargetWindow && elements.length === 0 && attempt < 2; attempt++) {
+        const focusResult = await this.focusWindow(input);
+        if (!focusResult.success) {
+          return {
+            error: focusResult.error ?? focusResult.output ?? `Could not refocus target window for ${options.intent}.`,
+            refreshed,
+          };
+        }
+        await this.delay(250 + attempt * 250);
+        await this.snapshotManager.takeSnapshot({
+          interactiveOnly: input.interactiveOnly ?? options.requireInteractive,
+        });
+        refreshed = true;
+        elements = this.findElementsByIntent(query, options);
+        associated = elements.length === 0 ? this.findAssociatedElement(query, options) : undefined;
+        if (associated) {
+          return {
+            element: associated,
+            refreshed,
+          };
+        }
       }
     }
 
@@ -4500,7 +4869,7 @@ $value.SetValue($targetText)
     if ((next.action === 'open_app' || next.action === 'focus_app' || next.action === 'read_app_text' || next.action === 'save_app_document') && !next.appName) {
       next.appName = parent.appName;
     }
-    if ((next.action === 'read_app_text' || next.action === 'save_app_document') && !next.filePath && parent.filePath) {
+    if ((next.action === 'focus_app' || next.action === 'read_app_text' || next.action === 'save_app_document') && !next.filePath && parent.filePath) {
       next.filePath = parent.filePath;
     }
 
@@ -4651,11 +5020,12 @@ $value.SetValue($targetText)
       }
       */
 
-      // 2. OCR Fallback
       try {
         const { UnifiedVfsRouter } = await import('../services/vfs/unified-vfs-router.js');
         const path = await import('path');
-        const snapshotPath = path.join(process.cwd(), '.codebuddy', 'temp', `ocr_snapshot_${Date.now()}.png`);
+        const tempDir = path.join(process.cwd(), '.codebuddy', 'temp');
+        try { await UnifiedVfsRouter.Instance.ensureDir(tempDir); } catch { /* best-effort */ }
+        const snapshotPath = path.join(tempDir, `ocr_snapshot_${Date.now()}.png`);
         
         const { ScreenshotTool } = await import('./screenshot-tool.js');
         const screenshotTool = new ScreenshotTool();
@@ -4745,7 +5115,9 @@ $value.SetValue($targetText)
     // 1. Take snapshot
     const { UnifiedVfsRouter } = await import('../services/vfs/unified-vfs-router.js');
     const path = await import('path');
-    const snapshotPath = path.join(process.cwd(), '.codebuddy', 'temp', `ocr_snapshot_${Date.now()}.png`);
+    const tempDir = path.join(process.cwd(), '.codebuddy', 'temp');
+    try { await UnifiedVfsRouter.Instance.ensureDir(tempDir); } catch { /* best-effort */ }
+    const snapshotPath = path.join(tempDir, `ocr_snapshot_${Date.now()}.png`);
     const { ScreenshotTool } = await import('./screenshot-tool.js');
     const screenshotTool = new ScreenshotTool();
     const screenshotResult = await screenshotTool.capture({ outputPath: snapshotPath });
@@ -4771,17 +5143,67 @@ $value.SetValue($targetText)
       return { success: false, error: `No text blocks found on screen.` };
     }
 
-    // 3. Find matching text (case insensitive, partial match)
-    const target = input.text.toLowerCase();
-    const match = ocrData.blocks.find(b => b.text && b.text.toLowerCase().includes(target));
+    // 3. Find matching text (case insensitive, partial match, supporting multi-word sequences)
+    const target = input.text.toLowerCase().trim();
+    const targetWords = target.split(/\s+/).filter(Boolean);
 
-    if (!match || !match.boundingBox) {
+    let matchBox: { x: number; y: number; width: number; height: number } | null = null;
+
+    if (targetWords.length > 1) {
+      // Look for a sequence of blocks that match the target words in order
+      for (let i = 0; i <= ocrData.blocks.length - targetWords.length; i++) {
+        let isMatch = true;
+        const candidateBlocks: typeof ocrData.blocks = [];
+
+        for (let j = 0; j < targetWords.length; j++) {
+          const block = ocrData.blocks[i + j];
+          if (!block || !block.text || !block.text.toLowerCase().includes(targetWords[j])) {
+            isMatch = false;
+            break;
+          }
+          candidateBlocks.push(block);
+        }
+
+        if (isMatch && candidateBlocks.every(b => b.boundingBox)) {
+          // Check if they are approximately on the same line (y coordinates similar)
+          const firstBox = candidateBlocks[0].boundingBox!;
+          const sameLine = candidateBlocks.every(b => {
+            const dy = Math.abs(b.boundingBox!.y - firstBox.y);
+            // Allow vertical alignment error up to 70% of the box height
+            return dy <= firstBox.height * 0.7;
+          });
+
+          if (sameLine) {
+            // Merge bounding boxes
+            const minX = Math.min(...candidateBlocks.map(b => b.boundingBox!.x));
+            const minY = Math.min(...candidateBlocks.map(b => b.boundingBox!.y));
+            const maxX = Math.max(...candidateBlocks.map(b => b.boundingBox!.x + b.boundingBox!.width));
+            const maxY = Math.max(...candidateBlocks.map(b => b.boundingBox!.y + b.boundingBox!.height));
+
+            matchBox = {
+              x: minX,
+              y: minY,
+              width: maxX - minX,
+              height: maxY - minY
+            };
+            break;
+          }
+        }
+      }
+    } else if (targetWords.length === 1) {
+      const match = ocrData.blocks.find(b => b.text && b.text.toLowerCase().includes(targetWords[0]));
+      if (match && match.boundingBox) {
+        matchBox = match.boundingBox;
+      }
+    }
+
+    if (!matchBox) {
       return { success: false, error: `Text "${input.text}" not found on screen.` };
     }
 
     // 4. Calculate center and click
-    const centerX = match.boundingBox.x + Math.round(match.boundingBox.width / 2);
-    const centerY = match.boundingBox.y + Math.round(match.boundingBox.height / 2);
+    const centerX = matchBox.x + Math.round(matchBox.width / 2);
+    const centerY = matchBox.y + Math.round(matchBox.height / 2);
 
     const resolved = await this.resolvePoint({ action: 'click_text', x: centerX, y: centerY });
     if (resolved) {
@@ -4953,6 +5375,18 @@ public static class CodeBuddyForceForeground {
   public static extern bool SetForegroundWindow(IntPtr hWnd);
   [DllImport("user32.dll")]
   public static extern bool BringWindowToTop(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern IntPtr SetFocus(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern IntPtr SetActiveWindow(IntPtr hWnd);
+  [DllImport("user32.dll")]
+  public static extern IntPtr GetForegroundWindow();
+  [DllImport("user32.dll")]
+  public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+  [DllImport("kernel32.dll")]
+  public static extern uint GetCurrentThreadId();
+  [DllImport("user32.dll")]
+  public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
 }
 '@
 $payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${payload}')) | ConvertFrom-Json
@@ -4971,8 +5405,25 @@ if ($handleValue -eq 0) { exit 0 }
 $hwnd = [IntPtr]::new($handleValue)
 [void][CodeBuddyForceForeground]::ShowWindowAsync($hwnd, 9)
 Start-Sleep -Milliseconds 80
-[void][CodeBuddyForceForeground]::BringWindowToTop($hwnd)
-[void][CodeBuddyForceForeground]::SetForegroundWindow($hwnd)
+$foreground = [CodeBuddyForceForeground]::GetForegroundWindow()
+$foregroundPid = [uint32]0
+$targetPid = [uint32]0
+$foregroundThread = if ($foreground -ne [IntPtr]::Zero) {
+  [CodeBuddyForceForeground]::GetWindowThreadProcessId($foreground, [ref]$foregroundPid)
+} else { 0 }
+$targetThread = [CodeBuddyForceForeground]::GetWindowThreadProcessId($hwnd, [ref]$targetPid)
+$currentThread = [CodeBuddyForceForeground]::GetCurrentThreadId()
+if ($foregroundThread -ne 0) { [void][CodeBuddyForceForeground]::AttachThreadInput($currentThread, $foregroundThread, $true) }
+if ($targetThread -ne 0) { [void][CodeBuddyForceForeground]::AttachThreadInput($currentThread, $targetThread, $true) }
+try {
+  [void][CodeBuddyForceForeground]::BringWindowToTop($hwnd)
+  [void][CodeBuddyForceForeground]::SetActiveWindow($hwnd)
+  [void][CodeBuddyForceForeground]::SetFocus($hwnd)
+  [void][CodeBuddyForceForeground]::SetForegroundWindow($hwnd)
+} finally {
+  if ($targetThread -ne 0) { [void][CodeBuddyForceForeground]::AttachThreadInput($currentThread, $targetThread, $false) }
+  if ($foregroundThread -ne 0) { [void][CodeBuddyForceForeground]::AttachThreadInput($currentThread, $foregroundThread, $false) }
+}
 `;
 
     try {

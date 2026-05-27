@@ -121,6 +121,33 @@ vi.mock('../../src/desktop-automation/index.js', () => ({
   }),
 }));
 
+vi.mock('../../src/tools/screenshot-tool.js', () => {
+  return {
+    ScreenshotTool: class {
+      capture = vi.fn().mockResolvedValue({ success: true, data: { path: 'mock-screenshot.png' } });
+    }
+  };
+});
+
+vi.mock('../../src/tools/ocr-tool.js', () => {
+  return {
+    OCRTool: class {
+      extractText = vi.fn().mockResolvedValue({
+        success: true,
+        data: {
+          text: 'mocked text Save As',
+          blocks: [
+            { text: 'mocked', boundingBox: { x: 10, y: 20, width: 50, height: 15 } },
+            { text: 'text', boundingBox: { x: 70, y: 20, width: 30, height: 15 } },
+            { text: 'Save', boundingBox: { x: 110, y: 20, width: 40, height: 15 } },
+            { text: 'As', boundingBox: { x: 160, y: 20, width: 20, height: 15 } },
+          ],
+        },
+      });
+    }
+  };
+});
+
 describe('ComputerControlTool semantic actions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -145,6 +172,49 @@ describe('ComputerControlTool semantic actions', () => {
       modifiers: [process.platform === 'darwin' ? 'meta' : 'ctrl'],
     });
     expect(mockAutomation.type).toHaveBeenCalledWith('Code Buddy Studio', { delay: 30 });
+  });
+
+  it('refreshes the snapshot after verifying a targeted window for text entry', async () => {
+    const stale = makeElement({ ref: 9, role: 'button', name: 'Unrelated' }) as UIElement;
+    const field = makeElement({ ref: 10, role: 'text-field', name: 'Message' }) as UIElement;
+    const freshSnapshot = makeSnapshot([field], 'fresh-target') as Snapshot;
+    setCurrentSnapshot(makeSnapshot([stale], 'stale-window') as Snapshot);
+    mockSnapshotManager.takeSnapshot.mockImplementationOnce(async () => {
+      setCurrentSnapshot(freshSnapshot);
+      return freshSnapshot;
+    });
+
+    const targetWindow = {
+      handle: 'fixture-window',
+      title: 'CodeBuddy Computer Use Fixture',
+      pid: 99,
+      processName: 'powershell',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      focused: false,
+      visible: true,
+      minimized: false,
+      maximized: false,
+      fullscreen: false,
+    };
+    mockAutomation.getWindows
+      .mockResolvedValueOnce([targetWindow]);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'fill_text_field',
+      name: 'Message',
+      text: 'Bonjour reel Computer Use',
+      exactName: true,
+      windowTitle: 'CodeBuddy Computer Use Fixture',
+      windowTitleMatch: 'contains',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockSnapshotManager.takeSnapshot).toHaveBeenCalledWith({ interactiveOnly: true });
+    expect(mockAutomation.focusWindow).toHaveBeenCalledWith('fixture-window');
+    expect(mockAutomation.click).toHaveBeenCalledWith(field.center.x, field.center.y, { button: 'left' });
+    expect(mockAutomation.type).toHaveBeenCalledWith('Bonjour reel Computer Use', { delay: 30 });
   });
 
   it('opens a dropdown and selects an option by label', async () => {
@@ -442,7 +512,7 @@ describe('ComputerControlTool semantic actions', () => {
     };
     mockAutomation.getWindows
       .mockResolvedValueOnce([{ ...notepadWindow, focused: false }])
-      .mockResolvedValueOnce([{ ...notepadWindow, focused: true }]);
+      .mockResolvedValue([{ ...notepadWindow, focused: true }]);
 
     const notepadResult = await tool.execute({
       action: 'use_app_workflow',
@@ -452,6 +522,40 @@ describe('ComputerControlTool semantic actions', () => {
     expect(notepadResult.success).toBe(true);
     expect(mockAutomation.focusWindow).toHaveBeenCalledWith('notepad-window');
     expect(mockAutomation.type).toHaveBeenCalledWith('profile workflow', { delay: 30 });
+  });
+
+  it('waits for an app profile window to appear before focusing it', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const notepadWindow = {
+      handle: 'notepad-window',
+      title: 'codebuddy-notepad-test.txt - Notepad',
+      pid: 42,
+      processName: 'notepad',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      focused: false,
+      visible: true,
+      minimized: false,
+      maximized: false,
+      fullscreen: false,
+    };
+    mockAutomation.getWindows
+      .mockResolvedValueOnce([])
+      .mockResolvedValueOnce([notepadWindow])
+      .mockResolvedValueOnce([notepadWindow]);
+
+    const result = await tool.execute({
+      action: 'focus_app',
+      appName: 'notepad',
+      filePath: 'C:\\temp\\codebuddy-notepad-test.txt',
+      timeoutMs: 500,
+      pollIntervalMs: 25,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.getWindows.mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(mockAutomation.focusWindow).toHaveBeenCalledWith('notepad-window');
   });
 
   it('reports the failing step when a workflow stops early', async () => {
@@ -469,5 +573,37 @@ describe('ComputerControlTool semantic actions', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('Step 2 (click_button) failed');
     expect(result.output).toContain('Failed at step 2');
+  });
+
+  it('clicks a single word on the screen using OCR text matching', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const result = await tool.execute({
+      action: 'click_text',
+      text: 'text',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.moveMouse).toHaveBeenCalledWith(85, 28); // center of box { x: 70, y: 20, width: 30, height: 15 }
+    expect(mockAutomation.click).toHaveBeenCalledWith(undefined, undefined, { button: 'left' });
+  });
+
+  it('clicks a multi-word phrase on the screen using sequential horizontal OCR blocks matching', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const result = await tool.execute({
+      action: 'click_text',
+      text: 'Save As',
+    });
+
+    expect(result.success).toBe(true);
+    // Combined bounding box for "Save" and "As":
+    // minX = 110, minY = 20, maxX = 160 + 20 = 180, maxY = 20 + 15 = 35.
+    // Width = 180 - 110 = 70. Height = 35 - 20 = 15.
+    // Center = 110 + 35 = 145, 20 + 8 = 28 (rounded).
+    expect(mockAutomation.moveMouse).toHaveBeenCalledWith(145, 28);
+    expect(mockAutomation.click).toHaveBeenCalledWith(undefined, undefined, { button: 'left' });
   });
 });

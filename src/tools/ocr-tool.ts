@@ -2,6 +2,8 @@ import { UnifiedVfsRouter } from '../services/vfs/unified-vfs-router.js';
 import path from 'path';
 import { spawn, execSync } from 'child_process';
 import { ToolResult, getErrorMessage } from '../types/index.js';
+import { fileURLToPath } from 'url';
+import { logger } from '../utils/logger.js';
 
 export interface OCRResult {
   text: string;
@@ -71,25 +73,40 @@ export class OCRTool {
         };
       }
 
-      // Check Tesseract availability
-      const hasTesseract = await this.checkTesseract();
+      // Cascade order:
+      // 1. Try Windows Runtime OCR if on Windows
+      if (process.platform === 'win32') {
+        const winResult = await this.runWindowsNativeOCR(resolvedPath);
+        if (winResult.success) {
+          return winResult;
+        }
+        logger.debug('Windows-native OCR failed, trying Tesseract.js fallback', { error: winResult.error });
+      }
 
+      // 2. Try Tesseract.js (WASM) - local zero-dependency
+      const wasmResult = await this.runTesseractJS(resolvedPath, options);
+      if (wasmResult.success) {
+        return wasmResult;
+      }
+      logger.debug('Tesseract.js OCR failed, trying Tesseract CLI fallback', { error: wasmResult.error });
+
+      // 3. Try Tesseract CLI (legacy binaire)
+      const hasTesseract = await this.checkTesseract();
       if (hasTesseract) {
         return await this.runTesseract(resolvedPath, options);
-      } else {
-        // Try alternative: use online OCR API if available
-        const codebuddyKey = process.env.GROK_API_KEY;
-        const openaiKey = process.env.OPENAI_API_KEY;
-
-        if (codebuddyKey || openaiKey) {
-          return await this.runVisionOCR(resolvedPath, (openaiKey || codebuddyKey) as string);
-        }
-
-        return {
-          success: false,
-          error: 'Tesseract OCR not installed. Install with: sudo apt install tesseract-ocr (Linux) or brew install tesseract (macOS). Alternatively, set OPENAI_API_KEY for vision-based OCR.'
-        };
       }
+
+      // 4. Try Cloud Vision API
+      const codebuddyKey = process.env.GROK_API_KEY;
+      const openaiKey = process.env.OPENAI_API_KEY;
+      if (codebuddyKey || openaiKey) {
+        return await this.runVisionOCR(resolvedPath, (openaiKey || codebuddyKey) as string);
+      }
+
+      return {
+        success: false,
+        error: 'All OCR engines failed or were unavailable (Windows OCR failed, Tesseract.js failed, Tesseract CLI not found, and no API keys configured).'
+      };
     } catch (error) {
       return {
         success: false,
@@ -454,6 +471,84 @@ export class OCRTool {
     lines.push(result.text || '[No text detected]');
 
     return lines.join('\n');
+  }
+
+  /**
+   * Run Windows-native OCR using Windows.Media.Ocr WinRT API via PowerShell wrapper
+   */
+  private async runWindowsNativeOCR(imagePath: string): Promise<ToolResult> {
+    const startTime = Date.now();
+    try {
+      const { exec } = await import('child_process');
+      const { promisify } = await import('util');
+      const execAsync = promisify(exec);
+
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const scriptPath = path.join(__dirname, 'win-ocr.ps1');
+
+      const cmd = `powershell -NoProfile -ExecutionPolicy Bypass -File "${scriptPath}" -ImagePath "${imagePath}"`;
+      const { stdout } = await execAsync(cmd, { timeout: 15000 });
+
+      const parsed = JSON.parse(stdout.trim());
+      if (parsed.success) {
+        const result: OCRResult = {
+          text: parsed.text,
+          blocks: parsed.blocks,
+          processingTime: Date.now() - startTime
+        };
+        return {
+          success: true,
+          output: this.formatOutput(result, imagePath),
+          data: result
+        };
+      } else {
+        return { success: false, error: parsed.error || 'Unknown Windows OCR error' };
+      }
+    } catch (err) {
+      return { success: false, error: `Windows-native OCR failed: ${err instanceof Error ? err.message : String(err)}` };
+    }
+  }
+
+  /**
+   * Run local Tesseract.js (WebAssembly) OCR inside Node process
+   */
+  private async runTesseractJS(imagePath: string, options: OCROptions): Promise<ToolResult> {
+    const startTime = Date.now();
+    try {
+      const { createWorker } = await import('tesseract.js');
+      const worker = await createWorker(options.language || 'eng');
+      
+      const { data } = await worker.recognize(imagePath);
+      await worker.terminate();
+
+      const blocks: OCRBlock[] = ((data as any).words || []).map((w: any) => ({
+        text: w.text,
+        confidence: w.confidence,
+        boundingBox: w.bbox ? {
+          x: w.bbox.x0,
+          y: w.bbox.y0,
+          width: w.bbox.x1 - w.bbox.x0,
+          height: w.bbox.y1 - w.bbox.y0
+        } : undefined
+      }));
+
+      const result: OCRResult = {
+        text: data.text,
+        confidence: data.confidence,
+        language: options.language || 'eng',
+        blocks,
+        processingTime: Date.now() - startTime
+      };
+
+      return {
+        success: true,
+        output: this.formatOutput(result, imagePath),
+        data: result
+      };
+    } catch (err) {
+      return { success: false, error: `Tesseract.js failed: ${getErrorMessage(err)}` };
+    }
   }
 
   /**

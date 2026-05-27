@@ -76,6 +76,14 @@ export interface UIElement {
   children?: number[];
   /** Raw accessibility attributes */
   attributes?: Record<string, unknown>;
+  /** Stable UIA AutomationId — preferred key for re-resolving this element within an app version */
+  automationId?: string;
+  /** UIA RuntimeId joined as a dotted string — unique within the current session only */
+  runtimeId?: string;
+  /** Raw UIA ControlType ProgrammaticName, e.g. "ControlType.Button" (before role mapping) */
+  controlType?: string;
+  /** Native window class name — framework-detection hint (WinForms/WPF/Avalonia) */
+  className?: string;
 }
 
 export interface Snapshot {
@@ -701,6 +709,9 @@ function Get-Elements($element, $depth) {
         $results += @{
             name = $name
             role = $role
+            automationId = $element.Current.AutomationId
+            className = $element.Current.ClassName
+            runtimeId = (($element.GetRuntimeId()) -join '.')
             x = [int]$rect.X
             y = [int]$rect.Y
             width = [int]$rect.Width
@@ -754,6 +765,10 @@ if ($focused) {
         focused: Boolean(item.focused),
         enabled: item.enabled !== false,
         visible: item.width > 0 && item.height > 0,
+        controlType: typeof item.role === 'string' ? item.role : undefined,
+        automationId: item.automationId || undefined,
+        runtimeId: item.runtimeId || undefined,
+        className: item.className || undefined,
       });
     }
 
@@ -876,6 +891,9 @@ function Get-Elements($element, $depth) {
         $results += @{
             name = $name
             role = $role
+            automationId = $element.Current.AutomationId
+            className = $element.Current.ClassName
+            runtimeId = (($element.GetRuntimeId()) -join '.')
             x = [int]$rect.X
             y = [int]$rect.Y
             width = [int]$rect.Width
@@ -930,6 +948,10 @@ if ($focused) {
             focused: Boolean(item.focused),
             enabled: item.enabled !== false,
             visible: item.width > 0 && item.height > 0,
+            controlType: typeof item.role === 'string' ? item.role : undefined,
+            automationId: item.automationId || undefined,
+            runtimeId: item.runtimeId || undefined,
+            className: item.className || undefined,
           });
         }
       } catch (_err) {
