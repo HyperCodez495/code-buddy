@@ -5,6 +5,7 @@ import type { UnifiedSkill } from './types.js';
 import { legacyToUnified } from './adapters/index.js';
 import { logger } from '../utils/logger.js';
 import { getSkillsHub } from './hub.js';
+import { getSkillRegistry } from "./registry.js";
 
 export interface Skill {
   name: string;
@@ -454,6 +455,15 @@ export class SkillManager extends EventEmitter {
 
     if (disabledSkills.has(this.activeSkill.name)) {
       return "";
+    }
+
+    try {
+      const registrySkill = getSkillRegistry().get(this.activeSkill.name);
+      if (registrySkill && registrySkill.enabled === false) {
+        return "";
+      }
+    } catch {
+      // Ignored
     }
 
     return `\n--- ACTIVE SKILL: ${this.activeSkill.name} ---\n${this.activeSkill.systemPrompt}\n--- END SKILL ---\n`;

@@ -1,0 +1,514 @@
+{
+  "generatedAt": "2026-05-26T15:00:00.000Z",
+  "baseUrl": "http://127.0.0.1:4177/",
+  "total": 29,
+  "passed": 29,
+  "failed": [],
+  "functionalCoverage": {
+    "total": 29,
+    "real": 3,
+    "used": 26,
+    "partial": 0,
+    "definition": "real = provider/service/hardware exercised; used = UI manipulated with verified output/state; partial = surface opened but end-to-end external or destructive behavior still requires a dedicated configured run"
+  },
+  "verificationSummary": {
+    "provider": "gpt-5.5 via ChatGPT OAuth",
+    "chatgptAuth": "whoami passed; patrice.huetz@gmail.com, pro plan",
+    "providerSmoke": "direct chat REAL-GPT55-PROVIDER-DIRECT in 1883ms; stream REAL-GPT55-STREAM-DIRECT in 9 chunks; tool-call qa_probe then REAL-GPT55-TOOL-ROUNDTRIP",
+    "cliRealGpt55": "text, json, stream-json, view_file and bash passed with gpt-5.5",
+    "serverRealGpt55": "passed; CODEBUDDY_REAL_GPT55_SERVER=1 npm test -- tests/server/chat-route-real-gpt55.test.ts --run; real Express /api/chat, legacy SSE, /api/chat/completions and /api/chat/models through ChatGPT OAuth gpt-5.5",
+    "coworkRealGpt55": "passed; COWORK_REAL_GPT55=1 npx playwright test e2e/chat-real-gpt55.spec.ts; screenshot docs/qa/code-buddy-studio/screenshots/29-real-gpt55-cowork-gui.png",
+    "realGpt55BugsFixed": "provider models chatgpt support; Cowork ConfigStore runtime guards for chatgpt; embedded engine config hot-apply; headless provider error exits non-zero",
+    "realGpt55RemainingWatch": "headless --quiet now exits non-zero on backend error; prompt load can still be optimized to reduce long ChatGPT timeout risk",
+    "vitest": "passed after UNC path guard fix; 208 files, 1333 tests",
+    "coverage": "passed; statements 45.84%, branches 42.48%, functions 55.73%, lines 46.64%",
+    "lint": "passed with 0 errors and 36 legacy warnings",
+    "typecheck": "passed",
+    "buildE2e": "passed",
+    "chatIpcE2e": "1 passed",
+    "companionDeterministicE2e": "1 passed",
+    "companionLiveE2e": "passed; COWORK_LIVE_COMPANION=1 npx playwright test e2e/companion-live.spec.ts --reporter=list --timeout=240000; project setup, real core IPC, self-state, self-evaluation, improvement loop, check-in and camera inspection/controlled unavailable path; screenshot 52",
+    "playwright": "49 passed, 2 skipped; real gpt-5.5 and live companion replayed separately",
+    "lintModifiedFiles": "passed",
+    "rootTypecheck": "passed",
+    "rootLint": "passed with 0 errors and 2326 legacy warnings",
+    "rootBuild": "passed",
+    "rootVitest": "passed after SyncManager persistence fix; npm test -- --run completed with exit 0 and no unhandled rejection",
+    "syncPersistenceBugFix": "fixed; SyncManager no longer turns persistence failures into unhandled async rejections when no error listener is registered; listener behavior is preserved",
+    "syncPersistenceRegression": "passed; npm test -- tests\\unit\\sync.test.ts tests\\unit\\sync-persistence.test.ts --run; 2 files, 129 tests",
+    "permissionRealFlow": "passed; npx playwright test e2e/permission-real-flow.spec.ts --reporter=list; observes permission.response IPC and persists Write(docs/*)",
+    "permissionCoworkE2e": "passed; npx playwright test e2e/cowork-smoke.spec.ts --grep \"permission|rule\" --reporter=list; 15 tests",
+    "permissionCoreRegression": "passed; permission/write-policy/approval/security suites: 12 files, 524 focused tests plus validation 195 tests",
+    "chatgptHeartbeatRetest": "passed; headless gpt-5.5 prompt returned REAL-GPT55-HEARTBEAT-PERMISSIONS in 29.2s",
+    "headlessProviderFailureExitCode": "passed; npm test -- tests/cli/cli-flags.test.ts tests/cli/headless-exit-code.test.ts --run; real src/index.ts --prompt --quiet --output-format json against local HTTP 500 provider exits 1 while preserving JSON error output",
+    "headlessFailureBugFix": "fixed; processPromptHeadless now returns a single exit code and canonical assistant error envelopes (Sorry, I encountered an error: ...) are classified as failed headless runs",
+    "fleetTwoPeerMeshReal": "passed; npm test -- tests/fleet/fleet-multi-peer-mesh-smoke.test.ts --run; real Gateway WebSocket plus two FleetListener clients, route_peer parallelism 2 plans mesh-alpha and mesh-beta with no describe errors",
+    "mcpHttpRealFixture": "passed; npm test -- tests/mcp/mcp-http-real-fixture.test.ts --run; real local HTTP JSON-RPC endpoint, initialize/tools/list/tools/call, MCP_HTTP_FIXTURE:OK and MCP_HTTP_SUM:42",
+    "mcpStreamableHttpFailClosed": "passed; npm test -- tests/mcp/mcp-streamable-http-limitation.test.ts --run; local SSE-like endpoint receives 0 requests, MCPManager status error, no tools, explicit incompatibility message",
+    "serverChatRealHttpDeterministic": "passed; npm test -- tests/server/chat-route-real-http.test.ts --run; real Express server covers /api/chat, legacy SSE, /api/chat/completions and /api/chat/models",
+    "fleetMcpServerGrouped": "passed; npm test -- tests/fleet/fleet-loopback-smoke.test.ts tests/fleet/fleet-multi-peer-mesh-smoke.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/mcp/mcp-http-real-fixture.test.ts tests/mcp/mcp-streamable-http-limitation.test.ts tests/server/chat-route-real-http.test.ts tests/server/peer-tool-bridge.test.ts tests/fleet/peer-tool-bridge.test.ts --run; 8 files, 54 tests",
+    "serverHealth": "passed; node dist/index.js server --port 39230 --host 127.0.0.1 --no-auth; GET /api/health returned status ok and database/api/memory ok",
+    "cliDoctor": "doctor --quick failed because option does not exist; doctor --quiet passed with 8 checks, 11 warnings, 0 errors",
+    "rootTargetedFixes": "database 65 passed; observability/run-store/mobile/run-commands 53 passed",
+    "dockerDesktop": "available; server 29.4.3",
+    "dockerComposeConfig": "passed",
+    "dockerRuntimeSmoke": "passed; OK-DOCKER-RUNTIME",
+    "dockerSandboxRealSmoke": "passed; CODEBUDDY_REAL_DOCKER_SANDBOX=1 npm test -- tests/sandbox/docker-sandbox-real-smoke.test.ts --run; real DockerSandbox node:22-slim, network none, read-only, OK-DOCKER-SANDBOX-REAL, exit 0, no active container left",
+    "dockerSandboxTests": "passed; 3 files, 81 tests",
+    "dockerProductionBuild": "passed after .dockerignore fix; context reduced from 2.73GB to ~346KB",
+    "dockerImageSmoke": "passed; docker run --rm --network none code-buddy:test-smoke --help",
+    "dockerComposeSmoke": "passed; docker compose run --rm grok --help",
+    "testRunnerCatalog": "passed; npx vitest run tests/test-runner-bridge-catalog.test.ts --reporter=verbose; 7 tests including all real/manual rows plus CLI command surface bundle, Plugins skills bundle, UI terminal observer bundle, Config auth provider bundle, Data session sync cache bundle, Server API MCP platform bundle, Fleet routing orchestration bundle, Context compression pruning bundle, Voice speech TTS bundle, Scheduler hooks notifications bundle, Maintenance doctor backup settings bundle, Infrastructure MCP sandbox adapters bundle, Remote control bundle, Device transport adapters bundle, Cowork sandbox executor bundle, Cowork project session git bundle, Cowork UI localization layout bundle, Cowork artifact document bundle, Cowork scheduling session bundle, Cowork local provider config bundle, Cowork activity audit diagnostics bundle, Cowork Fleet command team bundle, process timeout teardown, RunStore recording, and robust Vitest summary parsing; includes Mobile supervision gateway bundle, Providers resilience error bundle, Server provider error status bundle, and Infrastructure MCP sandbox adapters bundle; includes Cowork permission path rules bundle; includes Cowork settings hooks MCP workflows bundle; includes Cowork custom commands slash bundle; includes Cowork knowledge Hermes presence bundle",
+    "testRunnerWindowE2e": "passed; npx playwright test e2e/test-runner-panel.spec.ts e2e/test-runner-failure-flow.spec.ts --reporter=list; launches provider regression from the panel, verifies 1 ok / 0 ko, launches CLI headless provider failure exit from the panel and verifies 1 ok / 0 ko, launches Fleet/MCP local smoke suite from the panel and verifies 6 ok / 0 ko, verifies Cowork/Server real GPT-5.5 and Docker real sandbox catalog rows with env badges, then launches real failing script, verifies 0 ok / 1 ko with QA_FAIL_MARKER output, and finds Test runner: test:fail in Executions; screenshots 30,31,32,33,42,43; server provider error status bundle launched separately from the panel and verified 4 ok / 0 ko with screenshot 92; infrastructure MCP sandbox adapters bundle launched separately from the panel and verified 190 ok / 0 ko with screenshot 93; remote control bundle launched separately from the panel and verified 16 ok / 0 ko with screenshot 94; device transport adapters bundle launched separately from the panel and verified 178 ok / 0 ko with screenshot 95; Cowork sandbox executor bundle launched separately from the panel and verified 42 ok / 0 ko with screenshot 96; Cowork project session git bundle launched separately from the panel and verified 73 ok / 0 ko with screenshot 97; Cowork UI localization layout bundle launched separately from the panel and verified 95 ok / 0 ko with screenshot 98; Cowork artifact document bundle launched separately from the panel and verified 125 ok / 0 ko with screenshot 99; Cowork scheduling session bundle launched separately from the panel and verified 90 ok / 0 ko with screenshot 100; Cowork local provider config bundle launched separately from the panel and verified 142 ok / 0 ko with screenshot 101; Cowork activity audit diagnostics bundle launched separately from the panel and verified 67 ok / 0 ko with screenshot 102; Cowork Fleet command team bundle launched separately from the panel and verified 61 ok / 0 ko with screenshot 103; Cowork permission path rules bundle launched separately from the panel and verified 58 ok / 0 ko with screenshot 104; Cowork settings hooks MCP workflows bundle launched separately from the panel and verified 62 ok / 0 ko with screenshot 105; Cowork custom commands slash bundle launched separately from the panel and verified 11 ok / 0 ko with screenshot 106; Cowork knowledge Hermes presence bundle launched separately from the panel and verified 85 ok / 0 ko with screenshot 107",
+    "testRunnerHeadlessExitRegression": "passed; npx playwright test e2e/test-runner-panel.spec.ts --reporter=list after npm run build:e2e; UI row CLI / headless provider failure exit is visible and run from the panel",
+    "testRunnerFleetMcpLocalSuite": "passed; npx playwright test e2e/test-runner-panel.spec.ts --reporter=list after npm run build:e2e; UI row Fleet/MCP local smoke suite is visible and run from the panel; it exercises 6 local Fleet/MCP/server test files and reports 6 ok / 0 ko",
+    "testRunnerDockerSandboxRealSmoke": "passed; COWORK_REAL_DOCKER_SANDBOX=1 npx playwright test e2e/test-runner-docker-real.spec.ts --reporter=list after npm run build:e2e; UI row Docker / real sandbox smoke is visible, badge CODEBUDDY_REAL_DOCKER_SANDBOX is present, and the panel reports 1 ok / 0 ko; screenshot 44",
+    "testRunnerCoworkRealGpt55": "passed; COWORK_REAL_GPT55=1 npx playwright test e2e/test-runner-cowork-real-gpt55.spec.ts --reporter=list --timeout=360000; UI row Cowork / real GPT-5.5 chat is visible, badge COWORK_REAL_GPT55 is present, the panel launches the child real ChatGPT GUI smoke and reports 1 ok / 0 ko; screenshot 48",
+    "testRunnerServerRealGpt55": "passed after timeout guard fix; CODEBUDDY_REAL_GPT55_SERVER=1 npx playwright test e2e/test-runner-server-real-gpt55.spec.ts --reporter=list --timeout=420000; UI row Server / real GPT-5.5 chat API is visible, badge CODEBUDDY_REAL_GPT55_SERVER is present, the panel launches the child real Express/ChatGPT API smoke and reports 1 ok / 0 ko; screenshot 49",
+    "testRunnerCompanionLive": "passed; COWORK_LIVE_COMPANION=1 npx playwright test e2e/test-runner-companion-live.spec.ts --reporter=list --timeout=380000 after npm run build:e2e; UI row Cowork / live companion core IPC is visible, badge COWORK_LIVE_COMPANION is present, the panel launches the child companion-live smoke and reports 1 ok / 0 ko; screenshot 53",
+    "testRunnerWorkflowBridgeIntegration": "passed; retested 2026-05-26T02:44Z with npx vitest run tests/workflow-bridge-integration.test.ts --reporter=verbose (1 file, 8 tests) and npx playwright test e2e/test-runner-workflow-integration.spec.ts --reporter=list --timeout=200000; UI row Cowork / workflow bridge integration is visible, launches real Vitest workflow bridge integration, and reports 8 ok / 0 ko; screenshot 54",
+    "testRunnerPermissionRealFlow": "passed; npx playwright test e2e/test-runner-permission-real-flow.spec.ts --reporter=list --timeout=200000 after npm run build:e2e; UI row Cowork / permission real flow is visible, launches the real permission dialog IPC Playwright test, and reports 1 ok / 0 ko; screenshot 55",
+    "testRunnerVitestSummaryBugFix": "fixed and regression-tested; Vitest can render Test Files 1 passed and Tests 8 passed in one logical output line, so TestRunnerBridge now anchors on the Tests summary label before falling back to generic pass/fail counts",
+    "testRunnerCleanElectronBuild": "fixed; Electron main/preload Vite builds now set emptyOutDir true, preventing stale dynamic chunks from old builds from being loaded by the runner UI",
+    "testRunnerCatalogTimeoutGuard": "fixed and regression-tested; a first UI launch of Server / real GPT-5.5 chat API stayed running for more than 6 minutes while the direct server test passed in 63.21s. TestCatalogItem now supports timeoutMs, real provider/Docker catalog rows set explicit timeouts, and TestRunnerBridge fails timed-out checks while killing the process tree. Unit regression launches timeout-proof.js with QA_TIMEOUT_MARKER_*, timeoutMs 300, expects Timed out after 300ms, and verifies no marked node process remains",
+    "testRunnerScriptTimeoutFlow": "passed; CODEBUDDY_TEST_RUNNER_SCRIPT_TIMEOUT_MS=1500 npx playwright test e2e/test-runner-script-timeout-flow.spec.ts --reporter=list after npm run build:e2e; UI row test:hang launches a real Node process, times out with Timed out after 1500ms, reports 0 ok / 1 ko, records Test runner: test:hang as failed in Executions/source test-runner, and leaves no QA_UI_TIMEOUT_MARKER node process; screenshots 50,51",
+    "testRunnerSafeBatchGuard": "passed; npx playwright test e2e/test-runner-safe-batch.spec.ts --reporter=list after npm run build:e2e; Run safe checks executes SAFE_BATCH_MARKER, leaves manual test:e2e pending, and never prints UNSAFE_E2E_MARKER; screenshot 45",
+    "testRunnerCancelFlow": "passed; npx playwright test e2e/test-runner-cancel-flow.spec.ts --reporter=list after npm run build:e2e; Cancel turns a long-running catalog check into skipped, records Test runner: test:slow as cancelled, and leaves no CANCEL_START_MARKER node process; screenshot 46",
+    "testRunnerRerunFailing": "passed; npx playwright test e2e/test-runner-rerun-failing.spec.ts --reporter=list after npm run build:e2e; a temporary Vitest project fails with 0 ok / 1 ko, the fixture is changed from fail to pass, Re-run failing launches the failed file again and returns 1 ok / 0 ko; screenshot 47",
+    "testRunnerRegressionBundle": "passed; npx playwright test e2e/test-runner-panel.spec.ts e2e/test-runner-failure-flow.spec.ts e2e/test-runner-safe-batch.spec.ts e2e/test-runner-cancel-flow.spec.ts e2e/test-runner-rerun-failing.spec.ts --reporter=list; 5 passed in 59.2s",
+    "testRunnerBrowserIntegratedProbe": "passed; in-app browser at http://127.0.0.1:4177/ was reloaded, test-runner-button opened the panel, Run all / Tests surs / Re-run failing controls were present, and Coverage showed 29 features, 3 real, 26 used, 0 partial; direct CDP screenshot timed out so Playwright screenshots remain the visual evidence",
+    "testRunnerCancelBugFix": "fixed; cancellationRequested now converts close-after-cancel into skipped/cancelled and Windows cancel uses taskkill /T /F to kill the process tree instead of only npm/cmd",
+    "testRunnerFailureBugFix": "fixed; preload now exposes independent top-level electronAPI.onEvent so TestRunnerPanel receives test.output without replacing the global app listener",
+    "testRunnerRunStoreTracking": "passed; catalog checks now create RunStore entries with source test-runner and test-output.txt artifact; CODEBUDDY_RUNS_DIR isolates E2E runs",
+    "testRunnerFunctionalCoverage": "passed; coverage tab lists 29 features: 3 real, 26 used, 0 partial after deep feature-completion proofs",
+    "panelUsageDepthE2e": "passed; npx playwright test e2e/panel-usage-depth.spec.ts --reporter=list; 2 tests passed; validates Fleet add-peer, Team start modal, custom commands, hooks dry-run and schedules with screenshots 34,35",
+    "featureCompletionDepthE2e": "passed; npx playwright test e2e/feature-completion-depth.spec.ts --reporter=list; 4 tests passed; validates clipboard summary, orchestrator, Fleet command dispatch, bookmarks, activity, session insights, focus view, workflows, lesson candidates, user model, spec backlog, MCP playground and plugins with screenshots 36,37,38,39",
+    "testRunnerBrowserPreview": "passed; browser at http://127.0.0.1:4177 opened test runner coverage tab; summary shows 29 features, 3 real, 26 used, 0 partial; screenshot 40",
+    "uncPathBugFix": "fixed; ToolExecutor and SandboxToolExecutor reject UNC paths outside mounts before filesystem probing; isolated test dropped from ~2740ms to 2ms; full Cowork Vitest passes",
+    "coworkRealGpt55Retest": "passed again after QA window work; COWORK_REAL_GPT55=1 npx playwright test e2e/chat-real-gpt55.spec.ts --reporter=list --timeout=240000",
+    "companionLiveRetest": "passed again after QA window work; COWORK_LIVE_COMPANION=1 npx playwright test e2e/companion-live.spec.ts --reporter=list --timeout=240000; screenshot 52",
+    "testRunnerServerLocalHttp": "passed; npx playwright test e2e/test-runner-server-local-http.spec.ts --reporter=list --timeout=200000 after npm run build:e2e; UI row Server / local HTTP chat routes is visible, launches the deterministic real Express server HTTP suite, and reports 1 ok / 0 ko; screenshot 56",
+    "fleetPeerToolSecurityDirect": "passed; npm test -- tests/server/peer-tool-bridge.test.ts tests/fleet/peer-tool-bridge.test.ts --run; 2 files, 40 tests covering peer.tool.invoke allowlist, fleetSafe, workspace root, scopes, symlink escape, streaming, truncation, ANSI sanitization, PolicyEngine and audit",
+    "testRunnerFleetPeerToolSecurity": "passed; npx playwright test e2e/test-runner-fleet-peer-tool-security.spec.ts --reporter=list --timeout=200000 after npm run build:e2e; UI row Fleet / peer tool security suite is visible, launches peer.tool.invoke security suites, and reports 40 ok / 0 ko; screenshot 57",
+    "testRunnerFleetRoutingOrchestrationBundle": "passed; direct npm test -- tests/fleet/task-router.test.ts tests/fleet/saga-store.test.ts tests/fleet/result-aggregator-consensus.test.ts tests/fleet/privacy-lint.test.ts tests/fleet/peer-chat-stream.test.ts tests/fleet/peer-chat-client-factory.test.ts tests/fleet/fleet-registry.test.ts tests/fleet/fleet-listener.test.ts tests/fleet/fleet-handler.test.ts tests/fleet/fleet-chat-helper.test.ts tests/fleet/dispatch-profile.test.ts tests/fleet/cost-tracker.test.ts tests/fleet/compaction-bridge.test.ts tests/fleet/capability-registry.test.ts tests/fleet/autonomous-tick-broadcaster.test.ts --run returned 15 files and 357 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-fleet-routing-orchestration-bundle.spec.ts --reporter=list --timeout=280000 launched Fleet / routing orchestration bundle from the UI and reported 357 ok / 0 ko; screenshot 85",
+    "mcpRealTransportDirect": "passed; npm test -- tests/mcp/mcp-stdio-real-fixture.test.ts tests/mcp/mcp-http-real-fixture.test.ts tests/mcp/mcp-streamable-http-limitation.test.ts --run; 3 files, 3 tests covering real MCP stdio fixture, real HTTP JSON-RPC fixture, and explicit streamable_http fail-closed behavior",
+    "testRunnerMcpRealTransport": "passed; npx playwright test e2e/test-runner-mcp-real-transport.spec.ts --reporter=list --timeout=200000 after npm run build:e2e; UI row MCP / real transport suite is visible, launches real MCP transport fixtures, and reports 3 ok / 0 ko; screenshot 58",
+    "testRunnerCoworkIpcChat": "passed; npx playwright test e2e/test-runner-cowork-ipc-chat.spec.ts --reporter=list --timeout=220000 after npm run build:e2e; UI row Cowork / IPC chat flow is visible, launches e2e/chat-flow.spec.ts, starts and continues a chat through Electron IPC, and reports 1 ok / 0 ko; screenshot 59",
+    "testRunnerCompanionDeterministicPanel": "passed; npx playwright test e2e/test-runner-companion-deterministic-panel.spec.ts --reporter=list --timeout=340000 after npm run build:e2e; UI row Cowork / companion deterministic panel is visible, launches e2e/companion-panel.spec.ts, drives project setup, pulse, self-state, camera, voice diagnostics, missions and improvement loop, and reports 1 ok / 0 ko; screenshot 60",
+    "testRunnerPanelUsageDepth": "passed; direct npx playwright test e2e/panel-usage-depth.spec.ts --reporter=list --timeout=220000 returned 2 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-panel-usage-depth.spec.ts --reporter=list --timeout=320000 launched the row Cowork / panel usage depth from the UI and reported 2 ok / 0 ko; screenshot 61",
+    "testRunnerFeatureCompletionDepth": "passed; direct npx playwright test e2e/feature-completion-depth.spec.ts --reporter=list --timeout=260000 returned 4 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-feature-completion-depth.spec.ts --reporter=list --timeout=440000 launched the row Cowork / feature completion depth from the UI and reported 4 ok / 0 ko; screenshot 62",
+    "testRunnerFunctionalCoverageBundle": "passed; direct npx playwright test e2e/chat-flow.spec.ts e2e/companion-panel.spec.ts e2e/panel-usage-depth.spec.ts e2e/feature-completion-depth.spec.ts --reporter=list --timeout=360000 returned 8 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-functional-coverage-bundle.spec.ts --reporter=list --timeout=640000 launched the row Cowork / functional coverage bundle from the UI and reported 8 ok / 0 ko; screenshot 63",
+    "testRunnerBackendDeterministicBundle": "passed; direct npm test -- tests/cli/headless-exit-code.test.ts tests/server/chat-route-real-http.test.ts tests/fleet/fleet-loopback-smoke.test.ts tests/fleet/fleet-multi-peer-mesh-smoke.test.ts tests/server/peer-tool-bridge.test.ts tests/fleet/peer-tool-bridge.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/mcp/mcp-http-real-fixture.test.ts tests/mcp/mcp-streamable-http-limitation.test.ts --run returned 9 files and 55 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-backend-deterministic-bundle.spec.ts --reporter=list --timeout=340000 launched Backend / deterministic integration bundle from the UI and reported 55 ok / 0 ko; screenshot 64",
+    "testRunnerPermissionsSecurityBundle": "passed; direct npm test -- tests/security/write-policy.test.ts tests/security/permission-modes.test.ts tests/commands/permissions-handlers.test.ts tests/features/stream-permissions-prompts.test.ts tests/desktop/permission-bridge-unify.test.ts tests/approval-modes.test.ts tests/unit/approval-modes.test.ts tests/security-modes.test.ts tests/unit/security-modes.test.ts tests/unit/permission-config.test.ts tests/unit/tool-permissions.test.ts tests/utils/confirmation-service.test.ts --run returned 12 files and 524 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-permissions-security-bundle.spec.ts --reporter=list --timeout=280000 launched Permissions / security policy bundle from the UI and reported 524 ok / 0 ko; screenshot 65",
+    "testRunnerDockerSandboxFullBundle": "passed; direct CODEBUDDY_REAL_DOCKER_SANDBOX=1 npm test -- tests/sandbox/docker-sandbox-real-smoke.test.ts tests/sandbox/docker-sandbox.test.ts tests/unit/sandbox-docker.test.ts tests/agent/research-script-job-runner.test.ts --run returned 4 files and 82 tests passed with a real network-disabled Docker container; after npm run build:e2e, npx playwright test e2e/test-runner-docker-sandbox-full-bundle.spec.ts --reporter=list --timeout=360000 launched Docker / sandbox full bundle from the UI and reported 82 ok / 0 ko; screenshot 66",
+    "testRunnerObservabilityRunTrackingBundle": "passed; direct npm test -- tests/observability/run-store.test.ts tests/observability/run-trajectory-export.test.ts tests/observability/run-recall-pack.test.ts tests/observability/policy-evals.test.ts tests/observability/golden-workflow-evals.test.ts tests/observability/mobile-supervision-snapshot.test.ts tests/commands/run-commands.test.ts tests/daemon/cron-run-recording.test.ts tests/observability.test.ts tests/unit/observability-dashboard.test.ts --run returned 10 files and 135 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-observability-run-tracking-bundle.spec.ts --reporter=list --timeout=280000 launched Observability / run tracking bundle from the UI and reported 135 ok / 0 ko; screenshot 67",
+    "testRunnerGatewayRealtimeWebsocketBundle": "passed; direct npm test -- tests/server/websocket.test.ts tests/server/broadcast-backpressure.test.ts tests/server/lane-queue-server.test.ts tests/server/fleet-bridge.test.ts tests/server/peer-rpc.test.ts tests/server/peer-chat-bridge.test.ts tests/gateway/ws-transport.test.ts tests/gateway/ws-transport-backpressure.test.ts tests/gateway/gateway.test.ts tests/gateway/tls-pairing.test.ts tests/fleet/heartbeat-broadcaster.test.ts tests/fleet/peer-session-bridge.test.ts --run returned 12 files and 218 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-gateway-realtime-websocket-bundle.spec.ts --reporter=list --timeout=280000 launched Gateway / realtime websocket bundle from the UI and reported 218 ok / 0 ko; screenshot 68",
+    "testRunnerA2aAcpChannelBundle": "passed; direct npm test -- tests/server/a2a-protocol.test.ts tests/server/acp-routes.test.ts tests/server/channel-a2a-bridge.test.ts tests/server/channel-intake.test.ts tests/protocols/a2a.test.ts tests/protocols/a2a-task-router.test.ts tests/protocols/a2a-skill-selection.test.ts tests/protocols/a2a-skill-routing.test.ts tests/protocols/a2a-remote-agents.test.ts tests/protocols/a2a-codebuddy-executor.test.ts --run returned 10 files and 82 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-a2a-acp-channel-bundle.spec.ts --reporter=list --timeout=280000 launched A2A / ACP channel bundle from the UI and reported 82 ok / 0 ko; screenshot 69",
+    "testRunnerChannelsMessagingAdaptersBundle": "passed; direct npm test -- tests/channels/channels.test.ts tests/channels/channel-handlers-additional-channels.test.ts tests/channels/slack-block-builder.test.ts tests/channels/slack.test.ts tests/channels/discord.test.ts tests/channels/telegram.test.ts tests/channels/teams.test.ts tests/channels/google-chat.test.ts tests/channels/webchat.test.ts tests/channels/whatsapp.test.ts tests/channels/signal.test.ts tests/channels/matrix.test.ts tests/channels/message-serialization.test.ts tests/channels/offline-queue.test.ts tests/channels/session-isolation-integration.test.ts tests/channels/session-identity.test.ts tests/channels/group-security.test.ts tests/channels/dm-pairing.test.ts tests/channels/dm-pairing-integration.test.ts tests/channels/reconnection-manager.test.ts tests/channels/peer-routing-integration.test.ts tests/channels/identity-links-integration.test.ts tests/channels/new-channels.test.ts tests/channels/feishu-cards.test.ts tests/channels/dm-policy/engine.test.ts --run returned 25 files and 1036 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-channels-messaging-adapters-bundle.spec.ts --reporter=list --timeout=320000 launched Channels / messaging adapters bundle from the UI and reported 1036 ok / 0 ko; screenshot 70",
+    "testRunnerMemoryContextPersistenceBundle": "passed; direct npm test -- tests/enhanced-memory.test.ts tests/context-manager-v2.test.ts tests/context/transcript-repair.test.ts tests/context/tool-pair-preserver.test.ts tests/context/two-phase-compaction.test.ts tests/context/context-engine.test.ts tests/context/precompaction-flush.test.ts tests/context/auto-compact-threshold.test.ts tests/context/bootstrap-loader.test.ts tests/memory/persistent-memory.test.ts tests/memory/user-model.test.ts tests/memory/memory-provider.test.ts tests/memory/decision-memory.test.ts tests/unit/memory.test.ts tests/unit/memory-commands.test.ts tests/session-export.test.ts tests/session-pruning/pruning.test.ts tests/checkpoint-manager.test.ts --run returned 18 files and 561 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-memory-context-persistence-bundle.spec.ts --reporter=list --timeout=260000 launched Memory / context persistence bundle from the UI and reported 561 ok / 0 ko; screenshot 71",
+    "testRunnerProvidersModelConfigBundle": "passed; direct npm test -- tests/config/resolve-model.test.ts tests/config/model-registry.test.ts tests/config/model-pricing.test.ts tests/config/model-defaults.test.ts tests/config/migration.test.ts tests/config/env-schema.test.ts tests/config/config-resolver.test.ts tests/config/agent-defaults.test.ts tests/toml-config.test.ts tests/config-validator.test.ts tests/llm-provider.test.ts tests/providers/fallback-chain.test.ts tests/providers/smart-router.test.ts tests/providers/codex-oauth.test.ts tests/codebuddy/providers/provider-openai-compat-hooks.test.ts tests/codebuddy/providers/provider-chatgpt-responses.test.ts tests/codebuddy/providers/provider-gemini-cli.test.ts tests/unit/provider-manager.test.ts tests/unit/provider-command.test.ts tests/unit/providers.test.ts tests/unit/models.test.ts tests/unit/models-snapshot.test.ts --run returned 22 files and 579 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-providers-model-config-bundle.spec.ts --reporter=list --timeout=260000 launched Providers / model config bundle from the UI and reported 579 ok / 0 ko; screenshot 72",
+    "testRunnerToolsEditingSearchBundle": "passed after parser bug fix; direct npm test -- tests/tools/text-editor.test.ts tests/tools/ls-tool.test.ts tests/tools/process-tool.test.ts tests/tools/plan-tool.test.ts tests/tools/session-tools.test.ts tests/tools/tool-selector.test.ts tests/tools/bash-tool.test.ts tests/tools/bash-streaming.test.ts tests/unit/text-editor.test.ts tests/unit/tools.test.ts tests/unit/tools-core.test.ts tests/unit/search-tool.test.ts tests/unit/enhanced-search.test.ts tests/unit/codebuddy-client-search-compat.test.ts tests/search/hybrid-search.test.ts tests/search/usearch-index.test.ts tests/agent/tool-handler-filter.test.ts tests/agent/tool-executor.test.ts tests/agent/execution/tool-selection-lite.test.ts tests/agent/middleware/tool-filter.test.ts tests/tools/hooks/result-sanitizer.test.ts --run returned 21 files, 701 tests passed and 39 skipped; first UI run exposed a 0 ok / 0 ko parsing bug, fixed by choosing the last Vitest Tests summary with counters; npx vitest run tests/test-runner-bridge-catalog.test.ts --reporter=verbose now returns 7 tests; after npm run build:e2e, npx playwright test e2e/test-runner-tools-editing-search-bundle.spec.ts --reporter=list --timeout=320000 launched Tools / editing search bundle from the UI and reported 701 ok / 0 ko; screenshot 73",
+    "testRunnerAgentReasoningExecutionBundle": "passed; direct npm test -- tests/agent/codebuddy-agent.test.ts tests/agent/agent-executor-lanes.test.ts tests/agent/execution/agent-executor.test.ts tests/agent/execution/context-pipeline-user-model.test.ts tests/agent/execution/fleet-tool-hooks.test.ts tests/agent/middleware/workflow-guard.test.ts tests/agent/middleware/verification-enforcement.test.ts tests/agent/middleware/state-bag.test.ts tests/agent/middleware/quality-gate-middleware.test.ts tests/agent/middleware/pipeline.test.ts tests/agent/middleware/learning-first.test.ts tests/agent/middleware/auto-repair-middleware.test.ts tests/agent/middleware/auto-observation.test.ts tests/reasoning.test.ts tests/reasoning/think-handlers.test.ts tests/reasoning/reasoning-middleware.test.ts tests/reasoning/reasoning-facade.test.ts tests/agent/streaming/reasoning.test.ts tests/services/prompt-builder.test.ts tests/services/prompt-builder-query-aware.test.ts tests/agent/message-processor.test.ts tests/unit/message-processor.test.ts tests/agent/planning-flow.test.ts --run returned 23 files, 686 tests passed and 1 skipped; after npm run build:e2e, npx playwright test e2e/test-runner-agent-reasoning-execution-bundle.spec.ts --reporter=list --timeout=320000 launched Agent / reasoning execution bundle from the UI and reported 686 ok / 0 ko; screenshot 74",
+    "testRunnerAutonomousMultiAgentHarnessBundle": "passed; direct npm test -- tests/agent/autonomous/agentic-coding-contract.test.ts tests/agent/autonomous/agentic-coding-runner.test.ts tests/agent/autonomous/agentic-coding-runner-security.test.ts tests/agent/autonomous/checkpoint-manager.test.ts tests/agent/autonomous/checkpoint-resume.test.ts tests/agent/autonomous/edit-proposal-producer.test.ts tests/agent/autonomous/task-decomposer.test.ts tests/agent/autonomous/verification-loop.test.ts tests/agent/autonomous/fleet-llm-routing.test.ts tests/agent/autonomous/fleet-tick-handler.test.ts tests/agent/multi-agent/worktree-isolation.test.ts tests/agent/multi-agent/workflow-persistence.test.ts tests/agent/multi-agent/workflow-orchestrator.test.ts tests/agent/multi-agent/workflow-multi-persistence.test.ts tests/agent/multi-agent/workflow-event-streamer.test.ts tests/agent/multi-agent/workflow-cost-manager.test.ts tests/agent/multi-agent/sessions-yield.test.ts tests/agent/multi-agent/session-fleet-bridge.test.ts tests/agent/multi-agent/persistence-integration.test.ts tests/agent/multi-agent/metrics-ttl.test.ts tests/agent/multi-agent/metrics-persistence.test.ts tests/agent/multi-agent/heterogeneous-providers.test.ts tests/agent/multi-agent/fleet-workflow-bridge.test.ts tests/agent/multi-agent/coordinator-integration.test.ts tests/agent/multi-agent/auto-resolve.test.ts tests/agent/multi-agent/auto-resolve-mas-integration.test.ts tests/agent/multi-agent/async-background.test.ts tests/workflows/pipeline-integration.test.ts tests/workflows/pipeline-approval.test.ts tests/workflows/agent-pipeline.test.ts tests/planner/task-graph.test.ts tests/planner/delegation-engine.test.ts tests/integration/multi-agent.test.ts tests/advanced-parallel-executor.test.ts --run returned 34 files and 451 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-autonomous-multi-agent-harness-bundle.spec.ts --reporter=list --timeout=380000 launched Autonomous / multi-agent harness bundle from the UI and reported 451 ok / 0 ko; screenshot 75",
+    "testRunnerCompanionCoreBehaviourBundle": "passed; direct npm test -- tests/companion-camera.test.ts tests/companion-cards.test.ts tests/companion-check-in.test.ts tests/companion-competitive-radar.test.ts tests/companion-gateway.test.ts tests/companion-improvement-cycle.test.ts tests/companion-impulses.test.ts tests/companion-mission-board.test.ts tests/companion-mission-runner.test.ts tests/companion-mode.test.ts tests/companion-percepts.test.ts tests/companion-privacy.test.ts tests/companion-safety-ledger.test.ts tests/companion-self-evaluation.test.ts tests/companion-skill-curator.test.ts --run returned 15 files and 56 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-companion-core-behaviour-bundle.spec.ts --reporter=list --timeout=260000 launched Companion / core behaviour bundle from the UI and reported 56 ok / 0 ko; screenshot 76",
+    "testRunnerBrowserDesktopAutomationBundle": "passed; direct npm test -- tests/browser-automation/batch-actions.test.ts tests/browser-automation/browser-manager-refs.test.ts tests/browser-automation/browser-operator-executor.test.ts tests/browser-automation/browser-operator-session.test.ts tests/browser-automation/browser-stagehand-actions.test.ts tests/browser-automation/internet-proof-plan.test.ts tests/browser-automation/internet-scout-plan.test.ts tests/browser-automation/internet-scout-runner.test.ts tests/browser-automation/profile-manager.test.ts tests/browser-automation/route-interceptor.test.ts tests/browser-automation/screenshot-annotator.test.ts tests/desktop-automation/automation.test.ts tests/desktop-automation/native-providers.test.ts tests/desktop-automation/smart-snapshot-ocr.test.ts tests/desktop-automation/smart-snapshot-refs.test.ts --run returned 15 files and 262 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-browser-desktop-automation-bundle.spec.ts --reporter=list --timeout=320000 launched Automation / browser desktop bundle from the UI and reported 262 ok / 0 ko; screenshot 77",
+    "testRunnerSecurityHardeningAuditBundle": "passed; direct npm test -- tests/security/audit-logger.test.ts tests/security/bash-allowlist/allowlist-store.test.ts tests/security/bash-allowlist/pattern-matcher.test.ts tests/security/bash-parser.test.ts tests/security/code-validator.test.ts tests/security/context-engine-trust.test.ts tests/security/dangerous-patterns.test.ts tests/security/env-blocklist.test.ts tests/security/policy-engine.test.ts tests/security/security-audit.test.ts tests/security/skill-scanner.test.ts tests/security/syntax-validator.test.ts tests/security/tool-policy/policy-resolver.test.ts tests/security/tool-policy/profiles.test.ts tests/security/trust-folders.test.ts tests/unit/secrets-detector.test.ts tests/utils/path-validator.test.ts tests/security-manager.test.ts --run returned 18 files, 485 tests passed and 10 skipped; after npm run build:e2e, npx playwright test e2e/test-runner-security-hardening-audit-bundle.spec.ts --reporter=list --timeout=320000 launched Security / hardening audit bundle from the UI and reported 485 ok / 0 ko; screenshot 78",
+    "testRunnerCliCommandSurfaceBundle": "passed; direct npm test -- tests/cli/cli-flags.test.ts tests/cli/headless-exit-code.test.ts tests/cli/model-listing.test.ts tests/cli/session-commands.test.ts tests/commands/core-handlers.test.ts tests/commands/slash-commands.test.ts tests/commands/context-handlers.test.ts tests/commands/session-handlers.test.ts tests/commands/permissions-handlers.test.ts tests/commands/security-handlers.test.ts tests/commands/tools-commands.test.ts tests/commands/backup-handlers.test.ts tests/commands/agents-handler.test.ts tests/commands/agent-handlers.test.ts tests/commands/run-commands.test.ts tests/commands/worktree-handlers.test.ts tests/commands/fleet-commands.test.ts tests/commands/handlers/auth-handlers.test.ts tests/unit/slash-commands.test.ts tests/unit/config-command.test.ts tests/unit/memory-commands.test.ts --run returned 21 files and 558 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-cli-command-surface-bundle.spec.ts --reporter=list --timeout=320000 launched CLI / command surface bundle from the UI and reported 558 ok / 0 ko; screenshot 79",
+    "testRunnerPluginsSkillsBundle": "passed; direct npm test -- tests/plugins/provider-onboarding.test.ts tests/plugins/plugin-sdk-channel.test.ts tests/plugins/plugin-manager.test.ts tests/plugins/plugin-conflict-detector.test.ts tests/plugins/gitnexus.test.ts tests/plugins/extra-providers.test.ts tests/plugins/cloud-providers.test.ts tests/features/plugins-teams-output.test.ts tests/features/plugins-commands-summarize.test.ts tests/integration/plugin-cli.test.ts tests/unit/plugins.test.ts tests/skills/unified-registry.test.ts tests/skills/starter-packs.test.ts tests/skills/skill-registry.test.ts tests/skills/skill-prompt-integration.test.ts tests/skills/skill-manager.test.ts tests/skills/skill-loader.test.ts tests/skills/skill-layering.test.ts tests/skills/legacy-adapter.test.ts tests/skills/hub.test.ts tests/skills/eligibility.test.ts tests/skills/deprecation-warnings.test.ts tests/skills/bundled-skills.test.ts --run returned 23 files, 751 tests passed and 5 skipped; after npm run build:e2e, npx playwright test e2e/test-runner-plugins-skills-bundle.spec.ts --reporter=list --timeout=320000 launched Plugins / skills bundle from the UI and reported 751 ok / 0 ko; screenshot 80",
+    "testRunnerTerminalUiObserverBundle": "passed; direct npm test -- tests/ui/accessibility.test.ts tests/ui/chat-interface.test.tsx tests/ui/diff-renderer-logic.test.ts tests/ui/keyboard-shortcuts.test.ts tests/ui/metrics-dashboard.test.ts tests/ui/status-line.test.ts tests/ui/tabbed-question.test.ts tests/ui/themes.test.ts tests/ui/tool-stream-output.test.ts tests/unit/ui-components.test.ts tests/unit/clipboard.test.ts tests/unit/clipboard-manager.test.ts tests/unit/browser-commands.test.ts tests/tools/gui-tool.test.ts tests/observer/event-trigger.test.ts tests/observer/screen-observer.test.ts --run returned 16 files and 376 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-terminal-ui-observer-bundle.spec.ts --reporter=list --timeout=320000 launched UI / terminal observer bundle from the UI and reported 376 ok / 0 ko; screenshot 81",
+    "testRunnerConfigAuthProviderBundle": "passed; direct npm test -- tests/auth/profile-manager.test.ts tests/auth/oauth/manager.test.ts tests/auth/oauth/model-profiles.test.ts tests/doctor/chatgpt-oauth-check.test.ts tests/providers/codex-oauth.test.ts tests/providers/codex-oauth-e2e.test.ts tests/codebuddy/providers/provider-openai-compat-hooks.test.ts tests/codebuddy/providers/provider-chatgpt-responses.test.ts tests/codebuddy/providers/provider-gemini-cli.test.ts tests/codebuddy/client-stream-retry.test.ts tests/codebuddy/client-gemini-vision.test.ts tests/config/resolve-model.test.ts tests/config/model-registry.test.ts tests/config/model-pricing.test.ts tests/config/model-defaults.test.ts tests/config/migration.test.ts tests/config/env-schema.test.ts tests/config/config-resolver.test.ts tests/config/agent-defaults.test.ts tests/config-validator.test.ts tests/toml-config.test.ts tests/unit/config.test.ts tests/unit/config-loader.test.ts tests/unit/config-migrator.test.ts tests/unit/config-mutator.test.ts tests/unit/jsonc-config.test.ts tests/unit/provider-command.test.ts tests/unit/provider-manager.test.ts tests/unit/providers.test.ts tests/unit/models.test.ts tests/unit/models-snapshot.test.ts --run returned 31 files and 849 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-config-auth-provider-bundle.spec.ts --reporter=list --timeout=320000 launched Config / auth provider bundle from the UI and reported 849 ok / 0 ko; screenshot 82",
+    "testRunnerDataSessionSyncCacheBundle": "passed; direct npm test -- tests/database.test.ts tests/kv-cache-config.test.ts tests/persistence/session-lock.test.ts tests/persistence/conversation-branches.test.ts tests/sync/cloud-sync.test.ts tests/unit/sync.test.ts tests/unit/sync-persistence.test.ts tests/unit/sync-bindings.test.ts tests/unit/session-timeline.test.ts tests/unit/session-store.test.ts tests/unit/session-replay.test.ts tests/unit/session-export.test.ts tests/unit/session-export-formats.test.ts tests/unit/session-enhancements-update-channel.test.ts tests/unit/session-cleanup.test.ts tests/unit/database-layer.test.ts tests/unit/cloud-storage-factory.test.ts tests/unit/response-cache.test.ts tests/unit/prompt-cache.test.ts tests/unit/cache.test.ts tests/unit/distributed-cache.test.ts tests/utils/cache.test.ts tests/utils/lru-cache.test.ts tests/optimization/prompt-cache.test.ts tests/fleet/peer-session-store.test.ts tests/scheduler/cron-session.test.ts tests/scheduler/cron-precheck-persistence.test.ts --run returned 27 files and 900 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-data-session-sync-cache-bundle.spec.ts --reporter=list --timeout=320000 launched Data / session sync cache bundle from the UI and reported 900 ok / 0 ko; screenshot 83",
+    "testRunnerServerApiMcpPlatformBundle": "passed; direct npm test -- tests/server/api-server.test.ts tests/server/auth.test.ts tests/server/middleware.test.ts tests/server/mobile.test.ts tests/server/native-engine-routes.test.ts tests/server/server-startup.test.ts tests/server/workflow-builder.test.ts tests/canvas/canvas-server.test.ts tests/unit/http-server.test.ts tests/unit/rest-server.test.ts tests/unit/ide-extensions-server.test.ts tests/lsp-server.test.ts tests/mcp/mcp-server.test.ts tests/mcp/mcp-agent-server.test.ts tests/mcp/client.test.ts tests/unit/mcp-client.test.ts tests/unit/mcp-server.test.ts tests/unit/mcp-oauth.test.ts tests/integrations/mcp-server.test.ts tests/integrations/json-rpc-server.test.ts --run returned 20 files and 702 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-server-api-mcp-platform-bundle.spec.ts --reporter=list --timeout=320000 launched Server / API MCP platform bundle from the UI and reported 702 ok / 0 ko; screenshot 84",
+    "testRunnerContextCompressionPruningBundle": "passed; direct npm test -- tests/context/web-search.test.ts tests/context/restorable-compression-gaps.test.ts tests/context/dangling-patch.test.ts tests/context/context-manager-v2-gaps.test.ts tests/context/pruning/ttl-manager.test.ts tests/context/observation-variator.test.ts tests/context/pruning/soft-trim.test.ts tests/context/importance-scorer.test.ts tests/context/pruning/hard-clear.test.ts tests/context/guard.test.ts tests/context/compaction/progressive-fallback.test.ts tests/context/compaction/parallel-summarizer.test.ts tests/context/compaction/memory-flush.test.ts tests/context/compaction/adaptive-chunker.test.ts --run returned 14 files and 282 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-context-compression-pruning-bundle.spec.ts --reporter=list --timeout=280000 launched Context / compression pruning bundle from the UI and reported 282 ok / 0 ko; screenshot 86",
+    "voiceSpeechTtsDirect": "passed; npm test -- tests/voice-control.test.ts tests/voice/speech-recognition.test.ts tests/voice/wake-word.test.ts tests/talk-mode/tts.test.ts tests/talk-mode/audioreader-tts.test.ts tests/talk-mode/providers/openai-tts.test.ts tests/talk-mode/providers/edge-tts.test.ts tests/tools/audio-tool.test.ts tests/unit/voice-to-code.test.ts --run returned 9 files and 164 tests passed. Wake-word tests used the expected text-match fallback because PICOVOICE_ACCESS_KEY is not configured.",
+    "coworkVoiceBridgeDirect": "passed; in cowork, npx vitest run tests/voice-bridge.test.ts tests/voice-conversation-session.test.ts tests/voice-playback-interrupt.test.ts --reporter=verbose returned 3 files and 11 tests passed, covering worker readiness, controlled boot/model failures, conversation state, barge-in and playback interruption.",
+    "testRunnerVoiceSpeechTtsBundle": "passed; after npm run build:e2e, npx playwright test e2e/test-runner-voice-speech-tts-bundle.spec.ts --reporter=list --timeout=280000 launched Voice / speech TTS bundle from the UI and reported 164 ok / 0 ko; screenshot 87",
+    "testRunnerSchedulerHooksNotificationsBundle": "passed; direct npm test -- tests/scheduler/watchdog-handlers.test.ts tests/scheduler/scheduled-delivery.test.ts tests/scheduler/pre-check-runner.test.ts tests/scheduler/cron-session.test.ts tests/scheduler/cron-precheck-persistence.test.ts tests/hooks/user-hooks.test.ts tests/hooks/moltbot-hooks.test.ts tests/hooks/lifecycle-hooks.test.ts tests/hooks/input-handler.test.ts tests/hooks/hermes-lifecycle-hooks.test.ts tests/hooks/advanced-hooks.test.ts tests/tools/hooks/tool-hooks.test.ts tests/tools/hooks/session-lanes.test.ts tests/webhooks/webhook-manager.test.ts tests/triggers/webhook-trigger.test.ts tests/unit/hook-manager.test.ts tests/unit/hook-llm-evaluation.test.ts tests/unit/scheduler.test.ts tests/unit/webhooks.test.ts tests/proactive/notification-manager.test.ts tests/agent/proactive/notification-default-sink.test.ts tests/unit/notifications.test.ts --run returned 22 files and 766 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-scheduler-hooks-notifications-bundle.spec.ts --reporter=list --timeout=320000 launched Automation / scheduler hooks notifications bundle from the UI and reported 766 ok / 0 ko; screenshot 88",
+    "testRunnerMaintenanceDoctorBackupSettingsBundle": "passed; direct npm test -- tests/doctor/doctor.test.ts tests/doctor/chatgpt-oauth-check.test.ts tests/unit/doctor-fix.test.ts tests/wizard/onboarding.test.ts tests/commands/backup-handlers.test.ts tests/utils/update-notifier.test.ts tests/update-notifier.test.ts tests/utils/settings-manager.test.ts tests/unit/settings-manager-baseurl.test.ts tests/unit/update-tag.test.ts tests/unit/migration-manager.test.ts tests/config/migration.test.ts tests/features/hooks-policies-memory-settings.test.ts --run returned 13 files, 254 tests passed and 3 intentional skips; after npm run build:e2e, npx playwright test e2e/test-runner-maintenance-doctor-backup-settings-bundle.spec.ts --reporter=list --timeout=300000 launched Maintenance / doctor backup settings bundle from the UI and reported 254 ok / 0 ko; screenshot 89",
+    "testRunnerMobileSupervisionGatewayBundle": "passed; direct npm test -- tests/observability/mobile-supervision-snapshot.test.ts tests/observability/mobile-supervision-pairing-state.test.ts tests/observability/mobile-supervision-pairing-acceptance-plan.test.ts tests/observability/mobile-supervision-gateway-policy.test.ts tests/observability/mobile-supervision-gateway-listener-shell.test.ts tests/observability/mobile-supervision-gateway-contract.test.ts tests/observability/mobile-supervision-approval-queue.test.ts tests/server/mobile.test.ts --run returned 8 files and 39 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-mobile-supervision-gateway-bundle.spec.ts --reporter=list --timeout=260000 launched Mobile / supervision gateway bundle from the UI and reported 39 ok / 0 ko; screenshot 90",
+    "testRunnerProviderResilienceErrorBundle": "passed; direct npm test -- tests/codebuddy/stream-retry.test.ts tests/codebuddy/client-stream-retry.test.ts tests/streaming/retry-policy.test.ts tests/unit/retry.test.ts tests/rate-limiter.test.ts tests/unit/rate-limit-display.test.ts tests/utils/errors.test.ts tests/unit/errors.test.ts tests/unit/error-handling-audit.test.ts tests/unit/client.test.ts tests/unit/codebuddy-client.test.ts tests/unit/codebuddy-client-gemini-malformed.test.ts --run returned 12 files and 367 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-provider-resilience-error-bundle.spec.ts --reporter=list --timeout=260000 launched Providers / resilience error bundle from the UI and reported 367 ok / 0 ko; screenshot 91",
+    "serverProviderErrorStatusBugFix": "fixed; /api/chat and /api/chat/completions now map provider 429 to HTTP 429 with RATE_LIMITED and Retry-After, provider 5xx to PROVIDER_UNAVAILABLE with preserved status, and keep server-side rate limiting distinct",
+    "testRunnerServerProviderErrorStatusBundle": "passed; direct npm test -- tests/server/chat-route-provider-error.test.ts tests/server/chat-route-real-http.test.ts --run returned 2 files and 5 tests passed; after npm run build:e2e, npx playwright test e2e/test-runner-server-provider-error-status-bundle.spec.ts --reporter=list --timeout=240000 launched Server / provider error status bundle from the UI and reported 4 ok / 0 ko; screenshot 92",
+    "infraMcpSandboxAdaptersDirect": "passed; npm test -- tests/desktop/codebuddy-engine-adapter-mcp.test.ts tests/desktop/codebuddy-engine-adapter-lru.test.ts tests/desktop/codebuddy-engine-adapter-hotswap.test.ts tests/unit/mcp-tool-adapter.test.ts tests/unit/mcp-discovery.test.ts tests/unit/mcp-enhancements.test.ts tests/sandbox/sandbox-registry.test.ts tests/sandbox/auto-sandbox.test.ts tests/sandbox/os-sandbox.test.ts tests/sandbox/execpolicy.test.ts tests/unit/e2b-sandbox.test.ts --run; 11 files and 190 tests passed across MCP manager/discovery/tool adapter, Electron core adapter LRU/hotswap, sandbox registry, auto-sandbox, OS policy and E2B fallback",
+    "testRunnerInfraMcpSandboxAdaptersBundle": "passed; npx playwright test e2e/test-runner-infra-mcp-sandbox-adapters-bundle.spec.ts --reporter=list --timeout=280000 after npm run build:e2e; UI row Infrastructure / MCP sandbox adapters bundle is visible, launches the 11-file infrastructure bundle, and reports 190 ok / 0 ko; screenshot 93",
+    "coworkRemoteControlDirect": "passed; npx vitest run tests/remote-user-message-ui.test.ts tests/remote-manager-port-conflict.test.ts tests/remote-default-workdir.test.ts tests/remote-cwd-state.test.ts tests/remote-cwd-propagation.test.ts tests/remote-control-panel-links.test.ts tests/remote-control-panel-imports.test.ts tests/remote-control-panel-claude-layout.test.ts tests/slash-command-bridge-remote.test.ts --reporter=verbose; 9 files and 16 tests passed across remote manager, user-message UI, cwd/default workdir, port conflict, remote panel links/layout and slash-command remote",
+    "testRunnerCoworkRemoteControlBundle": "passed; npx playwright test e2e/test-runner-remote-control-bundle.spec.ts --reporter=list --timeout=220000 after npm run build:e2e; UI row Cowork / remote control bundle is visible, launches the 9-file Cowork remote bundle, and reports 16 ok / 0 ko; screenshot 94",
+    "deviceTransportAdaptersDirect": "passed; npm test -- tests/unit/device-transports.test.ts tests/unit/transport.test.ts tests/features/tailscale-dashboard-nodes.test.ts --run; 3 files and 178 tests passed across SSH/ADB/local device transports, generic transport helpers and Tailscale dashboard node modeling",
+    "testRunnerDeviceTransportAdaptersBundle": "passed; npx playwright test e2e/test-runner-device-transport-adapters-bundle.spec.ts --reporter=list --timeout=220000 after npm run build:e2e; UI row Device / transport adapters bundle is visible, launches the 3-file core transport bundle, and reports 178 ok / 0 ko; screenshot 95",
+    "coworkSandboxExecutorDirect": "passed; npx vitest run tests/tool-executor-sandbox.test.ts tests/sandbox-executor-containment.test.ts tests/sandbox-command-injection.test.ts --reporter=verbose; 3 files and 42 tests passed across dangerous command blocking, traversal/absolute path containment, webFetch URL validation, WSL/Lima injection guards, execFileAsync usage, stderr capture and symlink-safe rm -rf checks",
+    "testRunnerCoworkSandboxExecutorBundle": "passed; npx playwright test e2e/test-runner-cowork-sandbox-executor-bundle.spec.ts --reporter=list --timeout=220000 after npm run build:e2e; UI row Cowork / sandbox executor bundle is visible, launches the 3-file Cowork sandbox bundle, and reports 42 ok / 0 ko; screenshot 96",
+    "coworkProjectSessionGitDirect": "passed; npx vitest run tests/git-bridge-worktree.test.ts tests/git-bridge-compare.test.ts tests/file-attachment-helpers.test.ts tests/file-attachment-context.test.ts tests/recent-workspace-files.test.ts tests/workspace-path-constraints.test.ts tests/session-manager-crud.test.ts tests/session-manager-message-cache.test.ts tests/session-manager-queue-concurrency.test.ts tests/session-manager-title-unified.test.ts tests/session-search.test.ts tests/session-resume-dialog.test.ts tests/session-insights-bridge.test.ts tests/session-insights-audit.test.ts tests/session-insights-jump.test.ts tests/welcome-project-selector.test.ts --reporter=verbose; 16 files and 73 tests passed across Git worktrees/compare, workspace selector, recent files, attachment context, session CRUD/cache/queue/title/search/resume and insights/audit/jump",
+    "testRunnerCoworkProjectSessionGitBundle": "passed; npx playwright test e2e/test-runner-project-session-git-bundle.spec.ts --reporter=list --timeout=240000 after npm run build:e2e; UI row Cowork / project session git bundle is visible, launches the 16-file Cowork project/session/git bundle, and reports 73 ok / 0 ko; screenshot 97",
+    "coworkUiLocalizationLayoutDirect": "passed; npx vitest run tests/app-layout-scroll-lock.test.ts tests/app-startup-lazy-load.test.ts tests/dark-theme-palette.test.ts tests/i18n-french-support.test.ts tests/welcome-view-claude-layout.test.ts tests/welcome-view-submit-guard.test.ts tests/chat-view-claude-layout.test.ts tests/chat-view-width-layout.test.ts tests/message-card-claude-layout.test.ts tests/message-card-file-attachment-layout.test.ts tests/config-modal-claude-layout.test.ts tests/focus-view-surface.test.ts tests/fleet-team-panel-browser-bridge.test.ts tests/settings-surface-tabs.test.ts tests/settings-panel-plugin-entry.test.ts tests/settings-panel-schedule-entry.test.ts tests/provider-guidance-ui.test.ts tests/prose-chat-list-style.test.ts tests/latex-delimiters.test.ts tests/markdown-local-link.test.ts --reporter=verbose; 20 files and 95 tests passed across app/chat/welcome/message/config layout, dark theme palette, French i18n, Fleet Command Center translations, settings/plugin/schedule/provider guidance, focus view, Fleet/Team preview, local links, LaTeX and markdown list rendering",
+    "testRunnerCoworkUiLocalizationLayoutBundle": "passed; npx playwright test e2e/test-runner-ui-localization-layout-bundle.spec.ts --reporter=list --timeout=240000 after npm run build:e2e; UI row Cowork / UI localization layout bundle is visible, launches the 20-file Cowork UI/i18n/layout bundle, and reports 95 ok / 0 ko; screenshot 98",
+    "coworkArtifactDocumentDirect": "passed; npx vitest run tests/artifact-detector-agentic-harness.test.ts tests/artifact-icon.test.ts tests/artifact-parser.test.ts tests/artifact-path.test.ts tests/artifact-steps.test.ts tests/file-preview-agentic-harness.test.ts tests/chat-view-document-workshop.test.ts tests/document-workshop-flow.test.ts tests/document-workshop-progress.test.ts tests/file-link.test.ts tests/tool-output-path.test.ts tests/tool-result-summary.test.ts tests/message-card-link-handling.test.ts tests/message-card-citation-link-normalization.test.ts tests/message-card-ask-user-question-state.test.ts --reporter=verbose; 15 files and 125 tests passed across artifact detection/parsing/path/icon/steps, agentic harness preview, document workshop prompt/progress/readiness, file links, tool output path extraction, screenshot summaries, citation normalization and historical AskUserQuestion state",
+    "testRunnerCoworkArtifactDocumentBundle": "passed; npx playwright test e2e/test-runner-artifact-document-bundle.spec.ts --reporter=list --timeout=240000 after npm run build:e2e; UI row Cowork / artifact document bundle is visible, launches the 15-file artifact/document bundle, and reports 125 ok / 0 ko; screenshot 99",
+    "coworkSchedulingSessionDirect": "passed; npx vitest run tests/schedule-helpers.test.ts tests/schedule-task-title.test.ts tests/scheduled-task-edge-cases.test.ts tests/scheduled-task-manager.test.ts tests/scheduled-task-session-title-entry.test.ts tests/scheduled-task-store.test.ts tests/session-manager-scheduled-title.test.ts tests/session-title-defaults.test.ts tests/session-title-flow-abort.test.ts tests/session-title-flow.test.ts tests/session-title-utils.test.ts tests/session-update-event.test.ts tests/slash-command-bridge-schedule.test.ts tests/settings-panel-schedule-entry.test.ts --reporter=verbose; 14 files and 90 tests passed across schedule helpers, task title prefixes, ScheduledTaskManager one-shot/repeating/runNow/concurrency/timer overflow/daily-weekly slots, SQLite store metadata, slash /schedule parsing, settings schedule UI state and session title generation/abort/update flows",
+    "testRunnerCoworkSchedulingSessionBundle": "passed; npx playwright test e2e/test-runner-scheduling-session-bundle.spec.ts --reporter=list --timeout=240000 after npm run build:e2e; UI row Cowork / scheduling session bundle is visible, launches the 14-file scheduling/session bundle, and reports 90 ok / 0 ko; screenshot 100",
+    "coworkLocalProviderConfigDirect": "passed; npx vitest run tests/api-config-state.test.ts tests/api-config-state-config-sets.test.ts tests/api-diagnostics.test.ts tests/auth-utils.test.ts tests/config-store-config-sets.test.ts tests/config-store-env.test.ts tests/config-store-performance.test.ts tests/config-store-profiles.test.ts tests/config-test-routing.test.ts tests/settings-api-local-providers.test.ts tests/lmstudio-api.test.ts tests/lmstudio-discovery.test.ts tests/ollama-api.test.ts tests/ollama-base-url.test.ts tests/ollama-discovery.test.ts tests/loopback-url.test.ts tests/retry.test.ts tests/use-ipc-config-modal-gate.test.ts --reporter=verbose; 18 files and 142 tests passed across API config state/config sets, diagnostics TLS/SNI/model probe/local discovery, auth utils, ConfigStore profiles/env/config sets/performance, config test routing, Settings API local providers, Ollama/LM Studio APIs and discovery, loopback URLs, retry and config modal gating",
+    "testRunnerCoworkLocalProviderConfigBundle": "passed; npx playwright test e2e/test-runner-local-provider-config-bundle.spec.ts --reporter=list --timeout=260000 after npm run build:e2e; UI row Cowork / local provider config bundle is visible, launches the 18-file local provider/config bundle, and reports 142 ok / 0 ko; screenshot 101",
+    "coworkActivityAuditDiagnosticsDirect": "passed; npx vitest run tests/activity-feed.test.ts tests/global-search-dialog.test.ts tests/global-search-service.test.ts tests/audit-bridge.test.ts tests/audit-log-viewer.test.ts tests/diagnostics-summary.test.ts tests/renderer-diagnostics.test.ts tests/client-event-utils.test.ts tests/runner-event-mapping.test.ts tests/preview-service.test.ts tests/context-panel-recent-files.test.ts --reporter=verbose; 11 files and 67 tests passed across activity feed, global search, audit recall, diagnostics redaction, renderer diagnostics, event mapping, preview service and recent context files",
+    "testRunnerCoworkActivityAuditDiagnosticsBundle": "passed; npx playwright test e2e/test-runner-activity-audit-diagnostics-bundle.spec.ts --reporter=list --timeout=260000 after npm run build:e2e; UI row Cowork / activity audit diagnostics bundle is visible, launches the 11-file activity/audit/diagnostics bundle, and reports 67 ok / 0 ko; screenshot 102",
+    "coworkFleetCommandTeamDirect": "passed; npx vitest run tests/aggregator-wiring.test.ts tests/fleet-bridge.test.ts tests/fleet-command-center-board.test.ts tests/fleet-discovery.test.ts tests/fleet-internet-proof-metadata.test.ts tests/fleet-ipc.test.ts tests/fleet-outcome-panel.test.ts tests/fleet-scheduled-work-strip.test.ts tests/saga-runner.test.ts tests/team-bridge.test.ts --reporter=verbose; 10 files and 61 tests passed across FleetBridge, Fleet IPC dispatch, command center board, discovery YAML, SagaRunner primary/fallback/parallel/council/chain retry, internet proof metadata, outcomes/scheduled work and TeamBridge",
+    "testRunnerCoworkFleetCommandTeamBundle": "passed; npx playwright test e2e/test-runner-fleet-command-team-bundle.spec.ts --reporter=list --timeout=260000 after npm run build:e2e; UI row Cowork / Fleet command team bundle is visible, launches the 10-file Fleet/Team Cowork bundle, and reports 61 ok / 0 ko; screenshot 103",
+    "coworkPermissionPathRulesDirect": "passed; npx vitest run tests/declarative-rules-explain.test.ts tests/permission-dialog-computer-use.test.ts tests/permission-rule-classification.test.ts tests/permission-rule-preview.test.ts tests/permission-target-rule.test.ts tests/rules-bridge-fallback.test.ts tests/settings-permission-rules-computer-use.test.ts tests/path-containment.test.ts tests/path-guard-command-conversion.test.ts tests/path-resolver-containment.test.ts tests/tool-executor-unc-paths.test.ts --reporter=verbose; 12 files and 58 tests passed across PermissionDialog computer-use, settings quick rules, classification/preview/target rules, rules fallback, path containment, PathResolver, PathGuard and UNC protections",
+    "testRunnerCoworkPermissionPathRulesBundle": "passed; npx playwright test e2e/test-runner-permission-path-rules-bundle.spec.ts --reporter=list --timeout=260000 after npm run build:e2e; UI row Cowork / permission path rules bundle is visible, launches the 12-file permissions/path rules Cowork bundle, and reports 58 ok / 0 ko; screenshot 104",
+    "coworkSettingsHooksMcpWorkflowsDirect": "passed; npx vitest run tests/bundle-mcp-script.test.ts tests/engine-mcp-sync.test.ts tests/hooks-bridge-agent-dryrun.test.ts tests/hooks-bridge-events.test.ts tests/hooks-bridge-http-dryrun.test.ts tests/hooks-bridge-prompt-dryrun.test.ts tests/mcp-manager-env-merge.test.ts tests/mcp-tool-name.test.ts tests/settings-codebuddy-autostart.test.ts tests/theme-settings-persistence.test.ts tests/workflow-bridge-compilation.test.ts tests/workflow-bridge-integration.test.ts --reporter=verbose; 12 files and 62 tests passed across theme settings persistence, Code Buddy autostart, hooks bridge agent/HTTP/prompt dry-runs and events, MCP env merge/tool naming/bundle staging/engine sync, workflow DAG compiler and real Orchestrator integration",
+    "testRunnerCoworkSettingsHooksMcpWorkflowsBundle": "passed; npx playwright test e2e/test-runner-settings-hooks-mcp-workflows-bundle.spec.ts --reporter=list --timeout=260000 after npm run build:e2e; UI row Cowork / settings hooks MCP workflows bundle is visible, launches the 12-file settings/hooks/MCP/workflows Cowork bundle, and reports 62 ok / 0 ko; screenshot 105",
+    "coworkCustomCommandsSlashDirect": "passed after newline bug fix; npx vitest run tests/custom-commands-service.test.ts tests/slash-command-bridge-schedule.test.ts --reporter=verbose; 2 files and 11 tests passed across custom command defaults, save/delete, invalid draft rejection, sanitized slash names, custom precedence over builtins, autocomplete, local/remote execution and /schedule parsing",
+    "coworkCustomCommandsNewlineBugFix": "fixed; CustomCommandsService.parse now removes the technical trailing newline inserted by Markdown serialization so saved custom slash commands do not execute with an extra newline in the prompt",
+    "testRunnerCoworkCustomCommandsSlashBundle": "passed; npx playwright test e2e/test-runner-custom-commands-slash-bundle.spec.ts --reporter=list --timeout=220000 after npm run build:e2e; UI row Cowork / custom commands slash bundle is visible, launches the 2-file custom commands/slash bundle, and reports 11 ok / 0 ko; screenshot 106",
+    "coworkKnowledgeHermesPresenceDirect": "passed; npx vitest run tests/hermes-plan-strip.test.ts tests/hermes-surfaces-ipc.test.ts tests/lessons-vault-bridge.test.ts tests/lessons-vault-graph.test.ts tests/lessons-vault-strip.test.ts tests/presence-bridge-download.test.ts tests/presence-bridge-model.test.ts tests/presence-service.test.ts tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts tests/tool-profile-inspector-strip.test.ts --reporter=verbose; 11 files and 85 tests passed across lesson candidates, lessons vault, user model/spec IPC, companion IPC, Hermes plan/tool profiles, skill candidate review, and presence model flows",
+    "testRunnerCoworkKnowledgeHermesPresenceBundle": "passed; npx playwright test e2e/test-runner-knowledge-hermes-presence-bundle.spec.ts --reporter=list --timeout=240000 after npm run build:e2e; UI row Cowork / knowledge Hermes presence bundle is visible, launches the 11-file knowledge/Hermes/presence bundle, and reports 85 ok / 0 ko; screenshot 107"
+  },
+  "results": [
+    {
+      "slug": "01-home-work-surface",
+      "label": "Accueil et surface de travail",
+      "action": "none",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:welcome-view"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/01-home-work-surface.png"
+    },
+    {
+      "slug": "02-shortcuts-dialog",
+      "label": "Raccourcis clavier",
+      "action": "click testid:shortcuts-help-button",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:Raccourcis clavier"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/02-shortcuts-dialog.png"
+    },
+    {
+      "slug": "03-clipboard-summary",
+      "label": "Résumé du presse-papiers",
+      "action": "click testid:clipboard-summary-button, run summarize now, toggle monitoring, send summary to chat",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:clipboard-summary-text + text:CLIPBOARD_PANEL_OK"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/36-clipboard-orchestrator-fleet-used.png"
+    },
+    {
+      "slug": "04-voice-overlay",
+      "label": "Voix, speech et TTS",
+      "action": "click testid:voice-overlay-button, then launch Voice / speech TTS bundle from Test Runner and run Cowork voice bridge tests directly",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:voice-overlay-mic + text:Voice / speech TTS bundle + text:164 ok / 0 ko + VoiceBridge protocol 11 tests passed"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/87-test-runner-voice-speech-tts-bundle.png"
+    },
+    {
+      "slug": "05-global-search",
+      "label": "Recherche globale",
+      "action": "click css:button[title^=\"Rechercher des sessions\"]",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:global-search-dialog"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/05-global-search.png"
+    },
+    {
+      "slug": "06-orchestrator",
+      "label": "Orchestrateur multi-agent",
+      "action": "click testid:orchestrator-button, fill goal, select peer_review strategy, set rounds to 2, trigger spawn",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:orchestrator-goal-input + spawn handler invoked and launcher closed"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/36-clipboard-orchestrator-fleet-used.png"
+    },
+    {
+      "slug": "07-fleet-command-center",
+      "label": "Centre de commande Fleet",
+      "action": "click testid:fleet-command-center-button, fill Fleet goal, set privacy/profile, dispatch saga",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:fleet-command-dispatch-feedback + text:saga"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/36-clipboard-orchestrator-fleet-used.png"
+    },
+    {
+      "slug": "08-fleet-events",
+      "label": "Flux événements Fleet",
+      "action": "click testid:fleet-panel-button, open add peer form, validate required URL, fill peer URL/API key/label",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:fleet-add-error + values in fleet-add-url-input/fleet-add-label-input"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/34-fleet-team-used.png"
+    },
+    {
+      "slug": "09-agent-team",
+      "label": "Agent Team",
+      "action": "click testid:team-panel-button, open start modal, fill team goal, cancel without spawning agents",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:team-goal-input value Coordinate a safe E2E panel proof"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/34-fleet-team-used.png"
+    },
+    {
+      "slug": "10-workflows",
+      "label": "Workflows",
+      "action": "open workflows settings, create workflow, add tool node, save workflow, run workflow",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:workflow-run-result + text:WORKFLOW_RUN_OK"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/38-review-backlog-used.png"
+    },
+    {
+      "slug": "11-schedules",
+      "label": "Planifications",
+      "action": "open settings schedule tab, fill prompt/cwd, create a scheduled task in isolated Electron profile",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:QA panel scheduled proof"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/35-automation-panels-used.png"
+    },
+    {
+      "slug": "12-hooks-triggers",
+      "label": "Hooks et triggers",
+      "action": "open settings hooks tab, create command hook draft, run dry-run test command",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:HOOK_PANEL_OK in hooks-test-result"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/35-automation-panels-used.png"
+    },
+    {
+      "slug": "13-custom-commands",
+      "label": "Commandes personnalisées",
+      "action": "open custom commands tab, create /qa-panel-proof command, save it",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:custom-command-row-qa-panel-proof"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/35-automation-panels-used.png"
+    },
+    {
+      "slug": "14-bookmarks",
+      "label": "Favoris",
+      "action": "click testid:bookmarks-button, search BOOKMARK_PANEL_OK, verify populated bookmark, switch project/global scope",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:bookmark-row-bmk-1"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/37-knowledge-panels-used.png"
+    },
+    {
+      "slug": "15-activity",
+      "label": "Activité",
+      "action": "click testid:activity-button, apply fleet filter, apply scheduled filter",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:activity-entry-activity-fleet + testid:activity-entry-activity-scheduled"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/37-knowledge-panels-used.png"
+    },
+    {
+      "slug": "16-session-insights",
+      "label": "Session insights",
+      "action": "click testid:session-insights-button, search populated session, run transcript audit",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:session-insights-audit-result + text:Clean transcript"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/37-knowledge-panels-used.png"
+    },
+    {
+      "slug": "17-focus-view",
+      "label": "Vue ciblée",
+      "action": "seed active session, click testid:focus-view-button, verify prompt/response, open insights from focus view",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:focus-view + testid:session-insights-panel"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/37-knowledge-panels-used.png"
+    },
+    {
+      "slug": "18-lesson-candidates",
+      "label": "Leçons candidates",
+      "action": "click testid:lesson-candidate-button, set reviewer, approve candidate, verify all tab status",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:approved"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/38-review-backlog-used.png"
+    },
+    {
+      "slug": "19-user-model",
+      "label": "Modèle utilisateur",
+      "action": "click testid:user-model-button, set reviewer, accept observation, verify all tab and active summary",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:accepted + text:prefers concise QA proof"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/38-review-backlog-used.png"
+    },
+    {
+      "slug": "20-spec-backlog",
+      "label": "Backlog spec",
+      "action": "click testid:spec-panel-button, create project, add story, approve story",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:spec-story-story-created + text:approved"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/38-review-backlog-used.png"
+    },
+    {
+      "slug": "21-buddy-companion",
+      "label": "Buddy companion",
+      "action": "create a temporary real project, click companion-panel-button, record self-state, self-evaluate, run improvement loop, run Buddy check-in, inspect camera or verify controlled camera-unavailable path, then launch the same smoke from Test Runner",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:Buddy companion, text:self/companion_status, text:Self-evaluation, text:Improvement loop, text:Check-in, no NO_ACTIVE_PROJECT, no Unhandled, Test Runner row Cowork / live companion core IPC passed with 1 ok / 0 ko"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/52-companion-live-core-ipc.png"
+    },
+    {
+      "slug": "22-settings",
+      "label": "Paramètres généraux",
+      "action": "click testid:shell-settings-button",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:settings-panel"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/22-settings.png"
+    },
+    {
+      "slug": "23-api-settings",
+      "label": "Paramètres API",
+      "action": "click css:button[title=\"Paramètres de l'API\"]",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:settings-panel"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/23-api-settings.png"
+    },
+    {
+      "slug": "24-mcp-connectors",
+      "label": "Connecteurs MCP",
+      "action": "open MCP marketplace, search browser, expand installed server, select playground tool, invoke with JSON args",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:mcp-playground-result + text:MCP_PLAYGROUND_OK"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/39-connectors-plugins-used.png"
+    },
+    {
+      "slug": "25-permission-rules",
+      "label": "Permission rules",
+      "action": "inject permission request, click Allow, observe permission.response IPC, save folder-scoped Write rule, then launch the same flow from Test Runner",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "permission.response IPC + persisted rule Write(docs/*) + Test Runner row Cowork / permission real flow passed with 1 ok / 0 ko"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/55-test-runner-permission-real-flow.png"
+    },
+    {
+      "slug": "26-plugins",
+      "label": "Plugins",
+      "action": "open plugin manager, search installed plugin, expand details, toggle skills component, search catalog plugin",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:plugin-installed-plugin-e2e + testid:plugin-catalog-catalog-plugin"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/39-connectors-plugins-used.png"
+    },
+    {
+      "slug": "27-quick-prompts",
+      "label": "Prompts rapides",
+      "action": "click css:button:has-text(\"Créez un fichier\")",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "value:Créer un nouveau fichier"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/27-quick-prompts.png"
+    },
+    {
+      "slug": "28-chat-ui-mock",
+      "label": "Chat UI",
+      "action": "fill testid:welcome-prompt-input and press Enter",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "text:Mock response to"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/28-chat-ui-mock.png"
+    },
+    {
+      "slug": "29-test-runner-window",
+      "label": "Fenêtre Tests & exécutions",
+      "action": "click testid:test-runner-button, set repo workspace, launch CLI / provider command regression from catalog row, launch Cowork / IPC chat flow from catalog row, launch Cowork / companion deterministic panel from catalog row, launch Cowork / panel usage depth from catalog row, launch Cowork / feature completion depth from catalog row, launch Cowork / functional coverage bundle from catalog row, launch Backend / deterministic integration bundle from catalog row, launch Permissions / security policy bundle from catalog row, launch Docker / sandbox full bundle from catalog row, launch Observability / run tracking bundle from catalog row, launch Gateway / realtime websocket bundle from catalog row, launch A2A / ACP channel bundle from catalog row, launch Channels / messaging adapters bundle from catalog row, launch Memory / context persistence bundle from catalog row, launch Providers / model config bundle from catalog row, launch Providers / resilience error bundle from catalog row, launch Tools / editing search bundle from catalog row, launch Agent / reasoning execution bundle from catalog row, launch Autonomous / multi-agent harness bundle from catalog row, launch Companion / core behaviour bundle from catalog row, launch Automation / browser desktop bundle from catalog row, launch Security / hardening audit bundle from catalog row, launch CLI / headless provider failure exit from catalog row, launch Server / local HTTP chat routes from catalog row, launch Server / provider error status bundle from catalog row, launch Fleet / peer tool security suite from catalog row, launch Fleet / routing orchestration bundle from catalog row, launch MCP / real transport suite from catalog row, launch Fleet/MCP local smoke suite from catalog row, launch Docker / real sandbox smoke from opt-in catalog row, launch Cowork / real GPT-5.5 chat from opt-in catalog row, launch Server / real GPT-5.5 chat API from opt-in catalog row, launch Cowork / live companion core IPC from opt-in catalog row, launch Cowork / workflow bridge integration from catalog row, launch Cowork / permission real flow from catalog row, run safe checks on a temporary workspace, time out a hanging test:hang script, cancel a long-running test:slow script, launch temporary test:fail script from catalog, then re-run a failed Vitest file after fixing its fixture, launch CLI / command surface bundle from catalog row, launch Plugins / skills bundle from catalog row, launch UI / terminal observer bundle from catalog row, launch Config / auth provider bundle from catalog row, launch Data / session sync cache bundle from catalog row, launch Server / API MCP platform bundle from catalog row, launch Context / compression pruning bundle from catalog row, launch Voice / speech TTS bundle from catalog row, launch Mobile / supervision gateway bundle from catalog row, launch Automation / scheduler hooks notifications bundle from catalog row, launch Maintenance / doctor backup settings bundle from catalog row, launch Infrastructure / MCP sandbox adapters bundle from catalog row, launch Cowork / remote control bundle from catalog row, launch Device / transport adapters bundle from catalog row, launch Cowork / sandbox executor bundle from catalog row, launch Cowork / project session git bundle from catalog row, launch Cowork / UI localization layout bundle from catalog row, launch Cowork / artifact document bundle from catalog row, launch Cowork / scheduling session bundle from catalog row, launch Cowork / local provider config bundle from catalog row, launch Cowork / activity audit diagnostics bundle from catalog row, launch Cowork / Fleet command team bundle from catalog row; launch Cowork / permission path rules bundle from catalog row; launch Cowork / settings hooks MCP workflows bundle from catalog row; launch Cowork / custom commands slash bundle from catalog row; launch Cowork / knowledge Hermes presence bundle from catalog row",
+      "ok": true,
+      "verification": {
+        "ok": true,
+        "proof": "testid:test-runner-panel, aria-label:passed, text:1 ok / 0 ko, text:Server / local HTTP chat routes, text:/api/chat, text:Fleet/MCP local smoke suite, text:6 ok / 0 ko, text:Docker / real sandbox smoke, text:CODEBUDDY_REAL_DOCKER_SANDBOX, text:Cowork / real GPT-5.5 chat, text:COWORK_REAL_GPT55, text:Server / real GPT-5.5 chat API, text:CODEBUDDY_REAL_GPT55_SERVER, text:Cowork / live companion core IPC, text:COWORK_LIVE_COMPANION, text:Cowork / workflow bridge integration, text:8 ok / 0 ko, text:Cowork / permission real flow, text:1 ok / 0 ko, text:Cowork / panel usage depth, text:2 ok / 0 ko, text:Cowork / feature completion depth, text:4 ok / 0 ko, text:Cowork / functional coverage bundle, text:8 ok / 0 ko, text:Backend / deterministic integration bundle, text:55 ok / 0 ko, text:Permissions / security policy bundle, text:524 ok / 0 ko, text:Docker / sandbox full bundle, text:82 ok / 0 ko, text:SAFE_BATCH_MARKER, manual row remains pending, no UNSAFE_E2E_MARKER, text:Timed out after 1500ms, text:QA_UI_TIMEOUT_MARKER, text:Test runner: test:hang, timeout run source test-runner, aria-label:skipped, text:Test runner: test:slow, text:cancelled, aria-label:failed, text:0 ok / 1 ko, text:QA_FAIL_MARKER, text:Test runner: test:fail, text:Re-run failing, text:flaky.test.ts, testid:test-runner-executions-list, testid:test-runner-coverage-list, text:Fleet / peer tool security suite, text:40 ok / 0 ko, text:allowlist, text:PolicyEngine, text:Fleet / routing orchestration bundle, text:TaskRouter, text:privacy lint, text:357 ok / 0 ko, text:MCP / real transport suite, text:3 ok / 0 ko, text:HTTP JSON-RPC, text:fail-closed, text:Cowork / IPC chat flow, text:session chat, text:continue, text:Cowork / companion deterministic panel, text:cockpit compagnon, text:improvement loop, text:Observability / run tracking bundle, text:RunStore, text:run commands, text:135 ok / 0 ko, text:Gateway / realtime websocket bundle, text:backpressure, text:TLS pairing, text:218 ok / 0 ko, text:A2A / ACP channel bundle, text:remote routing, text:channel bridge, text:82 ok / 0 ko, text:Channels / messaging adapters bundle, text:WhatsApp, text:offline queue, text:1036 ok / 0 ko, text:Memory / context persistence bundle, text:ContextManager, text:checkpoints, text:561 ok / 0 ko, text:Providers / model config bundle, text:ChatGPT OAuth, text:fallback chain, text:579 ok / 0 ko, text:Providers / resilience error bundle, text:stream retry, text:rate limit, text:367 ok / 0 ko, text:Tools / editing search bundle, text:Text editor, text:hybrid index, text:701 ok / 0 ko, text:Agent / reasoning execution bundle, text:CodeBuddyAgent, text:prompt builder, text:686 ok / 0 ko, text:Autonomous / multi-agent harness bundle, text:agentic coding, text:workflow orchestrator, text:451 ok / 0 ko, text:Companion / core behaviour bundle, text:percepts, text:mission, text:56 ok / 0 ko, text:Automation / browser desktop bundle, text:route interceptor, text:OCR, text:262 ok / 0 ko, text:Security / hardening audit bundle, text:policy engine, text:secrets, text:485 ok / 0 ko, text:CLI / command surface bundle, text:558 ok / 0 ko, text:Plugins / skills bundle, text:751 ok / 0 ko, text:UI / terminal observer bundle, text:376 ok / 0 ko, text:Config / auth provider bundle, text:849 ok / 0 ko, text:Data / session sync cache bundle, text:900 ok / 0 ko, text:Server / API MCP platform bundle, text:702 ok / 0 ko, text:Context / compression pruning bundle, text:282 ok / 0 ko, text:Web search context, text:compaction fallback, text:Voice / speech TTS bundle, text:164 ok / 0 ko, text:wake-word fallback, text:voice-to-code, text:Automation / scheduler hooks notifications bundle, text:766 ok / 0 ko, text:cron prechecks, text:webhooks, text:Maintenance / doctor backup settings bundle, text:254 ok / 0 ko, text:ChatGPT OAuth diagnostics, text:migrations, text:Mobile / supervision gateway bundle, text:39 ok / 0 ko, text:no-network acceptance plan, text:approval queue, text:Server / provider error status bundle, text:provider 429/503, text:rate-limit serveur, text:4 ok / 0 ko, text:Retry-After, text:Infrastructure / MCP sandbox adapters bundle, text:190 ok / 0 ko, text:auto-sandbox, text:E2B fallback, text:Cowork / remote control bundle, text:16 ok / 0 ko, text:slash-command remote, text:Device / transport adapters bundle, text:178 ok / 0 ko, text:Tailscale, text:Cowork / sandbox executor bundle, text:42 ok / 0 ko, text:command injection, text:Cowork / project session git bundle, text:73 ok / 0 ko, text:Git worktrees, text:Cowork / UI localization layout bundle, text:95 ok / 0 ko, text:French i18n, text:Cowork / artifact document bundle, text:125 ok / 0 ko, text:document workshop, text:Cowork / scheduling session bundle, text:90 ok / 0 ko, text:slash /schedule, text:Cowork / local provider config bundle, text:142 ok / 0 ko, text:Ollama, text:LM Studio, text:Cowork / activity audit diagnostics bundle, text:67 ok / 0 ko, text:global search, text:renderer diagnostics, text:Cowork / Fleet command team bundle, text:61 ok / 0 ko, text:command center, text:Team bridge; text:Cowork / permission path rules bundle, text:58 ok / 0 ko, text:computer-use, text:UNC; text:Cowork / settings hooks MCP workflows bundle, text:62 ok / 0 ko, text:hooks, text:workflow; text:Cowork / custom commands slash bundle, text:11 ok / 0 ko, text:autocomplete, text:schedule; text:Cowork / knowledge Hermes presence bundle, text:85 ok / 0 ko, text:Lesson candidates, text:presence model flows"
+      },
+      "error": null,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/107-test-runner-knowledge-hermes-presence-bundle.png"
+    }
+  ]
+}

@@ -89,7 +89,7 @@ export function SettingsCustomCommands() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="settings-custom-commands">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
@@ -99,6 +99,7 @@ export function SettingsCustomCommands() {
         </div>
         <button
           onClick={newCommand}
+          data-testid="custom-command-new"
           className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors"
         >
           <Plus size={12} />
@@ -118,6 +119,7 @@ export function SettingsCustomCommands() {
               <button
                 key={cmd.name}
                 onClick={() => selectCommand(cmd)}
+                data-testid={`custom-command-row-${cmd.name}`}
                 className={`w-full text-left px-3 py-2 border-b border-border-muted transition-colors ${
                   selected === cmd.name ? 'bg-accent/10' : 'hover:bg-surface-hover'
                 }`}
@@ -151,6 +153,7 @@ export function SettingsCustomCommands() {
                   setDraft({ ...draft, name: ev.target.value });
                   setDirty(true);
                 }}
+                data-testid="custom-command-name-input"
                 placeholder="my-command"
                 className="flex-1 px-3 py-1.5 rounded-md bg-surface border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent font-mono"
               />
@@ -166,6 +169,7 @@ export function SettingsCustomCommands() {
                 setDraft({ ...draft, description: ev.target.value });
                 setDirty(true);
               }}
+              data-testid="custom-command-description-input"
               className="w-full px-3 py-1.5 rounded-md bg-surface border border-border text-sm text-text-primary focus:outline-none focus:border-accent"
             />
           </div>
@@ -179,6 +183,7 @@ export function SettingsCustomCommands() {
                 setDraft({ ...draft, body: ev.target.value });
                 setDirty(true);
               }}
+              data-testid="custom-command-body-input"
               placeholder={t('customCommands.bodyPlaceholder')}
               rows={10}
               className="w-full px-3 py-2 rounded-md bg-surface border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent font-mono"
@@ -198,6 +203,7 @@ export function SettingsCustomCommands() {
             <button
               onClick={handleSave}
               disabled={!dirty || saving || !draft.name.trim() || !draft.body.trim()}
+              data-testid="custom-command-save"
               className="flex items-center gap-1 text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
             >
               <Save size={12} />

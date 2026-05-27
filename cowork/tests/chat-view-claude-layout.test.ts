@@ -14,9 +14,10 @@ describe('ChatView Claude-style layout', () => {
     expect(source).toContain('max-w-[920px]');
   });
 
-  it('uses a quieter header treatment with Open Cowork eyebrow and compact connector badge', () => {
+  it('uses a quieter header treatment with the shared app name and compact connector badge', () => {
     const source = readChatView();
-    expect(source).toContain('Open Cowork');
+    expect(source).toContain("import { APP_NAME } from '../brand'");
+    expect(source).toContain('{APP_NAME}');
     expect(source).toContain('bg-background/88');
     expect(source).toContain('border-border-muted');
   });

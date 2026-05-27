@@ -498,8 +498,24 @@ export class SkillRegistry extends EventEmitter {
   getAllUnified(): UnifiedSkill[] {
     const unified: UnifiedSkill[] = [];
 
+    let disabledSkills = new Set<string>();
+    try {
+      disabledSkills = new Set(
+        getSkillsHub()
+          .list()
+          .filter((s) => s.enabled === false)
+          .map((s) => s.name)
+      );
+    } catch {
+      // Ignored
+    }
+
     for (const skill of this.skills.values()) {
-      unified.push(skillMdToUnified(skill));
+      const uSkill = skillMdToUnified(skill);
+      const isHubEnabled = !disabledSkills.has(skill.metadata.name);
+      const isSkillEnabled = skill.enabled !== false;
+      uSkill.enabled = isHubEnabled && isSkillEnabled;
+      unified.push(uSkill);
     }
 
     return unified;

@@ -41,7 +41,7 @@
     "prepare:python": "node scripts/prepare-python.js",
     "prepare:python:all": "node scripts/prepare-python.js --all",
     "preview": "vite preview",
-    "lint": "eslint src --ext .ts,.tsx",
+    "lint": "node scripts/lint.cjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",
     "test": "vitest",
     "test:coverage": "vitest run --coverage",

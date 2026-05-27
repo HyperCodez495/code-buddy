@@ -133,3 +133,12 @@ export {
 export {
   BrowserOperatorExecutor,
 } from './browser-operator-executor.js';
+
+export type {
+  BrowserOperatorHarnessBundle,
+  BrowserOperatorHarnessBundleOptions,
+} from './browser-operator-harness.js';
+
+export {
+  buildBrowserOperatorHarnessBundle,
+} from './browser-operator-harness.js';

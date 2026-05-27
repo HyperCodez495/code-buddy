@@ -2,6 +2,33 @@ import fs from "fs-extra";
 import * as path from "path";
 import * as os from "os";
 import { EventEmitter } from "events";
+import { getHooksManager } from "../hooks/lifecycle-hooks.js";
+import { Fact, FactCategory } from "./facts-memory.js";
+import { logger } from "../utils/logger.js";
+
+function mapMemoryCategoryToFactCategory(cat: MemoryCategory): FactCategory {
+  switch (cat) {
+    case 'project': return 'Projet';
+    case 'preferences': return 'Preferences';
+    case 'decisions': return 'Decisions';
+    case 'patterns': return 'Conventions';
+    case 'context': return 'Besoins';
+    case 'custom': return 'Profil';
+    default: return 'Profil';
+  }
+}
+
+function mapFactCategoryToMemoryCategory(cat: FactCategory): MemoryCategory {
+  switch (cat) {
+    case 'Projet': return 'project';
+    case 'Preferences': return 'preferences';
+    case 'Decisions': return 'decisions';
+    case 'Conventions': return 'patterns';
+    case 'Besoins': return 'context';
+    case 'Profil': return 'custom';
+    default: return 'custom';
+  }
+}
 
 export interface Memory {
   key: string;
@@ -236,18 +263,77 @@ export class PersistentMemoryManager extends EventEmitter {
     const { scope = "project", category = "context", tags } = options;
     const memories = scope === "project" ? this.projectMemories : this.userMemories;
 
-    const existing = memories.get(key);
-    const memory: Memory = {
-      key,
-      value,
-      category,
-      createdAt: existing?.createdAt || new Date(),
-      updatedAt: new Date(),
-      accessCount: existing?.accessCount || 0,
-      tags,
-    };
+    try {
+      const { FactsMemoryService } = await import('./facts-memory.js');
+      const service = new FactsMemoryService();
 
-    memories.set(key, memory);
+      if (await service.isAvailable()) {
+        const newFact: Fact = {
+          category: mapMemoryCategoryToFactCategory(category),
+          text: `${key}: ${value}`,
+          source: tags?.join(', ') || 'manual',
+          updatedAt: new Date()
+        };
+
+        const currentFacts: Fact[] = Array.from(memories.entries()).map(([k, m]) => ({
+          category: mapMemoryCategoryToFactCategory(m.category),
+          text: `${k}: ${m.value}`,
+          source: m.tags?.join(', ') || 'persistent-memory',
+          updatedAt: m.updatedAt
+        }));
+
+        const reconciledFacts = await service.reconcileFacts(currentFacts, [newFact]);
+
+        memories.clear();
+        for (const fact of reconciledFacts) {
+          let fKey = `fact-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+          let fValue = fact.text;
+          const colonIdx = fact.text.indexOf(': ');
+          if (colonIdx > 0 && colonIdx < 50) {
+            fKey = fact.text.substring(0, colonIdx).trim();
+            fValue = fact.text.substring(colonIdx + 2).trim();
+          }
+
+          const existing = memories.get(fKey);
+          memories.set(fKey, {
+            key: fKey,
+            value: fValue,
+            category: mapFactCategoryToMemoryCategory(fact.category),
+            createdAt: existing?.createdAt || fact.updatedAt || new Date(),
+            updatedAt: fact.updatedAt || new Date(),
+            accessCount: existing?.accessCount || 0,
+            tags: fact.source ? [fact.source] : tags
+          });
+        }
+      } else {
+        // Fallback to default direct write
+        const existing = memories.get(key);
+        const memory: Memory = {
+          key,
+          value,
+          category,
+          createdAt: existing?.createdAt || new Date(),
+          updatedAt: new Date(),
+          accessCount: existing?.accessCount || 0,
+          tags,
+        };
+        memories.set(key, memory);
+      }
+    } catch (err: any) {
+      logger.warn(`[FactsMemory] Failed to reconcile remember, falling back to default behavior: ${err.message}`);
+      const existing = memories.get(key);
+      const memory: Memory = {
+        key,
+        value,
+        category,
+        createdAt: existing?.createdAt || new Date(),
+        updatedAt: new Date(),
+        accessCount: existing?.accessCount || 0,
+        tags,
+      };
+      memories.set(key, memory);
+    }
+
     await this.saveMemories(scope);
 
     this.emit("memory:remembered", { key, scope, category });
@@ -430,6 +516,33 @@ export class PersistentMemoryManager extends EventEmitter {
     content += `---\n`;
     content += `*Last updated: ${new Date().toISOString()}*\n`;
 
+    try {
+      const hooksManager = getHooksManager();
+      const results = await hooksManager.executeHooks("before-memory-write", {
+        file: filePath,
+        content: content,
+      });
+
+      let abort = false;
+      let modifiedContent = content;
+
+      for (const res of results) {
+        if (res.abort) {
+          abort = true;
+        }
+        if (res.modified?.content !== undefined) {
+          modifiedContent = res.modified.content;
+        }
+      }
+
+      if (abort) {
+        return;
+      }
+      content = modifiedContent;
+    } catch (_err) {
+      // Ignored
+    }
+
     await fs.writeFile(filePath, content);
   }
 
@@ -463,53 +576,103 @@ export class PersistentMemoryManager extends EventEmitter {
   async autoCapture(message: string, response: string): Promise<void> {
     if (!this.config.autoCapture) return;
 
-    // Detect project context
-    const projectPatterns = [
-      /this (?:is|project) (?:a|an) ([^.]+)/i,
-      /using ([^,.]+ (?:framework|library|stack))/i,
-      /the (?:main|entry) (?:file|point) is ([^\s]+)/i,
-    ];
+    try {
+      const { FactsMemoryService } = await import('./facts-memory.js');
+      const service = new FactsMemoryService();
 
-    for (const pattern of projectPatterns) {
-      const match = message.match(pattern) || response.match(pattern);
-      if (match) {
-        await this.remember(`auto-${Date.now()}`, match[0], {
-          category: "project",
-          tags: ["auto-captured"],
+      if (!(await service.isAvailable())) {
+        throw new Error("FactsMemoryService is not available (running in tests or offline)");
+      }
+
+      // 1. Get current facts from project memories
+      const currentProjectFacts: Fact[] = Array.from(this.projectMemories.entries()).map(([key, memory]) => ({
+        category: mapMemoryCategoryToFactCategory(memory.category),
+        text: `${key}: ${memory.value}`,
+        source: memory.tags?.join(', ') || 'persistent-memory',
+        updatedAt: memory.updatedAt
+      }));
+
+      // 2. Extract facts from the conversation turn
+      const extractedFacts = await service.extractFacts(`User: ${message}\nAssistant: ${response}`);
+      if (extractedFacts.length === 0) return;
+
+      // 3. Reconcile facts
+      const reconciledFacts = await service.reconcileFacts(currentProjectFacts, extractedFacts);
+
+      // 4. Update project memories with reconciled facts
+      this.projectMemories.clear();
+      for (const fact of reconciledFacts) {
+        let key = `fact-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`;
+        let value = fact.text;
+
+        const colonIdx = fact.text.indexOf(': ');
+        if (colonIdx > 0 && colonIdx < 50) {
+          key = fact.text.substring(0, colonIdx).trim();
+          value = fact.text.substring(colonIdx + 2).trim();
+        }
+
+        this.projectMemories.set(key, {
+          key,
+          value,
+          category: mapFactCategoryToMemoryCategory(fact.category),
+          createdAt: fact.updatedAt || new Date(),
+          updatedAt: fact.updatedAt || new Date(),
+          accessCount: 0,
+          tags: fact.source ? [fact.source] : ['auto-captured']
         });
       }
-    }
 
-    // Detect preferences
-    const prefPatterns = [
-      /(?:i |we )prefer ([^.]+)/i,
-      /(?:always |never )([^.]+)/i,
-      /use ([^.]+) (?:style|convention|format)/i,
-    ];
+      await this.saveMemories("project");
+    } catch (err: any) {
+      logger.warn(`[FactsMemory] Failed to autoCapture facts, falling back to pattern matching: ${err.message}`);
+      // Fallback: Detect project context
+      const projectPatterns = [
+        /this (?:is|project) (?:a|an) ([^.]+)/i,
+        /using ([^,.]+ (?:framework|library|stack))/i,
+        /the (?:main|entry) (?:file|point) is ([^\s]+)/i,
+      ];
 
-    for (const pattern of prefPatterns) {
-      const match = message.match(pattern);
-      if (match) {
-        await this.remember(`pref-${Date.now()}`, match[0], {
-          category: "preferences",
-          tags: ["auto-captured"],
-        });
+      for (const pattern of projectPatterns) {
+        const match = message.match(pattern) || response.match(pattern);
+        if (match) {
+          await this.remember(`auto-${Date.now()}`, match[0], {
+            category: "project",
+            tags: ["auto-captured"],
+          });
+        }
       }
-    }
 
-    // Detect decisions
-    const decisionPatterns = [
-      /(?:decided|choosing|going with) ([^.]+)/i,
-      /(?:will|should) use ([^.]+) (?:for|because)/i,
-    ];
+      // Detect preferences
+      const prefPatterns = [
+        /(?:i |we )prefer ([^.]+)/i,
+        /(?:always |never )([^.]+)/i,
+        /use ([^.]+) (?:style|convention|format)/i,
+      ];
 
-    for (const pattern of decisionPatterns) {
-      const match = message.match(pattern) || response.match(pattern);
-      if (match) {
-        await this.remember(`decision-${Date.now()}`, match[0], {
-          category: "decisions",
-          tags: ["auto-captured"],
-        });
+      for (const pattern of prefPatterns) {
+        const match = message.match(pattern);
+        if (match) {
+          await this.remember(`pref-${Date.now()}`, match[0], {
+            category: "preferences",
+            tags: ["auto-captured"],
+          });
+        }
+      }
+
+      // Detect decisions
+      const decisionPatterns = [
+        /(?:decided|choosing|going with) ([^.]+)/i,
+        /(?:will|should) use ([^.]+) (?:for|because)/i,
+      ];
+
+      for (const pattern of decisionPatterns) {
+        const match = message.match(pattern) || response.match(pattern);
+        if (match) {
+          await this.remember(`decision-${Date.now()}`, match[0], {
+            category: "decisions",
+            tags: ["auto-captured"],
+          });
+        }
       }
     }
   }

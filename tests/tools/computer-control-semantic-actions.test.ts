@@ -1,0 +1,473 @@
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import type { Snapshot, UIElement } from '../../src/desktop-automation/smart-snapshot.js';
+
+const {
+  mockAutomation,
+  mockSnapshotManager,
+  setCurrentSnapshot,
+  makeElement,
+  makeSnapshot,
+} = vi.hoisted(() => {
+  type TestElement = {
+    ref: number;
+    role: string;
+    name: string;
+    bounds: { x: number; y: number; width: number; height: number };
+    center: { x: number; y: number };
+    interactive: boolean;
+    focused: boolean;
+    enabled: boolean;
+    visible: boolean;
+    value?: string;
+    placeholder?: string;
+    attributes?: Record<string, unknown>;
+  };
+  type TestSnapshot = {
+    id: string;
+    timestamp: Date;
+    source: string;
+    elements: TestElement[];
+    elementMap: Map<number, TestElement>;
+    screenSize: { width: number; height: number };
+    ttl: number;
+    valid: boolean;
+  };
+
+  let currentSnapshot: TestSnapshot | null = null;
+
+  const makeElement = (overrides: Partial<TestElement> & Pick<TestElement, 'ref' | 'role' | 'name'>): TestElement => {
+    const bounds = overrides.bounds ?? {
+      x: overrides.ref * 10,
+      y: overrides.ref * 10,
+      width: 100,
+      height: 24,
+    };
+    return {
+      bounds,
+      center: overrides.center ?? {
+        x: bounds.x + Math.round(bounds.width / 2),
+        y: bounds.y + Math.round(bounds.height / 2),
+      },
+      interactive: overrides.interactive ?? true,
+      focused: overrides.focused ?? false,
+      enabled: overrides.enabled ?? true,
+      visible: overrides.visible ?? true,
+      ...overrides,
+    };
+  };
+
+  const makeSnapshot = (elements: TestElement[], id = 'snap-1'): TestSnapshot => ({
+    id,
+    timestamp: new Date('2026-05-27T00:00:00.000Z'),
+    source: 'test-window',
+    elements,
+    elementMap: new Map(elements.map((element) => [element.ref, element])),
+    screenSize: { width: 1280, height: 720 },
+    ttl: 5000,
+    valid: true,
+  });
+
+  const mockAutomation = {
+    initialize: vi.fn().mockResolvedValue(undefined),
+    click: vi.fn().mockResolvedValue(undefined),
+    doubleClick: vi.fn().mockResolvedValue(undefined),
+    rightClick: vi.fn().mockResolvedValue(undefined),
+    moveMouse: vi.fn().mockResolvedValue(undefined),
+    drag: vi.fn().mockResolvedValue(undefined),
+    scroll: vi.fn().mockResolvedValue(undefined),
+    type: vi.fn().mockResolvedValue(undefined),
+    keyPress: vi.fn().mockResolvedValue(undefined),
+    keyDown: vi.fn().mockResolvedValue(undefined),
+    keyUp: vi.fn().mockResolvedValue(undefined),
+    hotkey: vi.fn().mockResolvedValue(undefined),
+    getMousePosition: vi.fn().mockResolvedValue({ x: 0, y: 0 }),
+    getWindows: vi.fn().mockResolvedValue([]),
+    focusWindow: vi.fn().mockResolvedValue(undefined),
+    getScreenSize: vi.fn().mockResolvedValue({ width: 1280, height: 720 }),
+  };
+
+  const mockSnapshotManager = {
+    takeSnapshot: vi.fn().mockImplementation(async () => currentSnapshot),
+    getElement: vi.fn().mockImplementation((ref: number) => currentSnapshot?.elementMap.get(ref)),
+    getCurrentSnapshot: vi.fn().mockImplementation(() => currentSnapshot),
+    toTextRepresentation: vi.fn(),
+    findElements: vi.fn(),
+    toAnnotatedScreenshot: vi.fn(),
+  };
+
+  return {
+    mockAutomation,
+    mockSnapshotManager,
+    setCurrentSnapshot: (snapshot: TestSnapshot | null) => {
+      currentSnapshot = snapshot;
+    },
+    makeElement,
+    makeSnapshot,
+  };
+});
+
+vi.mock('../../src/desktop-automation/index.js', () => ({
+  getDesktopAutomation: vi.fn().mockReturnValue(mockAutomation),
+  getPermissionManager: vi.fn().mockReturnValue({
+    check: vi.fn(),
+    getInstructions: vi.fn(),
+  }),
+  getSystemControl: vi.fn().mockReturnValue({}),
+  getSmartSnapshotManager: vi.fn().mockReturnValue(mockSnapshotManager),
+  getScreenRecorder: vi.fn().mockReturnValue({
+    start: vi.fn(),
+    stop: vi.fn(),
+    getStatus: vi.fn(),
+  }),
+}));
+
+describe('ComputerControlTool semantic actions', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    setCurrentSnapshot(null);
+  });
+
+  it('fills a named text field by focusing, clearing, and typing', async () => {
+    const field = makeElement({ ref: 1, role: 'text-field', name: 'Search' }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([field]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'fill_text_field',
+      name: 'Search',
+      text: 'Code Buddy Studio',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.click).toHaveBeenCalledWith(field.center.x, field.center.y, { button: 'left' });
+    expect(mockAutomation.keyPress).toHaveBeenCalledWith('a', {
+      modifiers: [process.platform === 'darwin' ? 'meta' : 'ctrl'],
+    });
+    expect(mockAutomation.type).toHaveBeenCalledWith('Code Buddy Studio', { delay: 30 });
+  });
+
+  it('opens a dropdown and selects an option by label', async () => {
+    const dropdown = makeElement({ ref: 2, role: 'dropdown', name: 'Country' }) as UIElement;
+    const option = makeElement({ ref: 3, role: 'list-item', name: 'France' }) as UIElement;
+    const closedSnapshot = makeSnapshot([dropdown], 'closed') as Snapshot;
+    const openSnapshot = makeSnapshot([dropdown, option], 'open') as Snapshot;
+
+    setCurrentSnapshot(closedSnapshot);
+    mockSnapshotManager.takeSnapshot.mockImplementationOnce(async () => {
+      setCurrentSnapshot(openSnapshot);
+      return openSnapshot;
+    });
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'select_dropdown_option',
+      name: 'Country',
+      option: 'France',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.click).toHaveBeenNthCalledWith(1, dropdown.center.x, dropdown.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenNthCalledWith(2, option.center.x, option.center.y, { button: 'left' });
+  });
+
+  it('does not click a checkbox that already matches the desired state', async () => {
+    const checkbox = makeElement({
+      ref: 4,
+      role: 'checkbox',
+      name: 'Enable companion mode',
+      attributes: { checked: true },
+    }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([checkbox]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'toggle_checkbox',
+      name: 'Enable companion',
+      checked: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.click).not.toHaveBeenCalled();
+    expect(result.output).toContain('already checked');
+  });
+
+  it('asserts visible text from the current snapshot without mutating the desktop', async () => {
+    const label = makeElement({
+      ref: 5,
+      role: 'text',
+      name: 'Ready to launch',
+      interactive: false,
+      enabled: false,
+    }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([label]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'assert_text_visible',
+      text: 'Ready to launch',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.click).not.toHaveBeenCalled();
+    expect(mockAutomation.type).not.toHaveBeenCalled();
+  });
+
+  it('uses role-specific semantic actions for buttons, radios, tabs, and list items', async () => {
+    const button = makeElement({ ref: 6, role: 'button', name: 'Apply' }) as UIElement;
+    const radio = makeElement({ ref: 7, role: 'radio', name: 'Expert mode' }) as UIElement;
+    const tab = makeElement({ ref: 8, role: 'tab', name: 'Advanced' }) as UIElement;
+    const item = makeElement({ ref: 9, role: 'list-item', name: 'Blue' }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([button, radio, tab, item]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    await expect(tool.execute({ action: 'click_button', name: 'Apply', exactName: true })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'select_radio', name: 'Expert mode', exactName: true })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'activate_tab', name: 'Advanced', exactName: true })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'select_list_item', name: 'Blue', exactName: true })).resolves.toMatchObject({ success: true });
+
+    expect(mockAutomation.click).toHaveBeenCalledWith(button.center.x, button.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(radio.center.x, radio.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(tab.center.x, tab.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(item.center.x, item.center.y, { button: 'left' });
+  });
+
+  it('uses semantic actions for sliders and tree items', async () => {
+    const slider = makeElement({
+      ref: 30,
+      role: 'slider',
+      name: 'Zoom',
+      bounds: { x: 100, y: 20, width: 200, height: 30 },
+      attributes: { minimum: 0, maximum: 100 },
+    }) as UIElement;
+    const collapsedTreeItem = makeElement({
+      ref: 31,
+      role: 'tree-item',
+      name: 'Projects',
+      bounds: { x: 40, y: 70, width: 180, height: 24 },
+      attributes: { expanded: false },
+    }) as UIElement;
+    const expandedTreeItem = makeElement({
+      ref: 32,
+      role: 'tree-item',
+      name: 'Archive',
+      bounds: { x: 40, y: 100, width: 180, height: 24 },
+      attributes: { expanded: true },
+    }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([slider, collapsedTreeItem, expandedTreeItem]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    await expect(tool.execute({ action: 'set_slider_value', ref: 30, value: 75 })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'expand_tree_item', ref: 31 })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'collapse_tree_item', ref: 32 })).resolves.toMatchObject({ success: true });
+    await expect(tool.execute({ action: 'select_tree_item', name: 'Archive', exactName: true })).resolves.toMatchObject({ success: true });
+
+    expect(mockAutomation.click).toHaveBeenCalledWith(250, slider.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(54, collapsedTreeItem.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(54, expandedTreeItem.center.y, { button: 'left' });
+    expect(mockAutomation.click).toHaveBeenCalledWith(expandedTreeItem.center.x, expandedTreeItem.center.y, { button: 'left' });
+  });
+
+  it('inspects dialogs and suggests the safe cancel choice without clicking', async () => {
+    const dialog = makeElement({
+      ref: 10,
+      role: 'window',
+      name: 'Unsaved changes',
+      interactive: false,
+    }) as UIElement;
+    const prompt = makeElement({
+      ref: 11,
+      role: 'text',
+      name: 'Do you want to save changes?',
+      interactive: false,
+    }) as UIElement;
+    const save = makeElement({ ref: 12, role: 'button', name: 'Save' }) as UIElement;
+    const cancel = makeElement({ ref: 13, role: 'button', name: 'Cancel' }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([dialog, prompt, save, cancel]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'inspect_dialog',
+      dialogText: 'save changes',
+      dialogIntent: 'cancel',
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('Unsaved changes');
+    expect(result.output).toContain('"Cancel" [safe]');
+    expect(result.output).toContain('Suggested: "Cancel"');
+    expect(mockAutomation.click).not.toHaveBeenCalled();
+  });
+
+  it('clicks a safe dialog button by intent', async () => {
+    const prompt = makeElement({
+      ref: 14,
+      role: 'text',
+      name: 'Operation failed',
+      interactive: false,
+    }) as UIElement;
+    const close = makeElement({ ref: 15, role: 'button', name: 'Close' }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([prompt, close]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+    const result = await tool.execute({
+      action: 'click_dialog_button',
+      dialogIntent: 'close',
+    });
+
+    expect(result.success).toBe(true);
+    expect(mockAutomation.click).toHaveBeenCalledWith(close.center.x, close.center.y, { button: 'left' });
+  });
+
+  it('requires confirmation before clicking destructive dialog choices', async () => {
+    const warning = makeElement({
+      ref: 16,
+      role: 'text',
+      name: 'This will permanently delete the item.',
+      interactive: false,
+    }) as UIElement;
+    const deleteButton = makeElement({ ref: 17, role: 'button', name: 'Delete' }) as UIElement;
+    setCurrentSnapshot(makeSnapshot([warning, deleteButton]) as Snapshot);
+
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const blocked = await tool.execute({
+      action: 'click_dialog_button',
+      name: 'Delete',
+    });
+    expect(blocked.success).toBe(false);
+    expect(blocked.error).toContain('requires explicit confirmation');
+    expect(mockAutomation.click).not.toHaveBeenCalled();
+
+    const confirmed = await tool.execute({
+      action: 'handle_dialog',
+      dialogIntent: 'discard',
+      confirmDangerous: true,
+    });
+    expect(confirmed.success).toBe(true);
+    expect(mockAutomation.click).toHaveBeenCalledWith(deleteButton.center.x, deleteButton.center.y, { button: 'left' });
+  });
+
+  it('lists app profiles and exposes Excel as a known application profile', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const listResult = await tool.execute({ action: 'list_app_profiles' });
+    expect(listResult.success).toBe(true);
+    expect(listResult.output).toContain('excel');
+
+    const profileResult = await tool.execute({ action: 'get_app_profile', appName: 'excel' });
+    expect(profileResult.success).toBe(true);
+    expect(profileResult.output).toContain('Microsoft Excel');
+  });
+
+  it('dry-runs mutating app profile and Excel actions with harness metadata', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const result = await tool.execute({
+      action: 'excel_set_cell',
+      cell: 'A1',
+      value: 'hello',
+      simulateOnly: true,
+    });
+
+    expect(result.success).toBe(true);
+    expect(result.output).toContain('[SIMULATED]');
+    const data = result.data as { harness: { sensitiveAction: { id: string } } };
+    expect(data.harness.sensitiveAction.id).toBe('codebuddy.computer_control.excel_set_cell');
+  });
+
+  it('requires explicit confirmation for live high-risk app profile actions', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const terminalResult = await tool.execute({
+      action: 'open_app',
+      appName: 'terminal',
+    });
+    expect(terminalResult.success).toBe(false);
+    expect(terminalResult.error).toContain('requires explicit confirmation');
+
+    const excelResult = await tool.execute({
+      action: 'excel_set_cell',
+      cell: 'A1',
+      value: 'protected',
+    });
+    expect(excelResult.success).toBe(false);
+    expect(excelResult.error).toContain('requires explicit confirmation');
+
+    const notepadSaveResult = await tool.execute({
+      action: 'save_app_document',
+      appName: 'notepad',
+      filePath: 'C:\\temp\\codebuddy-notepad.txt',
+    });
+    expect(notepadSaveResult.success).toBe(false);
+    expect(notepadSaveResult.error).toContain('requires explicit confirmation');
+  });
+
+  it('applies app profile safety and window context to workflows', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const terminalResult = await tool.execute({
+      action: 'use_app_workflow',
+      appName: 'terminal',
+      steps: [{ action: 'type', text: 'dir' }],
+    });
+    expect(terminalResult.success).toBe(false);
+    expect(terminalResult.error).toContain('requires explicit confirmation');
+
+    const notepadWindow = {
+      handle: 'notepad-window',
+      title: 'codebuddy-notepad-test.txt - Notepad',
+      pid: 42,
+      processName: 'notepad',
+      bounds: { x: 0, y: 0, width: 800, height: 600 },
+      focused: false,
+      visible: true,
+      minimized: false,
+      maximized: false,
+      fullscreen: false,
+    };
+    mockAutomation.getWindows
+      .mockResolvedValueOnce([{ ...notepadWindow, focused: false }])
+      .mockResolvedValueOnce([{ ...notepadWindow, focused: true }]);
+
+    const notepadResult = await tool.execute({
+      action: 'use_app_workflow',
+      appName: 'notepad',
+      steps: [{ action: 'type', text: 'profile workflow' }],
+    });
+    expect(notepadResult.success).toBe(true);
+    expect(mockAutomation.focusWindow).toHaveBeenCalledWith('notepad-window');
+    expect(mockAutomation.type).toHaveBeenCalledWith('profile workflow', { delay: 30 });
+  });
+
+  it('reports the failing step when a workflow stops early', async () => {
+    const { ComputerControlTool } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    const result = await tool.execute({
+      action: 'macro',
+      steps: [
+        { action: 'wait', seconds: 0 },
+        { action: 'click_button', name: 'Missing button' },
+      ],
+    });
+
+    expect(result.success).toBe(false);
+    expect(result.error).toContain('Step 2 (click_button) failed');
+    expect(result.output).toContain('Failed at step 2');
+  });
+});

@@ -31,6 +31,38 @@ ACTIONS:
 - snapshot_with_screenshot: Take snapshot + capture normalized screenshot (returns text + base64 image)
 - get_element: Get details of element by ref
 - find_elements: Search elements by role/name
+- click_element_by_name: Find and click an element by accessible name/text
+- click_button: Find and click a button by label
+- click_link: Find and click a link by label
+- fill_text_field: Focus a text field and type text, clearing first by default
+- clear_and_type: Clear current focus or target field, then type text
+- select_dropdown_option: Open a dropdown/listbox and select an option by label
+- select_radio: Select a radio button by label
+- activate_tab: Activate a tab by label
+- select_list_item: Select a list item by label
+- open_menu_item: Open a menu or menu item by label
+- toggle_checkbox: Toggle or set a checkbox to checked/unchecked
+- set_slider_value: Set a slider/range control by label
+- select_tree_item: Select a tree item by label
+- expand_tree_item: Expand a tree item by label
+- collapse_tree_item: Collapse a tree item by label
+- assert_text_visible: Verify text is visible in the desktop state
+- assert_element_visible: Verify an element by name/role is visible
+- inspect_dialog: Read the active/target dialog, its text, buttons, risks, and suggested safe choice
+- click_dialog_button: Click a named dialog button after dialog evidence is collected
+- handle_dialog: Choose a dialog button by intent (cancel/save/discard/continue/etc.)
+- list_app_profiles: List known application profiles
+- get_app_profile: Describe one application profile
+- open_app: Open a known app profile, optionally with filePath
+- focus_app: Focus a known app profile window
+- read_app_text: Read text from a targeted app document via UIAutomation
+- save_app_document: Save a targeted text document without global keyboard shortcuts
+- excel_open_workbook: Open or create an Excel workbook via Windows COM
+- excel_set_cell: Set an Excel cell value via Windows COM
+- excel_get_cell: Read an Excel cell value via Windows COM
+- excel_save_workbook: Save or Save As an Excel workbook via Windows COM
+- use_app_workflow: Execute a short sequence of computer_control steps
+- click_text: Click visible text using OCR fallback
 - click: Click at position or element ref
 - left_click: Left click shortcut (Claude-compatible alias)
 - middle_click: Middle click shortcut (Claude-compatible alias)
@@ -71,6 +103,7 @@ ACTIONS:
 - get_brightness: Get current brightness
 - set_brightness: Set brightness (0-100)
 - notify: Send system notification
+- wait_for_text: Wait until text appears using OCR fallback
 - start_recording: Start screen recording
 - stop_recording: Stop and save recording
 - system_info: Get system information
@@ -86,6 +119,45 @@ ACTIONS:
             'snapshot_with_screenshot',
             'get_element',
             'find_elements',
+            'click_element_by_name',
+            'click_button',
+            'click_link',
+            'fill_text_field',
+            'clear_and_type',
+            'select_dropdown_option',
+            'select_radio',
+            'activate_tab',
+            'select_list_item',
+            'open_menu_item',
+            'toggle_checkbox',
+            'set_slider_value',
+            'select_tree_item',
+            'expand_tree_item',
+            'collapse_tree_item',
+            'assert_text_visible',
+            'assert_element_visible',
+            'inspect_dialog',
+            'click_dialog_button',
+            'handle_dialog',
+            'list_app_profiles',
+            'get_app_profile',
+            'open_app',
+            'focus_app',
+            'read_app_text',
+            'save_app_document',
+            'excel_open_workbook',
+            'excel_set_cell',
+            'excel_get_cell',
+            'excel_save_workbook',
+            'use_app_workflow',
+            'macro',
+            'click_text',
+            'save_macro',
+            'play_macro',
+            'list_macros',
+            'delete_macro',
+            'wait_for_text',
+            'speak',
             'click',
             'left_click',
             'middle_click',
@@ -171,6 +243,30 @@ ACTIONS:
           type: 'number',
           description: 'Element reference number from snapshot (e.g., 1, 2, 3)',
         },
+        appName: {
+          type: 'string',
+          description: 'Application profile id/name, e.g. excel, notepad, calculator, browser, vscode',
+        },
+        filePath: {
+          type: 'string',
+          description: 'File/folder path for app launch or Excel workbook path',
+        },
+        saveAsPath: {
+          type: 'string',
+          description: 'Save-as path for Excel workbook',
+        },
+        sheetName: {
+          type: 'string',
+          description: 'Excel worksheet name',
+        },
+        cell: {
+          type: 'string',
+          description: 'Excel cell/range address, e.g. A1',
+        },
+        value: {
+          type: 'string',
+          description: 'Value for app-specific and range actions such as excel_set_cell or set_slider_value',
+        },
         x: {
           type: 'number',
           description: 'X coordinate for mouse actions',
@@ -189,11 +285,44 @@ ACTIONS:
         },
         text: {
           type: 'string',
-          description: 'Text to type',
+          description: 'Text to type, click by OCR, or assert visible depending on action',
         },
         key: {
           type: 'string',
           description: 'Key to press (enter, tab, escape, backspace, delete, up, down, left, right, f1-f12, etc.)',
+        },
+        clearFirst: {
+          type: 'boolean',
+          description: 'Clear existing focused/target text before typing (fill_text_field and clear_and_type)',
+        },
+        option: {
+          type: 'string',
+          description: 'Option label for select_dropdown_option',
+        },
+        checked: {
+          type: 'boolean',
+          description: 'Desired checked state for toggle_checkbox',
+        },
+        expanded: {
+          type: 'boolean',
+          description: 'Desired expanded state for tree-item actions',
+        },
+        exactName: {
+          type: 'boolean',
+          description: 'Prefer exact accessible-name matching for semantic element actions',
+        },
+        visualContext: {
+          type: 'boolean',
+          description: 'For targeted keyboard/text actions, capture snapshot + screenshot OCR evidence after focus is verified',
+        },
+        dialogIntent: {
+          type: 'string',
+          enum: ['accept', 'cancel', 'save', 'dont_save', 'discard', 'retry', 'continue', 'close', 'yes', 'no', 'ok', 'custom'],
+          description: 'Desired dialog decision for handle_dialog/click_dialog_button. Risky affirmative choices require confirmDangerous=true.',
+        },
+        dialogText: {
+          type: 'string',
+          description: 'Expected text/title inside the dialog; used to verify the correct dialog before clicking',
         },
         seconds: {
           type: 'number',
@@ -301,6 +430,19 @@ ACTIONS:
         interactiveOnly: {
           type: 'boolean',
           description: 'Only include interactive elements in snapshot',
+        },
+        steps: {
+          type: 'array',
+          items: { type: 'object' },
+          description: 'Workflow/macro steps for macro or use_app_workflow',
+        },
+        macroName: {
+          type: 'string',
+          description: 'Saved macro name for save_macro/play_macro/delete_macro',
+        },
+        macroDescription: {
+          type: 'string',
+          description: 'Saved macro description for save_macro',
         },
         format: {
           type: 'string',

@@ -14,7 +14,14 @@ export type WorkflowNodeType =
   | 'parallel'
   | 'approval'
   | 'loop'
+  | 'batch'
   | 'setVariable';
+
+export interface BatchNodeConfig {
+  itemsExpression: string;
+  variableName: string;
+  concurrencyLimit?: number;
+}
 
 export interface ToolNodeConfig {
   toolName: string;
@@ -67,6 +74,7 @@ export type WorkflowNodeConfig =
   | ConditionNodeConfig
   | ApprovalNodeConfig
   | LoopNodeConfig
+  | BatchNodeConfig
   | Record<string, never>;
 
 export interface WorkflowVisualNode {

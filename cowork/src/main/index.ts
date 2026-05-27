@@ -210,6 +210,7 @@ if (configStore.isConfigured()) {
 app.disableHardwareAcceleration();
 
 let mainWindow: BrowserWindow | null = null;
+let engineAdapter: EngineAdapterLike | undefined;
 let sessionManager: SessionManager | null = null;
 let skillsManager: SkillsManager | null = null;
 let pluginRuntimeService: PluginRuntimeService | null = null;
@@ -1195,7 +1196,7 @@ app
     // `engine/embedded-mode.ts` for the rationale (previously every
     // entry point other than `buddy gui` silently fell back to the
     // pi-coding-agent runner).
-    let engineAdapter: EngineAdapterLike | undefined;
+    engineAdapter = undefined;
     const userEngineMode = configStore.getAll().coreEngineMode ?? 'auto';
     if (!shouldLoadEngine(userEngineMode)) {
       const reason =
@@ -2793,6 +2794,15 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
     buildAgentRuntimeSignature(previousConfig) !== buildAgentRuntimeSignature(updatedConfig);
   const shouldReloadSandbox = previousConfig.sandboxEnabled !== updatedConfig.sandboxEnabled;
 
+  if (shouldReloadRunner && engineAdapter?.updateConfig) {
+    engineAdapter.updateConfig({
+      apiKey: updatedConfig.apiKey || process.env.GROK_API_KEY || '',
+      baseURL: updatedConfig.baseUrl || process.env.GROK_BASE_URL,
+      model: updatedConfig.model,
+      workingDirectory: currentWorkingDir || process.cwd(),
+    });
+  }
+
   if (sessionManager) {
     if (shouldReloadRunner) {
       sessionManager.reloadConfig();
@@ -4309,6 +4319,26 @@ ipcMain.handle('test.run', async (_event, files?: string[]) => {
     return await getTestRunnerBridge().run(files ?? []);
   } catch (err) {
     logError('[test.run] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('test.catalog', async () => {
+  try {
+    const { getTestRunnerBridge } = await import('./testing/test-runner-bridge');
+    return getTestRunnerBridge().getCatalog();
+  } catch (err) {
+    logError('[test.catalog] failed:', err);
+    return [];
+  }
+});
+
+ipcMain.handle('test.runCatalogItem', async (_event, id: string) => {
+  try {
+    const { getTestRunnerBridge } = await import('./testing/test-runner-bridge');
+    return await getTestRunnerBridge().runCatalogItem(id);
+  } catch (err) {
+    logError('[test.runCatalogItem] failed:', err);
     return null;
   }
 });

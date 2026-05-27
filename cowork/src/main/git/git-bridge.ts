@@ -248,7 +248,7 @@ export class GitBridge {
       const Y = xy[1];
 
       // Renamed: record is `R  new` then the old name is the next NUL field.
-      let fileName = rest;
+      const fileName = rest;
       let oldName: string | undefined;
       if (X === 'R' || Y === 'R') {
         oldName = parts[i + 1];

@@ -1,0 +1,178 @@
+{
+  "passed": true,
+  "runId": "run_mpno0a4f_051361",
+  "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+  "notepadPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+  "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test-result.json",
+  "desiredText": "Code Buddy Notepad profile workflow real test",
+  "fileContent": "Code Buddy Notepad profile workflow real test",
+  "assertions": {
+    "fileUpdated": true,
+    "allStepsSucceeded": true
+  },
+  "evidence": [
+    {
+      "label": "open Notepad profile with temp file",
+      "input": {
+        "action": "open_app",
+        "appName": "notepad",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt"
+      },
+      "success": true,
+      "output": "Opened Notepad with D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+      "data": {
+        "audit": {
+          "id": "audit-1779862215168-jy3k3p",
+          "action": "open_app",
+          "success": true,
+          "durationMs": 702,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0a4f_051361",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: open_app",
+            "status": "completed",
+            "startedAt": 1779862214466,
+            "endedAt": 1779862215168,
+            "metrics": {
+              "durationMs": 702,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "open_app",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862215168-jy3k3p",
+            "runId": "run_mpno0a4f_051361",
+            "type": "artifact",
+            "createdAt": 1779862215168,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "open_app completed in 702ms: Opened Notepad with D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+            "ref": "audit-1779862215168-jy3k3p.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.open_app",
+            "name": "Computer control: open_app",
+            "riskLevel": "medium",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "dry-run-required"
+          }
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0a4f_051361\\artifacts\\audit-1779862215168-jy3k3p.computer-control.json"
+      }
+    },
+    {
+      "label": "write and save through Notepad profile workflow",
+      "input": {
+        "action": "use_app_workflow",
+        "appName": "notepad",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+        "visualContext": true,
+        "steps": [
+          {
+            "action": "focus_app"
+          },
+          {
+            "action": "clear_and_type",
+            "text": "Code Buddy Notepad profile workflow real test"
+          },
+          {
+            "action": "save_app_document",
+            "confirmDangerous": true
+          }
+        ]
+      },
+      "success": true,
+      "output": "Executed macro with 3 steps. Success: true",
+      "data": {
+        "audit": {
+          "id": "audit-1779862236487-x9xabu",
+          "action": "use_app_workflow",
+          "success": true,
+          "durationMs": 21283,
+          "safetyProfile": "balanced",
+          "dangerous": true,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0a4f_051361",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: use_app_workflow",
+            "status": "completed",
+            "startedAt": 1779862215204,
+            "endedAt": 1779862236487,
+            "metrics": {
+              "durationMs": 21283,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "use_app_workflow",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862236487-x9xabu",
+            "runId": "run_mpno0a4f_051361",
+            "type": "artifact",
+            "createdAt": 1779862236487,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "use_app_workflow completed in 21283ms: Executed macro with 3 steps. Success: true",
+            "ref": "audit-1779862236487-x9xabu.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.use_app_workflow",
+            "name": "Computer control: use_app_workflow",
+            "riskLevel": "high",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "approval-required"
+          }
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0a4f_051361\\artifacts\\audit-1779862236487-x9xabu.computer-control.json"
+      }
+    }
+  ],
+  "generatedAt": "2026-05-27T06:10:37.008Z"
+}

@@ -7,7 +7,7 @@ import { commandExists } from '../utils/command-exists.js';
 
 export interface TTSConfig {
   enabled: boolean;
-  provider: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader';
+  provider: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader' | 'kokoro';
   voice?: string;
   rate?: string;
   volume?: string;
@@ -108,6 +108,9 @@ export class TextToSpeechManager extends EventEmitter {
    * Check if TTS is available
    */
   async isAvailable(): Promise<{ available: boolean; reason?: string }> {
+    if (this.config.provider === 'kokoro') {
+      return { available: true };
+    }
     // AudioReader uses HTTP API, not a CLI binary
     if (this.config.provider === 'audioreader') {
       try {
@@ -198,6 +201,9 @@ export class TextToSpeechManager extends EventEmitter {
           break;
         case 'audioreader':
           await this.speakWithAudioReader(text);
+          break;
+        case 'kokoro':
+          await this.speakWithKokoro(text);
           break;
         default:
           await this.speakWithEdgeTTS(text, language);
@@ -369,9 +375,32 @@ export class TextToSpeechManager extends EventEmitter {
   }
 
   /**
+   * Speak with local Kokoro TTS model (quantized ONNX hexgrad/Kokoro-82M)
+   */
+  private async speakWithKokoro(text: string): Promise<void> {
+    const { kokoroTtsService } = await import('../utils/kokoro-tts.js');
+    const voice = this.config.voice || 'af_bella';
+    const buffer = await kokoroTtsService.generateSpeech(text, voice);
+
+    const audioFile = path.join(this.tempDir, `tts_${Date.now()}.wav`);
+    fs.writeFileSync(audioFile, buffer);
+
+    try {
+      await this.playAudio(audioFile);
+    } finally {
+      try { fs.unlinkSync(audioFile); } catch { /* ignore */ }
+    }
+  }
+
+  /**
    * Play audio file using available player
    */
   private async playAudio(audioFile: string): Promise<void> {
+    if (audioFile.endsWith('.wav')) {
+      const { playWavFile } = await import('../utils/audio-player.js');
+      await playWavFile(audioFile);
+      return;
+    }
     return new Promise((resolve, reject) => {
       // Try different audio players
       const players = [

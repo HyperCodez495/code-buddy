@@ -127,7 +127,7 @@ export function SettingsMCPPlayground() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="settings-mcp-playground">
       <div>
         <h3 className="text-sm font-semibold text-text-primary">{t('mcpPlayground.title')}</h3>
         <p className="text-xs text-text-muted mt-1">{t('mcpPlayground.hint')}</p>
@@ -164,6 +164,7 @@ export function SettingsMCPPlayground() {
                       setSelectedServerId(server.id);
                       setSelectedTool(tool);
                     }}
+                    data-testid={`mcp-tool-${tool.name}`}
                     className={`w-full text-left px-3 py-1.5 flex items-center gap-1.5 transition-colors ${
                       selectedTool?.name === tool.name
                         ? 'bg-accent/10 text-accent'
@@ -213,6 +214,7 @@ export function SettingsMCPPlayground() {
                       setArgsJson(ev.target.value);
                       setArgsError(null);
                     }}
+                    data-testid="mcp-playground-args"
                     rows={8}
                     className="w-full px-3 py-2 rounded-md bg-surface border border-border text-xs text-text-primary focus:outline-none focus:border-accent font-mono"
                   />
@@ -225,6 +227,7 @@ export function SettingsMCPPlayground() {
                   <button
                     onClick={handleInvoke}
                     disabled={running}
+                    data-testid="mcp-playground-run"
                     className="flex items-center gap-1.5 text-xs px-4 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
                   >
                     {running ? <Loader2 size={12} className="animate-spin" /> : <Play size={12} />}
@@ -234,6 +237,7 @@ export function SettingsMCPPlayground() {
 
                 {result && (
                   <div
+                    data-testid="mcp-playground-result"
                     className={`rounded-md border p-3 text-xs space-y-2 ${
                       result.success
                         ? 'bg-success/5 border-success/30'

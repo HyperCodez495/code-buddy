@@ -223,6 +223,7 @@ export function SettingsPlugins() {
           type="text"
           value={search}
           onChange={(e) => setSearch(e.target.value)}
+          data-testid="plugins-search-input"
           placeholder={t('plugins.searchPlaceholder', 'Search plugins…')}
           className="w-full pl-8 pr-3 py-1.5 text-xs rounded-md bg-background border border-border-subtle focus:outline-none focus:border-accent"
         />
@@ -247,6 +248,7 @@ export function SettingsPlugins() {
             return (
               <div
                 key={plugin.pluginId}
+                data-testid={`plugin-installed-${plugin.pluginId}`}
                 className={`border rounded-lg overflow-hidden transition-colors ${
                   plugin.enabled ? 'border-border-subtle' : 'border-border-subtle opacity-60'
                 }`}
@@ -362,6 +364,7 @@ export function SettingsPlugins() {
             return (
               <div
                 key={plugin.name}
+                data-testid={`plugin-catalog-${plugin.name}`}
                 className="border border-border-subtle rounded-lg p-3 flex items-start gap-3"
               >
                 <div className="flex-1 min-w-0">

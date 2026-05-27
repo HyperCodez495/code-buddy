@@ -406,7 +406,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="settings-schedule">
       {error && (
         <div className="flex items-center gap-2 px-4 py-3 rounded-lg bg-error/10 text-error text-sm">
           <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -439,6 +439,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         <textarea
           value={prompt}
           onChange={(e) => setPrompt(e.target.value)}
+          data-testid="schedule-prompt-input"
           placeholder={t('schedule.promptPlaceholder')}
           rows={3}
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
@@ -446,6 +447,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
         <input
           value={cwd}
           onChange={(e) => setCwd(e.target.value)}
+          data-testid="schedule-cwd-input"
           placeholder={t('schedule.cwdPlaceholder')}
           className="w-full px-3 py-2 rounded-lg bg-background border border-border text-sm"
         />
@@ -552,6 +554,7 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
           <button
             onClick={submitTask}
             disabled={isLoading}
+            data-testid="schedule-create-button"
             className="px-3 py-2 rounded-lg bg-accent text-white text-sm disabled:opacity-50"
           >
             {editingId ? t('schedule.saveChanges') : t('schedule.createTask')}
@@ -571,12 +574,12 @@ export function SettingsSchedule({ isActive }: { isActive: boolean }) {
       <div className="space-y-2">
         <div className="text-xs text-text-muted">{t('schedule.listHint')}</div>
         {tasks.length === 0 ? (
-          <div className="text-sm text-text-muted text-center py-6 border border-dashed border-border rounded-lg">
+          <div className="text-sm text-text-muted text-center py-6 border border-dashed border-border rounded-lg" data-testid="schedule-empty-state">
             {t('schedule.empty')}
           </div>
         ) : (
           tasks.map((task) => (
-            <div key={task.id} className="rounded-lg border border-border bg-surface p-3 space-y-2">
+            <div key={task.id} className="rounded-lg border border-border bg-surface p-3 space-y-2" data-testid={`schedule-task-${task.id}`}>
               {(() => {
                 const lastRunSession = task.lastRunSessionId
                   ? (sessions.find((session) => session.id === task.lastRunSessionId) ?? null)

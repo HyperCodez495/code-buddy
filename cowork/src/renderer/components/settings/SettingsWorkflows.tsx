@@ -153,7 +153,7 @@ export const SettingsWorkflows: React.FC = () => {
   }
 
   return (
-    <div className="flex flex-col h-full overflow-hidden">
+    <div className="flex flex-col h-full overflow-hidden" data-testid="settings-workflows">
       <div className="flex items-center justify-between px-6 py-4 border-b border-border-muted shrink-0">
         <div>
           <h2 className="text-lg font-semibold text-text-primary flex items-center gap-2">
@@ -164,6 +164,7 @@ export const SettingsWorkflows: React.FC = () => {
         </div>
         <button
           onClick={() => setCreating(true)}
+          data-testid="workflow-create-button"
           className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover text-white rounded transition-colors"
         >
           <Plus size={12} />
@@ -187,6 +188,7 @@ export const SettingsWorkflows: React.FC = () => {
             {workflows.map((wf) => (
               <div
                 key={wf.id}
+                data-testid={`workflow-row-${wf.id}`}
                 className="flex items-center gap-3 p-3 bg-surface border border-border rounded-lg hover:border-border-strong transition-colors"
               >
                 <WorkflowIcon size={16} className="text-accent shrink-0" />
@@ -204,6 +206,7 @@ export const SettingsWorkflows: React.FC = () => {
                 <button
                   onClick={() => handleRun(wf.id)}
                   disabled={runningId === wf.id}
+                  data-testid={`workflow-run-${wf.id}`}
                   className="p-2 text-text-muted hover:text-success transition-colors disabled:opacity-50"
                   title={t('workflow.run')}
                 >
@@ -233,7 +236,10 @@ export const SettingsWorkflows: React.FC = () => {
         )}
 
         {runResult && (
-          <div className="mt-4 px-3 py-2 text-xs bg-surface border border-border rounded text-text-secondary">
+          <div
+            className="mt-4 px-3 py-2 text-xs bg-surface border border-border rounded text-text-secondary"
+            data-testid="workflow-run-result"
+          >
             {runResult}
           </div>
         )}

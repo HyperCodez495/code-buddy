@@ -409,6 +409,19 @@ export class SyncManager<T = unknown> extends EventEmitter {
     this.emit('status-changed', { previous: previousStatus, current: status });
   }
 
+  private emitPersistenceError(error: unknown): void {
+    if (this.listenerCount('error') > 0) {
+      this.emit('error', error);
+      return;
+    }
+
+    const normalized = error instanceof Error ? error : new Error(String(error));
+    logger.warn('Sync persistence operation failed', {
+      error: normalized.message,
+      persistPath: this.config.persistPath,
+    });
+  }
+
   // Persistence
   private async save(): Promise<void> {
     try {
@@ -425,7 +438,7 @@ export class SyncManager<T = unknown> extends EventEmitter {
       await this.vfs.writeFile(filePath, JSON.stringify(data, null, 2));
       this.emit('saved');
     } catch (error) {
-      this.emit('error', error);
+      this.emitPersistenceError(error);
     }
   }
 
@@ -446,7 +459,7 @@ export class SyncManager<T = unknown> extends EventEmitter {
         this.emit('loaded');
       }
     } catch (error) {
-      this.emit('error', error);
+      this.emitPersistenceError(error);
     }
   }
 

@@ -32,6 +32,10 @@ jest.mock('../../src/utils/settings-manager', () => ({
   }; }),
 }));
 
+jest.mock('../../src/providers/codex-oauth', () => ({
+  hasCodexCredentials: jest.fn(() => true),
+}));
+
 describe('Provider Command', () => {
   let command: Command;
   let consoleLogSpy: jest.SpyInstance;
@@ -92,6 +96,7 @@ describe('Provider Command', () => {
       expect(output).toContain('GROK_API_KEY');
       expect(output).toContain('ANTHROPIC_API_KEY');
       expect(output).toContain('OPENAI_API_KEY');
+      expect(output).toContain('CODEBUDDY_CHATGPT_OAUTH');
       expect(output).toContain('GOOGLE_API_KEY');
     });
   });
@@ -160,6 +165,15 @@ describe('Provider Command', () => {
       expect(output).toContain('claude-sonnet-4');
     });
 
+    it('should list ChatGPT OAuth models', () => {
+      command.parse(['models', 'chatgpt'], { from: 'user' });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+
+      expect(output).toContain('Models for ChatGPT (OAuth)');
+      expect(output).toContain('gpt-5.5');
+    });
+
     it('should reject unknown provider', () => {
       expect(() => {
         command.parse(['models', 'unknown'], { from: 'user' });
@@ -201,6 +215,7 @@ describe('Provider Configuration', () => {
       grok: ['grok-beta', 'grok-code-fast-1'],
       claude: ['claude-sonnet-4-20250514', 'claude-3-5-sonnet-latest'],
       openai: ['gpt-4o', 'gpt-4o-mini'],
+      chatgpt: ['gpt-5.5'],
       gemini: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'],
     };
 

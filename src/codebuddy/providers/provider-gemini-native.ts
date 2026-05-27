@@ -353,241 +353,269 @@ export class GeminiNativeProvider implements Provider {
     tools?: CodeBuddyTool[],
     opts?: ChatOptions
   ): Promise<CodeBuddyResponse> {
-    const model = opts?.model || this.currentModel;
-    const malformedRetryCount = opts?.geminiMalformedRetryCount ?? 0;
-    const url = `${this.baseURL}/models/${model}:generateContent`;
-    const requestTimeoutMs =
-      opts?.timeoutMs && opts.timeoutMs >= 1000 ? opts.timeoutMs : this.geminiRequestTimeoutMs;
+    const performChat = async (messagesPayload: CodeBuddyMessage[]): Promise<CodeBuddyResponse> => {
+      const model = opts?.model || this.currentModel;
+      const malformedRetryCount = opts?.geminiMalformedRetryCount ?? 0;
+      const url = `${this.baseURL}/models/${model}:generateContent`;
+      const requestTimeoutMs =
+        opts?.timeoutMs && opts.timeoutMs >= 1000 ? opts.timeoutMs : this.geminiRequestTimeoutMs;
 
-    const body = this.buildGeminiBody(messages, tools, opts);
+      const body = this.buildGeminiBody(messagesPayload, tools, opts);
 
-    // Log request for debugging
-    logger.debug('Gemini request', {
-      source: 'GeminiNativeProvider',
-      model,
-      hasTools: !!(tools && tools.length > 0),
-      toolCount: tools?.length || 0,
-    });
-
-    let response: Response;
-    try {
-      // Make request with retry
-      response = await retry(
-        async () => {
-          const controller = new AbortController();
-          const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
-          let res: Response;
-          try {
-            res = await fetch(url, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'x-goog-api-key': this.apiKey,
-              },
-              body: JSON.stringify(body),
-              signal: controller.signal,
-            });
-          } finally {
-            clearTimeout(timeoutId);
-          }
-
-          if (!res.ok) {
-            const errorText = await res.text();
-            logger.error('Gemini API error', {
-              source: 'GeminiNativeProvider',
-              status: res.status,
-              statusText: res.statusText,
-              errorBody: errorText?.substring(0, 500),
-            });
-            throw new Error(`${res.status} ${errorText || res.statusText}`);
-          }
-
-          return res;
-        },
-        {
-          ...RetryStrategies.llmApi,
-          timeout: requestTimeoutMs * 2,
-          isRetryable: RetryPredicates.llmApiError,
-          onRetry: (error, attempt, delay) => {
-            logger.warn(`Gemini API call failed, retrying (attempt ${attempt}) in ${delay}ms...`, {
-              source: 'GeminiNativeProvider',
-              error: error instanceof Error ? error.message : String(error),
-              requestTimeoutMs,
-            });
-          },
-        }
-      );
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      const looksLikeModel404 =
-        message.includes('404') &&
-        message.includes('models/') &&
-        message.includes('is not found');
-      const alreadyTriedFallback = opts?.geminiModelFallbackTried === true;
-
-      if (looksLikeModel404 && !alreadyTriedFallback && model !== 'gemini-2.5-flash') {
-        logger.warn('Gemini model not found, retrying with fallback model', {
-          source: 'GeminiNativeProvider',
-          originalModel: model,
-          fallbackModel: 'gemini-2.5-flash',
-        });
-        return await this.chat(messages, tools, {
-          ...opts,
-          model: 'gemini-2.5-flash',
-          geminiModelFallbackTried: true,
-        });
-      }
-      throw error;
-    }
-
-    const data = await response.json() as {
-      candidates: Array<{
-        content: {
-          parts: Array<{ text?: string; functionCall?: { name: string; args: unknown } }>;
-        };
-        finishReason: string;
-        groundingMetadata?: unknown;
-      }>;
-      usageMetadata?: {
-        promptTokenCount?: number;
-        candidatesTokenCount?: number;
-        totalTokenCount?: number;
-      };
-    };
-
-    // Convert response to CodeBuddy format
-    const candidate = data.candidates?.[0];
-
-    // Handle MALFORMED_FUNCTION_CALL: Gemini sometimes generates Python-style
-    // calls instead of strict JSON tool-call args.
-    if (candidate && !candidate.content && candidate.finishReason === 'MALFORMED_FUNCTION_CALL') {
-      const finishMsg = (candidate as { finishMessage?: string }).finishMessage || '';
-      logger.warn('Gemini returned MALFORMED_FUNCTION_CALL, requesting retry', {
+      // Log request for debugging
+      logger.debug('Gemini request', {
         source: 'GeminiNativeProvider',
-        snippet: finishMsg.substring(0, 200),
-        malformedRetryCount,
+        model,
+        hasTools: !!(tools && tools.length > 0),
+        toolCount: tools?.length || 0,
       });
 
-      if (malformedRetryCount < 2) {
-        const recoverySystemMessage: CodeBuddyMessage = {
-          role: 'system',
-          content: 'Retry tool calling with strict JSON arguments only. Do not emit Python-style function syntax.',
-        };
-        return await this.chat(
-          [...messages, recoverySystemMessage],
-          tools,
-          { ...opts, geminiMalformedRetryCount: malformedRetryCount + 1 },
+      let response: Response;
+      try {
+        // Make request with retry
+        response = await retry(
+          async () => {
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), requestTimeoutMs);
+            let res: Response;
+            try {
+              res = await fetch(url, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': this.apiKey,
+                },
+                body: JSON.stringify(body),
+                signal: controller.signal,
+              });
+            } finally {
+              clearTimeout(timeoutId);
+            }
+
+            if (!res.ok) {
+              const errorText = await res.text();
+              logger.error('Gemini API error', {
+                source: 'GeminiNativeProvider',
+                status: res.status,
+                statusText: res.statusText,
+                errorBody: errorText?.substring(0, 500),
+              });
+              throw new Error(`${res.status} ${errorText || res.statusText}`);
+            }
+
+            return res;
+          },
+          {
+            ...RetryStrategies.llmApi,
+            timeout: requestTimeoutMs * 2,
+            isRetryable: RetryPredicates.llmApiError,
+            onRetry: (error, attempt, delay) => {
+              logger.warn(`Gemini API call failed, retrying (attempt ${attempt}) in ${delay}ms...`, {
+                source: 'GeminiNativeProvider',
+                error: error instanceof Error ? error.message : String(error),
+                requestTimeoutMs,
+              });
+            },
+          }
         );
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        const looksLikeModel404 =
+          message.includes('404') &&
+          message.includes('models/') &&
+          message.includes('is not found');
+        const alreadyTriedFallback = opts?.geminiModelFallbackTried === true;
+
+        if (looksLikeModel404 && !alreadyTriedFallback && model !== 'gemini-2.5-flash') {
+          logger.warn('Gemini model not found, retrying with fallback model', {
+            source: 'GeminiNativeProvider',
+            originalModel: model,
+            fallbackModel: 'gemini-2.5-flash',
+          });
+          return await this.chat(messagesPayload, tools, {
+            ...opts,
+            model: 'gemini-2.5-flash',
+            geminiModelFallbackTried: true,
+          });
+        }
+        throw error;
       }
+
+      const data = await response.json() as {
+        candidates: Array<{
+          content: {
+            parts: Array<{ text?: string; functionCall?: { name: string; args: unknown } }>;
+          };
+          finishReason: string;
+          groundingMetadata?: unknown;
+        }>;
+        usageMetadata?: {
+          promptTokenCount?: number;
+          candidatesTokenCount?: number;
+          totalTokenCount?: number;
+        };
+      };
+
+      // Convert response to CodeBuddy format
+      const candidate = data.candidates?.[0];
+
+      // Handle MALFORMED_FUNCTION_CALL: Gemini sometimes generates Python-style
+      // calls instead of strict JSON tool-call args.
+      if (candidate && !candidate.content && candidate.finishReason === 'MALFORMED_FUNCTION_CALL') {
+        const finishMsg = (candidate as { finishMessage?: string }).finishMessage || '';
+        logger.warn('Gemini returned MALFORMED_FUNCTION_CALL, requesting retry', {
+          source: 'GeminiNativeProvider',
+          snippet: finishMsg.substring(0, 200),
+          malformedRetryCount,
+        });
+
+        if (malformedRetryCount < 2) {
+          const recoverySystemMessage: CodeBuddyMessage = {
+            role: 'system',
+            content: 'Retry tool calling with strict JSON arguments only. Do not emit Python-style function syntax.',
+          };
+          return await this.chat(
+            [...messagesPayload, recoverySystemMessage],
+            tools,
+            { ...opts, geminiMalformedRetryCount: malformedRetryCount + 1 },
+          );
+        }
+
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: 'I generated a malformed function call. Let me retry with the correct tool format. I need to use proper JSON arguments, not Python syntax.',
+              tool_calls: undefined,
+            },
+            finish_reason: 'stop',
+          }],
+          usage: {
+            prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
+            completion_tokens: 0,
+            total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
+          },
+        };
+      }
+
+      if (!candidate || !candidate.content) {
+        logger.error('Gemini response missing candidate or content', {
+          source: 'GeminiNativeProvider',
+          hasCandidates: !!data.candidates,
+          candidatesLength: data.candidates?.length,
+          rawResponse: JSON.stringify(data).substring(0, 500),
+        });
+        throw new Error('Invalid Gemini response: missing candidate content');
+      }
+
+      // Handle empty content (Gemini may return content without parts for certain queries)
+      if (!candidate.content.parts || candidate.content.parts.length === 0) {
+        logger.warn('Gemini returned empty content parts', {
+          source: 'GeminiNativeProvider',
+          finishReason: candidate.finishReason,
+        });
+        // Return a graceful response instead of throwing
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: "Je ne peux pas répondre à cette question. Il s'agit peut-être d'une requête nécessitant des données en temps réel (météo, actualités) auxquelles je n'ai pas accès, ou d'une question que le modèle ne peut pas traiter.",
+              tool_calls: undefined,
+            },
+            finish_reason: candidate.finishReason || 'stop',
+          }],
+          usage: {
+            prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
+            completion_tokens: 0,
+            total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
+          },
+        };
+      }
+
+      const toolCalls: CodeBuddyToolCall[] = [];
+      let content = '';
+
+      for (const part of candidate.content.parts) {
+        if (part.text) {
+          content += part.text;
+        } else if (part.functionCall) {
+          const toolCall = {
+            id: `call_${Date.now()}_${Math.random().toString(36).slice(2)}`,
+            type: 'function' as const,
+            function: {
+              name: part.functionCall.name,
+              arguments: JSON.stringify(part.functionCall.args),
+            },
+          };
+          toolCalls.push(toolCall);
+          logger.debug('Gemini tool call extracted', {
+            source: 'GeminiNativeProvider',
+            toolName: part.functionCall.name,
+            args: JSON.stringify(part.functionCall.args).substring(0, 200),
+          });
+        }
+      }
+
+      // When grounding was active, append the citation footer so the
+      // assistant message carries the sources alongside the prose. This
+      // is what the agent loop sees and what gets persisted to history.
+      const groundingFooter = GeminiNativeProvider.formatGroundingFooter(candidate.groundingMetadata);
+      if (groundingFooter && content) {
+        content += groundingFooter;
+      }
+
+      // Log response summary
+      logger.debug('Gemini response parsed', {
+        source: 'GeminiNativeProvider',
+        hasContent: !!content,
+        contentLength: content.length,
+        toolCallCount: toolCalls.length,
+        finishReason: candidate.finishReason,
+        hasGrounding: !!groundingFooter,
+      });
 
       return {
         choices: [{
           message: {
             role: 'assistant',
-            content: 'I generated a malformed function call. Let me retry with the correct tool format. I need to use proper JSON arguments, not Python syntax.',
-            tool_calls: undefined,
+            content: content || null,
+            tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
+          },
+          finish_reason: candidate.finishReason === 'STOP' ? 'stop' : candidate.finishReason.toLowerCase(),
+        }],
+        usage: data.usageMetadata ? {
+          prompt_tokens: data.usageMetadata.promptTokenCount || 0,
+          completion_tokens: data.usageMetadata.candidatesTokenCount || 0,
+          total_tokens: data.usageMetadata.totalTokenCount || 0,
+        } : undefined,
+      };
+    };
+
+    if (opts?.responseFormat === 'json') {
+      const { generateJsonWithRetry } = await import('../../utils/llm-retry.js');
+      const generateFn = async (promptUpdate: string): Promise<string> => {
+        const callMessages = [...messages];
+        if (promptUpdate !== 'initial') {
+          callMessages.push({ role: 'user', content: promptUpdate });
+        }
+        const response = await performChat(callMessages);
+        return response.choices[0]?.message?.content || '';
+      };
+
+      const parsed = await generateJsonWithRetry<any>(generateFn, 'initial');
+      const finalString = JSON.stringify(parsed);
+      return {
+        choices: [{
+          message: {
+            role: 'assistant',
+            content: finalString,
           },
           finish_reason: 'stop',
         }],
-        usage: {
-          prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
-          completion_tokens: 0,
-          total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
-        },
       };
     }
 
-    if (!candidate || !candidate.content) {
-      logger.error('Gemini response missing candidate or content', {
-        source: 'GeminiNativeProvider',
-        hasCandidates: !!data.candidates,
-        candidatesLength: data.candidates?.length,
-        rawResponse: JSON.stringify(data).substring(0, 500),
-      });
-      throw new Error('Invalid Gemini response: missing candidate content');
-    }
-
-    // Handle empty content (Gemini may return content without parts for certain queries)
-    if (!candidate.content.parts || candidate.content.parts.length === 0) {
-      logger.warn('Gemini returned empty content parts', {
-        source: 'GeminiNativeProvider',
-        finishReason: candidate.finishReason,
-      });
-      // Return a graceful response instead of throwing
-      return {
-        choices: [{
-          message: {
-            role: 'assistant',
-            content: "Je ne peux pas répondre à cette question. Il s'agit peut-être d'une requête nécessitant des données en temps réel (météo, actualités) auxquelles je n'ai pas accès, ou d'une question que le modèle ne peut pas traiter.",
-            tool_calls: undefined,
-          },
-          finish_reason: candidate.finishReason || 'stop',
-        }],
-        usage: {
-          prompt_tokens: data.usageMetadata?.promptTokenCount ?? 0,
-          completion_tokens: 0,
-          total_tokens: data.usageMetadata?.totalTokenCount ?? 0,
-        },
-      };
-    }
-
-    const toolCalls: CodeBuddyToolCall[] = [];
-    let content = '';
-
-    for (const part of candidate.content.parts) {
-      if (part.text) {
-        content += part.text;
-      } else if (part.functionCall) {
-        const toolCall = {
-          id: `call_${Date.now()}_${Math.random().toString(36).slice(2)}`,
-          type: 'function' as const,
-          function: {
-            name: part.functionCall.name,
-            arguments: JSON.stringify(part.functionCall.args),
-          },
-        };
-        toolCalls.push(toolCall);
-        logger.debug('Gemini tool call extracted', {
-          source: 'GeminiNativeProvider',
-          toolName: part.functionCall.name,
-          args: JSON.stringify(part.functionCall.args).substring(0, 200),
-        });
-      }
-    }
-
-    // When grounding was active, append the citation footer so the
-    // assistant message carries the sources alongside the prose. This
-    // is what the agent loop sees and what gets persisted to history.
-    const groundingFooter = GeminiNativeProvider.formatGroundingFooter(candidate.groundingMetadata);
-    if (groundingFooter && content) {
-      content += groundingFooter;
-    }
-
-    // Log response summary
-    logger.debug('Gemini response parsed', {
-      source: 'GeminiNativeProvider',
-      hasContent: !!content,
-      contentLength: content.length,
-      toolCallCount: toolCalls.length,
-      finishReason: candidate.finishReason,
-      hasGrounding: !!groundingFooter,
-    });
-
-    return {
-      choices: [{
-        message: {
-          role: 'assistant',
-          content: content || null,
-          tool_calls: toolCalls.length > 0 ? toolCalls : undefined,
-        },
-        finish_reason: candidate.finishReason === 'STOP' ? 'stop' : candidate.finishReason.toLowerCase(),
-      }],
-      usage: data.usageMetadata ? {
-        prompt_tokens: data.usageMetadata.promptTokenCount || 0,
-        completion_tokens: data.usageMetadata.candidatesTokenCount || 0,
-        total_tokens: data.usageMetadata.totalTokenCount || 0,
-      } : undefined,
-    };
+    return await performChat(messages);
   }
 
   private convertContentToGeminiParts(

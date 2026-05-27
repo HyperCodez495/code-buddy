@@ -1425,16 +1425,39 @@
     "deleteConfirm": "Delete this hook?"
   },
   "testRunner": {
-    "title": "Test runner",
+    "title": "Tests & executions",
     "framework": "Framework: {{framework}}",
     "noFramework": "No framework detected",
     "runAll": "Run all",
+    "runSafe": "Run safe checks",
+    "runCatalog": "Run catalog",
+    "runItem": "Run check",
     "runFailing": "Re-run failing",
     "cancel": "Cancel",
     "cancelled": "Test run cancelled",
+    "testsTab": "Tests",
+    "executionsTab": "Executions",
+    "coverageTab": "Coverage",
+    "coverageTotal": "Features",
+    "coverageReal": "Real",
+    "coverageUsed": "Used",
+    "coveragePartial": "Partial",
+    "coverageHint": "A feature is marked used only when a test manipulates it and checks an output, state, or external result.",
+    "coverageLevel": {
+      "opened": "opened",
+      "used": "used",
+      "real": "real"
+    },
+    "coverageStatus": {
+      "passed": "ok",
+      "partial": "partial",
+      "blocked": "blocked"
+    },
     "output": "Output",
-    "noOutput": "No output yet. Click Run all to start.",
-    "running": "Running…"
+    "noOutput": "No output yet. Run a check to start.",
+    "noCatalog": "No runnable checks found for this workspace.",
+    "noExecutions": "No recent executions found.",
+    "running": "Running..."
   },
   "personaSwitcher": {
     "title": "Persona switcher",

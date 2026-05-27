@@ -53,6 +53,7 @@ export default defineConfig({
           plugins: [copyMainAssets()],
           build: {
             outDir: 'dist-electron/main',
+            emptyOutDir: true,
             rollupOptions: {
               external: [
                 ...nodeBuiltins,
@@ -91,6 +92,7 @@ export default defineConfig({
         vite: {
           build: {
             outDir: 'dist-electron/preload',
+            emptyOutDir: true,
             rollupOptions: {
               external: ['electron'],
             },

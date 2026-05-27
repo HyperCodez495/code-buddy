@@ -116,6 +116,7 @@ export function FocusView({ open, onClose, onStopSession }: FocusViewProps) {
             <button
               type="button"
               onClick={() => setShowSessionInsights(true)}
+              data-testid="focus-view-open-insights"
               className="rounded-lg border border-border px-3 py-2 text-xs text-text-secondary hover:bg-surface-hover"
             >
               {t('focusView.openInsights', 'Open insights')}

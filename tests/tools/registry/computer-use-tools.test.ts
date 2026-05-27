@@ -12,7 +12,6 @@ import {
   BrowserExecuteTool,
   ComputerControlExecuteTool,
   ScreenshotExecuteTool,
-  ReasoningExecuteTool,
   createMiscTools,
   resetMiscInstances,
 } from '../../../src/tools/registry/misc-tools.js';
@@ -200,6 +199,32 @@ describe('Computer Use Tool Adapters', () => {
         const actionEnum = schema.parameters.properties!.action.enum;
         expect(actionEnum).toContain('snapshot');
         expect(actionEnum).toContain('snapshot_with_screenshot');
+        expect(actionEnum).toContain('click_element_by_name');
+        expect(actionEnum).toContain('click_button');
+        expect(actionEnum).toContain('fill_text_field');
+        expect(actionEnum).toContain('select_dropdown_option');
+        expect(actionEnum).toContain('select_radio');
+        expect(actionEnum).toContain('activate_tab');
+        expect(actionEnum).toContain('select_list_item');
+        expect(actionEnum).toContain('open_menu_item');
+        expect(actionEnum).toContain('toggle_checkbox');
+        expect(actionEnum).toContain('set_slider_value');
+        expect(actionEnum).toContain('select_tree_item');
+        expect(actionEnum).toContain('expand_tree_item');
+        expect(actionEnum).toContain('collapse_tree_item');
+        expect(actionEnum).toContain('assert_text_visible');
+        expect(actionEnum).toContain('assert_element_visible');
+        expect(actionEnum).toContain('inspect_dialog');
+        expect(actionEnum).toContain('click_dialog_button');
+        expect(actionEnum).toContain('handle_dialog');
+        expect(actionEnum).toContain('list_app_profiles');
+        expect(actionEnum).toContain('open_app');
+        expect(actionEnum).toContain('focus_app');
+        expect(actionEnum).toContain('read_app_text');
+        expect(actionEnum).toContain('save_app_document');
+        expect(actionEnum).toContain('excel_open_workbook');
+        expect(actionEnum).toContain('excel_set_cell');
+        expect(actionEnum).toContain('excel_get_cell');
         expect(actionEnum).toContain('click');
         expect(actionEnum).toContain('type');
         expect(actionEnum).toContain('key');

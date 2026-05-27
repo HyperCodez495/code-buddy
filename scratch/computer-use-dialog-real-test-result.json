@@ -1,0 +1,406 @@
+{
+  "passed": true,
+  "runId": "run_mpnnzueh_70c071",
+  "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+  "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-dialog-real-test-result.json",
+  "fixtureResult": {
+    "decision": "cancel",
+    "clickedAt": "2026-05-27T08:10:12.5962902+02:00"
+  },
+  "assertions": {
+    "clickedCancel": true,
+    "didNotClickSaveOrDelete": true,
+    "allStepsSucceeded": true
+  },
+  "evidence": [
+    {
+      "label": "wait for dialog fixture",
+      "input": {
+        "action": "wait_for_window",
+        "windowTitle": "CodeBuddy Dialog Fixture",
+        "windowTitleMatch": "contains",
+        "timeoutMs": 10000
+      },
+      "success": true,
+      "output": "Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
+      "data": {
+        "audit": {
+          "id": "audit-1779862195940-hcnrvc",
+          "action": "wait_for_window",
+          "success": true,
+          "durationMs": 1847,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862195940-hcnrvc",
+            "runId": "run_mpnnzueh_70c071",
+            "type": "artifact",
+            "createdAt": 1779862195940,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "wait_for_window completed in 1847ms: Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
+            "ref": "audit-1779862195940-hcnrvc.computer-control.json"
+          }
+        }
+      }
+    },
+    {
+      "label": "focus dialog fixture",
+      "input": {
+        "action": "focus_window",
+        "windowTitle": "CodeBuddy Dialog Fixture",
+        "windowTitleMatch": "contains"
+      },
+      "success": true,
+      "output": "Focused window: \"CodeBuddy Dialog Fixture\"",
+      "data": {
+        "audit": {
+          "id": "audit-1779862198794-fk0o3q",
+          "action": "focus_window",
+          "success": true,
+          "durationMs": 2817,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862198794-fk0o3q",
+            "runId": "run_mpnnzueh_70c071",
+            "type": "artifact",
+            "createdAt": 1779862198794,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "focus_window completed in 2817ms: Focused window: \"CodeBuddy Dialog Fixture\"",
+            "ref": "audit-1779862198794-fk0o3q.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.focus_window",
+            "name": "Computer control: focus_window",
+            "riskLevel": "medium",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "dry-run-required"
+          }
+        }
+      }
+    },
+    {
+      "label": "settle dialog fixture",
+      "input": {
+        "action": "wait",
+        "seconds": 0.5
+      },
+      "success": true,
+      "output": "Waited 500ms",
+      "data": {
+        "audit": {
+          "id": "audit-1779862199305-wa86g5",
+          "action": "wait",
+          "success": true,
+          "durationMs": 509,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862199305-wa86g5",
+            "runId": "run_mpnnzueh_70c071",
+            "type": "artifact",
+            "createdAt": 1779862199305,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "wait completed in 509ms: Waited 500ms",
+            "ref": "audit-1779862199305-wa86g5.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.wait",
+            "name": "Computer control: wait",
+            "riskLevel": "medium",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "dry-run-required"
+          }
+        }
+      }
+    },
+    {
+      "label": "inspect dialog choices",
+      "input": {
+        "action": "inspect_dialog",
+        "windowTitle": "CodeBuddy Dialog Fixture",
+        "windowTitleMatch": "contains",
+        "dialogText": "save changes",
+        "dialogIntent": "cancel"
+      },
+      "success": true,
+      "output": "Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSuggested: \"Cancel\" (matched dialogIntent \"cancel\")",
+      "data": {
+        "dialog": {
+          "source": "windows-uia",
+          "title": "CodeBuddy Dialog Fixture",
+          "processName": "powershell",
+          "pid": 51876,
+          "text": [
+            "Do you want to save changes before closing this test dialog?"
+          ],
+          "buttons": [
+            {
+              "name": "Save",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "caution",
+              "bounds": {
+                "x": 1658,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Delete",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "destructive",
+              "bounds": {
+                "x": 1748,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Cancel",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "safe",
+              "bounds": {
+                "x": 1838,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Fermer",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "safe",
+              "bounds": {
+                "x": 1909,
+                "y": 607,
+                "width": 34,
+                "height": 30
+              }
+            }
+          ],
+          "suggestedButton": {
+            "name": "Cancel",
+            "role": "ControlType.Button",
+            "enabled": true,
+            "risk": "safe",
+            "bounds": {
+              "x": 1838,
+              "y": 719,
+              "width": 80,
+              "height": 23
+            }
+          },
+          "suggestionReason": "matched dialogIntent \"cancel\""
+        },
+        "audit": {
+          "id": "audit-1779862203844-7m09gz",
+          "action": "inspect_dialog",
+          "success": true,
+          "durationMs": 4539,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862203844-7m09gz",
+            "runId": "run_mpnnzueh_70c071",
+            "type": "artifact",
+            "createdAt": 1779862203844,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "inspect_dialog completed in 4539ms: Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSu...",
+            "ref": "audit-1779862203844-7m09gz.computer-control.json"
+          }
+        }
+      }
+    },
+    {
+      "label": "click safe cancel choice",
+      "input": {
+        "action": "click_dialog_button",
+        "windowTitle": "CodeBuddy Dialog Fixture",
+        "windowTitleMatch": "contains",
+        "dialogIntent": "cancel"
+      },
+      "success": true,
+      "output": "Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
+      "data": {
+        "dialog": {
+          "source": "windows-uia",
+          "title": "CodeBuddy Dialog Fixture",
+          "processName": "powershell",
+          "pid": 51876,
+          "text": [
+            "Do you want to save changes before closing this test dialog?"
+          ],
+          "buttons": [
+            {
+              "name": "Save",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "caution",
+              "bounds": {
+                "x": 1658,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Delete",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "destructive",
+              "bounds": {
+                "x": 1748,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Cancel",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "safe",
+              "bounds": {
+                "x": 1838,
+                "y": 719,
+                "width": 80,
+                "height": 23
+              }
+            },
+            {
+              "name": "Fermer",
+              "role": "ControlType.Button",
+              "enabled": true,
+              "risk": "safe",
+              "bounds": {
+                "x": 1909,
+                "y": 607,
+                "width": 34,
+                "height": 30
+              }
+            }
+          ],
+          "suggestedButton": {
+            "name": "Cancel",
+            "role": "ControlType.Button",
+            "enabled": true,
+            "risk": "safe",
+            "bounds": {
+              "x": 1838,
+              "y": 719,
+              "width": 80,
+              "height": 23
+            }
+          },
+          "suggestionReason": "matched dialogIntent \"cancel\"",
+          "clickedButton": {
+            "name": "Cancel",
+            "role": "ControlType.Button",
+            "enabled": true,
+            "risk": "safe",
+            "bounds": {
+              "x": 1838,
+              "y": 719,
+              "width": 80,
+              "height": 23
+            }
+          },
+          "clickSource": "uia-invoke"
+        },
+        "selectedButton": {
+          "name": "Cancel",
+          "role": "ControlType.Button",
+          "enabled": true,
+          "risk": "safe",
+          "bounds": {
+            "x": 1838,
+            "y": 719,
+            "width": 80,
+            "height": 23
+          }
+        },
+        "reason": "matched dialogIntent \"cancel\"",
+        "audit": {
+          "id": "audit-1779862212784-7708rt",
+          "action": "click_dialog_button",
+          "success": true,
+          "durationMs": 8926,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862212784-7708rt",
+            "runId": "run_mpnnzueh_70c071",
+            "type": "artifact",
+            "createdAt": 1779862212784,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "click_dialog_button completed in 8926ms: Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
+            "ref": "audit-1779862212784-7708rt.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.click_dialog_button",
+            "name": "Computer control: click_dialog_button",
+            "riskLevel": "medium",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "dry-run-required"
+          }
+        }
+      }
+    }
+  ],
+  "generatedAt": "2026-05-27T06:10:13.296Z"
+}

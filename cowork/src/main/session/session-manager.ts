@@ -134,6 +134,17 @@ export interface EngineAdapterLike {
    * Optional — older bundles without skills hot-reload don't expose it.
    */
   reloadSkills?: () => Promise<void>;
+  /**
+   * Push updated provider/model settings into the embedded engine.
+   * The core adapter owns cached CodeBuddyAgent instances and needs an
+   * explicit config update when Cowork Settings change.
+   */
+  updateConfig?: (config: {
+    apiKey?: string;
+    baseURL?: string;
+    model?: string;
+    workingDirectory?: string;
+  }) => void;
 }
 
 /** Minimal interface for the project memory service */

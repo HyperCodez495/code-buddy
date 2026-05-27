@@ -6,6 +6,7 @@ import {
   Clock3,
   Cpu,
   FileText,
+  FlaskConical,
   Focus,
   GraduationCap,
   ListChecks,
@@ -57,6 +58,7 @@ export function ShellNavigation() {
   const showActivityFeed = useAppStore((s) => s.showActivityFeed);
   const showSessionInsights = useAppStore((s) => s.showSessionInsights);
   const showFocusView = useAppStore((s) => s.showFocusView);
+  const showTestRunner = useAppStore((s) => s.showTestRunner);
   const showOrchestratorLauncher = useAppStore((s) => s.showOrchestratorLauncher);
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
 
@@ -75,6 +77,7 @@ export function ShellNavigation() {
   const setShowActivityFeed = useAppStore((s) => s.setShowActivityFeed);
   const setShowSessionInsights = useAppStore((s) => s.setShowSessionInsights);
   const setShowFocusView = useAppStore((s) => s.setShowFocusView);
+  const setShowTestRunner = useAppStore((s) => s.setShowTestRunner);
   const setShowGlobalSearch = useAppStore((s) => s.setShowGlobalSearch);
 
   const openSettingsTab = (tab: string | null) => {
@@ -125,6 +128,7 @@ export function ShellNavigation() {
           icon: Sparkles,
           active: showOrchestratorLauncher,
           onClick: () => setShowOrchestratorLauncher(true),
+          testId: 'orchestrator-button',
         },
         {
           id: 'fleet-command',
@@ -140,6 +144,7 @@ export function ShellNavigation() {
           icon: Network,
           active: showFleetPanel,
           onClick: () => setShowFleetPanel(true),
+          testId: 'fleet-panel-button',
         },
         {
           id: 'team',
@@ -147,6 +152,7 @@ export function ShellNavigation() {
           icon: Users,
           active: showTeamPanel,
           onClick: () => setShowTeamPanel(true),
+          testId: 'team-panel-button',
         },
       ],
     },
@@ -159,6 +165,7 @@ export function ShellNavigation() {
           label: t('settings.workflows', 'Workflows'),
           icon: Workflow,
           onClick: () => openSettingsTab('workflows'),
+          testId: 'workflows-button',
         },
         {
           id: 'schedule',
@@ -190,6 +197,7 @@ export function ShellNavigation() {
           icon: Star,
           active: showBookmarksPanel,
           onClick: () => setShowBookmarksPanel(true),
+          testId: 'bookmarks-button',
         },
         {
           id: 'activity',
@@ -197,6 +205,7 @@ export function ShellNavigation() {
           icon: Activity,
           active: showActivityFeed,
           onClick: () => setShowActivityFeed(true),
+          testId: 'activity-button',
         },
         {
           id: 'session-insights',
@@ -213,6 +222,14 @@ export function ShellNavigation() {
           active: showFocusView,
           onClick: () => setShowFocusView(true),
           testId: 'focus-view-button',
+        },
+        {
+          id: 'test-runner',
+          label: t('testRunner.title', 'Test runner'),
+          icon: FlaskConical,
+          active: showTestRunner,
+          onClick: () => setShowTestRunner(true),
+          testId: 'test-runner-button',
         },
         {
           id: 'lessons',

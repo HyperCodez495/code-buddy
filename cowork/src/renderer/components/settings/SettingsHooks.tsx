@@ -158,7 +158,7 @@ export function SettingsHooks() {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-4" data-testid="settings-hooks">
       <div className="flex items-start justify-between gap-3">
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
@@ -182,6 +182,7 @@ export function SettingsHooks() {
           </button>
           <button
             onClick={newHandler}
+            data-testid="hooks-new-button"
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover transition-colors"
           >
             <Plus size={12} />
@@ -267,6 +268,7 @@ export function SettingsHooks() {
               <select
                 value={selectedEvent}
                 onChange={(ev) => setSelectedEvent(ev.target.value as HookEvent)}
+                data-testid="hooks-event-select"
                 className="w-full px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
               >
                 {HOOK_EVENTS.map((ev) => (
@@ -283,6 +285,7 @@ export function SettingsHooks() {
               <select
                 value={draft.type}
                 onChange={(ev) => setDraft({ ...draft, type: ev.target.value as HandlerType })}
+                data-testid="hooks-type-select"
                 className="w-full px-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-primary focus:outline-none focus:border-accent"
               >
                 <option value="command">command</option>
@@ -301,6 +304,7 @@ export function SettingsHooks() {
               <textarea
                 value={draft.command ?? ''}
                 onChange={(ev) => setDraft({ ...draft, command: ev.target.value })}
+                data-testid="hooks-command-input"
                 placeholder={'eslint --fix $FILE'}
                 rows={3}
                 className="w-full px-3 py-2 rounded-md bg-surface border border-border text-sm text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent font-mono"
@@ -373,6 +377,7 @@ export function SettingsHooks() {
             {(draft.type === 'command' || draft.type === 'http' || draft.type === 'prompt' || draft.type === 'agent') && (
               <button
                 onClick={() => void handleTest()}
+                data-testid="hooks-test-button"
                 disabled={
                   isTesting
                   || (draft.type === 'command' && !draft.command)
@@ -397,6 +402,7 @@ export function SettingsHooks() {
 
           {testResult && (
             <div
+              data-testid="hooks-test-result"
               className={`rounded-md border p-3 text-xs space-y-1 ${
                 testResult.success
                   ? 'bg-success/10 border-success/30'

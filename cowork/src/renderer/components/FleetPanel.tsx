@@ -73,12 +73,17 @@ export function FleetPanel() {
   const [addApiKey, setAddApiKey] = useState('');
   const [addLabel, setAddLabel] = useState('');
   const [addError, setAddError] = useState<string | null>(null);
+  const fleetApi = window.electronAPI?.fleet;
 
   const peers = useMemo(() => Object.values(peersMap), [peersMap]);
 
   useEffect(() => {
     if (!show) return;
-    void window.electronAPI.fleet.list().then((list) => {
+    if (!fleetApi) {
+      setFleetPeers([]);
+      return;
+    }
+    void fleetApi.list().then((list) => {
       setFleetPeers(
         list.map((p) => ({
           id: p.id,
@@ -94,7 +99,7 @@ export function FleetPanel() {
         }))
       );
     });
-  }, [show, setFleetPeers]);
+  }, [show, fleetApi, setFleetPeers]);
 
   const filteredEvents = useMemo(
     () => (filterPeer ? events.filter((e) => e.peerId === filterPeer) : events),
@@ -113,7 +118,11 @@ export function FleetPanel() {
       setAddError('API key required (must have fleet:listen and peer:invoke scopes)');
       return;
     }
-    const result = await window.electronAPI.fleet.addPeer({
+    if (!fleetApi) {
+      setAddError('Fleet bridge unavailable in browser preview. Open the desktop app to manage peers.');
+      return;
+    }
+    const result = await fleetApi.addPeer({
       url: addUrl.trim(),
       apiKey: addApiKey.trim(),
       label: addLabel.trim() || undefined,
@@ -129,17 +138,22 @@ export function FleetPanel() {
   };
 
   const handleRemove = async (peerId: string) => {
-    await window.electronAPI.fleet.removePeer(peerId);
+    if (!fleetApi) return;
+    await fleetApi.removePeer(peerId);
     removeFleetPeer(peerId);
     if (filterPeer === peerId) setFilterPeer(null);
   };
 
   const handleReconnect = async (peerId: string) => {
-    await window.electronAPI.fleet.reconnect(peerId);
+    if (!fleetApi) return;
+    await fleetApi.reconnect(peerId);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm"
+      data-testid="fleet-panel"
+    >
       <div className="flex h-full w-[520px] flex-col bg-background-secondary border-l border-border shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -164,6 +178,7 @@ export function FleetPanel() {
             </span>
             <button
               onClick={() => setShowAdd((v) => !v)}
+              data-testid="fleet-add-peer-button"
               className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
             >
               <Plus className="w-3.5 h-3.5" />
@@ -177,6 +192,7 @@ export function FleetPanel() {
                 type="text"
                 value={addUrl}
                 onChange={(e) => setAddUrl(e.target.value)}
+                data-testid="fleet-add-url-input"
                 placeholder="ws://100.98.18.76:3000/ws"
                 className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent font-mono"
               />
@@ -184,6 +200,7 @@ export function FleetPanel() {
                 type="password"
                 value={addApiKey}
                 onChange={(e) => setAddApiKey(e.target.value)}
+                data-testid="fleet-add-api-key-input"
                 placeholder="API key (fleet:listen + peer:invoke)"
                 className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
               />
@@ -191,11 +208,12 @@ export function FleetPanel() {
                 type="text"
                 value={addLabel}
                 onChange={(e) => setAddLabel(e.target.value)}
+                data-testid="fleet-add-label-input"
                 placeholder="Label (optional, e.g. Ministar Linux)"
                 className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
               />
               {addError && (
-                <p className="text-xs text-error flex items-center gap-1">
+                <p className="text-xs text-error flex items-center gap-1" data-testid="fleet-add-error">
                   <AlertCircle className="w-3 h-3" />
                   {addError}
                 </p>
@@ -209,6 +227,7 @@ export function FleetPanel() {
                 </button>
                 <button
                   onClick={submitAdd}
+                  data-testid="fleet-add-connect-button"
                   className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
                 >
                   Connect
@@ -220,9 +239,15 @@ export function FleetPanel() {
           <ul className="max-h-64 overflow-y-auto">
             {peers.length === 0 && (
               <li className="px-4 py-3 text-xs text-text-muted">
-                No peers configured. Add a Code Buddy instance running on your Tailscale mesh
-                (e.g. <code className="font-mono text-text-secondary">ws://100.98.18.76:3000/ws</code>)
-                with a key scoped for fleet:listen and peer:invoke.
+                {fleetApi
+                  ? (
+                    <>
+                      No peers configured. Add a Code Buddy instance running on your Tailscale mesh
+                      (e.g. <code className="font-mono text-text-secondary">ws://100.98.18.76:3000/ws</code>)
+                      with a key scoped for fleet:listen and peer:invoke.
+                    </>
+                  )
+                  : 'Fleet bridge unavailable in browser preview. Open the desktop app to connect peers.'}
               </li>
             )}
             {peers.map((peer) => {

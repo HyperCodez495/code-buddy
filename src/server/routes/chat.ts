@@ -40,6 +40,134 @@ async function getAgent(): Promise<ServerAgent> {
 
 const router = Router();
 
+type ProviderErrorShape = {
+  status?: unknown;
+  statusCode?: unknown;
+  code?: unknown;
+  retryAfter?: unknown;
+  response?: {
+    status?: unknown;
+    headers?: unknown;
+  };
+  headers?: unknown;
+};
+
+function readFiniteStatus(value: unknown): number | undefined {
+  const status = typeof value === 'number' ? value : Number(value);
+  if (!Number.isInteger(status) || status < 400 || status > 599) {
+    return undefined;
+  }
+  return status;
+}
+
+function readHeader(headers: unknown, name: string): unknown {
+  if (!headers || typeof headers !== 'object') {
+    return undefined;
+  }
+  if (typeof (headers as Headers).get === 'function') {
+    return (headers as Headers).get(name);
+  }
+  const record = headers as Record<string, unknown>;
+  return record[name] ?? record[name.toLowerCase()] ?? record[name.toUpperCase()];
+}
+
+function readRetryAfterSeconds(error: unknown): number | undefined {
+  const shaped = error as ProviderErrorShape;
+  const direct = Number(shaped?.retryAfter);
+  if (Number.isFinite(direct) && direct > 0) {
+    return Math.ceil(direct);
+  }
+
+  const headerValue =
+    readHeader(shaped?.headers, 'retry-after') ??
+    readHeader(shaped?.response?.headers, 'retry-after');
+  const fromHeader = Number(headerValue);
+  if (Number.isFinite(fromHeader) && fromHeader > 0) {
+    return Math.ceil(fromHeader);
+  }
+
+  return undefined;
+}
+
+function getErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof Error && error.message.trim().length > 0) {
+    return error.message;
+  }
+  if (typeof error === 'string' && error.trim().length > 0) {
+    return error;
+  }
+  return fallback;
+}
+
+function getProviderStatus(error: unknown): number | undefined {
+  const shaped = error as ProviderErrorShape;
+  const explicit =
+    readFiniteStatus(shaped?.statusCode) ??
+    readFiniteStatus(shaped?.status) ??
+    readFiniteStatus(shaped?.response?.status);
+  if (explicit) {
+    return explicit;
+  }
+
+  const lower = getErrorMessage(error, '').toLowerCase();
+  if (lower.includes('429') || lower.includes('rate limit') || lower.includes('too many requests') || lower.includes('quota')) {
+    return 429;
+  }
+  if (lower.includes('timeout') || lower.includes('econnreset') || lower.includes('socket hang up')) {
+    return 503;
+  }
+  return undefined;
+}
+
+function toProviderApiError(error: unknown): ApiServerError {
+  const message = getErrorMessage(error, 'Unknown provider error');
+  const providerStatus = getProviderStatus(error);
+
+  if (providerStatus === 429) {
+    const retryAfter = readRetryAfterSeconds(error);
+    return new ApiServerError(
+      message,
+      'RATE_LIMITED',
+      429,
+      {
+        providerStatus,
+        ...(retryAfter ? { retryAfter } : {}),
+      }
+    );
+  }
+
+  if (providerStatus && providerStatus >= 500) {
+    return new ApiServerError(message, 'PROVIDER_UNAVAILABLE', providerStatus, {
+      providerStatus,
+    });
+  }
+
+  if (providerStatus) {
+    return new ApiServerError(message, 'PROVIDER_ERROR', 502, {
+      providerStatus,
+    });
+  }
+
+  return ApiServerError.internal(message);
+}
+
+function setRetryAfterHeader(res: Response, error: ApiServerError): void {
+  const retryAfter = error.details?.retryAfter;
+  if (typeof retryAfter === 'number' && Number.isFinite(retryAfter) && retryAfter > 0) {
+    res.setHeader('Retry-After', Math.ceil(retryAfter).toString());
+  }
+}
+
+function openAIErrorType(error: ApiServerError): string {
+  if (error.code === 'RATE_LIMITED') {
+    return 'rate_limit_error';
+  }
+  if (error.code === 'PROVIDER_ERROR') {
+    return 'provider_error';
+  }
+  return 'server_error';
+}
+
 /**
  * POST /api/chat
  * Send a chat message and get a response
@@ -154,8 +282,9 @@ router.post(
 
       res.json(response);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      throw ApiServerError.internal(message);
+      const apiError = toProviderApiError(error);
+      setRetryAfterHeader(res, apiError);
+      throw apiError;
     }
   })
 );
@@ -244,14 +373,16 @@ async function handleStreamingChat(
 
     res.end();
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown stream error';
+    const apiError = toProviderApiError(error);
     const errorChunk = {
       id: requestId,
       delta: '',
       done: true,
       error: {
-        code: 'STREAM_ERROR',
-        message,
+        code: apiError.code,
+        message: apiError.message,
+        status: apiError.status,
+        details: apiError.details,
       },
     };
 
@@ -365,7 +496,7 @@ async function handleOpenAIStreamingChat(
 
     res.end();
   } catch (error: unknown) {
-    const message = error instanceof Error ? error.message : 'Unknown stream error';
+    const apiError = toProviderApiError(error);
     const errorChunk = {
       id: requestId,
       object: 'chat.completion.chunk',
@@ -382,7 +513,15 @@ async function handleOpenAIStreamingChat(
 
     // Send error as a final chunk then an error event
     res.write(`data: ${JSON.stringify(errorChunk)}\n\n`);
-    res.write(`data: ${JSON.stringify({ error: { message, type: 'server_error', code: null } })}\n\n`);
+    res.write(`data: ${JSON.stringify({
+      error: {
+        message: apiError.message,
+        type: openAIErrorType(apiError),
+        code: apiError.code,
+        status: apiError.status,
+        details: apiError.details,
+      },
+    })}\n\n`);
     res.end();
   }
 }
@@ -474,9 +613,15 @@ router.post(
 
       res.json(response);
     } catch (error: unknown) {
-      const message = error instanceof Error ? error.message : 'Unknown error';
-      res.status(500).json({
-        error: { message, type: 'server_error', code: null },
+      const apiError = toProviderApiError(error);
+      setRetryAfterHeader(res, apiError);
+      res.status(apiError.status).json({
+        error: {
+          message: apiError.message,
+          type: openAIErrorType(apiError),
+          code: apiError.code,
+          details: apiError.details,
+        },
       });
     }
   })

@@ -439,6 +439,38 @@ export class ToolHandler {
       hookContext = await hooksManager.executeBeforeHooks(hookContext);
       const modifiedArgs = hookContext.args;
 
+      // Axe 4: run lifecycle before-tool-call hooks via this.deps.hooksManager
+      const lifecycleBeforeResult = await this.deps.hooksManager.executeHooks('before-tool-call', {
+        toolName,
+        toolArgs: modifiedArgs,
+        sessionId: this.currentRunId,
+      });
+
+      let abortExecution = false;
+      let lifecycleModifiedArgs = { ...modifiedArgs };
+
+      for (const res of lifecycleBeforeResult) {
+        if (res.abort) {
+          abortExecution = true;
+        }
+        if (res.modified?.toolArgs) {
+          lifecycleModifiedArgs = { ...lifecycleModifiedArgs, ...res.modified.toolArgs };
+        }
+      }
+
+      if (abortExecution) {
+        return {
+          success: false,
+          error: `Execution of tool "${toolName}" was aborted by a before-tool-call hook.`,
+        };
+      }
+
+      // Re-serialize modified arguments back into toolCall.function.arguments so that
+      // downstream executors (mcp, plugins) that parse toolCall directly will see the modifications.
+      toolCall.function.arguments = JSON.stringify(lifecycleModifiedArgs);
+      hookContext.args = lifecycleModifiedArgs;
+      const finalArgs = hookContext.args;
+
       // Execute tool with potentially modified args
       let result: ToolResult;
 
@@ -457,14 +489,14 @@ export class ToolHandler {
           };
         } else {
           result = await this.morphEditor.editFile(
-            modifiedArgs.target_file as string,
-            modifiedArgs.instructions as string,
-            modifiedArgs.code_edit as string
+            finalArgs.target_file as string,
+            finalArgs.instructions as string,
+            finalArgs.code_edit as string
           );
         }
       } else if (this.registry.has(toolName)) {
         // Dispatch through registry for all other tools
-        result = await this.executeRegistryTool(toolName, modifiedArgs);
+        result = await this.executeRegistryTool(toolName, finalArgs);
       } else {
         // Suggest common alternatives for hallucinated tool names
         const suggestions: Record<string, string> = {
@@ -509,6 +541,15 @@ export class ToolHandler {
 
       // Execute after_tool_call hooks (can modify result)
       const finalHookResult = await hooksManager.executeAfterHooks(hookContext, hookResult);
+
+      // Axe 4: run lifecycle after-tool-call hooks
+      await this.deps.hooksManager.executeHooks('after-tool-call', {
+        toolName,
+        toolArgs: finalArgs,
+        output: finalHookResult.output,
+        error: finalHookResult.error,
+        sessionId: this.currentRunId,
+      });
 
       // Execute error hooks if failed
       if (!finalHookResult.success && finalHookResult.error) {

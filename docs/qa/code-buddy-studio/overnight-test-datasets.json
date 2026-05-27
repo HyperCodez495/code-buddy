@@ -1,0 +1,506 @@
+{
+  "generatedAt": "2026-05-26T01:12:56.000Z",
+  "purpose": "Deterministic data used for deep Code Buddy Studio QA. The values are intentionally recognizable so tests can prove that panels are used, not merely opened.",
+  "datasets": {
+    "clipboardSummary": {
+      "clipboardText": "CLIPBOARD_PANEL_OK: summarize this controlled QA clipboard payload.",
+      "expectedSummaryMarker": "CLIPBOARD_PANEL_OK",
+      "actions": ["summarizeNow", "toggleMonitoring", "sendToChat"]
+    },
+    "orchestrator": {
+      "goal": "Coordinate a safe QA feature completion run",
+      "strategy": "peer_review",
+      "rounds": 2,
+      "expectedOutcome": "spawn handler invoked and launcher closes"
+    },
+    "fleetCommandCenter": {
+      "peer": {
+        "id": "peer-e2e",
+        "label": "E2E Fleet Peer",
+        "routable": true
+      },
+      "goal": "Dispatch a local QA saga without external peers",
+      "privacy": "sensitive",
+      "profile": "code",
+      "expectedMarker": "saga"
+    },
+    "knowledgePanels": {
+      "bookmark": {
+        "id": "bmk-1",
+        "title": "BOOKMARK_PANEL_OK",
+        "path": "src/main/testing/test-runner-bridge.ts",
+        "scope": "project"
+      },
+      "activity": [
+        {
+          "id": "activity-fleet",
+          "kind": "fleet",
+          "title": "Fleet dispatch QA event"
+        },
+        {
+          "id": "activity-scheduled",
+          "kind": "scheduled",
+          "title": "Scheduled task QA event"
+        }
+      ],
+      "session": {
+        "id": "session-e2e",
+        "title": "QA seeded active session",
+        "prompt": "Explain the QA harness status",
+        "response": "The QA harness is green.",
+        "auditExpected": "Clean transcript"
+      }
+    },
+    "reviewAndBacklog": {
+      "workflow": {
+        "name": "QA workflow proof",
+        "nodeType": "tool",
+        "runExpected": "WORKFLOW_RUN_OK"
+      },
+      "lessonCandidate": {
+        "id": "lesson-1",
+        "reviewer": "qa-reviewer",
+        "expectedStatus": "approved"
+      },
+      "userModelObservation": {
+        "id": "observation-1",
+        "reviewer": "qa-reviewer",
+        "content": "prefers concise QA proof",
+        "expectedStatus": "accepted"
+      },
+      "specBacklog": {
+        "projectTitle": "QA spec project",
+        "storyTitle": "Validate every visible feature",
+        "storyNarrative": "As a maintainer I want real proof for every Code Buddy Studio feature.",
+        "expectedStatus": "approved"
+      }
+    },
+    "connectorsAndPlugins": {
+      "mcp": {
+        "search": "browser",
+        "tool": "browser.snapshot",
+        "arguments": {
+          "url": "http://127.0.0.1:4177/"
+        },
+        "expectedMarker": "MCP_PLAYGROUND_OK"
+      },
+      "plugins": {
+        "installedPluginId": "plugin-e2e",
+        "component": "skills",
+        "catalogSearch": "catalog-plugin"
+      }
+    },
+    "realMcpStdioFixture": {
+      "serverScript": "tests/fixtures/real-mcp-fixture.mjs",
+      "managerTest": "tests/mcp/mcp-stdio-real-fixture.test.ts",
+      "tools": [
+        {
+          "name": "mcp__qa_fixture__echo_marker",
+          "arguments": {
+            "message": "OK"
+          },
+          "expectedText": "MCP_REAL_FIXTURE:OK"
+        },
+        {
+          "name": "mcp__qa_fixture__sum_pair",
+          "arguments": {
+            "left": 20,
+            "right": 22
+          },
+          "expectedText": "MCP_SUM:42"
+        }
+      ]
+    },
+    "realMcpHttpFixture": {
+      "managerTest": "tests/mcp/mcp-http-real-fixture.test.ts",
+      "server": "local HTTP JSON-RPC fixture exposing /health and /rpc",
+      "transport": "custom MCP http transport",
+      "tools": [
+        {
+          "name": "mcp__qa_http__http_echo_marker",
+          "arguments": {
+            "message": "OK"
+          },
+          "expectedText": "MCP_HTTP_FIXTURE:OK"
+        },
+        {
+          "name": "mcp__qa_http__http_sum_pair",
+          "arguments": {
+            "left": 40,
+            "right": 2
+          },
+          "expectedText": "MCP_HTTP_SUM:42"
+        }
+      ],
+      "expectedRpcMethods": ["initialize", "notifications/initialized", "tools/list", "tools/call"]
+    },
+    "streamableHttpLimitation": {
+      "test": "tests/mcp/mcp-streamable-http-limitation.test.ts",
+      "endpoint": "local SSE-like /mcp endpoint",
+      "transport": "streamable_http",
+      "expectedError": "StreamableHttpTransport: SSE endpoints are not compatible with MCP request-response pattern",
+      "expectedStatus": "error",
+      "expectedTools": 0,
+      "expectedEndpointRequests": 0,
+      "purpose": "Document and lock the current fail-closed behavior until a true streamable HTTP client is implemented"
+    },
+    "serverChatHttpFixture": {
+      "test": "tests/server/chat-route-real-http.test.ts",
+      "server": "real Express HTTP server on an ephemeral localhost port",
+      "agent": "deterministic ServerAgent fixture wired through the real route adapter",
+      "coveredEndpoints": [
+        "/api/chat",
+        "/api/chat stream",
+        "/api/chat/completions",
+        "/api/chat/models"
+      ],
+      "expectedMarkers": [
+        "SERVER_CHAT_REAL_HTTP:QA_CHAT_HTTP_OK",
+        "SERVER_STREAM_PART_A:QA_STREAM_OK",
+        "SERVER_CHAT_REAL_HTTP:QA_OPENAI_HTTP_OK"
+      ]
+    },
+    "serverChatRealGpt55": {
+      "test": "tests/server/chat-route-real-gpt55.test.ts",
+      "command": "CODEBUDDY_REAL_GPT55_SERVER=1 npm test -- tests/server/chat-route-real-gpt55.test.ts --run",
+      "server": "real Express HTTP server on an ephemeral localhost port",
+      "provider": "ChatGPT OAuth",
+      "model": "gpt-5.5",
+      "coveredEndpoints": [
+        "/api/chat",
+        "/api/chat stream",
+        "/api/chat/completions",
+        "/api/chat/models"
+      ],
+      "expectedMarkers": [
+        "REAL-GPT55-SERVER-CHAT-ROUTE",
+        "REAL-GPT55-SERVER-STREAM-ROUTE",
+        "REAL-GPT55-SERVER-COMPAT-ROUTE"
+      ],
+      "expectedModelsOwner": "chatgpt"
+    },
+    "headlessProviderFailureExitCode": {
+      "test": "tests/cli/headless-exit-code.test.ts",
+      "command": "npm test -- tests/cli/cli-flags.test.ts tests/cli/headless-exit-code.test.ts --run",
+      "provider": "local HTTP fixture returning 500",
+      "cli": "src/index.ts --prompt --quiet --output-format json",
+      "expectedStdoutMarker": "qa forced provider failure",
+      "expectedAssistantPrefix": "Sorry, I encountered an error:",
+      "expectedExitCode": 1
+    },
+    "testRunnerHeadlessExitCatalog": {
+      "catalogId": "code-buddy-headless-provider-failure-exit",
+      "label": "CLI / headless provider failure exit",
+      "command": "npm test -- tests/cli/headless-exit-code.test.ts --run",
+      "safeToRun": true,
+      "expectedPanelResult": "1 ok / 0 ko",
+      "e2e": "cowork/e2e/test-runner-panel.spec.ts"
+    },
+    "testRunnerFleetMcpLocalCatalog": {
+      "catalogId": "code-buddy-fleet-mcp-local-smoke-suite",
+      "label": "Fleet/MCP local smoke suite",
+      "command": "npm test -- tests/fleet/fleet-loopback-smoke.test.ts tests/fleet/fleet-multi-peer-mesh-smoke.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/mcp/mcp-http-real-fixture.test.ts tests/mcp/mcp-streamable-http-limitation.test.ts tests/server/chat-route-real-http.test.ts --run",
+      "safeToRun": true,
+      "expectedPanelResult": "6 ok / 0 ko",
+      "e2e": "cowork/e2e/test-runner-panel.spec.ts"
+    },
+    "dockerSandboxRealSmoke": {
+      "test": "tests/sandbox/docker-sandbox-real-smoke.test.ts",
+      "command": "CODEBUDDY_REAL_DOCKER_SANDBOX=1 npm test -- tests/sandbox/docker-sandbox-real-smoke.test.ts --run",
+      "catalogId": "code-buddy-docker-sandbox-real-smoke",
+      "label": "Docker / real sandbox smoke",
+      "image": "node:22-slim",
+      "networkEnabled": false,
+      "readOnly": true,
+      "expectedMarker": "OK-DOCKER-SANDBOX-REAL",
+      "expectedEnv": "CODEBUDDY_CLI=1",
+      "expectedActiveContainerAfterRun": "",
+      "safeToRun": false,
+      "requiresEnv": "CODEBUDDY_REAL_DOCKER_SANDBOX",
+      "expectedPanelResult": "1 ok / 0 ko",
+      "e2e": "cowork/e2e/test-runner-docker-real.spec.ts",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/44-test-runner-docker-real.png"
+    },
+    "testRunnerCoworkRealGpt55": {
+      "test": "cowork/e2e/test-runner-cowork-real-gpt55.spec.ts",
+      "command": "COWORK_REAL_GPT55=1 npx playwright test e2e/test-runner-cowork-real-gpt55.spec.ts --reporter=list --timeout=360000",
+      "catalogId": "code-buddy-cowork-real-gpt55-chat",
+      "label": "Cowork / real GPT-5.5 chat",
+      "provider": "ChatGPT OAuth",
+      "model": "gpt-5.5",
+      "requiresEnv": "COWORK_REAL_GPT55",
+      "childTest": "cowork/e2e/chat-real-gpt55.spec.ts",
+      "expectedChildMarker": "REAL-GPT55-COWORK-GUI",
+      "expectedPanelResult": "1 ok / 0 ko",
+      "safeToRun": false,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/48-test-runner-cowork-real-gpt55.png"
+    },
+    "testRunnerCompanionLive": {
+      "test": "cowork/e2e/test-runner-companion-live.spec.ts",
+      "command": "COWORK_LIVE_COMPANION=1 npx playwright test e2e/test-runner-companion-live.spec.ts --reporter=list --timeout=380000",
+      "directCommand": "COWORK_LIVE_COMPANION=1 npx playwright test e2e/companion-live.spec.ts --reporter=list --timeout=240000",
+      "catalogId": "code-buddy-cowork-live-companion",
+      "label": "Cowork / live companion core IPC",
+      "requiresEnv": "COWORK_LIVE_COMPANION",
+      "childTest": "cowork/e2e/companion-live.spec.ts",
+      "coveredActions": [
+        "temporary project setup",
+        "record self-state",
+        "self-evaluate",
+        "improvement loop",
+        "Buddy check-in",
+        "camera inspection or controlled camera-unavailable path"
+      ],
+      "expectedPanelResult": "1 ok / 0 ko",
+      "safeToRun": false,
+      "directScreenshot": "docs/qa/code-buddy-studio/screenshots/52-companion-live-core-ipc.png",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/53-test-runner-companion-live.png"
+    },
+    "testRunnerServerRealGpt55": {
+      "test": "cowork/e2e/test-runner-server-real-gpt55.spec.ts",
+      "command": "CODEBUDDY_REAL_GPT55_SERVER=1 npx playwright test e2e/test-runner-server-real-gpt55.spec.ts --reporter=list --timeout=420000",
+      "directCommand": "CODEBUDDY_REAL_GPT55_SERVER=1 npm test -- tests/server/chat-route-real-gpt55.test.ts --run --reporter=verbose",
+      "catalogId": "code-buddy-server-real-gpt55-chat",
+      "label": "Server / real GPT-5.5 chat API",
+      "provider": "ChatGPT OAuth",
+      "model": "gpt-5.5",
+      "requiresEnv": "CODEBUDDY_REAL_GPT55_SERVER",
+      "childTest": "tests/server/chat-route-real-gpt55.test.ts",
+      "coveredEndpoints": [
+        "/api/chat",
+        "/api/chat stream",
+        "/api/chat/completions",
+        "/api/chat/models"
+      ],
+      "expectedMarkers": [
+        "REAL-GPT55-SERVER-CHAT-ROUTE",
+        "REAL-GPT55-SERVER-STREAM-ROUTE",
+        "REAL-GPT55-SERVER-COMPAT-ROUTE"
+      ],
+      "expectedPanelResult": "1 ok / 0 ko",
+      "safeToRun": false,
+      "timeoutGuardMs": 300000,
+      "initialFailureObserved": "UI row stayed running for more than 6 minutes before TestRunnerBridge gained per-catalog timeoutMs",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/49-test-runner-server-real-gpt55.png"
+    },
+    "testRunnerTimeoutRegression": {
+      "test": "cowork/tests/test-runner-bridge-catalog.test.ts",
+      "command": "npx vitest run tests/test-runner-bridge-catalog.test.ts --reporter=verbose",
+      "script": "temporary timeout-proof.js",
+      "markerPrefix": "QA_TIMEOUT_MARKER_",
+      "behavior": "prints marker then keeps Node alive with setInterval",
+      "timeoutMs": 300,
+      "expectedResult": {
+        "success": false,
+        "failed": 1,
+        "error": "Timed out after 300ms"
+      },
+      "expectedNoRemainingProcessQuery": "Get-CimInstance Win32_Process -Filter \"name = 'node.exe'\" | Where-Object { $_.CommandLine -like '*QA_TIMEOUT_MARKER_*' }",
+      "purpose": "Prevent long catalog checks from leaving the UI stuck in running state or orphaning child processes"
+    },
+    "testRunnerScriptTimeoutFlow": {
+      "test": "cowork/e2e/test-runner-script-timeout-flow.spec.ts",
+      "command": "CODEBUDDY_TEST_RUNNER_SCRIPT_TIMEOUT_MS=1500 npx playwright test e2e/test-runner-script-timeout-flow.spec.ts --reporter=list",
+      "workspace": "temporary Electron e2e workspace",
+      "script": {
+        "name": "test:hang",
+        "fileNamePattern": "timeout-QA_UI_TIMEOUT_MARKER_*.js",
+        "behavior": "prints marker then keeps Node alive with setInterval"
+      },
+      "env": {
+        "CODEBUDDY_TEST_RUNNER_SCRIPT_TIMEOUT_MS": "1500"
+      },
+      "expectedStatus": "failed",
+      "expectedResult": "0 ok / 1 ko",
+      "expectedOutput": "Timed out after 1500ms",
+      "expectedRunStore": {
+        "objective": "Test runner: test:hang",
+        "status": "failed",
+        "source": "test-runner"
+      },
+      "expectedNoRemainingProcessQuery": "Get-CimInstance Win32_Process -Filter \"name = 'node.exe'\" | Where-Object { $_.CommandLine -like '*QA_UI_TIMEOUT_MARKER*' }",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/50-test-runner-script-timeout.png",
+      "executionScreenshot": "docs/qa/code-buddy-studio/screenshots/51-test-runner-timeout-execution-monitor.png"
+    },
+    "testRunnerSafeBatchGuard": {
+      "test": "cowork/e2e/test-runner-safe-batch.spec.ts",
+      "workspace": "temporary Electron e2e workspace",
+      "safeScript": {
+        "name": "test",
+        "command": "node -e \"console.log('SAFE_BATCH_MARKER')\"",
+        "expectedStatus": "passed",
+        "expectedResult": "1 ok / 0 ko"
+      },
+      "manualScript": {
+        "name": "test:e2e",
+        "command": "node -e \"console.error('UNSAFE_E2E_MARKER'); process.exit(9)\"",
+        "expectedStatus": "pending",
+        "expectedMarkerAbsent": "UNSAFE_E2E_MARKER"
+      },
+      "button": "test-runner-run-safe",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/45-test-runner-safe-batch.png"
+    },
+    "testRunnerCancelFlow": {
+      "test": "cowork/e2e/test-runner-cancel-flow.spec.ts",
+      "workspace": "temporary Electron e2e workspace",
+      "script": {
+        "name": "test:slow",
+        "command": "node -e \"console.log('CANCEL_START_MARKER'); setInterval(() => {}, 1000)\""
+      },
+      "button": "test-runner-cancel",
+      "expectedStatus": "skipped",
+      "expectedRunStoreStatus": "cancelled",
+      "expectedResult": "0 ok / 0 ko",
+      "expectedNoRemainingProcessQuery": "Get-CimInstance Win32_Process -Filter \"name = 'node.exe'\" | Where-Object { $_.CommandLine -like '*CANCEL_START_MARKER*' }",
+      "expectedNoRemainingProcessRows": 0,
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/46-test-runner-cancel-flow.png"
+    },
+    "testRunnerRerunFailing": {
+      "test": "cowork/e2e/test-runner-rerun-failing.spec.ts",
+      "workspace": "temporary Vitest workspace under cowork/.tmp-test-runner-rerun",
+      "config": "vitest.config.ts",
+      "stateFile": "state.txt",
+      "testFile": "tests/flaky.test.ts",
+      "initialState": "fail",
+      "fixedState": "pass",
+      "button": "test-runner-run-failing",
+      "expectedFirstRun": {
+        "status": "failed",
+        "result": "0 ok / 1 ko"
+      },
+      "expectedRerun": {
+        "status": "passed",
+        "result": "1 ok / 0 ko"
+      },
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/47-test-runner-rerun-failing.png"
+    },
+    "testRunnerRegressionBundle": {
+      "command": "npx playwright test e2e/test-runner-panel.spec.ts e2e/test-runner-failure-flow.spec.ts e2e/test-runner-safe-batch.spec.ts e2e/test-runner-cancel-flow.spec.ts e2e/test-runner-rerun-failing.spec.ts --reporter=list",
+      "workspace": "cowork",
+      "expectedFiles": 5,
+      "expectedPassed": 5,
+      "coveredBehaviors": [
+        "catalog checks and execution tracking",
+        "real failing catalog run with stderr evidence",
+        "safe batch guard",
+        "cancel long-running check",
+        "re-run failed Vitest file after fixture fix"
+      ]
+    },
+    "syncPersistenceErrorHandling": {
+      "test": "tests/unit/sync-persistence.test.ts",
+      "source": "src/sync/index.ts",
+      "failureObserved": "npm test -- --run reported unhandled rejections opening .codebuddy/sync/state.json",
+      "rootCause": "EventEmitter special error event was emitted from async save/load without registered listeners, turning persistence failures into rejected fire-and-forget promises",
+      "coveredScenarios": [
+        "persistence error is emitted when an error listener is registered",
+        "persistence error is logged without creating an unhandled rejection when no listener is registered"
+      ],
+      "expectedCommand": "npm test -- tests\\unit\\sync.test.ts tests\\unit\\sync-persistence.test.ts --run",
+      "expectedResult": "2 files, 129 tests passed"
+    },
+    "realFleetLoopback": {
+      "test": "tests/fleet/fleet-loopback-smoke.test.ts",
+      "server": "real Gateway WebSocket on localhost ephemeral port",
+      "peer": "FleetListener authenticated with scoped API key",
+      "workspaceFile": "hello.txt",
+      "expectedText": "hello from loopback",
+      "coveredFlows": [
+        "peer.tool.invoke",
+        "peer.tool.invoke stream",
+        "peer.describe",
+        "peer_delegate",
+        "peer_chain",
+        "peer.chat-session"
+      ]
+    },
+    "realFleetTwoPeerMesh": {
+      "test": "tests/fleet/fleet-multi-peer-mesh-smoke.test.ts",
+      "server": "one real Gateway WebSocket on localhost ephemeral port",
+      "peers": ["mesh-alpha", "mesh-beta"],
+      "listenerCount": 2,
+      "routingRequest": {
+        "prompt": "review a multi-peer Fleet routing proof",
+        "privacyTag": "public",
+        "parallelism": 2
+      },
+      "expectedPlan": "primary, fallback and parallel lanes include both mesh-alpha and mesh-beta with zero describe errors"
+    },
+    "realProvider": {
+      "provider": "chatgpt",
+      "model": "gpt-5.5",
+      "expectedGuiMarker": "REAL-GPT55-COWORK-GUI",
+      "expectedHeartbeatMarker": "REAL-GPT55-HEARTBEAT-PERMISSIONS",
+      "authAccount": "patrice.huetz@gmail.com",
+      "plan": "pro"
+    },
+    "permissionRealFlow": {
+      "test": "cowork/e2e/permission-real-flow.spec.ts",
+      "ipcRequest": {
+        "toolUseId": "e2e-permission-ipc-allow",
+        "toolName": "Bash",
+        "input": {
+          "command": "git status --short"
+        },
+        "expectedDerivedRule": "Bash(git *)",
+        "expectedIpcResponse": {
+          "toolUseId": "e2e-permission-ipc-allow",
+          "result": "allow"
+        }
+      },
+      "persistentRule": {
+        "toolUseId": "e2e-permission-folder-allow",
+        "toolName": "Write",
+        "input": {
+          "file_path": "docs\\guide.md"
+        },
+        "expectedSavedRule": "Write(docs/*)"
+      },
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/41-permission-dialog-real-flow.png"
+    },
+    "testRunnerFailureFlow": {
+      "test": "cowork/e2e/test-runner-failure-flow.spec.ts",
+      "workspace": "temporary Electron e2e workspace",
+      "script": {
+        "name": "test:fail",
+        "command": "node -e \"console.error('QA_FAIL_MARKER'); process.exit(7)\""
+      },
+      "expectedStatus": "failed",
+      "expectedResult": "0 ok / 1 ko",
+      "expectedOutput": "QA_FAIL_MARKER",
+      "runStore": {
+        "isolatedEnv": "CODEBUDDY_RUNS_DIR",
+        "expectedObjective": "Test runner: test:fail",
+        "expectedSource": "test-runner",
+        "expectedArtifact": "test-output.txt"
+      },
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/42-test-runner-failure-flow.png",
+      "executionScreenshot": "docs/qa/code-buddy-studio/screenshots/43-test-runner-execution-monitor.png"
+    },
+    "testRunnerRealProviderCatalog": {
+      "test": "cowork/e2e/test-runner-panel.spec.ts",
+      "catalogRows": [
+        {
+          "label": "Cowork / real GPT-5.5 chat",
+          "requiresEnv": "COWORK_REAL_GPT55"
+        },
+        {
+          "label": "Server / real GPT-5.5 chat API",
+          "requiresEnv": "CODEBUDDY_REAL_GPT55_SERVER"
+        },
+        {
+          "label": "Docker / real sandbox smoke",
+          "requiresEnv": "CODEBUDDY_REAL_DOCKER_SANDBOX"
+        }
+      ],
+      "expectedSafety": "real provider and real Docker rows are manual/safeToRun=false and excluded from safe checks",
+      "screenshot": "docs/qa/code-buddy-studio/screenshots/30-test-runner-window.png"
+    },
+    "runtimeAndSecurity": {
+      "uncPath": "\\\\server\\share\\report.txt",
+      "expectedError": "Path is outside the mounted workspace",
+      "serverHealthPort": 39230,
+      "dockerRuntimeMarker": "OK-DOCKER-RUNTIME"
+    }
+  }
+}

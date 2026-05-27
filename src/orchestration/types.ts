@@ -196,7 +196,7 @@ export interface WorkflowStep {
   /** Step name */
   name: string;
   /** Step type */
-  type: 'task' | 'parallel' | 'conditional' | 'loop';
+  type: 'task' | 'parallel' | 'conditional' | 'loop' | 'batch';
   /** Task definitions for this step */
   tasks?: TaskDefinition[];
   /** Parallel branches (for parallel type) */
@@ -211,6 +211,14 @@ export interface WorkflowStep {
   loopCondition?: string;
   /** Loop body */
   loopBody?: WorkflowStep[];
+  /** Batch items expression */
+  batchItemsExpression?: string;
+  /** Batch variable name */
+  batchVariableName?: string;
+  /** Batch concurrency limit */
+  batchConcurrencyLimit?: number;
+  /** Batch body */
+  batchBody?: WorkflowStep[];
   /** Dependencies */
   dependsOn?: string[];
 }

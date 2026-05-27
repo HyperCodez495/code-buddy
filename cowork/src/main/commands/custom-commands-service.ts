@@ -66,7 +66,7 @@ export class CustomCommandsService {
       const end = raw.indexOf('\n---', 4);
       if (end > 0) {
         const front = raw.slice(4, end);
-        result.body = raw.slice(end + 4).replace(/^\n/, '');
+        result.body = raw.slice(end + 4).replace(/^\n/, '').replace(/\n$/, '');
         for (const line of front.split('\n')) {
           const idx = line.indexOf(':');
           if (idx <= 0) continue;

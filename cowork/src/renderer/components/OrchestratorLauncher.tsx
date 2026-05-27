@@ -139,7 +139,10 @@ export function OrchestratorLauncher() {
     STRATEGIES.find((s) => s.value === strategy)?.hint ?? '';
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      data-testid="orchestrator-launcher"
+    >
       <div className="bg-background border border-border rounded-2xl shadow-xl w-full max-w-xl p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -187,6 +190,7 @@ export function OrchestratorLauncher() {
               id="orchestrator-goal"
               value={goal}
               onChange={(e) => setGoal(e.target.value)}
+              data-testid="orchestrator-goal-input"
               placeholder="Describe what the team should achieve…"
               rows={4}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40 resize-y"
@@ -208,6 +212,7 @@ export function OrchestratorLauncher() {
                 id="orchestrator-strategy"
                 value={strategy}
                 onChange={(e) => setStrategy(e.target.value)}
+                data-testid="orchestrator-strategy-select"
                 className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
               >
                 {STRATEGIES.map((s) => (
@@ -230,6 +235,7 @@ export function OrchestratorLauncher() {
                 min={MIN_ROUNDS}
                 max={MAX_ROUNDS}
                 value={maxRounds}
+                data-testid="orchestrator-rounds-input"
                 onChange={(e) => {
                   const n = parseInt(e.target.value, 10);
                   if (!Number.isNaN(n)) {
@@ -263,6 +269,7 @@ export function OrchestratorLauncher() {
           <button
             onClick={handleSubmit}
             disabled={!canSubmit}
+            data-testid="orchestrator-spawn-button"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-accent text-white hover:bg-accent/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {status === 'launching' ? (

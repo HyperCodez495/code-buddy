@@ -480,55 +480,83 @@ export class OpenAICompatProvider implements Provider {
         requestPayload.tool_choice = opts.tool_choice;
       }
 
-      const response = await this.withCircuitBreaker(opts.circuitBreaker, () =>
-        retry(
-          async () => {
-            return await this.client.chat.completions.create(
-              requestPayload as unknown as ChatCompletionCreateParamsNonStreaming,
-            );
-          },
-          {
-            ...RetryStrategies.llmApi,
-            isRetryable: RetryPredicates.llmApiError,
-            onRetry: (error, attempt, delay) => {
-              logger.warn(`API call failed, retrying (attempt ${attempt}) in ${delay}ms...`, {
-                source: 'OpenAICompatProvider',
-                error: error instanceof Error ? error.message : String(error),
-              });
+      const performCall = async (messagesPayload: CodeBuddyMessage[]) => {
+        requestPayload.messages = messagesPayload;
+        const response = await this.withCircuitBreaker(opts.circuitBreaker, () =>
+          retry(
+            async () => {
+              return await this.client.chat.completions.create(
+                requestPayload as unknown as ChatCompletionCreateParamsNonStreaming,
+              );
             },
-          },
-        ),
-      );
+            {
+              ...RetryStrategies.llmApi,
+              isRetryable: RetryPredicates.llmApiError,
+              onRetry: (error, attempt, delay) => {
+                logger.warn(`API call failed, retrying (attempt ${attempt}) in ${delay}ms...`, {
+                  source: 'OpenAICompatProvider',
+                  error: error instanceof Error ? error.message : String(error),
+                });
+              },
+            },
+          ),
+        );
 
-      // Track rate limit headers (best-effort).
-      try {
-        const rawResponse = (response as unknown as { _response?: { headers?: Record<string, string> } })._response;
-        if (rawResponse?.headers) {
-          const providerName = this.getProviderName();
-          const rateLimitInfo = parseRateLimitHeaders(rawResponse.headers, providerName);
-          if (rateLimitInfo.remainingRequests !== undefined || rateLimitInfo.remainingTokens !== undefined) {
-            storeRateLimitInfo(rateLimitInfo);
+        // Track rate limit headers (best-effort).
+        try {
+          const rawResponse = (response as unknown as { _response?: { headers?: Record<string, string> } })._response;
+          if (rawResponse?.headers) {
+            const providerName = this.getProviderName();
+            const rateLimitInfo = parseRateLimitHeaders(rawResponse.headers, providerName);
+            if (rateLimitInfo.remainingRequests !== undefined || rateLimitInfo.remainingTokens !== undefined) {
+              storeRateLimitInfo(rateLimitInfo);
+            }
+          }
+        } catch {
+          // Non-critical
+        }
+
+        const codeBuddyResponse = response as unknown as CodeBuddyResponse;
+        const rawUsage = (response as unknown as Record<string, unknown>).usage as Record<string, unknown> | undefined;
+        if (rawUsage) {
+          this.trackPromptCache(rawUsage as { prompt_tokens?: number; cached_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } });
+
+          if (codeBuddyResponse.usage) {
+            const cachedTokens = (rawUsage.cached_tokens as number | undefined)
+              ?? ((rawUsage.prompt_tokens_details as { cached_tokens?: number } | undefined)?.cached_tokens);
+            if (cachedTokens !== undefined) {
+              codeBuddyResponse.usage.cached_tokens = cachedTokens;
+            }
           }
         }
-      } catch {
-        // Non-critical
-      }
+        return codeBuddyResponse;
+      };
 
-      const codeBuddyResponse = response as unknown as CodeBuddyResponse;
-      const rawUsage = (response as unknown as Record<string, unknown>).usage as Record<string, unknown> | undefined;
-      if (rawUsage) {
-        this.trackPromptCache(rawUsage as { prompt_tokens?: number; cached_tokens?: number; prompt_tokens_details?: { cached_tokens?: number } });
-
-        if (codeBuddyResponse.usage) {
-          const cachedTokens = (rawUsage.cached_tokens as number | undefined)
-            ?? ((rawUsage.prompt_tokens_details as { cached_tokens?: number } | undefined)?.cached_tokens);
-          if (cachedTokens !== undefined) {
-            codeBuddyResponse.usage.cached_tokens = cachedTokens;
+      if (opts.responseFormat === 'json') {
+        const { generateJsonWithRetry } = await import('../../utils/llm-retry.js');
+        const generateFn = async (promptUpdate: string): Promise<string> => {
+          const callMessages = [...finalMessages];
+          if (promptUpdate !== 'initial') {
+            callMessages.push({ role: 'user', content: promptUpdate });
           }
-        }
+          const response = await performCall(callMessages);
+          return response.choices[0]?.message?.content || '';
+        };
+
+        const parsed = await generateJsonWithRetry<any>(generateFn, 'initial');
+        const finalString = JSON.stringify(parsed);
+        return {
+          choices: [{
+            message: {
+              role: 'assistant',
+              content: finalString,
+            },
+            finish_reason: 'stop',
+          }],
+        };
       }
 
-      return codeBuddyResponse;
+      return await performCall(finalMessages);
     } catch (error: unknown) {
       if (error instanceof CircuitOpenError) {
         throw error;

@@ -275,6 +275,7 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
               <button
                 key={item.sessionId}
                 onClick={() => setSelectedId(item.sessionId)}
+                data-testid={`session-insights-row-${item.sessionId}`}
                 className={`w-full px-4 py-3 text-left border-b border-border-muted transition-colors ${
                   selectedId === item.sessionId ? 'bg-accent/10' : 'hover:bg-surface-hover'
                 }`}
@@ -336,6 +337,7 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                   <button
                     onClick={() => void loadAudit()}
                     disabled={loadingAudit}
+                    data-testid="session-insights-audit-button"
                     className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors"
                   >
                     {loadingAudit ? <Loader2 size={12} className="animate-spin" /> : null}
@@ -344,6 +346,7 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                   <button
                     onClick={() => void repairAudit()}
                     disabled={repairingAudit}
+                    data-testid="session-insights-repair-button"
                     className="inline-flex items-center gap-1 rounded-md border border-border px-3 py-1.5 text-xs text-text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors"
                   >
                     {repairingAudit ? <Loader2 size={12} className="animate-spin" /> : null}
@@ -376,7 +379,10 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                 )}
 
                 {audit && (
-                  <div className="rounded-lg border border-border-muted bg-surface px-3 py-3 space-y-2">
+                  <div
+                    className="rounded-lg border border-border-muted bg-surface px-3 py-3 space-y-2"
+                    data-testid="session-insights-audit-result"
+                  >
                     <div className="text-xs font-medium text-text-primary">
                       {t('sessionInsights.auditTitle', 'Transcript audit')}
                     </div>

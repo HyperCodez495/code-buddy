@@ -234,7 +234,8 @@ export class RunStore {
   private artifactIndexUnavailable = false;
 
    constructor(runsDir?: string) {
-    this.runsDir = runsDir || path.join(os.homedir(), '.codebuddy', 'runs');
+    this.runsDir =
+      runsDir || process.env.CODEBUDDY_RUNS_DIR || path.join(os.homedir(), '.codebuddy', 'runs');
     this.ensureDir(this.runsDir);
     this.loadSummaries();
   }
@@ -1137,7 +1138,7 @@ export class RunStore {
           matched: 'artifact',
           artifact: row.artifact,
           score: (score > 0 ? score : 1) + 35,
-          snippet: row.snippet || buildSearchSnippet(row.content, terms),
+          snippet: buildSearchSnippet(row.content, terms),
           source: inferRunSearchSource(summary, sources),
         });
       }
@@ -1262,6 +1263,10 @@ function normalizeSearchTerms(query: string): string[] {
 function buildFtsQuery(terms: string[]): string {
   return terms
     .map((term) => term.replace(/"/g, '""').trim())
+    .filter((term) => {
+      const isCjk = /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff\u3400-\u4dbf\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/u.test(term);
+      return term.length >= 2 || (isCjk && term.length >= 1);
+    })
     .filter(Boolean)
     .map((term) => `"${term}"`)
     .join(' ');
@@ -1353,7 +1358,7 @@ function scoreSearchText(text: string, terms: string[]): number {
 function buildSearchSnippet(text: string, terms: string[], maxLength = 180): string {
   const compact = text.replace(/\s+/g, ' ').trim();
   if (compact.length <= maxLength) {
-    return highlightTerms(compact, terms);
+    return compact;
   }
 
   const lower = compact.toLowerCase();
@@ -1366,15 +1371,7 @@ function buildSearchSnippet(text: string, terms: string[], maxLength = 180): str
   const snippet = compact.slice(start, end);
   const prefix = start > 0 ? '...' : '';
   const suffix = end < compact.length ? '...' : '';
-  return prefix + highlightTerms(snippet, terms) + suffix;
-}
-
-function highlightTerms(text: string, terms: string[]): string {
-  if (terms.length === 0 || !text) return text;
-  const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
-  const escapedTerms = sortedTerms.map(t => t.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
-  const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
-  return text.replace(regex, '<mark>$1</mark>');
+  return prefix + snippet + suffix;
 }
 
 function safeStringify(value: unknown): string {

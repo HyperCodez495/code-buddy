@@ -55,7 +55,10 @@ export type HookType =
   | "worktree:create"
   | "worktree:remove"
   | "task:completed"
-  | "teammate:idle";
+  | "teammate:idle"
+  | "before-tool-call"
+  | "after-tool-call"
+  | "before-memory-write";
 
 /**
  * Hook execution context
@@ -108,6 +111,7 @@ export interface HookResult {
     content?: string;
     command?: string;
     prompt?: string;
+    toolArgs?: Record<string, unknown>;
   };
   abort?: boolean;
 }

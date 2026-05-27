@@ -36,6 +36,9 @@ export type ElementRole =
   | 'menu-item'
   | 'tab'
   | 'list-item'
+  | 'slider'
+  | 'tree'
+  | 'tree-item'
   | 'image'
   | 'text'
   | 'container'
@@ -175,6 +178,19 @@ export class SmartSnapshotManager extends EventEmitter {
   constructor(config: Partial<SmartSnapshotConfig> = {}) {
     super();
     this.config = { ...DEFAULT_CONFIG, ...config };
+  }
+
+  private async runPowerShellEncoded(
+    script: string,
+    options: { executable?: string; timeout?: number } = {}
+  ): Promise<string> {
+    const executable = options.executable ?? 'powershell.exe';
+    const encoded = Buffer.from(script, 'utf16le').toString('base64');
+    const { stdout } = await execAsync(
+      `${executable} -NoProfile -EncodedCommand ${encoded}`,
+      { timeout: options.timeout ?? 15000 }
+    );
+    return stdout.trim();
   }
 
   // ============================================================================
@@ -689,6 +705,8 @@ function Get-Elements($element, $depth) {
             y = [int]$rect.Y
             width = [int]$rect.Width
             height = [int]$rect.Height
+            focused = $element.Current.HasKeyboardFocus
+            enabled = $element.Current.IsEnabled
         }
 
         $child = $walker.GetFirstChild($element)
@@ -713,16 +731,16 @@ if ($focused) {
 }
     `;
 
-    const { stdout } = await execAsync(
-      `powershell.exe -NoProfile -Command "${script.replace(/\n/g, '; ')}"`,
-      { timeout: 15000 }
-    );
+    const stdout = await this.runPowerShellEncoded(script, {
+      executable: 'powershell.exe',
+      timeout: 15000,
+    });
 
     const parsed = JSON.parse(stdout);
     const items = Array.isArray(parsed) ? parsed : [parsed];
 
     for (const item of items.slice(0, this.config.maxElements)) {
-      const role = this.mapWindowsRole(item.role);
+      const role = this.mapWindowsRole(item.role, item);
       elements.push({
         ref: this.nextRef++,
         role,
@@ -733,8 +751,8 @@ if ($focused) {
           y: item.y + item.height / 2,
         },
         interactive: this.isInteractiveRole(role),
-        focused: false,
-        enabled: true,
+        focused: Boolean(item.focused),
+        enabled: item.enabled !== false,
         visible: item.width > 0 && item.height > 0,
       });
     }
@@ -862,6 +880,8 @@ function Get-Elements($element, $depth) {
             y = [int]$rect.Y
             width = [int]$rect.Width
             height = [int]$rect.Height
+            focused = $element.Current.HasKeyboardFocus
+            enabled = $element.Current.IsEnabled
         }
 
         $child = $walker.GetFirstChild($element)
@@ -887,16 +907,16 @@ if ($focused) {
       `;
 
       try {
-        const { stdout } = await execAsync(
-          `powershell -Command "${script.replace(/\n/g, '; ')}"`,
-          { timeout: 15000 }
-        );
+        const stdout = await this.runPowerShellEncoded(script, {
+          executable: 'powershell.exe',
+          timeout: 15000,
+        });
 
         const parsed = JSON.parse(stdout);
         const items = Array.isArray(parsed) ? parsed : [parsed];
 
         for (const item of items.slice(0, this.config.maxElements)) {
-          const role = this.mapWindowsRole(item.role);
+          const role = this.mapWindowsRole(item.role, item);
           elements.push({
             ref: this.nextRef++,
             role,
@@ -907,8 +927,8 @@ if ($focused) {
               y: item.y + item.height / 2,
             },
             interactive: this.isInteractiveRole(role),
-            focused: false,
-            enabled: true,
+            focused: Boolean(item.focused),
+            enabled: item.enabled !== false,
             visible: item.width > 0 && item.height > 0,
           });
         }
@@ -1069,6 +1089,9 @@ if ($focused) {
       'menu item': 'menu-item',
       'page tab': 'tab',
       'list item': 'list-item',
+      'slider': 'slider',
+      'tree': 'tree',
+      'tree item': 'tree-item',
       'image': 'image',
       'label': 'text',
       'panel': 'container',
@@ -1078,7 +1101,10 @@ if ($focused) {
     return roleMap[atspiRole.toLowerCase()] || 'unknown';
   }
 
-  private mapWindowsRole(controlType: string): ElementRole {
+  private mapWindowsRole(
+    controlType: string,
+    item?: { name?: string; width?: number; height?: number; focused?: boolean }
+  ): ElementRole {
     const roleMap: Record<string, ElementRole> = {
       'ControlType.Button': 'button',
       'ControlType.Hyperlink': 'link',
@@ -1091,11 +1117,33 @@ if ($focused) {
       'ControlType.Tab': 'tab',
       'ControlType.TabItem': 'tab',
       'ControlType.ListItem': 'list-item',
+      'ControlType.Slider': 'slider',
+      'ControlType.Tree': 'tree',
+      'ControlType.TreeItem': 'tree-item',
       'ControlType.Image': 'image',
       'ControlType.Text': 'text',
       'ControlType.Pane': 'container',
       'ControlType.Window': 'window',
     };
+
+    if (controlType === 'ControlType.Pane' && item) {
+      const bounds = {
+        x: 0,
+        y: 0,
+        width: item.width ?? 0,
+        height: item.height ?? 0,
+      };
+      if (item.focused && bounds.width >= 80 && bounds.height <= 48) {
+        return 'text-field';
+      }
+      const inferred = this.mapOCRTextToRole(item.name ?? '', bounds);
+      if (inferred !== 'text') {
+        return inferred;
+      }
+      if ((item.name ?? '').trim()) {
+        return 'text';
+      }
+    }
 
     return roleMap[controlType] || 'unknown';
   }

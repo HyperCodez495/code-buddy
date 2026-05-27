@@ -17,7 +17,7 @@ import type { SecurityMode } from "./security/security-modes.js";
 import type { CustomAgentConfig } from "./agent/custom/custom-agent-loader.js";
 
 import { fileURLToPath } from 'url';
-import { resolveHeadlessOutputFormat } from './cli/headless-options.js';
+import { resolveHeadlessOutputFormat, resolveHeadlessResultExitCode } from './cli/headless-options.js';
 import { resolveCliModelList } from './cli/model-listing.js';
 
 // Read version from package.json
@@ -820,7 +820,7 @@ async function processPromptHeadless(
   outputFormat: string = 'json',
   outputSchemaPath?: string,
   agentName?: string,
-): Promise<void> {
+): Promise<number> {
   const previousDisableMCP = process.env.CODEBUDDY_DISABLE_MCP;
   const previousHeadless = process.env.CODEBUDDY_HEADLESS;
   process.env.CODEBUDDY_DISABLE_MCP = 'true';
@@ -925,18 +925,17 @@ async function processPromptHeadless(
     }
 
     // Validate output against JSON Schema if --output-schema was provided
-      if (outputSchemaPath) {
-        const { validateOutputSchema } = await import("./utils/output-schema-validator.js");
-        const validation = validateOutputSchema(messages, outputSchemaPath);
-        if (!validation.valid) {
-          cli.error('Output schema validation failed:');
-          for (const error of validation.errors) {
-            cli.error(`  - ${error}`);
-          }
-          await finalizeHeadlessRun(2);
-          return;
+    if (outputSchemaPath) {
+      const { validateOutputSchema } = await import("./utils/output-schema-validator.js");
+      const validation = validateOutputSchema(messages, outputSchemaPath);
+      if (!validation.valid) {
+        cli.error('Output schema validation failed:');
+        for (const error of validation.errors) {
+          cli.error(`  - ${error}`);
         }
+        return 2;
       }
+    }
 
     // Extract final assistant response text
     const assistantMessages = messages.filter(
@@ -944,6 +943,7 @@ async function processPromptHeadless(
     );
     const lastResponse = assistantMessages[assistantMessages.length - 1];
     const resultText = (lastResponse?.content as string) || '';
+    const exitCode = resolveHeadlessResultExitCode(resultText);
 
     // Gather cost and model info from the agent
     const sessionCost = agent.getSessionCost();
@@ -980,6 +980,7 @@ async function processPromptHeadless(
         messages,
       }));
     }
+    return exitCode;
   } catch (error: unknown) {
     // Output error in appropriate format
     const errorMessage = error instanceof Error ? error.message : String(error);
@@ -997,8 +998,7 @@ async function processPromptHeadless(
         })
       );
     }
-    await finalizeHeadlessRun(1);
-    return;
+    return 1;
   } finally {
     if (previousDisableMCP === undefined) {
       delete process.env.CODEBUDDY_DISABLE_MCP;
@@ -1237,6 +1237,14 @@ program
     "--verbose",
     "enable verbose/debug output"
   )
+  .option(
+    "--speak",
+    "enable automatic speech synthesis of agent responses using Text-to-Speech"
+  )
+  .option(
+    "--tts-provider <provider>",
+    "TTS provider (edge-tts, espeak, say, piper, audioreader, kokoro)"
+  )
   .action(async (message, options) => {
     // Apply --quiet / --verbose flags
     if (options.quiet) {
@@ -1245,6 +1253,23 @@ program
     if (options.verbose) {
       process.env.VERBOSE = 'true';
       process.env.DEBUG = 'true';
+    }
+    // Apply --speak / --tts-provider flags
+    if (options.speak || options.ttsProvider) {
+      const { getTTSManager } = await import('./input/text-to-speech.js');
+      const ttsManager = getTTSManager();
+      if (options.speak) {
+        ttsManager.enable();
+        ttsManager.setAutoSpeak(true);
+      }
+      if (options.ttsProvider) {
+        const validProviders = ['edge-tts', 'espeak', 'say', 'piper', 'audioreader', 'kokoro'];
+        if (validProviders.includes(options.ttsProvider)) {
+          ttsManager.updateConfig({ provider: options.ttsProvider as any });
+        } else {
+          startupLogger.warn(`⚠️ Invalid tts-provider: ${options.ttsProvider}. Valid: ${validProviders.join(', ')}`);
+        }
+      }
     }
     // Apply named configuration profile (--profile <name>) before anything else
     if (options.profile) {
@@ -1607,7 +1632,7 @@ program
 
       // Headless mode: process prompt and exit (if prompt, message, or piped input provided)
       if (combinedPrompt && (promptArg || pipedInput)) {
-        await processPromptHeadless(
+        const headlessExitCode = await processPromptHeadless(
           combinedPrompt,
           apiKey,
           baseURL,
@@ -1618,7 +1643,7 @@ program
           options.outputSchema,
           options.agent
         );
-        await finalizeHeadlessRun(0);
+        await finalizeHeadlessRun(headlessExitCode);
         return;
       }
 

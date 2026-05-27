@@ -145,6 +145,25 @@ describe('ConfigStore provider profiles', () => {
     expect(openrouterView.model).toBe('anthropic/claude-sonnet-4');
   });
 
+  it('switches to the ChatGPT OAuth profile from defaults', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'chatgpt',
+      activeProfileKey: 'chatgpt',
+      apiKey: 'oauth-chatgpt',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      model: 'gpt-5.5',
+    });
+
+    const config = store.getAll();
+    expect(config.provider).toBe('chatgpt');
+    expect(config.activeProfileKey).toBe('chatgpt');
+    expect(config.apiKey).toBe('oauth-chatgpt');
+    expect(config.baseUrl).toBe('https://chatgpt.com/backend-api/codex');
+    expect(config.model).toBe('gpt-5.5');
+  });
+
   it('keeps gemini and custom gemini profiles isolated from other providers', () => {
     const store = new ConfigStore();
 

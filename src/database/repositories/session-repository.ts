@@ -293,48 +293,107 @@ export class SessionRepository {
    * instead of scanning every JSON session file in Node memory.
    */
   searchMessages(query: string, options: SessionSearchOptions = {}): SessionSearchResult[] {
-    const ftsQuery = this.buildFtsQuery(query);
-    if (!ftsQuery) {
+    const allTokens = query
+      .trim()
+      .match(/[\p{L}\p{N}_@./:-]+/gu)
+      ?.filter(Boolean) || [];
+
+    if (allTokens.length === 0) {
       return [];
     }
 
+    const longTokens = allTokens.filter(token => {
+      const isCjk = /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff\u3400-\u4dbf\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/u.test(token);
+      return token.length >= 3 || (isCjk && token.length >= 3);
+    });
+    const shortTokens = allTokens.filter(token => {
+      const isCjk = /[\u4e00-\u9fa5\u3040-\u309f\u30a0-\u30ff\u3400-\u4dbf\u1100-\u11ff\u3130-\u318f\uac00-\ud7af]/u.test(token);
+      return token.length < 3 || (isCjk && token.length < 3);
+    });
+
     const limit = Math.min(Math.max(options.limit ?? 20, 1), 100);
     const offset = Math.max(options.offset ?? 0, 0);
-    const params: unknown[] = [ftsQuery];
+    const params: unknown[] = [];
 
-    let sql = `
-      SELECT
-        s.id AS session_id,
-        s.parent_session_id AS session_parent_session_id,
-        s.project_id AS session_project_id,
-        s.project_path AS session_project_path,
-        s.name AS session_name,
-        s.model AS session_model,
-        s.created_at AS session_created_at,
-        s.updated_at AS session_updated_at,
-        s.total_tokens_in AS session_total_tokens_in,
-        s.total_tokens_out AS session_total_tokens_out,
-        s.total_cost AS session_total_cost,
-        s.message_count AS session_message_count,
-        s.tool_calls_count AS session_tool_calls_count,
-        s.is_archived AS session_is_archived,
-        s.metadata AS session_metadata,
-        m.id AS message_id,
-        m.session_id AS message_session_id,
-        m.role AS message_role,
-        m.content AS message_content,
-        m.tool_calls AS message_tool_calls,
-        m.tool_call_id AS message_tool_call_id,
-        m.tokens AS message_tokens,
-        m.created_at AS message_created_at,
-        m.metadata AS message_metadata,
-        snippet(messages_fts, 0, '<mark>', '</mark>', '...', 18) AS snippet,
-        bm25(messages_fts) AS score
-      FROM messages_fts
-      JOIN messages m ON m.id = messages_fts.rowid
-      JOIN sessions s ON s.id = m.session_id
-      WHERE messages_fts MATCH ?
-    `;
+    let sql = '';
+    if (longTokens.length > 0) {
+      const ftsQuery = longTokens
+        .map(token => `"${token.replace(/"/g, '""')}"`)
+        .join(' AND ');
+
+      sql = `
+        SELECT
+          s.id AS session_id,
+          s.parent_session_id AS session_parent_session_id,
+          s.project_id AS session_project_id,
+          s.project_path AS session_project_path,
+          s.name AS session_name,
+          s.model AS session_model,
+          s.created_at AS session_created_at,
+          s.updated_at AS session_updated_at,
+          s.total_tokens_in AS session_total_tokens_in,
+          s.total_tokens_out AS session_total_tokens_out,
+          s.total_cost AS session_total_cost,
+          s.message_count AS session_message_count,
+          s.tool_calls_count AS session_tool_calls_count,
+          s.is_archived AS session_is_archived,
+          s.metadata AS session_metadata,
+          m.id AS message_id,
+          m.session_id AS message_session_id,
+          m.role AS message_role,
+          m.content AS message_content,
+          m.tool_calls AS message_tool_calls,
+          m.tool_call_id AS message_tool_call_id,
+          m.tokens AS message_tokens,
+          m.created_at AS message_created_at,
+          m.metadata AS message_metadata,
+          snippet(messages_fts, 0, '<mark>', '</mark>', '...', 18) AS snippet,
+          bm25(messages_fts) AS score
+        FROM messages_fts
+        JOIN messages m ON m.id = messages_fts.rowid
+        JOIN sessions s ON s.id = m.session_id
+        WHERE messages_fts MATCH ?
+      `;
+      params.push(ftsQuery);
+    } else {
+      sql = `
+        SELECT
+          s.id AS session_id,
+          s.parent_session_id AS session_parent_session_id,
+          s.project_id AS session_project_id,
+          s.project_path AS session_project_path,
+          s.name AS session_name,
+          s.model AS session_model,
+          s.created_at AS session_created_at,
+          s.updated_at AS session_updated_at,
+          s.total_tokens_in AS session_total_tokens_in,
+          s.total_tokens_out AS session_total_tokens_out,
+          s.total_cost AS session_total_cost,
+          s.message_count AS session_message_count,
+          s.tool_calls_count AS session_tool_calls_count,
+          s.is_archived AS session_is_archived,
+          s.metadata AS session_metadata,
+          m.id AS message_id,
+          m.session_id AS message_session_id,
+          m.role AS message_role,
+          m.content AS message_content,
+          m.tool_calls AS message_tool_calls,
+          m.tool_call_id AS message_tool_call_id,
+          m.tokens AS message_tokens,
+          m.created_at AS message_created_at,
+          m.metadata AS message_metadata,
+          NULL AS snippet,
+          0.0 AS score
+        FROM messages m
+        JOIN sessions s ON s.id = m.session_id
+        WHERE 1=1
+      `;
+    }
+
+    for (const token of shortTokens) {
+      sql += ' AND m.content LIKE ?';
+      params.push(`%${token}%`);
+    }
 
     if (options.projectId) {
       sql += ' AND s.project_id = ?';
@@ -345,7 +404,11 @@ export class SessionRepository {
       sql += ' AND s.is_archived = 0';
     }
 
-    sql += ' ORDER BY score ASC, m.id DESC LIMIT ? OFFSET ?';
+    if (longTokens.length > 0) {
+      sql += ' ORDER BY score ASC, m.id DESC LIMIT ? OFFSET ?';
+    } else {
+      sql += ' ORDER BY m.id DESC LIMIT ? OFFSET ?';
+    }
     params.push(limit, offset);
 
     const stmt = this.db.prepare(sql);
@@ -382,13 +445,37 @@ export class SessionRepository {
         metadata: row.message_metadata,
       } as Message & { tool_calls: string | null; metadata: string | null };
 
+      let snippet = row.snippet;
+      if (!snippet && row.message_content) {
+        snippet = this.buildLocalSnippet(row.message_content, allTokens);
+      }
+
       return {
         session: this.deserializeSession(sessionRow),
         message: this.deserializeMessage(messageRow),
-        snippet: row.snippet ?? row.message_content ?? '',
+        snippet: snippet ?? row.message_content ?? '',
         score: row.score,
       };
     });
+  }
+
+  private buildLocalSnippet(text: string, terms: string[], maxLength = 180): string {
+    const compact = text.replace(/\s+/g, ' ').trim();
+    if (compact.length <= maxLength) {
+      return compact;
+    }
+
+    const lower = compact.toLowerCase();
+    const indexes = terms
+      .map((term) => lower.indexOf(term.toLowerCase()))
+      .filter((index) => index >= 0);
+    const first = indexes.length > 0 ? Math.min(...indexes) : 0;
+    const start = Math.max(0, first - 50);
+    const end = Math.min(compact.length, start + maxLength);
+    const snippet = compact.slice(start, end);
+    const prefix = start > 0 ? '...' : '';
+    const suffix = end < compact.length ? '...' : '';
+    return prefix + snippet + suffix;
   }
 
   /**

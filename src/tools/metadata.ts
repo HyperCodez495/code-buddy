@@ -239,9 +239,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'computer_control',
     category: 'system',
-    keywords: ['computer', 'control', 'desktop', 'mouse', 'keyboard', 'window', 'click', 'type', 'automation'],
+    keywords: ['computer', 'control', 'desktop', 'mouse', 'keyboard', 'window', 'dialog', 'modal', 'prompt', 'click', 'type', 'automation', 'form', 'field', 'dropdown', 'listbox', 'checkbox', 'radio', 'tab', 'menu', 'tree', 'treeitem', 'slider', 'range', 'link', 'button', 'assert', 'application', 'profile', 'excel', 'spreadsheet', 'notepad', 'calculator'],
     priority: 6,
-    description: 'Control desktop applications with mouse, keyboard, and window actions'
+    description: 'Control desktop applications with app profiles, Excel automation, mouse, keyboard, windows, dialogs, form fields, dropdowns, lists, buttons, links, radios, tabs, menus, tree items, sliders, checkboxes, and assertions'
   },
 
   // Planning

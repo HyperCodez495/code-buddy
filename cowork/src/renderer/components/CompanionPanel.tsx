@@ -7,7 +7,7 @@
  * @module renderer/components/CompanionPanel
  */
 
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Activity,
   AlertCircle,
@@ -94,6 +94,15 @@ interface RendererCameraFrame {
   mediaPipe?: CompanionMediaPipeVisionAnalysis;
 }
 
+type CompanionCameraSnapshotResult = CameraSnapshotResult & {
+  mediaPipe?: CompanionMediaPipeVisionAnalysis;
+  capturedAt?: number;
+};
+
+type CompanionCameraInspectionResult = CameraSnapshotInspectionResult & {
+  snapshot?: CompanionCameraSnapshotResult;
+};
+
 function cameraErrorMessage(error: unknown): string {
   if (error instanceof Error) return error.message;
   return String(error);
@@ -117,6 +126,17 @@ function canUseRendererCamera(): boolean {
     typeof mediaDevices?.getUserMedia === 'function'
     && typeof companion?.cameraRendererSnapshot === 'function',
   );
+}
+
+function withCaptureTimestamp(
+  snapshot: CompanionCameraSnapshotResult | undefined | null,
+  capturedAt = Date.now(),
+): CompanionCameraSnapshotResult | null {
+  if (!snapshot) return null;
+  return {
+    ...snapshot,
+    capturedAt: snapshot.capturedAt ?? capturedAt,
+  };
 }
 
 async function captureRendererCameraFrame(): Promise<RendererCameraFrame> {
@@ -202,6 +222,109 @@ function ready(ok: boolean): string {
   return ok ? 'Ready' : 'Needs attention';
 }
 
+function countLabel(count: number, noun: string): string {
+  return `${count} ${noun}${count === 1 ? '' : 's'}`;
+}
+
+function mediaPipeVisionSummary(analysis: CompanionMediaPipeVisionAnalysis): string {
+  return `MediaPipe ${analysis.status}: ${[
+    countLabel(analysis.faceCount, 'face'),
+    countLabel(analysis.handCount, 'hand'),
+    countLabel(analysis.poseCount, 'pose'),
+  ].join(', ')}`;
+}
+
+function mediaPipeHandValue(analysis: CompanionMediaPipeVisionAnalysis): string {
+  if (analysis.hands.length === 0) return 'No hands';
+  return analysis.hands
+    .map((hand, index) => {
+      const tips = Object.keys(hand.fingerTips ?? {});
+      return `${hand.handedness ?? `Hand ${index + 1}`}: ${tips.length > 0 ? tips.join(', ') : 'no fingertips'}`;
+    })
+    .join(' / ');
+}
+
+function MediaPipeVisionSummary({ analysis }: { analysis: CompanionMediaPipeVisionAnalysis | null }) {
+  if (!analysis) return null;
+  const available = analysis.status === 'ok';
+
+  return (
+    <div
+      data-testid="mediapipe-vision-summary"
+      className="rounded border border-border bg-surface/35 p-3"
+    >
+      <div className="mb-2 flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Eye className={`h-4 w-4 shrink-0 ${available ? 'text-accent' : 'text-warning'}`} />
+          <span className="truncate text-xs font-semibold text-text-primary">
+            {mediaPipeVisionSummary(analysis)}
+          </span>
+        </div>
+        {typeof analysis.elapsedMs === 'number' && (
+          <span className="shrink-0 text-[10px] text-text-muted">{analysis.elapsedMs}ms</span>
+        )}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatusTile
+          icon={Eye}
+          label="Faces"
+          value={analysis.faceCount > 0 ? `${analysis.faceCount} detected` : 'None detected'}
+          ok={available && analysis.faceCount > 0}
+        />
+        <StatusTile
+          icon={Activity}
+          label="Hands"
+          value={mediaPipeHandValue(analysis)}
+          ok={available && analysis.handCount > 0}
+        />
+        <StatusTile
+          icon={Monitor}
+          label="Pose"
+          value={analysis.poseCount > 0 ? `${analysis.poseCount} body pose` : 'None detected'}
+          ok={available && analysis.poseCount > 0}
+        />
+        <StatusTile
+          icon={Brain}
+          label="Engine"
+          value={analysis.error ?? analysis.engine}
+          ok={available}
+        />
+      </div>
+    </div>
+  );
+}
+
+interface CompanionPulseSignal {
+  label: string;
+  value: string;
+  ok: boolean;
+  recoveryHint?: string;
+}
+
+type CompanionPulseAction =
+  | 'activate'
+  | 'retrySync'
+  | 'inspectVoice'
+  | 'inspectCamera'
+  | 'recordSelf'
+  | 'openVoiceChat'
+  | 'checkIn';
+
+interface CompanionPulse {
+  ok: boolean;
+  title: string;
+  summary: string;
+  nextAction: string;
+  nextActionKey?: CompanionPulseAction;
+  nextActionLabel?: string;
+  signals: CompanionPulseSignal[];
+}
+
+type CompanionSyncState = {
+  at: number;
+  status: 'ok' | 'partial' | 'failed';
+};
+
 function voiceConversationValue(snapshot: VoiceConversationSnapshot | null): string {
   if (!snapshot) return 'No voice session';
   const interruptions = snapshot.interruptionCount > 0
@@ -264,6 +387,18 @@ interface VoiceDiagnostics {
   } | null;
 }
 
+interface VoiceDiagnosticIssue {
+  id: string;
+  label: string;
+  detail?: string;
+  recommendation: string;
+}
+
+interface ReadinessValue {
+  value: string;
+  ok: boolean;
+}
+
 function runtimeVoiceValue(
   companionProvider: string,
   runtime: RuntimeVoiceStatus | null,
@@ -279,7 +414,42 @@ function runtimeVoiceValue(
 
 function routeDiagnosticValue(route: VoiceDiagnostics['stt']): string {
   const fallback = route.fallbackAvailable ? route.fallbackProvider : `${route.fallbackProvider} unavailable`;
-  return `${ready(route.available)} / ${route.provider} / ${fallback}`;
+  if (!route.available) return `Needs attention / ${route.provider} / ${fallback}`;
+  if (!route.fallbackAvailable) return `Degraded / ${route.provider} / ${fallback}`;
+  return `Ready / ${route.provider} / ${fallback}`;
+}
+
+function routeDiagnosticReady(route: VoiceDiagnostics['stt']): boolean {
+  return route.available && route.fallbackAvailable;
+}
+
+function voiceDiagnosticsFreshness(diagnostics: VoiceDiagnostics): { fresh: boolean; age: string } {
+  const checkedAtMs = parseTimestampMs(diagnostics.checkedAt);
+  const ageMs = checkedAtMs === null ? null : Date.now() - checkedAtMs;
+
+  return {
+    fresh: ageMs !== null && ageMs <= COMPANION_VOICE_DIAGNOSTIC_FRESH_MS,
+    age: ageMs === null ? 'unknown age' : formatAge(ageMs),
+  };
+}
+
+function voiceDiagnosticRouteReadiness(
+  route: VoiceDiagnostics['stt'],
+  diagnostics: VoiceDiagnostics,
+): ReadinessValue {
+  const freshness = voiceDiagnosticsFreshness(diagnostics);
+
+  if (!freshness.fresh) {
+    return {
+      value: `Stale diagnostic / ${freshness.age}`,
+      ok: false,
+    };
+  }
+
+  return {
+    value: routeDiagnosticValue(route),
+    ok: routeDiagnosticReady(route),
+  };
 }
 
 function probeDiagnosticValue(enabled: boolean, probe: VoiceDiagnosticProbe | undefined): string {
@@ -287,6 +457,556 @@ function probeDiagnosticValue(enabled: boolean, probe: VoiceDiagnosticProbe | un
   if (!probe) return 'Not checked';
   if (probe.ok) return `Online / ${probe.durationMs}ms`;
   return `Offline / ${probe.error ?? 'connection failed'}`;
+}
+
+const COMPANION_CONTEXT_FRESH_MS = 15 * 60 * 1000;
+const COMPANION_VOICE_DIAGNOSTIC_FRESH_MS = 15 * 60 * 1000;
+const COMPANION_VISION_FRESH_MS = 15 * 60 * 1000;
+const COMPANION_DIALOGUE_FRESH_MS = 15 * 60 * 1000;
+const COMPANION_AUTO_REFRESH_MS = 60 * 1000;
+const COMPANION_RECOVERY_REFRESH_MS = 10 * 1000;
+
+function parseTimestampMs(timestamp: string | undefined): number | null {
+  if (!timestamp) return null;
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function formatAge(ageMs: number): string {
+  const bounded = Math.max(0, ageMs);
+  if (bounded < 60_000) return 'just now';
+  if (bounded < 3_600_000) return `${Math.floor(bounded / 60_000)}m ago`;
+  if (bounded < 86_400_000) return `${Math.floor(bounded / 3_600_000)}h ago`;
+  return `${Math.floor(bounded / 86_400_000)}d ago`;
+}
+
+function companionSyncPresentation(sync: CompanionSyncState): { label: string; detail: string } {
+  const age = formatAge(Date.now() - sync.at);
+  if (sync.status === 'ok') {
+    return {
+      label: `Last sync ${age}`,
+      detail: `Companion sync healthy ${age}; cockpit state is current.`,
+    };
+  }
+
+  if (sync.status === 'partial') {
+    return {
+      label: `Last sync partial ${age}`,
+      detail: `Companion sync partial ${age}; Buddy will retry automatically.`,
+    };
+  }
+
+  return {
+    label: `Last sync failed ${age}`,
+    detail: `Companion sync failed ${age}; Buddy will retry automatically.`,
+  };
+}
+
+function companionSyncSignal(sync: CompanionSyncState | null): CompanionPulseSignal | null {
+  if (!sync || sync.status === 'ok') return null;
+  return {
+    label: 'Sync',
+    value: `${sync.status === 'partial' ? 'Partial' : 'Failed'} / ${formatAge(Date.now() - sync.at)}`,
+    ok: false,
+  };
+}
+
+function companionContextFreshness(input: {
+  percepts: CompanionPercept[];
+  stats: CompanionPerceptStats | null;
+}): CompanionPulseSignal {
+  const candidates = input.percepts
+    .map((percept) => ({
+      modality: percept.modality,
+      source: percept.source,
+      timestampMs: parseTimestampMs(percept.timestamp),
+    }))
+    .filter((percept): percept is { modality: CompanionPerceptModality; source: string; timestampMs: number } => (
+      percept.timestampMs !== null
+    ));
+  const latestStatsTimestamp = parseTimestampMs(input.stats?.latestTimestamp);
+  if (latestStatsTimestamp !== null) {
+    candidates.push({
+      modality: 'memory',
+      source: 'journal',
+      timestampMs: latestStatsTimestamp,
+    });
+  }
+  const latest = candidates.sort((a, b) => b.timestampMs - a.timestampMs)[0] ?? null;
+
+  if (!latest) {
+    return {
+      label: 'Context',
+      value: 'No percept journal yet',
+      ok: false,
+    };
+  }
+
+  const ageMs = Date.now() - latest.timestampMs;
+  const ok = ageMs <= COMPANION_CONTEXT_FRESH_MS;
+  const source = latest.source === 'journal' ? 'journal' : latest.modality;
+  return {
+    label: 'Context',
+    value: `${ok ? 'Fresh' : 'Stale'} / ${source} ${formatAge(ageMs)}`,
+    ok,
+  };
+}
+
+function companionVoiceSignal(input: {
+  status: CompanionStatus;
+  diagnostics: VoiceDiagnostics | null;
+  runtime: RuntimeVoiceStatus | null;
+  ttsRuntime: RuntimeVoiceStatus | null;
+}): CompanionPulseSignal {
+  if (input.diagnostics) {
+    const freshness = voiceDiagnosticsFreshness(input.diagnostics);
+    const diagnosticsReady = voiceDiagnosticIssues(input.diagnostics).length === 0;
+    const ok = freshness.fresh && diagnosticsReady;
+
+    return {
+      label: 'Voice',
+      value: freshness.fresh
+        ? `${ready(diagnosticsReady)} / diagnostic ${freshness.age}`
+        : `Stale diagnostic / ${freshness.age}`,
+      ok,
+    };
+  }
+
+  const runtimeReady = input.status.voice.enabled
+    && (input.runtime?.available ?? input.status.voice.available)
+    && input.status.tts.enabled
+    && (input.ttsRuntime?.available ?? input.status.tts.available);
+
+  return {
+    label: 'Voice',
+    value: `${ready(runtimeReady)} / runtime status`,
+    ok: runtimeReady,
+  };
+}
+
+function companionWakeSignal(status: CompanionStatus): CompanionPulseSignal {
+  const wakeWords = status.wakeWord.wakeWords.length > 0
+    ? status.wakeWord.wakeWords.join(', ')
+    : 'no wake words';
+
+  return {
+    label: 'Wake',
+    value: `${ready(status.wakeWord.available)} / ${status.wakeWord.engine}: ${wakeWords}`,
+    ok: status.wakeWord.available,
+  };
+}
+
+function companionVisionSignal(input: {
+  vision: CompanionMediaPipeVisionAnalysis | null;
+  capturedAt: number | null;
+  cameraAvailable: boolean;
+  rendererCameraCapable: boolean;
+}): CompanionPulseSignal {
+  if (input.vision) {
+    const ageMs = input.capturedAt === null ? null : Date.now() - input.capturedAt;
+    const fresh = ageMs === null || ageMs <= COMPANION_VISION_FRESH_MS;
+    const presenceDetected = input.vision.faceCount > 0
+      || input.vision.handCount > 0
+      || input.vision.poseCount > 0;
+    const ok = input.vision.status === 'ok' && fresh && presenceDetected;
+
+    return {
+      label: 'Vision',
+      value: fresh
+        ? presenceDetected
+          ? mediaPipeVisionSummary(input.vision)
+          : `No presence / ${mediaPipeVisionSummary(input.vision)}`
+        : `Stale MediaPipe / ${formatAge(ageMs)}`,
+      ok,
+    };
+  }
+
+  const capable = input.cameraAvailable || input.rendererCameraCapable;
+  return {
+    label: 'Vision',
+    value: capable ? 'Camera ready for inspection' : 'Camera unavailable',
+    ok: capable,
+  };
+}
+
+function companionDialogueSignal(snapshot: VoiceConversationSnapshot | null): CompanionPulseSignal {
+  if (!snapshot) {
+    return {
+      label: 'Dialogue',
+      value: 'No voice session',
+      ok: false,
+    };
+  }
+
+  if (snapshot.phase === 'error') {
+    return {
+      label: 'Dialogue',
+      value: snapshot.lastError ? `Error / ${snapshot.lastError}` : voiceConversationValue(snapshot),
+      ok: false,
+    };
+  }
+
+  if (snapshot.pendingInterruption) {
+    const reason = snapshot.lastInterruptionReason ? ` / ${snapshot.lastInterruptionReason}` : '';
+    const interruptions = snapshot.interruptionCount > 0
+      ? ` / ${snapshot.interruptionCount} interrupt${snapshot.interruptionCount === 1 ? '' : 's'}`
+      : '';
+    return {
+      label: 'Dialogue',
+      value: `Interruption pending${reason}${interruptions}`,
+      ok: false,
+      recoveryHint: snapshot.resumeInstruction,
+    };
+  }
+
+  const ageMs = Number.isFinite(snapshot.updatedAt) ? Date.now() - snapshot.updatedAt : null;
+  if (ageMs === null || ageMs > COMPANION_DIALOGUE_FRESH_MS) {
+    return {
+      label: 'Dialogue',
+      value: `Stale / ${snapshot.phase} ${ageMs === null ? 'unknown age' : formatAge(ageMs)}`,
+      ok: false,
+    };
+  }
+
+  return {
+    label: 'Dialogue',
+    value: voiceConversationValue(snapshot),
+    ok: true,
+  };
+}
+
+function buildCompanionPulse(input: {
+  status: CompanionStatus | null;
+  stats: CompanionPerceptStats | null;
+  percepts: CompanionPercept[];
+  voiceDiagnostics: VoiceDiagnostics | null;
+  voiceRuntime: RuntimeVoiceStatus | null;
+  ttsRuntime: RuntimeVoiceStatus | null;
+  vision: CompanionMediaPipeVisionAnalysis | null;
+  visionCapturedAt: number | null;
+  rendererCameraCapable: boolean;
+  voiceConversation: VoiceConversationSnapshot | null;
+  sync: CompanionSyncState | null;
+}): CompanionPulse | null {
+  const { status } = input;
+  if (!status) return null;
+
+  const brainReady = status.chatGptCredentialsPresent
+    && status.identity.soulIsCompanion
+    && status.identity.bootIsCompanion;
+  const voiceSignal = companionVoiceSignal({
+    status,
+    diagnostics: input.voiceDiagnostics,
+    runtime: input.voiceRuntime,
+    ttsRuntime: input.ttsRuntime,
+  });
+  const wakeSignal = companionWakeSignal(status);
+  const visionSignal = companionVisionSignal({
+    vision: input.vision,
+    capturedAt: input.visionCapturedAt,
+    cameraAvailable: status.camera.available,
+    rendererCameraCapable: input.rendererCameraCapable,
+  });
+  const dialogueSignal = companionDialogueSignal(input.voiceConversation);
+  const contextSignal = companionContextFreshness({
+    percepts: input.percepts,
+    stats: input.stats,
+  });
+  const syncSignal = companionSyncSignal(input.sync);
+
+  const signals: CompanionPulseSignal[] = [
+    {
+      label: 'Brain',
+      value: brainReady ? status.model : 'ChatGPT login or identity incomplete',
+      ok: brainReady,
+    },
+    ...(syncSignal ? [syncSignal] : []),
+    voiceSignal,
+    wakeSignal,
+    visionSignal,
+    dialogueSignal,
+    contextSignal,
+  ];
+  const readyCount = signals.filter((signal) => signal.ok).length;
+  let action: {
+    nextAction: string;
+    nextActionKey: CompanionPulseAction;
+    nextActionLabel: string;
+  };
+  if (!brainReady) {
+    action = {
+      nextAction: 'Activate companion or connect ChatGPT before asking Buddy to act.',
+      nextActionKey: 'activate',
+      nextActionLabel: 'Activate companion',
+    };
+  } else if (syncSignal) {
+    action = {
+      nextAction: 'Retry companion sync so Buddy refreshes the cockpit before acting.',
+      nextActionKey: 'retrySync',
+      nextActionLabel: 'Retry companion sync',
+    };
+  } else if (!voiceSignal.ok) {
+    action = {
+      nextAction: 'Run Inspect voice and follow the recovery cues before starting a spoken loop.',
+      nextActionKey: 'inspectVoice',
+      nextActionLabel: 'Inspect voice',
+    };
+  } else if (!wakeSignal.ok) {
+    action = {
+      nextAction: 'Run Inspect voice or configure wake word so Buddy can hear spoken instructions hands-free.',
+      nextActionKey: 'inspectVoice',
+      nextActionLabel: 'Inspect voice',
+    };
+  } else if (!visionSignal.ok) {
+    action = {
+      nextAction: 'Run Inspect camera so Buddy can refresh its local visual context.',
+      nextActionKey: 'inspectCamera',
+      nextActionLabel: 'Inspect camera',
+    };
+  } else if (!contextSignal.ok) {
+    action = {
+      nextAction: 'Record self-state so Buddy refreshes its local context before acting.',
+      nextActionKey: 'recordSelf',
+      nextActionLabel: 'Record self-state',
+    };
+  } else if (!dialogueSignal.ok) {
+    action = {
+      nextAction: dialogueSignal.recoveryHint
+        ?? 'Open voice chat or start listening before expecting bidirectional dialogue.',
+      nextActionKey: 'openVoiceChat',
+      nextActionLabel: 'Open voice chat',
+    };
+  } else {
+    action = {
+      nextAction: 'Keep working with Buddy; run a check-in when you want a spoken status.',
+      nextActionKey: 'checkIn',
+      nextActionLabel: 'Buddy check-in',
+    };
+  }
+
+  return {
+    ok: readyCount === signals.length,
+    title: readyCount === signals.length ? 'Buddy pulse steady' : 'Buddy pulse needs attention',
+    summary: `${readyCount}/${signals.length} companion systems ready`,
+    ...action,
+    signals,
+  };
+}
+
+function companionPulseSpeech(pulse: CompanionPulse, syncDetail?: string): string {
+  const spokenSignals = pulse.signals
+    .map((signal) => `${signal.label}: ${signal.value}${signal.ok ? '' : ', needs attention'}`)
+    .join('. ');
+  const spokenSync = syncDetail ? ` Sync: ${syncDetail}` : '';
+  return `${pulse.title}. ${pulse.summary}. ${spokenSignals}.${spokenSync} Next: ${pulse.nextAction}`;
+}
+
+function CompanionPulsePanel({
+  pulse,
+  actionDisabled,
+  syncDetail,
+  onRunAction,
+}: {
+  pulse: CompanionPulse;
+  actionDisabled: boolean;
+  syncDetail?: string;
+  onRunAction: (action: CompanionPulseAction) => void;
+}) {
+  const spokenPulse = companionPulseSpeech(pulse, syncDetail);
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="companion-pulse"
+      className={`rounded border px-3 py-3 ${
+        pulse.ok ? 'border-accent/30 bg-accent/5' : 'border-warning/35 bg-warning/10'
+      }`}
+    >
+      <div className="flex items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          <Activity className={`h-4 w-4 shrink-0 ${pulse.ok ? 'text-accent' : 'text-warning'}`} />
+          <span className="truncate text-sm font-semibold text-text-primary">{pulse.title}</span>
+        </div>
+        <span className="shrink-0 text-[10px] text-text-muted">{pulse.summary}</span>
+      </div>
+      <div className="mt-2 grid grid-cols-2 gap-2">
+        {pulse.signals.map((signal) => (
+          <div
+            key={signal.label}
+            aria-label={`${signal.label}: ${signal.value}; ${signal.ok ? 'ready' : 'needs attention'}`}
+            className="min-w-0 rounded border border-border bg-background/60 px-2 py-1.5"
+          >
+            <div className="flex items-center gap-1.5">
+              <span className={`h-1.5 w-1.5 rounded-full ${signal.ok ? 'bg-accent' : 'bg-warning'}`} />
+              <span className="text-[10px] font-semibold uppercase text-text-muted">{signal.label}</span>
+            </div>
+            <div className="mt-1 truncate text-xs text-text-primary" title={signal.value}>{signal.value}</div>
+          </div>
+        ))}
+      </div>
+      <div
+        data-testid="companion-pulse-next"
+        className="mt-2 flex items-center justify-between gap-2 rounded border border-border bg-background/60 px-2 py-1.5 text-xs text-text-secondary"
+      >
+        <span className="min-w-0">
+          <span className="font-medium text-text-primary">Next:</span> {pulse.nextAction}
+        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          {pulse.nextActionKey && pulse.nextActionLabel && (
+            <button
+              type="button"
+              data-testid="companion-pulse-action"
+              disabled={actionDisabled}
+              onClick={() => onRunAction(pulse.nextActionKey!)}
+              title={pulse.nextAction}
+              className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-primary hover:bg-surface disabled:opacity-50"
+            >
+              <Play className="h-3.5 w-3.5" />
+              {pulse.nextActionLabel}
+            </button>
+          )}
+          <button
+            type="button"
+            onClick={() => void speakText(spokenPulse)}
+            className="inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-primary hover:bg-surface"
+          >
+            <Volume2 className="h-3.5 w-3.5" />
+            Speak pulse
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function voiceDiagnosticIssues(diagnostics: VoiceDiagnostics): VoiceDiagnosticIssue[] {
+  const issues: VoiceDiagnosticIssue[] = [];
+  if (!diagnostics.ok) {
+    issues.push({
+      id: 'diagnostics',
+      label: 'diagnostic check failed',
+      recommendation: 'Run Inspect voice again after checking the local voice services.',
+    });
+  }
+  if (!diagnostics.stt.available) {
+    issues.push({
+      id: 'stt-route',
+      label: 'STT route offline',
+      detail: diagnostics.stt.bootError ?? `provider ${diagnostics.stt.provider} did not become ready`,
+      recommendation: 'Start the selected speech-to-text provider or switch voice input to a working fallback.',
+    });
+  }
+  if (!diagnostics.tts.available) {
+    issues.push({
+      id: 'tts-route',
+      label: 'TTS route offline',
+      detail: diagnostics.tts.bootError ?? `provider ${diagnostics.tts.provider} did not become ready`,
+      recommendation: 'Start the selected text-to-speech provider or switch voice output to a working fallback.',
+    });
+  }
+  if (!diagnostics.stt.fallbackAvailable) {
+    issues.push({
+      id: 'stt-fallback',
+      label: `${diagnostics.stt.fallbackProvider} fallback offline`,
+      recommendation: 'Restore the STT fallback so Buddy can keep listening if the primary route drops.',
+    });
+  }
+  if (!diagnostics.tts.fallbackAvailable) {
+    issues.push({
+      id: 'tts-fallback',
+      label: `${diagnostics.tts.fallbackProvider} fallback offline`,
+      recommendation: 'Restore the TTS fallback so Buddy can keep speaking if the primary route drops.',
+    });
+  }
+  if (diagnostics.kyutai?.sttEnabled && diagnostics.kyutai.sttProbe?.ok === false) {
+    issues.push({
+      id: 'kyutai-stt',
+      label: 'Kyutai STT offline',
+      detail: diagnostics.kyutai.sttProbe.error ?? diagnostics.kyutai.sttProbe.endpoint,
+      recommendation: 'Start the Kyutai ASR streaming endpoint or disable Kyutai STT for now.',
+    });
+  }
+  if (diagnostics.kyutai?.ttsEnabled && diagnostics.kyutai.ttsProbe?.ok === false) {
+    issues.push({
+      id: 'kyutai-tts',
+      label: 'Kyutai TTS offline',
+      detail: diagnostics.kyutai.ttsProbe.error ?? diagnostics.kyutai.ttsProbe.endpoint,
+      recommendation: 'Start the Kyutai TTS streaming endpoint or disable Kyutai TTS for now.',
+    });
+  }
+  if (diagnostics.kyutai && !diagnostics.kyutai.ffmpegFound) {
+    issues.push({
+      id: 'ffmpeg',
+      label: 'ffmpeg missing',
+      detail: `${diagnostics.kyutai.ffmpegBinary} was not found for streaming audio conversion`,
+      recommendation: 'Install ffmpeg or configure a valid ffmpeg binary path before streaming audio.',
+    });
+  }
+  return issues;
+}
+
+function voiceDiagnosticsSummary(diagnostics: VoiceDiagnostics): { ok: boolean; text: string } {
+  const issues = voiceDiagnosticIssues(diagnostics);
+
+  if (issues.length === 0) {
+    return {
+      ok: true,
+      text: 'Voice path ready: input, output, and fallbacks are available.',
+    };
+  }
+
+  const labels = issues.map((issue) => issue.label);
+  return {
+    ok: false,
+    text: `Needs attention: ${labels.slice(0, 4).join('; ')}${labels.length > 4 ? '; ...' : ''}`,
+  };
+}
+
+function VoiceDiagnosticsIssueList({ diagnostics }: { diagnostics: VoiceDiagnostics }) {
+  const issues = voiceDiagnosticIssues(diagnostics);
+  if (issues.length === 0) {
+    return null;
+  }
+
+  return (
+    <div
+      data-testid="voice-diagnostics-actions"
+      className="rounded border border-warning/30 bg-warning/5 px-3 py-2"
+    >
+      <div className="text-[11px] font-semibold uppercase text-text-muted">Recovery cues</div>
+      <ul className="mt-2 space-y-1">
+        {issues.map((issue) => (
+          <li key={issue.id} className="flex items-start gap-2 text-xs text-text-secondary">
+            <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0 text-warning" />
+            <span>
+              <span className="font-medium text-text-primary">{issue.label}</span>
+              {issue.detail && <span className="text-text-muted"> - {issue.detail}</span>}
+              <span className="block text-[11px] text-text-muted">{issue.recommendation}</span>
+            </span>
+          </li>
+        ))}
+      </ul>
+    </div>
+  );
+}
+
+function VoiceDiagnosticsSummaryBanner({ diagnostics }: { diagnostics: VoiceDiagnostics }) {
+  const summary = voiceDiagnosticsSummary(diagnostics);
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      data-testid="voice-diagnostics-summary"
+      className={`rounded border px-3 py-2 text-xs ${
+        summary.ok
+          ? 'border-accent/30 bg-accent/5 text-text-secondary'
+          : 'border-warning/40 bg-warning/10 text-warning'
+      }`}
+    >
+      {summary.text}
+    </div>
+  );
 }
 
 function StatusTile({
@@ -300,8 +1020,12 @@ function StatusTile({
   value: string;
   ok: boolean;
 }) {
+  const testId = `status-tile-${label.toLowerCase().replace(/\s+/g, '-')}`;
   return (
-    <div className="rounded border border-border bg-surface/40 px-3 py-2">
+    <div
+      data-testid={testId}
+      className="rounded border border-border bg-surface/40 px-3 py-2"
+    >
       <div className="flex items-center gap-2">
         <Icon className={`h-4 w-4 ${ok ? 'text-accent' : 'text-warning'}`} />
         <span className="text-[11px] font-semibold uppercase text-text-muted">{label}</span>
@@ -651,11 +1375,14 @@ export function CompanionPanel() {
   const [loading, setLoading] = useState(false);
   const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [lastSnapshot, setLastSnapshot] = useState<CameraSnapshotResult | null>(null);
-  const [lastInspection, setLastInspection] = useState<CameraSnapshotInspectionResult | null>(null);
+  const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
+  const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
+  const [lastSync, setLastSync] = useState<CompanionSyncState | null>(null);
+  const busyActionRef = useRef<typeof busyAction>(null);
+  const refreshInFlightRef = useRef(false);
   const rendererCameraCapable = canUseRendererCamera();
 
-  const captureRendererSnapshot = async (): Promise<CameraSnapshotResult> => {
+  const captureRendererSnapshot = async (): Promise<CompanionCameraSnapshotResult> => {
     const frame = await captureRendererCameraFrame();
     const res = await window.electronAPI.companion.cameraRendererSnapshot({
       dataUrl: frame.dataUrl,
@@ -667,7 +1394,11 @@ export function CompanionPanel() {
     if (!res.ok || !res.result) {
       throw new Error(res.error ?? 'Renderer camera snapshot failed');
     }
-    return res.result;
+    return {
+      ...res.result,
+      mediaPipe: frame.mediaPipe,
+      capturedAt: Date.now(),
+    };
   };
 
   const filteredStats = useMemo(() => {
@@ -675,98 +1406,183 @@ export function CompanionPanel() {
     return Object.entries(stats.byModality).sort(([a], [b]) => a.localeCompare(b));
   }, [stats]);
 
-  const refresh = useCallback(async () => {
-    if (!window.electronAPI?.companion) return;
+  const refresh = useCallback(async (modalityOverride?: CompanionPerceptModality | 'all') => {
+    if (!window.electronAPI?.companion || refreshInFlightRef.current) return;
+    refreshInFlightRef.current = true;
     setLoading(true);
     setError(null);
 
-    const selected = modality === 'all' ? undefined : modality;
-    const [
-      statusRes,
-      recentRes,
-      statsRes,
-      impulsesRes,
-      missionsRes,
-      safetyRecentRes,
-      safetyStatsRes,
-      cardsRes,
-      gatewayRes,
-      skillsRes,
-      voiceConversationRes,
-      voiceRuntimeRes,
-      ttsRuntimeRes,
-      privacyRes,
-    ] = await Promise.all([
-      window.electronAPI.companion.status(),
-      window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
-      window.electronAPI.companion.perceptStats(),
-      window.electronAPI.companion.impulses({ recordSuggestions: false }),
-      window.electronAPI.companion.listMissions(),
-      window.electronAPI.companion.recentSafetyEvents({ limit: 8 }),
-      window.electronAPI.companion.safetyStats(),
-      window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
-      window.electronAPI.companion.gatewayProfile(),
-      window.electronAPI.companion.listSkillCandidates(),
-      window.electronAPI.voice.conversationStatus().catch(() => null),
-      window.electronAPI.voice.status().catch(() => null),
-      window.electronAPI.voice.ttsStatus().catch(() => null),
-      window.electronAPI.companion.privacyReport(),
-    ]);
+    try {
+      const activeModality = modalityOverride ?? modality;
+      const selected = activeModality === 'all' ? undefined : activeModality;
+      const [
+        statusRes,
+        recentRes,
+        statsRes,
+        impulsesRes,
+        missionsRes,
+        safetyRecentRes,
+        safetyStatsRes,
+        cardsRes,
+        gatewayRes,
+        skillsRes,
+        voiceConversationRes,
+        voiceRuntimeRes,
+        ttsRuntimeRes,
+        privacyRes,
+      ] = await Promise.all([
+        window.electronAPI.companion.status(),
+        window.electronAPI.companion.recentPercepts({ limit: 30, modality: selected }),
+        window.electronAPI.companion.perceptStats(),
+        window.electronAPI.companion.impulses({ recordSuggestions: false }),
+        window.electronAPI.companion.listMissions(),
+        window.electronAPI.companion.recentSafetyEvents({ limit: 8 }),
+        window.electronAPI.companion.safetyStats(),
+        window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
+        window.electronAPI.companion.gatewayProfile(),
+        window.electronAPI.companion.listSkillCandidates(),
+        window.electronAPI.voice.conversationStatus().catch(() => null),
+        window.electronAPI.voice.status().catch(() => null),
+        window.electronAPI.voice.ttsStatus().catch(() => null),
+        window.electronAPI.companion.privacyReport(),
+      ]);
 
-    setLoading(false);
-    if (!statusRes.ok) {
-      setStatus(null);
-      setStats(null);
-      setPercepts([]);
-      setImpulses(null);
-      setMissions([]);
-      setSafetyEvents([]);
-      setSafetyStats(null);
-      setCards([]);
-      setGateway(null);
-      setSkillCandidates([]);
+      const partialFailure = !recentRes.ok
+        || !statsRes.ok
+        || !impulsesRes.ok
+        || !missionsRes.ok
+        || !safetyRecentRes.ok
+        || !safetyStatsRes.ok
+        || !cardsRes.ok
+        || !gatewayRes.ok
+        || !skillsRes.ok
+        || !privacyRes.ok;
+      setLastSync(statusRes.error === 'NO_ACTIVE_PROJECT'
+        ? null
+        : {
+          at: Date.now(),
+          status: !statusRes.ok
+            ? 'failed'
+            : partialFailure
+              ? 'partial'
+              : 'ok',
+        });
+      if (!statusRes.ok) {
+        if (statusRes.error === 'NO_ACTIVE_PROJECT') {
+          setStatus(null);
+          setStats(null);
+          setPercepts([]);
+          setEvaluation(null);
+          setRadar(null);
+          setImprovementCycle(null);
+          setImpulses(null);
+          setCheckIn(null);
+          setMissions([]);
+          setMissionRun(null);
+          setSafetyEvents([]);
+          setSafetyStats(null);
+          setCards([]);
+          setGateway(null);
+          setSkillCandidates([]);
+          setSkillCuratorResult(null);
+          setSetupResult(null);
+          setVoiceDiagnostics(null);
+          setPrivacyReport(null);
+          setPrivacyExport(null);
+          setPrivacyPurge(null);
+          setLastSnapshot(null);
+          setLastInspection(null);
+        }
+        setVoiceConversation(voiceConversationRes);
+        setVoiceRuntime(voiceRuntimeRes);
+        setTtsRuntime(ttsRuntimeRes);
+        setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
+        setError(statusRes.error === 'NO_ACTIVE_PROJECT'
+          ? 'Select a project before opening Buddy companion senses.'
+          : statusRes.error ?? 'Failed to load companion status');
+        return;
+      }
+
+      setStatus(statusRes.status ?? null);
+      setPercepts(recentRes.ok ? recentRes.items : []);
+      setStats(statsRes.ok ? statsRes.stats ?? null : null);
+      setImpulses(impulsesRes.ok ? impulsesRes.brief ?? null : null);
+      setMissions(missionsRes.ok ? missionsRes.items : []);
+      setSafetyEvents(safetyRecentRes.ok ? safetyRecentRes.items : []);
+      setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
+      setCards(cardsRes.ok ? cardsRes.items : []);
+      setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
+      setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
       setVoiceConversation(voiceConversationRes);
       setVoiceRuntime(voiceRuntimeRes);
       setTtsRuntime(ttsRuntimeRes);
       setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
-      setError(statusRes.error === 'NO_ACTIVE_PROJECT'
-        ? 'Select a project before opening Buddy companion senses.'
-        : statusRes.error ?? 'Failed to load companion status');
-      return;
-    }
-
-    setStatus(statusRes.status ?? null);
-    setPercepts(recentRes.ok ? recentRes.items : []);
-    setStats(statsRes.ok ? statsRes.stats ?? null : null);
-    setImpulses(impulsesRes.ok ? impulsesRes.brief ?? null : null);
-    setMissions(missionsRes.ok ? missionsRes.items : []);
-    setSafetyEvents(safetyRecentRes.ok ? safetyRecentRes.items : []);
-    setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
-    setCards(cardsRes.ok ? cardsRes.items : []);
-    setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
-    setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
-    setVoiceConversation(voiceConversationRes);
-    setVoiceRuntime(voiceRuntimeRes);
-    setTtsRuntime(ttsRuntimeRes);
-    setPrivacyReport(privacyRes.ok ? privacyRes.report ?? null : null);
-    if (!recentRes.ok || !statsRes.ok || !impulsesRes.ok || !missionsRes.ok || !safetyRecentRes.ok || !safetyStatsRes.ok || !cardsRes.ok || !gatewayRes.ok || !skillsRes.ok || !privacyRes.ok) {
-      setError(recentRes.error
-        ?? statsRes.error
-        ?? impulsesRes.error
-        ?? missionsRes.error
-        ?? safetyRecentRes.error
-        ?? safetyStatsRes.error
-        ?? cardsRes.error
-        ?? gatewayRes.error
-        ?? skillsRes.error
-        ?? privacyRes.error
-        ?? 'Failed to load companion state');
+      if (partialFailure) {
+        setError(recentRes.error
+          ?? statsRes.error
+          ?? impulsesRes.error
+          ?? missionsRes.error
+          ?? safetyRecentRes.error
+          ?? safetyStatsRes.error
+          ?? cardsRes.error
+          ?? gatewayRes.error
+          ?? skillsRes.error
+          ?? privacyRes.error
+          ?? 'Failed to load companion state');
+      }
+    } catch (err) {
+      setLastSync({ at: Date.now(), status: 'failed' });
+      setError(`Failed to refresh companion state: ${cameraErrorMessage(err)}`);
+    } finally {
+      refreshInFlightRef.current = false;
+      setLoading(false);
     }
   }, [modality]);
 
   useEffect(() => {
+    busyActionRef.current = busyAction;
+  }, [busyAction]);
+
+  const refreshIfIdle = useCallback(() => {
+    if (busyActionRef.current !== null || refreshInFlightRef.current) return;
+    void refresh();
+  }, [refresh]);
+
+  useEffect(() => {
     if (show) void refresh();
   }, [show, refresh]);
+
+  useEffect(() => {
+    if (!show) return undefined;
+
+    const timer = window.setInterval(refreshIfIdle, COMPANION_AUTO_REFRESH_MS);
+
+    return () => window.clearInterval(timer);
+  }, [show, refreshIfIdle]);
+
+  useEffect(() => {
+    if (!show || lastSync === null || lastSync.status === 'ok') return undefined;
+
+    const timer = window.setTimeout(refreshIfIdle, COMPANION_RECOVERY_REFRESH_MS);
+
+    return () => window.clearTimeout(timer);
+  }, [lastSync, show, refreshIfIdle]);
+
+  useEffect(() => {
+    if (!show) return undefined;
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState !== 'hidden') refreshIfIdle();
+    };
+
+    window.addEventListener('focus', refreshIfIdle);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', refreshIfIdle);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [show, refreshIfIdle]);
 
   const recordSelf = async () => {
     setBusyAction('self');
@@ -832,7 +1648,7 @@ export function CompanionPanel() {
       );
       return;
     }
-    setLastSnapshot(res.result ?? null);
+    setLastSnapshot(withCaptureTimestamp(res.result));
     await refresh();
   };
 
@@ -869,8 +1685,15 @@ export function CompanionPanel() {
       );
       return;
     }
-    setLastInspection(res.result ?? null);
-    if (res.result?.snapshot) setLastSnapshot(res.result.snapshot);
+    const capturedAt = Date.now();
+    const inspection = res.result
+      ? {
+        ...res.result,
+        snapshot: withCaptureTimestamp(res.result.snapshot, capturedAt) ?? undefined,
+      }
+      : null;
+    setLastInspection(inspection);
+    if (inspection?.snapshot) setLastSnapshot(inspection.snapshot);
     await refresh();
   };
 
@@ -881,6 +1704,10 @@ export function CompanionPanel() {
       const res = await window.electronAPI.voice.diagnostics();
       setVoiceDiagnostics(res);
       if (!res.ok) setError('Voice diagnostics failed');
+      else {
+        setModality('tool');
+        await refresh('tool');
+      }
     } catch (err) {
       setError(`Voice diagnostics failed: ${cameraErrorMessage(err)}`);
     } finally {
@@ -1103,6 +1930,75 @@ export function CompanionPanel() {
     await refresh();
   };
 
+  const activeVisionSnapshot = lastInspection?.snapshot?.mediaPipe ? lastInspection.snapshot : lastSnapshot;
+  const activeMediaPipeVision = activeVisionSnapshot?.mediaPipe ?? null;
+  const voiceInputReadiness = status
+    ? voiceDiagnostics
+      ? voiceDiagnosticRouteReadiness(voiceDiagnostics.stt, voiceDiagnostics)
+      : {
+        value: `${ready(status.voice.enabled && (voiceRuntime?.available ?? status.voice.available))} / ${runtimeVoiceValue(status.voice.provider, voiceRuntime, 'sttEnabled')}`,
+        ok: status.voice.enabled && (voiceRuntime?.available ?? status.voice.available),
+      }
+    : null;
+  const voiceOutputReadiness = status
+    ? voiceDiagnostics
+      ? voiceDiagnosticRouteReadiness(voiceDiagnostics.tts, voiceDiagnostics)
+      : {
+        value: `${ready(status.tts.enabled && (ttsRuntime?.available ?? status.tts.available))} / ${runtimeVoiceValue(status.tts.provider, ttsRuntime, 'ttsEnabled')}`,
+        ok: status.tts.enabled && (ttsRuntime?.available ?? status.tts.available),
+      }
+    : null;
+  const wakeReadiness = status ? companionWakeSignal(status) : null;
+  const visionReadiness = status
+    ? companionVisionSignal({
+      vision: activeMediaPipeVision,
+      capturedAt: activeVisionSnapshot?.capturedAt ?? null,
+      cameraAvailable: status.camera.available,
+      rendererCameraCapable,
+    })
+    : null;
+  const dialogueReadiness = companionDialogueSignal(voiceConversation);
+  const companionPulse = buildCompanionPulse({
+    status,
+    stats,
+    percepts,
+    voiceDiagnostics,
+    voiceRuntime,
+    ttsRuntime,
+    vision: activeMediaPipeVision,
+    visionCapturedAt: activeVisionSnapshot?.capturedAt ?? null,
+    rendererCameraCapable,
+    voiceConversation,
+    sync: lastSync,
+  });
+  const syncPresentation = lastSync ? companionSyncPresentation(lastSync) : null;
+  const runPulseAction = (action: CompanionPulseAction) => {
+    if (busyAction !== null) return;
+    switch (action) {
+      case 'activate':
+        void activateCompanion();
+        break;
+      case 'retrySync':
+        refreshIfIdle();
+        break;
+      case 'inspectVoice':
+        void inspectVoice();
+        break;
+      case 'inspectCamera':
+        void inspectCamera();
+        break;
+      case 'recordSelf':
+        void recordSelf();
+        break;
+      case 'openVoiceChat':
+        window.dispatchEvent(new Event('cowork:open-voice-chat'));
+        break;
+      case 'checkIn':
+        void runCheckIn();
+        break;
+    }
+  };
+
   if (!show) return null;
 
   return (
@@ -1133,7 +2029,10 @@ export function CompanionPanel() {
         </div>
 
         {error && (
-          <div className="mx-4 mt-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning">
+          <div
+            role="alert"
+            className="mx-4 mt-3 flex items-start gap-2 rounded border border-warning/40 bg-warning/10 px-3 py-2 text-xs text-warning"
+          >
             <AlertCircle className="mt-0.5 h-3.5 w-3.5 shrink-0" />
             <span>{error}</span>
           </div>
@@ -1143,7 +2042,33 @@ export function CompanionPanel() {
           <section className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Readiness</h3>
-              {status?.cwd && <span className="text-[10px] text-text-muted truncate max-w-[360px]">{status.cwd}</span>}
+              <div className="flex min-w-0 flex-col items-end gap-0.5">
+                {syncPresentation !== null && (
+                  <div className="flex items-center gap-1">
+                    <span
+                      data-testid="companion-last-sync"
+                      aria-label={syncPresentation.detail}
+                      title={syncPresentation.detail}
+                      className={`text-[10px] ${lastSync?.status === 'ok' ? 'text-text-muted' : 'text-warning'}`}
+                    >
+                      {syncPresentation.label}
+                    </span>
+                    {lastSync?.status !== 'ok' && (
+                      <button
+                        type="button"
+                        onClick={refreshIfIdle}
+                        disabled={busyAction !== null || loading}
+                        aria-label="Retry companion sync"
+                        title="Retry companion sync"
+                        className="rounded p-0.5 text-warning hover:bg-warning/10 disabled:opacity-50"
+                      >
+                        <RefreshCw className="h-3 w-3" />
+                      </button>
+                    )}
+                  </div>
+                )}
+                {status?.cwd && <span className="max-w-[360px] truncate text-[10px] text-text-muted">{status.cwd}</span>}
+              </div>
             </div>
 
             {status ? (
@@ -1163,44 +2088,46 @@ export function CompanionPanel() {
                 <StatusTile
                   icon={Mic}
                   label="Voice input"
-                  value={`${ready(status.voice.enabled && (voiceRuntime?.available ?? status.voice.available))} / ${runtimeVoiceValue(status.voice.provider, voiceRuntime, 'sttEnabled')}`}
-                  ok={status.voice.enabled && (voiceRuntime?.available ?? status.voice.available)}
+                  value={voiceInputReadiness?.value ?? 'Needs attention / voice input unavailable'}
+                  ok={voiceInputReadiness?.ok ?? false}
                 />
                 <StatusTile
                   icon={Volume2}
                   label="Voice output"
-                  value={`${ready(status.tts.enabled && (ttsRuntime?.available ?? status.tts.available))} / ${runtimeVoiceValue(status.tts.provider, ttsRuntime, 'ttsEnabled')}`}
-                  ok={status.tts.enabled && (ttsRuntime?.available ?? status.tts.available)}
+                  value={voiceOutputReadiness?.value ?? 'Needs attention / voice output unavailable'}
+                  ok={voiceOutputReadiness?.ok ?? false}
                 />
                 <StatusTile
                   icon={Activity}
                   label="Dialogue"
-                  value={voiceConversationValue(voiceConversation)}
-                  ok={Boolean(voiceConversation && voiceConversation.phase !== 'error')}
+                  value={dialogueReadiness.value}
+                  ok={dialogueReadiness.ok}
                 />
                 <StatusTile
                   icon={Camera}
                   label="Camera"
-                  value={
-                    status.camera.available
-                      ? `${ready(true)} / ${status.camera.platform}`
-                      : rendererCameraCapable
-                        ? 'Renderer capture / browser'
-                        : `${ready(false)} / ${status.camera.platform}`
-                  }
-                  ok={status.camera.available || rendererCameraCapable}
+                  value={visionReadiness?.value ?? 'Camera unavailable'}
+                  ok={visionReadiness?.ok ?? false}
                 />
                 <StatusTile
                   icon={Radio}
                   label="Wake word"
-                  value={`${status.wakeWord.engine} / ${status.wakeWord.wakeWords.join(', ')}`}
-                  ok={status.wakeWord.available}
+                  value={wakeReadiness?.value ?? 'Needs attention / wake word unavailable'}
+                  ok={wakeReadiness?.ok ?? false}
                 />
               </div>
             ) : (
               <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
                 {loading ? 'Loading companion state...' : 'No companion status loaded.'}
               </div>
+            )}
+            {companionPulse && (
+              <CompanionPulsePanel
+                pulse={companionPulse}
+                actionDisabled={busyAction !== null || loading}
+                syncDetail={syncPresentation?.detail}
+                onRunAction={runPulseAction}
+              />
             )}
           </section>
 
@@ -1328,6 +2255,8 @@ export function CompanionPanel() {
                   {new Date(voiceDiagnostics.checkedAt).toLocaleTimeString()}
                 </span>
               </div>
+              <VoiceDiagnosticsSummaryBanner diagnostics={voiceDiagnostics} />
+              <VoiceDiagnosticsIssueList diagnostics={voiceDiagnostics} />
               <div className="grid grid-cols-2 gap-2">
                 <StatusTile
                   icon={Mic}
@@ -1437,6 +2366,7 @@ export function CompanionPanel() {
                   </div>
                 </div>
               </div>
+              <MediaPipeVisionSummary analysis={activeMediaPipeVision} />
             </section>
           )}
 

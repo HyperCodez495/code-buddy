@@ -130,6 +130,27 @@ function makeStepId(prefix: string, nodeId: string): string {
   return `${prefix}_${nodeId}`;
 }
 
+function compileExpressions(str: string): string {
+  return str.replace(/\$task_([a-zA-Z0-9_-]+)(?:\.output)?/g, '$task_task_$1');
+}
+
+function compileInput(input: any): any {
+  if (typeof input === 'string') {
+    return compileExpressions(input);
+  }
+  if (Array.isArray(input)) {
+    return input.map(compileInput);
+  }
+  if (input !== null && typeof input === 'object') {
+    const res: Record<string, any> = {};
+    for (const [key, val] of Object.entries(input)) {
+      res[key] = compileInput(val);
+    }
+    return res;
+  }
+  return input;
+}
+
 function ensureToolConfig(node: WorkflowVisualNode): ToolNodeConfig {
   const cfg = node.config as Partial<ToolNodeConfig> | undefined;
   if (!cfg || typeof cfg.toolName !== 'string' || cfg.toolName.length === 0) {
@@ -197,6 +218,31 @@ function ensureLoopConfig(node: WorkflowVisualNode): LoopNodeConfig {
   return {
     condition: cfg.condition,
     maxIterations: typeof cfg.maxIterations === 'number' ? cfg.maxIterations : undefined,
+  };
+}
+
+interface BatchNodeConfig {
+  itemsExpression: string;
+  variableName: string;
+  concurrencyLimit?: number;
+}
+
+function ensureBatchConfig(node: WorkflowVisualNode): BatchNodeConfig {
+  const cfg = node.config as any;
+  if (!cfg || typeof cfg.itemsExpression !== 'string' || cfg.itemsExpression.length === 0) {
+    throw new CompilationError(
+      `Node '${node.id}' (batch): missing config.itemsExpression`
+    );
+  }
+  if (typeof cfg.variableName !== 'string' || cfg.variableName.length === 0) {
+    throw new CompilationError(
+      `Node '${node.id}' (batch): missing config.variableName`
+    );
+  }
+  return {
+    itemsExpression: cfg.itemsExpression,
+    variableName: cfg.variableName,
+    concurrencyLimit: typeof cfg.concurrencyLimit === 'number' ? cfg.concurrencyLimit : undefined,
   };
 }
 
@@ -354,7 +400,7 @@ function compileSingle(
               input: {
                 cowork_visual_node_id: node.id,
                 toolName: cfg.toolName,
-                toolInput: cfg.toolInput,
+                toolInput: compileInput(cfg.toolInput),
               },
               requiredCapabilities: ['tool_invoke'],
               priority: 'medium',
@@ -382,7 +428,7 @@ function compileSingle(
               input: {
                 cowork_visual_node_id: node.id,
                 variableName: cfg.name,
-                valueExpression: cfg.valueExpression,
+                valueExpression: compileExpressions(cfg.valueExpression),
               },
               requiredCapabilities: ['set_variable'],
               priority: 'medium',
@@ -453,7 +499,7 @@ function compileSingle(
           id: makeStepId('step', node.id),
           name: node.name || 'condition',
           type: 'conditional',
-          condition: cfg.expression,
+          condition: compileExpressions(cfg.expression),
           trueBranch: compileChain(ctx, trueTarget, stopAt),
           falseBranch: compileChain(ctx, falseTarget, stopAt),
         },
@@ -518,7 +564,7 @@ function compileSingle(
         id: makeStepId('step', node.id),
         name: node.name || 'loop',
         type: 'loop',
-        loopCondition: cfg.condition,
+        loopCondition: compileExpressions(cfg.condition),
         loopBody,
       };
       // maxIterations is not natively part of the core WorkflowStep type
@@ -527,6 +573,41 @@ function compileSingle(
       if (cfg.maxIterations) {
         stepBase.name = `${stepBase.name} (max ${cfg.maxIterations})`;
       }
+      return {
+        step: stepBase,
+        continueFrom: exitTarget,
+      };
+    }
+    case 'batch': {
+      const cfg = ensureBatchConfig(node);
+      const out = ctx.outgoingByNode.get(node.id) ?? [];
+      const bodyEdge = out.find((e) => e.label === 'body');
+      const exitEdge = out.find((e) => e.label === 'exit');
+      if (!bodyEdge || !exitEdge) {
+        throw new CompilationError(
+          `Node '${node.id}' (batch): outgoing edges must be labelled 'body' and 'exit'`
+        );
+      }
+      if (out.length !== 2) {
+        throw new CompilationError(
+          `Node '${node.id}' (batch): expected exactly 2 outgoing edges (body + exit), found ${out.length}`
+        );
+      }
+      const bodyTarget = ctx.byId.get(bodyEdge.target);
+      const exitTarget = ctx.byId.get(exitEdge.target);
+      if (!bodyTarget || !exitTarget) {
+        throw new CompilationError(`Node '${node.id}' (batch): edge target missing`);
+      }
+      const batchBody = compileChain(ctx, bodyTarget);
+      const stepBase: CoreWorkflowStep = {
+        id: makeStepId('step', node.id),
+        name: node.name || 'batch',
+        type: 'batch' as any,
+        batchItemsExpression: compileExpressions(cfg.itemsExpression),
+        batchVariableName: cfg.variableName,
+        batchConcurrencyLimit: cfg.concurrencyLimit,
+        batchBody,
+      } as any;
       return {
         step: stepBase,
         continueFrom: exitTarget,

@@ -3,33 +3,56 @@ import fs from 'fs-extra';
 import path from 'path';
 import os from 'os';
 import { BrowserOperatorExecutor } from '../../src/browser-automation/browser-operator-executor.js';
+import { ConfirmationService } from '../../src/utils/confirmation-service.js';
 import type { BrowserOperatorSessionDraft } from '../../src/browser-automation/browser-operator-session.js';
 
-const mockExecute = vi.fn();
-const mockScreenshot = vi.fn().mockResolvedValue(Buffer.from('fake-png'));
-const mockLaunch = vi.fn();
-const mockClose = vi.fn();
+let pageContentMock = '<html><body>normal page</body></html>';
+let mockGoto = vi.fn();
+let mockAct = vi.fn();
+let mockScreenshot = vi.fn();
+let mockClose = vi.fn();
+let mockInit = vi.fn();
+let mockEvaluate = vi.fn();
+let mockWheel = vi.fn();
+let mockPress = vi.fn();
+let mockFill = vi.fn();
+let mockClick = vi.fn();
+let mockObserve = vi.fn();
 
-vi.mock('../../src/browser-automation/browser-tool.js', () => ({
-  getBrowserTool: () => ({
-    execute: mockExecute,
-  }),
-}));
-
-vi.mock('../../src/browser-automation/browser-manager.js', () => ({
-  getBrowserManager: () => ({
-    launch: mockLaunch,
-    close: mockClose,
-    screenshot: mockScreenshot,
-  }),
-}));
+vi.mock('@browserbasehq/stagehand', () => {
+  return {
+    Stagehand: class {
+      init = mockInit;
+      close = mockClose;
+      page = {
+        content: vi.fn().mockImplementation(() => Promise.resolve(pageContentMock)),
+        goto: vi.fn().mockImplementation((...args) => mockGoto(...args)),
+        act: vi.fn().mockImplementation((...args) => mockAct(...args)),
+        screenshot: vi.fn().mockImplementation((...args) => mockScreenshot(...args)),
+        evaluate: vi.fn().mockImplementation((...args) => mockEvaluate(...args)),
+        observe: vi.fn().mockImplementation((...args) => mockObserve(...args)),
+        mouse: { wheel: vi.fn().mockImplementation((...args) => mockWheel(...args)) },
+        keyboard: { press: vi.fn().mockImplementation((...args) => mockPress(...args)) },
+        locator: vi.fn().mockImplementation(() => ({
+          fill: vi.fn().mockImplementation((...args) => mockFill(...args)),
+          click: vi.fn().mockImplementation((...args) => mockClick(...args)),
+        })),
+        title: vi.fn().mockResolvedValue('Example title'),
+        url: vi.fn().mockReturnValue('https://example.com/current'),
+      };
+    },
+  };
+});
 
 describe('BrowserOperatorExecutor', () => {
   let tempDir: string;
   let sampleDraft: BrowserOperatorSessionDraft;
+  let confirmSpy: ReturnType<typeof vi.spyOn>;
 
   beforeEach(async () => {
     tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'browser-executor-'));
+    confirmSpy = vi.spyOn(ConfirmationService.getInstance(), 'requestConfirmation');
+    confirmSpy.mockResolvedValue({ confirmed: true });
     
     sampleDraft = {
       schemaVersion: 1,
@@ -83,13 +106,30 @@ describe('BrowserOperatorExecutor', () => {
       proofExport: ['action log'],
     };
 
-    mockExecute.mockReset();
-    mockScreenshot.mockClear();
-    mockLaunch.mockClear();
-    mockClose.mockClear();
+    pageContentMock = '<html><body>normal page</body></html>';
+    mockGoto = vi.fn().mockResolvedValue(undefined);
+    mockAct = vi.fn().mockResolvedValue(undefined);
+    mockScreenshot = vi.fn().mockResolvedValue(Buffer.from('fake-png'));
+    mockClose = vi.fn().mockResolvedValue(undefined);
+    mockInit = vi.fn().mockResolvedValue(undefined);
+    mockEvaluate = vi.fn().mockResolvedValue({
+      url: 'https://example.com/current',
+      title: 'Example title',
+      text: 'Example text',
+      headings: [],
+      actions: [],
+      fields: [],
+      links: [],
+    });
+    mockWheel = vi.fn().mockResolvedValue(undefined);
+    mockPress = vi.fn().mockResolvedValue(undefined);
+    mockFill = vi.fn().mockResolvedValue(undefined);
+    mockClick = vi.fn().mockResolvedValue(undefined);
+    mockObserve = vi.fn().mockResolvedValue([]);
   });
 
   afterEach(async () => {
+    confirmSpy.mockRestore();
     await fs.remove(tempDir);
   });
 
@@ -99,8 +139,6 @@ describe('BrowserOperatorExecutor', () => {
   });
 
   it('should run successfully when consent is granted', async () => {
-    mockExecute.mockResolvedValue({ success: true, output: 'Action completed' });
-
     const executor = new BrowserOperatorExecutor(sampleDraft);
     executor.grantConsent('test-operator');
 
@@ -108,17 +146,15 @@ describe('BrowserOperatorExecutor', () => {
 
     expect(result.success).toBe(true);
     expect(result.stopped).toBe(false);
-    expect(mockLaunch).toHaveBeenCalled();
+    expect(mockInit).toHaveBeenCalled();
     expect(mockClose).toHaveBeenCalled();
 
     // Verify all actions completed
     expect(result.actionLog.every(a => a.status === 'completed')).toBe(true);
 
-    // Verify correct calls to getBrowserTool().execute
-    expect(mockExecute).toHaveBeenCalledTimes(3);
-    expect(mockExecute).toHaveBeenNthCalledWith(1, { action: 'navigate', url: 'https://example.com/target' });
-    expect(mockExecute).toHaveBeenNthCalledWith(2, { action: 'type', ref: 42, text: 'hello' });
-    expect(mockExecute).toHaveBeenNthCalledWith(3, { action: 'click', ref: 123 });
+    expect(mockGoto).toHaveBeenCalledWith('https://example.com/target', expect.objectContaining({ waitUntil: 'domcontentloaded' }));
+    expect(mockAct).toHaveBeenCalledWith({ action: 'type "hello" into 42' });
+    expect(mockAct).toHaveBeenCalledWith({ action: 'click element with reference 123' });
 
     // Verify proof artifact was written
     const proofPath = path.join(tempDir, '.codebuddy', 'runs', 'session-123', 'artifacts', 'session-123.browser-operator.json');
@@ -126,15 +162,31 @@ describe('BrowserOperatorExecutor', () => {
     const proof = await fs.readJson(proofPath);
     expect(proof.success).toBe(true);
     expect(proof.consent.grantedBy).toBe('test-operator');
+    expect(proof.harness.run.kind).toBe('run');
+    expect(proof.harness.run.status).toBe('completed');
+    expect(proof.harness.proof.kind).toBe('proof');
+    expect(proof.harness.proof.ref).toBe('session-123.browser-operator.json');
+    expect(proof.harness.sensitiveAction).toMatchObject({
+      kind: 'sensitive-action',
+      id: 'codebuddy.browser_operator.execute',
+      defaultDryRun: true,
+      requires: 'approval-required',
+    });
+    expect(proof.harness.approval).toMatchObject({
+      kind: 'approval',
+      decision: 'approved',
+      reviewer: 'test-operator',
+    });
+    expect(proof.harness.capabilities.map((cap: { id: string }) => cap.id)).toContain('codebuddy.browser_operator.live_control');
   });
 
   it('should stop mid-run if stop() is called', async () => {
-    mockExecute.mockImplementation(async () => {
+    let executor: BrowserOperatorExecutor;
+    mockGoto.mockImplementation(async () => {
       executor.stop();
-      return { success: true, output: 'Action completed' };
     });
 
-    const executor = new BrowserOperatorExecutor(sampleDraft);
+    executor = new BrowserOperatorExecutor(sampleDraft);
     executor.grantConsent();
 
     const result = await executor.execute(tempDir);
@@ -146,7 +198,7 @@ describe('BrowserOperatorExecutor', () => {
   });
 
   it('should stop and set status to stopped when a stop condition is met', async () => {
-    mockExecute.mockResolvedValue({ success: true, output: 'Operation completed successfully. Found done!' });
+    sampleDraft.stopControl.stopConditions = ['target'];
 
     const executor = new BrowserOperatorExecutor(sampleDraft);
     executor.grantConsent();
@@ -154,6 +206,127 @@ describe('BrowserOperatorExecutor', () => {
     const result = await executor.execute(tempDir);
 
     expect(result.stopped).toBe(true);
-    expect(result.actionLog[0]!.status).toBe('stopped'); // Since first action output matched "done" (from "successfully. Found done!"), it stops immediately!
+    expect(result.actionLog[0]!.status).toBe('stopped');
+  });
+
+  it('should pilot deterministic selectors, keyboard, scroll, extraction and screenshots', async () => {
+    sampleDraft.actionLog = [
+      {
+        id: 'open',
+        sequence: 1,
+        tool: 'navigate',
+        title: 'Open app',
+        requiresConsent: false,
+        status: 'planned',
+        inputs: { url: 'https://example.com/app' },
+      },
+      {
+        id: 'fill-email',
+        sequence: 2,
+        tool: 'fill',
+        title: 'Fill email',
+        requiresConsent: true,
+        status: 'planned',
+        inputs: { selector: '#email', value: 'patrice@example.com' },
+      },
+      {
+        id: 'press-enter',
+        sequence: 3,
+        tool: 'press',
+        title: 'Submit',
+        requiresConsent: true,
+        status: 'planned',
+        inputs: { key: 'Enter' },
+      },
+      {
+        id: 'scroll',
+        sequence: 4,
+        tool: 'scroll',
+        title: 'Scroll down',
+        requiresConsent: false,
+        status: 'planned',
+        inputs: { direction: 'down', amount: 480 },
+      },
+      {
+        id: 'extract',
+        sequence: 5,
+        tool: 'browser',
+        action: 'extract',
+        title: 'Extract DOM',
+        requiresConsent: false,
+        status: 'planned',
+        inputs: {},
+      },
+      {
+        id: 'screen',
+        sequence: 6,
+        tool: 'screenshot',
+        title: 'Capture proof',
+        requiresConsent: false,
+        status: 'planned',
+        inputs: {},
+      },
+    ];
+
+    const executor = new BrowserOperatorExecutor(sampleDraft);
+    executor.grantConsent();
+
+    const result = await executor.execute(tempDir);
+
+    expect(result.success).toBe(true);
+    expect(mockFill).toHaveBeenCalledWith('patrice@example.com');
+    expect(mockPress).toHaveBeenCalledWith('Enter');
+    expect(mockWheel).toHaveBeenCalledWith(0, 480);
+    expect(mockEvaluate).toHaveBeenCalled();
+    expect(mockScreenshot).toHaveBeenCalled();
+    expect(await fs.pathExists(path.join(tempDir, '.codebuddy', 'runs', 'session-123', 'artifacts', 'evidence_screen.png'))).toBe(true);
+  });
+
+  it('should identify a target element with Stagehand observe before acting deterministically', async () => {
+    mockObserve.mockResolvedValue([
+      {
+        selector: '#secondary',
+        description: 'Secondary cancel button',
+        method: 'click',
+      },
+      {
+        selector: '#save-primary',
+        description: 'Primary save button for the current form',
+        method: 'click',
+      },
+    ]);
+    sampleDraft.actionLog = [
+      {
+        id: 'open',
+        sequence: 1,
+        tool: 'navigate',
+        title: 'Open app',
+        requiresConsent: false,
+        status: 'planned',
+        inputs: { url: 'https://example.com/app' },
+      },
+      {
+        id: 'save',
+        sequence: 2,
+        tool: 'click',
+        title: 'Save form',
+        requiresConsent: true,
+        status: 'planned',
+        inputs: { target: 'primary save button' },
+      },
+    ];
+
+    const executor = new BrowserOperatorExecutor(sampleDraft);
+    executor.grantConsent();
+
+    const result = await executor.execute(tempDir);
+
+    expect(result.success).toBe(true);
+    expect(mockObserve).toHaveBeenCalledWith(expect.objectContaining({
+      instruction: expect.stringContaining('primary save button'),
+    }));
+    expect(mockClick).toHaveBeenCalledWith({ button: 'left', clickCount: 1 });
+    expect(result.actionLog[1]!.evidence).toContain('#save-primary');
+    expect(result.actionLog[1]!.evidence).toContain('stagehand-observe');
   });
 });

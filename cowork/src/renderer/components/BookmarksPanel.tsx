@@ -78,7 +78,10 @@ export function BookmarksPanel() {
   if (!showBookmarksPanel) return null;
 
   return (
-    <div className="fixed inset-y-0 right-0 z-40 w-96 bg-background border-l border-border shadow-2xl flex flex-col">
+    <div
+      className="fixed inset-y-0 right-0 z-40 w-96 bg-background border-l border-border shadow-2xl flex flex-col"
+      data-testid="bookmarks-panel"
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border">
         <div className="flex items-center gap-2">
@@ -105,6 +108,7 @@ export function BookmarksPanel() {
           <input
             value={query}
             onChange={(ev) => setQuery(ev.target.value)}
+            data-testid="bookmarks-search-input"
             placeholder={t('bookmarks.searchPlaceholder')}
             className="w-full pl-7 pr-2 py-1.5 rounded-md bg-surface border border-border text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
           />
@@ -112,6 +116,7 @@ export function BookmarksPanel() {
         <div className="flex gap-1">
           <button
             onClick={() => setScope('project')}
+            data-testid="bookmarks-scope-project"
             className={`flex-1 text-xs px-2 py-1 rounded transition-colors ${
               scope === 'project'
                 ? 'bg-accent/20 text-accent'
@@ -122,6 +127,7 @@ export function BookmarksPanel() {
           </button>
           <button
             onClick={() => setScope('all')}
+            data-testid="bookmarks-scope-all"
             className={`flex-1 text-xs px-2 py-1 rounded transition-colors ${
               scope === 'all'
                 ? 'bg-accent/20 text-accent'
@@ -147,6 +153,7 @@ export function BookmarksPanel() {
           filtered.map((bookmark) => (
             <div
               key={bookmark.id}
+              data-testid={`bookmark-row-${bookmark.id}`}
               className="px-4 py-3 border-b border-border-muted hover:bg-surface-hover transition-colors group"
             >
               <div className="flex items-start gap-2">
@@ -171,6 +178,7 @@ export function BookmarksPanel() {
                 </button>
                 <button
                   onClick={() => handleRemove(bookmark)}
+                  data-testid={`bookmark-remove-${bookmark.id}`}
                   className="p-1 rounded hover:bg-error/20 text-text-muted hover:text-error opacity-0 group-hover:opacity-100 transition-all"
                   title={t('bookmarks.remove')}
                 >

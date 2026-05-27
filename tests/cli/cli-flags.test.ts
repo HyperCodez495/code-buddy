@@ -3,7 +3,7 @@ import path from 'path';
 import os from 'os';
 import { validateOutputSchema } from '../../src/utils/output-schema-validator';
 import { SessionStore } from '../../src/persistence/session-store';
-import { resolveHeadlessOutputFormat } from '../../src/cli/headless-options';
+import { resolveHeadlessOutputFormat, resolveHeadlessResultExitCode } from '../../src/cli/headless-options';
 
 // ============================================================================
 // Feature 1: --output-schema validation
@@ -191,6 +191,11 @@ describe('Headless output option resolution', () => {
   it('falls back to --output and then json', () => {
     expect(resolveHeadlessOutputFormat({ output: 'stream-json' })).toBe('stream-json');
     expect(resolveHeadlessOutputFormat({})).toBe('json');
+  });
+
+  it('marks canonical assistant error envelopes as failed headless runs', () => {
+    expect(resolveHeadlessResultExitCode('Sorry, I encountered an error: provider failed')).toBe(1);
+    expect(resolveHeadlessResultExitCode('Normal assistant answer')).toBe(0);
   });
 });
 

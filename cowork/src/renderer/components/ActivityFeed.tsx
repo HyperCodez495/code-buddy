@@ -158,7 +158,10 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
   if (!open) return null;
 
   return (
-    <div className="fixed right-0 top-0 bottom-0 w-[400px] max-w-[90vw] bg-background border-l border-border shadow-elevated z-40 flex flex-col">
+    <div
+      className="fixed right-0 top-0 bottom-0 w-[400px] max-w-[90vw] bg-background border-l border-border shadow-elevated z-40 flex flex-col"
+      data-testid="activity-feed"
+    >
       {/* Header */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-border-muted shrink-0">
         <div className="flex items-center gap-2">
@@ -175,6 +178,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
             <button
               type="button"
               onClick={() => setFilter('all')}
+              data-testid="activity-filter-all"
               className={`px-2 py-1 text-[10px] transition-colors ${
                 filter === 'all'
                   ? 'bg-accent text-background'
@@ -186,6 +190,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
             <button
               type="button"
               onClick={() => setFilter('fleet')}
+              data-testid="activity-filter-fleet"
               className={`px-2 py-1 text-[10px] transition-colors ${
                 filter === 'fleet'
                   ? 'bg-accent text-background'
@@ -197,6 +202,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
             <button
               type="button"
               onClick={() => setFilter('scheduled')}
+              data-testid="activity-filter-scheduled"
               className={`px-2 py-1 text-[10px] transition-colors ${
                 filter === 'scheduled'
                   ? 'bg-accent text-background'
@@ -260,6 +266,7 @@ export const ActivityFeed: React.FC<ActivityFeedProps> = ({ open, onClose }) => 
                   <button
                     key={entry.id}
                     onClick={() => handleClick(entry)}
+                    data-testid={`activity-entry-${entry.id}`}
                     className="w-full flex items-start gap-3 px-4 py-2.5 hover:bg-surface-hover transition-colors text-left border-l-2 border-transparent hover:border-accent"
                   >
                     <Icon size={12} className="text-text-muted shrink-0 mt-0.5" />

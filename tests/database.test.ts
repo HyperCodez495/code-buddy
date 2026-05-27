@@ -402,6 +402,38 @@ describe.skipIf(!hasBetterSqlite3)('Database System', () => {
       expect(results[0].session.id).toBe('test-session-1');
     });
 
+    it('should search session messages with short terms and CJK characters', () => {
+      repo.createSession({
+        id: 'test-session-cjk',
+        project_id: 'test-project',
+        name: 'CJK Session',
+        model: 'grok-beta',
+      });
+
+      repo.addMessage({
+        session_id: 'test-session-cjk',
+        role: 'user',
+        content: 'I want to optimize our db using go, js, and test some 测试 cases.',
+        tokens: 20,
+      });
+
+      const resultsDb = repo.searchMessages('db');
+      expect(resultsDb.length).toBeGreaterThanOrEqual(1);
+      expect(resultsDb[0].message.content).toContain('db');
+
+      const resultsGo = repo.searchMessages('go');
+      expect(resultsGo.length).toBeGreaterThanOrEqual(1);
+      expect(resultsGo[0].message.content).toContain('go');
+
+      const resultsCjkSingle = repo.searchMessages('测');
+      expect(resultsCjkSingle.length).toBeGreaterThanOrEqual(1);
+      expect(resultsCjkSingle[0].message.content).toContain('测试');
+
+      const resultsCjkDouble = repo.searchMessages('测试');
+      expect(resultsCjkDouble.length).toBeGreaterThanOrEqual(1);
+      expect(resultsCjkDouble[0].message.content).toContain('测试');
+    });
+
     it('should let SessionStore search SQLite sessions before JSON fallback', async () => {
       const store = new SessionStore({ useSQLite: true });
       const results = await store.searchSessions('Hello AI');

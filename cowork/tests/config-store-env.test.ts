@@ -43,6 +43,9 @@ describe('ConfigStore applyToEnv', () => {
     COWORK_WORKDIR: process.env.COWORK_WORKDIR,
     ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY,
     ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    OPENAI_BASE_URL: process.env.OPENAI_BASE_URL,
+    OPENAI_MODEL: process.env.OPENAI_MODEL,
     GEMINI_API_KEY: process.env.GEMINI_API_KEY,
     GEMINI_BASE_URL: process.env.GEMINI_BASE_URL,
   };
@@ -51,6 +54,9 @@ describe('ConfigStore applyToEnv', () => {
     delete process.env.COWORK_WORKDIR;
     delete process.env.ANTHROPIC_API_KEY;
     delete process.env.ANTHROPIC_BASE_URL;
+    delete process.env.OPENAI_API_KEY;
+    delete process.env.OPENAI_BASE_URL;
+    delete process.env.OPENAI_MODEL;
     delete process.env.GEMINI_API_KEY;
     delete process.env.GEMINI_BASE_URL;
   });
@@ -70,6 +76,21 @@ describe('ConfigStore applyToEnv', () => {
       delete process.env.ANTHROPIC_BASE_URL;
     } else {
       process.env.ANTHROPIC_BASE_URL = originalEnv.ANTHROPIC_BASE_URL;
+    }
+    if (originalEnv.OPENAI_API_KEY === undefined) {
+      delete process.env.OPENAI_API_KEY;
+    } else {
+      process.env.OPENAI_API_KEY = originalEnv.OPENAI_API_KEY;
+    }
+    if (originalEnv.OPENAI_BASE_URL === undefined) {
+      delete process.env.OPENAI_BASE_URL;
+    } else {
+      process.env.OPENAI_BASE_URL = originalEnv.OPENAI_BASE_URL;
+    }
+    if (originalEnv.OPENAI_MODEL === undefined) {
+      delete process.env.OPENAI_MODEL;
+    } else {
+      process.env.OPENAI_MODEL = originalEnv.OPENAI_MODEL;
     }
     if (originalEnv.GEMINI_API_KEY === undefined) {
       delete process.env.GEMINI_API_KEY;
@@ -132,6 +153,23 @@ describe('ConfigStore applyToEnv', () => {
 
     expect(process.env.OPENAI_API_KEY).toBe('sk-openai-local-proxy');
     expect(process.env.OPENAI_BASE_URL).toBe('http://127.0.0.1:8082/v1');
+  });
+
+  it('exports ChatGPT OAuth credentials through the OpenAI-compatible env bridge', () => {
+    const store = new ConfigStore();
+
+    store.update({
+      provider: 'chatgpt',
+      apiKey: 'oauth-chatgpt',
+      baseUrl: 'https://chatgpt.com/backend-api/codex',
+      model: 'gpt-5.5',
+    });
+    store.applyToEnv();
+
+    expect(process.env.OPENAI_API_KEY).toBe('oauth-chatgpt');
+    expect(process.env.OPENAI_BASE_URL).toBe('https://chatgpt.com/backend-api/codex');
+    expect(process.env.OPENAI_MODEL).toBe('gpt-5.5');
+    expect(process.env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
   });
 
   it('exports ollama placeholder key and normalized base url when api key is empty', () => {

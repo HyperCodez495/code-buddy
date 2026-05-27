@@ -236,7 +236,10 @@ export function SpecPanel() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm"
+      data-testid="spec-panel"
+    >
       <div className="flex h-full w-[620px] flex-col bg-background-secondary border-l border-border shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -300,11 +303,13 @@ export function SpecPanel() {
                   type="text"
                   value={newProjectTitle}
                   onChange={(e) => setNewProjectTitle(e.target.value)}
+                  data-testid="spec-project-title-input"
                   placeholder="New spec project title"
                   className="flex-1 rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
                 />
                 <button
                   onClick={() => void createProject()}
+                  data-testid="spec-project-create"
                   className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
                 >
                   <Plus className="w-3.5 h-3.5" />
@@ -405,12 +410,14 @@ export function SpecPanel() {
                       type="text"
                       value={newStoryTitle}
                       onChange={(e) => setNewStoryTitle(e.target.value)}
+                      data-testid="spec-story-title-input"
                       placeholder="Story title"
                       className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
                     />
                     <textarea
                       value={newStoryNarrative}
                       onChange={(e) => setNewStoryNarrative(e.target.value)}
+                      data-testid="spec-story-narrative-input"
                       rows={2}
                       placeholder="Narrative — the why + implementation guidance (optional)"
                       className="w-full resize-y rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
@@ -424,6 +431,7 @@ export function SpecPanel() {
                       </button>
                       <button
                         onClick={() => void addStory()}
+                        data-testid="spec-story-add-submit"
                         className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
                       >
                         Add story
@@ -433,6 +441,7 @@ export function SpecPanel() {
                 ) : (
                   <button
                     onClick={() => setShowAddStory(true)}
+                    data-testid="spec-add-story-open"
                     className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text-secondary hover:bg-surface transition-colors"
                   >
                     <Plus className="w-3.5 h-3.5" />
@@ -454,7 +463,7 @@ export function SpecPanel() {
                   <div
                     key={story.id}
                     className="rounded border border-border bg-surface/40 p-3 space-y-2"
-                    data-testid="spec-story"
+                    data-testid={`spec-story-${story.id}`}
                   >
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-xs font-medium text-text-primary truncate">{story.title}</span>
@@ -503,6 +512,7 @@ export function SpecPanel() {
                           autoFocus
                           value={action.value}
                           onChange={(e) => setAction({ ...action, value: e.target.value })}
+                          data-testid="spec-action-value-input"
                           placeholder={ACTION_META[action.kind].placeholder}
                           className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
                         />
@@ -516,6 +526,7 @@ export function SpecPanel() {
                           <button
                             disabled={busy}
                             onClick={() => void submitAction()}
+                            data-testid="spec-action-confirm"
                             className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
                           >
                             Confirm

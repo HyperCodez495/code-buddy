@@ -69,9 +69,9 @@ test('validates Buddy companion against real core IPC and local hardware surface
   await appPage.getByTestId('companion-panel-button').click();
   await expect(appPage.getByRole('heading', { name: 'Buddy companion' })).toBeVisible();
   await expect(appPage.getByText(workspacePath, { exact: true })).toBeVisible();
-  await expect(appPage.getByText('Brain', { exact: true })).toBeVisible();
-  await expect(appPage.getByText('Dialogue', { exact: true })).toBeVisible();
-  await expect(appPage.getByText('Camera', { exact: true })).toBeVisible();
+  await expect(appPage.getByTestId('status-tile-brain')).toBeVisible();
+  await expect(appPage.getByTestId('status-tile-dialogue')).toBeVisible();
+  await expect(appPage.getByTestId('status-tile-camera')).toBeVisible();
 
   const initialText = await readCompanionPanelText(appPage);
   expect(initialText).not.toContain('core companion module unavailable');
@@ -94,8 +94,13 @@ test('validates Buddy companion against real core IPC and local hardware surface
   await appPage.getByRole('button', { name: 'Inspect camera' }).click();
   await expect
     .poll(async () => {
+      const hasVisionInspection = await appPage
+        .getByRole('heading', { name: 'Vision inspection' })
+        .isVisible()
+        .catch(() => false);
+      if (hasVisionInspection) return 'vision-ok';
+
       const panelText = await readCompanionPanelText(appPage);
-      if (panelText.includes('Vision inspection')) return 'vision-ok';
       if (
         panelText.includes('Cannot capture camera snapshot') ||
         panelText.includes('Renderer camera unavailable') ||
@@ -107,10 +112,18 @@ test('validates Buddy companion against real core IPC and local hardware surface
         return 'camera-unavailable-controlled';
       }
       return 'waiting';
-    }, { timeout: 20_000 })
+    }, { timeout: 45_000 })
     .not.toBe('waiting');
 
   const finalText = await readCompanionPanelText(appPage);
   expect(finalText).not.toContain('NO_ACTIVE_PROJECT');
   expect(finalText).not.toContain('Unhandled');
+
+  await appPage.screenshot({
+    path: path.resolve(
+      process.cwd(),
+      '../docs/qa/code-buddy-studio/screenshots/52-companion-live-core-ipc.png',
+    ),
+    fullPage: true,
+  });
 });

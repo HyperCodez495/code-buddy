@@ -80,6 +80,7 @@ export function TeamPanel() {
   const [memberRole, setMemberRole] = useState<string>('coder');
   const [memberLabel, setMemberLabel] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const teamApi = window.electronAPI?.team;
 
   const memberList = useMemo(() => Object.values(members), [members]);
   const taskList = useMemo(
@@ -92,14 +93,15 @@ export function TeamPanel() {
 
   useEffect(() => {
     if (!show) return;
-    void window.electronAPI.team.getStatus().then((snapshot) => {
+    if (!teamApi) return;
+    void teamApi.getStatus().then((snapshot) => {
       const snap = snapshot as
         | (typeof team & { error?: string })
         | { error: string };
       if (!snap || (snap as { error?: string }).error) return;
       setTeamSnapshot(snap as typeof team);
     });
-  }, [show, setTeamSnapshot]);
+  }, [show, teamApi, setTeamSnapshot]);
 
   if (!show) return null;
 
@@ -107,7 +109,11 @@ export function TeamPanel() {
 
   const handleStart = async () => {
     setErrorMsg(null);
-    const result = await window.electronAPI.team.start(goalInput.trim() || undefined);
+    if (!teamApi) {
+      setErrorMsg('Team bridge unavailable in browser preview. Open the desktop app to manage teams.');
+      return;
+    }
+    const result = await teamApi.start(goalInput.trim() || undefined);
     if (!result.success) {
       setErrorMsg(result.message);
       return;
@@ -118,12 +124,17 @@ export function TeamPanel() {
 
   const handleStop = async () => {
     if (!window.confirm('Dissolve the team?')) return;
-    await window.electronAPI.team.stop();
+    if (!teamApi) return;
+    await teamApi.stop();
   };
 
   const handleAddMember = async () => {
     setErrorMsg(null);
-    const result = await window.electronAPI.team.addMember(
+    if (!teamApi) {
+      setErrorMsg('Team bridge unavailable in browser preview. Open the desktop app to manage teams.');
+      return;
+    }
+    const result = await teamApi.addMember(
       memberRole,
       memberLabel.trim() || undefined
     );
@@ -136,11 +147,15 @@ export function TeamPanel() {
   };
 
   const handleRemoveMember = async (memberId: string) => {
-    await window.electronAPI.team.removeMember(memberId);
+    if (!teamApi) return;
+    await teamApi.removeMember(memberId);
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm"
+      data-testid="team-panel"
+    >
       <div className="flex h-full w-[560px] flex-col bg-background-secondary border-l border-border shadow-2xl">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
@@ -178,6 +193,7 @@ export function TeamPanel() {
           {!isActive ? (
             <button
               onClick={() => setShowStartModal(true)}
+              data-testid="team-start-button"
               className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
             >
               <Play className="w-3.5 h-3.5" />
@@ -212,12 +228,13 @@ export function TeamPanel() {
             <textarea
               value={goalInput}
               onChange={(e) => setGoalInput(e.target.value)}
+              data-testid="team-goal-input"
               placeholder="e.g. Refactor the auth middleware for compliance"
               rows={3}
               className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent resize-none"
             />
             {errorMsg && (
-              <p className="text-xs text-error flex items-center gap-1">
+              <p className="text-xs text-error flex items-center gap-1" data-testid="team-error">
                 <AlertCircle className="w-3 h-3" />
                 {errorMsg}
               </p>
@@ -231,6 +248,7 @@ export function TeamPanel() {
               </button>
               <button
                 onClick={handleStart}
+                data-testid="team-start-confirm"
                 className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
               >
                 Start
@@ -306,7 +324,9 @@ export function TeamPanel() {
           <ul className="max-h-48 overflow-y-auto">
             {memberList.length === 0 && (
               <li className="px-4 py-3 text-xs text-text-muted">
-                {isActive
+                {!teamApi
+                  ? 'Team bridge unavailable in browser preview. Open the desktop app to start or observe teams.'
+                  : isActive
                   ? 'No members yet. Click "Add member" to start.'
                   : 'Start a team to add members.'}
               </li>

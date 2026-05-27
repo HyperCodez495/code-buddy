@@ -222,4 +222,87 @@ export class InfrastructureFacade {
   getMarketplace(): PluginMarketplace {
     return this.marketplace;
   }
+
+  // ============================================================================
+  // Interceptors / Action Hooks (Axe 4)
+  // ============================================================================
+
+  /**
+   * Executed before a tool is called.
+   * Can modify arguments or abort execution.
+   */
+  async beforeToolCall(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    sessionId?: string
+  ): Promise<{ abort: boolean; modifiedArgs?: Record<string, unknown> }> {
+    const results = await this.hooksManager.executeHooks('before-tool-call', {
+      toolName,
+      toolArgs,
+      sessionId,
+    });
+
+    let abort = false;
+    let modifiedArgs = toolArgs;
+
+    for (const res of results) {
+      if (res.abort) {
+        abort = true;
+      }
+      if (res.modified?.toolArgs) {
+        modifiedArgs = { ...modifiedArgs, ...res.modified.toolArgs };
+      }
+    }
+
+    return { abort, modifiedArgs };
+  }
+
+  /**
+   * Executed after a tool call is completed.
+   */
+  async afterToolCall(
+    toolName: string,
+    toolArgs: Record<string, unknown>,
+    output?: string,
+    error?: string,
+    sessionId?: string
+  ): Promise<void> {
+    await this.hooksManager.executeHooks('after-tool-call', {
+      toolName,
+      toolArgs,
+      output,
+      error,
+      sessionId,
+    });
+  }
+
+  /**
+   * Executed before memory is written to disk.
+   * Can modify memory content or abort the write operation.
+   */
+  async beforeMemoryWrite(
+    filename: string,
+    content: string,
+    sessionId?: string
+  ): Promise<{ abort: boolean; modifiedContent?: string }> {
+    const results = await this.hooksManager.executeHooks('before-memory-write', {
+      file: filename,
+      content,
+      sessionId,
+    });
+
+    let abort = false;
+    let modifiedContent = content;
+
+    for (const res of results) {
+      if (res.abort) {
+        abort = true;
+      }
+      if (res.modified?.content !== undefined) {
+        modifiedContent = res.modified.content;
+      }
+    }
+
+    return { abort, modifiedContent };
+  }
 }

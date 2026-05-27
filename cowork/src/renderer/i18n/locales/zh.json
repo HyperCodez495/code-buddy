@@ -1412,16 +1412,39 @@
     "deleteConfirm": "删除此钩子？"
   },
   "testRunner": {
-    "title": "测试运行器",
+    "title": "测试与执行",
     "framework": "框架：{{framework}}",
     "noFramework": "未检测到测试框架",
     "runAll": "运行全部",
+    "runSafe": "运行安全检查",
+    "runCatalog": "运行目录",
+    "runItem": "运行检查",
     "runFailing": "重跑失败用例",
     "cancel": "取消",
     "cancelled": "测试运行已取消",
+    "testsTab": "测试",
+    "executionsTab": "执行",
+    "coverageTab": "覆盖",
+    "coverageTotal": "功能",
+    "coverageReal": "真实",
+    "coverageUsed": "已使用",
+    "coveragePartial": "部分",
+    "coverageHint": "只有测试实际操作功能并验证输出、状态或外部结果时，才标记为已使用。",
+    "coverageLevel": {
+      "opened": "已打开",
+      "used": "已使用",
+      "real": "真实"
+    },
+    "coverageStatus": {
+      "passed": "通过",
+      "partial": "部分",
+      "blocked": "阻塞"
+    },
     "output": "输出",
-    "noOutput": "暂无输出。点击运行全部开始。",
-    "running": "运行中…"
+    "noOutput": "暂无输出。运行一个检查开始。",
+    "noCatalog": "此工作区未找到可运行的检查。",
+    "noExecutions": "未找到最近执行。",
+    "running": "运行中..."
   },
   "personaSwitcher": {
     "title": "人格切换",

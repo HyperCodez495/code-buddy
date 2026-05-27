@@ -19,7 +19,8 @@ import type {
   OrchestratorEventHandler,
   TaskPriority,
 } from './types.js';
-import { safeEvalCondition } from '../sandbox/safe-eval.js';
+import { safeEvalCondition, safeEval } from '../sandbox/safe-eval.js';
+import { logger } from '../utils/logger.js';
 
 // Default configuration
 const DEFAULT_CONFIG: OrchestratorConfig = {
@@ -538,6 +539,9 @@ export class Orchestrator extends EventEmitter {
       case 'loop':
         await this.executeLoopStep(instance, step, context);
         break;
+      case 'batch':
+        await this.executeBatchStep(instance, step, context);
+        break;
     }
   }
 
@@ -637,6 +641,13 @@ export class Orchestrator extends EventEmitter {
     ) {
       context['iteration'] = iteration;
 
+      this.emit('loop_iteration_started', {
+        type: 'loop_iteration_started',
+        instanceId: instance.instanceId,
+        stepId: step.id,
+        iteration
+      });
+
       if (step.loopBody) {
         for (const bodyStep of step.loopBody) {
           await this.executeWorkflowStep(instance, bodyStep, context);
@@ -644,6 +655,67 @@ export class Orchestrator extends EventEmitter {
       }
 
       iteration++;
+    }
+  }
+
+  /**
+   * Execute batch step (parallel map)
+   */
+  private async executeBatchStep(
+    instance: WorkflowInstance,
+    step: WorkflowStep,
+    context: Record<string, unknown>
+  ): Promise<void> {
+    const itemsExpr = step.batchItemsExpression;
+    const varName = step.batchVariableName;
+    const concurrency = step.batchConcurrencyLimit || 5;
+    const body = step.batchBody;
+
+    if (!itemsExpr || !varName || !body) return;
+
+    // Evaluate items to get an array
+    const items = this.evaluateExpression(itemsExpr, context);
+    if (!Array.isArray(items)) {
+      logger.warn(`[Orchestrator] Batch items expression did not evaluate to an array: ${itemsExpr}`);
+      return;
+    }
+
+    const tasks = items.map((item, index) => async () => {
+      // Create local context fork for this batch item execution
+      const localContext = { ...context, [varName]: item, index };
+
+      this.emit('loop_iteration_started', {
+        type: 'loop_iteration_started',
+        instanceId: instance.instanceId,
+        stepId: step.id,
+        iteration: index
+      });
+
+      for (const bodyStep of body) {
+        await this.executeWorkflowStep(instance, bodyStep, localContext);
+      }
+    });
+
+    // Run parallel batches with concurrency limit
+    let taskIdx = 0;
+    const workers = Array(Math.min(concurrency, tasks.length)).fill(null).map(async () => {
+      while (taskIdx < tasks.length) {
+        const myIndex = taskIdx++;
+        await tasks[myIndex]();
+      }
+    });
+    await Promise.all(workers);
+  }
+
+  private evaluateExpression(expression: string, context: Record<string, unknown>): unknown {
+    let resolved = expression;
+    for (const [key, value] of Object.entries(context)) {
+      resolved = resolved.replace(new RegExp(`\\$${key}`, 'g'), JSON.stringify(value));
+    }
+    try {
+      return safeEval(resolved, { context, timeout: 2000 });
+    } catch {
+      return null;
     }
   }
 

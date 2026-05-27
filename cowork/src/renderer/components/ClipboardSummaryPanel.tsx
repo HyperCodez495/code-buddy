@@ -122,6 +122,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
       onClick={onClose}
       role="dialog"
       aria-modal="true"
+      data-testid="clipboard-summary-panel"
     >
       <div
         className="w-[560px] max-w-[92vw] max-h-[80vh] bg-zinc-900 border border-zinc-700 rounded-xl shadow-2xl flex flex-col overflow-hidden"
@@ -153,6 +154,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
             type="button"
             onClick={() => void handleSummarizeNow()}
             disabled={summarising}
+            data-testid="clipboard-summarize-now"
             className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-accent text-background hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
           >
             <Play size={11} />
@@ -161,6 +163,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
           <button
             type="button"
             onClick={() => void handleToggleMonitoring()}
+            data-testid="clipboard-monitor-toggle"
             className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded transition-colors ${
               monitoringEnabled
                 ? 'bg-success/15 text-success'
@@ -199,7 +202,9 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
               </div>
               {summary.summary ? (
                 <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                  <span data-testid="clipboard-summary-text">
                   {summary.summary}
+                  </span>
                 </div>
               ) : (
                 <div className="text-sm text-warning italic">
@@ -233,6 +238,7 @@ export const ClipboardSummaryPanel: React.FC<Props> = ({
             <button
               type="button"
               onClick={handleSendToChat}
+              data-testid="clipboard-send-to-chat"
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded bg-accent text-background hover:bg-accent-hover transition-colors"
             >
               <Send size={11} />

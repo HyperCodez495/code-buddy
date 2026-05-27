@@ -4403,7 +4403,6 @@ async function callVisionAPIWithTimeout(
 
     return new Promise<string>((resolve, reject) => {
        
-      let timeoutId: ReturnType<typeof setTimeout>;
       let isResolved = false;
 
       const options = {
@@ -4462,7 +4461,7 @@ async function callVisionAPIWithTimeout(
       });
 
       // Set timeout
-      timeoutId = setTimeout(() => {
+      const timeoutId = setTimeout(() => {
         if (!isResolved) {
           isResolved = true;
           req.destroy();

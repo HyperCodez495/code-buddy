@@ -7,6 +7,7 @@
 import { Command } from 'commander';
 import { logger } from "../utils/logger.js";
 import { getSettingsManager } from '../utils/settings-manager.js';
+import { hasCodexCredentials } from '../providers/codex-oauth.js';
 
 interface ProviderInfo {
   name: string;
@@ -43,6 +44,13 @@ export const PROVIDERS: Record<string, ProviderInfo> = {
     defaultModel: 'gpt-4o',
     baseURL: 'https://api.openai.com/v1',
   },
+  chatgpt: {
+    name: 'ChatGPT (OAuth)',
+    envVar: 'CODEBUDDY_CHATGPT_OAUTH',
+    models: ['gpt-5.5'],
+    defaultModel: 'gpt-5.5',
+    baseURL: 'https://chatgpt.com/backend-api/codex',
+  },
   gemini: {
     name: 'Gemini (Google)',
     envVar: 'GOOGLE_API_KEY',
@@ -58,7 +66,8 @@ function getConfiguredProviders(): string[] {
   for (const [key, info] of Object.entries(PROVIDERS)) {
     const hasKey = process.env[info.envVar] ||
                    (key === 'grok' && process.env.XAI_API_KEY) ||
-                   (key === 'gemini' && process.env.GEMINI_API_KEY);
+                   (key === 'gemini' && process.env.GEMINI_API_KEY) ||
+                   (key === 'chatgpt' && hasCodexCredentials());
     if (hasKey) {
       configured.push(key);
     }

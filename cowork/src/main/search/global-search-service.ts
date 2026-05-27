@@ -106,7 +106,7 @@ function extractSnippet(text: string, query: string, maxLen = 140): string {
   if (terms.length === 0) return prefix + snippetText + suffix;
 
   const sortedTerms = [...terms].sort((a, b) => b.length - a.length);
-  const escapedTerms = sortedTerms.map(t => t.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'));
+  const escapedTerms = sortedTerms.map(t => t.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&'));
   const regex = new RegExp(`(${escapedTerms.join('|')})`, 'gi');
   const highlighted = snippetText.replace(regex, '<mark>$1</mark>');
 

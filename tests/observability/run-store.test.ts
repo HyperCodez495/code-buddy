@@ -275,6 +275,42 @@ describe('RunStore', () => {
       expect(store.searchRuns('not-present')).toEqual([]);
     });
 
+    it('supports short terms and CJK characters in search queries', async () => {
+      const runId = startRun('Lead Scout db optimization with c++ and python');
+      store.saveArtifact(
+        runId,
+        'readme.md',
+        '# CJK Test\nBonjour, ce test contient des caractères comme 测试 et 日本语.',
+      );
+      store.endRun(runId, 'completed');
+      activeRunIds = activeRunIds.filter(id => id !== runId);
+      await new Promise(r => setTimeout(r, 50));
+
+      // Test short term (2 characters)
+      const dbHits = store.searchRuns('db', { limit: 5 });
+      expect(dbHits).toContainEqual(
+        expect.objectContaining({ runId, matched: 'summary' }),
+      );
+
+      // Test short term (3 characters)
+      const cppHits = store.searchRuns('c++', { limit: 5 });
+      expect(cppHits).toContainEqual(
+        expect.objectContaining({ runId, matched: 'summary' }),
+      );
+
+      // Test CJK single character
+      const cjkSingleHits = store.searchRuns('测', { limit: 5 });
+      expect(cjkSingleHits).toContainEqual(
+        expect.objectContaining({ runId, matched: 'artifact', artifact: 'readme.md' }),
+      );
+
+      // Test CJK double character
+      const cjkDoubleHits = store.searchRuns('测试', { limit: 5 });
+      expect(cjkDoubleHits).toContainEqual(
+        expect.objectContaining({ runId, matched: 'artifact', artifact: 'readme.md' }),
+      );
+    });
+
     it('filters recall hits by source channel and tags', async () => {
       const coworkRun = startRun('Architect discovery follow-up', {
         channel: 'cowork',

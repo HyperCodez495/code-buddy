@@ -1425,16 +1425,39 @@
     "deleteConfirm": "Supprimer ce hook ?"
   },
   "testRunner": {
-    "title": "Test runner",
+    "title": "Tests & exécutions",
     "framework": "Framework : {{framework}}",
     "noFramework": "Aucun framework détecté",
     "runAll": "Tout exécuter",
+    "runSafe": "Tests sûrs",
+    "runCatalog": "Catalogue complet",
+    "runItem": "Exécuter ce test",
     "runFailing": "Échec de la réexécution",
     "cancel": "Annuler",
     "cancelled": "Test annulé",
+    "testsTab": "Tests",
+    "executionsTab": "Exécutions",
+    "coverageTab": "Couverture",
+    "coverageTotal": "Fonctionnalités",
+    "coverageReal": "Réel",
+    "coverageUsed": "Utilisé",
+    "coveragePartial": "Partiel",
+    "coverageHint": "Une fonctionnalité est marquée utilisée seulement quand un test la manipule et vérifie une sortie, un état ou un résultat externe.",
+    "coverageLevel": {
+      "opened": "affiché",
+      "used": "utilisé",
+      "real": "réel"
+    },
+    "coverageStatus": {
+      "passed": "ok",
+      "partial": "partiel",
+      "blocked": "bloqué"
+    },
     "output": "Sortie",
-    "noOutput": "Aucune sortie pour le moment. Cliquez sur Tout exécuter pour commencer.",
-    "running": "En cours d'exécution…"
+    "noOutput": "Aucune sortie pour le moment. Lancez un test pour commencer.",
+    "noCatalog": "Aucun test exécutable trouvé pour ce workspace.",
+    "noExecutions": "Aucune exécution récente trouvée.",
+    "running": "En cours d'exécution..."
   },
   "personaSwitcher": {
     "title": "Sélecteur de personnalité",

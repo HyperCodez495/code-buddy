@@ -63,7 +63,16 @@ export class ToolExecutor {
     const normalizedTarget = path.normalize(targetPath);
     const isWindows = process.platform === 'win32';
 
-    // Symlink resolve if exists; fall back to normalizedTarget on error
+    const lexicallyAllowed = mounts.some((m) =>
+      isPathWithinRoot(normalizedTarget, path.normalize(m.real), isWindows)
+    );
+
+    if (!lexicallyAllowed) {
+      throw new Error('Path is outside the mounted workspace');
+    }
+
+    // Symlink resolve only after lexical containment so UNC/network paths outside
+    // the workspace cannot block on filesystem probing before being rejected.
     let realPath: string;
     try {
       realPath = fs.existsSync(normalizedTarget)

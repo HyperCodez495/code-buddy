@@ -509,6 +509,7 @@ export type { ToolSelectionResult, QueryClassification, ToolCategory };
 // ============================================================================
 
 import type { UnifiedSkill } from '../skills/types.js';
+import { getSkillsHub } from '../skills/hub.js';
 
 /**
  * Augment a set of tools based on a matched skill's requirements.
@@ -525,6 +526,28 @@ export function getSkillAugmentedTools(
   currentTools: CodeBuddyTool[],
   skill: UnifiedSkill
 ): CodeBuddyTool[] {
+  // Check if skill is disabled
+  let isDisabled = false;
+  try {
+    const disabledSkills = new Set(
+      getSkillsHub()
+        .list()
+        .filter((s) => s.enabled === false)
+        .map((s) => s.name)
+    );
+    if (disabledSkills.has(skill.name)) {
+      isDisabled = true;
+    }
+  } catch {
+    // Ignored
+  }
+  if (skill.enabled === false) {
+    isDisabled = true;
+  }
+  if (isDisabled) {
+    return currentTools;
+  }
+
   // Collect required tool names from the skill
   const requiredToolNames: string[] = [
     ...(skill.requires?.tools ?? []),

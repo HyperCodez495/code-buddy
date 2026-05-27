@@ -90,7 +90,11 @@ const translatedChromeSurfaces: Array<[string, string[]]> = [
   ],
   [
     path.resolve(process.cwd(), 'src/renderer/components/Titlebar.tsx'),
-    ['bookmarks.title', 'activity.title', 'notifications.title'],
+    ['shortcutsDialog.title', 'notifications.title'],
+  ],
+  [
+    path.resolve(process.cwd(), 'src/renderer/components/ShellNavigation.tsx'),
+    ['shell.navigation', 'bookmarks.title', 'activity.title', 'focusView.title'],
   ],
   [
     path.resolve(process.cwd(), 'src/renderer/components/UpdateNotification.tsx'),

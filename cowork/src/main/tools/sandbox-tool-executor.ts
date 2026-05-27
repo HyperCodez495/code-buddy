@@ -68,7 +68,17 @@ export class SandboxToolExecutor {
     const normalizedTarget = path.normalize(targetPath);
     const isWindows = process.platform === 'win32';
 
+    const lexicallyAllowed = mounts.some((m) =>
+      isPathWithinRoot(normalizedTarget, path.normalize(m.real), isWindows)
+    );
+
+    if (!lexicallyAllowed) {
+      throw new Error('Path is outside the mounted workspace');
+    }
+
     // Resolve symlinks if the path exists to prevent symlink escape attacks
+    // after lexical containment; UNC/network paths outside mounts should never
+    // reach a blocking filesystem probe.
     let realPath: string;
     try {
       realPath = fs.realpathSync(normalizedTarget);

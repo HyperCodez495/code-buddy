@@ -1,0 +1,596 @@
+{
+  "passed": true,
+  "runId": "run_mpno0sn6_85258e",
+  "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+  "workbookPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+  "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test-result.json",
+  "assertions": {
+    "workbookCreated": true,
+    "a1Matches": true,
+    "b1Matches": true,
+    "allStepsSucceeded": true
+  },
+  "evidence": [
+    {
+      "label": "write A1 through Excel COM",
+      "input": {
+        "action": "excel_set_cell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "cell": "A1",
+        "value": "Code Buddy Excel COM real test",
+        "confirmDangerous": true
+      },
+      "success": true,
+      "output": "Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
+      "data": {
+        "operation": "setCell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "workbookName": "computer-use-excel-real-test.xlsx",
+        "sheetName": "Feuil1",
+        "cell": "A1",
+        "value": "Code Buddy Excel COM real test",
+        "audit": {
+          "id": "audit-1779862240427-bvnxnh",
+          "action": "excel_set_cell",
+          "success": true,
+          "durationMs": 1958,
+          "safetyProfile": "balanced",
+          "dangerous": true,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0sn6_85258e",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: excel_set_cell",
+            "status": "completed",
+            "startedAt": 1779862238469,
+            "endedAt": 1779862240427,
+            "metrics": {
+              "durationMs": 1958,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "excel_set_cell",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862240427-bvnxnh",
+            "runId": "run_mpno0sn6_85258e",
+            "type": "artifact",
+            "createdAt": 1779862240427,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "excel_set_cell completed in 1958ms: Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
+            "ref": "audit-1779862240427-bvnxnh.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.excel_set_cell",
+            "name": "Computer control: excel_set_cell",
+            "riskLevel": "high",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "approval-required"
+          },
+          "approval": {
+            "kind": "approval",
+            "schemaVersion": 1,
+            "id": "approval_audit-1779862240427-bvnxnh",
+            "target": "codebuddy.computer_control.excel_set_cell",
+            "runId": "run_mpno0sn6_85258e",
+            "decision": "approved",
+            "reviewer": "human-operator",
+            "reason": "Computer control action carried explicit confirmDangerous=true.",
+            "decidedAt": 1779862240427,
+            "scope": "excel_set_cell"
+          },
+          "capabilities": [
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.inspect",
+              "name": "Inspect desktop state",
+              "level": "read",
+              "policy": "autonomous",
+              "fleetPolicy": "read-only-help",
+              "description": "Read windows, snapshots, cursor, system info and permission state."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.dry_run",
+              "name": "Simulate desktop actions",
+              "level": "reversible-write",
+              "policy": "dry-run-required",
+              "fleetPolicy": "none",
+              "description": "Prepare mutating desktop actions without applying them."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.live_control",
+              "name": "Control the desktop",
+              "level": "sensitive",
+              "policy": "approval-required",
+              "fleetPolicy": "none",
+              "description": "Click, type, move windows, record the screen or change system state."
+            }
+          ]
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862240427-bvnxnh.computer-control.json"
+      }
+    },
+    {
+      "label": "write B1 through Excel COM",
+      "input": {
+        "action": "excel_set_cell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "cell": "B1",
+        "value": "42",
+        "confirmDangerous": true
+      },
+      "success": true,
+      "output": "Excel Feuil1!B1 set to \"42\"",
+      "data": {
+        "operation": "setCell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "workbookName": "computer-use-excel-real-test.xlsx",
+        "sheetName": "Feuil1",
+        "cell": "B1",
+        "value": 42,
+        "audit": {
+          "id": "audit-1779862241239-8i0val",
+          "action": "excel_set_cell",
+          "success": true,
+          "durationMs": 782,
+          "safetyProfile": "balanced",
+          "dangerous": true,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0sn6_85258e",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: excel_set_cell",
+            "status": "completed",
+            "startedAt": 1779862240457,
+            "endedAt": 1779862241239,
+            "metrics": {
+              "durationMs": 782,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "excel_set_cell",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862241239-8i0val",
+            "runId": "run_mpno0sn6_85258e",
+            "type": "artifact",
+            "createdAt": 1779862241239,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "excel_set_cell completed in 782ms: Excel Feuil1!B1 set to \"42\"",
+            "ref": "audit-1779862241239-8i0val.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.excel_set_cell",
+            "name": "Computer control: excel_set_cell",
+            "riskLevel": "high",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "approval-required"
+          },
+          "approval": {
+            "kind": "approval",
+            "schemaVersion": 1,
+            "id": "approval_audit-1779862241239-8i0val",
+            "target": "codebuddy.computer_control.excel_set_cell",
+            "runId": "run_mpno0sn6_85258e",
+            "decision": "approved",
+            "reviewer": "human-operator",
+            "reason": "Computer control action carried explicit confirmDangerous=true.",
+            "decidedAt": 1779862241239,
+            "scope": "excel_set_cell"
+          },
+          "capabilities": [
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.inspect",
+              "name": "Inspect desktop state",
+              "level": "read",
+              "policy": "autonomous",
+              "fleetPolicy": "read-only-help",
+              "description": "Read windows, snapshots, cursor, system info and permission state."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.dry_run",
+              "name": "Simulate desktop actions",
+              "level": "reversible-write",
+              "policy": "dry-run-required",
+              "fleetPolicy": "none",
+              "description": "Prepare mutating desktop actions without applying them."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.live_control",
+              "name": "Control the desktop",
+              "level": "sensitive",
+              "policy": "approval-required",
+              "fleetPolicy": "none",
+              "description": "Click, type, move windows, record the screen or change system state."
+            }
+          ]
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862241239-8i0val.computer-control.json"
+      }
+    },
+    {
+      "label": "read A1 through Excel COM",
+      "input": {
+        "action": "excel_get_cell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "cell": "A1"
+      },
+      "success": true,
+      "output": "Excel Feuil1!A1 = Code Buddy Excel COM real test",
+      "data": {
+        "operation": "getCell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "workbookName": "computer-use-excel-real-test.xlsx",
+        "sheetName": "Feuil1",
+        "cell": "A1",
+        "value": "Code Buddy Excel COM real test",
+        "audit": {
+          "id": "audit-1779862242027-jsuorw",
+          "action": "excel_get_cell",
+          "success": true,
+          "durationMs": 786,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0sn6_85258e",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: excel_get_cell",
+            "status": "completed",
+            "startedAt": 1779862241241,
+            "endedAt": 1779862242027,
+            "metrics": {
+              "durationMs": 786,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "excel_get_cell",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862242027-jsuorw",
+            "runId": "run_mpno0sn6_85258e",
+            "type": "artifact",
+            "createdAt": 1779862242027,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "excel_get_cell completed in 786ms: Excel Feuil1!A1 = Code Buddy Excel COM real test",
+            "ref": "audit-1779862242027-jsuorw.computer-control.json"
+          },
+          "capabilities": [
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.inspect",
+              "name": "Inspect desktop state",
+              "level": "read",
+              "policy": "autonomous",
+              "fleetPolicy": "read-only-help",
+              "description": "Read windows, snapshots, cursor, system info and permission state."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.dry_run",
+              "name": "Simulate desktop actions",
+              "level": "reversible-write",
+              "policy": "dry-run-required",
+              "fleetPolicy": "none",
+              "description": "Prepare mutating desktop actions without applying them."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.live_control",
+              "name": "Control the desktop",
+              "level": "sensitive",
+              "policy": "approval-required",
+              "fleetPolicy": "none",
+              "description": "Click, type, move windows, record the screen or change system state."
+            }
+          ]
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242027-jsuorw.computer-control.json"
+      }
+    },
+    {
+      "label": "read B1 through Excel COM",
+      "input": {
+        "action": "excel_get_cell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "cell": "B1"
+      },
+      "success": true,
+      "output": "Excel Feuil1!B1 = 42",
+      "data": {
+        "operation": "getCell",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "workbookName": "computer-use-excel-real-test.xlsx",
+        "sheetName": "Feuil1",
+        "cell": "B1",
+        "value": 42,
+        "audit": {
+          "id": "audit-1779862242736-g1ih4a",
+          "action": "excel_get_cell",
+          "success": true,
+          "durationMs": 707,
+          "safetyProfile": "balanced",
+          "dangerous": false,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0sn6_85258e",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: excel_get_cell",
+            "status": "completed",
+            "startedAt": 1779862242029,
+            "endedAt": 1779862242736,
+            "metrics": {
+              "durationMs": 707,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "excel_get_cell",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862242736-g1ih4a",
+            "runId": "run_mpno0sn6_85258e",
+            "type": "artifact",
+            "createdAt": 1779862242736,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "excel_get_cell completed in 707ms: Excel Feuil1!B1 = 42",
+            "ref": "audit-1779862242736-g1ih4a.computer-control.json"
+          },
+          "capabilities": [
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.inspect",
+              "name": "Inspect desktop state",
+              "level": "read",
+              "policy": "autonomous",
+              "fleetPolicy": "read-only-help",
+              "description": "Read windows, snapshots, cursor, system info and permission state."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.dry_run",
+              "name": "Simulate desktop actions",
+              "level": "reversible-write",
+              "policy": "dry-run-required",
+              "fleetPolicy": "none",
+              "description": "Prepare mutating desktop actions without applying them."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.live_control",
+              "name": "Control the desktop",
+              "level": "sensitive",
+              "policy": "approval-required",
+              "fleetPolicy": "none",
+              "description": "Click, type, move windows, record the screen or change system state."
+            }
+          ]
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242736-g1ih4a.computer-control.json"
+      }
+    },
+    {
+      "label": "save workbook through Excel COM",
+      "input": {
+        "action": "excel_save_workbook",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "confirmDangerous": true
+      },
+      "success": true,
+      "output": "Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+      "data": {
+        "operation": "save",
+        "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "workbookName": "computer-use-excel-real-test.xlsx",
+        "sheetName": "Feuil1",
+        "cell": "",
+        "value": null,
+        "audit": {
+          "id": "audit-1779862243475-uyvrvs",
+          "action": "excel_save_workbook",
+          "success": true,
+          "durationMs": 726,
+          "safetyProfile": "balanced",
+          "dangerous": true,
+          "simulated": false
+        },
+        "harness": {
+          "run": {
+            "kind": "run",
+            "schemaVersion": 1,
+            "id": "run_mpno0sn6_85258e",
+            "actor": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "objective": "Computer control action: excel_save_workbook",
+            "status": "completed",
+            "startedAt": 1779862242749,
+            "endedAt": 1779862243475,
+            "metrics": {
+              "durationMs": 726,
+              "toolCallCount": 1
+            },
+            "metadata": {
+              "channel": "computer-control",
+              "organ": "code-buddy",
+              "tags": [
+                "computer-use",
+                "excel_save_workbook",
+                "live"
+              ]
+            }
+          },
+          "proof": {
+            "kind": "proof",
+            "schemaVersion": 1,
+            "id": "proof_audit-1779862243475-uyvrvs",
+            "runId": "run_mpno0sn6_85258e",
+            "type": "artifact",
+            "createdAt": 1779862243475,
+            "producedBy": {
+              "type": "agent",
+              "id": "code-buddy-computer-control"
+            },
+            "summary": "excel_save_workbook completed in 726ms: Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+            "ref": "audit-1779862243475-uyvrvs.computer-control.json"
+          },
+          "sensitiveAction": {
+            "kind": "sensitive-action",
+            "schemaVersion": 1,
+            "id": "codebuddy.computer_control.excel_save_workbook",
+            "name": "Computer control: excel_save_workbook",
+            "riskLevel": "high",
+            "scope": [],
+            "defaultDryRun": true,
+            "requires": "approval-required"
+          },
+          "approval": {
+            "kind": "approval",
+            "schemaVersion": 1,
+            "id": "approval_audit-1779862243475-uyvrvs",
+            "target": "codebuddy.computer_control.excel_save_workbook",
+            "runId": "run_mpno0sn6_85258e",
+            "decision": "approved",
+            "reviewer": "human-operator",
+            "reason": "Computer control action carried explicit confirmDangerous=true.",
+            "decidedAt": 1779862243475,
+            "scope": "excel_save_workbook"
+          },
+          "capabilities": [
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.inspect",
+              "name": "Inspect desktop state",
+              "level": "read",
+              "policy": "autonomous",
+              "fleetPolicy": "read-only-help",
+              "description": "Read windows, snapshots, cursor, system info and permission state."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.dry_run",
+              "name": "Simulate desktop actions",
+              "level": "reversible-write",
+              "policy": "dry-run-required",
+              "fleetPolicy": "none",
+              "description": "Prepare mutating desktop actions without applying them."
+            },
+            {
+              "kind": "capability",
+              "schemaVersion": 1,
+              "id": "codebuddy.computer_control.live_control",
+              "name": "Control the desktop",
+              "level": "sensitive",
+              "policy": "approval-required",
+              "fleetPolicy": "none",
+              "description": "Click, type, move windows, record the screen or change system state."
+            }
+          ]
+        },
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862243475-uyvrvs.computer-control.json"
+      }
+    }
+  ],
+  "generatedAt": "2026-05-27T06:10:43.485Z"
+}

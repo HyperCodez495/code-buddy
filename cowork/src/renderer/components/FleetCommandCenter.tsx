@@ -913,6 +913,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     setGoalText(e.target.value);
                     setGoalRunDraft(null);
                   }}
+                  data-testid="fleet-command-goal-input"
                   placeholder={t(
                     'fleet.goalPlaceholder',
                     'Décris ton objectif… le router choisira le meilleur peer × modèle (Cmd+Enter pour lancer)'
@@ -963,6 +964,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     min={1}
                     max={5}
                     value={parallelism}
+                    data-testid="fleet-command-parallelism-input"
                     onChange={(e) =>
                       setParallelism(Math.max(1, Math.min(5, Number(e.target.value) || 1)))
                     }
@@ -974,6 +976,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   <select
                     value={privacyTag}
                     onChange={(e) => setPrivacyTag(e.target.value as 'public' | 'sensitive')}
+                    data-testid="fleet-command-privacy-select"
                     className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] text-text-primary focus:border-accent focus:outline-none"
                   >
                     <option value="public">{t('fleet.privacyPublic', 'public')}</option>
@@ -987,6 +990,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   <select
                     value={dispatchProfile}
                     onChange={(e) => setDispatchProfile(e.target.value as FleetDispatchProfile)}
+                    data-testid="fleet-command-profile-select"
                     className="rounded border border-border bg-surface px-1 py-0.5 text-[11px] text-text-primary focus:border-accent focus:outline-none"
                   >
                     {FLEET_DISPATCH_PROFILES.map((profile) => (
@@ -1018,6 +1022,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     type="button"
                     onClick={handleScheduleDispatch}
                     disabled={!goalText.trim()}
+                    data-testid="fleet-command-schedule-button"
                     className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text-secondary transition-colors hover:border-accent/60 hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     <CalendarPlus size={11} />
@@ -1027,6 +1032,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     type="button"
                     onClick={() => void handleDispatch()}
                     disabled={dispatchDisabled}
+                    data-testid="fleet-command-dispatch-button"
                     className="ml-auto flex items-center gap-1 px-3 py-1 text-xs rounded bg-accent text-background hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     {dispatching ? (
@@ -1044,7 +1050,10 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   </div>
                 )}
                 {!error && dispatchFeedback?.sagaId && (
-                  <div className="mt-2 rounded border border-success/30 bg-success/10 p-2 text-[11px] text-success">
+                  <div
+                    className="mt-2 rounded border border-success/30 bg-success/10 p-2 text-[11px] text-success"
+                    data-testid="fleet-command-dispatch-feedback"
+                  >
                     <div className="flex items-center gap-1.5">
                       <CheckCircle2 size={11} className="shrink-0" />
                       <span className="min-w-0 truncate">

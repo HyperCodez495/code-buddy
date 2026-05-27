@@ -1,0 +1,2443 @@
+{
+  "passed": true,
+  "generatedAt": "2026-05-27T06:10:44.187Z",
+  "results": [
+    {
+      "name": "Windows Forms controls",
+      "script": "scratch/computer-use-real-test.ts",
+      "exitCode": 0,
+      "durationMs": 82733,
+      "passed": true,
+      "resultPath": "scratch/computer-use-real-test-result.json",
+      "stdoutTail": "Launched fixture pid=5368 statePath=D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-real-state.json\n[ok] focus fixture window: Focused window: \"CodeBuddy Computer Use Fixture\"\n[ok] snapshot fixture controls: # UI Snapshot (snap-1779862118572)\nSource: focused\nElements: 17\nValid until: 2026-05-27T06:08:43.572Z\n\n## Interactive Elements\n\n### Text-fields\n  [3] Unknown (focused)\n\n### Checkboxs\n  [6] Enable companion mode\n\n### Buttons\n  [16] Apply\n\n[ok] fill message field: Filled [3] text-field \"Unknown\" with 25 character(s)\n[ok] select France from country dropdown: Selected option \"France\" via uia-selection\n[ok] refocus fixture after dropdown: Focused window: \"CodeBuddy Computer Use Fixture\"\n[ok] enable companion checkbox: Set [23] checkbox \"Enable companion mode\" to checked\n[ok] select expert radio: Selected radio ControlType.RadioButton \"Expert mode\" via uia-selection\n[ok] activate advanced tab: Activated tab ControlType.TabItem \"Advanced\" via uia-selection\n[ok] select blue list item: Selected list item ControlType.ListItem \"Blue\" via uia-selection-mouse\n[ok] set zoom slider to 75: Set slider \"Zoom\" to 75 via uia-range\n[ok] expand projects tree item: Expanded tree item \"Projects\" via uia-expand-collapse\n[ok] select alpha tree item: Selected tree item ControlType.TreeItem \"Alpha\" via uia-selection\n[ok] click apply button by name: Clicked button ControlType.Button \"Apply\" via uia-invoke\n[ok] assert saved text visible: Text \"Saved\" is visible in [52] text \"Saved\"\n{\n  \"passed\": true,\n  \"runId\": \"run_mpnny3fk_809bb0\",\n  \"resultPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-real-test-result.json\",\n  \"finalState\": {\n    \"appliedCount\": 1,\n    \"timestamp\": \"2026-05-27T08:09:45.0209266+02:00\",\n    \"color\": \"Blue\",\n    \"projectsExpanded\": true,\n    \"companionEnabled\": true,\n    \"ready\": true,\n    \"selectedTreeNode\": \"Alpha\",\n    \"status\": \"saved\",\n    \"mode\": \"Expert\",\n    \"zoom\": 75,\n    \"country\": \"France\",\n    \"message\": \"Bonjour reel Computer Use\",\n    \"activeTab\": \"Advanced\"\n  },\n  \"assertions\": {\n    \"initialReady\": true,\n    \"messageTyped\": true,\n    \"countrySelected\": true,\n    \"checkboxEnabled\": true,\n    \"radioSelected\": true,\n    \"tabActivated\": true,\n    \"listItemSelected\": true,\n    \"sliderSet\": true,\n    \"treeExpanded\": true,\n    \"treeItemSelected\": true,\n    \"applyClicked\": true,\n    \"allStepsSucceeded\": true\n  },\n  \"stepCount\": 14\n}\n",
+      "stderrTail": "{\"timestamp\":\"2026-05-27T06:08:38.573Z\",\"level\":\"info\",\"source\":\"focused\",\"message\":\"Snapshot taken\",\"id\":\"snap-1779862118572\",\"elements\":17}\n{\"timestamp\":\"2026-05-27T06:09:09.200Z\",\"level\":\"info\",\"source\":\"focused\",\"message\":\"Snapshot taken\",\"id\":\"snap-1779862149200\",\"elements\":3}\n{\"timestamp\":\"2026-05-27T06:09:48.069Z\",\"level\":\"info\",\"source\":\"focused\",\"message\":\"Snapshot taken\",\"id\":\"snap-1779862188068\",\"elements\":18}\n",
+      "parsedResult": {
+        "passed": true,
+        "runId": "run_mpnny3fk_809bb0",
+        "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+        "statePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-real-state.json",
+        "fixturePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-fixture.ps1",
+        "initialState": {
+          "appliedCount": 0,
+          "timestamp": "2026-05-27T08:08:32.4117362+02:00",
+          "color": "Red",
+          "projectsExpanded": false,
+          "companionEnabled": false,
+          "ready": true,
+          "selectedTreeNode": "Archive",
+          "status": "ready",
+          "mode": "Basic",
+          "zoom": 25,
+          "country": "Canada",
+          "message": "",
+          "activeTab": "Overview"
+        },
+        "finalState": {
+          "appliedCount": 1,
+          "timestamp": "2026-05-27T08:09:45.0209266+02:00",
+          "color": "Blue",
+          "projectsExpanded": true,
+          "companionEnabled": true,
+          "ready": true,
+          "selectedTreeNode": "Alpha",
+          "status": "saved",
+          "mode": "Expert",
+          "zoom": 75,
+          "country": "France",
+          "message": "Bonjour reel Computer Use",
+          "activeTab": "Advanced"
+        },
+        "assertions": {
+          "initialReady": true,
+          "messageTyped": true,
+          "countrySelected": true,
+          "checkboxEnabled": true,
+          "radioSelected": true,
+          "tabActivated": true,
+          "listItemSelected": true,
+          "sliderSet": true,
+          "treeExpanded": true,
+          "treeItemSelected": true,
+          "applyClicked": true,
+          "allStepsSucceeded": true
+        },
+        "evidence": [
+          {
+            "label": "focus fixture window",
+            "input": {
+              "action": "focus_window",
+              "windowTitle": "CodeBuddy Computer Use Fixture",
+              "windowTitleMatch": "contains"
+            },
+            "success": true,
+            "output": "Focused window: \"CodeBuddy Computer Use Fixture\"",
+            "data": {
+              "audit": {
+                "id": "audit-1779862116955-5m21w9",
+                "action": "focus_window",
+                "success": true,
+                "durationMs": 4474,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: focus_window",
+                  "status": "completed",
+                  "startedAt": 1779862112481,
+                  "endedAt": 1779862116955,
+                  "metrics": {
+                    "durationMs": 4474,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "focus_window",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862116955-5m21w9",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862116955,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "focus_window completed in 4474ms: Focused window: \"CodeBuddy Computer Use Fixture\"",
+                  "ref": "audit-1779862116955-5m21w9.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.focus_window",
+                  "name": "Computer control: focus_window",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862116955-5m21w9.computer-control.json"
+            }
+          },
+          {
+            "label": "snapshot fixture controls",
+            "input": {
+              "action": "snapshot",
+              "interactiveOnly": false
+            },
+            "success": true,
+            "output": "# UI Snapshot (snap-1779862118572)\nSource: focused\nElements: 17\nValid until: 2026-05-27T06:08:43.572Z\n\n## Interactive Elements\n\n### Text-fields\n  [3] Unknown (focused)\n\n### Checkboxs\n  [6] Enable companion mode\n\n### Buttons\n  [16] Apply\n",
+            "data": {
+              "audit": {
+                "id": "audit-1779862118573-tsev09",
+                "action": "snapshot",
+                "success": true,
+                "durationMs": 1077,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: snapshot",
+                  "status": "completed",
+                  "startedAt": 1779862117496,
+                  "endedAt": 1779862118573,
+                  "metrics": {
+                    "durationMs": 1077,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "snapshot",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862118573-tsev09",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862118573,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "snapshot completed in 1077ms: # UI Snapshot (snap-1779862118572)\nSource: focused\nElements: 17\nValid until: 2026-05-27T06:08:43.572Z\n\n## Interactive Elements\n\n### Text-fields\n  [3] Unknown (focused)\n\n### Checkboxs\n  [6] Enable companion mode\n\n### Buttons\n  [16] Apply",
+                  "ref": "audit-1779862118573-tsev09.computer-control.json"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862118573-tsev09.computer-control.json"
+            }
+          },
+          {
+            "label": "fill message field",
+            "input": {
+              "action": "fill_text_field",
+              "name": "Message",
+              "text": "Bonjour reel Computer Use",
+              "clearFirst": true,
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Filled [3] text-field \"Unknown\" with 25 character(s)",
+            "data": {
+              "audit": {
+                "id": "audit-1779862132231-c57vme",
+                "action": "fill_text_field",
+                "success": true,
+                "durationMs": 13656,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: fill_text_field",
+                  "status": "completed",
+                  "startedAt": 1779862118575,
+                  "endedAt": 1779862132231,
+                  "metrics": {
+                    "durationMs": 13656,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "fill_text_field",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862132231-c57vme",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862132231,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "fill_text_field completed in 13656ms: Filled [3] text-field \"Unknown\" with 25 character(s)",
+                  "ref": "audit-1779862132231-c57vme.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.fill_text_field",
+                  "name": "Computer control: fill_text_field",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862132231-c57vme.computer-control.json",
+              "element": {
+                "ref": 3,
+                "role": "text-field",
+                "name": "Unknown",
+                "bounds": {
+                  "x": 112,
+                  "y": 165,
+                  "width": 360,
+                  "height": 20
+                },
+                "center": {
+                  "x": 292,
+                  "y": 175
+                },
+                "interactive": true,
+                "focused": true,
+                "enabled": true,
+                "visible": true
+              },
+              "textLength": 25
+            }
+          },
+          {
+            "label": "select France from country dropdown",
+            "input": {
+              "action": "select_dropdown_option",
+              "name": "Country",
+              "option": "France",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Selected option \"France\" via uia-selection",
+            "data": {
+              "audit": {
+                "id": "audit-1779862142428-d4ssh2",
+                "action": "select_dropdown_option",
+                "success": true,
+                "durationMs": 10195,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: select_dropdown_option",
+                  "status": "completed",
+                  "startedAt": 1779862132233,
+                  "endedAt": 1779862142428,
+                  "metrics": {
+                    "durationMs": 10195,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "select_dropdown_option",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862142428-d4ssh2",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862142428,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "select_dropdown_option completed in 10195ms: Selected option \"France\" via uia-selection",
+                  "ref": "audit-1779862142428-d4ssh2.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.select_dropdown_option",
+                  "name": "Computer control: select_dropdown_option",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862142428-d4ssh2.computer-control.json",
+              "option": "France",
+              "source": "uia-selection"
+            }
+          },
+          {
+            "label": "refocus fixture after dropdown",
+            "input": {
+              "action": "focus_window",
+              "windowTitle": "CodeBuddy Computer Use Fixture",
+              "windowTitleMatch": "contains"
+            },
+            "success": true,
+            "output": "Focused window: \"CodeBuddy Computer Use Fixture\"",
+            "data": {
+              "audit": {
+                "id": "audit-1779862146260-mr7s06",
+                "action": "focus_window",
+                "success": true,
+                "durationMs": 3818,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: focus_window",
+                  "status": "completed",
+                  "startedAt": 1779862142442,
+                  "endedAt": 1779862146260,
+                  "metrics": {
+                    "durationMs": 3818,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "focus_window",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862146260-mr7s06",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862146260,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "focus_window completed in 3818ms: Focused window: \"CodeBuddy Computer Use Fixture\"",
+                  "ref": "audit-1779862146260-mr7s06.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.focus_window",
+                  "name": "Computer control: focus_window",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862146260-mr7s06.computer-control.json"
+            }
+          },
+          {
+            "label": "enable companion checkbox",
+            "input": {
+              "action": "toggle_checkbox",
+              "name": "Enable companion mode",
+              "checked": true,
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Set [23] checkbox \"Enable companion mode\" to checked",
+            "data": {
+              "audit": {
+                "id": "audit-1779862153457-xev9oi",
+                "action": "toggle_checkbox",
+                "success": true,
+                "durationMs": 7195,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: toggle_checkbox",
+                  "status": "completed",
+                  "startedAt": 1779862146262,
+                  "endedAt": 1779862153457,
+                  "metrics": {
+                    "durationMs": 7195,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "toggle_checkbox",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862153457-xev9oi",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862153457,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "toggle_checkbox completed in 7195ms: Set [23] checkbox \"Enable companion mode\" to checked",
+                  "ref": "audit-1779862153457-xev9oi.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.toggle_checkbox",
+                  "name": "Computer control: toggle_checkbox",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862153457-xev9oi.computer-control.json",
+              "element": {
+                "ref": 23,
+                "role": "checkbox",
+                "name": "Enable companion mode",
+                "bounds": {
+                  "x": 112,
+                  "y": 287,
+                  "width": 260,
+                  "height": 28
+                },
+                "center": {
+                  "x": 242,
+                  "y": 301
+                },
+                "interactive": true,
+                "focused": false,
+                "enabled": true,
+                "visible": true
+              },
+              "changed": true
+            }
+          },
+          {
+            "label": "select expert radio",
+            "input": {
+              "action": "select_radio",
+              "name": "Expert mode",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Selected radio ControlType.RadioButton \"Expert mode\" via uia-selection",
+            "data": {
+              "audit": {
+                "id": "audit-1779862157954-0bl3lh",
+                "action": "select_radio",
+                "success": true,
+                "durationMs": 4496,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: select_radio",
+                  "status": "completed",
+                  "startedAt": 1779862153458,
+                  "endedAt": 1779862157954,
+                  "metrics": {
+                    "durationMs": 4496,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "select_radio",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862157954-0bl3lh",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862157954,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "select_radio completed in 4496ms: Selected radio ControlType.RadioButton \"Expert mode\" via uia-selection",
+                  "ref": "audit-1779862157954-0bl3lh.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.select_radio",
+                  "name": "Computer control: select_radio",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862157954-0bl3lh.computer-control.json",
+              "element": {
+                "name": "Expert mode",
+                "role": "ControlType.RadioButton",
+                "bounds": {
+                  "x": 408,
+                  "y": 269,
+                  "width": 140,
+                  "height": 28
+                }
+              },
+              "source": "uia-selection"
+            }
+          },
+          {
+            "label": "activate advanced tab",
+            "input": {
+              "action": "activate_tab",
+              "name": "Advanced",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Activated tab ControlType.TabItem \"Advanced\" via uia-selection",
+            "data": {
+              "audit": {
+                "id": "audit-1779862162603-5avvzb",
+                "action": "activate_tab",
+                "success": true,
+                "durationMs": 4647,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: activate_tab",
+                  "status": "completed",
+                  "startedAt": 1779862157956,
+                  "endedAt": 1779862162603,
+                  "metrics": {
+                    "durationMs": 4647,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "activate_tab",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862162603-5avvzb",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862162603,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "activate_tab completed in 4647ms: Activated tab ControlType.TabItem \"Advanced\" via uia-selection",
+                  "ref": "audit-1779862162603-5avvzb.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.activate_tab",
+                  "name": "Computer control: activate_tab",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862162603-5avvzb.computer-control.json",
+              "element": {
+                "name": "Advanced",
+                "role": "ControlType.TabItem",
+                "bounds": {
+                  "x": 467,
+                  "y": 315,
+                  "width": 61,
+                  "height": 18
+                }
+              },
+              "source": "uia-selection"
+            }
+          },
+          {
+            "label": "select blue list item",
+            "input": {
+              "action": "select_list_item",
+              "name": "Blue",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Selected list item ControlType.ListItem \"Blue\" via uia-selection-mouse",
+            "data": {
+              "audit": {
+                "id": "audit-1779862167238-89aqlb",
+                "action": "select_list_item",
+                "success": true,
+                "durationMs": 4632,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: select_list_item",
+                  "status": "completed",
+                  "startedAt": 1779862162606,
+                  "endedAt": 1779862167238,
+                  "metrics": {
+                    "durationMs": 4632,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "select_list_item",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862167238-89aqlb",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862167238,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "select_list_item completed in 4632ms: Selected list item ControlType.ListItem \"Blue\" via uia-selection-mouse",
+                  "ref": "audit-1779862167238-89aqlb.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.select_list_item",
+                  "name": "Computer control: select_list_item",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862167238-89aqlb.computer-control.json",
+              "element": {
+                "name": "Blue",
+                "role": "ControlType.ListItem",
+                "bounds": {
+                  "x": 114,
+                  "y": 370,
+                  "width": 176,
+                  "height": 13
+                }
+              },
+              "source": "uia-selection-mouse"
+            }
+          },
+          {
+            "label": "set zoom slider to 75",
+            "input": {
+              "action": "set_slider_value",
+              "name": "Zoom",
+              "value": 75,
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Set slider \"Zoom\" to 75 via uia-range",
+            "data": {
+              "audit": {
+                "id": "audit-1779862171650-rwgvmp",
+                "action": "set_slider_value",
+                "success": true,
+                "durationMs": 4410,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: set_slider_value",
+                  "status": "completed",
+                  "startedAt": 1779862167240,
+                  "endedAt": 1779862171650,
+                  "metrics": {
+                    "durationMs": 4410,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "set_slider_value",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862171650-rwgvmp",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862171650,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "set_slider_value completed in 4410ms: Set slider \"Zoom\" to 75 via uia-range",
+                  "ref": "audit-1779862171650-rwgvmp.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.set_slider_value",
+                  "name": "Computer control: set_slider_value",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862171650-rwgvmp.computer-control.json",
+              "element": {
+                "name": "Zoom",
+                "role": "ControlType.Slider"
+              },
+              "source": "uia-range",
+              "value": 75,
+              "min": 0,
+              "max": 100
+            }
+          },
+          {
+            "label": "expand projects tree item",
+            "input": {
+              "action": "expand_tree_item",
+              "name": "Projects",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Expanded tree item \"Projects\" via uia-expand-collapse",
+            "data": {
+              "audit": {
+                "id": "audit-1779862175947-ljo53k",
+                "action": "expand_tree_item",
+                "success": true,
+                "durationMs": 4296,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: expand_tree_item",
+                  "status": "completed",
+                  "startedAt": 1779862171651,
+                  "endedAt": 1779862175947,
+                  "metrics": {
+                    "durationMs": 4296,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "expand_tree_item",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862175947-ljo53k",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862175947,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "expand_tree_item completed in 4296ms: Expanded tree item \"Projects\" via uia-expand-collapse",
+                  "ref": "audit-1779862175947-ljo53k.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.expand_tree_item",
+                  "name": "Computer control: expand_tree_item",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862175947-ljo53k.computer-control.json",
+              "element": {
+                "name": "Projects",
+                "role": "ControlType.TreeItem"
+              },
+              "source": "uia-expand-collapse",
+              "before": "Collapsed",
+              "after": "Expanded"
+            }
+          },
+          {
+            "label": "select alpha tree item",
+            "input": {
+              "action": "select_tree_item",
+              "name": "Alpha",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Selected tree item ControlType.TreeItem \"Alpha\" via uia-selection",
+            "data": {
+              "audit": {
+                "id": "audit-1779862180711-3nfirs",
+                "action": "select_tree_item",
+                "success": true,
+                "durationMs": 4762,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: select_tree_item",
+                  "status": "completed",
+                  "startedAt": 1779862175949,
+                  "endedAt": 1779862180711,
+                  "metrics": {
+                    "durationMs": 4762,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "select_tree_item",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862180711-3nfirs",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862180711,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "select_tree_item completed in 4762ms: Selected tree item ControlType.TreeItem \"Alpha\" via uia-selection",
+                  "ref": "audit-1779862180711-3nfirs.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.select_tree_item",
+                  "name": "Computer control: select_tree_item",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862180711-3nfirs.computer-control.json",
+              "element": {
+                "name": "Alpha",
+                "role": "ControlType.TreeItem",
+                "bounds": {
+                  "x": 451,
+                  "y": 539,
+                  "width": 31,
+                  "height": 16
+                }
+              },
+              "source": "uia-selection"
+            }
+          },
+          {
+            "label": "click apply button by name",
+            "input": {
+              "action": "click_button",
+              "name": "Apply",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Clicked button ControlType.Button \"Apply\" via uia-invoke",
+            "data": {
+              "audit": {
+                "id": "audit-1779862185127-xsxap9",
+                "action": "click_button",
+                "success": true,
+                "durationMs": 4412,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: click_button",
+                  "status": "completed",
+                  "startedAt": 1779862180715,
+                  "endedAt": 1779862185127,
+                  "metrics": {
+                    "durationMs": 4412,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "click_button",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862185127-xsxap9",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862185127,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "click_button completed in 4412ms: Clicked button ControlType.Button \"Apply\" via uia-invoke",
+                  "ref": "audit-1779862185127-xsxap9.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.click_button",
+                  "name": "Computer control: click_button",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862185127-xsxap9.computer-control.json",
+              "element": {
+                "name": "Apply",
+                "role": "ControlType.Button",
+                "bounds": {
+                  "x": 112,
+                  "y": 571,
+                  "width": 120,
+                  "height": 34
+                }
+              },
+              "source": "uia-invoke"
+            }
+          },
+          {
+            "label": "assert saved text visible",
+            "input": {
+              "action": "assert_text_visible",
+              "text": "Saved",
+              "exactName": true,
+              "windowTitle": "CodeBuddy Computer Use Fixture"
+            },
+            "success": true,
+            "output": "Text \"Saved\" is visible in [52] text \"Saved\"",
+            "data": {
+              "audit": {
+                "id": "audit-1779862188069-w3pvcv",
+                "action": "assert_text_visible",
+                "success": true,
+                "durationMs": 2939,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpnny3fk_809bb0",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: assert_text_visible",
+                  "status": "completed",
+                  "startedAt": 1779862185130,
+                  "endedAt": 1779862188069,
+                  "metrics": {
+                    "durationMs": 2939,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "assert_text_visible",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862188069-w3pvcv",
+                  "runId": "run_mpnny3fk_809bb0",
+                  "type": "artifact",
+                  "createdAt": 1779862188069,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "assert_text_visible completed in 2939ms: Text \"Saved\" is visible in [52] text \"Saved\"",
+                  "ref": "audit-1779862188069-w3pvcv.computer-control.json"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnny3fk_809bb0\\artifacts\\audit-1779862188069-w3pvcv.computer-control.json",
+              "element": {
+                "ref": 52,
+                "role": "text",
+                "name": "Saved",
+                "bounds": {
+                  "x": 112,
+                  "y": 623,
+                  "width": 360,
+                  "height": 28
+                },
+                "center": {
+                  "x": 292,
+                  "y": 637
+                },
+                "interactive": false,
+                "focused": false,
+                "enabled": true,
+                "visible": true
+              },
+              "source": "snapshot"
+            }
+          }
+        ],
+        "generatedAt": "2026-05-27T06:09:48.071Z"
+      }
+    },
+    {
+      "name": "Dialog handling",
+      "script": "scratch/computer-use-dialog-real-test.ts",
+      "exitCode": 0,
+      "durationMs": 20244,
+      "passed": true,
+      "resultPath": "scratch/computer-use-dialog-real-test-result.json",
+      "stdoutTail": "[ok] wait for dialog fixture: Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)\n[ok] focus dialog fixture: Focused window: \"CodeBuddy Dialog Fixture\"\n[ok] settle dialog fixture: Waited 500ms\n[ok] inspect dialog choices: Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSuggested: \"Cancel\" (matched dialogIntent \"cancel\")\n[ok] click safe cancel choice: Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")\n{\n  \"passed\": true,\n  \"runId\": \"run_mpnnzueh_70c071\",\n  \"resultPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-dialog-real-test-result.json\",\n  \"assertions\": {\n    \"clickedCancel\": true,\n    \"didNotClickSaveOrDelete\": true,\n    \"allStepsSucceeded\": true\n  },\n  \"stepCount\": 5\n}\n",
+      "stderrTail": "",
+      "parsedResult": {
+        "passed": true,
+        "runId": "run_mpnnzueh_70c071",
+        "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+        "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-dialog-real-test-result.json",
+        "fixtureResult": {
+          "decision": "cancel",
+          "clickedAt": "2026-05-27T08:10:12.5962902+02:00"
+        },
+        "assertions": {
+          "clickedCancel": true,
+          "didNotClickSaveOrDelete": true,
+          "allStepsSucceeded": true
+        },
+        "evidence": [
+          {
+            "label": "wait for dialog fixture",
+            "input": {
+              "action": "wait_for_window",
+              "windowTitle": "CodeBuddy Dialog Fixture",
+              "windowTitleMatch": "contains",
+              "timeoutMs": 10000
+            },
+            "success": true,
+            "output": "Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
+            "data": {
+              "audit": {
+                "id": "audit-1779862195940-hcnrvc",
+                "action": "wait_for_window",
+                "success": true,
+                "durationMs": 1847,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862195940-hcnrvc",
+                  "runId": "run_mpnnzueh_70c071",
+                  "type": "artifact",
+                  "createdAt": 1779862195940,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "wait_for_window completed in 1847ms: Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
+                  "ref": "audit-1779862195940-hcnrvc.computer-control.json"
+                }
+              }
+            }
+          },
+          {
+            "label": "focus dialog fixture",
+            "input": {
+              "action": "focus_window",
+              "windowTitle": "CodeBuddy Dialog Fixture",
+              "windowTitleMatch": "contains"
+            },
+            "success": true,
+            "output": "Focused window: \"CodeBuddy Dialog Fixture\"",
+            "data": {
+              "audit": {
+                "id": "audit-1779862198794-fk0o3q",
+                "action": "focus_window",
+                "success": true,
+                "durationMs": 2817,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862198794-fk0o3q",
+                  "runId": "run_mpnnzueh_70c071",
+                  "type": "artifact",
+                  "createdAt": 1779862198794,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "focus_window completed in 2817ms: Focused window: \"CodeBuddy Dialog Fixture\"",
+                  "ref": "audit-1779862198794-fk0o3q.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.focus_window",
+                  "name": "Computer control: focus_window",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              }
+            }
+          },
+          {
+            "label": "settle dialog fixture",
+            "input": {
+              "action": "wait",
+              "seconds": 0.5
+            },
+            "success": true,
+            "output": "Waited 500ms",
+            "data": {
+              "audit": {
+                "id": "audit-1779862199305-wa86g5",
+                "action": "wait",
+                "success": true,
+                "durationMs": 509,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862199305-wa86g5",
+                  "runId": "run_mpnnzueh_70c071",
+                  "type": "artifact",
+                  "createdAt": 1779862199305,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "wait completed in 509ms: Waited 500ms",
+                  "ref": "audit-1779862199305-wa86g5.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.wait",
+                  "name": "Computer control: wait",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              }
+            }
+          },
+          {
+            "label": "inspect dialog choices",
+            "input": {
+              "action": "inspect_dialog",
+              "windowTitle": "CodeBuddy Dialog Fixture",
+              "windowTitleMatch": "contains",
+              "dialogText": "save changes",
+              "dialogIntent": "cancel"
+            },
+            "success": true,
+            "output": "Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSuggested: \"Cancel\" (matched dialogIntent \"cancel\")",
+            "data": {
+              "dialog": {
+                "source": "windows-uia",
+                "title": "CodeBuddy Dialog Fixture",
+                "processName": "powershell",
+                "pid": 51876,
+                "text": [
+                  "Do you want to save changes before closing this test dialog?"
+                ],
+                "buttons": [
+                  {
+                    "name": "Save",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "caution",
+                    "bounds": {
+                      "x": 1658,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Delete",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "destructive",
+                    "bounds": {
+                      "x": 1748,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Cancel",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "safe",
+                    "bounds": {
+                      "x": 1838,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Fermer",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "safe",
+                    "bounds": {
+                      "x": 1909,
+                      "y": 607,
+                      "width": 34,
+                      "height": 30
+                    }
+                  }
+                ],
+                "suggestedButton": {
+                  "name": "Cancel",
+                  "role": "ControlType.Button",
+                  "enabled": true,
+                  "risk": "safe",
+                  "bounds": {
+                    "x": 1838,
+                    "y": 719,
+                    "width": 80,
+                    "height": 23
+                  }
+                },
+                "suggestionReason": "matched dialogIntent \"cancel\""
+              },
+              "audit": {
+                "id": "audit-1779862203844-7m09gz",
+                "action": "inspect_dialog",
+                "success": true,
+                "durationMs": 4539,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862203844-7m09gz",
+                  "runId": "run_mpnnzueh_70c071",
+                  "type": "artifact",
+                  "createdAt": 1779862203844,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "inspect_dialog completed in 4539ms: Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSu...",
+                  "ref": "audit-1779862203844-7m09gz.computer-control.json"
+                }
+              }
+            }
+          },
+          {
+            "label": "click safe cancel choice",
+            "input": {
+              "action": "click_dialog_button",
+              "windowTitle": "CodeBuddy Dialog Fixture",
+              "windowTitleMatch": "contains",
+              "dialogIntent": "cancel"
+            },
+            "success": true,
+            "output": "Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
+            "data": {
+              "dialog": {
+                "source": "windows-uia",
+                "title": "CodeBuddy Dialog Fixture",
+                "processName": "powershell",
+                "pid": 51876,
+                "text": [
+                  "Do you want to save changes before closing this test dialog?"
+                ],
+                "buttons": [
+                  {
+                    "name": "Save",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "caution",
+                    "bounds": {
+                      "x": 1658,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Delete",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "destructive",
+                    "bounds": {
+                      "x": 1748,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Cancel",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "safe",
+                    "bounds": {
+                      "x": 1838,
+                      "y": 719,
+                      "width": 80,
+                      "height": 23
+                    }
+                  },
+                  {
+                    "name": "Fermer",
+                    "role": "ControlType.Button",
+                    "enabled": true,
+                    "risk": "safe",
+                    "bounds": {
+                      "x": 1909,
+                      "y": 607,
+                      "width": 34,
+                      "height": 30
+                    }
+                  }
+                ],
+                "suggestedButton": {
+                  "name": "Cancel",
+                  "role": "ControlType.Button",
+                  "enabled": true,
+                  "risk": "safe",
+                  "bounds": {
+                    "x": 1838,
+                    "y": 719,
+                    "width": 80,
+                    "height": 23
+                  }
+                },
+                "suggestionReason": "matched dialogIntent \"cancel\"",
+                "clickedButton": {
+                  "name": "Cancel",
+                  "role": "ControlType.Button",
+                  "enabled": true,
+                  "risk": "safe",
+                  "bounds": {
+                    "x": 1838,
+                    "y": 719,
+                    "width": 80,
+                    "height": 23
+                  }
+                },
+                "clickSource": "uia-invoke"
+              },
+              "selectedButton": {
+                "name": "Cancel",
+                "role": "ControlType.Button",
+                "enabled": true,
+                "risk": "safe",
+                "bounds": {
+                  "x": 1838,
+                  "y": 719,
+                  "width": 80,
+                  "height": 23
+                }
+              },
+              "reason": "matched dialogIntent \"cancel\"",
+              "audit": {
+                "id": "audit-1779862212784-7708rt",
+                "action": "click_dialog_button",
+                "success": true,
+                "durationMs": 8926,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862212784-7708rt",
+                  "runId": "run_mpnnzueh_70c071",
+                  "type": "artifact",
+                  "createdAt": 1779862212784,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "click_dialog_button completed in 8926ms: Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
+                  "ref": "audit-1779862212784-7708rt.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.click_dialog_button",
+                  "name": "Computer control: click_dialog_button",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              }
+            }
+          }
+        ],
+        "generatedAt": "2026-05-27T06:10:13.296Z"
+      }
+    },
+    {
+      "name": "Notepad profile save",
+      "script": "scratch/computer-use-notepad-real-test.ts",
+      "exitCode": 0,
+      "durationMs": 24128,
+      "passed": true,
+      "resultPath": "scratch/computer-use-notepad-real-test-result.json",
+      "stdoutTail": "[ok] open Notepad profile with temp file: Opened Notepad with D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt\n[ok] write and save through Notepad profile workflow: Executed macro with 3 steps. Success: true\n{\n  \"passed\": true,\n  \"runId\": \"run_mpno0a4f_051361\",\n  \"notepadPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-notepad-real-test.txt\",\n  \"resultPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-notepad-real-test-result.json\",\n  \"assertions\": {\n    \"fileUpdated\": true,\n    \"allStepsSucceeded\": true\n  },\n  \"stepCount\": 2\n}\n",
+      "stderrTail": "{\"timestamp\":\"2026-05-27T06:10:26.680Z\",\"level\":\"info\",\"source\":\"focused\",\"message\":\"Snapshot taken\",\"id\":\"snap-1779862226680\",\"elements\":68}\n",
+      "parsedResult": {
+        "passed": true,
+        "runId": "run_mpno0a4f_051361",
+        "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+        "notepadPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+        "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test-result.json",
+        "desiredText": "Code Buddy Notepad profile workflow real test",
+        "fileContent": "Code Buddy Notepad profile workflow real test",
+        "assertions": {
+          "fileUpdated": true,
+          "allStepsSucceeded": true
+        },
+        "evidence": [
+          {
+            "label": "open Notepad profile with temp file",
+            "input": {
+              "action": "open_app",
+              "appName": "notepad",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt"
+            },
+            "success": true,
+            "output": "Opened Notepad with D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+            "data": {
+              "audit": {
+                "id": "audit-1779862215168-jy3k3p",
+                "action": "open_app",
+                "success": true,
+                "durationMs": 702,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0a4f_051361",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: open_app",
+                  "status": "completed",
+                  "startedAt": 1779862214466,
+                  "endedAt": 1779862215168,
+                  "metrics": {
+                    "durationMs": 702,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "open_app",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862215168-jy3k3p",
+                  "runId": "run_mpno0a4f_051361",
+                  "type": "artifact",
+                  "createdAt": 1779862215168,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "open_app completed in 702ms: Opened Notepad with D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+                  "ref": "audit-1779862215168-jy3k3p.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.open_app",
+                  "name": "Computer control: open_app",
+                  "riskLevel": "medium",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "dry-run-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0a4f_051361\\artifacts\\audit-1779862215168-jy3k3p.computer-control.json"
+            }
+          },
+          {
+            "label": "write and save through Notepad profile workflow",
+            "input": {
+              "action": "use_app_workflow",
+              "appName": "notepad",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-notepad-real-test.txt",
+              "visualContext": true,
+              "steps": [
+                {
+                  "action": "focus_app"
+                },
+                {
+                  "action": "clear_and_type",
+                  "text": "Code Buddy Notepad profile workflow real test"
+                },
+                {
+                  "action": "save_app_document",
+                  "confirmDangerous": true
+                }
+              ]
+            },
+            "success": true,
+            "output": "Executed macro with 3 steps. Success: true",
+            "data": {
+              "audit": {
+                "id": "audit-1779862236487-x9xabu",
+                "action": "use_app_workflow",
+                "success": true,
+                "durationMs": 21283,
+                "safetyProfile": "balanced",
+                "dangerous": true,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0a4f_051361",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: use_app_workflow",
+                  "status": "completed",
+                  "startedAt": 1779862215204,
+                  "endedAt": 1779862236487,
+                  "metrics": {
+                    "durationMs": 21283,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "use_app_workflow",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862236487-x9xabu",
+                  "runId": "run_mpno0a4f_051361",
+                  "type": "artifact",
+                  "createdAt": 1779862236487,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "use_app_workflow completed in 21283ms: Executed macro with 3 steps. Success: true",
+                  "ref": "audit-1779862236487-x9xabu.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.use_app_workflow",
+                  "name": "Computer control: use_app_workflow",
+                  "riskLevel": "high",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "approval-required"
+                }
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0a4f_051361\\artifacts\\audit-1779862236487-x9xabu.computer-control.json"
+            }
+          }
+        ],
+        "generatedAt": "2026-05-27T06:10:37.008Z"
+      }
+    },
+    {
+      "name": "Excel COM profile",
+      "script": "scratch/computer-use-excel-real-test.ts",
+      "exitCode": 0,
+      "durationMs": 6708,
+      "passed": true,
+      "resultPath": "scratch/computer-use-excel-real-test-result.json",
+      "stdoutTail": "[ok] write A1 through Excel COM: Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"\n[ok] write B1 through Excel COM: Excel Feuil1!B1 set to \"42\"\n[ok] read A1 through Excel COM: Excel Feuil1!A1 = Code Buddy Excel COM real test\n[ok] read B1 through Excel COM: Excel Feuil1!B1 = 42\n[ok] save workbook through Excel COM: Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx\n{\n  \"passed\": true,\n  \"runId\": \"run_mpno0sn6_85258e\",\n  \"workbookPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-excel-real-test.xlsx\",\n  \"resultPath\": \"D:\\\\CascadeProjects\\\\grok-cli-weekend\\\\scratch\\\\computer-use-excel-real-test-result.json\",\n  \"assertions\": {\n    \"workbookCreated\": true,\n    \"a1Matches\": true,\n    \"b1Matches\": true,\n    \"allStepsSucceeded\": true\n  },\n  \"stepCount\": 5\n}\n",
+      "stderrTail": "",
+      "parsedResult": {
+        "passed": true,
+        "runId": "run_mpno0sn6_85258e",
+        "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
+        "workbookPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+        "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test-result.json",
+        "assertions": {
+          "workbookCreated": true,
+          "a1Matches": true,
+          "b1Matches": true,
+          "allStepsSucceeded": true
+        },
+        "evidence": [
+          {
+            "label": "write A1 through Excel COM",
+            "input": {
+              "action": "excel_set_cell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "cell": "A1",
+              "value": "Code Buddy Excel COM real test",
+              "confirmDangerous": true
+            },
+            "success": true,
+            "output": "Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
+            "data": {
+              "operation": "setCell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "workbookName": "computer-use-excel-real-test.xlsx",
+              "sheetName": "Feuil1",
+              "cell": "A1",
+              "value": "Code Buddy Excel COM real test",
+              "audit": {
+                "id": "audit-1779862240427-bvnxnh",
+                "action": "excel_set_cell",
+                "success": true,
+                "durationMs": 1958,
+                "safetyProfile": "balanced",
+                "dangerous": true,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0sn6_85258e",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: excel_set_cell",
+                  "status": "completed",
+                  "startedAt": 1779862238469,
+                  "endedAt": 1779862240427,
+                  "metrics": {
+                    "durationMs": 1958,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "excel_set_cell",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862240427-bvnxnh",
+                  "runId": "run_mpno0sn6_85258e",
+                  "type": "artifact",
+                  "createdAt": 1779862240427,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "excel_set_cell completed in 1958ms: Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
+                  "ref": "audit-1779862240427-bvnxnh.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.excel_set_cell",
+                  "name": "Computer control: excel_set_cell",
+                  "riskLevel": "high",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "approval-required"
+                },
+                "approval": {
+                  "kind": "approval",
+                  "schemaVersion": 1,
+                  "id": "approval_audit-1779862240427-bvnxnh",
+                  "target": "codebuddy.computer_control.excel_set_cell",
+                  "runId": "run_mpno0sn6_85258e",
+                  "decision": "approved",
+                  "reviewer": "human-operator",
+                  "reason": "Computer control action carried explicit confirmDangerous=true.",
+                  "decidedAt": 1779862240427,
+                  "scope": "excel_set_cell"
+                },
+                "capabilities": [
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.inspect",
+                    "name": "Inspect desktop state",
+                    "level": "read",
+                    "policy": "autonomous",
+                    "fleetPolicy": "read-only-help",
+                    "description": "Read windows, snapshots, cursor, system info and permission state."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.dry_run",
+                    "name": "Simulate desktop actions",
+                    "level": "reversible-write",
+                    "policy": "dry-run-required",
+                    "fleetPolicy": "none",
+                    "description": "Prepare mutating desktop actions without applying them."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.live_control",
+                    "name": "Control the desktop",
+                    "level": "sensitive",
+                    "policy": "approval-required",
+                    "fleetPolicy": "none",
+                    "description": "Click, type, move windows, record the screen or change system state."
+                  }
+                ]
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862240427-bvnxnh.computer-control.json"
+            }
+          },
+          {
+            "label": "write B1 through Excel COM",
+            "input": {
+              "action": "excel_set_cell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "cell": "B1",
+              "value": "42",
+              "confirmDangerous": true
+            },
+            "success": true,
+            "output": "Excel Feuil1!B1 set to \"42\"",
+            "data": {
+              "operation": "setCell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "workbookName": "computer-use-excel-real-test.xlsx",
+              "sheetName": "Feuil1",
+              "cell": "B1",
+              "value": 42,
+              "audit": {
+                "id": "audit-1779862241239-8i0val",
+                "action": "excel_set_cell",
+                "success": true,
+                "durationMs": 782,
+                "safetyProfile": "balanced",
+                "dangerous": true,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0sn6_85258e",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: excel_set_cell",
+                  "status": "completed",
+                  "startedAt": 1779862240457,
+                  "endedAt": 1779862241239,
+                  "metrics": {
+                    "durationMs": 782,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "excel_set_cell",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862241239-8i0val",
+                  "runId": "run_mpno0sn6_85258e",
+                  "type": "artifact",
+                  "createdAt": 1779862241239,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "excel_set_cell completed in 782ms: Excel Feuil1!B1 set to \"42\"",
+                  "ref": "audit-1779862241239-8i0val.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.excel_set_cell",
+                  "name": "Computer control: excel_set_cell",
+                  "riskLevel": "high",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "approval-required"
+                },
+                "approval": {
+                  "kind": "approval",
+                  "schemaVersion": 1,
+                  "id": "approval_audit-1779862241239-8i0val",
+                  "target": "codebuddy.computer_control.excel_set_cell",
+                  "runId": "run_mpno0sn6_85258e",
+                  "decision": "approved",
+                  "reviewer": "human-operator",
+                  "reason": "Computer control action carried explicit confirmDangerous=true.",
+                  "decidedAt": 1779862241239,
+                  "scope": "excel_set_cell"
+                },
+                "capabilities": [
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.inspect",
+                    "name": "Inspect desktop state",
+                    "level": "read",
+                    "policy": "autonomous",
+                    "fleetPolicy": "read-only-help",
+                    "description": "Read windows, snapshots, cursor, system info and permission state."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.dry_run",
+                    "name": "Simulate desktop actions",
+                    "level": "reversible-write",
+                    "policy": "dry-run-required",
+                    "fleetPolicy": "none",
+                    "description": "Prepare mutating desktop actions without applying them."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.live_control",
+                    "name": "Control the desktop",
+                    "level": "sensitive",
+                    "policy": "approval-required",
+                    "fleetPolicy": "none",
+                    "description": "Click, type, move windows, record the screen or change system state."
+                  }
+                ]
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862241239-8i0val.computer-control.json"
+            }
+          },
+          {
+            "label": "read A1 through Excel COM",
+            "input": {
+              "action": "excel_get_cell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "cell": "A1"
+            },
+            "success": true,
+            "output": "Excel Feuil1!A1 = Code Buddy Excel COM real test",
+            "data": {
+              "operation": "getCell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "workbookName": "computer-use-excel-real-test.xlsx",
+              "sheetName": "Feuil1",
+              "cell": "A1",
+              "value": "Code Buddy Excel COM real test",
+              "audit": {
+                "id": "audit-1779862242027-jsuorw",
+                "action": "excel_get_cell",
+                "success": true,
+                "durationMs": 786,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0sn6_85258e",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: excel_get_cell",
+                  "status": "completed",
+                  "startedAt": 1779862241241,
+                  "endedAt": 1779862242027,
+                  "metrics": {
+                    "durationMs": 786,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "excel_get_cell",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862242027-jsuorw",
+                  "runId": "run_mpno0sn6_85258e",
+                  "type": "artifact",
+                  "createdAt": 1779862242027,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "excel_get_cell completed in 786ms: Excel Feuil1!A1 = Code Buddy Excel COM real test",
+                  "ref": "audit-1779862242027-jsuorw.computer-control.json"
+                },
+                "capabilities": [
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.inspect",
+                    "name": "Inspect desktop state",
+                    "level": "read",
+                    "policy": "autonomous",
+                    "fleetPolicy": "read-only-help",
+                    "description": "Read windows, snapshots, cursor, system info and permission state."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.dry_run",
+                    "name": "Simulate desktop actions",
+                    "level": "reversible-write",
+                    "policy": "dry-run-required",
+                    "fleetPolicy": "none",
+                    "description": "Prepare mutating desktop actions without applying them."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.live_control",
+                    "name": "Control the desktop",
+                    "level": "sensitive",
+                    "policy": "approval-required",
+                    "fleetPolicy": "none",
+                    "description": "Click, type, move windows, record the screen or change system state."
+                  }
+                ]
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242027-jsuorw.computer-control.json"
+            }
+          },
+          {
+            "label": "read B1 through Excel COM",
+            "input": {
+              "action": "excel_get_cell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "cell": "B1"
+            },
+            "success": true,
+            "output": "Excel Feuil1!B1 = 42",
+            "data": {
+              "operation": "getCell",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "workbookName": "computer-use-excel-real-test.xlsx",
+              "sheetName": "Feuil1",
+              "cell": "B1",
+              "value": 42,
+              "audit": {
+                "id": "audit-1779862242736-g1ih4a",
+                "action": "excel_get_cell",
+                "success": true,
+                "durationMs": 707,
+                "safetyProfile": "balanced",
+                "dangerous": false,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0sn6_85258e",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: excel_get_cell",
+                  "status": "completed",
+                  "startedAt": 1779862242029,
+                  "endedAt": 1779862242736,
+                  "metrics": {
+                    "durationMs": 707,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "excel_get_cell",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862242736-g1ih4a",
+                  "runId": "run_mpno0sn6_85258e",
+                  "type": "artifact",
+                  "createdAt": 1779862242736,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "excel_get_cell completed in 707ms: Excel Feuil1!B1 = 42",
+                  "ref": "audit-1779862242736-g1ih4a.computer-control.json"
+                },
+                "capabilities": [
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.inspect",
+                    "name": "Inspect desktop state",
+                    "level": "read",
+                    "policy": "autonomous",
+                    "fleetPolicy": "read-only-help",
+                    "description": "Read windows, snapshots, cursor, system info and permission state."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.dry_run",
+                    "name": "Simulate desktop actions",
+                    "level": "reversible-write",
+                    "policy": "dry-run-required",
+                    "fleetPolicy": "none",
+                    "description": "Prepare mutating desktop actions without applying them."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.live_control",
+                    "name": "Control the desktop",
+                    "level": "sensitive",
+                    "policy": "approval-required",
+                    "fleetPolicy": "none",
+                    "description": "Click, type, move windows, record the screen or change system state."
+                  }
+                ]
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242736-g1ih4a.computer-control.json"
+            }
+          },
+          {
+            "label": "save workbook through Excel COM",
+            "input": {
+              "action": "excel_save_workbook",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "confirmDangerous": true
+            },
+            "success": true,
+            "output": "Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+            "data": {
+              "operation": "save",
+              "filePath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+              "workbookName": "computer-use-excel-real-test.xlsx",
+              "sheetName": "Feuil1",
+              "cell": "",
+              "value": null,
+              "audit": {
+                "id": "audit-1779862243475-uyvrvs",
+                "action": "excel_save_workbook",
+                "success": true,
+                "durationMs": 726,
+                "safetyProfile": "balanced",
+                "dangerous": true,
+                "simulated": false
+              },
+              "harness": {
+                "run": {
+                  "kind": "run",
+                  "schemaVersion": 1,
+                  "id": "run_mpno0sn6_85258e",
+                  "actor": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "objective": "Computer control action: excel_save_workbook",
+                  "status": "completed",
+                  "startedAt": 1779862242749,
+                  "endedAt": 1779862243475,
+                  "metrics": {
+                    "durationMs": 726,
+                    "toolCallCount": 1
+                  },
+                  "metadata": {
+                    "channel": "computer-control",
+                    "organ": "code-buddy",
+                    "tags": [
+                      "computer-use",
+                      "excel_save_workbook",
+                      "live"
+                    ]
+                  }
+                },
+                "proof": {
+                  "kind": "proof",
+                  "schemaVersion": 1,
+                  "id": "proof_audit-1779862243475-uyvrvs",
+                  "runId": "run_mpno0sn6_85258e",
+                  "type": "artifact",
+                  "createdAt": 1779862243475,
+                  "producedBy": {
+                    "type": "agent",
+                    "id": "code-buddy-computer-control"
+                  },
+                  "summary": "excel_save_workbook completed in 726ms: Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+                  "ref": "audit-1779862243475-uyvrvs.computer-control.json"
+                },
+                "sensitiveAction": {
+                  "kind": "sensitive-action",
+                  "schemaVersion": 1,
+                  "id": "codebuddy.computer_control.excel_save_workbook",
+                  "name": "Computer control: excel_save_workbook",
+                  "riskLevel": "high",
+                  "scope": [],
+                  "defaultDryRun": true,
+                  "requires": "approval-required"
+                },
+                "approval": {
+                  "kind": "approval",
+                  "schemaVersion": 1,
+                  "id": "approval_audit-1779862243475-uyvrvs",
+                  "target": "codebuddy.computer_control.excel_save_workbook",
+                  "runId": "run_mpno0sn6_85258e",
+                  "decision": "approved",
+                  "reviewer": "human-operator",
+                  "reason": "Computer control action carried explicit confirmDangerous=true.",
+                  "decidedAt": 1779862243475,
+                  "scope": "excel_save_workbook"
+                },
+                "capabilities": [
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.inspect",
+                    "name": "Inspect desktop state",
+                    "level": "read",
+                    "policy": "autonomous",
+                    "fleetPolicy": "read-only-help",
+                    "description": "Read windows, snapshots, cursor, system info and permission state."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.dry_run",
+                    "name": "Simulate desktop actions",
+                    "level": "reversible-write",
+                    "policy": "dry-run-required",
+                    "fleetPolicy": "none",
+                    "description": "Prepare mutating desktop actions without applying them."
+                  },
+                  {
+                    "kind": "capability",
+                    "schemaVersion": 1,
+                    "id": "codebuddy.computer_control.live_control",
+                    "name": "Control the desktop",
+                    "level": "sensitive",
+                    "policy": "approval-required",
+                    "fleetPolicy": "none",
+                    "description": "Click, type, move windows, record the screen or change system state."
+                  }
+                ]
+              },
+              "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862243475-uyvrvs.computer-control.json"
+            }
+          }
+        ],
+        "generatedAt": "2026-05-27T06:10:43.485Z"
+      }
+    }
+  ]
+}

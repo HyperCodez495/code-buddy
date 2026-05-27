@@ -35,6 +35,7 @@ export const test = base.extend<CoworkFixtures>({
         ...process.env,
         COWORK_E2E: '1',
         COWORK_E2E_USER_DATA_DIR: userDataDir,
+        CODEBUDDY_RUNS_DIR: path.join(userDataDir, 'codebuddy-runs'),
         CI: '1',
       },
     });

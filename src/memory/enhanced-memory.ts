@@ -21,6 +21,7 @@ import { getMemoryRepository, MemoryRepository } from '../database/repositories/
 import type { Memory as DBMemory, MemoryType as DBMemoryType } from '../database/schema.js';
 import { getEmbeddingProvider, EmbeddingProvider } from '../embeddings/embedding-provider.js';
 import { logger } from '../utils/logger.js';
+import { BayesianQualifier } from '../ml/bayesian-qualifier.js';
 
 export interface MemoryEntry {
   id: string;
@@ -163,6 +164,7 @@ export class EnhancedMemory extends EventEmitter {
   private decayIntervalId: ReturnType<typeof setInterval> | null = null;
   private dbRepository: MemoryRepository | null = null;
   private embeddingProvider: EmbeddingProvider | null = null;
+  private bayesianQualifier = new BayesianQualifier();
 
   constructor(config: Partial<MemoryConfig> = {}) {
     super();
@@ -208,6 +210,17 @@ export class EnhancedMemory extends EventEmitter {
     await this.loadProjects();
     await this.loadUserProfile();
     await this.loadSummaries();
+
+    // Load GPR state if exists
+    const qualifierPath = path.join(this.dataDir, 'bayesian-state.json');
+    if (await fs.pathExists(qualifierPath)) {
+      try {
+        const state = await fs.readFile(qualifierPath, 'utf8');
+        this.bayesianQualifier.loadState(state);
+      } catch (err: any) {
+        logger.error(`Failed to load bayesian-state: ${err.message}`);
+      }
+    }
 
     // Start decay timer
     this.decayIntervalId = setInterval(() => this.applyDecay(), 3600000); // Every hour
@@ -348,6 +361,16 @@ export class EnhancedMemory extends EventEmitter {
           path.join(this.dataDir, 'user-profile.json'),
           this.userProfile,
           { spaces: 2 }
+        )
+      );
+    }
+
+    if (this.bayesianQualifier) {
+      saveOperations.push(
+        fs.writeFile(
+          path.join(this.dataDir, 'bayesian-state.json'),
+          this.bayesianQualifier.saveState(),
+          'utf8'
         )
       );
     }
@@ -539,7 +562,21 @@ export class EnhancedMemory extends EventEmitter {
     if (options.query) {
       const query = options.query.toLowerCase();
 
-      if (this.config.embeddingEnabled) {
+      if (this.bayesianQualifier && (this.bayesianQualifier as any).isTrained) {
+        const queryEmbedding = this.config.embeddingEnabled
+          ? await this.generateEmbedding(options.query)
+          : undefined;
+
+        results = results
+          .map(m => {
+            const features = this.extractMemoryFeatures(m, queryEmbedding);
+            const { mean } = this.bayesianQualifier.predict(features);
+            return { memory: m, score: mean };
+          })
+          .filter(r => r.score > 0.3)
+          .sort((a, b) => b.score - a.score)
+          .map(r => r.memory);
+      } else if (this.config.embeddingEnabled) {
         // Semantic search
         const queryEmbedding = await this.generateEmbedding(options.query);
         results = results
@@ -1018,6 +1055,40 @@ export class EnhancedMemory extends EventEmitter {
     this.projects.clear();
     this.summaries = [];
     this.removeAllListeners();
+  }
+
+  private extractMemoryFeatures(entry: MemoryEntry, queryEmbedding?: number[]): number[] {
+    const sim = (queryEmbedding && entry.embedding)
+      ? this.cosineSimilarity(queryEmbedding, entry.embedding)
+      : 0.0;
+
+    const importance = entry.importance || 0.0;
+    const accessCount = entry.accessCount || 0;
+    const ageInDays = (Date.now() - new Date(entry.updatedAt).getTime()) / (1000 * 60 * 60 * 24);
+    const recency = Math.exp(-ageInDays * 0.01);
+    const length = entry.content.length / 10000;
+
+    return [sim, importance, accessCount, recency, length];
+  }
+
+  /**
+   * Qualify a memory as approved or rejected (Active Learning labeling)
+   */
+  async qualifyMemory(entry: MemoryEntry, approved: boolean, query?: string): Promise<void> {
+    const queryEmbedding = query ? await this.generateEmbedding(query) : undefined;
+    const features = this.extractMemoryFeatures(entry, queryEmbedding);
+    this.bayesianQualifier.addSample(features, approved ? 1 : 0);
+    this.bayesianQualifier.train();
+    await this.saveAll();
+  }
+
+  /**
+   * Predict the relevance score of a memory
+   */
+  predictRelevance(entry: MemoryEntry, queryEmbedding?: number[]): { score: number; uncertainty: number } {
+    const features = this.extractMemoryFeatures(entry, queryEmbedding);
+    const { mean, std } = this.bayesianQualifier.predict(features);
+    return { score: mean, uncertainty: std };
   }
 }
 

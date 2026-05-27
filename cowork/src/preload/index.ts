@@ -141,6 +141,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
     };
   },
 
+  // Additional event subscription for panels that need their own live feed
+  // without replacing the app-wide store listener registered through `on`.
+  onEvent: (callback: (event: ServerEvent) => void) => {
+    const listener = (_: Electron.IpcRendererEvent, data: ServerEvent) => {
+      callback(data);
+    };
+    ipcRenderer.on('server-event', listener);
+    return () => {
+      ipcRenderer.removeListener('server-event', listener);
+    };
+  },
+
   // Invoke and wait for response
   invoke: async <T>(event: ClientEvent): Promise<T> => {
     if (!ALLOWED_CLIENT_EVENTS.has(event.type)) {
@@ -1920,12 +1932,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
   test: {
     detect: (): Promise<string | null> => ipcRenderer.invoke('test.detect'),
     run: (files?: string[]): Promise<unknown> => ipcRenderer.invoke('test.run', files),
+    catalog: (): Promise<unknown[]> => ipcRenderer.invoke('test.catalog'),
+    runCatalogItem: (id: string): Promise<unknown> => ipcRenderer.invoke('test.runCatalogItem', id),
     runFailing: (): Promise<unknown> => ipcRenderer.invoke('test.runFailing'),
     cancel: (): Promise<{ success: boolean }> => ipcRenderer.invoke('test.cancel'),
     getState: (): Promise<{
       framework: string | null;
       lastResult: unknown | null;
       isRunning: boolean;
+      catalog?: unknown[];
     } | null> => ipcRenderer.invoke('test.getState'),
   },
 
@@ -2672,6 +2687,7 @@ declare global {
     electronAPI: {
       send: (event: ClientEvent) => void;
       on: (callback: (event: ServerEvent) => void) => () => void;
+      onEvent: (callback: (event: ServerEvent) => void) => () => void;
       invoke: <T>(event: ClientEvent) => Promise<T>;
       platform: NodeJS.Platform;
       getSystemTheme: () => Promise<{ shouldUseDarkColors: boolean }>;
@@ -4097,12 +4113,15 @@ declare global {
       test: {
         detect: () => Promise<string | null>;
         run: (files?: string[]) => Promise<unknown>;
+        catalog: () => Promise<unknown[]>;
+        runCatalogItem: (id: string) => Promise<unknown>;
         runFailing: () => Promise<unknown>;
         cancel: () => Promise<{ success: boolean }>;
         getState: () => Promise<{
           framework: string | null;
           lastResult: unknown | null;
           isRunning: boolean;
+          catalog?: unknown[];
         } | null>;
       };
       identity: {

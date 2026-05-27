@@ -34,10 +34,13 @@ const ANSI_BG_COLORS: Record<number, string> = {
   46: 'bg-cyan-900/50', 47: 'bg-zinc-700',
 };
 
+const ANSI_SGR_PATTERN = '\\u001b\\[([0-9;]*)m';
+const ANSI_SGR_STRIP_PATTERN = '\\u001b\\[[0-9;]*m';
+
 // Parse ANSI escape sequences into styled spans
 function parseAnsi(text: string): AnsiSpan[] {
   const result: AnsiSpan[] = [];
-  const regex = /\u001b\[([0-9;]*)m/g;
+  const regex = new RegExp(ANSI_SGR_PATTERN, 'g');
   let lastIndex = 0;
   let currentClasses: string[] = [];
   let match;
@@ -84,7 +87,7 @@ function parseAnsi(text: string): AnsiSpan[] {
 }
 
 function stripAnsi(text: string): string {
-  return text.replace(/\u001b\[[0-9;]*m/g, '');
+  return text.replace(new RegExp(ANSI_SGR_STRIP_PATTERN, 'g'), '');
 }
 
 export const TerminalOutput: React.FC<TerminalOutputProps> = React.memo(

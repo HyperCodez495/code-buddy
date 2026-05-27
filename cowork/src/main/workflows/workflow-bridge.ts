@@ -111,6 +111,7 @@ export class WorkflowBridge {
 
   /** Maps task.id → visual node.id, populated when a workflow is compiled. */
   private taskToVisualNode = new Map<string, string>();
+  private loopBodyNodes = new Map<string, string[]>();
   /** Maps Orchestrator instanceId → persistent workflow.id. */
   private instanceToWorkflowId = new Map<string, string>();
   /** Active workflow run, used to tag lifecycle events. V1 = 1 at a time. */
@@ -490,6 +491,20 @@ export class WorkflowBridge {
           });
         });
 
+        orchestrator.on('loop_iteration_started', (...args: unknown[]) => {
+          const evt = args[0] as { instanceId: string; stepId: string; iteration: number };
+          const wfId = this.workflowIdForInstance(evt.instanceId) ?? '';
+          const bodyNodes = this.loopBodyNodes.get(evt.stepId) ?? [];
+          for (const nodeId of bodyNodes) {
+            this.emitWorkflowEvent({
+              type: 'node_reset' as any,
+              workflowId: wfId,
+              instanceId: evt.instanceId,
+              nodeId,
+            });
+          }
+        });
+
         // The core Orchestrator only triggers `processQueue()` from
         // start(), completeTask(), and failTask(). Without this hook the
         // very first task of a workflow would sit in the queue forever
@@ -529,15 +544,35 @@ export class WorkflowBridge {
    */
   private indexTasksByVisualNode(coreDef: { steps: unknown[] }): void {
     this.taskToVisualNode.clear();
-    const walk = (steps: unknown[]) => {
+    this.loopBodyNodes.clear();
+    const walk = (steps: unknown[], parentLoopStepId?: string) => {
       for (const stepUnknown of steps) {
         const step = stepUnknown as {
+          id: string;
+          type: string;
           tasks?: Array<{ id: string; input: Record<string, unknown> }>;
           branches?: unknown[][];
           trueBranch?: unknown[];
           falseBranch?: unknown[];
           loopBody?: unknown[];
+          batchBody?: unknown[];
         };
+
+        if (parentLoopStepId) {
+          if (step.tasks) {
+            for (const t of step.tasks) {
+              const nodeId = t.input.cowork_visual_node_id;
+              if (typeof nodeId === 'string') {
+                const list = this.loopBodyNodes.get(parentLoopStepId) || [];
+                if (!list.includes(nodeId)) {
+                  list.push(nodeId);
+                }
+                this.loopBodyNodes.set(parentLoopStepId, list);
+              }
+            }
+          }
+        }
+
         if (step.tasks) {
           for (const t of step.tasks) {
             const nodeId = t.input.cowork_visual_node_id;
@@ -546,12 +581,18 @@ export class WorkflowBridge {
             }
           }
         }
-        if (step.branches) {
-          for (const branch of step.branches) walk(branch);
+
+        if (step.type === 'loop' && step.loopBody) {
+          walk(step.loopBody, step.id);
+        } else if (step.type === 'batch' && step.batchBody) {
+          walk(step.batchBody, step.id);
+        } else {
+          if (step.branches) {
+            for (const branch of step.branches) walk(branch, parentLoopStepId);
+          }
+          if (step.trueBranch) walk(step.trueBranch, parentLoopStepId);
+          if (step.falseBranch) walk(step.falseBranch, parentLoopStepId);
         }
-        if (step.trueBranch) walk(step.trueBranch);
-        if (step.falseBranch) walk(step.falseBranch);
-        if (step.loopBody) walk(step.loopBody);
       }
     };
     walk(coreDef.steps);

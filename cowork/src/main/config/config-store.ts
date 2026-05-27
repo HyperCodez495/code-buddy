@@ -375,6 +375,7 @@ export async function getPiAiModelPresets(): Promise<typeof PROVIDER_PRESETS> {
 }
 
 const PROFILE_KEYS: ProviderProfileKey[] = [
+  'chatgpt',
   'openrouter',
   'anthropic',
   'openai',
@@ -389,6 +390,7 @@ const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
+    value === 'chatgpt' ||
     value === 'openrouter' ||
     value === 'anthropic' ||
     value === 'custom' ||
@@ -637,7 +639,11 @@ export class ConfigStore {
         return false;
       }
       const fallback = this.getDefaultProfile(key);
-      if (typeof rawProfile.apiKey === 'string' && rawProfile.apiKey.trim()) {
+      if (
+        typeof rawProfile.apiKey === 'string' &&
+        rawProfile.apiKey.trim() &&
+        rawProfile.apiKey.trim() !== fallback.apiKey
+      ) {
         return true;
       }
       if (
@@ -1557,6 +1563,7 @@ export class ConfigStore {
     delete process.env.CODEBUDDY_MEMORY_PROVIDER;
 
     const useOpenAI =
+      projectedConfig.provider === 'chatgpt' ||
       projectedConfig.provider === 'openai' ||
       projectedConfig.provider === 'ollama' ||
       projectedConfig.provider === 'lmstudio' ||

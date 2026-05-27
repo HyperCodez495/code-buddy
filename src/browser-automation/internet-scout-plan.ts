@@ -146,14 +146,14 @@ export function buildInternetScoutPlan(options: InternetScoutPlanOptions): Inter
   if (options.requiresInteraction === true) {
     steps.push({
       id: 'interaction-plan',
-      title: 'Interact only through observed refs',
+      title: 'Identify the target element before acting',
       tool: 'browser',
       stage: 'interact',
       evidence: 'user-action',
       required: false,
-      action: 'click/type/fill',
-      reason: 'Use explicit refs from observe/snapshot, avoid blind selectors, and stop on auth or anti-bot walls.',
-      inputs: { requiresVisibleRef: true },
+      action: 'identify_element',
+      reason: 'Use LLM-assisted observation to resolve a visible selector before any click, typing, or form fill.',
+      inputs: { target: query, requiresVisibleRef: true },
     });
   }
 

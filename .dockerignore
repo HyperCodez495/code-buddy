@@ -1,9 +1,11 @@
 # Dependencies
 node_modules
+**/node_modules
 .npm
 
 # Build output
 dist
+**/dist
 
 # Git
 .git
@@ -17,6 +19,9 @@ dist
 
 # Test and coverage
 coverage
+**/coverage
+test-results
+**/test-results
 .nyc_output
 *.tsbuildinfo
 
@@ -34,6 +39,9 @@ Thumbs.db
 
 # Documentation (not needed in image)
 docs/
+docs-generated/
+docs-generated-full/
+wiki/
 *.md
 !README.md
 
@@ -47,4 +55,14 @@ jest.config.*
 # Development files
 .eslintrc*
 .prettierrc*
-tsconfig.json
+vitest.config.*
+commitlint.config.*
+
+# Local agent/app state and sibling workspaces
+.codebuddy/
+.omx/
+.omc/
+.antigravitycli/
+${APPDATA}/
+C*Users*gemini*openclaw_test*/
+cowork/

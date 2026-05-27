@@ -252,12 +252,14 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
           type="text"
           value={name}
           onChange={(e) => setName(e.target.value)}
+          data-testid="workflow-editor-name-input"
           className="flex-1 bg-transparent border-none outline-none text-sm font-semibold text-text-primary placeholder:text-text-muted"
           placeholder={t('workflow.namePlaceholder')}
         />
         <button
           onClick={handleSave}
           disabled={saving}
+          data-testid="workflow-editor-save"
           className="flex items-center gap-1 px-3 py-1.5 text-xs bg-accent hover:bg-accent-hover disabled:opacity-50 text-white rounded transition-colors"
           title={t('workflow.save')}
         >
@@ -299,6 +301,7 @@ export const WorkflowEditor: React.FC<WorkflowEditorProps> = ({
               <button
                 key={type}
                 onClick={() => addNode(type)}
+                data-testid={`workflow-add-node-${type}`}
                 className="w-full flex items-center gap-2 px-2 py-1.5 text-xs bg-surface hover:bg-surface-hover border border-border rounded transition-colors"
               >
                 <Icon size={12} />

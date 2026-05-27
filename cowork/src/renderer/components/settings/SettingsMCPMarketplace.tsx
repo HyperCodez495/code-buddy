@@ -222,7 +222,7 @@ export const SettingsMCPMarketplace: React.FC = () => {
   }, []);
 
   return (
-    <div className="flex flex-col h-full">
+    <div className="flex flex-col h-full" data-testid="settings-mcp-marketplace">
       <div className="px-4 py-3 border-b border-border-muted">
         <div className="flex items-center gap-2 mb-3">
           <Wrench size={14} className="text-accent" />
@@ -238,6 +238,7 @@ export const SettingsMCPMarketplace: React.FC = () => {
         <div className="flex gap-1 mb-2">
           <button
             onClick={() => setSubTab('marketplace')}
+            data-testid="mcp-marketplace-tab"
             className={`text-xs px-3 py-1 rounded transition-colors ${
               subTab === 'marketplace'
                 ? 'bg-accent/20 text-accent'
@@ -248,6 +249,7 @@ export const SettingsMCPMarketplace: React.FC = () => {
           </button>
           <button
             onClick={() => setSubTab('playground')}
+            data-testid="mcp-playground-tab"
             className={`text-xs px-3 py-1 rounded transition-colors ${
               subTab === 'playground'
                 ? 'bg-accent/20 text-accent'
@@ -269,6 +271,7 @@ export const SettingsMCPMarketplace: React.FC = () => {
             type="text"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
+            data-testid="mcp-marketplace-search"
             placeholder={t('mcpMarketplace.search')}
             className="w-full pl-8 pr-3 py-1.5 text-xs bg-surface border border-border rounded text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
           />
@@ -351,6 +354,7 @@ export const SettingsMCPMarketplace: React.FC = () => {
             return (
               <div
                 key={item.id}
+                data-testid={`mcp-marketplace-item-${item.id}`}
                 className="rounded-lg border border-border-muted bg-surface/40 overflow-hidden"
               >
                 <div

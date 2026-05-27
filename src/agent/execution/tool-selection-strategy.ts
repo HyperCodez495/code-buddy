@@ -37,6 +37,7 @@ import type {
 import { getPromptCacheManager } from '../../optimization/prompt-cache.js';
 import { logger } from '../../utils/logger.js';
 import type { UnifiedSkill } from '../../skills/types.js';
+import { getSkillsHub } from '../../skills/hub.js';
 
 // Re-export types for convenience
 export type {
@@ -283,6 +284,30 @@ export class ToolSelectionStrategy {
    * @param skill - The matched UnifiedSkill, or null to clear
    */
   setActiveSkill(skill: UnifiedSkill | null): void {
+    if (skill) {
+      let isDisabled = false;
+      try {
+        const disabledSkills = new Set(
+          getSkillsHub()
+            .list()
+            .filter((s) => s.enabled === false)
+            .map((s) => s.name)
+        );
+        if (disabledSkills.has(skill.name)) {
+          isDisabled = true;
+        }
+      } catch {
+        // Ignored
+      }
+      if (skill.enabled === false) {
+        isDisabled = true;
+      }
+      if (isDisabled) {
+        logger.warn(`Skill ${skill.name} is disabled. Skipping tool selection strategy active skill setting.`);
+        this.activeSkill = null;
+        return;
+      }
+    }
     this.activeSkill = skill;
     if (skill) {
       logger.debug('Active skill set for tool selection', { skill: skill.name });

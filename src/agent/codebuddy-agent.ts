@@ -22,6 +22,7 @@ import { getLaneQueue } from "../concurrency/lane-queue.js";
 import type { RouteAgentConfig } from "../channels/peer-routing.js";
 import { findSkill, findStarterPack } from "../skills/index.js";
 import { skillMdToUnified } from "../skills/adapters/index.js";
+import { getSkillsHub } from "../skills/hub.js";
 import { MessageQueue, type MessageQueueMode } from "./message-queue.js";
 import { CostPredictor } from "../analytics/cost-predictor.js";
 import { BudgetAlertManager } from "../analytics/budget-alerts.js";
@@ -817,36 +818,65 @@ export class CodeBuddyAgent extends BaseAgent {
 
       if (match) {
         const unifiedSkill = skillMdToUnified(match.skill);
+        let isDisabled = false;
+        try {
+          const disabledSkills = new Set(
+            getSkillsHub()
+              .list()
+              .filter((s) => s.enabled === false)
+              .map((s) => s.name)
+          );
+          if (disabledSkills.has(unifiedSkill.name)) {
+            isDisabled = true;
+          }
+        } catch {
+          // Ignored
+        }
+        if (match.skill.enabled === false) {
+          isDisabled = true;
+        }
 
-        // Set active skill on the tool selection strategy so required tools are included
-        this.toolSelectionStrategy.setActiveSkill(unifiedSkill);
-
-        // Inject skill system prompt into the conversation context
-        const skillPrompt = unifiedSkill.systemPrompt || unifiedSkill.description;
-        if (skillPrompt) {
-          // Find existing skill context message and replace, or insert before the last user message
+        if (isDisabled) {
+          logger.warn(`Skill matched but was disabled: ${unifiedSkill.name}`);
+          this.toolSelectionStrategy.setActiveSkill(null);
+          // Also clear any existing skill message
           const existingIdx = this.messages.findIndex(
             m => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith('[Skill:')
           );
-          const skillMessage = {
-            role: 'system' as const,
-            content: `[Skill: ${unifiedSkill.name}]\n${skillPrompt}`,
-          };
-
           if (existingIdx >= 0) {
-            this.messages[existingIdx] = skillMessage;
-          } else {
-            // Insert after the main system prompt (index 1)
-            const insertIdx = Math.min(1, this.messages.length);
-            this.messages.splice(insertIdx, 0, skillMessage);
+            this.messages.splice(existingIdx, 1);
           }
-        }
+        } else {
+          // Set active skill on the tool selection strategy so required tools are included
+          this.toolSelectionStrategy.setActiveSkill(unifiedSkill);
 
-        logger.debug('Skill matched for query', {
-          skill: unifiedSkill.name,
-          confidence: match.confidence,
-          reason: match.reason,
-        });
+          // Inject skill system prompt into the conversation context
+          const skillPrompt = unifiedSkill.systemPrompt || unifiedSkill.description;
+          if (skillPrompt) {
+            // Find existing skill context message and replace, or insert before the last user message
+            const existingIdx = this.messages.findIndex(
+              m => m.role === 'system' && typeof m.content === 'string' && m.content.startsWith('[Skill:')
+            );
+            const skillMessage = {
+              role: 'system' as const,
+              content: `[Skill: ${unifiedSkill.name}]\n${skillPrompt}`,
+            };
+
+            if (existingIdx >= 0) {
+              this.messages[existingIdx] = skillMessage;
+            } else {
+              // Insert after the main system prompt (index 1)
+              const insertIdx = Math.min(1, this.messages.length);
+              this.messages.splice(insertIdx, 0, skillMessage);
+            }
+          }
+
+          logger.debug('Skill matched for query', {
+            skill: unifiedSkill.name,
+            confidence: match.confidence,
+            reason: match.reason,
+          });
+        }
       } else {
         // No skill matched - clear any previous skill context
         this.toolSelectionStrategy.setActiveSkill(null);

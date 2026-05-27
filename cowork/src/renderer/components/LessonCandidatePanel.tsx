@@ -125,7 +125,10 @@ export function LessonCandidatePanel() {
   if (!show) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-stretch justify-end bg-black/30 backdrop-blur-sm"
+      data-testid="lesson-candidate-panel"
+    >
       <div className="flex h-full w-[560px] flex-col bg-background-secondary border-l border-border shadow-2xl">
         <div className="flex items-center justify-between border-b border-border px-4 py-3">
           <div className="flex items-center gap-2">
@@ -159,6 +162,7 @@ export function LessonCandidatePanel() {
               type="text"
               value={reviewer}
               onChange={(e) => setReviewer(e.target.value)}
+              data-testid="lesson-reviewer-input"
               placeholder="your name (required to approve)"
               className="flex-1 rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
             />
@@ -168,6 +172,7 @@ export function LessonCandidatePanel() {
               <button
                 key={t.key}
                 onClick={() => setTab(t.key)}
+                data-testid={`lesson-tab-${t.key}`}
                 className={`rounded px-2 py-1 text-xs transition-colors ${
                   tab === t.key
                     ? 'bg-accent text-white'
@@ -267,6 +272,7 @@ export function LessonCandidatePanel() {
                       <button
                         disabled={busyId === c.id}
                         onClick={() => void discard(c)}
+                        data-testid={`lesson-discard-${c.id}`}
                         className="flex items-center gap-1 rounded border border-border px-2 py-1 text-xs text-text-secondary hover:bg-surface transition-colors disabled:opacity-50"
                       >
                         <Trash2 className="w-3.5 h-3.5" />
@@ -275,6 +281,7 @@ export function LessonCandidatePanel() {
                       <button
                         disabled={busyId === c.id}
                         onClick={() => void approve(c)}
+                        data-testid={`lesson-approve-${c.id}`}
                         className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors disabled:opacity-50"
                       >
                         <Check className="w-3.5 h-3.5" />

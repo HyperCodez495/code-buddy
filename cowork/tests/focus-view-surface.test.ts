@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 
 const appPath = path.resolve(process.cwd(), 'src/renderer/App.tsx');
-const titlebarPath = path.resolve(process.cwd(), 'src/renderer/components/Titlebar.tsx');
+const shellNavigationPath = path.resolve(process.cwd(), 'src/renderer/components/ShellNavigation.tsx');
 const focusViewPath = path.resolve(process.cwd(), 'src/renderer/components/FocusView.tsx');
 
 describe('focus view surface', () => {
@@ -15,10 +15,11 @@ describe('focus view surface', () => {
     expect(source).toContain('<FocusView');
   });
 
-  it('adds a titlebar entry for the focus view', () => {
-    const source = fs.readFileSync(titlebarPath, 'utf8');
+  it('adds a shell navigation entry for the focus view', () => {
+    const source = fs.readFileSync(shellNavigationPath, 'utf8');
     expect(source).toContain("setShowFocusView(true)");
-    expect(source).toContain('data-testid="focus-view-button"');
+    expect(source).toContain("testId: 'focus-view-button'");
+    expect(source).toContain('data-testid={action.testId}');
   });
 
   it('renders empty-state and recent-step sections in the focus view', () => {
