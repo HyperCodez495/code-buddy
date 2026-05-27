@@ -253,6 +253,8 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'tool-executor-unc-paths.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'server'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'server', 'chat-route-real-gpt55.test.ts'), '');
+  mkdirSync(path.join(root, 'scratch'), { recursive: true });
+  writeFileSync(path.join(root, 'scratch', 'computer-use-real-suite.ts'), '');
   mkdirSync(path.join(root, 'tests', 'cli'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'cli', 'cli-flags.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'cli', 'headless-exit-code.test.ts'), '');
@@ -889,6 +891,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Server / API MCP platform bundle');
     expect(labels).toContain('Docker / real sandbox smoke');
     expect(labels).toContain('Docker / sandbox full bundle');
+    expect(labels).toContain('Computer Use / real desktop suite');
     expect(labels).not.toContain('typecheck:watch');
     expect(labels).not.toContain('lint:fix');
     expect(labels).not.toContain('dev');
@@ -1140,6 +1143,14 @@ describe('TestRunnerBridge catalog', () => {
       safeToRun: false,
       requiresEnv: 'CODEBUDDY_REAL_DOCKER_SANDBOX',
       env: { CODEBUDDY_REAL_DOCKER_SANDBOX: '1' },
+    });
+    expect(catalog.find((item) => item.label === 'Computer Use / real desktop suite')).toMatchObject({
+      command: 'npx',
+      args: ['tsx', 'scratch/computer-use-real-suite.ts'],
+      kind: 'integration',
+      safeToRun: false,
+      requiresEnv: 'CODEBUDDY_REAL_COMPUTER_USE',
+      env: { CODEBUDDY_REAL_COMPUTER_USE: '1' },
     });
   });
 

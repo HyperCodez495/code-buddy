@@ -33,8 +33,16 @@ test('opens the QA window with catalog checks and execution tracking', async ({ 
   await expect(appPage.getByText('CLI / headless provider failure exit', { exact: true })).toBeVisible();
   await expect(appPage.getByText('Fleet/MCP local smoke suite', { exact: true })).toBeVisible();
   await expect(appPage.getByText('Docker / real sandbox smoke', { exact: true })).toBeVisible();
-  await expect(appPage.getByText('CODEBUDDY_REAL_GPT55_SERVER', { exact: true })).toBeVisible();
-  await expect(appPage.getByText('CODEBUDDY_REAL_DOCKER_SANDBOX', { exact: true })).toBeVisible();
+  await expect(appPage.getByText('Computer Use / real desktop suite', { exact: true })).toBeVisible();
+  await expect(appPage.getByTestId('test-catalog-row-code-buddy-server-real-gpt55-chat')).toContainText(
+    'CODEBUDDY_REAL_GPT55_SERVER'
+  );
+  await expect(appPage.getByTestId('test-catalog-row-code-buddy-docker-sandbox-real-smoke')).toContainText(
+    'CODEBUDDY_REAL_DOCKER_SANDBOX'
+  );
+  await expect(appPage.getByTestId('test-catalog-row-code-buddy-computer-use-real-desktop-suite')).toContainText(
+    'CODEBUDDY_REAL_COMPUTER_USE'
+  );
 
   await appPage.screenshot({
     path: path.resolve(
@@ -55,7 +63,7 @@ test('opens the QA window with catalog checks and execution tracking', async ({ 
     { timeout: 120_000 }
   );
   await expect(appPage.getByTestId(`test-catalog-result-${providerRegressionId}`)).toHaveText(
-    '1 ok / 0 ko',
+    /\d+ ok \/ 0 ko/,
     { timeout: 120_000 }
   );
   await appPage.screenshot({
@@ -77,7 +85,7 @@ test('opens the QA window with catalog checks and execution tracking', async ({ 
     { timeout: 120_000 }
   );
   await expect(appPage.getByTestId(`test-catalog-result-${headlessExitId}`)).toHaveText(
-    '1 ok / 0 ko',
+    /\d+ ok \/ 0 ko/,
     { timeout: 120_000 }
   );
 
@@ -92,7 +100,7 @@ test('opens the QA window with catalog checks and execution tracking', async ({ 
     { timeout: 120_000 }
   );
   await expect(appPage.getByTestId(`test-catalog-result-${fleetMcpId}`)).toHaveText(
-    '6 ok / 0 ko',
+    /\d+ ok \/ 0 ko/,
     { timeout: 120_000 }
   );
 

@@ -1,11 +1,11 @@
 {
   "passed": true,
-  "runId": "run_mpnnzueh_70c071",
+  "runId": "run_mpnucs82_a7d78b",
   "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
   "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-dialog-real-test-result.json",
   "fixtureResult": {
     "decision": "cancel",
-    "clickedAt": "2026-05-27T08:10:12.5962902+02:00"
+    "clickedAt": "2026-05-27T11:08:07.1028575+02:00"
   },
   "assertions": {
     "clickedCancel": true,
@@ -22,13 +22,13 @@
         "timeoutMs": 10000
       },
       "success": true,
-      "output": "Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
+      "output": "Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 43724)",
       "data": {
         "audit": {
-          "id": "audit-1779862195940-hcnrvc",
+          "id": "audit-1779872877828-x9zu0n",
           "action": "wait_for_window",
           "success": true,
-          "durationMs": 1847,
+          "durationMs": 2335,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -37,16 +37,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862195940-hcnrvc",
-            "runId": "run_mpnnzueh_70c071",
+            "id": "proof_audit-1779872877828-x9zu0n",
+            "runId": "run_mpnucs82_a7d78b",
             "type": "artifact",
-            "createdAt": 1779862195940,
+            "createdAt": 1779872877828,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "wait_for_window completed in 1847ms: Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 51876)",
-            "ref": "audit-1779862195940-hcnrvc.computer-control.json"
+            "summary": "wait_for_window completed in 2335ms: Window found: \"CodeBuddy Dialog Fixture\" (powershell, PID: 43724)",
+            "ref": "audit-1779872877828-x9zu0n.computer-control.json"
           }
         }
       }
@@ -62,10 +62,10 @@
       "output": "Focused window: \"CodeBuddy Dialog Fixture\"",
       "data": {
         "audit": {
-          "id": "audit-1779862198794-fk0o3q",
+          "id": "audit-1779872881374-3au8rg",
           "action": "focus_window",
           "success": true,
-          "durationMs": 2817,
+          "durationMs": 3515,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -74,16 +74,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862198794-fk0o3q",
-            "runId": "run_mpnnzueh_70c071",
+            "id": "proof_audit-1779872881374-3au8rg",
+            "runId": "run_mpnucs82_a7d78b",
             "type": "artifact",
-            "createdAt": 1779862198794,
+            "createdAt": 1779872881374,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "focus_window completed in 2817ms: Focused window: \"CodeBuddy Dialog Fixture\"",
-            "ref": "audit-1779862198794-fk0o3q.computer-control.json"
+            "summary": "focus_window completed in 3515ms: Focused window: \"CodeBuddy Dialog Fixture\"",
+            "ref": "audit-1779872881374-3au8rg.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -108,10 +108,10 @@
       "output": "Waited 500ms",
       "data": {
         "audit": {
-          "id": "audit-1779862199305-wa86g5",
+          "id": "audit-1779872881890-l5qebz",
           "action": "wait",
           "success": true,
-          "durationMs": 509,
+          "durationMs": 514,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -120,16 +120,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862199305-wa86g5",
-            "runId": "run_mpnnzueh_70c071",
+            "id": "proof_audit-1779872881890-l5qebz",
+            "runId": "run_mpnucs82_a7d78b",
             "type": "artifact",
-            "createdAt": 1779862199305,
+            "createdAt": 1779872881890,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "wait completed in 509ms: Waited 500ms",
-            "ref": "audit-1779862199305-wa86g5.computer-control.json"
+            "summary": "wait completed in 514ms: Waited 500ms",
+            "ref": "audit-1779872881890-l5qebz.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -154,13 +154,13 @@
         "dialogIntent": "cancel"
       },
       "success": true,
-      "output": "Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSuggested: \"Cancel\" (matched dialogIntent \"cancel\")",
+      "output": "Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 43724\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSuggested: \"Cancel\" (matched dialogIntent \"cancel\")",
       "data": {
         "dialog": {
           "source": "windows-uia",
           "title": "CodeBuddy Dialog Fixture",
           "processName": "powershell",
-          "pid": 51876,
+          "pid": 43724,
           "text": [
             "Do you want to save changes before closing this test dialog?"
           ],
@@ -171,8 +171,8 @@
               "enabled": true,
               "risk": "caution",
               "bounds": {
-                "x": 1658,
-                "y": 719,
+                "x": 898,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -183,8 +183,8 @@
               "enabled": true,
               "risk": "destructive",
               "bounds": {
-                "x": 1748,
-                "y": 719,
+                "x": 988,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -195,8 +195,8 @@
               "enabled": true,
               "risk": "safe",
               "bounds": {
-                "x": 1838,
-                "y": 719,
+                "x": 1078,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -207,8 +207,8 @@
               "enabled": true,
               "risk": "safe",
               "bounds": {
-                "x": 1909,
-                "y": 607,
+                "x": 1149,
+                "y": 427,
                 "width": 34,
                 "height": 30
               }
@@ -220,8 +220,8 @@
             "enabled": true,
             "risk": "safe",
             "bounds": {
-              "x": 1838,
-              "y": 719,
+              "x": 1078,
+              "y": 539,
               "width": 80,
               "height": 23
             }
@@ -229,10 +229,10 @@
           "suggestionReason": "matched dialogIntent \"cancel\""
         },
         "audit": {
-          "id": "audit-1779862203844-7m09gz",
+          "id": "audit-1779872883588-c92saw",
           "action": "inspect_dialog",
           "success": true,
-          "durationMs": 4539,
+          "durationMs": 1696,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -241,16 +241,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862203844-7m09gz",
-            "runId": "run_mpnnzueh_70c071",
+            "id": "proof_audit-1779872883588-c92saw",
+            "runId": "run_mpnucs82_a7d78b",
             "type": "artifact",
-            "createdAt": 1779862203844,
+            "createdAt": 1779872883588,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "inspect_dialog completed in 4539ms: Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 51876\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSu...",
-            "ref": "audit-1779862203844-7m09gz.computer-control.json"
+            "summary": "inspect_dialog completed in 1696ms: Dialog: \"CodeBuddy Dialog Fixture\" (windows-uia)\nProcess: powershell, PID 43724\nText:\n- Do you want to save changes before closing this test dialog?\nButtons:\n- \"Save\" [caution]\n- \"Delete\" [destructive]\n- \"Cancel\" [safe]\n- \"Fermer\" [safe]\nSu...",
+            "ref": "audit-1779872883588-c92saw.computer-control.json"
           }
         }
       }
@@ -270,7 +270,7 @@
           "source": "windows-uia",
           "title": "CodeBuddy Dialog Fixture",
           "processName": "powershell",
-          "pid": 51876,
+          "pid": 43724,
           "text": [
             "Do you want to save changes before closing this test dialog?"
           ],
@@ -281,8 +281,8 @@
               "enabled": true,
               "risk": "caution",
               "bounds": {
-                "x": 1658,
-                "y": 719,
+                "x": 898,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -293,8 +293,8 @@
               "enabled": true,
               "risk": "destructive",
               "bounds": {
-                "x": 1748,
-                "y": 719,
+                "x": 988,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -305,8 +305,8 @@
               "enabled": true,
               "risk": "safe",
               "bounds": {
-                "x": 1838,
-                "y": 719,
+                "x": 1078,
+                "y": 539,
                 "width": 80,
                 "height": 23
               }
@@ -317,8 +317,8 @@
               "enabled": true,
               "risk": "safe",
               "bounds": {
-                "x": 1909,
-                "y": 607,
+                "x": 1149,
+                "y": 427,
                 "width": 34,
                 "height": 30
               }
@@ -330,8 +330,8 @@
             "enabled": true,
             "risk": "safe",
             "bounds": {
-              "x": 1838,
-              "y": 719,
+              "x": 1078,
+              "y": 539,
               "width": 80,
               "height": 23
             }
@@ -343,8 +343,8 @@
             "enabled": true,
             "risk": "safe",
             "bounds": {
-              "x": 1838,
-              "y": 719,
+              "x": 1078,
+              "y": 539,
               "width": 80,
               "height": 23
             }
@@ -357,18 +357,18 @@
           "enabled": true,
           "risk": "safe",
           "bounds": {
-            "x": 1838,
-            "y": 719,
+            "x": 1078,
+            "y": 539,
             "width": 80,
             "height": 23
           }
         },
         "reason": "matched dialogIntent \"cancel\"",
         "audit": {
-          "id": "audit-1779862212784-7708rt",
+          "id": "audit-1779872887171-m0uxf1",
           "action": "click_dialog_button",
           "success": true,
-          "durationMs": 8926,
+          "durationMs": 3566,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -377,16 +377,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862212784-7708rt",
-            "runId": "run_mpnnzueh_70c071",
+            "id": "proof_audit-1779872887171-m0uxf1",
+            "runId": "run_mpnucs82_a7d78b",
             "type": "artifact",
-            "createdAt": 1779862212784,
+            "createdAt": 1779872887171,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "click_dialog_button completed in 8926ms: Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
-            "ref": "audit-1779862212784-7708rt.computer-control.json"
+            "summary": "click_dialog_button completed in 3566ms: Clicked dialog button \"Cancel\" (matched dialogIntent \"cancel\")",
+            "ref": "audit-1779872887171-m0uxf1.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -402,5 +402,5 @@
       }
     }
   ],
-  "generatedAt": "2026-05-27T06:10:13.296Z"
+  "generatedAt": "2026-05-27T09:08:07.683Z"
 }

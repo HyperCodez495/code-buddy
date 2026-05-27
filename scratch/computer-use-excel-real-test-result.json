@@ -1,6 +1,6 @@
 {
   "passed": true,
-  "runId": "run_mpno0sn6_85258e",
+  "runId": "run_mpnudicm_1e3e03",
   "runsDir": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs",
   "workbookPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
   "resultPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test-result.json",
@@ -30,10 +30,10 @@
         "cell": "A1",
         "value": "Code Buddy Excel COM real test",
         "audit": {
-          "id": "audit-1779862240427-bvnxnh",
+          "id": "audit-1779872910430-w0n79h",
           "action": "excel_set_cell",
           "success": true,
-          "durationMs": 1958,
+          "durationMs": 1079,
           "safetyProfile": "balanced",
           "dangerous": true,
           "simulated": false
@@ -42,17 +42,17 @@
           "run": {
             "kind": "run",
             "schemaVersion": 1,
-            "id": "run_mpno0sn6_85258e",
+            "id": "run_mpnudicm_1e3e03",
             "actor": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
             "objective": "Computer control action: excel_set_cell",
             "status": "completed",
-            "startedAt": 1779862238469,
-            "endedAt": 1779862240427,
+            "startedAt": 1779872909351,
+            "endedAt": 1779872910430,
             "metrics": {
-              "durationMs": 1958,
+              "durationMs": 1079,
               "toolCallCount": 1
             },
             "metadata": {
@@ -68,16 +68,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862240427-bvnxnh",
-            "runId": "run_mpno0sn6_85258e",
+            "id": "proof_audit-1779872910430-w0n79h",
+            "runId": "run_mpnudicm_1e3e03",
             "type": "artifact",
-            "createdAt": 1779862240427,
+            "createdAt": 1779872910430,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "excel_set_cell completed in 1958ms: Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
-            "ref": "audit-1779862240427-bvnxnh.computer-control.json"
+            "summary": "excel_set_cell completed in 1079ms: Excel Feuil1!A1 set to \"Code Buddy Excel COM real test\"",
+            "ref": "audit-1779872910430-w0n79h.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -92,13 +92,13 @@
           "approval": {
             "kind": "approval",
             "schemaVersion": 1,
-            "id": "approval_audit-1779862240427-bvnxnh",
+            "id": "approval_audit-1779872910430-w0n79h",
             "target": "codebuddy.computer_control.excel_set_cell",
-            "runId": "run_mpno0sn6_85258e",
+            "runId": "run_mpnudicm_1e3e03",
             "decision": "approved",
             "reviewer": "human-operator",
             "reason": "Computer control action carried explicit confirmDangerous=true.",
-            "decidedAt": 1779862240427,
+            "decidedAt": 1779872910430,
             "scope": "excel_set_cell"
           },
           "capabilities": [
@@ -134,7 +134,7 @@
             }
           ]
         },
-        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862240427-bvnxnh.computer-control.json"
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnudicm_1e3e03\\artifacts\\audit-1779872910430-w0n79h.computer-control.json"
       }
     },
     {
@@ -156,10 +156,10 @@
         "cell": "B1",
         "value": 42,
         "audit": {
-          "id": "audit-1779862241239-8i0val",
+          "id": "audit-1779872911400-f56nkq",
           "action": "excel_set_cell",
           "success": true,
-          "durationMs": 782,
+          "durationMs": 940,
           "safetyProfile": "balanced",
           "dangerous": true,
           "simulated": false
@@ -168,17 +168,17 @@
           "run": {
             "kind": "run",
             "schemaVersion": 1,
-            "id": "run_mpno0sn6_85258e",
+            "id": "run_mpnudicm_1e3e03",
             "actor": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
             "objective": "Computer control action: excel_set_cell",
             "status": "completed",
-            "startedAt": 1779862240457,
-            "endedAt": 1779862241239,
+            "startedAt": 1779872910460,
+            "endedAt": 1779872911400,
             "metrics": {
-              "durationMs": 782,
+              "durationMs": 940,
               "toolCallCount": 1
             },
             "metadata": {
@@ -194,16 +194,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862241239-8i0val",
-            "runId": "run_mpno0sn6_85258e",
+            "id": "proof_audit-1779872911400-f56nkq",
+            "runId": "run_mpnudicm_1e3e03",
             "type": "artifact",
-            "createdAt": 1779862241239,
+            "createdAt": 1779872911400,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "excel_set_cell completed in 782ms: Excel Feuil1!B1 set to \"42\"",
-            "ref": "audit-1779862241239-8i0val.computer-control.json"
+            "summary": "excel_set_cell completed in 940ms: Excel Feuil1!B1 set to \"42\"",
+            "ref": "audit-1779872911400-f56nkq.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -218,13 +218,13 @@
           "approval": {
             "kind": "approval",
             "schemaVersion": 1,
-            "id": "approval_audit-1779862241239-8i0val",
+            "id": "approval_audit-1779872911400-f56nkq",
             "target": "codebuddy.computer_control.excel_set_cell",
-            "runId": "run_mpno0sn6_85258e",
+            "runId": "run_mpnudicm_1e3e03",
             "decision": "approved",
             "reviewer": "human-operator",
             "reason": "Computer control action carried explicit confirmDangerous=true.",
-            "decidedAt": 1779862241239,
+            "decidedAt": 1779872911400,
             "scope": "excel_set_cell"
           },
           "capabilities": [
@@ -260,7 +260,7 @@
             }
           ]
         },
-        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862241239-8i0val.computer-control.json"
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnudicm_1e3e03\\artifacts\\audit-1779872911400-f56nkq.computer-control.json"
       }
     },
     {
@@ -280,10 +280,10 @@
         "cell": "A1",
         "value": "Code Buddy Excel COM real test",
         "audit": {
-          "id": "audit-1779862242027-jsuorw",
+          "id": "audit-1779872912236-jutkh8",
           "action": "excel_get_cell",
           "success": true,
-          "durationMs": 786,
+          "durationMs": 833,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -292,17 +292,17 @@
           "run": {
             "kind": "run",
             "schemaVersion": 1,
-            "id": "run_mpno0sn6_85258e",
+            "id": "run_mpnudicm_1e3e03",
             "actor": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
             "objective": "Computer control action: excel_get_cell",
             "status": "completed",
-            "startedAt": 1779862241241,
-            "endedAt": 1779862242027,
+            "startedAt": 1779872911403,
+            "endedAt": 1779872912236,
             "metrics": {
-              "durationMs": 786,
+              "durationMs": 833,
               "toolCallCount": 1
             },
             "metadata": {
@@ -318,16 +318,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862242027-jsuorw",
-            "runId": "run_mpno0sn6_85258e",
+            "id": "proof_audit-1779872912236-jutkh8",
+            "runId": "run_mpnudicm_1e3e03",
             "type": "artifact",
-            "createdAt": 1779862242027,
+            "createdAt": 1779872912236,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "excel_get_cell completed in 786ms: Excel Feuil1!A1 = Code Buddy Excel COM real test",
-            "ref": "audit-1779862242027-jsuorw.computer-control.json"
+            "summary": "excel_get_cell completed in 833ms: Excel Feuil1!A1 = Code Buddy Excel COM real test",
+            "ref": "audit-1779872912236-jutkh8.computer-control.json"
           },
           "capabilities": [
             {
@@ -362,7 +362,7 @@
             }
           ]
         },
-        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242027-jsuorw.computer-control.json"
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnudicm_1e3e03\\artifacts\\audit-1779872912236-jutkh8.computer-control.json"
       }
     },
     {
@@ -382,10 +382,10 @@
         "cell": "B1",
         "value": 42,
         "audit": {
-          "id": "audit-1779862242736-g1ih4a",
+          "id": "audit-1779872913091-0km0az",
           "action": "excel_get_cell",
           "success": true,
-          "durationMs": 707,
+          "durationMs": 854,
           "safetyProfile": "balanced",
           "dangerous": false,
           "simulated": false
@@ -394,17 +394,17 @@
           "run": {
             "kind": "run",
             "schemaVersion": 1,
-            "id": "run_mpno0sn6_85258e",
+            "id": "run_mpnudicm_1e3e03",
             "actor": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
             "objective": "Computer control action: excel_get_cell",
             "status": "completed",
-            "startedAt": 1779862242029,
-            "endedAt": 1779862242736,
+            "startedAt": 1779872912237,
+            "endedAt": 1779872913091,
             "metrics": {
-              "durationMs": 707,
+              "durationMs": 854,
               "toolCallCount": 1
             },
             "metadata": {
@@ -420,16 +420,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862242736-g1ih4a",
-            "runId": "run_mpno0sn6_85258e",
+            "id": "proof_audit-1779872913091-0km0az",
+            "runId": "run_mpnudicm_1e3e03",
             "type": "artifact",
-            "createdAt": 1779862242736,
+            "createdAt": 1779872913091,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "excel_get_cell completed in 707ms: Excel Feuil1!B1 = 42",
-            "ref": "audit-1779862242736-g1ih4a.computer-control.json"
+            "summary": "excel_get_cell completed in 854ms: Excel Feuil1!B1 = 42",
+            "ref": "audit-1779872913091-0km0az.computer-control.json"
           },
           "capabilities": [
             {
@@ -464,7 +464,7 @@
             }
           ]
         },
-        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862242736-g1ih4a.computer-control.json"
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnudicm_1e3e03\\artifacts\\audit-1779872913091-0km0az.computer-control.json"
       }
     },
     {
@@ -484,10 +484,10 @@
         "cell": "",
         "value": null,
         "audit": {
-          "id": "audit-1779862243475-uyvrvs",
+          "id": "audit-1779872913973-xxt21l",
           "action": "excel_save_workbook",
           "success": true,
-          "durationMs": 726,
+          "durationMs": 868,
           "safetyProfile": "balanced",
           "dangerous": true,
           "simulated": false
@@ -496,17 +496,17 @@
           "run": {
             "kind": "run",
             "schemaVersion": 1,
-            "id": "run_mpno0sn6_85258e",
+            "id": "run_mpnudicm_1e3e03",
             "actor": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
             "objective": "Computer control action: excel_save_workbook",
             "status": "completed",
-            "startedAt": 1779862242749,
-            "endedAt": 1779862243475,
+            "startedAt": 1779872913105,
+            "endedAt": 1779872913973,
             "metrics": {
-              "durationMs": 726,
+              "durationMs": 868,
               "toolCallCount": 1
             },
             "metadata": {
@@ -522,16 +522,16 @@
           "proof": {
             "kind": "proof",
             "schemaVersion": 1,
-            "id": "proof_audit-1779862243475-uyvrvs",
-            "runId": "run_mpno0sn6_85258e",
+            "id": "proof_audit-1779872913973-xxt21l",
+            "runId": "run_mpnudicm_1e3e03",
             "type": "artifact",
-            "createdAt": 1779862243475,
+            "createdAt": 1779872913973,
             "producedBy": {
               "type": "agent",
               "id": "code-buddy-computer-control"
             },
-            "summary": "excel_save_workbook completed in 726ms: Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
-            "ref": "audit-1779862243475-uyvrvs.computer-control.json"
+            "summary": "excel_save_workbook completed in 868ms: Excel workbook saved: D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-excel-real-test.xlsx",
+            "ref": "audit-1779872913973-xxt21l.computer-control.json"
           },
           "sensitiveAction": {
             "kind": "sensitive-action",
@@ -546,13 +546,13 @@
           "approval": {
             "kind": "approval",
             "schemaVersion": 1,
-            "id": "approval_audit-1779862243475-uyvrvs",
+            "id": "approval_audit-1779872913973-xxt21l",
             "target": "codebuddy.computer_control.excel_save_workbook",
-            "runId": "run_mpno0sn6_85258e",
+            "runId": "run_mpnudicm_1e3e03",
             "decision": "approved",
             "reviewer": "human-operator",
             "reason": "Computer control action carried explicit confirmDangerous=true.",
-            "decidedAt": 1779862243475,
+            "decidedAt": 1779872913973,
             "scope": "excel_save_workbook"
           },
           "capabilities": [
@@ -588,9 +588,9 @@
             }
           ]
         },
-        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpno0sn6_85258e\\artifacts\\audit-1779862243475-uyvrvs.computer-control.json"
+        "proofArtifactPath": "D:\\CascadeProjects\\grok-cli-weekend\\scratch\\computer-use-runs\\run_mpnudicm_1e3e03\\artifacts\\audit-1779872913973-xxt21l.computer-control.json"
       }
     }
   ],
-  "generatedAt": "2026-05-27T06:10:43.485Z"
+  "generatedAt": "2026-05-27T09:08:33.975Z"
 }

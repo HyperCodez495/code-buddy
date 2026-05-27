@@ -100,3 +100,8 @@ Latest evidence files:
 - `scratch/computer-use-excel-real-test-result.json`
 - `scratch/computer-use-dialog-real-test-result.json`
 - `scratch/computer-use-real-suite-result.json`
+
+The real suite is also available from Cowork's `Tests & executions` catalog as
+`Computer Use / real desktop suite`. It is marked manual and requires
+`CODEBUDDY_REAL_COMPUTER_USE`, because it really opens and controls desktop
+applications.

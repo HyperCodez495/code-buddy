@@ -2923,6 +2923,24 @@ export class TestRunnerBridge extends EventEmitter {
     addIfFileExists(
       items,
       {
+        id: 'code-buddy-computer-use-real-desktop-suite',
+        label: 'Computer Use / real desktop suite',
+        group: 'Conditions reelles',
+        description: 'Pilote vraiment WinForms, dialogues, Notepad et Excel COM via Computer Use',
+        command: 'npx',
+        args: ['tsx', 'scratch/computer-use-real-suite.ts'],
+        cwd: workspace,
+        kind: 'integration',
+        safeToRun: false,
+        requiresEnv: 'CODEBUDDY_REAL_COMPUTER_USE',
+        env: { CODEBUDDY_REAL_COMPUTER_USE: '1' },
+        timeoutMs: 360_000,
+      },
+      path.join(workspace, 'scratch', 'computer-use-real-suite.ts')
+    );
+    addIfFileExists(
+      items,
+      {
         id: 'code-buddy-server-real-gpt55-chat',
         label: 'Server / real GPT-5.5 chat API',
         group: 'Conditions reelles',
