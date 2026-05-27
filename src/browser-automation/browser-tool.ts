@@ -724,6 +724,22 @@ export class BrowserTool {
       return { success: false, error: 'URL is required' };
     }
 
+    // SSRF guard for the network surface only. http/https can be steered at internal
+    // services / cloud metadata, so they're validated (parity with batch-mode :474).
+    // Local schemes (file://, about:, data:) are legitimate navigation targets and are
+    // not a server-side request forgery, so they pass through unchanged.
+    let scheme = '';
+    try { scheme = new URL(input.url).protocol; } catch { /* leave to Playwright */ }
+    if (scheme === 'http:' || scheme === 'https:') {
+      try {
+        const { assertSafeUrl } = await import('../security/ssrf-guard.js');
+        const check = await assertSafeUrl(input.url);
+        if (!check.safe) {
+          return { success: false, error: `SSRF blocked: ${check.reason || 'URL not allowed'}` };
+        }
+      } catch { /* SSRF guard unavailable, proceed */ }
+    }
+
     await this.manager.navigate({
       url: input.url,
       waitUntil: input.waitUntil,

@@ -88,34 +88,42 @@ function parseIPv4ToUint32(host: string): number | null {
 }
 
 function isPrivateIPv4(uint32: number): boolean {
+  // Normalize to unsigned. CRITICAL: JS bitwise `&` yields a *signed* int32, so
+  // `(u & 0xffff0000)` is negative whenever the high bit is set (first octet ≥ 128)
+  // and would never `===` the positive hex literal — silently letting 169.254/16,
+  // 172.16/12, 192.168/16, multicast and reserved ranges through. `>>> 0` on each
+  // masked value forces an unsigned comparison.
+  const u = uint32 >>> 0;
+  const inNet = (mask: number, net: number): boolean => ((u & mask) >>> 0) === net;
+
   // 0.0.0.0/8 — This network
-  if ((uint32 & 0xff000000) === 0x00000000) return true;
+  if (inNet(0xff000000, 0x00000000)) return true;
   // 10.0.0.0/8
-  if ((uint32 & 0xff000000) === 0x0a000000) return true;
+  if (inNet(0xff000000, 0x0a000000)) return true;
   // 100.64.0.0/10 — Shared address space (RFC 6598)
-  if ((uint32 & 0xffc00000) === 0x64400000) return true;
+  if (inNet(0xffc00000, 0x64400000)) return true;
   // 127.0.0.0/8 — Loopback
-  if ((uint32 & 0xff000000) === 0x7f000000) return true;
+  if (inNet(0xff000000, 0x7f000000)) return true;
   // 169.254.0.0/16 — Link-local / AWS metadata
-  if ((uint32 & 0xffff0000) === 0xa9fe0000) return true;
+  if (inNet(0xffff0000, 0xa9fe0000)) return true;
   // 172.16.0.0/12
-  if ((uint32 & 0xfff00000) === 0xac100000) return true;
+  if (inNet(0xfff00000, 0xac100000)) return true;
   // 192.0.0.0/24 — IETF protocol assignments
-  if ((uint32 & 0xffffff00) === 0xc0000000) return true;
+  if (inNet(0xffffff00, 0xc0000000)) return true;
   // 192.168.0.0/16
-  if ((uint32 & 0xffff0000) === 0xc0a80000) return true;
+  if (inNet(0xffff0000, 0xc0a80000)) return true;
   // 198.18.0.0/15 — Benchmark testing
-  if ((uint32 & 0xfffe0000) === 0xc6120000) return true;
+  if (inNet(0xfffe0000, 0xc6120000)) return true;
   // 198.51.100.0/24 — TEST-NET-2
-  if ((uint32 & 0xffffff00) === 0xc6336400) return true;
+  if (inNet(0xffffff00, 0xc6336400)) return true;
   // 203.0.113.0/24 — TEST-NET-3
-  if ((uint32 & 0xffffff00) === 0xcb007100) return true;
+  if (inNet(0xffffff00, 0xcb007100)) return true;
   // 224.0.0.0/4 — Multicast
-  if ((uint32 & 0xf0000000) === 0xe0000000) return true;
+  if (inNet(0xf0000000, 0xe0000000)) return true;
   // 240.0.0.0/4 — Reserved
-  if ((uint32 & 0xf0000000) === 0xf0000000) return true;
+  if (inNet(0xf0000000, 0xf0000000)) return true;
   // 255.255.255.255
-  if (uint32 === 0xffffffff) return true;
+  if (u === 0xffffffff) return true;
 
   return false;
 }

@@ -1,0 +1,54 @@
+/**
+ * Security regression: the direct `navigate` action must apply the same SSRF
+ * guard that batch-mode navigation does (browser-tool.ts). Previously a direct
+ * navigate bypassed the guard entirely.
+ */
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+const navigateSpy = vi.fn().mockResolvedValue(undefined);
+
+// Stub the manager so no real browser / Playwright is loaded.
+vi.mock('../../src/browser-automation/browser-manager.js', () => ({
+  getBrowserManager: () => ({
+    navigate: navigateSpy,
+    getTitle: vi.fn().mockResolvedValue('Title'),
+  }),
+  BrowserManager: class {},
+}));
+
+vi.mock('../../src/utils/logger.js', () => ({
+  logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
+}));
+
+import { BrowserTool } from '../../src/browser-automation/browser-tool.js';
+
+describe('navigate SSRF guard (parity with batch-mode)', () => {
+  beforeEach(() => navigateSpy.mockClear());
+
+  // Covers the signed-shift regression: every private range whose first octet
+  // is >= 128 (169.254, 172.16, 192.168) previously bypassed the guard.
+  it.each([
+    ['loopback', 'http://127.0.0.1:8080/'],
+    ['cloud metadata', 'http://169.254.169.254/latest/meta-data/'],
+    ['RFC1918 192.168', 'http://192.168.1.1/'],
+    ['RFC1918 172.16/12', 'http://172.16.5.5/'],
+    ['RFC1918 10/8', 'http://10.0.0.5/'],
+  ])('blocks %s and never reaches manager.navigate', async (_label, url) => {
+    const tool = new BrowserTool();
+    const r = await tool.execute({ action: 'navigate', url });
+    expect(r.success).toBe(false);
+    expect(r.error).toMatch(/SSRF blocked/);
+    expect(navigateSpy).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ['public 1.1.1.1', 'http://1.1.1.1/'],
+    ['public 8.8.8.8', 'http://8.8.8.8/'],
+    ['just outside 172.16/12', 'http://172.32.5.5/'],
+  ])('allows %s through to the manager', async (_label, url) => {
+    const tool = new BrowserTool();
+    const r = await tool.execute({ action: 'navigate', url });
+    expect(r.success).toBe(true);
+    expect(navigateSpy).toHaveBeenCalledTimes(1);
+  });
+});
