@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { Box, Text, useInput, DOMElement } from "ink";
 import type { CodeBuddyAgent, ChatEntry } from "../../agent/codebuddy-agent.js";
 import { useInputHandler } from "../../hooks/use-input-handler.js";
-import { LoadingSpinner } from "./LoadingSpinner.js";
+import { StatusBlock } from "./StatusBlock.js";
 import { CommandSuggestions } from "./CommandSuggestions.js";
 import { ModelSelection } from "./ModelSelection.js";
 import { ChatHistory } from "./ChatHistory.js";
@@ -567,7 +567,7 @@ function ChatInterfaceWithAgent({
 
       {!confirmationOptions && (
         <>
-          <LoadingSpinner
+          <StatusBlock
             isActive={isProcessing || isStreaming}
             processingTime={processingTime}
             tokenCount={tokenCount}

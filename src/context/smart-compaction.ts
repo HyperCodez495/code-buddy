@@ -11,6 +11,7 @@
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { preserveToolPairs } from './tool-pair-preserver.js';
+import { wireCompactionProgress } from './progress-compaction-bridge.js';
 
 // ============================================================================
 // Types & Interfaces
@@ -669,6 +670,8 @@ const DEFAULT_COMPACTION_CONFIG: CompactionConfig = {
 export function getSmartCompactionEngine(config?: CompactionConfig): SmartCompactionEngine {
   if (!compactionEngineInstance) {
     compactionEngineInstance = new SmartCompactionEngine(config ?? DEFAULT_COMPACTION_CONFIG);
+    // Surface compaction as a progress task in any renderer (CLI / Cowork).
+    wireCompactionProgress(compactionEngineInstance);
   } else if (config) {
     compactionEngineInstance.updateConfig(config);
   }

@@ -11,6 +11,7 @@
 
 import { EventEmitter } from 'events';
 import { SmartCompactionEngine, CompactionConfig, type Message as CompactionMessage } from '../../context/smart-compaction.js';
+import { wireCompactionProgress } from '../../context/progress-compaction-bridge.js';
 
 // ============================================================================
 // Types & Interfaces
@@ -267,6 +268,8 @@ export class RetryFallbackEngine extends EventEmitter {
       this.compactionEngine = new SmartCompactionEngine(
         this.config.compactionConfig as CompactionConfig
       );
+      // Surface this engine's compactions as progress tasks in any renderer.
+      wireCompactionProgress(this.compactionEngine);
     }
   }
 
