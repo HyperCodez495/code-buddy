@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
+import { useTheme } from '../context/theme-context.js';
 
 interface ReasoningBlockProps {
   content: string;
@@ -12,6 +13,7 @@ interface ReasoningBlockProps {
  * Can be toggled with 't' key when not in streaming mode.
  */
 export function ReasoningBlock({ content, isStreaming = false }: ReasoningBlockProps) {
+  const { colors } = useTheme();
   const [collapsed, setCollapsed] = useState(false);
 
   useInput((input) => {
@@ -24,24 +26,40 @@ export function ReasoningBlock({ content, isStreaming = false }: ReasoningBlockP
   const previewLength = 2;
   const hasMore = lines.length > previewLength;
 
+  // Modern collapse symbols
+  const arrowSymbol = collapsed ? '⏵' : '⏷';
+
   return (
-    <Box flexDirection="column" marginTop={1}>
-      <Box>
-        <Text dimColor color="gray">
-          {collapsed ? '▶' : '▼'} Thinking{isStreaming ? '...' : ` (${lines.length} lines)`}
+    <Box flexDirection="column" marginTop={1} marginBottom={1}>
+      <Box flexDirection="row" alignItems="center">
+        <Text color={colors.textMuted} bold>
+          {arrowSymbol} 🧠 Thinking{isStreaming ? '...' : ` (${lines.length} lines)`}
         </Text>
         {!isStreaming && hasMore && (
-          <Text dimColor color="gray"> [t to {collapsed ? 'expand' : 'collapse'}]</Text>
+          <Text color={colors.textMuted} dimColor>
+            {' '}• [press <Text color={colors.accent}>t</Text> to {collapsed ? 'expand' : 'collapse'}]
+          </Text>
         )}
       </Box>
       {!collapsed && (
-        <Box paddingLeft={2} flexDirection="column">
+        <Box paddingLeft={1} flexDirection="column" marginTop={1}>
           {lines.map((line, idx) => (
-            <Text key={idx} dimColor color="gray">{line}</Text>
+            <Box key={idx} flexDirection="row">
+              <Text color={colors.border}>┊ </Text>
+              <Text color={colors.textMuted} italic>
+                {line}
+              </Text>
+            </Box>
           ))}
-          {isStreaming && <Text dimColor color="gray">█</Text>}
+          {isStreaming && (
+            <Box flexDirection="row">
+              <Text color={colors.border}>┊ </Text>
+              <Text color={colors.accent}>▋</Text>
+            </Box>
+          )}
         </Box>
       )}
     </Box>
   );
 }
+

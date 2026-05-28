@@ -192,13 +192,13 @@ export function StatusBar({
     const filledWidth = Math.max(0, Math.min(width, Math.round((progress / 100) * width)));
     const emptyWidth = width - filledWidth;
 
-    const filled = '█'.repeat(filledWidth);
-    const empty = '░'.repeat(emptyWidth);
+    const filled = '▰'.repeat(filledWidth);
+    const empty = '▱'.repeat(emptyWidth);
 
     return (
       <>
         <Text color={color}>{filled}</Text>
-        <Text dimColor>{empty}</Text>
+        <Text color={colors.textMuted}>{empty}</Text>
       </>
     );
   };
@@ -206,7 +206,7 @@ export function StatusBar({
   // Compact mode - single line
   if (compact) {
     return (
-      <Box borderStyle="single" borderColor={colors.border} paddingX={1}>
+      <Box borderStyle="round" borderColor={colors.border} paddingX={1}>
         <Text color={metrics.modeColor}>{metrics.modeIcon} {mode}</Text>
         <Text dimColor> • </Text>
         <Text color={yolo ? colors.error : colors.success}>{yolo ? '🔥 YOLO' : '🛡 SAFE'}</Text>
@@ -227,7 +227,7 @@ export function StatusBar({
 
   // Detailed mode
   return (
-    <Box flexDirection="column" borderStyle="single" borderColor={colors.border} paddingX={1}>
+    <Box flexDirection="column" borderStyle="round" borderColor={colors.border} paddingX={1}>
       {/* Header */}
       <Box justifyContent="space-between">
         <Box>
