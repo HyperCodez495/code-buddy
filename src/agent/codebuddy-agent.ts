@@ -429,6 +429,53 @@ export class CodeBuddyAgent extends BaseAgent {
     import('../tools/computer-control-tool.js').then(({ setVisionGroundingProvider }) => {
       setVisionGroundingProvider(async (req) => {
         try {
+          if (req.candidates.length === 0) {
+            // Coordinate-based visual grounding fallback for empty UIA tree (e.g., Skia, Avalonia, Canvas)
+            const prompt = `You are a visual grounding agent. Your task is to find the pixel coordinate of the element matching the user's intent: "${req.intent}".${req.roleHint ? ` Expected role hint: "${req.roleHint}".` : ''}
+
+Identify the target element in the provided screenshot. Return the target's center coordinates on a relative scale from 0 to 1000, where (0, 0) is the top-left corner and (1000, 1000) is the bottom-right corner of the image.
+
+Output ONLY a JSON object in this exact format:
+{
+  "x": <integer between 0 and 1000>,
+  "y": <integer between 0 and 1000>
+}
+Do not write any other text or explanations.`;
+
+            const response = await this.codebuddyClient.chat(
+              [
+                {
+                  role: 'user',
+                  content: [
+                    { type: 'text', text: prompt },
+                    { type: 'image_url', image_url: { url: `data:image/png;base64,${req.imageBase64}` } }
+                  ]
+                }
+              ],
+              undefined,
+              this.visionGroundingModel ? { model: this.visionGroundingModel } : undefined
+            );
+            const reply = response.choices[0]?.message?.content?.trim();
+            if (!reply) return null;
+
+            try {
+              const { parseJsonResponse } = await import('../utils/llm-retry.js');
+              const parsed = parseJsonResponse(reply);
+              if (parsed && typeof parsed.x === 'number' && typeof parsed.y === 'number') {
+                return { x: parsed.x, y: parsed.y };
+              }
+            } catch (e) {
+              logger.warn('Failed to parse coordinate response as JSON, trying regex fallback', { reply, error: String(e) });
+              const xMatch = reply.match(/"x"\s*:\s*(\d+)/i);
+              const yMatch = reply.match(/"y"\s*:\s*(\d+)/i);
+              if (xMatch && yMatch) {
+                return { x: parseInt(xMatch[1], 10), y: parseInt(yMatch[1], 10) };
+              }
+            }
+            return null;
+          }
+
+          // Traditional Set-of-Marks badging flow if candidates are available
           const prompt = `You are a visual grounding agent. Your task is to identify the unique [ref] number of the interactive element in the provided screenshot that matches the user's intent: "${req.intent}".${req.roleHint ? ` Expected role hint: "${req.roleHint}".` : ''}
 
 Here are the candidate elements present in the screenshot:

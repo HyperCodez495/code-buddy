@@ -17,6 +17,7 @@ import {
   Play,
   RefreshCw,
   RotateCcw,
+  Search,
   Square,
   TerminalSquare,
   X,
@@ -63,6 +64,8 @@ type CatalogStatus = 'pending' | 'running' | 'passed' | 'failed' | 'skipped';
 type RunnerTab = 'tests' | 'executions' | 'coverage';
 type CoverageLevel = 'opened' | 'used' | 'real';
 type CoverageStatus = 'passed' | 'partial' | 'blocked';
+type CatalogModeFilter = 'all' | 'safe' | 'manual' | 'real';
+type CatalogKindFilter = 'all' | TestCatalogKind;
 
 interface CatalogRunState {
   status: CatalogStatus;
@@ -468,6 +471,9 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
   const [itemStates, setItemStates] = useState<Record<string, CatalogRunState>>({});
   const [activeItemId, setActiveItemId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<RunnerTab>('tests');
+  const [catalogQuery, setCatalogQuery] = useState('');
+  const [catalogMode, setCatalogMode] = useState<CatalogModeFilter>('all');
+  const [catalogKind, setCatalogKind] = useState<CatalogKindFilter>('all');
   const [isRunning, setIsRunning] = useState(false);
   const [output, setOutput] = useState<string>('');
   const [runs, setRuns] = useState<AuditRunSummary[]>([]);
@@ -581,6 +587,55 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
     };
   }, [catalog.length, itemStates]);
 
+  const catalogModeOptions = useMemo(
+    () => [
+      { value: 'all' as CatalogModeFilter, label: t('testRunner.filterAll', 'All') },
+      { value: 'safe' as CatalogModeFilter, label: t('testRunner.filterSafe', 'Safe') },
+      { value: 'manual' as CatalogModeFilter, label: t('testRunner.filterManual', 'Manual') },
+      { value: 'real' as CatalogModeFilter, label: t('testRunner.filterReal', 'Real') },
+    ],
+    [t]
+  );
+
+  const catalogKindOptions = useMemo(
+    () => [
+      { value: 'all' as CatalogKindFilter, label: t('testRunner.kindAll', 'All types') },
+      { value: 'quality' as CatalogKindFilter, label: t('testRunner.kind.quality', 'Quality') },
+      { value: 'unit' as CatalogKindFilter, label: t('testRunner.kind.unit', 'Unit') },
+      {
+        value: 'integration' as CatalogKindFilter,
+        label: t('testRunner.kind.integration', 'Integration'),
+      },
+      { value: 'e2e' as CatalogKindFilter, label: t('testRunner.kind.e2e', 'E2E') },
+      {
+        value: 'real-provider' as CatalogKindFilter,
+        label: t('testRunner.kind.realProvider', 'Real provider'),
+      },
+      { value: 'script' as CatalogKindFilter, label: t('testRunner.kind.script', 'Script') },
+    ],
+    [t]
+  );
+
+  const filteredCatalog = useMemo(() => {
+    const query = catalogQuery.trim().toLowerCase();
+    return catalog.filter((item) => {
+      const matchesMode =
+        catalogMode === 'all' ||
+        (catalogMode === 'safe' && item.safeToRun) ||
+        (catalogMode === 'manual' && !item.safeToRun) ||
+        (catalogMode === 'real' && item.kind === 'real-provider');
+      const matchesKind = catalogKind === 'all' || item.kind === catalogKind;
+      const matchesQuery =
+        !query ||
+        [item.label, item.group, item.description, item.command, item.args.join(' '), item.requiresEnv]
+          .filter(Boolean)
+          .join(' ')
+          .toLowerCase()
+          .includes(query);
+      return matchesMode && matchesKind && matchesQuery;
+    });
+  }, [catalog, catalogKind, catalogMode, catalogQuery]);
+
   const coverageSummary = useMemo(
     () => ({
       total: functionalCoverage.length,
@@ -594,13 +649,13 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
 
   const groupedCatalog = useMemo(() => {
     const groups = new Map<string, TestCatalogItem[]>();
-    for (const item of catalog) {
+    for (const item of filteredCatalog) {
       const current = groups.get(item.group) ?? [];
       current.push(item);
       groups.set(item.group, current);
     }
     return Array.from(groups.entries());
-  }, [catalog]);
+  }, [filteredCatalog]);
 
   const markItem = useCallback((id: string, state: CatalogRunState) => {
     setItemStates((prev) => ({ ...prev, [id]: state }));
@@ -643,13 +698,13 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
 
   const handleRunCatalogBatch = useCallback(
     async (includeAll: boolean) => {
-      const selected = includeAll ? catalog : catalog.filter((item) => item.safeToRun);
+      const selected = includeAll ? filteredCatalog : filteredCatalog.filter((item) => item.safeToRun);
       for (const item of selected) {
         const runResult = await handleRunCatalogItem(item);
         if (runResult && !runResult.success && !includeAll) break;
       }
     },
-    [catalog, handleRunCatalogItem]
+    [filteredCatalog, handleRunCatalogItem]
   );
 
   const handleRunFramework = useCallback(async () => {
@@ -798,9 +853,64 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
             </>
           )}
           <div className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
+            <span className="tabular-nums" data-testid="test-runner-visible-count">
+              {t('testRunner.visibleCount', '{{visible}}/{{total}} visible', {
+                visible: filteredCatalog.length,
+                total: catalog.length,
+              })}
+            </span>
             <span className="tabular-nums text-success">{catalogSummary.passed} ok</span>
             <span className="tabular-nums text-error">{catalogSummary.failed} ko</span>
             <span className="tabular-nums">{catalogSummary.pending} pending</span>
+          </div>
+        </div>
+
+        <div className="mt-3 space-y-2" data-testid="test-runner-catalog-filters">
+          <div className="relative">
+            <Search className="absolute left-2.5 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-text-muted" />
+            <input
+              type="text"
+              value={catalogQuery}
+              onChange={(event) => setCatalogQuery(event.target.value)}
+              placeholder={t(
+                'testRunner.catalogSearchPlaceholder',
+                'Search catalog by bundle, group, command, or environment...'
+              )}
+              className="w-full rounded-md border border-border-subtle bg-background py-1.5 pl-8 pr-2 text-xs text-text-primary placeholder:text-text-muted focus:border-accent focus:outline-none"
+              data-testid="test-runner-catalog-search"
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            {catalogModeOptions.map((option) => (
+              <button
+                key={option.value}
+                type="button"
+                onClick={() => setCatalogMode(option.value)}
+                data-testid={`test-runner-filter-${option.value}`}
+                className={`rounded-md border px-2.5 py-1 text-[11px] transition-colors ${
+                  catalogMode === option.value
+                    ? 'border-accent bg-accent/10 text-accent'
+                    : 'border-border-muted text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+                }`}
+              >
+                {option.label}
+              </button>
+            ))}
+            <label className="ml-auto flex items-center gap-2 text-[11px] text-text-muted">
+              {t('testRunner.kindFilterLabel', 'Type')}
+              <select
+                value={catalogKind}
+                onChange={(event) => setCatalogKind(event.target.value as CatalogKindFilter)}
+                className="rounded-md border border-border-subtle bg-background px-2 py-1 text-xs text-text-primary focus:border-accent focus:outline-none"
+                data-testid="test-runner-kind-filter"
+              >
+                {catalogKindOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </label>
           </div>
         </div>
 

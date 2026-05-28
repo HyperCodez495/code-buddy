@@ -91,7 +91,34 @@ describe('api config set helpers', () => {
     const sets = buildApiConfigSets(config, FALLBACK_PROVIDER_PRESETS);
     expect(sets.length).toBe(1);
     expect(sets[0].isSystem).toBe(true);
+    expect(sets[0].name).toBe('Default');
     expect(sets[0].provider).toBe('openrouter');
+  });
+
+  it('uses neutral names for unnamed config sets', () => {
+    const config = {
+      provider: 'openrouter',
+      customProtocol: 'anthropic',
+      activeProfileKey: 'openrouter',
+      activeConfigSetId: 'unnamed',
+      configSets: [
+        {
+          id: 'unnamed',
+          name: '',
+          isSystem: false,
+          provider: 'openrouter',
+          customProtocol: 'anthropic',
+          activeProfileKey: 'openrouter',
+          profiles: {},
+          enableThinking: false,
+          updatedAt: '2026-01-01T00:00:00.000Z',
+        },
+      ],
+      isConfigured: true,
+    } as AppConfig;
+
+    const sets = buildApiConfigSets(config, FALLBACK_PROVIDER_PRESETS);
+    expect(sets[0].name).toBe('Set 1');
   });
 
   it('generates stable draft signature and detects material changes', () => {

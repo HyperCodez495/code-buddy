@@ -16,10 +16,15 @@
 import { EventEmitter } from 'events';
 import { execSync, exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { logger } from '../utils/logger.js';
 import { Point, Rect } from './types.js';
 
 const execAsync = promisify(exec);
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // ============================================================================
 // Types
@@ -746,16 +751,77 @@ export class SmartSnapshotManager extends EventEmitter {
     return this.detectLinuxATSPIElements(options);
   }
 
+  private ensureBridgeCompiled(wsl: boolean = false): string {
+    const srcPath = path.join(__dirname, 'CodeBuddyDesktopBridge.cs');
+    const exePath = path.join(__dirname, 'CodeBuddyDesktopBridge.exe');
+
+    if (process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || !!process.env.JEST_WORKER_ID) {
+      return ''; // Test mode, skip compiling
+    }
+
+    try {
+      let needsCompile = false;
+      if (!fs.existsSync(exePath)) {
+        needsCompile = true;
+      } else {
+        const srcStat = fs.statSync(srcPath);
+        const exeStat = fs.statSync(exePath);
+        if (srcStat.mtime > exeStat.mtime) {
+          needsCompile = true;
+        }
+      }
+
+      if (needsCompile) {
+        logger.info('Compiling CodeBuddyDesktopBridge for SmartSnapshotManager...');
+        const cscPath = wsl
+          ? '/mnt/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+          : 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
+
+        let winSrcPath = srcPath;
+        let winExePath = exePath;
+        if (wsl) {
+          winSrcPath = execSync(`wslpath -w "${srcPath}"`, { encoding: 'utf8' }).trim();
+          winExePath = execSync(`wslpath -w "${exePath}"`, { encoding: 'utf8' }).trim();
+        }
+
+        const cmd = `"${cscPath}" /r:"System.dll" /r:"System.Drawing.dll" /r:"System.Windows.Forms.dll" /r:"System.Web.Extensions.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\UIAutomationClient.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\UIAutomationTypes.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\WindowsBase.dll" /out:"${winExePath}" "${winSrcPath}"`;
+        execSync(cmd, { stdio: 'ignore' });
+        logger.info('CodeBuddyDesktopBridge compiled successfully.');
+      }
+      return exePath;
+    } catch (err) {
+      logger.warn('Failed to compile CodeBuddyDesktopBridge in SmartSnapshotManager, using legacy PowerShell fallback:', { error: err });
+      return '';
+    }
+  }
+
   /**
    * Detect elements on WSL2 via PowerShell UIAutomation (same script as detectWindowsElements)
    */
   private async detectWSLElements(_options: SnapshotOptions): Promise<UIElement[]> {
     const elements: UIElement[] = [];
+    const maxDepth = _options.maxDepth ?? 5;
 
-    // Check powershell.exe is available
-    execSync('which powershell.exe', { stdio: 'ignore' });
+    try {
+      const exePath = this.ensureBridgeCompiled(true);
+      let stdout = '';
 
-    const script = `
+      if (exePath && fs.existsSync(exePath)) {
+        try {
+          const winExePath = execSync(`wslpath -w "${exePath}"`, { encoding: 'utf8' }).trim();
+          const { stdout: bridgeOut } = await execAsync(`powershell.exe -NoProfile -NonInteractive -Command "& \\"${winExePath}\\" get_uia_tree ${maxDepth}"`, { timeout: 15000 });
+          stdout = bridgeOut.trim();
+        } catch (err) {
+          logger.warn('Failed to query C# bridge for WSL snapshot, falling back to legacy PowerShell:', { error: err });
+          stdout = '';
+        }
+      }
+
+      if (!stdout) {
+        // Check powershell.exe is available
+        execSync('which powershell.exe', { stdio: 'ignore' });
+
+        const script = `
 Add-Type -AssemblyName UIAutomationClient
 $automation = [System.Windows.Automation.AutomationElement]::RootElement
 $condition = [System.Windows.Automation.Condition]::TrueCondition
@@ -804,36 +870,41 @@ if ($focused) {
         Get-Elements $parent 0 | ConvertTo-Json -Depth 10
     }
 }
-    `;
+        `;
 
-    const stdout = await this.runPowerShellEncoded(script, {
-      executable: 'powershell.exe',
-      timeout: 15000,
-    });
+        stdout = await this.runPowerShellEncoded(script, {
+          executable: 'powershell.exe',
+          timeout: 15000,
+        });
+      }
 
-    const parsed = JSON.parse(stdout);
-    const items = Array.isArray(parsed) ? parsed : [parsed];
+      const parsed = JSON.parse(stdout);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
 
-    for (const item of items.slice(0, this.config.maxElements)) {
-      const role = this.mapWindowsRole(item.role, item);
-      elements.push({
-        ref: this.nextRef++,
-        role,
-        name: item.name || 'Unknown',
-        bounds: { x: item.x, y: item.y, width: item.width, height: item.height },
-        center: {
-          x: item.x + item.width / 2,
-          y: item.y + item.height / 2,
-        },
-        interactive: this.isInteractiveRole(role),
-        focused: Boolean(item.focused),
-        enabled: item.enabled !== false,
-        visible: item.width > 0 && item.height > 0,
-        controlType: typeof item.role === 'string' ? item.role : undefined,
-        automationId: item.automationId || undefined,
-        runtimeId: item.runtimeId || undefined,
-        className: item.className || undefined,
-      });
+      for (const item of items.slice(0, this.config.maxElements)) {
+        const role = this.mapWindowsRole(item.role, item);
+        elements.push({
+          ref: this.nextRef++,
+          role,
+          name: item.name || 'Unknown',
+          bounds: { x: item.x, y: item.y, width: item.width, height: item.height },
+          center: {
+            x: item.x + item.width / 2,
+            y: item.y + item.height / 2,
+          },
+          interactive: this.isInteractiveRole(role),
+          focused: Boolean(item.focused),
+          enabled: item.enabled !== false,
+          visible: item.width > 0 && item.height > 0,
+          controlType: typeof item.role === 'string' ? item.role : undefined,
+          automationId: item.automationId || undefined,
+          runtimeId: item.runtimeId || undefined,
+          className: item.className || undefined,
+        });
+      }
+    } catch (error) {
+      logger.debug('WSL elements detection failed', { error });
+      elements.push(...this.getMockElements());
     }
 
     return elements;
@@ -934,10 +1005,25 @@ print(json.dumps(all_elements[:100]))
 
   private async detectWindowsElements(_options: SnapshotOptions): Promise<UIElement[]> {
     const elements: UIElement[] = [];
+    const maxDepth = _options.maxDepth ?? 5;
 
     try {
-      // Use UIAutomation via PowerShell
-      const script = `
+      const exePath = this.ensureBridgeCompiled(false);
+      let stdout = '';
+
+      if (exePath && fs.existsSync(exePath)) {
+        try {
+          const { stdout: bridgeOut } = await execAsync(`"${exePath}" get_uia_tree ${maxDepth}`, { timeout: 15000 });
+          stdout = bridgeOut.trim();
+        } catch (err) {
+          logger.warn('Failed to query C# bridge for snapshot, falling back to legacy PowerShell:', { error: err });
+          stdout = '';
+        }
+      }
+
+      if (!stdout) {
+        // Use UIAutomation via PowerShell
+        const script = `
 Add-Type -AssemblyName UIAutomationClient
 $automation = [System.Windows.Automation.AutomationElement]::RootElement
 $condition = [System.Windows.Automation.Condition]::TrueCondition
@@ -986,41 +1072,37 @@ if ($focused) {
         Get-Elements $parent 0 | ConvertTo-Json -Depth 10
     }
 }
-      `;
+        `;
 
-      try {
-        const stdout = await this.runPowerShellEncoded(script, {
+        stdout = await this.runPowerShellEncoded(script, {
           executable: 'powershell.exe',
           timeout: 15000,
         });
+      }
 
-        const parsed = JSON.parse(stdout);
-        const items = Array.isArray(parsed) ? parsed : [parsed];
+      const parsed = JSON.parse(stdout);
+      const items = Array.isArray(parsed) ? parsed : [parsed];
 
-        for (const item of items.slice(0, this.config.maxElements)) {
-          const role = this.mapWindowsRole(item.role, item);
-          elements.push({
-            ref: this.nextRef++,
-            role,
-            name: item.name || 'Unknown',
-            bounds: { x: item.x, y: item.y, width: item.width, height: item.height },
-            center: {
-              x: item.x + item.width / 2,
-              y: item.y + item.height / 2,
-            },
-            interactive: this.isInteractiveRole(role),
-            focused: Boolean(item.focused),
-            enabled: item.enabled !== false,
-            visible: item.width > 0 && item.height > 0,
-            controlType: typeof item.role === 'string' ? item.role : undefined,
-            automationId: item.automationId || undefined,
-            runtimeId: item.runtimeId || undefined,
-            className: item.className || undefined,
-          });
-        }
-      } catch (_err) {
-        // Intentionally ignored: UIAutomation JSON parsing may fail, fallback to mock elements
-        elements.push(...this.getMockElements());
+      for (const item of items.slice(0, this.config.maxElements)) {
+        const role = this.mapWindowsRole(item.role, item);
+        elements.push({
+          ref: this.nextRef++,
+          role,
+          name: item.name || 'Unknown',
+          bounds: { x: item.x, y: item.y, width: item.width, height: item.height },
+          center: {
+            x: item.x + item.width / 2,
+            y: item.y + item.height / 2,
+          },
+          interactive: this.isInteractiveRole(role),
+          focused: Boolean(item.focused),
+          enabled: item.enabled !== false,
+          visible: item.width > 0 && item.height > 0,
+          controlType: typeof item.role === 'string' ? item.role : undefined,
+          automationId: item.automationId || undefined,
+          runtimeId: item.runtimeId || undefined,
+          className: item.className || undefined,
+        });
       }
     } catch (error) {
       logger.debug('Windows accessibility detection failed', { error });

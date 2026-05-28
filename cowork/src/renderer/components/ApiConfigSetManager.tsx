@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Layers, Plus, Save, Trash2, Pencil } from 'lucide-react';
 import type { ApiConfigSet } from '../types';
@@ -26,6 +26,8 @@ interface ApiConfigSetManagerProps {
   onDiscardAndContinuePendingAction: () => Promise<void> | void;
 }
 
+const LEGACY_SYSTEM_SET_NAMES = new Set(['默认方案', 'Par défaut', 'Default']);
+
 export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
   const { t } = useTranslation();
   const {
@@ -51,19 +53,30 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
   const [activeLocalDialog, setActiveLocalDialog] = useState<'none' | 'delete'>('none');
   const [renameName, setRenameName] = useState('');
   const [isInlineRenaming, setIsInlineRenaming] = useState(false);
+  const displaySetName = useCallback((set: ApiConfigSet | null | undefined) => {
+    if (!set) {
+      return '-';
+    }
+    if (set.isSystem && LEGACY_SYSTEM_SET_NAMES.has(set.name)) {
+      return t('api.defaultSetName', 'Default profile');
+    }
+    return set.name;
+  }, [t]);
 
   useEffect(() => {
     setActiveLocalDialog('none');
-    setRenameName(currentConfigSet?.name || '');
+    setRenameName(displaySetName(currentConfigSet));
     setIsInlineRenaming(false);
-  }, [activeConfigSetId, currentConfigSet?.name]);
+  }, [activeConfigSetId, currentConfigSet, displaySetName]);
 
-  const pendingActionMessage = t('api.unsavedSwitchPrompt', { name: pendingConfigSet?.name || '-' });
+  const pendingActionMessage = t('api.unsavedSwitchPrompt', {
+    name: displaySetName(pendingConfigSet),
+  });
   const hasDialogOpen = activeLocalDialog !== 'none';
   const canRenameCurrentConfigSet = Boolean(currentConfigSet);
 
   const cancelInlineRename = () => {
-    setRenameName(currentConfigSet?.name || '');
+    setRenameName(displaySetName(currentConfigSet));
     setIsInlineRenaming(false);
   };
 
@@ -73,8 +86,12 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
       return;
     }
     const nextName = renameName.trim();
-    if (!nextName || nextName === currentConfigSet.name) {
-      setRenameName(currentConfigSet.name);
+    if (
+      !nextName ||
+      nextName === currentConfigSet.name ||
+      nextName === displaySetName(currentConfigSet)
+    ) {
+      setRenameName(displaySetName(currentConfigSet));
       setIsInlineRenaming(false);
       return;
     }
@@ -87,21 +104,29 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
   };
 
   return (
-    <div className="space-y-3 py-5 border-b border-border-muted px-4">
-      <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-        <Layers className="w-4 h-4" />
-        {t('api.configSet')}
-        {hasUnsavedChanges && (
-          <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">{t('api.unsavedBadge')}</span>
-        )}
-      </label>
-      <div className="space-y-2">
+    <div className="space-y-3 border-b border-border-muted pb-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
+          <Layers className="h-4 w-4" />
+          {t('api.configSet')}
+          {hasUnsavedChanges && (
+            <span className="rounded-full bg-warning/15 px-2 py-0.5 text-[11px] text-warning">
+              {t('api.unsavedBadge')}
+            </span>
+          )}
+        </label>
+        <span className="text-xs text-text-muted">{t('api.currentSetSavingHint')}</span>
+      </div>
+
+      <div className="grid gap-2 lg:grid-cols-[minmax(0,1fr)_auto]">
         {isInlineRenaming ? (
           <input
             type="text"
             value={renameName}
             onChange={(e) => setRenameName(e.target.value)}
-            onBlur={() => { void commitInlineRename(); }}
+            onBlur={() => {
+              void commitInlineRename();
+            }}
             onKeyDown={(e) => {
               if (e.key === 'Enter') {
                 e.preventDefault();
@@ -115,76 +140,102 @@ export function ApiConfigSetManager(props: ApiConfigSetManagerProps) {
             autoFocus
             disabled={isMutatingConfigSet || hasDialogOpen}
             placeholder={t('api.createSetNamePlaceholder')}
-            className="w-full px-3 py-2.5 rounded-lg bg-background border border-border-muted text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
+            className="min-h-10 w-full rounded-lg border border-border-muted bg-background px-3 py-2.5 text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60"
           />
         ) : (
           <select
             value={activeConfigSetId}
-            onChange={(e) => { void onSwitchSet(e.target.value); }}
+            onChange={(e) => {
+              void onSwitchSet(e.target.value);
+            }}
             disabled={isMutatingConfigSet || hasDialogOpen}
-            className="w-full px-3 py-2.5 rounded-lg bg-background border border-border-muted text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent disabled:opacity-60"
+            className="min-h-10 w-full rounded-lg border border-border-muted bg-background px-3 py-2.5 text-text-primary focus:border-accent focus:outline-none focus:ring-2 focus:ring-accent/30 disabled:opacity-60"
           >
             {configSets.map((set) => (
               <option key={set.id} value={set.id}>
-                {set.isSystem ? `${set.name} (${t('api.defaultSetTag')})` : set.name}
+                {set.isSystem
+                  ? `${displaySetName(set)} (${t('api.defaultSetTag')})`
+                  : displaySetName(set)}
               </option>
             ))}
           </select>
         )}
-        {isInlineRenaming && (
-          <p className="text-[11px] text-text-muted">{t('api.renameInlineHint')}</p>
-        )}
-        <div className="flex items-center gap-2">
+
+        <div className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            onClick={() => { void onSaveCurrentSet(); }}
+            title={t('common.save')}
+            aria-label={t('common.save')}
+            onClick={() => {
+              void onSaveCurrentSet();
+            }}
             disabled={isMutatingConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-2 rounded-lg border border-border-muted bg-background hover:bg-surface-hover text-text-secondary text-xs hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border-muted bg-background px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Save className="w-3.5 h-3.5" />
+            <Save className="h-3.5 w-3.5" />
             {t('common.save')}
           </button>
           <button
             type="button"
-            onClick={() => { void onRequestCreateBlankSet(); }}
+            title={t('api.newSet')}
+            aria-label={t('api.newSet')}
+            onClick={() => {
+              void onRequestCreateBlankSet();
+            }}
             disabled={isMutatingConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-2 rounded-lg border border-border-muted bg-background hover:bg-surface-hover text-text-secondary text-xs hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border-muted bg-background px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Plus className="w-3.5 h-3.5" />
+            <Plus className="h-3.5 w-3.5" />
             {t('api.newSet')}
           </button>
           <button
             type="button"
+            title={t('api.renameSet')}
+            aria-label={t('api.renameSet')}
             onClick={() => {
               if (!currentConfigSet) {
                 return;
               }
-              setRenameName(currentConfigSet.name);
+              setRenameName(displaySetName(currentConfigSet));
               setIsInlineRenaming(true);
             }}
-            disabled={isMutatingConfigSet || !canRenameCurrentConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-3 py-2 rounded-lg border border-border-muted bg-background hover:bg-surface-hover text-text-secondary text-xs hover:text-text-primary disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            disabled={
+              isMutatingConfigSet ||
+              !canRenameCurrentConfigSet ||
+              hasDialogOpen ||
+              isInlineRenaming
+            }
+            className="inline-flex min-h-10 items-center gap-1.5 rounded-lg border border-border-muted bg-background px-3 py-2 text-xs text-text-secondary transition-colors hover:bg-surface-hover hover:text-text-primary disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Pencil className="w-3.5 h-3.5" />
+            <Pencil className="h-3.5 w-3.5" />
             {t('api.renameSet')}
           </button>
-          <div className="flex-1" />
           <button
             type="button"
+            title={t('api.deleteSet')}
+            aria-label={t('api.deleteSet')}
             onClick={() => setActiveLocalDialog('delete')}
-            disabled={isMutatingConfigSet || !canDeleteCurrentConfigSet || hasDialogOpen || isInlineRenaming}
-            className="px-2.5 py-2 rounded-lg text-text-muted text-xs hover:text-error hover:bg-error/10 disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center gap-1"
+            disabled={
+              isMutatingConfigSet ||
+              !canDeleteCurrentConfigSet ||
+              hasDialogOpen ||
+              isInlineRenaming
+            }
+            className="inline-flex min-h-10 items-center justify-center rounded-lg px-2.5 py-2 text-text-muted transition-colors hover:bg-error/10 hover:text-error disabled:cursor-not-allowed disabled:opacity-50"
           >
-            <Trash2 className="w-3.5 h-3.5" />
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
         </div>
       </div>
-      <p className="text-xs text-text-muted">{t('api.currentSetSavingHint')}</p>
+
+      {isInlineRenaming && (
+        <p className="text-[11px] text-text-muted">{t('api.renameInlineHint')}</p>
+      )}
 
       {activeLocalDialog === 'delete' && currentConfigSet && (
         <div className="space-y-3 rounded-lg border border-error/30 bg-error/10 px-3 py-3">
           <p className="text-xs text-text-primary">
-            {t('api.configSetDeleteConfirm', { name: currentConfigSet.name })}
+            {t('api.configSetDeleteConfirm', { name: displaySetName(currentConfigSet) })}
           </p>
           <div className="grid grid-cols-2 gap-2">
             <button

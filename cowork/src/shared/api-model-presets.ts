@@ -36,7 +36,7 @@ export interface ModelInputGuidance {
 
 export const API_PROVIDER_PRESETS: SharedProviderPresets = {
   chatgpt: {
-    name: 'ChatGPT (OAuth subscription)',
+    name: 'ChatGPT',
     // Routed by CodeBuddyClient → ChatGptResponsesProvider when this
     // baseURL substring is detected. The OAuth token replaces the
     // API key (sentinel `oauth-chatgpt`).
@@ -50,7 +50,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'gpt-5', name: 'GPT-5' },
     ],
     keyPlaceholder: 'oauth-chatgpt',
-    keyHint: 'Authentifié via Sign In — pas de clé API à coller.',
+    keyHint: 'OAuth sign-in; no API key is required.',
   },
   openrouter: {
     name: 'OpenRouter',
@@ -66,7 +66,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'google/gemini-2.5-flash', name: 'google/gemini-2.5-flash' },
     ],
     keyPlaceholder: 'sk-or-v1-...',
-    keyHint: '从 openrouter.ai/keys 获取',
+    keyHint: 'Get it from openrouter.ai/keys.',
   },
   anthropic: {
     name: 'Anthropic',
@@ -79,7 +79,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'claude-3-7-sonnet-latest', name: 'claude-3-7-sonnet-latest' },
     ],
     keyPlaceholder: 'sk-ant-...',
-    keyHint: '从 console.anthropic.com 获取',
+    keyHint: 'Get it from console.anthropic.com.',
   },
   openai: {
     name: 'OpenAI',
@@ -94,7 +94,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'gpt-4.1', name: 'gpt-4.1' },
     ],
     keyPlaceholder: 'sk-...',
-    keyHint: '从 platform.openai.com 获取',
+    keyHint: 'Get it from platform.openai.com.',
   },
   gemini: {
     name: 'Gemini',
@@ -108,7 +108,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'gemini-2.5-flash-lite', name: 'gemini-2.5-flash-lite' },
     ],
     keyPlaceholder: 'AIza...',
-    keyHint: '从 aistudio.google.com 获取',
+    keyHint: 'Get it from aistudio.google.com.',
   },
   ollama: {
     name: 'Ollama',
@@ -118,8 +118,8 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'llama3.2:latest', name: 'llama3.2:latest' },
       { id: 'deepseek-r1:latest', name: 'deepseek-r1:latest' },
     ],
-    keyPlaceholder: '可留空',
-    keyHint: '多数 Ollama 部署可留空；如果你的代理层要求鉴权，也可以填写 Key',
+    keyPlaceholder: 'Optional',
+    keyHint: 'Most Ollama servers can leave this empty. Add a key only if your proxy requires one.',
   },
   lmstudio: {
     name: 'LM Studio',
@@ -130,11 +130,11 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'deepseek-coder', name: 'deepseek-coder' },
       { id: 'llama-3.1-8b', name: 'llama-3.1-8b' },
     ],
-    keyPlaceholder: '可留空',
-    keyHint: 'LM Studio 本地服务器通常无需 API Key；如果你经过代理层，也可以填写占位 Key。',
+    keyPlaceholder: 'Optional',
+    keyHint: 'LM Studio local servers usually do not need a key. Add one only if your proxy requires one.',
   },
   custom: {
-    name: '更多模型',
+    name: 'Custom endpoint',
     baseUrl: '',
     models: [
       { id: 'deepseek-chat', name: 'deepseek-chat' },
@@ -147,7 +147,7 @@ export const API_PROVIDER_PRESETS: SharedProviderPresets = {
       { id: 'mistral-large-latest', name: 'mistral-large-latest' },
     ],
     keyPlaceholder: 'sk-xxx',
-    keyHint: '输入你的 API Key',
+    keyHint: 'Enter the API key for this endpoint.',
   },
 };
 

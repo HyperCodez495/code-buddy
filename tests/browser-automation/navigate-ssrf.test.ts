@@ -33,6 +33,16 @@ describe('navigate SSRF guard (parity with batch-mode)', () => {
     ['RFC1918 192.168', 'http://192.168.1.1/'],
     ['RFC1918 172.16/12', 'http://172.16.5.5/'],
     ['RFC1918 10/8', 'http://10.0.0.5/'],
+    ['IPv6 loopback standard', 'http://[::1]:8080/'],
+    ['IPv6 loopback bypass (leading zeros)', 'http://[::0001]:8080/'],
+    ['IPv6 loopback bypass (uncompressed)', 'http://[0:0:0:0:0:0:0:1]:8080/'],
+    ['IPv6 unspecified', 'http://[::]:8080/'],
+    ['IPv6 ULA', 'http://[fc00::1]:8080/'],
+    ['IPv6 link-local', 'http://[fe80::1]:8080/'],
+    ['IPv6 site-local', 'http://[fec0::1]:8080/'],
+    ['IPv6 documentation', 'http://[2001:db8::1]:8080/'],
+    ['IPv6 ORCHID', 'http://[2001:10::1]:8080/'],
+    ['IPv6 discard-only', 'http://[100::1]:8080/'],
   ])('blocks %s and never reaches manager.navigate', async (_label, url) => {
     const tool = new BrowserTool();
     const r = await tool.execute({ action: 'navigate', url });

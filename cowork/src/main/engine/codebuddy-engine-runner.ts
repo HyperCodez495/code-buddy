@@ -97,15 +97,26 @@ export class CodeBuddyEngineRunner {
       payload: { sessionId: session.id, status: 'running' },
     } as ServerEvent);
 
-    // Save user message
-    const userMessage: Message = {
-      id: uuidv4(),
-      sessionId: session.id,
-      role: 'user',
-      content: [{ type: 'text', text: prompt } as TextContent],
-      timestamp: Date.now(),
-    };
-    saveMessage(userMessage);
+    // Check if the current user message is already at the end of existingMessages
+    const hasUserMessageAtEnd =
+      existingMessages.length > 0 &&
+      existingMessages[existingMessages.length - 1]?.role === 'user';
+
+    const userMessageId = hasUserMessageAtEnd
+      ? existingMessages[existingMessages.length - 1].id
+      : uuidv4();
+
+    if (!hasUserMessageAtEnd) {
+      // Save user message (fallback for tests/standalone runs)
+      const userMessage: Message = {
+        id: userMessageId,
+        sessionId: session.id,
+        role: 'user',
+        content: [{ type: 'text', text: prompt } as TextContent],
+        timestamp: Date.now(),
+      };
+      saveMessage(userMessage);
+    }
 
     // Create checkpoint before this turn (ghost snapshot)
     try {
@@ -148,15 +159,21 @@ export class CodeBuddyEngineRunner {
       // Checkpoint creation is best-effort — don't block the session
     }
 
+    // Filter out the current user message to avoid duplicate context assembly
+    const historyMessages = hasUserMessageAtEnd
+      ? existingMessages.slice(0, -1)
+      : existingMessages;
+
     // Convert existing messages to engine format
-    const engineMessages = this.convertMessages(existingMessages, prompt);
+    const engineMessages = this.convertMessages(historyMessages, prompt);
     const systemPromptAppend = await this.resolveActivePersonaPrompt();
 
     let fullContent = '';
+    let runtimeError: string | null = null;
     const contentBlocks: ContentBlock[] = [];
     const reasoningCapture = createReasoningCapture({
       bridge: getReasoningBridge(),
-      toolUseId: `${session.id}:reasoning:${userMessage.id}`,
+      toolUseId: `${session.id}:reasoning:${userMessageId}`,
       sessionId: session.id,
       problem: prompt,
       mode: session.model ?? 'embedded',
@@ -348,9 +365,10 @@ export class CodeBuddyEngineRunner {
               break;
 
             case 'error':
+              runtimeError = event.error || 'Unknown error';
               sendToRenderer({
                 type: 'error',
-                payload: { message: event.error || 'Unknown error', sessionId: session.id },
+                payload: { message: runtimeError, sessionId: session.id },
               } as ServerEvent);
               break;
           }
@@ -361,6 +379,10 @@ export class CodeBuddyEngineRunner {
           systemPromptAppend,
         }
       );
+
+      if (runtimeError && !fullContent && contentBlocks.length === 0) {
+        fullContent = `**Error**: ${runtimeError}`;
+      }
 
       // Save assistant message
       const assistantContent: ContentBlock[] = [];

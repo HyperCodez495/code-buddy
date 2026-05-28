@@ -9,18 +9,28 @@ describe('ConfigModal Claude-style layout', () => {
     const source = fs.readFileSync(configModalPath, 'utf8');
     expect(source).toContain('bg-black/40');
     expect(source).toContain('rounded-[2rem]');
-    expect(source).toContain('max-w-[880px]');
+    expect(source).toContain('max-w-[1040px]');
   });
 
   it('offers a local Ollama discovery action in the base-url section', () => {
     const source = fs.readFileSync(configModalPath, 'utf8');
-    expect(source).toContain('discoverLocalOllama');
-    expect(source).toContain("t('api.discoverLocalOllama')");
+    const panelSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/LLMConfigPanel.tsx'),
+      'utf8'
+    );
+    expect(source).toContain('LLMConfigPanel');
+    expect(panelSource).toContain('discoverLocalOllama');
+    expect(panelSource).toContain("t('api.discoverLocalOllama')");
   });
 
   it('offers a local LM Studio discovery action in the base-url section', () => {
     const source = fs.readFileSync(configModalPath, 'utf8');
-    expect(source).toContain('discoverLocalLmStudio');
-    expect(source).toContain("t('api.discoverLocalLmStudio')");
+    const panelSource = fs.readFileSync(
+      path.resolve(process.cwd(), 'src/renderer/components/LLMConfigPanel.tsx'),
+      'utf8'
+    );
+    expect(source).toContain('LLMConfigPanel');
+    expect(panelSource).toContain('discoverLocalLmStudio');
+    expect(panelSource).toContain("t('api.discoverLocalLmStudio')");
   });
 });

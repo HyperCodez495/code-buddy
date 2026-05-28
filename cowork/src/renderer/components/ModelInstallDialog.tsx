@@ -22,6 +22,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useAppStore } from '../store';
 import { Cpu, X, FolderOpen, CheckCircle2, AlertTriangle, Download } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 
 type DialogStatus = 'idle' | 'checking' | 'installing' | 'downloading' | 'success' | 'error';
 
@@ -42,10 +43,12 @@ const DEFAULT_DOWNLOAD_URL =
   'https://huggingface.co/immich-app/buffalo_s/resolve/main/recognition/model.onnx';
 
 export function ModelInstallDialog() {
+  const { t } = useTranslation();
   const showModelInstallDialog = useAppStore((s) => s.showModelInstallDialog);
   const setShowModelInstallDialog = useAppStore((s) => s.setShowModelInstallDialog);
 
   const [installed, setInstalled] = useState<boolean | null>(null);
+  const [dismissedForSession, setDismissedForSession] = useState(false);
   const [modelPath, setModelPath] = useState<string>('');
   const [status, setStatus] = useState<DialogStatus>('idle');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -80,6 +83,12 @@ export function ModelInstallDialog() {
     };
   }, [showModelInstallDialog]);
 
+  useEffect(() => {
+    if (showModelInstallDialog) {
+      setDismissedForSession(false);
+    }
+  }, [showModelInstallDialog]);
+
   // Tear down the progress listener whenever the dialog unmounts or
   // a new download starts. MUST be declared BEFORE any early-return
   // so the hook order is stable across renders (React Rules of Hooks).
@@ -105,9 +114,13 @@ export function ModelInstallDialog() {
     // First check still in flight, model presence unknown — stay quiet.
     return null;
   }
+  if (installed === false && !showModelInstallDialog && dismissedForSession) {
+    return null;
+  }
 
   const handleClose = () => {
     setShowModelInstallDialog(false);
+    setDismissedForSession(true);
     setStatus('idle');
     setErrorMsg(null);
     setProgress(null);
@@ -129,7 +142,7 @@ export function ModelInstallDialog() {
     try {
       const res = await window.electronAPI?.presence?.downloadModel({ url: downloadUrl });
       if (!res || !res.ok) {
-        setErrorMsg(res?.error ?? 'Téléchargement a échoué.');
+        setErrorMsg(res?.error ?? t('modelInstall.downloadFailed', 'Download failed.'));
         setStatus('error');
         return;
       }
@@ -153,7 +166,7 @@ export function ModelInstallDialog() {
       setStatus('installing');
       const res = await window.electronAPI?.presence?.installModelFromPath({ sourcePath });
       if (!res || !res.ok) {
-        setErrorMsg(res?.error ?? 'Installation a échoué.');
+        setErrorMsg(res?.error ?? t('modelInstall.installFailed', 'Installation failed.'));
         setStatus('error');
         return;
       }
@@ -167,7 +180,10 @@ export function ModelInstallDialog() {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm"
+      data-testid="model-install-dialog"
+    >
       <div className="bg-background border border-border rounded-2xl shadow-xl w-full max-w-lg p-6">
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -176,17 +192,18 @@ export function ModelInstallDialog() {
             </div>
             <div>
               <h2 className="text-base font-semibold text-text-primary">
-                Modèle Buffalo_S requis
+                {t('modelInstall.title', 'Buffalo_S model required')}
               </h2>
               <p className="text-xs text-text-secondary mt-0.5">
-                Reconnaissance faciale (~13 Mo, ONNX)
+                {t('modelInstall.subtitle', 'Face recognition (~13 MB, ONNX)')}
               </p>
             </div>
           </div>
           <button
             onClick={handleClose}
             className="p-1 rounded hover:bg-surface text-text-secondary"
-            title="Fermer"
+            aria-label={t('common.close', 'Close')}
+            title={t('common.close', 'Close')}
           >
             <X className="w-4 h-4" />
           </button>
@@ -196,20 +213,24 @@ export function ModelInstallDialog() {
           <div className="flex items-start gap-2 p-3 rounded-lg bg-green-500/5 border border-green-500/20 mb-4">
             <CheckCircle2 className="w-4 h-4 text-green-500 mt-0.5 shrink-0" />
             <div className="text-xs text-text-secondary">
-              Modèle installé à <code className="text-text-primary">{modelPath}</code>. Tu peux
-              fermer ce dialogue ; la reconnaissance faciale est prête.
+              {t('modelInstall.installedPrefix', 'Model installed at')}{' '}
+              <code className="text-text-primary">{modelPath}</code>.{' '}
+              {t('modelInstall.installedSuffix', 'You can close this dialog; face recognition is ready.')}
             </div>
           </div>
         ) : (
           <div className="text-sm text-text-secondary space-y-3 mb-4">
             <p>
-              Cowork a besoin de Buffalo_S (ArcFace, 13 Mo) pour reconnaître les visages.
-              Deux options : laisser Cowork le télécharger depuis un miroir public, ou
-              choisir un fichier <code>.onnx</code> déjà téléchargé.
+              {t(
+                'modelInstall.body',
+                'Cowork needs Buffalo_S (ArcFace, 13 MB) to recognize faces. You can let Cowork download it from a public mirror or choose an already downloaded .onnx file.'
+              )}
             </p>
             <p className="text-xs">
-              Cible installée :{' '}
-              <code className="text-text-primary">{modelPath || '(en cours de détection…)'}</code>
+              {t('modelInstall.targetPath', 'Install target:')}{' '}
+              <code className="text-text-primary">
+                {modelPath || t('modelInstall.detecting', '(detecting...)')}
+              </code>
             </p>
           </div>
         )}
@@ -218,7 +239,7 @@ export function ModelInstallDialog() {
           <div className="border border-border rounded-lg p-3 mb-3 space-y-2">
             <div className="flex items-center gap-2 text-xs font-medium text-text-primary">
               <Download className="w-3.5 h-3.5" />
-              Télécharger automatiquement
+              {t('modelInstall.autoDownload', 'Automatic download')}
             </div>
             <input
               type="url"
@@ -230,8 +251,10 @@ export function ModelInstallDialog() {
               className="w-full text-xs px-2 py-1 rounded border border-border bg-surface text-text-primary disabled:opacity-50"
             />
             <p className="text-[11px] text-text-secondary">
-              Miroir par défaut : HuggingFace (immich-app/buffalo_s). Tu peux coller une autre URL
-              .onnx publique si ce miroir ne répond pas.
+              {t(
+                'modelInstall.mirrorHint',
+                'Default mirror: HuggingFace (immich-app/buffalo_s). You can paste another public .onnx URL if this mirror is unavailable.'
+              )}
             </p>
 
             {progress && status === 'downloading' && (
@@ -248,10 +271,11 @@ export function ModelInstallDialog() {
                   />
                 </div>
                 <div className="text-[11px] text-text-secondary tabular-nums">
-                  {(progress.bytes / (1024 * 1024)).toFixed(1)} Mo
+                  {(progress.bytes / (1024 * 1024)).toFixed(1)}{' '}
+                  {t('modelInstall.sizeUnit', 'MB')}
                   {progress.total
-                    ? ` / ${(progress.total / (1024 * 1024)).toFixed(1)} Mo`
-                    : ' (taille inconnue)'}
+                    ? ` / ${(progress.total / (1024 * 1024)).toFixed(1)} ${t('modelInstall.sizeUnit', 'MB')}`
+                    : ` ${t('modelInstall.unknownSize', '(unknown size)')}`}
                 </div>
               </div>
             )}
@@ -266,7 +290,9 @@ export function ModelInstallDialog() {
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md bg-blue-500 text-white hover:bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               <Download className="w-3.5 h-3.5" />
-              {status === 'downloading' ? 'Téléchargement…' : 'Télécharger'}
+              {status === 'downloading'
+                ? t('modelInstall.downloading', 'Downloading...')
+                : t('modelInstall.download', 'Download')}
             </button>
           </div>
         )}
@@ -285,14 +311,15 @@ export function ModelInstallDialog() {
             rel="noopener noreferrer"
             className="text-[11px] text-text-secondary hover:text-blue-500 hover:underline"
           >
-            En savoir plus sur Buffalo_S →
+            {t('modelInstall.learnMore', 'Learn more about Buffalo_S')}
           </a>
           <div className="flex items-center gap-2">
             <button
               onClick={handleClose}
+              data-testid="model-install-close"
               className="px-3 py-1.5 text-xs rounded-md text-text-secondary hover:bg-surface"
             >
-              Fermer
+              {t('common.close', 'Close')}
             </button>
             <button
               onClick={handlePickFile}
@@ -301,10 +328,10 @@ export function ModelInstallDialog() {
             >
               <FolderOpen className="w-3.5 h-3.5" />
               {status === 'installing'
-                ? 'Installation…'
+                ? t('modelInstall.installing', 'Installing...')
                 : installed
-                  ? 'Remplacer…'
-                  : 'Fichier local…'}
+                  ? t('modelInstall.replaceFile', 'Replace file...')
+                  : t('modelInstall.localFile', 'Local file...')}
             </button>
           </div>
         </div>

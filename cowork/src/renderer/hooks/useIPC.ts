@@ -280,6 +280,13 @@ export function useIPC() {
           case 'error':
             console.error('[useIPC] Server error:', event.payload.message);
             store.setLoading(false);
+            if (event.payload.sessionId) {
+              store.updateSession(event.payload.sessionId, { status: 'idle' });
+              store.finishExecutionClock(event.payload.sessionId);
+              store.clearActiveTurn(event.payload.sessionId);
+              store.clearPendingTurns(event.payload.sessionId);
+              store.clearQueuedMessages(event.payload.sessionId);
+            }
             if (event.payload.code === 'CONFIG_REQUIRED_ACTIVE_SET') {
               store.setGlobalNotice({
                 id: `notice-config-required-${Date.now()}`,

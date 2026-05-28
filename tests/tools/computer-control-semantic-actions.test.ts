@@ -647,4 +647,44 @@ describe('ComputerControlTool semantic actions', () => {
     setVisionGroundingProvider(null);
     delete process.env.CODEBUDDY_VISION_GROUNDING;
   });
+
+  it('triggers visual grounding coordinate fallback when UIA is empty', async () => {
+    const { ComputerControlTool, setVisionGroundingProvider } = await import('../../src/tools/computer-control-tool.js');
+    const tool = new ComputerControlTool();
+
+    // Enable grounding fallback
+    process.env.CODEBUDDY_VISION_GROUNDING = '1';
+
+    // Mock annotated screenshot
+    mockSnapshotManager.toAnnotatedScreenshot.mockResolvedValue({ image: 'fake-base64-data' });
+
+    // Set up snapshot with no elements
+    setCurrentSnapshot(makeSnapshot([]));
+
+    // Register a stub grounding provider returning coordinates { x: 500, y: 600 }
+    const groundingProviderSpy = vi.fn().mockResolvedValue({ x: 500, y: 600 });
+    setVisionGroundingProvider(groundingProviderSpy);
+
+    const result = await tool.execute({
+      action: 'click_button',
+      name: 'Virtual Button',
+    });
+
+    expect(result.success).toBe(true);
+    expect(groundingProviderSpy).toHaveBeenCalledWith(expect.objectContaining({
+      imageBase64: 'fake-base64-data',
+      intent: 'Virtual Button',
+      roleHint: 'button',
+      candidates: []
+    }));
+
+    // Center coordinates scale 500/1000 and 600/1000 relative to screen size (1280x720 in the test snapshot)
+    // 500/1000 * 1280 = 640
+    // 600/1000 * 720 = 432
+    expect(mockAutomation.click).toHaveBeenCalledWith(640, 432, { button: 'left' });
+
+    // Clean up
+    setVisionGroundingProvider(null);
+    delete process.env.CODEBUDDY_VISION_GROUNDING;
+  });
 });

@@ -65,14 +65,7 @@ type PendingConfigSetAction = { type: 'switch'; targetSetId: string };
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 const CONFIG_SET_LIMIT = 20;
 const DEFAULT_CONFIG_SET_ID = 'default';
-// Display name for the bundled "default" config set. Was hardcoded in
-// Mandarin (`默认方案`) when the codebase was forked; replaced here with
-// a locale-neutral French string. Surfaced in the API Settings dialog
-// as "Par défaut" — matches the parenthetical that already appears in
-// the dropdown UI. Locale-aware naming would need a t() call which
-// isn't available in this non-component module; the current pragmatic
-// fix avoids importing i18n into a hot config-state hook.
-const DEFAULT_CONFIG_SET_NAME = 'Par défaut';
+const DEFAULT_CONFIG_SET_NAME = 'Default';
 export const FALLBACK_PROVIDER_PRESETS: ProviderPresets = API_PROVIDER_PRESETS;
 
 const PROFILE_KEYS: ProviderProfileKey[] = [
@@ -540,7 +533,7 @@ export function buildApiConfigSets(
       return {
         ...set,
         id: typeof set.id === 'string' && set.id.trim() ? set.id : `set-${index + 1}`,
-        name: typeof set.name === 'string' && set.name.trim() ? set.name : `配置方案 ${index + 1}`,
+        name: typeof set.name === 'string' && set.name.trim() ? set.name : `Set ${index + 1}`,
         provider,
         customProtocol,
         activeProfileKey,

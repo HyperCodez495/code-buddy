@@ -131,7 +131,9 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
               type="button"
               onClick={onClose}
               className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover"
+              aria-label={t('common.close', 'Close')}
               title={t('common.close', 'Close')}
+              data-testid="onboarding-close"
             >
               <X size={14} />
             </button>
@@ -233,6 +235,7 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
                     testId: 'onboarding-path-quickstart',
                     title: t('onboarding.pathQuickTitle', 'Quick start'),
                     desc: t('onboarding.pathQuickDesc', 'Connect the brain and start chatting.'),
+                    action: () => setStep(1 as Step),
                   },
                   {
                     testId: 'onboarding-path-control',
@@ -241,21 +244,25 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
                       'onboarding.pathControlDesc',
                       'Tune workspace, backend, and tool policy.'
                     ),
+                    action: () => setStep(2 as Step),
                   },
                   {
                     testId: 'onboarding-path-later',
                     title: t('onboarding.pathLaterTitle', 'Configure later'),
                     desc: t('onboarding.pathLaterDesc', 'Skip safely and keep setup reversible.'),
+                    action: () => void markComplete(),
                   },
                 ].map((item) => (
-                  <div
+                  <button
                     key={item.testId}
-                    className="rounded-lg border border-border-subtle bg-surface/40 p-3"
+                    type="button"
+                    onClick={item.action}
+                    className="rounded-lg border border-border-subtle bg-surface/40 p-3 text-left transition-colors hover:border-accent/40 hover:bg-surface-hover focus:outline-none focus:ring-2 focus:ring-accent/30"
                     data-testid={item.testId}
                   >
                     <p className="text-xs font-semibold text-text-primary">{item.title}</p>
                     <p className="mt-1 text-[11px] leading-4 text-text-muted">{item.desc}</p>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>

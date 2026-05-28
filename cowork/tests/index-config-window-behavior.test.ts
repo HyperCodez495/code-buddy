@@ -18,10 +18,22 @@ describe('Main process window/config behavior', () => {
   it('session.start blocked by active set emits structured error without forcing config.status', () => {
     const source = fs.readFileSync(indexPath, 'utf8');
     const sessionStartGuard = source.match(/if \(event\.type === 'session\.start'[\s\S]*?return null;\n {2}}/)?.[0] || '';
+    const configErrorHelper =
+      source.match(/function sendActiveSetConfigRequiredError[\s\S]*?\n}\n\nasync function handleClientEvent/)?.[0] ||
+      '';
 
     expect(sessionStartGuard).toContain('hasUsableCredentialsForActiveSet');
-    expect(sessionStartGuard).toContain("code: 'CONFIG_REQUIRED_ACTIVE_SET'");
-    expect(sessionStartGuard).toContain("action: 'open_api_settings'");
-    expect(sessionStartGuard).not.toContain("type: 'config.status'");
+    expect(sessionStartGuard).toContain('sendActiveSetConfigRequiredError');
+    expect(configErrorHelper).toContain("code: 'CONFIG_REQUIRED_ACTIVE_SET'");
+    expect(configErrorHelper).toContain("action: 'open_api_settings'");
+    expect(configErrorHelper).not.toContain("type: 'config.status'");
+  });
+
+  it('session.continue blocked by active set includes session id for renderer cleanup', () => {
+    const source = fs.readFileSync(indexPath, 'utf8');
+    const continueGuard = source.match(/if \(event\.type === 'session\.continue'[\s\S]*?return null;\n {2}}/)?.[0] || '';
+
+    expect(continueGuard).toContain('hasUsableCredentialsForActiveSet');
+    expect(continueGuard).toContain('sendActiveSetConfigRequiredError(event.payload.sessionId)');
   });
 });

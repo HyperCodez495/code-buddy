@@ -30,6 +30,7 @@ import {
 } from '../services/presence/face-utils';
 import type { FaceDetection } from '../../shared/presence/types';
 import { useAppStore } from '../store';
+import { useTranslation } from 'react-i18next';
 
 /**
  * Substring used to detect that the main process raised the
@@ -51,6 +52,7 @@ export interface EnrollmentDialogProps {
 }
 
 export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDialogProps) {
+  const { t } = useTranslation();
   const [name, setName] = useState('');
   const [aliasesInput, setAliasesInput] = useState('');
   const [samplesCaught, setSamplesCaught] = useState(0);
@@ -155,7 +157,9 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
 
   const handleCapture = async () => {
     if (!latestDetection || !videoRef.current || !window.electronAPI) {
-      setErrorMsg('No face detected — face the camera squarely and retry.');
+      setErrorMsg(
+        t('enrollment.noFaceDetected', 'No face detected. Face the camera squarely and retry.')
+      );
       return;
     }
     setStatus('capturing');
@@ -182,7 +186,7 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
       // raw error stack.
       if (msg.toLowerCase().includes(MODEL_MISSING_ERROR_HINT)) {
         setShowModelInstallDialog(true);
-        setErrorMsg('Modèle Buffalo_S manquant — installation requise.');
+        setErrorMsg(t('enrollment.modelMissing', 'Buffalo_S model missing. Installation required.'));
       } else {
         setErrorMsg(msg);
       }
@@ -218,41 +222,48 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
       <div className="w-[640px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900 dark:text-zinc-100">
-        <h2 className="text-lg font-semibold mb-4">Enregistrer un visage</h2>
+        <h2 className="text-lg font-semibold mb-4">
+          {t('enrollment.title', 'Register a face')}
+        </h2>
 
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-sm">
-              Nom
+              {t('enrollment.nameLabel', 'Name')}
               <input
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="Patrice"
+                placeholder={t('enrollment.namePlaceholder', 'Patrice')}
                 className="block w-full rounded border px-2 py-1 dark:bg-zinc-800"
               />
             </label>
             <label className="text-sm">
-              Alias (séparés par des virgules)
+              {t('enrollment.aliasesLabel', 'Aliases (comma-separated)')}
               <input
                 type="text"
                 value={aliasesInput}
                 onChange={(e) => setAliasesInput(e.target.value)}
-                placeholder="mon chéri, patron"
+                placeholder={t('enrollment.aliasesPlaceholder', 'boss, teammate')}
                 className="block w-full rounded border px-2 py-1 dark:bg-zinc-800"
               />
             </label>
             <p className="text-xs text-zinc-500 dark:text-zinc-400">
-              Les alias sont des registres alternatifs que l'IA peut utiliser pour
-              vous saluer selon le contexte. Optionnels — vous pouvez n'en mettre aucun.
+              {t(
+                'enrollment.aliasesHelp',
+                'Aliases are optional names the AI can use to greet you depending on context.'
+              )}
             </p>
 
             <div className="text-sm">
-              Échantillons : <strong>{samplesCaught} / {SAMPLES_REQUIRED}</strong>
+              {t('enrollment.samplesLabel', 'Samples:')}{' '}
+              <strong>{samplesCaught} / {SAMPLES_REQUIRED}</strong>
             </div>
 
             {status === 'error' && errorMsg && (
-              <div className="text-sm text-red-600">Erreur : {errorMsg}</div>
+              <div className="text-sm text-red-600">
+                {t('enrollment.errorLabel', 'Error:')} {errorMsg}
+              </div>
             )}
 
             <div className="flex gap-2 pt-2">
@@ -266,13 +277,13 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
                 }
                 className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
               >
-                Capturer
+                {t('enrollment.capture', 'Capture')}
               </button>
               <button
                 onClick={onClose}
                 className="rounded border px-3 py-1 dark:border-zinc-700"
               >
-                {status === 'done' ? 'Fermer' : 'Annuler'}
+                {status === 'done' ? t('common.close', 'Close') : t('common.cancel', 'Cancel')}
               </button>
             </div>
           </div>

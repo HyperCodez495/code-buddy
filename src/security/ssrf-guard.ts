@@ -185,15 +185,19 @@ function expandIPv6(address: string): number[] | null {
 function isPrivateIPv6(address: string): boolean {
   const addr = address.toLowerCase().replace(/^\[|\]$/g, ''); // strip brackets
 
-  // ::1 — loopback
-  if (addr === '::1') return true;
-  // :: — unspecified
-  if (addr === '::') return true;
-
   const groups = expandIPv6(addr);
   if (!groups) return false; // parse error → caller should handle
 
   const g = groups;
+
+  // ::1 — loopback (fully normalized check on expanded groups)
+  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0 && g[7] === 1) {
+    return true;
+  }
+  // :: — unspecified (fully normalized check on expanded groups)
+  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0 && g[7] === 0) {
+    return true;
+  }
 
   // ::ffff:0:0/96 — IPv4-mapped
   if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) {
@@ -225,14 +229,27 @@ function isPrivateIPv6(address: string): boolean {
   // 2001:0000::/32 — Teredo (RFC 4380)
   if (g[0] === 0x2001 && g[1] === 0x0000) return true;
 
+  // 2001:db8::/32 — Documentation (RFC 3849)
+  if (g[0] === 0x2001 && g[1] === 0x0db8) return true;
+
+  // 2001:10::/28 & 2001:20::/28 — ORCHID (RFC 4843 & 7343)
+  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0010) return true;
+  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0020) return true;
+
   // fc00::/7 — Unique local
   if ((g[0] & 0xfe00) === 0xfc00) return true;
 
   // fe80::/10 — Link-local
   if ((g[0] & 0xffc0) === 0xfe80) return true;
 
+  // fec0::/10 — Site-local (deprecated but private)
+  if ((g[0] & 0xffc0) === 0xfec0) return true;
+
   // ff00::/8 — Multicast
   if ((g[0] & 0xff00) === 0xff00) return true;
+
+  // 100::/64 — Discard-only prefix (RFC 6666)
+  if (g[0] === 0x0100 && g[1] === 0 && g[2] === 0 && g[3] === 0) return true;
 
   return false;
 }

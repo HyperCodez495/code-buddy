@@ -1,12 +1,18 @@
 /**
  * Windows Native Desktop Automation Provider
  *
- * Uses PowerShell P/Invoke (user32.dll) for native Windows desktop automation.
- * Supports WSL2 interop via powershell.exe.
+ * Uses a persistent C# background daemon (CodeBuddyDesktopBridge.exe)
+ * for native Windows desktop automation, falling back to PowerShell scripts.
+ * Supports WSL2 interop.
  */
 
-import { spawn } from 'child_process';
+import { spawn, execSync, ChildProcess } from 'child_process';
+import path from 'path';
+import fs from 'fs';
+import readline from 'readline';
+import { fileURLToPath } from 'url';
 import { BaseNativeProvider } from './base-native-provider.js';
+import { logger } from '../utils/logger.js';
 import type {
   ProviderCapabilities,
   MousePosition,
@@ -28,6 +34,9 @@ import type {
   ColorInfo,
   ClipboardContent,
 } from './types.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Virtual key code mapping
 const VK_CODES: Record<string, number> = {
@@ -73,8 +82,6 @@ const VK_CODES: Record<string, number> = {
   'f10': 0x79,
   'f11': 0x7A,
   'f12': 0x7B,
-  // a-z (populated below)
-  // 0-9 (populated below)
 };
 
 // Populate a-z
@@ -127,6 +134,9 @@ export class WindowsNativeProvider extends BaseNativeProvider {
 
   private readonly psCmd: string;
   private readonly wsl: boolean;
+  private daemonProcess: ChildProcess | null = null;
+  private daemonInterface: readline.Interface | null = null;
+  private daemonQueue: Promise<any> = Promise.resolve();
 
   private readonly P_INVOKE_BLOCK = `Add-Type @"
 using System;
@@ -157,13 +167,161 @@ public class NativeInput {
   }
 
   // ---------------------------------------------------------------------------
-  // PowerShell execution helper
+  // Environment Check
   // ---------------------------------------------------------------------------
 
-  /**
-   * Execute a PowerShell script via the configured PS command.
-   * Uses EncodedCommand to avoid quoting/heredoc parsing issues.
-   */
+  private isTestMode(): boolean {
+    return process.env.NODE_ENV === 'test' || process.env.VITEST === 'true' || !!process.env.JEST_WORKER_ID;
+  }
+
+  // ---------------------------------------------------------------------------
+  // Persistent Daemon / Execution
+  // ---------------------------------------------------------------------------
+
+  private getWindowsPath(posixPath: string): string {
+    if (!this.wsl) return posixPath;
+    try {
+      return execSync(`wslpath -w "${posixPath}"`, { encoding: 'utf8' }).trim();
+    } catch {
+      return posixPath;
+    }
+  }
+
+  private compileBridge(): void {
+    if (this.isTestMode()) return;
+
+    const srcPath = path.join(__dirname, 'CodeBuddyDesktopBridge.cs');
+    const exePath = path.join(__dirname, 'CodeBuddyDesktopBridge.exe');
+
+    let needsCompile = false;
+    try {
+      if (!fs.existsSync(exePath)) {
+        needsCompile = true;
+      } else {
+        const srcStat = fs.statSync(srcPath);
+        const exeStat = fs.statSync(exePath);
+        if (srcStat.mtime > exeStat.mtime) {
+          needsCompile = true;
+        }
+      }
+    } catch {
+      needsCompile = true;
+    }
+
+    if (needsCompile) {
+      logger.info('Compiling CodeBuddyDesktopBridge...');
+      const cscPath = this.wsl
+        ? '/mnt/c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe'
+        : 'C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\csc.exe';
+
+      const winSrcPath = this.getWindowsPath(srcPath);
+      const winExePath = this.getWindowsPath(exePath);
+
+      const cmd = `"${cscPath}" /r:"System.dll" /r:"System.Drawing.dll" /r:"System.Windows.Forms.dll" /r:"System.Web.Extensions.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\UIAutomationClient.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\UIAutomationTypes.dll" /r:"C:\\Windows\\Microsoft.NET\\Framework64\\v4.0.30319\\WPF\\WindowsBase.dll" /out:"${winExePath}" "${winSrcPath}"`;
+      try {
+        execSync(cmd, { stdio: 'ignore' });
+        logger.info('CodeBuddyDesktopBridge compiled successfully.');
+      } catch (err) {
+        logger.warn('Failed to compile CodeBuddyDesktopBridge, falling back to legacy PowerShell:', { error: err });
+      }
+    }
+  }
+
+  private spawnDaemon(): void {
+    if (this.isTestMode()) return;
+
+    const exePath = path.join(__dirname, 'CodeBuddyDesktopBridge.exe');
+    if (!fs.existsSync(exePath)) {
+      logger.warn('CodeBuddyDesktopBridge.exe not found, using legacy PowerShell execution.');
+      return;
+    }
+
+    try {
+      const execName = this.wsl ? 'powershell.exe' : exePath;
+      const args = this.wsl
+        ? ['-NoProfile', '-NonInteractive', '-Command', `& "${this.getWindowsPath(exePath)}"`]
+        : [];
+
+      this.daemonProcess = spawn(execName, args, {
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+
+      this.daemonInterface = readline.createInterface({
+        input: this.daemonProcess.stdout!,
+        output: this.daemonProcess.stdin!,
+      });
+
+      this.daemonProcess.on('error', (err) => {
+        logger.error('CodeBuddyDesktopBridge daemon process error:', { error: err });
+        this.daemonProcess = null;
+      });
+
+      this.daemonProcess.on('exit', (code) => {
+        logger.warn(`CodeBuddyDesktopBridge daemon process exited with code ${code}`);
+        this.daemonProcess = null;
+      });
+    } catch (err) {
+      logger.error('Failed to spawn CodeBuddyDesktopBridge daemon:', { error: err });
+      this.daemonProcess = null;
+    }
+  }
+
+  private writeToDaemon(action: string, args: Record<string, any>): Promise<any> {
+    return new Promise((resolve, reject) => {
+      if (!this.daemonProcess || !this.daemonInterface) {
+        return reject(new Error('Daemon not running'));
+      }
+
+      const timeout = setTimeout(() => {
+        this.daemonInterface?.removeAllListeners('line');
+        reject(new Error(`Daemon request timed out: ${action}`));
+      }, 10000);
+
+      this.daemonInterface.once('line', (line) => {
+        clearTimeout(timeout);
+        try {
+          const res = JSON.parse(line);
+          if (res.success) {
+            resolve(res);
+          } else {
+            reject(new Error(res.error || 'Unknown daemon error'));
+          }
+        } catch (err) {
+          reject(new Error(`Failed to parse daemon response: ${line}`));
+        }
+      });
+
+      this.daemonProcess.stdin!.write(JSON.stringify({ action, ...args }) + '\n');
+    });
+  }
+
+  private async executeAction(action: string, args: Record<string, any> = {}): Promise<any> {
+    if (this.isTestMode() || !this.daemonProcess) {
+      return this.fallbackPs(action, args);
+    }
+
+    return new Promise((resolve, reject) => {
+      this.daemonQueue = this.daemonQueue.then(async () => {
+        try {
+          const res = await this.writeToDaemon(action, args);
+          resolve(res);
+        } catch (err) {
+          logger.warn(`Daemon action ${action} failed, trying PowerShell fallback:`, { error: err });
+          try {
+            const res = await this.fallbackPs(action, args);
+            resolve(res);
+          } catch (fallbackErr) {
+            reject(fallbackErr);
+          }
+        }
+      });
+    });
+  }
+
+  // ---------------------------------------------------------------------------
+  // PowerShell execution helper (for fallback/test mode)
+  // ---------------------------------------------------------------------------
+
   private async ps(script: string): Promise<string> {
     const preparedScript = `$ProgressPreference='SilentlyContinue'; $ErrorActionPreference='Stop'; ${script}`;
     const encodedScript = Buffer.from(preparedScript, 'utf16le').toString('base64');
@@ -173,25 +331,16 @@ public class NativeInput {
     );
   }
 
-  /**
-   * Validate that a value is a finite number to prevent injection.
-   */
   private validateNumber(value: number, name: string): void {
     if (typeof value !== 'number' || !Number.isFinite(value)) {
       throw new Error(`Invalid ${name}: must be a finite number`);
     }
   }
 
-  /**
-   * Escape a string for use inside PowerShell single quotes (double the single quotes).
-   */
   private escapePsSingleQuote(s: string): string {
     return s.replace(/'/g, "''");
   }
 
-  /**
-   * Get mouse button event flags.
-   */
   private getMouseFlags(button: MouseButton = 'left'): { down: number; up: number } {
     switch (button) {
       case 'right':
@@ -204,14 +353,10 @@ public class NativeInput {
     }
   }
 
-  /**
-   * Resolve a key name to its virtual key code.
-   */
   private resolveVK(key: KeyCode): number {
     const normalized = key.toLowerCase();
     const vk = VK_CODES[normalized];
     if (vk === undefined) {
-      // If single character, use its char code
       if (key.length === 1) {
         return key.toUpperCase().charCodeAt(0);
       }
@@ -226,6 +371,8 @@ public class NativeInput {
 
   async initialize(): Promise<void> {
     try {
+      this.compileBridge();
+      this.spawnDaemon();
       await this.ps('Write-Output ok');
       this.initialized = true;
     } catch (err) {
@@ -246,6 +393,15 @@ public class NativeInput {
 
   async shutdown(): Promise<void> {
     this.initialized = false;
+    if (this.daemonProcess) {
+      try {
+        this.daemonProcess.stdin?.end();
+        this.daemonProcess.kill();
+      } catch {
+        // ignore
+      }
+      this.daemonProcess = null;
+    }
   }
 
   // ---------------------------------------------------------------------------
@@ -254,60 +410,33 @@ public class NativeInput {
 
   async getMousePosition(): Promise<MousePosition> {
     this.ensureInitialized();
-    const result = await this.ps(
-      `${this.P_INVOKE_BLOCK}; $p = New-Object NativeInput+POINT; [NativeInput]::GetCursorPos([ref]$p) | Out-Null; Write-Output "$($p.X),$($p.Y)"`
-    );
-    const parts = result.trim().split(',');
-    return {
-      x: parseInt(parts[0], 10),
-      y: parseInt(parts[1], 10),
-    };
+    const result = await this.executeAction('get_mouse_position');
+    return { x: result.x, y: result.y };
   }
 
   async moveMouse(x: number, y: number, _options?: MouseMoveOptions): Promise<void> {
     this.ensureInitialized();
     this.validateNumber(x, 'x');
     this.validateNumber(y, 'y');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::SetCursorPos(${Math.round(x)}, ${Math.round(y)})`
-    );
+    await this.executeAction('move_mouse', { x: Math.round(x), y: Math.round(y) });
   }
 
   async click(options?: MouseClickOptions): Promise<void> {
     this.ensureInitialized();
     const button = options?.button ?? 'left';
     const clicks = options?.clicks ?? 1;
-    const clickDelay = options?.delay ?? 50;
-    const flags = this.getMouseFlags(button);
-
-    for (let i = 0; i < clicks; i++) {
-      if (i > 0) {
-        await this.delay(clickDelay);
-      }
-      await this.ps(
-        `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
-      );
-    }
+    const delay = options?.delay ?? 50;
+    await this.executeAction('click', { button, clicks, delay });
   }
 
   async doubleClick(button?: MouseButton): Promise<void> {
     this.ensureInitialized();
-    const flags = this.getMouseFlags(button ?? 'left');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
-    );
-    await this.delay(50);
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
-    );
+    await this.executeAction('double_click', { button: button ?? 'left' });
   }
 
   async rightClick(): Promise<void> {
     this.ensureInitialized();
-    const flags = this.getMouseFlags('right');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
-    );
+    await this.executeAction('right_click');
   }
 
   async drag(
@@ -324,49 +453,15 @@ public class NativeInput {
     this.validateNumber(toY, 'toY');
 
     const button = options?.button ?? 'left';
-    const flags = this.getMouseFlags(button);
     const duration = options?.duration ?? 300;
-
-    // Move to start position
-    await this.moveMouse(fromX, fromY);
-    await this.delay(50);
-
-    // Mouse down
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero)`
-    );
-    await this.delay(duration);
-
-    // Move to end position
-    await this.moveMouse(toX, toY);
-    await this.delay(50);
-
-    // Mouse up
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
-    );
+    await this.executeAction('drag', { fromX, fromY, toX, toY, button, duration });
   }
 
   async scroll(options: MouseScrollOptions): Promise<void> {
     this.ensureInitialized();
     const deltaY = options.deltaY ?? 0;
     const deltaX = options.deltaX ?? 0;
-
-    if (deltaY !== 0) {
-      this.validateNumber(deltaY, 'deltaY');
-      const amount = Math.round(deltaY * 120);
-      await this.ps(
-        `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${MOUSEEVENTF_WHEEL}, 0, 0, ${amount}, [IntPtr]::Zero)`
-      );
-    }
-
-    if (deltaX !== 0) {
-      this.validateNumber(deltaX, 'deltaX');
-      const amount = Math.round(deltaX * 120);
-      await this.ps(
-        `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${MOUSEEVENTF_HWHEEL}, 0, 0, ${amount}, [IntPtr]::Zero)`
-      );
-    }
+    await this.executeAction('scroll', { deltaY, deltaX });
   }
 
   // ---------------------------------------------------------------------------
@@ -377,84 +472,32 @@ public class NativeInput {
     this.ensureInitialized();
     const vk = this.resolveVK(key);
     const modifiers = options?.modifiers ?? [];
-    const modVKs = modifiers.map(m => {
-      const mvk = MODIFIER_VK[m];
-      if (mvk === undefined) throw new Error(`Unknown modifier: ${m}`);
-      return mvk;
-    });
-
-    // Build PS script: modifiers down, key down/up, modifiers up
-    const lines: string[] = [this.P_INVOKE_BLOCK];
-    for (const mvk of modVKs) {
-      lines.push(`[NativeInput]::keybd_event(${mvk}, 0, 0, [IntPtr]::Zero)`);
-    }
-    lines.push(`[NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`);
-    if (options?.delay) {
-      lines.push(`Start-Sleep -Milliseconds ${Math.round(options.delay)}`);
-    }
-    lines.push(`[NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
-    for (const mvk of modVKs.reverse()) {
-      lines.push(`[NativeInput]::keybd_event(${mvk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
-    }
-
-    await this.ps(lines.join('; '));
+    const delay = options?.delay ?? 0;
+    await this.executeAction('key_press', { vk, modifiers, delay });
   }
 
   async keyDown(key: KeyCode): Promise<void> {
     this.ensureInitialized();
     const vk = this.resolveVK(key);
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`
-    );
+    await this.executeAction('key_down', { vk });
   }
 
   async keyUp(key: KeyCode): Promise<void> {
     this.ensureInitialized();
     const vk = this.resolveVK(key);
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`
-    );
+    await this.executeAction('key_up', { vk });
   }
 
   async type(text: string, _options?: TypeOptions): Promise<void> {
     this.ensureInitialized();
-    // Escape special SendKeys characters: +^%~(){}[]
-    const escaped = text.replace(/([+^%~(){}[\]])/g, '{$1}');
-    const psEscaped = this.escapePsSingleQuote(escaped);
-    await this.ps(
-      `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${psEscaped}')`
-    );
+    await this.executeAction('type', { text });
   }
 
   async hotkey(sequence: HotkeySequence): Promise<void> {
     this.ensureInitialized();
     const modifiers = sequence.modifiers ?? [];
-    const modVKs = modifiers.map(m => {
-      const mvk = MODIFIER_VK[m];
-      if (mvk === undefined) throw new Error(`Unknown modifier: ${m}`);
-      return mvk;
-    });
-
-    const lines: string[] = [this.P_INVOKE_BLOCK];
-
-    // Modifiers down
-    for (const mvk of modVKs) {
-      lines.push(`[NativeInput]::keybd_event(${mvk}, 0, 0, [IntPtr]::Zero)`);
-    }
-
-    // Key presses
-    for (const key of sequence.keys) {
-      const vk = this.resolveVK(key);
-      lines.push(`[NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`);
-      lines.push(`[NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
-    }
-
-    // Modifiers up (reverse order)
-    for (const mvk of [...modVKs].reverse()) {
-      lines.push(`[NativeInput]::keybd_event(${mvk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
-    }
-
-    await this.ps(lines.join('; '));
+    const keys = sequence.keys.map(k => String(this.resolveVK(k)));
+    await this.executeAction('hotkey', { keys, modifiers });
   }
 
   // ---------------------------------------------------------------------------
@@ -463,75 +506,337 @@ public class NativeInput {
 
   async getActiveWindow(): Promise<WindowInfo | null> {
     this.ensureInitialized();
-    try {
-      const handleStr = await this.ps(
-        `${this.P_INVOKE_BLOCK}; [NativeInput]::GetForegroundWindow().ToInt64()`
-      );
-      const handle = handleStr.trim();
-      if (!handle || handle === '0') return null;
-      return this.getWindow(handle);
-    } catch {
-      return null;
-    }
+    const res = await this.executeAction('get_active_window');
+    return res.window;
   }
 
-  async getWindows(_options?: WindowSearchOptions): Promise<WindowInfo[]> {
+  async getWindows(options?: WindowSearchOptions): Promise<WindowInfo[]> {
     this.ensureInitialized();
-    const result = await this.ps(
-      'Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | ForEach-Object { Write-Output "$($_.MainWindowHandle)|$($_.Id)|$($_.ProcessName)|$($_.MainWindowTitle)" }'
-    );
+    const res = await this.executeAction('get_windows');
+    const windows: WindowInfo[] = res.windows || [];
 
-    const windows: WindowInfo[] = [];
-    const lines = result.split('\n').filter(l => l.trim());
-
-    for (const line of lines) {
-      const parts = line.split('|');
-      if (parts.length < 4) continue;
-
-      const handle = parts[0].trim();
-      const pid = parseInt(parts[1].trim(), 10);
-      const processName = parts[2].trim();
-      const title = parts.slice(3).join('|').trim();
-
-      windows.push({
-        handle,
-        title,
-        pid,
-        processName,
-        bounds: { x: 0, y: 0, width: 0, height: 0 },
-        focused: false,
-        visible: true,
-        minimized: false,
-        maximized: false,
-        fullscreen: false,
-      });
-    }
-
-    // Apply search filters
-    if (_options) {
+    if (options) {
       return windows.filter(w => {
-        if (_options.title) {
-          const titleMatch = _options.title instanceof RegExp
-            ? _options.title.test(w.title)
-            : w.title.includes(_options.title);
+        if (options.title) {
+          const titleMatch = options.title instanceof RegExp
+            ? options.title.test(w.title)
+            : w.title.includes(options.title);
           if (!titleMatch) return false;
         }
-        if (_options.processName && w.processName !== _options.processName) return false;
-        if (_options.pid && w.pid !== _options.pid) return false;
+        if (options.processName && w.processName !== options.processName) return false;
+        if (options.pid && w.pid !== options.pid) return false;
         return true;
       });
     }
-
     return windows;
   }
 
   async getWindow(handle: string): Promise<WindowInfo | null> {
     this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
+    const res = await this.executeAction('get_window', { handle });
+    return res.window;
+  }
 
-    try {
-      const script = `${this.P_INVOKE_BLOCK};
+  async focusWindow(handle: string): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('focus_window', { handle });
+  }
+
+  async minimizeWindow(handle: string): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('minimize_window', { handle });
+  }
+
+  async maximizeWindow(handle: string): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('maximize_window', { handle });
+  }
+
+  async restoreWindow(handle: string): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('restore_window', { handle });
+  }
+
+  async closeWindow(handle: string): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('close_window', { handle });
+  }
+
+  async setWindow(handle: string, options: WindowSetOptions): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('set_window', { handle, ...options });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Applications
+  // ---------------------------------------------------------------------------
+
+  async getRunningApps(): Promise<AppInfo[]> {
+    this.ensureInitialized();
+    const res = await this.executeAction('get_running_apps');
+    return res.apps || [];
+  }
+
+  async launchApp(appPath: string, options?: AppLaunchOptions): Promise<AppInfo> {
+    this.ensureInitialized();
+    const res = await this.executeAction('launch_app', { path: appPath, ...options });
+    return res.app;
+  }
+
+  async closeApp(pid: number): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('close_app', { pid });
+  }
+
+  // ---------------------------------------------------------------------------
+  // Screens
+  // ---------------------------------------------------------------------------
+
+  async getScreens(): Promise<ScreenInfo[]> {
+    this.ensureInitialized();
+    const res = await this.executeAction('get_screens');
+    return res.screens || [];
+  }
+
+  async getPixelColor(x: number, y: number): Promise<ColorInfo> {
+    this.ensureInitialized();
+    this.validateNumber(x, 'x');
+    this.validateNumber(y, 'y');
+    const res = await this.executeAction('get_pixel_color', { x, y });
+    return { r: res.r, g: res.g, b: res.b, a: res.a, hex: res.hex };
+  }
+
+  // ---------------------------------------------------------------------------
+  // Clipboard
+  // ---------------------------------------------------------------------------
+
+  async getClipboard(): Promise<ClipboardContent> {
+    this.ensureInitialized();
+    const res = await this.executeAction('get_clipboard');
+    return {
+      text: res.text || undefined,
+      formats: res.formats || [],
+    };
+  }
+
+  async setClipboard(content: Partial<ClipboardContent>): Promise<void> {
+    this.ensureInitialized();
+    if (content.text !== undefined) {
+      await this.executeAction('set_clipboard', { text: content.text });
+    }
+  }
+
+  async clearClipboard(): Promise<void> {
+    this.ensureInitialized();
+    await this.executeAction('clear_clipboard');
+  }
+
+  // ---------------------------------------------------------------------------
+  // Legacy PowerShell Failback Logic
+  // ---------------------------------------------------------------------------
+
+  private async fallbackPs(action: string, args: Record<string, any>): Promise<any> {
+    switch (action) {
+      case 'get_mouse_position': {
+        const result = await this.ps(
+          `${this.P_INVOKE_BLOCK}; $p = New-Object NativeInput+POINT; [NativeInput]::GetCursorPos([ref]$p) | Out-Null; Write-Output "$($p.X),$($p.Y)"`
+        );
+        const parts = result.trim().split(',');
+        return {
+          x: parseInt(parts[0], 10),
+          y: parseInt(parts[1], 10),
+        };
+      }
+      case 'move_mouse': {
+        const { x, y } = args;
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::SetCursorPos(${Math.round(x)}, ${Math.round(y)})`
+        );
+        break;
+      }
+      case 'click': {
+        const { button, clicks, delay } = args;
+        const flags = this.getMouseFlags(button);
+        for (let i = 0; i < clicks; i++) {
+          if (i > 0) await this.delay(delay);
+          await this.ps(
+            `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
+          );
+        }
+        break;
+      }
+      case 'double_click': {
+        const { button } = args;
+        const flags = this.getMouseFlags(button);
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
+        );
+        await this.delay(50);
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'right_click': {
+        const flags = this.getMouseFlags('right');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero); [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'drag': {
+        const { fromX, fromY, toX, toY, button, duration } = args;
+        const flags = this.getMouseFlags(button);
+        await this.moveMouse(fromX, fromY);
+        await this.delay(50);
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.down}, 0, 0, 0, [IntPtr]::Zero)`
+        );
+        await this.delay(duration);
+        await this.moveMouse(toX, toY);
+        await this.delay(50);
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${flags.up}, 0, 0, 0, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'scroll': {
+        const { deltaY, deltaX } = args;
+        if (deltaY !== 0) {
+          const amount = Math.round(deltaY * 120);
+          await this.ps(
+            `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${MOUSEEVENTF_WHEEL}, 0, 0, ${amount}, [IntPtr]::Zero)`
+          );
+        }
+        if (deltaX !== 0) {
+          const amount = Math.round(deltaX * 120);
+          await this.ps(
+            `${this.P_INVOKE_BLOCK}; [NativeInput]::mouse_event(${MOUSEEVENTF_HWHEEL}, 0, 0, ${amount}, [IntPtr]::Zero)`
+          );
+        }
+        break;
+      }
+      case 'key_press': {
+        const { vk, modifiers, delay } = args;
+        const modVKs = modifiers.map((m: string) => {
+          const mvk = MODIFIER_VK[m];
+          if (mvk === undefined) throw new Error(`Unknown modifier: ${m}`);
+          return mvk;
+        });
+
+        const lines: string[] = [this.P_INVOKE_BLOCK];
+        for (const mvk of modVKs) {
+          lines.push(`[NativeInput]::keybd_event(${mvk}, 0, 0, [IntPtr]::Zero)`);
+        }
+        lines.push(`[NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`);
+        if (delay) {
+          lines.push(`Start-Sleep -Milliseconds ${Math.round(delay)}`);
+        }
+        lines.push(`[NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
+        for (const mvk of modVKs.reverse()) {
+          lines.push(`[NativeInput]::keybd_event(${mvk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
+        }
+        await this.ps(lines.join('; '));
+        break;
+      }
+      case 'key_down': {
+        const { vk } = args;
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'key_up': {
+        const { vk } = args;
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'type': {
+        const { text } = args;
+        const escaped = text.replace(/([+^%~(){}[\]])/g, '{$1}');
+        const psEscaped = this.escapePsSingleQuote(escaped);
+        await this.ps(
+          `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${psEscaped}')`
+        );
+        break;
+      }
+      case 'hotkey': {
+        const { keys, modifiers } = args;
+        const modVKs = modifiers.map((m: string) => {
+          const mvk = MODIFIER_VK[m];
+          if (mvk === undefined) throw new Error(`Unknown modifier: ${m}`);
+          return mvk;
+        });
+
+        const lines: string[] = [this.P_INVOKE_BLOCK];
+        for (const mvk of modVKs) {
+          lines.push(`[NativeInput]::keybd_event(${mvk}, 0, 0, [IntPtr]::Zero)`);
+        }
+        for (const key of keys) {
+          const vk = parseInt(key, 10);
+          lines.push(`[NativeInput]::keybd_event(${vk}, 0, 0, [IntPtr]::Zero)`);
+          lines.push(`[NativeInput]::keybd_event(${vk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
+        }
+        for (const mvk of [...modVKs].reverse()) {
+          lines.push(`[NativeInput]::keybd_event(${mvk}, 0, ${KEYEVENTF_KEYUP}, [IntPtr]::Zero)`);
+        }
+        await this.ps(lines.join('; '));
+        break;
+      }
+      case 'get_active_window': {
+        try {
+          const handleStr = await this.ps(
+            `${this.P_INVOKE_BLOCK}; [NativeInput]::GetForegroundWindow().ToInt64()`
+          );
+          const handle = handleStr.trim();
+          if (!handle || handle === '0') return { window: null };
+          const win = await this.getWindow(handle);
+          return { window: win };
+        } catch {
+          return { window: null };
+        }
+      }
+      case 'get_windows': {
+        const result = await this.ps(
+          'Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | ForEach-Object { Write-Output "$($_.MainWindowHandle)|$($_.Id)|$($_.ProcessName)|$($_.MainWindowTitle)" }'
+        );
+
+        const windows: WindowInfo[] = [];
+        const lines = result.split('\n').filter(l => l.trim());
+
+        for (const line of lines) {
+          const parts = line.split('|');
+          if (parts.length < 4) continue;
+
+          const handle = parts[0].trim();
+          const pid = parseInt(parts[1].trim(), 10);
+          const processName = parts[2].trim();
+          const title = parts.slice(3).join('|').trim();
+
+          windows.push({
+            handle,
+            title,
+            pid,
+            processName,
+            bounds: { x: 0, y: 0, width: 0, height: 0 },
+            focused: false,
+            visible: true,
+            minimized: false,
+            maximized: false,
+            fullscreen: false,
+          });
+        }
+        return { windows };
+      }
+      case 'get_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+
+        try {
+          const script = `${this.P_INVOKE_BLOCK};
 $h = [IntPtr]${handleNum};
 $r = New-Object NativeInput+RECT;
 [NativeInput]::GetWindowRect($h, [ref]$r) | Out-Null;
@@ -545,275 +850,252 @@ $pname = '';
 try { $pname = (Get-Process -Id $procId -ErrorAction SilentlyContinue).ProcessName } catch {}
 Write-Output "$($r.Left)|$($r.Top)|$($r.Right)|$($r.Bottom)|$($sb.ToString())|$procId|$pname|$($fg -eq $h)"`;
 
-      const result = await this.ps(script);
-      const parts = result.trim().split('|');
-      if (parts.length < 8) return null;
+          const result = await this.ps(script);
+          const parts = result.trim().split('|');
+          if (parts.length < 8) return { window: null };
 
-      const left = parseInt(parts[0], 10);
-      const top = parseInt(parts[1], 10);
-      const right = parseInt(parts[2], 10);
-      const bottom = parseInt(parts[3], 10);
-      const title = parts[4];
-      const pid = parseInt(parts[5], 10);
-      const processName = parts[6];
-      const focused = parts[7].trim().toLowerCase() === 'true';
+          const left = parseInt(parts[0], 10);
+          const top = parseInt(parts[1], 10);
+          const right = parseInt(parts[2], 10);
+          const bottom = parseInt(parts[3], 10);
+          const title = parts[4];
+          const pid = parseInt(parts[5], 10);
+          const processName = parts[6];
+          const focused = parts[7].trim().toLowerCase() === 'true';
 
-      return {
-        handle,
-        title,
-        pid,
-        processName,
-        bounds: {
-          x: left,
-          y: top,
-          width: right - left,
-          height: bottom - top,
-        },
-        focused,
-        visible: true,
-        minimized: false,
-        maximized: false,
-        fullscreen: false,
-      };
-    } catch {
-      return null;
+          return {
+            window: {
+              handle,
+              title,
+              pid,
+              processName,
+              bounds: {
+                x: left,
+                y: top,
+                width: right - left,
+                height: bottom - top,
+              },
+              focused,
+              visible: true,
+              minimized: false,
+              maximized: false,
+              fullscreen: false,
+            }
+          };
+        } catch {
+          return { window: null };
+        }
+      }
+      case 'focus_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::SetForegroundWindow([IntPtr]${handleNum})`
+        );
+        break;
+      }
+      case 'minimize_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 6)`
+        );
+        break;
+      }
+      case 'maximize_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 3)`
+        );
+        break;
+      }
+      case 'restore_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 9)`
+        );
+        break;
+      }
+      case 'close_window': {
+        const { handle } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+        await this.ps(
+          `${this.P_INVOKE_BLOCK}; [NativeInput]::SendMessage([IntPtr]${handleNum}, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)`
+        );
+        break;
+      }
+      case 'set_window': {
+        const { handle, position, size, focus } = args;
+        const handleNum = parseInt(handle, 10);
+        this.validateNumber(handleNum, 'handle');
+
+        const lines: string[] = [this.P_INVOKE_BLOCK];
+
+        if (position || size) {
+          const current = await this.getWindow(handle);
+          const x = position?.x ?? current?.bounds.x ?? 0;
+          const y = position?.y ?? current?.bounds.y ?? 0;
+          const w = size?.width ?? current?.bounds.width ?? 800;
+          const h = size?.height ?? current?.bounds.height ?? 600;
+
+          this.validateNumber(x, 'x');
+          this.validateNumber(y, 'y');
+          this.validateNumber(w, 'width');
+          this.validateNumber(h, 'height');
+
+          lines.push(
+            `[NativeInput]::MoveWindow([IntPtr]${handleNum}, ${Math.round(x)}, ${Math.round(y)}, ${Math.round(w)}, ${Math.round(h)}, $true)`
+          );
+        }
+
+        if (focus) {
+          lines.push(`[NativeInput]::SetForegroundWindow([IntPtr]${handleNum})`);
+        }
+
+        if (lines.length > 1) {
+          await this.ps(lines.join('; '));
+        }
+        break;
+      }
+      case 'get_running_apps': {
+        const result = await this.ps(
+          'Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress'
+        );
+
+        try {
+          const parsed = JSON.parse(result);
+          const items = Array.isArray(parsed) ? parsed : [parsed];
+          const apps = items.map((item: { Id: number; ProcessName: string; Path: string | null }) => ({
+            name: item.ProcessName ?? '',
+            path: item.Path ?? '',
+            pid: item.Id,
+            running: true,
+          }));
+          return { apps };
+        } catch {
+          return { apps: [] };
+        }
+      }
+      case 'launch_app': {
+        const { path: appPath, args: appArgs, cwd, hidden } = args;
+        const escapedPath = this.escapePsSingleQuote(appPath);
+        let cmd = `Start-Process '${escapedPath}' -PassThru`;
+
+        if (appArgs && appArgs.length > 0) {
+          const joinedArgs = appArgs.map((a: string) => this.escapePsSingleQuote(a)).join(' ');
+          cmd += ` -ArgumentList '${joinedArgs}'`;
+        }
+
+        if (cwd) {
+          cmd += ` -WorkingDirectory '${this.escapePsSingleQuote(cwd)}'`;
+        }
+
+        if (hidden) {
+          cmd += ' -WindowStyle Hidden';
+        }
+
+        cmd += ' | Select-Object Id,ProcessName | ConvertTo-Json -Compress';
+
+        const result = await this.ps(cmd);
+        try {
+          const parsed = JSON.parse(result);
+          return {
+            app: {
+              name: parsed.ProcessName ?? '',
+              path: appPath,
+              pid: parsed.Id,
+              running: true,
+            }
+          };
+        } catch {
+          return {
+            app: {
+              name: appPath,
+              path: appPath,
+              running: true,
+            }
+          };
+        }
+      }
+      case 'close_app': {
+        const { pid } = args;
+        this.validateNumber(pid, 'pid');
+        await this.ps(`Stop-Process -Id ${Math.round(pid)}`);
+        break;
+      }
+      case 'get_screens': {
+        const result = await this.ps(
+          'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { Write-Output "$($_.DeviceName)|$($_.Bounds.X)|$($_.Bounds.Y)|$($_.Bounds.Width)|$($_.Bounds.Height)|$($_.WorkingArea.X)|$($_.WorkingArea.Y)|$($_.WorkingArea.Width)|$($_.WorkingArea.Height)|$($_.Primary)" }'
+        );
+
+        const screens: ScreenInfo[] = [];
+        const lines = result.split('\n').filter(l => l.trim());
+
+        for (let i = 0; i < lines.length; i++) {
+          const parts = lines[i].split('|');
+          if (parts.length < 10) continue;
+
+          screens.push({
+            id: i,
+            name: parts[0].trim(),
+            bounds: {
+              x: parseInt(parts[1], 10),
+              y: parseInt(parts[2], 10),
+              width: parseInt(parts[3], 10),
+              height: parseInt(parts[4], 10),
+            },
+            workArea: {
+              x: parseInt(parts[5], 10),
+              y: parseInt(parts[6], 10),
+              width: parseInt(parts[7], 10),
+              height: parseInt(parts[8], 10),
+            },
+            scaleFactor: 1,
+            primary: parts[9].trim().toLowerCase() === 'true',
+          });
+        }
+        return { screens };
+      }
+      case 'get_pixel_color': {
+        const { x, y } = args;
+        const result = await this.ps(
+          `Add-Type -AssemblyName System.Drawing; $bmp = New-Object System.Drawing.Bitmap(1, 1); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen(${Math.round(x)}, ${Math.round(y)}, 0, 0, (New-Object System.Drawing.Size(1, 1))); $c = $bmp.GetPixel(0, 0); Write-Output "$($c.R)|$($c.G)|$($c.B)|$($c.A)"; $g.Dispose(); $bmp.Dispose()`
+        );
+
+        const parts = result.trim().split('|');
+        const r = parseInt(parts[0], 10);
+        const g = parseInt(parts[1], 10);
+        const b = parseInt(parts[2], 10);
+        const a = parts.length > 3 ? parseInt(parts[3], 10) : 255;
+        const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
+        return { r, g, b, a, hex };
+      }
+      case 'get_clipboard': {
+        const text = await this.ps('Get-Clipboard');
+        return {
+          text: text || undefined,
+          formats: text ? ['text'] : [],
+        };
+      }
+      case 'set_clipboard': {
+        const { text } = args;
+        const escaped = this.escapePsSingleQuote(text);
+        await this.ps(`Set-Clipboard -Value '${escaped}'`);
+        break;
+      }
+      case 'clear_clipboard': {
+        await this.ps('Set-Clipboard -Value $null');
+        break;
+      }
+      default:
+        throw new Error(`Unknown fallback action: ${action}`);
     }
-  }
-
-  async focusWindow(handle: string): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::SetForegroundWindow([IntPtr]${handleNum})`
-    );
-  }
-
-  async minimizeWindow(handle: string): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 6)`
-    );
-  }
-
-  async maximizeWindow(handle: string): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 3)`
-    );
-  }
-
-  async restoreWindow(handle: string): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::ShowWindow([IntPtr]${handleNum}, 9)`
-    );
-  }
-
-  async closeWindow(handle: string): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-    await this.ps(
-      `${this.P_INVOKE_BLOCK}; [NativeInput]::SendMessage([IntPtr]${handleNum}, 0x10, [IntPtr]::Zero, [IntPtr]::Zero)`
-    );
-  }
-
-  async setWindow(handle: string, options: WindowSetOptions): Promise<void> {
-    this.ensureInitialized();
-    const handleNum = parseInt(handle, 10);
-    this.validateNumber(handleNum, 'handle');
-
-    const lines: string[] = [this.P_INVOKE_BLOCK];
-
-    if (options.position || options.size) {
-      // Need current rect to fill in missing values
-      const current = await this.getWindow(handle);
-      const x = options.position?.x ?? current?.bounds.x ?? 0;
-      const y = options.position?.y ?? current?.bounds.y ?? 0;
-      const w = options.size?.width ?? current?.bounds.width ?? 800;
-      const h = options.size?.height ?? current?.bounds.height ?? 600;
-
-      this.validateNumber(x, 'x');
-      this.validateNumber(y, 'y');
-      this.validateNumber(w, 'width');
-      this.validateNumber(h, 'height');
-
-      lines.push(
-        `[NativeInput]::MoveWindow([IntPtr]${handleNum}, ${Math.round(x)}, ${Math.round(y)}, ${Math.round(w)}, ${Math.round(h)}, $true)`
-      );
-    }
-
-    if (options.focus) {
-      lines.push(`[NativeInput]::SetForegroundWindow([IntPtr]${handleNum})`);
-    }
-
-    if (lines.length > 1) {
-      await this.ps(lines.join('; '));
-    }
-  }
-
-  // ---------------------------------------------------------------------------
-  // Applications
-  // ---------------------------------------------------------------------------
-
-  async getRunningApps(): Promise<AppInfo[]> {
-    this.ensureInitialized();
-    const result = await this.ps(
-      'Get-Process | Where-Object {$_.MainWindowHandle -ne 0} | Select-Object Id,ProcessName,Path | ConvertTo-Json -Compress'
-    );
-
-    try {
-      const parsed = JSON.parse(result);
-      const items = Array.isArray(parsed) ? parsed : [parsed];
-      return items.map((item: { Id: number; ProcessName: string; Path: string | null }) => ({
-        name: item.ProcessName ?? '',
-        path: item.Path ?? '',
-        pid: item.Id,
-        running: true,
-      }));
-    } catch {
-      return [];
-    }
-  }
-
-  async launchApp(appPath: string, options?: AppLaunchOptions): Promise<AppInfo> {
-    this.ensureInitialized();
-    const escapedPath = this.escapePsSingleQuote(appPath);
-    let cmd = `Start-Process '${escapedPath}' -PassThru`;
-
-    if (options?.args && options.args.length > 0) {
-      const args = options.args.map(a => this.escapePsSingleQuote(a)).join(' ');
-      cmd += ` -ArgumentList '${args}'`;
-    }
-
-    if (options?.cwd) {
-      cmd += ` -WorkingDirectory '${this.escapePsSingleQuote(options.cwd)}'`;
-    }
-
-    if (options?.hidden) {
-      cmd += ' -WindowStyle Hidden';
-    }
-
-    cmd += ' | Select-Object Id,ProcessName | ConvertTo-Json -Compress';
-
-    const result = await this.ps(cmd);
-    try {
-      const parsed = JSON.parse(result);
-      return {
-        name: parsed.ProcessName ?? '',
-        path: appPath,
-        pid: parsed.Id,
-        running: true,
-      };
-    } catch {
-      return {
-        name: appPath,
-        path: appPath,
-        running: true,
-      };
-    }
-  }
-
-  async closeApp(pid: number): Promise<void> {
-    this.ensureInitialized();
-    this.validateNumber(pid, 'pid');
-    await this.ps(`Stop-Process -Id ${Math.round(pid)}`);
-  }
-
-  // ---------------------------------------------------------------------------
-  // Screens
-  // ---------------------------------------------------------------------------
-
-  async getScreens(): Promise<ScreenInfo[]> {
-    this.ensureInitialized();
-    const result = await this.ps(
-      'Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Screen]::AllScreens | ForEach-Object { Write-Output "$($_.DeviceName)|$($_.Bounds.X)|$($_.Bounds.Y)|$($_.Bounds.Width)|$($_.Bounds.Height)|$($_.WorkingArea.X)|$($_.WorkingArea.Y)|$($_.WorkingArea.Width)|$($_.WorkingArea.Height)|$($_.Primary)" }'
-    );
-
-    const screens: ScreenInfo[] = [];
-    const lines = result.split('\n').filter(l => l.trim());
-
-    for (let i = 0; i < lines.length; i++) {
-      const parts = lines[i].split('|');
-      if (parts.length < 10) continue;
-
-      screens.push({
-        id: i,
-        name: parts[0].trim(),
-        bounds: {
-          x: parseInt(parts[1], 10),
-          y: parseInt(parts[2], 10),
-          width: parseInt(parts[3], 10),
-          height: parseInt(parts[4], 10),
-        },
-        workArea: {
-          x: parseInt(parts[5], 10),
-          y: parseInt(parts[6], 10),
-          width: parseInt(parts[7], 10),
-          height: parseInt(parts[8], 10),
-        },
-        scaleFactor: 1,
-        primary: parts[9].trim().toLowerCase() === 'true',
-      });
-    }
-
-    return screens;
-  }
-
-  async getPixelColor(x: number, y: number): Promise<ColorInfo> {
-    this.ensureInitialized();
-    this.validateNumber(x, 'x');
-    this.validateNumber(y, 'y');
-
-    const result = await this.ps(
-      `Add-Type -AssemblyName System.Drawing; $bmp = New-Object System.Drawing.Bitmap(1, 1); $g = [System.Drawing.Graphics]::FromImage($bmp); $g.CopyFromScreen(${Math.round(x)}, ${Math.round(y)}, 0, 0, (New-Object System.Drawing.Size(1, 1))); $c = $bmp.GetPixel(0, 0); Write-Output "$($c.R)|$($c.G)|$($c.B)|$($c.A)"; $g.Dispose(); $bmp.Dispose()`
-    );
-
-    const parts = result.trim().split('|');
-    const r = parseInt(parts[0], 10);
-    const g = parseInt(parts[1], 10);
-    const b = parseInt(parts[2], 10);
-    const a = parts.length > 3 ? parseInt(parts[3], 10) : 255;
-
-    const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
-
-    return { r, g, b, a, hex };
-  }
-
-  // ---------------------------------------------------------------------------
-  // Clipboard
-  // ---------------------------------------------------------------------------
-
-  async getClipboard(): Promise<ClipboardContent> {
-    this.ensureInitialized();
-    try {
-      const text = await this.ps('Get-Clipboard');
-      return {
-        text: text || undefined,
-        formats: text ? ['text'] : [],
-      };
-    } catch {
-      return { formats: [] };
-    }
-  }
-
-  async setClipboard(content: Partial<ClipboardContent>): Promise<void> {
-    this.ensureInitialized();
-    if (content.text !== undefined) {
-      const escaped = this.escapePsSingleQuote(content.text);
-      await this.ps(`Set-Clipboard -Value '${escaped}'`);
-    }
-  }
-
-  async clearClipboard(): Promise<void> {
-    this.ensureInitialized();
-    await this.ps('Set-Clipboard -Value $null');
   }
 }

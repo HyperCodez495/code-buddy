@@ -119,6 +119,7 @@ import {
   type CreateConfigSetPayload,
 } from './config/config-store';
 import { runConfigApiTest } from './config/config-test-routing';
+import { resolveEngineRuntimeConfig } from './config/engine-runtime-config';
 import { listLmStudioModels } from './config/lmstudio-api';
 import { listOllamaModels } from './config/ollama-api';
 import { mcpConfigStore } from './mcp/mcp-config-store';
@@ -188,8 +189,23 @@ import { createRequire } from 'module';
 // Intercept Module resolution for better-sqlite3 to redirect from the root node_modules to cowork's node_modules.
 // Because the core database modules are resolved relative to the dist/ directory, Node's normal resolution walks up
 // to the root node_modules instead of using cowork's Electron-compiled version.
-const originalResolveFilename = (Module as any)._resolveFilename;
-(Module as any)._resolveFilename = function (request: string, parent: any, isMain: boolean, options: any) {
+type NodeModuleResolver = (
+  this: unknown,
+  request: string,
+  parent: unknown,
+  isMain: boolean,
+  options?: unknown
+) => string;
+
+const moduleWithResolver = Module as typeof Module & { _resolveFilename: NodeModuleResolver };
+const originalResolveFilename = moduleWithResolver._resolveFilename;
+moduleWithResolver._resolveFilename = function (
+  this: unknown,
+  request: string,
+  parent: unknown,
+  isMain: boolean,
+  options?: unknown
+) {
   if (request === 'better-sqlite3') {
     try {
       const coworkRequire = createRequire(import.meta.url);
@@ -199,7 +215,7 @@ const originalResolveFilename = (Module as any)._resolveFilename;
       // Fall back to original resolve if resolution fails
     }
   }
-  return originalResolveFilename.apply(this, arguments);
+  return originalResolveFilename.call(this, request, parent, isMain, options);
 };
 
 const APP_NAME = 'Code Buddy Studio';
@@ -1264,10 +1280,11 @@ app
           /* webpackIgnore: true */ /* @vite-ignore */ adapterUrl
         );
         const apiConfig = configStore.getAll();
+        const runtimeConfig = resolveEngineRuntimeConfig(apiConfig);
         engineAdapter = new CodeBuddyEngineAdapter({
-          apiKey: apiConfig.apiKey || process.env.GROK_API_KEY || '',
-          baseURL: apiConfig.baseUrl || process.env.GROK_BASE_URL,
-          model: apiConfig.model,
+          apiKey: runtimeConfig.apiKey || process.env.GROK_API_KEY || '',
+          baseURL: runtimeConfig.baseURL || process.env.GROK_BASE_URL,
+          model: runtimeConfig.model,
           workingDirectory: currentWorkingDir || process.cwd(),
           embedded: true,
         }) as EngineAdapterLike;
@@ -2362,6 +2379,10 @@ ipcMain.handle(
     }
   ) => {
     if (!sessionManager) throw new Error('SessionManager not initialized');
+    if (!configStore.hasUsableCredentialsForActiveSet()) {
+      sendActiveSetConfigRequiredError();
+      return null;
+    }
     const session = await sessionManager.startBackgroundSession(
       payload.title,
       payload.prompt,
@@ -2838,10 +2859,11 @@ const syncConfigAfterMutation = async (previousConfig: AppConfig) => {
   const shouldReloadSandbox = previousConfig.sandboxEnabled !== updatedConfig.sandboxEnabled;
 
   if (shouldReloadRunner && engineAdapter?.updateConfig) {
+    const runtimeConfig = resolveEngineRuntimeConfig(updatedConfig);
     engineAdapter.updateConfig({
-      apiKey: updatedConfig.apiKey || process.env.GROK_API_KEY || '',
-      baseURL: updatedConfig.baseUrl || process.env.GROK_BASE_URL,
-      model: updatedConfig.model,
+      apiKey: runtimeConfig.apiKey || process.env.GROK_API_KEY || '',
+      baseURL: runtimeConfig.baseURL || process.env.GROK_BASE_URL,
+      model: runtimeConfig.model,
       workingDirectory: currentWorkingDir || process.cwd(),
     });
   }
@@ -6188,17 +6210,27 @@ ipcMain.handle('sandbox.retrySetup', async () => {
   }
 });
 
+function sendActiveSetConfigRequiredError(sessionId?: string): void {
+  sendToRenderer({
+    type: 'error',
+    payload: {
+      ...(sessionId ? { sessionId } : {}),
+      message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
+      code: 'CONFIG_REQUIRED_ACTIVE_SET',
+      action: 'open_api_settings',
+    },
+  });
+}
+
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
   // Check if configured before starting sessions
   if (event.type === 'session.start' && !configStore.hasUsableCredentialsForActiveSet()) {
-    sendToRenderer({
-      type: 'error',
-      payload: {
-        message: '当前方案未配置可用凭证，请先在 API 设置中完成配置',
-        code: 'CONFIG_REQUIRED_ACTIVE_SET',
-        action: 'open_api_settings',
-      },
-    });
+    sendActiveSetConfigRequiredError();
+    return null;
+  }
+
+  if (event.type === 'session.continue' && !configStore.hasUsableCredentialsForActiveSet()) {
+    sendActiveSetConfigRequiredError(event.payload.sessionId);
     return null;
   }
 

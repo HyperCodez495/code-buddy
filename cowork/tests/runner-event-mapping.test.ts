@@ -199,13 +199,14 @@ describe('CodeBuddyEngineRunner event mapping', () => {
   });
 
   it("propagates `error` chunks as error ServerEvent", async () => {
-    const { emitted } = await run([
+    const { emitted, saved } = await run([
       { type: 'error', error: 'rate limited' },
       { type: 'done' },
     ]);
     const err = emitted.find((e) => e.type === 'error');
     expect(err).toBeDefined();
     expect((err!.payload as { message: string }).message).toBe('rate limited');
+    expect(saved[1]?.content).toEqual([{ type: 'text', text: '**Error**: rate limited' }]);
   });
 
   it("emits a session.status running at turn start", async () => {

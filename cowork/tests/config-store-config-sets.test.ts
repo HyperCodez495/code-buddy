@@ -65,6 +65,7 @@ describe('ConfigStore config sets', () => {
     expect(config.activeConfigSetId).toBe('default');
     expect(config.configSets.length).toBe(1);
     expect(config.configSets[0].isSystem).toBe(true);
+    expect(config.configSets[0].name).toBe('Default');
     expect(config.configSets[0].provider).toBe('openai');
     expect(config.provider).toBe('openai');
     expect(config.apiKey).toBe('sk-legacy-openai');

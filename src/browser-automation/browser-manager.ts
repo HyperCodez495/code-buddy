@@ -671,22 +671,34 @@ export class BrowserManager extends EventEmitter {
   // Navigation
   // ============================================================================
 
-  /**
-   * Navigate to URL
-   */
   async navigate(options: NavigateOptions): Promise<void> {
     const page = this.getCurrentPage();
+    const timeout = options.timeout || this.config.timeout || 30000;
 
-    await page.goto(options.url, {
-      waitUntil: options.waitUntil || 'domcontentloaded',
-      timeout: options.timeout || this.config.timeout,
-      referer: options.referer,
-    });
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        await page.goto(options.url, {
+          waitUntil: options.waitUntil || 'domcontentloaded',
+          timeout,
+          referer: options.referer,
+        });
 
-    // Invalidate snapshot
-    if (this.currentSnapshot) {
-      this.currentSnapshot.valid = false;
+        // Invalidate snapshot
+        if (this.currentSnapshot) {
+          this.currentSnapshot.valid = false;
+        }
+        return; // Succeeded!
+      } catch (err) {
+        lastError = err as Error;
+        logger.warn(`Navigation attempt ${attempt} to ${options.url} failed, retrying...`, { error: err });
+        if (attempt < 3) {
+          await page.waitForTimeout(1000 * attempt); // Exponential backoff wait before retry
+        }
+      }
     }
+
+    throw new Error(`Navigation to ${options.url} failed after 3 attempts. Last error: ${lastError?.message}`);
   }
 
   /**
@@ -875,9 +887,6 @@ export class BrowserManager extends EventEmitter {
     }
   }
 
-  /**
-   * Select option in dropdown
-   */
   async select(options: SelectOptions): Promise<void> {
     const page = this.getCurrentPage();
     const element = this.getElement(options.ref);
@@ -886,22 +895,59 @@ export class BrowserManager extends EventEmitter {
       throw new Error(`Element [${options.ref}] not found.`);
     }
 
-    // Click to open dropdown
-    await page.mouse.click(element.center.x, element.center.y);
+    const selector = `[data-agent-ref="${options.ref}"]`;
 
-    // Wait a bit for dropdown to open
-    await page.waitForTimeout(200);
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        // Native selectOption first
+        if (element.tagName === 'select' || element.role === 'combobox' || element.role === 'listbox') {
+          try {
+            if (options.value) {
+              await page.selectOption(selector, { value: options.value });
+            } else if (options.label) {
+              await page.selectOption(selector, { label: options.label });
+            } else if (options.index !== undefined) {
+              await page.selectOption(selector, { index: options.index });
+            }
+            return; // Succeeded natively!
+          } catch (err) {
+            logger.warn(`Native selectOption attempt ${attempt} failed, falling back to mouse/keyboard interactions`, { error: err });
+          }
+        }
 
-    // Select by value, label, or index
-    if (options.value) {
-      await page.keyboard.type(options.value.charAt(0));
-      await page.keyboard.press('Enter');
-    } else if (options.index !== undefined) {
-      for (let i = 0; i < options.index; i++) {
-        await page.keyboard.press('ArrowDown');
+        // Custom dropdown interactive fallback
+        const locator = page.locator(selector).first();
+        await locator.waitFor({ state: 'visible', timeout: 2000 });
+        await locator.click();
+
+        // Wait for dropdown to open (menus, listboxes, lists)
+        try {
+          await page.waitForSelector('[role="listbox"]:visible, [role="menu"]:visible, ul:visible, select:visible', { timeout: 500 });
+        } catch {
+          await page.waitForTimeout(150);
+        }
+
+        if (options.value) {
+          await page.keyboard.type(options.value.charAt(0));
+          await page.keyboard.press('Enter');
+        } else if (options.index !== undefined) {
+          for (let i = 0; i < options.index; i++) {
+            await page.keyboard.press('ArrowDown');
+          }
+          await page.keyboard.press('Enter');
+        }
+        return; // Succeeded!
+      } catch (err) {
+        lastError = err as Error;
+        logger.warn(`Dropdown select attempt ${attempt} failed, retrying...`, { error: err });
+        if (attempt < 3) {
+          await page.waitForTimeout(500);
+        }
       }
-      await page.keyboard.press('Enter');
     }
+
+    throw new Error(`Dropdown selection failed after 3 attempts. Last error: ${lastError?.message}`);
   }
 
   /**
@@ -1246,9 +1292,40 @@ export class BrowserManager extends EventEmitter {
     if (!source) throw new Error(`Source element [${options.sourceRef}] not found.`);
     if (!target) throw new Error(`Target element [${options.targetRef}] not found.`);
 
-    const sourceLocator = page.locator(`[aria-label="${source.name}"]`).first();
-    const targetLocator = page.locator(`[aria-label="${target.name}"]`).first();
-    await sourceLocator.dragTo(targetLocator);
+    // Use injected selector first, fallback to coordinates or aria-label locators
+    const sourceSelector = `[data-agent-ref="${options.sourceRef}"]`;
+    const targetSelector = `[data-agent-ref="${options.targetRef}"]`;
+
+    let lastError: Error | null = null;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const sourceLoc = page.locator(sourceSelector).first();
+        const targetLoc = page.locator(targetSelector).first();
+
+        // Check visibility and wait
+        await sourceLoc.waitFor({ state: 'visible', timeout: 2000 });
+        await targetLoc.waitFor({ state: 'visible', timeout: 2000 });
+
+        await sourceLoc.dragTo(targetLoc);
+        return; // Succeeded!
+      } catch (err) {
+        lastError = err as Error;
+        logger.warn(`Drag-and-drop attempt ${attempt} failed, retrying...`, { error: err });
+        // Fallback to hover + mouse down + move + mouse up if dragTo fails
+        try {
+          await page.mouse.move(source.center.x, source.center.y);
+          await page.mouse.down();
+          await page.waitForTimeout(100);
+          await page.mouse.move(target.center.x, target.center.y, { steps: 5 });
+          await page.mouse.up();
+          return; // Fallback succeeded!
+        } catch (fallbackErr) {
+          logger.warn(`Drag-and-drop coordinates fallback attempt ${attempt} failed`, { error: fallbackErr });
+        }
+      }
+    }
+
+    throw new Error(`Drag-and-drop failed after 3 attempts. Last error: ${lastError?.message}`);
   }
 
   /**

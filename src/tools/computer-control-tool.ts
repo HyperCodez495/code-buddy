@@ -54,7 +54,7 @@ export interface VisionGroundingRequest {
   candidates: { ref: number; role: string; name: string }[];
 }
 
-export type VisionGroundingProvider = (req: VisionGroundingRequest) => Promise<number | null>;
+export type VisionGroundingProvider = (req: VisionGroundingRequest) => Promise<number | { x: number; y: number } | null>;
 
 let visionGroundingProvider: VisionGroundingProvider | null = null;
 
@@ -4630,17 +4630,21 @@ $value.SetValue($targetText)
       if (isGroundingEnabled && visionGroundingProvider && !input.simulateOnly) {
         try {
           logger.info('Attempting visual grounding fallback for query', { query });
-          const ann = await this.snapshotManager.toAnnotatedScreenshot({ interactiveOnly: true, crop: true });
-          if (ann && ann.image) {
-            const currentSnap = this.snapshotManager.getCurrentSnapshot();
-            const candidates = (currentSnap?.elements ?? [])
-              .filter((e) => e.interactive)
-              .map((e) => ({
-                ref: e.ref,
-                role: e.role,
-                name: e.name,
-              }));
+          const currentSnap = this.snapshotManager.getCurrentSnapshot();
+          const candidates = (currentSnap?.elements ?? [])
+            .filter((e) => e.interactive)
+            .map((e) => ({
+              ref: e.ref,
+              role: e.role,
+              name: e.name,
+            }));
 
+          const ann = await this.snapshotManager.toAnnotatedScreenshot({
+            interactiveOnly: candidates.length > 0,
+            crop: candidates.length > 0,
+          });
+
+          if (ann && ann.image) {
             const matchedRef = await visionGroundingProvider({
               imageBase64: ann.image,
               intent: query,
@@ -4649,6 +4653,38 @@ $value.SetValue($targetText)
             });
 
             if (matchedRef !== null && matchedRef !== undefined) {
+              if (typeof matchedRef === 'object' && 'x' in matchedRef && 'y' in matchedRef) {
+                // The provider returned raw coordinates (e.g. from coordinates-based grounding)
+                // Convert relative 0-1000 coordinates to absolute screen pixels
+                const snapWidth = currentSnap?.screenSize?.width || 1920;
+                const snapHeight = currentSnap?.screenSize?.height || 1080;
+                const absoluteX = Math.round((matchedRef.x / 1000) * snapWidth);
+                const absoluteY = Math.round((matchedRef.y / 1000) * snapHeight);
+
+                const virtualEl: UIElement = {
+                  ref: -999, // special virtual ref ID
+                  role: options.roles?.[0] || 'unknown',
+                  name: query,
+                  bounds: { x: absoluteX, y: absoluteY, width: 0, height: 0 },
+                  center: { x: absoluteX, y: absoluteY },
+                  interactive: true,
+                  focused: false,
+                  enabled: true,
+                  visible: true,
+                  attributes: { source: 'visual-coordinates-grounding' }
+                };
+
+                if (currentSnap) {
+                  currentSnap.elementMap.set(-999, virtualEl);
+                }
+
+                logger.info('Visual grounding fallback successfully matched direct coordinates', { x: absoluteX, y: absoluteY });
+                return {
+                  element: virtualEl,
+                  refreshed,
+                };
+              }
+
               const matchedEl = this.snapshotManager.getElement(matchedRef);
               if (matchedEl) {
                 // Validate matched element role if options.roles is specified

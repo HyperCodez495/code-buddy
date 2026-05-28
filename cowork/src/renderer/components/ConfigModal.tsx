@@ -1,21 +1,11 @@
 import { useEffect } from 'react';
-import {
-  X,
-  Key,
-  Server,
-  Cpu,
-  CheckCircle,
-  AlertCircle,
-  Loader2,
-  Edit3,
-  Plug,
-  RefreshCw,
-} from 'lucide-react';
+import { AlertCircle, CheckCircle, Key, Loader2, Plug, Save, X } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
 import type { AppConfig, ApiTestResult } from '../types';
 import { useApiConfigState } from '../hooks/useApiConfigState';
+import { useIPC } from '../hooks/useIPC';
 import { ApiConfigSetManager } from './ApiConfigSetManager';
-import { CommonProviderSetupsCard, GuidanceInlineHint } from './ProviderGuidance';
+import { LLMConfigPanel } from './LLMConfigPanel';
 
 interface ConfigModalProps {
   isOpen: boolean;
@@ -25,19 +15,6 @@ interface ConfigModalProps {
   isFirstRun?: boolean;
 }
 
-const PROVIDER_LABELS: Record<
-  'openrouter' | 'anthropic' | 'openai' | 'gemini' | 'ollama' | 'lmstudio' | 'custom',
-  string
-> = {
-  openrouter: 'OpenRouter',
-  anthropic: 'Anthropic',
-  openai: 'OpenAI',
-  gemini: 'Gemini',
-  ollama: 'Ollama',
-  lmstudio: 'LM Studio',
-  custom: 'Custom',
-};
-
 export function ConfigModal({
   isOpen,
   onClose,
@@ -46,81 +23,23 @@ export function ConfigModal({
   isFirstRun,
 }: ConfigModalProps) {
   const { t } = useTranslation();
-  const {
-    provider,
-    customProtocol,
-    apiKey,
-    baseUrl,
-    model,
-    customModel,
-    useCustomModel,
-    modelInputPlaceholder,
-    modelInputHint,
-    presets,
-    currentPreset,
-    modelOptions,
-    isSaving,
-    error,
-    successMessage,
-    lastSaveCompletedAt,
-    isTesting,
-    isRefreshingModels,
-    isDiscoveringLocalOllama,
-    isDiscoveringLocalLmStudio,
-    testResult,
-    friendlyTestDetails,
-    isOllamaMode,
-    isLocalOpenAIProviderMode,
-    isLmStudioMode,
-    requiresApiKey,
-    protocolGuidanceText,
-    protocolGuidanceTone,
-    baseUrlGuidanceText,
-    commonProviderSetups,
-    configSets,
-    activeConfigSetId,
-    currentConfigSet,
-    pendingConfigSetAction,
-    pendingConfigSet,
-    hasUnsavedChanges,
-    isMutatingConfigSet,
-    canDeleteCurrentConfigSet,
-    setApiKey,
-    setBaseUrl,
-    setModel,
-    setCustomModel,
-    toggleCustomModel,
-    applyCommonProviderSetup,
-    changeProvider,
-    changeProtocol,
-    requestConfigSetSwitch,
-    requestCreateBlankConfigSet,
-    cancelPendingConfigSetAction,
-    saveAndContinuePendingConfigSetAction,
-    discardAndContinuePendingConfigSetAction,
-    renameConfigSet,
-    deleteConfigSet,
-    handleSave,
-    handleTest,
-    refreshModelOptions,
-    discoverLocalOllama,
-    discoverLocalLmStudio,
-    shouldShowOllamaManualModelToggle,
-  } = useApiConfigState({
+  const apiConfig = useApiConfigState({
     enabled: isOpen,
     initialConfig,
     onSave,
   });
+  const { geminiOauthLogin, geminiOauthClear, codexOauthLogin, codexOauthClear, codexOauthStatus } =
+    useIPC();
 
   useEffect(() => {
-    if (!lastSaveCompletedAt) {
+    if (!apiConfig.lastSaveCompletedAt) {
       return;
     }
     const timer = setTimeout(() => {
       onClose();
     }, 1000);
     return () => clearTimeout(timer);
-  }, [lastSaveCompletedAt, onClose]);
+  }, [apiConfig.lastSaveCompletedAt, onClose]);
 
   if (!isOpen) return null;
 
@@ -149,14 +68,35 @@ export function ConfigModal({
     }
   };
 
+  const configSetManager = (
+    <ApiConfigSetManager
+      configSets={apiConfig.configSets}
+      activeConfigSetId={apiConfig.activeConfigSetId}
+      currentConfigSet={apiConfig.currentConfigSet}
+      pendingConfigSetAction={apiConfig.pendingConfigSetAction}
+      pendingConfigSet={apiConfig.pendingConfigSet}
+      hasUnsavedChanges={apiConfig.hasUnsavedChanges}
+      isMutatingConfigSet={apiConfig.isMutatingConfigSet}
+      isSaving={apiConfig.isSaving}
+      canDeleteCurrentConfigSet={apiConfig.canDeleteCurrentConfigSet}
+      onSwitchSet={apiConfig.requestConfigSetSwitch}
+      onRequestCreateBlankSet={apiConfig.requestCreateBlankConfigSet}
+      onSaveCurrentSet={apiConfig.handleSave}
+      onRenameSet={apiConfig.renameConfigSet}
+      onDeleteSet={apiConfig.deleteConfigSet}
+      onCancelPendingAction={apiConfig.cancelPendingConfigSetAction}
+      onSaveAndContinuePendingAction={apiConfig.saveAndContinuePendingConfigSetAction}
+      onDiscardAndContinuePendingAction={apiConfig.discardAndContinuePendingConfigSetAction}
+    />
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-md">
-      <div className="bg-background rounded-[2rem] shadow-elevated w-full max-w-[880px] mx-4 max-h-[88vh] overflow-hidden border border-border-subtle flex flex-col">
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-border-muted bg-background/88">
+      <div className="flex max-h-[88vh] w-full max-w-[1040px] flex-col overflow-hidden rounded-[2rem] border border-border-subtle bg-background shadow-elevated mx-4">
+        <div className="flex items-center justify-between border-b border-border-muted bg-background/88 px-6 py-5">
           <div className="flex items-center gap-3">
-            <div className="w-11 h-11 rounded-2xl border border-border-subtle bg-background-secondary/88 flex items-center justify-center text-accent">
-              <Key className="w-5 h-5" />
+            <div className="flex h-11 w-11 items-center justify-center rounded-2xl border border-border-subtle bg-background-secondary/88 text-accent">
+              <Key className="h-5 w-5" />
             </div>
             <div>
               <p className="text-[11px] uppercase tracking-[0.14em] text-text-muted">
@@ -172,343 +112,81 @@ export function ConfigModal({
           </div>
           <button
             onClick={onClose}
-            className="p-2 rounded-xl hover:bg-surface-hover transition-colors"
+            className="rounded-xl p-2 transition-colors hover:bg-surface-hover"
+            aria-label={t('common.close', 'Close')}
           >
-            <X className="w-5 h-5 text-text-secondary" />
+            <X className="h-5 w-5 text-text-secondary" />
           </button>
         </div>
 
-        {/* Content */}
-        <div className="p-6 space-y-5 flex-1 overflow-y-auto bg-background/70">
-          {/* Config Set Switcher */}
-          <ApiConfigSetManager
-            configSets={configSets}
-            activeConfigSetId={activeConfigSetId}
-            currentConfigSet={currentConfigSet}
-            pendingConfigSetAction={pendingConfigSetAction}
-            pendingConfigSet={pendingConfigSet}
-            hasUnsavedChanges={hasUnsavedChanges}
-            isMutatingConfigSet={isMutatingConfigSet}
-            isSaving={isSaving}
-            canDeleteCurrentConfigSet={canDeleteCurrentConfigSet}
-            onSwitchSet={requestConfigSetSwitch}
-            onRequestCreateBlankSet={requestCreateBlankConfigSet}
-            onSaveCurrentSet={handleSave}
-            onRenameSet={renameConfigSet}
-            onDeleteSet={deleteConfigSet}
-            onCancelPendingAction={cancelPendingConfigSetAction}
-            onSaveAndContinuePendingAction={saveAndContinuePendingConfigSetAction}
-            onDiscardAndContinuePendingAction={discardAndContinuePendingConfigSetAction}
+        <div className="flex-1 space-y-4 overflow-y-auto bg-background/70 p-6">
+          <LLMConfigPanel
+            controller={apiConfig}
+            configSetManager={configSetManager}
+            auth={{
+              chatgpt: {
+                login: codexOauthLogin,
+                clear: codexOauthClear,
+                status: codexOauthStatus,
+              },
+              gemini: {
+                login: geminiOauthLogin,
+                clear: geminiOauthClear,
+              },
+            }}
+            testResult={apiConfig.testResult}
+            friendlyTestDetails={apiConfig.friendlyTestDetails}
+            testErrorMessage={testErrorMessage}
           />
 
-          {/* Provider Selection */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-              <Server className="w-4 h-4" />
-              {t('api.provider')}
-            </label>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {(['openrouter', 'anthropic', 'openai', 'gemini', 'ollama', 'lmstudio', 'custom'] as const).map(
-                (p) => (
-                  <button
-                    key={p}
-                    onClick={() => changeProvider(p)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      provider === p
-                        ? 'bg-accent text-white'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    {presets?.[p]?.name ||
-                      (p === 'custom' ? t('api.custom') : PROVIDER_LABELS[p]) ||
-                      p}
-                  </button>
-                )
-              )}
-            </div>
-          </div>
-
-          {/* API Key */}
-          <div className="space-y-2">
-            <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-              <Key className="w-4 h-4" />
-              {t('api.apiKey')}
-            </label>
-            <input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder={currentPreset?.keyPlaceholder || t('api.enterApiKey')}
-              className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-            />
-            {currentPreset?.keyHint && (
-              <p className="text-xs text-text-muted">{currentPreset.keyHint}</p>
-            )}
-          </div>
-
-          {/* Custom Protocol */}
-          {provider === 'custom' && (
-            <div className="space-y-2">
-              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <Server className="w-4 h-4" />
-                {t('api.protocol')}
-              </label>
-              <div className="grid grid-cols-3 gap-2">
-                {(
-                  [
-                    { id: 'anthropic', label: 'Anthropic' },
-                    { id: 'openai', label: 'OpenAI' },
-                    { id: 'gemini', label: 'Gemini' },
-                  ] as const
-                ).map((mode) => (
-                  <button
-                    key={mode.id}
-                    onClick={() => changeProtocol(mode.id)}
-                    className={`px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-                      customProtocol === mode.id
-                        ? 'bg-accent text-white'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    {mode.label}
-                  </button>
-                ))}
-              </div>
-              <p className="text-xs text-text-muted">{t('api.selectProtocol')}</p>
-              <GuidanceInlineHint text={protocolGuidanceText} tone={protocolGuidanceTone} />
-            </div>
-          )}
-
-          {/* Base URL - Editable for custom provider */}
-          {(provider === 'custom' || provider === 'ollama' || provider === 'lmstudio') && (
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                  <Server className="w-4 h-4" />
-                  {t('api.baseUrl')}
-                </label>
-                {isOllamaMode ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void discoverLocalOllama();
-                    }}
-                    disabled={isDiscoveringLocalOllama}
-                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-accent-muted text-accent hover:bg-accent-muted/80 disabled:opacity-50"
-                  >
-                    <Plug className="w-3 h-3" />
-                    {isDiscoveringLocalOllama
-                      ? t('api.discoveringLocalOllama')
-                      : t('api.discoverLocalOllama')}
-                  </button>
-                ) : isLmStudioMode ? (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void discoverLocalLmStudio();
-                    }}
-                    disabled={isDiscoveringLocalLmStudio}
-                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-accent-muted text-accent hover:bg-accent-muted/80 disabled:opacity-50"
-                  >
-                    <Plug className="w-3 h-3" />
-                    {isDiscoveringLocalLmStudio
-                      ? t('api.discoveringLocalLmStudio')
-                      : t('api.discoverLocalLmStudio')}
-                  </button>
-                ) : null}
-              </div>
-              <input
-                type="text"
-                value={baseUrl}
-                onChange={(e) => setBaseUrl(e.target.value)}
-                placeholder={
-                  provider === 'ollama'
-                    ? 'http://localhost:11434/v1'
-                    : provider === 'lmstudio'
-                      ? 'http://localhost:1234/v1'
-                    : customProtocol === 'openai'
-                      ? 'https://api.openai.com/v1'
-                      : customProtocol === 'gemini'
-                        ? 'https://generativelanguage.googleapis.com'
-                        : currentPreset?.baseUrl || 'https://api.anthropic.com'
-                }
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-              />
-              <p className="text-xs text-text-muted">
-                {provider === 'ollama'
-                  ? t('api.enterOllamaUrl')
-                  : provider === 'lmstudio'
-                    ? t('api.enterLmStudioUrl')
-                  : customProtocol === 'openai'
-                    ? t('api.enterOpenAIUrl')
-                    : customProtocol === 'gemini'
-                      ? t('api.enterGeminiUrl')
-                      : t('api.enterAnthropicUrl')}
-              </p>
-              {isOllamaMode ? (
-                <p className="text-xs text-text-muted">{t('api.discoverLocalOllamaHint')}</p>
-              ) : isLmStudioMode ? (
-                <p className="text-xs text-text-muted">{t('api.discoverLocalLmStudioHint')}</p>
-              ) : null}
-              {provider === 'custom' && <GuidanceInlineHint text={baseUrlGuidanceText} />}
-            </div>
-          )}
-
-          {/* Model Selection */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <label className="flex items-center gap-2 text-sm font-medium text-text-primary">
-                <Cpu className="w-4 h-4" />
-                {t('api.model')}
-              </label>
-              <div className="flex items-center gap-2">
-                {isLocalOpenAIProviderMode && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      void refreshModelOptions();
-                    }}
-                    className="flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all bg-surface-hover text-text-secondary hover:bg-surface-active disabled:opacity-50"
-                    disabled={isRefreshingModels}
-                  >
-                    <RefreshCw className={`w-3 h-3 ${isRefreshingModels ? 'animate-spin' : ''}`} />
-                    {isRefreshingModels ? t('api.refreshingModels') : t('api.refreshModels')}
-                  </button>
-                )}
-                {shouldShowOllamaManualModelToggle && (
-                  <button
-                    type="button"
-                    onClick={toggleCustomModel}
-                    className={`flex items-center gap-1 text-xs px-2 py-1 rounded-md transition-all ${
-                      useCustomModel
-                        ? 'bg-accent-muted text-accent'
-                        : 'bg-surface-hover text-text-secondary hover:bg-surface-active'
-                    }`}
-                  >
-                    <Edit3 className="w-3 h-3" />
-                    {isLocalOpenAIProviderMode
-                      ? (useCustomModel ? t('api.useDetectedModels') : t('api.manualModel'))
-                      : (useCustomModel ? t('api.usePreset') : t('api.custom'))}
-                  </button>
-                )}
-              </div>
-            </div>
-            {useCustomModel ? (
-              <input
-                type="text"
-                value={customModel}
-                onChange={(e) => setCustomModel(e.target.value)}
-                placeholder={modelInputPlaceholder}
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary placeholder-text-muted focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all"
-              />
-            ) : (
-              <select
-                value={modelOptions.length ? model : ''}
-                onChange={(e) => setModel(e.target.value)}
-                className="w-full px-4 py-3 rounded-xl bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 focus:border-accent transition-all appearance-none cursor-pointer"
-              >
-                {modelOptions.length ? (
-                  modelOptions.map((m) => (
-                    <option key={m.id} value={m.id}>
-                      {m.name}
-                    </option>
-                  ))
-                ) : (
-                  <option value="" disabled>
-                    {t('api.noModelsAvailable')}
-                  </option>
-                )}
-              </select>
-            )}
-            {useCustomModel && <p className="text-xs text-text-muted">{modelInputHint}</p>}
-          </div>
-
-          {provider === 'custom' && (
-            <CommonProviderSetupsCard
-              setups={commonProviderSetups}
-              onApplySetup={applyCommonProviderSetup}
-            />
-          )}
-
-          {/* Error Message */}
-          {error && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-error/10 text-error text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              {error}
-            </div>
-          )}
-
-          {testResult && (
-            <div
-              className={`flex gap-2 px-4 py-3 rounded-xl text-sm ${testResult.ok ? 'bg-success/10 text-success' : 'bg-error/10 text-error'}`}
-            >
-              {testResult.ok ? (
-                <CheckCircle className="w-4 h-4 flex-shrink-0" />
-              ) : (
-                <AlertCircle className="w-4 h-4 flex-shrink-0" />
-              )}
-              <div className="flex-1">
-                <div>
-                  {testResult.ok
-                    ? t('api.testSuccess', {
-                        ms: typeof testResult.latencyMs === 'number' ? testResult.latencyMs : '--',
-                      })
-                    : testErrorMessage(testResult)}
-                </div>
-                {!testResult.ok && friendlyTestDetails && (
-                  <div className="mt-1 text-xs leading-5 text-text-primary">
-                    {friendlyTestDetails}
-                  </div>
-                )}
-                {!testResult.ok && testResult.details && (
-                  <div className="mt-1 text-xs text-text-muted">{testResult.details}</div>
-                )}
-              </div>
+          {apiConfig.error && (
+            <div className="flex items-center gap-2 rounded-xl bg-error/10 px-4 py-3 text-sm text-error">
+              <AlertCircle className="h-4 w-4 flex-shrink-0" />
+              {apiConfig.error}
             </div>
           )}
         </div>
 
-        {/* Footer */}
-        <div className="px-6 py-4 bg-surface-hover border-t border-border">
-              {successMessage && (
-                <div className="mb-3 flex items-center gap-2 px-4 py-3 rounded-xl bg-success/10 text-success text-sm">
-                  <CheckCircle className="w-4 h-4 flex-shrink-0" />
-                  {successMessage}
-                </div>
-              )}
+        <div className="border-t border-border bg-surface-hover px-6 py-4">
+          {apiConfig.successMessage && (
+            <div className="mb-3 flex items-center gap-2 rounded-xl bg-success/10 px-4 py-3 text-sm text-success">
+              <CheckCircle className="h-4 w-4 flex-shrink-0" />
+              {apiConfig.successMessage}
+            </div>
+          )}
           <div className="grid grid-cols-2 gap-2">
             <button
-              onClick={handleTest}
-              disabled={isTesting || (requiresApiKey && !apiKey.trim())}
-              className="w-full py-3 px-4 rounded-xl border border-border bg-surface text-text-primary font-medium hover:bg-surface-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              onClick={apiConfig.handleTest}
+              disabled={apiConfig.isTesting || (apiConfig.requiresApiKey && !apiConfig.apiKey.trim())}
+              className="flex w-full items-center justify-center gap-2 rounded-xl border border-border bg-surface px-4 py-3 font-medium text-text-primary transition-all hover:bg-surface-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isTesting ? (
+              {apiConfig.isTesting ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   {t('api.testingConnection')}
                 </>
               ) : (
                 <>
-                  <Plug className="w-4 h-4" />
+                  <Plug className="h-4 w-4" />
                   {t('api.testConnection')}
                 </>
               )}
             </button>
             <button
               onClick={() => {
-                void handleSave();
+                void apiConfig.handleSave();
               }}
-              disabled={isSaving || (requiresApiKey && !apiKey.trim())}
-              className="w-full py-3 px-4 rounded-xl bg-accent text-white font-medium hover:bg-accent-hover disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
+              disabled={apiConfig.isSaving || (apiConfig.requiresApiKey && !apiConfig.apiKey.trim())}
+              className="flex w-full items-center justify-center gap-2 rounded-xl bg-accent px-4 py-3 font-medium text-white transition-all hover:bg-accent-hover disabled:cursor-not-allowed disabled:opacity-50"
             >
-              {isSaving ? (
+              {apiConfig.isSaving ? (
                 <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
+                  <Loader2 className="h-4 w-4 animate-spin" />
                   {t('common.saving')}
                 </>
               ) : (
                 <>
-                  <CheckCircle className="w-4 h-4" />
+                  <Save className="h-4 w-4" />
                   {isFirstRun ? t('api.getStarted') : t('api.saveSettings')}
                 </>
               )}

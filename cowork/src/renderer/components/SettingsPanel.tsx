@@ -23,6 +23,7 @@ import {
   Blocks,
   ServerCog,
   Cpu,
+  Gauge,
   Search,
   Sparkles,
 } from 'lucide-react';
@@ -54,11 +55,13 @@ import { SettingsCustomize } from './settings/SettingsCustomize';
 import { SettingsProjects } from './settings/SettingsProjects';
 import { SettingsPlugins } from './settings/SettingsPlugins';
 import { SettingsTelemetry } from './settings/SettingsTelemetry';
+import { SettingsControlCenter } from './settings/SettingsControlCenter';
 import { SkillsBrowser } from './SkillsBrowser';
 
 interface SettingsPanelProps {
   onClose: () => void;
   initialTab?:
+    | 'control'
     | 'api'
     | 'sandbox'
     | 'connectors'
@@ -85,6 +88,7 @@ interface SettingsPanelProps {
 }
 
 type TabId =
+  | 'control'
   | 'api'
   | 'codebuddy'
   | 'sandbox'
@@ -112,6 +116,7 @@ type TabId =
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
+  'control',
   'api',
   'codebuddy',
   'sandbox',
@@ -139,7 +144,7 @@ const VALID_TABS = new Set<TabId>([
   'general',
 ]);
 
-export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProps) {
+export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
   const compactSidebar = width < 900;
@@ -147,6 +152,11 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // takes effect even before this component mounts.
   const storeTab = useAppStore((s) => s.settingsTab);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
+  const setShowTestRunner = useAppStore((s) => s.setShowTestRunner);
+  const setShowOrchestratorLauncher = useAppStore((s) => s.setShowOrchestratorLauncher);
+  const setShowFleetCommandCenter = useAppStore((s) => s.setShowFleetCommandCenter);
+  const setShowTeamPanel = useAppStore((s) => s.setShowTeamPanel);
+  const setShowCompanionPanel = useAppStore((s) => s.setShowCompanionPanel);
   const resolvedInitial =
     storeTab && VALID_TABS.has(storeTab as TabId) ? (storeTab as TabId) : initialTab;
 
@@ -157,7 +167,10 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
   // P1.5 — Settings search filter
   const [searchQuery, setSearchQuery] = useState('');
   // Tabs recommended for first-time users (shown with a "★ Start here" badge)
-  const BEGINNER_TABS = useMemo<Set<TabId>>(() => new Set(['api', 'sandbox', 'skills']), []);
+  const BEGINNER_TABS = useMemo<Set<TabId>>(
+    () => new Set(['control', 'api', 'sandbox', 'skills']),
+    []
+  );
   useEffect(() => {
     try {
       const v = window.electronAPI?.getVersion?.();
@@ -178,12 +191,24 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
 
   // Mark tab as viewed when it becomes active
   useEffect(() => {
-    if (!viewedTabs.has(activeTab)) {
-      setViewedTabs((prev) => new Set([...prev, activeTab]));
-    }
+    setViewedTabs((prev) => {
+      if (prev.has(activeTab)) {
+        return prev;
+      }
+      return new Set([...prev, activeTab]);
+    });
   }, [activeTab]);
 
-  const tabs = [
+  const tabs = useMemo(() => [
+    {
+      id: 'control' as TabId,
+      label: t('controlCenter.tabLabel', 'Control center'),
+      icon: Gauge,
+      description: t(
+        'controlCenter.tabHint',
+        'Pilot Code Buddy, safety, automation, fleet, and harness surfaces'
+      ),
+    },
     {
       id: 'api' as TabId,
       label: t('settings.apiSettings'),
@@ -194,7 +219,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       id: 'codebuddy' as TabId,
       label: 'Code Buddy',
       icon: Zap,
-      description: 'Local agentic backend with 110+ tools',
+      description: t('settings.codebuddyDesc', 'Local agentic backend with 110+ tools'),
     },
     {
       id: 'sandbox' as TabId,
@@ -337,7 +362,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
       icon: Globe,
       description: t('settings.generalDesc'),
     },
-  ];
+  ], [t]);
   const activeTabMeta = tabs.find((tab) => tab.id === activeTab);
 
   // P1.5 — filter tabs by search query (case-insensitive over label + description)
@@ -433,6 +458,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
           <button
             onClick={onClose}
             className={`w-full py-2 ${compactSidebar ? 'px-2' : 'px-4'} rounded-lg bg-background hover:bg-background transition-colors text-text-secondary text-sm`}
+            aria-label={t('common.close')}
             title={compactSidebar ? t('common.close') : undefined}
           >
             {compactSidebar ? <X className="w-4 h-4 mx-auto" /> : t('common.close')}
@@ -463,6 +489,7 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
           </div>
           <button
             onClick={onClose}
+            aria-label={t('common.close')}
             className="p-2 rounded-lg hover:bg-surface-hover transition-colors"
           >
             <X className="w-5 h-5 text-text-secondary" />
@@ -471,6 +498,18 @@ export function SettingsPanel({ onClose, initialTab = 'api' }: SettingsPanelProp
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-4 py-6 lg:px-8 lg:py-8">
           <div className="max-w-[860px] w-full min-w-0 mx-auto">
             <div className="">
+              <div className={activeTab === 'control' ? '' : 'hidden'}>
+                {viewedTabs.has('control') && (
+                  <SettingsControlCenter
+                    onNavigate={(tab) => setActiveTab(tab)}
+                    onOpenTestRunner={() => setShowTestRunner(true)}
+                    onOpenOrchestrator={() => setShowOrchestratorLauncher(true)}
+                    onOpenFleet={() => setShowFleetCommandCenter(true)}
+                    onOpenTeam={() => setShowTeamPanel(true)}
+                    onOpenCompanion={() => setShowCompanionPanel(true)}
+                  />
+                )}
+              </div>
               <div className={activeTab === 'api' ? '' : 'hidden'}>
                 {viewedTabs.has('api') && (
                   <>

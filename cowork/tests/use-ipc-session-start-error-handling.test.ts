@@ -14,4 +14,16 @@ describe('useIPC session start error handling', () => {
     );
     expect(source).not.toContain('throw e;');
   });
+
+  it('clears the active turn when a session-scoped backend error arrives', () => {
+    const source = fs.readFileSync(useIPCPath, 'utf8');
+    const errorCase = source.match(/case 'error':[\s\S]*?break;/)?.[0] || '';
+
+    expect(errorCase).toContain('event.payload.sessionId');
+    expect(errorCase).toContain("store.updateSession(event.payload.sessionId, { status: 'idle' })");
+    expect(errorCase).toContain('store.finishExecutionClock(event.payload.sessionId)');
+    expect(errorCase).toContain('store.clearActiveTurn(event.payload.sessionId)');
+    expect(errorCase).toContain('store.clearPendingTurns(event.payload.sessionId)');
+    expect(errorCase).toContain('store.clearQueuedMessages(event.payload.sessionId)');
+  });
 });

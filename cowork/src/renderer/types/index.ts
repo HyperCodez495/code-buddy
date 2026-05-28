@@ -1201,7 +1201,7 @@ export type ServerEvent =
   | { type: 'new-session' }
   | { type: 'navigate'; payload: string }
   | { type: 'scheduled-task.error'; payload: { taskId: string; error: string } }
-  | { type: 'error'; payload: { message: string; code?: 'CONFIG_REQUIRED_ACTIVE_SET'; action?: 'open_api_settings' } }
+  | { type: 'error'; payload: { message: string; sessionId?: string; code?: 'CONFIG_REQUIRED_ACTIVE_SET'; action?: 'open_api_settings' } }
   | { type: 'diff.preview'; payload: { sessionId: string; diffPreview: DiffPreview } }
   | { type: 'checkpoint.created'; payload: { sessionId: string; snapshot: CheckpointSnapshot } }
   | { type: 'checkpoint.timeline'; payload: CheckpointTimeline }
