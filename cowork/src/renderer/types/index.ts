@@ -1248,6 +1248,7 @@ export type ServerEvent =
   | { type: 'test.complete'; payload: unknown }
   | { type: 'test.cancelled'; payload: null }
   | { type: 'gui.action'; payload: GuiActionEvent }
+  | { type: 'browser.action'; payload: BrowserActionEvent }
   | { type: 'workflow.event'; payload: import('../../shared/workflow-types').WorkflowEventPayload }
   | { type: 'workflow.approval_required'; payload: import('../../shared/workflow-types').PendingApproval }
   | {
@@ -1273,6 +1274,25 @@ export interface GuiActionEvent {
   /** Optional click coordinates relative to the screenshot */
   click?: { x: number; y: number };
   /** Other input parameters that produced this action */
+  details?: Record<string, unknown>;
+  timestamp: number;
+}
+
+// Browser Operator overlay events (S2 — browser automation pilotability)
+export interface BrowserActionEvent {
+  sessionId: string;
+  toolUseId: string;
+  /** Browser action verb: navigate, click, type, extract, screenshot, … */
+  action: string;
+  /** Target URL when the action navigates */
+  url?: string;
+  /** Selector / text / target the action operated on */
+  target?: string;
+  /** Short, redaction-safe excerpt of the tool result (proof note) */
+  evidence?: string;
+  /** Base64 data URI or absolute file path of a page screenshot if available */
+  screenshot?: string;
+  /** Raw input parameters that produced this action */
   details?: Record<string, unknown>;
   timestamp: number;
 }

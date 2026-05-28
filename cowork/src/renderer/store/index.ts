@@ -208,6 +208,19 @@ interface AppState {
     timestamp: number;
   }>;
   showComputerUseOverlay: boolean;
+  // S2: Browser Operator live action log
+  browserActions: Array<{
+    sessionId: string;
+    toolUseId: string;
+    action: string;
+    url?: string;
+    target?: string;
+    evidence?: string;
+    screenshot?: string;
+    details?: Record<string, unknown>;
+    timestamp: number;
+  }>;
+  showBrowserOperatorOverlay: boolean;
   /**
    * Visual workflow executions, keyed by Orchestrator instanceId. The bridge
    * emits `workflow.event` and the useIPC hook merges them in here so the
@@ -369,6 +382,7 @@ interface AppState {
   showLessonCandidatePanel: boolean;
   showUserModelPanel: boolean;
   showSpecPanel: boolean;
+  showMobileSupervisionPanel: boolean;
   showCompanionPanel: boolean;
 
   // Notifications (Claude Cowork parity)
@@ -489,6 +503,18 @@ interface AppState {
     timestamp: number;
   }) => void;
   setShowComputerUseOverlay: (show: boolean) => void;
+  appendBrowserAction: (action: {
+    sessionId: string;
+    toolUseId: string;
+    action: string;
+    url?: string;
+    target?: string;
+    evidence?: string;
+    screenshot?: string;
+    details?: Record<string, unknown>;
+    timestamp: number;
+  }) => void;
+  setShowBrowserOperatorOverlay: (show: boolean) => void;
   applyWorkflowEvent: (
     payload: import('../../shared/workflow-types').WorkflowEventPayload
   ) => void;
@@ -617,6 +643,7 @@ interface AppState {
   setShowLessonCandidatePanel: (show: boolean) => void;
   setShowUserModelPanel: (show: boolean) => void;
   setShowSpecPanel: (show: boolean) => void;
+  setShowMobileSupervisionPanel: (show: boolean) => void;
   setShowCompanionPanel: (show: boolean) => void;
 
   // Notification actions
@@ -694,6 +721,8 @@ export const useAppStore = create<AppState>((set) => ({
   activeArtifact: null,
   guiActions: [],
   showComputerUseOverlay: false,
+  browserActions: [],
+  showBrowserOperatorOverlay: false,
   workflowExecutions: {},
   pendingApprovals: [],
   openTabs: [],
@@ -793,6 +822,7 @@ export const useAppStore = create<AppState>((set) => ({
   showLessonCandidatePanel: false,
   showUserModelPanel: false,
   showSpecPanel: false,
+  showMobileSupervisionPanel: false,
   showCompanionPanel: false,
   notifications: [],
   showNotificationCenter: false,
@@ -1256,6 +1286,14 @@ export const useAppStore = create<AppState>((set) => ({
       return { guiActions: next, showComputerUseOverlay: true };
     }),
   setShowComputerUseOverlay: (show) => set({ showComputerUseOverlay: show }),
+  appendBrowserAction: (action) =>
+    set((state) => {
+      const next = [...state.browserActions, action];
+      // Cap to last 50 actions to bound memory.
+      if (next.length > 50) next.splice(0, next.length - 50);
+      return { browserActions: next, showBrowserOperatorOverlay: true };
+    }),
+  setShowBrowserOperatorOverlay: (show) => set({ showBrowserOperatorOverlay: show }),
   applyWorkflowEvent: (payload) =>
     set((state) => {
       const existing = state.workflowExecutions[payload.instanceId];
@@ -1732,6 +1770,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowLessonCandidatePanel: (show) => set({ showLessonCandidatePanel: show }),
   setShowUserModelPanel: (show) => set({ showUserModelPanel: show }),
   setShowSpecPanel: (show) => set({ showSpecPanel: show }),
+  setShowMobileSupervisionPanel: (show) => set({ showMobileSupervisionPanel: show }),
   setShowCompanionPanel: (show) => set({ showCompanionPanel: show }),
   clearSubAgents: (sessionId) =>
     set((state) => {

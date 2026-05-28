@@ -33,19 +33,38 @@ export interface SlashCommandDef {
   arguments?: SlashCommandArg[];
 }
 
+/**
+ * Renderer-side effects for presentation-only slash commands that have no
+ * headless engine behaviour (they map to a Cowork equivalent instead).
+ */
+export type SlashUiEffectKind =
+  | 'open_model_picker'
+  | 'run_orchestrator'
+  | 'open_orchestrator_launcher'
+  | 'open_fleet'
+  | 'set_plan_mode'
+  | 'open_lessons'
+  | 'open_team';
+
 export interface SlashCommandExecuteResult {
   success: boolean;
   /** Text that should be injected as the user prompt (if any) */
   prompt?: string;
-  /** Free-form message shown in the chat (e.g. "Cleared", "Switched model") */
+  /** Free-form message shown as a transient toast (e.g. "Cleared", errors) */
   message?: string;
+  /** Engine command output to render as an assistant chat message (not a toast) */
+  output?: string;
   error?: string;
   /** True when the command handled everything itself (no LLM round needed) */
   handled?: boolean;
   action?: {
-    type: 'open_schedule' | 'create_schedule';
+    type: 'open_schedule' | 'create_schedule' | 'ui_effect';
     draft?: SlashScheduleDraft;
     createInput?: SlashScheduleCreateInput;
+    /** For type 'ui_effect': which Cowork-side effect the renderer should apply */
+    uiEffect?: SlashUiEffectKind;
+    /** Parsed args, forwarded so the renderer can parameterize the effect */
+    args?: string[];
   };
 }
 
@@ -311,6 +330,132 @@ async function loadSlashModule(): Promise<CoreSlashModule | null> {
   return mod;
 }
 
+type HeadlessSlashResult = {
+  handled: boolean;
+  output?: string;
+  prompt?: string;
+  passToAI?: boolean;
+  denied?: boolean;
+  reason?: string;
+};
+
+type CoreHeadlessModule = {
+  executeHeadlessSlashToken: (
+    token: string,
+    args: string[],
+    allow: ReadonlySet<string>,
+    ctx?: { conversationHistory?: unknown; client?: unknown }
+  ) => Promise<HeadlessSlashResult>;
+};
+
+let cachedHeadlessModule: CoreHeadlessModule | null = null;
+
+async function loadHeadlessModule(): Promise<CoreHeadlessModule | null> {
+  if (cachedHeadlessModule) return cachedHeadlessModule;
+  const mod = await loadCoreModule<CoreHeadlessModule>('commands/headless-slash.js');
+  if (mod) {
+    cachedHeadlessModule = mod;
+    log('[SlashCommandBridge] Core headless-slash module loaded');
+  } else {
+    logWarn('[SlashCommandBridge] Core headless-slash module unavailable');
+  }
+  return mod;
+}
+
+/**
+ * Slice S0 allowlist: tokens that are safe to run headlessly from Cowork **today**.
+ *
+ * Scope is deliberately limited to info / read-only commands. Their worst-case
+ * failure mode is benign — if the bridge's core module instance and the engine
+ * adapter's instance ever resolve to different `dist/` realms (core-loader tries
+ * several candidate roots), a read just returns empty/default data; it never
+ * lies about having changed state.
+ *
+ * Deliberately excluded until their realm/context is positively confirmed:
+ * - **mutating** (would silently no-op + falsely report success if realms differ):
+ *   __YOLO_MODE__, __AUTONOMY__, __SELF_HEALING__, __DRY_RUN__, __PROMPT_CACHE__,
+ *   __CACHE__. These must route through the engine session, not a bridge-side
+ *   singleton — they graduate once realm-sharing is verified (S1+).
+ * - **wrong-context**: __WORKSPACE__ reads `process.cwd()`, which in the Cowork
+ *   main process is the Electron app dir, not the session's project.
+ * - **history/client-dependent**: __COMPACT__, __SAVE_CONVERSATION__, __EXPORT__,
+ *   __CONTEXT__ (stats), __AI_TEST__ — would run against an empty history today.
+ * - **orchestration (S1)**: __SWARM__, __TEAM__, __AGENTS__, __PARALLEL__,
+ *   __BATCH__, __FLEET__ — spawn real work whose value is the live panel.
+ */
+const COWORK_HEADLESS_ALLOW: ReadonlySet<string> = new Set([
+  '__HELP__',
+  '__STATS__',
+  '__COST__',
+  '__TOOLS__',
+  '__WHOAMI__',
+  '__STATUS__',
+  '__FEATURES__',
+]);
+
+type UiEffectResolution =
+  | { uiEffect: SlashUiEffectKind; args: string[] }
+  | 'deny'
+  | undefined;
+
+/**
+ * Map a token (+ its args) to a renderer-side Cowork effect, an honest denial,
+ * or undefined (fall through to the headless engine path).
+ *
+ * S1: multi-agent commands route to Cowork-NATIVE orchestration
+ * (`orchestrator.run` / launcher / fleet panel), NOT the headless CLI handlers —
+ * only the native path emits the `subagent.*` events the SubAgentPanel observes
+ * live (the OrchestratorBridge owns the event forwarding, so visibility does not
+ * depend on which realm the MultiAgentSystem instance lives in). Subcommands we
+ * don't drive yet are denied honestly rather than silently opening a launcher.
+ *
+ * `/clear` is intentionally absent: "clear chat" in a persistent, multi-session
+ * GUI is ambiguous (clear the view vs. start a new session) and deserves its own
+ * decision — it falls through to the honest "not yet pilotable" path.
+ */
+function resolveUiEffectAction(token: string, args: string[]): UiEffectResolution {
+  switch (token) {
+    case '__CHANGE_MODEL__':
+      return { uiEffect: 'open_model_picker', args };
+    case '__PLAN_MODE__':
+      // `/plan` → enter read-only plan permission mode (S4).
+      return { uiEffect: 'set_plan_mode', args: [] };
+    case '__SWARM__':
+    case '__PARALLEL__':
+      // `/swarm <task>` launches immediately (parallel strategy); bare `/swarm`
+      // opens the launcher (mirrors the CLI's accidental-trigger guard).
+      return args.length > 0
+        ? { uiEffect: 'run_orchestrator', args }
+        : { uiEffect: 'open_orchestrator_launcher', args: [] };
+    case '__AGENTS__':
+      // Bare `/agents` = the native multi-agent cockpit. Subcommands
+      // (run/status/stop/metrics) are not driven from Cowork yet.
+      return args.length === 0 ? { uiEffect: 'open_orchestrator_launcher', args: [] } : 'deny';
+    case '__FLEET__':
+      // Bare `/fleet` opens the Fleet Command Center; subcommands
+      // (listen/route/chat/...) are not driven from Cowork yet.
+      return args.length === 0 ? { uiEffect: 'open_fleet', args: [] } : 'deny';
+    case '__TEAM__':
+      // S8: bare `/team` opens the Cowork Team panel; subcommands
+      // (start/add/status/...) are not driven from Cowork yet.
+      return args.length === 0 ? { uiEffect: 'open_team', args: [] } : 'deny';
+    case '__LESSONS__':
+      // S8: `/lessons` opens the lesson candidate review panel.
+      return { uiEffect: 'open_lessons', args: [] };
+    default:
+      return undefined;
+  }
+}
+
+/** Resolve a natural-language prompt command's text (substitute `{{args}}` or append). */
+function resolvePromptCommandText(prompt: string, args: string[]): string {
+  const joined = args.join(' ').trim();
+  if (prompt.includes('{{args}}')) {
+    return prompt.replace(/\{\{args\}\}/g, joined);
+  }
+  return joined ? `${prompt}\n\n${joined}` : prompt;
+}
+
 export class SlashCommandBridge {
   /** List built-in + user-defined slash commands (flat). */
   async listCommands(): Promise<SlashCommandDef[]> {
@@ -407,35 +552,66 @@ export class SlashCommandBridge {
       };
     }
 
-    const joined = args.join(' ').trim();
-
-    // Handle special tokens the renderer can resolve directly.
+    // Special tokens (`__FOO__`): split between renderer-side presentation
+    // effects and real headless engine behaviour. We no longer surface the raw
+    // token as a toast — that was discovery-without-piloting.
     if (cmd.prompt.startsWith('__') && cmd.prompt.endsWith('__')) {
+      const token = cmd.prompt;
+
+      // 1. Renderer-side Cowork effect / honest denial / fall-through to engine.
+      const resolution = resolveUiEffectAction(token, args);
+      if (resolution === 'deny') {
+        return {
+          success: true,
+          handled: true,
+          message: `/${name} n'est pas encore pilotable depuis Cowork (à venir dans une prochaine étape).`,
+        };
+      }
+      if (resolution) {
+        return {
+          success: true,
+          handled: true,
+          action: { type: 'ui_effect', uiEffect: resolution.uiEffect, args: resolution.args },
+        };
+      }
+
+      // 2. Engine behaviour → run headlessly via the shared handler (default-deny).
+      const headlessMod = await loadHeadlessModule();
+      if (!headlessMod) {
+        return { success: true, handled: true, message: `/${name} indisponible (moteur non chargé).` };
+      }
+      const res = await headlessMod.executeHeadlessSlashToken(token, args, COWORK_HEADLESS_ALLOW);
+      if (res.denied) {
+        return {
+          success: true,
+          handled: true,
+          message: `/${name} n'est pas encore pilotable depuis Cowork (à venir dans une prochaine étape).`,
+        };
+      }
+      if (res.passToAI && res.prompt) {
+        return { success: true, prompt: res.prompt, handled: false };
+      }
+      if (res.output) {
+        return { success: true, handled: true, output: res.output };
+      }
       return {
         success: true,
         handled: true,
-        message: cmd.prompt, // the renderer switches on this
+        message: res.reason ? `/${name}: ${res.reason}` : `/${name} exécuté.`,
       };
     }
 
     // Natural-language prompt commands: substitute {{args}} or append.
-    let resolved = cmd.prompt;
-    if (resolved.includes('{{args}}')) {
-      resolved = resolved.replace(/\{\{args\}\}/g, joined);
-    } else if (joined) {
-      resolved = `${resolved}\n\n${joined}`;
-    }
-
     return {
       success: true,
-      prompt: resolved,
+      prompt: resolvePromptCommandText(cmd.prompt, args),
       handled: false,
     };
   }
 
   async executeRemoteInput(
     rawInput: string,
-    sessionId?: string
+    _sessionId?: string
   ): Promise<RemoteSlashCommandResult> {
     const trimmed = rawInput.trim();
     if (!trimmed.startsWith('/')) {
@@ -448,21 +624,20 @@ export class SlashCommandBridge {
       return { allowed: false, message: 'Empty slash command is not available remotely.' };
     }
 
-    const result = await this.execute(name, args, sessionId);
-    if (!result.success) {
-      return {
-        allowed: false,
-        message: result.error ?? `/${name} is not available in remote sessions.`,
-      };
+    // Classify from the catalog WITHOUT executing. A remote (mobile) input must
+    // never trigger engine command side effects as a byproduct of deciding to
+    // block it — only forwardable natural-language prompt commands are allowed.
+    const all = await this.listCommands();
+    const cmd = all.find((c) => c.name === name);
+    if (!cmd) {
+      return { allowed: false, message: `/${name} is not available in remote sessions.` };
     }
 
-    if (result.handled || !result.prompt) {
-      return {
-        allowed: false,
-        message: `/${name} is not available in remote sessions.`,
-      };
+    const isToken = cmd.prompt.startsWith('__') && cmd.prompt.endsWith('__');
+    if (isToken || cmd.name === 'schedule') {
+      return { allowed: false, message: `/${name} is not available in remote sessions.` };
     }
 
-    return { allowed: true, prompt: result.prompt };
+    return { allowed: true, prompt: resolvePromptCommandText(cmd.prompt, args) };
   }
 }

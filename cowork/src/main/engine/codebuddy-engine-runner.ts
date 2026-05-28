@@ -10,6 +10,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import { log, logError } from '../utils/logger';
+import { isBrowserOperatorTool, buildBrowserActionPayload } from './browser-action';
 import { getReasoningBridge } from '../reasoning/reasoning-bridge';
 import { createReasoningCapture } from '../reasoning/reasoning-capture';
 import type {
@@ -265,6 +266,21 @@ export class CodeBuddyEngineRunner {
                     event.tool.input,
                     event.tool.data
                   );
+                }
+
+                // S2: emit browser.action events for the Browser Operator overlay.
+                if (isBrowserOperatorTool(event.tool.name)) {
+                  sendToRenderer({
+                    type: 'browser.action',
+                    payload: buildBrowserActionPayload({
+                      sessionId: session.id,
+                      toolUseId: event.tool.id,
+                      toolName: event.tool.name,
+                      rawInput: event.tool.input,
+                      data: event.tool.data,
+                      output: event.tool.output,
+                    }),
+                  });
                 }
               }
               break;

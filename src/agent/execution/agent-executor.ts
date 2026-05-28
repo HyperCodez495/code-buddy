@@ -50,6 +50,8 @@ import type { MiddlewarePipeline, MiddlewareContext } from "../middleware/index.
 import type { MessageQueue } from "../message-queue.js";
 import { semanticTruncate } from "../../utils/head-tail-truncation.js";
 import { getRestorableCompressor } from "../../context/restorable-compression.js";
+import { recordCompactionFork } from "../../context/compaction-fork.js";
+import { getActiveRunStore } from "../../observability/run-store.js";
 import { getResponseConstraintStack, resolveToolChoice } from "../response-constraint.js";
 import type { ICMBridge } from "../../memory/icm-bridge.js";
 import { shouldCompactBeforeToolExec, estimateToolResultTokens } from "../../context/proactive-compaction.js";
@@ -651,6 +653,13 @@ export class AgentExecutor {
           if (mwResult.action === 'compact') {
             // Trigger context compaction
             this.deps.contextManager.prepareMessages(messages);
+            // S7: record a fork run at the compaction boundary for lineage.
+            // No-op unless this session is linked to an observability run.
+            const forkId = recordCompactionFork(
+              getActiveRunStore(),
+              this.deps.toolHandler.getRunId(),
+            );
+            if (forkId) this.deps.toolHandler.setRunId(forkId);
           }
           if (mwResult.action === 'warn' && mwResult.message) {
             yield { type: "content", content: `\n${mwResult.message}\n` };

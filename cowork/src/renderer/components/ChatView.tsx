@@ -11,6 +11,7 @@ import {
   useAppConfig,
 } from '../store/selectors';
 import { useAppStore } from '../store';
+import { applySlashCommandResult } from '../commands/slash-command-actions';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
 import { ModelSwitcher } from './ModelSwitcher';
@@ -805,41 +806,20 @@ export function ChatView() {
           return;
         }
 
-        if (result.handled) {
-          if (result.message) {
-            setGlobalNotice({
-              id: `slash-info-${Date.now()}`,
-              type: 'info',
-              message: commandName ? `/${commandName}: ${result.message}` : result.message,
-            });
-          }
+        // All remaining cases (engine output, prompt-forward, ui_effect,
+        // toast/denied, error) are applied by the shared dispatcher. Schedule
+        // actions above are kept inline because they use ChatView-local state.
+        const handledLocally = applySlashCommandResult(result, {
+          commandName,
+          activeSessionId: activeSessionId ?? null,
+          continueWithPrompt: (p) =>
+            continueSession(activeSessionId, [{ type: 'text', text: p }]),
+        });
+        if (handledLocally) {
           setPrompt('');
           if (textareaRef.current) {
             textareaRef.current.value = '';
           }
-          return;
-        }
-
-        if (result.success && result.prompt) {
-          await continueSession(activeSessionId, [
-            {
-              type: 'text',
-              text: result.prompt,
-            },
-          ]);
-          setPrompt('');
-          if (textareaRef.current) {
-            textareaRef.current.value = '';
-          }
-          return;
-        }
-
-        if (result.error) {
-          setGlobalNotice({
-            id: `slash-error-${Date.now()}`,
-            type: 'error',
-            message: result.error,
-          });
           return;
         }
       }
@@ -1429,30 +1409,25 @@ export function ChatView() {
                 setSettingsTab('schedule');
                 setShowSettings(true);
                 setPrompt('');
-              } else if (result.handled && result.message) {
-                // Built-in tokens (__CLEAR_CHAT__, __HELP__, etc.) require
-                // additional wiring in subsequent Phase 2 steps. For now,
-                // surface them as informational notices.
-                useAppStore.getState().setGlobalNotice?.({
-                  id: `slash-info-${Date.now()}`,
-                  type: 'info',
-                  message: `/${item.name}: ${item.description}`,
+              } else {
+                // Engine output, ui_effect, toast/denied and prompt-forward are
+                // applied by the shared dispatcher. In the palette, a
+                // prompt-resolving command fills the textarea for editing rather
+                // than sending immediately, so we keep that UX in the callback.
+                let promptFilled = false;
+                applySlashCommandResult(result, {
+                  commandName: item.name,
+                  activeSessionId: activeSessionId ?? null,
+                  continueWithPrompt: (p) => {
+                    promptFilled = true;
+                    setPrompt(p);
+                    setTimeout(() => {
+                      textareaRef.current?.focus();
+                      textareaRef.current?.setSelectionRange(p.length, p.length);
+                    }, 0);
+                  },
                 });
-                setPrompt('');
-              } else if (result.success && result.prompt) {
-                // Replace the slash text with the resolved prompt
-                setPrompt(result.prompt);
-                setTimeout(() => {
-                  textareaRef.current?.focus();
-                  const end = result.prompt?.length ?? 0;
-                  textareaRef.current?.setSelectionRange(end, end);
-                }, 0);
-              } else if (result.error) {
-                useAppStore.getState().setGlobalNotice?.({
-                  id: `slash-error-${Date.now()}`,
-                  type: 'error',
-                  message: result.error,
-                });
+                if (!promptFilled) setPrompt('');
               }
             } catch (err) {
               console.error('[ChatView] Slash command execute failed:', err);

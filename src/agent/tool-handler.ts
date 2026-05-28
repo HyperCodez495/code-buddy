@@ -172,6 +172,11 @@ export class ToolHandler {
     this.currentRunId = runId;
   }
 
+  /** The active observability run id, if this session is linked to one. */
+  getRunId(): string | undefined {
+    return this.currentRunId;
+  }
+
   /**
    * Set the working directory for tool execution contexts. Cowork's embedded
    * engine calls this with the active project's `workspacePath` so review-gated

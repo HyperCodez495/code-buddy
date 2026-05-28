@@ -11,8 +11,10 @@
  */
 
 import { useCallback, useEffect, useState } from 'react';
-import { X, UserCog, Check, Trash2, AlertCircle, FolderOpen, RefreshCw } from 'lucide-react';
+import { X, UserCog, Check, Trash2, AlertCircle, FolderOpen, RefreshCw, Sparkles } from 'lucide-react';
 import { useAppStore } from '../store';
+import { useActiveSessionMessages } from '../store/selectors';
+import { toInferenceHistory } from './user-model-inference';
 import { EmptyState } from './LessonCandidatePanel';
 import {
   NO_ACTIVE_PROJECT,
@@ -47,6 +49,8 @@ export function UserModelPanel() {
   const [noProject, setNoProject] = useState(false);
   const [reviewer, setReviewer] = useState('');
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [inferring, setInferring] = useState(false);
+  const activeMessages = useActiveSessionMessages();
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -89,6 +93,26 @@ export function UserModelPanel() {
     await refresh();
   };
 
+  const runInference = async () => {
+    const history = toInferenceHistory(activeMessages);
+    if (history.length === 0) {
+      setError('No conversation history in this session to analyze.');
+      return;
+    }
+    setInferring(true);
+    setError(null);
+    // Dialectic inference proposes pending observations only — accept is still
+    // the only write path, and the core privacy screen drops sensitive content.
+    const res = await window.electronAPI.userModel.runInference(history);
+    setInferring(false);
+    if (!res.ok) {
+      setError(res.error ?? 'Inference failed');
+      return;
+    }
+    setTab('pending');
+    await refresh();
+  };
+
   const discard = async (o: UserObservation) => {
     setBusyId(o.id);
     setError(null);
@@ -115,6 +139,16 @@ export function UserModelPanel() {
             <h2 className="text-sm font-semibold text-text-primary">User model</h2>
           </div>
           <div className="flex items-center gap-1">
+            <button
+              onClick={() => void runInference()}
+              disabled={inferring}
+              data-testid="user-model-infer"
+              className="flex items-center gap-1 rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface transition-colors disabled:opacity-50"
+              title="Infer working-preference observations from the current session (proposes pending only)"
+            >
+              <Sparkles className={`w-3.5 h-3.5 ${inferring ? 'animate-pulse text-accent' : 'text-accent'}`} />
+              {inferring ? 'Inferring…' : 'Infer from session'}
+            </button>
             <button
               onClick={() => void refresh()}
               className="rounded p-1 hover:bg-surface transition-colors"

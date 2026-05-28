@@ -34,6 +34,7 @@ import { GlobalSearchDialog } from './components/GlobalSearchDialog';
 import { FilePreviewPane } from './components/FilePreviewPane';
 import { ArtifactPanel } from './components/ArtifactPanel';
 import { ComputerUseOverlay } from './components/ComputerUseOverlay';
+import { BrowserOperatorOverlay } from './components/BrowserOperatorOverlay';
 import { ApprovalDialog } from './components/ApprovalDialog';
 import { ActivityFeed } from './components/ActivityFeed';
 import { SessionInsightsPanel } from './components/SessionInsightsPanel';
@@ -57,6 +58,7 @@ import { TeamPanel } from './components/TeamPanel';
 import { LessonCandidatePanel } from './components/LessonCandidatePanel';
 import { UserModelPanel } from './components/UserModelPanel';
 import { SpecPanel } from './components/SpecPanel';
+import { MobileSupervisionPanel } from './components/MobileSupervisionPanel';
 import { CompanionPanel } from './components/CompanionPanel';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { SubAgentDashboard } from './components/SubAgentDashboard';
@@ -576,6 +578,9 @@ function App() {
       {/* Computer Use Overlay — Phase 2 step 13 */}
       <ComputerUseOverlay />
 
+      {/* Browser Operator Overlay — S2 */}
+      <BrowserOperatorOverlay />
+
       {/* Workflow approval modal — driven by store.pendingApprovals */}
       <ApprovalDialog />
 
@@ -638,6 +643,7 @@ function App() {
       <LessonCandidatePanel />
       <UserModelPanel />
       <SpecPanel />
+      <MobileSupervisionPanel />
       <CompanionPanel />
     </div>
   );

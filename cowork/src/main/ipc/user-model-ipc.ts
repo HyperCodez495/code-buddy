@@ -63,6 +63,14 @@ interface UserModelLike {
 
 type UserModelMod = {
   getUserModel: (workDir?: string) => UserModelLike;
+  /**
+   * S3: dialectic inference over a transcript. Proposes pending observations
+   * (privacy-screened) and returns them; never writes the active model.
+   */
+  runUserDialecticInference?: (
+    chatHistory: Array<{ type: string; content: string }>,
+    workDir?: string,
+  ) => Promise<UserObservation[]>;
 };
 
 const NO_PROJECT = 'NO_ACTIVE_PROJECT';
@@ -153,6 +161,32 @@ export function registerUserModelIpcHandlers(projectManagerSource: ProjectManage
         return { ok: true as const, observation: model.discard(id, input ?? {}) };
       } catch (err) {
         return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  // S3: run dialectic inference over a session transcript → pending observations.
+  // Proposes only (review-gated); the existing `accept` is still the only write
+  // path. Uses the core provider auto-detection (env) when no client is wired.
+  ipcMain.handle(
+    'userModel.runInference',
+    async (_e, chatHistory: Array<{ type: string; content: string }>, projectId?: string) => {
+      const empty: UserObservation[] = [];
+      const workDir = resolveWorkDir(projectManagerSource, projectId);
+      if (!workDir) return { ok: false as const, error: NO_PROJECT, items: empty };
+      if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return { ok: false as const, error: 'No conversation history to analyze.', items: empty };
+      }
+      const mod = await loadCoreModule<UserModelMod>('memory/user-model.js');
+      if (!mod?.runUserDialecticInference) {
+        return { ok: false as const, error: 'core user-model inference unavailable', items: empty };
+      }
+      try {
+        const proposed = await mod.runUserDialecticInference(chatHistory, workDir);
+        return { ok: true as const, items: proposed };
+      } catch (err) {
+        logError('[userModel.runInference] failed:', err);
+        return { ok: false as const, error: errorMessage(err), items: empty };
       }
     },
   );

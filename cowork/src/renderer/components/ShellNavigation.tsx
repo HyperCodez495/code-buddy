@@ -10,6 +10,7 @@ import {
   Focus,
   GraduationCap,
   ListChecks,
+  Smartphone,
   MessageSquare,
   Network,
   Package,
@@ -72,6 +73,8 @@ export function ShellNavigation() {
   const setShowLessonCandidatePanel = useAppStore((s) => s.setShowLessonCandidatePanel);
   const setShowUserModelPanel = useAppStore((s) => s.setShowUserModelPanel);
   const setShowSpecPanel = useAppStore((s) => s.setShowSpecPanel);
+  const showMobileSupervisionPanel = useAppStore((s) => s.showMobileSupervisionPanel);
+  const setShowMobileSupervisionPanel = useAppStore((s) => s.setShowMobileSupervisionPanel);
   const setShowCompanionPanel = useAppStore((s) => s.setShowCompanionPanel);
   const setShowBookmarksPanel = useAppStore((s) => s.setShowBookmarksPanel);
   const setShowActivityFeed = useAppStore((s) => s.setShowActivityFeed);
@@ -254,6 +257,14 @@ export function ShellNavigation() {
           active: showSpecPanel,
           onClick: () => setShowSpecPanel(true),
           testId: 'spec-panel-button',
+        },
+        {
+          id: 'mobile-supervision',
+          label: t('mobileSupervision.title', 'Mobile supervision'),
+          icon: Smartphone,
+          active: showMobileSupervisionPanel,
+          onClick: () => setShowMobileSupervisionPanel(true),
+          testId: 'mobile-supervision-button',
         },
         {
           id: 'companion',

@@ -2466,10 +2466,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       success: boolean;
       prompt?: string;
       message?: string;
+      output?: string;
       error?: string;
       handled?: boolean;
       action?: {
-        type: 'open_schedule' | 'create_schedule';
+        type: 'open_schedule' | 'create_schedule' | 'ui_effect';
+        uiEffect?: 'open_model_picker' | 'run_orchestrator' | 'open_orchestrator_launcher' | 'open_fleet' | 'set_plan_mode' | 'open_lessons' | 'open_team';
+        args?: string[];
         draft?: {
           prompt: string;
           cwd?: string;
@@ -2616,6 +2619,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       input: { reviewedBy?: string; reason?: string },
       projectId?: string
     ) => ipcRenderer.invoke('userModel.discard', id, input, projectId),
+    runInference: (
+      chatHistory: Array<{ type: string; content: string }>,
+      projectId?: string
+    ) => ipcRenderer.invoke('userModel.runInference', chatHistory, projectId),
+  },
+
+  // S6: supervision-only mobile gateway management (loopback to embedded server)
+  mobileSupervision: {
+    status: () => ipcRenderer.invoke('mobileSupervision.status'),
+    approve: (id: string, reviewer?: string) =>
+      ipcRenderer.invoke('mobileSupervision.approve', id, reviewer),
+    cancel: (id: string) => ipcRenderer.invoke('mobileSupervision.cancel', id),
+    rotateCode: () => ipcRenderer.invoke('mobileSupervision.rotateCode'),
   },
 
   spec: {
@@ -4607,10 +4623,13 @@ declare global {
           success: boolean;
           prompt?: string;
           message?: string;
+          output?: string;
           error?: string;
           handled?: boolean;
           action?: {
-            type: 'open_schedule' | 'create_schedule';
+            type: 'open_schedule' | 'create_schedule' | 'ui_effect';
+            uiEffect?: 'open_model_picker' | 'run_orchestrator' | 'open_orchestrator_launcher' | 'open_fleet' | 'set_plan_mode' | 'open_lessons' | 'open_team';
+            args?: string[];
             draft?: {
               prompt: string;
               cwd?: string;
@@ -4697,6 +4716,26 @@ declare global {
       };
       lessonCandidate: LessonCandidateApi;
       userModel: UserModelApi;
+      mobileSupervision: {
+        status: () => Promise<{
+          running: boolean;
+          port: number | null;
+          pairingCode?: string;
+          devices?: string[];
+          drafts?: Array<{
+            id: string;
+            prompt: string;
+            status: 'needs_local_operator' | 'approved' | 'cancelled';
+            source: 'mobile_device' | 'draft_only';
+            createdAt: number;
+            approvedBy?: string;
+          }>;
+          error?: string;
+        }>;
+        approve: (id: string, reviewer?: string) => Promise<{ ok: boolean; error?: string }>;
+        cancel: (id: string) => Promise<{ ok: boolean; error?: string }>;
+        rotateCode: () => Promise<{ ok: boolean; pairingCode?: string; error?: string }>;
+      };
       spec: SpecApi;
       skillsHub: {
         list: (projectId?: string) => Promise<any[]>;

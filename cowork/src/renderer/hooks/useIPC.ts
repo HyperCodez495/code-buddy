@@ -467,6 +467,11 @@ export function useIPC() {
             store.appendGuiAction(event.payload);
             break;
 
+          case 'browser.action':
+            // S2: Browser Operator overlay
+            store.appendBrowserAction(event.payload);
+            break;
+
           case 'workflow.event':
             store.applyWorkflowEvent(event.payload);
             break;

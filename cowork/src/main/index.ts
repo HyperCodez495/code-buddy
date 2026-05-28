@@ -45,6 +45,7 @@ import { registerCommandIpcHandlers } from './ipc/command-ipc';
 import { registerSkillMdIpcHandlers } from './ipc/skill-md-ipc';
 import { registerKnowledgeIpcHandlers } from './ipc/knowledge-ipc';
 import { registerLessonCandidateIpcHandlers } from './ipc/lessons-candidate-ipc';
+import { registerMobileSupervisionIpcHandlers } from './ipc/mobile-supervision-ipc';
 import { registerUserModelIpcHandlers } from './ipc/user-model-ipc';
 import { registerCompanionIpcHandlers } from './ipc/companion-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
@@ -2334,6 +2335,7 @@ registerKnowledgeIpcHandlers(knowledgeService, projectManager);
 // projectManager getter (set during async boot, like fleetBridge above).
 registerLessonCandidateIpcHandlers(() => projectManager);
 registerUserModelIpcHandlers(() => projectManager);
+registerMobileSupervisionIpcHandlers();
 registerCompanionIpcHandlers(() => projectManager);
 registerSpecIpcHandlers(() => projectManager, configStore);
 registerSpecNextIpcHandlers(() => projectManager);

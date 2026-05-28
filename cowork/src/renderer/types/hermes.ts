@@ -184,6 +184,15 @@ export interface UserModelApi {
     input: { reviewedBy?: string; reason?: string },
     projectId?: string,
   ) => Promise<{ ok: boolean; error?: string; observation?: UserObservation }>;
+  /**
+   * S3: run dialectic inference over a session transcript. Proposes pending
+   * observations (review-gated, privacy-screened) — never writes the active
+   * model. `chatHistory` is the minimal `{ type, content }` transcript.
+   */
+  runInference: (
+    chatHistory: Array<{ type: string; content: string }>,
+    projectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; items: UserObservation[] }>;
 }
 
 export interface SpecPlanAdvanceResult {
