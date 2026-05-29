@@ -124,3 +124,15 @@ De bout en bout, l'expérience *from source* est solide : `npm install` (1 min, 
 - Mais deux choses cassent l'expérience réelle : (1) un inconnu qui suit la page d'accueil reçoit **0.4.0**, un produit d'il y a 3 mois ; (2) deux features (indexation sémantique, `/plan`) sont **silencieusement mortes dans le build** à cause d'un import — invisibles aux tests parce qu'ils mockent fs.
 
 **La leçon stratégique se confirme noir sur blanc : le levier n'est pas d'ajouter du code, c'est de durcir au contact du réel.** Un seul vrai run a trouvé plus de problèmes réels que la suite de 29K tests sur ces chemins. La suite logique = (a) publier npm, (b) corriger F6 (trivial), (c) une vraie passe de dogfooding.
+
+## Dogfooding round 2 — vraie tâche de code (2026-05-29)
+
+Au-delà du smoke-test d'install, un run de **vraie tâche de code** (gpt-5.5 via login ChatGPT, **$0**) sur le build frais (tous correctifs F6/F7/F8 inclus) :
+
+- Prompt : « écris `slugify.test.js` avec `node:test`/`node:assert` couvrant titre normal, espaces, caractères spéciaux, chaîne vide ».
+- Boucle : `view_file` (lit `slugify.js`) → `create_file` (écrit le test) → réponse + instructions. exit 0, **17 s**, `cost: $0.0000`, **0 WARN** gpt-4o.
+- **Le code généré est correct** (require bien destructuré, 4 cas alignés sur le comportement réel de slugify) et **`node --test` → 4/4 PASS**.
+- La seule « erreur » observée = étape agentique **récupérée** (lecture avant création) ; le run de contrôle montre **0 erreur/warn** au démarrage.
+- Seul bruit persistant : **F5 GLib** (cosmétique, différé).
+
+**Conclusion :** le socle est utilisable pour de *vraies* tâches — clone → build → `buddy` écrit du code juste qui passe ses tests. Les frictions fixables sont corrigées (F2/F4/F6/F7/F8 ✓, F3 partiel, F1 mitigé). Le reste = action de Patrice (**F1 `npm publish`**), cosmétique différé (**F5**), ou dette Phase 2 (circular deps, god files) destinée au hand-off externe. **Point de convergence atteint : durcir davantage = rendements décroissants ; le prochain vrai pas est `npm publish`, pas plus de code.**
