@@ -2596,6 +2596,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       input: { reviewedBy?: string; reason?: string },
       projectId?: string
     ) => ipcRenderer.invoke('lessonCandidate.discard', id, input, projectId),
+    proposeFromSession: (
+      chatHistory: Array<{ type: string; content: string }>,
+      projectId?: string
+    ) => ipcRenderer.invoke('lessonCandidate.proposeFromSession', chatHistory, projectId),
   },
 
   userModel: {

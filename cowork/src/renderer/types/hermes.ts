@@ -164,6 +164,14 @@ export interface LessonCandidateApi {
     input: { reviewedBy?: string; reason?: string },
     projectId?: string,
   ) => Promise<{ ok: boolean; error?: string; candidate?: LessonCandidate }>;
+  /**
+   * D2: auto-propose reusable lessons from a session transcript. Proposes
+   * PENDING candidates only (review-gated); no-ops without a provider.
+   */
+  proposeFromSession: (
+    chatHistory: Array<{ type: string; content: string }>,
+    projectId?: string,
+  ) => Promise<{ ok: boolean; error?: string; items: LessonCandidate[] }>;
 }
 
 export interface UserModelApi {

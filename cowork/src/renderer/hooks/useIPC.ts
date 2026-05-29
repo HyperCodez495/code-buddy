@@ -16,8 +16,9 @@ import { shouldAutoInferUserModel, toInferenceHistory } from '../components/user
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
 
-// D1: sessions we've already auto-inferred a user model for (once per session).
+// D1/D2: sessions we've already auto-learned from (once per session, per feature).
 const autoInferredUserModelSessions = new Set<string>();
+const autoProposedLessonSessions = new Set<string>();
 
 /**
  * D1 — when a session goes terminal, auto-propose user-model observations from
@@ -43,6 +44,35 @@ function maybeAutoInferUserModel(sessionId: string, status: string): void {
     void window.electronAPI?.userModel?.runInference?.(toInferenceHistory(messages)).catch(() => {});
   } catch {
     /* auto-inference must never disrupt session lifecycle */
+  }
+}
+
+/**
+ * D2 — when a substantial session goes terminal, auto-propose reusable lessons
+ * from its transcript (guarded, once-per-session). Fire-and-forget; reuses the
+ * `lessonCandidate.proposeFromSession` IPC, which only proposes review-gated
+ * PENDING candidates and no-ops without a configured provider.
+ */
+function maybeAutoProposeLessons(sessionId: string, status: string): void {
+  try {
+    const ss = useAppStore.getState().sessionStates[sessionId];
+    const messages = ss?.messages ?? [];
+    const userMessageCount = messages.filter((m) => m.role === 'user').length;
+    if (
+      !shouldAutoInferUserModel({
+        status,
+        userMessageCount,
+        alreadyInferred: autoProposedLessonSessions.has(sessionId),
+      })
+    ) {
+      return;
+    }
+    autoProposedLessonSessions.add(sessionId);
+    void window.electronAPI?.lessonCandidate
+      ?.proposeFromSession?.(toInferenceHistory(messages))
+      .catch(() => {});
+  } catch {
+    /* auto-proposal must never disrupt session lifecycle */
   }
 }
 
@@ -164,8 +194,9 @@ export function useIPC() {
               store.clearActiveTurn(event.payload.sessionId);
               store.clearPendingTurns(event.payload.sessionId);
               store.clearQueuedMessages(event.payload.sessionId);
-              // D1: auto-propose user-model observations from a substantial session.
+              // D1/D2: auto-learn from a substantial session (user model + lessons).
               maybeAutoInferUserModel(event.payload.sessionId, event.payload.status);
+              maybeAutoProposeLessons(event.payload.sessionId, event.payload.status);
             }
             break;
 

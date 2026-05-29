@@ -144,4 +144,35 @@ export function registerLessonCandidateIpcHandlers(projectManagerSource: Project
       }
     },
   );
+
+  // D2: auto-propose reusable lessons from a finished session transcript. Only
+  // proposes PENDING candidates (review-gated, no silent write); no-ops without
+  // a configured LLM provider.
+  ipcMain.handle(
+    'lessonCandidate.proposeFromSession',
+    async (_e, chatHistory: Array<{ type: string; content: string }>, projectId?: string) => {
+      const empty: LessonCandidate[] = [];
+      const workDir = resolveWorkDir(projectManagerSource, projectId);
+      if (!workDir) return { ok: false as const, error: NO_PROJECT, items: empty };
+      if (!Array.isArray(chatHistory) || chatHistory.length === 0) {
+        return { ok: false as const, error: 'No conversation history to analyze.', items: empty };
+      }
+      const mod = await loadCoreModule<{
+        proposeLessonsFromSession?: (
+          history: Array<{ type: string; content: string }>,
+          workDir?: string,
+        ) => Promise<LessonCandidate[]>;
+      }>('agent/lesson-auto-proposer.js');
+      if (!mod?.proposeLessonsFromSession) {
+        return { ok: false as const, error: 'core lesson-auto-proposer unavailable', items: empty };
+      }
+      try {
+        const items = await mod.proposeLessonsFromSession(chatHistory, workDir);
+        return { ok: true as const, items };
+      } catch (err) {
+        logError('[lessonCandidate.proposeFromSession] failed:', err);
+        return { ok: false as const, error: errorMessage(err), items: empty };
+      }
+    },
+  );
 }
