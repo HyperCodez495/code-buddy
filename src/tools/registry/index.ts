@@ -157,6 +157,9 @@ export {
   createLeadScoutTools,
 } from './lead-scout-tools.js';
 
+// Tool Adapters - Browser Operator (live-web session proposal)
+export { BrowserOperatorTool, createBrowserOperatorTools } from './browser-operator-tools.js';
+
 // Tool Adapters - Persistent Memory (remember, recall, forget)
 export {
   RememberTool,
@@ -392,6 +395,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createRelationshipIntelligenceTools } = await import('./relationship-intelligence-tools.js');
   const { createInternetScoutTools } = await import('./internet-scout-tools.js');
   const { createLeadScoutTools } = await import('./lead-scout-tools.js');
+  const { createBrowserOperatorTools } = await import('./browser-operator-tools.js');
   const { createScriptTools } = await import('./script-tools.js');
   const { createPlanTools } = await import('./plan-tools.js');
   const { createAttentionTools } = await import('./attention-tools.js');
@@ -437,6 +441,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createRelationshipIntelligenceTools(),
     ...createInternetScoutTools(),
     ...createLeadScoutTools(),
+    ...createBrowserOperatorTools(),
     ...createMemoryTools(),
     ...createParallelTools(),
     ...createScriptTools(),
@@ -506,6 +511,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createRelationshipIntelligenceTools(),
     ...createInternetScoutTools(),
     ...createLeadScoutTools(),
+    ...createBrowserOperatorTools(),
     ...createMemoryTools(),
     ...createParallelTools(),
     ...createAttentionTools(),
@@ -563,6 +569,7 @@ import { createKnowledgeTools } from './knowledge-tools.js';
 import { createRelationshipIntelligenceTools } from './relationship-intelligence-tools.js';
 import { createInternetScoutTools } from './internet-scout-tools.js';
 import { createLeadScoutTools } from './lead-scout-tools.js';
+import { createBrowserOperatorTools } from './browser-operator-tools.js';
 import { createMemoryTools } from './memory-tools.js';
 import { createParallelTools } from './parallel-tools.js';
 import { createAttentionTools } from './attention-tools.js';

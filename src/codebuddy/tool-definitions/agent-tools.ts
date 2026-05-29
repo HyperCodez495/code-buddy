@@ -988,6 +988,66 @@ export const USER_MODEL_RECALL_TOOL: CodeBuddyTool = {
   },
 };
 
+// ============================================================================
+// Browser Operator (live-web session proposal)
+// ============================================================================
+
+export const BROWSER_OPERATOR_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_operator',
+    description:
+      'Propose a consent-gated Browser Operator session for a live web goal that web_search/web_fetch cannot satisfy (interaction, login-gated, multi-step). Returns a reviewable plan — action log, consent scopes, stop control, proof export — WITHOUT launching a browser. The operator reviews and runs it; local/interactive/login-gated sessions require explicit consent. Prefer web_search/web_fetch for read-only lookups; use this only when a live, interactive browser session is genuinely needed.',
+    parameters: {
+      type: 'object',
+      properties: {
+        goal: {
+          type: 'string',
+          description:
+            'What the browser session should accomplish, e.g. "log into the dashboard and export the monthly report".',
+        },
+        query: {
+          type: 'string',
+          description: 'Optional search query seed. Defaults to the goal.',
+        },
+        sourceUrl: {
+          type: 'string',
+          description: 'Optional known starting URL for the session.',
+        },
+        intent: {
+          type: 'string',
+          enum: ['research', 'prospecting', 'profile_enrichment', 'page_verification', 'lead_discovery'],
+          description: 'Plan intent. Defaults to research.',
+        },
+        mode: {
+          type: 'string',
+          enum: ['isolated', 'local'],
+          description:
+            'Browser surface. "isolated" (default) uses a fresh public surface; "local" reuses the operator\'s logged-in browser and therefore requires consent.',
+        },
+        requiresInteraction: {
+          type: 'boolean',
+          description:
+            'Set true when the goal needs clicking/typing (mutating interaction). Adds an interact stage and consent scope.',
+        },
+        allowLoginPages: {
+          type: 'boolean',
+          description: 'Set true when the session may pass authenticated/login pages. Requires consent.',
+        },
+        expectedText: {
+          type: 'string',
+          description: 'Optional text whose presence proves the goal was reached (verification evidence).',
+        },
+        maxPages: {
+          type: 'number',
+          description: 'Maximum pages the session may visit. Defaults to 5.',
+        },
+      },
+      required: ['goal'],
+    },
+  },
+};
+
 export const TASK_VERIFY_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -1040,5 +1100,6 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   LESSONS_GRAPH_TOOL,
   USER_MODEL_OBSERVE_TOOL,
   USER_MODEL_RECALL_TOOL,
+  BROWSER_OPERATOR_TOOL,
   TASK_VERIFY_TOOL,
 ];

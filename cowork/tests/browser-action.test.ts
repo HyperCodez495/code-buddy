@@ -5,6 +5,9 @@ describe('isBrowserOperatorTool', () => {
   it('detects browser-automation tool names', () => {
     expect(isBrowserOperatorTool('browser')).toBe(true);
     expect(isBrowserOperatorTool('browser_navigate')).toBe(true);
+    // D3: the browser_operator agent tool must be streamed to the overlay so a
+    // proposed session is visible to the operator (not a silent JSON blob).
+    expect(isBrowserOperatorTool('browser_operator')).toBe(true);
     expect(isBrowserOperatorTool('internet_scout')).toBe(true);
     expect(isBrowserOperatorTool('Browser')).toBe(true);
   });

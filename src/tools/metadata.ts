@@ -237,6 +237,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Automate web browser for navigation, interaction, extraction, observation, and testing'
   },
   {
+    name: 'browser_operator',
+    category: 'web',
+    keywords: ['browser operator', 'browser', 'web automation', 'live web', 'navigate', 'login', 'interaction', 'consent', 'stagehand', 'computer use', 'session', 'stop control', 'proof export', 'operator', 'propose'],
+    priority: 6,
+    description: 'Propose a consent-gated Browser Operator session (action log, consent scopes, stop control, proof export) for live web goals beyond web_search/web_fetch — without launching a browser'
+  },
+  {
     name: 'computer_control',
     category: 'system',
     keywords: ['computer', 'control', 'desktop', 'mouse', 'keyboard', 'window', 'dialog', 'modal', 'prompt', 'click', 'type', 'automation', 'form', 'field', 'dropdown', 'listbox', 'checkbox', 'radio', 'tab', 'menu', 'tree', 'treeitem', 'slider', 'range', 'link', 'button', 'assert', 'application', 'profile', 'excel', 'spreadsheet', 'notepad', 'calculator'],
