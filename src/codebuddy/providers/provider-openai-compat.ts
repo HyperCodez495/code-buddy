@@ -36,7 +36,7 @@ import type {
   SearchOptions,
   SearchParameters,
 } from '../client.js';
-import { hasToolCalls } from '../client.js';
+import { hasToolCalls } from '../message-guards.js';
 import { logger } from '../../utils/logger.js';
 import { retry, RetryStrategies, RetryPredicates } from '../../utils/retry.js';
 import { getCircuitBreaker, CircuitOpenError } from '../../providers/circuit-breaker.js';

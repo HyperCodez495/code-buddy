@@ -1,5 +1,5 @@
 import type { MemoryProvider, MemoryRememberOptions } from '../memory-provider.js';
-import { LocalMemoryProvider } from '../memory-provider.js';
+import { LocalMemoryProvider } from '../local-memory-provider.js';
 import type { Memory } from '../persistent-memory.js';
 import { logger } from '../../utils/logger.js';
 

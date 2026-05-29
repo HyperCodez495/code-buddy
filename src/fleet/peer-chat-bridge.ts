@@ -20,7 +20,7 @@
  */
 
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
-import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
+import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-method-registry.js';
 import { logger } from '../utils/logger.js';
 import {
   DEFAULT_DISPATCH_POLICY_PREVIEW_TOOLS,

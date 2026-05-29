@@ -28,50 +28,27 @@ import {
   normalizeDispatchProfile,
 } from '../../fleet/dispatch-profile.js';
 import { logger } from '../../utils/logger.js';
+import {
+  _clearPeerMethodsForTests,
+  getPeerMethodHandler,
+  listPeerMethods,
+  registerPeerMethod,
+  unregisterPeerMethod,
+  type PeerMethodContext,
+  type PeerMethodHandler,
+} from './peer-method-registry.js';
+
+export {
+  listPeerMethods,
+  registerPeerMethod,
+  unregisterPeerMethod,
+  type PeerMethodContext,
+  type PeerMethodHandler,
+} from './peer-method-registry.js';
 
 // ──────────────────────────────────────────────────────────────────
 // Types
 // ──────────────────────────────────────────────────────────────────
-
-/**
- * Server-side handler context passed to method implementations.
- * Includes connection id for audit logs and the originating client's
- * scopes for permission-aware methods.
- *
- * Phase (d).14 — `traceId` + `depth` carry the call-chain context so a
- * handler that fans out to OTHER peers can propagate them. Default for
- * a fresh request is a new traceId + depth=0; a handler that calls
- * another peer's request() should pass `{ traceId: ctx.traceId, depth: ctx.depth + 1 }`.
- */
-export interface PeerMethodContext {
-  /** WS connection id of the caller. */
-  connectionId: string;
-  /** Scopes held by the caller's authenticated session. */
-  scopes: string[];
-  /** Phase (d).14 — call-chain trace id for loop detection. */
-  traceId: string;
-  /** Phase (d).14 — current call depth in the chain (0 = fresh request from a human/external). */
-  depth: number;
-  /**
-   * Phase (d).19 — streaming output channel. When set, the handler can
-   * push partial result deltas as they're produced; the transport layer
-   * forwards each call as a `peer:chunk` frame. The final return value
-   * of the handler is still sent as a `peer:response` for correlation.
-   *
-   * Undefined means the caller didn't request streaming OR the
-   * transport doesn't support it — handlers should fall back to
-   * accumulating and returning the full result. Methods that REQUIRE
-   * streaming (like `peer.chat-stream`) should throw when this is
-   * undefined.
-   */
-  emitChunk?: (delta: string) => void;
-}
-
-/** Method handler signature. Async, returns the JSON-serializable payload. */
-export type PeerMethodHandler = (
-  params: Record<string, unknown>,
-  ctx: PeerMethodContext,
-) => Promise<unknown>;
 
 /** Request frame received over WS (peer:request type). */
 export interface PeerRequestFrame {
@@ -112,8 +89,6 @@ export interface PeerResponseFrame {
 // ──────────────────────────────────────────────────────────────────
 // Registry
 // ──────────────────────────────────────────────────────────────────
-
-const handlers = new Map<string, PeerMethodHandler>();
 
 /**
  * Phase (d).14 — peer role. Influences what the SERVER answers:
@@ -156,29 +131,9 @@ function newTraceId(): string {
   return `trace-${ts}-${rand}`;
 }
 
-/**
- * Register a peer method handler. Idempotent for the same (method,
- * handler) pair; replaces silently if a different handler is registered
- * for the same method (last-wins, mirror of express middleware).
- */
-export function registerPeerMethod(method: string, handler: PeerMethodHandler): void {
-  handlers.set(method, handler);
-  logger.debug(`[peer-rpc] registered method: ${method}`);
-}
-
-/** Unregister a method (test cleanup, plugin hot-reload). */
-export function unregisterPeerMethod(method: string): void {
-  handlers.delete(method);
-}
-
-/** List currently-registered method names. */
-export function listPeerMethods(): string[] {
-  return [...handlers.keys()].sort();
-}
-
 /** Test-only reset hook. Removes all methods, including built-ins. */
 export function _resetPeerRpcForTests(): void {
-  handlers.clear();
+  _clearPeerMethodsForTests();
   // Re-register the built-ins so tests don't have to know about them.
   registerBuiltInMethods();
 }
@@ -389,7 +344,7 @@ export async function dispatchPeerRequest(
     };
   }
 
-  const handler = handlers.get(frame.method);
+  const handler = getPeerMethodHandler(frame.method);
   if (!handler) {
     return {
       id: frame.id,

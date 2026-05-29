@@ -4,22 +4,19 @@ This file stores persistent memory for the Code Buddy agent.
 It is automatically managed but can be manually edited.
 
 ## Project Context
-<!-- No memories in this category -->
+<!-- Key information about this project -->
 
 ## User Preferences
-<!-- No memories in this category -->
+<!-- Coding style, conventions, preferences -->
 
 ## Decisions
-<!-- No memories in this category -->
+<!-- Important architectural or design decisions -->
 
 ## Patterns
-<!-- No memories in this category -->
-
-## Context
-- **test-key**: test-value
+<!-- Code patterns and conventions used -->
 
 ## Custom
-<!-- No memories in this category -->
+<!-- User-defined memories -->
 
 ---
-*Last updated: 2026-05-24T06:26:35.699Z*
+*Last updated: 2026-03-28T21:10:41.031Z*

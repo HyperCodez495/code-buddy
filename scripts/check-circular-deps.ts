@@ -21,11 +21,18 @@ const SRC = path.join(ROOT, 'src');
 const KNOWN_CYCLES: string[] = [
   // Agent profiles ↔ operating modes (mutual type dependency)
   JSON.stringify(['agent/operating-modes.ts', 'agent/profiles/index.ts', 'agent/profiles/profile-loader.ts']),
-  // Channel clients import from barrel which re-exports them
-  JSON.stringify(['channels/discord/client.ts', 'channels/discord/index.ts', 'channels/index.ts']),
-  JSON.stringify(['channels/index.ts', 'channels/slack/client.ts', 'channels/slack/index.ts']),
-  JSON.stringify(['channels/index.ts', 'channels/telegram/client.ts', 'channels/telegram/index.ts']),
-  JSON.stringify(['channels/index.ts', 'channels/webhook-server.ts']),
+  // Phase 2.1 hand-off cycles: still runtime-coupled, documented in PHASE2-CIRCULAR-DEPS.md.
+  JSON.stringify(['agent/autonomous/fleet-tick-handler.ts', 'agent/codebuddy-agent.ts']),
+  JSON.stringify([
+    'agent/codebuddy-agent.ts',
+    'agent/execution/agent-executor.ts',
+    'agent/execution/tool-hooks.ts',
+    'server/agent-adapter.ts',
+    'server/websocket/fleet-bridge.ts',
+    'server/websocket/handler.ts',
+  ]),
+  JSON.stringify(['agent/codebuddy-agent.ts', 'daemon/heartbeat.ts']),
+  JSON.stringify(['config/config-mutator.ts', 'config/toml-config.ts']),
 ];
 
 async function main() {
@@ -38,6 +45,18 @@ async function main() {
   });
 
   const cycles = result.circular();
+  const cycleKeys = new Set(cycles.map(cycle => JSON.stringify([...cycle].sort())));
+  const staleKnownCycles = KNOWN_CYCLES.filter(key => !cycleKeys.has(key));
+
+  if (staleKnownCycles.length > 0) {
+    console.error(`✗ Found ${staleKnownCycles.length} stale accepted circular dependencies:\n`);
+    for (const key of staleKnownCycles) {
+      const cycle = JSON.parse(key) as string[];
+      console.error(`  ${cycle.join(' → ')}`);
+    }
+    console.error('\nRemove stale entries from KNOWN_CYCLES before accepting new results.');
+    process.exit(1);
+  }
 
   if (cycles.length === 0) {
     console.log('✓ No circular dependencies found.');

@@ -5,7 +5,7 @@
 > This is the key lever: many cycles are type-only edges written as value `import`s and can be
 > broken by switching to `import type` (zero runtime impact).
 
-## Done this session (verified) — 10 → 7 cycles (cycles 1–3; cycles 1–2 in `3fe87ff4`)
+## Done this session (verified) — Phase 2 cycles 10 → 4
 
 1. **`agentic-coding-runner ↔ checkpoint-manager`** — checkpoint-manager imported 3 interfaces
    with a value `import`. Switched to `import type` → edge erased for madge. One line.
@@ -56,16 +56,32 @@ the helpers `countOccurrences`/`truncateOutput`/`execAsync` (export the ones the
 - ✅ Verified: typecheck 0, `tests/agent/autonomous` **148/148** (incl. the redaction gate +
   path-traversal security suite), `autonomous-code-command` **60/60**, `check:circular` **8 → 7**.
 
-## Remaining 7 cycles (genuine value cycles → dedicated effort / hand-off)
+## Audit continuation — cycles 4–6 removed
+
+4. **`client ↔ provider-openai-compat`** — extracted the runtime `hasToolCalls` guard into
+   `src/codebuddy/message-guards.ts`; `client.ts` still re-exports the public API, while the
+   provider imports the leaf helper. Verified with client + transcript repair tests.
+5. **`network-memory-adapters ↔ memory-provider`** — extracted `LocalMemoryProvider` into
+   `src/memory/local-memory-provider.ts`; the registry still re-exports it for compatibility,
+   while remote adapters depend on the leaf module. Verified with memory provider tests.
+6. **`peer-rpc ↔ peer-chat-bridge`** — extracted the peer method registry/types into
+   `src/server/websocket/peer-method-registry.ts`; `peer-rpc.ts` re-exports the old surface, while
+   `peer-chat-bridge.ts` registers through the leaf registry. Verified with peer RPC/chat/tool tests.
+
+The remaining 4 Phase 2 cycles are accepted in `scripts/check-circular-deps.ts` so the gate now
+fails only for **new** cycles. `npm run check:circular` reports 5 accepted cycles total because the
+pre-existing `agent/operating-modes ↔ agent/profiles` cycle is still intentionally accepted outside
+this Phase 2 hand-off. The allowlist is intentionally exact: stale accepted entries fail the check,
+so a fixed cycle cannot quietly become accepted again later. The 4 Phase 2 cycles below are still
+runtime-coupled and should be broken deliberately, not hidden.
+
+## Remaining 4 cycles (genuine value cycles → dedicated effort / hand-off)
 
 | Cycle | Type | Note |
 |---|---|---|
-| `codebuddy-agent → agent-executor → tool-hooks → fleet-bridge → handler → agent-adapter → codebuddy-agent` | value (7 modules) | the worst; advisor: break via a hook **registry** (fleet-bridge registers via callback instead of importing) + type extraction |
-| `client ↔ provider-openai-compat` | value | provider imports `hasToolCalls` (runtime) — extract that helper |
-| `peer-rpc ↔ peer-chat-bridge` | value | bridge imports `registerPeerMethod` — registry pattern |
-| `codebuddy-agent ↔ daemon/heartbeat` | value | boot-time dependency |
 | `fleet-tick-handler ↔ codebuddy-agent` | value | — |
-| `network-memory-adapters ↔ memory-provider` | check | possibly type-only |
+| `codebuddy-agent → agent-executor → tool-hooks → fleet-bridge → handler → agent-adapter → codebuddy-agent` | value (7 modules) | the worst; advisor: break via a hook **registry** (fleet-bridge registers via callback instead of importing) + type extraction |
+| `codebuddy-agent ↔ daemon/heartbeat` | value | boot-time dependency; likely needs injected review agent factory |
 | `toml-config ↔ config-mutator` | mostly type | config-mutator already `import type`s; audit suggests extracting `config-types.ts` |
 
 These align with the audit's "multi-sprint" framing and are good candidates for the external

@@ -14,6 +14,8 @@ import { OpenAICompatProvider } from "./providers/provider-openai-compat.js";
 import { ChatGptResponsesProvider } from "./providers/provider-chatgpt-responses.js";
 import { GeminiCliProvider } from "./providers/provider-gemini-cli.js";
 import { withStreamRetry } from "./stream-retry.js";
+export { hasToolCalls } from './message-guards.js';
+export type { CodeBuddyMessageWithToolCalls } from './message-guards.js';
 
 /** Sentinel apiKey for the ChatGPT OAuth path — auto-detect chain in
  *  `src/index.ts` passes this when `~/.codebuddy/codex-auth.json` exists. */
@@ -80,18 +82,6 @@ export interface CodeBuddyToolCall {
     name: string;
     arguments: string;
   };
-}
-
-/** Message with tool calls (assistant message that requested tool use) */
-export interface CodeBuddyMessageWithToolCalls {
-  role: 'assistant';
-  content: string | null;
-  tool_calls: CodeBuddyToolCall[];
-}
-
-/** Type guard for messages with tool calls */
-export function hasToolCalls(msg: CodeBuddyMessage): msg is CodeBuddyMessageWithToolCalls {
-  return msg.role === 'assistant' && 'tool_calls' in msg && Array.isArray((msg as CodeBuddyMessageWithToolCalls).tool_calls);
 }
 
 export interface SearchParameters {

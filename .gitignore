@@ -165,15 +165,15 @@ cowork/node_modules/
 cowork/dist/
 cowork/dist-electron/
 cowork/release/
-. g i t n e x u s /  
- 
+.gitnexus/
+
 # Code Buddy Runtime metadata and temporary logs
 .codebuddy/
 .omx/
 .antigravitycli/
 Doc/
 
-# OCR models and native desktop bridge binaries (large, machine-specific — not source)
+# OCR models and native desktop bridge binaries (large, machine-specific - not source)
 *.traineddata
 src/desktop-automation/*.exe
 
