@@ -164,6 +164,7 @@ const PANEL_OPENERS: Record<string, (show: boolean) => void> = {
   session_insights: (s) => useAppStore.getState().setShowSessionInsights(s),
   memory: (s) => useAppStore.getState().setShowMemoryEditor(s),
   identity: (s) => useAppStore.getState().setShowIdentityPanel(s),
+  device: (s) => useAppStore.getState().setShowDevicePanel(s),
   reasoning: (s) => useAppStore.getState().setShowReasoningViewer(s),
   test_runner: (s) => useAppStore.getState().setShowTestRunner(s),
 };

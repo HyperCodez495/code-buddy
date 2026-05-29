@@ -50,6 +50,16 @@ function bridgeWithCatalog(): SlashCommandBridge {
     { name: 'identity', description: 'Identity', prompt: '__IDENTITY__', isBuiltin: true },
     { name: 'test', description: 'Test', prompt: '__TEST__', isBuiltin: true },
     { name: 'undo', description: 'Undo', prompt: '__UNDO__', isBuiltin: true },
+    { name: 'yolo', description: 'YOLO mode', prompt: '__YOLO_MODE__', isBuiltin: true },
+    { name: 'autonomy', description: 'Autonomy', prompt: '__AUTONOMY__', isBuiltin: true },
+    { name: 'guardian', description: 'Guardian', prompt: '__GUARDIAN__', isBuiltin: true },
+    { name: 'security-review', description: 'Security review', prompt: '__SECURITY_REVIEW__', isBuiltin: true },
+    { name: 'vulns', description: 'Vulnerabilities', prompt: '__VULNS__', isBuiltin: true },
+    { name: 'secrets-scan', description: 'Secrets scan', prompt: '__SECRETS_SCAN__', isBuiltin: true },
+    { name: 'batch', description: 'Batch', prompt: '__BATCH__', isBuiltin: true },
+    { name: 'pairing', description: 'Pairing', prompt: '__PAIRING__', isBuiltin: true },
+    { name: 'plugins', description: 'Plugins', prompt: '__PLUGINS__', isBuiltin: true },
+    { name: 'plugin', description: 'Plugin', prompt: '__PLUGIN__', isBuiltin: true },
   ];
   return bridge;
 }
@@ -199,5 +209,47 @@ describe('SlashCommandBridge headless routing (S0)', () => {
 
   it('routes /undo and /redo to engine_action (real IPC ops)', async () => {
     expect((await bridge.execute('undo', [])).action).toMatchObject({ type: 'ui_effect', uiEffect: 'engine_action', args: ['undo'] });
+  });
+
+  it('does NOT mis-route scan/review actions or autonomy config to a Settings tab', async () => {
+    // /vulns, /secrets-scan, /security-review, /guardian RUN a scan/review and
+    // produce output — opening a config tab that does not perform the scan would
+    // be misdirection (worse than an honest "not yet pilotable"). /yolo and
+    // /autonomy have no control on the rules tab. All must fall through to the
+    // honest deny path (no ui_effect action), not open Settings.
+    for (const name of ['vulns', 'secrets-scan', 'security-review', 'guardian', 'yolo', 'autonomy']) {
+      const res = await bridge.execute(name, []);
+      expect(res.action).toBeUndefined();
+    }
+  });
+
+  it('routes /batch <goal> to a run_orchestrator ui_effect (sibling of /swarm)', async () => {
+    expect((await bridge.execute('batch', ['ship the feature'])).action).toMatchObject({
+      type: 'ui_effect',
+      uiEffect: 'run_orchestrator',
+      args: ['ship the feature'],
+    });
+    expect((await bridge.execute('batch', [])).action).toMatchObject({
+      type: 'ui_effect',
+      uiEffect: 'open_orchestrator_launcher',
+    });
+  });
+
+  it('routes /pairing to the device panel (C3)', async () => {
+    expect((await bridge.execute('pairing', [])).action).toMatchObject({
+      type: 'ui_effect',
+      uiEffect: 'open_panel',
+      args: ['device'],
+    });
+  });
+
+  it('routes /plugins and /plugin to the Settings plugins tab', async () => {
+    for (const name of ['plugins', 'plugin']) {
+      expect((await bridge.execute(name, [])).action).toMatchObject({
+        type: 'ui_effect',
+        uiEffect: 'open_settings',
+        args: ['plugins'],
+      });
+    }
   });
 });

@@ -433,6 +433,8 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
       return { uiEffect: 'set_plan_mode', args: [] };
     case '__SWARM__':
     case '__PARALLEL__':
+    // `/batch <goal>` also decomposes into parallel sub-agents (same cockpit).
+    case '__BATCH__':
       // `/swarm <task>` launches immediately (parallel strategy); bare `/swarm`
       // opens the launcher (mirrors the CLI's accidental-trigger guard).
       return args.length > 0
@@ -468,9 +470,19 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
     case '__ELEVATED__':
     case '__BATCH_REVIEW__':
     case '__SECURITY__':
+      // Permission/policy/approval CONFIG → the Permission rules tab is the cockpit.
+      // NB: scan/review ACTIONS (/vulns, /secrets-scan, /security-review, /guardian)
+      // are deliberately NOT routed here — opening a config tab that does not run
+      // the scan would be misdirection. They run via the agent in chat
+      // (SecurityReview / CodeGuardian auto-delegate). Likewise /yolo and /autonomy
+      // have no autonomy control on this tab, so they stay CLI.
       return { uiEffect: 'open_settings', args: ['rules'] };
     case '__HOOKS__':
       return { uiEffect: 'open_settings', args: ['hooks'] };
+    case '__PLUGINS__':
+    case '__PLUGIN__':
+      // `/plugins` → the Settings Plugins tab (install + toggle plugin components).
+      return { uiEffect: 'open_settings', args: ['plugins'] };
     case '__THEME__':
     case '__AVATAR__':
     case '__VIM_MODE__':
@@ -493,6 +505,9 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
       return { uiEffect: 'open_panel', args: ['memory'] };
     case '__IDENTITY__':
       return { uiEffect: 'open_panel', args: ['identity'] };
+    case '__PAIRING__':
+      // `/pairing` → the device pairing/management panel (C3).
+      return { uiEffect: 'open_panel', args: ['device'] };
     case '__TEST__':
       return { uiEffect: 'open_panel', args: ['test_runner'] };
     case '__THINK__':

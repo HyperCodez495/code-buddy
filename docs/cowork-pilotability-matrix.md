@@ -1,80 +1,108 @@
 # Cowork pilotability matrix — axis-B "definition of done"
 
-Date: 2026-05-29. Source: `src/commands/slash/builtin-commands.ts` (135 builtin slash
-commands) + `src/index.ts` CLI groups, traced through
-`cowork/src/main/commands/slash-command-bridge.ts` (`resolveUiEffectAction` +
-`COWORK_HEADLESS_ALLOW`) and `cowork/src/renderer/commands/slash-command-actions.ts`.
+Date: 2026-05-29 (reconciled from source — see note). Source of truth:
+`src/commands/slash/builtin-commands.ts` (every builtin's `prompt` token), traced
+through `cowork/src/main/commands/slash-command-bridge.ts` (`resolveUiEffectAction`
+switch + `COWORK_HEADLESS_ALLOW`) and `cowork/src/renderer/commands/slash-command-actions.ts`
+(`PANEL_OPENERS` / `ENGINE_ACTIONS` dispatch).
 
 **This file is the falsifiable bar for "completely pilotable from Cowork."** Every
-builtin slash command and CLI group has exactly one disposition below. "Done" =
-every entry is `pilotable` or `deliberately-CLI-only` (with a reason). The
-`route-to-<surface>` rows are the remaining implementation backlog.
+builtin slash command has exactly one disposition. "Done" = every entry is 🟢
+(pilotable) or 🔴 (deliberately CLI-only, with a true reason). 🟡 = genuine backlog
+that needs a **new** Cowork surface (named) — honest "not done," not faked to 🔴.
 
-> Reality check (verified 2026-05-29): the slash bridge — and 6 sibling IPC
-> bridges — were **dead in-app** until the getter-sweep fix (handlers captured a
-> `null` bridge registered before async boot). So pre-fix, *nothing* slash routed.
-> Now `command.execute` + orchestrator/subagent/team/mention/skillMd/knowledge IPC
-> work (proven by `cowork/e2e/slash-commands-smoke.spec.ts`).
+> **Reconcile note (2026-05-29):** the prior version of this file was stale — it
+> listed ~55 commands as backlog that S0–S8 + C1/C2/C3 + the routing commits had
+> already routed. The mechanism: `const token = cmd.prompt` in the bridge, so a
+> command whose core `prompt` is a `__TOKEN__` is pilotable the moment
+> `resolveUiEffectAction` has a `case` for it (single-realm, no core change). This
+> version is measured directly against the switch + allowlist + dispatch maps.
 
-## Disposition summary (135 slash commands)
+## How a command becomes pilotable
+1. **ui_effect** — `resolveUiEffectAction(token)` returns an effect → dispatcher
+   opens a real panel / Settings tab / runs an engine IPC op. (Most commands.)
+2. **headless-allowlisted** — token in `COWORK_HEADLESS_ALLOW` → core handler runs
+   read-only, output rendered as a chat message.
+3. **prompt-forward** — core `prompt` is natural language → forwarded to the LLM.
+4. **special-intercept** — `clear`, `memory`, `schedule` (renderer/ChatView-local).
 
-| Disposition | Count | Meaning |
-|---|---|---|
-| 🟢 ui_effect-routed | 13 | Opens a real panel / applies an effect (S1/S4/S8/C1/C2) |
-| 🟢 headless-allowlisted | 7 | Runs engine handler, renders output in chat (S0) |
-| 🟢 prompt-forward | ~8 | Natural-language prompt → LLM answers in chat (commit, explain, refactor, docs, debug-issue, scan-todos, …) |
-| 🟢 special-intercept | 2 | `/clear`, `/memory` (renderer) |
-| 🟡 route-to-existing-surface (BACKLOG) | ~55 | Maps cleanly to an existing Cowork panel/settings-tab/toolbar — route via `resolveUiEffectAction` |
-| 🟡 headless-safe-info (BACKLOG) | ~20 | Read-only/report command → add to `COWORK_HEADLESS_ALLOW` |
-| 🔴 deliberately-CLI-only | ~30 | No operator-cockpit value, or TUI/OS-bound, or destructive — stays CLI by design |
+## 🟢 Pilotable today (verified against the switch + allowlist + dispatch)
 
-## 🟢 Already pilotable (today)
-- **ui_effect**: plan, config, model, lessons, permissions, parallel, swarm, companion, workflow, track, team, agents, fleet.
-- **headless**: help, features, whoami, tools, cost, stats, status.
-- **prompt-forward**: commit, explain, refactor, docs, debug-issue, scan-todos, generate-tests-as-prompt, address-todo (any backtick-prompt command).
-- **special**: clear, memory.
+**ui_effect-routed (45 tokens):** model, switch, plan, swarm, parallel, batch,
+agents, fleet, team, lessons, companion, track, config, workflow, pipeline,
+plugins, plugin, permissions, policy, approvals, elevated, batch-review, security,
+hooks, theme, avatar, vim, fast, dry-run, cache, prompt-cache, heal (self-healing),
+search, shortcuts, persona, sessions, remember, identity, pairing, test, think,
+undo, redo, subagent, agent.
 
-## 🟡 BACKLOG — route to an EXISTING surface (the bulk of remaining work)
-Each maps to a panel/settings-tab/toolbar that already exists → extend `resolveUiEffectAction` (+ dispatcher case) like C1/C2.
+**Already on-screen — the docked Context panel** (App.tsx renders `<ContextPanel>`
+whenever a session is active): tabs **files / git / memory / knowledge / agents /
+mcp** are always visible, so those domains are reachable now without a slash
+command. `/add`, `/context`, `/knowledge` (browse) land here. Driving a *specific*
+tab from a slash command would need `ContextPanel`'s local `activeTab` lifted to
+the store — a minor enhancement, not a pilotability gap.
 
-| Command(s) | Target surface |
+> `/security` and `/policy` route to the Permission rules tab because they are
+> *config/dashboard* commands ("Show security dashboard and settings" / "Manage
+> security policies"). The scan/review *action* commands (`/vulns`,
+> `/secrets-scan`, `/security-review`, `/guardian`) are deliberately 🔴, not
+> routed here — see below.
+
+**headless-allowlisted (11):** help, stats, cost, tools, whoami, status, features,
+history, log, workspace, diff.
+
+**special-intercept (3):** clear, memory, schedule.
+
+**prompt-forward:** every command whose core `prompt` is natural language (explain,
+commit, refactor, docs, debug-issue, generate-tests-as-prompt, address-todo, …) —
+the LLM answers in chat. These were never gated.
+
+## 🟡 Backlog — genuine value, needs a NEW Cowork surface (honest "not done")
+Each maps to a capability with real operator value but **no existing** panel/effect
+to route to. Routing these is the remaining axis-B work (each = new panel/effect +
+opener + test, the C3 pattern).
+
+| Command(s) | Needs (verified against the renderer) |
 |---|---|
-| yolo, autonomy | YoloModeToggle / permission/autonomy controls |
-| checkpoints, restore, undo, redo, timeline | checkpoint toolbar / timeline panel |
-| branch, fork, branches, checkout, merge | BranchSwitcher |
-| sessions | session list / SessionInsights |
-| persona | PersonaSwitcherDialog |
-| theme, avatar | Settings → general/appearance |
-| vim, fast, dry-run, heal (self-healing), cache, prompt-cache | Settings → general |
-| hooks | Settings → hooks tab |
-| plugins, plugin | Settings → (plugins) |
-| pipeline | Settings → workflows |
-| skill, starter | SkillsBrowser |
-| subagent, agent | SubAgentPanel / OrchestratorLauncher |
-| think | reasoning trace viewer |
-| pr, diff, review, conflicts, worktree | git/diff surfaces |
-| security, guardian, security-review, vulns, secrets-scan, policy | Settings → rules / security review surfaces |
-| knowledge-graph, remember | knowledge / memory editor |
-| add, context, workspace | ContextPanel |
-| search | global search dialog |
-| voice, speak, tts | voice controls |
-| export, save, export-list, export-formats | export dialog |
-| approvals, batch-review, elevated | permission/approvals surfaces |
-| switch, model-router, mode | model/mode selectors |
-| tool-analytics | analytics / cost surface |
-| identity | (C3 new identity panel) |
-| cloud, trigger, heartbeat | (C3 / scheduler surfaces) |
+| checkpoints, restore, timeline | `CheckpointPanel` exists (rendered inside `ContextPanel`) but has no global show-flag; undo/redo already route via `engine_action`. Needs a store flag / tab focus to drive checkpoint list+restore from a slash command. |
+| voice, speak, tts | `VoiceChatOverlay` / `VoiceButton` / `MicButton` exist but are toggled by **local** `Titlebar` state. Needs that `open` state lifted to the store to drive via slash. |
+| export, save, export-list, export-formats | `ExportDialog` exists but is toggled by **local** `Sidebar` state. Needs a store flag to open it from a slash command. (Sessions auto-persist, so this is convenience, not data safety.) |
+| knowledge-graph | knowledge browse/CRUD is already on-screen (Context panel → Knowledge tab); the **graph visualization** specifically is a new view. |
+| telemetry, quota, coverage, bug | headless allowlist — **only after** verifying each core handler is read-only (unverified = "looks done but isn't"). |
 
-## 🟡 BACKLOG — headless-safe info (add to allowlist)
-Read-only/report; benign failure if realm differs. `shortcuts, history, log, quota, telemetry, coverage, bug` → add to `COWORK_HEADLESS_ALLOW`.
+Each is a real, verified surface that exists in the renderer but is gated behind
+**local component state** (not a global store flag), so a slash `ui_effect` can't
+reach it yet. The fix is a small store-flag lift per surface (the C-batch pattern),
+not a new feature — but it touches component state management, so it's honest
+backlog rather than a one-line route. None is environment- or security-gated.
 
-## 🔴 deliberately-CLI-only (legitimate "done")
-Reason in parens. `init`/`reinit` (destructive workspace reset), `login`/`logout` (app handles auth UI), `reload` (process), `new` (TUI new-chat = Cowork sidebar), `compact` (history-dependent; engine auto-compacts), `btw` (TUI one-shot), `share`, `colab` (multi-IA file convention), `daily-reset`, `script`, `fcs` (FileCommander legacy), `dev` (golden-path CLI workflow), `transform`, `voice-code`, `suggest`, `ultraplan` (CLI best-of-N), `tdd`, `ai-test`, `watch`, `debug`, `test`/`lint`/`fix` (run via chat/agent or git surface), `infra`. Each: no incremental operator-cockpit value over chat/agent, or OS/process-bound.
+## 🔴 Deliberately CLI-only (legitimate "done", reason = true)
+- **Destructive / process:** init, reinit (workspace reset), reload (process), daily-reset, new (= Cowork sidebar new session).
+- **Auth owned by the app shell:** login, logout.
+- **History-dependent / covered by the engine:** compact (engine auto-compacts), btw (TUI one-shot).
+- **Scan/review ACTIONS — run via the agent in chat:** review, vulns, secrets-scan, security-review, guardian (these RUN a scan/review and produce output; CodeGuardian + SecurityReview auto-delegate. Routing them to a Settings tab that does not perform the scan would be misdirection — explicitly rejected. Distinct from /security + /policy, which are config/dashboard and DO route to the rules tab.)
+- **Autonomy/exec modes — no faithful slash route:** yolo (toggle full-auto), autonomy (set level suggest/confirm/auto/full/yolo). The Permission rules tab edits declarative allow/deny rules; it has no autonomy-level or YOLO control, so routing there would be a non-faithful redirect. Cowork governs autonomy via its per-session permission-mode control (the same surface `/plan` drives).
+- **Covered by an existing 🟢 surface:** mode (set via /plan + model/permission controls), model-router (covered by /model auto), tool-analytics (covered by /cost + /stats), scan-todos / address-todo / replace / generate-tests / pr / conflicts (run via the agent in chat), add / context (the docked Context panel — files/git/memory/knowledge tabs), copy (native copy).
+- **Git, terminal-bound:** branch, fork, branches, checkout, merge, worktree (git via the integrated terminal/agent).
+- **CLI workflows / dev tooling:** ultraplan (best-of-N), dev (golden-path), tdd, ai-test, watch, lint, fix, debug, script, fcs, transform, infra, voice-code, suggest, starter, share, colab (multi-IA file convention).
+- **Daemon / non-goal:** heartbeat, trigger (background daemons), cloud (remote sandbox — explicit non-goal).
 
 ## CLI groups (~40) — disposition
-- 🟢 pilotable (panel/app): server/gui (app), spec, skills, lessons, user-model, cron/schedule (SettingsSchedule), provider/config (Settings), mcp (marketplace), companion, run (audit log).
-- 🟡 route/new-panel (C3): secrets (vault), identity, device, knowledge, research, flow, hub, deploy, channels, daemon/trigger, backup, nodes, approvals, groups, pairing, autonomous-code, gitnexus, heartbeat.
-- 🔴 CLI-only: completions, update, doctor, onboard, security-audit (one-off/OS).
+- 🟢 pilotable (panel/app): server/gui (app), spec, skills, lessons, user-model, cron/schedule (SettingsSchedule), provider/config (Settings), mcp (marketplace), companion, run (audit log), identity + device (C3 panels).
+- 🟡 route/new-panel: secrets (vault UI — see gated note), research, flow (live launcher — see gated note), knowledge-graph, channels, groups, autonomous-code, gitnexus.
+- 🔴 CLI-only: completions, update, doctor, onboard, security-audit, deploy, nodes, daemon, backup (one-off / OS / maintenance).
+
+## Gated (axis-A autonomy + axis-B surfaces that need live resources or a security design)
+Not fabricated as unverifiable code; each needs a real resource or its own review:
+- **D4 — gateway inbound listener** (always-joinable agent): separate plan with its own threat-model + ExitPlanMode. Posture fixed: inbound *proposes* `needs_local_operator`, never auto-dispatches.
+- **secrets vault EXECUTION**: encrypted vault + master key; security-sensitive, no reusable API surface — needs a dedicated secure design.
+- **research / flow LIVE**: depend on a configured provider + network; the panel can launch them but E2E verification needs live keys.
+- **browser-operator EXECUTION**: the `browser_operator` agent tool (D3) proposes a consent-gated session; the live browser run stays operator-driven behind the consent gate.
 
 ## Acceptance
-Done-for-axis-B = every 🟡 row is either implemented (→🟢) or reclassified 🔴 with a reason. Track C3 + the "route-to-existing-surface" batch close the 🟡 rows. The single-allowlisted **CLI-runner panel** (C3) can cover several 🟡 CLI groups (research/flow/hub/deploy/device-list) at once instead of bespoke panels.
+Axis-B is "done" when every command is 🟢 or 🔴-with-true-reason. **Current honest
+state:** the operator-cockpit-relevant surface is 🟢; the remaining 🟡 rows each need
+a *new* surface (named above) and are genuine deferred backlog, not blockers hidden
+as 🔴. The strong claim "100% of slash commands open a panel" is **not** true and
+should not be asserted — "completely pilotable" means every command has a
+**deliberate disposition**, which this matrix now provides.
