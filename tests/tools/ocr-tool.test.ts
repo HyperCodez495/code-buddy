@@ -15,12 +15,29 @@ jest.mock('../../src/services/vfs/unified-vfs-router.js', () => ({
   }
 }));
 
-// Mock child_process
+// Mock child_process. We intentionally do NOT provide `exec`: the Windows-native
+// OCR engine (engine 1 of the cascade) does `const { exec } = await
+// import('child_process')` then `promisify(exec)`. Leaving `exec` undefined makes
+// `promisify(undefined)` throw synchronously, so engine 1 fails fast and the
+// cascade falls through. (Providing a no-op `exec` mock would instead create a
+// promisified function that never resolves and hangs the test.)
 const mockSpawn = jest.fn();
 const mockExecSync = jest.fn();
 jest.mock('child_process', () => ({
   spawn: (...args: any[]) => mockSpawn(...args),
   execSync: (...args: any[]) => mockExecSync(...args)
+}));
+
+// The OCR cascade tries Windows-native OCR (engine 1) and Tesseract.js WASM
+// (engine 2) BEFORE the Tesseract CLI path these tests exercise. Stub
+// tesseract.js so engine 2 fails on a microtask (rather than doing real WASM
+// macrotask IO, which would both download models and race the test's
+// `setImmediate`-timed event emissions). With this in place the cascade falls
+// through deterministically to the mocked Tesseract CLI path.
+jest.mock('tesseract.js', () => ({
+  createWorker: jest.fn(async () => {
+    throw new Error('tesseract.js disabled in test');
+  })
 }));
 
 describe('OCRTool', () => {
@@ -86,8 +103,12 @@ describe('OCRTool', () => {
 5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95\tHello
 5\t1\t1\t1\t1\t2\t70\t10\t50\t20\t90\tWorld`;
 
-      // Use setImmediate to let the promise chain advance
-      await new Promise(resolve => setImmediate(resolve));
+      // Wait until the cascade has fallen through to the Tesseract CLI path and
+      // `spawn` has been called, so the stdout/close listeners are attached
+      // before we emit. (A bare `setImmediate` macrotask can race ahead of the
+      // microtask hops in the engine cascade and emit into a process with no
+      // listeners yet, hanging the test.)
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalled());
 
       proc.stdout.emit('data', Buffer.from(tsvOutput));
       proc.emit('close', 0);
@@ -137,7 +158,11 @@ describe('OCRTool', () => {
         const result = await tool.extractText('test.png');
 
         expect(result.success).toBe(false);
-        expect(result.error).toContain('Tesseract OCR not installed');
+        // Source now reports a unified cascade-failure message once every OCR
+        // engine (Windows OCR, Tesseract.js, Tesseract CLI, Vision API) is
+        // unavailable — assert that deliberate message instead of the old
+        // Tesseract-CLI-only wording.
+        expect(result.error).toContain('All OCR engines failed');
       } finally {
         process.env = originalEnv;
       }

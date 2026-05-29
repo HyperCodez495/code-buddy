@@ -163,7 +163,12 @@ jest.mock('../../src/optimization/prompt-cache.js', () => ({
 
 jest.mock('../../src/hooks/lifecycle-hooks.js', () => ({
   getHooksManager: jest.fn().mockReturnValue({
-    executeHooks: jest.fn().mockResolvedValue(undefined),
+    // The real HooksManager.executeHooks returns Promise<HookResult[]> (an empty
+    // array when no hooks are registered). tool-handler iterates the result
+    // (`for (const res of lifecycleBeforeResult)`), so the mock must resolve an
+    // array — resolving `undefined` makes the bash-tool path throw
+    // "lifecycleBeforeResult is not iterable" before bash/auto-repair ever run.
+    executeHooks: jest.fn().mockResolvedValue([]),
   }),
 }));
 

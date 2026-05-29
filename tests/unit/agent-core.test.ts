@@ -59,7 +59,10 @@ const {
   mockIsYOLOEnabled: vi.fn().mockReturnValue(false),
   mockPrepareMessages: vi.fn().mockImplementation((messages: any) => messages),
   mockShouldWarn: vi.fn().mockReturnValue({ warn: false }),
-  mockExecuteHooks: vi.fn().mockResolvedValue(undefined),
+  // Real HooksManager.executeHooks returns Promise<HookResult[]>; the source
+  // iterates the 'before-tool-call' result with for..of (tool-handler.ts:459),
+  // so the mock must resolve to an array, not undefined.
+  mockExecuteHooks: vi.fn().mockResolvedValue([]),
 }));
 
 function makeDefaultChatResponse() {
@@ -113,7 +116,7 @@ function resetAgentCoreMocks(): void {
   mockShouldWarn.mockReset();
   mockShouldWarn.mockReturnValue({ warn: false });
   mockExecuteHooks.mockReset();
-  mockExecuteHooks.mockResolvedValue(undefined);
+  mockExecuteHooks.mockResolvedValue([]);
 }
 
 jest.mock("../../src/agent/planner/progress-default-sink.js", () => ({

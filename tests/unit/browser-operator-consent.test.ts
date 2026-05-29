@@ -45,7 +45,10 @@ describe('Browser Operator Consent Gate', () => {
       goal: 'Test consent gate',
       mode: 'isolated',
       consent: {
+        required: true,
         granted: true, // Initial session level consent is granted
+        scopes: ['browser_interaction'], // required field consumed by buildBrowserOperatorHarnessBundle (scopes.join)
+        reason: 'Test consent gate',
       },
       actionLog: [
         {

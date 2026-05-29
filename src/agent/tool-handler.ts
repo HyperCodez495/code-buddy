@@ -446,23 +446,32 @@ export class ToolHandler {
       hookContext = await hooksManager.executeBeforeHooks(hookContext);
       const modifiedArgs = hookContext.args;
 
-      // Axe 4: run lifecycle before-tool-call hooks via this.deps.hooksManager
-      const lifecycleBeforeResult = await this.deps.hooksManager.executeHooks('before-tool-call', {
-        toolName,
-        toolArgs: modifiedArgs,
-        sessionId: this.currentRunId,
-      });
-
+      // Axe 4: run lifecycle before-tool-call hooks via this.deps.hooksManager.
+      // Guarded (mirrors the pre-bash/post-bash hook calls): a throwing hook must
+      // degrade gracefully — log and continue with no modifications — rather than
+      // fail the entire tool call.
       let abortExecution = false;
       let lifecycleModifiedArgs = { ...modifiedArgs };
 
-      for (const res of lifecycleBeforeResult) {
-        if (res.abort) {
-          abortExecution = true;
+      try {
+        const lifecycleBeforeResult = await this.deps.hooksManager.executeHooks('before-tool-call', {
+          toolName,
+          toolArgs: modifiedArgs,
+          sessionId: this.currentRunId,
+        });
+
+        for (const res of lifecycleBeforeResult) {
+          if (res.abort) {
+            abortExecution = true;
+          }
+          if (res.modified?.toolArgs) {
+            lifecycleModifiedArgs = { ...lifecycleModifiedArgs, ...res.modified.toolArgs };
+          }
         }
-        if (res.modified?.toolArgs) {
-          lifecycleModifiedArgs = { ...lifecycleModifiedArgs, ...res.modified.toolArgs };
-        }
+      } catch (hookError) {
+        logger.warn('before-tool-call hook failed, continuing with execution', {
+          error: getErrorMessage(hookError),
+        });
       }
 
       if (abortExecution) {

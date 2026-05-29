@@ -319,10 +319,15 @@ jest.mock("../../src/optimization/prompt-cache.js", () => ({
   PromptCacheManager: jest.fn(),
 }));
 
-// Mock hooks manager
+// Mock hooks manager.
+// IMPORTANT: the real HooksManager.executeHooks returns Promise<HookResult[]>
+// (see src/hooks/lifecycle-hooks.ts:382). tool-handler.ts iterates the
+// before-tool-call result (`for (const res of lifecycleBeforeResult)`), so the
+// mock MUST resolve an array — resolving `undefined` throws
+// "lifecycleBeforeResult is not iterable" and fails every executeTool dispatch.
 jest.mock("../../src/hooks/lifecycle-hooks.js", () => ({
   getHooksManager: jest.fn().mockReturnValue({
-    executeHooks: jest.fn().mockResolvedValue(undefined),
+    executeHooks: jest.fn().mockResolvedValue([]),
     formatStatus: jest.fn().mockReturnValue("Hooks: 0 registered"),
   }),
   HooksManager: jest.fn(),

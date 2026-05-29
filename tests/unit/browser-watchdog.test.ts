@@ -47,6 +47,9 @@ describe('Browser Operator Watchdog', () => {
       mode: 'headless',
       query: 'https://example.com',
       consent: {
+        // `scopes` is a required field on BrowserOperatorConsentState; the real
+        // session factory always populates it (browser-operator-session.ts:104).
+        scopes: ['public_web_read'],
         granted: true,
         grantedBy: 'human',
         grantedAt: new Date().toISOString()
@@ -89,6 +92,7 @@ describe('Browser Operator Watchdog', () => {
       mode: 'headless',
       query: 'https://example.com',
       consent: {
+        scopes: ['public_web_read'],
         granted: true,
         grantedBy: 'human',
         grantedAt: new Date().toISOString()
@@ -146,6 +150,7 @@ describe('Browser Operator Watchdog', () => {
       mode: 'headless',
       query: 'https://example.com',
       consent: {
+        scopes: ['public_web_read'],
         granted: true,
         grantedBy: 'human',
         grantedAt: new Date().toISOString()
