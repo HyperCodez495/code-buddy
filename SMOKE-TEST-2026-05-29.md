@@ -108,15 +108,16 @@ README/`getting-started.md` annoncent « cost $0.0000 » avec le login ChatGPT (
 
 De bout en bout, l'expérience *from source* est solide : `npm install` (1 min, 0 échec natif sur Node 24) → `npm run build` (exit 0) → `buddy --version` (0,2 s, bonne version) → `buddy doctor` (1,57 s, diagnostic clair) → **boucle agentique E2E OK** (gpt-5.5 via login ChatGPT, appel d'outil, réponse correcte, exit 0).
 
-| Priorité | Friction | Nature | Geste |
+| Priorité | Friction | Nature | État (2026-05-29) |
 |----------|----------|--------|-------|
-| 🔴 **P0** | **F1** — `npm install -g` livre `0.4.0` (3 mois de retard) | livraison | **Publier `1.0.0-rc.8` sur npm** (tag `next`), ou réordonner le README vers *from source* en attendant |
-| ✅ **CORRIGÉ** | **F6** — `import * as fs from 'fs-extra'` cassait fs au runtime (indexation sémantique + `/plan` + `submit_plan`) | **code (bug)** | ✅ fait : `import fs from 'fs-extra'` (3 fichiers), rebuild + E2E vérifiés |
-| 🟡 P1 | **F3** — 67 vulns prod transitives (12 high) | deps | Overrides `music-metadata`/`picomatch` ou note `SECURITY.md` |
-| 🟡 P1 | **F7** — routage modèle incohérent (gpt-4o→gpt-5.2 alors que principal=gpt-5.5) | code | Tracer le chemin qui demande gpt-4o |
-| 🟡 P2 | **F2** — badges README périmés | présentation | Aligner ~29K / 70 % |
-| 🟡 P2 | **F8** — coût `$0.02` affiché malgré forfait ChatGPT | UX | Afficher $0.00 « inclus » sur le chemin flat-fee |
-| ⚪ P3 | **F4/F5** — `codebuddy` vs `buddy`, warnings doctor, bruit GLib | cosmétique | Polish |
+| 🟡 **P0** | **F1** — `npm install -g` livre `0.4.0` (3 mois de retard) | livraison | ✅ **mitigé repo** : README + getting-started réordonnés vers *from source* + avertissement « npm en retard ». **`npm publish` rc.8 reste à faire par Patrice** (action externe, identifiants npm) |
+| ✅ **CORRIGÉ** | **F6** — `import * as fs from 'fs-extra'` cassait fs au runtime (indexation sémantique + `/plan` + `submit_plan`) | code (bug) | ✅ `import fs from 'fs-extra'` (3 fichiers) + test de régression, rebuild + E2E vérifiés |
+| ✅ **CORRIGÉ** | **F7** — routage modèle incohérent (gpt-4o→gpt-5.2 alors que principal=gpt-5.5) | code | ✅ remap proactif des slugs OpenAI-API-only dans `chatgpt-responses` → **0 WARN** en E2E (était 1) |
+| ✅ **CORRIGÉ** | **F8** — coût `$0.02` affiché malgré forfait ChatGPT | UX | ✅ `isSubscriptionAuth()` (flag provider) zéroe le coût flat-fee → **`cost: $0.0000`** en E2E |
+| ✅ **CORRIGÉ** | **F2** — badges README périmés | présentation | ✅ `Tests 29K+` / `Coverage ≥70%` |
+| ✅ **CORRIGÉ** | **F4** — `codebuddy` vs `buddy` dans `--help` | cosmétique | ✅ `program.name("buddy")` |
+| ✅ **CORRIGÉ (partiel)** | **F3** — 67 vulns prod (12 high) | deps | ✅ `npm audit fix` non-breaking → **high 12→5, total 67→53** (lockfile) ; 5 high résiduels (breaking stagehand/otel + `xlsx` no-fix) **documentés dans `SECURITY.md`** |
+| ⚪ **différé** | **F5** — bruit `GLib-GObject-CRITICAL` (8 lignes) en headless | cosmétique | ⏸️ émis par la couche native (GTK/libvips) ; report documenté (advisor) — non bloquant |
 
 **Conclusion pour « est-ce vraiment utilisable ? »** :
 - Pour *toi* / quiconque clone : l'outil **s'installe, se build, démarre vite et la boucle agentique tourne** — donc **oui, le socle est utilisable**.

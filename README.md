@@ -15,8 +15,8 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Tests-27%2C334-00d26a?style=flat-square&logo=jest" alt="Tests"/>
-  <img src="https://img.shields.io/badge/Coverage-85%25-48dbfb?style=flat-square" alt="Coverage"/>
+  <img src="https://img.shields.io/badge/Tests-29K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
+  <img src="https://img.shields.io/badge/Coverage-%E2%89%A570%25-48dbfb?style=flat-square" alt="Coverage"/>
   <img src="https://img.shields.io/badge/Build-passing-00d26a?style=flat-square" alt="Build"/>
 </p>
 
@@ -75,7 +75,12 @@ More captures + walk-through: [`docs/screenshots/`](docs/screenshots/README.md).
 ## Quick Start
 
 ```bash
-# Install
+# Install — from source (recommended during the 1.0 release-candidate phase: gets the latest)
+git clone https://github.com/phuetz/code-buddy.git
+cd code-buddy && npm install && npm run build && npm link   # exposes `buddy` globally
+
+# Or install the published release from npm
+# ⚠️ during rc, the npm release can lag the source — prefer from-source for the newest features
 npm install -g @phuetz/code-buddy
 
 # Option A — bring your own API key

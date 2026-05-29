@@ -20,18 +20,19 @@ choco install ripgrep
 ## Installation
 
 ```bash
-# npm (recommended)
-npm install -g @phuetz/code-buddy
-
-# Or try without installing
-npx @phuetz/code-buddy@latest
-
-# From source
+# From source (recommended during the 1.0 release-candidate phase — gets the latest)
 git clone https://github.com/phuetz/code-buddy.git
 cd code-buddy
 npm install
 npm run build
-npm start
+npm link            # exposes `buddy` globally (or use: npm start / node dist/index.js)
+
+# npm — published stable release
+# NOTE: during the rc phase the npm release can lag the source; prefer from-source for newest features
+npm install -g @phuetz/code-buddy
+
+# Or try without installing (also subject to the lag note above)
+npx @phuetz/code-buddy@latest
 ```
 
 ## First Run
