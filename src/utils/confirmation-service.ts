@@ -299,6 +299,20 @@ export class ConfirmationService extends EventEmitter {
       return { confirmed: true };
     }
 
+    // Self-improvement is intentionally not covered by CODEBUDDY_AUTO_CONFIRM.
+    // In non-interactive contexts, fail closed with a visible reason instead of
+    // waiting on a prompt that cannot be answered.
+    if (isSelfImprovement) {
+      if (!process.stdin.isTTY && !this.remoteApproval?.hasChannels()) {
+        return {
+          confirmed: false,
+          feedback:
+            'Self-improvement requires explicit approval, but no interactive terminal or '
+            + 'remote approval channel is available.',
+        };
+      }
+    }
+
     // Enrich content with diff preview if available
     if (options.diffPreview && !options.content?.includes(options.diffPreview)) {
       const preview = options.diffPreview.length > 2000
@@ -326,6 +340,13 @@ export class ConfirmationService extends EventEmitter {
         // If VS Code opening fails, continue without it
         options.showVSCodeOpen = false;
       }
+    }
+
+    if (!process.stdin.isTTY) {
+      return {
+        confirmed: false,
+        feedback: 'Approval requires an interactive terminal or configured remote approval channel',
+      };
     }
 
     // Create a promise that will be resolved by the UI component

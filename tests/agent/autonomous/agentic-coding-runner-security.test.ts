@@ -163,6 +163,53 @@ describe('AgenticCodingRunner - Security and Self-Improvement', () => {
       expect(readmeContent).toContain('Initial README content');
     });
 
+    it('accepts a required approval decision file as the self-improvement approval source', async () => {
+      vi.spyOn(process, 'cwd').mockReturnValue(tempRepo);
+
+      const taskFile = path.join(tempRoot, 'task.json');
+      const approvalDecisionFile = path.join(tempRoot, 'approval-decision.json');
+      const contract = {
+        repo: tempRepo,
+        task: 'Fix the README formatting',
+        allowedPaths: ['README.md'],
+        verification: ['node -e "console.log(\'all green\')"'],
+        riskLevel: 'low',
+        edits: [{
+          type: 'replace_text',
+          path: 'README.md',
+          find: 'Initial README content',
+          replace: 'Modified README content'
+        }]
+      };
+      await fs.writeFile(taskFile, JSON.stringify(contract, null, 2), 'utf8');
+      await fs.writeFile(approvalDecisionFile, JSON.stringify({
+        kind: 'agentic-coding-approval-decision',
+        schemaVersion: 1,
+        decision: 'approved',
+        reviewer: 'qa-reviewer',
+        reason: 'Test approval for a bounded self-improvement fixture',
+      }, null, 2), 'utf8');
+
+      const confirmationService = ConfirmationService.getInstance();
+      const spyConfirm = vi.spyOn(confirmationService, 'requestConfirmation');
+
+      const report = await runAgenticCodingCell({
+        taskFile,
+        approvalDecisionFile,
+        applyEdits: true,
+        requireApproval: true,
+        runVerification: true,
+        runId: 'decision-test'
+      });
+
+      expect(spyConfirm).not.toHaveBeenCalled();
+      expect(report.status).toBe('verified');
+      expect(report.approvalDecision?.decision).toBe('approved');
+
+      const readmeContent = await fs.readFile(path.join(tempRepo, 'README.md'), 'utf8');
+      expect(readmeContent).toContain('Modified README content');
+    });
+
     it('keeps sandbox branch and logs allow if verification loop succeeds', async () => {
       vi.spyOn(process, 'cwd').mockReturnValue(tempRepo);
 

@@ -5426,23 +5426,31 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   let selfImprovementApproved = false;
 
   if (isSelfImprovement && (options.applyEdits || options.runVerification) && validationErrors.length === 0 && blockedReasons.length === 0) {
-    const approval = await ConfirmationService.getInstance().requestConfirmation({
-      operation: 'self_improvement',
-      filename: finalContract.repo,
-      content: `Self-improvement requested on Code Buddy itself. Task: ${finalContract.task}`
-    });
-
-    if (!approval.confirmed) {
-      blockedReasons.push(`Self-improvement approval denied: ${approval.feedback || 'User rejected'}`);
-      auditLogger.log({
-        action: 'self_improvement',
-        decision: 'block',
-        source: 'runAgenticCodingCell',
-        target: finalContract.repo,
-        details: `Self-improvement approval denied: ${approval.feedback || 'User rejected'}`
-      });
-    } else {
+    const approvedByDecisionFile = Boolean(options.requireApproval && approvalDecision?.decision === 'approved');
+    if (approvedByDecisionFile) {
       selfImprovementApproved = true;
+    } else {
+      const approval = await ConfirmationService.getInstance().requestConfirmation({
+        operation: 'self_improvement',
+        filename: finalContract.repo,
+        content: `Self-improvement requested on Code Buddy itself. Task: ${finalContract.task}`
+      });
+
+      if (!approval.confirmed) {
+        blockedReasons.push(`Self-improvement approval denied: ${approval.feedback || 'User rejected'}`);
+        auditLogger.log({
+          action: 'self_improvement',
+          decision: 'block',
+          source: 'runAgenticCodingCell',
+          target: finalContract.repo,
+          details: `Self-improvement approval denied: ${approval.feedback || 'User rejected'}`
+        });
+      } else {
+        selfImprovementApproved = true;
+      }
+    }
+
+    if (selfImprovementApproved) {
       try {
         originalBranch = await getOriginalBranch(finalContract.repo);
         const runId = options.runId || 'default';

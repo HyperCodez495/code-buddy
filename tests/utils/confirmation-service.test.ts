@@ -8,6 +8,7 @@ import {
 
 describe('ConfirmationService', () => {
   let service: ConfirmationService;
+  const originalStdinIsTTY = process.stdin.isTTY;
 
   beforeEach(() => {
     // Reset the singleton
@@ -15,6 +16,7 @@ describe('ConfirmationService', () => {
     service = ConfirmationService.getInstance();
     delete process.env.CODEBUDDY_AUTO_CONFIRM;
     delete process.env.CODEBUDDY_SELF_IMPROVEMENT;
+    Object.defineProperty(process.stdin, 'isTTY', { value: originalStdinIsTTY, configurable: true });
   });
 
   afterEach(() => {
@@ -176,7 +178,23 @@ describe('ConfirmationService', () => {
       expect(result.feedback).toContain('Kill switch engaged');
     });
 
-    it('should not let auto-confirm bypass self-improvement approval', async () => {
+    it('rejects self-improvement approval when non-interactive and no remote channel is configured', async () => {
+      Object.defineProperty(process.stdin, 'isTTY', { value: false, configurable: true });
+      process.env.CODEBUDDY_AUTO_CONFIRM = 'true';
+
+      const result = await service.requestConfirmation({
+        operation: 'self_improvement',
+        filename: 'D:/CascadeProjects/grok-cli-weekend',
+        riskLevel: 'high' as any,
+      }, 'file');
+
+      expect(result.confirmed).toBe(false);
+      expect(result.feedback).toContain('interactive terminal');
+      expect(service.isPending()).toBe(false);
+    });
+
+    it('should not let auto-confirm bypass interactive self-improvement approval', async () => {
+      Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
       process.env.CODEBUDDY_AUTO_CONFIRM = 'true';
 
       const pending = service.requestConfirmation({
@@ -187,7 +205,6 @@ describe('ConfirmationService', () => {
 
       await new Promise((resolve) => setImmediate(resolve));
       expect(service.isPending()).toBe(true);
-
       service.rejectOperation('manual approval required');
       const result = await pending;
 
