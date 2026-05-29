@@ -205,17 +205,28 @@ function runTask(taskSlug) {
   }
 }
 
+function listTasks() {
+  return fs.readdirSync(tasksDir)
+    .filter(file => fs.statSync(path.join(tasksDir, file)).isDirectory())
+    .sort((a, b) => a.localeCompare(b));
+}
+
 // Main execution
 function main() {
   const args = process.argv.slice(2);
+  const availableTasks = listTasks();
   let tasksToRun = [];
 
   if (args.length > 0) {
-    tasksToRun = [args[0]];
+    const unknownTasks = args.filter(task => !availableTasks.includes(task));
+    if (unknownTasks.length > 0) {
+      console.error(`Unknown task(s): ${unknownTasks.join(', ')}`);
+      console.error(`Available tasks: ${availableTasks.join(', ')}`);
+      process.exit(1);
+    }
+    tasksToRun = args;
   } else {
-    tasksToRun = fs.readdirSync(tasksDir).filter(file => {
-      return fs.statSync(path.join(tasksDir, file)).isDirectory();
-    });
+    tasksToRun = availableTasks;
   }
 
   console.log(`Found tasks to run: ${tasksToRun.join(', ')}`);

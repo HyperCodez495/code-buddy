@@ -142,6 +142,23 @@ Real validation:
 - `node eval/run-task.mjs space-path-edit` -> passed, modified `eval/sandbox/target with space.txt`.
 - `node eval/run-task.mjs` -> all 6 real tasks passed.
 
+### Step 8 - Continuation: deterministic task selection
+
+The harness previously relied on filesystem directory order and accepted only the first task argument. That was usable, but awkward for focused real-mode checks and noisier in handoffs.
+
+Fix landed:
+
+- Task discovery is now sorted alphabetically for stable output.
+- `node eval/run-task.mjs task-a task-b` can run multiple named tasks in one process.
+- Unknown task names now fail before any repo setup and print the available task list.
+
+Real validation:
+
+- `node --check eval/run-task.mjs` -> exit 0.
+- `node eval/run-task.mjs simple-edit space-path-edit` -> both tasks passed.
+- `node eval/run-task.mjs not-a-task` -> exit 1 with `Unknown task(s): not-a-task` and the available task list.
+- `node eval/run-task.mjs` -> all 6 real tasks passed.
+
 ## Verdict
 
-The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, the Cowork ChatGPT path passed against the real backend, strict preflight now tolerates Code Buddy's own runtime artifacts without hiding project configuration edits, and the eval harness no longer hides failed setup commands, depends on shell quoting, or loses filenames containing spaces.
+The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, the Cowork ChatGPT path passed against the real backend, strict preflight now tolerates Code Buddy's own runtime artifacts without hiding project configuration edits, and the eval harness no longer hides failed setup commands, depends on shell quoting, loses filenames containing spaces, or produces unstable task ordering.
