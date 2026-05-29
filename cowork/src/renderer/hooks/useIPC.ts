@@ -11,9 +11,40 @@ import type {
   ContentBlock,
 } from '../types';
 import i18n from '../i18n/config';
+import { shouldAutoInferUserModel, toInferenceHistory } from '../components/user-model-inference';
 
 // Check if running in Electron
 const isElectron = typeof window !== 'undefined' && window.electronAPI !== undefined;
+
+// D1: sessions we've already auto-inferred a user model for (once per session).
+const autoInferredUserModelSessions = new Set<string>();
+
+/**
+ * D1 — when a session goes terminal, auto-propose user-model observations from
+ * its transcript (guarded, once-per-session, ≥N user turns). Fire-and-forget;
+ * reuses the verified `userModel.runInference` IPC, which only proposes
+ * review-gated observations and no-ops without a configured provider.
+ */
+function maybeAutoInferUserModel(sessionId: string, status: string): void {
+  try {
+    const ss = useAppStore.getState().sessionStates[sessionId];
+    const messages = ss?.messages ?? [];
+    const userMessageCount = messages.filter((m) => m.role === 'user').length;
+    if (
+      !shouldAutoInferUserModel({
+        status,
+        userMessageCount,
+        alreadyInferred: autoInferredUserModelSessions.has(sessionId),
+      })
+    ) {
+      return;
+    }
+    autoInferredUserModelSessions.add(sessionId);
+    void window.electronAPI?.userModel?.runInference?.(toInferenceHistory(messages)).catch(() => {});
+  } catch {
+    /* auto-inference must never disrupt session lifecycle */
+  }
+}
 
 export function useIPC() {
   // Handle incoming server events - only setup once
@@ -133,6 +164,8 @@ export function useIPC() {
               store.clearActiveTurn(event.payload.sessionId);
               store.clearPendingTurns(event.payload.sessionId);
               store.clearQueuedMessages(event.payload.sessionId);
+              // D1: auto-propose user-model observations from a substantial session.
+              maybeAutoInferUserModel(event.payload.sessionId, event.payload.status);
             }
             break;
 

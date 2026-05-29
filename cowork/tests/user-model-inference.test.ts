@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { toInferenceHistory } from '../src/renderer/components/user-model-inference';
+import {
+  toInferenceHistory,
+  shouldAutoInferUserModel,
+  AUTO_INFER_MIN_USER_MESSAGES,
+} from '../src/renderer/components/user-model-inference';
 import type { Message } from '../src/renderer/types';
 
 function msg(role: Message['role'], ...texts: string[]): Message {
@@ -46,5 +50,28 @@ describe('toInferenceHistory', () => {
 
   it('returns empty for no messages', () => {
     expect(toInferenceHistory([])).toEqual([]);
+  });
+});
+
+describe('shouldAutoInferUserModel (D1 guard)', () => {
+  const N = AUTO_INFER_MIN_USER_MESSAGES;
+
+  it('fires once on a terminal status for a substantial session', () => {
+    expect(shouldAutoInferUserModel({ status: 'idle', userMessageCount: N, alreadyInferred: false })).toBe(true);
+    expect(shouldAutoInferUserModel({ status: 'completed', userMessageCount: N + 3, alreadyInferred: false })).toBe(true);
+  });
+
+  it('does not fire while running or on error', () => {
+    expect(shouldAutoInferUserModel({ status: 'running', userMessageCount: N + 5, alreadyInferred: false })).toBe(false);
+    expect(shouldAutoInferUserModel({ status: 'error', userMessageCount: N + 5, alreadyInferred: false })).toBe(false);
+  });
+
+  it('does not fire for short sessions (bounds the LLM cost)', () => {
+    expect(shouldAutoInferUserModel({ status: 'idle', userMessageCount: N - 1, alreadyInferred: false })).toBe(false);
+    expect(shouldAutoInferUserModel({ status: 'idle', userMessageCount: 1, alreadyInferred: false })).toBe(false);
+  });
+
+  it('fires at most once per session (no per-turn spam)', () => {
+    expect(shouldAutoInferUserModel({ status: 'idle', userMessageCount: N + 9, alreadyInferred: true })).toBe(false);
   });
 });
