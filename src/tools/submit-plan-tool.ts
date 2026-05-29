@@ -2,7 +2,7 @@ import { BaseTool, ParameterDefinition } from './base-tool.js';
 import { ToolResult } from '../types/index.js';
 import { setAgentMode, AgentMode } from '../agent/plan-mode.js';
 import { getOperatingModeManager } from '../agent/operating-modes.js';
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import { logger } from '../utils/logger.js';
 

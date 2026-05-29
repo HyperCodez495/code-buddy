@@ -7,7 +7,7 @@
  * over the entire codebase, bypassing the limitations of context windows.
  */
 
-import * as fs from 'fs-extra';
+import fs from 'fs-extra';
 import * as path from 'path';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
