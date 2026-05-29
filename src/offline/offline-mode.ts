@@ -422,9 +422,12 @@ export class OfflineMode extends EventEmitter {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) continue;
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));

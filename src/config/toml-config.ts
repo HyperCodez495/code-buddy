@@ -832,9 +832,9 @@ export function parseTOML(content: string): Record<string, unknown> {
 
     // Section header [section] or [section.subsection]
     const sectionMatch = line.match(/^\[([^\]]+)\]$/);
-    if (sectionMatch) {
+    if (sectionMatch && sectionMatch[1] !== undefined) {
       const parts = sectionMatch[1].split('.');
-      currentSection = parts[0];
+      currentSection = parts[0] ?? '';
       currentSubSection = parts.slice(1).join('.');
 
       // Initialize section if needed
@@ -852,7 +852,7 @@ export function parseTOML(content: string): Record<string, unknown> {
 
     // Key-value pair
     const kvMatch = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*)\s*=\s*(.+)$/);
-    if (kvMatch) {
+    if (kvMatch && kvMatch[1] !== undefined && kvMatch[2] !== undefined) {
       const key = kvMatch[1];
       let value: unknown = kvMatch[2].trim();
 

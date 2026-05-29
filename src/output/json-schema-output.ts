@@ -98,10 +98,11 @@ export class JsonSchemaOutput {
 
     // Try to find JSON object or array in text
     const jsonMatch = trimmed.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) {
+    const candidate = jsonMatch?.[1];
+    if (candidate !== undefined) {
       try {
-        JSON.parse(jsonMatch[1]);
-        return jsonMatch[1];
+        JSON.parse(candidate);
+        return candidate;
       } catch {
         // Not valid JSON
       }
@@ -117,10 +118,12 @@ export class JsonSchemaOutput {
     // Match ```json ... ``` or ``` ... ```
     const codeBlockRegex = /```(?:json)?\s*\n([\s\S]*?)\n```/;
     const match = text.match(codeBlockRegex);
-    if (match) {
+    const block = match?.[1];
+    if (block !== undefined) {
       try {
-        JSON.parse(match[1].trim());
-        return match[1].trim();
+        const trimmed = block.trim();
+        JSON.parse(trimmed);
+        return trimmed;
       } catch {
         // Not valid JSON in code block
       }

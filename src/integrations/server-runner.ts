@@ -90,7 +90,11 @@ export function parseServerArgs(args: string[]): ServerRunnerOptions | null {
     } else if (arg === '--mcp-server') {
       mode = 'mcp';
     } else if (arg === '--server' && args[i + 1]) {
-      const serverType = args[++i].toLowerCase();
+      const nextArg = args[++i];
+      if (nextArg === undefined) {
+        continue;
+      }
+      const serverType = nextArg.toLowerCase();
       if (serverType === 'json-rpc' || serverType === 'jsonrpc') {
         mode = 'json-rpc';
       } else if (serverType === 'mcp') {

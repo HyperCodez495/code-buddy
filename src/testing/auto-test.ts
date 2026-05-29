@@ -434,9 +434,9 @@ export class AutoTestManager extends EventEmitter {
       try {
         const pkg = JSON.parse(fs.readFileSync(pkgPath, "utf-8"));
         if (pkg.devDependencies?.jest || pkg.dependencies?.jest) {
-          this.detectedFramework = BUILTIN_FRAMEWORKS.jest;
+          this.detectedFramework = BUILTIN_FRAMEWORKS.jest ?? null;
         } else if (pkg.devDependencies?.vitest || pkg.dependencies?.vitest) {
-          this.detectedFramework = BUILTIN_FRAMEWORKS.vitest;
+          this.detectedFramework = BUILTIN_FRAMEWORKS.vitest ?? null;
         }
       } catch {
         // Ignore parse errors

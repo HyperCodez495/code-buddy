@@ -270,12 +270,10 @@ export function calculateCost(
   }
 
   // Default to local (free) if not found
-  if (!pricing) {
-    pricing = TOKEN_PRICING['local'];
-  }
+  const effectivePricing = pricing ?? { input: 0, output: 0 };
 
-  const inputCost = (inputTokens / 1000) * pricing.input;
-  const outputCost = (outputTokens / 1000) * pricing.output;
+  const inputCost = (inputTokens / 1000) * effectivePricing.input;
+  const outputCost = (outputTokens / 1000) * effectivePricing.output;
 
   return {
     inputCost,

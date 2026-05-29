@@ -579,8 +579,11 @@ export class TaskVerifyTool implements ITool {
           const profile = await getRepoProfiler(workDir).getProfile();
           if (profile.commands.test) {
             const parts = profile.commands.test.split(/\s+/);
-            testCmd = parts[0];
-            testArgs = parts.slice(1);
+            const [cmd, ...rest] = parts;
+            if (cmd) {
+              testCmd = cmd;
+              testArgs = rest;
+            }
           }
         } catch {
           // use default npm test

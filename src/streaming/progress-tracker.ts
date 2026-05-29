@@ -112,8 +112,9 @@ export class ProgressTracker extends EventEmitter {
     this.progressHistory = [];
 
     // Set first stage as active
-    if (this.stageOrder.length > 0) {
-      const firstStage = this.stages.get(this.stageOrder[0]);
+    const firstStageName = this.stageOrder[0];
+    if (firstStageName !== undefined) {
+      const firstStage = this.stages.get(firstStageName);
       if (firstStage) {
         firstStage.status = 'active';
       }
@@ -127,6 +128,7 @@ export class ProgressTracker extends EventEmitter {
    */
   updateProgress(progress: number, stageName?: string, message?: string): void {
     const name = stageName || this.stageOrder[this.currentStageIndex];
+    if (name === undefined) return;
     const stage = this.stages.get(name);
 
     if (!stage) return;
@@ -160,7 +162,7 @@ export class ProgressTracker extends EventEmitter {
    */
   completeStage(stageName?: string): void {
     const name = stageName || this.stageOrder[this.currentStageIndex];
-    const stage = this.stages.get(name);
+    const stage = name !== undefined ? this.stages.get(name) : undefined;
 
     if (stage) {
       stage.progress = 100;
@@ -170,7 +172,9 @@ export class ProgressTracker extends EventEmitter {
     // Move to next stage
     if (this.currentStageIndex < this.stageOrder.length - 1) {
       this.currentStageIndex++;
-      const nextStage = this.stages.get(this.stageOrder[this.currentStageIndex]);
+      const nextStageName = this.stageOrder[this.currentStageIndex];
+      const nextStage =
+        nextStageName !== undefined ? this.stages.get(nextStageName) : undefined;
       if (nextStage) {
         nextStage.status = 'active';
       }
@@ -184,7 +188,7 @@ export class ProgressTracker extends EventEmitter {
    */
   failStage(stageName?: string, message?: string): void {
     const name = stageName || this.stageOrder[this.currentStageIndex];
-    const stage = this.stages.get(name);
+    const stage = name !== undefined ? this.stages.get(name) : undefined;
 
     if (stage) {
       stage.status = 'failed';
@@ -223,6 +227,12 @@ export class ProgressTracker extends EventEmitter {
     // Calculate progress rate from history
     const first = this.progressHistory[0];
     const last = this.progressHistory[this.progressHistory.length - 1];
+
+    // Guarded by the length < 2 early return above, so both must exist; this
+    // also satisfies noUncheckedIndexedAccess without changing behavior.
+    if (first === undefined || last === undefined) {
+      return undefined;
+    }
 
     const progressDelta = last.progress - first.progress;
     const timeDelta = last.time - first.time;

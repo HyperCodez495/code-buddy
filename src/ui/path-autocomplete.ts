@@ -401,6 +401,7 @@ export function formatSuggestions(
 
   for (let i = 0; i < suggestions.length; i++) {
     const s = suggestions[i];
+    if (s === undefined) continue;
     const icon = s.type === 'directory' ? '[D]' : '[F]';
     const prefix = i === highlightIndex ? '> ' : '  ';
     const hidden = s.isHidden ? ' (hidden)' : '';
@@ -444,13 +445,17 @@ export function completePath(input: string, suggestion: PathSuggestion): string 
  */
 export function getCommonPrefix(suggestions: PathSuggestion[]): string {
   if (suggestions.length === 0) return '';
-  if (suggestions.length === 1) return suggestions[0].path;
+  const first = suggestions[0];
+  if (first === undefined) return '';
+  if (suggestions.length === 1) return first.path;
 
   const names = suggestions.map(s => s.displayName.replace('/', ''));
-  let prefix = names[0];
+  let prefix = names[0] ?? '';
 
   for (let i = 1; i < names.length; i++) {
-    while (!names[i].toLowerCase().startsWith(prefix.toLowerCase())) {
+    const name = names[i];
+    if (name === undefined) continue;
+    while (!name.toLowerCase().startsWith(prefix.toLowerCase())) {
       prefix = prefix.slice(0, -1);
       if (!prefix) return '';
     }

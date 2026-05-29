@@ -195,26 +195,29 @@ function extractFunctions(content: string, filePath: string): FunctionComplexity
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
 
     if (!inFunction) {
       // Look for function start
       for (const pattern of functionPatterns) {
         const match = line.match(pattern);
-        if (match && match[1]) {
-          currentFunction = {
-            name: match[1],
+        const fnName = match?.[1];
+        if (fnName) {
+          const fn = {
+            name: fnName,
             startLine: i + 1,
             content: [line],
           };
+          currentFunction = fn;
           braceCount = (line.match(/\{/g) || []).length - (line.match(/\}/g) || []).length;
           inFunction = braceCount > 0 || line.includes('=>');
 
           // Handle single-line arrow functions
           if (line.includes('=>') && !line.includes('{')) {
             functions.push(analyzeFunctionContent(
-              currentFunction.name,
+              fn.name,
               filePath,
-              currentFunction.startLine,
+              fn.startLine,
               i + 1,
               [line]
             ));
@@ -290,8 +293,9 @@ function analyzeFunctionContent(
 
   // Count parameters
   const paramMatch = content.match(/\(([^)]*)\)/);
-  const parameters = paramMatch && paramMatch[1].trim()
-    ? paramMatch[1].split(',').length
+  const paramGroup = paramMatch?.[1];
+  const parameters = paramGroup && paramGroup.trim()
+    ? paramGroup.split(',').length
     : 0;
 
   return {

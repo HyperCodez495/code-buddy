@@ -357,6 +357,13 @@ export class PersistentCheckpointManager extends EventEmitter {
     }
 
     const lastCheckpointId = index.checkpoints[index.checkpoints.length - 1];
+    if (lastCheckpointId === undefined) {
+      return {
+        success: false,
+        restored: [],
+        errors: ['No checkpoints available']
+      };
+    }
     return this.restore(lastCheckpointId);
   }
 

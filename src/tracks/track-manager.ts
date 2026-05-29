@@ -535,10 +535,10 @@ export class TrackManager {
         const taskMatch = line.match(/^(\s*)- \[([ x~-])\] (.+?)(?:\s*`([a-f0-9]{7,})`)?$/);
         if (!taskMatch) continue;
 
-        const indent = taskMatch[1].length;
-        const status = this.parseTaskStatus(taskMatch[2]);
-        const title = taskMatch[3].trim();
-        const commitSha = taskMatch[4];
+        const [, indentMatch = '', statusChar = '', titleMatch = '', commitSha] = taskMatch;
+        const indent = indentMatch.length;
+        const status = this.parseTaskStatus(statusChar);
+        const title = titleMatch.trim();
 
         const task: TrackTask = {
           id: this.slugify(title),
@@ -598,7 +598,10 @@ export class TrackManager {
     for (const line of lines) {
       const match = line.match(/^[-*]\s*(?:\[.\]\s*)?(.+)$/);
       if (match) {
-        items.push(match[1].trim());
+        const captured = match[1];
+        if (captured !== undefined) {
+          items.push(captured.trim());
+        }
       }
     }
 

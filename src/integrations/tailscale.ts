@@ -118,7 +118,7 @@ export class TailscaleManager {
       // Get version separately (status --json doesn't always include it)
       try {
         const { stdout: ver } = await execFileAsync('tailscale', ['version'], { timeout: EXEC_TIMEOUT });
-        status.version = ver.trim().split('\n')[0];
+        status.version = ver.trim().split('\n')[0] ?? '';
       } catch { /* non-critical */ }
 
       this.cachedStatus = status;

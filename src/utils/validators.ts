@@ -396,7 +396,7 @@ export function validateCommand(
   }
 
   // Extract base command
-  const baseCommand = trimmed.split(/[\s;|&]/)[0].replace(/^(sudo\s+)?/, '');
+  const baseCommand = (trimmed.split(/[\s;|&]/)[0] ?? '').replace(/^(sudo\s+)?/, '');
 
   // Allowed commands check
   if (allowedCommands && allowedCommands.length > 0) {

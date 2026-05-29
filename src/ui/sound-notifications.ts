@@ -245,6 +245,14 @@ export class SoundNotificationManager {
 
       const [startH, startM] = start.split(':').map(Number);
       const [endH, endM] = end.split(':').map(Number);
+      if (
+        startH === undefined ||
+        startM === undefined ||
+        endH === undefined ||
+        endM === undefined
+      ) {
+        continue;
+      }
 
       const startMinutes = startH * 60 + startM;
       const endMinutes = endH * 60 + endM;
@@ -364,7 +372,7 @@ export class SoundNotificationManager {
     const methods = [
       // paplay with system sounds
       () => {
-        const soundFile = frequencies[0] > 500
+        const soundFile = (frequencies[0] ?? 0) > 500
           ? '/usr/share/sounds/freedesktop/stereo/complete.oga'
           : '/usr/share/sounds/freedesktop/stereo/bell.oga';
         return `paplay ${soundFile} 2>/dev/null`;

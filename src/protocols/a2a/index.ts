@@ -403,7 +403,8 @@ export class A2AAgentClient {
       .map((name) => ({ name, score: this.scoreSpokeForSkill(name, skillId) }))
       .sort((a, b) => b.score - a.score);
 
-    return scored.length > 0 ? scored[0].name : null;
+    const best = scored[0];
+    return best ? best.name : null;
   }
 
   /** Submit a task to a specific agent (local or remote) */
@@ -536,24 +537,25 @@ export function createAgentCard(config: {
  * (probe-based). The signature stays simple in V0.1 to ease testing.
  */
 export function selectAgent(candidates: string[]): string {
-  if (candidates.length === 0) {
+  const first = candidates[0];
+  if (first === undefined) {
     throw new Error('selectAgent: empty candidate list');
   }
-  return candidates[0];
+  return first;
 }
 
 export function getTaskResult(task: Task): string {
   // Check artifacts first
-  if (task.artifacts.length > 0) {
-    const lastArtifact = task.artifacts[task.artifacts.length - 1];
+  const lastArtifact = task.artifacts[task.artifacts.length - 1];
+  if (lastArtifact !== undefined) {
     const textParts = lastArtifact.parts.filter((p): p is TextPart => p.type === 'text');
     if (textParts.length > 0) return textParts.map((p) => p.text).join('\n');
   }
 
   // Fallback to last agent message
   const agentMessages = task.messages.filter((m) => m.role === 'agent');
-  if (agentMessages.length > 0) {
-    const last = agentMessages[agentMessages.length - 1];
+  const last = agentMessages[agentMessages.length - 1];
+  if (last !== undefined) {
     const textParts = last.parts.filter((p): p is TextPart => p.type === 'text');
     return textParts.map((p) => p.text).join('\n');
   }

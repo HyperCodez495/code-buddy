@@ -106,7 +106,8 @@ export class PriorityQueue<T = unknown> extends Queue<T> {
     let insertIndex = this.items.length;
 
     for (let i = 0; i < this.items.length; i++) {
-      if (item.priorityValue > this.items[i].priorityValue) {
+      const existing = this.items[i];
+      if (existing && item.priorityValue > existing.priorityValue) {
         insertIndex = i;
         break;
       }
@@ -200,8 +201,9 @@ export class PriorityQueue<T = unknown> extends Queue<T> {
     const priorities: PriorityLevel[] = ['low', 'normal', 'high', 'critical'];
     const currentIndex = priorities.indexOf(item.priority);
 
-    if (currentIndex < priorities.length - 1) {
-      return this.updatePriority(id, priorities[currentIndex + 1]);
+    const higher = priorities[currentIndex + 1];
+    if (currentIndex < priorities.length - 1 && higher !== undefined) {
+      return this.updatePriority(id, higher);
     }
 
     return false; // Already at highest priority
@@ -220,8 +222,9 @@ export class PriorityQueue<T = unknown> extends Queue<T> {
     const priorities: PriorityLevel[] = ['low', 'normal', 'high', 'critical'];
     const currentIndex = priorities.indexOf(item.priority);
 
-    if (currentIndex > 0) {
-      return this.updatePriority(id, priorities[currentIndex - 1]);
+    const lower = priorities[currentIndex - 1];
+    if (currentIndex > 0 && lower !== undefined) {
+      return this.updatePriority(id, lower);
     }
 
     return false; // Already at lowest priority
@@ -300,8 +303,10 @@ export class PriorityQueue<T = unknown> extends Queue<T> {
     let lowest: PriorityLevel | null = null;
 
     if (this.items.length > 0) {
-      highest = this.items[0].priority;
-      lowest = this.items[this.items.length - 1].priority;
+      const first = this.items[0];
+      const last = this.items[this.items.length - 1];
+      highest = first ? first.priority : null;
+      lowest = last ? last.priority : null;
     }
 
     return {

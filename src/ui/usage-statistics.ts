@@ -269,7 +269,7 @@ export function calculateUsageStats(data: {
   // Daily usage
   const dailyMap = new Map<string, DailyUsage>();
   for (const session of sessions) {
-    const date = session.startTime.toISOString().split('T')[0];
+    const date = session.startTime.toISOString().split('T')[0] ?? session.startTime.toISOString();
     const existing = dailyMap.get(date) || {
       date,
       sessions: 0,

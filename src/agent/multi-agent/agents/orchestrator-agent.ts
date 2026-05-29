@@ -161,7 +161,7 @@ Explore the codebase to understand the current state, then create a comprehensiv
 
     const planMatch = output.match(planRegex);
     const complexity = planMatch ? planMatch[1] : "moderate";
-    const planContent = planMatch ? planMatch[2] : output;
+    const planContent = planMatch?.[2] ?? output;
 
     const goalMatch = planContent.match(goalRegex);
     const summaryMatch = planContent.match(summaryRegex);
@@ -174,7 +174,7 @@ Explore the codebase to understand the current state, then create a comprehensiv
     phaseRegex.lastIndex = 0;
 
     while ((phaseMatch = phaseRegex.exec(phaseContent)) !== null) {
-      const [, order, parallelizable, content] = phaseMatch;
+      const [, order = "0", parallelizable, content = ""] = phaseMatch;
 
       const nameMatch = content.match(nameRegex);
       const phaseDescMatch = content.match(descRegex);
@@ -184,14 +184,14 @@ Explore the codebase to understand the current state, then create a comprehensiv
       taskRegex.lastIndex = 0;
 
       while ((taskMatch = taskRegex.exec(content)) !== null) {
-        const [, priority, agent, taskContent] = taskMatch;
+        const [, priority, agent, taskContent = ""] = taskMatch;
         const taskTitleMatch = taskContent.match(titleRegex);
         const taskDescMatch = taskContent.match(descRegex);
 
         tasks.push({
           id: createId("task"),
-          title: taskTitleMatch ? taskTitleMatch[1].trim() : "Untitled Task",
-          description: taskDescMatch ? taskDescMatch[1].trim() : "",
+          title: taskTitleMatch?.[1]?.trim() ?? "Untitled Task",
+          description: taskDescMatch?.[1]?.trim() ?? "",
           status: "pending",
           priority: priority as TaskPriority,
           assignedTo: agent as AgentRole,
@@ -206,8 +206,8 @@ Explore the codebase to understand the current state, then create a comprehensiv
 
       phases.push({
         id: createId("phase"),
-        name: nameMatch ? nameMatch[1].trim() : `Phase ${order}`,
-        description: phaseDescMatch ? phaseDescMatch[1].trim() : "",
+        name: nameMatch?.[1]?.trim() ?? `Phase ${order}`,
+        description: phaseDescMatch?.[1]?.trim() ?? "",
         tasks,
         parallelizable: parallelizable === "true",
         order: parseInt(order, 10),
@@ -249,8 +249,8 @@ Explore the codebase to understand the current state, then create a comprehensiv
 
     return {
       id: createId("plan"),
-      goal: goalMatch ? goalMatch[1].trim() : goal,
-      summary: summaryMatch ? summaryMatch[1].trim() : "Execution plan for: " + goal,
+      goal: goalMatch?.[1]?.trim() ?? goal,
+      summary: summaryMatch?.[1]?.trim() ?? ("Execution plan for: " + goal),
       phases: phases.sort((a, b) => a.order - b.order),
       estimatedComplexity: complexity as ExecutionPlan["estimatedComplexity"],
       requiredAgents: Array.from(requiredAgents),

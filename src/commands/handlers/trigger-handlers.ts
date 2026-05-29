@@ -367,6 +367,10 @@ function parseFlags(args: string[]): ParsedFlags {
 
   while (i < args.length) {
     const arg = args[i];
+    if (arg === undefined) {
+      i++;
+      continue;
+    }
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
       const next = args[i + 1];

@@ -74,7 +74,12 @@ export class ObservationVariator {
    */
   wrapToolResult(toolName: string, content: string): string {
     const idx = this.turnIndex % TOOL_RESULT_TEMPLATES.length;
-    return TOOL_RESULT_TEMPLATES[idx](toolName, content);
+    const template = TOOL_RESULT_TEMPLATES[idx];
+    // Guard: idx is always in bounds (0 <= turnIndex%len < len), so this
+    // fallback is unreachable, but it preserves the wrap-the-result behavior
+    // instead of returning undefined.
+    if (!template) return `Result from ${toolName}:\n${content}`;
+    return template(toolName, content);
   }
 
   /**
@@ -82,7 +87,12 @@ export class ObservationVariator {
    */
   wrapMemoryBlock(content: string): string {
     const idx = this.turnIndex % MEMORY_BLOCK_PHRASINGS.length;
-    return MEMORY_BLOCK_PHRASINGS[idx](content);
+    const phrasing = MEMORY_BLOCK_PHRASINGS[idx];
+    // Guard: idx is always in bounds (0 <= turnIndex%len < len), so this
+    // fallback is unreachable, but it preserves the wrap-the-block behavior
+    // instead of returning undefined.
+    if (!phrasing) return `Relevant memory context:\n${content}`;
+    return phrasing(content);
   }
 }
 

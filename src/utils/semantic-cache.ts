@@ -195,8 +195,12 @@ export class SemanticCache<T = unknown> extends EventEmitter {
     const hyperplanes = this.lshHyperplanes[tableIndex];
     let hash = '';
 
+    if (!hyperplanes) {
+      return hash;
+    }
+
     for (const hyperplane of hyperplanes) {
-      const dotProduct = embedding.reduce((sum, v, i) => sum + v * hyperplane[i], 0);
+      const dotProduct = embedding.reduce((sum, v, i) => sum + v * (hyperplane[i] ?? 0), 0);
       hash += dotProduct >= 0 ? '1' : '0';
     }
 
@@ -210,11 +214,15 @@ export class SemanticCache<T = unknown> extends EventEmitter {
     if (!this.config.enableLSH) return;
 
     for (let t = 0; t < this.lshTables.length; t++) {
+      const table = this.lshTables[t];
+      if (!table) continue;
       const hash = this.computeLSHHash(embedding, t);
-      if (!this.lshTables[t].has(hash)) {
-        this.lshTables[t].set(hash, new Set());
+      let bucket = table.get(hash);
+      if (!bucket) {
+        bucket = new Set();
+        table.set(hash, bucket);
       }
-      this.lshTables[t].get(hash)!.add(key);
+      bucket.add(key);
     }
   }
 
@@ -225,12 +233,14 @@ export class SemanticCache<T = unknown> extends EventEmitter {
     if (!this.config.enableLSH) return;
 
     for (let t = 0; t < this.lshTables.length; t++) {
+      const table = this.lshTables[t];
+      if (!table) continue;
       const hash = this.computeLSHHash(embedding, t);
-      const bucket = this.lshTables[t].get(hash);
+      const bucket = table.get(hash);
       if (bucket) {
         bucket.delete(key);
         if (bucket.size === 0) {
-          this.lshTables[t].delete(hash);
+          table.delete(hash);
         }
       }
     }
@@ -248,8 +258,10 @@ export class SemanticCache<T = unknown> extends EventEmitter {
     const candidates = new Set<string>();
 
     for (let t = 0; t < this.lshTables.length; t++) {
+      const table = this.lshTables[t];
+      if (!table) continue;
       const hash = this.computeLSHHash(embedding, t);
-      const bucket = this.lshTables[t].get(hash);
+      const bucket = table.get(hash);
       if (bucket) {
         for (const key of bucket) {
           candidates.add(key);
@@ -563,9 +575,11 @@ export class SemanticCache<T = unknown> extends EventEmitter {
     let magnitudeB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      magnitudeA += a[i] * a[i];
-      magnitudeB += b[i] * b[i];
+      const ai = a[i] ?? 0;
+      const bi = b[i] ?? 0;
+      dotProduct += ai * bi;
+      magnitudeA += ai * ai;
+      magnitudeB += bi * bi;
     }
 
     const magnitude = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);

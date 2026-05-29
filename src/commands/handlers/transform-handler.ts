@@ -107,7 +107,8 @@ export async function handleTransform(args: string[]): Promise<CommandHandlerRes
     };
   }
 
-  const type = args[0].toLowerCase();
+  // safe: args.length === 0 returns early above, so args[0] is in-bounds here.
+  const type = (args[0] ?? '').toLowerCase();
 
   if (!TRANSFORM_TYPES.includes(type as TransformType)) {
     return {

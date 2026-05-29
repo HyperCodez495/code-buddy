@@ -215,10 +215,8 @@ export class MetricsDashboard extends EventEmitter {
       this.costs.sessionCost += request.cost;
       this.costs.averageCostPerRequest = this.costs.totalCost / this.requestCount;
 
-      if (!this.costs.costByModel[request.model]) {
-        this.costs.costByModel[request.model] = 0;
-      }
-      this.costs.costByModel[request.model] += request.cost;
+      this.costs.costByModel[request.model] =
+        (this.costs.costByModel[request.model] ?? 0) + request.cost;
     }
 
     this.addEvent({

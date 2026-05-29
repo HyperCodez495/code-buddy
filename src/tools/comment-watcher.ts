@@ -111,6 +111,7 @@ export class CommentWatcher extends EventEmitter {
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (line === undefined) continue;
 
         for (const trigger of this.config.triggers) {
           const match = line.match(trigger.regex);
@@ -121,7 +122,7 @@ export class CommentWatcher extends EventEmitter {
               line: i + 1,
               column,
               trigger: trigger.pattern,
-              content: match[1].trim(),
+              content: (match[1] ?? "").trim(),
               fullLine: line.trim(),
               priority: trigger.priority,
             });
@@ -168,6 +169,7 @@ export class CommentWatcher extends EventEmitter {
         if (!match) continue;
 
         const [, file, lineNum, content] = match;
+        if (file === undefined || lineNum === undefined || content === undefined) continue;
 
         // Match against triggers to get full details
         for (const trigger of this.config.triggers) {
@@ -178,7 +180,7 @@ export class CommentWatcher extends EventEmitter {
               line: parseInt(lineNum),
               column: content.indexOf(triggerMatch[0]),
               trigger: trigger.pattern,
-              content: triggerMatch[1].trim(),
+              content: (triggerMatch[1] ?? "").trim(),
               fullLine: content.trim(),
               priority: trigger.priority,
             });
@@ -272,6 +274,9 @@ export class CommentWatcher extends EventEmitter {
       // Remove or modify the comment line
       if (comment.line <= lines.length) {
         const line = lines[comment.line - 1];
+        if (line === undefined) {
+          return false;
+        }
 
         // Check if it's a standalone comment line
         const trimmed = line.trim();
@@ -350,6 +355,7 @@ export class CommentWatcher extends EventEmitter {
 
     for (let i = 0; i < this.detectedComments.length; i++) {
       const c = this.detectedComments[i];
+      if (c === undefined) continue;
       const priority = c.priority >= 9 ? "🔴" : c.priority >= 7 ? "🟡" : "🟢";
       const relativePath = path.relative(this.projectRoot, c.file);
 

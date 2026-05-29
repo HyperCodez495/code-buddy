@@ -228,7 +228,7 @@ export class MetricsDashboard {
     // Initialize all days
     for (let i = 0; i < days; i++) {
       const date = new Date(Date.now() - i * 24 * 60 * 60 * 1000);
-      const dateStr = date.toISOString().split('T')[0];
+      const dateStr = date.toISOString().split('T')[0] ?? date.toISOString();
       dailyMap.set(dateStr, {
         date: dateStr,
         sessions: 0,
@@ -243,7 +243,7 @@ export class MetricsDashboard {
 
     // Aggregate sessions
     for (const session of sessions) {
-      const dateStr = session.startTime.toISOString().split('T')[0];
+      const dateStr = session.startTime.toISOString().split('T')[0] ?? session.startTime.toISOString();
       const daily = dailyMap.get(dateStr);
       if (daily) {
         daily.sessions++;

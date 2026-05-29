@@ -161,21 +161,28 @@ function levenshteinDistance(a: string, b: string): number {
   for (let i = 0; i <= m; i++) {
     dp[i] = [i];
   }
+  const firstRow = dp[0] ?? [];
+  if (dp[0] === undefined) dp[0] = firstRow;
   for (let j = 0; j <= n; j++) {
-    dp[0][j] = j;
+    firstRow[j] = j;
   }
 
   for (let i = 1; i <= m; i++) {
+    // Each row index 0..m was initialized above, so prevRow/curRow are defined.
+    const prevRow = dp[i - 1] ?? [];
+    const curRow = dp[i] ?? [];
     for (let j = 1; j <= n; j++) {
       if (a[i - 1] === b[j - 1]) {
-        dp[i][j] = dp[i - 1][j - 1];
+        curRow[j] = prevRow[j - 1] ?? 0;
       } else {
-        dp[i][j] = 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+        curRow[j] =
+          1 + Math.min(prevRow[j] ?? 0, curRow[j - 1] ?? 0, prevRow[j - 1] ?? 0);
       }
     }
   }
 
-  return dp[m][n];
+  const lastRow = dp[m] ?? [];
+  return lastRow[n] ?? 0;
 }
 
 const FUZZY_MATCH_THRESHOLD = 0.1; // 10% max difference

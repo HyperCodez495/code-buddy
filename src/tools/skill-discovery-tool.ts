@@ -91,6 +91,12 @@ export class SkillDiscoveryTool {
       // Auto-install top result if requested
       if (auto_install && discovered.length > 0) {
         const topSkill = discovered[0];
+        if (topSkill === undefined) {
+          return {
+            success: true,
+            output,
+          };
+        }
         try {
           const installed = await hub.install(topSkill.name, topSkill.version);
           output += `\nAuto-installed: ${installed.name} v${installed.version}`;

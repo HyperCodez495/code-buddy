@@ -309,8 +309,10 @@ export class USearchVectorIndex extends EventEmitter {
     for (let i = 0; i < keys.length; i++) {
       // Convert BigInt to number if needed (native usearch returns BigUint64Array)
       const rawKey = keys[i];
+      if (rawKey === undefined) continue; // parallel arrays of equal length; unreachable
       const key: number = typeof rawKey === 'bigint' ? Number(rawKey) : rawKey;
       const distance = distances[i];
+      if (distance === undefined) continue; // === undefined, not falsy: distance 0 is valid
 
       const id = this.keyToId.get(key);
       if (!id) continue; // Skip removed vectors
@@ -706,9 +708,12 @@ class FallbackVectorIndex implements USearchNativeIndex {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) break; // dimension invariant: unreachable
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     const denominator = Math.sqrt(normA) * Math.sqrt(normB);
@@ -721,7 +726,10 @@ class FallbackVectorIndex implements USearchNativeIndex {
   private l2SquaredDistance(a: Float32Array, b: Float32Array): number {
     let sum = 0;
     for (let i = 0; i < a.length; i++) {
-      const diff = a[i] - b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) break; // dimension invariant: unreachable
+      const diff = ai - bi;
       sum += diff * diff;
     }
     return sum;
@@ -730,7 +738,10 @@ class FallbackVectorIndex implements USearchNativeIndex {
   private innerProduct(a: Float32Array, b: Float32Array): number {
     let sum = 0;
     for (let i = 0; i < a.length; i++) {
-      sum += a[i] * b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) break; // dimension invariant: unreachable
+      sum += ai * bi;
     }
     return sum;
   }

@@ -55,8 +55,7 @@ function renderPlain(data: TreeData): string {
   lines.push('');
 
   // Render tree
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
+  for (const [i, node] of nodes.entries()) {
     const isLast = i === nodes.length - 1;
     const prefix = isLast ? '└── ' : '├── ';
     renderNodePlain(node, lines, prefix, isLast);
@@ -79,8 +78,7 @@ function renderNodePlain(
 
   if (node.children && node.children.length > 0) {
     const _childIndent = isLast ? '    ' : '│   ';
-    for (let i = 0; i < node.children.length; i++) {
-      const child = node.children[i];
+    for (const [i, child] of node.children.entries()) {
       const childIsLast = i === node.children.length - 1;
       const childPrefix = childIsLast ? '└── ' : '├── ';
       renderNodePlain(child, lines, childPrefix, childIsLast, depth + 1);
@@ -130,8 +128,7 @@ function renderFancy(data: TreeData, ctx: RenderContext): string {
   lines.push('├' + '─'.repeat(W - 2) + '┤');
 
   // Render tree
-  for (let i = 0; i < nodes.length; i++) {
-    const node = nodes[i];
+  for (const [i, node] of nodes.entries()) {
     const isLast = i === nodes.length - 1;
     renderNodeFancy(node, lines, '', isLast, colors, icons, W);
   }
@@ -152,8 +149,8 @@ function renderNodeFancy(
 ): void {
   // Tree characters
   const branch = isLast ? '└── ' : '├── ';
-  const icon = node.isDirectory ? icons.dir : icons.file;
-  const color = node.isDirectory ? colors.dir : colors.file;
+  const icon = (node.isDirectory ? icons.dir : icons.file) ?? '';
+  const color = (node.isDirectory ? colors.dir : colors.file) ?? '';
 
   // Format name with size
   let displayName = node.name;
@@ -176,8 +173,7 @@ function renderNodeFancy(
   // Render children
   if (node.children && node.children.length > 0) {
     const childPrefix = prefix + (isLast ? '    ' : '│   ');
-    for (let i = 0; i < node.children.length; i++) {
-      const child = node.children[i];
+    for (const [i, child] of node.children.entries()) {
       const childIsLast = i === node.children.length - 1;
       renderNodeFancy(child, lines, childPrefix, childIsLast, colors, icons, width);
     }

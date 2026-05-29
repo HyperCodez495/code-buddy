@@ -132,6 +132,7 @@ export function buildPaletteItems(
   const recent = history.getRecent(15);
   for (let i = 0; i < recent.length; i++) {
     const entry = recent[i];
+    if (!entry) continue;
     // Skip slash commands in recent (they're already in commands)
     if (entry.command.startsWith('/')) continue;
 
@@ -326,7 +327,7 @@ export function CommandPalette({
           visibleItems.map((item, displayIndex) => {
             const actualIndex = startIndex + displayIndex;
             const isSelected = actualIndex === clampedIndex;
-            const badge = CATEGORY_BADGE[item.category];
+            const badge = CATEGORY_BADGE[item.category] ?? { icon: '?', color: 'gray' };
 
             return (
               <Box key={item.id} paddingLeft={1}>

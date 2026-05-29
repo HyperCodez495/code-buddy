@@ -270,7 +270,7 @@ export class AnalyticsDashboard extends EventEmitter {
     }
 
     // Cleanup old daily stats
-    const cutoffStr = cutoff.toISOString().split('T')[0];
+    const cutoffStr = cutoff.toISOString().slice(0, 10);
     for (const [date] of this.dailyStats) {
       if (date < cutoffStr) {
         this.dailyStats.delete(date);
@@ -347,7 +347,9 @@ export class AnalyticsDashboard extends EventEmitter {
       session.tokensOutput += tokensOutput;
 
       // Calculate cost
-      const pricing = MODEL_PRICING[model || session.model] || MODEL_PRICING.default;
+      const pricing =
+        MODEL_PRICING[model || session.model] ??
+        MODEL_PRICING.default ?? { input: 3.0, output: 15.0 };
       const cost = (tokensInput * pricing.input + tokensOutput * pricing.output) / 1_000_000;
       session.cost += cost;
 
@@ -429,7 +431,7 @@ export class AnalyticsDashboard extends EventEmitter {
    * Update daily stats
    */
   private updateDailyStats(session: SessionMetrics): void {
-    const date = new Date(session.startTime).toISOString().split('T')[0];
+    const date = new Date(session.startTime).toISOString().slice(0, 10);
 
     let stats = this.dailyStats.get(date);
     if (!stats) {
@@ -533,7 +535,7 @@ export class AnalyticsDashboard extends EventEmitter {
       costByModel[session.model] = (costByModel[session.model] || 0) + session.cost;
 
       // By day
-      const day = new Date(session.startTime).toISOString().split('T')[0];
+      const day = new Date(session.startTime).toISOString().slice(0, 10);
       costByDay[day] = (costByDay[day] || 0) + session.cost;
 
       // By week
@@ -570,7 +572,7 @@ export class AnalyticsDashboard extends EventEmitter {
   private getWeekStart(date: Date): string {
     const d = new Date(date);
     d.setDate(d.getDate() - d.getDay());
-    return d.toISOString().split('T')[0];
+    return d.toISOString().slice(0, 10);
   }
 
   /**
@@ -601,7 +603,7 @@ export class AnalyticsDashboard extends EventEmitter {
     const getPercentile = (arr: number[], p: number): number => {
       if (arr.length === 0) return 0;
       const index = Math.ceil((p / 100) * arr.length) - 1;
-      return arr[Math.max(0, index)];
+      return arr[Math.max(0, index)] ?? 0;
     };
 
     return {

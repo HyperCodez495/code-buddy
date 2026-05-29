@@ -313,7 +313,7 @@ export class DocumentTool {
       .filter(entry => /^xl\/worksheets\/sheet\d+\.xml$/.test(entry.entryName))
       .map(entry => {
         const match = entry.entryName.match(/sheet(\d+)\.xml$/);
-        return { entryName: entry.entryName, index: match ? parseInt(match[1]) : 0 };
+        return { entryName: entry.entryName, index: match?.[1] ? parseInt(match[1]) : 0 };
       })
       .sort((a, b) => a.index - b.index);
 
@@ -408,7 +408,7 @@ export class DocumentTool {
     const sheetMatches = workbookXml.match(/<sheet[^>]+name="([^"]+)"[^>]*>/g) || [];
     for (const match of sheetMatches) {
       const nameMatch = match.match(/name="([^"]+)"/);
-      if (nameMatch) {
+      if (nameMatch?.[1] !== undefined) {
         sheetNames.push(nameMatch[1]);
       }
     }
@@ -434,7 +434,7 @@ export class DocumentTool {
 
     for (const rowXml of rowMatches) {
       const rowNumMatch = rowXml.match(/r="(\d+)"/);
-      const rowNum = rowNumMatch ? parseInt(rowNumMatch[1]) - 1 : data.length;
+      const rowNum = rowNumMatch?.[1] !== undefined ? parseInt(rowNumMatch[1]) - 1 : data.length;
 
       // Ensure row exists
       while (data.length <= rowNum) {
@@ -446,28 +446,31 @@ export class DocumentTool {
 
       for (const cellXml of cellMatches) {
         const refMatch = cellXml.match(/r="([A-Z]+)(\d+)"/);
-        if (!refMatch) continue;
+        const colStr = refMatch?.[1];
+        if (colStr === undefined) continue;
 
-        const colStr = refMatch[1];
         const colIndex = this.colStringToIndex(colStr);
         maxCol = Math.max(maxCol, colIndex + 1);
 
         // Ensure row has enough columns
-        while (data[rowNum].length <= colIndex) {
-          data[rowNum].push('');
+        const row = data[rowNum];
+        if (row === undefined) continue;
+        while (row.length <= colIndex) {
+          row.push('');
         }
 
         // Get cell value
         const valueMatch = cellXml.match(/<v>([^<]*)<\/v>/);
-        let value = valueMatch ? valueMatch[1] : '';
+        let value = valueMatch?.[1] ?? '';
 
         // Check if it's a shared string reference
         const typeMatch = cellXml.match(/t="s"/);
-        if (typeMatch && sharedStrings[parseInt(value)]) {
-          value = sharedStrings[parseInt(value)];
+        const sharedValue = sharedStrings[parseInt(value)];
+        if (typeMatch && sharedValue) {
+          value = sharedValue;
         }
 
-        data[rowNum][colIndex] = value;
+        row[colIndex] = value;
       }
     }
 
@@ -687,7 +690,7 @@ export class DocumentTool {
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(xml)) !== null) {
-      blocks.push({ tagName: match[1], xml: match[0] });
+      blocks.push({ tagName: match[1] ?? '', xml: match[0] });
     }
 
     return blocks;
@@ -753,7 +756,7 @@ export class DocumentTool {
     const hasImageMarkup = /<(?:w:drawing|w:pict|pic:pic|v:imagedata)\b/.test(paragraphXml);
 
     while ((match = relRegex.exec(paragraphXml)) !== null) {
-      relIds.add(this.decodeXmlText(match[1]));
+      relIds.add(this.decodeXmlText(match[1] ?? ''));
     }
 
     const markers = [...relIds]
@@ -774,7 +777,7 @@ export class DocumentTool {
     let match: RegExpExecArray | null;
 
     while ((match = regex.exec(xml)) !== null) {
-      texts.push(this.decodeXmlText(match[1]));
+      texts.push(this.decodeXmlText(match[1] ?? ''));
     }
 
     return texts;
@@ -830,7 +833,7 @@ export class DocumentTool {
     let match: RegExpExecArray | null;
 
     while ((match = relRegex.exec(documentXml)) !== null) {
-      const id = this.decodeXmlText(match[1]);
+      const id = this.decodeXmlText(match[1] ?? '');
       if (!seen.has(id)) {
         ids.push(id);
         seen.add(id);
@@ -842,7 +845,7 @@ export class DocumentTool {
 
   private getXmlAttribute(xml: string, attributeName: string): string | undefined {
     const match = xml.match(new RegExp(`\\b${attributeName}=(["'])(.*?)\\1`));
-    return match ? this.decodeXmlText(match[2]) : undefined;
+    return match ? this.decodeXmlText(match[2] ?? '') : undefined;
   }
 
   /**

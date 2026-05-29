@@ -286,7 +286,8 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
       // 5. Run agent turn
       const entries = await agent.processUserMessage(message.content);
-      const response = entries.length > 0 ? String(entries[entries.length - 1].content) : '';
+      const lastEntry = entries[entries.length - 1];
+      const response = lastEntry ? String(lastEntry.content) : '';
 
       // 6. Deliver reply
       await channel.send({

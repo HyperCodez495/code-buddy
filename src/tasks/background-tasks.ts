@@ -84,8 +84,8 @@ export class BackgroundTaskManager extends EventEmitter {
       const content = `${icon} Task **${task.id}**: ${event}\n${task.result?.output?.slice(0, 500) || task.result?.error || ''}`;
 
       await manager.sendToUser(
-        channelType as import('../channels/index.js').ChannelType,
-        channelId,
+        (channelType ?? task.notifyChannel) as import('../channels/index.js').ChannelType,
+        channelId ?? 'default',
         content,
         event === 'failed' ? 'high' : 'normal'
       );
@@ -244,6 +244,9 @@ export class BackgroundTaskManager extends EventEmitter {
 
     // Find grok executable
     const codebuddyPath = process.argv[1]; // Current script path
+    if (!codebuddyPath) {
+      throw new Error('Cannot determine CLI script path (process.argv[1] is undefined)');
+    }
 
     const child = spawn('node', [codebuddyPath, ...args], {
       cwd: task.workingDirectory,

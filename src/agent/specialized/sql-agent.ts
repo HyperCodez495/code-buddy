@@ -328,7 +328,9 @@ export class SQLAgent extends SpecializedAgent {
       const rows = result.rows.map(row => {
         const obj: Record<string, unknown> = {};
         row.forEach((val, i) => {
-          obj[result.columns[i]] = val;
+          const colName = result.columns[i];
+          if (colName === undefined) return;
+          obj[colName] = val;
         });
         return obj;
       });
@@ -418,7 +420,8 @@ export class SQLAgent extends SpecializedAgent {
 
       if (isSelect) {
         const rows = stmt.all() as Record<string, unknown>[];
-        const columns = rows.length > 0 ? Object.keys(rows[0]) : [];
+        const firstRow = rows[0];
+        const columns = firstRow !== undefined ? Object.keys(firstRow) : [];
 
         return {
           columns,
@@ -487,6 +490,10 @@ export class SQLAgent extends SpecializedAgent {
 
     const [, selectClause, tableName, whereClause, orderByClause, limitClause] = selectMatch;
 
+    if (selectClause === undefined || tableName === undefined) {
+      throw new Error('Only basic SELECT queries are supported without a SQL engine');
+    }
+
     const data = tables.get(tableName);
     if (!data || data.length === 0) {
       return { columns: [], rows: [], rowCount: 0, duration: Date.now() - startTime };
@@ -497,8 +504,10 @@ export class SQLAgent extends SpecializedAgent {
     // Apply WHERE
     if (whereClause) {
       const match = whereClause.match(/(\w+)\s*(=|!=|>|<|>=|<=|LIKE)\s*['"]?([^'"]+)['"]?/i);
-      if (match) {
-        const [, col, op, val] = match;
+      const col = match?.[1];
+      const op = match?.[2];
+      const val = match?.[3];
+      if (match && col !== undefined && op !== undefined && val !== undefined) {
         result = result.filter(row => {
           const cellVal = (row as Record<string, unknown>)[col];
           switch (op.toUpperCase()) {
@@ -521,12 +530,14 @@ export class SQLAgent extends SpecializedAgent {
     if (orderByClause) {
       const [col, dir] = orderByClause.trim().split(/\s+/);
       const asc = !dir || dir.toUpperCase() !== 'DESC';
-      result.sort((a, b) => {
-        const va = (a as Record<string, unknown>)[col];
-        const vb = (b as Record<string, unknown>)[col];
-        const cmp = String(va).localeCompare(String(vb));
-        return asc ? cmp : -cmp;
-      });
+      if (col !== undefined) {
+        result.sort((a, b) => {
+          const va = (a as Record<string, unknown>)[col];
+          const vb = (b as Record<string, unknown>)[col];
+          const cmp = String(va).localeCompare(String(vb));
+          return asc ? cmp : -cmp;
+        });
+      }
     }
 
     // Apply LIMIT
@@ -581,18 +592,23 @@ export class SQLAgent extends SpecializedAgent {
 
   private parseCSV(content: string): Record<string, unknown>[] {
     const lines = content.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length === 0) return [];
+    const headerLine = lines[0];
+    if (headerLine === undefined) return [];
 
-    const headers = this.parseCSVLine(lines[0]);
+    const headers = this.parseCSVLine(headerLine);
     const data: Record<string, unknown>[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const values = this.parseCSVLine(lines[i]);
+      const line = lines[i];
+      if (line === undefined) continue;
+      const values = this.parseCSVLine(line);
       const row: Record<string, unknown> = {};
       for (let j = 0; j < headers.length; j++) {
+        const header = headers[j];
+        if (header === undefined) continue;
         const val = values[j];
         const num = Number(val);
-        row[headers[j]] = !isNaN(num) && val !== '' ? num : val;
+        row[header] = !isNaN(num) && val !== '' ? num : val;
       }
       data.push(row);
     }
@@ -689,7 +705,10 @@ export class SQLAgent extends SpecializedAgent {
     });
 
     // Header
-    const header = result.columns.map((col, i) => col.slice(0, widths[i]).padEnd(widths[i])).join(' │ ');
+    const header = result.columns.map((col, i) => {
+      const w = widths[i] ?? 0;
+      return col.slice(0, w).padEnd(w);
+    }).join(' │ ');
     const separator = widths.map(w => '─'.repeat(w)).join('─┼─');
 
     lines.push(header);
@@ -698,9 +717,10 @@ export class SQLAgent extends SpecializedAgent {
     // Rows (limit to 20)
     const displayRows = result.rows.slice(0, 20);
     for (const row of displayRows) {
-      const formatted = row.map((val, i) =>
-        String(val ?? '').slice(0, widths[i]).padEnd(widths[i])
-      ).join(' │ ');
+      const formatted = row.map((val, i) => {
+        const w = widths[i] ?? 0;
+        return String(val ?? '').slice(0, w).padEnd(w);
+      }).join(' │ ');
       lines.push(formatted);
     }
 

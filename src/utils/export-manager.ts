@@ -130,7 +130,7 @@ function escapeCsv(text: string): string {
 
 function formatDate(date: Date | undefined): string {
   if (!date) return '';
-  return date.toISOString().replace('T', ' ').split('.')[0];
+  return date.toISOString().replace('T', ' ').split('.')[0] ?? '';
 }
 
 function truncate(text: string, maxLength: number): string {
@@ -590,12 +590,12 @@ export function exportTable(table: TableExport, format: 'markdown' | 'html' | 'c
       });
 
       // Header
-      lines.push(table.headers.map((h, i) => h.padEnd(widths[i])).join(' | '));
+      lines.push(table.headers.map((h, i) => h.padEnd(widths[i] ?? 0)).join(' | '));
       lines.push(widths.map((w) => '-'.repeat(w)).join('-+-'));
 
       // Rows
       for (const row of table.rows) {
-        lines.push(row.map((cell, i) => String(cell ?? '').padEnd(widths[i])).join(' | '));
+        lines.push(row.map((cell, i) => String(cell ?? '').padEnd(widths[i] ?? 0)).join(' | '));
       }
 
       return lines.join('\n');

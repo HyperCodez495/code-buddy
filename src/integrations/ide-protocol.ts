@@ -597,7 +597,9 @@ class TCPTransport extends EventEmitter implements Transport {
         break;
       }
 
-      const contentLength = parseInt(match[1], 10);
+      const lengthCapture = match[1];
+      if (lengthCapture === undefined) break;
+      const contentLength = parseInt(lengthCapture, 10);
       const contentStart = headerEnd + 4;
       const contentEnd = contentStart + contentLength;
 

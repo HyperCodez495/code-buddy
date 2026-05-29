@@ -290,8 +290,9 @@ export class WhatsAppChannel extends BaseChannel {
       let content: Record<string, unknown>;
 
       // Handle attachments
-      if (message.attachments && message.attachments.length > 0) {
-        content = this.buildMediaContent(message.attachments[0], message.content);
+      const firstAttachment = message.attachments?.[0];
+      if (firstAttachment) {
+        content = this.buildMediaContent(firstAttachment, message.content);
       } else {
         content = { text: message.content };
       }

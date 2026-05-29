@@ -21,8 +21,13 @@ export async function handleBug(args: string[]): Promise<CommandHandlerResult> {
   const remaining: string[] = [];
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--severity' && i + 1 < args.length) {
-      const sev = args[++i].toLowerCase();
+    if (arg === undefined) {
+      continue;
+    }
+    const next = args[i + 1];
+    if (arg === '--severity' && next !== undefined) {
+      i++;
+      const sev = next.toLowerCase();
       if (sev === 'critical' || sev === 'high') {
         severityFilter = sev;
       } else {

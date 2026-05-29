@@ -408,8 +408,8 @@ export function checkLandlockSupport(): boolean {
     const release = os.release(); // e.g. "5.15.0-generic"
     const match = release.match(/^(\d+)\.(\d+)/);
     if (match) {
-      const major = parseInt(match[1], 10);
-      const minor = parseInt(match[2], 10);
+      const major = parseInt(match[1] ?? '', 10);
+      const minor = parseInt(match[2] ?? '', 10);
       if (major > 5 || (major === 5 && minor >= 13)) {
         return true;
       }
@@ -463,13 +463,13 @@ export function generateSeccompFilter(): Buffer {
   off += 8;
 
   // Instructions 1..N: Compare each blocked syscall
-  for (let i = 0; i < numSyscalls; i++) {
+  for (const [i, syscall] of syscalls.entries()) {
     const remainingCompares = numSyscalls - 1 - i;
     const jumpToKill = remainingCompares + 1; // skip remaining compares + allow
     buf.writeUInt16LE(BPF_JMP | BPF_JEQ | BPF_K, off);
     buf.writeUInt8(jumpToKill, off + 2); // jt: jump to KILL
     buf.writeUInt8(0, off + 3);          // jf: next instruction
-    buf.writeUInt32LE(syscalls[i], off + 4);
+    buf.writeUInt32LE(syscall, off + 4);
     off += 8;
   }
 
@@ -861,7 +861,7 @@ export class OSSandbox extends EventEmitter implements SandboxBackendInterface {
    */
   isCommandExcluded(command: string): boolean {
     const trimmed = command.trim();
-    const baseCommand = trimmed.split(/\s+/)[0];
+    const baseCommand = trimmed.split(/\s+/)[0] ?? '';
     const binaryName = baseCommand.split('/').pop() || baseCommand;
 
     return this.config.excludedCommands.some((excluded) => {

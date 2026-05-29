@@ -569,7 +569,7 @@ export class GoogleChatChannel extends BaseChannel {
         isBot: false, // Bot messages are filtered above
       },
       content: text,
-      contentType: isCommand ? 'command' : (attachments.length > 0 ? attachments[0].type : 'text'),
+      contentType: isCommand ? 'command' : (attachments[0]?.type ?? 'text'),
       attachments: attachments.length > 0 ? attachments : undefined,
       isCommand,
       commandName,

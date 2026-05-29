@@ -35,6 +35,7 @@ export class GoScanner implements LanguageScanner {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
       const trimmed = line.trimStart();
 
@@ -51,6 +52,7 @@ export class GoScanner implements LanguageScanner {
       const structMatch = trimmed.match(/^type\s+(\w+)\s+struct\s*\{/);
       if (structMatch) {
         const name = structMatch[1];
+        if (name === undefined) continue;
         tracker.currentClassName = name;
         tracker.classStartDepth = tracker.braceDepth - 1;
         inStructBody = true;
@@ -69,9 +71,11 @@ export class GoScanner implements LanguageScanner {
       // Interface declaration: type Foo interface {
       const ifaceMatch = trimmed.match(/^type\s+(\w+)\s+interface\s*\{/);
       if (ifaceMatch) {
+        const ifaceName = ifaceMatch[1];
+        if (ifaceName === undefined) continue;
         symbols.push({
-          fqn: `iface:${ifaceMatch[1]}`,
-          name: ifaceMatch[1],
+          fqn: `iface:${ifaceName}`,
+          name: ifaceName,
           kind: 'class',
           module: moduleId,
           line: lineNum,
@@ -82,7 +86,7 @@ export class GoScanner implements LanguageScanner {
       // Struct embedding (bare type name inside struct body) → extends
       if (inStructBody && structName && tracker.braceDepth > structDepth) {
         const embedMatch = trimmed.match(/^(\*?)([A-Z]\w+)\s*$/);
-        if (embedMatch && !trimmed.includes('//')) {
+        if (embedMatch && embedMatch[2] !== undefined && !trimmed.includes('//')) {
           inheritance.push({
             className: structName,
             extends: embedMatch[2],
@@ -96,6 +100,7 @@ export class GoScanner implements LanguageScanner {
       if (methodMatch) {
         const receiverType = methodMatch[2];
         const methodName = methodMatch[3];
+        if (receiverType === undefined || methodName === undefined) continue;
         const rawParams = methodMatch[4]?.trim() || '';
         const rawReturn = (methodMatch[5] || methodMatch[6] || '').trim();
         const fqn = `fn:${receiverType}.${methodName}`;
@@ -121,6 +126,7 @@ export class GoScanner implements LanguageScanner {
       if (simpleMethodMatch && !methodMatch) {
         const receiverType = simpleMethodMatch[2];
         const methodName = simpleMethodMatch[3];
+        if (receiverType === undefined || methodName === undefined) continue;
         const multiParams = extractMultiLineParams(lines, i);
         const fqn = `fn:${receiverType}.${methodName}`;
         symbols.push({
@@ -138,6 +144,7 @@ export class GoScanner implements LanguageScanner {
       const funcMatch = trimmed.match(/^func\s+(\w+)\s*\(([^)]*)\)(?:\s*(?:\(([^)]*)\)|([^{]*?)))?\s*\{/);
       if (funcMatch) {
         const funcName = funcMatch[1];
+        if (funcName === undefined) continue;
         const rawParams = funcMatch[2]?.trim() || '';
         const rawReturn = (funcMatch[3] || funcMatch[4] || '').trim();
         const fqn = `fn:${funcName}`;
@@ -159,6 +166,7 @@ export class GoScanner implements LanguageScanner {
       const simpleFuncMatch = trimmed.match(/^func\s+(\w+)\s*\(/);
       if (simpleFuncMatch && !funcMatch && !simpleMethodMatch) {
         const funcName = simpleFuncMatch[1];
+        if (funcName === undefined) continue;
         const multiParams = extractMultiLineParams(lines, i);
         const fqn = `fn:${funcName}`;
         symbols.push({
@@ -177,12 +185,15 @@ export class GoScanner implements LanguageScanner {
         RE_GO_METHOD_CALL.lastIndex = 0;
         let cm: RegExpExecArray | null;
         while ((cm = RE_GO_METHOD_CALL.exec(line)) !== null) {
-          if (!GO_BLACKLIST.has(cm[2]) && !GO_BLACKLIST.has(cm[1])) {
+          const receiver = cm[1];
+          const callee = cm[2];
+          if (receiver === undefined || callee === undefined) continue;
+          if (!GO_BLACKLIST.has(callee) && !GO_BLACKLIST.has(receiver)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[2],
+              calleeName: callee,
               isMethodCall: true,
-              receiverClass: /^[A-Z]/.test(cm[1]) ? cm[1] : tracker.currentClassName ?? undefined,
+              receiverClass: /^[A-Z]/.test(receiver) ? receiver : tracker.currentClassName ?? undefined,
             });
           }
         }
@@ -190,6 +201,7 @@ export class GoScanner implements LanguageScanner {
         RE_GO_CALL.lastIndex = 0;
         while ((cm = RE_GO_CALL.exec(line)) !== null) {
           const name = cm[1];
+          if (name === undefined) continue;
           if (!GO_BLACKLIST.has(name) && name.length > 2) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,

@@ -88,7 +88,7 @@ export interface ChatGptResponsesProviderOptions {
  *  Returns null if `current` is already the last entry or absent. */
 function pickFallbackModel(current: string): string | null {
   const idx = FALLBACK_MODELS.indexOf(current);
-  if (idx < 0) return FALLBACK_MODELS[0]; // current not in list → start from top
+  if (idx < 0) return FALLBACK_MODELS[0] ?? null; // current not in list → start from top
   return FALLBACK_MODELS[idx + 1] ?? null;
 }
 
@@ -438,7 +438,7 @@ export function isFreshUserTurn(messages: CodeBuddyMessage[]): boolean {
   // Find the last user message and look at what comes after it.
   let lastUserIdx = -1;
   for (let i = messages.length - 1; i >= 0; i--) {
-    if (messages[i].role === 'user') {
+    if (messages[i]?.role === 'user') {
       lastUserIdx = i;
       break;
     }
@@ -447,7 +447,7 @@ export function isFreshUserTurn(messages: CodeBuddyMessage[]): boolean {
   // Fresh if everything AFTER the last user message is also user/system.
   // (If there's any assistant or tool message after, we're mid-turn.)
   for (let j = lastUserIdx + 1; j < messages.length; j++) {
-    const role = messages[j].role;
+    const role = messages[j]?.role;
     if (role === 'assistant' || role === 'tool') return false;
   }
   return true;

@@ -118,6 +118,9 @@ export function validatePipelineDefinition(definition: PipelineFileDefinition): 
   const stepNames = new Set<string>();
   for (let i = 0; i < definition.steps.length; i++) {
     const step = definition.steps[i];
+    if (!step) {
+      continue;
+    }
 
     if (!step.name || typeof step.name !== 'string') {
       errors.push(`Step ${i + 1}: must have a "name" field (string)`);
@@ -192,6 +195,9 @@ export function createPipelineCommand(): Command {
           console.log(`Steps (${definition.steps.length}):`);
           for (let i = 0; i < definition.steps.length; i++) {
             const step = definition.steps[i];
+            if (!step) {
+              continue;
+            }
             console.log(`  ${i + 1}. ${step.name} (${step.type || 'tool'})`);
           }
           console.log('\nDry run complete. No steps were executed.');

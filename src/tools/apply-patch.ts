@@ -92,7 +92,9 @@ export function seekSequence(
   for (let i = startIndex; i <= lines.length - pattern.length; i++) {
     let match = true;
     for (let j = 0; j < pattern.length; j++) {
-      if (lines[i + j] !== pattern[j]) { match = false; break; }
+      const lineVal = lines[i + j];
+      const patVal = pattern[j];
+      if (lineVal === undefined || patVal === undefined || lineVal !== patVal) { match = false; break; }
     }
     if (match) return i;
   }
@@ -101,7 +103,9 @@ export function seekSequence(
   for (let i = startIndex; i <= lines.length - pattern.length; i++) {
     let match = true;
     for (let j = 0; j < pattern.length; j++) {
-      if (lines[i + j].trimEnd() !== pattern[j].trimEnd()) { match = false; break; }
+      const lineVal = lines[i + j];
+      const patVal = pattern[j];
+      if (lineVal === undefined || patVal === undefined || lineVal.trimEnd() !== patVal.trimEnd()) { match = false; break; }
     }
     if (match) return i;
   }
@@ -110,7 +114,9 @@ export function seekSequence(
   for (let i = startIndex; i <= lines.length - pattern.length; i++) {
     let match = true;
     for (let j = 0; j < pattern.length; j++) {
-      if (lines[i + j].trim() !== pattern[j].trim()) { match = false; break; }
+      const lineVal = lines[i + j];
+      const patVal = pattern[j];
+      if (lineVal === undefined || patVal === undefined || lineVal.trim() !== patVal.trim()) { match = false; break; }
     }
     if (match) return i;
   }
@@ -120,7 +126,9 @@ export function seekSequence(
   for (let i = startIndex; i <= lines.length - pattern.length; i++) {
     let match = true;
     for (let j = 0; j < pattern.length; j++) {
-      if (normalizeUnicode(lines[i + j]).trim() !== normalizedPattern[j]) { match = false; break; }
+      const lineVal = lines[i + j];
+      const normPat = normalizedPattern[j];
+      if (lineVal === undefined || normPat === undefined || normalizeUnicode(lineVal).trim() !== normPat) { match = false; break; }
     }
     if (match) return i;
   }
@@ -156,16 +164,19 @@ export function parsePatch(patchText: string): FileOp[] {
 
   while (i < lines.length) {
     const line = lines[i];
+    if (line === undefined) { i++; continue; }
 
     if (line.startsWith('*** Add File: ')) {
       const filePath = line.slice('*** Add File: '.length).trim();
       const contentLines: string[] = [];
       i++;
-      while (i < lines.length && !lines[i].startsWith('***') && !lines[i].startsWith('@@')) {
-        if (lines[i].startsWith('+')) {
-          contentLines.push(lines[i].slice(1));
+      let addLine = lines[i];
+      while (i < lines.length && addLine !== undefined && !addLine.startsWith('***') && !addLine.startsWith('@@')) {
+        if (addLine.startsWith('+')) {
+          contentLines.push(addLine.slice(1));
         }
         i++;
+        addLine = lines[i];
       }
       ops.push({ type: 'add', path: filePath, content: contentLines.join('\n') });
 
@@ -179,21 +190,23 @@ export function parsePatch(patchText: string): FileOp[] {
       let moveTo: string | undefined;
       i++;
 
-      if (i < lines.length && lines[i].startsWith('*** Move to: ')) {
-        moveTo = lines[i].slice('*** Move to: '.length).trim();
+      const moveLine = lines[i];
+      if (i < lines.length && moveLine !== undefined && moveLine.startsWith('*** Move to: ')) {
+        moveTo = moveLine.slice('*** Move to: '.length).trim();
         i++;
       }
 
       const hunks: Hunk[] = [];
-      while (i < lines.length && !lines[i].startsWith('*** ')) {
-        if (lines[i].startsWith('@@')) {
-          const header = lines[i].slice(2).trim() || undefined;
+      let hunkLine = lines[i];
+      while (i < lines.length && hunkLine !== undefined && !hunkLine.startsWith('*** ')) {
+        if (hunkLine.startsWith('@@')) {
+          const header = hunkLine.slice(2).trim() || undefined;
           i++;
           const oldLines: string[] = [];
           const newLines: string[] = [];
 
-          while (i < lines.length && !lines[i].startsWith('@@') && !lines[i].startsWith('*** ')) {
-            const l = lines[i];
+          let l = lines[i];
+          while (i < lines.length && l !== undefined && !l.startsWith('@@') && !l.startsWith('*** ')) {
             if (l.startsWith(' ')) {
               oldLines.push(l.slice(1));
               newLines.push(l.slice(1));
@@ -203,11 +216,13 @@ export function parsePatch(patchText: string): FileOp[] {
               newLines.push(l.slice(1));
             }
             i++;
+            l = lines[i];
           }
           hunks.push({ header, oldLines, newLines });
         } else {
           i++;
         }
+        hunkLine = lines[i];
       }
       ops.push({ type: 'update', path: filePath, moveTo, hunks });
 
@@ -317,8 +332,9 @@ export class ApplyPatchTool extends BaseTool {
       if (patchResult.filesUpdated.length > 0) lines.push(`Updated: ${patchResult.filesUpdated.join(', ')}`);
       if (patchResult.errors.length > 0) lines.push(`Errors: ${patchResult.errors.join('; ')}`);
       logger.debug(`apply_patch: +${patchResult.filesAdded.length} -${patchResult.filesDeleted.length} ~${patchResult.filesUpdated.length} !${patchResult.errors.length}`);
-      return patchResult.errors.length > 0 && lines.length === 1
-        ? this.error(lines[0])
+      const onlyLine = lines[0];
+      return patchResult.errors.length > 0 && lines.length === 1 && onlyLine !== undefined
+        ? this.error(onlyLine)
         : this.success(lines.join('\n'));
     } catch (err) {
       return this.error(`Patch failed: ${err instanceof Error ? err.message : String(err)}`);

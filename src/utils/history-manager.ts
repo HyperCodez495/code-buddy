@@ -143,11 +143,9 @@ export class HistoryManager {
     }
 
     // Prevent consecutive duplicates
-    if (this.history.length > 0) {
-      const lastEntry = this.history[this.history.length - 1];
-      if (lastEntry.text === trimmed) {
-        return false;
-      }
+    const lastEntry = this.history[this.history.length - 1];
+    if (lastEntry && lastEntry.text === trimmed) {
+      return false;
     }
 
     // Add new entry
@@ -361,6 +359,7 @@ export class HistoryManager {
     // Look for exact prefix matches, preferring recent entries
     for (let i = this.history.length - 1; i >= 0; i--) {
       const entry = this.history[i];
+      if (!entry) continue;
       if (entry.text.toLowerCase().startsWith(lowerPrefix) && entry.text.length > prefix.length) {
         return entry.text;
       }

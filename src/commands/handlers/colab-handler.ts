@@ -378,8 +378,8 @@ Example:
     };
   }
 
-  const title = args[0];
-  const description = args[1];
+  const title = args[0] ?? '';
+  const description = args[1] ?? '';
   const options = parseCreateArgs(args.slice(2));
 
   const task = manager.createTask({
@@ -502,8 +502,8 @@ function parseLogArgs(args: string[]): LogEntryArgs {
       case '--tests':
         result.tests = (value || '').split(',').map(t => {
           const [file, count] = t.trim().split(':');
-          return { file, count: parseInt(count) || 0 };
-        }).filter(t => t.file);
+          return { file: file ?? '', count: parseInt(count ?? '') || 0 };
+        }).filter((t): t is { file: string; count: number } => t.file !== '');
         i++;
         break;
       case '--proof':
@@ -603,7 +603,7 @@ function parseCreateArgs(args: string[]): CreateTaskArgs {
         i++;
         break;
       case '--max-files':
-        result.maxFiles = parseInt(value) || 10;
+        result.maxFiles = parseInt(value ?? '') || 10;
         i++;
         break;
       case '--files':

@@ -25,7 +25,7 @@ export function TabbedQuestion({ question, options, onAnswer }: TabbedQuestionPr
   useInput((input, key) => {
     if (isOther) {
       if (key.return) {
-        onAnswer(otherText || options[0]);
+        onAnswer(otherText || options[0] || '');
         return;
       }
       if (key.escape) {
@@ -51,7 +51,10 @@ export function TabbedQuestion({ question, options, onAnswer }: TabbedQuestionPr
         // "Other" selected
         setIsOther(true);
       } else {
-        onAnswer(options[selectedIndex]);
+        const answer = options[selectedIndex];
+        if (answer !== undefined) {
+          onAnswer(answer);
+        }
       }
     }
   });

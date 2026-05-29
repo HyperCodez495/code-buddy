@@ -204,7 +204,9 @@ const MemoizedChatEntry = React.memo(
             if (parts.length >= 3) {
               const serverName = parts[1];
               const actualToolName = parts.slice(2).join("__");
-              return `${serverName.charAt(0).toUpperCase() + serverName.slice(1)}(${actualToolName.replace(/_/g, " ")})`;
+              if (serverName !== undefined) {
+                return `${serverName.charAt(0).toUpperCase() + serverName.slice(1)}(${actualToolName.replace(/_/g, " ")})`;
+              }
             }
           }
 
@@ -417,6 +419,9 @@ export function ChatHistory({
     let newCommitted = safeCommitted;
     while (newCommitted < allEntries.length) {
       const entry = allEntries[newCommitted];
+      if (entry === undefined) {
+        break;
+      }
       const isStable = !entry.isStreaming &&
         !(entry.type === "tool_call" && entry.content === "Executing...");
       if (isStable) {

@@ -75,7 +75,7 @@ export function parseMarkdownSections(content: string): MarkdownSection[] {
     if (h1 || h2 || h3) {
       if (current) sections.push(current);
       const match = (h1 || h2 || h3)!;
-      current = { heading: match[1].trim(), level: h1 ? 1 : h2 ? 2 : 3, body: [] };
+      current = { heading: (match[1] ?? '').trim(), level: h1 ? 1 : h2 ? 2 : 3, body: [] };
     } else if (current) {
       current.body.push(line);
     } else {
@@ -192,8 +192,8 @@ function parseLocalImageReference(line: string): LocalImageReference | null {
   const markdownImage = trimmed.match(/^!\[([^\]]*)\]\(([^)]+)\)$/);
   if (markdownImage) {
     return {
-      altText: markdownImage[1].trim(),
-      imagePath: markdownImage[2].trim(),
+      altText: (markdownImage[1] ?? '').trim(),
+      imagePath: (markdownImage[2] ?? '').trim(),
     };
   }
 
@@ -201,7 +201,7 @@ function parseLocalImageReference(line: string): LocalImageReference | null {
   if (bracketImage) {
     return {
       altText: '',
-      imagePath: bracketImage[1].trim(),
+      imagePath: (bracketImage[1] ?? '').trim(),
     };
   }
 
@@ -280,6 +280,7 @@ function readJpegDimensions(data: Buffer): ImageDimensions | null {
     }
 
     const marker = data[offset + 1];
+    if (marker === undefined) break; // safe: loop bound offset+9<data.length guarantees offset+1 in-bounds; break matches malformed-data→return-null pattern
     offset += 2;
 
     if (marker === 0xd9 || marker === 0xda) {
@@ -381,7 +382,7 @@ async function validateDocxPackage(outputPath: string): Promise<DocxValidationEv
   const relationshipTargets = extractRelationshipTargets(relsXml);
   const embeddedRelationshipIds = Array.from(
     documentXml.matchAll(/\br:embed="([^"]+)"/g),
-    match => match[1]
+    match => match[1] ?? ''
   );
 
   for (const relationshipId of embeddedRelationshipIds) {
@@ -598,13 +599,16 @@ async function generateDocx(
 
     for (let i = 0; i < section.body.length; i++) {
       const line = section.body[i];
+      if (line === undefined) continue;
       const trimmed = line.trim();
       if (!trimmed) continue;
 
       if (isDocxTableBlockLine(line)) {
         const tableLines: string[] = [];
-        while (i < section.body.length && isDocxTableBlockLine(section.body[i])) {
-          tableLines.push(section.body[i]);
+        while (i < section.body.length) {
+          const bodyLine = section.body[i];
+          if (bodyLine === undefined || !isDocxTableBlockLine(bodyLine)) break;
+          tableLines.push(bodyLine);
           i++;
         }
         i--;
@@ -655,8 +659,9 @@ async function generateXlsx(title: string, content: string, outputPath: string):
   }));
 
   // Auto-width columns
-  if (rows.length > 0) {
-    ws['!cols'] = rows[0].map((_, i) => ({
+  const firstRow = rows[0];
+  if (firstRow) {
+    ws['!cols'] = firstRow.map((_, i) => ({
       wch: Math.min(50, Math.max(10, ...rows.map(r => (r[i] || '').length + 2))),
     }));
   }

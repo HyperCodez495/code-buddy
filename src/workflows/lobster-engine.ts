@@ -156,7 +156,7 @@ export class LobsterEngine {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(text)) !== null) {
       const stepId = match[1];
-      if (validIds.has(stepId)) {
+      if (stepId !== undefined && validIds.has(stepId)) {
         refs.push(stepId);
       }
     }
@@ -228,11 +228,13 @@ export class LobsterEngine {
     // Handle equality checks: 'value == expected' or 'value != expected'
     const eqMatch = resolved.match(/^(.+?)\s*==\s*(.+)$/);
     if (eqMatch) {
-      return eqMatch[1].trim() === eqMatch[2].trim();
+      const [, eqLeft = '', eqRight = ''] = eqMatch;
+      return eqLeft.trim() === eqRight.trim();
     }
     const neqMatch = resolved.match(/^(.+?)\s*!=\s*(.+)$/);
     if (neqMatch) {
-      return neqMatch[1].trim() !== neqMatch[2].trim();
+      const [, neqLeft = '', neqRight = ''] = neqMatch;
+      return neqLeft.trim() !== neqRight.trim();
     }
 
     // Truthy check: non-empty, not 'false', not '0'
@@ -354,10 +356,11 @@ export class LobsterEngine {
         step.command === 'approve';
 
       if (isApprovalGate) {
+        const lastResult = results[results.length - 1];
         const gate: ApprovalGate = {
           stepId,
           prompt: `Approval required for step "${step.name}"`,
-          previewData: results.length > 0 ? results[results.length - 1].stdout : undefined,
+          previewData: lastResult?.stdout,
           limit: step.timeout,
         };
 

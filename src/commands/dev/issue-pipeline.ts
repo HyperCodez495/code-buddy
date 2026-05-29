@@ -198,10 +198,11 @@ async function fetchIssue(
 ): Promise<IssueInfo> {
   // Extract issue number from URL or use as-is
   const numMatch = issueRef.match(/(\d+)\s*$/);
-  if (!numMatch) {
+  const numStr = numMatch?.[1];
+  if (numStr === undefined) {
     throw new Error(`Cannot parse issue reference: ${issueRef}`);
   }
-  const issueNumber = parseInt(numMatch[1], 10);
+  const issueNumber = parseInt(numStr, 10);
 
   try {
     const output = execSync(

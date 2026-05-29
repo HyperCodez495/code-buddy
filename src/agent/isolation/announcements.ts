@@ -191,7 +191,9 @@ export class AnnouncementQueue extends EventEmitter {
     const targetPriority = priorityOrder[priority];
 
     for (let i = 0; i < queue.length; i++) {
-      if (priorityOrder[queue[i].priority] > targetPriority) {
+      const item = queue[i];
+      if (item === undefined) continue;
+      if (priorityOrder[item.priority] > targetPriority) {
         return i;
       }
     }
@@ -329,10 +331,11 @@ export class AnnouncementQueue extends EventEmitter {
 
       const handler = () => {
         const announcements = this.consume(target, filter);
-        if (announcements.length > 0) {
+        const first = announcements[0];
+        if (first !== undefined) {
           clearTimeout(timeout);
           this.off(`notify:${target}`, handler);
-          resolve(announcements[0]);
+          resolve(first);
         }
       };
 

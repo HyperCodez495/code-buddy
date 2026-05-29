@@ -243,7 +243,7 @@ export class EmbeddedBrowser extends EventEmitter {
    */
   private extractTitle(html: string): string {
     const match = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-    return match ? match[1].trim() : 'Untitled';
+    return match?.[1]?.trim() ?? 'Untitled';
   }
 
   /**
@@ -291,12 +291,17 @@ export class EmbeddedBrowser extends EventEmitter {
       const attrRegex = /(\w+)=["']([^"']+)["']/g;
       let attrMatch;
       while ((attrMatch = attrRegex.exec(elementHtml)) !== null) {
-        attributes[attrMatch[1]] = attrMatch[2];
+        const attrName = attrMatch[1];
+        const attrValue = attrMatch[2];
+        if (attrName === undefined || attrValue === undefined) {
+          continue;
+        }
+        attributes[attrName] = attrValue;
       }
 
       elements.push({
         selector,
-        tagName: tagName || match[1],
+        tagName: tagName || match[1] || '',
         id: attributes.id,
         className: attributes.class,
         text: this.htmlToText(match[2] || match[0]).slice(0, 100),
@@ -330,9 +335,13 @@ export class EmbeddedBrowser extends EventEmitter {
 
     let match;
     while ((match = linkRegex.exec(this.pageContent)) !== null) {
+      const href = match[1];
+      if (href === undefined) {
+        continue;
+      }
       links.push({
-        href: match[1],
-        text: match[2].trim() || match[1],
+        href,
+        text: match[2]?.trim() || href,
       });
     }
 
@@ -362,7 +371,7 @@ export class EmbeddedBrowser extends EventEmitter {
     let match;
     while ((match = formRegex.exec(this.pageContent)) !== null) {
       const formHtml = match[0];
-      const content = match[1];
+      const content = match[1] ?? '';
 
       // Extract action and method
       const actionMatch = formHtml.match(/action=["']([^"']+)["']/i);
@@ -379,18 +388,19 @@ export class EmbeddedBrowser extends EventEmitter {
         const typeMatch = inputHtml.match(/type=["']([^"']+)["']/i);
         const valueMatch = inputHtml.match(/value=["']([^"']+)["']/i);
 
-        if (nameMatch) {
+        const inputName = nameMatch?.[1];
+        if (inputName !== undefined) {
           inputs.push({
-            name: nameMatch[1],
-            type: typeMatch ? typeMatch[1] : 'text',
-            value: valueMatch ? valueMatch[1] : undefined,
+            name: inputName,
+            type: typeMatch?.[1] ?? 'text',
+            value: valueMatch?.[1],
           });
         }
       }
 
       forms.push({
-        action: actionMatch ? actionMatch[1] : '',
-        method: methodMatch ? methodMatch[1].toUpperCase() : 'GET',
+        action: actionMatch?.[1] ?? '',
+        method: methodMatch?.[1]?.toUpperCase() ?? 'GET',
         inputs,
       });
     }

@@ -264,12 +264,14 @@ function detectSourceRoot(cwd: string, modules: Set<string>): string {
   const dirCounts = new Map<string, number>();
   for (const mod of modules) {
     const parts = mod.replace(/^mod:/, '').split('/');
-    if (parts.length >= 2) {
-      dirCounts.set(parts[0], (dirCounts.get(parts[0]) ?? 0) + 1);
+    const first = parts[0];
+    if (parts.length >= 2 && first !== undefined) {
+      dirCounts.set(first, (dirCounts.get(first) ?? 0) + 1);
     }
   }
   const sorted = [...dirCounts.entries()].sort((a, b) => b[1] - a[1]);
-  if (sorted.length > 0 && sorted[0][1] > modules.size * 0.5) return sorted[0][0];
+  const top = sorted[0];
+  if (top !== undefined && top[1] > modules.size * 0.5) return top[0];
 
   return 'src';
 }
@@ -319,8 +321,9 @@ function deriveClusterLabel(members: string[]): string {
     dirCounts.set(dir, (dirCounts.get(dir) ?? 0) + 1);
   }
   const sorted = [...dirCounts.entries()].sort((a, b) => b[1] - a[1]);
-  if (sorted.length === 0) return 'misc';
-  if (sorted[0][1] / members.length > 0.6) return sorted[0][0];
+  const top = sorted[0];
+  if (top === undefined) return 'misc';
+  if (top[1] / members.length > 0.6) return top[0];
   return sorted.slice(0, 2).map(([d]) => d).join(' + ');
 }
 
@@ -411,10 +414,12 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
     const readme = fs.readFileSync(path.join(cwd, 'README.md'), 'utf-8').substring(0, 3000);
     // Extract first non-heading paragraph as problem statement
     const firstPara = readme.match(/^(?!#|\s*$)(.+(?:\n(?!#|\s*$).+)*)/m);
-    if (firstPara) result.problemStatement = firstPara[1].trim().substring(0, 300);
+    if (firstPara?.[1]) result.problemStatement = firstPara[1].trim().substring(0, 300);
     // Extract feature list items
     for (const m of readme.matchAll(/^[-*]\s+\*?\*?(.+?)\*?\*?\s*(?:[—–-].+)?$/gm)) {
-      result.features.push(m[1].trim());
+      const feature = m[1];
+      if (feature === undefined) continue;
+      result.features.push(feature.trim());
       if (result.features.length >= 20) break;
     }
   } catch { /* no README */ }
@@ -425,11 +430,11 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
 
     // Extract architecture overview section
     const archMatch = claude.match(/## Architecture[^\n]*\n([\s\S]*?)(?=\n## [^#])/);
-    if (archMatch) result.architectureOverview = archMatch[1].trim().substring(0, 1500);
+    if (archMatch?.[1]) result.architectureOverview = archMatch[1].trim().substring(0, 1500);
 
     // Extract key subsystem table (### Key Subsystems Quick Reference)
     const tableMatch = claude.match(/### Key Subsystems Quick Reference\n([\s\S]*?)(?=\n###|\n## [^#])/);
-    if (tableMatch) {
+    if (tableMatch?.[1]) {
       result.subsystemTable = tableMatch[1].trim().substring(0, 4000);
     } else {
       // Fallback: any subsystem/location/notes table
@@ -440,13 +445,17 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
     // Extract inspired-by features (Native Engine, Codex, Manus, etc.)
     // Pattern: "### Feature Name (Source-inspired)" or "Feature (Source-inspired)" in h3/h4
     for (const m of claude.matchAll(/### (.+?)\s*\((\w[\w\s]*?)-inspired\)\s*\n([\s\S]*?)(?=\n###|\n## [^#])/g)) {
-      const name = m[1].trim();
-      const source = m[2].trim();
+      const rawName = m[1];
+      const rawSource = m[2];
+      const body = m[3];
+      if (rawName === undefined || rawSource === undefined || body === undefined) continue;
+      const name = rawName.trim();
+      const source = rawSource.trim();
       // Extract location from backtick paths in the description
-      const locMatch = m[3].match(/`(src\/[^`]+)`/);
+      const locMatch = body.match(/`(src\/[^`]+)`/);
       const location = locMatch?.[1] ?? '';
       // First meaningful line as description
-      const descLine = m[3].split('\n').find(l => l.trim() && !l.startsWith('|') && !l.startsWith('`'));
+      const descLine = body.split('\n').find(l => l.trim() && !l.startsWith('|') && !l.startsWith('`'));
       result.inspiredFeatures.push({
         name,
         source,
@@ -457,9 +466,12 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
 
     // Capture "### OpenManus/Native Engine Section (paths)" headings
     for (const m of claude.matchAll(/### ((?:OpenManus|Native Engine)[^(\n]*)\s*(?:\(([^)]*)\))?\s*\n([\s\S]*?)(?=\n###|\n## [^#])/g)) {
-      const name = m[1].trim();
+      const rawName = m[1];
+      const body = m[3];
+      if (rawName === undefined || body === undefined) continue;
+      const name = rawName.trim();
       const location = m[2]?.replace(/`/g, '').split(',')[0]?.trim() ?? '';
-      const descLine = m[3].split('\n').find(l => l.trim() && !l.startsWith('|') && !l.startsWith('`') && !l.startsWith('```'));
+      const descLine = body.split('\n').find(l => l.trim() && !l.startsWith('|') && !l.startsWith('`') && !l.startsWith('```'));
       if (!result.inspiredFeatures.some(f => f.name === name)) {
         result.inspiredFeatures.push({
           name,
@@ -472,9 +484,13 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
 
     // Scan subsystem table rows mentioning Native Engine/Codex/OpenManus
     for (const m of claude.matchAll(/\| ([^|]+?) \| `([^`]+)` \|([^|]*(?:Native Engine|Codex|Manus|OpenManus)[^|]*)\|/g)) {
-      const name = m[1].trim();
-      const location = m[2].trim();
-      const desc = m[3].trim();
+      const rawName = m[1];
+      const rawLocation = m[2];
+      const rawDesc = m[3];
+      if (rawName === undefined || rawLocation === undefined || rawDesc === undefined) continue;
+      const name = rawName.trim();
+      const location = rawLocation.trim();
+      const desc = rawDesc.trim();
       if (!result.inspiredFeatures.some(f => f.name === name)) {
         const source = /OpenManus/i.test(desc) ? 'OpenManus' : /Native Engine/i.test(desc) ? 'Native Engine' : 'Codex';
         result.inspiredFeatures.push({ name, source, location, description: desc.substring(0, 200) });
@@ -483,7 +499,11 @@ function extractReadmeContext(cwd: string): ProjectProfile['readmeContext'] {
 
     // Scan for "# commands (Native Engine parity)" style sections
     for (const m of claude.matchAll(/# .+?\(Native Engine[^)]*\)\s*\n([\s\S]*?)(?=\n#[^#])/g)) {
-      const commands = [...m[1].matchAll(/^(?:buddy|\/)\s+(.+)$/gm)].map(c => c[1].trim());
+      const section = m[1];
+      if (section === undefined) continue;
+      const commands = [...section.matchAll(/^(?:buddy|\/)\s+(.+)$/gm)]
+        .map(c => c[1]?.trim())
+        .filter((c): c is string => c !== undefined);
       if (commands.length > 0 && !result.inspiredFeatures.some(f => f.name === 'Native Engine CLI Commands')) {
         result.inspiredFeatures.push({
           name: 'Native Engine CLI Commands',
@@ -507,7 +527,7 @@ function extractAPISurface(cwd: string): ProjectProfile['apiSurface'] {
     try {
       const content = fs.readFileSync(path.join(cwd, entry), 'utf-8');
       for (const m of content.matchAll(/\.command\s*\(\s*['"`]([^'"`]+)['"`]/g)) {
-        result.cliCommands.push(m[1]);
+        if (m[1] !== undefined) result.cliCommands.push(m[1]);
       }
       if (result.cliCommands.length > 0) break;
     } catch { /* file not found */ }
@@ -523,7 +543,10 @@ function extractAPISurface(cwd: string): ProjectProfile['apiSurface'] {
       for (const file of files) {
         const content = fs.readFileSync(path.join(fullDir, file), 'utf-8');
         for (const m of content.matchAll(/\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi)) {
-          result.httpEndpoints.push({ method: m[1].toUpperCase(), path: m[2] });
+          const method = m[1];
+          const routePath = m[2];
+          if (method === undefined || routePath === undefined) continue;
+          result.httpEndpoints.push({ method: method.toUpperCase(), path: routePath });
         }
       }
     } catch { /* can't read route dir */ }
@@ -615,7 +638,7 @@ function extractEnvVars(cwd: string): Array<{ name: string; desc: string }> {
       const envExample = fs.readFileSync(path.join(cwd, '.env.example'), 'utf-8');
       for (const line of envExample.split('\n')) {
         const match = line.match(/^([A-Z][A-Z0-9_]+)\s*=/);
-        if (match) vars.push({ name: match[1], desc: '' });
+        if (match?.[1]) vars.push({ name: match[1], desc: '' });
       }
     } catch { /* no .env.example */ }
   }

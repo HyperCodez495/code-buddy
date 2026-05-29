@@ -50,7 +50,7 @@ export function generateConversationTitle(firstMessage: string): string {
 }
 
 function extractTitle(message: string): string {
-  const firstWord = message.split(/\s+/)[0].toLowerCase();
+  const firstWord = (message.split(/\s+/)[0] ?? '').toLowerCase();
 
   // Check if message starts with a known action verb
   const matchedPrefix = ACTION_PREFIXES.find(p => firstWord === p);
@@ -91,7 +91,7 @@ function extractTitle(message: string): string {
   }
 
   // Default: use first sentence or truncate
-  const firstSentence = message.split(/[.!?\n]/)[0].trim();
+  const firstSentence = (message.split(/[.!?\n]/)[0] ?? '').trim();
   if (firstSentence.length > 0 && firstSentence.length <= MAX_TITLE_LENGTH) {
     return firstSentence;
   }
@@ -109,7 +109,7 @@ function extractSubject(text: string): string | null {
   const withoutFillers = text.replace(/^(?:the|a|an|this|my|our|some)\s+/i, '');
 
   // Take the first meaningful phrase (up to a comma, period, or newline)
-  const phrase = withoutFillers.split(/[,.\n]/)[0].trim();
+  const phrase = (withoutFillers.split(/[,.\n]/)[0] ?? '').trim();
 
   if (phrase.length > 0 && phrase.length <= MAX_TITLE_LENGTH - 10) {
     return phrase;

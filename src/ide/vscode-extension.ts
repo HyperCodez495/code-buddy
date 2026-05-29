@@ -211,7 +211,11 @@ export class VSCodeBridge {
     if (stepIndex < 0 || stepIndex >= plan.steps.length) {
       return false;
     }
-    plan.steps[stepIndex].approved = true;
+    const step = plan.steps[stepIndex];
+    if (!step) {
+      return false;
+    }
+    step.approved = true;
     logger.debug('Plan step approved', { planId, stepIndex });
     return true;
   }

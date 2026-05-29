@@ -137,18 +137,18 @@ export class LatencyOptimizer extends EventEmitter {
     let startTimeStr: string;
 
     if (separator === "::") {
-      operation = parts[0];
-      startTimeStr = parts[1];
+      operation = parts[0] ?? "";
+      startTimeStr = parts[1] ?? "";
     } else {
       // Old format - find the timestamp (13-digit number)
       const timestampIndex = parts.findIndex(p => /^\d{13}$/.test(p));
       if (timestampIndex === -1) {
         // Fallback to old behavior for backward compatibility
-        operation = parts[0];
-        startTimeStr = parts[1];
+        operation = parts[0] ?? "";
+        startTimeStr = parts[1] ?? "";
       } else {
         operation = parts.slice(0, timestampIndex).join("-");
-        startTimeStr = parts[timestampIndex];
+        startTimeStr = parts[timestampIndex] ?? "";
       }
     }
 
@@ -307,18 +307,15 @@ export class LatencyOptimizer extends EventEmitter {
 
     const percentile = (p: number): number => {
       const index = Math.ceil((p / 100) * durations.length) - 1;
-      return durations[Math.max(0, index)];
+      return durations[Math.max(0, index)] ?? 0;
     };
 
     // Group by operation
     const byOperation: Record<string, { count: number; avg: number; met: number }> = {};
     for (const m of completed) {
-      if (!byOperation[m.operation]) {
-        byOperation[m.operation] = { count: 0, avg: 0, met: 0 };
-      }
-      const op = byOperation[m.operation];
+      const op = (byOperation[m.operation] ??= { count: 0, avg: 0, met: 0 });
       op.count++;
-      op.avg = (op.avg * (op.count - 1) + m.duration!) / op.count;
+      op.avg = (op.avg * (op.count - 1) + (m.duration ?? 0)) / op.count;
       if (m.status === "met") op.met++;
     }
 
@@ -457,10 +454,10 @@ export class StreamingOptimizer {
     const sorted = [...this.firstTokenTimes].sort((a, b) => a - b);
     const percentile = (p: number): number => {
       const index = Math.ceil((p / 100) * sorted.length) - 1;
-      return sorted[Math.max(0, index)];
+      return sorted[Math.max(0, index)] ?? 0;
     };
 
-    const target = OPERATION_TARGETS.streaming_start;
+    const target = OPERATION_TARGETS.streaming_start ?? LATENCY_THRESHOLDS.ACCEPTABLE;
     const meetingTarget = this.firstTokenTimes.filter((t) => t <= target).length;
 
     return {

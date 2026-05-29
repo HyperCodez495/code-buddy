@@ -198,7 +198,7 @@ export class SecurityReviewAgent extends EventEmitter {
 
           // Check for no version pinning
           if (!line.includes('==') && !line.includes('>=') && !line.includes('<=')) {
-            const pkg = line.split('[')[0].trim();
+            const pkg = (line.split('[')[0] ?? '').trim();
             if (pkg) {
               findings.push({
                 id: `dep-unpinned-${pkg}`,

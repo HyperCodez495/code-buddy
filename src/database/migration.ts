@@ -449,7 +449,7 @@ export class DatabaseMigration extends EventEmitter {
         for (const session of data.sessions) {
           try {
             analyticsRepo.recordAnalytics({
-              date: session.date || new Date().toISOString().split('T')[0],
+              date: session.date || new Date().toISOString().slice(0, 10),
               model: session.model,
               cost: session.cost,
               tokens_in: Math.floor(session.tokens * 0.7), // Estimate

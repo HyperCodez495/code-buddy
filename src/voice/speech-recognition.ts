@@ -142,7 +142,7 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
     const formData = new FormData();
     formData.append('file', new Blob([new Uint8Array(audio)], { type: 'audio/wav' }), 'audio.wav');
     formData.append('model', 'whisper-1');
-    formData.append('language', this.config.language.split('-')[0]);
+    formData.append('language', this.config.language.split('-')[0] ?? this.config.language);
 
     if (this.config.vocabulary && this.config.vocabulary.length > 0) {
       formData.append('prompt', this.config.vocabulary.join(', '));
@@ -222,7 +222,9 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
       }>;
     };
 
-    if (!data.results || data.results.length === 0) {
+    const firstResult = data.results?.[0];
+    const result = firstResult?.alternatives[0];
+    if (!result) {
       return {
         text: '',
         isFinal: true,
@@ -230,7 +232,6 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
       };
     }
 
-    const result = data.results[0].alternatives[0];
     const words: TranscriptWord[] = result.words?.map((w) => ({
       word: w.word,
       startTime: parseFloat(w.startTime.replace('s', '')),
@@ -243,7 +244,7 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
       isFinal: true,
       confidence: result.confidence,
       words,
-      alternatives: data.results[0].alternatives.slice(1).map((a) => ({
+      alternatives: firstResult.alternatives.slice(1).map((a) => ({
         text: a.transcript,
         confidence: a.confidence,
       })),
@@ -336,7 +337,7 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
     const response = await fetch(
       'https://api.deepgram.com/v1/listen?' +
         new URLSearchParams({
-          language: this.config.language.split('-')[0],
+          language: this.config.language.split('-')[0] ?? this.config.language,
           punctuate: 'true',
           diarize: 'false',
           smart_format: 'true',
@@ -454,7 +455,7 @@ export class SpeechRecognizer extends EventEmitter implements ISpeechRecognizer 
   private async transcribeWithLocalWhisperCli(audio: Buffer): Promise<TranscriptResult | null> {
     const dir = await mkdtemp(join(tmpdir(), 'codebuddy-stt-'));
     const inputPath = join(dir, 'audio.wav');
-    const language = this.config.language.split('-')[0];
+    const language = this.config.language.split('-')[0] ?? this.config.language;
     const selectedModel = this.selectModelForDuration(audio.length);
 
     try {

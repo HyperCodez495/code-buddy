@@ -93,7 +93,12 @@ export function extractCommentaryToolCalls(content: string): ExtractedToolCalls 
   while ((match = commentaryPattern.exec(content)) !== null) {
     try {
       const toolName = match[1];
-      const args = JSON.parse(match[2]);
+      const rawArgs = match[2];
+      if (toolName === undefined || rawArgs === undefined) {
+        // Capture group missing — skip this match
+        continue;
+      }
+      const args = JSON.parse(rawArgs);
       toolCalls.push({ name: toolName, arguments: args });
       remainingContent = remainingContent.replace(match[0], "").trim();
     } catch {
@@ -107,11 +112,16 @@ export function extractCommentaryToolCalls(content: string): ExtractedToolCalls 
   while ((match = functionCallPattern.exec(content)) !== null) {
     try {
       const toolName = match[1];
+      const rawArgs = match[2];
+      if (toolName === undefined || rawArgs === undefined) {
+        // Capture group missing — skip this match
+        continue;
+      }
       // Skip if it's a common JavaScript function
       if (["console", "log", "error", "warn", "info", "debug"].includes(toolName)) {
         continue;
       }
-      const args = JSON.parse(match[2]);
+      const args = JSON.parse(rawArgs);
       toolCalls.push({ name: toolName, arguments: args });
       remainingContent = remainingContent.replace(match[0], "").trim();
     } catch {

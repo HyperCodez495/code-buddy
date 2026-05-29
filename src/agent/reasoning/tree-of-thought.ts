@@ -472,7 +472,7 @@ Provide an improved version of this thought that addresses the feedback:`;
     let match;
 
     while ((match = approachPattern.exec(content)) !== null) {
-      const approach = match[1].trim();
+      const approach = match[1]?.trim();
       if (approach) {
         approaches.push(approach);
       }
@@ -482,7 +482,7 @@ Provide an improved version of this thought that addresses the feedback:`;
     if (approaches.length === 0) {
       const numberedPattern = /^\d+[.)]\s*([\s\S]*?)(?=^\d+[.)]|$)/gm;
       while ((match = numberedPattern.exec(content)) !== null) {
-        const approach = match[1].trim();
+        const approach = match[1]?.trim();
         if (approach) {
           approaches.push(approach);
         }
@@ -509,8 +509,8 @@ Provide an improved version of this thought that addresses the feedback:`;
     let match;
 
     while ((match = stepPattern.exec(content)) !== null) {
-      const stepNum = parseInt(match[1], 10);
-      const stepContent = match[2].trim();
+      const stepNum = parseInt(match[1] ?? "", 10);
+      const stepContent = (match[2] ?? "").trim();
 
       // Extract action and observation
       const actionMatch = stepContent.match(/Action:\s*([\s\S]*?)(?=Observation:|$)/i);
@@ -536,7 +536,9 @@ Provide an improved version of this thought that addresses the feedback:`;
     return {
       steps,
       finalAnswer: answerMatch?.[1]?.trim() || content,
-      confidence: confidenceMatch ? parseInt(confidenceMatch[1], 10) / 100 : 0.5,
+      confidence: confidenceMatch?.[1]
+        ? parseInt(confidenceMatch[1], 10) / 100
+        : 0.5,
     };
   }
 
@@ -594,11 +596,10 @@ Provide an improved version of this thought that addresses the feedback:`;
       output += "─".repeat(40) + "\n";
       output += "🛤️  REASONING PATH:\n";
       output += "─".repeat(40) + "\n";
-      for (let i = 0; i < result.path.length; i++) {
-        const node = result.path[i];
+      result.path.forEach((node, i) => {
         output += `${i + 1}. [${node.type}] ${node.content.slice(0, 100)}...\n`;
         output += `   Score: ${node.score.toFixed(2)}\n`;
-      }
+      });
       output += "\n";
     }
 
@@ -606,11 +607,10 @@ Provide an improved version of this thought that addresses the feedback:`;
       output += "─".repeat(40) + "\n";
       output += "🔄 ALTERNATIVES:\n";
       output += "─".repeat(40) + "\n";
-      for (let i = 0; i < result.alternatives.length; i++) {
-        const alt = result.alternatives[i];
+      result.alternatives.forEach((alt, i) => {
         output += `${i + 1}. [Score: ${alt.score.toFixed(2)}] `;
         output += `${alt.content.slice(0, 80)}...\n`;
-      }
+      });
     }
 
     output += "\n" + "═".repeat(60) + "\n";

@@ -144,9 +144,9 @@ export class LinuxNativeProvider extends BaseNativeProvider {
       const yMatch = output.match(/y:(\d+)/);
       const screenMatch = output.match(/screen:(\d+)/);
       return {
-        x: xMatch ? parseInt(xMatch[1], 10) : 0,
-        y: yMatch ? parseInt(yMatch[1], 10) : 0,
-        screen: screenMatch ? parseInt(screenMatch[1], 10) : 0,
+        x: xMatch?.[1] ? parseInt(xMatch[1], 10) : 0,
+        y: yMatch?.[1] ? parseInt(yMatch[1], 10) : 0,
+        screen: screenMatch?.[1] ? parseInt(screenMatch[1], 10) : 0,
       };
     } catch {
       return { x: 0, y: 0, screen: 0 };
@@ -330,11 +330,11 @@ export class LinuxNativeProvider extends BaseNativeProvider {
         const geom = await this.exec(`xdotool getwindowgeometry ${handle}`);
         const posMatch = geom.match(/Position:\s*(\d+),(\d+)/);
         const sizeMatch = geom.match(/Geometry:\s*(\d+)x(\d+)/);
-        if (posMatch) {
+        if (posMatch?.[1] && posMatch[2]) {
           x = parseInt(posMatch[1], 10);
           y = parseInt(posMatch[2], 10);
         }
-        if (sizeMatch) {
+        if (sizeMatch?.[1] && sizeMatch[2]) {
           width = parseInt(sizeMatch[1], 10);
           height = parseInt(sizeMatch[2], 10);
         }
@@ -433,7 +433,7 @@ export class LinuxNativeProvider extends BaseNativeProvider {
         const trimmed = line.trim();
         if (!trimmed) continue;
         const match = trimmed.match(/^\s*(\d+)\s+(.+)$/);
-        if (match) {
+        if (match?.[1] && match[2]) {
           const pid = parseInt(match[1], 10);
           const comm = match[2].trim();
           apps.push({
@@ -503,7 +503,7 @@ export class LinuxNativeProvider extends BaseNativeProvider {
         const match = line.match(
           /^(\S+)\s+connected\s+(primary\s+)?(\d+)x(\d+)\+(\d+)\+(\d+)/
         );
-        if (match) {
+        if (match?.[1] && match[3] && match[4] && match[5] && match[6]) {
           const name = match[1];
           const primary = !!match[2];
           const width = parseInt(match[3], 10);

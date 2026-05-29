@@ -118,7 +118,10 @@ function findRouteConfig(
 
   for (const prefix of sortedPrefixes) {
     if (path.startsWith(prefix)) {
-      return routeLimits[prefix];
+      const config = routeLimits[prefix];
+      if (config !== undefined) {
+        return config;
+      }
     }
   }
 

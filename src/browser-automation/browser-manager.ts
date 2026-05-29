@@ -179,8 +179,9 @@ export class BrowserManager extends EventEmitter {
         this.setupPageListeners(pageId, page);
       }
 
-      if (pages.length > 0) {
-        this.currentPageId = Array.from(this.pages.keys())[0];
+      const firstPageId = Array.from(this.pages.keys())[0];
+      if (pages.length > 0 && firstPageId !== undefined) {
+        this.currentPageId = firstPageId;
       }
 
       logger.info('Connected to browser via CDP', { cdpUrl });
@@ -340,7 +341,7 @@ export class BrowserManager extends EventEmitter {
     this.pages.delete(tabId);
 
     if (this.currentPageId === tabId) {
-      this.currentPageId = this.pages.size > 0 ? Array.from(this.pages.keys())[0] : null;
+      this.currentPageId = this.pages.size > 0 ? Array.from(this.pages.keys())[0] ?? null : null;
     }
   }
 

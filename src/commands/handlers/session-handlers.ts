@@ -427,8 +427,9 @@ export function handleSessions(args: string[]): CommandHandlerResult {
 
       for (let i = 0; i < cleanupArgs.length; i++) {
         const arg = cleanupArgs[i];
-        if (arg === '--days' && cleanupArgs[i + 1]) {
-          days = parseInt(cleanupArgs[i + 1], 10);
+        const nextArg = cleanupArgs[i + 1];
+        if (arg === '--days' && nextArg) {
+          days = parseInt(nextArg, 10);
           if (isNaN(days) || days < 1) {
             return {
               handled: true,
@@ -440,8 +441,8 @@ export function handleSessions(args: string[]): CommandHandlerResult {
             };
           }
           i++;
-        } else if (arg === '--keep' && cleanupArgs[i + 1]) {
-          keep = parseInt(cleanupArgs[i + 1], 10);
+        } else if (arg === '--keep' && nextArg) {
+          keep = parseInt(nextArg, 10);
           if (isNaN(keep) || keep < 0) {
             return {
               handled: true,

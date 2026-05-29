@@ -326,6 +326,7 @@ export class CodeReviewEngine extends EventEmitter {
 
     for (let i = 0; i < files.length; i++) {
       const file = files[i];
+      if (file === undefined) continue;
       this.emit('progress', { phase: 'reviewing', current: i + 1, total: files.length, file });
 
       try {
@@ -369,6 +370,7 @@ export class CodeReviewEngine extends EventEmitter {
       // Check each line
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (line === undefined) continue;
         const matches = line.matchAll(new RegExp(rule.pattern.source, rule.pattern.flags));
 
         for (const match of matches) {
@@ -675,9 +677,10 @@ export class CodeReviewEngine extends EventEmitter {
           const fix = comment.autoFix!;
           const lineIndex = fix.line - 1;
 
-          if (lineIndex >= 0 && lineIndex < lines.length) {
+          const currentLine = lines[lineIndex];
+          if (lineIndex >= 0 && lineIndex < lines.length && currentLine !== undefined) {
             if (fix.type === 'replace' && fix.oldText && fix.newText) {
-              lines[lineIndex] = lines[lineIndex].replace(fix.oldText, fix.newText);
+              lines[lineIndex] = currentLine.replace(fix.oldText, fix.newText);
               applied++;
             }
           }

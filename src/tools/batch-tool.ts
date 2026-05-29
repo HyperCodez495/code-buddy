@@ -155,7 +155,7 @@ export async function executeBatch(
     }
     // Rejected promise (shouldn't happen since we catch errors above)
     return {
-      tool: calls[index].tool,
+      tool: calls[index]?.tool ?? 'unknown',
       success: false,
       error: result.reason?.message || String(result.reason),
       durationMs: 0,
@@ -183,8 +183,7 @@ export async function executeBatch(
 export function formatBatchResults(result: BatchExecutionResult): string {
   const lines: string[] = [result.summary, ''];
 
-  for (let i = 0; i < result.results.length; i++) {
-    const r = result.results[i];
+  for (const r of result.results) {
     const status = r.success ? '[OK]' : '[FAIL]';
     const duration = `${r.durationMs}ms`;
     lines.push(`${status} ${r.tool} (${duration})`);

@@ -225,7 +225,8 @@ export class LaneQueue extends EventEmitter {
     let insertIndex = queue.length;
 
     for (let i = 0; i < queue.length; i++) {
-      if ((queue[i].options.priority ?? 0) < priority) {
+      const existing = queue[i];
+      if (existing && (existing.options.priority ?? 0) < priority) {
         insertIndex = i;
         break;
       }
@@ -282,6 +283,7 @@ export class LaneQueue extends EventEmitter {
 
     for (let i = 0; i < lane.pending.length; i++) {
       const task = lane.pending[i];
+      if (!task) continue;
 
       if (task.options.parallel) {
         // Parallel task: can run if under limit

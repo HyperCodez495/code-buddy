@@ -262,6 +262,7 @@ function extractCodeBlocks(code: string): CodeBlock[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue; // safe: i is bounded by lines.length; guard satisfies noUncheckedIndexedAccess
     const trimmedLine = line.trim();
 
     // Check if starting a new block

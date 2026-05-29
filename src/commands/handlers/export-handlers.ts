@@ -30,7 +30,8 @@ export async function handleExport(args: string[]): Promise<CommandHandlerResult
   } else {
     // Get most recent session
     const sessions = sessionRepo.findSessions({ limit: 1 });
-    if (sessions.length === 0) {
+    const mostRecent = sessions[0];
+    if (!mostRecent) {
       return {
         handled: true,
         entry: {
@@ -40,7 +41,7 @@ export async function handleExport(args: string[]): Promise<CommandHandlerResult
         },
       };
     }
-    sessionId = sessions[0].id;
+    sessionId = mostRecent.id;
   }
 
   // Export session

@@ -273,7 +273,8 @@ export class ArchitectMode extends EventEmitter {
 
       if (wave.length === 0) {
         // No progress — break dependency cycle, schedule remaining sequentially
-        wave.push(remaining[0]);
+        const first = remaining[0];
+        if (first !== undefined) wave.push(first);
       }
 
       for (const step of wave) {
@@ -299,9 +300,10 @@ export class ArchitectMode extends EventEmitter {
 
     // Extract from markdown code block
     const codeBlockMatch = content.match(/```(?:json)?\s*\n([\s\S]*?)\n```/);
-    if (codeBlockMatch) {
+    const codeBlockBody = codeBlockMatch?.[1];
+    if (codeBlockBody !== undefined) {
       try {
-        return JSON.parse(codeBlockMatch[1]) as ArchitectProposal;
+        return JSON.parse(codeBlockBody) as ArchitectProposal;
       } catch (e) { logger.debug('Code block JSON parse failed for architect proposal', { error: String(e) }); }
     }
 

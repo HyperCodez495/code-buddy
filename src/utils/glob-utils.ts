@@ -21,7 +21,7 @@ export function expandBraces(pattern: string): string[] {
   const match = pattern.match(/^(.*)\{([^}]+)\}(.*)$/);
   if (!match) return [pattern];
 
-  const [, prefix, alternatives, suffix] = match;
+  const [, prefix = '', alternatives = '', suffix = ''] = match;
   return alternatives.split(',').map(alt => `${prefix}${alt.trim()}${suffix}`);
 }
 
@@ -38,6 +38,7 @@ export function globToRegex(glob: string): RegExp {
   let i = 0;
   while (i < glob.length) {
     const char = glob[i];
+    if (char === undefined) break; // safe: loop condition i < glob.length guarantees this never fires; satisfies noUncheckedIndexedAccess
     if (char === '*' && glob[i + 1] === '*') {
       // ** matches any path segments
       regex += '.*';

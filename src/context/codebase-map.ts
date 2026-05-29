@@ -227,23 +227,27 @@ export class CodebaseMapper {
       // ES6 imports
       const importMatches = content.matchAll(/import\s+.*?\s+from\s+['"]([^'"]+)['"]/g);
       for (const match of importMatches) {
-        imports.push(match[1]);
+        const spec = match[1];
+        if (spec !== undefined) imports.push(spec);
       }
 
       // Require
       const requireMatches = content.matchAll(/require\s*\(\s*['"]([^'"]+)['"]\s*\)/g);
       for (const match of requireMatches) {
-        imports.push(match[1]);
+        const spec = match[1];
+        if (spec !== undefined) imports.push(spec);
       }
     } else if (ext === "py") {
       const importMatches = content.matchAll(/(?:from\s+(\S+)\s+)?import\s+(\S+)/g);
       for (const match of importMatches) {
-        imports.push(match[1] || match[2]);
+        const spec = match[1] || match[2];
+        if (spec !== undefined) imports.push(spec);
       }
     } else if (ext === "go") {
       const importMatches = content.matchAll(/import\s+(?:\(\s*)?"([^"]+)"/g);
       for (const match of importMatches) {
-        imports.push(match[1]);
+        const spec = match[1];
+        if (spec !== undefined) imports.push(spec);
       }
     }
 
@@ -257,7 +261,8 @@ export class CodebaseMapper {
       // Named exports
       const exportMatches = content.matchAll(/export\s+(?:const|let|var|function|class|interface|type|enum)\s+(\w+)/g);
       for (const match of exportMatches) {
-        exports.push(match[1]);
+        const name = match[1];
+        if (name !== undefined) exports.push(name);
       }
 
       // Default export
@@ -284,10 +289,11 @@ export class CodebaseMapper {
 
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (line === undefined) continue;
 
         // Functions
         const funcMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/);
-        if (funcMatch) {
+        if (funcMatch && funcMatch[1] !== undefined) {
           symbols.push({
             name: funcMatch[1],
             type: "function",
@@ -299,7 +305,7 @@ export class CodebaseMapper {
 
         // Classes
         const classMatch = line.match(/(?:export\s+)?class\s+(\w+)/);
-        if (classMatch) {
+        if (classMatch && classMatch[1] !== undefined) {
           symbols.push({
             name: classMatch[1],
             type: "class",
@@ -311,7 +317,7 @@ export class CodebaseMapper {
 
         // Interfaces
         const interfaceMatch = line.match(/(?:export\s+)?interface\s+(\w+)/);
-        if (interfaceMatch) {
+        if (interfaceMatch && interfaceMatch[1] !== undefined) {
           symbols.push({
             name: interfaceMatch[1],
             type: "interface",
@@ -323,7 +329,7 @@ export class CodebaseMapper {
 
         // Types
         const typeMatch = line.match(/(?:export\s+)?type\s+(\w+)/);
-        if (typeMatch) {
+        if (typeMatch && typeMatch[1] !== undefined) {
           symbols.push({
             name: typeMatch[1],
             type: "type",
@@ -335,7 +341,7 @@ export class CodebaseMapper {
 
         // Constants
         const constMatch = line.match(/(?:export\s+)?const\s+(\w+)/);
-        if (constMatch && constMatch[1] === constMatch[1].toUpperCase()) {
+        if (constMatch && constMatch[1] !== undefined && constMatch[1] === constMatch[1].toUpperCase()) {
           symbols.push({
             name: constMatch[1],
             type: "constant",
@@ -367,10 +373,11 @@ export class CodebaseMapper {
       // ES6 imports
       const importMatches = content.matchAll(/import\s+.*?\s+from\s+['"]([^'"]+)['"]/g);
       for (const match of importMatches) {
-        if (match[1].startsWith(".")) {
+        const spec = match[1];
+        if (spec !== undefined && spec.startsWith(".")) {
           const resolved = path.relative(
             this.rootDir,
-            path.resolve(path.dirname(filePath), match[1])
+            path.resolve(path.dirname(filePath), spec)
           );
           deps.push({ from: relativePath, to: resolved, type: "import" });
         }
@@ -379,10 +386,11 @@ export class CodebaseMapper {
       // Dynamic imports
       const dynamicMatches = content.matchAll(/import\s*\(\s*['"]([^'"]+)['"]\s*\)/g);
       for (const match of dynamicMatches) {
-        if (match[1].startsWith(".")) {
+        const spec = match[1];
+        if (spec !== undefined && spec.startsWith(".")) {
           const resolved = path.relative(
             this.rootDir,
-            path.resolve(path.dirname(filePath), match[1])
+            path.resolve(path.dirname(filePath), spec)
           );
           deps.push({ from: relativePath, to: resolved, type: "dynamic" });
         }

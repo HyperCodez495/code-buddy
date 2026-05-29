@@ -169,6 +169,10 @@ export class ModelProfileManager extends EventEmitter {
       }
 
       const model = preferredModel || profile.defaultModel || profile.models[0];
+      // Skip profiles with no resolvable model (empty models[] and no default)
+      if (model === undefined) {
+        continue;
+      }
       const selection: ProfileSelection = {
         profile,
         model,
@@ -206,6 +210,10 @@ export class ModelProfileManager extends EventEmitter {
       }
 
       const model = preferredModel || profile.defaultModel || profile.models[0];
+      // Skip profiles with no resolvable model (empty models[] and no default)
+      if (model === undefined) {
+        continue;
+      }
       const selection: ProfileSelection = {
         profile,
         model,

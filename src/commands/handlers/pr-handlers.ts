@@ -333,9 +333,10 @@ export async function handlePR(args: string[]): Promise<CommandHandlerResult> {
  */
 function buildTitleFromBranch(branchName: string, commits: string[]): string {
   // If there's exactly one commit, use its message
-  if (commits.length === 1) {
+  const firstCommit = commits[0];
+  if (commits.length === 1 && firstCommit !== undefined) {
     // Remove the short hash prefix
-    const msg = commits[0].replace(/^[a-f0-9]+ /, '');
+    const msg = firstCommit.replace(/^[a-f0-9]+ /, '');
     return msg;
   }
 

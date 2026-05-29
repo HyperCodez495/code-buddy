@@ -100,7 +100,9 @@ export function buildConceptIndex(
   // Second pass: H2 headings as sub-concepts (page titles already claimed)
   for (const { page, content } of pages) {
     for (const match of content.matchAll(/^## (.+)$/gm)) {
-      const heading = match[1].replace(/\s*\(.*\)$/, '').trim();
+      const captured = match[1];
+      if (captured === undefined) continue;
+      const heading = captured.replace(/\s*\(.*\)$/, '').trim();
       if (heading.length < 3 || heading.length > 60) continue;
       if (seen.has(heading.toLowerCase())) continue;
       // Skip generic headings
@@ -265,6 +267,7 @@ export function linkConcepts(
   // Third pass: add prev/next navigation at the bottom of each page
   for (let i = 0; i < pages.length; i++) {
     const genPage = pages[i];
+    if (genPage === undefined) continue;
     const filePath = path.join(outputDir, `${genPage.page.slug}.md`);
     if (!fs.existsSync(filePath)) continue;
 

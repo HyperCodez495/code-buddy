@@ -474,13 +474,20 @@ export class ConfigMigrator extends EventEmitter {
       } else {
         let current: Record<string, unknown> = result;
         for (let i = 0; i < parts.length - 1; i++) {
-          if (current[parts[i]] && typeof current[parts[i]] === 'object') {
-            current = current[parts[i]] as Record<string, unknown>;
+          const part = parts[i];
+          if (part === undefined) {
+            break;
+          }
+          if (current[part] && typeof current[part] === 'object') {
+            current = current[part] as Record<string, unknown>;
           } else {
             break;
           }
         }
-        delete current[parts[parts.length - 1]];
+        const lastPart = parts[parts.length - 1];
+        if (lastPart !== undefined) {
+          delete current[lastPart];
+        }
       }
     }
 

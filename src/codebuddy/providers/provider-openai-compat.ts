@@ -257,7 +257,7 @@ export class OpenAICompatProvider implements Provider {
         return false;
       }
 
-      const message = response.choices[0].message;
+      const message = response.choices[0]?.message;
       const hasToolCall = !!(message?.tool_calls && message.tool_calls.length > 0);
 
       this.toolSupportProbed = true;

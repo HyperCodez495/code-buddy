@@ -113,8 +113,11 @@ class MinHeap {
   private bubbleUp(index: number): void {
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.items[index].distance >= this.items[parent].distance) break;
-      [this.items[index], this.items[parent]] = [this.items[parent], this.items[index]];
+      const cur = this.items[index];
+      const par = this.items[parent];
+      if (cur === undefined || par === undefined) break;
+      if (cur.distance >= par.distance) break;
+      [this.items[index], this.items[parent]] = [par, cur];
       index = parent;
     }
   }
@@ -127,16 +130,23 @@ class MinHeap {
       const right = 2 * index + 2;
       let smallest = index;
 
-      if (left < length && this.items[left].distance < this.items[smallest].distance) {
+      const leftItem = this.items[left];
+      const smallestItem = this.items[smallest];
+      if (left < length && leftItem !== undefined && smallestItem !== undefined && leftItem.distance < smallestItem.distance) {
         smallest = left;
       }
-      if (right < length && this.items[right].distance < this.items[smallest].distance) {
+      const rightItem = this.items[right];
+      const curSmallest = this.items[smallest];
+      if (right < length && rightItem !== undefined && curSmallest !== undefined && rightItem.distance < curSmallest.distance) {
         smallest = right;
       }
 
       if (smallest === index) break;
 
-      [this.items[index], this.items[smallest]] = [this.items[smallest], this.items[index]];
+      const a = this.items[index];
+      const b = this.items[smallest];
+      if (a === undefined || b === undefined) break;
+      [this.items[index], this.items[smallest]] = [b, a];
       index = smallest;
     }
   }
@@ -182,8 +192,11 @@ class MaxHeap {
   private bubbleUp(index: number): void {
     while (index > 0) {
       const parent = Math.floor((index - 1) / 2);
-      if (this.items[index].distance <= this.items[parent].distance) break;
-      [this.items[index], this.items[parent]] = [this.items[parent], this.items[index]];
+      const cur = this.items[index];
+      const par = this.items[parent];
+      if (cur === undefined || par === undefined) break;
+      if (cur.distance <= par.distance) break;
+      [this.items[index], this.items[parent]] = [par, cur];
       index = parent;
     }
   }
@@ -196,16 +209,23 @@ class MaxHeap {
       const right = 2 * index + 2;
       let largest = index;
 
-      if (left < length && this.items[left].distance > this.items[largest].distance) {
+      const leftItem = this.items[left];
+      const largestItem = this.items[largest];
+      if (left < length && leftItem !== undefined && largestItem !== undefined && leftItem.distance > largestItem.distance) {
         largest = left;
       }
-      if (right < length && this.items[right].distance > this.items[largest].distance) {
+      const rightItem = this.items[right];
+      const curLargest = this.items[largest];
+      if (right < length && rightItem !== undefined && curLargest !== undefined && rightItem.distance > curLargest.distance) {
         largest = right;
       }
 
       if (largest === index) break;
 
-      [this.items[index], this.items[largest]] = [this.items[largest], this.items[index]];
+      const a = this.items[index];
+      const b = this.items[largest];
+      if (a === undefined || b === undefined) break;
+      [this.items[index], this.items[largest]] = [b, a];
       index = largest;
     }
   }
@@ -304,8 +324,9 @@ export class HNSWVectorStore extends EventEmitter {
         }
       }
 
-      if (selectedNeighbors.length > 0) {
-        currentNodeId = selectedNeighbors[0].id;
+      const firstSelected = selectedNeighbors[0];
+      if (firstSelected !== undefined) {
+        currentNodeId = firstSelected.id;
       }
     }
 
@@ -324,12 +345,14 @@ export class HNSWVectorStore extends EventEmitter {
    * Add multiple vectors in batch
    */
   addBatch(entries: VectorEntry[]): void {
-    for (let i = 0; i < entries.length; i++) {
-      this.add(entries[i]);
+    let i = 0;
+    for (const entry of entries) {
+      this.add(entry);
 
       if ((i + 1) % 1000 === 0) {
         this.emit("batch:progress", { completed: i + 1, total: entries.length });
       }
+      i++;
     }
   }
 
@@ -353,8 +376,9 @@ export class HNSWVectorStore extends EventEmitter {
     // Traverse from top level to level 1
     for (let l = this.maxLevel; l > 0; l--) {
       const nearest = this.searchLayer(query, currentNodeId, 1, l);
-      if (nearest.length > 0) {
-        currentNodeId = nearest[0].id;
+      const firstNearest = nearest[0];
+      if (firstNearest !== undefined) {
+        currentNodeId = firstNearest.id;
       }
     }
 
@@ -503,7 +527,8 @@ export class HNSWVectorStore extends EventEmitter {
   private distance(a: number[], b: number[]): number {
     let sum = 0;
     for (let i = 0; i < a.length; i++) {
-      const diff = a[i] - b[i];
+      // Preserve original behavior: a shorter `b` yields NaN (dimension-mismatch signal), not a masked finite distance.
+      const diff = (a[i] ?? NaN) - (b[i] ?? NaN);
       sum += diff * diff;
     }
     return Math.sqrt(sum);

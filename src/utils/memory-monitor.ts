@@ -301,9 +301,14 @@ export class MemoryMonitor extends EventEmitter {
     }
 
     // Check if heap never decreases
-    const decreaseCount = this.snapshots.slice(1).filter((s, i) =>
-      s.heapUsed < this.snapshots[i].heapUsed
-    ).length;
+    let decreaseCount = 0;
+    for (let i = 1; i < this.snapshots.length; i++) {
+      const current = this.snapshots[i];
+      const previous = this.snapshots[i - 1];
+      if (current && previous && current.heapUsed < previous.heapUsed) {
+        decreaseCount++;
+      }
+    }
 
     if (decreaseCount === 0 && this.snapshots.length > 20) {
       evidence.push('Heap size never decreased over monitoring period');

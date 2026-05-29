@@ -548,8 +548,10 @@ export class GitHubActionsManager extends EventEmitter {
       }
 
       // Validate steps
-      for (let i = 0; i < (job.steps || []).length; i++) {
-        const step = job.steps[i];
+      const steps = job.steps || [];
+      for (let i = 0; i < steps.length; i++) {
+        const step = steps[i];
+        if (step === undefined) continue;
         if (!step.uses && !step.run) {
           errors.push(`Step ${i + 1} in job "${jobId}" must have either 'uses' or 'run'`);
         }
@@ -692,9 +694,10 @@ export class GitHubActionsManager extends EventEmitter {
 
     // Check for parallel job opportunities
     const jobIds = Object.keys(config.jobs || {});
-    if (jobIds.length === 1 && config.jobs) {
-      const job = config.jobs[jobIds[0]];
-      if (job.steps && job.steps.length > 10) {
+    const soleJobId = jobIds[0];
+    if (jobIds.length === 1 && config.jobs && soleJobId !== undefined) {
+      const job = config.jobs[soleJobId];
+      if (job?.steps && job.steps.length > 10) {
         suggestions.push({
           type: 'parallelization',
           message: 'Consider splitting long job into multiple parallel jobs',

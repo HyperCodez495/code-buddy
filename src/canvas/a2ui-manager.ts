@@ -307,6 +307,9 @@ export class A2UIManager extends EventEmitter {
   ): { type: ComponentType; props: Record<string, unknown> } {
     const keys = Object.keys(componentProps) as ComponentType[];
     const type = keys[0];
+    if (type === undefined) {
+      throw new Error('extractComponentInfo: componentProps has no component type key');
+    }
     const props = (componentProps as Record<string, unknown>)[type] as Record<string, unknown>;
     return { type, props: props || {} };
   }
@@ -397,13 +400,19 @@ export class A2UIManager extends EventEmitter {
 
     for (let i = 0; i < parts.length - 1; i++) {
       const part = parts[i];
+      if (part === undefined) {
+        continue;
+      }
       if (!(part in current) || typeof current[part] !== 'object') {
         current[part] = {};
       }
       current = current[part] as Record<string, unknown>;
     }
 
-    current[parts[parts.length - 1]] = value;
+    const lastPart = parts[parts.length - 1];
+    if (lastPart !== undefined) {
+      current[lastPart] = value;
+    }
   }
 
   // ==========================================================================
@@ -1426,7 +1435,7 @@ export class A2UIManager extends EventEmitter {
 
     const components = Array.from(surface.components.values()).map(c => ({
       id: c.id,
-      type: Object.keys(c.component)[0],
+      type: Object.keys(c.component)[0] ?? '',
     }));
 
     return {

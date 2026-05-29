@@ -257,47 +257,56 @@ export class TodoTracker {
     for (const rawLine of lines) {
       const topMatch = rawLine.match(/^- \[(.)\] <!--([^:]+):([^:]+):([^-]+)--> (.+)/);
       if (topMatch) {
-        current = {
-          id: topMatch[2],
-          status: topMatch[3] as TodoStatus,
-          priority: topMatch[4] as TodoPriority,
-          text: topMatch[5].trim(),
-          subtasks: [],
-          createdAt: 0,
-          updatedAt: 0,
-        };
-        items.push(current);
-        continue;
+        const [, , id, status, priority, text] = topMatch;
+        if (id !== undefined && status !== undefined && priority !== undefined && text !== undefined) {
+          current = {
+            id,
+            status: status as TodoStatus,
+            priority: priority as TodoPriority,
+            text: text.trim(),
+            subtasks: [],
+            createdAt: 0,
+            updatedAt: 0,
+          };
+          items.push(current);
+          continue;
+        }
       }
 
       // Plain markdown list item (no metadata comment)
       const plainTop = rawLine.match(/^- \[(.)\] (.+)/);
       if (plainTop) {
-        current = {
-          id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-          status: plainTop[1] === 'x' ? 'done' : 'pending',
-          priority: 'medium',
-          text: plainTop[2].trim(),
-          subtasks: [],
-          createdAt: 0,
-          updatedAt: 0,
-        };
-        items.push(current);
-        continue;
+        const [, check, text] = plainTop;
+        if (text !== undefined) {
+          current = {
+            id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
+            status: check === 'x' ? 'done' : 'pending',
+            priority: 'medium',
+            text: text.trim(),
+            subtasks: [],
+            createdAt: 0,
+            updatedAt: 0,
+          };
+          items.push(current);
+          continue;
+        }
       }
 
       // Sub-task (indented)
       const subMatch = rawLine.match(/^ {2,}- \[(.)\] (.+)/);
       if (subMatch && current) {
-        current.subtasks.push({
-          id: Math.random().toString(36).slice(2, 7),
-          text: subMatch[2].trim(),
-          status: subMatch[1] === 'x' ? 'done' : 'pending',
-          priority: 'medium',
-          subtasks: [],
-          createdAt: 0,
-          updatedAt: 0,
-        });
+        const [, check, text] = subMatch;
+        if (text !== undefined) {
+          current.subtasks.push({
+            id: Math.random().toString(36).slice(2, 7),
+            text: text.trim(),
+            status: check === 'x' ? 'done' : 'pending',
+            priority: 'medium',
+            subtasks: [],
+            createdAt: 0,
+            updatedAt: 0,
+          });
+        }
       }
     }
 

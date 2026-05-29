@@ -182,42 +182,42 @@ const EXTRACTION_PATTERNS: Array<{
     pattern: /(?:i\s+prefer|i\s+like|je\s+pr[ée]f[èe]re|j'aime)\s+(.+?)(?:\.|$)/i,
     entityType: 'preference',
     relationType: 'prefers',
-    extract: (m) => ({ entity: m[1].trim() }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim() }),
   },
   // Dislikes: "I don't like X", "I hate X", "je déteste X"
   {
     pattern: /(?:i\s+(?:don'?t|do\s+not)\s+like|i\s+hate|i\s+dislike|je\s+d[ée]teste|je\s+n'aime\s+pas)\s+(.+?)(?:\.|$)/i,
     entityType: 'preference',
     relationType: 'dislikes',
-    extract: (m) => ({ entity: m[1].trim() }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim() }),
   },
   // Working on: "I'm working on X", "je travaille sur X"
   {
     pattern: /(?:i(?:'m|\s+am)\s+working\s+on|je\s+travaille\s+sur)\s+(.+?)(?:\.|$)/i,
     entityType: 'project',
     relationType: 'works_on',
-    extract: (m) => ({ entity: m[1].trim() }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim() }),
   },
   // Uses: "I use X", "we use X", "on utilise X"
   {
     pattern: /(?:i\s+use|we\s+use|on\s+utilise|j'utilise|nous\s+utilisons)\s+(.+?)(?:\s+for\s+|\.|\s+pour\s+|$)/i,
     entityType: 'technology',
     relationType: 'uses',
-    extract: (m) => ({ entity: m[1].trim() }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim() }),
   },
   // Knows person: "my colleague X", "mon collègue X", "X is a VIP"
   {
     pattern: /(?:my\s+(?:colleague|client|boss|manager|friend)|mon\s+(?:coll[èe]gue|client|chef))\s+(?:is\s+)?(\w+)/i,
     entityType: 'person',
     relationType: 'knows',
-    extract: (m) => ({ entity: m[1].trim() }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim() }),
   },
   // VIP/important: "X is a VIP", "X is important"
   {
     pattern: /(\w+)\s+(?:is\s+(?:a\s+)?(?:VIP|important|key|critical)|est\s+(?:un\s+)?(?:VIP|important))/i,
     entityType: 'person',
     relationType: 'related_to',
-    extract: (m) => ({ entity: m[1].trim(), properties: { importance: 'vip' } }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim(), properties: { importance: 'vip' } }),
   },
   // Temporal: "in the morning I prefer X", "le matin je préfère X"
   {
@@ -225,8 +225,8 @@ const EXTRACTION_PATTERNS: Array<{
     entityType: 'habit',
     relationType: 'temporal_pattern',
     extract: (m) => {
-      const temporal = m[0].match(/morning|matin|evening|soir|afternoon|apr[èe]s-midi|friday|vendredi|weekend/i);
-      return { entity: m[1].trim(), properties: { temporal: temporal?.[0]?.toLowerCase() } };
+      const temporal = (m[0] ?? '').match(/morning|matin|evening|soir|afternoon|apr[èe]s-midi|friday|vendredi|weekend/i);
+      return { entity: (m[1] ?? '').trim(), properties: { temporal: temporal?.[0]?.toLowerCase() } };
     },
   },
   // Style: "always use X", "toujours utiliser X"
@@ -234,7 +234,7 @@ const EXTRACTION_PATTERNS: Array<{
     pattern: /(?:always\s+use|toujours\s+utiliser|never\s+use|jamais\s+utiliser)\s+(.+?)(?:\.|$)/i,
     entityType: 'preference',
     relationType: 'has_style',
-    extract: (m) => ({ entity: m[1].trim(), properties: { strength: m[0].match(/never|jamais/i) ? 'avoid' : 'always' } }),
+    extract: (m) => ({ entity: (m[1] ?? '').trim(), properties: { strength: (m[0] ?? '').match(/never|jamais/i) ? 'avoid' : 'always' } }),
   },
 ];
 
@@ -259,7 +259,12 @@ function getCurrentTemporalContext(): string[] {
 
   const dayNames = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
   const dayNamesFr = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-  contexts.push(dayNames[day], dayNamesFr[day]);
+  // day is Date.getDay() (0-6); both arrays have 7 entries so lookups are in-bounds.
+  // Guard preserves behavior: push only the entries that exist (always true here).
+  const dayName = dayNames[day];
+  const dayNameFr = dayNamesFr[day];
+  if (dayName !== undefined) contexts.push(dayName);
+  if (dayNameFr !== undefined) contexts.push(dayNameFr);
 
   return contexts;
 }

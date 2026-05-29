@@ -174,7 +174,9 @@ export class DailyResetManager extends EventEmitter {
     messages: Array<{ role: string; content: string | null }>,
     systemMessage?: { role: string; content: string }
   ): Promise<ResetResult> {
-    const today = new Date().toISOString().split('T')[0];
+    // toISOString() always returns 'YYYY-MM-DDTHH:mm:ss.sssZ'; slice(0,10)
+    // yields the same 'YYYY-MM-DD' as split('T')[0] but stays typed as string.
+    const today = new Date().toISOString().slice(0, 10);
 
     // Avoid duplicate resets on the same day
     if (this.lastResetDate === today) {

@@ -352,9 +352,12 @@ export class VisualWorkspaceManager extends EventEmitter {
     const index = workspace.elements.findIndex((e) => e.id === elementId);
     if (index === -1) return null;
 
-    const previousState = { ...workspace.elements[index] };
-    const updatedElement = {
-      ...workspace.elements[index],
+    const existing = workspace.elements[index];
+    if (!existing) return null;
+
+    const previousState = { ...existing };
+    const updatedElement: VisualElement = {
+      ...existing,
       ...updates,
       id: elementId,
       updatedAt: new Date(),
@@ -387,6 +390,7 @@ export class VisualWorkspaceManager extends EventEmitter {
     if (index === -1) return false;
 
     const deletedElement = workspace.elements[index];
+    if (!deletedElement) return false;
     workspace.elements.splice(index, 1);
     workspace.selectedIds = workspace.selectedIds.filter((id) => id !== elementId);
     workspace.updatedAt = new Date();
@@ -495,6 +499,7 @@ export class VisualWorkspaceManager extends EventEmitter {
     if (!workspace || !hist || idx === undefined || idx < 0) return false;
 
     const entry = hist[idx];
+    if (!entry) return false;
     this.historyIndex.set(workspaceId, idx - 1);
 
     for (let i = 0; i < entry.elementIds.length; i++) {
@@ -531,8 +536,9 @@ export class VisualWorkspaceManager extends EventEmitter {
     const workspace = this.workspaces.get(workspaceId);
     if (!workspace) return false;
 
-    this.historyIndex.set(workspaceId, idx + 1);
     const entry = hist[idx + 1];
+    if (!entry) return false;
+    this.historyIndex.set(workspaceId, idx + 1);
 
     for (let i = 0; i < entry.elementIds.length; i++) {
       const elementId = entry.elementIds[i];
@@ -576,8 +582,10 @@ export class VisualWorkspaceManager extends EventEmitter {
       const gridY = Math.max(1, Math.floor(workspace.config.gridSize * scaleY));
 
       for (let y = 0; y < height; y += gridY) {
+        const row = buffer[y];
+        if (!row) continue;
         for (let x = 0; x < width; x++) {
-          if (buffer[y]) buffer[y][x] = '·';
+          row[x] = '·';
         }
       }
     }
@@ -594,14 +602,17 @@ export class VisualWorkspaceManager extends EventEmitter {
       const y2 = Math.min(height - 1, Math.floor((element.position.y + element.size.height) * scaleY));
 
       // Draw border
+      const topRow = buffer[y1];
+      const bottomRow = buffer[y2];
       for (let x = x1; x <= x2; x++) {
-        if (buffer[y1]) buffer[y1][x] = '─';
-        if (buffer[y2]) buffer[y2][x] = '─';
+        if (topRow) topRow[x] = '─';
+        if (bottomRow) bottomRow[x] = '─';
       }
       for (let y = y1; y <= y2; y++) {
-        if (buffer[y]) {
-          buffer[y][x1] = '│';
-          buffer[y][x2] = '│';
+        const row = buffer[y];
+        if (row) {
+          row[x1] = '│';
+          row[x2] = '│';
         }
       }
 
@@ -625,9 +636,11 @@ export class VisualWorkspaceManager extends EventEmitter {
       const labelY = Math.floor((y1 + y2) / 2);
       const labelX = x1 + 1 + Math.floor((maxLen - label.length) / 2);
 
-      if (buffer[labelY]) {
+      const labelRow = buffer[labelY];
+      if (labelRow) {
         for (let i = 0; i < label.length && labelX + i < x2; i++) {
-          buffer[labelY][labelX + i] = label[i];
+          const ch = label[i];
+          if (ch !== undefined) labelRow[labelX + i] = ch;
         }
       }
     }

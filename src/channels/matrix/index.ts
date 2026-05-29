@@ -328,8 +328,9 @@ export class MatrixChannel extends BaseChannel {
       const roomId = message.channelId;
 
       // Handle media attachments
-      if (message.attachments && message.attachments.length > 0) {
-        return this.sendMedia(roomId, message.attachments[0], message.content);
+      const firstAttachment = message.attachments?.[0];
+      if (firstAttachment) {
+        return this.sendMedia(roomId, firstAttachment, message.content);
       }
 
       // Determine content format
@@ -743,8 +744,9 @@ export class MatrixChannel extends BaseChannel {
     // Get topic
     try {
       const topicEvents = r?.currentState?.getStateEvents?.('m.room.topic');
-      if (topicEvents && topicEvents.length > 0) {
-        info.topic = topicEvents[0].getContent().topic;
+      const firstTopicEvent = topicEvents?.[0];
+      if (firstTopicEvent) {
+        info.topic = firstTopicEvent.getContent().topic;
       }
     } catch {
       // Non-critical

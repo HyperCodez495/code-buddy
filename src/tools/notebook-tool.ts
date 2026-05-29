@@ -176,6 +176,7 @@ export class NotebookTool {
 
     for (let i = 0; i < notebook.cells.length; i++) {
       const cell = notebook.cells[i];
+      if (cell === undefined) continue;
       parts.push(`## Cell ${i} [${cell.cell_type}]`);
 
       if (cell.execution_count !== undefined && cell.execution_count !== null) {
@@ -211,6 +212,9 @@ export class NotebookTool {
     }
 
     const cell = notebook.cells[cellIndex];
+    if (cell === undefined) {
+      return { success: false, error: `Cell index ${cellIndex} out of range (0-${notebook.cells.length - 1})` };
+    }
     const content = cell.source.join('');
 
     const parts = [
@@ -266,14 +270,19 @@ export class NotebookTool {
       return { success: false, error: `Cell index ${cellIndex} out of range` };
     }
 
-    notebook.cells[cellIndex].source = content.split('\n').map((line, i, arr) =>
+    const cell = notebook.cells[cellIndex];
+    if (cell === undefined) {
+      return { success: false, error: `Cell index ${cellIndex} out of range` };
+    }
+
+    cell.source = content.split('\n').map((line, i, arr) =>
       i < arr.length - 1 ? line + '\n' : line
     );
 
     // Clear outputs for code cells when updated
-    if (notebook.cells[cellIndex].cell_type === 'code') {
-      notebook.cells[cellIndex].outputs = [];
-      notebook.cells[cellIndex].execution_count = null;
+    if (cell.cell_type === 'code') {
+      cell.outputs = [];
+      cell.execution_count = null;
     }
 
     await this.saveNotebook(filePath, notebook);
@@ -307,6 +316,7 @@ export class NotebookTool {
 
     for (let i = 0; i < notebook.cells.length; i++) {
       const cell = notebook.cells[i];
+      if (cell === undefined) continue;
       if (cell.cell_type === 'code') {
         codeBlocks.push(`# Cell ${i}`);
         codeBlocks.push(cell.source.join(''));
@@ -423,6 +433,9 @@ export class NotebookTool {
     }
 
     const cell = notebook.cells[cellIndex];
+    if (cell === undefined) {
+      return { success: false, error: `Cell index ${cellIndex} out of range (0-${notebook.cells.length - 1})` };
+    }
     if (cell.cell_type !== 'code') {
       return { success: false, error: `Cell ${cellIndex} is a ${cell.cell_type} cell, not a code cell` };
     }
@@ -464,10 +477,13 @@ export class NotebookTool {
       const executedContent = await this.vfs.readFile(tempPath, 'utf-8');
       const executedNotebook = JSON.parse(executedContent) as Notebook;
       const executedCell = executedNotebook.cells[0];
+      if (executedCell === undefined) {
+        return { success: false, error: `Failed to execute cell ${cellIndex}: executed notebook had no cells` };
+      }
 
       // Update the original notebook's cell with outputs
-      notebook.cells[cellIndex].outputs = executedCell.outputs || [];
-      notebook.cells[cellIndex].execution_count = executedCell.execution_count;
+      cell.outputs = executedCell.outputs || [];
+      cell.execution_count = executedCell.execution_count;
       await this.saveNotebook(filePath, notebook);
 
       // Format output
@@ -552,6 +568,7 @@ export class NotebookTool {
       // Show outputs for each code cell
       for (let i = 0; i < executedNotebook.cells.length; i++) {
         const cell = executedNotebook.cells[i];
+        if (cell === undefined) continue;
         if (cell.cell_type !== 'code') continue;
 
         parts.push(`## Cell ${i} [${cell.execution_count ?? '?'}]`);

@@ -56,6 +56,7 @@ export function findStarterByKeyword(query: string): SkillMatch | null {
 
     if (matched) {
       const resolved = LANGUAGE_ALIASES[key];
+      if (resolved === undefined) continue;
       const skill = registry.get(resolved);
       if (skill) {
         return { skill, confidence: 0.5, reason: `keyword match: "${key}"` };

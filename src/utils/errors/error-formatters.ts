@@ -35,13 +35,16 @@ export function formatStackTrace(error: Error, maxLines = 5): string[] {
   const stackLines = lines.slice(1);
 
   for (let i = 0; i < Math.min(stackLines.length, maxLines); i++) {
-    const line = stackLines[i].trim();
+    const rawLine = stackLines[i];
+    if (rawLine === undefined) continue;
+    const line = rawLine.trim();
 
     // Parse the stack frame
     const match = line.match(/at\s+(?:(.+?)\s+)?\(?((?:file:|https?:|\/)[^)]+):(\d+):(\d+)\)?/);
 
     if (match) {
       const [, fnName, filePath, lineNum, colNum] = match;
+      if (filePath === undefined) continue;
       // Simplify the path - show only the last 2-3 segments
       const pathParts = filePath.split("/");
       const shortPath = pathParts.slice(-3).join("/");

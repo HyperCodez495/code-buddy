@@ -59,6 +59,14 @@ function encrypt(text: string, passphrase: string): string {
 
 function decrypt(data: string, passphrase: string): string {
   const [saltHex, ivHex, tagHex, encrypted] = data.split(':');
+  if (
+    saltHex === undefined ||
+    ivHex === undefined ||
+    tagHex === undefined ||
+    encrypted === undefined
+  ) {
+    throw new Error('Malformed encrypted vault data');
+  }
   const salt = Buffer.from(saltHex, 'hex');
   const key = deriveKey(passphrase, salt);
   const iv = Buffer.from(ivHex, 'hex');
@@ -132,6 +140,7 @@ export function registerSecretsCommands(program: Command): void {
       console.log(`\nStored Secrets (${names.length}):\n`);
       for (const name of names.sort()) {
         const entry = store.secrets[name];
+        if (!entry) continue;
         const masked = entry.value.slice(0, 4) + '****' + entry.value.slice(-4);
         console.log(`  ${name}: ${masked}  (${entry.source}, updated ${entry.updatedAt})`);
       }

@@ -426,16 +426,18 @@ export class PipelineRunner extends EventEmitter {
     // For safety, we only support simple checks
     if (condition.includes("previousOutput.includes")) {
       const match = condition.match(/previousOutput\.includes\(['"]([^'"]+)['"]\)/);
-      if (match) {
-        return previousOutput.includes(match[1]);
+      const needle = match?.[1];
+      if (needle !== undefined) {
+        return previousOutput.includes(needle);
       }
     }
 
     if (condition.includes("previousOutput.length")) {
       const match = condition.match(/previousOutput\.length\s*(>|<|>=|<=|===|==)\s*(\d+)/);
-      if (match) {
-        const op = match[1];
-        const num = parseInt(match[2]);
+      const op = match?.[1];
+      const rawNum = match?.[2];
+      if (op !== undefined && rawNum !== undefined) {
+        const num = parseInt(rawNum);
         switch (op) {
           case ">": return previousOutput.length > num;
           case "<": return previousOutput.length < num;

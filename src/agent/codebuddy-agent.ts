@@ -68,7 +68,7 @@ export class CodeBuddyAgent extends BaseAgent {
 
   /** Message queue for steer/followup/collect modes */
   private messageQueue: MessageQueue = new MessageQueue();
-  private repairListeners: Record<string, (data: unknown) => void> = {};
+  private repairListeners: Partial<Record<'start' | 'success' | 'failed' | 'error', (data: unknown) => void>> = {};
 
   /** Cost prediction before execution */
   private costPredictor!: CostPredictor;
@@ -193,16 +193,17 @@ export class CodeBuddyAgent extends BaseAgent {
     } catch { /* settings optional */ }
 
     // Forward repair events from RepairCoordinator (store refs for cleanup)
-    this.repairListeners = {
+    const repairListeners = {
       start: (data: unknown) => this.emit('repair:start', data),
       success: (data: unknown) => this.emit('repair:success', data),
       failed: (data: unknown) => this.emit('repair:failed', data),
       error: (data: unknown) => this.emit('repair:error', data),
     };
-    this.repairCoordinator.on('repair:start', this.repairListeners.start);
-    this.repairCoordinator.on('repair:success', this.repairListeners.success);
-    this.repairCoordinator.on('repair:failed', this.repairListeners.failed);
-    this.repairCoordinator.on('repair:error', this.repairListeners.error);
+    this.repairListeners = repairListeners;
+    this.repairCoordinator.on('repair:start', repairListeners.start);
+    this.repairCoordinator.on('repair:success', repairListeners.success);
+    this.repairCoordinator.on('repair:failed', repairListeners.failed);
+    this.repairCoordinator.on('repair:error', repairListeners.error);
 
     // Initialize StreamingHandler
     //
@@ -468,8 +469,10 @@ Do not write any other text or explanations.`;
               logger.warn('Failed to parse coordinate response as JSON, trying regex fallback', { reply, error: String(e) });
               const xMatch = reply.match(/"x"\s*:\s*(\d+)/i);
               const yMatch = reply.match(/"y"\s*:\s*(\d+)/i);
-              if (xMatch && yMatch) {
-                return { x: parseInt(xMatch[1], 10), y: parseInt(yMatch[1], 10) };
+              const xStr = xMatch?.[1];
+              const yStr = yMatch?.[1];
+              if (xStr !== undefined && yStr !== undefined) {
+                return { x: parseInt(xStr, 10), y: parseInt(yStr, 10) };
               }
             }
             return null;
@@ -1214,8 +1217,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
     const chatOnlyPrompt = getChatOnlySystemPrompt(process.cwd(), customInstructions || undefined);
 
     // Replace the system message
-    if (this.messages.length > 0 && this.messages[0].role === 'system') {
-      this.messages[0].content = chatOnlyPrompt;
+    const firstMessage = this.messages[0];
+    if (firstMessage && firstMessage.role === 'system') {
+      firstMessage.content = chatOnlyPrompt;
     } else {
       // Insert at the beginning if no system message exists
       this.messages.unshift({
@@ -1392,9 +1396,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
   setSystemPrompt(prompt: string): void {
     this.customSystemPromptOverride = prompt;
     // Find and update the system message
-    const systemMessageIndex = this.messages.findIndex(m => m.role === 'system');
-    if (systemMessageIndex >= 0) {
-      this.messages[systemMessageIndex].content = prompt;
+    const systemMessage = this.messages.find(m => m.role === 'system');
+    if (systemMessage) {
+      systemMessage.content = prompt;
     } else {
       // Add system message if none exists
       this.messages.unshift({
@@ -1457,8 +1461,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
       );
 
       // Update the system message
-      if (this.messages.length > 0 && this.messages[0].role === "system") {
-        this.messages[0].content = systemPrompt;
+      const firstMessage = this.messages[0];
+      if (firstMessage && firstMessage.role === "system") {
+        firstMessage.content = systemPrompt;
       }
     })().catch(error => {
       logger.error("Failed to update system prompt for YOLO mode", error as Error);
@@ -1760,11 +1765,12 @@ Look at the screenshot and find the element matching the user's intent. Output o
       }
     }
     // Remove only the forwarding listeners we attached (not other listeners)
-    if (this.repairListeners.start) {
-      this.repairCoordinator.off('repair:start', this.repairListeners.start);
-      this.repairCoordinator.off('repair:success', this.repairListeners.success);
-      this.repairCoordinator.off('repair:failed', this.repairListeners.failed);
-      this.repairCoordinator.off('repair:error', this.repairListeners.error);
+    const { start, success, failed, error } = this.repairListeners;
+    if (start) {
+      this.repairCoordinator.off('repair:start', start);
+      if (success) this.repairCoordinator.off('repair:success', success);
+      if (failed) this.repairCoordinator.off('repair:failed', failed);
+      if (error) this.repairCoordinator.off('repair:error', error);
     }
     if (this._budgetAlertListener) {
       this.budgetAlertManager.off('alert', this._budgetAlertListener);

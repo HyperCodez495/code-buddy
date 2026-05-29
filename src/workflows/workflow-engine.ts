@@ -225,6 +225,9 @@ export class WorkflowEngine extends EventEmitter {
         }
 
         const step = workflow.steps[stepIndex];
+        if (!step) {
+          throw new Error(`Workflow step at index ${stepIndex} is undefined`);
+        }
         state.context.currentStep = step.id;
 
         if (options.onStepStart) {

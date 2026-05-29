@@ -135,8 +135,10 @@ function getCommitsSampled(
     .filter(Boolean)
     .map(line => {
       const [hash, dateStr] = line.split('|');
+      if (hash === undefined || dateStr === undefined) return undefined;
       return { hash, date: new Date(dateStr) };
-    });
+    })
+    .filter((c): c is { hash: string; date: Date } => c !== undefined);
 
   if (allCommits.length <= samples) {
     return allCommits;
@@ -147,14 +149,16 @@ function getCommitsSampled(
   const sampled: Array<{ hash: string; date: Date }> = [];
 
   for (let i = 0; i < allCommits.length; i += step) {
-    if (sampled.length < samples) {
-      sampled.push(allCommits[i]);
+    const commit = allCommits[i];
+    if (commit && sampled.length < samples) {
+      sampled.push(commit);
     }
   }
 
   // Always include latest
-  if (sampled[sampled.length - 1]?.hash !== allCommits[0]?.hash) {
-    sampled.push(allCommits[0]);
+  const latest = allCommits[0];
+  if (latest && sampled[sampled.length - 1]?.hash !== latest.hash) {
+    sampled.push(latest);
   }
 
   return sampled;
@@ -253,6 +257,9 @@ function getLanguageFromExtension(ext: string): string {
 function calculateSummary(dataPoints: EvolutionDataPoint[]): EvolutionReport['summary'] {
   const first = dataPoints[0];
   const last = dataPoints[dataPoints.length - 1];
+  if (!first || !last) {
+    throw new Error('calculateSummary requires at least one data point');
+  }
 
   const daysDiff = (last.date.getTime() - first.date.getTime()) / (1000 * 60 * 60 * 24);
 
@@ -278,6 +285,9 @@ function calculateSummary(dataPoints: EvolutionDataPoint[]): EvolutionReport['su
 function calculateTrends(dataPoints: EvolutionDataPoint[]): EvolutionReport['trends'] {
   const first = dataPoints[0];
   const last = dataPoints[dataPoints.length - 1];
+  if (!first || !last) {
+    throw new Error('calculateTrends requires at least one data point');
+  }
 
   const locChange = last.linesOfCode - first.linesOfCode;
   const fileChange = last.fileCount - first.fileCount;
@@ -384,8 +394,8 @@ export function formatEvolutionReport(report: EvolutionReport): string {
   }
 
   // Language breakdown (latest)
-  if (report.dataPoints.length > 0) {
-    const latest = report.dataPoints[report.dataPoints.length - 1];
+  const latest = report.dataPoints[report.dataPoints.length - 1];
+  if (latest) {
     const languages = Object.entries(latest.languageBreakdown)
       .sort((a, b) => b[1] - a[1])
       .slice(0, 5);

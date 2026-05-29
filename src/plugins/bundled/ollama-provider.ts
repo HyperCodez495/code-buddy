@@ -73,7 +73,7 @@ function inferContextWindow(modelName: string): number {
   }
   // Try base name (strip tag)
   const baseName = modelName.split(':')[0];
-  if (KNOWN_CONTEXT_WINDOWS[baseName]) {
+  if (baseName !== undefined && KNOWN_CONTEXT_WINDOWS[baseName]) {
     return KNOWN_CONTEXT_WINDOWS[baseName];
   }
   return DEFAULT_CONTEXT_WINDOW;

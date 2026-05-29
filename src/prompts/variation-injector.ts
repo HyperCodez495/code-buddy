@@ -125,7 +125,10 @@ export function applyVariation(
   if (shuffleOrder) {
     for (let i = result.length - 1; i > 0; i--) {
       const j = Math.floor(rng() * (i + 1));
-      [result[i], result[j]] = [result[j], result[i]];
+      // safe: i in [1, length-1] and j = floor(rng()*(i+1)) in [0, i], both in bounds
+      const tmp = result[i] as string;
+      result[i] = result[j] as string;
+      result[j] = tmp;
     }
   }
 
@@ -137,6 +140,7 @@ export function applyVariation(
       for (const [canonical, alternatives] of Object.entries(PHRASING_POOLS)) {
         if (block.includes(canonical)) {
           const pick = alternatives[Math.floor(rng() * alternatives.length)];
+          if (pick === undefined) return block; // empty pool — leave block unchanged
           return block.replace(canonical, pick);
         }
       }
@@ -164,7 +168,7 @@ export function extractBlocks(prompt: string): {
 
   // Find the "Reminders" or "Guidelines" or "Important" section marker
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
     if (
       /^#{1,3}\s+(Reminder|Guideline|Important|Behavior|Rule)/i.test(line) ||
       line === '---' && i > lines.length / 2

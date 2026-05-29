@@ -232,6 +232,14 @@ export class TaskRouter {
       return Number(Boolean(b.role)) - Number(Boolean(a.role));
     });
     const primary = candidates[0];
+    if (primary === undefined) {
+      // Unreachable: the candidates.length === 0 check above already throws,
+      // but this guard narrows DispatchLane | undefined -> DispatchLane and
+      // preserves the same no-peer failure shape.
+      throw new NoPeerAvailableError(
+        'No peer can satisfy the task (no candidate after scoring).',
+      );
+    }
     const fallback = candidates.find(
       (c) => c.peerId !== primary.peerId,
     );

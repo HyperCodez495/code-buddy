@@ -429,6 +429,9 @@ export class AuthProfileManager extends EventEmitter {
       this.roundRobinIndex = 0;
     }
     const selected = healthy[this.roundRobinIndex];
+    if (selected === undefined) {
+      throw new Error('selectRoundRobin called with no healthy profiles');
+    }
     this.roundRobinIndex = (this.roundRobinIndex + 1) % healthy.length;
     return selected;
   }
@@ -438,7 +441,11 @@ export class AuthProfileManager extends EventEmitter {
    */
   private selectByPriority(healthy: AuthProfile[]): AuthProfile {
     // Already sorted by priority in getHealthyProfiles()
-    return healthy[0];
+    const selected = healthy[0];
+    if (selected === undefined) {
+      throw new Error('selectByPriority called with no healthy profiles');
+    }
+    return selected;
   }
 
   /**
@@ -446,7 +453,11 @@ export class AuthProfileManager extends EventEmitter {
    */
   private selectRandom(healthy: AuthProfile[]): AuthProfile {
     const index = Math.floor(Math.random() * healthy.length);
-    return healthy[index];
+    const selected = healthy[index];
+    if (selected === undefined) {
+      throw new Error('selectRandom called with no healthy profiles');
+    }
+    return selected;
   }
 
   // ============================================================================

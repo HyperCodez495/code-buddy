@@ -94,7 +94,7 @@ function renderTool(tool: CodeBuddyTool, meta: ToolMetadata | undefined): string
   // Use metadata description if shorter / cleaner; fall back to tool definition
   const desc = meta?.description || fn.description || '';
   // Take only the first sentence / line for the summary
-  const summary = desc.split('\n')[0].trim();
+  const summary = (desc.split('\n')[0] ?? '').trim();
   lines.push(summary);
   lines.push('');
 
@@ -216,7 +216,7 @@ function computeHash(tools: CodeBuddyTool[]): string {
  */
 function extractStoredHash(content: string): string | null {
   const match = content.match(/<!-- hash:([a-f0-9]+) -->/);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 /**

@@ -159,8 +159,11 @@ export function buildCodeGraphContext(
   // Semantic fallback: if no exact match, try embedding-based search.
   // The index is built lazily in the background; only used if already ready.
   if (unique.length === 0 && candidates.length > 0) {
-    const semanticResult = semanticFallbackSync(graph, candidates[0]);
-    if (semanticResult) return semanticResult;
+    const firstCandidate = candidates[0];
+    if (firstCandidate !== undefined) {
+      const semanticResult = semanticFallbackSync(graph, firstCandidate);
+      if (semanticResult) return semanticResult;
+    }
   }
 
   return null;
@@ -238,7 +241,7 @@ export function extractEntities(message: string): string[] {
     let match: RegExpExecArray | null;
     while ((match = pattern.exec(message)) !== null) {
       const candidate = match[1];
-      if (candidate.length < 3) continue;
+      if (candidate === undefined || candidate.length < 3) continue;
       if (STOP.has(candidate.toLowerCase())) continue;
 
       const key = candidate.toLowerCase();

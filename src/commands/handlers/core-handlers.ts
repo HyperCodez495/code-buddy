@@ -19,33 +19,41 @@ export async function handleHelp(): Promise<CommandHandlerResult> {
   const allCommands = slashManager.getAllCommands();
 
   // Group commands by category
+  const coreCmds: typeof allCommands = [];
+  const codeDevCmds: typeof allCommands = [];
+  const gitCmds: typeof allCommands = [];
+  const contextMemoryCmds: typeof allCommands = [];
+  const sessionExportCmds: typeof allCommands = [];
+  const settingsUiCmds: typeof allCommands = [];
+  const advancedCmds: typeof allCommands = [];
+
   const categories: Record<string, typeof allCommands> = {
-    'Core': [],
-    'Code & Development': [],
-    'Git & Version Control': [],
-    'Context & Memory': [],
-    'Session & Export': [],
-    'Settings & UI': [],
-    'Advanced': [],
+    'Core': coreCmds,
+    'Code & Development': codeDevCmds,
+    'Git & Version Control': gitCmds,
+    'Context & Memory': contextMemoryCmds,
+    'Session & Export': sessionExportCmds,
+    'Settings & UI': settingsUiCmds,
+    'Advanced': advancedCmds,
   };
 
   // Categorize commands
   for (const cmd of allCommands) {
     const name = cmd.name.toLowerCase();
     if (['help', 'clear', 'exit', 'model', 'mode'].includes(name)) {
-      categories['Core'].push(cmd);
+      coreCmds.push(cmd);
     } else if (['review', 'test', 'lint', 'explain', 'refactor', 'debug', 'docs', 'generate-tests', 'ai-test', 'guardian'].includes(name)) {
-      categories['Code & Development'].push(cmd);
+      codeDevCmds.push(cmd);
     } else if (['commit', 'checkpoints', 'restore', 'undo', 'diff', 'branches', 'fork', 'checkout', 'merge'].includes(name)) {
-      categories['Git & Version Control'].push(cmd);
+      gitCmds.push(cmd);
     } else if (['memory', 'remember', 'context', 'add', 'workspace', 'scan-todos', 'address-todo'].includes(name)) {
-      categories['Context & Memory'].push(cmd);
+      contextMemoryCmds.push(cmd);
     } else if (['save', 'export', 'cache', 'cost'].includes(name)) {
-      categories['Session & Export'].push(cmd);
+      sessionExportCmds.push(cmd);
     } else if (['theme', 'avatar', 'voice', 'speak', 'tts', 'security', 'autonomy', 'dry-run'].includes(name)) {
-      categories['Settings & UI'].push(cmd);
+      settingsUiCmds.push(cmd);
     } else {
-      categories['Advanced'].push(cmd);
+      advancedCmds.push(cmd);
     }
   }
 
@@ -750,7 +758,7 @@ export async function handleToolAnalytics(args: string[]): Promise<CommandHandle
       break;
 
     case 'top':
-      const limit = parseInt(args[1]) || 10;
+      const limit = parseInt(args[1] ?? '') || 10;
       const topTools = analytics.getMostUsedTools(limit);
       const lines: string[] = ['Top Used Tools:', '-'.repeat(40)];
       for (const tool of topTools) {

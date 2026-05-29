@@ -293,7 +293,11 @@ export class ModelRouter extends EventEmitter {
       }
     });
 
-    return candidates[0][0];
+    const best = candidates[0];
+    if (best === undefined) {
+      return this.config.defaultModel;
+    }
+    return best[0];
   }
 
   private getCheapestModel(): string {
@@ -304,7 +308,11 @@ export class ModelRouter extends EventEmitter {
         return costA - costB;
       });
 
-    return sorted[0][0];
+    const cheapest = sorted[0];
+    if (cheapest === undefined) {
+      return this.config.defaultModel;
+    }
+    return cheapest[0];
   }
 
   private switchModel(newModel: string, reason: string): void {

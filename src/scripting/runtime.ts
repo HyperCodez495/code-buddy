@@ -379,12 +379,15 @@ export class FCSRuntime {
 
       for (let i = 0; i < node.parameters.length; i++) {
         const param = node.parameters[i];
+        if (param === undefined) continue;
         let value: CodeBuddyValue;
 
-        if (namedArgs[param.name] !== undefined) {
-          value = namedArgs[param.name];
-        } else if (args[i] !== undefined) {
-          value = args[i];
+        const namedValue = namedArgs[param.name];
+        const positional = args[i];
+        if (namedValue !== undefined) {
+          value = namedValue;
+        } else if (positional !== undefined) {
+          value = positional;
         } else if (param.defaultValue) {
           value = await this.evaluate(param.defaultValue, ctx);
         } else {
@@ -436,7 +439,9 @@ export class FCSRuntime {
             };
 
             for (let i = 0; i < fnDecl.parameters.length; i++) {
-              methodCtx.variables.set(fnDecl.parameters[i].name, methodArgs[i]);
+              const param = fnDecl.parameters[i];
+              if (param === undefined) continue;
+              methodCtx.variables.set(param.name, methodArgs[i]);
             }
 
             const result = await this.executeBlock(fnDecl.body, methodCtx);
@@ -982,7 +987,9 @@ export class FCSRuntime {
       };
 
       for (let i = 0; i < node.parameters.length; i++) {
-        localCtx.variables.set(node.parameters[i], args[i]);
+        const paramName = node.parameters[i];
+        if (paramName === undefined) continue;
+        localCtx.variables.set(paramName, args[i]);
       }
 
       if (node.body.type === 'Block') {

@@ -41,8 +41,8 @@ export function reduceStreamChunk(
       } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
         const accArray = acc[key] as Array<Record<string, unknown>>;
         for (let i = 0; i < value.length; i++) {
-          if (!accArray[i]) accArray[i] = {};
-          accArray[i] = reduce(accArray[i], value[i]);
+          const current = accArray[i] ?? {};
+          accArray[i] = reduce(current, value[i]);
         }
       } else if (typeof acc[key] === "object" && typeof value === "object" && acc[key] !== null && value !== null) {
         acc[key] = reduce(acc[key] as Record<string, unknown>, value);

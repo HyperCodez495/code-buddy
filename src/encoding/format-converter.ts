@@ -133,8 +133,11 @@ export function xmlToJson(
       const selfClose = noDecl.match(/^<([a-zA-Z_][\w.-]*)([^>]*)\/>$/);
       if (selfClose) {
         const [, tagName, attrs] = selfClose;
+        if (tagName === undefined) {
+          throw new EncodingError('Invalid XML format');
+        }
         const result: Record<string, unknown> = {};
-        if (preserveAttributes && attrs.trim()) {
+        if (preserveAttributes && attrs !== undefined && attrs.trim()) {
           result['@attributes'] = parseAttributes(attrs);
         }
         return { [tagName]: result };
@@ -143,10 +146,13 @@ export function xmlToJson(
     }
 
     const [, tagName, attrs, innerContent] = rootMatch;
+    if (tagName === undefined || innerContent === undefined) {
+      throw new EncodingError('Invalid XML format');
+    }
     const result: Record<string, unknown> = {};
 
     // Parse attributes
-    if (preserveAttributes && attrs.trim()) {
+    if (preserveAttributes && attrs !== undefined && attrs.trim()) {
       result['@attributes'] = parseAttributes(attrs);
     }
 
@@ -168,13 +174,14 @@ export function xmlToJson(
     let match;
 
     while ((match = childRegex.exec(innerContent)) !== null) {
-      const [, childTag, childAttrs, childContent = ''] = match;
+      const [, childTag, childAttrs = '', childContent = ''] = match;
+      if (childTag === undefined) {
+        continue;
+      }
       const childResult = parseChildElement(childTag, childAttrs, childContent, preserveAttributes, trimText);
 
-      if (!children[childTag]) {
-        children[childTag] = [];
-      }
-      children[childTag].push(childResult);
+      const bucket = children[childTag] ?? (children[childTag] = []);
+      bucket.push(childResult);
     }
 
     // Flatten single-element arrays
@@ -190,7 +197,12 @@ export function xmlToJson(
     const attrRegex = /([a-zA-Z_][\w.-]*)=["']([^"']*)["']/g;
     let match;
     while ((match = attrRegex.exec(attrString)) !== null) {
-      attrs[match[1]] = match[2];
+      const attrName = match[1];
+      const attrValue = match[2];
+      if (attrName === undefined || attrValue === undefined) {
+        continue;
+      }
+      attrs[attrName] = attrValue;
     }
     return attrs;
   };
@@ -223,13 +235,14 @@ export function xmlToJson(
     let match;
 
     while ((match = childRegex.exec(content)) !== null) {
-      const [, childTag, childAttrs, childContent = ''] = match;
+      const [, childTag, childAttrs = '', childContent = ''] = match;
+      if (childTag === undefined) {
+        continue;
+      }
       const childResult = parseChildElement(childTag, childAttrs, childContent, preserveAttrs, trim);
 
-      if (!children[childTag]) {
-        children[childTag] = [];
-      }
-      children[childTag].push(childResult);
+      const bucket = children[childTag] ?? (children[childTag] = []);
+      bucket.push(childResult);
     }
 
     for (const [key, values] of Object.entries(children)) {
@@ -296,7 +309,7 @@ export function csvToJson(
   const rows = lines.map(parseRow);
 
   if (hasHeader) {
-    const headers = rows[0];
+    const headers = rows[0] ?? [];
     const data = rows.slice(1);
 
     return data.map(row => {
@@ -413,16 +426,24 @@ export function yamlToJson(yaml: string): Record<string, unknown> {
     }
 
     const [, spaces, key, value] = match;
+    if (spaces === undefined || key === undefined || value === undefined) {
+      continue;
+    }
     const indent = spaces.length;
     const trimmedKey = key.trim();
     const trimmedValue = value.trim();
 
     // Pop stack until we find parent with smaller indent
-    while (stack.length > 1 && stack[stack.length - 1].indent >= indent) {
+    let top = stack[stack.length - 1];
+    while (stack.length > 1 && top !== undefined && top.indent >= indent) {
       stack.pop();
+      top = stack[stack.length - 1];
     }
 
     const parent = stack[stack.length - 1];
+    if (parent === undefined) {
+      continue;
+    }
 
     if (trimmedValue === '' || trimmedValue === '|' || trimmedValue === '>') {
       // This is a parent node
@@ -575,13 +596,18 @@ export function queryStringToJson(queryString: string): Record<string, string | 
 
   for (const pair of pairs) {
     const [key, value = ''] = pair.split('=').map(decodeURIComponent);
+    if (key === undefined) {
+      continue;
+    }
 
     if (key in result) {
       const existing = result[key];
       if (Array.isArray(existing)) {
         existing.push(value);
-      } else {
+      } else if (existing !== undefined) {
         result[key] = [existing, value];
+      } else {
+        result[key] = value;
       }
     } else {
       result[key] = value;

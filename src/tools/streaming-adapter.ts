@@ -77,7 +77,7 @@ function streamByLines(
   let buffer = '';
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i];
+    const line = lines[i] ?? ''; // safe: i < lines.length, so element is always defined; default '' is a no-op for the in-bounds case
     const separator = i < lines.length - 1 ? '\n' : '';
 
     if (buffer.length + line.length + separator.length > chunkSize && buffer.length > 0) {

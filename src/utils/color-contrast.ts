@@ -30,10 +30,15 @@ export function hexToRgb(hex: string): { r: number; g: number; b: number } | nul
     return null;
   }
 
+  const [, rHex, gHex, bHex] = result;
+  if (rHex === undefined || gHex === undefined || bHex === undefined) {
+    return null;
+  }
+
   return {
-    r: parseInt(result[1], 16),
-    g: parseInt(result[2], 16),
-    b: parseInt(result[3], 16),
+    r: parseInt(rHex, 16),
+    g: parseInt(gHex, 16),
+    b: parseInt(bHex, 16),
   };
 }
 
@@ -57,12 +62,16 @@ export function rgbToHex(r: number, g: number, b: number): string {
  * https://www.w3.org/WAI/GL/wiki/Relative_luminance
  */
 export function getRelativeLuminance(r: number, g: number, b: number): number {
-  const [rs, gs, bs] = [r, g, b].map((c) => {
+  const toLinear = (c: number): number => {
     const srgb = c / 255;
     return srgb <= 0.03928
       ? srgb / 12.92
       : Math.pow((srgb + 0.055) / 1.055, 2.4);
-  });
+  };
+
+  const rs = toLinear(r);
+  const gs = toLinear(g);
+  const bs = toLinear(b);
 
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }

@@ -45,20 +45,26 @@ interface BorderChars {
   midMid: string;
 }
 
+// Default/fallback border style. Referenced both as the 'single' style and as
+// the fallback when an unknown borderStyle is requested, so the previous
+// `BORDER_STYLES[borderStyle] || BORDER_STYLES.single` behavior is preserved
+// while giving the fallback a statically-known (non-undefined) type.
+const FALLBACK_BORDER: BorderChars = {
+  topLeft: '┌',
+  topRight: '┐',
+  bottomLeft: '└',
+  bottomRight: '┘',
+  horizontal: '─',
+  vertical: '│',
+  topMid: '┬',
+  bottomMid: '┴',
+  leftMid: '├',
+  rightMid: '┤',
+  midMid: '┼',
+};
+
 const BORDER_STYLES: Record<string, BorderChars> = {
-  single: {
-    topLeft: '┌',
-    topRight: '┐',
-    bottomLeft: '└',
-    bottomRight: '┘',
-    horizontal: '─',
-    vertical: '│',
-    topMid: '┬',
-    bottomMid: '┴',
-    leftMid: '├',
-    rightMid: '┤',
-    midMid: '┼',
-  },
+  single: FALLBACK_BORDER,
   double: {
     topLeft: '╔',
     topRight: '╗',
@@ -196,13 +202,14 @@ export function InkTable<T extends ScalarDict>({
   borderStyle = 'single',
   maxColumnWidth = 60,
 }: TableProps<T>): React.ReactElement | null {
-  const chars = BORDER_STYLES[borderStyle] || BORDER_STYLES.single;
+  const chars: BorderChars = BORDER_STYLES[borderStyle] ?? FALLBACK_BORDER;
 
   // Determine columns to display
   const columns = useMemo(() => {
     if (columnsProp) return columnsProp;
-    if (data.length === 0) return [];
-    return Object.keys(data[0]) as (keyof T)[];
+    const firstRow = data[0];
+    if (!firstRow) return [];
+    return Object.keys(firstRow) as (keyof T)[];
   }, [columnsProp, data]);
 
   // Calculate column widths
@@ -236,7 +243,7 @@ export function InkTable<T extends ScalarDict>({
     right: string,
     line: string
   ): string => {
-    const segments = columns.map((col) => line.repeat(columnWidths[String(col)]));
+    const segments = columns.map((col) => line.repeat(columnWidths[String(col)] ?? 0));
     return left + segments.join(mid) + right;
   };
 
@@ -244,7 +251,7 @@ export function InkTable<T extends ScalarDict>({
   const buildRowString = (values: string[]): string => {
     const cells = values.map((value, index) => {
       const colName = String(columns[index]);
-      const width = columnWidths[colName] - padding * 2;
+      const width = (columnWidths[colName] ?? 0) - padding * 2;
       const truncated = truncateString(value, width);
       const padded = padString(truncated, width);
       return ' '.repeat(padding) + padded + ' '.repeat(padding);

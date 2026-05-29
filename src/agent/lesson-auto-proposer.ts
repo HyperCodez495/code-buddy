@@ -53,7 +53,8 @@ function formatTranscript(history: ChatEntry[]): string {
 function parseCandidates(reply: string): Array<{ category: string; content: string; context?: string }> {
   let text = reply.trim();
   const fence = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-  if (fence) text = fence[1].trim();
+  const fenced = fence?.[1];
+  if (fenced !== undefined) text = fenced.trim();
   const start = text.indexOf('[');
   const end = text.lastIndexOf(']');
   if (start === -1 || end === -1 || end <= start) return [];

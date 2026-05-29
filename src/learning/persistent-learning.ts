@@ -360,8 +360,8 @@ export class PersistentLearning extends EventEmitter {
 
     // Repair insights
     const repairStats = this.getRepairStats();
-    if (repairStats.topStrategies.length > 0) {
-      const topStrategy = repairStats.topStrategies[0];
+    const topStrategy = repairStats.topStrategies[0];
+    if (topStrategy !== undefined) {
       insights.push({
         type: 'repair',
         message: `"${topStrategy.strategy}" is the most effective repair strategy with ${(topStrategy.successRate * 100).toFixed(0)}% success rate`,
@@ -385,8 +385,8 @@ export class PersistentLearning extends EventEmitter {
 
     // Tool insights
     const toolStats = this.getToolStats(projectId);
-    if (toolStats.topTools.length > 0) {
-      const topTool = toolStats.topTools[0];
+    const topTool = toolStats.topTools[0];
+    if (topTool !== undefined) {
       insights.push({
         type: 'tool',
         message: `"${topTool.name}" is the most used tool with ${(topTool.successRate * 100).toFixed(0)}% success rate`,

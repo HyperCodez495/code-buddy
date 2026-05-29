@@ -43,7 +43,9 @@ export function setCurrentTurn(turn: number): void {
   currentTurn = turn;
   // Expire turn-scoped grants from previous turns
   for (let i = grants.length - 1; i >= 0; i--) {
-    if (grants[i].scope === 'turn' && grants[i].turnNumber !== undefined && grants[i].turnNumber! < turn) {
+    const g = grants[i];
+    if (g === undefined) continue;
+    if (g.scope === 'turn' && g.turnNumber !== undefined && g.turnNumber < turn) {
       grants.splice(i, 1);
     }
   }

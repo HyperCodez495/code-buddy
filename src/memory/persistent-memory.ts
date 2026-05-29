@@ -209,8 +209,10 @@ export class PersistentMemoryManager extends EventEmitter {
         if (currentKey && currentValue) {
           memories.push(this.createMemory(currentKey, currentValue.trim(), currentCategory));
         }
-        currentKey = memoryMatch[1];
-        currentValue = memoryMatch[2];
+        // Group 1 (`[^*]+`) always matches at least one char; group 2 (`.*`) defaults to "" when empty.
+        const [, matchedKey = "", matchedValue = ""] = memoryMatch;
+        currentKey = matchedKey;
+        currentValue = matchedValue;
         inMemoryBlock = true;
         continue;
       }

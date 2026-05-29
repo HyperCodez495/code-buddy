@@ -359,6 +359,10 @@ export async function runFullProviderOnboarding(): Promise<boolean> {
     rl.close();
 
     const config = PROVIDER_CONFIGS[choiceIdx];
+    if (!config) {
+      logger.error('No provider configuration available to onboard');
+      return false;
+    }
     return await runProviderOnboarding(config.id);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);

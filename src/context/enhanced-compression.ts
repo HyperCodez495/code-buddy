@@ -249,9 +249,10 @@ export class EnhancedContextCompressor {
     const oldMessageCount = messages.length - windowSize;
 
     for (let i = 0; i < oldMessageCount; i++) {
+      const msg = messages[i];
       const classInfo = classified.get(i);
-      if (classInfo && classInfo.preserve) {
-        importantOldMessages.push(messages[i]);
+      if (msg && classInfo && classInfo.preserve) {
+        importantOldMessages.push(msg);
       }
     }
 
@@ -460,9 +461,11 @@ export class EnhancedContextCompressor {
 
     // Process from most recent backwards
     for (let i = messages.length - 1; i >= 0; i--) {
-      const msgTokens = this.countTokens([messages[i]]);
+      const msg = messages[i];
+      if (!msg) continue;
+      const msgTokens = this.countTokens([msg]);
       if (currentTokens + msgTokens <= tokenLimit) {
-        result.unshift(messages[i]);
+        result.unshift(msg);
         currentTokens += msgTokens;
       } else {
         break;
@@ -480,6 +483,7 @@ export class EnhancedContextCompressor {
 
     for (let i = 0; i < messages.length; i++) {
       const msg = messages[i];
+      if (!msg) continue;
       const contentType = this.detectContentType(msg);
       const importance = this.calculateImportance(msg, i, messages.length, contentType);
       const preserve = importance >= this.config.preservationThreshold ||
@@ -585,6 +589,7 @@ export class EnhancedContextCompressor {
 
     for (let index = 0; index < messages.length; index++) {
       const msg = messages[index];
+      if (!msg) continue;
       const content = typeof msg.content === 'string' ? msg.content : '';
       const now = new Date();
 
@@ -592,6 +597,7 @@ export class EnhancedContextCompressor {
       const fileOpMatches = Array.from(content.matchAll(KEY_INFO_PATTERNS.fileOperation));
       for (const match of fileOpMatches) {
         const path = match[2];
+        if (path === undefined) continue;
         const opText = match[0].toLowerCase();
         let operation: 'create' | 'edit' | 'delete' = 'edit';
         if (opText.includes('creat') || opText.includes('writ')) operation = 'create';
@@ -602,8 +608,10 @@ export class EnhancedContextCompressor {
       // Extract errors
       const errorMatches = Array.from(content.matchAll(KEY_INFO_PATTERNS.errorMessage));
       for (const match of errorMatches) {
+        const errorText = match[1];
+        if (errorText === undefined) continue;
         keyInfo.errors.push({
-          message: match[1].trim(),
+          message: errorText.trim(),
           timestamp: now,
           index,
         });
@@ -612,8 +620,10 @@ export class EnhancedContextCompressor {
       // Extract decisions
       const decisionMatches = Array.from(content.matchAll(KEY_INFO_PATTERNS.decision));
       for (const match of decisionMatches) {
+        const decisionText = match[1];
+        if (decisionText === undefined) continue;
         keyInfo.decisions.push({
-          message: match[1].trim(),
+          message: decisionText.trim(),
           timestamp: now,
           index,
         });
@@ -636,8 +646,10 @@ export class EnhancedContextCompressor {
       const codeBlockRegex = /```(\w*)\n([\s\S]*?)```/g;
       const codeMatches = Array.from(content.matchAll(codeBlockRegex));
       for (const match of codeMatches) {
+        const snippet = match[2];
+        if (snippet === undefined) continue;
         keyInfo.codeSnippets.push({
-          content: match[2].slice(0, 500), // Limit size
+          content: snippet.slice(0, 500), // Limit size
           language: match[1] || undefined,
           index,
         });
@@ -657,7 +669,7 @@ export class EnhancedContextCompressor {
     for (const msg of messages) {
       if (msg.role === 'user' && typeof msg.content === 'string') {
         // Extract first line as topic indicator
-        const firstLine = msg.content.split('\n')[0].slice(0, 100);
+        const firstLine = (msg.content.split('\n')[0] ?? '').slice(0, 100);
         if (firstLine !== currentTopic) {
           currentTopic = firstLine;
           flows.push(`- User asked: ${firstLine}${msg.content.length > 100 ? '...' : ''}`);
@@ -696,7 +708,7 @@ export class EnhancedContextCompressor {
     const topics = new Set<string>();
     for (const msg of messages) {
       if (msg.role === 'user' && typeof msg.content === 'string') {
-        const topic = msg.content.split('\n')[0].slice(0, 50);
+        const topic = (msg.content.split('\n')[0] ?? '').slice(0, 50);
         if (topic.length > 10) topics.add(topic);
       }
     }

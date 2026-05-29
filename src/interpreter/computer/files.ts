@@ -584,6 +584,9 @@ export class ComputerFiles {
 
     for (let i = 0; i < sortedEntries.length; i++) {
       const entry = sortedEntries[i];
+      if (entry === undefined) {
+        continue;
+      }
       const isLast = i === sortedEntries.length - 1;
       const connector = isLast ? '└── ' : '├── ';
       const childPrefix = isLast ? '    ' : '│   ';

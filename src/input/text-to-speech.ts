@@ -146,8 +146,9 @@ export class TextToSpeechManager extends EventEmitter {
       return this.config.voice;
     }
     return TextToSpeechManager.EDGE_VOICES[lang] ||
-           TextToSpeechManager.EDGE_VOICES[lang.split('-')[0]] ||
-           TextToSpeechManager.EDGE_VOICES['en'];
+           TextToSpeechManager.EDGE_VOICES[lang.split('-')[0] ?? lang] ||
+           TextToSpeechManager.EDGE_VOICES['en'] ||
+           'en-US-JennyNeural'; // == EDGE_VOICES['en']; guaranteed string default
   }
 
   /**
@@ -275,7 +276,7 @@ export class TextToSpeechManager extends EventEmitter {
    */
   private async speakWithEspeak(text: string, language: string): Promise<void> {
     return new Promise((resolve, reject) => {
-      const lang = language.split('-')[0];
+      const lang = language.split('-')[0] ?? language;
       const espeak = spawn('espeak', ['-v', lang, text]);
 
       espeak.on('close', (code) => {
@@ -417,8 +418,9 @@ export class TextToSpeechManager extends EventEmitter {
           return;
         }
 
-        const [cmd, args] = players[index];
-        const player = spawn(cmd as string, args as string[]);
+        // safe: index < players.length checked on the preceding lines
+        const [cmd, args] = players[index] as [string, string[]];
+        const player = spawn(cmd, args);
 
         player.on('close', (code) => {
           if (code === 0) {

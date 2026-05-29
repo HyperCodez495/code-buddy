@@ -36,7 +36,8 @@ export const swiftProfiler: LanguageProfiler = {
       ctx.commands.build = ctx.commands.build || 'xcodebuild';
     } else {
       ctx.packageManager = ctx.packageManager || 'swift';
-      if (xcodeprojs.length > 0) ctx.configMtime = ctx.configMtime || fsh.mtime(path.join(ctx.cwd, xcodeprojs[0]));
+      const firstXcodeproj = xcodeprojs[0];
+      if (firstXcodeproj) ctx.configMtime = ctx.configMtime || fsh.mtime(path.join(ctx.cwd, firstXcodeproj));
       ctx.commands.build = ctx.commands.build || 'xcodebuild';
     }
 
@@ -80,6 +81,7 @@ export const swiftProfiler: LanguageProfiler = {
           'Lottie', 'Hero', 'IQKeyboardManager',
         ]);
         for (const [, dep] of pkgDeps) {
+          if (dep === undefined) continue;
           if (swiftNotable.has(dep) && !ctx.keyDependencies.includes(dep)) {
             ctx.keyDependencies.push(dep);
           }
@@ -145,7 +147,9 @@ export const swiftProfiler: LanguageProfiler = {
           'lottie-ios', 'Hero', 'IQKeyboardManagerSwift',
         ]);
         for (const [, pod] of pods) {
+          if (pod === undefined) continue;
           const basePod = pod.split('/')[0]; // Handle subspecs like Firebase/Auth
+          if (basePod === undefined) continue;
           if (podNotable.has(basePod) && !ctx.keyDependencies.includes(basePod)) {
             ctx.keyDependencies.push(basePod);
           }
@@ -156,8 +160,9 @@ export const swiftProfiler: LanguageProfiler = {
     // Project name fallback from xcodeproj
     if (!ctx.projectName) {
       const xcodeprojs = fsh.glob(ctx.cwd, '*.xcodeproj');
-      if (xcodeprojs.length > 0) {
-        ctx.projectName = xcodeprojs[0].replace('.xcodeproj', '');
+      const firstXcodeproj = xcodeprojs[0];
+      if (firstXcodeproj) {
+        ctx.projectName = firstXcodeproj.replace('.xcodeproj', '');
       }
     }
 

@@ -190,6 +190,10 @@ export class StepManager extends EventEmitter {
       const comparisonMatch = condition.match(/^(\w+)\s*(===|!==|==|!=|>=|<=|>|<)\s*(.+)$/);
       if (comparisonMatch) {
         const [, variable, operator, valueStr] = comparisonMatch;
+        if (variable === undefined || operator === undefined || valueStr === undefined) {
+          // Mandatory regex groups; defensive fall-through matches default behavior.
+          return true;
+        }
         const actualValue = context.variables[variable];
         let expectedValue: unknown = valueStr;
 

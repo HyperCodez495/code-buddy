@@ -45,10 +45,11 @@ export class SelectiveRollbackManager extends EventEmitter {
     };
 
     const fileVersions = this.versions.get(normalized) || [];
-    
+
     // Skip if content is same as latest
-    if (fileVersions.length > 0 && fileVersions[0].hash === version.hash) {
-      return fileVersions[0];
+    const latest = fileVersions[0];
+    if (latest && latest.hash === version.hash) {
+      return latest;
     }
 
     fileVersions.unshift(version);

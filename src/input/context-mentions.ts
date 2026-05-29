@@ -66,6 +66,7 @@ export class ContextMentionParser {
       while ((match = pattern.exec(input)) !== null) {
         const original = match[0];
         const value = match[1];
+        if (value === undefined) continue;
 
         try {
           const context = await this.resolveMention(
@@ -123,7 +124,7 @@ export class ContextMentionParser {
     let webMatch;
     while ((webMatch = webPattern.exec(text)) !== null) {
       const original = webMatch[0];
-      const query = webMatch[1].trim();
+      const query = (webMatch[1] ?? '').trim();
       try {
         const ctx = await this.resolveWeb(query, original);
         contexts.push(ctx);
@@ -144,6 +145,7 @@ export class ContextMentionParser {
     while ((gitMatch = gitExtPattern.exec(text)) !== null) {
       const original = gitMatch[0];
       const subcommand = gitMatch[1];
+      if (subcommand === undefined) continue;
       const args = gitMatch[2]?.trim() || '';
       try {
         const ctx = await this.resolveGitExtended(subcommand, args, original);
@@ -480,12 +482,11 @@ export class ContextMentionParser {
 
       const files = stdout.trim().split("\n").filter(Boolean);
 
-      if (files.length === 0) {
-        throw new Error(`Symbol not found: ${symbol}`);
-      }
-
       // Read the first matching file
       const firstFile = files[0];
+      if (firstFile === undefined) {
+        throw new Error(`Symbol not found: ${symbol}`);
+      }
       const content = await fs.readFile(firstFile, "utf-8");
 
       // Try to extract the symbol definition
@@ -508,7 +509,8 @@ export class ContextMentionParser {
     // Find the line with the symbol definition
     let startLine = -1;
     for (let i = 0; i < lines.length; i++) {
-      if (lines[i].match(new RegExp(`\\b(class|function|interface|type|const|let|var|export)\\s+${symbol}\\b`))) {
+      const line = lines[i];
+      if (line !== undefined && line.match(new RegExp(`\\b(class|function|interface|type|const|let|var|export)\\s+${symbol}\\b`))) {
         startLine = i;
         break;
       }
@@ -524,7 +526,8 @@ export class ContextMentionParser {
     let started = false;
 
     for (let i = startLine; i < lines.length && i < startLine + 100; i++) {
-      for (const char of lines[i]) {
+      const line = lines[i] ?? '';
+      for (const char of line) {
         if (char === "{" || char === "(") {
           braceCount++;
           started = true;

@@ -162,7 +162,9 @@ export function MultiStepProgress({
   // Render step icon with animation
   const getStepIcon = (status: StepStatus): string => {
     if (status === "running") {
-      return SPINNER_FRAMES[spinnerFrame];
+      // spinnerFrame is always kept in [0, SPINNER_FRAMES.length) via modulo (line 122);
+      // fall back to the first frame to satisfy noUncheckedIndexedAccess.
+      return SPINNER_FRAMES[spinnerFrame] ?? SPINNER_FRAMES[0] ?? "⠋";
     }
     return STATUS_CONFIG[status].icon;
   };

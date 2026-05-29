@@ -427,7 +427,7 @@ export class AICompletionProvider {
    */
   private buildLabel(text: string): string {
     const lines = text.split('\n');
-    const firstLine = lines[0].trim();
+    const firstLine = (lines[0] ?? '').trim();
     const maxLen = 60;
 
     if (lines.length > 1) {

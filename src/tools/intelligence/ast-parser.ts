@@ -326,19 +326,21 @@ export class ASTParser {
     let match;
 
     while ((match = this.execGlobal(regex, content)) !== null) {
+      const name = match[1];
+      if (name === undefined) continue;
       const range = this.getRange(content, match.index, match[0].length);
       const visibility = this.inferVisibility(content, match.index, language);
 
       symbols.push({
         id: this.createId("class"),
-        name: match[1],
+        name,
         type: "class",
         language,
         filePath,
         range,
+        signature: (match[0].split("{")[0] ?? match[0]).trim(),
         visibility,
         scope: "module",
-        signature: match[0].split("{")[0].trim(),
         metadata: {
           extends: match[2] || undefined,
           implements: match[3]?.split(",").map((s: string) => s.trim()).filter(Boolean) || [],
@@ -367,7 +369,7 @@ export class ASTParser {
       const visibility = this.inferVisibility(content, match.index, language);
 
       // Parse parameters
-      let name: string;
+      let name: string | undefined;
       let paramsStr: string;
       let returnType: string | undefined;
 
@@ -388,6 +390,8 @@ export class ASTParser {
         returnType = match[4]?.trim();
       }
 
+      if (name === undefined) continue;
+
       const parameters = this.parseParameters(paramsStr, language);
 
       symbols.push({
@@ -399,7 +403,7 @@ export class ASTParser {
         range,
         visibility,
         scope: "module",
-        signature: match[0].split("{")[0].split(":")[0].trim(),
+        signature: ((match[0].split("{")[0] ?? match[0]).split(":")[0] ?? match[0]).trim(),
         parameters,
         returnType,
         metadata: {
@@ -426,18 +430,20 @@ export class ASTParser {
     let match;
 
     while ((match = this.execGlobal(regex, content)) !== null) {
+      const name = match[1];
+      if (name === undefined) continue;
       const range = this.getRange(content, match.index, match[0].length);
 
       symbols.push({
         id: this.createId("interface"),
-        name: match[1],
+        name,
         type: "interface",
         language,
         filePath,
         range,
         visibility: "public",
         scope: "module",
-        signature: match[0].split("{")[0].trim(),
+        signature: (match[0].split("{")[0] ?? match[0]).trim(),
         metadata: {
           extends: match[2]?.split(",").map((s: string) => s.trim()).filter(Boolean) || [],
         },
@@ -461,11 +467,13 @@ export class ASTParser {
     let match;
 
     while ((match = this.execGlobal(regex, content)) !== null) {
+      const name = match[1];
+      if (name === undefined) continue;
       const range = this.getRange(content, match.index, match[0].length);
 
       symbols.push({
         id: this.createId("type"),
-        name: match[1],
+        name,
         type: "type",
         language,
         filePath,
@@ -493,11 +501,13 @@ export class ASTParser {
     let match;
 
     while ((match = this.execGlobal(regex, content)) !== null) {
+      const name = match[1];
+      if (name === undefined) continue;
       const range = this.getRange(content, match.index, match[0].length);
 
       symbols.push({
         id: this.createId("enum"),
-        name: match[1],
+        name,
         type: "enum",
         language,
         filePath,
@@ -533,11 +543,14 @@ export class ASTParser {
       const closeBraces = (beforeMatch.match(/\}/g) || []).length;
       if (openBraces > closeBraces) continue;
 
+      const name = match[1];
+      if (name === undefined) continue;
+
       const range = this.getRange(content, match.index, match[0].length);
 
       symbols.push({
         id: this.createId("constant"),
-        name: match[1],
+        name,
         type: "constant",
         language,
         filePath,
@@ -595,8 +608,10 @@ export class ASTParser {
         });
       } else if (language === "go") {
         // Go: import "package"
+        const source = match[1];
+        if (source === undefined) continue;
         imports.push({
-          source: match[1],
+          source,
           specifiers: [],
           isTypeOnly: false,
           isDynamic: false,
@@ -605,6 +620,7 @@ export class ASTParser {
       } else {
         // TypeScript/JavaScript
         const source = match[4];
+        if (source === undefined) continue;
         const isTypeOnly = match[0].includes("import type");
 
         // Default import
@@ -735,21 +751,21 @@ export class ASTParser {
       if (language === "python") {
         // Python: name: type = default
         const [nameType, defVal] = trimmed.split("=");
-        const [n, t] = nameType.split(":");
-        name = n.trim();
+        const [n, t] = (nameType ?? trimmed).split(":");
+        name = (n ?? "").trim();
         type = t?.trim();
         defaultValue = defVal?.trim();
       } else if (language === "go") {
         // Go: name type
         const parts = trimmed.split(/\s+/);
-        name = parts[0];
+        name = parts[0] ?? "";
         type = parts.slice(1).join(" ");
       } else {
         // TypeScript: name?: type = default
         const cleaned = trimmed.replace("...", "");
         const [nameType, defVal] = cleaned.split("=");
-        const [n, t] = nameType.split(":");
-        name = n.replace("?", "").trim();
+        const [n, t] = (nameType ?? cleaned).split(":");
+        name = (n ?? "").replace("?", "").trim();
         type = t?.trim();
         defaultValue = defVal?.trim();
       }
@@ -803,13 +819,13 @@ export class ASTParser {
     const before = content.slice(0, offset);
     const lines = before.split("\n");
     const startLine = lines.length;
-    const startColumn = lines[lines.length - 1].length;
+    const startColumn = (lines[lines.length - 1] ?? "").length;
 
     const matchContent = content.slice(offset, offset + length);
     const matchLines = matchContent.split("\n");
     const endLine = startLine + matchLines.length - 1;
     const endColumn = matchLines.length > 1
-      ? matchLines[matchLines.length - 1].length
+      ? (matchLines[matchLines.length - 1] ?? "").length
       : startColumn + length;
 
     return {
@@ -831,7 +847,8 @@ export class ASTParser {
     if (language === "go") {
       // Go uses capitalization
       const nameMatch = content.slice(offset).match(/(?:func\s+(?:\([^)]+\)\s+)?|type\s+|const\s+|var\s+)([A-Za-z])/);
-      if (nameMatch && /^[A-Z]/.test(nameMatch[1])) {
+      const goName = nameMatch?.[1];
+      if (goName !== undefined && /^[A-Z]/.test(goName)) {
         return "public";
       }
       return "private";
@@ -840,9 +857,10 @@ export class ASTParser {
     if (language === "python") {
       // Python uses underscore prefix convention
       const nameMatch = content.slice(offset).match(/(?:def\s+|class\s+)(_*\w)/);
-      if (nameMatch) {
-        if (nameMatch[1].startsWith("__")) return "private";
-        if (nameMatch[1].startsWith("_")) return "protected";
+      const pyName = nameMatch?.[1];
+      if (pyName !== undefined) {
+        if (pyName.startsWith("__")) return "private";
+        if (pyName.startsWith("_")) return "protected";
       }
       return "public";
     }

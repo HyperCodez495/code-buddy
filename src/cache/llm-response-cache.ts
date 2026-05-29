@@ -234,7 +234,7 @@ export class LLMResponseCache extends EventEmitter {
     // Get last user message
     for (let i = messages.length - 1; i >= 0; i--) {
       const msg = messages[i];
-      if (msg.role === 'user' && typeof msg.content === 'string') {
+      if (msg && msg.role === 'user' && typeof msg.content === 'string') {
         return msg.content;
       }
     }
@@ -340,9 +340,12 @@ export class LLMResponseCache extends EventEmitter {
     let magnitudeB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      magnitudeA += a[i] * a[i];
-      magnitudeB += b[i] * b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) continue;
+      dotProduct += ai * bi;
+      magnitudeA += ai * ai;
+      magnitudeB += bi * bi;
     }
 
     const magnitude = Math.sqrt(magnitudeA) * Math.sqrt(magnitudeB);

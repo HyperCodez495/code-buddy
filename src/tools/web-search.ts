@@ -633,21 +633,22 @@ export class WebSearchTool {
     let match;
     while ((match = resultRegex.exec(html)) !== null && results.length < maxResults) {
       const resultHtml = match[1];
+      if (resultHtml === undefined) continue;
       const titleMatch = titleRegex.exec(resultHtml);
       const snippetMatch = snippetRegex.exec(resultHtml);
 
       if (titleMatch) {
-        let url = titleMatch[1];
+        let url = titleMatch[1] ?? '';
         if (url.includes('uddg=')) {
           const uddgMatch = url.match(/uddg=([^&]+)/);
-          if (uddgMatch) url = decodeURIComponent(uddgMatch[1]);
+          if (uddgMatch) url = decodeURIComponent(uddgMatch[1] ?? '');
         }
 
         results.push({
-          title: this.decodeHtmlEntities(titleMatch[2].trim()),
+          title: this.decodeHtmlEntities((titleMatch[2] ?? '').trim()),
           url,
           snippet: snippetMatch
-            ? this.decodeHtmlEntities(this.stripHtml(snippetMatch[1]).trim())
+            ? this.decodeHtmlEntities(this.stripHtml(snippetMatch[1] ?? '').trim())
             : '',
           siteName: resolveSiteName(url),
         });
@@ -658,13 +659,13 @@ export class WebSearchTool {
     if (results.length === 0) {
       const linkRegex = /<a[^>]*class="[^"]*result__url[^"]*"[^>]*href="([^"]*)"[^>]*>([^<]*)<\/a>/gi;
       while ((match = linkRegex.exec(html)) !== null && results.length < maxResults) {
-        let url = match[1];
+        let url = match[1] ?? '';
         if (url.includes('uddg=')) {
           const uddgMatch = url.match(/uddg=([^&]+)/);
-          if (uddgMatch) url = decodeURIComponent(uddgMatch[1]);
+          if (uddgMatch) url = decodeURIComponent(uddgMatch[1] ?? '');
         }
         results.push({
-          title: this.decodeHtmlEntities(match[2].trim()) || url,
+          title: this.decodeHtmlEntities((match[2] ?? '').trim()) || url,
           url,
           snippet: '',
           siteName: resolveSiteName(url),
@@ -808,8 +809,7 @@ export class WebSearchTool {
     // Collect sources for citation block
     const citedSources: Array<{ n: number; title: string; url: string }> = [];
 
-    for (let i = 0; i < results.length; i++) {
-      const result = results[i];
+    for (const [i, result] of results.entries()) {
       const num = i + 1;
 
       if (!result.url && result.snippet) {

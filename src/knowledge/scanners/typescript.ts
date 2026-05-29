@@ -34,27 +34,31 @@ export class TypeScriptScanner implements LanguageScanner {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue; // safe: i < lines.length, guard satisfies noUncheckedIndexedAccess
       const lineNum = i + 1;
 
       updateBraceDepth(line, tracker);
 
       // Class declaration
       const classMatch = line.match(/(?:export\s+)?(?:abstract\s+)?class\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+(\w+)(?:<[^>]*>)?)?(?:\s+implements\s+([\w,\s<>]+))?/);
-      if (classMatch && !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*')) {
-        tracker.currentClassName = classMatch[1];
+      const className = classMatch?.[1];
+      if (classMatch && className !== undefined && !line.trimStart().startsWith('//') && !line.trimStart().startsWith('*')) {
+        const extendsName = classMatch[2];
+        const implementsRaw = classMatch[3];
+        tracker.currentClassName = className;
         tracker.classStartDepth = tracker.braceDepth - 1;
         symbols.push({
-          fqn: `cls:${classMatch[1]}`,
-          name: classMatch[1],
+          fqn: `cls:${className}`,
+          name: className,
           kind: 'class',
           module: moduleId,
           line: lineNum,
         });
         // Inheritance
-        const info: InheritanceInfo = { className: classMatch[1] };
-        if (classMatch[2]) info.extends = classMatch[2];
-        if (classMatch[3]) {
-          info.implements = classMatch[3].split(',').map(s => s.trim().replace(/<.*>$/, '')).filter(s => s && /^[A-Z]/.test(s));
+        const info: InheritanceInfo = { className };
+        if (extendsName) info.extends = extendsName;
+        if (implementsRaw) {
+          info.implements = implementsRaw.split(',').map(s => s.trim().replace(/<.*>$/, '')).filter(s => s && /^[A-Z]/.test(s));
         }
         if (info.extends || info.implements?.length) inheritance.push(info);
       }
@@ -62,8 +66,9 @@ export class TypeScriptScanner implements LanguageScanner {
       // Method inside class
       if (tracker.currentClassName) {
         const methodMatch = line.match(/^\s+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^{]+?))?(?:\s*\{|;)/);
-        if (methodMatch && !TS_BLACKLIST.has(methodMatch[1]) && methodMatch[1] !== 'constructor') {
-          const methodName = methodMatch[1];
+        const methodMatchName = methodMatch?.[1];
+        if (methodMatch && methodMatchName !== undefined && !TS_BLACKLIST.has(methodMatchName) && methodMatchName !== 'constructor') {
+          const methodName = methodMatchName;
           const fqn = `fn:${tracker.currentClassName}.${methodName}`;
           const rawParams = methodMatch[2]?.trim() || '';
           const rawReturn = methodMatch[3]?.trim() || '';
@@ -83,8 +88,9 @@ export class TypeScriptScanner implements LanguageScanner {
         // Fallback: multi-line params
         if (!methodMatch) {
           const simpleMethodMatch = line.match(/^\s+(?:(?:public|private|protected|static|async|override|readonly|abstract|get|set)\s+)*(\w+)\s*(?:<[^>]*>)?\s*\(/);
-          if (simpleMethodMatch && !TS_BLACKLIST.has(simpleMethodMatch[1]) && simpleMethodMatch[1] !== 'constructor') {
-            const methodName = simpleMethodMatch[1];
+          const simpleMethodName = simpleMethodMatch?.[1];
+          if (simpleMethodMatch && simpleMethodName !== undefined && !TS_BLACKLIST.has(simpleMethodName) && simpleMethodName !== 'constructor') {
+            const methodName = simpleMethodName;
             const fqn = `fn:${tracker.currentClassName}.${methodName}`;
             const multiParams = extractMultiLineParams(lines, i);
             symbols.push({
@@ -106,8 +112,9 @@ export class TypeScriptScanner implements LanguageScanner {
       // Top-level function
       if (!tracker.currentClassName) {
         const funcMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*:\s*([^{]+?))?(?:\s*\{)/);
-        if (funcMatch) {
-          const funcName = funcMatch[1];
+        const funcMatchName = funcMatch?.[1];
+        if (funcMatch && funcMatchName !== undefined) {
+          const funcName = funcMatchName;
           const fqn = `fn:${funcName}`;
           const rawParams = funcMatch[2]?.trim() || '';
           const rawReturn = funcMatch[3]?.trim() || '';
@@ -126,8 +133,9 @@ export class TypeScriptScanner implements LanguageScanner {
         // Fallback for multi-line function params
         if (!funcMatch) {
           const simpleFuncMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)\s*(?:<[^>]*>)?\s*\(/);
-          if (simpleFuncMatch) {
-            const funcName = simpleFuncMatch[1];
+          const simpleFuncName = simpleFuncMatch?.[1];
+          if (simpleFuncMatch && simpleFuncName !== undefined) {
+            const funcName = simpleFuncName;
             const fqn = `fn:${funcName}`;
             const multiParams = extractMultiLineParams(lines, i);
             symbols.push({
@@ -146,8 +154,9 @@ export class TypeScriptScanner implements LanguageScanner {
 
         // Arrow function export
         const arrowMatch = line.match(/export\s+(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(([^)]*)\)(?:\s*:\s*([^=>{]+?))?(?:\s*=>)/);
-        if (arrowMatch) {
-          const funcName = arrowMatch[1];
+        const arrowMatchName = arrowMatch?.[1];
+        if (arrowMatch && arrowMatchName !== undefined) {
+          const funcName = arrowMatchName;
           const rawParams = arrowMatch[2]?.trim() || '';
           const rawReturn = arrowMatch[3]?.trim() || '';
           symbols.push({
@@ -163,8 +172,9 @@ export class TypeScriptScanner implements LanguageScanner {
         // Fallback arrow: multi-line
         if (!arrowMatch) {
           const simpleArrowMatch = line.match(/export\s+(?:const|let)\s+(\w+)\s*=\s*(?:async\s*)?\(/);
-          if (simpleArrowMatch) {
-            const funcName = simpleArrowMatch[1];
+          const simpleArrowName = simpleArrowMatch?.[1];
+          if (simpleArrowMatch && simpleArrowName !== undefined) {
+            const funcName = simpleArrowName;
             const multiParams = extractMultiLineParams(lines, i);
             symbols.push({
               fqn: `fn:${funcName}`,
@@ -187,10 +197,11 @@ export class TypeScriptScanner implements LanguageScanner {
         RE_THIS_CALL.lastIndex = 0;
         let cm: RegExpExecArray | null;
         while ((cm = RE_THIS_CALL.exec(line)) !== null) {
-          if (!TS_BLACKLIST.has(cm[1])) {
+          const calleeName = cm[1];
+          if (calleeName !== undefined && !TS_BLACKLIST.has(calleeName)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[1],
+              calleeName,
               isMethodCall: true,
               receiverClass: tracker.currentClassName ?? undefined,
             });
@@ -199,12 +210,19 @@ export class TypeScriptScanner implements LanguageScanner {
 
         RE_STATIC_CALL.lastIndex = 0;
         while ((cm = RE_STATIC_CALL.exec(line)) !== null) {
-          if (!TS_BLACKLIST.has(cm[2]) && !TS_BLACKLIST.has(cm[1])) {
+          const receiverClass = cm[1];
+          const calleeName = cm[2];
+          if (
+            receiverClass !== undefined &&
+            calleeName !== undefined &&
+            !TS_BLACKLIST.has(calleeName) &&
+            !TS_BLACKLIST.has(receiverClass)
+          ) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[2],
+              calleeName,
               isMethodCall: true,
-              receiverClass: cm[1],
+              receiverClass,
             });
           }
         }
@@ -212,7 +230,7 @@ export class TypeScriptScanner implements LanguageScanner {
         RE_CALL.lastIndex = 0;
         while ((cm = RE_CALL.exec(line)) !== null) {
           const name = cm[1];
-          if (!TS_BLACKLIST.has(name) && /^[a-z]/.test(name) && name.length > 2) {
+          if (name !== undefined && !TS_BLACKLIST.has(name) && /^[a-z]/.test(name) && name.length > 2) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
               calleeName: name,

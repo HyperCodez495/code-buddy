@@ -188,6 +188,7 @@ ${contextSection}
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       if (!line.trim().startsWith('- [ ]') && !line.trim().startsWith('- [/]')) continue;
 
       const stepText = line.replace(/^-\s*\[[^\]]*\]\s*/, '');
@@ -223,7 +224,10 @@ ${contextSection}
     // Place sorted steps at the original step positions
     const newLines = [...lines];
     for (let i = 0; i < stepIndices.length && i < stepLines.length; i++) {
-      newLines[stepIndices[i]] = stepLines[i].line;
+      const targetIndex = stepIndices[i];
+      const step = stepLines[i];
+      if (targetIndex === undefined || step === undefined) continue;
+      newLines[targetIndex] = step.line;
     }
 
     const newContent = newLines.join('\n');
@@ -257,7 +261,8 @@ ${contextSection}
         filePath = entity.replace(/^mod:/, '');
       } else {
         const definedIn = graph.query({ subject: entity, predicate: 'definedIn' });
-        if (definedIn.length > 0) filePath = definedIn[0].object.replace(/^mod:/, '');
+        const firstDefinedIn = definedIn[0];
+        if (firstDefinedIn) filePath = firstDefinedIn.object.replace(/^mod:/, '');
       }
       if (filePath && !files.includes(filePath)) {
         files.push(filePath);

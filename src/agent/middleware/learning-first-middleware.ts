@@ -236,6 +236,7 @@ export class LearningFirstMiddleware implements ConversationMiddleware {
     // Walk history from the end to find the last user message
     for (let i = context.history.length - 1; i >= 0; i--) {
       const entry = context.history[i];
+      if (!entry) continue;
       if (entry.type === 'user' && typeof entry.content === 'string' && entry.content.trim()) {
         return entry.content.trim();
       }

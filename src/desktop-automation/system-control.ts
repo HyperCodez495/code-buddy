@@ -541,7 +541,7 @@ export class SystemControl extends EventEmitter {
       return {
         present: true,
         charging,
-        level: percentMatch ? parseInt(percentMatch[1], 10) : 0,
+        level: percentMatch?.[1] !== undefined ? parseInt(percentMatch[1], 10) : 0,
       };
     } catch {
       return { present: false, charging: false, level: 0 };
@@ -698,7 +698,10 @@ export class SystemControl extends EventEmitter {
         const displayMatch = line.match(/^(\S+) connected (primary )?(\d+x\d+)/);
         if (displayMatch) {
           const [, name, primary, resolution] = displayMatch;
-          const [width, height] = resolution.split('x').map(s => parseInt(s, 10));
+          if (resolution === undefined) continue;
+          const [widthStr, heightStr] = resolution.split('x');
+          const width = widthStr !== undefined ? parseInt(widthStr, 10) : 0;
+          const height = heightStr !== undefined ? parseInt(heightStr, 10) : 0;
 
           currentDisplay = {
             id: name,
@@ -726,8 +729,8 @@ export class SystemControl extends EventEmitter {
       const deviceMatch = output.match(/dev (\S+)/);
 
       let type: NetworkInfo['type'] = 'unknown';
-      if (deviceMatch) {
-        const device = deviceMatch[1];
+      const device = deviceMatch?.[1];
+      if (device !== undefined) {
         if (device.startsWith('wl')) type = 'wifi';
         else if (device.startsWith('eth') || device.startsWith('en')) type = 'ethernet';
       }

@@ -151,6 +151,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         if (messages.length > 1) {
           for (let i = 0; i < messages.length - 1; i++) {
             const msg = messages[i];
+            if (!msg) continue;
             if (msg.content) {
               agent.addToHistory({
                 role: msg.role as 'user' | 'assistant' | 'system',

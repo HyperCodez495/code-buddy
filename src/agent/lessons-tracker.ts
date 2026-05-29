@@ -805,13 +805,15 @@ export class LessonsTracker {
       // Item: - [id] content <!-- date source:context -->
       const itemMatch = rawLine.match(/^- \[([^\]]+)\] (.+?) <!-- ([^\s]+) ([^\s:]+)(?::([^-]+))? -->/);
       if (itemMatch) {
+        const [, id, rawContent, dateStr, sourceStr, ctx] = itemMatch;
+        if (id === undefined || rawContent === undefined || dateStr === undefined || sourceStr === undefined) continue;
         items.push({
-          id: itemMatch[1],
-          content: itemMatch[2].trim(),
+          id,
+          content: rawContent.trim(),
           category: currentCategory,
-          createdAt: new Date(itemMatch[3]).getTime() || 0,
-          source: (itemMatch[4] as LessonItem['source']) ?? 'manual',
-          context: itemMatch[5]?.trim() || undefined,
+          createdAt: new Date(dateStr).getTime() || 0,
+          source: (sourceStr as LessonItem['source']) ?? 'manual',
+          context: ctx?.trim() || undefined,
         });
         continue;
       }
@@ -819,9 +821,11 @@ export class LessonsTracker {
       // Plain item fallback: - content
       const plainMatch = rawLine.match(/^- (.+)/);
       if (plainMatch) {
+        const plainContent = plainMatch[1];
+        if (plainContent === undefined) continue;
         items.push({
           id: Date.now().toString(36) + Math.random().toString(36).slice(2, 5),
-          content: plainMatch[1].trim(),
+          content: plainContent.trim(),
           category: currentCategory,
           createdAt: 0,
           source: 'manual',
@@ -860,21 +864,30 @@ function extractLessonConcepts(
   if (lesson.context) add(lesson.context, 'context');
 
   for (const match of lesson.content.matchAll(/\[\[([^\]]+)\]\]/g)) {
-    const { label, target } = parseWikiLink(match[1]);
+    const inner = match[1];
+    if (inner === undefined) continue;
+    const { label, target } = parseWikiLink(inner);
     add(label, 'wiki_link', target);
   }
 
   for (const match of lesson.content.matchAll(/(?<!!)\[([^\]]+)\]\(([^)]+)\)/g)) {
-    const target = normalizeMarkdownLinkTarget(match[2]);
-    if (target) add(match[1], 'markdown_link', target);
+    const linkLabel = match[1];
+    const linkTarget = match[2];
+    if (linkLabel === undefined || linkTarget === undefined) continue;
+    const target = normalizeMarkdownLinkTarget(linkTarget);
+    if (target) add(linkLabel, 'markdown_link', target);
   }
 
   for (const match of lesson.content.matchAll(/(?:^|\s)#([A-Za-z0-9][A-Za-z0-9_-]{1,64})/g)) {
-    add(match[1], 'tag');
+    const tag = match[1];
+    if (tag === undefined) continue;
+    add(tag, 'tag');
   }
 
   for (const match of lesson.content.matchAll(/\b(?:tags?|related)\s*:\s*([^.;\n]+)/gi)) {
-    for (const part of match[1].split(/[,|]/)) {
+    const tagList = match[1];
+    if (tagList === undefined) continue;
+    for (const part of tagList.split(/[,|]/)) {
       add(part, match[0].toLowerCase().startsWith('related') ? 'related' : 'tag');
     }
   }
@@ -908,6 +921,7 @@ function buildRelatedLessonEdges(
     for (let j = i + 1; j < lessons.length; j++) {
       const left = lessons[i];
       const right = lessons[j];
+      if (left === undefined || right === undefined) continue;
       const leftConcepts = new Set((lessonConcepts[left.id] ?? []).map(concept => concept.slug));
       const sharedConcepts = (lessonConcepts[right.id] ?? [])
         .map(concept => concept.slug)
@@ -1236,7 +1250,7 @@ function normalizeGraphConceptFilter(value: string | undefined): string | null {
 }
 
 function parseWikiLink(value: string): { label: string; target: string } {
-  const [target, alias] = value.split('|', 2).map(part => part.trim());
+  const [target = '', alias] = value.split('|', 2).map(part => part.trim());
   return {
     label: alias || target,
     target: normalizeMarkdownLinkTarget(target) ?? target,
@@ -1247,7 +1261,7 @@ function normalizeMarkdownLinkTarget(value: string): string | null {
   const trimmed = value.trim();
   if (!trimmed || /^[a-z][a-z0-9+.-]*:/i.test(trimmed)) return null;
 
-  const [withoutQuery] = trimmed.startsWith('#') ? [trimmed.slice(1)] : trimmed.split(/[?#]/, 1);
+  const [withoutQuery = ''] = trimmed.startsWith('#') ? [trimmed.slice(1)] : trimmed.split(/[?#]/, 1);
   const normalized = withoutQuery.replace(/\\/g, '/').replace(/\/+$/g, '');
   const basename = normalized.split('/').pop() ?? normalized;
   const withoutExtension = basename.replace(/\.md$/i, '');

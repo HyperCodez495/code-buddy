@@ -213,7 +213,7 @@ export class CompactModeManager {
 
     switch (this.currentMode) {
       case 'minimal':
-        return `${role[0].toUpperCase()}: ${this.truncate(singleLine, this.getContentWidth() - 3)}`;
+        return `${(role[0] ?? '').toUpperCase()}: ${this.truncate(singleLine, this.getContentWidth() - 3)}`;
       case 'compact':
         return `[${role}] ${this.truncate(singleLine)}`;
       default:
@@ -366,13 +366,18 @@ export class CompactModeManager {
     });
 
     // Format header
-    const headerLine = headers.map((h, i) => h.padEnd(colWidths[i])).join(' | ');
+    const headerLine = headers.map((h, i) => h.padEnd(colWidths[i] ?? 0)).join(' | ');
     const separatorLine = colWidths.map(w => '─'.repeat(w)).join('─┼─');
 
     // Format rows
     const dataLines = rows.map(row =>
       row.map((cell, i) => {
         const width = colWidths[i];
+        // No matching column width (row wider than headers): leave cell unchanged,
+        // matching prior padEnd(undefined) === padEnd(0) behavior.
+        if (width === undefined) {
+          return cell;
+        }
         return cell.length > width
           ? cell.slice(0, width - 2) + '..'
           : cell.padEnd(width);

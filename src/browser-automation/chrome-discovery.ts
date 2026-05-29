@@ -108,9 +108,10 @@ export function discoverChromeEndpoint(): string | null {
 
   // 2. Auto-discovery
   const instances = findRunningChrome();
-  if (instances.length > 0) {
-    logger.debug(`Chrome auto-discovered at ${instances[0].cdpUrl}`);
-    return instances[0].cdpUrl;
+  const firstInstance = instances[0];
+  if (firstInstance) {
+    logger.debug(`Chrome auto-discovered at ${firstInstance.cdpUrl}`);
+    return firstInstance.cdpUrl;
   }
 
   return null;

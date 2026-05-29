@@ -227,7 +227,9 @@ function classifyDeadCodeConfidence(
 ): DeadCodeConfidence {
   // Extract bare method name from fn:ClassName.methodName or fn:funcName
   const parts = fn.replace(/^fn:/, '').split('.');
-  const bareName = parts[parts.length - 1];
+  // String.split always yields at least one element, so the last index is
+  // present; the `?? ''` only satisfies noUncheckedIndexedAccess.
+  const bareName = parts[parts.length - 1] ?? '';
 
   // 1. Dynamic entry method names → low
   if (DYNAMIC_ENTRY_METHODS.has(bareName)) return 'low';
@@ -319,7 +321,9 @@ export function computeCoupling(graph: KnowledgeGraph, topN: number = 20): Coupl
 
   const hotspots: CouplingEntry[] = [];
   for (const [key, { calls, imports }] of couplingMap) {
-    const [moduleA, moduleB] = key.split('|||');
+    // Keys are built by makeKey as `${a}|||${b}`, so the split always yields
+    // both parts; the `?? ''` only satisfies noUncheckedIndexedAccess.
+    const [moduleA = '', moduleB = ''] = key.split('|||');
     hotspots.push({ moduleA, moduleB, calls, imports, total: calls + imports });
   }
   hotspots.sort((a, b) => b.total - a.total);

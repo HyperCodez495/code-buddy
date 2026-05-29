@@ -128,9 +128,9 @@ export function createBuiltins(config: CodeBuddyScriptConfig, print: PrintFn): B
 
   builtins.range = (...args: number[]): number[] => {
     let start = 0, end = 0, step = 1;
-    if (args.length === 1) { end = args[0]; }
-    else if (args.length === 2) { start = args[0]; end = args[1]; }
-    else if (args.length >= 3) { start = args[0]; end = args[1]; step = args[2]; }
+    if (args.length === 1) { end = args[0] ?? 0; }
+    else if (args.length === 2) { start = args[0] ?? 0; end = args[1] ?? 0; }
+    else if (args.length >= 3) { start = args[0] ?? 0; end = args[1] ?? 0; step = args[2] ?? 1; }
 
     const result: number[] = [];
     if (step > 0) { for (let i = start; i < end; i += step) result.push(i); }
@@ -351,8 +351,8 @@ export function createBuiltins(config: CodeBuddyScriptConfig, print: PrintFn): B
   // ============================================
 
   builtins.now = (): number => Date.now();
-  builtins.date = (): string => new Date().toISOString().split('T')[0];
-  builtins.time = (): string => new Date().toISOString().split('T')[1].split('.')[0];
+  builtins.date = (): string => new Date().toISOString().split('T')[0] ?? '';
+  builtins.time = (): string => (new Date().toISOString().split('T')[1] ?? '').split('.')[0] ?? '';
   builtins.datetime = (): string => new Date().toISOString();
   builtins.timestamp = (): number => Math.floor(Date.now() / 1000);
 

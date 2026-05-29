@@ -1371,20 +1371,20 @@ if ($focused) {
           { encoding: 'utf-8' }
         );
         const match = output.match(/(\d+)\s*x\s*(\d+)/);
-        if (match) {
+        if (match && match[1] !== undefined && match[2] !== undefined) {
           return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
         }
       } else if (process.platform === 'linux') {
         try {
           const output = execSync(`xdpyinfo | grep dimensions`, { encoding: 'utf-8' });
           const match = output.match(/(\d+)x(\d+)/);
-          if (match) {
+          if (match && match[1] !== undefined && match[2] !== undefined) {
             return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
           }
         } catch (_error) {
           const output = execSync(`xrandr --query`, { encoding: 'utf-8' });
           const match = output.match(/current\s+(\d+)\s+x\s+(\d+)/i);
-          if (match) {
+          if (match && match[1] !== undefined && match[2] !== undefined) {
             return { width: parseInt(match[1], 10), height: parseInt(match[2], 10) };
           }
         }

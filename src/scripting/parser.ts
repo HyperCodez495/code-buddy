@@ -1060,11 +1060,19 @@ export class FCSParser {
   }
 
   private peek(): Token {
-    return this.tokens[Math.min(this.current, this.tokens.length - 1)];
+    const token = this.tokens[Math.min(this.current, this.tokens.length - 1)];
+    if (token === undefined) {
+      throw new Error("Unexpected end of token stream");
+    }
+    return token;
   }
 
   private previous(): Token {
-    return this.tokens[this.current - 1];
+    const token = this.tokens[this.current - 1];
+    if (token === undefined) {
+      throw new Error("No previous token available");
+    }
+    return token;
   }
 
   private advance(): Token {
@@ -1077,8 +1085,9 @@ export class FCSParser {
   }
 
   private checkNext(type: TokenType): boolean {
-    if (this.current + 1 >= this.tokens.length) return false;
-    return this.tokens[this.current + 1].type === type;
+    const next = this.tokens[this.current + 1];
+    if (next === undefined) return false;
+    return next.type === type;
   }
 
   private isDictLiteralStart(): boolean {

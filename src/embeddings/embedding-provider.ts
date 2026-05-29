@@ -222,9 +222,11 @@ export class EmbeddingProvider extends EventEmitter {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const ai = a[i] ?? 0;
+      const bi = b[i] ?? 0;
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
@@ -286,8 +288,12 @@ export class EmbeddingProvider extends EventEmitter {
 
   private async embedOpenAI(text: string): Promise<EmbeddingResult> {
     const result = await this.embedBatchOpenAI([text]);
+    const embedding = result.embeddings[0];
+    if (embedding === undefined) {
+      throw new Error('OpenAI embedding error: no embedding returned');
+    }
     return {
-      embedding: result.embeddings[0],
+      embedding,
       dimensions: result.dimensions,
       provider: 'openai',
     };
@@ -337,8 +343,12 @@ export class EmbeddingProvider extends EventEmitter {
 
   private async embedGrok(text: string): Promise<EmbeddingResult> {
     const result = await this.embedBatchGrok([text]);
+    const embedding = result.embeddings[0];
+    if (embedding === undefined) {
+      throw new Error('CodeBuddy embedding error: no embedding returned');
+    }
     return {
-      embedding: result.embeddings[0],
+      embedding,
       dimensions: result.dimensions,
       provider: 'grok',
     };
@@ -412,11 +422,12 @@ export class EmbeddingProvider extends EventEmitter {
     // Normalize
     let norm = 0;
     for (let i = 0; i < dimensions; i++) {
-      norm += embedding[i] * embedding[i];
+      const ei = embedding[i] ?? 0;
+      norm += ei * ei;
     }
     norm = Math.sqrt(norm);
     for (let i = 0; i < dimensions; i++) {
-      embedding[i] /= norm;
+      embedding[i] = (embedding[i] ?? 0) / norm;
     }
 
     return {

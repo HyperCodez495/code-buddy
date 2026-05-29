@@ -242,7 +242,7 @@ export function useInputHandler({
     }
     if (key.tab || key.return) {
       const selectedModel = availableModels[selectedModelIndex];
-      // Delegate to Dispatcher implicitly via handleDirectCommand? 
+      // Delegate to Dispatcher implicitly via handleDirectCommand?
       // No, UI navigation logic remains here, but the action can be manual.
       // Or we can construct a command string and let dispatcher handle it.
       // But we have state setters here.
@@ -251,10 +251,12 @@ export function useInputHandler({
       // agent.setModel(selectedModel.model);
       // updateCurrentModel(selectedModel.model);
       // ...
-      
+
       // We can use a helper, but for now let's leave this UI logic as is, or use handleDirectCommand("/models " + model)
-      handleDirectCommand(`/models ${selectedModel.model}`);
-      
+      if (selectedModel) {
+        handleDirectCommand(`/models ${selectedModel.model}`);
+      }
+
       setShowModelSelection(false);
       setSelectedModelIndex(0);
       return true;
@@ -278,7 +280,7 @@ export function useInputHandler({
         const selectedFile = fileSuggestions[selectedFileIndex];
         const { startPos } = extractFileReference(input);
 
-        if (startPos >= 0) {
+        if (selectedFile && startPos >= 0) {
           // Replace the @ reference with the selected file path
           const beforeAt = input.slice(0, startPos);
           const filePath = selectedFile.isDirectory
@@ -445,6 +447,9 @@ export function useInputHandler({
     for (const match of matches) {
       const filePath = match[1];
       const fullMatch = match[0];
+      if (filePath === undefined) {
+        continue;
+      }
 
       try {
         const resolvedPath = path.isAbsolute(filePath)

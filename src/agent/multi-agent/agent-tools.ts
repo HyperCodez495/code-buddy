@@ -71,7 +71,8 @@ let nicknameIdx = 0;
 let nicknameGeneration = 0;
 
 function allocateNickname(): string {
-  const name = AGENT_NAMES[nicknameIdx % AGENT_NAMES.length];
+  // safe: modulo guarantees 0 <= index < AGENT_NAMES.length, and AGENT_NAMES is a non-empty constant array
+  const name = AGENT_NAMES[nicknameIdx % AGENT_NAMES.length] ?? 'Agent';
   nicknameIdx++;
   if (nicknameIdx >= AGENT_NAMES.length) {
     nicknameGeneration++;

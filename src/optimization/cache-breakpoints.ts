@@ -62,7 +62,7 @@ export function buildStableDynamicSplit(systemPrompt: string): StableDynamicSpli
   const lines = systemPrompt.split('\n');
 
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
     if (DYNAMIC_MARKERS.some(re => re.test(line))) {
       return {
         stablePrefix: lines.slice(0, i).join('\n').trimEnd(),
@@ -97,18 +97,21 @@ export function injectAnthropicCacheBreakpoints(
 
   // Find the last system message index
   let lastSystemIdx = -1;
+  let lastSystemMessage: CacheBreakpointMessage | undefined;
   for (let i = result.length - 1; i >= 0; i--) {
-    if (result[i].role === 'system') {
+    const message = result[i];
+    if (message?.role === 'system') {
       lastSystemIdx = i;
+      lastSystemMessage = message;
       break;
     }
   }
 
-  if (lastSystemIdx === -1) return result;
+  if (lastSystemIdx === -1 || lastSystemMessage === undefined) return result;
 
   // Clone and add cache_control to the last system message
   result[lastSystemIdx] = {
-    ...result[lastSystemIdx],
+    ...lastSystemMessage,
     cache_control: { type: 'ephemeral' },
   };
 

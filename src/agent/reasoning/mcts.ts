@@ -687,8 +687,9 @@ export class MCTS {
   private extractCode(content: string): string | null {
     // Try to extract code blocks
     const codeBlockMatch = content.match(/```(?:\w+)?\n([\s\S]*?)```/);
-    if (codeBlockMatch) {
-      return codeBlockMatch[1].trim();
+    const captured = codeBlockMatch?.[1];
+    if (captured !== undefined) {
+      return captured.trim();
     }
 
     // Check if content looks like code
@@ -748,7 +749,9 @@ export class MCTS {
    */
   private toCategoricalScore(raw: number): number {
     const entries = Object.entries(CATEGORICAL_SCORES);
-    let closest = entries[0][1];
+    const first = entries[0];
+    if (first === undefined) return raw;
+    let closest = first[1];
     let minDist = Math.abs(raw - closest);
 
     for (const [, value] of entries) {

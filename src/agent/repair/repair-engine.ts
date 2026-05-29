@@ -180,6 +180,7 @@ export class RepairEngine extends EventEmitter {
       const results: RepairResult[] = [];
       for (let i = 0; i < session.faults.length; i++) {
         const fault = session.faults[i];
+        if (!fault) continue;
         const progress = 0.1 + (0.8 * (i + 1)) / session.faults.length;
         this.emit("repair:progress", {
           message: `Repairing fault ${i + 1}/${session.faults.length}...`,
@@ -420,8 +421,8 @@ export class RepairEngine extends EventEmitter {
 
     // Strategy 2: XML format (backward compatibility)
     const fixMatch = content.match(/<fix>([\s\S]*?)<\/fix>/);
-    if (fixMatch) {
-      const fixContent = fixMatch[1];
+    const fixContent = fixMatch?.[1];
+    if (fixContent !== undefined) {
       const fileMatch = fixContent.match(/<file>([^<]+)<\/file>/);
       const startMatch = fixContent.match(/<line_start>(\d+)<\/line_start>/);
       const endMatch = fixContent.match(/<line_end>(\d+)<\/line_end>/);
@@ -429,14 +430,17 @@ export class RepairEngine extends EventEmitter {
       const fixedMatch = fixContent.match(/<fixed>([\s\S]*?)<\/fixed>/);
       const explanationMatch = fixContent.match(/<explanation>([\s\S]*?)<\/explanation>/);
 
-      if (fixedMatch) {
+      const fixedContent = fixedMatch?.[1];
+      if (fixedContent !== undefined) {
+        const startMatchValue = startMatch?.[1];
+        const endMatchValue = endMatch?.[1];
         const change: PatchChange = {
           file: fileMatch?.[1] || fault.location.file,
           type: "replace",
-          startLine: startMatch ? parseInt(startMatch[1], 10) : fault.location.startLine,
-          endLine: endMatch ? parseInt(endMatch[1], 10) : fault.location.endLine,
+          startLine: startMatchValue !== undefined ? parseInt(startMatchValue, 10) : fault.location.startLine,
+          endLine: endMatchValue !== undefined ? parseInt(endMatchValue, 10) : fault.location.endLine,
           originalCode: originalMatch?.[1]?.trim() || "",
-          newCode: fixedMatch[1].trim(),
+          newCode: fixedContent.trim(),
         };
         return {
           id: `patch-llm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
@@ -453,7 +457,8 @@ export class RepairEngine extends EventEmitter {
 
     // Strategy 3: Code block fallback
     const codeMatch = content.match(/```[\w]*\n([\s\S]*?)```/);
-    if (codeMatch) {
+    const codeMatchContent = codeMatch?.[1];
+    if (codeMatchContent !== undefined) {
       return {
         id: `patch-llm-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
         fault,
@@ -463,7 +468,7 @@ export class RepairEngine extends EventEmitter {
           startLine: fault.location.startLine,
           endLine: fault.location.endLine,
           originalCode: fault.location.snippet || "",
-          newCode: codeMatch[1].trim(),
+          newCode: codeMatchContent.trim(),
         }],
         strategy: "llm_generated",
         confidence: 0.5,
@@ -545,10 +550,11 @@ Please provide an improved fix that addresses the issues with the previous attem
     }
 
     // Backup original file
+    const primaryChange = patch.changes[0];
     let originalContent: string | null = null;
-    if (this.fileReader && this.fileWriter) {
+    if (this.fileReader && this.fileWriter && primaryChange) {
       try {
-        originalContent = await this.fileReader(patch.changes[0].file);
+        originalContent = await this.fileReader(primaryChange.file);
 
         // Apply patch temporarily
         await this.applyPatch(patch);
@@ -557,13 +563,13 @@ Please provide an improved fix that addresses the issues with the previous attem
         const result = await this.testExecutor();
 
         // Restore original
-        await this.fileWriter(patch.changes[0].file, originalContent);
+        await this.fileWriter(primaryChange.file, originalContent);
 
         return result;
       } catch (error: unknown) {
         // Restore on error
         if (originalContent && this.fileWriter) {
-          await this.fileWriter(patch.changes[0].file, originalContent);
+          await this.fileWriter(primaryChange.file, originalContent);
         }
         return {
           ...defaultResult,
@@ -631,16 +637,18 @@ Please provide an improved fix that addresses the issues with the previous attem
     // Try to extract any file reference
     const fileMatch = errorOutput.match(/(?:at|in|file)\s+([^\s:]+\.(?:ts|js|tsx|jsx|py|rb|go|rs|java|c|cpp)):?(\d+)?/i);
 
-    if (fileMatch) {
+    const matchedFile = fileMatch?.[1];
+    if (matchedFile !== undefined) {
+      const matchedLine = fileMatch?.[2];
       return {
         id: `fault-generic-${Date.now()}`,
         type: "unknown",
         severity: "medium",
         message: errorOutput.slice(0, 500),
         location: {
-          file: fileMatch[1],
-          startLine: fileMatch[2] ? parseInt(fileMatch[2], 10) : 1,
-          endLine: fileMatch[2] ? parseInt(fileMatch[2], 10) : 1,
+          file: matchedFile,
+          startLine: matchedLine ? parseInt(matchedLine, 10) : 1,
+          endLine: matchedLine ? parseInt(matchedLine, 10) : 1,
         },
         suspiciousness: 0.5,
         metadata: { generic: true },

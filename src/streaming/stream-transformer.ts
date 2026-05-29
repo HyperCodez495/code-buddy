@@ -253,7 +253,11 @@ export class StreamTransformer<_T = unknown> {
       if (!winner.done) {
         yield winner.value;
         // Queue next read for this iterator
-        results[winner.index] = iterators[winner.index].next().then((result) => ({
+        const iter = iterators[winner.index];
+        if (!iter) {
+          throw new Error(`StreamTransformer.merge: iterator ${winner.index} missing`);
+        }
+        results[winner.index] = iter.next().then((result) => ({
           value: result.value,
           done: result.done ?? false,
           index: winner.index,
@@ -335,6 +339,10 @@ export class StreamTransformer<_T = unknown> {
       [Symbol.asyncIterator](): AsyncIterator<T> {
         return {
           async next(): Promise<IteratorResult<T>> {
+            const buffer = buffers[index];
+            if (!buffer) {
+              throw new Error(`StreamTransformer.tee: buffer ${index} missing`);
+            }
             if (doneFlags[index]) {
               return { done: true, value: undefined };
             }
@@ -343,20 +351,20 @@ export class StreamTransformer<_T = unknown> {
               throw sourceError;
             }
 
-            if (buffers[index].length === 0) {
+            if (buffer.length === 0) {
               if (sourceExhausted) {
                 doneFlags[index] = true;
                 return { done: true, value: undefined };
               }
               await readFromSource();
               if (sourceError) throw sourceError;
-              if (buffers[index].length === 0 && sourceExhausted) {
+              if (buffer.length === 0 && sourceExhausted) {
                 doneFlags[index] = true;
                 return { done: true, value: undefined };
               }
             }
 
-            return { done: false, value: buffers[index].shift()! };
+            return { done: false, value: buffer.shift()! };
           },
         };
       },

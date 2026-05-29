@@ -454,6 +454,9 @@ export class CustomAgentLoader {
       const match = line.match(/^([a-zA-Z_][a-zA-Z0-9_]*):\s*(.*)$/);
       if (match) {
         const [, key, value] = match;
+        if (key === undefined || value === undefined) {
+          continue;
+        }
 
         if (value === '|' || value === '>') {
           // Start multiline

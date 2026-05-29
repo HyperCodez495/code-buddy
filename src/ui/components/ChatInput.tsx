@@ -48,12 +48,13 @@ export const ChatInput = React.memo(function ChatInput({
     let totalChars = 0;
 
     for (let i = 0; i < lines.length; i++) {
-      if (totalChars + lines[i].length >= cursorPosition) {
+      const line = lines[i] ?? "";
+      if (totalChars + line.length >= cursorPosition) {
         currentLineIndex = i;
         currentCharIndex = cursorPosition - totalChars;
         break;
       }
-      totalChars += lines[i].length + 1; // +1 for newline
+      totalChars += line.length + 1; // +1 for newline
     }
 
     return { lines, isMultiline, beforeCursor, currentLineIndex, currentCharIndex };

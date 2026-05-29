@@ -536,9 +536,14 @@ export class ArchiveTool {
           if (inList && line.trim()) {
             const match = line.match(/(\d+)\s+\d+\s+(\S+)\s+(.+)/);
             if (match) {
+              const sizeStr = match[1];
+              const pathStr = match[3];
+              if (sizeStr === undefined || pathStr === undefined) {
+                continue;
+              }
               entries.push({
-                path: match[3].trim(),
-                size: parseInt(match[1]),
+                path: pathStr.trim(),
+                size: parseInt(sizeStr),
                 isDirectory: match[2] === 'D....'
               });
             }
@@ -579,9 +584,14 @@ export class ArchiveTool {
         for (const line of lines) {
           const match = line.match(/(\d+)\s+\d+%\s+[\d-]+\s+[\d:]+\s+[.A-Z]+\s+(.+)/);
           if (match) {
+            const sizeStr = match[1];
+            const pathStr = match[2];
+            if (sizeStr === undefined || pathStr === undefined) {
+              continue;
+            }
             entries.push({
-              path: match[2].trim(),
-              size: parseInt(match[1]),
+              path: pathStr.trim(),
+              size: parseInt(sizeStr),
               isDirectory: false
             });
           }
@@ -785,7 +795,15 @@ export class ArchiveTool {
       if (format === 'tar.xz') args.splice(1, 0, '-J');
 
       // Change to parent directory and use relative paths
-      const parentDir = path.dirname(sourcePaths[0]);
+      const firstSource = sourcePaths[0];
+      if (firstSource === undefined) {
+        // No sources to archive; createTar's failure contract is resolve(false)
+        // (matches tar 'error' / non-zero-exit handling below). Unreachable in
+        // practice: create() validates a non-empty sourcePaths before calling.
+        resolve(false);
+        return;
+      }
+      const parentDir = path.dirname(firstSource);
       const relPaths = sourcePaths.map(p => path.relative(parentDir, p));
 
       args.push('-C', parentDir);

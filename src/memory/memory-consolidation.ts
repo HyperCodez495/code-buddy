@@ -215,13 +215,14 @@ export function consolidateMemories(
   }
 
   // Write rollout summary
-  if (newMemories.length > 0) {
+  const firstMemory = newMemories[0];
+  if (firstMemory) {
     const slug = new Date().toISOString().replace(/[:.]/g, '-');
     const rolloutPath = path.join(rolloutDir, `${slug}.md`);
     const rolloutContent = [
       `# Rollout Summary: ${slug}`,
       ``,
-      `Source: ${newMemories[0].source}`,
+      `Source: ${firstMemory.source}`,
       `Extracted: ${newMemories.length} memories`,
       ``,
       ...newMemories.map(m => `- [${m.category}] ${m.summary}`),

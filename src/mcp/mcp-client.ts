@@ -133,7 +133,9 @@ export class MCPClient extends EventEmitter {
     // Log connection failures
     results.forEach((result, index) => {
       if (result.status === 'rejected') {
-        logger.error(`Failed to connect to MCP server ${enabledConfigs[index].name}: ${getErrorMessage(result.reason)}`);
+        const failedConfig = enabledConfigs[index];
+        const serverName = failedConfig?.name ?? 'unknown';
+        logger.error(`Failed to connect to MCP server ${serverName}: ${getErrorMessage(result.reason)}`);
       }
     });
   }

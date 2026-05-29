@@ -227,10 +227,13 @@ export class OCRTool {
 
     // Skip header line
     for (let i = 1; i < lines.length; i++) {
-      const parts = lines[i].split('\t');
+      const line = lines[i];
+      if (line === undefined) continue;
+      const parts = line.split('\t');
       if (parts.length >= 12) {
-        const level = parseInt(parts[0]);
-        const conf = parseFloat(parts[10]);
+        // parts[0..11] are present because parts.length >= 12 was checked above
+        const level = parseInt(parts[0] ?? ''); // safe: length >= 12 guarantees index 0
+        const conf = parseFloat(parts[10] ?? ''); // safe: length >= 12 guarantees index 10
         const text = parts[11]?.trim();
 
         if (level === 5 && text) { // Word level
@@ -244,10 +247,11 @@ export class OCRTool {
             text,
             confidence: conf,
             boundingBox: {
-              x: parseInt(parts[6]),
-              y: parseInt(parts[7]),
-              width: parseInt(parts[8]),
-              height: parseInt(parts[9])
+              // parts[6..9] are present because parts.length >= 12 was checked above
+              x: parseInt(parts[6] ?? ''), // safe: length >= 12 guarantees index 6
+              y: parseInt(parts[7] ?? ''), // safe: length >= 12 guarantees index 7
+              width: parseInt(parts[8] ?? ''), // safe: length >= 12 guarantees index 8
+              height: parseInt(parts[9] ?? '') // safe: length >= 12 guarantees index 9
             }
           });
         }
@@ -371,7 +375,8 @@ export class OCRTool {
     );
 
     const results: { file: string; text?: string; error?: string }[] = ocrResults.map((outcome, index) => {
-      const filePath = filePaths[index];
+      // index is always within bounds: ocrResults is mapped 1:1 from filePaths
+      const filePath = filePaths[index] ?? '';
       if (outcome.status === 'fulfilled') {
         const { result } = outcome.value;
         if (result.success) {

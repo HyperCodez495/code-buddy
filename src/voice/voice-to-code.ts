@@ -169,20 +169,22 @@ export class VoiceToCodePipeline extends EventEmitter {
  * Get setup instructions for a specific STT provider.
  */
 function getSetupInstructions(provider: string): string {
+  const whisperInstructions = [
+    'Voice-to-code requires Whisper for speech recognition.',
+    '',
+    'Setup instructions:',
+    '  1. Install whisper.cpp or OpenAI Whisper:',
+    '     pip install openai-whisper',
+    '     # or build whisper.cpp from https://github.com/ggerganov/whisper.cpp',
+    '',
+    '  2. Set WHISPER_MODEL_PATH to your model file (optional):',
+    '     export WHISPER_MODEL_PATH=/path/to/ggml-base.bin',
+    '',
+    '  3. Ensure a microphone is connected and accessible.',
+  ].join('\n');
+
   const instructions: Record<string, string> = {
-    whisper: [
-      'Voice-to-code requires Whisper for speech recognition.',
-      '',
-      'Setup instructions:',
-      '  1. Install whisper.cpp or OpenAI Whisper:',
-      '     pip install openai-whisper',
-      '     # or build whisper.cpp from https://github.com/ggerganov/whisper.cpp',
-      '',
-      '  2. Set WHISPER_MODEL_PATH to your model file (optional):',
-      '     export WHISPER_MODEL_PATH=/path/to/ggml-base.bin',
-      '',
-      '  3. Ensure a microphone is connected and accessible.',
-    ].join('\n'),
+    whisper: whisperInstructions,
     picovoice: [
       'Voice-to-code requires Picovoice for speech recognition.',
       '',
@@ -203,7 +205,7 @@ function getSetupInstructions(provider: string): string {
     ].join('\n'),
   };
 
-  return instructions[provider] || instructions.whisper;
+  return instructions[provider] ?? whisperInstructions;
 }
 
 /**

@@ -239,14 +239,18 @@ export class E2BSandbox {
     const filename = `/workspace/script_${Date.now()}.${ext}`;
     await this.writeFile(filename, script);
 
-    const runners: Record<string, string> = {
+    const runners: Record<typeof language, string> = {
       python: `python ${filename}`,
       typescript: `npx tsx ${filename}`,
       javascript: `node ${filename}`,
       shell: `sh ${filename}`,
     };
 
-    return this.execute(runners[language]);
+    const runner = runners[language];
+    if (runner === undefined) {
+      throw new Error(`Unsupported script language: ${language}`);
+    }
+    return this.execute(runner);
   }
 
   /**

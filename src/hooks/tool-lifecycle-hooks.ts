@@ -563,8 +563,10 @@ export function createRateLimitHook(
       const oneMinuteAgo = now - 60000;
 
       // Remove old entries
-      while (callTimes.length > 0 && callTimes[0] < oneMinuteAgo) {
+      let oldest = callTimes[0];
+      while (oldest !== undefined && oldest < oneMinuteAgo) {
         callTimes.shift();
+        oldest = callTimes[0];
       }
 
       if (callTimes.length >= maxCallsPerMinute) {

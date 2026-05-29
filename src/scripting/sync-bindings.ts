@@ -97,7 +97,7 @@ export class WorkspaceStateTracker {
       states.sort((a, b) => b.timestamp - a.timestamp);
       const latest = states[0];
 
-      if (latest.data) {
+      if (latest?.data) {
         this.restoreSnapshotFromData(latest.data);
       }
     }

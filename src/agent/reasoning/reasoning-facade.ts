@@ -280,6 +280,7 @@ export class ReasoningFacade {
 
     for (let i = currentIndex + 1; i < ESCALATION_ORDER.length; i++) {
       const nextMode = ESCALATION_ORDER[i];
+      if (nextMode === undefined) continue;
       this.applyMode(
         nextMode,
         options.searchAlgorithm,

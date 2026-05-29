@@ -20,7 +20,7 @@ function extractLastCodeBlock(text: string): string | null {
   let match: RegExpExecArray | null;
 
   while ((match = codeBlockRegex.exec(text)) !== null) {
-    lastMatch = match[1].trim();
+    lastMatch = (match[1] ?? '').trim();
   }
 
   return lastMatch;
@@ -32,7 +32,7 @@ function extractLastCodeBlock(text: string): string | null {
 function getLastAssistantMessage(history: ChatEntry[]): string | null {
   for (let i = history.length - 1; i >= 0; i--) {
     const entry = history[i];
-    if (entry.type === 'assistant' && entry.content) {
+    if (entry?.type === 'assistant' && entry.content) {
       return entry.content;
     }
   }

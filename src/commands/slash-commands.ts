@@ -121,9 +121,7 @@ export class SlashCommandManager {
     let frontmatterDone = false;
     const promptLines: string[] = [];
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
-
+    for (const line of lines) {
       // Handle YAML frontmatter
       if (line.trim() === '---') {
         if (!frontmatterDone) {
@@ -139,12 +137,12 @@ export class SlashCommandManager {
         // Parse frontmatter
         const descMatch = line.match(/^description:\s*(.+)$/);
         if (descMatch) {
-          description = descMatch[1].trim().replace(/^["']|["']$/g, '');
+          description = (descMatch[1] ?? '').trim().replace(/^["']|["']$/g, '');
         }
 
         const argMatch = line.match(/^argument:\s*(.+)$/);
         if (argMatch) {
-          const argParts = argMatch[1].split(',').map(s => s.trim());
+          const argParts = (argMatch[1] ?? '').split(',').map(s => s.trim());
           args.push({
             name: argParts[0] || 'arg',
             description: argParts[1] || '',
@@ -231,7 +229,7 @@ export class SlashCommandManager {
 
     // Parse command and arguments
     const parts = input.trim().split(/\s+/);
-    const commandName = parts[0].replace(/^\//, '');
+    const commandName = (parts[0] ?? '').replace(/^\//, '');
     const args = parts.slice(1);
 
     // Validate command name

@@ -349,9 +349,10 @@ export class SchemaValidator extends EventEmitter {
 
     // Try to find JSON in code blocks
     const codeBlockMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/);
-    if (codeBlockMatch) {
+    const codeBlockBody = codeBlockMatch?.[1];
+    if (codeBlockBody !== undefined) {
       try {
-        return { json: JSON.parse(codeBlockMatch[1].trim()), extracted: true };
+        return { json: JSON.parse(codeBlockBody.trim()), extracted: true };
       } catch {
         // Continue
       }
@@ -359,12 +360,13 @@ export class SchemaValidator extends EventEmitter {
 
     // Try to find JSON object or array
     const jsonMatch = text.match(/(\{[\s\S]*\}|\[[\s\S]*\])/);
-    if (jsonMatch) {
+    const jsonBody = jsonMatch?.[1];
+    if (jsonBody !== undefined) {
       try {
-        return { json: JSON.parse(jsonMatch[1]), extracted: true };
+        return { json: JSON.parse(jsonBody), extracted: true };
       } catch {
         // Try to fix common issues
-        let fixed = jsonMatch[1]
+        let fixed = jsonBody
           .replace(/,\s*}/g, '}') // Remove trailing commas
           .replace(/,\s*]/g, ']')
           .replace(/'/g, '"') // Replace single quotes

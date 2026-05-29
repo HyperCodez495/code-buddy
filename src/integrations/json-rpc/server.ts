@@ -537,11 +537,12 @@ export class JsonRpcServer {
       const message = error instanceof Error ? error.message : 'Unknown error';
       // Try to extract line/column from error message
       const match = message.match(/line (\d+), column (\d+)/i);
+      const [, lineStr, columnStr] = match ?? [];
       return {
         valid: false,
         errors: [{
-          line: match ? parseInt(match[1]) : 1,
-          column: match ? parseInt(match[2]) : 1,
+          line: lineStr !== undefined ? parseInt(lineStr) : 1,
+          column: columnStr !== undefined ? parseInt(columnStr) : 1,
           message,
         }],
       };

@@ -84,6 +84,7 @@ export function scanFile(filePath: string): ScanResult {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
 
       // Skip markdown comments and frontmatter delimiters

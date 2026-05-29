@@ -260,7 +260,14 @@ export class TelegramChannel extends BaseChannel {
    * Send message with attachments
    */
   private async sendWithAttachments(message: OutboundMessage): Promise<DeliveryResult> {
-    const attachment = message.attachments![0];
+    const attachment = message.attachments?.[0];
+    if (!attachment) {
+      return {
+        success: false,
+        error: 'No attachment to send',
+        timestamp: new Date(),
+      };
+    }
     const params: Record<string, unknown> = {
       chat_id: message.channelId,
       caption: message.content,
@@ -714,13 +721,15 @@ export class TelegramChannel extends BaseChannel {
     if (msg.photo && msg.photo.length > 0) {
       // Get largest photo
       const photo = msg.photo[msg.photo.length - 1];
-      attachments.push({
-        type: 'image',
-        url: photo.file_id, // Will need to call getFile to get actual URL
-        width: photo.width,
-        height: photo.height,
-        size: photo.file_size,
-      });
+      if (photo) {
+        attachments.push({
+          type: 'image',
+          url: photo.file_id, // Will need to call getFile to get actual URL
+          width: photo.width,
+          height: photo.height,
+          size: photo.file_size,
+        });
+      }
     }
 
     if (msg.audio) {

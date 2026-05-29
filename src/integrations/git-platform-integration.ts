@@ -306,14 +306,18 @@ export class GitPlatformIntegration extends EventEmitter {
 
       // Parse SSH URL: git@github.com:owner/repo.git
       const sshMatch = remoteUrl.match(/@[^:]+:([^/]+)\/([^.]+)/);
-      if (sshMatch) {
-        return { owner: sshMatch[1], repo: sshMatch[2] };
+      const sshOwner = sshMatch?.[1];
+      const sshRepo = sshMatch?.[2];
+      if (sshOwner !== undefined && sshRepo !== undefined) {
+        return { owner: sshOwner, repo: sshRepo };
       }
 
       // Parse HTTPS URL: https://github.com/owner/repo.git
       const httpsMatch = remoteUrl.match(/\/\/[^/]+\/([^/]+)\/([^.]+)/);
-      if (httpsMatch) {
-        return { owner: httpsMatch[1], repo: httpsMatch[2] };
+      const httpsOwner = httpsMatch?.[1];
+      const httpsRepo = httpsMatch?.[2];
+      if (httpsOwner !== undefined && httpsRepo !== undefined) {
+        return { owner: httpsOwner, repo: httpsRepo };
       }
     } catch {
       // Not a git repository

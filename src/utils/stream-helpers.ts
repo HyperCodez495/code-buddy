@@ -358,10 +358,10 @@ export async function* mergeAsyncIterables<T>(
   const pending = new Map<number, Promise<{ index: number; result: IteratorResult<T> }>>();
 
   // Initialize all pending promises
-  for (let i = 0; i < iterators.length; i++) {
+  for (const [i, iterator] of iterators.entries()) {
     pending.set(
       i,
-      iterators[i].next().then(result => ({ index: i, result }))
+      iterator.next().then(result => ({ index: i, result }))
     );
   }
 
@@ -375,10 +375,15 @@ export async function* mergeAsyncIterables<T>(
       } else {
         yield result.value;
         // Queue next read from this iterator
-        pending.set(
-          index,
-          iterators[index].next().then(r => ({ index, result: r }))
-        );
+        const iterator = iterators[index];
+        if (iterator === undefined) {
+          pending.delete(index);
+        } else {
+          pending.set(
+            index,
+            iterator.next().then(r => ({ index, result: r }))
+          );
+        }
       }
     }
   } finally {

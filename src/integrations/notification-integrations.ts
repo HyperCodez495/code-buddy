@@ -188,8 +188,9 @@ export class NotificationManager extends EventEmitter {
     this.notificationQueue = [];
 
     // Send as a batch or individually
-    if (notifications.length === 1) {
-      await this.sendNotification(notifications[0]);
+    const [first] = notifications;
+    if (notifications.length === 1 && first) {
+      await this.sendNotification(first);
     } else {
       await this.sendBatchNotification(notifications);
     }
@@ -250,7 +251,10 @@ export class NotificationManager extends EventEmitter {
       const index = levels.indexOf(n.level);
       if (index > highest) highest = index;
     }
-    return levels[highest];
+    // `highest` is always a valid in-bounds index (starts at 0; `levels` is
+    // non-empty); fall back to the base 'info' level (levels[0]) to satisfy
+    // the index-access checker without changing behavior.
+    return levels[highest] ?? 'info';
   }
 
   /**

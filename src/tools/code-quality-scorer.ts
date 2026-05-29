@@ -261,12 +261,13 @@ function extractFunctions(content: string, _language: string): Array<{ name: str
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
 
     if (!currentFunction) {
       const match = line.match(functionPattern);
       if (match) {
         currentFunction = {
-          name: match[1] || match[2],
+          name: match[1] ?? match[2] ?? '',
           startLine: i,
         };
         braceCount = 0;
@@ -372,11 +373,12 @@ function detectCodeSmells(content: string, _language: string): CodeSmell[] {
 
   // Check for long lines
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].length > 120) {
+    const line = lines[i];
+    if (line !== undefined && line.length > 120) {
       smells.push({
         type: 'long-line',
         severity: 'low',
-        message: `Line ${i + 1} is ${lines[i].length} characters`,
+        message: `Line ${i + 1} is ${line.length} characters`,
         line: i + 1,
         suggestion: 'Break into multiple lines or extract variables',
       });

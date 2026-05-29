@@ -227,6 +227,7 @@ function collectExports(
     regex.lastIndex = 0;
     while ((match = regex.exec(content)) !== null) {
       const name = match[1];
+      if (name === undefined) continue;
       const line = getLineNumber(content, match.index);
       exportMap.set(name, { file, line, type });
     }
@@ -235,7 +236,11 @@ function collectExports(
   // Named exports
   PATTERNS.namedExport.lastIndex = 0;
   while ((match = PATTERNS.namedExport.exec(content)) !== null) {
-    const exports = match[1].split(',').map(e => e.trim().split(/\s+as\s+/)[0].trim());
+    const exportGroup = match[1];
+    if (exportGroup === undefined) continue;
+    const exports = exportGroup
+      .split(',')
+      .map(e => (e.trim().split(/\s+as\s+/)[0] ?? '').trim());
     for (const name of exports) {
       if (name && !exportMap.has(name)) {
         const line = getLineNumber(content, match.index);
@@ -265,11 +270,14 @@ function collectIdentifiers(
   PATTERNS.identifier.lastIndex = 0;
   while ((match = PATTERNS.identifier.exec(cleanContent)) !== null) {
     const name = match[1];
+    if (name === undefined) continue;
     if (name.length > 1 && !/^\d/.test(name)) { // Skip single chars and numbers
-      if (!identifiers.has(name)) {
-        identifiers.set(name, new Set());
+      let fileSet = identifiers.get(name);
+      if (fileSet === undefined) {
+        fileSet = new Set();
+        identifiers.set(name, fileSet);
       }
-      identifiers.get(name)!.add(file);
+      fileSet.add(file);
     }
   }
 }
@@ -287,16 +295,20 @@ function collectImports(
   // Named imports
   PATTERNS.namedImport.lastIndex = 0;
   while ((match = PATTERNS.namedImport.exec(content)) !== null) {
-    const imports = match[1].split(',').map(i => {
+    const importGroup = match[1];
+    if (importGroup === undefined) continue;
+    const imports = importGroup.split(',').map(i => {
       const parts = i.trim().split(/\s+as\s+/);
-      return parts[0].trim();
+      return (parts[0] ?? '').trim();
     });
     for (const name of imports) {
       if (name) {
-        if (!importUsage.has(name)) {
-          importUsage.set(name, new Set());
+        let fileSet = importUsage.get(name);
+        if (fileSet === undefined) {
+          fileSet = new Set();
+          importUsage.set(name, fileSet);
         }
-        importUsage.get(name)!.add(file);
+        fileSet.add(file);
       }
     }
   }
@@ -330,10 +342,12 @@ function checkUnusedImports(file: string, content: string): DeadCodeResult[] {
   PATTERNS.namedImport.lastIndex = 0;
   while ((match = PATTERNS.namedImport.exec(content)) !== null) {
     const line = getLineNumber(content, match.index);
-    const importList = match[1].split(',');
+    const importGroup = match[1];
+    if (importGroup === undefined) continue;
+    const importList = importGroup.split(',');
     for (const imp of importList) {
       const parts = imp.trim().split(/\s+as\s+/);
-      const name = parts[0].trim();
+      const name = (parts[0] ?? '').trim();
       const alias = parts[1]?.trim();
       if (name && name !== 'type') {
         imports.push({ name, line, alias });

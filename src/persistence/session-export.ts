@@ -731,6 +731,9 @@ export class SessionPlayer extends EventEmitter {
       }
 
       const message = messages[this.currentIndex];
+      if (message === undefined) {
+        break;
+      }
       const prevMessage = messages[this.currentIndex - 1];
 
       // Calculate delay based on real time difference

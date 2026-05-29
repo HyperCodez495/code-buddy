@@ -236,15 +236,15 @@ export class GPUMonitor extends EventEmitter {
       return stdout.trim().split("\n").map((line) => {
         const [id, name, total, used, free, util, temp, power] = line.split(",").map((s) => s.trim());
         return {
-          id: parseInt(id),
-          name,
+          id: parseInt(id ?? ""),
+          name: name ?? "",
           vendor: "nvidia" as GPUVendor,
-          vramTotal: parseInt(total),
-          vramUsed: parseInt(used),
-          vramFree: parseInt(free),
-          utilization: parseInt(util),
-          temperature: parseInt(temp),
-          powerDraw: parseFloat(power),
+          vramTotal: parseInt(total ?? ""),
+          vramUsed: parseInt(used ?? ""),
+          vramFree: parseInt(free ?? ""),
+          utilization: parseInt(util ?? ""),
+          temperature: parseInt(temp ?? ""),
+          powerDraw: parseFloat(power ?? ""),
         };
       });
     } catch (error) {
@@ -298,7 +298,9 @@ export class GPUMonitor extends EventEmitter {
       const cardPaths = cards.trim().split("\n").filter(Boolean);
 
       for (let i = 0; i < cardPaths.length; i++) {
-        const basePath = cardPaths[i].replace("/mem_info_vram_total", "");
+        const cardPath = cardPaths[i];
+        if (cardPath === undefined) continue;
+        const basePath = cardPath.replace("/mem_info_vram_total", "");
 
         try {
           const { stdout: totalStr } = await execAsync(`cat ${basePath}/mem_info_vram_total`);
@@ -346,7 +348,7 @@ export class GPUMonitor extends EventEmitter {
         "memory_pressure 2>/dev/null | grep 'System-wide memory' || echo '0%'"
       );
       const usageMatch = pressure.match(/(\d+)%/);
-      const usage = usageMatch ? parseInt(usageMatch[1]) : 0;
+      const usage = usageMatch ? parseInt(usageMatch[1] ?? "") : 0;
 
       return [{
         id: 0,
@@ -370,7 +372,7 @@ export class GPUMonitor extends EventEmitter {
       // Intel integrated graphics typically share system RAM
       const { stdout: memInfo } = await execAsync("cat /proc/meminfo | grep MemTotal");
       const match = memInfo.match(/(\d+)/);
-      const totalRAM = match ? parseInt(match[1]) / 1024 : 8192; // KB to MB
+      const totalRAM = match ? parseInt(match[1] ?? "") / 1024 : 8192; // KB to MB
 
       // Intel iGPU typically can use 1-2GB
       const gpuAvailable = Math.min(2048, totalRAM * 0.25);

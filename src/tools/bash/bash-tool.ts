@@ -521,6 +521,9 @@ export class BashTool implements Disposable {
     }
 
     const [cmd, ...args] = argv;
+    if (cmd === undefined) {
+      return { success: false, error: 'shellFreeExec: argv must be non-empty' };
+    }
     const workDir = cwd ?? this.currentDirectory;
     const policyEnv = {
       ...getShellEnvPolicy().buildEnv(getFilteredEnv()),

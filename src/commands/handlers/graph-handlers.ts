@@ -73,17 +73,19 @@ export async function handleImpact(args: string[]): Promise<CommandHandlerResult
   let maxDepth = 5;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--direction' && i + 1 < args.length) {
-      const d = args[i + 1].toLowerCase();
+    const arg = args[i];
+    if (arg === undefined) continue;
+    if (arg === '--direction' && i + 1 < args.length) {
+      const d = (args[i + 1] ?? '').toLowerCase();
       if (d === 'up' || d === 'down' || d === 'both') {
         direction = d;
       }
       i++;
-    } else if (args[i] === '--depth' && i + 1 < args.length) {
-      maxDepth = parseInt(args[i + 1], 10) || 5;
+    } else if (arg === '--depth' && i + 1 < args.length) {
+      maxDepth = parseInt(args[i + 1] ?? '', 10) || 5;
       i++;
     } else if (!target) {
-      target = args[i];
+      target = arg;
     }
   }
 
@@ -146,11 +148,13 @@ export async function handleProcesses(args: string[]): Promise<CommandHandlerRes
   let minSteps = 3;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--min-steps' && i + 1 < args.length) {
-      minSteps = parseInt(args[i + 1], 10) || 3;
+    const arg = args[i];
+    if (arg === undefined) continue;
+    if (arg === '--min-steps' && i + 1 < args.length) {
+      minSteps = parseInt(args[i + 1] ?? '', 10) || 3;
       i++;
     } else if (!entryPoint) {
-      entryPoint = args[i];
+      entryPoint = arg;
     }
   }
 
@@ -219,8 +223,10 @@ export async function handleCommunities(args: string[]): Promise<CommandHandlerR
   let minSize = 3;
 
   for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--min-size' && i + 1 < args.length) {
-      minSize = parseInt(args[i + 1], 10) || 3;
+    const arg = args[i];
+    if (arg === undefined) continue;
+    if (arg === '--min-size' && i + 1 < args.length) {
+      minSize = parseInt(args[i + 1] ?? '', 10) || 3;
       i++;
     }
   }

@@ -64,7 +64,9 @@ function extractIdentifiers(text: string): string[] {
   const ids = new Set<string>();
 
   for (const m of text.matchAll(FILE_PATH_RE)) {
-    const raw = m[1].trim().replace(/['"`:]/g, '');
+    const captured = m[1];
+    if (captured === undefined) continue;
+    const raw = captured.trim().replace(/['"`:]/g, '');
     if (raw.length > 3) ids.add(raw);
   }
 
@@ -74,7 +76,8 @@ function extractIdentifiers(text: string): string[] {
   }
 
   for (const m of text.matchAll(TOOL_CALL_ID_RE)) {
-    ids.add(m[1]);
+    const captured = m[1];
+    if (captured !== undefined) ids.add(captured);
   }
 
   return [...ids];
@@ -195,7 +198,7 @@ export class RestorableCompressor {
       try {
         // Strip line range if present (file.ts:10-50 → file.ts)
         const filePath = identifier.split(':')[0];
-        if (fs.existsSync(filePath)) {
+        if (filePath !== undefined && fs.existsSync(filePath)) {
           const content = fs.readFileSync(filePath, 'utf-8');
           this.store.set(identifier, content); // cache for future
           return { found: true, content, identifier };

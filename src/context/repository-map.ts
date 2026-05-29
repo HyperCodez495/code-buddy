@@ -294,20 +294,23 @@ export class RepositoryMap {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
 
       // Check each pattern
       for (const [kind, pattern] of Object.entries(patterns)) {
         const match = line.match(pattern);
         if (match) {
+          const captured = match[1];
+          if (captured === undefined) continue;
           if (kind === 'import') {
-            fileInfo.imports.push(match[1]);
+            fileInfo.imports.push(captured);
           } else if (kind === 'export') {
-            fileInfo.exports.push(...match[1].split(',').map(s => s.trim()));
+            fileInfo.exports.push(...captured.split(',').map(s => s.trim()));
           } else {
             const symbolKind = kind === 'constFunc' || kind === 'arrowFunc' ? 'function' : kind as SymbolKind;
             fileInfo.symbols.push({
-              name: match[1],
+              name: captured,
               kind: symbolKind,
               filePath: fileInfo.path,
               line: lineNum,
@@ -333,6 +336,7 @@ export class RepositoryMap {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
 
       for (const [kind, pattern] of Object.entries(patterns)) {
@@ -341,8 +345,10 @@ export class RepositoryMap {
           if (kind === 'import') {
             if (match[1]) fileInfo.imports.push(match[1]);
           } else {
+            const captured = match[1];
+            if (captured === undefined) continue;
             fileInfo.symbols.push({
-              name: match[1],
+              name: captured,
               kind: kind as SymbolKind,
               filePath: fileInfo.path,
               line: lineNum,
@@ -357,14 +363,15 @@ export class RepositoryMap {
   }
 
   private extractSignature(lines: string[], startLine: number): string {
-    let signature = lines[startLine].trim();
+    let signature = (lines[startLine] ?? '').trim();
 
     // For multi-line signatures, collect until we find the opening brace or colon
     let i = startLine;
     while (i < lines.length && !signature.includes('{') && !signature.includes(':') && i - startLine < 5) {
       i++;
-      if (i < lines.length) {
-        signature += ' ' + lines[i].trim();
+      const next = lines[i];
+      if (next !== undefined) {
+        signature += ' ' + next.trim();
       }
     }
 

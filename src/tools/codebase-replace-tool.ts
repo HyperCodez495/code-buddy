@@ -176,10 +176,14 @@ export async function codebaseReplace(
       const lines = content.split('\n');
       let previewCount = 0;
       for (let i = 0; i < lines.length && previewCount < 3; i++) {
-        if (regex.test(lines[i])) {
+        const line = lines[i];
+        if (line === undefined) {
+          continue;
+        }
+        if (regex.test(line)) {
           regex.lastIndex = 0; // Reset after test
-          const before = lines[i].trim();
-          const after = lines[i].replace(regex, replacement).trim();
+          const before = line.trim();
+          const after = line.replace(regex, replacement).trim();
           previewLines.push(`  ${file}:${i + 1}`);
           previewLines.push(`    - ${before}`);
           previewLines.push(`    + ${after}`);

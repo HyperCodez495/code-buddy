@@ -429,8 +429,7 @@ export class PlanGenerator {
     lines.push("STEPS");
     lines.push("─".repeat(40));
 
-    for (let i = 0; i < plan.steps.length; i++) {
-      const step = plan.steps[i];
+    for (const [i, step] of plan.steps.entries()) {
       const statusIcon = this.getStatusIcon(step.status);
       const riskBadge = step.risk !== "none" ? ` [${step.risk.toUpperCase()} RISK]` : "";
 
@@ -505,8 +504,7 @@ export class PlanGenerator {
     lines.push("## Steps");
     lines.push("");
 
-    for (let i = 0; i < plan.steps.length; i++) {
-      const step = plan.steps[i];
+    for (const [i, step] of plan.steps.entries()) {
       const checkbox = step.status === "completed" ? "[x]" : "[ ]";
 
       lines.push(`### ${i + 1}. ${checkbox} ${step.title}`);

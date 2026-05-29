@@ -33,7 +33,7 @@ function parseCommandFile(content: string, fileName: string): { description: str
     if (endIndex > 0) {
       const frontmatter = lines.slice(1, endIndex).join('\n');
       const descMatch = frontmatter.match(/description:\s*(.+)/i);
-      const description = descMatch ? descMatch[1].trim() : `Custom command: ${fileName}`;
+      const description = descMatch?.[1]?.trim() ?? `Custom command: ${fileName}`;
       const prompt = lines.slice(endIndex + 1).join('\n').trim();
       return { description, prompt };
     }

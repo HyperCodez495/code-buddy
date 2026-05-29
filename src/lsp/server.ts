@@ -447,8 +447,10 @@ connection.onHover(
     let wordStart = charPos;
     let wordEnd = charPos;
 
-    while (wordStart > 0 && /\w/.test(line[wordStart - 1])) wordStart--;
-    while (wordEnd < line.length && /\w/.test(line[wordEnd])) wordEnd++;
+    // safe: wordStart > 0 guarantees wordStart-1 is in bounds; ?? '' only to satisfy the type checker (never matches \w)
+    while (wordStart > 0 && /\w/.test(line[wordStart - 1] ?? '')) wordStart--;
+    // safe: wordEnd < line.length guarantees wordEnd is in bounds; ?? '' only to satisfy the type checker (never matches \w)
+    while (wordEnd < line.length && /\w/.test(line[wordEnd] ?? '')) wordEnd++;
 
     const word = line.slice(wordStart, wordEnd);
 
@@ -529,7 +531,8 @@ connection.onSignatureHelp(
     let nameEnd = funcStart;
     let nameStart = funcStart - 1;
 
-    while (nameStart >= 0 && /\w/.test(text[nameStart])) {
+    // safe: nameStart >= 0 guarantees text[nameStart] is in bounds; ?? '' only to satisfy the type checker (never matches \w)
+    while (nameStart >= 0 && /\w/.test(text[nameStart] ?? '')) {
       nameStart--;
     }
 
@@ -563,7 +566,7 @@ ${context}`,
         return {
           signatures: [
             {
-              label: content.split('\n')[0],
+              label: content.split('\n')[0] ?? content,
               documentation: content,
             },
           ],

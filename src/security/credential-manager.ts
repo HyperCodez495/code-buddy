@@ -92,6 +92,9 @@ function decrypt(encryptedData: string): string {
   }
 
   const [ivHex, authTagHex, encrypted] = parts;
+  if (ivHex === undefined || authTagHex === undefined || encrypted === undefined) {
+    throw new Error('Invalid encrypted data format');
+  }
 
   // Validate hex strings (IV=12 bytes=24 hex, authTag=16 bytes=32 hex)
   if (ivHex.length !== 24 || !/^[0-9a-f]+$/i.test(ivHex)) {

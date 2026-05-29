@@ -347,18 +347,18 @@ export class ContextManagerV2 {
       const chars = content.length;
 
       if (msg.role === 'system') {
-        if (content.includes('<lessons_context>')) layers.lessons += chars;
-        else if (content.includes('<decisions_context>')) layers.decisions += chars;
-        else if (content.includes('code_graph')) layers.code_graph += chars;
-        else layers.system += chars;
+        if (content.includes('<lessons_context>')) layers.lessons = (layers.lessons ?? 0) + chars;
+        else if (content.includes('<decisions_context>')) layers.decisions = (layers.decisions ?? 0) + chars;
+        else if (content.includes('code_graph')) layers.code_graph = (layers.code_graph ?? 0) + chars;
+        else layers.system = (layers.system ?? 0) + chars;
       } else if (msg.role === 'tool') {
-        layers.tool_results += chars;
+        layers.tool_results = (layers.tool_results ?? 0) + chars;
       } else if (msg.role === 'user') {
-        layers.user_messages += chars;
+        layers.user_messages = (layers.user_messages ?? 0) + chars;
       } else if (msg.role === 'assistant') {
-        layers.assistant_messages += chars;
+        layers.assistant_messages = (layers.assistant_messages ?? 0) + chars;
       } else {
-        layers.other += chars;
+        layers.other = (layers.other ?? 0) + chars;
       }
     }
 
@@ -615,8 +615,10 @@ export class ContextManagerV2 {
     const oldMessages = messages.slice(0, -keepCount);
     const importantOldMessages: CodeBuddyMessage[] = [];
     for (let i = 0; i < oldMessages.length; i++) {
-      if (scores[i].score > 0.8) {
-        importantOldMessages.push(oldMessages[i]);
+      const score = scores[i];
+      const oldMessage = oldMessages[i];
+      if (oldMessage !== undefined && (score?.score ?? 0) > 0.8) {
+        importantOldMessages.push(oldMessage);
       }
     }
 
@@ -732,6 +734,8 @@ export class ContextManagerV2 {
     // Remove oldest messages, preserving tool-call/tool-result pairs
     while (currentTokens > this.effectiveLimit && result.length > 2) {
       const first = result[0];
+      // result.length > 2 (loop guard above) guarantees result[0] exists; guard for type-safety
+      if (first === undefined) break;
       // If removing an assistant message with tool_calls, also remove its paired tool results
       if (first.role === 'assistant' && 'tool_calls' in first && Array.isArray((first as { tool_calls?: unknown[] }).tool_calls)) {
         const toolCallIds = new Set(

@@ -69,6 +69,7 @@ export function stem(word: string): string {
   let result = word.toLowerCase();
 
   for (const [suffix, replacement] of suffixes) {
+    if (suffix === undefined || replacement === undefined) continue;
     if (result.endsWith(suffix) && result.length > suffix.length + 2) {
       result = result.slice(0, -suffix.length) + replacement;
       break;

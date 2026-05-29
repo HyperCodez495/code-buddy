@@ -236,11 +236,11 @@ export async function streamedIteration<T, R>(
   const results: R[] = [];
 
   try {
-    for (let i = 0; i < items.length; i++) {
+    for (const [i, item] of items.entries()) {
       const progress = Math.round(((i + 1) / items.length) * 100);
       stream.update(progress, `Processing item ${i + 1}/${items.length}...`);
 
-      const result = await processor(items[i], i);
+      const result = await processor(item, i);
       results.push(result);
     }
 

@@ -64,14 +64,15 @@ function parseFrontmatter(content: string): { meta: RuleFrontmatter; body: strin
     return { meta: {}, body: content };
   }
 
-  const yamlBlock = fmMatch[1];
-  const body = fmMatch[2];
+  const yamlBlock = fmMatch[1] ?? '';
+  const body = fmMatch[2] ?? '';
   const meta: RuleFrontmatter = {};
 
   for (const line of yamlBlock.split('\n')) {
     const kv = line.match(/^(\w+):\s*(.*)$/);
     if (!kv) continue;
     const [, key, value] = kv;
+    if (key === undefined || value === undefined) continue;
 
     if (key === 'title') {
       meta.title = value.trim();
@@ -81,7 +82,7 @@ function parseFrontmatter(content: string): { meta: RuleFrontmatter; body: strin
       // Support "scope: [code, plan]" inline array
       const inline = value.match(/^\[(.*)\]$/);
       if (inline) {
-        meta.scope = inline[1].split(',').map(t => t.trim().replace(/['"]/g, ''));
+        meta.scope = (inline[1] ?? '').split(',').map(t => t.trim().replace(/['"]/g, ''));
       }
     } else if (key === 'alwaysApply') {
       const trimmed = value.trim().toLowerCase();

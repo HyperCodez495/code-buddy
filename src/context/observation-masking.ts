@@ -733,6 +733,7 @@ export class ObservationMasker extends EventEmitter {
 
     for (let i = 0; i < sorted.length; i++) {
       const obs = sorted[i];
+      if (obs === undefined) continue;
       const isInWindow = i >= windowStart;
 
       if (isInWindow) {

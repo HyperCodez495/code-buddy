@@ -85,14 +85,18 @@ function deepEqual(a: unknown, b: unknown): boolean {
  */
 export function getSubsystemForPath(path: string): SubsystemId | null {
   // Check exact match first
-  if (path in PATH_TO_SUBSYSTEM) {
-    return PATH_TO_SUBSYSTEM[path];
+  const exact = PATH_TO_SUBSYSTEM[path];
+  if (exact !== undefined) {
+    return exact;
   }
 
   // Check prefix match
   const rootKey = path.split('.')[0];
-  if (rootKey in PATH_TO_SUBSYSTEM) {
-    return PATH_TO_SUBSYSTEM[rootKey];
+  if (rootKey !== undefined) {
+    const prefix = PATH_TO_SUBSYSTEM[rootKey];
+    if (prefix !== undefined) {
+      return prefix;
+    }
   }
 
   return null;

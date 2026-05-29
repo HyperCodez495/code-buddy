@@ -4917,8 +4917,8 @@ $value.SetValue($targetText)
     const results: Array<{ action: ComputerAction; result: ToolResult }> = [];
     let allSuccess = true;
 
-    for (let i = 0; i < input.steps.length; i++) {
-      const stepInput = this.enrichWorkflowStep(input, input.steps[i]);
+    for (const step of input.steps) {
+      const stepInput = this.enrichWorkflowStep(input, step);
       // Do not allow nested macros
       if (stepInput.action === 'macro' || stepInput.action === 'use_app_workflow') {
         return { success: false, error: 'Nested macros are not allowed' };
@@ -5259,17 +5259,18 @@ $value.SetValue($targetText)
         const candidateBlocks: typeof ocrData.blocks = [];
 
         for (let j = 0; j < targetWords.length; j++) {
+          const word = targetWords[j];
           const block = ocrData.blocks[i + j];
-          if (!block || !block.text || !block.text.toLowerCase().includes(targetWords[j])) {
+          if (!word || !block || !block.text || !block.text.toLowerCase().includes(word)) {
             isMatch = false;
             break;
           }
           candidateBlocks.push(block);
         }
 
-        if (isMatch && candidateBlocks.every(b => b.boundingBox)) {
+        const firstBox = candidateBlocks[0]?.boundingBox;
+        if (isMatch && firstBox && candidateBlocks.every(b => b.boundingBox)) {
           // Check if they are approximately on the same line (y coordinates similar)
-          const firstBox = candidateBlocks[0].boundingBox!;
           const sameLine = candidateBlocks.every(b => {
             const dy = Math.abs(b.boundingBox!.y - firstBox.y);
             // Allow vertical alignment error up to 70% of the box height
@@ -5294,7 +5295,10 @@ $value.SetValue($targetText)
         }
       }
     } else if (targetWords.length === 1) {
-      const match = ocrData.blocks.find(b => b.text && b.text.toLowerCase().includes(targetWords[0]));
+      const targetWord = targetWords[0];
+      const match = targetWord
+        ? ocrData.blocks.find(b => b.text && b.text.toLowerCase().includes(targetWord))
+        : undefined;
       if (match && match.boundingBox) {
         matchBox = match.boundingBox;
       }

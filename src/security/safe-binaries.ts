@@ -102,10 +102,13 @@ export class SafeBinariesChecker {
 
     // Handle sudo/command prefixes
     const prefixes = ['sudo', 'command', 'builtin'];
-    let firstWord = cmd.split(/\s+/)[0];
+    const parts = cmd.split(/\s+/);
+    // String.split always returns at least one element, so parts[0] is defined;
+    // fall back to '' to satisfy the type checker without changing behavior.
+    let firstWord = parts[0] ?? '';
 
-    if (prefixes.includes(firstWord) && cmd.split(/\s+/).length > 1) {
-      firstWord = cmd.split(/\s+/)[1];
+    if (prefixes.includes(firstWord) && parts.length > 1) {
+      firstWord = parts[1] ?? firstWord;
     }
 
     // Strip path prefix (e.g., /usr/bin/ls -> ls)

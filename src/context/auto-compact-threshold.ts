@@ -107,7 +107,9 @@ export function pickBufferTokens(
       if (lcModel.includes(pattern)) return value;
     }
   }
-  return DEFAULT_BUFFER_TABLE.default;
+  // DEFAULT_BUFFER_TABLE.default is statically defined above (13_000); the
+  // `?? 13_000` keeps the same literal in the impossible-undefined case.
+  return DEFAULT_BUFFER_TABLE.default ?? 13_000;
 }
 
 /**

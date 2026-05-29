@@ -322,10 +322,17 @@ export class OpenTelemetryIntegration extends EventEmitter {
     const match = traceparent.match(/^00-([a-f0-9]{32})-([a-f0-9]{16})-([a-f0-9]{2})$/);
     if (!match) return null;
 
+    const traceId = match[1];
+    const spanId = match[2];
+    const traceFlagsHex = match[3];
+    if (traceId === undefined || spanId === undefined || traceFlagsHex === undefined) {
+      return null;
+    }
+
     return {
-      traceId: match[1],
-      spanId: match[2],
-      traceFlags: parseInt(match[3], 16),
+      traceId,
+      spanId,
+      traceFlags: parseInt(traceFlagsHex, 16),
     };
   }
 
@@ -600,6 +607,9 @@ export class OpenTelemetryIntegration extends EventEmitter {
    */
   private formatMetricGroup(name: string, metrics: Metric[]): object {
     const first = metrics[0];
+    if (first === undefined) {
+      throw new Error(`formatMetricGroup called with empty metrics for "${name}"`);
+    }
     const dataPoints = metrics.map(m => ({
       attributes: Object.entries(m.attributes || {}).map(([key, value]) => ({
         key,

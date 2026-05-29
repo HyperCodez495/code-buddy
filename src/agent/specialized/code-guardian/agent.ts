@@ -84,17 +84,21 @@ export class CodeGuardianAgent extends SpecializedAgent {
 
       switch (task.action) {
         case 'analyze':
-        case 'analyze-file':
-          if (!task.inputFiles || task.inputFiles.length === 0) {
+        case 'analyze-file': {
+          const firstFile = task.inputFiles?.[0];
+          if (firstFile === undefined) {
             return { success: false, error: 'Aucun fichier spécifié' };
           }
-          return await this.analyzeFile(task.inputFiles[0], startTime);
+          return await this.analyzeFile(firstFile, startTime);
+        }
 
-        case 'analyze-directory':
-          if (!task.inputFiles || task.inputFiles.length === 0) {
+        case 'analyze-directory': {
+          const firstDir = task.inputFiles?.[0];
+          if (firstDir === undefined) {
             return { success: false, error: 'Aucun répertoire spécifié' };
           }
-          return await this.analyzeDirectory(task.inputFiles[0], task.params, startTime);
+          return await this.analyzeDirectory(firstDir, task.params, startTime);
+        }
 
         case 'suggest-refactor':
           if (!task.inputFiles || task.inputFiles.length === 0) {
@@ -126,23 +130,29 @@ export class CodeGuardianAgent extends SpecializedAgent {
           }
           return await this.checkSecurity(task.inputFiles, startTime);
 
-        case 'map-dependencies':
-          if (!task.inputFiles || task.inputFiles.length === 0) {
+        case 'map-dependencies': {
+          const firstFile = task.inputFiles?.[0];
+          if (firstFile === undefined) {
             return { success: false, error: 'Aucun fichier spécifié' };
           }
-          return await this.mapDependencies(task.inputFiles[0], startTime);
+          return await this.mapDependencies(firstFile, startTime);
+        }
 
-        case 'explain-code':
-          if (!task.inputFiles || task.inputFiles.length === 0) {
+        case 'explain-code': {
+          const firstFile = task.inputFiles?.[0];
+          if (firstFile === undefined) {
             return { success: false, error: 'Aucun fichier spécifié' };
           }
-          return await this.explainCode(task.inputFiles[0], task.params, startTime);
+          return await this.explainCode(firstFile, task.params, startTime);
+        }
 
-        case 'review-architecture':
-          if (!task.inputFiles || task.inputFiles.length === 0) {
+        case 'review-architecture': {
+          const firstDir = task.inputFiles?.[0];
+          if (firstDir === undefined) {
             return { success: false, error: 'Aucun répertoire spécifié' };
           }
-          return await this.reviewArchitecture(task.inputFiles[0], startTime);
+          return await this.reviewArchitecture(firstDir, startTime);
+        }
 
         default:
           return { success: false, error: `Action inconnue: ${task.action}` };

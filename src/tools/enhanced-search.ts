@@ -510,8 +510,9 @@ export class EnhancedSearch extends EventEmitter {
 
     for (const pattern of patterns) {
       const match = text.match(pattern);
-      if (match) {
-        name = match[1];
+      const captured = match?.[1];
+      if (captured !== undefined) {
+        name = captured;
         break;
       }
     }
@@ -786,8 +787,9 @@ export class EnhancedSearch extends EventEmitter {
     if (match) {
       // Find the capture group with the name (usually last non-empty one)
       for (let i = match.length - 1; i >= 1; i--) {
-        if (match[i] && /^[a-zA-Z_$]/.test(match[i])) {
-          name = match[i];
+        const group = match[i];
+        if (group && /^[a-zA-Z_$]/.test(group)) {
+          name = group;
           break;
         }
       }

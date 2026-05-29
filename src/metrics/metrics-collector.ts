@@ -149,7 +149,11 @@ export class Counter {
     key.split(',').forEach((pair) => {
       const match = pair.match(/^(.+)="(.+)"$/);
       if (match) {
-        labels[match[1]] = match[2];
+        const k = match[1];
+        const v = match[2];
+        if (k !== undefined && v !== undefined) {
+          labels[k] = v;
+        }
       }
     });
     return labels;
@@ -230,7 +234,11 @@ export class Gauge {
     key.split(',').forEach((pair) => {
       const match = pair.match(/^(.+)="(.+)"$/);
       if (match) {
-        labels[match[1]] = match[2];
+        const k = match[1];
+        const v = match[2];
+        if (k !== undefined && v !== undefined) {
+          labels[k] = v;
+        }
       }
     });
     return labels;
@@ -330,7 +338,11 @@ export class Histogram {
     key.split(',').forEach((pair) => {
       const match = pair.match(/^(.+)="(.+)"$/);
       if (match) {
-        labels[match[1]] = match[2];
+        const k = match[1];
+        const v = match[2];
+        if (k !== undefined && v !== undefined) {
+          labels[k] = v;
+        }
       }
     });
     return labels;

@@ -222,7 +222,7 @@ export function renderBanner(text: string, options: BannerOptions = {}): string 
   for (const char of upperText) {
     const charLines = BLOCK_FONT[char] || BLOCK_FONT[' '];
     for (let i = 0; i < 5; i++) {
-      lines[i] += charLines[i] || '   ';
+      lines[i] += charLines?.[i] || '   ';
     }
   }
 
@@ -276,7 +276,8 @@ export function renderColorBanner(text: string, colors: string[] = ['cyan', 'blu
   return lines.map((line, i) => {
     const colorIndex = Math.floor(i / lines.length * colors.length);
     const color = colors[Math.min(colorIndex, colors.length - 1)];
-    return `${colorCodes[color] || ''}${line}${colorCodes['reset']}`;
+    const colorCode = color !== undefined ? colorCodes[color] : undefined;
+    return `${colorCode || ''}${line}${colorCodes['reset'] ?? ''}`;
   }).join('\n');
 }
 

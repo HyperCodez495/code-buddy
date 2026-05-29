@@ -215,7 +215,7 @@ export function profileDotnetSolutionDirs(ctx: ProfilingContext, fsh: FsHelpers)
       else if (projName.includes('shared') || projName.includes('common')) role = 'Shared library';
       else if (projName.includes('worker')) role = 'Background service';
       else if (projName.includes('client') || projName.includes('blazor')) role = 'Client / UI';
-      else if (slnFiles.length > 0 && slnFiles[0].replace('.sln', '').toLowerCase() === projName) role = 'Shared library (main)';
+      else if (slnFiles[0] !== undefined && slnFiles[0].replace('.sln', '').toLowerCase() === projName) role = 'Shared library (main)';
       else {
         try {
           const cpXml = fs.readFileSync(path.join(ctx.cwd, csproj), 'utf-8');

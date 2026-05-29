@@ -416,14 +416,17 @@ export class SentryIntegration extends EventEmitter {
    */
   private parseDsn(dsn: string): { publicKey: string; projectId: string; host: string } {
     const match = dsn.match(/^https?:\/\/([^@]+)@([^/]+)\/(\d+)$/);
-    if (!match) {
+    const publicKey = match?.[1];
+    const host = match?.[2];
+    const projectId = match?.[3];
+    if (!match || publicKey === undefined || host === undefined || projectId === undefined) {
       throw new Error('Invalid Sentry DSN format');
     }
 
     return {
-      publicKey: match[1],
-      host: match[2],
-      projectId: match[3],
+      publicKey,
+      host,
+      projectId,
     };
   }
 
@@ -440,12 +443,17 @@ export class SentryIntegration extends EventEmitter {
         const match = line.match(/at\s+(?:(.+?)\s+\()?(.+?):(\d+):(\d+)\)?/);
         if (!match) return null;
 
+        const filename = match[2];
+        const lineRaw = match[3];
+        const colRaw = match[4];
+        if (filename === undefined || lineRaw === undefined || colRaw === undefined) return null;
+
         return {
           function: match[1] || '<anonymous>',
-          filename: match[2],
-          lineno: parseInt(match[3], 10),
-          colno: parseInt(match[4], 10),
-          in_app: !match[2].includes('node_modules'),
+          filename,
+          lineno: parseInt(lineRaw, 10),
+          colno: parseInt(colRaw, 10),
+          in_app: !filename.includes('node_modules'),
         };
       })
       .filter((frame): frame is NonNullable<typeof frame> => frame !== null)

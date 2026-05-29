@@ -135,10 +135,11 @@ function nameFromEntryPoint(symbol: string): string {
   // Build name
   const cleanWords = words.filter(w => w.length > 0).map(w => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase());
 
-  if (cleanWords.length === 0) return `${name} Flow`;
+  const lastWord = cleanWords[cleanWords.length - 1];
+  if (lastWord === undefined) return `${name} Flow`;
 
   // Add suffix based on context
-  const last = cleanWords[cleanWords.length - 1].toLowerCase();
+  const last = lastWord.toLowerCase();
   if (['flow', 'process', 'processing', 'pipeline', 'workflow', 'handler'].includes(last)) {
     return cleanWords.join(' ');
   }
@@ -156,21 +157,23 @@ function nameFromEntryPoint(symbol: string): string {
 function getFilePath(symbol: string, graph: KnowledgeGraph): string {
   // Check definedIn relation
   const definedIn = graph.query({ subject: symbol, predicate: 'definedIn' });
-  if (definedIn.length > 0) {
-    return definedIn[0].object.replace(/^mod:/, '');
+  const definedInFirst = definedIn[0];
+  if (definedInFirst !== undefined) {
+    return definedInFirst.object.replace(/^mod:/, '');
   }
 
   // Check belongsTo relation
   const belongsTo = graph.query({ subject: symbol, predicate: 'belongsTo' });
-  if (belongsTo.length > 0) {
-    return belongsTo[0].object.replace(/^mod:/, '');
+  const belongsToFirst = belongsTo[0];
+  if (belongsToFirst !== undefined) {
+    return belongsToFirst.object.replace(/^mod:/, '');
   }
 
   // Try extracting from the symbol name itself (e.g., "fn:src/auth/login")
   if (symbol.includes('/')) {
     const parts = symbol.split(':');
     const path = parts.length > 1 ? parts.slice(1).join(':') : parts[0];
-    return path;
+    return path ?? symbol;
   }
 
   return 'unknown';

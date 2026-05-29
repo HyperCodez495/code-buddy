@@ -137,13 +137,19 @@ export class GitHubIntegration extends EventEmitter {
     // HTTPS: https://github.com/owner/repo.git
     const httpsMatch = url.match(/https?:\/\/[^/]+\/([^/]+)\/([^/]+?)(?:\.git)?$/);
     if (httpsMatch) {
-      return { owner: httpsMatch[1], repo: httpsMatch[2] };
+      const [, owner, repo] = httpsMatch;
+      if (owner !== undefined && repo !== undefined) {
+        return { owner, repo };
+      }
     }
 
     // SSH: git@github.com:owner/repo.git
     const sshMatch = url.match(/git@[^:]+:([^/]+)\/([^/]+?)(?:\.git)?$/);
     if (sshMatch) {
-      return { owner: sshMatch[1], repo: sshMatch[2] };
+      const [, owner, repo] = sshMatch;
+      if (owner !== undefined && repo !== undefined) {
+        return { owner, repo };
+      }
     }
 
     return null;

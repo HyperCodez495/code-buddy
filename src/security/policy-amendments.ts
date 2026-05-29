@@ -132,7 +132,7 @@ export function suggestAmendment(
   toolName: string = 'bash',
 ): AmendmentSuggestion | null {
   const normalized = canonicalizeCommand(command);
-  const firstWord = normalized.split(/\s+/)[0];
+  const firstWord = normalized.split(/\s+/)[0] ?? '';
 
   // Don't suggest for banned prefixes
   if (BANNED_COMMAND_PREFIXES.some(p => firstWord === p)) {

@@ -128,10 +128,15 @@ export function deleteWordAfter(text: string, position: number): { text: string;
  */
 export function getTextPosition(text: string, index: number): TextPosition {
   const lines = text.slice(0, index).split('\n');
+  // String.prototype.split always returns a non-empty array, so the last
+  // element is defined; capture it explicitly to satisfy the type checker
+  // without a non-null assertion. Default '' yields column 0 in the
+  // unreachable empty-array case, preserving the original behavior.
+  const lastLine = lines[lines.length - 1] ?? '';
   return {
     index,
     line: lines.length - 1,
-    column: lines[lines.length - 1].length,
+    column: lastLine.length,
   };
 }
 

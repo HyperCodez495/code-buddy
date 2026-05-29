@@ -37,6 +37,7 @@ export class RustScanner implements LanguageScanner {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
       const trimmed = line.trimStart();
 
@@ -44,10 +45,11 @@ export class RustScanner implements LanguageScanner {
 
       // Struct: pub struct Foo {  or  struct Foo {
       const structMatch = trimmed.match(/^(?:pub(?:\(crate\))?\s+)?struct\s+(\w+)(?:<[^>]*>)?(?:\s*\{|\s*\(|\s*;)/);
-      if (structMatch) {
+      if (structMatch?.[1]) {
+        const structName = structMatch[1];
         symbols.push({
-          fqn: `cls:${structMatch[1]}`,
-          name: structMatch[1],
+          fqn: `cls:${structName}`,
+          name: structName,
           kind: 'class',
           module: moduleId,
           line: lineNum,
@@ -57,10 +59,11 @@ export class RustScanner implements LanguageScanner {
 
       // Enum: pub enum Foo {
       const enumMatch = trimmed.match(/^(?:pub(?:\(crate\))?\s+)?enum\s+(\w+)(?:<[^>]*>)?\s*\{/);
-      if (enumMatch) {
+      if (enumMatch?.[1]) {
+        const enumName = enumMatch[1];
         symbols.push({
-          fqn: `cls:${enumMatch[1]}`,
-          name: enumMatch[1],
+          fqn: `cls:${enumName}`,
+          name: enumName,
           kind: 'class',
           module: moduleId,
           line: lineNum,
@@ -70,19 +73,21 @@ export class RustScanner implements LanguageScanner {
 
       // Trait: pub trait Foo: SuperTrait {  or  trait Foo {
       const traitMatch = trimmed.match(/^(?:pub(?:\(crate\))?\s+)?trait\s+(\w+)(?:<[^>]*>)?(?:\s*:\s*([\w\s+<>,]+))?\s*\{/);
-      if (traitMatch) {
+      if (traitMatch?.[1]) {
+        const traitName = traitMatch[1];
         symbols.push({
-          fqn: `iface:${traitMatch[1]}`,
-          name: traitMatch[1],
+          fqn: `iface:${traitName}`,
+          name: traitName,
           kind: 'class',
           module: moduleId,
           line: lineNum,
         });
         // Trait inheritance
-        if (traitMatch[2]) {
-          const superTraits = traitMatch[2].split('+').map(s => s.trim().replace(/<.*>$/, '')).filter(s => s && /^[A-Z]/.test(s));
+        const superSpec = traitMatch[2];
+        if (superSpec) {
+          const superTraits = superSpec.split('+').map(s => s.trim().replace(/<.*>$/, '')).filter(s => s && /^[A-Z]/.test(s));
           for (const sup of superTraits) {
-            inheritance.push({ className: traitMatch[1], extends: sup });
+            inheritance.push({ className: traitName, extends: sup });
           }
         }
         continue;
@@ -90,7 +95,7 @@ export class RustScanner implements LanguageScanner {
 
       // Impl block: impl Foo {  or  impl Trait for Foo {
       const implMatch = trimmed.match(/^impl(?:<[^>]*>)?\s+(?:(\w+)(?:<[^>]*>)?\s+for\s+)?(\w+)(?:<[^>]*>)?\s*\{/);
-      if (implMatch) {
+      if (implMatch?.[2]) {
         const traitName = implMatch[1] || null;
         const targetName = implMatch[2];
         tracker.currentImplTarget = targetName;
@@ -111,7 +116,7 @@ export class RustScanner implements LanguageScanner {
 
       // Function/method: fn name(params) -> ReturnType {
       const fnMatch = trimmed.match(/^(?:pub(?:\(crate\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)(?:<[^>]*>)?\s*\(([^)]*)\)(?:\s*->\s*([^{]+))?\s*\{/);
-      if (fnMatch) {
+      if (fnMatch?.[1]) {
         const funcName = fnMatch[1];
         const rawParams = fnMatch[2]?.trim() || '';
         const rawReturn = fnMatch[3]?.trim() || '';
@@ -156,14 +161,15 @@ export class RustScanner implements LanguageScanner {
 
       // Fallback: multi-line fn params
       const simpleFnMatch = trimmed.match(/^(?:pub(?:\(crate\))?\s+)?(?:async\s+)?(?:unsafe\s+)?fn\s+(\w+)(?:<[^>]*>)?\s*\(/);
-      if (simpleFnMatch && !fnMatch) {
+      if (simpleFnMatch?.[1] && !fnMatch) {
         const funcName = simpleFnMatch[1];
         const multiParams = extractMultiLineParams(lines, i);
         // Look for return type
         let rawReturn: string | undefined;
         for (let j = i; j < Math.min(i + 15, lines.length); j++) {
-          const retMatch = lines[j].match(/\)\s*->\s*([^{]+?)\s*\{/);
-          if (retMatch) { rawReturn = retMatch[1].trim(); break; }
+          const retLine = lines[j];
+          const retMatch = retLine?.match(/\)\s*->\s*([^{]+?)\s*\{/);
+          if (retMatch?.[1]) { rawReturn = retMatch[1].trim(); break; }
         }
 
         if (tracker.currentImplTarget && tracker.braceDepth > (tracker.implStartDepth ?? -1)) {
@@ -193,10 +199,11 @@ export class RustScanner implements LanguageScanner {
         RE_RUST_SELF_CALL.lastIndex = 0;
         let cm: RegExpExecArray | null;
         while ((cm = RE_RUST_SELF_CALL.exec(line)) !== null) {
-          if (!RUST_BLACKLIST.has(cm[1])) {
+          const selfCallee = cm[1];
+          if (selfCallee && !RUST_BLACKLIST.has(selfCallee)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[1],
+              calleeName: selfCallee,
               isMethodCall: true,
               receiverClass: tracker.currentImplTarget ?? undefined,
             });
@@ -205,12 +212,14 @@ export class RustScanner implements LanguageScanner {
 
         RE_RUST_STATIC_CALL.lastIndex = 0;
         while ((cm = RE_RUST_STATIC_CALL.exec(line)) !== null) {
-          if (!RUST_BLACKLIST.has(cm[2]) && !RUST_BLACKLIST.has(cm[1])) {
+          const staticReceiver = cm[1];
+          const staticCallee = cm[2];
+          if (staticReceiver && staticCallee && !RUST_BLACKLIST.has(staticCallee) && !RUST_BLACKLIST.has(staticReceiver)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[2],
+              calleeName: staticCallee,
               isMethodCall: true,
-              receiverClass: cm[1],
+              receiverClass: staticReceiver,
             });
           }
         }
@@ -218,7 +227,7 @@ export class RustScanner implements LanguageScanner {
         RE_RUST_CALL.lastIndex = 0;
         while ((cm = RE_RUST_CALL.exec(line)) !== null) {
           const name = cm[1];
-          if (!RUST_BLACKLIST.has(name) && name.length > 2) {
+          if (name && !RUST_BLACKLIST.has(name) && name.length > 2) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
               calleeName: name,

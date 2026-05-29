@@ -328,6 +328,7 @@ export class SlackChannel extends BaseChannel {
   private async handleInteraction(payload: SlackInteractionPayload): Promise<void> {
     if (payload.type === 'block_actions' && payload.actions?.length) {
       const action = payload.actions[0];
+      if (!action) return;
 
       const message: InboundMessage = {
         id: `interaction-${Date.now()}`,
@@ -693,7 +694,7 @@ export class SlackChannel extends BaseChannel {
    */
   private determineContentType(event: SlackEvent): ContentType {
     if (event.files?.length) {
-      return this.getFileType(event.files[0].mimetype);
+      return this.getFileType(event.files[0]?.mimetype);
     }
     if (event.text?.startsWith('/')) return 'command';
     return 'text';

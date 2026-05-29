@@ -315,6 +315,7 @@ export class DiagramTool {
 
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
+      if (node === undefined) continue;
       const label = node.label;
       const boxWidth = label.length + 4;
 
@@ -344,6 +345,7 @@ export class DiagramTool {
 
     for (let i = 0; i < children.length; i++) {
       const child = children[i];
+      if (child === undefined) continue;
       const isLast = i === children.length - 1;
       const prefix = isLast ? '└── ' : '├── ';
 
@@ -352,6 +354,7 @@ export class DiagramTool {
       if (child.children) {
         for (let j = 0; j < child.children.length; j++) {
           const subChild = child.children[j];
+          if (subChild === undefined) continue;
           const subPrefix = isLast ? '    ' : '│   ';
           const subConnector = j === child.children.length - 1 ? '└── ' : '├── ';
           lines.push(subPrefix + subConnector + subChild.name);
@@ -368,7 +371,7 @@ export class DiagramTool {
   private mermaidToAscii(mermaidCode: string): string {
     // Extract basic structure from Mermaid code
     const lines = mermaidCode.split('\n');
-    const type = lines[0].toLowerCase();
+    const type = (lines[0] ?? '').toLowerCase();
 
     if (type.includes('flowchart') || type.includes('graph')) {
       return this.flowchartToAscii(lines.slice(1));
@@ -394,14 +397,14 @@ export class DiagramTool {
 
       // Match node definition: id[label] or id(label) etc.
       const nodeMatch = trimmed.match(/^(\w+)[[({]([^\])}]+)[\])}]$/);
-      if (nodeMatch) {
+      if (nodeMatch && nodeMatch[1] !== undefined && nodeMatch[2] !== undefined) {
         nodes.push({ id: nodeMatch[1], label: nodeMatch[2] });
         continue;
       }
 
       // Match connection: id1 --> id2
       const connMatch = trimmed.match(/^(\w+)\s*[-=.]+[>)}\]]+\s*(\w+)/);
-      if (connMatch) {
+      if (connMatch && connMatch[1] !== undefined && connMatch[2] !== undefined) {
         connections.push({ from: connMatch[1], to: connMatch[2] });
       }
     }
@@ -424,7 +427,7 @@ export class DiagramTool {
       const trimmed = line.trim();
 
       const partMatch = trimmed.match(/participant\s+(\w+)/);
-      if (partMatch) {
+      if (partMatch && partMatch[1] !== undefined) {
         participants.push(partMatch[1]);
         continue;
       }
@@ -459,13 +462,13 @@ export class DiagramTool {
 
     for (const line of lines) {
       const titleMatch = line.match(/title\s+(.+)/i);
-      if (titleMatch) {
+      if (titleMatch && titleMatch[1] !== undefined) {
         title = titleMatch[1];
         continue;
       }
 
       const dataMatch = line.match(/"([^"]+)"\s*:\s*(\d+)/);
-      if (dataMatch) {
+      if (dataMatch && dataMatch[1] !== undefined && dataMatch[2] !== undefined) {
         data.push({ label: dataMatch[1], value: parseInt(dataMatch[2]) });
       }
     }

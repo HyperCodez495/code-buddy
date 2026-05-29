@@ -247,10 +247,11 @@ export function createGrokBindings(
       return result.trim().split('\n').filter(Boolean).slice(0, 100).map(line => {
         const match = line.match(/^(.+?):(\d+):(.*)$/);
         if (match) {
+          const [, file = '', lineNo = '', content = ''] = match;
           return {
-            file: path.relative(config.workdir, match[1]),
-            line: parseInt(match[2], 10),
-            content: match[3]
+            file: path.relative(config.workdir, file),
+            line: parseInt(lineNo, 10),
+            content
           };
         }
         return { file: '', line: 0, content: line };
@@ -273,16 +274,21 @@ export function createGrokBindings(
       return result.trim().split('\n').filter(Boolean).slice(0, 100).map(line => {
         const match = line.match(/^(.+?):(\d+):(.*)$/);
         if (match) {
+          const [, file = '', lineNo = '', content = ''] = match;
           return {
-            file: path.relative(config.workdir, match[1]),
-            line: parseInt(match[2], 10),
-            content: match[3]
+            file: path.relative(config.workdir, file),
+            line: parseInt(lineNo, 10),
+            content
           };
         }
         return { file: '', line: 0, content: line };
       });
     } catch {
-      return tool.grep(pattern, filePattern);
+      const grep = tool.grep;
+      if (typeof grep !== 'function') {
+        throw new TypeError('tool.grep is not a function');
+      }
+      return grep(pattern, filePattern);
     }
   };
 
@@ -310,7 +316,11 @@ export function createGrokBindings(
   const context: Record<string, CodeBuddyFunction | CodeBuddyValue> = {};
 
   context.add = (pattern: string): number => {
-    const files = tool.glob(pattern);
+    const glob = tool.glob;
+    if (typeof glob !== 'function') {
+      throw new TypeError('tool.glob is not a function');
+    }
+    const files = glob(pattern);
     let added = 0;
 
     for (const file of files) {
@@ -353,7 +363,11 @@ export function createGrokBindings(
 
     for (const file of contextFiles) {
       try {
-        const content = tool.read(file);
+        const read = tool.read;
+        if (typeof read !== 'function') {
+          throw new TypeError('tool.read is not a function');
+        }
+        const content = read(file);
         parts.push(`// === ${file} ===\n${content}`);
       } catch {
         // Skip unreadable files
@@ -411,7 +425,11 @@ Think through the problem and execute the necessary steps.`;
     let content = '';
 
     if (filePath) {
-      content = tool.read(filePath);
+      const read = tool.read;
+      if (typeof read !== 'function') {
+        throw new TypeError('tool.read is not a function');
+      }
+      content = read(filePath);
     } else {
       try {
         content = execSync('git diff', { cwd: config.workdir, encoding: 'utf-8' });
@@ -424,12 +442,20 @@ Think through the problem and execute the necessary steps.`;
   };
 
   agent.generateTests = async (filePath: string): Promise<string> => {
-    const content = tool.read(filePath);
+    const read = tool.read;
+    if (typeof read !== 'function') {
+      throw new TypeError('tool.read is not a function');
+    }
+    const content = read(filePath);
     return askFn(`Generate comprehensive unit tests for this code:\n\n${content}`);
   };
 
   agent.refactor = async (filePath: string, instructions: string): Promise<string> => {
-    const content = tool.read(filePath);
+    const read = tool.read;
+    if (typeof read !== 'function') {
+      throw new TypeError('tool.read is not a function');
+    }
+    const content = read(filePath);
     return askFn(`Refactor this code according to these instructions: ${instructions}\n\nCode:\n${content}`);
   };
 

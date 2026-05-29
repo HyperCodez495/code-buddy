@@ -412,7 +412,8 @@ export class DMPairingManager extends EventEmitter {
     const bytes = crypto.randomBytes(this.config.codeLength);
     let code = '';
     for (let i = 0; i < this.config.codeLength; i++) {
-      code += chars[bytes[i] % chars.length];
+      const byte = bytes[i] ?? 0;
+      code += chars[byte % chars.length] ?? '';
     }
     return code;
   }
@@ -439,10 +440,8 @@ export class DMPairingManager extends EventEmitter {
     // Group by channel type (like Native Engine: <channel>-allowFrom.json)
     const byChannel: Record<string, ApprovedSender[]> = {};
     for (const sender of this.allowlist.values()) {
-      if (!byChannel[sender.channelType]) {
-        byChannel[sender.channelType] = [];
-      }
-      byChannel[sender.channelType].push(sender);
+      const group = byChannel[sender.channelType] ?? (byChannel[sender.channelType] = []);
+      group.push(sender);
     }
 
     for (const [channelType, senders] of Object.entries(byChannel)) {

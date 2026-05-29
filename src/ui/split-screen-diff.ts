@@ -203,12 +203,16 @@ function mergeAdjacentChanges(lines: SplitDiffLine[]): SplitDiffLine[] {
 
   while (i < lines.length) {
     const current = lines[i];
+    if (current === undefined) {
+      i++;
+      continue;
+    }
 
     // If this is a removal followed by an addition, merge them
     if (current.leftType === 'removed' && current.rightType === 'empty') {
       // Look ahead for an addition to pair with
-      if (i + 1 < lines.length) {
-        const next = lines[i + 1];
+      const next = lines[i + 1];
+      if (next !== undefined) {
         if (next.leftType === 'empty' && next.rightType === 'added') {
           // Merge them
           result.push({
@@ -240,7 +244,9 @@ function filterWithContext(lines: SplitDiffLine[], contextLines: number): SplitD
   const changedIndices = new Set<number>();
 
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].leftType !== 'same' || lines[i].rightType !== 'same') {
+    const line = lines[i];
+    if (line === undefined) continue;
+    if (line.leftType !== 'same' || line.rightType !== 'same') {
       // Include context around this change
       for (let j = Math.max(0, i - contextLines); j <= Math.min(lines.length - 1, i + contextLines); j++) {
         changedIndices.add(j);
@@ -254,6 +260,8 @@ function filterWithContext(lines: SplitDiffLine[], contextLines: number): SplitD
 
   for (let i = 0; i < lines.length; i++) {
     if (changedIndices.has(i)) {
+      const line = lines[i];
+      if (line === undefined) continue;
       // Add separator if there's a gap
       if (lastIncluded >= 0 && i > lastIncluded + 1) {
         result.push({
@@ -263,7 +271,7 @@ function filterWithContext(lines: SplitDiffLine[], contextLines: number): SplitD
           rightContent: '...',
         });
       }
-      result.push(lines[i]);
+      result.push(line);
       lastIncluded = i;
     }
   }

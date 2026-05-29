@@ -515,6 +515,9 @@ export class ToolDependencyGraph {
       for (let j = i + 1; j < nodeList.length; j++) {
         const node1 = nodeList[i];
         const node2 = nodeList[j];
+        if (node1 === undefined || node2 === undefined) {
+          continue;
+        }
 
         // Check for resource conflicts
         if (this.hasResourceConflict(node1.resources, node2.resources)) {

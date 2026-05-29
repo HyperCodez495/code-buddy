@@ -258,7 +258,11 @@ export class ThemeManager {
     }
 
     // Set default theme
-    this.currentTheme = BUILTIN_THEMES[0];
+    const defaultTheme = BUILTIN_THEMES[0];
+    if (!defaultTheme) {
+      throw new Error('No built-in themes available');
+    }
+    this.currentTheme = defaultTheme;
 
     // Load saved preference
     this.loadPreference();
@@ -316,7 +320,11 @@ export class ThemeManager {
 
     // Reset to default if removed current
     if (this.currentTheme.id === themeId) {
-      this.currentTheme = BUILTIN_THEMES[0];
+      const defaultTheme = BUILTIN_THEMES[0];
+      if (!defaultTheme) {
+        throw new Error('No built-in themes available');
+      }
+      this.currentTheme = defaultTheme;
     }
 
     this.saveCustomThemes();

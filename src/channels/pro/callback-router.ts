@@ -29,11 +29,12 @@ export function parseCallbackData(data: string): ParsedCallback | null {
   // New format: pro:<feature>:<action>:<id>
   if (data.startsWith('pro:')) {
     const parts = data.split(':');
-    if (parts.length >= 4) {
+    const [, feature, action, ...rest] = parts;
+    if (parts.length >= 4 && feature !== undefined && action !== undefined) {
       return {
-        feature: parts[1] as ParsedCallback['feature'],
-        action: parts[2],
-        id: parts.slice(3).join(':'),
+        feature: feature as ParsedCallback['feature'],
+        action,
+        id: rest.join(':'),
       };
     }
     return null;

@@ -73,7 +73,14 @@ export async function resolveSecretRef(value: string): Promise<string> {
   let match: RegExpExecArray | null;
   const re = new RegExp(SECRET_REF_PATTERN.source, 'g');
   while ((match = re.exec(value)) !== null) {
-    matches.push({ full: match[0], type: match[1], ref: match[2] });
+    const [full, type, ref] = match;
+    // Both capture groups are required by SECRET_REF_PATTERN, so a successful
+    // match always yields them; guard to satisfy noUncheckedIndexedAccess
+    // without altering behavior (an incomplete match is simply skipped).
+    if (full === undefined || type === undefined || ref === undefined) {
+      continue;
+    }
+    matches.push({ full, type, ref });
   }
 
   if (matches.length === 0) {

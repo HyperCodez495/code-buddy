@@ -178,7 +178,9 @@ function parseFunctionsFromContent(content: string): string[] {
   const funcRegex = /^\s*(?:function\s+)?(\w+)\s*\(\)\s*\{/gm;
   let match: RegExpExecArray | null;
   while ((match = funcRegex.exec(content)) !== null) {
-    functions.push(match[1]);
+    const name = match[1];
+    if (name === undefined) continue;
+    functions.push(name);
   }
   return functions;
 }
@@ -203,7 +205,9 @@ function parseFishFunctions(content: string): string[] {
   const funcRegex = /^\s*function\s+(\w+)/gm;
   let match: RegExpExecArray | null;
   while ((match = funcRegex.exec(content)) !== null) {
-    functions.push(match[1]);
+    const name = match[1];
+    if (name === undefined) continue;
+    functions.push(name);
   }
   return functions;
 }

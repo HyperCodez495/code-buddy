@@ -40,20 +40,23 @@ export function parseConflicts(fileContent: string, filePath = ''): ConflictRegi
   let i = 0;
 
   while (i < lines.length) {
-    const startMatch = lines[i].match(/^<{7}\s*(.*)/);
+    const startLineText = lines[i] ?? '';
+    const startMatch = startLineText.match(/^<{7}\s*(.*)/);
     if (!startMatch) {
       i++;
       continue;
     }
 
     const startLine = i + 1; // 1-indexed
-    const oursLabel = startMatch[1].trim() || 'HEAD';
+    const oursLabel = (startMatch[1] ?? '').trim() || 'HEAD';
     const oursLines: string[] = [];
     i++;
 
     // Collect "ours" lines until =======
-    while (i < lines.length && !lines[i].startsWith('=======')) {
-      oursLines.push(lines[i]);
+    while (i < lines.length) {
+      const oursLine = lines[i] ?? '';
+      if (oursLine.startsWith('=======')) break;
+      oursLines.push(oursLine);
       i++;
     }
 
@@ -65,12 +68,13 @@ export function parseConflicts(fileContent: string, filePath = ''): ConflictRegi
     let theirsLabel = '';
 
     while (i < lines.length) {
-      const endMatch = lines[i].match(/^>{7}\s*(.*)/);
+      const theirsLine = lines[i] ?? '';
+      const endMatch = theirsLine.match(/^>{7}\s*(.*)/);
       if (endMatch) {
-        theirsLabel = endMatch[1].trim() || 'incoming';
+        theirsLabel = (endMatch[1] ?? '').trim() || 'incoming';
         break;
       }
-      theirsLines.push(lines[i]);
+      theirsLines.push(theirsLine);
       i++;
     }
 

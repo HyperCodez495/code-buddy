@@ -218,11 +218,12 @@ function pickStory(
     return story;
   }
   const approved = store.listStories(projectId, 'approved'); // oldest first (createdAt)
-  if (approved.length === 0) {
+  const first = approved[0];
+  if (!first) {
     console.log('No approved stories. Approve one with: buddy spec story approve <id> --by <name>');
     return null;
   }
-  return approved[0];
+  return first;
 }
 
 function buildTaskText(story: SpecStory): string {

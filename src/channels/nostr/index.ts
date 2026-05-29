@@ -232,7 +232,9 @@ export class NostrAdapter {
       chk = ((chk & 0x1ffffff) << 5) ^ value;
       for (let i = 0; i < 5; i++) {
         if ((top >> i) & 1) {
-          chk ^= NostrAdapter.BECH32_GENERATOR[i];
+          const gen = NostrAdapter.BECH32_GENERATOR[i];
+          if (gen === undefined) continue;
+          chk ^= gen;
         }
       }
     }

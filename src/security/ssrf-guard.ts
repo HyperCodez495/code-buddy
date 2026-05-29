@@ -84,7 +84,9 @@ function parseIPv4ToUint32(host: string): number | null {
   }
 
   if (octets.some(o => o > 255)) return null;
-  return ((octets[0] << 24) | (octets[1] << 16) | (octets[2] << 8) | octets[3]) >>> 0;
+  // octets is exactly length 4 here (loop above pads short forms to 4); defaults never fire.
+  const [o0 = 0, o1 = 0, o2 = 0, o3 = 0] = octets;
+  return ((o0 << 24) | (o1 << 16) | (o2 << 8) | o3) >>> 0;
 }
 
 function isPrivateIPv4(uint32: number): boolean {
@@ -138,7 +140,9 @@ function expandIPv6(address: string): number[] | null {
     // Handle IPv4-mapped: ::ffff:1.2.3.4
     const v4mapped = address.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/i);
     if (v4mapped) {
-      const v4 = parseIPv4ToUint32(v4mapped[1]);
+      const v4str = v4mapped[1];
+      if (v4str === undefined) return null;
+      const v4 = parseIPv4ToUint32(v4str);
       if (v4 === null) return null;
       return [0, 0, 0, 0, 0, 0xffff, (v4 >>> 16) & 0xffff, v4 & 0xffff];
     }
@@ -166,13 +170,13 @@ function expandIPv6(address: string): number[] | null {
     };
 
     if (halves.length === 1) {
-      const groups = parseGroups(halves[0]);
+      const groups = parseGroups(halves[0] ?? '');
       if (!groups || groups.length !== 8) return null;
       return groups;
     }
 
-    const left = parseGroups(halves[0]) ?? [];
-    const right = parseGroups(halves[1]) ?? [];
+    const left = parseGroups(halves[0] ?? '') ?? [];
+    const right = parseGroups(halves[1] ?? '') ?? [];
     const fill = new Array(8 - left.length - right.length).fill(0);
     const groups = [...left, ...fill, ...right];
     if (groups.length !== 8) return null;
@@ -188,68 +192,69 @@ function isPrivateIPv6(address: string): boolean {
   const groups = expandIPv6(addr);
   if (!groups) return false; // parse error → caller should handle
 
-  const g = groups;
+  // expandIPv6 returns null or an exactly-length-8 array, so defaults never fire.
+  const [g0 = 0, g1 = 0, g2 = 0, g3 = 0, g4 = 0, g5 = 0, g6 = 0, g7 = 0] = groups;
 
   // ::1 — loopback (fully normalized check on expanded groups)
-  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0 && g[7] === 1) {
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 1) {
     return true;
   }
   // :: — unspecified (fully normalized check on expanded groups)
-  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0 && g[6] === 0 && g[7] === 0) {
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0 && g6 === 0 && g7 === 0) {
     return true;
   }
 
   // ::ffff:0:0/96 — IPv4-mapped
-  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0xffff) {
-    const v4 = (g[6] << 16) | g[7];
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0xffff) {
+    const v4 = (g6 << 16) | g7;
     return isPrivateIPv4(v4 >>> 0);
   }
 
   // 0:0:0:0:0:0::/96 — IPv4-compatible (deprecated but still mapped)
-  if (g[0] === 0 && g[1] === 0 && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0) {
-    const v4 = (g[6] << 16) | g[7];
+  if (g0 === 0 && g1 === 0 && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    const v4 = (g6 << 16) | g7;
     if (v4 !== 0 && v4 !== 1) return isPrivateIPv4(v4 >>> 0);
   }
 
   // 64:ff9b::/96 — NAT64 (RFC 6052)
-  if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0 && g[3] === 0 && g[4] === 0 && g[5] === 0) {
-    const v4 = (g[6] << 16) | g[7];
+  if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0 && g3 === 0 && g4 === 0 && g5 === 0) {
+    const v4 = (g6 << 16) | g7;
     return isPrivateIPv4(v4 >>> 0);
   }
 
   // 64:ff9b:1::/48 — NAT64 (RFC 8215)
-  if (g[0] === 0x0064 && g[1] === 0xff9b && g[2] === 0x0001) return true;
+  if (g0 === 0x0064 && g1 === 0xff9b && g2 === 0x0001) return true;
 
   // 2002::/16 — 6to4 (RFC 3056): embedded IPv4 is in groups [1] and [2]
-  if (g[0] === 0x2002) {
-    const v4 = (g[1] << 16) | g[2];
+  if (g0 === 0x2002) {
+    const v4 = (g1 << 16) | g2;
     return isPrivateIPv4(v4 >>> 0);
   }
 
   // 2001:0000::/32 — Teredo (RFC 4380)
-  if (g[0] === 0x2001 && g[1] === 0x0000) return true;
+  if (g0 === 0x2001 && g1 === 0x0000) return true;
 
   // 2001:db8::/32 — Documentation (RFC 3849)
-  if (g[0] === 0x2001 && g[1] === 0x0db8) return true;
+  if (g0 === 0x2001 && g1 === 0x0db8) return true;
 
   // 2001:10::/28 & 2001:20::/28 — ORCHID (RFC 4843 & 7343)
-  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0010) return true;
-  if (g[0] === 0x2001 && (g[1] & 0xfff0) === 0x0020) return true;
+  if (g0 === 0x2001 && (g1 & 0xfff0) === 0x0010) return true;
+  if (g0 === 0x2001 && (g1 & 0xfff0) === 0x0020) return true;
 
   // fc00::/7 — Unique local
-  if ((g[0] & 0xfe00) === 0xfc00) return true;
+  if ((g0 & 0xfe00) === 0xfc00) return true;
 
   // fe80::/10 — Link-local
-  if ((g[0] & 0xffc0) === 0xfe80) return true;
+  if ((g0 & 0xffc0) === 0xfe80) return true;
 
   // fec0::/10 — Site-local (deprecated but private)
-  if ((g[0] & 0xffc0) === 0xfec0) return true;
+  if ((g0 & 0xffc0) === 0xfec0) return true;
 
   // ff00::/8 — Multicast
-  if ((g[0] & 0xff00) === 0xff00) return true;
+  if ((g0 & 0xff00) === 0xff00) return true;
 
   // 100::/64 — Discard-only prefix (RFC 6666)
-  if (g[0] === 0x0100 && g[1] === 0 && g[2] === 0 && g[3] === 0) return true;
+  if (g0 === 0x0100 && g1 === 0 && g2 === 0 && g3 === 0) return true;
 
   return false;
 }

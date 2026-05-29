@@ -92,6 +92,7 @@ function deriveScope(files: string[]): string {
   // Find the deepest common directory
   if (dirs.length === 1) {
     const d = dirs[0];
+    if (d === undefined) return '';
     // Use the last meaningful directory part as scope
     const meaningful = d.filter(p => p !== 'src' && p !== '.');
     return meaningful[meaningful.length - 1] || d[d.length - 1] || '';
@@ -99,6 +100,7 @@ function deriveScope(files: string[]): string {
 
   // Find common prefix
   const first = dirs[0];
+  if (first === undefined) return '';
   let commonLen = 0;
   for (let i = 0; i < first.length; i++) {
     if (dirs.every(d => d[i] === first[i])) {

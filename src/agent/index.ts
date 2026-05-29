@@ -228,14 +228,12 @@ export class Agent {
 
   private parseViewCommand(input: string): { path: string; range?: [number, number] } {
     const parts = input.split(' ');
-    const path = parts[1];
+    const path = parts[1] ?? '';
 
-    if (parts.length > 2) {
-      const rangePart = parts[2];
-      if (rangePart.includes('-')) {
-        const [start, end] = rangePart.split('-').map(Number);
-        return { path, range: [start, end] };
-      }
+    const rangePart = parts[2];
+    if (rangePart !== undefined && rangePart.includes('-')) {
+      const [start, end] = rangePart.split('-').map(Number);
+      return { path, range: [start ?? NaN, end ?? NaN] };
     }
 
     return { path };
@@ -247,10 +245,13 @@ export class Agent {
     const match = input.match(/str_replace\s+(\S+)\s+"([^"]+)"\s+"([^"]*)"/);
     if (!match) return null;
 
+    const [, path, oldStr, newStr] = match;
+    if (path === undefined || oldStr === undefined || newStr === undefined) return null;
+
     return {
-      path: match[1],
-      oldStr: match[2],
-      newStr: match[3],
+      path,
+      oldStr,
+      newStr,
     };
   }
 
@@ -258,9 +259,12 @@ export class Agent {
     const match = input.match(/create\s+(\S+)\s+"([^"]*)"/);
     if (!match) return null;
 
+    const [, path, content] = match;
+    if (path === undefined || content === undefined) return null;
+
     return {
-      path: match[1],
-      content: match[2],
+      path,
+      content,
     };
   }
 
@@ -270,10 +274,13 @@ export class Agent {
     const match = input.match(/insert\s+(\S+)\s+(\d+)\s+"([^"]*)"/);
     if (!match) return null;
 
+    const [, path, line, content] = match;
+    if (path === undefined || line === undefined || content === undefined) return null;
+
     return {
-      path: match[1],
-      line: parseInt(match[2]),
-      content: match[3],
+      path,
+      line: parseInt(line),
+      content,
     };
   }
 

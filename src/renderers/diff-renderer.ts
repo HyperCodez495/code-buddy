@@ -120,9 +120,7 @@ function renderFancy(data: DiffData, ctx: RenderContext): string {
 
   // Render hunks
   if (hunks && hunks.length > 0) {
-    for (let hunkIdx = 0; hunkIdx < hunks.length; hunkIdx++) {
-      const hunk = hunks[hunkIdx];
-
+    for (const [hunkIdx, hunk] of hunks.entries()) {
       // Hunk header
       if (hunkIdx > 0) {
         lines.push('│' + ' '.repeat(W - 2) + '│');
@@ -182,17 +180,17 @@ function renderDiffLine(
   switch (line.type) {
     case 'add':
       prefix = '+';
-      colorCode = colors.bgGreen;
+      colorCode = colors.bgGreen ?? '';
       lineNum = (line.newLineNumber ?? '').toString().padStart(4);
       break;
     case 'delete':
       prefix = '-';
-      colorCode = colors.bgRed;
+      colorCode = colors.bgRed ?? '';
       lineNum = (line.oldLineNumber ?? '').toString().padStart(4);
       break;
     case 'context':
       prefix = ' ';
-      colorCode = colors.dim;
+      colorCode = colors.dim ?? '';
       lineNum = (line.newLineNumber ?? '').toString().padStart(4);
       break;
   }

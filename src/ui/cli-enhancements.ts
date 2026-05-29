@@ -546,7 +546,7 @@ export class PromptStash {
   }
 
   peek(): StashedPrompt | null {
-    return this.stash.length > 0 ? this.stash[this.stash.length - 1] : null;
+    return this.stash[this.stash.length - 1] ?? null;
   }
 
   getAll(): StashedPrompt[] {

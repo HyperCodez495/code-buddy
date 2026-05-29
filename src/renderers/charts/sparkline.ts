@@ -46,7 +46,10 @@ export function generateSparklineSVG(values: number[], options: ChartOptions = {
     .range([height! - p.bottom, p.top]);
 
   // Determine color based on trend
-  const isUp = values[values.length - 1] >= values[0];
+  const lastVal = values[values.length - 1];
+  const firstVal = values[0];
+  // Preserve original semantics: `undefined >= undefined` evaluated to false.
+  const isUp = lastVal !== undefined && firstVal !== undefined && lastVal >= firstVal;
   const lineColor = opts.lineColor || (isUp ? '#00ff88' : '#ff4444');
 
   // Area

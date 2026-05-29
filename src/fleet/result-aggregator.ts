@@ -72,7 +72,13 @@ export async function aggregateParallelResults(
   }
   if (completed.length === 1) {
     // Nothing to synthesise — just return the single answer.
-    return completed[0].result!;
+    const only = completed[0];
+    if (only === undefined || typeof only.result !== 'string') {
+      throw new Error(
+        'aggregateParallelResults: no completed steps with a result',
+      );
+    }
+    return only.result;
   }
 
   const client = cachedGetter?.() ?? null;

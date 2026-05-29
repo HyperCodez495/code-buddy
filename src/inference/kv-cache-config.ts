@@ -157,7 +157,8 @@ export class KVCacheManager extends EventEmitter {
       }
       logger.warn('Unknown model architecture, using defaults', { model: arch });
       // Use generic 7B architecture as fallback
-      this.architecture = MODEL_ARCHITECTURES['llama-3.1-8b'];
+      const fallbackArch = MODEL_ARCHITECTURES['llama-3.1-8b'];
+      this.architecture = fallbackArch ?? null;
     } else {
       this.architecture = arch;
     }

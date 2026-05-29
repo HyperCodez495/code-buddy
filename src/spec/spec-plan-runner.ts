@@ -122,7 +122,8 @@ export function withGoalHeader(goal: string, prd: string): string {
 export function readPlanGoal(store: SpecStore, projectId: string): string {
   const prd = store.readArtifact(projectId, 'prd') ?? '';
   const match = prd.match(GOAL_HEADER);
-  if (match && match[1].trim()) return match[1].trim();
+  const captured = match?.[1]?.trim();
+  if (captured) return captured;
   return store.getProject(projectId)?.title ?? '';
 }
 
@@ -159,6 +160,6 @@ function readArtifactOrThrow(store: SpecStore, projectId: string, name: 'prd' | 
 }
 
 export function deriveTitle(goal: string): string {
-  const firstLine = goal.split('\n')[0].trim();
+  const firstLine = (goal.split('\n')[0] ?? '').trim();
   return firstLine.length <= 80 ? firstLine : `${firstLine.slice(0, 79)}…`;
 }

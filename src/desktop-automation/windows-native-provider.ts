@@ -643,8 +643,8 @@ public class NativeInput {
         );
         const parts = result.trim().split(',');
         return {
-          x: parseInt(parts[0], 10),
-          y: parseInt(parts[1], 10),
+          x: parseInt(parts[0] ?? '', 10),
+          y: parseInt(parts[1] ?? '', 10),
         };
       }
       case 'move_mouse': {
@@ -809,10 +809,11 @@ public class NativeInput {
         for (const line of lines) {
           const parts = line.split('|');
           if (parts.length < 4) continue;
+          const [rawHandle = '', rawPid = '', rawProcessName = ''] = parts;
 
-          const handle = parts[0].trim();
-          const pid = parseInt(parts[1].trim(), 10);
-          const processName = parts[2].trim();
+          const handle = rawHandle.trim();
+          const pid = parseInt(rawPid.trim(), 10);
+          const processName = rawProcessName.trim();
           const title = parts.slice(3).join('|').trim();
 
           windows.push({
@@ -853,15 +854,25 @@ Write-Output "$($r.Left)|$($r.Top)|$($r.Right)|$($r.Bottom)|$($sb.ToString())|$p
           const result = await this.ps(script);
           const parts = result.trim().split('|');
           if (parts.length < 8) return { window: null };
+          const [
+            rawLeft = '',
+            rawTop = '',
+            rawRight = '',
+            rawBottom = '',
+            rawTitle = '',
+            rawPid = '',
+            rawProcessName = '',
+            rawFocused = '',
+          ] = parts;
 
-          const left = parseInt(parts[0], 10);
-          const top = parseInt(parts[1], 10);
-          const right = parseInt(parts[2], 10);
-          const bottom = parseInt(parts[3], 10);
-          const title = parts[4];
-          const pid = parseInt(parts[5], 10);
-          const processName = parts[6];
-          const focused = parts[7].trim().toLowerCase() === 'true';
+          const left = parseInt(rawLeft, 10);
+          const top = parseInt(rawTop, 10);
+          const right = parseInt(rawRight, 10);
+          const bottom = parseInt(rawBottom, 10);
+          const title = rawTitle;
+          const pid = parseInt(rawPid, 10);
+          const processName = rawProcessName;
+          const focused = rawFocused.trim().toLowerCase() === 'true';
 
           return {
             window: {
@@ -1038,27 +1049,39 @@ Write-Output "$($r.Left)|$($r.Top)|$($r.Right)|$($r.Bottom)|$($sb.ToString())|$p
         const screens: ScreenInfo[] = [];
         const lines = result.split('\n').filter(l => l.trim());
 
-        for (let i = 0; i < lines.length; i++) {
-          const parts = lines[i].split('|');
+        for (const [i, line] of lines.entries()) {
+          const parts = line.split('|');
           if (parts.length < 10) continue;
+          const [
+            name = '',
+            boundsX = '',
+            boundsY = '',
+            boundsW = '',
+            boundsH = '',
+            workX = '',
+            workY = '',
+            workW = '',
+            workH = '',
+            primary = '',
+          ] = parts;
 
           screens.push({
             id: i,
-            name: parts[0].trim(),
+            name: name.trim(),
             bounds: {
-              x: parseInt(parts[1], 10),
-              y: parseInt(parts[2], 10),
-              width: parseInt(parts[3], 10),
-              height: parseInt(parts[4], 10),
+              x: parseInt(boundsX, 10),
+              y: parseInt(boundsY, 10),
+              width: parseInt(boundsW, 10),
+              height: parseInt(boundsH, 10),
             },
             workArea: {
-              x: parseInt(parts[5], 10),
-              y: parseInt(parts[6], 10),
-              width: parseInt(parts[7], 10),
-              height: parseInt(parts[8], 10),
+              x: parseInt(workX, 10),
+              y: parseInt(workY, 10),
+              width: parseInt(workW, 10),
+              height: parseInt(workH, 10),
             },
             scaleFactor: 1,
-            primary: parts[9].trim().toLowerCase() === 'true',
+            primary: primary.trim().toLowerCase() === 'true',
           });
         }
         return { screens };
@@ -1070,10 +1093,10 @@ Write-Output "$($r.Left)|$($r.Top)|$($r.Right)|$($r.Bottom)|$($sb.ToString())|$p
         );
 
         const parts = result.trim().split('|');
-        const r = parseInt(parts[0], 10);
-        const g = parseInt(parts[1], 10);
-        const b = parseInt(parts[2], 10);
-        const a = parts.length > 3 ? parseInt(parts[3], 10) : 255;
+        const r = parseInt(parts[0] ?? '', 10);
+        const g = parseInt(parts[1] ?? '', 10);
+        const b = parseInt(parts[2] ?? '', 10);
+        const a = parts.length > 3 ? parseInt(parts[3] ?? '', 10) : 255;
         const hex = `#${r.toString(16).padStart(2, '0')}${g.toString(16).padStart(2, '0')}${b.toString(16).padStart(2, '0')}`;
         return { r, g, b, a, hex };
       }

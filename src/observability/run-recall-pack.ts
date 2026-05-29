@@ -542,25 +542,32 @@ function parseRecallPackMemories(
   const lines = content.split(/\r?\n/);
   for (let index = 0; index < lines.length; index += 1) {
     const line = lines[index];
-    const trimmed = line.trim();
+    const trimmed = line?.trim();
     if (!trimmed) continue;
 
     const heading = trimmed.match(/^##\s+(.+)$/);
     if (heading) {
-      section = heading[1].trim();
+      const headingText = heading[1];
+      if (headingText !== undefined) {
+        section = headingText.trim();
+      }
       continue;
     }
 
     const persistent = trimmed.match(/^-\s*\*\*([^*]+)\*\*:\s*(.+)$/);
     if (persistent) {
-      memories.push({
-        category: normalizeMemoryCategory(section),
-        content: persistent[2].trim(),
-        file,
-        key: persistent[1].trim(),
-        line: index + 1,
-        scope,
-      });
+      const persistentKey = persistent[1];
+      const persistentContent = persistent[2];
+      if (persistentKey !== undefined && persistentContent !== undefined) {
+        memories.push({
+          category: normalizeMemoryCategory(section),
+          content: persistentContent.trim(),
+          file,
+          key: persistentKey.trim(),
+          line: index + 1,
+          scope,
+        });
+      }
       continue;
     }
 
@@ -568,14 +575,18 @@ function parseRecallPackMemories(
       /^-\s*\[(preference|pattern|context|decision)\]\s*(.+?)(?:\s*\(from session:([^)]+)\))?$/i,
     );
     if (project) {
-      memories.push({
-        category: project[1].toLowerCase(),
-        content: project[2].trim(),
-        file,
-        line: index + 1,
-        scope,
-        sourceSessionId: project[3],
-      });
+      const projectCategory = project[1];
+      const projectContent = project[2];
+      if (projectCategory !== undefined && projectContent !== undefined) {
+        memories.push({
+          category: projectCategory.toLowerCase(),
+          content: projectContent.trim(),
+          file,
+          line: index + 1,
+          scope,
+          sourceSessionId: project[3],
+        });
+      }
     }
   }
 

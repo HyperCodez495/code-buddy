@@ -127,6 +127,9 @@ export class AllowlistStore extends EventEmitter {
 
     // Don't remove system patterns
     const pattern = this.config.patterns[index];
+    if (!pattern) {
+      return false;
+    }
     if (pattern.source === 'system') {
       // Just disable it instead
       pattern.enabled = false;

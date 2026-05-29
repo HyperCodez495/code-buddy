@@ -316,6 +316,7 @@ export class ToolAnalytics extends EventEmitter {
       const toolIndex = chain.tools.indexOf(lastTool);
       if (toolIndex >= 0 && toolIndex < chain.tools.length - 1) {
         const nextTool = chain.tools[toolIndex + 1];
+        if (nextTool === undefined) continue;
         const existing = suggestions.find(s => s.toolName === nextTool);
 
         if (existing) {

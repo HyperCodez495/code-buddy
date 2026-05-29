@@ -339,9 +339,8 @@ export class ROITracker {
     if (report.trends.weeklyProductivity.length > 1) {
       lines.push('WEEKLY PRODUCTIVITY TREND');
       lines.push('───────────────────────────────────────────────────────────────────────────────');
-      for (let i = 0; i < report.trends.weeklyProductivity.length; i++) {
+      for (const [i, prod] of report.trends.weeklyProductivity.entries()) {
         const week = report.trends.weeklyProductivity.length - i;
-        const prod = report.trends.weeklyProductivity[i];
         const bar = '█'.repeat(Math.min(40, Math.round(prod * 10)));
         lines.push(`  Week -${week}: ${bar} ${prod.toFixed(1)}x`);
       }

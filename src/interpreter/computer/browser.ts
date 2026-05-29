@@ -246,12 +246,15 @@ export class ComputerBrowser extends EventEmitter {
 
     while ((match = resultPattern.exec(html)) !== null && results.length < limit) {
       const [, url, title, snippet] = match;
+      if (url === undefined || title === undefined || snippet === undefined) {
+        continue;
+      }
 
       // Decode DuckDuckGo redirect URLs
       let actualUrl = url;
       if (url.includes('uddg=')) {
         const uddgMatch = url.match(/uddg=([^&]*)/);
-        if (uddgMatch) {
+        if (uddgMatch && uddgMatch[1] !== undefined) {
           actualUrl = decodeURIComponent(uddgMatch[1]);
         }
       }
@@ -270,6 +273,9 @@ export class ComputerBrowser extends EventEmitter {
 
       while ((match = altPattern.exec(html)) !== null && results.length < limit) {
         const [, url, title, snippet] = match;
+        if (url === undefined || title === undefined || snippet === undefined) {
+          continue;
+        }
 
         results.push({
           title: this.decodeHtmlEntities(title.trim()),
@@ -357,7 +363,7 @@ export class ComputerBrowser extends EventEmitter {
 
     // Extract title
     const titleMatch = html.match(/<title[^>]*>([^<]*)<\/title>/i);
-    if (titleMatch) {
+    if (titleMatch && titleMatch[1] !== undefined) {
       content.title = this.decodeHtmlEntities(titleMatch[1].trim());
     }
 
@@ -365,7 +371,12 @@ export class ComputerBrowser extends EventEmitter {
     const metaPattern = /<meta[^>]*name="([^"]*)"[^>]*content="([^"]*)"[^>]*>/gi;
     let metaMatch;
     while ((metaMatch = metaPattern.exec(html)) !== null) {
-      content.metadata[metaMatch[1]] = this.decodeHtmlEntities(metaMatch[2]);
+      const metaName = metaMatch[1];
+      const metaContent = metaMatch[2];
+      if (metaName === undefined || metaContent === undefined) {
+        continue;
+      }
+      content.metadata[metaName] = this.decodeHtmlEntities(metaContent);
     }
 
     // Extract main content (remove scripts, styles, etc.)
@@ -390,7 +401,7 @@ export class ComputerBrowser extends EventEmitter {
       let linkMatch;
       while ((linkMatch = linkPattern.exec(html)) !== null && content.links.length < 50) {
         const href = linkMatch[1];
-        const text = this.decodeHtmlEntities(linkMatch[2].trim());
+        const text = this.decodeHtmlEntities((linkMatch[2] ?? '').trim());
 
         if (href && text && !href.startsWith('#') && !href.startsWith('javascript:')) {
           content.links.push({

@@ -58,8 +58,8 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
     return { meta: {}, body: raw };
   }
 
-  const yamlBlock = match[1];
-  const body = match[2];
+  const yamlBlock = match[1] ?? '';
+  const body = match[2] ?? '';
   const meta: Record<string, unknown> = {};
 
   for (const line of yamlBlock.split('\n')) {

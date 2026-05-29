@@ -34,9 +34,11 @@ class BruteForceIndex {
       let normA = 0;
       let normB = 0;
       for (let i = 0; i < this.dim; i++) {
-        dot += queryArr[i] * vec[i];
-        normA += queryArr[i] * queryArr[i];
-        normB += vec[i] * vec[i];
+        const q = queryArr[i] ?? 0;
+        const v = vec[i] ?? 0;
+        dot += q * v;
+        normA += q * q;
+        normB += v * v;
       }
       const denom = Math.sqrt(normA) * Math.sqrt(normB);
       const similarity = denom > 0 ? dot / denom : 0;
@@ -185,12 +187,14 @@ export class WorkspaceIndexer extends EventEmitter {
           
           if (embeddings && embeddings.embeddings) {
               for (let i = 0; i < chunks.length; i++) {
+                  const chunk = chunks[i];
+                  if (chunk === undefined) continue;
                   const id = this.nextId++;
                   this.entries.set(id, {
                       id,
                       filePath: file,
                       chunkIndex: i,
-                      text: chunks[i]
+                      text: chunk
                   });
                   const indexed = await this.addVector(id, embeddings.embeddings[i]);
                   if (indexed) {

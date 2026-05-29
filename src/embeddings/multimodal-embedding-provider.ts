@@ -137,11 +137,19 @@ export class MultimodalEmbeddingProvider {
       );
     }
 
-    return data.embeddings.map((emb, i) => ({
-      embedding: emb.values,
-      inputType: inputs[i].type,
-      dimensions: emb.values.length,
-    }));
+    return data.embeddings.map((emb, i) => {
+      const input = inputs[i];
+      if (input === undefined) {
+        throw new Error(
+          `Unexpected embedding response: missing input for embedding at index ${i}`
+        );
+      }
+      return {
+        embedding: emb.values,
+        inputType: input.type,
+        dimensions: emb.values.length,
+      };
+    });
   }
 
   /**
@@ -149,7 +157,11 @@ export class MultimodalEmbeddingProvider {
    */
   async embedText(text: string): Promise<number[]> {
     const results = await this.embed([{ type: 'text', content: text }]);
-    return results[0].embedding;
+    const first = results[0];
+    if (first === undefined) {
+      throw new Error('Multimodal embedding returned no result for text input');
+    }
+    return first.embedding;
   }
 
   /**
@@ -162,7 +174,11 @@ export class MultimodalEmbeddingProvider {
     const results = await this.embed([
       { type: 'image', content: base64Data, mimeType },
     ]);
-    return results[0].embedding;
+    const first = results[0];
+    if (first === undefined) {
+      throw new Error('Multimodal embedding returned no result for image input');
+    }
+    return first.embedding;
   }
 
   /**

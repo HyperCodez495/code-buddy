@@ -155,7 +155,8 @@ export class MultiFormatRenderer {
 
     for (const line of lines) {
       const h2Match = line.match(/^##\s+(.+)$/);
-      if (h2Match) {
+      const heading = h2Match?.[1];
+      if (heading !== undefined) {
         // Flush previous section
         if (buffer.length > 0 || currentKey !== '_intro') {
           const text = buffer.join('\n').trim();
@@ -163,7 +164,7 @@ export class MultiFormatRenderer {
             sections[currentKey] = text;
           }
         }
-        currentKey = h2Match[1].trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+        currentKey = heading.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         buffer = [];
       } else {
         buffer.push(line);

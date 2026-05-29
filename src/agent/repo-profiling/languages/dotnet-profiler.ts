@@ -126,20 +126,21 @@ export const dotnetProfiler: LanguageProfiler = {
           'Dock.Avalonia', 'AvaloniaEdit', 'Avalonia.Svg.Skia',
         ]);
         for (const [, pkg] of pkgRefs) {
+          if (pkg === undefined) continue;
           const match = [...dotnetNotable].find(n => pkg.startsWith(n));
           if (match && !ctx.keyDependencies.includes(match)) ctx.keyDependencies.push(match);
         }
         // Test framework from packages
         if (!ctx.testFramework) {
-          if (pkgRefs.some(([, p]) => p.startsWith('xunit'))) ctx.testFramework = 'xUnit';
-          else if (pkgRefs.some(([, p]) => p.startsWith('NUnit'))) ctx.testFramework = 'NUnit';
-          else if (pkgRefs.some(([, p]) => p.startsWith('MSTest') || p.includes('Microsoft.VisualStudio.TestTools'))) ctx.testFramework = 'MSTest';
+          if (pkgRefs.some(([, p]) => (p ?? '').startsWith('xunit'))) ctx.testFramework = 'xUnit';
+          else if (pkgRefs.some(([, p]) => (p ?? '').startsWith('NUnit'))) ctx.testFramework = 'NUnit';
+          else if (pkgRefs.some(([, p]) => (p ?? '').startsWith('MSTest') || (p ?? '').includes('Microsoft.VisualStudio.TestTools'))) ctx.testFramework = 'MSTest';
         }
         // Database detection from EF providers (stored for infra section)
         // Linter for .NET
         if (!ctx.linter) {
-          if (pkgRefs.some(([, p]) => p.includes('StyleCop'))) ctx.linter = 'StyleCop';
-          else if (pkgRefs.some(([, p]) => p.includes('Roslynator'))) ctx.linter = 'Roslynator';
+          if (pkgRefs.some(([, p]) => (p ?? '').includes('StyleCop'))) ctx.linter = 'StyleCop';
+          else if (pkgRefs.some(([, p]) => (p ?? '').includes('Roslynator'))) ctx.linter = 'Roslynator';
           else if (fsh.exists(path.join(ctx.cwd, '.editorconfig'))) ctx.linter = '.editorconfig + analyzers';
         }
         // Formatter for .NET
@@ -155,16 +156,17 @@ export const dotnetProfiler: LanguageProfiler = {
         try {
           const xml = fs.readFileSync(path.join(ctx.cwd, csproj), 'utf-8');
           const pkgRefs = [...xml.matchAll(/<PackageReference\s+Include="([^"]+)"/g)];
-          if (pkgRefs.some(([, p]) => p.startsWith('xunit'))) { ctx.testFramework = 'xUnit'; break; }
-          else if (pkgRefs.some(([, p]) => p.startsWith('NUnit'))) { ctx.testFramework = 'NUnit'; break; }
-          else if (pkgRefs.some(([, p]) => p.startsWith('MSTest') || p.includes('Microsoft.VisualStudio.TestTools'))) { ctx.testFramework = 'MSTest'; break; }
+          if (pkgRefs.some(([, p]) => (p ?? '').startsWith('xunit'))) { ctx.testFramework = 'xUnit'; break; }
+          else if (pkgRefs.some(([, p]) => (p ?? '').startsWith('NUnit'))) { ctx.testFramework = 'NUnit'; break; }
+          else if (pkgRefs.some(([, p]) => (p ?? '').startsWith('MSTest') || (p ?? '').includes('Microsoft.VisualStudio.TestTools'))) { ctx.testFramework = 'MSTest'; break; }
         } catch { /* ignore */ }
       }
     }
 
     // Solution-level detection
-    if (slnFiles.length > 0) {
-      const slnPath = path.join(ctx.cwd, slnFiles[0]);
+    const firstSln = slnFiles[0];
+    if (firstSln !== undefined) {
+      const slnPath = path.join(ctx.cwd, firstSln);
       try {
         const slnContent = fs.readFileSync(slnPath, 'utf-8');
         const projectMatches = slnContent.match(/^Project\(/gm);

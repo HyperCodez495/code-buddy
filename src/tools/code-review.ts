@@ -346,6 +346,7 @@ Provide your analysis in JSON format as specified.`;
       if (!pathMatch) continue;
 
       const filePath = pathMatch[2];
+      if (filePath === undefined) continue;
 
       // Skip binary files
       if (fileDiff.includes('Binary files')) continue;
@@ -355,8 +356,10 @@ Provide your analysis in JSON format as specified.`;
       const hunkMatches = fileDiff.matchAll(/@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@[^\n]*\n([\s\S]*?)(?=@@|$)/g);
 
       for (const match of hunkMatches) {
-        const startLine = parseInt(match[1], 10);
+        const startLineRaw = match[1];
         const hunkContent = match[2];
+        if (startLineRaw === undefined || hunkContent === undefined) continue;
+        const startLine = parseInt(startLineRaw, 10);
         const lines = hunkContent
           .split('\n')
           .filter(line => line.startsWith('+') || line.startsWith(' '))

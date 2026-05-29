@@ -202,7 +202,10 @@ class CrossEncoderScorer {
     for (const pattern of functionPatterns) {
       let match;
       while ((match = pattern.exec(query)) !== null) {
-        queryIdentifiers.add(match[1].toLowerCase());
+        const captured = match[1];
+        if (captured !== undefined) {
+          queryIdentifiers.add(captured.toLowerCase());
+        }
       }
     }
 
@@ -467,8 +470,12 @@ export class CrossEncoderReranker extends EventEmitter {
     }
 
     // Apply MMR
-    const selected: RerankedResult[] = [initialResults[0]];
-    const remaining = initialResults.slice(1);
+    const [first, ...remaining] = initialResults;
+    // length > 1 guaranteed above, so first is defined; guard to satisfy the type system
+    if (first === undefined) {
+      return { results: initialResults, stats };
+    }
+    const selected: RerankedResult[] = [first];
 
     while (selected.length < this.config.topK && remaining.length > 0) {
       let bestIndex = -1;
@@ -476,6 +483,9 @@ export class CrossEncoderReranker extends EventEmitter {
 
       for (let i = 0; i < remaining.length; i++) {
         const candidate = remaining[i];
+        if (candidate === undefined) {
+          continue;
+        }
 
         // Calculate max similarity to already selected
         let maxSimilarity = 0;
@@ -494,7 +504,11 @@ export class CrossEncoderReranker extends EventEmitter {
       }
 
       if (bestIndex >= 0) {
-        selected.push(remaining[bestIndex]);
+        const best = remaining[bestIndex];
+        if (best === undefined) {
+          break;
+        }
+        selected.push(best);
         remaining.splice(bestIndex, 1);
       } else {
         break;

@@ -46,7 +46,8 @@ function askChoice(rl: readline.Interface, question: string, choices: string[], 
     choices.forEach((c, i) => console.log(`    ${i + 1}. ${c}${i === defaultIdx ? ' (default)' : ''}`));
     rl.question(`  Choice [${defaultIdx + 1}]: `, (answer) => {
       const idx = parseInt(answer) - 1;
-      resolve(choices[idx >= 0 && idx < choices.length ? idx : defaultIdx]);
+      const selectedIdx = idx >= 0 && idx < choices.length ? idx : defaultIdx;
+      resolve(choices[selectedIdx] ?? choices[0] ?? '');
     });
   });
 }

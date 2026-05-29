@@ -147,6 +147,7 @@ export async function enrichDocs(options: EnrichOptions): Promise<EnrichResult> 
 
   for (let i = 0; i < mdFiles.length; i++) {
     const file = mdFiles[i];
+    if (file === undefined) continue;
     options.onProgress?.(file, i + 1, mdFiles.length);
     logger.info(`Enriching [${i + 1}/${mdFiles.length}] ${file}`);
 
@@ -364,7 +365,7 @@ function stripLLMNoise(content: string): string {
 
   // Remove ```markdown wrapper if present
   const mdFenceMatch = result.match(/```markdown\n([\s\S]*?)```\s*$/);
-  if (mdFenceMatch) {
+  if (mdFenceMatch && mdFenceMatch[1] !== undefined) {
     result = mdFenceMatch[1];
   }
 
@@ -403,6 +404,9 @@ function crossValidateIdentifiers(
   // Match `SomeIdentifier.someMethod()` or `SomeClass.method()` patterns
   const result = content.replace(/`([A-Z][a-zA-Z0-9]*\.[a-zA-Z][a-zA-Z0-9]*)\(\)`/g, (match, identifier: string) => {
     const [className, methodName] = identifier.split('.');
+    // The regex guarantees an identifier of the form `Class.method`, so both
+    // parts are always present; guard keeps TS happy and is a no-op at runtime.
+    if (className === undefined || methodName === undefined) return match;
 
     // Check if class exists
     const classExists = verifiedEntities.has(className) ||

@@ -333,6 +333,7 @@ export class PipelineCompositor extends EventEmitter {
     if (!match) return null;
 
     const name = match[1];
+    if (name === undefined) return null;
     const rawArgs = match[2] || '';
     const args = this.parseArgs(rawArgs);
 
@@ -370,6 +371,7 @@ export class PipelineCompositor extends EventEmitter {
     while ((match = kvPattern.exec(argsStr)) !== null) {
       const key = match[1];
       const value = match[2] ?? match[3] ?? match[4];
+      if (key === undefined) continue;
       args[key] = value;
       hasKv = true;
     }
@@ -447,8 +449,7 @@ export class PipelineCompositor extends EventEmitter {
     }
 
     // Execute steps
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
+    for (const [i, step] of steps.entries()) {
       const operator = i > 0 ? (operators[i - 1] || '|') : '|';
 
       // Check total duration
@@ -817,8 +818,7 @@ export class PipelineCompositor extends EventEmitter {
     }
 
     const names = new Set<string>();
-    for (let i = 0; i < steps.length; i++) {
-      const step = steps[i];
+    for (const [i, step] of steps.entries()) {
       if (!step.name) {
         errors.push(`Step ${i + 1}: missing name`);
       }

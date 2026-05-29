@@ -49,10 +49,10 @@ export function parseSkillFile(
   const [, frontmatterYaml, markdownBody] = match;
 
   // Parse metadata
-  const metadata = parseMetadata(frontmatterYaml, sourcePath);
+  const metadata = parseMetadata(frontmatterYaml ?? '', sourcePath);
 
   // Parse content
-  const skillContent = parseContent(markdownBody);
+  const skillContent = parseContent(markdownBody ?? '');
 
   return {
     metadata,
@@ -195,8 +195,8 @@ function splitByHeadings(markdown: string): Section[] {
 
       // Start new section
       currentSection = {
-        heading: headingMatch[2].trim(),
-        level: headingMatch[1].length,
+        heading: (headingMatch[2] ?? '').trim(),
+        level: (headingMatch[1] ?? '').length,
         content: '',
       };
       contentLines = [];
@@ -275,7 +275,7 @@ function parseSteps(content: string): SkillStep[] {
     // Numbered list: "1. Do something"
     const numberedMatch = trimmed.match(/^\d+\.\s+(.+)$/);
     if (numberedMatch) {
-      const step = parseStepLine(numberedMatch[1], index++);
+      const step = parseStepLine(numberedMatch[1] ?? '', index++);
       steps.push(step);
       continue;
     }
@@ -283,7 +283,7 @@ function parseSteps(content: string): SkillStep[] {
     // Bullet list with step marker: "- **Step 1**: Do something"
     const bulletMatch = trimmed.match(/^[-*]\s+\*?\*?(?:Step\s+\d+)?:?\*?\*?\s*(.+)$/i);
     if (bulletMatch) {
-      const step = parseStepLine(bulletMatch[1], index++);
+      const step = parseStepLine(bulletMatch[1] ?? '', index++);
       steps.push(step);
     }
   }
@@ -310,7 +310,7 @@ function parseStepLine(text: string, index: number): SkillStep {
   const conditionMatch = text.match(/^[Ii]f\s+(.+?),\s+(?:then\s+)?(.+)$/);
   if (conditionMatch) {
     step.condition = conditionMatch[1];
-    step.description = conditionMatch[2];
+    step.description = conditionMatch[2] ?? '';
   }
 
   return step;
@@ -330,7 +330,7 @@ function parseToolInvocations(content: string): SkillToolInvocation[] {
     const toolMatch = trimmed.match(/^[-*]\s+`(\w+)`(?:\s*:\s*(.+))?$/);
     if (toolMatch) {
       tools.push({
-        name: toolMatch[1],
+        name: toolMatch[1] ?? '',
         description: toolMatch[2] || undefined,
       });
       continue;
@@ -339,9 +339,9 @@ function parseToolInvocations(content: string): SkillToolInvocation[] {
     // Format: "- tool_name(arg1, arg2): Description"
     const funcMatch = trimmed.match(/^[-*]\s+(\w+)\(([^)]*)\)(?:\s*:\s*(.+))?$/);
     if (funcMatch) {
-      const args = parseToolArgs(funcMatch[2]);
+      const args = parseToolArgs(funcMatch[2] ?? '');
       tools.push({
-        name: funcMatch[1],
+        name: funcMatch[1] ?? '',
         args,
         description: funcMatch[3] || undefined,
       });
@@ -366,6 +366,7 @@ function parseToolArgs(argsStr: string): Record<string, unknown> {
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i];
+    if (part === undefined) continue;
     const eqIndex = part.indexOf('=');
 
     if (eqIndex > 0) {
@@ -419,7 +420,7 @@ function parseCodeBlocks(markdown: string): SkillCodeBlock[] {
     blocks.push({
       language: match[1] || 'text',
       label: match[2] || undefined,
-      code: match[3].trim(),
+      code: (match[3] ?? '').trim(),
     });
   }
 

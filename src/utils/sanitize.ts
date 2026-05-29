@@ -425,6 +425,7 @@ export function extractCommentaryToolCalls(content: string): {
   while ((match1 = pattern1.exec(content)) !== null) {
     const toolName = match1[1];
     const argsJson = match1[2];
+    if (toolName === undefined || argsJson === undefined) continue;
 
     try {
       const args = JSON.parse(argsJson);
@@ -444,11 +445,12 @@ export function extractCommentaryToolCalls(content: string): {
   let match2: RegExpExecArray | null;
 
   while ((match2 = pattern2.exec(content)) !== null) {
-    // Avoid double-parsing if already extracted via commentary
-    if (toolCalls.some(tc => tc.raw.includes(match2![2]))) continue;
-
     const toolName = match2[1];
     const argsJson = match2[2];
+    if (toolName === undefined || argsJson === undefined) continue;
+
+    // Avoid double-parsing if already extracted via commentary
+    if (toolCalls.some(tc => tc.raw.includes(argsJson))) continue;
 
     try {
       const args = JSON.parse(argsJson);

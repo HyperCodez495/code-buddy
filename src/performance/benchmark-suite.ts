@@ -183,7 +183,9 @@ export class BenchmarkSuite extends EventEmitter {
       // Warmup runs
       this.emit('phase', { phase: 'warmup', total: this.config.warmupRuns });
       for (let i = 0; i < this.config.warmupRuns; i++) {
-        const prompt = this.config.prompts[i % this.config.prompts.length];
+        const prompts = this.config.prompts;
+        const prompt = prompts[i % prompts.length];
+        if (!prompt) throw new Error('Benchmark requires at least one prompt');
         this.emit('warmup', { run: i + 1, total: this.config.warmupRuns });
         await this.executeRun(prompt, callback, true);
       }
@@ -222,7 +224,9 @@ export class BenchmarkSuite extends EventEmitter {
    */
   private async runSequential(callback: BenchmarkCallback): Promise<void> {
     for (let i = 0; i < this.config.runs; i++) {
-      const prompt = this.config.prompts[i % this.config.prompts.length];
+      const prompts = this.config.prompts;
+      const prompt = prompts[i % prompts.length];
+      if (!prompt) throw new Error('Benchmark requires at least one prompt');
       this.emit('run', { run: i + 1, total: this.config.runs, prompt: prompt.name });
 
       const run = await this.executeRun(prompt, callback, false);
@@ -249,7 +253,9 @@ export class BenchmarkSuite extends EventEmitter {
 
       for (let i = 0; i < batchSize; i++) {
         const runIndex = batchStart + i;
-        const prompt = this.config.prompts[runIndex % this.config.prompts.length];
+        const prompts = this.config.prompts;
+        const prompt = prompts[runIndex % prompts.length];
+        if (!prompt) throw new Error('Benchmark requires at least one prompt');
 
         this.emit('run', {
           run: runIndex + 1,
@@ -417,8 +423,8 @@ export class BenchmarkSuite extends EventEmitter {
     const stdDev = Math.sqrt(avgSquaredDiff);
 
     return {
-      min: sorted[0],
-      max: sorted[sorted.length - 1],
+      min: sorted[0] ?? 0,
+      max: sorted[sorted.length - 1] ?? 0,
       avg,
       p50: this.percentile(sorted, 50),
       p95: this.percentile(sorted, 95),
@@ -435,12 +441,15 @@ export class BenchmarkSuite extends EventEmitter {
     const lower = Math.floor(index);
     const upper = Math.ceil(index);
 
+    const lo = sorted[lower] ?? 0;
+    const hi = sorted[upper] ?? 0;
+
     if (lower === upper) {
-      return sorted[lower];
+      return lo;
     }
 
     const weight = index - lower;
-    return sorted[lower] * (1 - weight) + sorted[upper] * weight;
+    return lo * (1 - weight) + hi * weight;
   }
 
   /**

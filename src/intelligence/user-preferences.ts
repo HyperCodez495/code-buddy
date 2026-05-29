@@ -161,8 +161,8 @@ export class PreferencesManager {
 
     // Detect indentation
     const indentMatch = code.match(/^(\s+)/m);
-    if (indentMatch) {
-      const indent = indentMatch[1];
+    const indent = indentMatch?.[1];
+    if (indent !== undefined) {
       if (indent.includes('\t')) {
         this.preferences.codingStyle.indentation = 'tabs';
       } else {

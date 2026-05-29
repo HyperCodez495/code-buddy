@@ -143,13 +143,14 @@ export function updateGraphForFile(
     }
     if (!call.isMethodCall) {
       const funcs = candidates.filter(c => c.kind === 'function');
-      if (funcs.length === 1) {
-        graph.add(call.callerFqn, 'calls', `fn:${funcs[0].name}`);
+      const onlyFunc = funcs.length === 1 ? funcs[0] : undefined;
+      if (onlyFunc) {
+        graph.add(call.callerFqn, 'calls', `fn:${onlyFunc.name}`);
         continue;
       }
     }
-    if (candidates.length === 1) {
-      const c = candidates[0];
+    const c = candidates.length === 1 ? candidates[0] : undefined;
+    if (c) {
       const target = c.kind === 'method' && c.className
         ? `fn:${c.className}.${c.name}`
         : `fn:${c.name}`;

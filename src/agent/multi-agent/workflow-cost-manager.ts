@@ -94,14 +94,15 @@ export class WorkflowCostManager {
   private calculateCostSync(inputTokens: number, outputTokens: number, model: string): number {
     // Pricing kept in sync with src/utils/cost-tracker.ts MODEL_PRICING fallback.
     // V0.5 = single source of truth via CostTracker.calculateCost().
+    const defaultRate = { input: 0.003, output: 0.015 };
     const ratesByModel: Record<string, { input: number; output: number }> = {
       'grok-4-latest': { input: 0.003, output: 0.015 },
       'grok-3-fast': { input: 0.0006, output: 0.004 },
       'grok-3-mini': { input: 0.0003, output: 0.0005 },
       'grok-code-fast-1': { input: 0.00015, output: 0.0006 },
-      default: { input: 0.003, output: 0.015 },
+      default: defaultRate,
     };
-    const rate = ratesByModel[model] ?? ratesByModel.default;
+    const rate = ratesByModel[model] ?? defaultRate;
     return (inputTokens / 1000) * rate.input + (outputTokens / 1000) * rate.output;
   }
 

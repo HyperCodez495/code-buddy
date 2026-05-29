@@ -116,9 +116,10 @@ export async function getGitState(
     // Parse upstream diff
     if (upstreamDiff) {
       const parts = upstreamDiff.trim().split(/\s+/);
-      if (parts.length === 2) {
-        state.ahead = parseInt(parts[0], 10) || 0;
-        state.behind = parseInt(parts[1], 10) || 0;
+      const [aheadStr, behindStr] = parts;
+      if (parts.length === 2 && aheadStr !== undefined && behindStr !== undefined) {
+        state.ahead = parseInt(aheadStr, 10) || 0;
+        state.behind = parseInt(behindStr, 10) || 0;
       }
 
       // Get remote name
@@ -142,11 +143,13 @@ export async function getGitState(
         if (xy === '??') {
           state.untrackedFiles.push(filePath);
         } else {
-          if (xy[0] !== ' ' && xy[0] !== '?') {
+          const stagedChar = xy[0] ?? ' ';
+          const unstagedChar = xy[1] ?? ' ';
+          const isStaged = stagedChar !== ' ' && stagedChar !== '?';
+          if (isStaged) {
             state.stagedFiles.push(filePath);
           }
-          const statusChar =
-            xy[0] !== ' ' && xy[0] !== '?' ? xy[0] : xy[1];
+          const statusChar = isStaged ? stagedChar : unstagedChar;
           state.dirtyFiles.push({ status: statusChar, path: filePath });
         }
       }

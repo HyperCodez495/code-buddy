@@ -63,7 +63,7 @@ const DEFAULT_OPTIONS: Required<HeatmapOptions> = {
 export function generateHeatmap(options: HeatmapOptions = {}): HeatmapData {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const since = new Date(Date.now() - opts.days * 24 * 60 * 60 * 1000);
-  const sinceStr = since.toISOString().split('T')[0];
+  const sinceStr = since.toISOString().split('T')[0] ?? since.toISOString();
 
   // Get file statistics from git
   const fileStats = getFileStats(opts.repoPath, sinceStr, opts.exclude);
@@ -122,6 +122,9 @@ function getFileStats(
     for (const line of logOutput.split('\n')) {
       if (line.includes('|')) {
         const [hash, author, dateStr] = line.split('|');
+        if (hash === undefined || author === undefined || dateStr === undefined) {
+          continue;
+        }
         currentCommit = { hash, author, date: new Date(dateStr) };
       } else if (line.trim() && currentCommit) {
         const filePath = line.trim();
@@ -165,11 +168,14 @@ function getFileStats(
       const parts = line.split('\t');
       if (parts.length >= 3) {
         const [additions, deletions, filePath] = parts;
+        if (additions === undefined || deletions === undefined || filePath === undefined) {
+          continue;
+        }
         const add = parseInt(additions, 10) || 0;
         const del = parseInt(deletions, 10) || 0;
 
-        if (files.has(filePath)) {
-          const file = files.get(filePath)!;
+        const file = files.get(filePath);
+        if (file) {
           file.additions += add;
           file.deletions += del;
           file.churnScore = file.additions + file.deletions;

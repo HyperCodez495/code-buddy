@@ -144,6 +144,9 @@ export class ArchiveAgent extends SpecializedAgent {
     }
 
     const archivePath = task.inputFiles[0];
+    if (archivePath === undefined) {
+      return { success: false, error: 'No archive file specified' };
+    }
     if (!existsSync(archivePath)) {
       return { success: false, error: `Archive not found: ${archivePath}` };
     }
@@ -183,6 +186,9 @@ export class ArchiveAgent extends SpecializedAgent {
     }
 
     const archivePath = task.inputFiles[0];
+    if (archivePath === undefined) {
+      return { success: false, error: 'No archive file specified' };
+    }
     if (!existsSync(archivePath)) {
       return { success: false, error: `Archive not found: ${archivePath}` };
     }
@@ -276,6 +282,9 @@ export class ArchiveAgent extends SpecializedAgent {
     }
 
     const archivePath = task.inputFiles[0];
+    if (archivePath === undefined) {
+      return { success: false, error: 'No archive file specified' };
+    }
     if (!existsSync(archivePath)) {
       return { success: false, error: `Archive not found: ${archivePath}` };
     }
@@ -323,6 +332,9 @@ export class ArchiveAgent extends SpecializedAgent {
     const archivePath = task.inputFiles[0];
     const filesToAdd = task.inputFiles.slice(1);
 
+    if (archivePath === undefined) {
+      return { success: false, error: 'No archive file specified' };
+    }
     if (!existsSync(archivePath)) {
       return { success: false, error: `Archive not found: ${archivePath}` };
     }
@@ -371,6 +383,9 @@ export class ArchiveAgent extends SpecializedAgent {
     }
 
     const archivePath = task.inputFiles[0];
+    if (archivePath === undefined) {
+      return { success: false, error: 'No archive file specified' };
+    }
     if (!existsSync(archivePath)) {
       return { success: false, error: `Archive not found: ${archivePath}` };
     }
@@ -711,14 +726,17 @@ export class ArchiveAgent extends SpecializedAgent {
   }
 
   private findCommonBase(paths: string[]): string {
-    if (paths.length === 0) return process.cwd();
-    if (paths.length === 1) return paths[0];
+    const first = paths[0];
+    if (paths.length === 0 || first === undefined) return process.cwd();
+    if (paths.length === 1) return first;
 
     const parts = paths.map(p => p.split('/'));
+    const firstParts = parts[0] ?? first.split('/');
     const common: string[] = [];
 
-    for (let i = 0; i < parts[0].length; i++) {
-      const part = parts[0][i];
+    for (let i = 0; i < firstParts.length; i++) {
+      const part = firstParts[i];
+      if (part === undefined) break;
       if (parts.every(p => p[i] === part)) {
         common.push(part);
       } else {

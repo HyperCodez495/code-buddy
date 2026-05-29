@@ -110,7 +110,7 @@ function generateShortId(uuid: string): string {
  * Get log file path for a session
  */
 function getLogPath(sessionId: string): string {
-  const date = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
+  const date = new Date().toISOString().split('T')[0] ?? ''; // YYYY-MM-DD
   const dir = join(LOG_DIR, date);
   if (!existsSync(dir)) {
     mkdirSync(dir, { recursive: true });
@@ -253,8 +253,8 @@ export class InteractionLogger {
       .filter(({ m }) => m.role === 'assistant')
       .pop()?.i;
 
-    if (lastAssistantIdx !== undefined) {
-      const msg = this.currentSession.messages[lastAssistantIdx];
+    const msg = lastAssistantIdx !== undefined ? this.currentSession.messages[lastAssistantIdx] : undefined;
+    if (msg !== undefined) {
       msg.tool_calls = toolCalls.map(tc => ({
         id: tc.id,
         name: tc.name,
@@ -350,6 +350,7 @@ export class InteractionLogger {
 
     // If multiple matches, return the most recent
     const path = files[0];
+    if (path === undefined) return null;
     try {
       const content = readFileSync(path, 'utf-8');
       return JSON.parse(content) as SessionData;
@@ -431,9 +432,10 @@ export class InteractionLogger {
         }))
         .sort((a, b) => b.mtime - a.mtime);
 
-      if (files.length > 0) {
+      const latest = files[0];
+      if (latest !== undefined) {
         try {
-          const content = readFileSync(files[0].path, 'utf-8');
+          const content = readFileSync(latest.path, 'utf-8');
           return JSON.parse(content) as SessionData;
         } catch {
           continue;
@@ -548,7 +550,7 @@ export class InteractionLogger {
     lines.push('-'.repeat(40));
 
     for (const msg of session.messages) {
-      const prefix = `[${msg.timestamp.split('T')[1].split('.')[0]}]`;
+      const prefix = `[${msg.timestamp.split('T')[1]?.split('.')[0] ?? msg.timestamp}]`;
       const role = msg.role.toUpperCase().padEnd(10);
       const content = msg.content || '(no content)';
       lines.push(`${prefix} ${role}: ${content.substring(0, 100)}${content.length > 100 ? '...' : ''}`);

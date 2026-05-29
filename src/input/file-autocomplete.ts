@@ -156,13 +156,15 @@ export class FileAutocomplete {
     if (!filePath) return null;
 
     const rangeMatch = rangeStr.match(/^(\d+)(?:-(\d+))?$/);
-    if (!rangeMatch) {
+    const startCapture = rangeMatch?.[1];
+    if (!rangeMatch || startCapture === undefined) {
       // Colon but no valid range - still return path
       return { path: filePath };
     }
 
-    const lineStart = parseInt(rangeMatch[1], 10);
-    const lineEnd = rangeMatch[2] ? parseInt(rangeMatch[2], 10) : undefined;
+    const lineStart = parseInt(startCapture, 10);
+    const endCapture = rangeMatch[2];
+    const lineEnd = endCapture ? parseInt(endCapture, 10) : undefined;
 
     return { path: filePath, lineStart, lineEnd };
   }

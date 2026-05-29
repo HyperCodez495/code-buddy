@@ -427,8 +427,7 @@ export class ConversationBranchManager extends EventEmitter {
       const isCurrent = node.branch.id === this.currentBranchId ? " 🟢" : "";
       let result = `${indent}├─ ${node.branch.name} (${node.branch.messages.length} msgs)${isCurrent}\n`;
 
-      for (let i = 0; i < node.children.length; i++) {
-        const child = node.children[i];
+      for (const [i, child] of node.children.entries()) {
         const isLast = i === node.children.length - 1;
         const newIndent = indent + (isLast ? "   " : "│  ");
         result += formatNode(child, newIndent);

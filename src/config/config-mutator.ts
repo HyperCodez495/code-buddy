@@ -116,6 +116,7 @@ async function validateSecretRef(value: string): Promise<string | null> {
   const envMatches = [...value.matchAll(/\$\{env:([^}]+)\}/g)];
   for (const match of envMatches) {
     const envName = match[1];
+    if (envName === undefined) continue;
     if (process.env[envName] === undefined) {
       return `Environment variable "${envName}" is not set — SecretRef will resolve to empty string`;
     }
@@ -124,6 +125,7 @@ async function validateSecretRef(value: string): Promise<string | null> {
   const fileMatches = [...value.matchAll(/\$\{file:([^}]+)\}/g)];
   for (const match of fileMatches) {
     const filePath = match[1];
+    if (filePath === undefined) continue;
     try {
       const fs = await import('fs');
       if (!fs.existsSync(filePath)) {
@@ -157,10 +159,14 @@ function navigateKeyPath(
 
   // Single key — top-level assignment
   if (parts.length === 1) {
+    const singleKey = parts[0];
+    if (singleKey === undefined) {
+      return { error: 'Empty key path' };
+    }
     return {
       parent: config,
-      leafKey: parts[0],
-      currentValue: config[parts[0]],
+      leafKey: singleKey,
+      currentValue: config[singleKey],
     };
   }
 
@@ -168,6 +174,7 @@ function navigateKeyPath(
   let current: Record<string, unknown> = config;
   for (let i = 0; i < parts.length - 1; i++) {
     const segment = parts[i];
+    if (segment === undefined) continue; // safe: i < parts.length - 1, but satisfy noUncheckedIndexedAccess
     const next = current[segment];
 
     if (next === undefined || next === null) {
@@ -182,6 +189,9 @@ function navigateKeyPath(
   }
 
   const leafKey = parts[parts.length - 1];
+  if (leafKey === undefined) {
+    return { error: 'Empty key path' };
+  }
   return {
     parent: current,
     leafKey,

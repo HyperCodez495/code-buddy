@@ -274,6 +274,7 @@ Also check for:
 
     while ((match = feedbackRegex.exec(result.output)) !== null) {
       const [, type, severity, message] = match;
+      if (type === undefined || severity === undefined || message === undefined) continue;
 
       const feedback: AgentFeedback = {
         id: createId("feedback"),
@@ -331,6 +332,7 @@ Also check for:
     // Extract "file:line" patterns
     while ((match = filePattern.exec(message)) !== null) {
       const [, file, line] = match;
+      if (file === undefined || line === undefined) continue;
       locations.push({
         file,
         startLine: parseInt(line, 10),
@@ -341,6 +343,7 @@ Also check for:
     // Extract "Line N" patterns (without file, will need context)
     while ((match = linePattern.exec(message)) !== null) {
       const [, startLine, endLine] = match;
+      if (startLine === undefined) continue;
       locations.push({
         file: "", // Will be filled in by context
         startLine: parseInt(startLine, 10),

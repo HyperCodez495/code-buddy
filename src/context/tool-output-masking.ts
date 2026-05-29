@@ -82,14 +82,14 @@ export function applyToolOutputMasking(messages: CodeBuddyMessage[]): number {
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role !== 'tool' || typeof msg.content !== 'string') continue;
+    if (!msg || msg.role !== 'tool' || typeof msg.content !== 'string') continue;
 
     // Extract tool name from preceding assistant message
     let toolName = '';
     const toolCallId = (msg as { tool_call_id?: string }).tool_call_id;
     for (let j = i - 1; j >= 0; j--) {
       const prev = messages[j];
-      if (prev.role === 'assistant' && 'tool_calls' in prev && Array.isArray(prev.tool_calls)) {
+      if (prev && prev.role === 'assistant' && 'tool_calls' in prev && Array.isArray(prev.tool_calls)) {
         const tc = (prev.tool_calls as Array<{ id: string; function?: { name: string } }>)
           .find(t => t.id === toolCallId);
         if (tc) {
@@ -124,7 +124,9 @@ export function applyToolOutputMasking(messages: CodeBuddyMessage[]): number {
     : toolMessages.length - 1;
 
   for (let i = startIdx; i >= 0; i--) {
-    cumulativeChars += toolMessages[i].chars;
+    const tm = toolMessages[i];
+    if (!tm) continue;
+    cumulativeChars += tm.chars;
     if (cumulativeChars > PROTECTION_THRESHOLD_CHARS) {
       protectionBoundary = i;
       break;
@@ -137,7 +139,9 @@ export function applyToolOutputMasking(messages: CodeBuddyMessage[]): number {
   // Calculate total prunable chars
   let totalPrunable = 0;
   for (let i = 0; i <= protectionBoundary; i++) {
-    totalPrunable += toolMessages[i].chars;
+    const tm = toolMessages[i];
+    if (!tm) continue;
+    totalPrunable += tm.chars;
   }
 
   // Only mask if enough prunable content
@@ -146,7 +150,9 @@ export function applyToolOutputMasking(messages: CodeBuddyMessage[]): number {
   // Mask old outputs (validate index bounds before access)
   let masked = 0;
   for (let i = 0; i <= protectionBoundary; i++) {
-    const { index, toolName } = toolMessages[i];
+    const tm = toolMessages[i];
+    if (!tm) continue;
+    const { index, toolName } = tm;
     if (index < 0 || index >= messages.length) continue;
     const msg = messages[index];
     if (!msg || typeof msg.content !== 'string') continue;
@@ -203,13 +209,13 @@ export function expireOldToolResults(
   const turnMap = new Map<number, number>(); // message index → estimated turn
 
   for (let i = 0; i < messages.length; i++) {
-    if (messages[i].role === 'assistant') turnEstimate++;
+    if (messages[i]?.role === 'assistant') turnEstimate++;
     turnMap.set(i, turnEstimate);
   }
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role !== 'tool' || typeof msg.content !== 'string') continue;
+    if (!msg || msg.role !== 'tool' || typeof msg.content !== 'string') continue;
     if (msg.content.includes(MASKING_TAG)) continue; // Already masked
 
     const msgTurn = turnMap.get(i) ?? 0;
@@ -327,14 +333,14 @@ export function pruneImageContent(
 
   for (let i = 0; i < messages.length; i++) {
     const msg = messages[i];
-    if (msg.role !== 'tool') continue;
+    if (!msg || msg.role !== 'tool') continue;
 
     // Extract tool name from preceding assistant message
     let toolName = '';
     const toolCallId = (msg as { tool_call_id?: string }).tool_call_id;
     for (let j = i - 1; j >= 0; j--) {
       const prev = messages[j];
-      if (prev.role === 'assistant' && 'tool_calls' in prev && Array.isArray(prev.tool_calls)) {
+      if (prev && prev.role === 'assistant' && 'tool_calls' in prev && Array.isArray(prev.tool_calls)) {
         const tc = (prev.tool_calls as Array<{ id: string; function?: { name: string } }>)
           .find(t => t.id === toolCallId);
         if (tc) {

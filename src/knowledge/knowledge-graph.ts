@@ -136,6 +136,7 @@ export class KnowledgeGraph {
 
     for (const idx of subjectSet) {
       const t = this.triples[idx];
+      if (t === undefined) continue;
       if (t.predicate === predicate && t.object === object) return true;
     }
     return false;
@@ -166,6 +167,7 @@ export class KnowledgeGraph {
     const results: Triple[] = [];
     for (const idx of indices) {
       const t = this.triples[idx];
+      if (t === undefined) continue;
       if (this.matchesPattern(t, pattern)) {
         results.push(t);
       }
@@ -276,6 +278,7 @@ export class KnowledgeGraph {
     // Remove from index maps (incremental, not full rebuild)
     for (const idx of toRemove) {
       const t = this.triples[idx];
+      if (t === undefined) continue;
       this.subjectIndex.get(t.subject)?.delete(idx);
       this.predicateIndex.get(t.predicate)?.delete(idx);
       this.objectIndex.get(t.object)?.delete(idx);
@@ -435,7 +438,9 @@ export class KnowledgeGraph {
     if (scored.length === 0) return null;
 
     scored.sort((a, b) => b.score - a.score);
-    return scored[0].id;
+    const top = scored[0];
+    if (top === undefined) return null;
+    return top.id;
   }
 
   /**
@@ -564,8 +569,7 @@ export class KnowledgeGraph {
     this.predicateIndex.clear();
     this.objectIndex.clear();
 
-    for (let i = 0; i < triples.length; i++) {
-      const t = triples[i];
+    for (const [i, t] of triples.entries()) {
       this.addToIndex(this.subjectIndex, t.subject, i);
       this.addToIndex(this.predicateIndex, t.predicate, i);
       this.addToIndex(this.objectIndex, t.object, i);

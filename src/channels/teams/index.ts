@@ -452,6 +452,8 @@ export class TeamsChannel extends BaseChannel {
       (activity.conversation.conversationType === 'groupChat' ||
       activity.conversation.conversationType === 'channel');
 
+    const firstAttachment = attachments[0];
+
     const inbound: InboundMessage = {
       id: activity.id ?? `teams-${Date.now()}`,
       channel: {
@@ -467,7 +469,7 @@ export class TeamsChannel extends BaseChannel {
         isBot: activity.from.role === 'bot',
       },
       content: text,
-      contentType: attachments.length > 0 ? attachments[0].type : (text.startsWith('/') ? 'command' : 'text'),
+      contentType: firstAttachment ? firstAttachment.type : (text.startsWith('/') ? 'command' : 'text'),
       attachments: attachments.length > 0 ? attachments : undefined,
       replyTo: activity.replyToId,
       timestamp: activity.timestamp ? new Date(activity.timestamp) : new Date(),

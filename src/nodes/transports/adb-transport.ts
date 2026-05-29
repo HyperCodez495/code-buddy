@@ -148,11 +148,11 @@ export class ADBTransport implements DeviceTransport {
     let currentId = '';
     for (const line of lines) {
       const idMatch = line.match(/Camera ID[:\s]+(\d+)/i);
-      if (idMatch) {
+      if (idMatch?.[1] !== undefined) {
         currentId = idMatch[1];
       }
       const facingMatch = line.match(/Facing[:\s]+(BACK|FRONT|EXTERNAL)/i);
-      if (facingMatch && currentId) {
+      if (facingMatch?.[1] !== undefined && currentId) {
         cameras.push({ id: currentId, facing: facingMatch[1].toLowerCase() });
         currentId = '';
       }
@@ -204,7 +204,7 @@ export class ADBTransport implements DeviceTransport {
     const lines = result.stdout.split('\n').filter((l) => l.trim());
     for (const line of lines) {
       const nameMatch = line.match(/display_name=([^,\n]+)/);
-      if (nameMatch) {
+      if (nameMatch?.[1] !== undefined) {
         contacts.push({ name: nameMatch[1].trim() });
       }
     }
@@ -231,11 +231,11 @@ export class ADBTransport implements DeviceTransport {
       const titleMatch = line.match(/title=([^,]+)/);
       const startMatch = line.match(/dtstart=(\d+)/);
       const endMatch = line.match(/dtend=(\d+)/);
-      if (titleMatch) {
+      if (titleMatch?.[1] !== undefined) {
         events.push({
           title: titleMatch[1].trim(),
-          start: startMatch ? new Date(parseInt(startMatch[1])).toISOString() : '',
-          end: endMatch ? new Date(parseInt(endMatch[1])).toISOString() : '',
+          start: startMatch?.[1] !== undefined ? new Date(parseInt(startMatch[1])).toISOString() : '',
+          end: endMatch?.[1] !== undefined ? new Date(parseInt(endMatch[1])).toISOString() : '',
         });
       }
     }
@@ -261,12 +261,12 @@ export class ADBTransport implements DeviceTransport {
       const textMatch = block.match(/android\.text=([^\n]+)/);
       const timeMatch = block.match(/postTime=(\d+)/);
 
-      if (pkgMatch) {
+      if (pkgMatch?.[1] !== undefined) {
         notifications.push({
           app: pkgMatch[1],
-          title: titleMatch ? titleMatch[1].trim() : '',
-          text: textMatch ? textMatch[1].trim() : '',
-          time: timeMatch ? parseInt(timeMatch[1]) : 0,
+          title: titleMatch?.[1] !== undefined ? titleMatch[1].trim() : '',
+          text: textMatch?.[1] !== undefined ? textMatch[1].trim() : '',
+          time: timeMatch?.[1] !== undefined ? parseInt(timeMatch[1]) : 0,
         });
       }
     }
@@ -289,7 +289,10 @@ export class ADBTransport implements DeviceTransport {
     const regex = /(\w+)\s*=\s*([-\d.]+)/g;
     let match: RegExpExecArray | null;
     while ((match = regex.exec(result.stdout)) !== null) {
-      data[match[1]] = parseFloat(match[2]);
+      const key = match[1];
+      const value = match[2];
+      if (key === undefined || value === undefined) continue;
+      data[key] = parseFloat(value);
     }
     return data;
   }
@@ -310,11 +313,11 @@ export class ADBTransport implements DeviceTransport {
     const tempMatch = output.match(/temperature:\s*(\d+)/);
 
     return {
-      level: levelMatch ? parseInt(levelMatch[1]) : -1,
+      level: levelMatch?.[1] !== undefined ? parseInt(levelMatch[1]) : -1,
       // Status 2 = charging, 5 = full
-      charging: statusMatch ? [2, 5].includes(parseInt(statusMatch[1])) : false,
+      charging: statusMatch?.[1] !== undefined ? [2, 5].includes(parseInt(statusMatch[1])) : false,
       // Temperature is in tenths of a degree
-      temperature: tempMatch ? parseInt(tempMatch[1]) / 10 : 0,
+      temperature: tempMatch?.[1] !== undefined ? parseInt(tempMatch[1]) / 10 : 0,
     };
   }
 

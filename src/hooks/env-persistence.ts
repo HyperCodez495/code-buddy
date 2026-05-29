@@ -161,9 +161,10 @@ export class EnvPersistence {
       '',
     ];
 
-    const sortedKeys = Object.keys(env).sort();
-    for (const key of sortedKeys) {
-      const value = env[key];
+    const sortedEntries = Object.entries(env).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0
+    );
+    for (const [key, value] of sortedEntries) {
       // Quote values that contain spaces or special characters
       const needsQuoting = /[\s"'$`\\!#&|;()]/.test(value);
       const quotedValue = needsQuoting ? `"${value.replace(/["\\]/g, '\\$&')}"` : value;

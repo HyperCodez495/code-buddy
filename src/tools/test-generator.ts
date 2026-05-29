@@ -189,7 +189,7 @@ export class TestGeneratorTool {
       pytest: { run: "pytest", coverage: "pytest --cov" },
     };
 
-    const cmd = commands[framework] || commands.jest;
+    const cmd = commands[framework] ?? commands.jest ?? { run: "npx jest", coverage: "npx jest --coverage" };
     return coverage ? cmd.coverage : cmd.run;
   }
 
@@ -236,32 +236,43 @@ export class TestGeneratorTool {
     // Match export statements
     const exportMatches = content.matchAll(/export\s+(?:const|let|var|function|class|async function)\s+(\w+)/g);
     for (const match of exportMatches) {
-      exports.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      exports.push(name);
     }
 
     // Match named exports
     const namedExportMatch = content.match(/export\s*\{([^}]+)\}/);
-    if (namedExportMatch) {
-      const names = namedExportMatch[1].split(",").map((n) => n.trim().split(/\s+as\s+/)[0]);
+    if (namedExportMatch?.[1] !== undefined) {
+      const names = namedExportMatch[1]
+        .split(",")
+        .map((n) => n.trim().split(/\s+as\s+/)[0])
+        .filter((n): n is string => n !== undefined);
       exports.push(...names);
     }
 
     // Match function declarations
     const funcMatches = content.matchAll(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/g);
     for (const match of funcMatches) {
-      functions.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      functions.push(name);
     }
 
     // Match arrow functions assigned to const
     const arrowMatches = content.matchAll(/(?:export\s+)?const\s+(\w+)\s*=\s*(?:async\s*)?\([^)]*\)\s*(?::\s*[^=]+)?\s*=>/g);
     for (const match of arrowMatches) {
-      functions.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      functions.push(name);
     }
 
     // Match class declarations
     const classMatches = content.matchAll(/(?:export\s+)?class\s+(\w+)/g);
     for (const match of classMatches) {
-      classes.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      classes.push(name);
     }
 
     return {

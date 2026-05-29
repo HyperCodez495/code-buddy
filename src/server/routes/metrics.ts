@@ -227,8 +227,9 @@ function formatCounters(snapshot: MetricsSnapshot): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [name, values] of Object.entries(snapshot.counters)) {
-    if (values.length === 1 && Object.keys(values[0].labels).length === 0) {
-      result[name] = values[0].value;
+    const first = values[0];
+    if (first !== undefined && values.length === 1 && Object.keys(first.labels).length === 0) {
+      result[name] = first.value;
     } else {
       result[name] = values.map((v) => ({
         value: v.value,
@@ -244,8 +245,9 @@ function formatGauges(snapshot: MetricsSnapshot): Record<string, unknown> {
   const result: Record<string, unknown> = {};
 
   for (const [name, values] of Object.entries(snapshot.gauges)) {
-    if (values.length === 1 && Object.keys(values[0].labels).length === 0) {
-      result[name] = values[0].value;
+    const first = values[0];
+    if (first !== undefined && values.length === 1 && Object.keys(first.labels).length === 0) {
+      result[name] = first.value;
     } else {
       result[name] = values.map((v) => ({
         value: v.value,

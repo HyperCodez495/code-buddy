@@ -516,7 +516,8 @@ export class EnhancedMemory extends EventEmitter {
     const embedding: number[] = [];
 
     for (let i = 0; i < 384; i++) { // 384 dimensions to match all-MiniLM-L6-v2
-      embedding.push((hash[i % hash.length] / 255) * 2 - 1);
+      const byte = hash[i % hash.length] ?? 0; // modulo keeps index in bounds; ?? 0 satisfies the type checker
+      embedding.push((byte / 255) * 2 - 1);
     }
 
     // Normalize
@@ -641,9 +642,12 @@ export class EnhancedMemory extends EventEmitter {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      const ai = a[i];
+      const bi = b[i];
+      if (ai === undefined || bi === undefined) continue; // lengths are equal and i < a.length, so this never triggers for dense arrays
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     return dotProduct / (Math.sqrt(normA) * Math.sqrt(normB));

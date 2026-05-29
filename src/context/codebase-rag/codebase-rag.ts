@@ -683,14 +683,18 @@ export class CodebaseRAG extends EventEmitter {
     const namePattern = /(?:function|class|method|interface|type)\s+`?(\w+)`?/gi;
     let match;
     while ((match = namePattern.exec(query)) !== null) {
-      entities.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      entities.push(name);
     }
 
     // Also extract backtick-quoted names
     const backtickPattern = /`(\w+)`/g;
     while ((match = backtickPattern.exec(query)) !== null) {
-      if (!entities.includes(match[1])) {
-        entities.push(match[1]);
+      const name = match[1];
+      if (name === undefined) continue;
+      if (!entities.includes(name)) {
+        entities.push(name);
       }
     }
 

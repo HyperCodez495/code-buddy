@@ -152,7 +152,7 @@ export function findBestFuzzyMatch(
   threshold: number = 0.9
 ): FuzzyMatchResult | null {
   const matches = findFuzzyMatches(content, searchStr, { threshold, maxResults: 1 });
-  return matches.length > 0 ? matches[0] : null;
+  return matches[0] ?? null;
 }
 
 /**

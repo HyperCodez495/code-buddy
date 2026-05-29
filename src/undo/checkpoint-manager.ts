@@ -459,6 +459,10 @@ export class CheckpointManager extends TypedEventEmitter<CheckpointEvents> {
     }
 
     const targetCheckpoint = this.checkpoints[this.currentIndex - 1];
+    if (!targetCheckpoint) {
+      this.emit('undo:noop', { reason: 'No previous checkpoint' });
+      return null;
+    }
     return this.restoreCheckpoint(targetCheckpoint, 'undo');
   }
 
@@ -472,6 +476,10 @@ export class CheckpointManager extends TypedEventEmitter<CheckpointEvents> {
     }
 
     const targetCheckpoint = this.checkpoints[this.currentIndex + 1];
+    if (!targetCheckpoint) {
+      this.emit('redo:noop', { reason: 'No next checkpoint' });
+      return null;
+    }
     return this.restoreCheckpoint(targetCheckpoint, 'redo');
   }
 
@@ -782,6 +790,9 @@ export class CheckpointManager extends TypedEventEmitter<CheckpointEvents> {
     }
 
     const checkpoint = this.checkpoints[index];
+    if (!checkpoint) {
+      throw new Error('Checkpoint not found. Use listCheckpoints() to see available checkpoints.');
+    }
     await this.deleteCheckpointFiles(checkpoint);
     this.checkpoints.splice(index, 1);
 

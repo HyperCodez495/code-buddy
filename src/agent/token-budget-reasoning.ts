@@ -396,9 +396,13 @@ export class TokenBudgetReasoning extends EventEmitter {
     const levelThresholds = [0, 0.15, 0.35, 0.55, 0.75, 1.0];
     const lowerThreshold = levelThresholds[levelIndex];
     const upperThreshold = levelThresholds[levelIndex + 1];
+    const nextLevel = levels[levelIndex + 1];
+    if (lowerThreshold === undefined || upperThreshold === undefined || nextLevel === undefined) {
+      return baseBudget;
+    }
 
     const positionInLevel = (score - lowerThreshold) / (upperThreshold - lowerThreshold);
-    const nextLevelBudget = this.config.budgets[levels[levelIndex + 1]];
+    const nextLevelBudget = this.config.budgets[nextLevel];
 
     const adaptiveBudget = baseBudget + (nextLevelBudget - baseBudget) * positionInLevel;
 

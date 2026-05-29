@@ -579,12 +579,13 @@ Respond with:
       const critiqueMatch = response.content.match(/<critique>([\s\S]*?)<\/critique>/);
       const argumentMatch = response.content.match(/<refined_argument>([\s\S]*?)<\/refined_argument>/);
       const confMatch = response.content.match(/<confidence>([\d.]+)<\/confidence>/);
+      const confStr = confMatch?.[1];
 
       newPositions.push({
         modelId: position.modelId,
         argument: argumentMatch?.[1]?.trim() || response.content,
         critique: critiqueMatch?.[1]?.trim(),
-        confidence: confMatch ? parseFloat(confMatch[1]) : position.confidence,
+        confidence: confStr !== undefined ? parseFloat(confStr) : position.confidence,
       });
     }
 
@@ -603,7 +604,11 @@ Respond with:
     }
 
     if (responses.length === 1) {
-      return { content: responses[0].content, confidence: responses[0].confidence };
+      const only = responses[0];
+      if (!only) {
+        return { content: "", confidence: 0 };
+      }
+      return { content: only.content, confidence: only.confidence };
     }
 
     // Use first available client to synthesize
@@ -639,10 +644,11 @@ Synthesize these responses into a single, comprehensive answer that:
 
       const answerMatch = content.match(/<synthesized_answer>([\s\S]*?)<\/synthesized_answer>/);
       const confMatch = content.match(/<confidence>([\d.]+)<\/confidence>/);
+      const confStr = confMatch?.[1];
 
       return {
         content: answerMatch?.[1]?.trim() || content,
-        confidence: confMatch ? parseFloat(confMatch[1]) : 0.7,
+        confidence: confStr !== undefined ? parseFloat(confStr) : 0.7,
       };
     } catch {
       return this.selectBestResponse(responses) || { content: "", confidence: 0 };
@@ -667,10 +673,14 @@ Synthesize these responses into a single, comprehensive answer that:
     const similarities: Array<{ pair: [string, string]; similarity: number }> = [];
 
     for (let i = 0; i < responses.length; i++) {
+      const a = responses[i];
+      if (!a) continue;
       for (let j = i + 1; j < responses.length; j++) {
-        const sim = this.calculateSimilarity(responses[i].content, responses[j].content);
+        const b = responses[j];
+        if (!b) continue;
+        const sim = this.calculateSimilarity(a.content, b.content);
         similarities.push({
-          pair: [responses[i].modelId, responses[j].modelId],
+          pair: [a.modelId, b.modelId],
           similarity: sim,
         });
       }
@@ -839,6 +849,9 @@ Synthesize these responses into a single, comprehensive answer that:
     scores.sort((a, b) => b.score - a.score);
 
     const selected = scores[0];
+    if (!selected) {
+      throw new Error("routeTask: no models available to route");
+    }
     return {
       selectedModel: selected.model.id,
       reason: selected.reason,

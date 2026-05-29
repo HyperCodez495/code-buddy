@@ -100,8 +100,12 @@ export class ContextCompressor {
     let olderStartIndex = 0;
 
     while (olderStartIndex < olderMessages.length && currentTokens > tokenLimit) {
-      // Subtract tokens of removed message instead of recounting all
-      currentTokens -= olderMessageTokens[olderStartIndex];
+      // Subtract tokens of removed message instead of recounting all.
+      // olderMessageTokens is a 1:1 .map() of olderMessages, so this index is
+      // always in bounds given the loop condition; guard satisfies the type.
+      const removedTokens = olderMessageTokens[olderStartIndex];
+      if (removedTokens === undefined) break;
+      currentTokens -= removedTokens;
       olderStartIndex++;
     }
 

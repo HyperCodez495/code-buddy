@@ -452,10 +452,11 @@ export class MultiPathRetrieval extends EventEmitter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       for (const pattern of patterns) {
         const match = line.match(pattern);
-        if (match) {
+        if (match && match[1] !== undefined) {
           // Save previous chunk
           if (currentChunk) {
             const chunkContent = lines.slice(currentChunk.start, i).join('\n');
@@ -522,7 +523,10 @@ export class MultiPathRetrieval extends EventEmitter {
     for (const pattern of patterns) {
       let match;
       while ((match = pattern.exec(content)) !== null) {
-        symbols.push(match[1]);
+        const symbol = match[1];
+        if (symbol !== undefined) {
+          symbols.push(symbol);
+        }
       }
     }
 
@@ -539,10 +543,16 @@ export class MultiPathRetrieval extends EventEmitter {
 
     let match;
     while ((match = importPattern.exec(content)) !== null) {
-      deps.push(match[1]);
+      const dep = match[1];
+      if (dep !== undefined) {
+        deps.push(dep);
+      }
     }
     while ((match = requirePattern.exec(content)) !== null) {
-      deps.push(match[1]);
+      const dep = match[1];
+      if (dep !== undefined) {
+        deps.push(dep);
+      }
     }
 
     return [...new Set(deps)];

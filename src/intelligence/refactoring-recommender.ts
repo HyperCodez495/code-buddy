@@ -406,6 +406,7 @@ export function analyzeForRefactoring(
       // Check each line
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
+        if (line === undefined) continue;
         const match = line.match(rule.pattern);
 
         if (match) {

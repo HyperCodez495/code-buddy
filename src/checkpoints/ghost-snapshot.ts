@@ -117,7 +117,7 @@ export class GhostSnapshotManager {
 
       // Extract the actual hash from the commit output
       const hashMatch = commitHash.match(/\[.*\s+([a-f0-9]+)\]/);
-      const hash = hashMatch ? hashMatch[1] : (await this.git(['rev-parse', 'HEAD'])).trim();
+      const hash = hashMatch?.[1] ?? (await this.git(['rev-parse', 'HEAD'])).trim();
 
       // Store as a named ref (not on any branch)
       const refName = `${GHOST_REF_PREFIX}${id}`;
@@ -187,6 +187,7 @@ export class GhostSnapshotManager {
     if (targetIndex < 0) return null;
 
     const target = this.snapshots[targetIndex];
+    if (current === undefined || target === undefined) return null;
     const restored = await this.restoreSnapshot(target.id);
     if (restored) {
       this.redoStack.push(current);

@@ -129,6 +129,7 @@ function parseLessonsGraphSlashArgs(tokens: string[]): {
 
   for (let i = 0; i < tokens.length; i++) {
     const token = tokens[i];
+    if (token === undefined) continue;
     if (token === '--json') {
       format = 'json';
       continue;

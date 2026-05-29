@@ -595,8 +595,11 @@ export class DockerSandboxManager extends EventEmitter {
     const match = limit.match(/^(\d+)([kmg]?)$/i);
     if (!match) return 536870912; // Default 512MB
 
-    const value = parseInt(match[1], 10);
-    const unit = match[2].toLowerCase();
+    // match[1] is the required \d+ group; match[2] is the optional [kmg]? group
+    // (empty string when absent, which falls through to the default case below).
+    const [, digits = '', suffix = ''] = match;
+    const value = parseInt(digits, 10);
+    const unit = suffix.toLowerCase();
 
     switch (unit) {
       case 'k': return value * 1024;

@@ -186,8 +186,8 @@ export class MacOSNativeProvider extends BaseNativeProvider {
       const output = await this.exec('cliclick p:');
       const parts = output.trim().split(',');
       return {
-        x: parseInt(parts[0], 10) || 0,
-        y: parseInt(parts[1], 10) || 0,
+        x: parseInt(parts[0] ?? '', 10) || 0,
+        y: parseInt(parts[1] ?? '', 10) || 0,
       };
     } catch {
       return { x: 0, y: 0 };
@@ -430,10 +430,10 @@ end tell`;
         pid,
         processName: appName,
         bounds: {
-          x: parseInt(posStr[0], 10) || 0,
-          y: parseInt(posStr[1], 10) || 0,
-          width: parseInt(sizeStr[0], 10) || 0,
-          height: parseInt(sizeStr[1], 10) || 0,
+          x: parseInt(posStr[0] ?? '', 10) || 0,
+          y: parseInt(posStr[1] ?? '', 10) || 0,
+          width: parseInt(sizeStr[0] ?? '', 10) || 0,
+          height: parseInt(sizeStr[1] ?? '', 10) || 0,
         },
         focused: true,
         visible: true,
@@ -476,12 +476,13 @@ end tell`;
         const parts = entry.split('|||');
         if (parts.length < 6) continue;
 
-        const processName = parts[0].trim();
-        const title = parts[1].trim();
-        const posStr = parts[2].split(',');
-        const sizeStr = parts[3].split(',');
-        const pid = parseInt(parts[4], 10) || 0;
-        const idx = parseInt(parts[5], 10) || 1;
+        // parts.length >= 6 verified above, so indices 0-5 are in-bounds.
+        const processName = (parts[0] ?? '').trim();
+        const title = (parts[1] ?? '').trim();
+        const posStr = (parts[2] ?? '').split(',');
+        const sizeStr = (parts[3] ?? '').split(',');
+        const pid = parseInt(parts[4] ?? '', 10) || 0;
+        const idx = parseInt(parts[5] ?? '', 10) || 1;
 
         const win: WindowInfo = {
           handle: `${processName}:${idx}`,
@@ -489,10 +490,10 @@ end tell`;
           pid,
           processName,
           bounds: {
-            x: parseInt(posStr[0], 10) || 0,
-            y: parseInt(posStr[1], 10) || 0,
-            width: parseInt(sizeStr[0], 10) || 0,
-            height: parseInt(sizeStr[1], 10) || 0,
+            x: parseInt(posStr[0] ?? '', 10) || 0,
+            y: parseInt(posStr[1] ?? '', 10) || 0,
+            width: parseInt(sizeStr[0] ?? '', 10) || 0,
+            height: parseInt(sizeStr[1] ?? '', 10) || 0,
           },
           focused: false,
           visible: true,
@@ -555,10 +556,10 @@ end tell`;
         pid,
         processName,
         bounds: {
-          x: parseInt(posStr[0], 10) || 0,
-          y: parseInt(posStr[1], 10) || 0,
-          width: parseInt(sizeStr[0], 10) || 0,
-          height: parseInt(sizeStr[1], 10) || 0,
+          x: parseInt(posStr[0] ?? '', 10) || 0,
+          y: parseInt(posStr[1] ?? '', 10) || 0,
+          width: parseInt(sizeStr[0] ?? '', 10) || 0,
+          height: parseInt(sizeStr[1] ?? '', 10) || 0,
         },
         focused,
         visible: true,
@@ -606,8 +607,9 @@ end tell`;
       const bounds = boundsStr.split(',').map(s => parseInt(s.trim(), 10));
 
       if (bounds.length >= 4) {
-        const width = bounds[2] - bounds[0];
-        const height = bounds[3] - bounds[1];
+        // safe: bounds.length >= 4 verified on the line above, indices 0-3 in-bounds
+        const width = (bounds[2] ?? 0) - (bounds[0] ?? 0);
+        const height = (bounds[3] ?? 0) - (bounds[1] ?? 0);
         await this.sysEvents(
           `set position of window ${windowIndex} of process "${escaped}" to {0, 0}`
         );
@@ -701,10 +703,11 @@ end tell`;
         const parts = entry.split('|||');
         if (parts.length < 3) continue;
 
+        // parts.length >= 3 verified above, so indices 0-2 are in-bounds.
         apps.push({
-          name: parts[0].trim(),
+          name: parts[0]?.trim() ?? '',
           path: parts[2]?.trim() ?? '',
-          pid: parseInt(parts[1], 10) || undefined,
+          pid: parseInt(parts[1] ?? '', 10) || undefined,
           running: true,
         });
       }

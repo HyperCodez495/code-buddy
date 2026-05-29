@@ -323,9 +323,12 @@ export class HybridMemorySearch {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      // a.length === b.length (guarded above) and i < a.length, so both are in bounds.
+      const ai = a[i] ?? 0;
+      const bi = b[i] ?? 0;
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     const denominator = Math.sqrt(normA) * Math.sqrt(normB);

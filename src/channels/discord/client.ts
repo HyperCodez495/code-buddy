@@ -824,7 +824,7 @@ export class DiscordChannel extends BaseChannel {
    */
   private determineContentType(msg: DiscordMessage): ContentType {
     if (msg.attachments.length > 0) {
-      return this.getAttachmentType(msg.attachments[0].content_type);
+      return this.getAttachmentType(msg.attachments[0]?.content_type);
     }
     if (msg.content.startsWith('/')) return 'command';
     return 'text';

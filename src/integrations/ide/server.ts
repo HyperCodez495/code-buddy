@@ -682,7 +682,7 @@ Return JSON:
   private stripMarkdownFence(content: string): string {
     const trimmed = content.trim();
     const fenced = trimmed.match(/^```(?:[\w-]+)?\s*([\s\S]*?)\s*```$/);
-    return fenced ? fenced[1].trim() : trimmed;
+    return fenced?.[1] !== undefined ? fenced[1].trim() : trimmed;
   }
 
   private extractCodeBlock(content: string): string {

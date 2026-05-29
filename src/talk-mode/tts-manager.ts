@@ -238,8 +238,9 @@ export class TTSManager extends EventEmitter {
     // Sort by priority (highest first)
     availableProviders.sort((a, b) => b.priority - a.priority);
 
-    if (availableProviders.length > 0) {
-      this.activeProvider = availableProviders[0].provider;
+    const best = availableProviders[0];
+    if (best) {
+      this.activeProvider = best.provider;
       this.emit('provider-change', this.activeProvider.id);
     }
   }
@@ -459,7 +460,9 @@ export class TTSManager extends EventEmitter {
         (a.priority ?? 0) - (b.priority ?? 0)
       );
       const toRemove = sortedQueue[0];
-      this.queue = this.queue.filter(i => i.id !== toRemove.id);
+      if (toRemove) {
+        this.queue = this.queue.filter(i => i.id !== toRemove.id);
+      }
     }
 
     this.queue.push(item);

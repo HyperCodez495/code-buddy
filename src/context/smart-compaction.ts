@@ -340,12 +340,13 @@ export class SmartCompactionEngine extends EventEmitter {
       const systemIndex = result.findIndex(m => m.role === 'system');
       let systemMessage: Message | null = null;
       if (systemIndex !== -1) {
-        systemMessage = result[systemIndex];
+        systemMessage = result[systemIndex] ?? null; // safe: findIndex returned an in-bounds index
         result.splice(systemIndex, 1);
       }
 
       // Ensure first non-system is user
-      if (result.length > 0 && result[0].role !== 'user') {
+      const firstMessage = result[0];
+      if (firstMessage && firstMessage.role !== 'user') {
         // Insert placeholder user message
         result.unshift({
           role: 'user',
@@ -416,7 +417,9 @@ export class SmartCompactionEngine extends EventEmitter {
       const sysIndex = result.findIndex(m => m.role === 'system');
       if (sysIndex > 0) {
         const [sys] = result.splice(sysIndex, 1);
-        result.unshift(sys);
+        if (sys) {
+          result.unshift(sys);
+        }
       }
     }
 

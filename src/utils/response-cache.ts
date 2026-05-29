@@ -204,8 +204,8 @@ export class ResponseCache {
 
     // Remove 10% of entries
     const toRemove = Math.max(1, Math.floor(this.maxEntries * 0.1));
-    for (let i = 0; i < toRemove && i < entries.length; i++) {
-      this.cache.delete(entries[i][0]);
+    for (const [key] of entries.slice(0, toRemove)) {
+      this.cache.delete(key);
     }
   }
 

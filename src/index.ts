@@ -2046,7 +2046,8 @@ function removeCommands(parent: typeof program, names: string | string[]): void 
   const nameSet = new Set(Array.isArray(names) ? names : [names]);
   const cmds = parent.commands as import('commander').Command[];
   for (let i = cmds.length - 1; i >= 0; i--) {
-    if (nameSet.has(cmds[i].name())) {
+    const cmd = cmds[i];
+    if (cmd !== undefined && nameSet.has(cmd.name())) {
       cmds.splice(i, 1);
     }
   }

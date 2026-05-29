@@ -202,12 +202,13 @@ export class WorkspaceDetector extends EventEmitter {
       }
     }
 
-    if (matches.length > 0) {
-      // Sort by weight
-      matches.sort((a, b) => b.weight - a.weight);
+    // Sort by weight
+    matches.sort((a, b) => b.weight - a.weight);
 
-      config.type = matches[0].type;
-      config.subTypes = matches.slice(1).map((m) => m.type);
+    const [best, ...rest] = matches;
+    if (best) {
+      config.type = best.type;
+      config.subTypes = rest.map((m) => m.type);
       config.frameworks = [...new Set(matches.flatMap((m) => m.frameworks))];
     }
   }
@@ -265,7 +266,8 @@ export class WorkspaceDetector extends EventEmitter {
       try {
         const content = await fs.readFile(requirementsPath, "utf-8");
         const deps = content.split("\n")
-          .map((line) => line.split("==")[0].split(">=")[0].trim())
+          .map((line) => (line.split("==")[0] ?? line).split(">=")[0] ?? "")
+          .map((part) => part.trim())
           .filter(Boolean);
         config.dependencies = deps;
 

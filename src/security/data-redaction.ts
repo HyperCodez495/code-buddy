@@ -592,7 +592,7 @@ export class DataRedactionEngine extends EventEmitter {
 
     for (const r of redactions) {
       byCategory[r.category]++;
-      bySeverity[r.severity]++;
+      bySeverity[r.severity] = (bySeverity[r.severity] ?? 0) + 1;
     }
 
     return {

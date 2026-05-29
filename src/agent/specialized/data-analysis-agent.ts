@@ -91,7 +91,11 @@ export class DataAnalysisAgent extends SpecializedAgent {
       if (task.data) {
         data = Array.isArray(task.data) ? task.data : [task.data];
       } else if (task.inputFiles && task.inputFiles.length > 0) {
-        const loadResult = this.loadData(task.inputFiles[0]);
+        const inputFile = task.inputFiles[0];
+        if (inputFile === undefined) {
+          return { success: false, error: 'No data or input file provided' };
+        }
+        const loadResult = this.loadData(inputFile);
         if (!loadResult.success) {
           return loadResult;
         }
@@ -373,13 +377,17 @@ export class DataAnalysisAgent extends SpecializedAgent {
       const col = String(r[columns]);
       const val = r[values];
 
-      if (!groups.has(idx)) {
-        groups.set(idx, {});
+      let group = groups.get(idx);
+      if (!group) {
+        group = {};
+        groups.set(idx, group);
       }
-      if (!groups.get(idx)![col]) {
-        groups.get(idx)![col] = [];
+      let bucket = group[col];
+      if (!bucket) {
+        bucket = [];
+        group[col] = bucket;
       }
-      groups.get(idx)![col].push(val);
+      bucket.push(val);
     }
 
     // Build pivot table
@@ -411,6 +419,9 @@ export class DataAnalysisAgent extends SpecializedAgent {
     }
 
     const rightFile = task.inputFiles[1];
+    if (rightFile === undefined) {
+      return { success: false, error: 'Join requires a second input file' };
+    }
     const loadResult = this.loadData(rightFile);
     if (!loadResult.success) {
       return loadResult;
@@ -650,19 +661,24 @@ export class DataAnalysisAgent extends SpecializedAgent {
 
   private parseCSV(content: string): Record<string, unknown>[] {
     const lines = content.split('\n').map(l => l.trim()).filter(l => l);
-    if (lines.length === 0) return [];
+    const headerLine = lines[0];
+    if (headerLine === undefined) return [];
 
-    const headers = this.parseCSVLine(lines[0]);
+    const headers = this.parseCSVLine(headerLine);
     const data: Record<string, unknown>[] = [];
 
     for (let i = 1; i < lines.length; i++) {
-      const values = this.parseCSVLine(lines[i]);
+      const line = lines[i];
+      if (line === undefined) continue;
+      const values = this.parseCSVLine(line);
       const row: Record<string, unknown> = {};
       for (let j = 0; j < headers.length; j++) {
+        const header = headers[j];
+        if (header === undefined) continue;
         const val = values[j];
         // Try to convert to number
         const num = Number(val);
-        row[headers[j]] = !isNaN(num) && val !== '' ? num : val;
+        row[header] = !isNaN(num) && val !== '' ? num : val;
       }
       data.push(row);
     }
@@ -845,8 +861,11 @@ export class DataAnalysisAgent extends SpecializedAgent {
     let denY = 0;
 
     for (let i = 0; i < n; i++) {
-      const dx = x[i] - meanX;
-      const dy = y[i] - meanY;
+      const xi = x[i];
+      const yi = y[i];
+      if (xi === undefined || yi === undefined) break;
+      const dx = xi - meanX;
+      const dy = yi - meanY;
       num += dx * dy;
       denX += dx * dx;
       denY += dy * dy;
@@ -906,7 +925,9 @@ export class DataAnalysisAgent extends SpecializedAgent {
 
     // Rows
     for (const col1 of cols) {
-      const values = cols.map(col2 => corr[col1][col2].toFixed(2).padEnd(8));
+      const row = corr[col1];
+      if (row === undefined) continue;
+      const values = cols.map(col2 => (row[col2] ?? 0).toFixed(2).padEnd(8));
       lines.push(`${col1.slice(0, 10).padEnd(10)} ${values.join(' ')}`);
     }
 

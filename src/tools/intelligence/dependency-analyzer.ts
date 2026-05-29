@@ -298,8 +298,9 @@ export class DependencyAnalyzer {
         .filter((n) => n.dependents.length === 0)
         .sort((a, b) => b.dependencies.length - a.dependencies.length);
 
-      if (sorted.length > 0) {
-        entryPoints.push(sorted[0].filePath);
+      const top = sorted[0];
+      if (top) {
+        entryPoints.push(top.filePath);
       }
     }
 

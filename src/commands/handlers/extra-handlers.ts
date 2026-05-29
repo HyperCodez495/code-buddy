@@ -46,6 +46,16 @@ export async function handleUndo(_args: string[]): Promise<CommandHandlerResult>
 
     // Show what will be reverted
     const lastCheckpoint = checkpoints[checkpoints.length - 1];
+    if (!lastCheckpoint) {
+      return {
+        handled: true,
+        entry: {
+          type: 'assistant',
+          content: 'No checkpoints available to undo. File changes create automatic checkpoints that can be reverted.',
+          timestamp: new Date(),
+        },
+      };
+    }
     const fileList = lastCheckpoint.files
       .map(f => `  - ${path.relative(process.cwd(), f.path)}`)
       .join('\n');

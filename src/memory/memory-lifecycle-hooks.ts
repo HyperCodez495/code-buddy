@@ -398,8 +398,9 @@ export class MemoryLifecycleHooks extends EventEmitter {
     const topicsStr = topics.slice(0, 3).join(', ');
 
     // Get first and last meaningful messages
-    const firstMsg = userMessages[0].slice(0, 100);
-    const lastMsg = userMessages[userMessages.length - 1].slice(0, 100);
+    // safe: early return above guarantees userMessages.length >= 1, so both indices are in bounds
+    const firstMsg = (userMessages[0] ?? '').slice(0, 100);
+    const lastMsg = (userMessages[userMessages.length - 1] ?? '').slice(0, 100);
 
     let summary = `Session with ${messageCount} user messages.`;
 

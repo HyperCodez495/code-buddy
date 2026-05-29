@@ -117,9 +117,7 @@ export class AdvancedParallelExecutor extends EventEmitter {
     const results: AgentResult[] = [];
     const batches = this.createBatches(preparedTasks, this.config.maxConcurrent);
 
-    for (let i = 0; i < batches.length; i++) {
-      const batch = batches[i];
-
+    for (const [i, batch] of batches.entries()) {
       this.emit('parallel:batch:start', {
         batchIndex: i,
         batchSize: batch.length,
@@ -383,8 +381,13 @@ export class AdvancedParallelExecutor extends EventEmitter {
       );
 
       // First agent wins, others marked with warning
-      for (let i = 1; i < sortedAgents.length; i++) {
-        sortedAgents[i].output += `\n⚠️ Conflict with ${sortedAgents[0].agentId} on ${conflict.file}`;
+      const firstAgent = sortedAgents[0];
+      if (firstAgent) {
+        for (let i = 1; i < sortedAgents.length; i++) {
+          const agent = sortedAgents[i];
+          if (!agent) continue;
+          agent.output += `\n⚠️ Conflict with ${firstAgent.agentId} on ${conflict.file}`;
+        }
       }
     }
 

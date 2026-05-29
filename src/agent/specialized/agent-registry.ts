@@ -147,7 +147,7 @@ export class AgentRegistry extends EventEmitter {
     }
 
     // Return best match
-    return matches.sort((a, b) => b.score - a.score)[0];
+    return matches.sort((a, b) => b.score - a.score)[0] ?? null;
   }
 
   /**
@@ -164,8 +164,9 @@ export class AgentRegistry extends EventEmitter {
    */
   findAgentForTask(task: AgentTask): AgentMatch | null {
     // If specific files provided, use file-based matching
-    if (task.inputFiles && task.inputFiles.length > 0) {
-      return this.findAgentForFile(task.inputFiles[0]);
+    const firstInputFile = task.inputFiles?.[0];
+    if (firstInputFile !== undefined) {
+      return this.findAgentForFile(firstInputFile);
     }
 
     // Otherwise, try to match by action name
@@ -186,7 +187,7 @@ export class AgentRegistry extends EventEmitter {
       return null;
     }
 
-    return matches.sort((a, b) => b.score - a.score)[0];
+    return matches.sort((a, b) => b.score - a.score)[0] ?? null;
   }
 
   /**
@@ -283,7 +284,11 @@ export class AgentRegistry extends EventEmitter {
 
     // Map results back to agent IDs
     initResults.forEach((result, index) => {
-      const agentId = agentEntries[index][0];
+      const entry = agentEntries[index];
+      if (entry === undefined) {
+        return;
+      }
+      const agentId = entry[0];
       results.set(agentId, result.status === 'fulfilled');
     });
 

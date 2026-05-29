@@ -151,7 +151,10 @@ export class LoopDetectionService {
       if (positions.length >= CONTENT_LOOP_THRESHOLD) {
         // Verify they're close together (not just coincidental matches)
         const recent = positions.slice(-CONTENT_LOOP_THRESHOLD);
-        const avgDist = (recent[recent.length - 1] - recent[0]) / (recent.length - 1);
+        const first = recent[0];
+        const last = recent[recent.length - 1];
+        if (first === undefined || last === undefined || recent.length < 2) continue;
+        const avgDist = (last - first) / (recent.length - 1);
 
         if (avgDist <= CONTENT_CHUNK_SIZE * 5) {
           return {

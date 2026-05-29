@@ -493,6 +493,12 @@ export class A2UITool {
     }
 
     const type = Object.keys(component.component)[0];
+    if (type === undefined) {
+      return {
+        success: false,
+        error: `Component '${input.componentId}' in surface '${input.surfaceId}' has no type`,
+      };
+    }
     const props = (component.component as Record<string, unknown>)[type];
 
     return {

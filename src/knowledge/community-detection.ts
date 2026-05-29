@@ -103,8 +103,8 @@ export function detectCommunities(
 
   // Initialize: each entity gets its own label
   const labels = new Map<string, number>();
-  for (let i = 0; i < entities.length; i++) {
-    labels.set(entities[i], i);
+  for (const [i, entity] of entities.entries()) {
+    labels.set(entity, i);
   }
 
   // Deterministic seeded shuffle
@@ -138,12 +138,13 @@ export function detectCommunities(
       }
 
       // Break tie: pick label of the neighbor with highest PageRank
+      const firstCandidate = candidates[0] ?? 0; // candidates non-empty (built from neighbor labels); default unreachable
       let bestLabel: number;
       if (candidates.length === 1) {
-        bestLabel = candidates[0];
+        bestLabel = firstCandidate;
       } else if (pageRankScores && pageRankScores.size > 0) {
         let bestScore = -1;
-        bestLabel = candidates[0];
+        bestLabel = firstCandidate;
         for (const nbr of nbrs) {
           const nbrLabel = labels.get(nbr)!;
           if (candidates.includes(nbrLabel)) {
@@ -232,7 +233,7 @@ export function summarizeCommunity(
   // Common path prefix
   const paths = members.map(m => m.replace(/^mod:/, ''));
   const prefix = commonPrefix(paths);
-  const label = prefix ? prefix.replace(/\/$/, '') : paths[0].split('/').slice(0, 2).join('/');
+  const label = prefix ? prefix.replace(/\/$/, '') : (paths[0] ?? '').split('/').slice(0, 2).join('/');
 
   // Top-3 by PageRank
   const ranked = [...members].sort((a, b) => {
@@ -270,7 +271,12 @@ function seededShuffle<T>(arr: T[], seed: number): void {
   for (let i = arr.length - 1; i > 0; i--) {
     s = (s * 1103515245 + 12345) & 0x7fffffff;
     const j = s % (i + 1);
-    [arr[i], arr[j]] = [arr[j], arr[i]];
+    const a = arr[i];
+    const b = arr[j];
+    if (a !== undefined && b !== undefined) {
+      arr[i] = b;
+      arr[j] = a;
+    }
   }
 }
 
@@ -327,11 +333,15 @@ function computeModularity(
 /** Find the longest common prefix of a set of strings */
 function commonPrefix(strings: string[]): string {
   if (strings.length === 0) return '';
-  if (strings.length === 1) return strings[0].includes('/') ? strings[0].substring(0, strings[0].lastIndexOf('/') + 1) : '';
+  if (strings.length === 1) {
+    const only = strings[0] ?? '';
+    return only.includes('/') ? only.substring(0, only.lastIndexOf('/') + 1) : '';
+  }
 
   const sorted = [...strings].sort();
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
+  if (first === undefined || last === undefined) return '';
 
   let i = 0;
   while (i < first.length && i < last.length && first[i] === last[i]) i++;

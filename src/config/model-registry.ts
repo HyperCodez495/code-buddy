@@ -144,7 +144,10 @@ export class ModelRegistry {
       }
     }
     if (bestMatch) {
-      return { ...BUILTIN_PRICING[bestMatch] };
+      const matched = BUILTIN_PRICING[bestMatch];
+      if (matched) {
+        return { ...matched };
+      }
     }
 
     // 4. Default

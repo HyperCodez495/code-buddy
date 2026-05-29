@@ -297,8 +297,8 @@ export class SettingsHierarchy {
     let merged: Record<string, unknown> = {};
 
     // Merge in reverse order (lowest priority first)
-    for (let i = this.levels.length - 1; i >= 0; i--) {
-      merged = deepMerge(merged, this.levels[i].settings);
+    for (const levelData of [...this.levels].reverse()) {
+      merged = deepMerge(merged, levelData.settings);
     }
 
     return merged as CodeBuddySettings;

@@ -244,13 +244,19 @@ async function findUnusedDependencies(
       for (const match of importMatches) {
         // Get the package name (handle scoped packages)
         let packageName = match[1];
+        if (packageName === undefined) {
+          // No captured package specifier; nothing to record.
+          continue;
+        }
         if (packageName.startsWith('@')) {
           // Scoped package: @scope/package/path -> @scope/package
           const parts = packageName.split('/');
           packageName = parts.slice(0, 2).join('/');
         } else {
           // Regular package: package/path -> package
-          packageName = packageName.split('/')[0];
+          // split() on a non-empty string always yields at least one element,
+          // so [0] is defined; default to the full name to stay null-safe.
+          packageName = packageName.split('/')[0] ?? packageName;
         }
         usedPackages.add(packageName);
       }

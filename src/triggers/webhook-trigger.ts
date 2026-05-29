@@ -268,6 +268,10 @@ export class WebhookTriggerManager extends EventEmitter {
 
     // Fire the first matching trigger
     const trigger = matchingTriggers[0];
+    if (!trigger) {
+      // Unreachable in practice: matchingTriggers.length === 0 returned above.
+      return { fired: false, eventType: event.type };
+    }
 
     // Verify signature if trigger has a secret
     if (trigger.secret) {

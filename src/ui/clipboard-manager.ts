@@ -174,6 +174,9 @@ export class ClipboardManager {
     }
 
     const entry = recentHistory[index];
+    if (entry === undefined) {
+      return false;
+    }
     return this.writeToClipboard(entry.content);
   }
 
@@ -195,6 +198,9 @@ export class ClipboardManager {
     }
 
     const entryToRemove = recentHistory[index];
+    if (entryToRemove === undefined) {
+      return false;
+    }
     const idx = this.history.findIndex(e =>
       e.content === entryToRemove.content &&
       e.timestamp.getTime() === entryToRemove.timestamp.getTime()
@@ -240,8 +246,7 @@ export class ClipboardManager {
       '',
     ];
 
-    for (let i = 0; i < recent.length; i++) {
-      const entry = recent[i];
+    for (const [i, entry] of recent.entries()) {
       const time = entry.timestamp.toLocaleTimeString();
       const type = entry.type.toUpperCase().padEnd(4);
       const preview = entry.content.length > 50
@@ -359,7 +364,7 @@ export class ClipboardManager {
     // Don't add duplicates of the last entry
     if (this.history.length > 0) {
       const last = this.history[this.history.length - 1];
-      if (last.content === entry.content) {
+      if (last !== undefined && last.content === entry.content) {
         return;
       }
     }

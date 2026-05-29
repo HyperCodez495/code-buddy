@@ -861,8 +861,9 @@ export class SessionStore {
 
     // Find last message with taskState, scanning from end
     for (let i = session.messages.length - 1; i >= 0; i--) {
-      if (session.messages[i].taskState) {
-        return session.messages[i].taskState!;
+      const message = session.messages[i];
+      if (message?.taskState) {
+        return message.taskState;
       }
     }
     return null;
@@ -1153,6 +1154,7 @@ export class SessionStore {
     if (messageIndex < 0) return null;
 
     const message = messages[messageIndex];
+    if (!message) return null;
     const content = typeof message.content === 'string' ? message.content : '';
     return {
       snippet: this.buildPlainSnippet(content, lowerQuery),
@@ -1204,7 +1206,7 @@ export class SessionStore {
    */
   async getLastSession(): Promise<Session | null> {
     const sessions = await this.listSessions();
-    return sessions.length > 0 ? sessions[0] : null;
+    return sessions[0] ?? null;
   }
 
   /**

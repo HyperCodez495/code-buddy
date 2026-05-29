@@ -55,8 +55,15 @@ export function parseKittyKey(sequence: string): KittyKeyEvent | null {
   const match = sequence.match(/\x1b\[(\d+);(\d+)(?::(\d+))?u/);
   if (!match) return null;
 
-  const keycode = parseInt(match[1]);
-  const mods = parseInt(match[2]) - 1; // 1-based → 0-based
+  const keycodeStr = match[1];
+  const modsStr = match[2];
+  // Both groups use `(\d+)` (non-optional), so a successful match always
+  // populates them; guard anyway to satisfy noUncheckedIndexedAccess and
+  // preserve the "not a valid CSI u sequence" → null contract.
+  if (keycodeStr === undefined || modsStr === undefined) return null;
+
+  const keycode = parseInt(keycodeStr);
+  const mods = parseInt(modsStr) - 1; // 1-based → 0-based
   const eventTypeCode = match[3] ? parseInt(match[3]) : 1;
 
   let eventType: 'press' | 'repeat' | 'release';

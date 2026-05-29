@@ -164,6 +164,7 @@ export function detectDrift(graph: KnowledgeGraph, cwd: string): DriftResult | n
   for (const edge of newImports) {
     if (!oldImports.has(edge)) {
       const [from, to] = edge.split('→');
+      if (from === undefined || to === undefined) continue;
       newCoupling.push({ from, to });
     }
   }
@@ -172,6 +173,7 @@ export function detectDrift(graph: KnowledgeGraph, cwd: string): DriftResult | n
   for (const edge of oldImports) {
     if (!newImports.has(edge)) {
       const [from, to] = edge.split('→');
+      if (from === undefined || to === undefined) continue;
       removedCoupling.push({ from, to });
     }
   }

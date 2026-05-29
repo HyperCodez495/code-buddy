@@ -19,7 +19,7 @@ import { logger } from '../../utils/logger.js';
 
 // Helper to extract string param (Express params can be string | string[])
 function getStringParam(param: string | string[] | undefined): string {
-  return Array.isArray(param) ? param[0] : param || '';
+  return Array.isArray(param) ? param[0] ?? '' : param || '';
 }
 
 export function createCloudTaskRoutes(): Router {

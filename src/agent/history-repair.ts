@@ -63,6 +63,7 @@ export function repairMessageHistory(messages: LLMMessage[]): RepairResult {
   const fixed: LLMMessage[] = [];
   for (let i = 0; i < result.length; i++) {
     const msg = result[i];
+    if (!msg) continue;
 
     if (msg.role === 'tool') {
       // Check if there's a preceding assistant with matching tool_call
@@ -100,6 +101,7 @@ export function repairMessageHistory(messages: LLMMessage[]): RepairResult {
   const SYNTHETIC_MARKER = '[No result recorded]';
   for (let i = 0; i < result.length; i++) {
     const msg = result[i];
+    if (!msg) continue;
     if (msg.role === 'assistant' && msg.tool_calls) {
       for (const tc of msg.tool_calls) {
         // Check if there's a corresponding tool result after this message (real or synthetic)
@@ -110,7 +112,7 @@ export function repairMessageHistory(messages: LLMMessage[]): RepairResult {
         if (!hasResult) {
           // Find where to insert (right after current assistant or after last tool result)
           let insertIdx = i + 1;
-          while (insertIdx < result.length && result[insertIdx].role === 'tool') {
+          while (insertIdx < result.length && result[insertIdx]?.role === 'tool') {
             insertIdx++;
           }
 
@@ -141,7 +143,7 @@ export function repairMessageHistory(messages: LLMMessage[]): RepairResult {
 
   // Pass 5: Ensure first non-system message is user
   const firstNonSystem = result.findIndex(m => m.role !== 'system');
-  if (firstNonSystem >= 0 && result[firstNonSystem].role !== 'user') {
+  if (firstNonSystem >= 0 && result[firstNonSystem]?.role !== 'user') {
     result.splice(firstNonSystem, 0, {
       role: 'user',
       content: '[Session resumed]',

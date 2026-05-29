@@ -334,8 +334,8 @@ export class SemanticSearchEngine {
       '',
     ];
 
-    for (let i = 0; i < results.length; i++) {
-      const { message, score, highlights, matchType } = results[i];
+    for (const [i, result] of results.entries()) {
+      const { message, score, highlights, matchType } = result;
       const time = message.timestamp.toLocaleString();
       const preview = message.content.length > 100
         ? message.content.slice(0, 97) + '...'
@@ -538,6 +538,7 @@ export class SemanticSearchEngine {
       // Add context before
       for (let i = Math.max(0, index - contextSize); i < index; i++) {
         const msg = sessionMessages[i];
+        if (msg === undefined) continue;
         if (!addedIds.has(msg.id)) {
           enhanced.push({
             message: msg,
@@ -558,6 +559,7 @@ export class SemanticSearchEngine {
       // Add context after
       for (let i = index + 1; i <= Math.min(sessionMessages.length - 1, index + contextSize); i++) {
         const msg = sessionMessages[i];
+        if (msg === undefined) continue;
         if (!addedIds.has(msg.id)) {
           enhanced.push({
             message: msg,

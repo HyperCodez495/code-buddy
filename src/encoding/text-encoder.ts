@@ -317,11 +317,11 @@ export function bytesToString(bytes: Uint8Array, encoding: 'utf-8' | 'utf-16' | 
     }
     case 'ascii': {
       let result = '';
-      for (let i = 0; i < bytes.length; i++) {
-        if (bytes[i] > 127) {
+      for (const [i, byte] of bytes.entries()) {
+        if (byte > 127) {
           throw new EncodingError(`Byte at position ${i} is not valid ASCII`);
         }
-        result += String.fromCharCode(bytes[i]);
+        result += String.fromCharCode(byte);
       }
       return result;
     }

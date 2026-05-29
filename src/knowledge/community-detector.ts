@@ -103,16 +103,18 @@ function mostCommonNeighborLabel(
  */
 function symbolToFile(symbol: string, graph: KnowledgeGraph): string {
   const definedIn = graph.query({ subject: symbol, predicate: 'definedIn' });
-  if (definedIn.length > 0) return definedIn[0].object.replace(/^mod:/, '');
+  const firstDefinedIn = definedIn[0];
+  if (firstDefinedIn) return firstDefinedIn.object.replace(/^mod:/, '');
 
   const belongsTo = graph.query({ subject: symbol, predicate: 'belongsTo' });
-  if (belongsTo.length > 0) return belongsTo[0].object.replace(/^mod:/, '');
+  const firstBelongsTo = belongsTo[0];
+  if (firstBelongsTo) return firstBelongsTo.object.replace(/^mod:/, '');
 
   if (symbol.startsWith('mod:')) return symbol.replace(/^mod:/, '');
 
   if (symbol.includes('/')) {
     const parts = symbol.split(':');
-    return parts.length > 1 ? parts.slice(1).join(':') : parts[0];
+    return parts.length > 1 ? parts.slice(1).join(':') : (parts[0] ?? symbol);
   }
 
   return '';
@@ -247,8 +249,8 @@ export function detectCommunities(
 
   // Initialize: each node gets its own label
   const labels = new Map<string, number>();
-  for (let i = 0; i < nodes.length; i++) {
-    labels.set(nodes[i], i);
+  for (const [i, node] of nodes.entries()) {
+    labels.set(node, i);
   }
 
   // Iterate: each node adopts the most common label among neighbors
@@ -260,7 +262,13 @@ export function detectCommunities(
     for (let i = shuffled.length - 1; i > 0; i--) {
       // Simple deterministic shuffle based on iteration
       const j = (i * (iter + 1) * 31) % (i + 1);
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+      const a = shuffled[i];
+      const b = shuffled[j];
+      // Both i (1..length-1) and j (0..i via modulo) are in bounds, so a/b
+      // are defined; guard only to satisfy the type checker without changing behavior.
+      if (a === undefined || b === undefined) continue;
+      shuffled[i] = b;
+      shuffled[j] = a;
     }
 
     for (const node of shuffled) {

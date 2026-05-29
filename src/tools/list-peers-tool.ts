@@ -89,6 +89,10 @@ export async function executeListPeers(params: ListPeersParams = {}): Promise<To
       params.timeoutMs && params.timeoutMs > 0 ? params.timeoutMs : 5_000;
     await Promise.all(
       entries.map(async (entry, index) => {
+        // peers is built by mapping the same `entries` array, so this index
+        // is always in range; guard regardless to satisfy strict indexing.
+        const peer = peers[index];
+        if (peer === undefined) return;
         try {
           const raw = await entry.listener.request(
             'peer.describe',
@@ -99,14 +103,14 @@ export async function executeListPeers(params: ListPeersParams = {}): Promise<To
             peerChatProvider?: unknown;
             capabilities?: unknown;
           };
-          peers[index].peerChatProvider = normalizePeerChatProvider(
+          peer.peerChatProvider = normalizePeerChatProvider(
             described.peerChatProvider,
           );
-          peers[index].capabilities = summarizeCapabilities(
+          peer.capabilities = summarizeCapabilities(
             described.capabilities,
           );
         } catch (err) {
-          peers[index].describeError =
+          peer.describeError =
             err instanceof Error ? err.message : String(err);
         }
       }),

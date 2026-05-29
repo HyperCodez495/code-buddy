@@ -4191,12 +4191,19 @@ function buildProposalLoopNodes(
 function buildProposalLoopEdges(
   steps: AgenticCodingProposalLoopStep[],
 ): AgenticCodingWorkflowEdge[] {
-  return steps.slice(1).map((step, index) => ({
-    animated: true,
-    id: `proposal-loop-edge-${steps[index].id}-${step.id}`,
-    source: steps[index].id,
-    target: step.id,
-  }));
+  const edges: AgenticCodingWorkflowEdge[] = [];
+  for (let index = 1; index < steps.length; index += 1) {
+    const source = steps[index - 1];
+    const step = steps[index];
+    if (!source || !step) continue; // bounds guarantee both defined
+    edges.push({
+      animated: true,
+      id: `proposal-loop-edge-${source.id}-${step.id}`,
+      source: source.id,
+      target: step.id,
+    });
+  }
+  return edges;
 }
 
 function buildProposalLoopNextAction(
@@ -6875,14 +6882,16 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
           ...(focusWindow.next ? [focusWindow.next] : []),
         ]
         : [];
-      const focusWindowRange = focusWindowEntries.length > 0
+      const focusWindowRangeFirst = focusWindowEntries[0];
+      const focusWindowRangeLast = focusWindowEntries[focusWindowEntries.length - 1];
+      const focusWindowRange = focusWindowRangeFirst && focusWindowRangeLast
         ? {
-          containsEnd: focusWindowEntries[focusWindowEntries.length - 1].index === focusNodeIds.length - 1,
-          containsStart: focusWindowEntries[0].index === 0,
-          endIndex: focusWindowEntries[focusWindowEntries.length - 1].index,
+          containsEnd: focusWindowRangeLast.index === focusNodeIds.length - 1,
+          containsStart: focusWindowRangeFirst.index === 0,
+          endIndex: focusWindowRangeLast.index,
           nodeIds: focusWindowEntries.map((entry) => entry.id),
           size: focusWindowEntries.length,
-          startIndex: focusWindowEntries[0].index,
+          startIndex: focusWindowRangeFirst.index,
           totalNodeCount: focusNodeIds.length,
         }
         : undefined;
@@ -6895,6 +6904,7 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
       for (let index = 1; index < focusWindowEntries.length; index += 1) {
         const sourceEntry = focusWindowEntries[index - 1];
         const targetEntry = focusWindowEntries[index];
+        if (!sourceEntry || !targetEntry) continue; // bounds guarantee both defined
         const edge = edgeByPair.get(`${sourceEntry.id}\u0000${targetEntry.id}`);
         if (edge) {
           focusWindowSegments.push({

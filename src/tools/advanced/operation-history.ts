@@ -130,7 +130,7 @@ export class OperationHistory {
     }
 
     const entry = this.history[this.currentPosition];
-    if (!entry.canUndo) {
+    if (!entry || !entry.canUndo) {
       return { success: false, error: "Operation cannot be undone" };
     }
 
@@ -158,6 +158,9 @@ export class OperationHistory {
     }
 
     const entry = this.history[this.currentPosition + 1];
+    if (!entry) {
+      return { success: false, error: "Nothing to redo" };
+    }
 
     try {
       // Re-execute operations
@@ -407,8 +410,7 @@ export class OperationHistory {
     const entries = this.getHistory(limit);
     const currentIdx = this.history.length - 1 - this.currentPosition;
 
-    for (let i = 0; i < entries.length; i++) {
-      const entry = entries[i];
+    for (const [i, entry] of entries.entries()) {
       const isCurrent = i === currentIdx;
       const pointer = isCurrent ? "→" : " ";
       const date = new Date(entry.timestamp).toLocaleString();
@@ -454,17 +456,15 @@ export class OperationHistory {
     oldestEntry: Date | null;
     newestEntry: Date | null;
   } {
+    const first = this.history[0];
+    const last = this.history[this.history.length - 1];
     return {
       totalEntries: this.history.length,
       currentPosition: this.currentPosition,
       canUndo: this.canUndo(),
       canRedo: this.canRedo(),
-      oldestEntry: this.history.length > 0
-        ? new Date(this.history[0].timestamp)
-        : null,
-      newestEntry: this.history.length > 0
-        ? new Date(this.history[this.history.length - 1].timestamp)
-        : null,
+      oldestEntry: first ? new Date(first.timestamp) : null,
+      newestEntry: last ? new Date(last.timestamp) : null,
     };
   }
 }

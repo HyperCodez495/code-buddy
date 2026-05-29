@@ -176,7 +176,9 @@ export function parseSemver(version: string): [number, number, number] {
   if (!match) {
     return [0, 0, 0];
   }
-  return [parseInt(match[1], 10), parseInt(match[2], 10), parseInt(match[3], 10)];
+  // safe: regex matched with three mandatory `(\d+)` capture groups, so match[1..3] are present
+  const [, major, minor, patch] = match;
+  return [parseInt(major ?? '0', 10), parseInt(minor ?? '0', 10), parseInt(patch ?? '0', 10)];
 }
 
 /**
@@ -617,6 +619,7 @@ export class SkillsHub extends EventEmitter {
     }
 
     for (const skill of toUpdate) {
+      if (!skill) continue;
       try {
         // Check for newer version
         const hubInfo = await this.getHubSkillInfo(skill.name);
@@ -776,6 +779,7 @@ export class SkillsHub extends EventEmitter {
     const skillNames = Object.keys(this.lockfile.skills);
     for (const name of skillNames) {
       const entry = this.lockfile.skills[name];
+      if (!entry) continue;
 
       // Check if skill still exists on disk
       if (!fs.existsSync(entry.path)) {
@@ -956,8 +960,10 @@ export class SkillsHub extends EventEmitter {
     const match = content.match(/^---\r?\n([\s\S]*?)\r?\n---/);
     if (!match) return null;
 
+    // safe: regex matched with a mandatory capture group, so match[1] is present
+    const frontmatter = match[1] ?? '';
     try {
-      const parsed = yaml.parse(match[1]) as Record<string, unknown>;
+      const parsed = yaml.parse(frontmatter) as Record<string, unknown>;
       if (typeof parsed.version === 'string') {
         return parsed.version;
       }
@@ -978,8 +984,10 @@ export class SkillsHub extends EventEmitter {
       throw new Error(`Invalid SKILL.md format for '${skillName}': missing YAML frontmatter`);
     }
 
+    // safe: regex matched with a mandatory capture group, so match[1] is present
+    const frontmatter = match[1] ?? '';
     try {
-      const parsed = yaml.parse(match[1]) as Record<string, unknown>;
+      const parsed = yaml.parse(frontmatter) as Record<string, unknown>;
       if (!parsed.name || typeof parsed.name !== 'string') {
         throw new Error(`SKILL.md for '${skillName}' is missing required 'name' field`);
       }

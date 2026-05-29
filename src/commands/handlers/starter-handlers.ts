@@ -84,7 +84,18 @@ export async function handleStarter(args: string[]): Promise<CommandHandlerResul
     };
   }
 
-  const action = args[0].toLowerCase();
+  const first = args[0];
+  if (first === undefined) {
+    return {
+      handled: true,
+      entry: {
+        type: 'assistant',
+        content: formatStarterList(),
+        timestamp: new Date(),
+      },
+    };
+  }
+  const action = first.toLowerCase();
 
   // /starter search <query>
   if (action === 'search' && args.length > 1) {
@@ -117,7 +128,7 @@ export async function handleStarter(args: string[]): Promise<CommandHandlerResul
 
   // Try without join (single word alias)
   if (!skill) {
-    const altResolved = resolveStarterAlias(args[0]);
+    const altResolved = resolveStarterAlias(first);
     skill = registry.get(altResolved);
   }
 

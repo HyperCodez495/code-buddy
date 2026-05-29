@@ -164,7 +164,8 @@ export function createProgress(percent: number, width: number = 20, style?: Comp
 
 export function createSpinner(frame: number = 0, style?: ComponentStyle): CanvasComponent {
   const frames = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏'];
-  return createComponent('spinner', frames[frame % frames.length], style);
+  // frame % frames.length is always in [0, frames.length); fallback to first frame is unreachable
+  return createComponent('spinner', frames[frame % frames.length] ?? '⠋', style);
 }
 
 export function createTable(
@@ -179,12 +180,12 @@ export function createTable(
   });
 
   // Header
-  lines.push(headers.map((h, i) => h.padEnd(colWidths[i])).join(' │ '));
+  lines.push(headers.map((h, i) => h.padEnd(colWidths[i] ?? 0)).join(' │ '));
   lines.push(colWidths.map(w => '─'.repeat(w)).join('─┼─'));
 
   // Rows
   for (const row of rows) {
-    lines.push(row.map((c, i) => (c || '').padEnd(colWidths[i])).join(' │ '));
+    lines.push(row.map((c, i) => (c || '').padEnd(colWidths[i] ?? 0)).join(' │ '));
   }
 
   return createComponent('table', lines, style);
@@ -219,7 +220,12 @@ export class CanvasRenderer {
 
     for (let i = 0; i < chars.length && x + i < this.width; i++) {
       if (y >= 0 && y < this.height && x + i >= 0) {
-        this.buffer[y][x + i] = chars[i];
+        const row = this.buffer[y];
+        const ch = chars[i];
+        // y < this.height and i < chars.length, so both are in bounds
+        if (row !== undefined && ch !== undefined) {
+          row[x + i] = ch;
+        }
       }
     }
   }
@@ -229,6 +235,7 @@ export class CanvasRenderer {
     if (border === 'none') return;
 
     const chars = ANSI.box[border] || ANSI.box.single;
+    if (chars === undefined) return;
 
     // Corners
     this.drawText(chars.tl, x, y, style);
@@ -353,8 +360,8 @@ export class CanvasManager extends EventEmitter {
       case 'list':
       case 'table':
         const lines = component.content as string[];
-        for (let i = 0; i < lines.length; i++) {
-          this.renderer.drawText(lines[i], x, y + i, component.style);
+        for (const [i, line] of lines.entries()) {
+          this.renderer.drawText(line, x, y + i, component.style);
         }
         break;
 

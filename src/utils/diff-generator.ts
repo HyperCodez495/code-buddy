@@ -131,8 +131,8 @@ function buildHunks(
     const contextEnd = Math.min(oldLines.length, change.oldEnd + contextLines);
 
     // Try to merge with previous hunk if they overlap
-    if (hunks.length > 0) {
-      const lastHunk = hunks[hunks.length - 1];
+    const lastHunk = hunks[hunks.length - 1];
+    if (lastHunk) {
       const lastHunkEnd = lastHunk.oldStart + lastHunk.oldCount;
 
       if (lastHunkEnd >= contextStart) {
@@ -141,23 +141,23 @@ function buildHunks(
         const newContextEnd = Math.min(oldLines.length, change.oldEnd + contextLines);
 
         // Add context between previous change and current
-        for (let idx = oldHunkEnd; idx < change.oldStart; idx++) {
-          lastHunk.lines.push({ type: ' ', content: oldLines[idx] });
+        for (const content of oldLines.slice(oldHunkEnd, change.oldStart)) {
+          lastHunk.lines.push({ type: ' ', content });
         }
 
         // Add removed lines
-        for (let idx = change.oldStart; idx < change.oldEnd; idx++) {
-          lastHunk.lines.push({ type: '-', content: oldLines[idx] });
+        for (const content of oldLines.slice(change.oldStart, change.oldEnd)) {
+          lastHunk.lines.push({ type: '-', content });
         }
 
         // Add added lines
-        for (let idx = change.newStart; idx < change.newEnd; idx++) {
-          lastHunk.lines.push({ type: '+', content: newLines[idx] });
+        for (const content of newLines.slice(change.newStart, change.newEnd)) {
+          lastHunk.lines.push({ type: '+', content });
         }
 
         // Add trailing context
-        for (let idx = change.oldEnd; idx < newContextEnd && idx < oldLines.length; idx++) {
-          lastHunk.lines.push({ type: ' ', content: oldLines[idx] });
+        for (const content of oldLines.slice(change.oldEnd, newContextEnd)) {
+          lastHunk.lines.push({ type: ' ', content });
         }
 
         lastHunk.oldCount = newContextEnd - lastHunk.oldStart;
@@ -179,23 +179,23 @@ function buildHunks(
     };
 
     // Add leading context
-    for (let idx = contextStart; idx < change.oldStart; idx++) {
-      hunk.lines.push({ type: ' ', content: oldLines[idx] });
+    for (const content of oldLines.slice(contextStart, change.oldStart)) {
+      hunk.lines.push({ type: ' ', content });
     }
 
     // Add removed lines
-    for (let idx = change.oldStart; idx < change.oldEnd; idx++) {
-      hunk.lines.push({ type: '-', content: oldLines[idx] });
+    for (const content of oldLines.slice(change.oldStart, change.oldEnd)) {
+      hunk.lines.push({ type: '-', content });
     }
 
     // Add added lines
-    for (let idx = change.newStart; idx < change.newEnd; idx++) {
-      hunk.lines.push({ type: '+', content: newLines[idx] });
+    for (const content of newLines.slice(change.newStart, change.newEnd)) {
+      hunk.lines.push({ type: '+', content });
     }
 
     // Add trailing context
-    for (let idx = change.oldEnd; idx < contextEnd && idx < oldLines.length; idx++) {
-      hunk.lines.push({ type: ' ', content: oldLines[idx] });
+    for (const content of oldLines.slice(change.oldEnd, contextEnd)) {
+      hunk.lines.push({ type: ' ', content });
     }
 
     hunks.push(hunk);

@@ -217,7 +217,10 @@ class FocusManager {
 
     const currentIndex = this.elements.findIndex((e) => e.id === this.currentFocus);
     const nextIndex = (currentIndex + 1) % this.elements.length;
-    this.focus(this.elements[nextIndex].id);
+    const nextElement = this.elements[nextIndex];
+    if (nextElement) {
+      this.focus(nextElement.id);
+    }
   }
 
   /**
@@ -228,7 +231,10 @@ class FocusManager {
 
     const currentIndex = this.elements.findIndex((e) => e.id === this.currentFocus);
     const prevIndex = currentIndex <= 0 ? this.elements.length - 1 : currentIndex - 1;
-    this.focus(this.elements[prevIndex].id);
+    const prevElement = this.elements[prevIndex];
+    if (prevElement) {
+      this.focus(prevElement.id);
+    }
   }
 
   /**
@@ -429,23 +435,27 @@ export function useArrowKeyNavigation(
  */
 function hexToRgb(hex: string): { r: number; g: number; b: number } | null {
   const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
-  return result
-    ? {
-        r: parseInt(result[1], 16),
-        g: parseInt(result[2], 16),
-        b: parseInt(result[3], 16),
-      }
-    : null;
+  if (!result || result[1] === undefined || result[2] === undefined || result[3] === undefined) {
+    return null;
+  }
+  return {
+    r: parseInt(result[1], 16),
+    g: parseInt(result[2], 16),
+    b: parseInt(result[3], 16),
+  };
 }
 
 /**
  * Calculate relative luminance
  */
 function getLuminance(r: number, g: number, b: number): number {
-  const [rs, gs, bs] = [r, g, b].map((c) => {
+  const toLinear = (c: number): number => {
     const s = c / 255;
     return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4);
-  });
+  };
+  const rs = toLinear(r);
+  const gs = toLinear(g);
+  const bs = toLinear(b);
 
   return 0.2126 * rs + 0.7152 * gs + 0.0722 * bs;
 }

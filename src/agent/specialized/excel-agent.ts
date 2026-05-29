@@ -187,7 +187,7 @@ export class ExcelAgent extends SpecializedAgent {
     }
 
     const filePath = task.inputFiles[0];
-    if (!existsSync(filePath)) {
+    if (!filePath || !existsSync(filePath)) {
       return { success: false, error: `File not found: ${filePath}` };
     }
 
@@ -295,7 +295,7 @@ export class ExcelAgent extends SpecializedAgent {
     }
 
     const filePath = task.inputFiles[0];
-    if (!existsSync(filePath)) {
+    if (!filePath || !existsSync(filePath)) {
       return { success: false, error: `File not found: ${filePath}` };
     }
 
@@ -342,6 +342,9 @@ export class ExcelAgent extends SpecializedAgent {
     }
 
     const inputFile = task.inputFiles[0];
+    if (!inputFile) {
+      return { success: false, error: 'No input file specified' };
+    }
     const _inputExt = extname(inputFile).toLowerCase();
     const _outputExt = extname(task.outputFile).toLowerCase();
 
@@ -391,6 +394,7 @@ export class ExcelAgent extends SpecializedAgent {
     const filteredData: unknown[][] = [headers];
     for (let i = 1; i < sheet.data.length; i++) {
       const row = sheet.data[i];
+      if (!row) continue;
       const cellValue = row[colIndex];
 
       let matches = false;
@@ -443,9 +447,12 @@ export class ExcelAgent extends SpecializedAgent {
     const columnStats: Record<string, Record<string, unknown>> = {};
 
     for (let col = 0; col < headers.length; col++) {
+      const header = headers[col] ?? String(col);
       const values: unknown[] = [];
       for (let row = 1; row < sheet.data.length; row++) {
-        values.push(sheet.data[row][col]);
+        const dataRow = sheet.data[row];
+        if (!dataRow) continue;
+        values.push(dataRow[col]);
       }
 
       const numericValues = values.filter(v => typeof v === 'number' || !isNaN(Number(v)));
@@ -469,7 +476,7 @@ export class ExcelAgent extends SpecializedAgent {
         }
       }
 
-      columnStats[headers[col]] = stats;
+      columnStats[header] = stats;
     }
 
     return {
@@ -505,13 +512,18 @@ export class ExcelAgent extends SpecializedAgent {
       const { sheet } = readResult.data as { workbook: ExcelWorkbook; sheet: ExcelSheet };
 
       if (!headers) {
-        headers = sheet.data[0];
-        allData.push(headers);
+        const firstRow = sheet.data[0];
+        if (firstRow) {
+          headers = firstRow;
+          allData.push(headers);
+        }
       }
 
       // Add rows (skip header if not first file)
       for (let i = 1; i < sheet.data.length; i++) {
-        allData.push(sheet.data[i]);
+        const dataRow = sheet.data[i];
+        if (!dataRow) continue;
+        allData.push(dataRow);
       }
     }
 
@@ -604,7 +616,8 @@ export class ExcelAgent extends SpecializedAgent {
     // First 5 rows
     for (let i = 1; i < Math.min(6, sheet.data.length); i++) {
       const row = sheet.data[i];
-      const formatted = (row as unknown[]).slice(0, 6).map(c => String(c ?? '').slice(0, 15)).join(' | ');
+      if (!row) continue;
+      const formatted = row.slice(0, 6).map(c => String(c ?? '').slice(0, 15)).join(' | ');
       lines.push(formatted + (row.length > 6 ? ' ...' : ''));
     }
 
@@ -651,7 +664,7 @@ export class ExcelAgent extends SpecializedAgent {
       else types.add('string');
     }
     if (types.size === 0) return 'null';
-    if (types.size === 1) return [...types][0];
+    if (types.size === 1) return [...types][0] ?? 'mixed';
     return 'mixed';
   }
 }

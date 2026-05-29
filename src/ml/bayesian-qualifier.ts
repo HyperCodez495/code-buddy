@@ -17,21 +17,23 @@ export class StandardScaler {
 
   fit(X: number[][]): void {
     if (X.length === 0) return;
-    const numFeatures = X[0].length;
+    const firstRow = X[0];
+    if (firstRow === undefined) return;
+    const numFeatures = firstRow.length;
     this.means = Array(numFeatures).fill(0);
     this.stds = Array(numFeatures).fill(0);
 
     for (let j = 0; j < numFeatures; j++) {
       let sum = 0;
-      for (let i = 0; i < X.length; i++) {
-        sum += X[i][j];
+      for (const row of X) {
+        sum += row[j] ?? 0;
       }
       const mean = sum / X.length;
       this.means[j] = mean;
 
       let varianceSum = 0;
-      for (let i = 0; i < X.length; i++) {
-        varianceSum += Math.pow(X[i][j] - mean, 2);
+      for (const row of X) {
+        varianceSum += Math.pow((row[j] ?? 0) - mean, 2);
       }
       this.stds[j] = Math.sqrt(varianceSum / X.length) || 1e-8;
     }
@@ -39,12 +41,12 @@ export class StandardScaler {
 
   transform(X: number[][]): number[][] {
     if (this.means.length === 0) return X;
-    return X.map(row => row.map((val, j) => (val - this.means[j]) / this.stds[j]));
+    return X.map(row => row.map((val, j) => (val - (this.means[j] ?? 0)) / (this.stds[j] ?? 1e-8)));
   }
 
   transformVector(x: number[]): number[] {
     if (this.means.length === 0) return x;
-    return x.map((val, j) => (val - this.means[j]) / this.stds[j]);
+    return x.map((val, j) => (val - (this.means[j] ?? 0)) / (this.stds[j] ?? 1e-8));
   }
 }
 
@@ -101,8 +103,12 @@ export class BayesianQualifier {
     // 2. Compute Covariance Matrix K
     const K = new Matrix(N, N);
     for (let i = 0; i < N; i++) {
+      const rowI = this.XScaled[i];
+      if (rowI === undefined) continue;
       for (let j = 0; j < N; j++) {
-        let cov = this.rbfKernel(this.XScaled[i], this.XScaled[j]);
+        const rowJ = this.XScaled[j];
+        if (rowJ === undefined) continue;
+        let cov = this.rbfKernel(rowI, rowJ);
         if (i === j) {
           cov += this.noiseVariance;
         }
@@ -157,7 +163,9 @@ export class BayesianQualifier {
     // Compute kStar vector
     const kStar = new Matrix(N, 1);
     for (let i = 0; i < N; i++) {
-      kStar.set(i, 0, this.rbfKernel(xStar, this.XScaled[i]));
+      const rowI = this.XScaled[i];
+      if (rowI === undefined) continue;
+      kStar.set(i, 0, this.rbfKernel(xStar, rowI));
     }
 
     // mean = kStar^T * alpha
@@ -241,7 +249,7 @@ export class BayesianQualifier {
   private rbfKernel(x1: number[], x2: number[]): number {
     let sumSqDiff = 0;
     for (let i = 0; i < x1.length; i++) {
-      sumSqDiff += Math.pow(x1[i] - x2[i], 2);
+      sumSqDiff += Math.pow((x1[i] ?? 0) - (x2[i] ?? 0), 2);
     }
     return this.signalVariance * Math.exp(-sumSqDiff / (2 * this.lengthScale * this.lengthScale));
   }

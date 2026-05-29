@@ -65,8 +65,8 @@ export class KokoroTTSService {
 
     // Write PCM data
     let offset = 44;
-    for (let i = 0; i < audioData.length; i++) {
-      let s = Math.max(-1, Math.min(1, audioData[i]));
+    for (const sample of audioData) {
+      const s = Math.max(-1, Math.min(1, sample));
       const val = s < 0 ? s * 0x8000 : s * 0x7FFF;
       buffer.writeInt16LE(val, offset);
       offset += 2;

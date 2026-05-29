@@ -306,7 +306,10 @@ export class TDDModeManager extends EventEmitter {
       throw new Error("No active TDD cycle");
     }
 
-    const template = TEST_TEMPLATES[this.config.language] || TEST_TEMPLATES.typescript;
+    const template = TEST_TEMPLATES[this.config.language] ?? TEST_TEMPLATES.typescript;
+    if (!template) {
+      throw new Error("No test template available for the configured language");
+    }
     const coverageLevel = this.config.testCoverage;
 
     let prompt = `You are in TDD mode. Generate comprehensive tests FIRST, before any implementation.

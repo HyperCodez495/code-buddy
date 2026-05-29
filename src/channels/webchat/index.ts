@@ -648,7 +648,8 @@ export class WebChatChannel extends BaseChannel {
    * Determine content type from message content
    */
   private determineContentType(content: string, attachments?: MessageAttachment[]): ContentType {
-    if (attachments && attachments.length > 0) return attachments[0].type;
+    const firstAttachment = attachments?.[0];
+    if (firstAttachment) return firstAttachment.type;
     if (content.startsWith('/')) return 'command';
     return 'text';
   }

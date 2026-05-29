@@ -543,7 +543,7 @@ export class BrowserController extends EventEmitter {
     ];
 
     // In a real implementation, we'd check if the path exists
-    return paths[0];
+    return paths[0] ?? null;
   }
 
   /**

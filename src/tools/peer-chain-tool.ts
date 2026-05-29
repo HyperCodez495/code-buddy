@@ -99,8 +99,7 @@ export async function executePeerChain(params: PeerChainParams): Promise<ToolRes
   }
 
   const completed: CompletedStage[] = [];
-  for (let index = 0; index < routeData.nextCalls.length; index++) {
-    const call = routeData.nextCalls[index];
+  for (const [index, call] of routeData.nextCalls.entries()) {
     const role = resolveStageRole(call, routeData, roles, index);
     const stagePrompt = buildPeerChainStagePrompt({
       completed,

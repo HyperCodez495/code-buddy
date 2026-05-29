@@ -313,6 +313,7 @@ class SessionLane extends EventEmitter {
     if (index === -1) return false;
 
     const [task] = this.queue.splice(index, 1);
+    if (task === undefined) return false;
     task.reject(new Error('Task cancelled'));
     this.emit('task:cancelled', this.sessionId, taskId);
 

@@ -137,8 +137,7 @@ ${HtmlThemeEngine.getScript()}
     const result: string[] = [];
     let inParagraph = false;
 
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i];
+    for (const line of lines) {
       const trimmed = line.trim();
 
       // Restore code blocks
@@ -215,12 +214,16 @@ ${HtmlThemeEngine.getScript()}
         const parseRow = (row: string): string[] =>
           row.split('|').map(c => c.trim()).filter((c, i, arr) => i > 0 && i < arr.length - 1);
 
+        const headerRow = rows[0];
+        const separatorRow = rows[1];
+        if (headerRow === undefined || separatorRow === undefined) return block;
+
         // Check if second row is separator
-        const sep = parseRow(rows[1]);
+        const sep = parseRow(separatorRow);
         const isSep = sep.every(c => /^[-:]+$/.test(c));
         if (!isSep) return block;
 
-        const headerCells = parseRow(rows[0]);
+        const headerCells = parseRow(headerRow);
         const thead = `<thead><tr>${headerCells.map(c => `<th>${HtmlThemeEngine.inlineMarkdown(c)}</th>`).join('')}</tr></thead>`;
 
         const bodyRows = rows.slice(2);
@@ -268,7 +271,7 @@ ${HtmlThemeEngine.getScript()}
     const lines = md.split('\n');
     for (const line of lines) {
       const m = line.match(/^(#{2,3})\s+(.+)$/);
-      if (m) {
+      if (m && m[1] !== undefined && m[2] !== undefined) {
         const text = m[2].trim();
         const id = text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
         headings.push({ level: m[1].length, text, id });

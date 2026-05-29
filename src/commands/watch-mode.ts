@@ -88,6 +88,13 @@ export function extractAIComments(content: string, filePath: string): AIComment[
     pattern.regex.lastIndex = 0; // Reset regex state
 
     while ((match = pattern.regex.exec(content)) !== null) {
+      // Every COMMENT_PATTERNS regex has exactly one capture group; skip if
+      // it is somehow absent rather than crashing.
+      const captured = match[1];
+      if (captured === undefined) {
+        continue;
+      }
+
       // Find line number
       const beforeMatch = content.slice(0, match.index);
       const lineNumber = beforeMatch.split('\n').length;
@@ -99,7 +106,7 @@ export function extractAIComments(content: string, filePath: string): AIComment[
 
       comments.push({
         type: pattern.type,
-        content: match[1].trim(),
+        content: captured.trim(),
         filePath,
         lineNumber,
         context,

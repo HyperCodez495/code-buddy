@@ -294,9 +294,9 @@ export class ExtendedThinkingEngine extends EventEmitter {
 
     return {
       id: this.createId("thought"),
-      type: typeMatch[1] as ThoughtType,
-      content: contentMatch[1].trim(),
-      confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+      type: (typeMatch[1] ?? "analysis") as ThoughtType,
+      content: (contentMatch[1] ?? "").trim(),
+      confidence: confidenceMatch?.[1] ? parseFloat(confidenceMatch[1]) : 0.5,
       reasoning: reasoningMatch?.[1]?.trim(),
       timestamp: Date.now(),
     };
@@ -335,7 +335,7 @@ export class ExtendedThinkingEngine extends EventEmitter {
       return {
         thought,
         verified: verifiedMatch?.[1]?.toLowerCase() === "true",
-        confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+        confidence: confidenceMatch?.[1] ? parseFloat(confidenceMatch[1]) : 0.5,
         issues: issuesMatch?.[1]?.trim() ? [issuesMatch[1].trim()] : undefined,
         corrections: correctionsMatch?.[1]?.trim()
           ? [correctionsMatch[1].trim()]
@@ -448,9 +448,10 @@ export class ExtendedThinkingEngine extends EventEmitter {
     let maxGroupSize = 0;
 
     for (const [_key, group] of answerGroups) {
-      if (group.length > maxGroupSize) {
+      const first = group[0];
+      if (first && group.length > maxGroupSize) {
         maxGroupSize = group.length;
-        consensusAnswer = group[0].answer;
+        consensusAnswer = first.answer;
         consensusConfidence =
           group.reduce((sum, a) => sum + a.confidence, 0) / group.length;
       }
@@ -483,18 +484,18 @@ export class ExtendedThinkingEngine extends EventEmitter {
     const insightsMatch = content.match(/<key_insights>([\s\S]*?)<\/key_insights>/);
     const uncertaintiesMatch = content.match(/<uncertainties>([\s\S]*?)<\/uncertainties>/);
 
-    const keyInsights = insightsMatch
+    const keyInsights = insightsMatch?.[1]
       ? insightsMatch[1].split(/\n-/).filter((s) => s.trim()).map((s) => s.trim())
       : [];
 
-    const uncertainties = uncertaintiesMatch
+    const uncertainties = uncertaintiesMatch?.[1]
       ? uncertaintiesMatch[1].split(/\n-/).filter((s) => s.trim()).map((s) => s.trim())
       : [];
 
     return {
       answer: answerMatch?.[1]?.trim() || content,
       reasoning: reasoningMatch?.[1]?.trim() || "",
-      confidence: confidenceMatch ? parseFloat(confidenceMatch[1]) : 0.5,
+      confidence: confidenceMatch?.[1] ? parseFloat(confidenceMatch[1]) : 0.5,
       thinkingTime: (session.endTime || Date.now()) - session.startTime,
       thoughtCount: thoughts.length,
       chainsExplored: session.chains.length,

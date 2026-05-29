@@ -105,6 +105,14 @@ Examples:
   }
 
   const worktreePath = args[0];
+  if (worktreePath === undefined) {
+    return `❌ Usage: /worktree add <path> [branch]
+
+Examples:
+  /worktree add ../feature-auth feature/auth
+  /worktree add ../bugfix-123 bugfix/issue-123
+  /worktree add ../experiment  (creates new branch from HEAD)`;
+  }
   const branch = args[1];
   const resolvedPath = path.resolve(worktreePath);
   const dirName = path.basename(resolvedPath);
@@ -183,6 +191,11 @@ Use /worktree list to see available worktrees.`;
   }
 
   const worktreePath = args[0];
+  if (worktreePath === undefined) {
+    return `❌ Usage: /worktree remove <path>
+
+Use /worktree list to see available worktrees.`;
+  }
   const force = args.includes('--force') || args.includes('-f');
   const resolvedPath = path.resolve(worktreePath);
 

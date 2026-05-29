@@ -345,8 +345,8 @@ export class ApprovalModeManager extends EventEmitter {
       }
     }
 
-    // Get base command
-    const baseCommand = command.split(/\s+/)[0];
+    // Get base command (split always yields at least one element)
+    const baseCommand = command.split(/\s+/)[0] ?? '';
     const fullCommand = command.trim();
 
     // Check safe commands
@@ -368,7 +368,7 @@ export class ApprovalModeManager extends EventEmitter {
     if (baseCommand === 'git') {
       const gitSubcommand = command.split(/\s+/)[1];
       const safeGitCommands = ['status', 'log', 'diff', 'branch', 'show', 'ls-files'];
-      if (safeGitCommands.includes(gitSubcommand)) {
+      if (gitSubcommand !== undefined && safeGitCommands.includes(gitSubcommand)) {
         return 'command-safe';
       }
       return 'command-system';

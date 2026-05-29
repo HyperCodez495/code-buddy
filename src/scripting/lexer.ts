@@ -258,7 +258,8 @@ export class FCSLexer {
   }
 
   private scanNumber(startPos: number, startLine: number, startColumn: number): Token {
-    let value = this.source[startPos];
+    // safe: nextToken already advanced over an in-bounds char, so startPos is valid; '' never used
+    let value = this.source[startPos] ?? '';
 
     // Hex number
     if (value === '0' && (this.peek() === 'x' || this.peek() === 'X')) {
@@ -304,7 +305,8 @@ export class FCSLexer {
   }
 
   private scanIdentifier(startPos: number, startLine: number, startColumn: number): Token {
-    let value = this.source[startPos];
+    // safe: nextToken already advanced over an in-bounds char, so startPos is valid; '' never used
+    let value = this.source[startPos] ?? '';
 
     while (this.isAlphaNumeric(this.peek())) {
       value += this.advance();
@@ -378,13 +380,13 @@ export class FCSLexer {
       return this.createToken(TokenType.Newline, '\n', startPos, startLine, startColumn);
     }
 
-    const currentIndent = this.indentStack[this.indentStack.length - 1];
+    const currentIndent = this.indentStack[this.indentStack.length - 1] ?? 0;
 
     if (indentLevel > currentIndent) {
       this.indentStack.push(indentLevel);
       this.addToken(TokenType.Indent, '');
     } else if (indentLevel < currentIndent) {
-      while (this.indentStack.length > 1 && this.indentStack[this.indentStack.length - 1] > indentLevel) {
+      while (this.indentStack.length > 1 && (this.indentStack[this.indentStack.length - 1] ?? 0) > indentLevel) {
         this.indentStack.pop();
         this.addToken(TokenType.Dedent, '');
       }
@@ -418,7 +420,7 @@ export class FCSLexer {
 
   private advance(): string {
     if (this.isAtEnd()) return '\0';
-    const ch = this.source[this.position++];
+    const ch = this.source[this.position++] ?? '\0';
     this.column++;
     if (ch === '\n') {
       this.line++;
@@ -428,11 +430,11 @@ export class FCSLexer {
   }
 
   private peek(): string {
-    return this.isAtEnd() ? '\0' : this.source[this.position];
+    return this.isAtEnd() ? '\0' : (this.source[this.position] ?? '\0');
   }
 
   private peekNext(): string {
-    return this.position + 1 >= this.source.length ? '\0' : this.source[this.position + 1];
+    return this.position + 1 >= this.source.length ? '\0' : (this.source[this.position + 1] ?? '\0');
   }
 
   private match(expected: string): boolean {

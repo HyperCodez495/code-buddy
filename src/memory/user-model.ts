@@ -542,7 +542,7 @@ Example output:
 
 function parseLLMResponse(text: string): Array<{ kind: string; content: string; confidence: number }> {
   const jsonMatch = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-  const jsonText = jsonMatch ? jsonMatch[1] : text;
+  const jsonText = (jsonMatch ? jsonMatch[1] : text) ?? text;
   try {
     const parsed = JSON.parse(jsonText.trim());
     if (Array.isArray(parsed)) return parsed;

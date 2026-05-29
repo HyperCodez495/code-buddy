@@ -33,6 +33,7 @@ export class JavaScanner implements LanguageScanner {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
       const trimmed = line.trimStart();
 
@@ -45,6 +46,7 @@ export class JavaScanner implements LanguageScanner {
       const classMatch = trimmed.match(/^(?:(?:public|private|protected|abstract|final|static)\s+)*class\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+(\w+)(?:<[^>]*>)?)?(?:\s+implements\s+([\w,\s<>]+))?\s*\{/);
       if (classMatch) {
         const className = classMatch[1];
+        if (className === undefined) continue;
         tracker.currentClassName = className;
         tracker.classStartDepth = tracker.braceDepth - 1;
         symbols.push({
@@ -67,6 +69,7 @@ export class JavaScanner implements LanguageScanner {
       const ifaceMatch = trimmed.match(/^(?:(?:public|private|protected)\s+)?interface\s+(\w+)(?:<[^>]*>)?(?:\s+extends\s+([\w,\s<>]+))?\s*\{/);
       if (ifaceMatch) {
         const ifaceName = ifaceMatch[1];
+        if (ifaceName === undefined) continue;
         tracker.currentClassName = ifaceName;
         tracker.classStartDepth = tracker.braceDepth - 1;
         symbols.push({
@@ -88,16 +91,18 @@ export class JavaScanner implements LanguageScanner {
       // Enum: public enum Foo implements Bar {
       const enumMatch = trimmed.match(/^(?:(?:public|private|protected)\s+)?enum\s+(\w+)(?:\s+implements\s+([\w,\s<>]+))?\s*\{/);
       if (enumMatch) {
+        const enumName = enumMatch[1];
+        if (enumName === undefined) continue;
         symbols.push({
-          fqn: `cls:${enumMatch[1]}`,
-          name: enumMatch[1],
+          fqn: `cls:${enumName}`,
+          name: enumName,
           kind: 'class',
           module: moduleId,
           line: lineNum,
         });
         if (enumMatch[2]) {
           const ifaces = enumMatch[2].split(',').map(s => s.trim().replace(/<.*>$/, '')).filter(s => s);
-          inheritance.push({ className: enumMatch[1], implements: ifaces });
+          inheritance.push({ className: enumName, implements: ifaces });
         }
         continue;
       }
@@ -106,9 +111,12 @@ export class JavaScanner implements LanguageScanner {
       if (tracker.currentClassName) {
         // Java: return type comes before method name
         const methodMatch = trimmed.match(/^(?:(?:public|private|protected|static|final|abstract|synchronized|native|default)\s+)*(?:<[^>]*>\s+)?(\w+(?:<[^>]*>)?(?:\[\])?)\s+(\w+)\s*\(([^)]*)\)(?:\s*throws\s+[\w,\s]+)?\s*[{;]/);
-        if (methodMatch && !JAVA_BLACKLIST.has(methodMatch[2]) && methodMatch[2] !== tracker.currentClassName) {
-          const returnType = methodMatch[1];
-          const methodName = methodMatch[2];
+        const methodReturnType = methodMatch?.[1];
+        const methodMatchName = methodMatch?.[2];
+        if (methodMatch && methodReturnType !== undefined && methodMatchName !== undefined
+            && !JAVA_BLACKLIST.has(methodMatchName) && methodMatchName !== tracker.currentClassName) {
+          const returnType = methodReturnType;
+          const methodName = methodMatchName;
           const rawParams = methodMatch[3]?.trim() || '';
           const fqn = `fn:${tracker.currentClassName}.${methodName}`;
           symbols.push({
@@ -147,9 +155,12 @@ export class JavaScanner implements LanguageScanner {
 
         // Multi-line method params
         const simpleMethodMatch = trimmed.match(/^(?:(?:public|private|protected|static|final|abstract|synchronized)\s+)*(?:<[^>]*>\s+)?(\w+(?:<[^>]*>)?(?:\[\])?)\s+(\w+)\s*\(/);
-        if (simpleMethodMatch && !methodMatch && !JAVA_BLACKLIST.has(simpleMethodMatch[2]) && simpleMethodMatch[2] !== tracker.currentClassName) {
-          const returnType = simpleMethodMatch[1];
-          const methodName = simpleMethodMatch[2];
+        const simpleReturnType = simpleMethodMatch?.[1];
+        const simpleMethodName = simpleMethodMatch?.[2];
+        if (simpleMethodMatch && !methodMatch && simpleReturnType !== undefined && simpleMethodName !== undefined
+            && !JAVA_BLACKLIST.has(simpleMethodName) && simpleMethodName !== tracker.currentClassName) {
+          const returnType = simpleReturnType;
+          const methodName = simpleMethodName;
           const multiParams = extractMultiLineParams(lines, i);
           const fqn = `fn:${tracker.currentClassName}.${methodName}`;
           symbols.push({
@@ -170,10 +181,11 @@ export class JavaScanner implements LanguageScanner {
         RE_JAVA_THIS_CALL.lastIndex = 0;
         let cm: RegExpExecArray | null;
         while ((cm = RE_JAVA_THIS_CALL.exec(line)) !== null) {
-          if (!JAVA_BLACKLIST.has(cm[1])) {
+          const thisCallName = cm[1];
+          if (thisCallName !== undefined && !JAVA_BLACKLIST.has(thisCallName)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[1],
+              calleeName: thisCallName,
               isMethodCall: true,
               receiverClass: tracker.currentClassName ?? undefined,
             });
@@ -182,12 +194,15 @@ export class JavaScanner implements LanguageScanner {
 
         RE_JAVA_STATIC_CALL.lastIndex = 0;
         while ((cm = RE_JAVA_STATIC_CALL.exec(line)) !== null) {
-          if (!JAVA_BLACKLIST.has(cm[2]) && !JAVA_BLACKLIST.has(cm[1])) {
+          const staticReceiver = cm[1];
+          const staticMethod = cm[2];
+          if (staticReceiver !== undefined && staticMethod !== undefined
+              && !JAVA_BLACKLIST.has(staticMethod) && !JAVA_BLACKLIST.has(staticReceiver)) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
-              calleeName: cm[2],
+              calleeName: staticMethod,
               isMethodCall: true,
-              receiverClass: cm[1],
+              receiverClass: staticReceiver,
             });
           }
         }
@@ -195,7 +210,7 @@ export class JavaScanner implements LanguageScanner {
         RE_JAVA_CALL.lastIndex = 0;
         while ((cm = RE_JAVA_CALL.exec(line)) !== null) {
           const name = cm[1];
-          if (!JAVA_BLACKLIST.has(name) && /^[a-z]/.test(name) && name.length > 2) {
+          if (name !== undefined && !JAVA_BLACKLIST.has(name) && /^[a-z]/.test(name) && name.length > 2) {
             calls.push({
               callerFqn: tracker.currentFunctionFqn,
               calleeName: name,

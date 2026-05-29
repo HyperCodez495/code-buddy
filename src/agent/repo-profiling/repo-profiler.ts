@@ -90,7 +90,8 @@ export class RepoProfiler {
         try {
           const gomod = fs.readFileSync(ctx.goModPath, 'utf-8');
           const modMatch = gomod.match(/^module\s+(\S+)/m);
-          if (modMatch) ctx.projectName = modMatch[1].split('/').pop();
+          const moduleName = modMatch?.[1];
+          if (moduleName) ctx.projectName = moduleName.split('/').pop();
         } catch { /* ignore */ }
       }
     }

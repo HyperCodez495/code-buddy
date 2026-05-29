@@ -598,6 +598,7 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       let m: RegExpExecArray | null;
       while ((m = RE_RUST_USE.exec(headContent)) !== null) {
         const modName = m[1];
+        if (!modName) continue;
         if (!importedBy.has(modName)) importedBy.set(modName, new Set());
         importedBy.get(modName)!.add(moduleId);
       }
@@ -626,29 +627,34 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       if (RE_SINGLETON.test(content)) singletons.push(className);
 
       const regMatch = RE_REGISTRY.exec(content);
-      if (regMatch) registries.push(regMatch[1]);
+      const regName = regMatch?.[1];
+      if (regName) registries.push(regName);
 
       const factMatch = RE_FACTORY.exec(content);
-      if (factMatch) factories.push(factMatch[1] || factMatch[2]);
+      const factName = factMatch ? (factMatch[1] || factMatch[2]) : undefined;
+      if (factName) factories.push(factName);
 
       const facadeMatch = RE_FACADE.exec(content);
-      if (facadeMatch) {
-        facades.push(facadeMatch[1]);
-        facadeEntries.push({ name: facadeMatch[1], file: f.relPath });
+      const facadeName = facadeMatch?.[1];
+      if (facadeName) {
+        facades.push(facadeName);
+        facadeEntries.push({ name: facadeName, file: f.relPath });
       }
 
       const obsMatch = RE_OBSERVER.exec(content);
-      if (obsMatch) observers.push(obsMatch[1]);
+      const obsName = obsMatch?.[1];
+      if (obsName) observers.push(obsName);
 
       if (f.relPath.includes('/middleware/') || f.relPath.includes('/middlewares/')) {
         middlewares.push(className);
         const baseName = path.basename(f.relPath, f.ext);
         if (baseName !== 'index' && baseName !== 'types' && baseName !== 'pipeline') {
           const prioMatch = RE_MIDDLEWARE_PRIORITY.exec(content);
+          const prioStr = prioMatch?.[1];
           middlewareEntries.push({
             name: className,
             file: f.relPath,
-            priority: prioMatch ? parseInt(prioMatch[1], 10) : undefined,
+            priority: prioStr !== undefined ? parseInt(prioStr, 10) : undefined,
           });
         }
       }
@@ -656,19 +662,22 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       // Agent classes
       if (f.relPath.includes('/specialized/') || f.relPath.includes('/agents/')) {
         const agentMatch = RE_AGENT_CLASS.exec(content);
-        if (agentMatch) agents.push({ name: agentMatch[1], file: f.relPath });
+        const agentName = agentMatch?.[1];
+        if (agentName) agents.push({ name: agentName, file: f.relPath });
       }
 
       // Tool classes
       if (f.relPath.includes('/tools/') && !f.relPath.includes('/registry/') && !f.relPath.includes('/types')) {
         const toolMatch = RE_TOOL_CLASS.exec(content);
-        if (toolMatch) tools.push({ name: toolMatch[1], file: f.relPath });
+        const toolName = toolMatch?.[1];
+        if (toolName) tools.push({ name: toolName, file: f.relPath });
       }
 
       // Channel classes
       if (f.relPath.includes('/channels/') && !f.relPath.includes('/pro/') && !f.relPath.includes('mock')) {
         const chanMatch = RE_CHANNEL_CLASS.exec(content);
-        if (chanMatch) channels.push({ name: chanMatch[1], file: f.relPath });
+        const chanName = chanMatch?.[1];
+        if (chanName) channels.push({ name: chanName, file: f.relPath });
       }
 
       // Key exports
@@ -679,7 +688,7 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
         let expMatch: RegExpExecArray | null;
         while ((expMatch = RE_EXPORT.exec(content)) !== null) {
           const expName = expMatch[1];
-          if (expName.length > 2 && !expName.startsWith('_')) {
+          if (expName && expName.length > 2 && !expName.startsWith('_')) {
             if (!moduleExports.has(modDir)) moduleExports.set(modDir, new Set());
             moduleExports.get(modDir)!.add(expName);
           }
@@ -694,9 +703,9 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       const structs: string[] = [];
       RE_RUST_STRUCT.lastIndex = 0;
       let rm: RegExpExecArray | null;
-      while ((rm = RE_RUST_STRUCT.exec(content)) !== null) structs.push(rm[1]);
+      while ((rm = RE_RUST_STRUCT.exec(content)) !== null) { const s = rm[1]; if (s) structs.push(s); }
       RE_RUST_TRAIT.lastIndex = 0;
-      while ((rm = RE_RUST_TRAIT.exec(content)) !== null) structs.push(rm[1]);
+      while ((rm = RE_RUST_TRAIT.exec(content)) !== null) { const t = rm[1]; if (t) structs.push(t); }
       if (structs.length > 0) {
         const parent = path.dirname(f.relPath).split('/').pop() || rustModule;
         if (!moduleExports.has(parent)) moduleExports.set(parent, new Set());
@@ -715,7 +724,7 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       RE_PY_CLASS.lastIndex = 0;
       let pm: RegExpExecArray | null;
       const pyClasses: string[] = [];
-      while ((pm = RE_PY_CLASS.exec(content)) !== null) pyClasses.push(pm[1]);
+      while ((pm = RE_PY_CLASS.exec(content)) !== null) { const c = pm[1]; if (c) pyClasses.push(c); }
       if (pyClasses.length > 0) {
         const parent = path.dirname(f.relPath).split('/').pop() || path.basename(f.relPath, '.py');
         if (!moduleExports.has(parent)) moduleExports.set(parent, new Set());
@@ -723,14 +732,18 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       }
 
       // Python singletons: __instance, _instance pattern
-      if (/_?_?instance\s*(?:=|:)/.test(content) && pyClasses.length > 0) {
-        singletons.push(pyClasses[0]);
+      const firstPyClass = pyClasses[0];
+      if (/_?_?instance\s*(?:=|:)/.test(content) && firstPyClass) {
+        singletons.push(firstPyClass);
       }
 
       // Python REST routes (Flask/FastAPI)
       RE_PY_DECORATOR.lastIndex = 0;
       while ((pm = RE_PY_DECORATOR.exec(content)) !== null) {
-        restRoutes.push({ method: pm[2].toUpperCase(), path: pm[3], file: f.relPath });
+        const method = pm[2];
+        const routePath = pm[3];
+        if (method === undefined || routePath === undefined) continue;
+        restRoutes.push({ method: method.toUpperCase(), path: routePath, file: f.relPath });
       }
     }
 
@@ -739,9 +752,9 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       const goStructs: string[] = [];
       RE_GO_STRUCT.lastIndex = 0;
       let gm: RegExpExecArray | null;
-      while ((gm = RE_GO_STRUCT.exec(content)) !== null) goStructs.push(gm[1]);
+      while ((gm = RE_GO_STRUCT.exec(content)) !== null) { const s = gm[1]; if (s) goStructs.push(s); }
       RE_GO_INTERFACE.lastIndex = 0;
-      while ((gm = RE_GO_INTERFACE.exec(content)) !== null) goStructs.push(gm[1]);
+      while ((gm = RE_GO_INTERFACE.exec(content)) !== null) { const i = gm[1]; if (i) goStructs.push(i); }
       if (goStructs.length > 0) {
         const parent = path.dirname(f.relPath).split('/').pop() || path.basename(f.relPath, '.go');
         if (!moduleExports.has(parent)) moduleExports.set(parent, new Set());
@@ -757,7 +770,10 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
       const RE_GO_ROUTE = /\.(GET|POST|PUT|DELETE|PATCH|Handle|HandleFunc)\s*\(\s*"([^"]+)"/gi;
       RE_GO_ROUTE.lastIndex = 0;
       while ((gm = RE_GO_ROUTE.exec(content)) !== null) {
-        restRoutes.push({ method: gm[1].toUpperCase(), path: gm[2], file: f.relPath });
+        const method = gm[1];
+        const routePath = gm[2];
+        if (method === undefined || routePath === undefined) continue;
+        restRoutes.push({ method: method.toUpperCase(), path: routePath, file: f.relPath });
       }
     }
 
@@ -771,19 +787,25 @@ function scanCombined(files: FileEntry[], cwd: string, srcDirs: string[]): Combi
         let m: RegExpExecArray | null;
         RE_ROUTE.lastIndex = 0;
         while ((m = RE_ROUTE.exec(content)) !== null) {
-          restRoutes.push({ method: m[1].toUpperCase(), path: m[2], file: f.relPath });
+          const method = m[1];
+          const routePath = m[2];
+          if (method === undefined || routePath === undefined) continue;
+          restRoutes.push({ method: method.toUpperCase(), path: routePath, file: f.relPath });
         }
         RE_WS_EVENT.lastIndex = 0;
         while ((m = RE_WS_EVENT.exec(content)) !== null) {
-          if (!GENERIC_EVENTS.has(m[1])) wsEventsSet.add(m[1]);
+          const ev = m[1];
+          if (ev && !GENERIC_EVENTS.has(ev)) wsEventsSet.add(ev);
         }
         RE_WS_EMIT.lastIndex = 0;
         while ((m = RE_WS_EMIT.exec(content)) !== null) {
-          if (!GENERIC_EVENTS.has(m[1])) wsEventsSet.add(m[1]);
+          const ev = m[1];
+          if (ev && !GENERIC_EVENTS.has(ev)) wsEventsSet.add(ev);
         }
         RE_MSG_HANDLER.lastIndex = 0;
         while ((m = RE_MSG_HANDLER.exec(content)) !== null) {
-          if (!GENERIC_EVENTS.has(m[1]) && m[1].length > 2) wsEventsSet.add(m[1]);
+          const ev = m[1];
+          if (ev && !GENERIC_EVENTS.has(ev) && ev.length > 2) wsEventsSet.add(ev);
         }
       }
     }

@@ -77,8 +77,9 @@ function buildOnboardingHooks(apiKey: string): ProviderOnboardingHooks {
       }
     },
     'wizard.modelPicker': async (models: DiscoveredModel[]) => {
-      if (models.length === 0) return 'gemma-4-9b-it';
-      return models[0].id;
+      const first = models[0];
+      if (!first) return 'gemma-4-9b-it';
+      return first.id;
     },
     onModelSelected: async (modelId: string) => {
       logger.info(`[GemmaProvider] Selected model: ${modelId}`);
@@ -131,7 +132,9 @@ export class GemmaProviderPlugin implements PluginProvider {
     if (!lastMessage) throw new Error("No messages provided");
 
     const chatSession = model.startChat({ history: formattedHistory });
-    const result = await chatSession.sendMessage(lastMessage.parts[0].text);
+    const lastPart = lastMessage.parts[0];
+    if (!lastPart) throw new Error('No messages provided');
+    const result = await chatSession.sendMessage(lastPart.text);
     return result.response.text();
   }
 

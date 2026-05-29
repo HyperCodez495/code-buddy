@@ -57,7 +57,8 @@ export const rustProfiler: LanguageProfiler = {
 
       // Key dependencies from [dependencies]
       const depSection = cargoContent.match(/\[dependencies\]\n([\s\S]*?)(?=\n\[|$)/);
-      if (depSection) {
+      const depSectionBody = depSection?.[1];
+      if (depSectionBody !== undefined) {
         const rustNotable: Record<string, string> = {
           'tokio': 'tokio', 'async-std': 'async-std',
           'actix-web': 'actix-web', 'axum': 'axum', 'rocket': 'rocket', 'warp': 'warp',
@@ -77,7 +78,7 @@ export const rustProfiler: LanguageProfiler = {
         };
         for (const [dep] of Object.entries(rustNotable)) {
           const depRegex = new RegExp(`^\\s*${dep.replace('-', '[-_]')}\\s*=`, 'm');
-          if (depRegex.test(depSection[1]) && !ctx.keyDependencies.includes(dep)) {
+          if (depRegex.test(depSectionBody) && !ctx.keyDependencies.includes(dep)) {
             ctx.keyDependencies.push(dep);
           }
         }

@@ -147,7 +147,9 @@ export class VideoTool {
 
             if (videoStream.r_frame_rate) {
               const [num, den] = videoStream.r_frame_rate.split('/');
-              info.fps = Math.round(parseInt(num) / parseInt(den));
+              if (num !== undefined && den !== undefined) {
+                info.fps = Math.round(parseInt(num) / parseInt(den));
+              }
             }
           }
 
@@ -221,8 +223,7 @@ export class VideoTool {
 
       if (options.timestamps && options.timestamps.length > 0) {
         // Extract specific timestamps
-        for (let i = 0; i < options.timestamps.length; i++) {
-          const timestamp = options.timestamps[i];
+        for (const [i, timestamp] of options.timestamps.entries()) {
           const outputPath = path.join(outputDir, `frame_${i + 1}.${format}`);
           await this.extractFrameAtTimestamp(resolvedPath, timestamp, outputPath);
           frames.push({

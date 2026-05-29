@@ -29,8 +29,9 @@ export class SkillVariableResolver {
    */
   parseIndexedArgument(varRef: string): number {
     const match = varRef.match(/^\$ARGUMENTS\[(\d+)\]$/);
-    if (match) {
-      return parseInt(match[1], 10);
+    const indexStr = match?.[1];
+    if (indexStr !== undefined) {
+      return parseInt(indexStr, 10);
     }
     return -1;
   }
@@ -45,7 +46,7 @@ export class SkillVariableResolver {
     result = result.replace(/\$ARGUMENTS\[(\d+)\]/g, (_match, indexStr) => {
       const index = parseInt(indexStr, 10);
       const args = context.arguments || [];
-      return index < args.length ? args[index] : '';
+      return index < args.length ? (args[index] ?? '') : '';
     });
 
     // Replace $ARGUMENTS with all arguments joined

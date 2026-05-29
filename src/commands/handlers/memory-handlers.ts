@@ -109,11 +109,15 @@ export async function handleMemory(args: string[]): Promise<CommandHandlerResult
       case "store":
         if (args.length >= 3) {
           const key = args[1];
+          if (key === undefined) {
+            content = `Usage: /memory remember <key> <content> [project|user]`;
+            break;
+          }
           const value = args.slice(2).join(" ");
-          const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project") 
-            ? args.pop() as "project" | "user" 
+          const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project")
+            ? args.pop() as "project" | "user"
             : "project";
-          
+
           // Store in both for redundancy and better retrieval
           await persistentMemory.remember(key, value, { scope, category: "custom" });
           await enhancedMemory.store({
@@ -209,8 +213,18 @@ export async function handleRemember(args: string[]): Promise<CommandHandlerResu
   }
 
   const key = args[0];
-  const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project") 
-    ? args.pop() as "project" | "user" 
+  if (key === undefined) {
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content: `Usage: /remember <key> <value> [project|user]`,
+        timestamp: new Date(),
+      },
+    };
+  }
+  const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project")
+    ? args.pop() as "project" | "user"
     : "project";
   const value = args.slice(1).join(" ");
 
@@ -272,7 +286,7 @@ export async function handleAddressTodo(
   args: string[]
 ): Promise<CommandHandlerResult> {
   const commentWatcher = getCommentWatcher();
-  const index = parseInt(args[0], 10);
+  const index = parseInt(args[0] ?? "", 10);
 
   if (isNaN(index)) {
     return {
@@ -301,6 +315,16 @@ Run /scan-todos first to see available items`,
   }
 
   const comment = comments[index - 1];
+  if (comment === undefined) {
+    return {
+      handled: true,
+      entry: {
+        type: "assistant",
+        content: `❌ Invalid index. Available: 1-${comments.length}`,
+        timestamp: new Date(),
+      },
+    };
+  }
   const prompt = commentWatcher.generatePromptForComment(comment);
 
   return {

@@ -70,8 +70,10 @@ export function generateSessionSummary(metrics: SessionMetrics): SessionSummary 
     highlights.push(`${totalToolCalls} tool calls executed`);
 
     // Find most used tool
-    const mostUsed = metrics.toolUsage.reduce((max, t) =>
-      t.calls > max.calls ? t : max, metrics.toolUsage[0]);
+    const mostUsed = metrics.toolUsage.reduce<typeof metrics.toolUsage[number] | undefined>(
+      (max, t) => (max === undefined || t.calls > max.calls ? t : max),
+      undefined,
+    );
     if (mostUsed && mostUsed.calls > 1) {
       highlights.push(`Most used tool: ${mostUsed.name} (${mostUsed.calls}x)`);
     }

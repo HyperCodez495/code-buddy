@@ -110,6 +110,12 @@ export class PDFAgent extends SpecializedAgent {
       }
 
       const filePath = task.inputFiles[0];
+      if (filePath === undefined) {
+        return {
+          success: false,
+          error: 'No input file specified',
+        };
+      }
 
       // Validate file
       if (!existsSync(filePath)) {
@@ -314,8 +320,9 @@ export class PDFAgent extends SpecializedAgent {
     const summaryParts: string[] = [];
     for (const page of extractResult.pages.slice(0, 5)) { // First 5 pages
       const sentences = page.text.split(/[.!?]+/).filter(s => s.trim());
-      if (sentences.length > 0) {
-        summaryParts.push(sentences[0].trim() + '.');
+      const firstSentence = sentences[0];
+      if (firstSentence !== undefined) {
+        summaryParts.push(firstSentence.trim() + '.');
       }
     }
 

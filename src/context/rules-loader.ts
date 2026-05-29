@@ -53,8 +53,12 @@ function parseFrontmatter(raw: string): { meta: Record<string, unknown>; body: s
     return { meta: {}, body: raw };
   }
 
-  const yamlBlock = match[1];
-  const body = match[2];
+  // The regex guarantees both capture groups exist when `match` is truthy
+  // (each is `([\s\S]*?)` / `([\s\S]*)`, which match empty strings), but under
+  // noUncheckedIndexedAccess the indexed access is `string | undefined`.
+  // Default to '' to preserve the existing behavior for both groups.
+  const yamlBlock = match[1] ?? '';
+  const body = match[2] ?? '';
 
   // Simple YAML parser for our limited schema (no dependency on yaml lib)
   const meta: Record<string, unknown> = {};

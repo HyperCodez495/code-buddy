@@ -484,7 +484,9 @@ export class SemanticMemorySearch extends EventEmitter {
 
     // TF-IDF inspired scoring
     const termFrequency = matches / Math.max(queryTerms.length, 1);
-    const docFrequency = this.invertedIndex.get(queryTerms[0]?.toLowerCase())?.size || 1;
+    const firstTerm = queryTerms[0]?.toLowerCase();
+    const docFrequency =
+      (firstTerm !== undefined ? this.invertedIndex.get(firstTerm)?.size : undefined) || 1;
     const idf = Math.log(this.index.size / docFrequency + 1);
 
     // Boost by importance
@@ -534,10 +536,12 @@ export class SemanticMemorySearch extends EventEmitter {
       let bestScore = -Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
-        const relevance = remaining[i].score;
+        const candidate = remaining[i];
+        if (candidate === undefined) continue;
+        const relevance = candidate.score;
         const maxSim = selected.length === 0
           ? 0
-          : Math.max(...selected.map(s => termSim(remaining[i], s)));
+          : Math.max(...selected.map(s => termSim(candidate, s)));
         const mmrScore = lambda * relevance - (1 - lambda) * maxSim;
         if (mmrScore > bestScore) {
           bestScore = mmrScore;
@@ -545,7 +549,9 @@ export class SemanticMemorySearch extends EventEmitter {
         }
       }
 
-      selected.push(remaining[bestIdx]);
+      const best = remaining[bestIdx];
+      if (best === undefined) break;
+      selected.push(best);
       remaining.splice(bestIdx, 1);
     }
 

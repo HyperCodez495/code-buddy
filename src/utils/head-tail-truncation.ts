@@ -242,13 +242,17 @@ export function semanticTruncate(
 
   for (let i = 0; i < middle.length && importantLines.length < maxImportantLines; i++) {
     const line = middle[i];
+    if (line === undefined) continue;
     const isImportant = allPatterns.some(p => p.test(line));
 
     if (isImportant) {
       importantLines.push(line);
       // Also grab 1 line of context after errors
       if (i + 1 < middle.length && importantLines.length < maxImportantLines) {
-        importantLines.push(middle[i + 1]);
+        const nextLine = middle[i + 1];
+        if (nextLine !== undefined) {
+          importantLines.push(nextLine);
+        }
         i++; // Skip next
       }
     }

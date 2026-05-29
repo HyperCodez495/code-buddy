@@ -189,11 +189,12 @@ export async function generatePages(
 
   for (let i = 0; i < plan.pages.length; i++) {
     const page = plan.pages[i];
+    if (!page) continue;
     onProgress?.(page.title, i + 1, plan.pages.length);
 
     // Incremental: skip pages whose source files haven't changed
-    if (incremental && manifest[page.slug]) {
-      const entry = manifest[page.slug];
+    const entry = incremental ? manifest[page.slug] : undefined;
+    if (entry) {
       const pageFile = path.join(outputDir, `${page.slug}.md`);
       if (fs.existsSync(pageFile)) {
         // Check if any source file was modified after last generation
@@ -515,7 +516,10 @@ function rawArchitecture(page: DocPage, p: ProjectProfile, graph: KnowledgeGraph
     }
     // Connect layers linearly (simplified)
     for (let i = 0; i < topLayers.length - 1; i++) {
-      lines.push(`  ${JSON.stringify(topLayers[i].name)} --> ${JSON.stringify(topLayers[i + 1].name)}`);
+      const from = topLayers[i];
+      const to = topLayers[i + 1];
+      if (!from || !to) continue;
+      lines.push(`  ${JSON.stringify(from.name)} --> ${JSON.stringify(to.name)}`);
     }
     lines.push('```');
   }
@@ -1022,7 +1026,7 @@ function buildPageContext(
               const content = fs.readFileSync(path.join(layerDir, file), 'utf-8');
               const routes = [...content.matchAll(/\.(get|post|put|delete|patch)\s*\(\s*['"`]([^'"`]+)['"`]/gi)];
               if (routes.length > 0) {
-                contextParts.push(`  Routes in ${file}: ${routes.map(r => `${r[1].toUpperCase()} ${r[2]}`).join(', ')}`);
+                contextParts.push(`  Routes in ${file}: ${routes.map(r => `${(r[1] ?? '').toUpperCase()} ${r[2] ?? ''}`).join(', ')}`);
               }
             }
           }
@@ -1106,7 +1110,7 @@ function addDeepWikiStructure(content: string, page: DocPage, config: DocsConfig
   // 2. Add Summary if missing — build from headings if possible
   if (!result.includes('## Summary') && !result.includes('## Key Takeaways')) {
     const headings = [...result.matchAll(/^## (.+)$/gm)]
-      .map(m => m[1].trim())
+      .map(m => (m[1] ?? '').trim())
       .filter(h => h !== 'Summary' && h !== 'Key Takeaways');
 
     result += '\n\n## Summary\n\n';
@@ -1127,7 +1131,7 @@ function stripNoise(content: string): string {
   let result = content;
   // Remove ```markdown wrapper
   const mdFenceMatch = result.match(/```markdown\n([\s\S]*?)```\s*$/);
-  if (mdFenceMatch) result = mdFenceMatch[1];
+  if (mdFenceMatch && mdFenceMatch[1] !== undefined) result = mdFenceMatch[1];
   // Remove preamble before first heading
   const firstHeading = result.indexOf('\n# ');
   if (firstHeading > 0 && firstHeading < 500) result = result.substring(firstHeading + 1);

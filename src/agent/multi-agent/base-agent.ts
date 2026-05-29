@@ -313,6 +313,9 @@ ${context.decisions.slice(-5).map(d => `- ${d.description} (by ${d.madeBy})`).jo
     let match;
     while ((match = artifactRegex.exec(output)) !== null) {
       const [, type, name, language, content] = match;
+      if (type === undefined || name === undefined || content === undefined) {
+        continue;
+      }
       this.artifacts.push({
         id: `artifact-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         type: type as TaskArtifact["type"],
@@ -334,6 +337,9 @@ ${context.decisions.slice(-5).map(d => `- ${d.description} (by ${d.madeBy})`).jo
     let match;
     while ((match = feedbackRegex.exec(output)) !== null) {
       const [, type, severity, message] = match;
+      if (type === undefined || severity === undefined || message === undefined) {
+        continue;
+      }
       feedback.push({
         id: `feedback-${Date.now()}-${Math.random().toString(36).slice(2)}`,
         from: this.config.role,

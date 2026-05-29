@@ -177,9 +177,10 @@ function detectNvidiaGpus(): GpuDetected[] {
   const gpus: GpuDetected[] = [];
   for (const line of output.split('\n')) {
     const parts = line.split(',');
-    if (parts.length < 2) continue;
-    const model = parts[0].trim();
-    const vramMB = parseInt(parts[1].trim(), 10);
+    const [rawModel, rawVram] = parts;
+    if (rawModel === undefined || rawVram === undefined) continue;
+    const model = rawModel.trim();
+    const vramMB = parseInt(rawVram.trim(), 10);
     if (isNaN(vramMB)) continue;
     gpus.push({ model, vramGB: vramMB / 1024, backend: 'cuda' });
   }
@@ -198,10 +199,11 @@ function detectRocmGpus(): GpuDetected[] {
     if (!line || line.startsWith('device')) continue;
     // rocm-smi csv: device,vram_total,vram_used
     const parts = line.split(',');
-    if (parts.length < 2) continue;
-    const vramBytes = parseInt(parts[1].trim(), 10);
+    const [rawDevice, rawVram] = parts;
+    if (rawDevice === undefined || rawVram === undefined) continue;
+    const vramBytes = parseInt(rawVram.trim(), 10);
     if (isNaN(vramBytes)) continue;
-    gpus.push({ model: `AMD GPU ${parts[0].trim()}`, vramGB: vramBytes / 1e9, backend: 'rocm' });
+    gpus.push({ model: `AMD GPU ${rawDevice.trim()}`, vramGB: vramBytes / 1e9, backend: 'rocm' });
   }
   return gpus;
 }

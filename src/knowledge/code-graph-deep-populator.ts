@@ -172,6 +172,7 @@ export function populateDeepCodeGraph(
     DYNAMIC_IMPORT_RE.lastIndex = 0;
     while ((match = DYNAMIC_IMPORT_RE.exec(content)) !== null) {
       const importPath = match[1];
+      if (importPath === undefined) continue;
       const targetModule = resolveDynamicImport(importPath, moduleId);
       if (targetModule) {
         graph.add(sourceModule, 'imports', `mod:${targetModule}`);
@@ -276,7 +277,10 @@ function resolveCall(
   if (!call.isMethodCall) {
     const functions = candidates.filter(c => c.kind === 'function');
     if (functions.length === 1) return functions;
-    if (functions.length > 1) return [functions[0]];
+    if (functions.length > 1) {
+      const first = functions[0];
+      if (first !== undefined) return [first];
+    }
   }
 
   // Fallback: return first candidate if unique

@@ -122,8 +122,10 @@ export function extractMultiLineParams(lines: string[], startIdx: number): strin
 
   for (let i = startIdx; i < Math.min(startIdx + 15, lines.length); i++) {
     const line = lines[i];
+    if (line === undefined) continue;
     for (let j = 0; j < line.length; j++) {
       const ch = line[j];
+      if (ch === undefined) continue;
       if (ch === '(') {
         if (!collecting) {
           collecting = true;
@@ -161,6 +163,7 @@ export function extractReturnTypeAfterParams(
 
   for (let i = startIdx; i < Math.min(startIdx + 15, lines.length); i++) {
     const line = lines[i];
+    if (line === undefined) continue;
     for (let j = 0; j < line.length; j++) {
       if (line[j] === '(') depth++;
       if (line[j] === ')') {
@@ -168,17 +171,17 @@ export function extractReturnTypeAfterParams(
         if (depth === 0) {
           const rest = line.substring(j + 1).trim();
           const retMatch = rest.match(returnMarker);
-          if (retMatch) return retMatch[1].trim();
+          if (retMatch && retMatch[1] !== undefined) return retMatch[1].trim();
           foundClose = true;
           break;
         }
       }
     }
     if (foundClose) {
-      if (i + 1 < lines.length) {
-        const nextLine = lines[i + 1].trim();
-        const retMatch = nextLine.match(returnMarker);
-        if (retMatch) return retMatch[1].trim();
+      const nextLine = lines[i + 1];
+      if (nextLine !== undefined) {
+        const retMatch = nextLine.trim().match(returnMarker);
+        if (retMatch && retMatch[1] !== undefined) return retMatch[1].trim();
       }
       break;
     }

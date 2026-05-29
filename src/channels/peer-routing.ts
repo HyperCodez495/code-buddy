@@ -372,6 +372,7 @@ export class PeerRouter extends EventEmitter {
 
       case 'time-range': {
         const [start, end] = (condition.value as string).split('-').map(Number);
+        if (start === undefined || end === undefined) return false;
         const hour = new Date().getHours();
         return hour >= start && hour <= end;
       }

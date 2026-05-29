@@ -130,24 +130,24 @@ export class PDFTool {
     const metadata: PDFMetadata = {};
 
     const titleMatch = pdfString.match(/\/Title\s*\(([^)]*)\)/);
-    if (titleMatch) metadata.title = this.decodeString(titleMatch[1]);
+    if (titleMatch?.[1] !== undefined) metadata.title = this.decodeString(titleMatch[1]);
 
     const authorMatch = pdfString.match(/\/Author\s*\(([^)]*)\)/);
-    if (authorMatch) metadata.author = this.decodeString(authorMatch[1]);
+    if (authorMatch?.[1] !== undefined) metadata.author = this.decodeString(authorMatch[1]);
 
     const subjectMatch = pdfString.match(/\/Subject\s*\(([^)]*)\)/);
-    if (subjectMatch) metadata.subject = this.decodeString(subjectMatch[1]);
+    if (subjectMatch?.[1] !== undefined) metadata.subject = this.decodeString(subjectMatch[1]);
 
     const creatorMatch = pdfString.match(/\/Creator\s*\(([^)]*)\)/);
-    if (creatorMatch) metadata.creator = this.decodeString(creatorMatch[1]);
+    if (creatorMatch?.[1] !== undefined) metadata.creator = this.decodeString(creatorMatch[1]);
 
     const creationDateMatch = pdfString.match(/\/CreationDate\s*\(D:(\d{14})/);
-    if (creationDateMatch) {
+    if (creationDateMatch?.[1] !== undefined) {
       metadata.creationDate = this.parseDate(creationDateMatch[1]);
     }
 
     const modDateMatch = pdfString.match(/\/ModDate\s*\(D:(\d{14})/);
-    if (modDateMatch) {
+    if (modDateMatch?.[1] !== undefined) {
       metadata.modificationDate = this.parseDate(modDateMatch[1]);
     }
 
@@ -168,7 +168,7 @@ export class PDFTool {
       const tjMatches = block.match(/\(([^)]*)\)\s*Tj/g) || [];
       for (const match of tjMatches) {
         const text = match.match(/\(([^)]*)\)/);
-        if (text) {
+        if (text?.[1] !== undefined) {
           textParts.push(this.decodeString(text[1]));
         }
       }
@@ -177,11 +177,11 @@ export class PDFTool {
       const tjArrayMatches = block.match(/\[([^\]]*)\]\s*TJ/g) || [];
       for (const match of tjArrayMatches) {
         const arrayContent = match.match(/\[([^\]]*)\]/);
-        if (arrayContent) {
+        if (arrayContent?.[1] !== undefined) {
           const strings = arrayContent[1].match(/\(([^)]*)\)/g) || [];
           for (const str of strings) {
             const text = str.match(/\(([^)]*)\)/);
-            if (text) {
+            if (text?.[1] !== undefined) {
               textParts.push(this.decodeString(text[1]));
             }
           }

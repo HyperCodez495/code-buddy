@@ -245,10 +245,8 @@ export function ToolResultsList({
 
     const groups: Record<string, ToolResultData[]> = {};
     results.slice(0, maxResults).forEach((result) => {
-      if (!groups[result.toolName]) {
-        groups[result.toolName] = [];
-      }
-      groups[result.toolName].push(result);
+      const bucket = groups[result.toolName] ?? (groups[result.toolName] = []);
+      bucket.push(result);
     });
 
     return groups;

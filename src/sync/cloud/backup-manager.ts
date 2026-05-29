@@ -413,6 +413,7 @@ export class BackupManager extends EventEmitter {
 
       for (let i = 0; i < itemsToRestore.length; i++) {
         const item = itemsToRestore[i];
+        if (!item) continue;
 
         try {
           const itemPath = join(targetPath, item.path);

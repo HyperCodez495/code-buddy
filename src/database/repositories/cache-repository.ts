@@ -307,9 +307,13 @@ export class CacheRepository {
     let normB = 0;
 
     for (let i = 0; i < a.length; i++) {
-      dotProduct += a[i] * b[i];
-      normA += a[i] * a[i];
-      normB += b[i] * b[i];
+      // a.length === b.length is guaranteed above, and i < a.length, so both
+      // indices are in-bounds; ?? 0 only guards the type, never alters values.
+      const ai = a[i] ?? 0;
+      const bi = b[i] ?? 0;
+      dotProduct += ai * bi;
+      normA += ai * ai;
+      normB += bi * bi;
     }
 
     const magnitude = Math.sqrt(normA) * Math.sqrt(normB);

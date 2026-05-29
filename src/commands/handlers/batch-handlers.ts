@@ -129,8 +129,7 @@ export function formatBatchPlan(plan: BatchPlan): string {
     '',
   ];
 
-  for (let i = 0; i < plan.units.length; i++) {
-    const unit = plan.units[i];
+  plan.units.forEach((unit, i) => {
     lines.push(`  ${i + 1}. [${unit.label}]`);
     lines.push(`     ${unit.instruction.slice(0, 100)}${unit.instruction.length > 100 ? '...' : ''}`);
     if (unit.filePatterns?.length) {
@@ -139,7 +138,7 @@ export function formatBatchPlan(plan: BatchPlan): string {
     if (unit.dependsOn?.length) {
       lines.push(`     Depends on: ${unit.dependsOn.join(', ')}`);
     }
-  }
+  });
 
   lines.push('');
   lines.push(`${'─'.repeat(60)}`);
@@ -193,6 +192,7 @@ export async function executeBatchPlan(
     for (let i = 0; i < batchResults.length; i++) {
       const unit = ready[i];
       const settled = batchResults[i];
+      if (unit === undefined || settled === undefined) continue;
 
       if (settled.status === 'fulfilled') {
         results.push(settled.value);
@@ -237,7 +237,7 @@ export function formatBatchResults(results: BatchResult[]): string {
     const time = `${(result.durationMs / 1000).toFixed(1)}s`;
     lines.push(`  ${status} ${result.label} (${time})`);
     if (result.summary) {
-      const preview = result.summary.split('\n')[0].slice(0, 80);
+      const preview = (result.summary.split('\n')[0] ?? '').slice(0, 80);
       lines.push(`      ${preview}`);
     }
   }

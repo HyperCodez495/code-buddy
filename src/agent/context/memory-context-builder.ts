@@ -683,8 +683,7 @@ export class SmartSuggestionsManager extends EventEmitter {
       // Check direct match
       if (this.keywordToolMap.has(word)) {
         const tools = this.keywordToolMap.get(word)!;
-        for (let i = 0; i < tools.length; i++) {
-          const tool = tools[i];
+        for (const [i, tool] of tools.entries()) {
           const score = (tools.length - i) / tools.length; // Higher score for earlier tools
           toolScores.set(tool, (toolScores.get(tool) || 0) + score);
         }

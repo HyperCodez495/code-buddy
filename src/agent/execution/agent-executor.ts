@@ -409,6 +409,7 @@ export class AgentExecutor {
 
     for (let i = 0; i < result.length && charsToFree > 0; i++) {
       const m = result[i];
+      if (m === undefined) continue;
       if (m.role === 'tool' && typeof m.content === 'string' && m.content.length > 500) {
         const callId = (m as { tool_call_id?: string }).tool_call_id || `tool_${i}`;
         const compressed = compressor.compress([{
@@ -675,11 +676,13 @@ export class AgentExecutor {
         // (~50ms); doing it only on toolRounds === 0 amortizes the cost
         // over the whole turn loop. Sub-turn tool follow-ups reuse the
         // SP picked at turn start.
-        if (toolRounds === 0 && this.deps.rebuildSystemPromptForQuery) {
+        const rebuildSystemPromptForQuery = this.deps.rebuildSystemPromptForQuery;
+        if (toolRounds === 0 && rebuildSystemPromptForQuery) {
           try {
-            const rebuiltSP = await this.deps.rebuildSystemPromptForQuery(message);
-            if (rebuiltSP && messages.length > 0 && messages[0].role === 'system') {
-              messages[0].content = rebuiltSP;
+            const rebuiltSP = await rebuildSystemPromptForQuery(message);
+            const firstMessage = messages[0];
+            if (rebuiltSP && firstMessage && firstMessage.role === 'system') {
+              firstMessage.content = rebuiltSP;
               logger.debug(
                 `[agent-executor] system prompt rebuilt query-aware (${rebuiltSP.length} chars)`,
               );
@@ -885,7 +888,7 @@ export class AgentExecutor {
 
           // Single-tool mode: only execute first tool call, re-enqueue rest
           const streamToolCallsToExecute = this.config.singleToolMode
-            ? [toolCalls[0]]
+            ? toolCalls.slice(0, 1)
             : toolCalls;
 
           if (this.config.singleToolMode && toolCalls.length > 1) {

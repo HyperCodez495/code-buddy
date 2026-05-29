@@ -215,7 +215,9 @@ export class WorkspaceManager extends EventEmitter {
       });
 
       const best = foundMarkers[0];
-      return { root: best.path, marker: best.marker };
+      if (best) {
+        return { root: best.path, marker: best.marker };
+      }
     }
 
     return null;
@@ -590,8 +592,7 @@ export class WorkspaceManager extends EventEmitter {
       '-'.repeat(50),
     ];
 
-    for (let i = 0; i < recent.length; i++) {
-      const ws = recent[i];
+    for (const [i, ws] of recent.entries()) {
       const current = this.currentWorkspace?.id === ws.id ? ' (current)' : '';
       const lastAccessed = new Date(ws.lastAccessed).toLocaleDateString();
       lines.push(`  ${i + 1}. ${ws.name}${current}`);

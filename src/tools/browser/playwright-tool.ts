@@ -116,7 +116,7 @@ export class BrowserTool {
     this.isLaunching = true;
     try {
       this.browser = await chromium.connectOverCDP(endpointUrl);
-      this.context = this.browser.contexts()[0];
+      this.context = this.browser.contexts()[0] ?? null;
 
       this.actions = [];
       this.consoleMessages = [];
@@ -126,10 +126,10 @@ export class BrowserTool {
       // Load existing pages
       if (this.context) {
         const pages = this.context.pages();
-        for (let i = 0; i < pages.length; i++) {
+        for (const page of pages) {
           const tabId = this.generateTabId();
-          this.pages.set(tabId, pages[i]);
-          
+          this.pages.set(tabId, page);
+
           // Set active page to the visible one, or just the first
           if (!this.activePageId) {
             this.activePageId = tabId;
@@ -303,7 +303,7 @@ export class BrowserTool {
     if (this.activePageId === tabId) {
       // Find another tab to make active
       const remainingTabs = Array.from(this.pages.keys());
-      this.activePageId = remainingTabs.length > 0 ? remainingTabs[0] : null;
+      this.activePageId = remainingTabs.length > 0 ? remainingTabs[0] ?? null : null;
     }
 
     this.recordAction('closeTab', undefined, tabId);

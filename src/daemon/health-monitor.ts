@@ -141,7 +141,7 @@ export class HealthMonitor extends EventEmitter {
     const metrics: HealthMetrics = {
       timestamp: new Date(),
       cpu: {
-        usage: os.loadavg()[0] * 100 / os.cpus().length,
+        usage: (os.loadavg()[0] ?? 0) * 100 / os.cpus().length,
         loadAvg: os.loadavg(),
       },
       memory: {

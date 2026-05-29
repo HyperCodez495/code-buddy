@@ -219,9 +219,11 @@ export class ToolPhaseThrottler {
     if (queue && queue.length > 0) {
       // Emit only the most recent event
       const latest = queue[queue.length - 1];
-      this.emitEvent(latest.event);
-      this.lastEmit.set(toolCallId, Date.now());
-      this.queues.delete(toolCallId);
+      if (latest) {
+        this.emitEvent(latest.event);
+        this.lastEmit.set(toolCallId, Date.now());
+        this.queues.delete(toolCallId);
+      }
     }
   }
 

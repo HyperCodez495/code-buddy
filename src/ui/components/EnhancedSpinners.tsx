@@ -307,7 +307,7 @@ export function TaskList({ tasks }: TaskListProps) {
       case "failed":
         return "✗";
       case "running":
-        return spinnerFrames[runningFrame];
+        return spinnerFrames[runningFrame] ?? "";
       case "skipped":
         return "⊘";
       default:
@@ -433,7 +433,9 @@ export function DataTable({ headers, rows, maxWidth = 80 }: DataTableProps) {
     return Math.min(maxInColumn, Math.floor(maxWidth / headers.length));
   });
 
-  const formatCell = (content: string, width: number): string => {
+  const formatCell = (content: string, width: number | undefined): string => {
+    // matches prior padEnd(undefined) behavior: no pad, no truncate
+    if (width === undefined) return content;
     if (content.length > width) {
       return content.slice(0, width - 1) + "…";
     }

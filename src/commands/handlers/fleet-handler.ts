@@ -335,16 +335,17 @@ function parseArgs(rest: string[]): ParsedListenArgs {
   let maxAttempts: number | null = null;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--api-key' && i + 1 < rest.length) {
-      apiKey = rest[i + 1];
+      apiKey = rest[i + 1] ?? null;
       i++;
     } else if (arg === '--name' && i + 1 < rest.length) {
-      name = rest[i + 1];
+      name = rest[i + 1] ?? null;
       i++;
     } else if (arg === '--auto-reconnect') {
       autoReconnect = true;
     } else if (arg === '--max-attempts' && i + 1 < rest.length) {
-      const n = parseInt(rest[i + 1], 10);
+      const n = parseInt(rest[i + 1] ?? '', 10);
       if (Number.isFinite(n) && n > 0) maxAttempts = n;
       i++;
     } else if (!url && (arg.startsWith('ws://') || arg.startsWith('wss://'))) {
@@ -371,11 +372,12 @@ function parseHistoryArgs(rest: string[]): ParsedHistoryArgs {
   let json = false;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--peer' && i + 1 < rest.length) {
-      peer = rest[i + 1];
+      peer = rest[i + 1] ?? null;
       i++;
     } else if (arg === '--type' && i + 1 < rest.length) {
-      type = rest[i + 1];
+      type = rest[i + 1] ?? null;
       i++;
     } else if (arg === '--json') {
       json = true;
@@ -394,6 +396,7 @@ function parseDescribeArgs(rest: string[]): ParsedDescribeArgs {
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--timeout') {
       const parsed = parsePositiveIntegerFlag(arg, rest[i + 1]);
       if (parsed.error) return { peerName, timeoutMs, json, error: parsed.error };
@@ -459,6 +462,7 @@ function parseRouteArgs(rest: string[]): ParsedRouteArgs {
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--privacy' && i + 1 < rest.length) {
       const privacy = rest[i + 1];
       if (privacy !== 'public' && privacy !== 'sensitive') {
@@ -678,11 +682,12 @@ function parseChatStartArgs(rest: string[]): ParsedChatStartArgs {
   let alias: string | null = null;
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if ((arg === '--system' || arg === '--system-prompt') && i + 1 < rest.length) {
-      systemPrompt = rest[i + 1];
+      systemPrompt = rest[i + 1] ?? null;
       i++;
     } else if (arg === '--model' && i + 1 < rest.length) {
-      model = rest[i + 1];
+      model = rest[i + 1] ?? null;
       i++;
     } else if ((arg === '--profile' || arg === '--dispatch-profile') && i + 1 < rest.length) {
       const parsed = parseDispatchProfileFlag(rest[i + 1]);
@@ -690,7 +695,7 @@ function parseChatStartArgs(rest: string[]): ParsedChatStartArgs {
       dispatchProfile = parsed.value;
       i++;
     } else if (arg === '--name' && i + 1 < rest.length) {
-      alias = rest[i + 1];
+      alias = rest[i + 1] ?? null;
       i++;
     } else if (!peerName) {
       peerName = arg;
@@ -709,8 +714,9 @@ function parseChatSayArgs(rest: string[]): ParsedChatSayArgs {
   const messageParts: string[] = [];
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--session' && i + 1 < rest.length) {
-      alias = rest[i + 1];
+      alias = rest[i + 1] ?? null;
       i++;
     } else {
       messageParts.push(arg);
@@ -739,7 +745,7 @@ function resolveChatAlias(explicit: string | null): { alias: string | null; erro
     return { alias: null, error: 'No active chat sessions. Open one with /fleet chat start <peer>.' };
   }
   if (chatSessions.size === 1) {
-    return { alias: [...chatSessions.keys()][0], error: null };
+    return { alias: [...chatSessions.keys()][0] ?? null, error: null };
   }
   if (activeAlias && chatSessions.has(activeAlias)) {
     return { alias: activeAlias, error: null };
@@ -999,7 +1005,7 @@ async function handleChat(rest: string[]): Promise<CommandHandlerResult> {
     }
     chatSessions.delete(alias);
     if (activeAlias === alias) {
-      activeAlias = chatSessions.size > 0 ? [...chatSessions.keys()][chatSessions.size - 1] : null;
+      activeAlias = chatSessions.size > 0 ? [...chatSessions.keys()][chatSessions.size - 1] ?? null : null;
     }
     return textResult(`Chat session "${alias}" closed${serverWarn}.`);
   }
@@ -1326,8 +1332,9 @@ export async function handleFleet(args: string[]): Promise<CommandHandlerResult>
     let timeoutMs = 30_000;
     for (let i = 0; i < rest.length; i++) {
       const arg = rest[i];
+      if (arg === undefined) continue;
       if (arg === '--timeout' && i + 1 < rest.length) {
-        const n = parseInt(rest[i + 1], 10);
+        const n = parseInt(rest[i + 1] ?? '', 10);
         if (Number.isFinite(n) && n > 0) timeoutMs = n;
         i++;
       } else if (!peerName) {
@@ -1713,8 +1720,9 @@ async function handleTool(rest: string[]): Promise<CommandHandlerResult> {
 
   for (let i = 0; i < rest.length; i++) {
     const arg = rest[i];
+    if (arg === undefined) continue;
     if (arg === '--timeout' && i + 1 < rest.length) {
-      const n = parseInt(rest[i + 1], 10);
+      const n = parseInt(rest[i + 1] ?? '', 10);
       if (Number.isFinite(n) && n > 0) timeoutMs = n;
       i++;
     } else if (arg === '--stream') {

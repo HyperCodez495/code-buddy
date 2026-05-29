@@ -51,9 +51,10 @@ export function validatePages(
     const headings = new Set<string>();
     for (const line of page.content.split('\n')) {
       const match = line.match(/^##+ (.+)/);
-      if (match) {
+      const headingText = match?.[1];
+      if (headingText !== undefined) {
         // Convert heading to anchor: lowercase, replace spaces with hyphens, strip non-alnum
-        const anchor = match[1].trim()
+        const anchor = headingText.trim()
           .toLowerCase()
           .replace(/[^a-z0-9\s-]/g, '')
           .replace(/\s+/g, '-');
@@ -165,7 +166,7 @@ export function validatePages(
       /\*\*Sources?:\*\*\s*\[([^\]]+)\]\([^)]*\)/g,
       (match, citation: string) => {
         // Extract file path from citation like "file.ts:L1-L100"
-        const filePart = citation.split(':')[0].trim();
+        const filePart = (citation.split(':')[0] ?? '').trim();
         if (filePart && !fs.existsSync(path.join(process.cwd(), filePart))) {
           result.fakeCitationsRemoved++;
           changed = true;

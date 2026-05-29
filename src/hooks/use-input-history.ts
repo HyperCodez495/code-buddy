@@ -45,7 +45,10 @@ export function useInputHistory(): InputHistoryHook {
     }
 
     setCurrentIndex(newIndex);
-    return newIndex === -1 ? originalInput : history[newIndex];
+    // newIndex is provably in-bounds here (0..history.length-1), so `?? null`
+    // never fires at runtime; it only satisfies noUncheckedIndexedAccess
+    // while matching the function's existing `string | null` contract.
+    return newIndex === -1 ? originalInput : (history[newIndex] ?? null);
   }, [history, currentIndex, originalInput]);
 
   const getCurrentHistoryIndex = useCallback(() => currentIndex, [currentIndex]);

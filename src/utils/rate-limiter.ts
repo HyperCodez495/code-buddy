@@ -233,6 +233,7 @@ export class RateLimiter extends EventEmitter {
 
     while (this.queue.length > 0) {
       const request = this.queue[0];
+      if (request === undefined) break;
 
       // Wait until we can proceed
       while (!this.canProceed(request.estimatedTokens)) {

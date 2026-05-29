@@ -114,7 +114,8 @@ export const agenticCodingWorkflowBuilderProposalSchema = z.object({
   }
 
   const triggerNodes = proposal.nodes.filter((node) => node.type === 'trigger');
-  if (triggerNodes.length !== 1) {
+  const triggerNode = triggerNodes[0];
+  if (triggerNodes.length !== 1 || triggerNode === undefined) {
     ctx.addIssue({
       code: z.ZodIssueCode.custom,
       message: `workflow builder proposals must declare exactly one trigger node, found ${triggerNodes.length}`,
@@ -129,7 +130,7 @@ export const agenticCodingWorkflowBuilderProposalSchema = z.object({
   }
 
   const reachableNodeIds = new Set<string>();
-  const queue = [triggerNodes[0].id];
+  const queue = [triggerNode.id];
   while (queue.length > 0) {
     const current = queue.shift();
     if (!current || reachableNodeIds.has(current)) {

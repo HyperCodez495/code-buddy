@@ -404,30 +404,49 @@ function parseSingleLine(linterName: string, line: string): LintIssue | null {
   // Try ESLint-style (indented lines under file headers)
   const eslintMatch = line.match(/^\s+(\d+):(\d+)\s+(error|warning)\s+(.+?)\s{2,}(\S+)\s*$/);
   if (eslintMatch) {
+    const [, lineNo, colNo, severityStr, messageStr, ruleStr] = eslintMatch;
+    if (
+      lineNo === undefined ||
+      colNo === undefined ||
+      severityStr === undefined ||
+      messageStr === undefined ||
+      ruleStr === undefined
+    ) {
+      return null;
+    }
     return {
       file: '', // ESLint groups under file headers
-      line: parseInt(eslintMatch[1], 10),
-      column: parseInt(eslintMatch[2], 10),
-      severity: eslintMatch[3] as 'error' | 'warning',
-      message: eslintMatch[4].trim(),
-      rule: eslintMatch[5],
+      line: parseInt(lineNo, 10),
+      column: parseInt(colNo, 10),
+      severity: severityStr as 'error' | 'warning',
+      message: messageStr.trim(),
+      rule: ruleStr,
     };
   }
 
   // Generic file:line:col: message format (ruff, clippy, golangci-lint, rubocop)
   const genericMatch = line.match(/^(.+?):(\d+):(\d+):\s*(?:(error|warning|info|note|E|W|C|R|F)\w*[\s:]*)?(.+)$/i);
   if (genericMatch) {
-    const severityRaw = (genericMatch[4] || '').toLowerCase();
+    const [, fileStr, lineNo, colNo, severityGroup, messageStr] = genericMatch;
+    if (
+      fileStr === undefined ||
+      lineNo === undefined ||
+      colNo === undefined ||
+      messageStr === undefined
+    ) {
+      return null;
+    }
+    const severityRaw = (severityGroup ?? '').toLowerCase();
     let severity: 'error' | 'warning' | 'info' = 'warning';
     if (severityRaw.startsWith('e') || severityRaw === 'error') severity = 'error';
     else if (severityRaw === 'info' || severityRaw === 'note') severity = 'info';
 
     return {
-      file: genericMatch[1],
-      line: parseInt(genericMatch[2], 10),
-      column: parseInt(genericMatch[3], 10),
+      file: fileStr,
+      line: parseInt(lineNo, 10),
+      column: parseInt(colNo, 10),
       severity,
-      message: genericMatch[5].trim(),
+      message: messageStr.trim(),
     };
   }
 

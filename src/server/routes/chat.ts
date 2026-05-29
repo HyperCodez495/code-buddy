@@ -251,9 +251,14 @@ router.post(
           });
         }
 
+        const lastMessage = messages[messages.length - 1];
+        if (!lastMessage) {
+          throw ApiServerError.badRequest('Messages must be a non-empty array');
+        }
+
         return runAgentCompletion(
           agent,
-          messages[messages.length - 1].content as string,
+          lastMessage.content as string,
           { model: body.model }
         );
       });
@@ -333,9 +338,14 @@ async function handleStreamingChat(
     let _totalContent = '';
     let usage = { promptTokens: 0, completionTokens: 0, totalTokens: 0 };
 
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      throw ApiServerError.badRequest('Messages must be a non-empty array');
+    }
+
     const stream = streamAgentDeltas(
       agent,
-      messages[messages.length - 1].content as string,
+      lastMessage.content as string,
       { model: body.model }
     );
 
@@ -441,9 +451,14 @@ async function handleOpenAIStreamingChat(
     const promptTokens = Math.ceil(promptText.length / 4);
     let completionTokens = 0;
 
+    const lastMessage = messages[messages.length - 1];
+    if (!lastMessage) {
+      throw ApiServerError.badRequest('Messages must be a non-empty array');
+    }
+
     const stream = streamAgentDeltas(
       agent,
-      messages[messages.length - 1].content as string,
+      lastMessage.content as string,
       { model: body.model }
     );
 
@@ -575,6 +590,9 @@ router.post(
 
       const messages = body.messages as ChatCompletionMessageParam[];
       const lastMessage = messages[messages.length - 1];
+      if (!lastMessage) {
+        throw ApiServerError.badRequest('Messages must be a non-empty array');
+      }
 
       const result = await runAgentCompletion(
         agent,

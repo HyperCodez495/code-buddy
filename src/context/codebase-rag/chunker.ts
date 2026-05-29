@@ -332,6 +332,7 @@ export class CodeChunker {
 
     for (let i = startIdx; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue; // defensive: i < lines.length, narrows for noUncheckedIndexedAccess
 
       for (const char of line) {
         if (char === "{") {
@@ -375,7 +376,8 @@ export class CodeChunker {
     let inDoc = false;
 
     for (let i = symbolIdx - 1; i >= 0 && i >= symbolIdx - 20; i--) {
-      const line = lines[i].trim();
+      const line = lines[i]?.trim();
+      if (line === undefined) continue; // defensive: i within bounds, narrows for noUncheckedIndexedAccess
 
       if (line.endsWith("*/")) {
         inDoc = true;
@@ -417,6 +419,7 @@ export class CodeChunker {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue; // defensive: i < lines.length, narrows for noUncheckedIndexedAccess
       const lineTokens = this.estimateTokens(line);
 
       if (currentTokens + lineTokens > targetSize && currentChunk.length > 0) {
@@ -484,6 +487,7 @@ export class CodeChunker {
 
     for (let i = 0; i < chunkLines.length; i++) {
       const line = chunkLines[i];
+      if (line === undefined) continue; // defensive: i < chunkLines.length, narrows for noUncheckedIndexedAccess
       const lineTokens = this.estimateTokens(line);
 
       if (currentTokens + lineTokens > this.config.chunkSize && currentLines.length > 0) {
@@ -562,8 +566,9 @@ export class CodeChunker {
     }
     if (language === "go") {
       const funcMatch = firstLine.match(/func\s+(?:\([^)]+\)\s+)?(\w+)/);
-      if (funcMatch) {
-        return /^[A-Z]/.test(funcMatch[1]);
+      const funcName = funcMatch?.[1];
+      if (funcName !== undefined) {
+        return /^[A-Z]/.test(funcName);
       }
     }
     return true;

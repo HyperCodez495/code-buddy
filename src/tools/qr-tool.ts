@@ -97,9 +97,11 @@ export class QRTool {
     this.addFinderPattern(matrix, size - 7, 0);
 
     // Add timing patterns
+    const timingRow = matrix[6];
     for (let i = 8; i < size - 8; i++) {
-      matrix[6][i] = i % 2 === 0;
-      matrix[i][6] = i % 2 === 0;
+      if (timingRow) timingRow[i] = i % 2 === 0;
+      const row = matrix[i];
+      if (row) row[6] = i % 2 === 0;
     }
 
     // Add data (simplified - just fill remaining area based on data)
@@ -118,9 +120,13 @@ export class QRTool {
           // Skip if in finder pattern or timing pattern
           if (this.isReservedModule(size, x, cx)) continue;
 
+          const dataRow = matrix[x];
+          if (!dataRow) continue;
+
           if (byteIndex < dataBytes.length) {
-            const bit = (dataBytes[byteIndex] >> (7 - bitIndex)) & 1;
-            matrix[x][cx] = bit === 1;
+            const byte = dataBytes[byteIndex] ?? 0;
+            const bit = (byte >> (7 - bitIndex)) & 1;
+            dataRow[cx] = bit === 1;
 
             bitIndex++;
             if (bitIndex >= 8) {
@@ -129,7 +135,7 @@ export class QRTool {
             }
           } else {
             // Fill remaining with pattern
-            matrix[x][cx] = (x + cx) % 3 === 0;
+            dataRow[cx] = (x + cx) % 3 === 0;
           }
         }
       }
@@ -143,11 +149,13 @@ export class QRTool {
    */
   private addFinderPattern(matrix: boolean[][], startRow: number, startCol: number): void {
     for (let r = 0; r < 7; r++) {
+      const row = matrix[startRow + r];
+      if (!row) continue;
       for (let c = 0; c < 7; c++) {
         // Outer border, inner border, and center
         const isOuter = r === 0 || r === 6 || c === 0 || c === 6;
         const isInner = r >= 2 && r <= 4 && c >= 2 && c <= 4;
-        matrix[startRow + r][startCol + c] = isOuter || isInner;
+        row[startCol + c] = isOuter || isInner;
       }
     }
   }
@@ -176,9 +184,10 @@ export class QRTool {
     if (useUnicode) {
       // Use unicode block characters for compact display
       // Each character represents 2 vertical modules
+      const rowLength = matrix[0]?.length ?? 0;
       for (let y = 0; y < matrix.length; y += 2) {
         let line = '';
-        for (let x = 0; x < matrix[0].length; x++) {
+        for (let x = 0; x < rowLength; x++) {
           const top = matrix[y]?.[x] ?? false;
           const bottom = matrix[y + 1]?.[x] ?? false;
 
@@ -238,8 +247,10 @@ export class QRTool {
 `;
 
     for (let y = 0; y < matrix.length; y++) {
-      for (let x = 0; x < matrix[y].length; x++) {
-        if (matrix[y][x]) {
+      const row = matrix[y];
+      if (!row) continue;
+      for (let x = 0; x < row.length; x++) {
+        if (row[x]) {
           const px = margin + x * moduleSize;
           const py = margin + y * moduleSize;
           svg += `    <rect x="${px}" y="${py}" width="${moduleSize}" height="${moduleSize}"/>\n`;
@@ -277,7 +288,7 @@ export class QRTool {
         const output = result.stdout;
         const match = output.match(/QR-Code:(.+)/);
 
-        if (match) {
+        if (match && match[1] !== undefined) {
           const text = match[1].trim();
           const parsed = this.parseQRContent(text);
 
@@ -368,7 +379,7 @@ export class QRTool {
       result.type = 'geo';
       const geo = text.replace(/^geo:/i, '');
       const [lat, lng] = geo.split(',');
-      result.parsed = { latitude: parseFloat(lat), longitude: parseFloat(lng) };
+      result.parsed = { latitude: parseFloat(lat ?? ''), longitude: parseFloat(lng ?? '') };
       return result;
     }
 
@@ -387,6 +398,7 @@ export class QRTool {
 
     for (const line of lines) {
       const [key, ...valueParts] = line.split(':');
+      if (key === undefined) continue;
       const value = valueParts.join(':');
 
       switch (key.split(';')[0]) {
@@ -395,8 +407,8 @@ export class QRTool {
           break;
         case 'N':
           const [lastName, firstName] = value.split(';');
-          vcard.lastName = lastName;
-          vcard.firstName = firstName;
+          vcard.lastName = lastName ?? '';
+          vcard.firstName = firstName ?? '';
           break;
         case 'TEL':
           if (!vcard.phone) {

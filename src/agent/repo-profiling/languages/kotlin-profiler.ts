@@ -161,6 +161,7 @@ export const kotlinProfiler: LanguageProfiler = {
     // Match implementation("...group:artifact...") patterns
     const depMatches = [...allBuild.matchAll(/(?:implementation|api|testImplementation)\s*\(\s*"[^"]*:([^":]+)/g)];
     for (const [, artifact] of depMatches) {
+      if (artifact === undefined) continue;
       const lower = artifact.toLowerCase();
       for (const notable of gradleNotable) {
         if (lower.includes(notable) && !ctx.keyDependencies.includes(artifact)) {
@@ -172,6 +173,7 @@ export const kotlinProfiler: LanguageProfiler = {
     // Also match plugin IDs
     const pluginMatches = [...allBuild.matchAll(/id\s*\(\s*"([^"]+)"\s*\)/g)];
     for (const [, plugin] of pluginMatches) {
+      if (plugin === undefined) continue;
       if (plugin.includes('hilt') && !ctx.keyDependencies.includes('hilt')) ctx.keyDependencies.push('hilt');
       if (plugin.includes('compose') && !ctx.keyDependencies.includes('compose')) ctx.keyDependencies.push('compose');
       if (plugin.includes('sqldelight') && !ctx.keyDependencies.includes('sqldelight')) ctx.keyDependencies.push('sqldelight');

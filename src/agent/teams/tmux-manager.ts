@@ -113,7 +113,7 @@ export function createTeamSession(
 
       panes.push({
         index: i,
-        agentName: agentNames[i],
+        agentName: agentNames[i] ?? `agent-${i}`,
         active: false,
       });
     }

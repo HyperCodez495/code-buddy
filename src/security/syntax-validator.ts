@@ -89,7 +89,7 @@ function validateJavaScript(code: string, ext: string): SyntaxCheckResult {
   // Check for common syntax issues
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
+    const line = (lines[i] ?? '').trim();
     // Duplicate semicolons
     if (/;;(?!.*for)/.test(line)) {
       errors.push(`Line ${i + 1}: Double semicolons`);
@@ -150,7 +150,7 @@ function validateYaml(code: string): SyntaxCheckResult {
   // Check for tabs (YAML doesn't allow tabs for indentation)
   const lines = code.split('\n');
   for (let i = 0; i < lines.length; i++) {
-    if (lines[i].includes('\t')) {
+    if ((lines[i] ?? '').includes('\t')) {
       errors.push(`Line ${i + 1}: YAML does not allow tabs for indentation`);
       break; // One error is enough
     }
@@ -159,12 +159,13 @@ function validateYaml(code: string): SyntaxCheckResult {
   // Check for duplicate keys at root level (simple check)
   const rootKeys = new Set<string>();
   for (let i = 0; i < lines.length; i++) {
-    const match = lines[i].match(/^([a-zA-Z_][\w-]*):/);
-    if (match) {
-      if (rootKeys.has(match[1])) {
-        errors.push(`Line ${i + 1}: Duplicate root key '${match[1]}'`);
+    const match = (lines[i] ?? '').match(/^([a-zA-Z_][\w-]*):/);
+    const key = match?.[1];
+    if (key !== undefined) {
+      if (rootKeys.has(key)) {
+        errors.push(`Line ${i + 1}: Duplicate root key '${key}'`);
       }
-      rootKeys.add(match[1]);
+      rootKeys.add(key);
     }
   }
 
@@ -189,19 +190,22 @@ function validateHtml(code: string): SyntaxCheckResult {
   let match;
   while ((match = tagRegex.exec(code)) !== null) {
     // Calculate line number
-    while (charsSoFar + lines[lineNum - 1].length + 1 <= match.index && lineNum < lines.length) {
-      charsSoFar += lines[lineNum - 1].length + 1;
+    let curLine = lines[lineNum - 1];
+    while (curLine !== undefined && charsSoFar + curLine.length + 1 <= match.index && lineNum < lines.length) {
+      charsSoFar += curLine.length + 1;
       lineNum++;
+      curLine = lines[lineNum - 1];
     }
 
     const fullTag = match[0];
-    const tagName = match[1].toLowerCase();
+    const tagName = (match[1] ?? '').toLowerCase();
 
     if (selfClosing.has(tagName) || fullTag.endsWith('/>')) continue;
 
     if (fullTag.startsWith('</')) {
       // Closing tag
-      if (tagStack.length > 0 && tagStack[tagStack.length - 1].tag === tagName) {
+      const top = tagStack[tagStack.length - 1];
+      if (top !== undefined && top.tag === tagName) {
         tagStack.pop();
       }
       // Don't report mismatched closing tags to avoid noise
@@ -240,10 +244,13 @@ function checkBalancedDelimiters(
 ): string[] {
   const errors: string[] = [];
   const stack: { char: string; line: number }[] = [];
-  const openers = pairs ? [pairs[0]] : ['{', '[', '('];
-  const closers = pairs ? [pairs[1]] : ['}', ']', ')'];
+  // When `pairs` is supplied it is a two-element [open, close] tuple.
+  const customOpen = pairs?.[0] ?? '';
+  const customClose = pairs?.[1] ?? '';
+  const openers = pairs ? [customOpen] : ['{', '[', '('];
+  const closers = pairs ? [customClose] : ['}', ']', ')'];
   const matchMap: Record<string, string> = pairs
-    ? { [pairs[1]]: pairs[0] }
+    ? { [customClose]: customOpen }
     : { '}': '{', ']': '[', ')': '(' };
 
   let inSingleQuote = false;
@@ -254,6 +261,7 @@ function checkBalancedDelimiters(
 
   for (let i = 0; i < code.length; i++) {
     const ch = code[i];
+    if (ch === undefined) continue;
     const prev = code[i - 1];
     const next = code[i + 1];
 
@@ -290,10 +298,10 @@ function checkBalancedDelimiters(
       stack.push({ char: ch, line: lineNum });
     } else if (closers.includes(ch)) {
       const expected = matchMap[ch];
-      if (stack.length === 0) {
+      const top = stack[stack.length - 1];
+      if (top === undefined) {
         errors.push(`Line ${lineNum}: Unexpected '${ch}' without matching '${expected}'`);
-      } else if (stack[stack.length - 1].char !== expected) {
-        const top = stack[stack.length - 1];
+      } else if (top.char !== expected) {
         errors.push(`Line ${lineNum}: Mismatched '${ch}' — expected closing for '${top.char}' at line ${top.line}`);
       } else {
         stack.pop();

@@ -165,6 +165,7 @@ export class QualityGateMiddleware implements ConversationMiddleware {
 
     for (let i = recent.length - 1; i >= 0; i--) {
       const entry = recent[i];
+      if (entry === undefined) continue;
       if (entry.type === 'assistant') {
         const content = typeof entry.content === 'string' ? entry.content : '';
         // If the assistant response contains code blocks or file changes,
@@ -196,7 +197,10 @@ export class QualityGateMiddleware implements ConversationMiddleware {
       for (const pattern of filePatterns) {
         let match;
         while ((match = pattern.exec(content)) !== null) {
-          files.add(match[1]);
+          const captured = match[1];
+          if (captured !== undefined) {
+            files.add(captured);
+          }
         }
       }
     }

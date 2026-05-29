@@ -102,8 +102,9 @@ export class PRSessionLinker {
     logger.debug(`Attempting auto-link from branch: ${branch}`);
 
     const prMatch = branch.match(/pr[/-](\d+)/i);
-    if (prMatch) {
-      return this.linkToPR(prMatch[1]);
+    const prMatchNumber = prMatch?.[1];
+    if (prMatchNumber) {
+      return this.linkToPR(prMatchNumber);
     }
 
     const repo = await this.resolveRepository();
@@ -121,7 +122,7 @@ export class PRSessionLinker {
 
   private parsePRIdentifier(prIdentifier: string): { number: number; repo?: string } {
     const urlMatch = prIdentifier.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
-    if (urlMatch) {
+    if (urlMatch && urlMatch[1] !== undefined && urlMatch[2] !== undefined) {
       return {
         repo: urlMatch[1],
         number: parseInt(urlMatch[2], 10),
@@ -158,7 +159,7 @@ export class PRSessionLinker {
     }
 
     const httpsMatch = remote.match(/github\.com[:/](.+?)(?:\.git)?$/i);
-    if (httpsMatch) {
+    if (httpsMatch?.[1] !== undefined) {
       return httpsMatch[1];
     }
 

@@ -221,13 +221,19 @@ export class SmartModelRouter extends EventEmitter {
 
     // Get healthy provider
     const preferredProvider = request.preferredProvider;
-    let provider = preferredProvider && this.isProviderHealthy(preferredProvider)
-      ? preferredProvider
-      : this.fallbackChain.getNextProvider();
+    let provider: ProviderType | undefined =
+      preferredProvider && this.isProviderHealthy(preferredProvider)
+        ? preferredProvider
+        : this.fallbackChain.getNextProvider() ?? undefined;
 
     if (!provider) {
       // All providers exhausted, try to recover
       provider = this.config.providers[0];
+    }
+
+    if (!provider) {
+      // No providers configured at all — cannot route
+      throw new Error('SmartModelRouter.route: no providers configured');
     }
 
     // Select model for provider and tier
@@ -436,7 +442,8 @@ export class SmartModelRouter extends EventEmitter {
   private getLowerTier(tier: ModelTier): ModelTier | null {
     const index = TIER_ORDER.indexOf(tier);
     if (index > 0) {
-      return TIER_ORDER[index - 1];
+      // safe: index > 0 and index < TIER_ORDER.length (from indexOf), so index - 1 is in bounds
+      return TIER_ORDER[index - 1] ?? null;
     }
     return null;
   }
@@ -458,7 +465,7 @@ export class SmartModelRouter extends EventEmitter {
     if (models.length > 0) {
       // Try to get model at tier index, or closest lower
       const modelIndex = Math.min(tierIndex, models.length - 1);
-      return models[modelIndex];
+      return models[modelIndex] ?? `${provider}-default`;
     }
 
     // Fallback to first model
@@ -474,7 +481,11 @@ export class SmartModelRouter extends EventEmitter {
         return provider as ProviderType;
       }
     }
-    return this.config.providers[0];
+    const primary = this.config.providers[0];
+    if (!primary) {
+      throw new Error('SmartModelRouter.findProviderForModel: no providers configured');
+    }
+    return primary;
   }
 
   /**
@@ -516,8 +527,9 @@ export class SmartModelRouter extends EventEmitter {
     for (const provider of this.config.providers) {
       if (provider !== currentProvider) {
         const models = this.config.models[provider] || [];
-        if (models.length > 0) {
-          alternatives.push({ provider, model: models[0] });
+        const firstModel = models[0];
+        if (firstModel !== undefined) {
+          alternatives.push({ provider, model: firstModel });
         }
       }
     }

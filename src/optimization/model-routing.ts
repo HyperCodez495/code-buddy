@@ -307,7 +307,9 @@ export function getCostComparison(
   costs.sort((a, b) => a.cost - b.cost);
 
   // Calculate savings vs most expensive
-  const maxCost = costs[costs.length - 1].cost;
+  const mostExpensive = costs[costs.length - 1];
+  if (mostExpensive === undefined) return [];
+  const maxCost = mostExpensive.cost;
 
   return costs.map((c) => ({
     ...c,

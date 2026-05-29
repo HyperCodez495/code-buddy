@@ -386,7 +386,7 @@ export class LinearClient extends TaskManagementClient {
 
     const result = (await response.json()) as GraphQLResponse<T>;
     if (result.errors) {
-      throw new Error(`Linear GraphQL error: ${result.errors[0].message}`);
+      throw new Error(`Linear GraphQL error: ${result.errors[0]?.message ?? 'unknown error'}`);
     }
 
     return result.data;
@@ -815,7 +815,9 @@ export class TaskManagementIntegration extends EventEmitter {
     for (const pattern of patterns) {
       const matches = message.matchAll(pattern);
       for (const match of matches) {
-        keys.push(match[1]);
+        const key = match[1];
+        if (key === undefined) continue;
+        keys.push(key);
       }
     }
 

@@ -24,11 +24,11 @@ function resolveBranch(idOrName: string): string | null {
 
   // ID prefix match
   const byPrefix = branches.filter(b => b.id.startsWith(idOrName));
-  if (byPrefix.length === 1) return byPrefix[0].id;
+  if (byPrefix.length === 1 && byPrefix[0]) return byPrefix[0].id;
 
   // Name prefix match (case-insensitive)
   const byNamePrefix = branches.filter(b => b.name.toLowerCase().startsWith(idOrName.toLowerCase()));
-  if (byNamePrefix.length === 1) return byNamePrefix[0].id;
+  if (byNamePrefix.length === 1 && byNamePrefix[0]) return byNamePrefix[0].id;
 
   return null;
 }
@@ -284,6 +284,7 @@ function handleBranchDiff(args: string[]): CommandHandlerResult {
       content += `Only in current ("${currentBranch.name}"): ${onlyInCurrent.length} message(s)\n`;
       for (const idx of onlyInCurrent.slice(0, 5)) {
         const msg = currentBranch.messages[idx];
+        if (!msg) continue;
         const preview = (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)).slice(0, 80);
         content += `  [${idx}] ${msg.role}: ${preview}${preview.length >= 80 ? "..." : ""}\n`;
       }
@@ -297,6 +298,7 @@ function handleBranchDiff(args: string[]): CommandHandlerResult {
       content += `Only in compare ("${otherBranch.name}"): ${onlyInOther.length} message(s)\n`;
       for (const idx of onlyInOther.slice(0, 5)) {
         const msg = otherBranch.messages[idx];
+        if (!msg) continue;
         const preview = (typeof msg.content === 'string' ? msg.content : JSON.stringify(msg.content)).slice(0, 80);
         content += `  [${idx}] ${msg.role}: ${preview}${preview.length >= 80 ? "..." : ""}\n`;
       }
@@ -399,6 +401,7 @@ function handleBranchHistory(args: string[]): CommandHandlerResult {
 
   for (let i = 0; i < history.length; i++) {
     const branch = history[i];
+    if (!branch) continue;
     const isCurrent = branch.id === branchManager.getCurrentBranchId();
     const marker = isCurrent ? "* " : "  ";
     const indent = "  ".repeat(i);

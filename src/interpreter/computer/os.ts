@@ -346,10 +346,10 @@ export class ComputerOS {
     return lines.map(line => {
       const parts = line.trim().split(/\s+/);
       return {
-        pid: parseInt(parts[1], 10),
-        name: parts[10] || parts[parts.length - 1],
-        cpu: parseFloat(parts[2]),
-        memory: parseFloat(parts[3]),
+        pid: parseInt(parts[1] ?? '', 10),
+        name: parts[10] || parts[parts.length - 1] || '',
+        cpu: parseFloat(parts[2] ?? ''),
+        memory: parseFloat(parts[3] ?? ''),
         user: parts[0],
         command: parts.slice(10).join(' '),
       };
@@ -363,10 +363,10 @@ export class ComputerOS {
     return lines.map(line => {
       const parts = line.split(',');
       return {
-        pid: parseInt(parts[3], 10),
-        name: parts[1],
-        cpu: parseFloat(parts[2]) || 0,
-        memory: parseInt(parts[4], 10) || 0,
+        pid: parseInt(parts[3] ?? '', 10),
+        name: parts[1] ?? '',
+        cpu: parseFloat(parts[2] ?? '') || 0,
+        memory: parseInt(parts[4] ?? '', 10) || 0,
       };
     }).filter(p => !isNaN(p.pid));
   }
@@ -471,11 +471,11 @@ export class ComputerOS {
       while ((match = pattern.exec(stdout)) !== null) {
         displays.push({
           id: id++,
-          name: match[1],
-          width: parseInt(match[3], 10),
-          height: parseInt(match[4], 10),
-          x: parseInt(match[5], 10),
-          y: parseInt(match[6], 10),
+          name: match[1] ?? '',
+          width: parseInt(match[3] ?? '', 10),
+          height: parseInt(match[4] ?? '', 10),
+          x: parseInt(match[5] ?? '', 10),
+          y: parseInt(match[6] ?? '', 10),
           primary: !!match[2],
           scaleFactor: 1,
         });
@@ -517,8 +517,8 @@ export class ComputerOS {
         return {
           id: index,
           name: `Display ${index + 1}`,
-          width: parseInt(width, 10) || 1920,
-          height: parseInt(height, 10) || 1080,
+          width: parseInt(width ?? '', 10) || 1920,
+          height: parseInt(height ?? '', 10) || 1080,
           x: 0,
           y: 0,
           primary: index === 0,

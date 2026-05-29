@@ -50,6 +50,9 @@ function globToRegex(pattern: string): RegExp {
 
   while (i < pattern.length) {
     const char = pattern[i];
+    if (char === undefined) {
+      break;
+    }
 
     if (char === '*' && pattern[i + 1] === '*') {
       // ** matches anything including /
@@ -130,7 +133,7 @@ export class PermissionPatternMatcher {
    */
   parseToolSpecifier(spec: string): ParsedToolSpecifier {
     const match = spec.match(/^([A-Za-z_]+)(?:\((.+)\))?$/);
-    if (!match) {
+    if (!match || match[1] === undefined) {
       throw new Error(`Invalid tool specifier: ${spec}`);
     }
 

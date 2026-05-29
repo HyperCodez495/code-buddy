@@ -532,7 +532,10 @@ export class InterpreterService extends EventEmitter {
    * Calculate cost for tokens
    */
   calculateCost(model: string, tokens: TokenUsage): number {
-    const pricing = this.config.pricing[model] || DEFAULT_MODEL_PRICING['grok-3-mini'];
+    const pricing = this.config.pricing[model] ?? DEFAULT_MODEL_PRICING['grok-3-mini'];
+    if (!pricing) {
+      throw new Error(`No pricing available for model "${model}" and no default fallback pricing found`);
+    }
     const inputCost = (tokens.input / 1_000_000) * pricing.input;
     const outputCost = (tokens.output / 1_000_000) * pricing.output;
     return inputCost + outputCost;

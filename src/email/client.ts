@@ -36,8 +36,10 @@ export function parseEmailAddress(input: string | EmailAddress): EmailAddress {
 
   // Parse "Name <email@example.com>" format
   const match = input.match(/^(.+?)\s*<(.+)>$/);
-  if (match) {
-    return { name: match[1].trim(), address: match[2].trim() };
+  const name = match?.[1];
+  const address = match?.[2];
+  if (name !== undefined && address !== undefined) {
+    return { name: name.trim(), address: address.trim() };
   }
 
   return { address: input.trim() };

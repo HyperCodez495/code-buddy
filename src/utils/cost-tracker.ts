@@ -184,7 +184,7 @@ export class CostTracker extends EventEmitter {
     if (isChatGptSubscriptionModel(model)) {
       return 0;
     }
-    const pricing = MODEL_PRICING[model] || MODEL_PRICING["default"];
+    const pricing = MODEL_PRICING[model] ?? MODEL_PRICING["default"] ?? { inputPer1k: 0.003, outputPer1k: 0.015 };
     const effectiveInput = inputTokens - cachedTokens + (cachedTokens * 0.5);
     return (effectiveInput / 1000) * pricing.inputPer1k +
            (outputTokens / 1000) * pricing.outputPer1k;
@@ -210,16 +210,18 @@ export class CostTracker extends EventEmitter {
       const prunedCost = pruned.reduce((sum, u) => sum + u.cost, 0);
       const prunedIn = pruned.reduce((sum, u) => sum + u.inputTokens, 0);
       const prunedOut = pruned.reduce((sum, u) => sum + u.outputTokens, 0);
+      const prunedTimestamp = pruned[0]?.timestamp ?? new Date();
       this.sessionUsage.unshift({
         inputTokens: prunedIn, outputTokens: prunedOut,
-        model: 'aggregated', timestamp: pruned[0].timestamp, cost: prunedCost,
+        model: 'aggregated', timestamp: prunedTimestamp, cost: prunedCost,
       });
     }
     this.history.push(usage);
 
     // Store in SQLite if enabled
     if (this.dbRepository) {
-      const today = new Date().toISOString().split('T')[0];
+      const isoNow = new Date().toISOString();
+      const today = isoNow.split('T')[0] ?? isoNow;
       this.dbRepository.recordAnalytics({
         date: today,
         model,
@@ -320,11 +322,13 @@ export class CostTracker extends EventEmitter {
     // Model breakdown
     const modelBreakdown: Record<string, { cost: number; calls: number }> = {};
     for (const usage of this.history) {
-      if (!modelBreakdown[usage.model]) {
-        modelBreakdown[usage.model] = { cost: 0, calls: 0 };
+      let entry = modelBreakdown[usage.model];
+      if (!entry) {
+        entry = { cost: 0, calls: 0 };
+        modelBreakdown[usage.model] = entry;
       }
-      modelBreakdown[usage.model].cost += usage.cost;
-      modelBreakdown[usage.model].calls += 1;
+      entry.cost += usage.cost;
+      entry.calls += 1;
     }
 
     return {

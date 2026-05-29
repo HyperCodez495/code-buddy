@@ -315,6 +315,9 @@ export async function handleSecurityReview(args: string[]): Promise<CommandHandl
 
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
+    if (arg === undefined) {
+      continue;
+    }
     if (arg === '--quick') {
       quickFlag = true;
       continue;

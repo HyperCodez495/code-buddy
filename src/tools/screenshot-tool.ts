@@ -412,7 +412,7 @@ Write-Output 'ok'
       }
 
       // If nothing fit under maxBytes, use smallest settings
-      const smallWidth = sizes[sizes.length - 1];
+      const smallWidth = sizes[sizes.length - 1] ?? 800;
       const smallHeight = Math.round(smallWidth * aspect);
       const buffer = await sharp(imagePath)
         .resize(smallWidth, smallHeight, { fit: 'inside' })
@@ -455,9 +455,10 @@ Write-Output 'ok'
                 { timeout: 5000 }
               );
               const parts = probeOut.trim().split(',');
-              if (parts.length === 2) {
-                const w = parseInt(parts[0], 10);
-                const h = parseInt(parts[1], 10);
+              const [widthPart, heightPart] = parts;
+              if (parts.length === 2 && widthPart !== undefined && heightPart !== undefined) {
+                const w = parseInt(widthPart, 10);
+                const h = parseInt(heightPart, 10);
                 if (!isNaN(w) && !isNaN(h)) {
                   width = w;
                   height = h;

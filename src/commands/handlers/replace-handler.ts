@@ -25,6 +25,7 @@ export async function handleReplace(args: string[]): Promise<CommandHandlerResul
 
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
+    if (arg === undefined) continue;
     switch (arg) {
       case '--dry-run':
       case '-n':
@@ -35,16 +36,22 @@ export async function handleReplace(args: string[]): Promise<CommandHandlerResul
         isRegex = true;
         break;
       case '--glob':
-      case '-g':
-        if (i + 1 < args.length) {
-          glob = args[++i];
+      case '-g': {
+        const next = args[i + 1];
+        if (next !== undefined) {
+          glob = next;
+          i++;
         }
         break;
-      case '--max-files':
-        if (i + 1 < args.length) {
-          maxFiles = parseInt(args[++i], 10) || 50;
+      }
+      case '--max-files': {
+        const next = args[i + 1];
+        if (next !== undefined) {
+          maxFiles = parseInt(next, 10) || 50;
+          i++;
         }
         break;
+      }
       default:
         positional.push(arg);
     }
@@ -79,6 +86,17 @@ Examples:
 
   const searchPattern = positional[0];
   const replacement = positional[1];
+  if (searchPattern === undefined || replacement === undefined) {
+    // Unreachable given the positional.length < 2 guard above; kept for type-safety.
+    return {
+      handled: true,
+      entry: {
+        type: 'assistant',
+        content: '/replace — search and replacement arguments are required.',
+        timestamp: new Date(),
+      },
+    };
+  }
 
   try {
     const { codebaseReplace, formatReplaceResult } = await import('../../tools/codebase-replace-tool.js');

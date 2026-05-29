@@ -404,8 +404,8 @@ export class AITestRunner extends EventEmitter {
       let passed = false;
       let details = '';
 
-      if (hasToolCall) {
-        const toolCall = toolCalls[0];
+      const toolCall = toolCalls[0];
+      if (hasToolCall && toolCall) {
         passed = toolCall.function.name === 'get_weather';
 
         if (passed) {

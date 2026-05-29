@@ -104,8 +104,11 @@ export const pythonProfiler: LanguageProfiler = {
       const allPyDeps = new Set<string>();
       // From pyproject.toml [project].dependencies
       const depsMatch = pyContent.match(/\[project\][\s\S]*?dependencies\s*=\s*\[([\s\S]*?)\n\s*\]/);
-      if (depsMatch) {
-        for (const m of depsMatch[1].matchAll(/"([a-zA-Z0-9_-]+)/g)) allPyDeps.add(m[1].toLowerCase());
+      if (depsMatch?.[1]) {
+        for (const m of depsMatch[1].matchAll(/"([a-zA-Z0-9_-]+)/g)) {
+          const dep = m[1];
+          if (dep) allPyDeps.add(dep.toLowerCase());
+        }
       }
       // From requirements.txt
       if (fsh.exists(requirementsPath)) {
@@ -113,14 +116,17 @@ export const pythonProfiler: LanguageProfiler = {
           const reqContent = fs.readFileSync(requirementsPath, 'utf-8');
           for (const line of reqContent.split('\n')) {
             const m = line.match(/^([a-zA-Z0-9_-]+)/);
-            if (m) allPyDeps.add(m[1].toLowerCase());
+            if (m?.[1]) allPyDeps.add(m[1].toLowerCase());
           }
         } catch { /* ignore */ }
       }
       // Also scan [tool.poetry.dependencies] if present
       const poetryDeps = pyContent.match(/\[tool\.poetry\.dependencies\]([\s\S]*?)(?=\[|$)/);
-      if (poetryDeps) {
-        for (const m of poetryDeps[1].matchAll(/^([a-zA-Z0-9_-]+)\s*=/gm)) allPyDeps.add(m[1].toLowerCase());
+      if (poetryDeps?.[1]) {
+        for (const m of poetryDeps[1].matchAll(/^([a-zA-Z0-9_-]+)\s*=/gm)) {
+          const dep = m[1];
+          if (dep) allPyDeps.add(dep.toLowerCase());
+        }
       }
 
       // Framework

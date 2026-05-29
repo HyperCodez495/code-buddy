@@ -170,6 +170,7 @@ function parseMarkdownTable(tableLines: string[]): TableData | null {
 
   // Parse header row
   const headerLine = tableLines[0];
+  if (headerLine === undefined) return null;
   const headers = headerLine
     .split('|')
     .map((h) => h.trim())
@@ -179,13 +180,15 @@ function parseMarkdownTable(tableLines: string[]): TableData | null {
 
   // Parse separator row for alignment
   const separatorLine = tableLines[1];
-  if (!separatorLine.includes('-')) return null;
+  if (separatorLine === undefined || !separatorLine.includes('-')) return null;
   const alignments = parseAlignment(separatorLine);
 
   // Parse data rows
   const rows: Record<string, string>[] = [];
   for (let i = 2; i < tableLines.length; i++) {
-    const line = tableLines[i].trim();
+    const rawLine = tableLines[i];
+    if (rawLine === undefined) continue;
+    const line = rawLine.trim();
     if (!line.startsWith('|') || !line.endsWith('|')) continue;
 
     const cells = line
@@ -238,6 +241,10 @@ function findTables(content: string): TableInfo[] {
   let i = 0;
   while (i < lines.length) {
     const line = lines[i];
+    if (line === undefined) {
+      i++;
+      continue;
+    }
 
     // Look for potential table start (header row)
     if (isTableRow(line)) {
@@ -248,15 +255,17 @@ function findTables(content: string): TableInfo[] {
       i++;
 
       // Check for separator row
-      if (i < lines.length && isTableSeparator(lines[i])) {
-        const sepColCount = countColumns(lines[i]);
+      const sepLine = i < lines.length ? lines[i] : undefined;
+      if (sepLine !== undefined && isTableSeparator(sepLine)) {
+        const sepColCount = countColumns(sepLine);
         if (sepColCount === headerColCount) {
-          tableLines.push(lines[i]);
+          tableLines.push(sepLine);
           i++;
 
           // Collect data rows
           while (i < lines.length) {
             const dataLine = lines[i];
+            if (dataLine === undefined) break;
             if (!isTableRow(dataLine)) break;
 
             const dataColCount = countColumns(dataLine);
@@ -272,7 +281,7 @@ function findTables(content: string): TableInfo[] {
           // Determine if table is complete
           const hasDataRows = tableLines.length > 2;
           const lastLine = tableLines[tableLines.length - 1];
-          const lastLineComplete = lastLine.trim().endsWith('|');
+          const lastLineComplete = lastLine?.trim().endsWith('|') ?? false;
 
           const raw = tableLines.join('\n');
           const data = parseMarkdownTable(tableLines);
@@ -346,7 +355,8 @@ function renderTableCustom(data: TableData): string {
 
   // Header row: │ H1 │ H2 │ H3 │
   const headerCells = headers.map((h, i) => {
-    const padding = colWidths[i] - visibleWidth(h) - 1;
+    const w = colWidths[i] ?? 0; // colWidths is built from headers.map, so always defined
+    const padding = w - visibleWidth(h) - 1;
     return ' ' + h + ' '.repeat(Math.max(0, padding));
   });
   output.push(
@@ -363,14 +373,13 @@ function renderTableCustom(data: TableData): string {
   // Data rows: │ D1 │ D2 │ D3 │
   for (const row of rows) {
     const cells = headers.map((h, i) => {
+      const w = colWidths[i] ?? 0; // colWidths is built from headers.map, so always defined
       const cellValue = row[h] || '';
       const cellWidth = visibleWidth(cellValue);
-      const _padding = colWidths[i] - cellWidth - 1; // Used for intermediate calculation
+      const _padding = w - cellWidth - 1; // Used for intermediate calculation
       const truncated =
-        cellWidth > colWidths[i] - 2
-          ? stripAnsi(cellValue).slice(0, colWidths[i] - 3) + '…'
-          : cellValue;
-      const finalPadding = colWidths[i] - visibleWidth(truncated) - 1;
+        cellWidth > w - 2 ? stripAnsi(cellValue).slice(0, w - 3) + '…' : cellValue;
+      const finalPadding = w - visibleWidth(truncated) - 1;
       return ' ' + truncated + ' '.repeat(Math.max(0, finalPadding));
     });
     output.push(TABLE_CHARS.left + cells.join(TABLE_CHARS.middle) + TABLE_CHARS.right);
@@ -552,7 +561,7 @@ export const MarkdownRenderer = React.memo(function MarkdownRenderer({
 
   try {
     // Single text segment - use TextSegment
-    if (segments.length === 1 && segments[0].type === 'text') {
+    if (segments.length === 1 && segments[0]?.type === 'text') {
       return <TextSegment content={content} />;
     }
 

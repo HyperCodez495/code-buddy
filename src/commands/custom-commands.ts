@@ -109,12 +109,12 @@ export class CustomCommandLoader {
 
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---\n([\s\S]*)$/);
     if (frontmatterMatch) {
-      const frontmatter = frontmatterMatch[1];
-      prompt = frontmatterMatch[2].trim();
+      const frontmatter = frontmatterMatch[1] ?? '';
+      prompt = (frontmatterMatch[2] ?? '').trim();
 
       // Parse description from frontmatter
       const descMatch = frontmatter.match(/description:\s*(.+)/);
-      if (descMatch) {
+      if (descMatch && descMatch[1] !== undefined) {
         description = descMatch[1].trim();
       }
     }
@@ -211,9 +211,11 @@ export class CustomCommandLoader {
         case "USER":
           return process.env.USER || process.env.USERNAME || "user";
         case "DATE":
-          return new Date().toISOString().split("T")[0];
+          // ISO 8601 (YYYY-MM-DDT...) — split[0] is the date portion
+          return new Date().toISOString().split("T")[0] ?? "";
         case "TIME":
-          return new Date().toISOString().split("T")[1].slice(0, 8);
+          // ISO 8601 (...THH:mm:ss.sssZ) — split[1] is the time portion
+          return (new Date().toISOString().split("T")[1] ?? "").slice(0, 8);
         default:
           // SECURITY: Only allow whitelisted environment variables
           if (SAFE_ENV_VARS.has(varName)) {

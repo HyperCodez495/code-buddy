@@ -767,7 +767,10 @@ export class MigrationManager extends EventEmitter {
     if (applied.length === 0) return '0.0.0';
 
     const versions = applied.map((h) => h.version);
-    return versions.sort((a, b) => semver.compare(b, a))[0];
+    const sorted = versions.sort((a, b) => semver.compare(b, a));
+    const latest = sorted[0];
+    if (latest === undefined) return '0.0.0';
+    return latest;
   }
 
   /**
@@ -776,7 +779,9 @@ export class MigrationManager extends EventEmitter {
   getLatestVersion(): string {
     const migrations = this.getMigrations();
     if (migrations.length === 0) return '0.0.0';
-    return migrations[migrations.length - 1].version;
+    const last = migrations[migrations.length - 1];
+    if (last === undefined) return '0.0.0';
+    return last.version;
   }
 
   /**
@@ -1087,9 +1092,10 @@ export class MigrationManager extends EventEmitter {
           (h) => h.version === currentVersion && h.status === 'success'
         );
 
-        if (historyIndex !== -1) {
-          this.history[historyIndex].status = 'rolled_back';
-          this.history[historyIndex].transactionId = transactionId;
+        const historyEntry = historyIndex !== -1 ? this.history[historyIndex] : undefined;
+        if (historyEntry !== undefined) {
+          historyEntry.status = 'rolled_back';
+          historyEntry.transactionId = transactionId;
           await this.saveHistory();
         }
 

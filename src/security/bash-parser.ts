@@ -72,16 +72,24 @@ function fallbackParse(input: string, depth: number = 0): ParseResult {
   // First, handle `bash -c "..."` and `sh -c "..."` wrapper
   const bashCMatch = input.match(/^(bash|sh|zsh)\s+(-[a-z]*c)\s+(['"])([\s\S]*?)\3\s*$/);
   if (bashCMatch) {
-    const innerResult = fallbackParse(bashCMatch[4], depth + 1);
-    // Also add the outer shell command
-    return {
-      commands: [
-        { command: bashCMatch[1], args: [bashCMatch[2], bashCMatch[4]], raw: input, connector: null, isSubshell: false },
-        ...innerResult.commands.map(c => ({ ...c, isSubshell: true })),
-      ],
-      usedTreeSitter: false,
-      warnings: innerResult.warnings,
-    };
+    const shellName = bashCMatch[1];
+    const shellFlag = bashCMatch[2];
+    const innerCmd = bashCMatch[4];
+    // Groups 1, 2 and 4 are mandatory in the regex, so they are present
+    // whenever the overall match succeeds; guard anyway to satisfy the type
+    // checker and skip the wrapper handling if anything is unexpectedly absent.
+    if (shellName !== undefined && shellFlag !== undefined && innerCmd !== undefined) {
+      const innerResult = fallbackParse(innerCmd, depth + 1);
+      // Also add the outer shell command
+      return {
+        commands: [
+          { command: shellName, args: [shellFlag, innerCmd], raw: input, connector: null, isSubshell: false },
+          ...innerResult.commands.map(c => ({ ...c, isSubshell: true })),
+        ],
+        usedTreeSitter: false,
+        warnings: innerResult.warnings,
+      };
+    }
   }
 
   // Tokenize: split on unquoted separators (&&, ||, |, ;)
@@ -174,13 +182,15 @@ function fallbackParse(input: string, depth: number = 0): ParseResult {
     const subCmdRegex = /\$\((.+?)\)/g;
     let subCmdMatch;
     while ((subCmdMatch = subCmdRegex.exec(seg.text)) !== null) {
-      const innerResult = fallbackParse(subCmdMatch[1], depth + 1);
+      const innerCmd = subCmdMatch[1];
+      if (innerCmd === undefined) continue;
+      const innerResult = fallbackParse(innerCmd, depth + 1);
       commands.push(...innerResult.commands.map(c => ({ ...c, isSubshell: true })));
     }
 
     // Handle subshell (...)
     const subshellMatch = seg.text.match(/^\((.+)\)$/);
-    if (subshellMatch) {
+    if (subshellMatch && subshellMatch[1] !== undefined) {
       const innerResult = fallbackParse(subshellMatch[1], depth + 1);
       commands.push(...innerResult.commands.map(c => ({ ...c, isSubshell: true })));
       continue;
@@ -202,11 +212,12 @@ function fallbackParse(input: string, depth: number = 0): ParseResult {
 
     // Split into command and args
     const parts = tokenizeSimple(cleanText);
-    if (parts.length === 0) continue;
+    const [commandName, ...commandArgs] = parts;
+    if (commandName === undefined) continue;
 
     commands.push({
-      command: parts[0],
-      args: parts.slice(1),
+      command: commandName,
+      args: commandArgs,
       raw: seg.text,
       connector: seg.connector,
       isSubshell: false,
@@ -312,10 +323,11 @@ function extractCommandsFromTree(
             parts.push(child.text);
           }
         }
-        if (parts.length > 0) {
+        const [commandName, ...commandArgs] = parts;
+        if (commandName !== undefined) {
           commands.push({
-            command: parts[0],
-            args: parts.slice(1),
+            command: commandName,
+            args: commandArgs,
             raw: n.text,
             connector: null,
             isSubshell: subshell,

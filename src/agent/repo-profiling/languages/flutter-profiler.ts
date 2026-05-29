@@ -93,7 +93,8 @@ export const flutterProfiler: LanguageProfiler = {
       if (!section) continue;
       for (const line of section.split('\n')) {
         const m = line.match(/^\s+([a-zA-Z_][a-zA-Z0-9_]*):/);
-        if (m) allDeps.add(m[1]);
+        const dep = m?.[1];
+        if (dep) allDeps.add(dep);
       }
     }
 

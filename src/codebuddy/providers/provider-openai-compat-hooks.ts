@@ -51,7 +51,7 @@ export function injectJsonSystemPromptForAnthropic(
   }
   if (lastSystemIdx < 0) return messages;
   const sysMsg = messages[lastSystemIdx];
-  if (typeof sysMsg.content !== 'string') return messages;
+  if (sysMsg === undefined || typeof sysMsg.content !== 'string') return messages;
 
   const result = [...messages];
   result[lastSystemIdx] = {

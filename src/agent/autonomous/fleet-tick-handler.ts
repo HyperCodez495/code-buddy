@@ -230,9 +230,9 @@ export function pickTask(
       t.priority !== 'critical' &&
       PRIORITY_RANK[t.priority] <= thresholdRank,
   );
-  if (claimable.length === 0) return null;
   claimable.sort((a, b) => PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority]);
-  return claimable[0];
+  const top = claimable[0];
+  return top ?? null;
 }
 
 /**
@@ -352,8 +352,7 @@ async function runFleetTickChain(args: {
   const stages: NonNullable<WorklogFileEntry['chainStages']> = [];
   let lastStdout = '';
   let priorParsed: AgentTaskOutput | null = null;
-  for (let i = 0; i < args.roles.length; i++) {
-    const role = args.roles[i];
+  for (const role of args.roles) {
     const stagePrompt = buildChainStagePrompt(role, args.basePrompt, args.task, priorParsed);
     const stageStart = Date.now();
     let stageStdout = '';

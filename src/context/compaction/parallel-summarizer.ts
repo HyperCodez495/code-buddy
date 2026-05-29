@@ -180,10 +180,11 @@ export function mergeSummaries(
     return { merged: '', tokenCount: 0 };
   }
 
-  if (summaries.length === 1) {
+  const single = summaries[0];
+  if (summaries.length === 1 && single !== undefined) {
     return {
-      merged: summaries[0].summary,
-      tokenCount: summaries[0].tokenCount,
+      merged: single.summary,
+      tokenCount: single.tokenCount,
     };
   }
 

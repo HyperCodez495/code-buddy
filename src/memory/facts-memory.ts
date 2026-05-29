@@ -178,11 +178,12 @@ Output the result strictly as a JSON array of transaction actions.`;
           });
         } else if (item.action === 'UPDATE' && item.targetIndex !== undefined && item.fact) {
           const idx = item.targetIndex;
-          if (idx >= 0 && idx < resultFacts.length) {
+          const existing = resultFacts[idx];
+          if (idx >= 0 && idx < resultFacts.length && existing) {
             resultFacts[idx] = {
               category: item.fact.category,
               text: item.fact.text,
-              source: resultFacts[idx].source || 'reconciliation',
+              source: existing.source || 'reconciliation',
               updatedAt: new Date()
             };
           }

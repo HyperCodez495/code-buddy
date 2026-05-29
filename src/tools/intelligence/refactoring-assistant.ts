@@ -209,22 +209,23 @@ export class RefactoringAssistant {
 
       // Build function signature
       const params = usedVariables.map((v) => v.name).join(", ");
-      const _returnType = returnVariables.length > 0
+      const firstReturnVariable = returnVariables[0];
+      const _returnType = returnVariables.length > 0 && firstReturnVariable
         ? returnVariables.length === 1
-          ? returnVariables[0].name
+          ? firstReturnVariable.name
           : `{ ${returnVariables.map((v) => v.name).join(", ")} }`
         : "void"; // Reserved for explicit return type annotation
 
       // Build function body
       let functionBody = selectedCode;
-      if (returnVariables.length === 1) {
-        functionBody += `\n  return ${returnVariables[0].name};`;
+      if (returnVariables.length === 1 && firstReturnVariable) {
+        functionBody += `\n  return ${firstReturnVariable.name};`;
       } else if (returnVariables.length > 1) {
         functionBody += `\n  return { ${returnVariables.map((v) => v.name).join(", ")} };`;
       }
 
       // Get indentation
-      const baseIndent = this.getIndentation(lines[startLine]);
+      const baseIndent = this.getIndentation(lines[startLine] ?? "");
 
       // Build function
       const functionCode = [
@@ -237,8 +238,8 @@ export class RefactoringAssistant {
       let functionCall: string;
       if (returnVariables.length === 0) {
         functionCall = `${request.newName}(${params});`;
-      } else if (returnVariables.length === 1) {
-        functionCall = `const ${returnVariables[0].name} = ${request.newName}(${params});`;
+      } else if (returnVariables.length === 1 && firstReturnVariable) {
+        functionCall = `const ${firstReturnVariable.name} = ${request.newName}(${params});`;
       } else {
         functionCall = `const { ${returnVariables.map((v) => v.name).join(", ")} } = ${request.newName}(${params});`;
       }
@@ -292,26 +293,32 @@ export class RefactoringAssistant {
       const endLine = request.range.end.line - 1;
       const endCol = request.range.end.column;
 
+      const startLineContent = lines[startLine];
+      const endLineContent = lines[endLine];
+      if (startLineContent === undefined || endLineContent === undefined) {
+        return this.errorResult("extractVariable", "Selection range is out of bounds");
+      }
+
       let selectedExpression: string;
       if (startLine === endLine) {
-        selectedExpression = lines[startLine].slice(startCol, endCol);
+        selectedExpression = startLineContent.slice(startCol, endCol);
       } else {
-        const firstLine = lines[startLine].slice(startCol);
+        const firstLine = startLineContent.slice(startCol);
         const middleLines = lines.slice(startLine + 1, endLine);
-        const lastLine = lines[endLine].slice(0, endCol);
+        const lastLine = endLineContent.slice(0, endCol);
         selectedExpression = [firstLine, ...middleLines, lastLine].join("\n");
       }
 
       // Get indentation
-      const baseIndent = this.getIndentation(lines[startLine]);
+      const baseIndent = this.getIndentation(startLineContent);
 
       // Build variable declaration
       const varDeclaration = `${baseIndent}const ${request.newName} = ${selectedExpression.trim()};`;
 
       // Replace expression with variable reference
-      const newLine = lines[startLine].slice(0, startCol) +
+      const newLine = startLineContent.slice(0, startCol) +
         request.newName +
-        lines[endLine].slice(endCol);
+        endLineContent.slice(endCol);
 
       // Build new content
       const newLines = [...lines];
@@ -409,11 +416,15 @@ export class RefactoringAssistant {
       ];
 
       // Update class to implement interface
-      const classLineContent = newLines[classLine + interfaceLines.length + 1];
+      const classLineIndex = classLine + interfaceLines.length + 1;
+      const classLineContent = newLines[classLineIndex];
+      if (classLineContent === undefined) {
+        return this.errorResult("extractInterface", "Could not locate class declaration line");
+      }
       const updatedClassLine = classLineContent.includes("implements")
         ? classLineContent.replace(/implements\s+/, `implements ${request.newName}, `)
         : classLineContent.replace(/\{/, `implements ${request.newName} {`);
-      newLines[classLine + interfaceLines.length + 1] = updatedClassLine;
+      newLines[classLineIndex] = updatedClassLine;
 
       const newContent = newLines.join("\n");
 
@@ -475,7 +486,7 @@ export class RefactoringAssistant {
         return this.errorResult("inlineFunction", "Could not extract function body");
       }
 
-      let functionBody = bodyMatch[1].trim();
+      const functionBody = (bodyMatch[1] ?? "").trim();
 
       // Find all usages
       const usages = await this.symbolSearch.findUsages(targetFunction);
@@ -508,6 +519,7 @@ export class RefactoringAssistant {
         for (const callUsage of sortedUsages) {
           const callLine = callUsage.range.start.line - 1;
           const line = fileLines[callLine];
+          if (line === undefined) continue;
 
           // Find the full call expression
           const callPattern = new RegExp(
@@ -591,11 +603,11 @@ export class RefactoringAssistant {
       }
 
       const declarationLineIndex = targetVariable.range.start.line - 1;
-      if (declarationLineIndex < 0 || declarationLineIndex >= lines.length) {
+      const declarationLine = lines[declarationLineIndex];
+      if (declarationLineIndex < 0 || declarationLine === undefined) {
         return this.errorResult("inlineVariable", "Variable declaration line is out of bounds");
       }
 
-      const declarationLine = lines[declarationLineIndex];
       const declaration = this.extractInlineableDeclaration(declarationLine, targetVariable.name);
       if (!declaration) {
         return this.errorResult(
@@ -628,6 +640,7 @@ export class RefactoringAssistant {
       for (let i = 0; i < replacedLines.length; i++) {
         if (i === declarationLineIndex) continue;
         const line = replacedLines[i];
+        if (line === undefined) continue;
         const replaced = line.replace(identifierPattern, () => {
           replacementCount++;
           return `(${replacementExpr})`;
@@ -751,12 +764,16 @@ export class RefactoringAssistant {
       const startCol = edit.range.start.column;
       const endCol = edit.range.end.column;
 
+      const startLineContent = lines[startLine];
+      if (startLineContent === undefined) continue;
+
       if (startLine === endLine) {
-        const line = lines[startLine];
-        lines[startLine] = line.slice(0, startCol) + edit.newText + line.slice(endCol);
+        lines[startLine] = startLineContent.slice(0, startCol) + edit.newText + startLineContent.slice(endCol);
       } else {
-        const firstLine = lines[startLine].slice(0, startCol) + edit.newText;
-        const lastLine = lines[endLine].slice(endCol);
+        const endLineContent = lines[endLine];
+        if (endLineContent === undefined) continue;
+        const firstLine = startLineContent.slice(0, startCol) + edit.newText;
+        const lastLine = endLineContent.slice(endCol);
         lines.splice(startLine, endLine - startLine + 1, firstLine + lastLine);
       }
     }
@@ -778,13 +795,16 @@ export class RefactoringAssistant {
     const declPattern = /(?:const|let|var)\s+(\w+)/g;
     let match;
     while ((match = declPattern.exec(code)) !== null) {
-      variables.set(match[1], { isDeclared: true, isUsed: false });
+      const declName = match[1];
+      if (declName === undefined) continue;
+      variables.set(declName, { isDeclared: true, isUsed: false });
     }
 
     // Find usages (identifiers)
     const identPattern = /\b([a-zA-Z_]\w*)\b/g;
     while ((match = identPattern.exec(code)) !== null) {
       const name = match[1];
+      if (name === undefined) continue;
       // Skip keywords
       const keywords = ["const", "let", "var", "function", "if", "else", "for", "while", "return"];
       if (keywords.includes(name)) continue;
@@ -808,7 +828,7 @@ export class RefactoringAssistant {
    */
   private getIndentation(line: string): string {
     const match = line.match(/^(\s*)/);
-    return match ? match[1] : "";
+    return match?.[1] ?? "";
   }
 
   /**
@@ -828,10 +848,14 @@ export class RefactoringAssistant {
     const match = line.match(pattern);
     if (!match) return null;
 
+    const kind = match[1];
+    const expression = match[2];
+    if (kind === undefined || expression === undefined) return null;
+
     return {
-      kind: match[1] as "const" | "let" | "var",
+      kind: kind as "const" | "let" | "var",
       name: variableName,
-      expression: match[2].trim(),
+      expression: expression.trim(),
     };
   }
 
@@ -843,7 +867,8 @@ export class RefactoringAssistant {
     const assignmentPattern = new RegExp(`\\b${escaped}\\b\\s*=[^=]`);
 
     for (let i = declarationLineIndex + 1; i < lines.length; i++) {
-      if (assignmentPattern.test(lines[i])) {
+      const line = lines[i];
+      if (line !== undefined && assignmentPattern.test(line)) {
         return true;
       }
     }
@@ -866,6 +891,7 @@ export class RefactoringAssistant {
     let braceCount = 0;
     for (let i = currentLine; i >= 0; i--) {
       const line = lines[i];
+      if (line === undefined) continue;
       braceCount += (line.match(/\}/g) || []).length;
       braceCount -= (line.match(/\{/g) || []).length;
 
@@ -873,7 +899,8 @@ export class RefactoringAssistant {
         // Found containing block
         // Look for function/class declaration
         for (let j = i; j >= 0; j--) {
-          if (/^\s*(function|class|const|let|var)/.test(lines[j])) {
+          const candidate = lines[j];
+          if (candidate !== undefined && /^\s*(function|class|const|let|var)/.test(candidate)) {
             return j;
           }
         }

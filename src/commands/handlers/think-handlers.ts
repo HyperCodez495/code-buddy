@@ -117,7 +117,8 @@ export async function handleThink(
     };
   }
 
-  const first = args[0].toLowerCase();
+  // safe: args.length === 0 returned above, so args[0] is defined here
+  const first = (args[0] ?? '').toLowerCase();
 
   // ── /think off ──────────────────────────────────────────────────────
   if (first === 'off') {

@@ -100,7 +100,8 @@ export class PersistentAnalytics extends EventEmitter {
    * Record a usage event
    */
   record(event: UsageEvent): void {
-    const today = new Date().toISOString().split('T')[0];
+    // ISO string is YYYY-MM-DDTHH:mm:ss.sssZ; slice(0,10) yields the date part as a guaranteed string
+    const today = new Date().toISOString().slice(0, 10);
 
     this.analyticsRepo.recordAnalytics({
       date: today,
@@ -130,7 +131,8 @@ export class PersistentAnalytics extends EventEmitter {
    * Record a new session
    */
   recordSession(projectId?: string): void {
-    const today = new Date().toISOString().split('T')[0];
+    // ISO string is YYYY-MM-DDTHH:mm:ss.sssZ; slice(0,10) yields the date part as a guaranteed string
+    const today = new Date().toISOString().slice(0, 10);
 
     this.analyticsRepo.recordAnalytics({
       date: today,
@@ -158,7 +160,7 @@ export class PersistentAnalytics extends EventEmitter {
    * Calculate cost for tokens
    */
   calculateCost(model: string, tokensIn: number, tokensOut: number): number {
-    const costs = MODEL_COSTS[model] || MODEL_COSTS['grok'];
+    const costs = MODEL_COSTS[model] ?? MODEL_COSTS['grok'] ?? { input: 5, output: 15 };
     return (tokensIn * costs.input + tokensOut * costs.output) / 1_000_000;
   }
 
@@ -244,11 +246,10 @@ export class PersistentAnalytics extends EventEmitter {
       totalCacheHits += a.cache_hit_rate * a.requests;
 
       if (a.model) {
-        if (!byModel[a.model]) {
-          byModel[a.model] = { cost: 0, requests: 0 };
-        }
-        byModel[a.model].cost += a.cost;
-        byModel[a.model].requests += a.requests;
+        const entry = byModel[a.model] ?? { cost: 0, requests: 0 };
+        entry.cost += a.cost;
+        entry.requests += a.requests;
+        byModel[a.model] = entry;
       }
     }
 

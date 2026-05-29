@@ -88,6 +88,7 @@ export class BatchReviewService {
 
     for (let i = 0; i < this.pendingChanges.length; i++) {
       const change = this.pendingChanges[i];
+      if (!change) continue;
       const icon = change.type === 'create' ? '+' : change.type === 'delete' ? '-' : '~';
       const status = change.approved ? ' [approved]' : change.rejected ? ' [rejected]' : '';
       lines.push(`  [${i + 1}] ${icon} ${change.filePath} (${change.type})${status}`);
@@ -135,8 +136,10 @@ export class BatchReviewService {
    */
   approveChange(index: number): boolean {
     if (index < 0 || index >= this.pendingChanges.length) return false;
-    this.pendingChanges[index].approved = true;
-    this.pendingChanges[index].rejected = false;
+    const change = this.pendingChanges[index];
+    if (!change) return false;
+    change.approved = true;
+    change.rejected = false;
     return true;
   }
 
@@ -145,8 +148,10 @@ export class BatchReviewService {
    */
   rejectChange(index: number): boolean {
     if (index < 0 || index >= this.pendingChanges.length) return false;
-    this.pendingChanges[index].approved = false;
-    this.pendingChanges[index].rejected = true;
+    const change = this.pendingChanges[index];
+    if (!change) return false;
+    change.approved = false;
+    change.rejected = true;
     return true;
   }
 
@@ -156,6 +161,7 @@ export class BatchReviewService {
   toggleChange(index: number): boolean {
     if (index < 0 || index >= this.pendingChanges.length) return false;
     const change = this.pendingChanges[index];
+    if (!change) return false;
     if (change.approved) {
       change.approved = false;
       change.rejected = true;

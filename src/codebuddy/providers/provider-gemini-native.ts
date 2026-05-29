@@ -218,6 +218,7 @@ export class GeminiNativeProvider implements Provider {
     const sanitized: typeof contents = [];
     for (let i = 0; i < contents.length; i++) {
       const entry = contents[i];
+      if (!entry) continue;
       if (entry.role === 'function') {
         const prev = sanitized[sanitized.length - 1];
         if (prev && prev.role === 'model' && prev.parts.some(p => 'functionCall' in p)) {
@@ -252,7 +253,7 @@ export class GeminiNativeProvider implements Provider {
     }
 
     // Pass 3: Ensure conversation starts with 'user'
-    if (merged.length > 0 && merged[0].role !== 'user') {
+    if (merged.length > 0 && merged[0]?.role !== 'user') {
       merged.unshift({ role: 'user', parts: [{ text: '(continuing previous conversation)' }] });
     }
 
@@ -310,11 +311,12 @@ export class GeminiNativeProvider implements Provider {
       body.toolConfig = { functionCallingConfig: { mode: 'AUTO' } };
 
       // Log first tool's sanitized schema for debugging
-      if (functionDeclarations.length > 0) {
+      const firstDeclaration = functionDeclarations[0];
+      if (firstDeclaration) {
         logger.debug('Gemini tool schema sample (first tool)', {
           source: 'GeminiNativeProvider',
-          toolName: functionDeclarations[0].name,
-          parametersType: (functionDeclarations[0].parameters as Record<string, unknown>)?.type,
+          toolName: firstDeclaration.name,
+          parametersType: (firstDeclaration.parameters as Record<string, unknown>)?.type,
         });
       }
     }
@@ -672,7 +674,7 @@ export class GeminiNativeProvider implements Provider {
 
   private parseDataUrl(url: string): { mimeType: string; data: string } {
     const match = url.match(/^data:([^;]+);base64,(.+)$/);
-    if (match) {
+    if (match && match[1] !== undefined && match[2] !== undefined) {
       return { mimeType: match[1], data: match[2] };
     }
     return { mimeType: 'image/png', data: url };
@@ -842,6 +844,7 @@ export class GeminiNativeProvider implements Provider {
         if (!candidates || candidates.length === 0) continue;
 
         const candidate = candidates[0];
+        if (!candidate) continue;
         // Grounding metadata typically arrives in the final chunk of the
         // stream — keep the latest non-empty payload around so we can
         // emit the "Sources:" footer right before the stop chunk.
@@ -972,6 +975,9 @@ export class GeminiNativeProvider implements Provider {
   ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
     const response = await this.chat(messages, tools, opts);
     const choice = response.choices[0];
+    if (!choice) {
+      throw new Error('Gemini chat response contained no choices');
+    }
 
     if (choice.message.content) {
       yield {

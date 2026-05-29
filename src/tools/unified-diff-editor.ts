@@ -293,7 +293,11 @@ export class UnifiedDiffEditor {
     const normalizedChars = normalized.split('');
 
     while (normPos < normalizedPos && origPos < original.length) {
+      // origPos < original.length guaranteed by loop condition, so origChar is defined.
       const origChar = original[origPos];
+      if (origChar === undefined) break;
+      // normChar may be undefined if normalizedPos exceeds the normalized length;
+      // an undefined normChar never equals the string origChar, matching prior behavior.
       const normChar = normalizedChars[normPos];
 
       if (origChar === normChar) {
@@ -437,8 +441,9 @@ export class UnifiedDiffEditor {
       if (line.startsWith('diff --git')) {
         flushHunk();
         const match = line.match(/ b\/(.+)$/);
-        if (match) {
-          currentOp = { filePath: match[1], hunks: [] };
+        const filePath = match?.[1];
+        if (filePath !== undefined) {
+          currentOp = { filePath, hunks: [] };
           operations.push(currentOp);
         }
       } else if (line.startsWith('@@')) {

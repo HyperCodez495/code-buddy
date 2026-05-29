@@ -418,6 +418,7 @@ export function scanFile(filePath: string, severityFilter?: BugSeverity): BugRep
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       // Skip comment lines (but allow comment-directive patterns like @ts-ignore)
       const trimmed = line.trim();

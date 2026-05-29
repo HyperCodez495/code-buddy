@@ -403,8 +403,10 @@ export class SkillExecutor extends EventEmitter {
 
       // Simple comparison: "varName == value"
       const compMatch = condition.match(/^(\w+)\s*(==|!=|>|<|>=|<=)\s*(.+)$/);
-      if (compMatch) {
-        const [, varName, op, valueStr] = compMatch;
+      const varName = compMatch?.[1];
+      const op = compMatch?.[2];
+      const valueStr = compMatch?.[3];
+      if (varName !== undefined && op !== undefined && valueStr !== undefined) {
         const varValue = this.resolveVariable(varName, context);
         const compareValue = this.parseConditionValue(valueStr);
 

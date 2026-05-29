@@ -350,6 +350,7 @@ export class ReasoningMiddleware implements ConversationMiddleware {
     // Walk messages backwards to find the last user message
     for (let i = context.messages.length - 1; i >= 0; i--) {
       const msg = context.messages[i];
+      if (msg === undefined) continue;
       if (msg.role === 'user' && typeof msg.content === 'string') {
         return msg.content;
       }

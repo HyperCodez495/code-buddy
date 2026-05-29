@@ -139,7 +139,8 @@ function DashboardContent({
           // Cycle through tabs
           const currentIndex = TABS.findIndex((t) => t.id === activeTab);
           const nextIndex = (currentIndex + 1) % TABS.length;
-          setActiveTab(TABS[nextIndex].id);
+          const nextTab = TABS[nextIndex];
+          if (nextTab) setActiveTab(nextTab.id);
         }
         // Quit
         else if (input === 'q' || input === 'Q') {

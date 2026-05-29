@@ -151,10 +151,13 @@ export class VoiceActivityDetector extends EventEmitter implements IVADDetector 
     // Update noise floor (10th percentile of energy)
     if (this.energyHistory.length >= 10) {
       const sorted = [...this.energyHistory].sort((a, b) => a - b);
-      this.noiseFloor = sorted[Math.floor(sorted.length * 0.1)] * 1.5;
+      const percentileValue = sorted[Math.floor(sorted.length * 0.1)];
+      if (percentileValue !== undefined) {
+        this.noiseFloor = percentileValue * 1.5;
 
-      // Speech threshold is 3x noise floor
-      this.speechThreshold = Math.max(0.05, this.noiseFloor * 3);
+        // Speech threshold is 3x noise floor
+        this.speechThreshold = Math.max(0.05, this.noiseFloor * 3);
+      }
     }
   }
 
@@ -213,9 +216,7 @@ export class VoiceActivityDetector extends EventEmitter implements IVADDetector 
    * Get current energy level
    */
   getCurrentEnergy(): number {
-    return this.energyHistory.length > 0
-      ? this.energyHistory[this.energyHistory.length - 1]
-      : 0;
+    return this.energyHistory[this.energyHistory.length - 1] ?? 0;
   }
 
   /**

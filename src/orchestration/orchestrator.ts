@@ -176,7 +176,7 @@ export class Orchestrator extends EventEmitter {
       return a.completedTasks - b.completedTasks;
     });
 
-    return candidates[0];
+    return candidates[0] ?? null;
   }
 
   // ============================================================================
@@ -231,8 +231,8 @@ export class Orchestrator extends EventEmitter {
 
     // Find insertion point (sorted by priority descending)
     let insertIdx = 0;
-    for (let i = 0; i < this.taskQueue.length; i++) {
-      const existingPriority = PRIORITY_WEIGHTS[this.taskQueue[i].definition.priority];
+    for (const [i, existing] of this.taskQueue.entries()) {
+      const existingPriority = PRIORITY_WEIGHTS[existing.definition.priority];
       if (priority > existingPriority) {
         break;
       }
@@ -701,7 +701,9 @@ export class Orchestrator extends EventEmitter {
     const workers = Array(Math.min(concurrency, tasks.length)).fill(null).map(async () => {
       while (taskIdx < tasks.length) {
         const myIndex = taskIdx++;
-        await tasks[myIndex]();
+        const taskFn = tasks[myIndex];
+        if (!taskFn) continue;
+        await taskFn();
       }
     });
     await Promise.all(workers);

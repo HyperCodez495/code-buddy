@@ -19,7 +19,8 @@ export async function detectTerminalBackground(): Promise<TerminalBackground> {
   if (colorFors) {
     // COLORFGBG is "fg;bg" — bg >= 8 typically means dark
     const parts = colorFors.split(';');
-    const bg = parseInt(parts[parts.length - 1], 10);
+    const bgRaw = parts[parts.length - 1];
+    const bg = bgRaw !== undefined ? parseInt(bgRaw, 10) : NaN;
     if (!isNaN(bg)) {
       return bg < 8 ? 'dark' : 'light';
     }
@@ -61,7 +62,8 @@ export async function detectTerminalBackground(): Promise<TerminalBackground> {
       // Look for OSC 11 response: ESC ] 11 ; rgb:RRRR/GGGG/BBBB ST
       // eslint-disable-next-line no-control-regex
       const match = buffer.match(/\x1b\]11;rgb:([0-9a-f]+)\/([0-9a-f]+)\/([0-9a-f]+)/i);
-      if (match) {
+      // The three capture groups are mandatory, so they are all defined when `match` is truthy.
+      if (match && match[1] !== undefined && match[2] !== undefined && match[3] !== undefined) {
         cleanup();
         // Parse color components — first 2 hex chars of each (they may be 2 or 4 digits)
         const r = parseInt(match[1].slice(0, 2), 16) / 255;

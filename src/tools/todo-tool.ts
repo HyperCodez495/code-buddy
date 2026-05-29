@@ -95,11 +95,11 @@ export class TodoTool {
   private sortTodos(todos: TodoItem[]): TodoItem[] {
     return [...todos].sort((a, b) => {
       // First sort by status (in_progress > pending > completed)
-      const statusDiff = STATUS_ORDER[b.status] - STATUS_ORDER[a.status];
+      const statusDiff = (STATUS_ORDER[b.status] ?? 0) - (STATUS_ORDER[a.status] ?? 0);
       if (statusDiff !== 0) return statusDiff;
 
       // Then by priority (high > medium > low)
-      return PRIORITY_ORDER[b.priority] - PRIORITY_ORDER[a.priority];
+      return (PRIORITY_ORDER[b.priority] ?? 0) - (PRIORITY_ORDER[a.priority] ?? 0);
     });
   }
 
@@ -140,7 +140,7 @@ export class TodoTool {
     const sortedTodos = this.sortTodos(this.todos);
 
     // Group by status for better visualization
-    const groups: Record<string, TodoItem[]> = {
+    const groups: Record<TodoItem['status'], TodoItem[]> = {
       in_progress: [],
       pending: [],
       completed: [],
@@ -280,6 +280,12 @@ export class TodoTool {
         }
 
         const todo = this.todos[todoIndex];
+        if (!todo) {
+          return {
+            success: false,
+            error: `Todo with id ${update.id} not found`,
+          };
+        }
 
         if (update.status && !['pending', 'in_progress', 'completed'].includes(update.status)) {
           return {

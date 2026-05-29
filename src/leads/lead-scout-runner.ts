@@ -241,11 +241,12 @@ function parseCsv(content: string): Record<string, unknown>[] {
     .split(/\r?\n/)
     .map((line) => line.trim())
     .filter((line) => line.length > 0);
-  if (rows.length === 0) {
+  const headerRow = rows[0];
+  if (headerRow === undefined) {
     return [];
   }
 
-  const headers = parseCsvLine(rows[0]).map((header) => header.trim());
+  const headers = parseCsvLine(headerRow).map((header) => header.trim());
   return rows.slice(1).map((row) => {
     const cells = parseCsvLine(row);
     const record: Record<string, unknown> = {};

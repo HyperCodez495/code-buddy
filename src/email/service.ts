@@ -438,6 +438,9 @@ export class EmailService extends EventEmitter {
     options: Omit<SendMailOptions, 'to' | 'subject' | 'inReplyTo' | 'references'>
   ): Promise<SendMailResult> {
     const replyTo = originalMessage.replyTo?.[0] || originalMessage.from[0];
+    if (replyTo === undefined) {
+      throw new Error('Cannot reply: original message has no reply-to or from address');
+    }
 
     return this.sendEmail({
       ...options,

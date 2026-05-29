@@ -191,6 +191,9 @@ export class ProviderFallbackChain extends EventEmitter {
     for (let i = 0; i < this.chain.length; i++) {
       const index = (startIndex + i) % this.chain.length;
       const provider = this.chain[index];
+      if (provider === undefined) {
+        continue;
+      }
       attemptedProviders.push(provider);
 
       if (this.isProviderHealthy(provider)) {
@@ -441,6 +444,9 @@ export class ProviderFallbackChain extends EventEmitter {
   private promoteNextHealthyProvider(): void {
     for (let i = 1; i < this.chain.length; i++) {
       const provider = this.chain[i];
+      if (provider === undefined) {
+        continue;
+      }
       if (this.isProviderHealthy(provider)) {
         this.promoteProvider(provider);
         return;

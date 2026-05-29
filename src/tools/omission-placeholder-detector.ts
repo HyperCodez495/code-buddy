@@ -149,8 +149,7 @@ export function detectOmissionPlaceholders(
   }
 
   const contentLines = content.split('\n');
-  for (let i = 0; i < contentLines.length; i++) {
-    const line = contentLines[i];
+  for (const [i, line] of contentLines.entries()) {
     const match = normalizePlaceholder(line);
 
     if (match) {

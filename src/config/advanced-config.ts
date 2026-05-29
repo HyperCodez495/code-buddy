@@ -265,14 +265,15 @@ export class ConfigBackupRotation {
     const pattern = new RegExp(`^${configName.replace(/\./g, '\\.')}\\.(\\d+)\\.bak$`);
 
     return files
-      .filter(f => pattern.test(f))
       .map(f => {
-        const match = f.match(pattern)!;
+        const match = f.match(pattern);
+        if (!match || match[1] === undefined) return null;
         return {
           path: path.join(this.backupDir, f),
           timestamp: parseInt(match[1], 10),
         };
       })
+      .filter((entry): entry is { path: string; timestamp: number } => entry !== null)
       .sort((a, b) => b.timestamp - a.timestamp);
   }
 
@@ -316,7 +317,8 @@ export class ConfigBackupRotation {
 
   getLatestBackup(configName: string): string | null {
     const backups = this.listBackups(configName);
-    return backups.length > 0 ? backups[0].path : null;
+    const latest = backups[0];
+    return latest ? latest.path : null;
   }
 
   getMaxBackups(): number {

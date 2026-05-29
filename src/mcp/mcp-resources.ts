@@ -140,6 +140,15 @@ export function registerResources(server: McpServer): void {
         }
 
         const session = sessions[0];
+        if (session === undefined) {
+          return {
+            contents: [{
+              uri: 'codebuddy://sessions/latest',
+              mimeType: 'application/json',
+              text: JSON.stringify({ message: 'No sessions found' }),
+            }],
+          };
+        }
         const data = {
           id: session.id,
           name: session.name,

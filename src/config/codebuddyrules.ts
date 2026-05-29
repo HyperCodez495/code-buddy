@@ -419,7 +419,7 @@ export class CodeBuddyRulesManager extends EventEmitter {
 
     // Check allowed commands (if specified, only these are allowed)
     if (this.rules.security.allowedCommands?.length) {
-      const cmd = command.split(/\s+/)[0];
+      const cmd = command.split(/\s+/)[0] ?? '';
       return this.rules.security.allowedCommands.includes(cmd);
     }
 
@@ -636,14 +636,16 @@ ignore:
   private parseMarkdownRules(content: string): CodeBuddyRules {
     // Try YAML frontmatter
     const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
-    if (frontmatterMatch) {
-      return yaml.load(frontmatterMatch[1]) as CodeBuddyRules;
+    const frontmatter = frontmatterMatch?.[1];
+    if (frontmatter !== undefined) {
+      return yaml.load(frontmatter) as CodeBuddyRules;
     }
 
     // Try YAML code block
     const codeBlockMatch = content.match(/```ya?ml\n([\s\S]*?)\n```/);
-    if (codeBlockMatch) {
-      return yaml.load(codeBlockMatch[1]) as CodeBuddyRules;
+    const codeBlock = codeBlockMatch?.[1];
+    if (codeBlock !== undefined) {
+      return yaml.load(codeBlock) as CodeBuddyRules;
     }
 
     // Treat entire content as raw instructions

@@ -341,6 +341,9 @@ export class CodebaseMapExecuteTool implements ITool {
         }
 
         const shortest = paths[0];
+        if (!shortest) {
+          return { success: true, output: `No path found between ${resolvedFrom} and ${resolvedTo}.` };
+        }
         const pathStr = shortest.map(t => `${t.subject} --${t.predicate}--> ${t.object}`).join('\n  → ');
         return {
           success: true,

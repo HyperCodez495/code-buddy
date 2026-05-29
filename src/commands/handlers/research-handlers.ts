@@ -476,7 +476,7 @@ export function handleModelRouter(args: string[]): CommandHandlerResult {
     }
 
     case 'compare': {
-      const tokens = parseInt(args[1]) || 10000;
+      const tokens = parseInt(args[1] ?? '') || 10000;
       const comparison = getCostComparison(tokens);
       const lines = [`💰 Cost Comparison for ${tokens.toLocaleString()} tokens:`, ''];
       for (const item of comparison) {

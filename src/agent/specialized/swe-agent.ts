@@ -197,8 +197,9 @@ export function suggestFilesForTask(
       filePath = entity.replace(/^mod:/, '');
     } else {
       const definedIn = graph.query({ subject: entity, predicate: 'definedIn' });
-      if (definedIn.length > 0) {
-        filePath = definedIn[0].object.replace(/^mod:/, '');
+      const firstDefinedIn = definedIn[0];
+      if (firstDefinedIn) {
+        filePath = firstDefinedIn.object.replace(/^mod:/, '');
       }
     }
     if (!filePath) continue;
@@ -230,8 +231,7 @@ export function suggestFilesForTask(
 
   // Build context block
   const lines = ['Task affects these files (from dependency graph):'];
-  for (let i = 0; i < Math.min(fileEntries.length, 8); i++) {
-    const f = fileEntries[i];
+  for (const [i, f] of fileEntries.slice(0, 8).entries()) {
     const details: string[] = [];
     if (f.callerCount > 0) details.push(`${f.callerCount} callers`);
     if (f.rank > 0.05) details.push(`PageRank ${f.rank.toFixed(2)}`);

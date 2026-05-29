@@ -214,6 +214,7 @@ export class CodeReviewManager extends EventEmitter {
     let match;
     while ((match = fileRegex.exec(diff)) !== null) {
       const file = match[2];
+      if (file === undefined) continue;
       const fileStart = match.index;
       const nextFileMatch = fileRegex.exec(diff);
       const fileEnd = nextFileMatch ? nextFileMatch.index : diff.length;
@@ -236,10 +237,13 @@ export class CodeReviewManager extends EventEmitter {
       let hunkMatch;
       hunkRegex.lastIndex = 0;
       while ((hunkMatch = hunkRegex.exec(fileContent)) !== null) {
+        const oldStartRaw = hunkMatch[1];
+        const newStartRaw = hunkMatch[3];
+        if (oldStartRaw === undefined || newStartRaw === undefined) continue;
         hunks.push({
-          oldStart: parseInt(hunkMatch[1], 10),
+          oldStart: parseInt(oldStartRaw, 10),
           oldLines: parseInt(hunkMatch[2] || "1", 10),
-          newStart: parseInt(hunkMatch[3], 10),
+          newStart: parseInt(newStartRaw, 10),
           newLines: parseInt(hunkMatch[4] || "1", 10),
           content: fileContent.substring(hunkMatch.index),
         });
@@ -274,6 +278,7 @@ export class CodeReviewManager extends EventEmitter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       // Skip removed lines (start with -)
       if (line.startsWith("-")) continue;

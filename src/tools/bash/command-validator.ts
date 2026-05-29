@@ -41,6 +41,7 @@ export function extractBaseCommand(command: string): string | null {
   if (!match) return null;
 
   let cmd = match[1];
+  if (cmd === undefined) return null;
 
   // Remove path prefix (e.g., /usr/bin/ls -> ls)
   if (cmd.includes('/')) {

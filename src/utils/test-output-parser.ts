@@ -45,8 +45,10 @@ function parseJestOutput(output: string): ParseResult {
   let match;
   const passRegex = new RegExp(JEST_PASS_REGEX);
   while ((match = passRegex.exec(output)) !== null) {
+    const name = match[1];
+    if (name === undefined) continue;
     tests.push({
-      name: match[1].trim(),
+      name: name.trim(),
       status: 'passed',
       duration: match[2] ? parseInt(match[2], 10) : undefined,
     });
@@ -55,8 +57,10 @@ function parseJestOutput(output: string): ParseResult {
   // Parse failing tests
   const failRegex = new RegExp(JEST_FAIL_REGEX);
   while ((match = failRegex.exec(output)) !== null) {
+    const name = match[1];
+    if (name === undefined) continue;
     tests.push({
-      name: match[1].trim(),
+      name: name.trim(),
       status: 'failed',
       duration: match[2] ? parseInt(match[2], 10) : undefined,
     });
@@ -65,15 +69,17 @@ function parseJestOutput(output: string): ParseResult {
   // Parse skipped tests
   const skipRegex = new RegExp(JEST_SKIP_REGEX);
   while ((match = skipRegex.exec(output)) !== null) {
+    const name = match[1];
+    if (name === undefined) continue;
     tests.push({
-      name: match[1].trim(),
+      name: name.trim(),
       status: 'skipped',
     });
   }
 
   // Get duration
   const timeMatch = output.match(JEST_TIME_REGEX);
-  const duration = timeMatch ? parseFloat(timeMatch[1]) * 1000 : undefined;
+  const duration = timeMatch && timeMatch[1] !== undefined ? parseFloat(timeMatch[1]) * 1000 : undefined;
 
   const data: TestResultsData = {
     type: 'test-results',
@@ -109,7 +115,7 @@ function parseVitestOutput(output: string): ParseResult {
   const lines = output.split('\n');
   for (const line of lines) {
     const passMatch = line.match(/^\s*✓\s+(.+?)(?:\s+(\d+)ms)?$/);
-    if (passMatch) {
+    if (passMatch && passMatch[1] !== undefined) {
       tests.push({
         name: passMatch[1].trim(),
         status: 'passed',
@@ -119,7 +125,7 @@ function parseVitestOutput(output: string): ParseResult {
     }
 
     const failMatch = line.match(/^\s*×\s+(.+?)(?:\s+(\d+)ms)?$/);
-    if (failMatch) {
+    if (failMatch && failMatch[1] !== undefined) {
       tests.push({
         name: failMatch[1].trim(),
         status: 'failed',
@@ -129,7 +135,7 @@ function parseVitestOutput(output: string): ParseResult {
   }
 
   const durationMatch = output.match(VITEST_DURATION_REGEX);
-  const duration = durationMatch ? parseFloat(durationMatch[1]) * 1000 : undefined;
+  const duration = durationMatch && durationMatch[1] !== undefined ? parseFloat(durationMatch[1]) * 1000 : undefined;
 
   const data: TestResultsData = {
     type: 'test-results',
@@ -158,9 +164,9 @@ function parseMochaOutput(output: string): ParseResult {
 
   const passed = parseInt(summaryMatch[1] || '0', 10);
   const failMatch = output.match(MOCHA_FAIL_REGEX);
-  const failed = failMatch ? parseInt(failMatch[1], 10) : 0;
+  const failed = failMatch ? parseInt(failMatch[1] || '0', 10) : 0;
   const pendingMatch = output.match(MOCHA_PENDING_REGEX);
-  const skipped = pendingMatch ? parseInt(pendingMatch[1], 10) : 0;
+  const skipped = pendingMatch ? parseInt(pendingMatch[1] || '0', 10) : 0;
 
   const total = passed + failed + skipped;
 
@@ -170,9 +176,9 @@ function parseMochaOutput(output: string): ParseResult {
     const durationStr = summaryMatch[2];
     const msMatch = durationStr.match(/(\d+)ms/);
     const sMatch = durationStr.match(/([\d.]+)s/);
-    if (msMatch) {
+    if (msMatch && msMatch[1] !== undefined) {
       duration = parseInt(msMatch[1], 10);
-    } else if (sMatch) {
+    } else if (sMatch && sMatch[1] !== undefined) {
       duration = parseFloat(sMatch[1]) * 1000;
     }
   }
@@ -182,7 +188,7 @@ function parseMochaOutput(output: string): ParseResult {
   const lines = output.split('\n');
   for (const line of lines) {
     const passMatch = line.match(/^\s*✓\s+(.+?)(?:\s+\((\d+)ms\))?$/);
-    if (passMatch) {
+    if (passMatch && passMatch[1] !== undefined) {
       tests.push({
         name: passMatch[1].trim(),
         status: 'passed',
@@ -192,7 +198,7 @@ function parseMochaOutput(output: string): ParseResult {
     }
 
     const failMatch = line.match(/^\s*\d+\)\s+(.+)$/);
-    if (failMatch && !line.includes('passing')) {
+    if (failMatch && failMatch[1] !== undefined && !line.includes('passing')) {
       tests.push({
         name: failMatch[1].trim(),
         status: 'failed',
@@ -235,7 +241,7 @@ function parsePytestOutput(output: string): ParseResult {
   const lines = output.split('\n');
   for (const line of lines) {
     const passMatch = line.match(/^(.+?)::(.+?)\s+PASSED/);
-    if (passMatch) {
+    if (passMatch && passMatch[1] !== undefined && passMatch[2] !== undefined) {
       tests.push({
         name: passMatch[2].trim(),
         suite: passMatch[1].trim(),
@@ -245,7 +251,7 @@ function parsePytestOutput(output: string): ParseResult {
     }
 
     const failMatch = line.match(/^(.+?)::(.+?)\s+FAILED/);
-    if (failMatch) {
+    if (failMatch && failMatch[1] !== undefined && failMatch[2] !== undefined) {
       tests.push({
         name: failMatch[2].trim(),
         suite: failMatch[1].trim(),
@@ -255,7 +261,7 @@ function parsePytestOutput(output: string): ParseResult {
     }
 
     const skipMatch = line.match(/^(.+?)::(.+?)\s+SKIPPED/);
-    if (skipMatch) {
+    if (skipMatch && skipMatch[1] !== undefined && skipMatch[2] !== undefined) {
       tests.push({
         name: skipMatch[2].trim(),
         suite: skipMatch[1].trim(),
@@ -299,10 +305,13 @@ function parseGoTestOutput(output: string): ParseResult {
   let match;
   const passRegex = new RegExp(GO_PASS_REGEX);
   while ((match = passRegex.exec(output)) !== null) {
+    const name = match[1];
+    const dur = match[2];
+    if (name === undefined || dur === undefined) continue;
     tests.push({
-      name: match[1],
+      name,
       status: 'passed',
-      duration: parseFloat(match[2]) * 1000,
+      duration: parseFloat(dur) * 1000,
     });
     passed++;
   }
@@ -310,10 +319,13 @@ function parseGoTestOutput(output: string): ParseResult {
   // Parse failing tests
   const failRegex = new RegExp(GO_FAIL_REGEX);
   while ((match = failRegex.exec(output)) !== null) {
+    const name = match[1];
+    const dur = match[2];
+    if (name === undefined || dur === undefined) continue;
     tests.push({
-      name: match[1],
+      name,
       status: 'failed',
-      duration: parseFloat(match[2]) * 1000,
+      duration: parseFloat(dur) * 1000,
     });
     failed++;
   }
@@ -321,8 +333,10 @@ function parseGoTestOutput(output: string): ParseResult {
   // Parse skipped tests
   const skipRegex = new RegExp(GO_SKIP_REGEX);
   while ((match = skipRegex.exec(output)) !== null) {
+    const name = match[1];
+    if (name === undefined) continue;
     tests.push({
-      name: match[1],
+      name,
       status: 'skipped',
     });
     skipped++;
@@ -332,7 +346,9 @@ function parseGoTestOutput(output: string): ParseResult {
   let duration: number | undefined;
   const summaryRegex = new RegExp(GO_SUMMARY_REGEX);
   while ((match = summaryRegex.exec(output)) !== null) {
-    duration = (duration || 0) + parseFloat(match[3]) * 1000;
+    const dur = match[3];
+    if (dur === undefined) continue;
+    duration = (duration || 0) + parseFloat(dur) * 1000;
   }
 
   const total = passed + failed + skipped;

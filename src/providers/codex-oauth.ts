@@ -217,8 +217,8 @@ interface IdTokenClaims {
 function decodeIdTokenClaims(idToken: string): IdTokenClaims | null {
   try {
     const parts = idToken.split('.');
-    if (parts.length < 2) return null;
     const payload = parts[1];
+    if (payload === undefined) return null;
     const padded = payload + '==='.slice((payload.length + 3) % 4);
     const json = Buffer.from(padded.replace(/-/g, '+').replace(/_/g, '/'), 'base64').toString(
       'utf-8'
@@ -400,12 +400,14 @@ async function bindCallbackServer(
   // First, try to shut down any zombie Codex login server on the
   // primary port. Mirrors openai/codex Rust upstream behavior — the
   // worst that happens here is a no-op on a clean bind.
-  if (ports.length > 0) {
-    await pingCancelEndpoint(ports[0]);
+  const primaryPort = ports[0];
+  if (primaryPort !== undefined) {
+    await pingCancelEndpoint(primaryPort);
   }
 
   for (let i = 0; i < ports.length; i++) {
     const port = ports[i];
+    if (port === undefined) continue;
     const isPrimary = i === 0;
     // For the primary port, retry up to 10x@200ms (= 2s) to give a
     // freshly-cancelled server time to release the socket. Secondary

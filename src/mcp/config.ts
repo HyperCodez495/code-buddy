@@ -16,7 +16,8 @@ function resolveEnvVars(env: Record<string, string> | undefined): Record<string,
   const resolved: Record<string, string> = {};
   for (const [key, value] of Object.entries(env)) {
     const match = value.match(/^\$\{(\w+)\}$/);
-    resolved[key] = match ? (process.env[match[1]] || '') : value;
+    const varName = match?.[1];
+    resolved[key] = varName !== undefined ? (process.env[varName] || '') : value;
   }
   return resolved;
 }

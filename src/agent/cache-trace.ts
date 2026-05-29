@@ -117,7 +117,12 @@ export class CacheTrace {
     lines.push(`Cache Trace [${this.sessionId}] — ${this.entries.length} stages`);
     lines.push('');
 
-    const firstTs = this.entries[0].timestamp;
+    const firstEntry = this.entries[0];
+    const lastEntry = this.entries[this.entries.length - 1];
+    if (firstEntry === undefined || lastEntry === undefined) {
+      return 'Cache trace: disabled or no entries';
+    }
+    const firstTs = firstEntry.timestamp;
     for (const entry of this.entries) {
       const relativeMs = entry.timestamp - firstTs;
       const duration = entry.durationMs ? ` (${entry.durationMs}ms)` : '';
@@ -126,7 +131,7 @@ export class CacheTrace {
       lines.push(`  +${relativeMs}ms  ${entry.stage}${duration}${tokens}${msgs}`);
     }
 
-    const totalMs = this.entries[this.entries.length - 1].timestamp - firstTs;
+    const totalMs = lastEntry.timestamp - firstTs;
     lines.push('');
     lines.push(`  Total: ${totalMs}ms`);
 

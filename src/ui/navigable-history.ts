@@ -71,7 +71,7 @@ export class NavigableHistory {
     // Deduplicate consecutive entries
     if (this.options.deduplicate && this.entries.length > 0) {
       const lastEntry = this.entries[this.entries.length - 1];
-      if (lastEntry.command === trimmed) {
+      if (lastEntry && lastEntry.command === trimmed) {
         // Update timestamp of existing entry
         lastEntry.timestamp = new Date();
         if (metadata) {
@@ -116,11 +116,12 @@ export class NavigableHistory {
     if (this.currentIndex < this.entries.length - 1) {
       this.currentIndex++;
       const entry = this.entries[this.entries.length - 1 - this.currentIndex];
-      return entry.command;
+      return entry ? entry.command : null;
     }
 
     // Already at oldest entry
-    return this.entries[0].command;
+    const oldest = this.entries[0];
+    return oldest ? oldest.command : null;
   }
 
   /**
@@ -139,7 +140,7 @@ export class NavigableHistory {
     }
 
     const entry = this.entries[this.entries.length - 1 - this.currentIndex];
-    return entry.command;
+    return entry ? entry.command : null;
   }
 
   /**
@@ -165,14 +166,17 @@ export class NavigableHistory {
 
     // Find matching entries
     this.searchResults = [];
+    const matches: HistoryEntry[] = [];
     for (let i = this.entries.length - 1; i >= 0; i--) {
-      if (this.entries[i].command.toLowerCase().includes(this.searchQuery)) {
+      const entry = this.entries[i];
+      if (entry && entry.command.toLowerCase().includes(this.searchQuery)) {
         this.searchResults.push(i);
+        matches.push(entry);
       }
     }
 
     this.searchResultIndex = this.searchResults.length > 0 ? 0 : -1;
-    return this.searchResults.map(i => this.entries[i]);
+    return matches;
   }
 
   /**
@@ -183,7 +187,10 @@ export class NavigableHistory {
       return null;
     }
     const entryIndex = this.searchResults[this.searchResultIndex];
-    return this.entries[entryIndex];
+    if (entryIndex === undefined) {
+      return null;
+    }
+    return this.entries[entryIndex] ?? null;
   }
 
   /**
@@ -274,7 +281,9 @@ export class NavigableHistory {
     const unique: string[] = [];
 
     for (let i = this.entries.length - 1; i >= 0; i--) {
-      const cmd = this.entries[i].command;
+      const entry = this.entries[i];
+      if (!entry) continue;
+      const cmd = entry.command;
       if (!seen.has(cmd)) {
         seen.add(cmd);
         unique.push(cmd);
@@ -372,6 +381,7 @@ export class NavigableHistory {
 
     for (let i = 0; i < recent.length; i++) {
       const entry = recent[i];
+      if (!entry) continue;
       const time = entry.timestamp.toLocaleTimeString();
       const truncated = entry.command.length > 60
         ? entry.command.slice(0, 57) + '...'

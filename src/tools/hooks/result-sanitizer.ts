@@ -259,8 +259,8 @@ export class ResultSanitizer {
         ...(this.config.customSanitizers || []),
       ];
 
-      for (let i = 0; i < allSanitizers.length; i++) {
-        const sanitized = allSanitizers[i](output);
+      for (const [i, sanitizer] of allSanitizers.entries()) {
+        const sanitized = sanitizer(output);
         if (sanitized !== output) {
           output = sanitized;
           appliedSanitizers.push(`custom_${i}`);

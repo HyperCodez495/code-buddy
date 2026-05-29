@@ -99,14 +99,15 @@ export class TrackCommands {
     const nameMatch = args.match(/^["']?([^"']+)["']?/);
     const typeMatch = args.match(/--type\s+(\w+)/);
 
-    if (!nameMatch) {
+    const capturedName = nameMatch?.[1];
+    if (!capturedName) {
       return {
         success: false,
         message: 'Please provide a track name'
       };
     }
 
-    const name = nameMatch[1].trim();
+    const name = capturedName.trim();
     const type = (typeMatch?.[1] || 'feature') as TrackType;
 
     try {
@@ -135,10 +136,12 @@ export class TrackCommands {
     // If no track ID, find the first in-progress track
     if (!trackId) {
       const tracks = await this.manager.listTracks({ status: 'in_progress' });
-      if (tracks.length === 0) {
+      const firstInProgress = tracks[0];
+      if (!firstInProgress) {
         const planningTracks = await this.manager.listTracks({ status: 'planning' });
-        if (planningTracks.length > 0) {
-          trackId = planningTracks[0].id;
+        const firstPlanning = planningTracks[0];
+        if (firstPlanning) {
+          trackId = firstPlanning.id;
           // Update status to in_progress
           await this.manager.updateTrackStatus(trackId, 'in_progress');
         } else {
@@ -148,7 +151,7 @@ export class TrackCommands {
           };
         }
       } else {
-        trackId = tracks[0].id;
+        trackId = firstInProgress.id;
       }
     }
 

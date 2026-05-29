@@ -298,8 +298,7 @@ export class SagaStore {
    */
   async advanceChain(sagaId: string): Promise<SagaRecord | null> {
     return this.update(sagaId, (saga) => {
-      for (let i = 0; i < saga.steps.length; i++) {
-        const step = saga.steps[i];
+      for (const step of saga.steps) {
         if (step.lane !== 'chain') continue;
         if (step.status !== 'pending') continue;
         if (step.dependsOn !== undefined) {

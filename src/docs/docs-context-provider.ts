@@ -93,13 +93,17 @@ class DocsContextProvider {
         }
         // H2 headings
         for (const m of content.matchAll(/^## (.+)$/gm)) {
-          for (const w of m[1].toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) {
+          const heading = m[1];
+          if (heading === undefined) continue;
+          for (const w of heading.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) {
             keywords.push(w);
           }
         }
         // Bold terms
         for (const m of content.matchAll(/\*\*([^*]+)\*\*/g)) {
-          for (const w of m[1].toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) {
+          const bold = m[1];
+          if (bold === undefined) continue;
+          for (const w of bold.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) {
             keywords.push(w);
           }
         }
@@ -138,7 +142,9 @@ class DocsContextProvider {
         const keywords: string[] = [];
         for (const w of title.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) keywords.push(w);
         for (const m of content.matchAll(/^## (.+)$/gm)) {
-          for (const w of m[1].toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) keywords.push(w);
+          const heading = m[1];
+          if (heading === undefined) continue;
+          for (const w of heading.toLowerCase().split(/[^a-z0-9]+/).filter(w => w.length > 2 && !STOP_WORDS.has(w))) keywords.push(w);
         }
         const isArchitecture = /overview|architecture|key.concept/i.test(slug) || /overview|architecture/i.test(title);
         this.index.set(slug, { slug, title, description, keywords: [...new Set(keywords)], content, isArchitecture });
@@ -202,7 +208,8 @@ class DocsContextProvider {
     const topPages = scored.slice(0, MAX_PAGES_RETURNED);
 
     // Only return if the top score is meaningful
-    if (topPages[0].score < 1.5) return null;
+    const topPage = topPages[0];
+    if (topPage === undefined || topPage.score < 1.5) return null;
 
     // Build context snippets
     const parts: string[] = [];

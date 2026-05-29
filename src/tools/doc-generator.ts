@@ -134,6 +134,7 @@ function parseFile(
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
     const trimmed = line.trim();
 
     // Track JSDoc blocks
@@ -181,6 +182,7 @@ function parseDeclaration(
   );
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('function', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -191,6 +193,7 @@ function parseDeclaration(
   );
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('function', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -199,6 +202,7 @@ function parseDeclaration(
   match = trimmed.match(/^(?:export\s+)?(?:abstract\s+)?class\s+(\w+)/);
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('class', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -207,6 +211,7 @@ function parseDeclaration(
   match = trimmed.match(/^(?:export\s+)?interface\s+(\w+)/);
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('interface', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -215,6 +220,7 @@ function parseDeclaration(
   match = trimmed.match(/^(?:export\s+)?type\s+(\w+)\s*(?:<[^>]+>)?\s*=/);
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('type', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -223,6 +229,7 @@ function parseDeclaration(
   match = trimmed.match(/^(?:export\s+)?(?:const\s+)?enum\s+(\w+)/);
   if (match) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('enum', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -231,6 +238,7 @@ function parseDeclaration(
   match = trimmed.match(/^(?:export\s+)?(?:const|let|var)\s+(\w+)\s*(?::\s*[^=]+)?\s*=/);
   if (match && !trimmed.includes('=>') && !trimmed.includes('function')) {
     const name = match[1];
+    if (name === undefined) return null;
     if (!opts.includePrivate && name.startsWith('_')) return null;
     return createEntry('variable', name, jsdoc, filePath, lineNumber, exported, trimmed);
   }
@@ -287,19 +295,19 @@ function parseJsdoc(jsdoc: string): {
 
   // Extract description (text before first @tag)
   const descMatch = jsdoc.match(/\/\*\*\s*([\s\S]*?)(?:@|\*\/)/);
-  const description = descMatch
-    ? descMatch[1]
-        .replace(/\s*\*\s*/g, ' ')
-        .trim()
-    : undefined;
+  const description = descMatch?.[1]
+    ?.replace(/\s*\*\s*/g, ' ')
+    .trim();
 
   // Extract @param tags
   const params: ParamDoc[] = [];
   const paramRegex = /@param\s*(?:\{([^}]+)\})?\s*(\w+)\s*(?:-?\s*(.*))?/g;
   let paramMatch;
   while ((paramMatch = paramRegex.exec(jsdoc)) !== null) {
+    const paramName = paramMatch[2];
+    if (paramName === undefined) continue;
     params.push({
-      name: paramMatch[2],
+      name: paramName,
       type: paramMatch[1],
       description: paramMatch[3]?.trim(),
     });
@@ -316,24 +324,26 @@ function parseJsdoc(jsdoc: string): {
   const exampleRegex = /@example\s*([\s\S]*?)(?=@|$|\*\/)/g;
   let exampleMatch;
   while ((exampleMatch = exampleRegex.exec(jsdoc)) !== null) {
-    const example = exampleMatch[1].replace(/\s*\*\s*/g, '\n').trim();
+    const example = exampleMatch[1]?.replace(/\s*\*\s*/g, '\n').trim();
     if (example) examples.push(example);
   }
 
   // Extract @deprecated
   const deprecatedMatch = jsdoc.match(/@deprecated\s*(.*)/);
-  const deprecated = deprecatedMatch ? deprecatedMatch[1].trim() : undefined;
+  const deprecated = deprecatedMatch?.[1]?.trim();
 
   // Extract @since
   const sinceMatch = jsdoc.match(/@since\s*(.*)/);
-  const since = sinceMatch ? sinceMatch[1].trim() : undefined;
+  const since = sinceMatch?.[1]?.trim();
 
   // Extract @see
   const see: string[] = [];
   const seeRegex = /@see\s*(.*)/g;
   let seeMatch;
   while ((seeMatch = seeRegex.exec(jsdoc)) !== null) {
-    see.push(seeMatch[1].trim());
+    const seeValue = seeMatch[1];
+    if (seeValue === undefined) continue;
+    see.push(seeValue.trim());
   }
 
   return {
@@ -352,8 +362,9 @@ function parseJsdoc(jsdoc: string): {
  */
 function extractModuleDescription(content: string): string | undefined {
   const headerMatch = content.match(/^\/\*\*\s*([\s\S]*?)\*\//);
-  if (headerMatch) {
-    return headerMatch[1]
+  const header = headerMatch?.[1];
+  if (header !== undefined) {
+    return header
       .replace(/\s*\*\s*/g, ' ')
       .replace(/@\w+.*$/gm, '')
       .trim();

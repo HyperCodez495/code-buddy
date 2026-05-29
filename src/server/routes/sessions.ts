@@ -48,7 +48,7 @@ const router = Router();
 
 // Helper to extract string param (Express params can be string | string[])
 function getStringParam(param: string | string[] | undefined): string {
-  return Array.isArray(param) ? param[0] : param || '';
+  return (Array.isArray(param) ? param[0] : param) || '';
 }
 
 function getSessionTimestamp(session: SessionData, field: 'created' | 'updated'): Date | string {
@@ -164,6 +164,9 @@ router.get(
     });
 
     const latest = sorted[0];
+    if (!latest) {
+      throw ApiServerError.notFound('No sessions found');
+    }
 
     res.json({
       id: latest.id,

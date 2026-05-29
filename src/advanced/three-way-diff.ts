@@ -127,7 +127,7 @@ export class ThreeWayDiff extends EventEmitter {
 
     // Add remaining unchanged lines
     for (let i = lastEndLine + 1; i < base.length; i++) {
-      result.push(base[i]);
+      result.push(base[i] ?? '');
     }
 
     return result.join('\n');
@@ -197,6 +197,7 @@ export class ThreeWayDiff extends EventEmitter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       if (line.startsWith('<<<<<<<')) {
         inConflict = true;

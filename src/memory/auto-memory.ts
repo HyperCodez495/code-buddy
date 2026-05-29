@@ -249,9 +249,14 @@ export class AutoMemoryManager {
         // Parse entries in format: - **key**: value [timestamp] [source]
         const match = line.match(/^-\s*\*\*([^*]+)\*\*:\s*(.+?)(?:\s*\[(\d+)\])?\s*(?:\[(\w+)\])?\s*$/);
         if (match) {
+          const key = match[1];
+          const value = match[2];
+          if (key === undefined || value === undefined) {
+            continue;
+          }
           const entry: MemoryEntry = {
-            key: match[1],
-            value: match[2].trim(),
+            key,
+            value: value.trim(),
             scope,
             timestamp: match[3] ? parseInt(match[3], 10) : Date.now(),
             source: (match[4] as 'agent' | 'user') || 'user',

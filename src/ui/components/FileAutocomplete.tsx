@@ -48,7 +48,9 @@ export function extractFileReference(input: string): { found: boolean; partial: 
   }
 
   // Check if @ is at start or preceded by whitespace
-  if (atIndex > 0 && !/\s/.test(input[atIndex - 1])) {
+  // safe: atIndex > 0 guarantees 0 <= atIndex - 1 < input.length, so the char is always defined
+  const charBeforeAt = atIndex > 0 ? input.charAt(atIndex - 1) : '';
+  if (atIndex > 0 && !/\s/.test(charBeforeAt)) {
     return { found: false, partial: '', startPos: -1 };
   }
 

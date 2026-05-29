@@ -26,7 +26,7 @@
     "noFallthroughCasesInSwitch": true,
     // Stricter checks - enabled but require gradual migration
     // These provide better type safety but need codebase updates
-    "noUncheckedIndexedAccess": false, // TODO: Enable after adding null checks (~200 locations)
+    "noUncheckedIndexedAccess": true,
     "exactOptionalPropertyTypes": false, // TODO: Enable after fixing optional property types
 
     "esModuleInterop": true,

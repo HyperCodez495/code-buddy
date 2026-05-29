@@ -161,13 +161,14 @@ export async function handleSwitch(args: string[]): Promise<CommandHandlerResult
     // Try prefix match
     const prefixMatches = available.filter(m => m.toLowerCase().startsWith(modelName.toLowerCase()));
 
-    if (prefixMatches.length === 1) {
-      providerRef.setSwitchedModel(prefixMatches[0]);
+    const sole = prefixMatches[0];
+    if (prefixMatches.length === 1 && sole !== undefined) {
+      providerRef.setSwitchedModel(sole);
       return {
         handled: true,
         entry: {
           type: 'assistant',
-          content: `Model switched to: ${prefixMatches[0]}\n\nSubsequent messages will use this model. Use /switch auto to revert.`,
+          content: `Model switched to: ${sole}\n\nSubsequent messages will use this model. Use /switch auto to revert.`,
           timestamp: new Date(),
         },
       };

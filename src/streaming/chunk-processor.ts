@@ -504,8 +504,7 @@ export class ChunkProcessor {
   ): void {
     if (!toolCalls || toolCalls.length === 0) return;
 
-    for (let i = 0; i < toolCalls.length; i++) {
-      const tc = toolCalls[i];
+    for (const tc of toolCalls) {
       const index = tc.index;
 
       let existing = this.toolCallsMap.get(index);
@@ -729,7 +728,7 @@ export class ChunkProcessor {
   private calculatePercentile(sortedArray: number[], percentile: number): number {
     if (sortedArray.length === 0) return 0;
     const index = Math.ceil((percentile / 100) * sortedArray.length) - 1;
-    return sortedArray[Math.max(0, index)];
+    return sortedArray[Math.max(0, index)] ?? 0;
   }
 
   /**

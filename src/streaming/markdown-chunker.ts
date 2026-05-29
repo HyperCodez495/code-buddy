@@ -99,8 +99,11 @@ export function detectFence(
 
   while ((match = fenceRegex.exec(text)) !== null) {
     const fence = match[1];
+    // Capture group 1 (the fence) is required in the regex, but the type is
+    // widened to string | undefined; skip if absent rather than treating it as a fence.
+    if (fence === undefined) continue;
     const language = match[2] || '';
-    const index = match.index + (match[0].startsWith('\n') ? 1 : 0);
+    const index = match.index + (match[0]?.startsWith('\n') ? 1 : 0);
 
     if (!newState.inCodeBlock) {
       // Opening fence

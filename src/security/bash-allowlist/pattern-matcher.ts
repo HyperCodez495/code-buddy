@@ -99,7 +99,8 @@ export function findBestMatch(
     return b.score - a.score;
   });
 
-  return matches[0].pattern;
+  const best = matches[0];
+  return best ? best.pattern : undefined;
 }
 
 // ============================================================================

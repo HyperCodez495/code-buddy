@@ -354,18 +354,38 @@ Create checkpoints with file operations or use /checkpoints to see available one
   let fromId: string;
   let toId: string;
 
+  // checkpoints.length >= 2 is guaranteed by the guard above, so these
+  // accesses are in bounds.
+  const secondLast = checkpoints[checkpoints.length - 2];
+  const last = checkpoints[checkpoints.length - 1];
+  if (secondLast === undefined || last === undefined) {
+    return {
+      handled: true,
+      entry: {
+        type: 'assistant',
+        content: `Diff Checkpoints
+
+Not enough checkpoints to compare. Need at least 2 checkpoints.
+Current checkpoints: ${checkpoints.length}
+
+Create checkpoints with file operations or use /checkpoints to see available ones.`,
+        timestamp: new Date(),
+      },
+    };
+  }
+
   if (args[0] === 'last' || args.length === 0) {
     // Compare last two checkpoints
-    fromId = checkpoints[checkpoints.length - 2].id;
-    toId = checkpoints[checkpoints.length - 1].id;
+    fromId = secondLast.id;
+    toId = last.id;
   } else if (args.length === 1) {
     // Compare specified checkpoint with current
-    fromId = args[0];
-    toId = checkpoints[checkpoints.length - 1].id;
+    fromId = args[0] ?? last.id;
+    toId = last.id;
   } else {
     // Compare two specified checkpoints
-    fromId = args[0];
-    toId = args[1];
+    fromId = args[0] ?? last.id;
+    toId = args[1] ?? last.id;
   }
 
   try {
@@ -622,8 +642,7 @@ Create checkpoints by making file changes or running /checkpoint create <name>.`
     lines.push('Recent checkpoints:');
     lines.push('');
 
-    for (let i = 0; i < recent.length; i++) {
-      const cp = recent[i];
+    for (const [i, cp] of recent.entries()) {
       const date = new Date(cp.timestamp);
       lines.push(`  [${i + 1}] ${cp.id} - ${cp.name}`);
       lines.push(`      ${date.toLocaleString()} | ${cp.files.length} files`);
@@ -935,8 +954,9 @@ export async function handleStatus(): Promise<CommandHandlerResult> {
     const mm = getMemoryManager();
     const stats = mm.getStats();
     const recent = mm.getRecentMemories(1);
-    const lastUpdate = recent.length > 0
-      ? formatStatusTimeAgo(recent[0].updatedAt)
+    const mostRecent = recent[0];
+    const lastUpdate = mostRecent
+      ? formatStatusTimeAgo(mostRecent.updatedAt)
       : 'never';
     lines.push(`  Memory:          ${stats.project} project • ${stats.user} user • last update: ${lastUpdate}`);
   } catch (_err) {

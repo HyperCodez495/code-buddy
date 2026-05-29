@@ -42,25 +42,28 @@ class FuzzyMatcher {
     if (m === 0) return n;
     if (n === 0) return m;
 
-    const dp: number[][] = Array(m + 1)
-      .fill(null)
-      .map(() => Array(n + 1).fill(0));
+    const dp: number[][] = Array.from({ length: m + 1 }, () =>
+      Array(n + 1).fill(0)
+    );
 
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
+    const firstRow = dp[0] ?? [];
+    for (let i = 0; i <= m; i++) (dp[i] ?? [])[0] = i;
+    for (let j = 0; j <= n; j++) firstRow[j] = j;
 
     for (let i = 1; i <= m; i++) {
+      const prevRow = dp[i - 1] ?? [];
+      const curRow = dp[i] ?? [];
       for (let j = 1; j <= n; j++) {
         const cost = s1[i - 1] === s2[j - 1] ? 0 : 1;
-        dp[i][j] = Math.min(
-          dp[i - 1][j] + 1,
-          dp[i][j - 1] + 1,
-          dp[i - 1][j - 1] + cost
+        curRow[j] = Math.min(
+          (prevRow[j] ?? 0) + 1,
+          (curRow[j - 1] ?? 0) + 1,
+          (prevRow[j - 1] ?? 0) + cost
         );
       }
     }
 
-    return dp[m][n];
+    return dp[m]?.[n] ?? 0;
   }
 
   /**
@@ -395,6 +398,7 @@ export class SymbolSearch {
 
         for (let lineNum = 0; lineNum < lines.length; lineNum++) {
           const line = lines[lineNum];
+          if (line === undefined) continue;
           let match;
 
           while ((match = namePattern.exec(line)) !== null) {

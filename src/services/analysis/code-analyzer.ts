@@ -91,6 +91,7 @@ export class CodeAnalyzer {
       let match;
       while ((match = importRegex.exec(content)) !== null) {
         const path = match[1];
+        if (path === undefined) continue;
         const isType = match[0].includes('import type');
         dependencies.push({
           path,
@@ -102,10 +103,12 @@ export class CodeAnalyzer {
       // require()
       const requireRegex = /require\s*\(\s*['"]([^'"]+)['"]\s*\)/g;
       while ((match = requireRegex.exec(content)) !== null) {
+        const path = match[1];
+        if (path === undefined) continue;
         dependencies.push({
-          path: match[1],
+          path,
           type: 'require',
-          isExternal: !match[1].startsWith('.') && !match[1].startsWith('/'),
+          isExternal: !path.startsWith('.') && !path.startsWith('/'),
         });
       }
     }
@@ -115,6 +118,7 @@ export class CodeAnalyzer {
       let match;
       while ((match = importRegex.exec(content)) !== null) {
         const path = match[1] || match[2];
+        if (path === undefined) continue;
         dependencies.push({
           path,
           type: 'import',
@@ -134,7 +138,9 @@ export class CodeAnalyzer {
       const namedExportRegex = /export\s+(?:const|let|var|function|class|interface|type|enum)\s+(\w+)/g;
       let match;
       while ((match = namedExportRegex.exec(content)) !== null) {
-        exports.push(match[1]);
+        const name = match[1];
+        if (name === undefined) continue;
+        exports.push(name);
       }
 
       // Export default
@@ -201,7 +207,7 @@ export class CodeAnalyzer {
     // Détection de console.log en production
     if (['typescript', 'javascript'].includes(language)) {
       lines.forEach((line, index) => {
-        if (/console\.(log|debug|info)\s*\(/.test(line) && !/\/\//.test(line.split('console')[0])) {
+        if (/console\.(log|debug|info)\s*\(/.test(line) && !/\/\//.test(line.split('console')[0] ?? '')) {
           issues.push({
             type: 'maintainability',
             severity: 'warning',

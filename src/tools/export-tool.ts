@@ -461,7 +461,14 @@ export class ExportTool {
       const timestamp = Date.now();
       const filePath = outputPath || path.join(this.outputDir, `export_${timestamp}.csv`);
 
-      const headers = Object.keys(data[0]);
+      const firstRow = data[0];
+      if (firstRow === undefined) {
+        return {
+          success: false,
+          error: 'No data to export'
+        };
+      }
+      const headers = Object.keys(firstRow);
       const lines = [headers.join(',')];
 
       for (const row of data) {
@@ -513,7 +520,7 @@ export class ExportTool {
         let match;
         while ((match = codeBlockRegex.exec(msg.content)) !== null) {
           const language = match[1] || 'txt';
-          const code = match[2].trim();
+          const code = (match[2] ?? '').trim();
 
           if (options.language && language !== options.language) continue;
 

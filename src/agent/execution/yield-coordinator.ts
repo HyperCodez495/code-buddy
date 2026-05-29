@@ -33,7 +33,7 @@ export const YIELD_DEFAULT_TIMEOUT_MS = 300_000;
 export function extractYieldChildId(rawContent: string): string | null {
   if (!rawContent.includes(YIELD_SIGNAL)) return null;
   const match = rawContent.match(CHILD_ID_PATTERN);
-  return match ? match[1] : null;
+  return match?.[1] ?? null;
 }
 
 /**

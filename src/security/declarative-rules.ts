@@ -50,8 +50,10 @@ interface ParsedRule {
  */
 function parseRule(rule: string): ParsedRule {
   const match = rule.match(/^(\w+)\((.+)\)$/);
-  if (match) {
-    return { toolName: match[1], argPattern: match[2] };
+  const toolName = match?.[1];
+  const argPattern = match?.[2];
+  if (toolName !== undefined && argPattern !== undefined) {
+    return { toolName, argPattern };
   }
   return { toolName: rule, argPattern: null };
 }

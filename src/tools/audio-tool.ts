@@ -125,7 +125,9 @@ export class AudioTool {
       // Look for MP3 frame sync
       let offset = 0;
       while (offset < buffer.length - 4) {
-        if (buffer[offset] === 0xFF && (buffer[offset + 1] & 0xE0) === 0xE0) {
+        const byte0 = buffer[offset];
+        const byte1 = buffer[offset + 1];
+        if (byte0 === 0xFF && byte1 !== undefined && (byte1 & 0xE0) === 0xE0) {
           // Found frame sync
           const header = buffer.readUInt32BE(offset);
 
@@ -138,8 +140,10 @@ export class AudioTool {
           const bitrates = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 0];
           const sampleRates = [44100, 48000, 32000, 0];
 
-          const bitrate = bitrates[bitrateIndex];
-          const sampleRate = sampleRates[sampleRateIndex];
+          // bitrateIndex is masked to 0..15 and sampleRateIndex to 0..3, so the
+          // lookups are always in-bounds; ?? 0 matches the tables' own invalid sentinel.
+          const bitrate = bitrates[bitrateIndex] ?? 0;
+          const sampleRate = sampleRates[sampleRateIndex] ?? 0;
           const channels = channelMode === 3 ? 1 : 2;
 
           // Estimate duration

@@ -134,9 +134,10 @@ export class ChangelogGenerator {
 
     // Add unreleased if requested
     if (this.options.includeUnreleased) {
+      const firstTag = tags[0];
       const unreleasedCommits = commits.filter(c => {
-        if (tags.length === 0) return true;
-        return c.date > tags[0].date;
+        if (!firstTag) return true;
+        return c.date > firstTag.date;
       });
 
       if (unreleasedCommits.length > 0) {
@@ -187,18 +188,17 @@ export class ChangelogGenerator {
         { cwd: this.options.repoPath, encoding: 'utf-8' }
       );
 
-      return output
-        .trim()
-        .split('\n')
-        .filter(Boolean)
-        .map(line => {
-          const [name, dateStr] = line.split('|');
-          return {
-            name,
-            date: new Date(dateStr),
-          };
-        })
-        .filter(tag => /^v?\d+\.\d+\.\d+/.test(tag.name)); // Only semver tags
+      const tags: Array<{ name: string; date: Date }> = [];
+      for (const line of output.trim().split('\n')) {
+        if (!line) continue;
+        const [name, dateStr] = line.split('|');
+        if (name === undefined) continue;
+        tags.push({
+          name,
+          date: new Date(dateStr ?? ''),
+        });
+      }
+      return tags.filter(tag => /^v?\d+\.\d+\.\d+/.test(tag.name)); // Only semver tags
     } catch {
       return [];
     }
@@ -222,11 +222,20 @@ export class ChangelogGenerator {
 
         const lines = entry.split('\n');
         const firstLine = lines[0];
+        if (firstLine === undefined) continue;
         const parts = firstLine.split('|');
 
         if (parts.length < 6) continue;
 
         const [hash, shortHash, subject, body, author, dateStr] = parts;
+        if (
+          hash === undefined ||
+          shortHash === undefined ||
+          subject === undefined ||
+          author === undefined
+        ) {
+          continue;
+        }
         const parsed = this.parseConventionalCommit(subject, body || '');
 
         if (parsed) {
@@ -235,7 +244,7 @@ export class ChangelogGenerator {
             shortHash,
             ...parsed,
             body: body || undefined,
-            date: new Date(dateStr),
+            date: new Date(dateStr ?? ''),
             author,
           });
         }
@@ -266,7 +275,12 @@ export class ChangelogGenerator {
     const [, type, scope, breakingMark, subjectText] = match;
 
     // Validate type
-    if (!COMMIT_TYPE_LABELS[type as CommitType]) {
+    if (type === undefined || !COMMIT_TYPE_LABELS[type as CommitType]) {
+      return null;
+    }
+
+    if (subjectText === undefined) {
+      // Pattern requires a subject; treat a missing capture as a non-conventional commit
       return null;
     }
 
@@ -278,7 +292,7 @@ export class ChangelogGenerator {
     let breakingNote: string | undefined;
     if (breaking && body) {
       const breakingMatch = body.match(/BREAKING[ -]CHANGE:\s*(.+?)(?:\n\n|$)/s);
-      if (breakingMatch) {
+      if (breakingMatch && breakingMatch[1] !== undefined) {
         breakingNote = breakingMatch[1].trim();
       }
     }
@@ -288,7 +302,9 @@ export class ChangelogGenerator {
     const refPattern = /#(\d+)/g;
     let refMatch;
     while ((refMatch = refPattern.exec(subject + ' ' + body)) !== null) {
-      references.push(refMatch[1]);
+      const ref = refMatch[1];
+      if (ref === undefined) continue;
+      references.push(ref);
     }
 
     return {

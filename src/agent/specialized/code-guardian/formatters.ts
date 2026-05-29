@@ -36,8 +36,8 @@ export function getSeverityIcon(severity: IssueSeverity): string {
 
 export function groupIssuesBySeverity(issues: CodeIssue[]): Record<string, CodeIssue[]> {
   return issues.reduce((acc, issue) => {
-    if (!acc[issue.severity]) acc[issue.severity] = [];
-    acc[issue.severity].push(issue);
+    const bucket = acc[issue.severity] ?? (acc[issue.severity] = []);
+    bucket.push(issue);
     return acc;
   }, {} as Record<string, CodeIssue[]>);
 }

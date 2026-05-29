@@ -119,7 +119,7 @@ export class AutoRepairMiddleware implements ConversationMiddleware {
 
     for (let i = recent.length - 1; i >= 0; i--) {
       const entry = recent[i];
-      if (entry.type !== 'tool_result') continue;
+      if (!entry || entry.type !== 'tool_result') continue;
 
       const content = typeof entry.content === 'string' ? entry.content : '';
       if (!content) continue;
@@ -167,6 +167,9 @@ export class AutoRepairMiddleware implements ConversationMiddleware {
       // Format fault info as repair suggestion (without running full repair
       // which requires file I/O — just provide diagnostic info to the agent)
       const fault = locResult.faults[0];
+      if (!fault) {
+        return null;
+      }
       const lines = [
         `**Fault Localized:**`,
         `- File: ${fault.location?.file || 'unknown'}`,

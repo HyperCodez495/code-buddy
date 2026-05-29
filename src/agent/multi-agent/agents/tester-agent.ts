@@ -305,31 +305,31 @@ STEPS:
 
     // Parse summary
     const summaryMatch = output.match(/<summary>([\s\S]*?)<\/summary>/);
-    if (summaryMatch) {
-      const summary = summaryMatch[1];
+    const summary = summaryMatch?.[1];
+    if (summary !== undefined) {
       const totalMatch = summary.match(/Total:\s*(\d+)/i);
       const passedMatch = summary.match(/Passed:\s*(\d+)/i);
       const failedMatch = summary.match(/Failed:\s*(\d+)/i);
       const skippedMatch = summary.match(/Skipped:\s*(\d+)/i);
       const coverageMatch = summary.match(/Coverage:\s*(\d+(?:\.\d+)?)/i);
 
-      if (totalMatch) total = parseInt(totalMatch[1], 10);
-      if (passedMatch) passed = parseInt(passedMatch[1], 10);
-      if (failedMatch) failed = parseInt(failedMatch[1], 10);
-      if (skippedMatch) skipped = parseInt(skippedMatch[1], 10);
-      if (coverageMatch) coverage = parseFloat(coverageMatch[1]);
+      if (totalMatch?.[1] !== undefined) total = parseInt(totalMatch[1], 10);
+      if (passedMatch?.[1] !== undefined) passed = parseInt(passedMatch[1], 10);
+      if (failedMatch?.[1] !== undefined) failed = parseInt(failedMatch[1], 10);
+      if (skippedMatch?.[1] !== undefined) skipped = parseInt(skippedMatch[1], 10);
+      if (coverageMatch?.[1] !== undefined) coverage = parseFloat(coverageMatch[1]);
     }
 
     // Also try to parse from common test output formats
     const jestMatch = output.match(/Tests:\s*(\d+)\s*failed.*?(\d+)\s*passed.*?(\d+)\s*total/i);
-    if (jestMatch) {
+    if (jestMatch?.[1] !== undefined && jestMatch[2] !== undefined && jestMatch[3] !== undefined) {
       failed = parseInt(jestMatch[1], 10);
       passed = parseInt(jestMatch[2], 10);
       total = parseInt(jestMatch[3], 10);
     }
 
     const vitestMatch = output.match(/(\d+)\s*passed.*?(\d+)\s*failed/i);
-    if (vitestMatch) {
+    if (vitestMatch?.[1] !== undefined && vitestMatch[2] !== undefined) {
       passed = parseInt(vitestMatch[1], 10);
       failed = parseInt(vitestMatch[2], 10);
       total = passed + failed;
@@ -337,15 +337,16 @@ STEPS:
 
     // Parse failures
     const failuresMatch = output.match(/<failures>([\s\S]*?)<\/failures>/);
-    if (failuresMatch) {
+    if (failuresMatch?.[1] !== undefined) {
       const failureLines = failuresMatch[1].split(/\n\s*-\s*/).filter(l => l.trim());
       for (const line of failureLines) {
         const parts = line.split(/\n\s+/);
-        if (parts.length > 0) {
+        const firstPart = parts[0];
+        if (firstPart !== undefined) {
           failures.push({
-            testName: parts[0].split(":")[0]?.trim() || "Unknown test",
+            testName: firstPart.split(":")[0]?.trim() || "Unknown test",
             file: parts.find(p => p.startsWith("File:"))?.replace("File:", "").trim() || "",
-            error: parts.find(p => p.startsWith("Reason:"))?.replace("Reason:", "").trim() || parts[0].split(":")[1]?.trim() || "",
+            error: parts.find(p => p.startsWith("Reason:"))?.replace("Reason:", "").trim() || firstPart.split(":")[1]?.trim() || "",
             suggestion: parts.find(p => p.startsWith("Suggestion:"))?.replace("Suggestion:", "").trim() || "",
           });
         }
@@ -354,14 +355,14 @@ STEPS:
 
     // Parse coverage gaps
     const gapsMatch = output.match(/<coverage-gaps>([\s\S]*?)<\/coverage-gaps>/);
-    if (gapsMatch) {
+    if (gapsMatch?.[1] !== undefined) {
       const lines = gapsMatch[1].split(/\n\s*-\s*/).filter(l => l.trim());
       coverageGaps.push(...lines);
     }
 
     // Parse recommendations
     const recsMatch = output.match(/<recommendations>([\s\S]*?)<\/recommendations>/);
-    if (recsMatch) {
+    if (recsMatch?.[1] !== undefined) {
       const lines = recsMatch[1].split(/\n\s*\d+\.\s*/).filter(l => l.trim());
       recommendations.push(...lines);
     }

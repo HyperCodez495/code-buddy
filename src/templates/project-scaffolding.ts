@@ -872,6 +872,7 @@ export class TemplateEngine extends EventEmitter {
     if (!match) return true;
 
     const [, name, operator, expected] = match;
+    if (name === undefined || operator === undefined || expected === undefined) return true;
     const actual = String(variables[name] || '');
     const expectedValue = expected.replace(/^["']|["']$/g, '');
 

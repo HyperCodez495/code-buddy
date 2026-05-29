@@ -174,6 +174,7 @@ export class CanvasManager extends EventEmitter {
     if (index === -1) return false;
 
     const deletedElement = canvas.elements[index];
+    if (!deletedElement) return false;
     canvas.elements.splice(index, 1);
     canvas.selectedIds = canvas.selectedIds.filter((id) => id !== elementId);
     canvas.updatedAt = new Date();
@@ -390,6 +391,7 @@ export class CanvasManager extends EventEmitter {
     if (!canvas || !hist || idx === undefined || idx < 0) return false;
 
     const entry = hist[idx];
+    if (!entry) return false;
     this.historyIndex.set(canvasId, idx - 1);
 
     // Restore previous state
@@ -433,6 +435,7 @@ export class CanvasManager extends EventEmitter {
 
     this.historyIndex.set(canvasId, idx + 1);
     const entry = hist[idx + 1];
+    if (!entry) return false;
 
     // Apply new state
     for (let i = 0; i < entry.elementIds.length; i++) {
@@ -504,13 +507,16 @@ export class CanvasManager extends EventEmitter {
       const gridY = Math.floor(canvas.config.gridSize * scaleY);
 
       for (let y = 0; y < height; y += gridY || 1) {
+        const row = buffer[y];
+        if (!row) continue;
         for (let x = 0; x < width; x++) {
-          if (buffer[y]) buffer[y][x] = '·';
+          row[x] = '·';
         }
       }
       for (let x = 0; x < width; x += gridX || 1) {
         for (let y = 0; y < height; y++) {
-          if (buffer[y]) buffer[y][x] = '·';
+          const row = buffer[y];
+          if (row) row[x] = '·';
         }
       }
     }
@@ -533,9 +539,10 @@ export class CanvasManager extends EventEmitter {
         if (buffer[y2]) buffer[y2][x] = '─';
       }
       for (let y = y1; y <= y2; y++) {
-        if (buffer[y]) {
-          buffer[y][x1] = '│';
-          buffer[y][x2] = '│';
+        const row = buffer[y];
+        if (row) {
+          row[x1] = '│';
+          row[x2] = '│';
         }
       }
 
@@ -572,9 +579,11 @@ export class CanvasManager extends EventEmitter {
       const contentY = Math.floor((y1 + y2) / 2);
       const contentX = x1 + 1 + Math.floor((maxLen - content.length) / 2);
 
-      if (buffer[contentY]) {
+      const contentRow = buffer[contentY];
+      if (contentRow) {
         for (let i = 0; i < content.length && contentX + i < x2; i++) {
-          buffer[contentY][contentX + i] = content[i];
+          const ch = content[i];
+          if (ch !== undefined) contentRow[contentX + i] = ch;
         }
       }
     }

@@ -205,6 +205,9 @@ export class SkillLoader {
       }
 
       const frontmatter = frontmatterMatch[1];
+      if (frontmatter === undefined) {
+        return null;
+      }
       const body = content.slice(frontmatterMatch[0].length).trim();
 
       const skill: Partial<LoadedSkill> = {

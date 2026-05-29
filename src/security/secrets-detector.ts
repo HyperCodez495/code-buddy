@@ -249,6 +249,7 @@ export function scanFileForSecrets(filePath: string): SecretFinding[] {
 
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i];
+    if (line === undefined) continue;
 
     // Skip empty lines
     if (!line.trim()) continue;

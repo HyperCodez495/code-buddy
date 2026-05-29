@@ -306,8 +306,9 @@ export class SmartContextPreloader extends EventEmitter {
 
       for (const part of logParts) {
         const lines = part.split('\n');
-        if (lines.length > 0) {
-          const [hash, message, author, date] = lines[0].split('|');
+        const firstLine = lines[0];
+        if (firstLine !== undefined) {
+          const [hash, message, author, date] = firstLine.split('|');
           if (hash && message) {
             commits.push({
               hash,
@@ -546,10 +547,11 @@ export class SmartContextPreloader extends EventEmitter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       // Functions
       const funcMatch = line.match(/(?:export\s+)?(?:async\s+)?function\s+(\w+)/);
-      if (funcMatch) {
+      if (funcMatch && funcMatch[1] !== undefined) {
         symbols.push({
           name: funcMatch[1],
           type: 'function',
@@ -561,7 +563,7 @@ export class SmartContextPreloader extends EventEmitter {
 
       // Classes
       const classMatch = line.match(/(?:export\s+)?class\s+(\w+)/);
-      if (classMatch) {
+      if (classMatch && classMatch[1] !== undefined) {
         symbols.push({
           name: classMatch[1],
           type: 'class',
@@ -572,7 +574,7 @@ export class SmartContextPreloader extends EventEmitter {
 
       // Interfaces
       const interfaceMatch = line.match(/(?:export\s+)?interface\s+(\w+)/);
-      if (interfaceMatch) {
+      if (interfaceMatch && interfaceMatch[1] !== undefined) {
         symbols.push({
           name: interfaceMatch[1],
           type: 'interface',
@@ -583,7 +585,7 @@ export class SmartContextPreloader extends EventEmitter {
 
       // Type aliases
       const typeMatch = line.match(/(?:export\s+)?type\s+(\w+)/);
-      if (typeMatch) {
+      if (typeMatch && typeMatch[1] !== undefined) {
         symbols.push({
           name: typeMatch[1],
           type: 'type',
@@ -605,10 +607,11 @@ export class SmartContextPreloader extends EventEmitter {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
 
       // Functions
       const funcMatch = line.match(/^(?:async\s+)?def\s+(\w+)/);
-      if (funcMatch) {
+      if (funcMatch && funcMatch[1] !== undefined) {
         symbols.push({
           name: funcMatch[1],
           type: 'function',
@@ -620,7 +623,7 @@ export class SmartContextPreloader extends EventEmitter {
 
       // Classes
       const classMatch = line.match(/^class\s+(\w+)/);
-      if (classMatch) {
+      if (classMatch && classMatch[1] !== undefined) {
         symbols.push({
           name: classMatch[1],
           type: 'class',

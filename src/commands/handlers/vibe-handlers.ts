@@ -185,25 +185,36 @@ export async function handleTools(args: string[]): Promise<CommandHandlerResult>
           'Other': [],
         };
 
+        const pushToCategory = (category: string, name: string): void => {
+          const bucket = categories[category];
+          // Categories is initialized with all eight keys above, so the bucket
+          // always exists; guard satisfies noUncheckedIndexedAccess without
+          // altering behavior.
+          if (bucket === undefined) {
+            return;
+          }
+          bucket.push(name);
+        };
+
         for (const tool of result.tools) {
           const name = tool.function.name;
 
           if (name.includes('file') || name.includes('create') || name.includes('view')) {
-            categories['File Operations'].push(name);
+            pushToCategory('File Operations', name);
           } else if (name.includes('search') || name.includes('find')) {
-            categories['Search'].push(name);
+            pushToCategory('Search', name);
           } else if (name.includes('git')) {
-            categories['Git'].push(name);
+            pushToCategory('Git', name);
           } else if (name.includes('symbol') || name.includes('reference') || name.includes('definition')) {
-            categories['Code Intelligence'].push(name);
+            pushToCategory('Code Intelligence', name);
           } else if (['pdf', 'audio', 'video', 'screenshot', 'ocr', 'diagram', 'qr'].includes(name)) {
-            categories['Multimodal'].push(name);
+            pushToCategory('Multimodal', name);
           } else if (name === 'bash' || name.includes('clipboard') || name.includes('archive')) {
-            categories['System'].push(name);
+            pushToCategory('System', name);
           } else if (name.startsWith('mcp__')) {
-            categories['MCP'].push(name);
+            pushToCategory('MCP', name);
           } else {
-            categories['Other'].push(name);
+            pushToCategory('Other', name);
           }
         }
 
@@ -457,8 +468,9 @@ export async function handleConfig(args: string[]): Promise<CommandHandlerResult
 
         // Batch JSON mode: single argument is a JSON string
         if (isJson && cleanArgs.length === 1) {
+          const batchJson = cleanArgs[0] ?? '';
           try {
-            const batch = JSON.parse(cleanArgs[0]) as Record<string, unknown>;
+            const batch = JSON.parse(batchJson) as Record<string, unknown>;
             const results = await setConfigBatch(batch, { dryRun: isDryRun, json: isJson });
 
             lines.push(isDryRun ? 'Config Set (Dry Run)' : 'Config Set (Batch)');
@@ -494,6 +506,12 @@ export async function handleConfig(args: string[]): Promise<CommandHandlerResult
         }
 
         const keyPath = cleanArgs[0];
+        if (keyPath === undefined) {
+          lines.push('Error: /config set requires <key> <value>');
+          lines.push('');
+          lines.push('Example: /config set middleware.max_turns 200');
+          break;
+        }
         // Join remaining args as value (handles values with spaces)
         const rawValue = cleanArgs.slice(1).join(' ');
 

@@ -147,7 +147,7 @@ export async function parseImageInput(input: string): Promise<ImageInput> {
     return {
       type: 'base64',
       data: input,
-      mimeType: mimeMatch ? mimeMatch[1] : 'image/png',
+      mimeType: mimeMatch?.[1] ?? 'image/png',
       source: 'base64',
     };
   }

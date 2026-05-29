@@ -416,13 +416,15 @@ export function generateCommunityDiagram(
 /** Find the common directory prefix of multiple paths */
 function commonDirPrefix(paths: string[]): string {
   if (paths.length === 0) return '';
-  if (paths.length === 1) {
-    const i = paths[0].lastIndexOf('/');
-    return i >= 0 ? paths[0].substring(0, i) : paths[0];
+  const only = paths[0];
+  if (paths.length === 1 && only !== undefined) {
+    const i = only.lastIndexOf('/');
+    return i >= 0 ? only.substring(0, i) : only;
   }
   const sorted = [...paths].sort();
   const first = sorted[0];
   const last = sorted[sorted.length - 1];
+  if (first === undefined || last === undefined) return '';
   let i = 0;
   while (i < first.length && i < last.length && first[i] === last[i]) i++;
   const prefix = first.substring(0, i);

@@ -49,58 +49,82 @@ const ERROR_PATTERNS: Array<{
     pattern: /(.+)\((\d+),(\d+)\):\s*error\s+TS(\d+):\s*(.+)/,
     type: "type_error",
     severity: "high",
-    extractLocation: (match) => ({
-      file: match[1],
-      startLine: parseInt(match[2], 10),
-      startColumn: parseInt(match[3], 10),
-      endLine: parseInt(match[2], 10),
-    }),
+    extractLocation: (match) => {
+      const [, file, line, column] = match;
+      if (file === undefined || line === undefined || column === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        startColumn: parseInt(column, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
   // ESLint errors
   {
     pattern: /(.+):(\d+):(\d+):\s*(error|warning)\s+(.+)/,
     type: "lint_error",
     severity: "medium",
-    extractLocation: (match) => ({
-      file: match[1],
-      startLine: parseInt(match[2], 10),
-      startColumn: parseInt(match[3], 10),
-      endLine: parseInt(match[2], 10),
-    }),
+    extractLocation: (match) => {
+      const [, file, line, column] = match;
+      if (file === undefined || line === undefined || column === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        startColumn: parseInt(column, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
   // Node.js stack traces
   {
     pattern: /at\s+(?:(.+)\s+)?\(?(.+):(\d+):(\d+)\)?/,
     type: "runtime_error",
     severity: "high",
-    extractLocation: (match) => ({
-      file: match[2],
-      startLine: parseInt(match[3], 10),
-      startColumn: parseInt(match[4], 10),
-      endLine: parseInt(match[3], 10),
-    }),
+    extractLocation: (match) => {
+      const file = match[2];
+      const line = match[3];
+      const column = match[4];
+      if (file === undefined || line === undefined || column === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        startColumn: parseInt(column, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
   // SyntaxError
   {
     pattern: /SyntaxError:\s*(.+)\s+at\s+(.+):(\d+)/i,
     type: "syntax_error",
     severity: "critical",
-    extractLocation: (match) => ({
-      file: match[2],
-      startLine: parseInt(match[3], 10),
-      endLine: parseInt(match[3], 10),
-    }),
+    extractLocation: (match) => {
+      const file = match[2];
+      const line = match[3];
+      if (file === undefined || line === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
   // TypeError / ReferenceError
   {
     pattern: /(TypeError|ReferenceError):\s*(.+)\s+at\s+(.+):(\d+)/i,
     type: "runtime_error",
     severity: "high",
-    extractLocation: (match) => ({
-      file: match[3],
-      startLine: parseInt(match[4], 10),
-      endLine: parseInt(match[4], 10),
-    }),
+    extractLocation: (match) => {
+      const file = match[3];
+      const line = match[4];
+      if (file === undefined || line === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
   // Jest test failures
   {
@@ -114,11 +138,16 @@ const ERROR_PATTERNS: Array<{
     pattern: /File\s+"([^"]+)",\s+line\s+(\d+)/,
     type: "runtime_error",
     severity: "high",
-    extractLocation: (match) => ({
-      file: match[1],
-      startLine: parseInt(match[2], 10),
-      endLine: parseInt(match[2], 10),
-    }),
+    extractLocation: (match) => {
+      const file = match[1];
+      const line = match[2];
+      if (file === undefined || line === undefined) return null;
+      return {
+        file,
+        startLine: parseInt(line, 10),
+        endLine: parseInt(line, 10),
+      };
+    },
   },
 ];
 
@@ -240,13 +269,16 @@ export class FaultLocalizer {
     let match;
     while ((match = stackPattern.exec(errorOutput)) !== null) {
       const file = match[2];
+      const line = match[3];
+      const column = match[4];
+      if (file === undefined || line === undefined || column === undefined) continue;
       // Filter out node_modules and internal paths
       if (!file.includes("node_modules") && !file.startsWith("internal/")) {
         locations.push({
           file,
-          startLine: parseInt(match[3], 10),
-          endLine: parseInt(match[3], 10),
-          startColumn: parseInt(match[4], 10),
+          startLine: parseInt(line, 10),
+          endLine: parseInt(line, 10),
+          startColumn: parseInt(column, 10),
         });
       }
     }
@@ -274,9 +306,9 @@ export class FaultLocalizer {
     }
 
     // If no faults found but we have stack locations, create faults from them
-    if (faults.length === 0 && stackLocations.length > 0) {
+    const primaryLocation = stackLocations[0];
+    if (faults.length === 0 && primaryLocation !== undefined) {
       // Use the first non-filtered location as the primary fault
-      const primaryLocation = stackLocations[0];
       faults.push({
         id: `fault-stack-${Date.now()}`,
         type: "runtime_error",
@@ -523,9 +555,10 @@ export class FaultLocalizer {
       for (const caller of callers.slice(0, 3)) {
         const callerEntity = caller.subject;
         const definedIn = graph.query({ subject: callerEntity, predicate: 'definedIn' });
-        if (definedIn.length === 0) continue;
+        const firstDefinedIn = definedIn[0];
+        if (firstDefinedIn === undefined) continue;
 
-        const callerFile = definedIn[0].object.replace(/^mod:/, '');
+        const callerFile = firstDefinedIn.object.replace(/^mod:/, '');
         const alreadyFaulted = faults.some(f => f.location.file.includes(callerFile));
         if (alreadyFaulted) continue;
 

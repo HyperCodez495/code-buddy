@@ -203,6 +203,9 @@ export class AgentSDK {
 
     for (const match of prompt.matchAll(pattern)) {
       const [, name, json] = match;
+      if (name === undefined || json === undefined) {
+        continue;
+      }
       const parsed = JSON.parse(json) as Record<string, unknown>;
       invocations.push({ name, input: parsed });
     }

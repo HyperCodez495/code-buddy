@@ -353,14 +353,15 @@ export class ScreenRecorder extends EventEmitter {
         const matches = output.matchAll(/Display Type: (.+)/g);
         let id = 0;
         for (const match of matches) {
-          displays.push({ id: id++, name: match[1] });
+          const name = match[1] ?? `Display ${id}`;
+          displays.push({ id: id++, name });
         }
       } else if (platform === 'linux') {
         // Linux displays via xrandr
         const output = execSync(`xrandr --query | grep ' connected'`, { encoding: 'utf-8' });
         const lines = output.split('\n').filter(l => l.trim());
-        for (let i = 0; i < lines.length; i++) {
-          const match = lines[i].match(/^(\S+)/);
+        for (const [i, line] of lines.entries()) {
+          const match = line.match(/^(\S+)/);
           displays.push({ id: i, name: match?.[1] || `Display ${i}` });
         }
       } else if (platform === 'win32') {
@@ -370,8 +371,8 @@ export class ScreenRecorder extends EventEmitter {
           { encoding: 'utf-8' }
         );
         const lines = output.split('\n').filter(l => l.trim());
-        for (let i = 0; i < lines.length; i++) {
-          displays.push({ id: i, name: lines[i].trim() || `Display ${i}` });
+        for (const [i, line] of lines.entries()) {
+          displays.push({ id: i, name: line.trim() || `Display ${i}` });
         }
       }
     } catch {

@@ -361,12 +361,12 @@ export function AccessibleTable({ headers, rows, caption }: AccessibleTableProps
         </Text>
       )}
       <Text bold>
-        {headers.map((h, i) => formatCell(h, colWidths[i])).join(" │ ")}
+        {headers.map((h, i) => formatCell(h, colWidths[i] ?? 0)).join(" │ ")}
       </Text>
       <Text dimColor>{separator}</Text>
       {rows.map((row, rowIndex) => (
         <Text key={rowIndex}>
-          {row.map((cell, i) => formatCell(cell || "", colWidths[i])).join(" │ ")}
+          {row.map((cell, i) => formatCell(cell || "", colWidths[i] ?? 0)).join(" │ ")}
         </Text>
       ))}
     </Box>

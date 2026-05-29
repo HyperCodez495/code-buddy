@@ -207,10 +207,10 @@ export class SpeculativeDecoder extends EventEmitter {
         this.updateStats(draft.tokens.length, verification.accepted);
 
         // Add accepted tokens
-        for (let i = 0; i < verification.finalTokens.length; i++) {
-          generatedTokens.push(verification.finalTokens[i]);
+        for (const token of verification.finalTokens) {
+          generatedTokens.push(token);
           if (onToken) {
-            onToken(verification.finalTokens[i]);
+            onToken(token);
           }
         }
 
@@ -314,7 +314,11 @@ export class SpeculativeDecoder extends EventEmitter {
     const lowerTarget = targetModel.toLowerCase();
 
     for (const pair of RECOMMENDED_PAIRS) {
-      if (lowerTarget.includes(pair.target.split('-')[0])) {
+      const prefix = pair.target.split('-')[0];
+      if (prefix === undefined) {
+        continue;
+      }
+      if (lowerTarget.includes(prefix)) {
         return pair;
       }
     }

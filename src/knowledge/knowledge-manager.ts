@@ -72,14 +72,16 @@ function parseFrontmatter(content: string): { meta: Frontmatter; body: string } 
     return { meta: {}, body: content };
   }
 
-  const yamlBlock = fmMatch[1];
-  const body = fmMatch[2];
+  const yamlBlock = fmMatch[1] ?? '';
+  const body = fmMatch[2] ?? '';
   const meta: Frontmatter = {};
 
   for (const line of yamlBlock.split('\n')) {
     const kv = line.match(/^(\w+):\s*(.*)$/);
     if (!kv) continue;
-    const [, key, value] = kv;
+    const key = kv[1];
+    const value = kv[2] ?? '';
+    if (key === undefined) continue;
 
     if (key === 'title') {
       meta.title = value.trim();
@@ -89,7 +91,7 @@ function parseFrontmatter(content: string): { meta: Frontmatter; body: string } 
       // Support "tags: [a, b]" or multiline list
       const inline = value.match(/^\[(.*)\]$/);
       if (inline) {
-        meta[key] = inline[1].split(',').map(t => t.trim().replace(/['"]/g, ''));
+        meta[key] = (inline[1] ?? '').split(',').map(t => t.trim().replace(/['"]/g, ''));
       }
     }
   }
@@ -207,7 +209,9 @@ export class KnowledgeManager {
           .trim();
 
         const titleMatch = content.match(/^# (.+)$/m);
-        const { priority, tags } = priorityPages[matchedKey];
+        const pageMeta = priorityPages[matchedKey];
+        if (!pageMeta) continue;
+        const { priority, tags } = pageMeta;
 
         this.entries.push({
           path: filePath,

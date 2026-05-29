@@ -140,8 +140,7 @@ function TokenRenderer({
   let charCount = 0;
   const elements: React.ReactNode[] = [];
 
-  for (let i = 0; i < tokens.length; i++) {
-    const token = tokens[i];
+  for (const [i, token] of tokens.entries()) {
     const tokenStart = charCount;
     const tokenEnd = charCount + token.value.length;
 
@@ -296,13 +295,13 @@ export function EnhancedChatInput({
     let currentCharIndex = 0;
     let totalChars = 0;
 
-    for (let i = 0; i < lines.length; i++) {
-      if (totalChars + lines[i].length >= cursorPosition) {
+    for (const [i, line] of lines.entries()) {
+      if (totalChars + line.length >= cursorPosition) {
         currentLineIndex = i;
         currentCharIndex = cursorPosition - totalChars;
         break;
       }
-      totalChars += lines[i].length + 1;
+      totalChars += line.length + 1;
     }
 
     return { lines, isMultiline, currentLineIndex, currentCharIndex };
@@ -355,8 +354,8 @@ export function EnhancedChatInput({
 
             // Calculate cursor position within this line
             let lineStartPos = 0;
-            for (let i = 0; i < index; i++) {
-              lineStartPos += cursorData.lines[i].length + 1;
+            for (const prevLine of cursorData.lines.slice(0, index)) {
+              lineStartPos += prevLine.length + 1;
             }
             const lineCursorPos = cursorPosition - lineStartPos;
 

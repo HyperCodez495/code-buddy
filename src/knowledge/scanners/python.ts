@@ -22,9 +22,10 @@ const RE_PY_CALL = /(?:^|[^.\w])(\w+)\s*\(/g;
 
 function indentLevel(line: string): number {
   const match = line.match(/^(\s*)/);
-  if (!match) return 0;
+  const leading = match?.[1];
+  if (leading === undefined) return 0;
   // Normalize: tab = 4 spaces
-  return match[1].replace(/\t/g, '    ').length;
+  return leading.replace(/\t/g, '    ').length;
 }
 
 export class PythonScanner implements LanguageScanner {
@@ -45,6 +46,7 @@ export class PythonScanner implements LanguageScanner {
 
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
+      if (line === undefined) continue;
       const lineNum = i + 1;
       const trimmed = line.trimStart();
 
@@ -77,26 +79,28 @@ export class PythonScanner implements LanguageScanner {
       // Class declaration: class Foo(Bar, Baz):
       const classMatch = trimmed.match(/^class\s+(\w+)(?:\(([^)]*)\))?\s*:/);
       if (classMatch) {
-        currentClassName = classMatch[1];
+        const className = classMatch[1] ?? '';
+        const baseList = classMatch[2];
+        currentClassName = className;
         classIndent = indent;
         symbols.push({
-          fqn: `cls:${classMatch[1]}`,
-          name: classMatch[1],
+          fqn: `cls:${className}`,
+          name: className,
           kind: 'class',
           module: moduleId,
           line: lineNum,
         });
 
         // Inheritance
-        if (classMatch[2]) {
-          const bases = classMatch[2].split(',').map(s => s.trim().replace(/\[.*\]$/, '')).filter(s => s && /^[A-Z]/.test(s));
+        if (baseList) {
+          const bases = baseList.split(',').map(s => s.trim().replace(/\[.*\]$/, '')).filter(s => s && /^[A-Z]/.test(s));
           if (bases.length > 0) {
-            const info: InheritanceInfo = { className: classMatch[1] };
+            const info: InheritanceInfo = { className };
             // First non-protocol base is extends, rest are implements
             const protocols = new Set(['Protocol', 'ABC', 'ABCMeta', 'Generic', 'TypedDict']);
             const realBases = bases.filter(b => !protocols.has(b));
             const ifaceBases = bases.filter(b => protocols.has(b));
-            if (realBases.length > 0) info.extends = realBases[0];
+            if (realBases.length > 0 && realBases[0] !== undefined) info.extends = realBases[0];
             if (realBases.length > 1 || ifaceBases.length > 0) {
               info.implements = [...realBases.slice(1), ...ifaceBases];
             }
@@ -109,7 +113,7 @@ export class PythonScanner implements LanguageScanner {
       // Function/method: def foo(args) -> ReturnType:  or  async def foo(...):
       const funcMatch = trimmed.match(/^(?:async\s+)?def\s+(\w+)\s*\(([^)]*)\)(?:\s*->\s*([^:]+))?\s*:/);
       if (funcMatch) {
-        const funcName = funcMatch[1];
+        const funcName = funcMatch[1] ?? '';
         const rawParams = funcMatch[2]?.trim() || '';
         const rawReturn = funcMatch[3]?.trim() || '';
 
@@ -175,13 +179,15 @@ export class PythonScanner implements LanguageScanner {
       // Multi-line function def (params don't close on same line)
       const simpleFuncMatch = trimmed.match(/^(?:async\s+)?def\s+(\w+)\s*\(/);
       if (simpleFuncMatch) {
-        const funcName = simpleFuncMatch[1];
+        const funcName = simpleFuncMatch[1] ?? '';
         const multiParams = extractMultiLineParams(lines, i);
         // Look for return type after closing paren
         let rawReturn: string | undefined;
         for (let j = i; j < Math.min(i + 15, lines.length); j++) {
-          const retMatch = lines[j].match(/\)\s*->\s*([^:]+):/);
-          if (retMatch) { rawReturn = retMatch[1].trim(); break; }
+          const retLine = lines[j];
+          if (retLine === undefined) continue;
+          const retMatch = retLine.match(/\)\s*->\s*([^:]+):/);
+          if (retMatch) { rawReturn = retMatch[1]?.trim(); break; }
         }
 
         const cleanParams = multiParams
@@ -230,10 +236,12 @@ export class PythonScanner implements LanguageScanner {
         RE_PY_SELF_CALL.lastIndex = 0;
         let cm: RegExpExecArray | null;
         while ((cm = RE_PY_SELF_CALL.exec(line)) !== null) {
-          if (!PY_BLACKLIST.has(cm[1]) && !cm[1].startsWith('_')) {
+          const calleeName = cm[1];
+          if (calleeName === undefined) continue;
+          if (!PY_BLACKLIST.has(calleeName) && !calleeName.startsWith('_')) {
             calls.push({
               callerFqn: currentFunctionFqn,
-              calleeName: cm[1],
+              calleeName,
               isMethodCall: true,
               receiverClass: currentClassName ?? undefined,
             });
@@ -242,12 +250,15 @@ export class PythonScanner implements LanguageScanner {
 
         RE_PY_CLS_CALL.lastIndex = 0;
         while ((cm = RE_PY_CLS_CALL.exec(line)) !== null) {
-          if (!PY_BLACKLIST.has(cm[2]) && !PY_BLACKLIST.has(cm[1])) {
+          const receiverClass = cm[1];
+          const calleeName = cm[2];
+          if (receiverClass === undefined || calleeName === undefined) continue;
+          if (!PY_BLACKLIST.has(calleeName) && !PY_BLACKLIST.has(receiverClass)) {
             calls.push({
               callerFqn: currentFunctionFqn,
-              calleeName: cm[2],
+              calleeName,
               isMethodCall: true,
-              receiverClass: cm[1],
+              receiverClass,
             });
           }
         }
@@ -255,6 +266,7 @@ export class PythonScanner implements LanguageScanner {
         RE_PY_CALL.lastIndex = 0;
         while ((cm = RE_PY_CALL.exec(line)) !== null) {
           const name = cm[1];
+          if (name === undefined) continue;
           if (!PY_BLACKLIST.has(name) && /^[a-z]/.test(name) && name.length > 2) {
             calls.push({
               callerFqn: currentFunctionFqn,

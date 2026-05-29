@@ -109,7 +109,7 @@ export class CodeGraphTool implements ITool {
     for (const t of callers.slice(0, 30)) {
       // Find which file the caller is defined in
       const defIn = graph.query({ subject: t.subject, predicate: 'definedIn' });
-      const file = defIn.length > 0 ? ` (${defIn[0].object})` : '';
+      const file = defIn[0] !== undefined ? ` (${defIn[0].object})` : '';
       lines.push(`  ${t.subject}${file}`);
     }
     if (callers.length > 30) lines.push(`  +${callers.length - 30} more`);
@@ -131,7 +131,7 @@ export class CodeGraphTool implements ITool {
     const lines = [`${entity} calls:\n`];
     for (const t of callees.slice(0, 30)) {
       const defIn = graph.query({ subject: t.object, predicate: 'definedIn' });
-      const file = defIn.length > 0 ? ` (${defIn[0].object})` : '';
+      const file = defIn[0] !== undefined ? ` (${defIn[0].object})` : '';
       lines.push(`  ${t.object}${file}`);
     }
     if (callees.length > 30) lines.push(`  +${callees.length - 30} more`);
@@ -279,6 +279,9 @@ export class CodeGraphTool implements ITool {
     const lines = [`Path from ${fromEntity} to ${toEntity}:\n`];
     // Show the shortest path
     const shortest = paths.sort((a, b) => a.length - b.length)[0];
+    if (!shortest) {
+      return { success: true, output: `No path found from ${fromEntity} to ${toEntity}.` };
+    }
     let current = fromEntity;
     for (const triple of shortest) {
       const next = triple.subject === current ? triple.object : triple.subject;
@@ -492,8 +495,7 @@ export class CodeGraphTool implements ITool {
 
     lines.push('Rank  Calls  Imports  Total  Module A ↔ Module B');
     lines.push('─'.repeat(80));
-    for (let i = 0; i < result.hotspots.length; i++) {
-      const e = result.hotspots[i];
+    for (const [i, e] of result.hotspots.entries()) {
       const a = e.moduleA.replace(/^mod:/, '');
       const b = e.moduleB.replace(/^mod:/, '');
       lines.push(`#${i + 1}    ${String(e.calls).padEnd(7)}${String(e.imports).padEnd(9)}${String(e.total).padEnd(7)}${a} ↔ ${b}`);
@@ -519,8 +521,7 @@ export class CodeGraphTool implements ITool {
     }
 
     const lines: string[] = [`Refactoring Suggestions (${suggestions.length}):\n`];
-    for (let i = 0; i < suggestions.length; i++) {
-      const s = suggestions[i];
+    for (const [i, s] of suggestions.entries()) {
       lines.push(`${i + 1}. ${s.entity} (PageRank: ${s.pageRank.toFixed(3)})`);
       lines.push(`   ${s.reason}`);
       if (s.totalCallers > 0) lines.push(`   Callers: ${s.totalCallers}, Cross-community: ${s.crossCommunityCallers}`);

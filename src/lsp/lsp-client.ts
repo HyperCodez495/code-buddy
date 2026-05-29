@@ -434,13 +434,14 @@ export class LSPClient {
 
       const header = conn.buffer.slice(0, headerEnd);
       const match = header.match(/Content-Length:\s*(\d+)/i);
-      if (!match) {
+      const lengthStr = match?.[1];
+      if (lengthStr === undefined) {
         // Skip malformed header
         conn.buffer = conn.buffer.slice(headerEnd + 4);
         continue;
       }
 
-      const contentLength = parseInt(match[1], 10);
+      const contentLength = parseInt(lengthStr, 10);
       const contentStart = headerEnd + 4;
 
       if (conn.buffer.length < contentStart + contentLength) {

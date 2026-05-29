@@ -219,6 +219,7 @@ export class CodingStyleAnalyzer {
       if (!match) continue;
 
       const whitespace = match[1];
+      if (whitespace === undefined) continue;
 
       if (whitespace.includes('\t')) {
         tabs++;
@@ -435,7 +436,7 @@ export class CodingStyleAnalyzer {
     counts.sort((a, b) => b.count - a.count);
     const top = counts[0];
 
-    if (top.count === 0) return null;
+    if (top === undefined || top.count === 0) return null;
 
     return {
       convention: top.convention,

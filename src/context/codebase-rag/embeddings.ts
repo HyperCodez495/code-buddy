@@ -178,10 +178,11 @@ export class SemanticHashEmbeddingProvider implements EmbeddingProvider {
     // Aggregate token embeddings
     for (const token of tokens) {
       const tokenIdx = this.hashToken(token) % this.vocabSize;
-      const tokenEmb = this.projectionMatrix![tokenIdx];
+      const tokenEmb = this.projectionMatrix?.[tokenIdx];
+      if (!tokenEmb) continue;
 
       for (let i = 0; i < this.dimension; i++) {
-        embedding[i] += tokenEmb[i];
+        embedding[i] += tokenEmb[i] ?? 0;
       }
     }
 
@@ -327,7 +328,7 @@ export class CodeEmbeddingProvider implements EmbeddingProvider {
     // Feature: Indentation depth (complexity indicator)
     const maxIndent = Math.max(...lines.map(l => {
       const match = l.match(/^(\s*)/);
-      return match ? match[1].length : 0;
+      return match?.[1]?.length ?? 0;
     }));
     features[idx++] = Math.min(maxIndent / 16, 1);
 
@@ -400,9 +401,11 @@ export function cosineSimilarity(a: number[], b: number[]): number {
   let normB = 0;
 
   for (let i = 0; i < a.length; i++) {
-    dotProduct += a[i] * b[i];
-    normA += a[i] * a[i];
-    normB += b[i] * b[i];
+    const ai = a[i] ?? 0;
+    const bi = b[i] ?? 0;
+    dotProduct += ai * bi;
+    normA += ai * ai;
+    normB += bi * bi;
   }
 
   const magnitude = Math.sqrt(normA) * Math.sqrt(normB);
@@ -481,11 +484,13 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
 
     // Check cache for each text
     for (let i = 0; i < texts.length; i++) {
-      const cached = cache.get(texts[i], this.getModelName());
+      const text = texts[i];
+      if (text === undefined) continue;
+      const cached = cache.get(text, this.getModelName());
       if (cached) {
         results[i] = cached;
       } else {
-        toCompute.push({ index: i, text: texts[i] });
+        toCompute.push({ index: i, text });
       }
     }
 
@@ -495,9 +500,12 @@ export class CachedEmbeddingProvider implements EmbeddingProvider {
       const computed = await this.baseProvider.embedBatch(textsToCompute);
 
       for (let i = 0; i < toCompute.length; i++) {
-        const { index, text } = toCompute[i];
-        results[index] = computed[i];
-        cache.set(text, computed[i]);
+        const entry = toCompute[i];
+        const embedding = computed[i];
+        if (entry === undefined || embedding === undefined) continue;
+        const { index, text } = entry;
+        results[index] = embedding;
+        cache.set(text, embedding);
       }
     }
 

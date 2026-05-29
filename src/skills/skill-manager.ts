@@ -247,6 +247,9 @@ export class SkillManager extends EventEmitter {
       }
 
       const frontmatter = frontmatterMatch[1];
+      if (frontmatter === undefined) {
+        return null;
+      }
       const body = content.slice(frontmatterMatch[0].length).trim();
 
       // Simple YAML parsing
@@ -259,7 +262,7 @@ export class SkillManager extends EventEmitter {
         const [key, ...valueParts] = line.split(":");
         const value = valueParts.join(":").trim();
 
-        switch (key.trim()) {
+        switch (key?.trim()) {
           case "name":
             config.name = value;
             break;
@@ -395,11 +398,12 @@ export class SkillManager extends EventEmitter {
   autoSelectSkill(input: string): Skill | null {
     const matches = this.matchSkills(input, 1);
 
-    if (matches.length > 0 && matches[0].score >= 5) {
-      this.activeSkill = matches[0].skill;
+    const best = matches[0];
+    if (best && best.score >= 5) {
+      this.activeSkill = best.skill;
       this.emit("skill:activated", {
         skill: this.activeSkill.name,
-        triggers: matches[0].matchedTriggers,
+        triggers: best.matchedTriggers,
       });
       return this.activeSkill;
     }

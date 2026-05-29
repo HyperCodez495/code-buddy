@@ -55,13 +55,19 @@ export function detectCharset(bytes: Uint8Array): CharsetInfo {
 
   while (i < bytes.length) {
     const byte = bytes[i];
+    if (byte === undefined) {
+      // Defensively unreachable given the loop invariant (i < bytes.length).
+      isValidUtf8 = false;
+      break;
+    }
 
     if (byte <= 0x7F) {
       // ASCII byte
       i++;
     } else if ((byte & 0xE0) === 0xC0) {
       // 2-byte sequence
-      if (i + 1 >= bytes.length || (bytes[i + 1] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      if (b1 === undefined || (b1 & 0xC0) !== 0x80) {
         isValidUtf8 = false;
         break;
       }
@@ -69,9 +75,11 @@ export function detectCharset(bytes: Uint8Array): CharsetInfo {
       i += 2;
     } else if ((byte & 0xF0) === 0xE0) {
       // 3-byte sequence
-      if (i + 2 >= bytes.length ||
-          (bytes[i + 1] & 0xC0) !== 0x80 ||
-          (bytes[i + 2] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      const b2 = bytes[i + 2];
+      if (b1 === undefined || b2 === undefined ||
+          (b1 & 0xC0) !== 0x80 ||
+          (b2 & 0xC0) !== 0x80) {
         isValidUtf8 = false;
         break;
       }
@@ -79,10 +87,13 @@ export function detectCharset(bytes: Uint8Array): CharsetInfo {
       i += 3;
     } else if ((byte & 0xF8) === 0xF0) {
       // 4-byte sequence
-      if (i + 3 >= bytes.length ||
-          (bytes[i + 1] & 0xC0) !== 0x80 ||
-          (bytes[i + 2] & 0xC0) !== 0x80 ||
-          (bytes[i + 3] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      const b2 = bytes[i + 2];
+      const b3 = bytes[i + 3];
+      if (b1 === undefined || b2 === undefined || b3 === undefined ||
+          (b1 & 0xC0) !== 0x80 ||
+          (b2 & 0xC0) !== 0x80 ||
+          (b3 & 0xC0) !== 0x80) {
         isValidUtf8 = false;
         break;
       }
@@ -178,11 +189,16 @@ export function isValidUtf8(bytes: Uint8Array): boolean {
   let i = 0;
   while (i < bytes.length) {
     const byte = bytes[i];
+    if (byte === undefined) {
+      // Defensively unreachable given the loop invariant (i < bytes.length).
+      return false;
+    }
 
     if (byte <= 0x7F) {
       i++;
     } else if ((byte & 0xE0) === 0xC0) {
-      if (i + 1 >= bytes.length || (bytes[i + 1] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      if (b1 === undefined || (b1 & 0xC0) !== 0x80) {
         return false;
       }
       // Check for overlong encoding
@@ -191,17 +207,22 @@ export function isValidUtf8(bytes: Uint8Array): boolean {
       }
       i += 2;
     } else if ((byte & 0xF0) === 0xE0) {
-      if (i + 2 >= bytes.length ||
-          (bytes[i + 1] & 0xC0) !== 0x80 ||
-          (bytes[i + 2] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      const b2 = bytes[i + 2];
+      if (b1 === undefined || b2 === undefined ||
+          (b1 & 0xC0) !== 0x80 ||
+          (b2 & 0xC0) !== 0x80) {
         return false;
       }
       i += 3;
     } else if ((byte & 0xF8) === 0xF0) {
-      if (i + 3 >= bytes.length ||
-          (bytes[i + 1] & 0xC0) !== 0x80 ||
-          (bytes[i + 2] & 0xC0) !== 0x80 ||
-          (bytes[i + 3] & 0xC0) !== 0x80) {
+      const b1 = bytes[i + 1];
+      const b2 = bytes[i + 2];
+      const b3 = bytes[i + 3];
+      if (b1 === undefined || b2 === undefined || b3 === undefined ||
+          (b1 & 0xC0) !== 0x80 ||
+          (b2 & 0xC0) !== 0x80 ||
+          (b3 & 0xC0) !== 0x80) {
         return false;
       }
       i += 4;
@@ -552,10 +573,11 @@ export function fromCodePoints(codePoints: number[]): string {
   }
 
   for (let i = 0; i < codePoints.length; i++) {
-    if (typeof codePoints[i] !== 'number' || !Number.isInteger(codePoints[i]) || codePoints[i] < 0) {
+    const cp = codePoints[i];
+    if (typeof cp !== 'number' || !Number.isInteger(cp) || cp < 0) {
       throw new EncodingError(`Invalid code point at index ${i}`);
     }
-    if (codePoints[i] > 0x10FFFF) {
+    if (cp > 0x10FFFF) {
       throw new EncodingError(`Code point at index ${i} exceeds maximum valid value`);
     }
   }

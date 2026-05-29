@@ -176,12 +176,14 @@ export class SemanticMapBuilder extends EventEmitter {
     let match;
     const classPattern = new RegExp(patterns.classPattern.source, patterns.classPattern.flags);
     while ((match = classPattern.exec(content)) !== null) {
+      const className = match[1];
+      if (!className) continue;
       const location = this.getLocationFromOffset(content, match.index);
       elements.push({
         id: this.createId("class"),
         type: "class",
-        name: match[1],
-        qualifiedName: `${filePath}:${match[1]}`,
+        name: className,
+        qualifiedName: `${filePath}:${className}`,
         filePath,
         location,
         language,
@@ -196,8 +198,10 @@ export class SemanticMapBuilder extends EventEmitter {
     // Extract functions
     const funcPattern = new RegExp(patterns.functionPattern.source, patterns.functionPattern.flags);
     while ((match = funcPattern.exec(content)) !== null) {
-      const location = this.getLocationFromOffset(content, match.index);
       const name = language === "go" ? (match[3] || match[1]) : match[1];
+      if (!name) continue;
+      const location = this.getLocationFromOffset(content, match.index);
+      const signature = (match[0] ?? "").split("{")[0]?.trim() ?? "";
       elements.push({
         id: this.createId("function"),
         type: "function",
@@ -207,7 +211,7 @@ export class SemanticMapBuilder extends EventEmitter {
         location,
         language,
         visibility: this.inferVisibility(content, match.index, language),
-        signature: match[0].split("{")[0].trim(),
+        signature,
         metadata: {
           params: match[2]?.split(",").map((p: string) => p.trim()) || [],
           returnType: match[3]?.trim(),
@@ -218,12 +222,14 @@ export class SemanticMapBuilder extends EventEmitter {
     // Extract interfaces
     const interfacePattern = new RegExp(patterns.interfacePattern.source, patterns.interfacePattern.flags);
     while ((match = interfacePattern.exec(content)) !== null) {
+      const interfaceName = match[1];
+      if (!interfaceName) continue;
       const location = this.getLocationFromOffset(content, match.index);
       elements.push({
         id: this.createId("interface"),
         type: "interface",
-        name: match[1],
-        qualifiedName: `${filePath}:${match[1]}`,
+        name: interfaceName,
+        qualifiedName: `${filePath}:${interfaceName}`,
         filePath,
         location,
         language,
@@ -237,12 +243,14 @@ export class SemanticMapBuilder extends EventEmitter {
     // Extract types
     const typePattern = new RegExp(patterns.typePattern.source, patterns.typePattern.flags);
     while ((match = typePattern.exec(content)) !== null) {
+      const typeName = match[1];
+      if (!typeName) continue;
       const location = this.getLocationFromOffset(content, match.index);
       elements.push({
         id: this.createId("type"),
         type: "type",
-        name: match[1],
-        qualifiedName: `${filePath}:${match[1]}`,
+        name: typeName,
+        qualifiedName: `${filePath}:${typeName}`,
         filePath,
         location,
         language,
@@ -257,6 +265,7 @@ export class SemanticMapBuilder extends EventEmitter {
       const location = this.getLocationFromOffset(content, match.index);
       const importedItems = (match[1] || match[2] || "").split(",").map((s: string) => s.trim());
       const source = match[3] || match[1];
+      if (!source) continue;
 
       elements.push({
         id: this.createId("import"),
@@ -279,12 +288,14 @@ export class SemanticMapBuilder extends EventEmitter {
     while ((match = varPattern.exec(content)) !== null) {
       const location = this.getLocationFromOffset(content, match.index);
       const isConstant = content.slice(Math.max(0, match.index - 10), match.index).includes("const");
+      const varName = match[1];
+      if (!varName) continue;
 
       elements.push({
         id: this.createId("variable"),
         type: isConstant ? "constant" : "variable",
-        name: match[1],
-        qualifiedName: `${filePath}:${match[1]}`,
+        name: varName,
+        qualifiedName: `${filePath}:${varName}`,
         filePath,
         location,
         language,
@@ -911,13 +922,17 @@ export class SemanticMapBuilder extends EventEmitter {
     const clusters = Array.from(this.map!.clusters.values());
 
     for (let i = 0; i < clusters.length; i++) {
+      const clusterI = clusters[i];
+      if (!clusterI) continue;
       for (let j = i + 1; j < clusters.length; j++) {
-        const similarity = this.calculateClusterSimilarity(clusters[i], clusters[j]);
+        const clusterJ = clusters[j];
+        if (!clusterJ) continue;
+        const similarity = this.calculateClusterSimilarity(clusterI, clusterJ);
         if (similarity > this.config.similarityThreshold) {
           // Merge j into i
-          clusters[i].elements.push(...clusters[j].elements);
-          clusters[i].keywords = [...new Set([...clusters[i].keywords, ...clusters[j].keywords])];
-          this.map!.clusters.delete(clusters[j].id);
+          clusterI.elements.push(...clusterJ.elements);
+          clusterI.keywords = [...new Set([...clusterI.keywords, ...clusterJ.keywords])];
+          this.map!.clusters.delete(clusterJ.id);
         }
       }
     }

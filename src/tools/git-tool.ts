@@ -105,7 +105,7 @@ export class GitTool {
       if (soul?.content) {
         // Extract name from first heading or first line
         const nameMatch = soul.content.match(/^#\s+(.+)/m);
-        if (nameMatch) {
+        if (nameMatch?.[1]) {
           const name = nameMatch[1].trim();
           return `Co-Authored-By: ${name} <noreply@codebuddy.dev>`;
         }
@@ -113,7 +113,7 @@ export class GitTool {
       const identityFile = identity.get('IDENTITY.md');
       if (identityFile?.content) {
         const nameMatch = identityFile.content.match(/^#\s+(.+)/m);
-        if (nameMatch) {
+        if (nameMatch?.[1]) {
           const name = nameMatch[1].trim();
           return `Co-Authored-By: ${name} <noreply@codebuddy.dev>`;
         }
@@ -208,7 +208,7 @@ export class GitTool {
         branch = line.split(" ")[2] || "unknown";
       } else if (line.startsWith("# branch.ab")) {
         const match = line.match(/\+(\d+)\s+-(\d+)/);
-        if (match) {
+        if (match?.[1] !== undefined && match[2] !== undefined) {
           ahead = parseInt(match[1]);
           behind = parseInt(match[2]);
         }
@@ -417,8 +417,9 @@ export class GitTool {
     const directories = allFiles
       .map((f) => path.dirname(f))
       .filter((d) => d !== ".");
-    if (directories.length > 0) {
-      const commonDir = directories[0].split("/")[0];
+    const firstDir = directories[0];
+    if (firstDir !== undefined) {
+      const commonDir = firstDir.split("/")[0];
       if (commonDir && commonDir !== "src") {
         scope = commonDir;
       }
@@ -429,8 +430,9 @@ export class GitTool {
     const fileTypes = [...new Set(allFiles.map((f) => path.extname(f)))];
 
     let description = "";
-    if (fileCount === 1) {
-      description = `update ${path.basename(allFiles[0])}`;
+    const firstFile = allFiles[0];
+    if (fileCount === 1 && firstFile !== undefined) {
+      description = `update ${path.basename(firstFile)}`;
     } else if (fileTypes.length === 1) {
       description = `update ${fileCount} ${fileTypes[0]} files`;
     } else {
@@ -576,7 +578,7 @@ export class GitTool {
     for (const line of lines) {
       // Header line: <hash> <orig-line> <final-line> [<num-lines>]
       const headerMatch = line.match(/^([0-9a-f]{40})\s+\d+\s+(\d+)/);
-      if (headerMatch) {
+      if (headerMatch?.[1] !== undefined && headerMatch[2] !== undefined) {
         currentHash = headerMatch[1];
         currentLineNumber = parseInt(headerMatch[2], 10);
         continue;
@@ -591,7 +593,7 @@ export class GitTool {
       // Author time (unix timestamp) - convert to ISO date
       if (line.startsWith('author-time ')) {
         const timestamp = parseInt(line.slice(12), 10);
-        currentDate = new Date(timestamp * 1000).toISOString().split('T')[0];
+        currentDate = new Date(timestamp * 1000).toISOString().split('T')[0] ?? '';
         continue;
       }
 

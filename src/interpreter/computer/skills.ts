@@ -579,8 +579,7 @@ export class ComputerSkills extends EventEmitter {
     const stepResults: StepResult[] = [];
     let lastOutput: unknown = null;
 
-    for (let i = 0; i < skill.steps.length; i++) {
-      const step = skill.steps[i];
+    for (const [i, step] of skill.steps.entries()) {
       const stepId = step.id || `step-${i}`;
       const stepStart = Date.now();
 
@@ -834,12 +833,16 @@ export class ComputerSkills extends EventEmitter {
    * Save a skill to disk
    */
   async save(skill: Skill, filePath?: string): Promise<void> {
-    const resolved = filePath
-      ? this.resolvePath(filePath)
-      : path.join(
-          this.resolvePath(this.config.skillPaths[0]),
-          `${skill.id}.json`
-        );
+    let resolved: string;
+    if (filePath) {
+      resolved = this.resolvePath(filePath);
+    } else {
+      const defaultPath = this.config.skillPaths[0];
+      if (defaultPath === undefined) {
+        throw new Error('Cannot save skill: no skill paths configured');
+      }
+      resolved = path.join(this.resolvePath(defaultPath), `${skill.id}.json`);
+    }
 
     const dir = path.dirname(resolved);
     if (!fs.existsSync(dir)) {

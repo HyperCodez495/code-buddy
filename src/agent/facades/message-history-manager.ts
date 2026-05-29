@@ -213,8 +213,9 @@ export class MessageHistoryManager {
    * Clear messages while optionally preserving system message
    */
   clearMessages(preserveSystemMessage: boolean = true): void {
-    if (preserveSystemMessage && this.messages.length > 0 && this.messages[0].role === 'system') {
-      this.messages = [this.messages[0]];
+    const first = this.messages[0];
+    if (preserveSystemMessage && first !== undefined && first.role === 'system') {
+      this.messages = [first];
     } else {
       this.messages = [];
     }
@@ -224,8 +225,9 @@ export class MessageHistoryManager {
    * Get the system message if present
    */
   getSystemMessage(): CodeBuddyMessage | null {
-    if (this.messages.length > 0 && this.messages[0].role === 'system') {
-      return this.messages[0];
+    const first = this.messages[0];
+    if (first !== undefined && first.role === 'system') {
+      return first;
     }
     return null;
   }
@@ -235,7 +237,8 @@ export class MessageHistoryManager {
    */
   setSystemMessage(content: string): void {
     const systemMessage: CodeBuddyMessage = { role: 'system', content };
-    if (this.messages.length > 0 && this.messages[0].role === 'system') {
+    const first = this.messages[0];
+    if (first !== undefined && first.role === 'system') {
       this.messages[0] = systemMessage;
     } else {
       this.messages.unshift(systemMessage);
@@ -302,10 +305,9 @@ export class MessageHistoryManager {
    * Trim LLM messages, preserving system message
    */
   private trimMessages(): void {
-    const hasSystemMessage = this.messages[0]?.role === 'system';
+    const systemMessage = this.messages[0];
 
-    if (hasSystemMessage) {
-      const systemMessage = this.messages[0];
+    if (systemMessage !== undefined && systemMessage.role === 'system') {
       const conversationMessages = this.messages.slice(1);
       if (conversationMessages.length > this.config.maxMessagesSize) {
         const trimCount = conversationMessages.length - this.config.maxMessagesSize;

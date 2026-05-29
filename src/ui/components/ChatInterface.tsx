@@ -121,9 +121,10 @@ function ChatInterfaceWithAgent({
       const index = prev.findIndex(
         (entry) => entry.type === "tool_call" && entry.toolCall?.id === toolCallId
       );
-      if (index !== -1) {
+      const target = prev[index];
+      if (index !== -1 && target) {
         const updated = [...prev];
-        updated[index] = { ...prev[index], ...updates };
+        updated[index] = { ...target, ...updates };
         return updated;
       }
       return prev;
@@ -300,9 +301,9 @@ function ChatInterfaceWithAgent({
                     const idx = prev.findIndex(
                       (e) => e.type === 'tool_call' && e.toolCall?.id === toolCallId
                     );
-                    if (idx !== -1) {
+                    const existing = idx !== -1 ? prev[idx] : undefined;
+                    if (existing) {
                       const updated = [...prev];
-                      const existing = updated[idx];
                       updated[idx] = {
                         ...existing,
                         content: (existing.content === 'Executing...' ? '' : existing.content) + delta,

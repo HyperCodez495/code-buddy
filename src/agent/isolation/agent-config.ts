@@ -178,12 +178,13 @@ export function generateSessionKey(agentId: string, sessionId: string): string {
  */
 export function parseSessionKey(key: string): { agentId: string; sessionId: string } | null {
   const parts = key.split(':');
-  if (parts.length !== 3 || parts[0] !== 'agent') {
+  const [prefix, agentId, sessionId] = parts;
+  if (parts.length !== 3 || prefix !== 'agent' || agentId === undefined || sessionId === undefined) {
     return null;
   }
   return {
-    agentId: parts[1],
-    sessionId: parts[2],
+    agentId,
+    sessionId,
   };
 }
 

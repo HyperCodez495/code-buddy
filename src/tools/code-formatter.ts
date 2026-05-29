@@ -318,7 +318,7 @@ function formatYaml(code: string, opts: FormatOptions): FormatResult {
     const match = line.match(/^(\s*)(.*)$/);
     if (!match) continue;
 
-    const [, spaces, content] = match;
+    const [, spaces = '', content = ''] = match;
     const level = Math.floor(spaces.length / 2);
     lines.push(indent.repeat(level) + content);
   }

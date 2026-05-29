@@ -48,9 +48,14 @@ function parseHunkHeader(line: string): { oldLine: number; newLine: number } | n
   const hunkHeaderRegex = /^@@ -(\d+),?\d* \+(\d+),?\d* @@/;
   const match = line.match(hunkHeaderRegex);
   if (match) {
+    const oldLineStr = match[1];
+    const newLineStr = match[2];
+    if (oldLineStr === undefined || newLineStr === undefined) {
+      return null;
+    }
     return {
-      oldLine: parseInt(match[1], 10),
-      newLine: parseInt(match[2], 10),
+      oldLine: parseInt(oldLineStr, 10),
+      newLine: parseInt(newLineStr, 10),
     };
   }
   return null;

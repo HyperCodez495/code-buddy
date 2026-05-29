@@ -69,6 +69,13 @@ export function verifyToken(token: string, secret: string): JwtPayload | null {
     }
 
     const [headerEncoded, payloadEncoded, signatureProvided] = parts;
+    if (
+      headerEncoded === undefined ||
+      payloadEncoded === undefined ||
+      signatureProvided === undefined
+    ) {
+      return null;
+    }
 
     // Verify signature
     const expectedSignature = createSignature(
@@ -104,7 +111,7 @@ export function verifyToken(token: string, secret: string): JwtPayload | null {
  */
 function parseExpiration(exp: string): number {
   const match = exp.match(/^(\d+)([smhd])$/);
-  if (!match) {
+  if (!match || match[1] === undefined || match[2] === undefined) {
     return 24 * 60 * 60; // Default 24 hours
   }
 
@@ -135,7 +142,12 @@ export function decodeToken(token: string): JwtPayload | null {
       return null;
     }
 
-    return JSON.parse(base64UrlDecode(parts[1]));
+    const payloadEncoded = parts[1];
+    if (payloadEncoded === undefined) {
+      return null;
+    }
+
+    return JSON.parse(base64UrlDecode(payloadEncoded));
   } catch {
     return null;
   }

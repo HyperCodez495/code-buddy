@@ -141,8 +141,7 @@ export class ConfirmationService extends EventEmitter {
 
     const lines = ['🔍 Dry-run Summary:', '═'.repeat(50)];
 
-    for (let i = 0; i < this.dryRunLog.length; i++) {
-      const entry = this.dryRunLog[i];
+    for (const [i, entry] of this.dryRunLog.entries()) {
       lines.push(`\n${i + 1}. ${entry.operation}`);
       lines.push(`   Time: ${entry.timestamp.toLocaleTimeString()}`);
       if (entry.content) {

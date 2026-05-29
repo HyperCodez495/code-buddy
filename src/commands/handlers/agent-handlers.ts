@@ -34,7 +34,7 @@ export function handleAgent(args: string[]): CommandHandlerResult {
     };
   }
 
-  const subcommand = args[0].toLowerCase();
+  const subcommand = args[0]?.toLowerCase() ?? '';
 
   // Create new agent
   if (subcommand === 'create') {
@@ -124,6 +124,12 @@ function handleAgentInfo(args: string[]): CommandHandlerResult {
   }
 
   const id = args[0];
+  if (id === undefined) {
+    return {
+      handled: true,
+      output: 'Usage: /agent info <agent-id>',
+    };
+  }
   const loader = getCustomAgentLoader();
   const agent = loader.getAgent(id);
 
@@ -178,7 +184,7 @@ function handleAgentInfo(args: string[]): CommandHandlerResult {
  * Activate an agent
  */
 function handleAgentActivate(args: string[]): CommandHandlerResult {
-  const id = args[0];
+  const id = args[0] ?? '';
   const loader = getCustomAgentLoader();
   const agent = loader.getAgent(id);
 
@@ -223,6 +229,9 @@ export function checkAgentTriggers(input: string): CommandHandlerResult | null {
 
   // Use the first matching agent
   const agent = matchingAgents[0];
+  if (agent === undefined) {
+    return null;
+  }
   setActiveCustomAgentRuntime(agent);
 
   return {

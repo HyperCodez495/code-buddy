@@ -270,6 +270,13 @@ export class CheckpointManager extends EventEmitter {
     }
 
     const lastCheckpoint = this.checkpoints[this.checkpoints.length - 1];
+    if (lastCheckpoint === undefined) {
+      return {
+        success: false,
+        restored: [],
+        errors: ['No checkpoints available']
+      };
+    }
     const result = this.rewindTo(lastCheckpoint.id);
 
     return {

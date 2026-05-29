@@ -157,17 +157,20 @@ export function HelpSystem({
           }
           if (key.return && searchResults.length > 0) {
             const result = searchResults[0];
-            const catIndex = config.categories.findIndex(
-              (c) => c.name === result.category
-            );
-            if (catIndex !== -1) {
-              setSelectedCategory(catIndex);
-              const cmdIndex = config.categories[catIndex].commands.findIndex(
-                (c) => c.command === result.command.command
+            if (result) {
+              const catIndex = config.categories.findIndex(
+                (c) => c.name === result.category
               );
-              if (cmdIndex !== -1) {
-                setSelectedCommand(cmdIndex);
-                setView("command");
+              const matchedCategory = config.categories[catIndex];
+              if (catIndex !== -1 && matchedCategory) {
+                setSelectedCategory(catIndex);
+                const cmdIndex = matchedCategory.commands.findIndex(
+                  (c) => c.command === result.command.command
+                );
+                if (cmdIndex !== -1) {
+                  setSelectedCommand(cmdIndex);
+                  setView("command");
+                }
               }
             }
             setSearchMode(false);

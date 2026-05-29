@@ -56,7 +56,7 @@ function renderPlain(data: TableData): string {
 
   // Headers
   const headerRow = headers
-    .map((h, i) => h.padEnd(colWidths[i]))
+    .map((h, i) => h.padEnd(colWidths[i] ?? 0))
     .join(' | ');
   lines.push(headerRow);
   lines.push('-'.repeat(headerRow.length));
@@ -64,7 +64,7 @@ function renderPlain(data: TableData): string {
   // Rows
   for (const row of rows) {
     const rowStr = row
-      .map((cell, i) => formatCell(cell).padEnd(colWidths[i]))
+      .map((cell, i) => formatCell(cell).padEnd(colWidths[i] ?? 0))
       .join(' | ');
     lines.push(rowStr);
   }
@@ -105,7 +105,7 @@ function renderFancy(data: TableData, ctx: RenderContext): string {
   // Header row
   const headerCells = headers.map((h, i) => {
     const align = alignment[i] || 'left';
-    return alignText(h, colWidths[i], align);
+    return alignText(h, colWidths[i] ?? 0, align);
   });
 
   lines.push(
@@ -118,12 +118,11 @@ function renderFancy(data: TableData, ctx: RenderContext): string {
   lines.push('├' + colWidths.map(w => '─'.repeat(w + 2)).join('┼') + '┤');
 
   // Data rows
-  for (let rowIdx = 0; rowIdx < rows.length; rowIdx++) {
-    const row = rows[rowIdx];
+  for (const row of rows) {
     const rowCells = row.map((cell, i) => {
       const align = alignment[i] || 'left';
       const cellStr = formatCell(cell);
-      return alignText(cellStr, colWidths[i], align);
+      return alignText(cellStr, colWidths[i] ?? 0, align);
     });
 
     lines.push('│ ' + rowCells.join(' │ ') + ' │');
@@ -150,7 +149,7 @@ function calculateColumnWidths(
 
   for (const row of rows) {
     for (let i = 0; i < row.length; i++) {
-      const cellStr = formatCell(row[i]);
+      const cellStr = formatCell(row[i] ?? null);
       widths[i] = Math.max(widths[i] || 0, stringWidth(cellStr));
     }
   }

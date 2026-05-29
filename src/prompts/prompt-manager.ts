@@ -359,24 +359,33 @@ export class PromptManager {
 
     const yamlBlock = match[1];
     const content = match[2];
+    // The regex requires both capture groups to match, so if `match` is
+    // truthy these are guaranteed strings. Guard to satisfy the type checker
+    // and fall back to treating the input as raw content with no metadata.
+    if (yamlBlock === undefined || content === undefined) {
+      return { content: raw, meta: null };
+    }
     const meta: PromptMeta = {};
 
     for (const line of yamlBlock.split('\n')) {
       const kv = line.match(/^(\w[\w-]*):\s*(.+)$/);
       if (!kv) continue;
-      const key = kv[1].trim();
-      const val = kv[2].trim();
+      const key = kv[1];
+      const val = kv[2];
+      if (key === undefined || val === undefined) continue;
+      const trimmedKey = key.trim();
+      const trimmedVal = val.trim();
 
-      switch (key) {
+      switch (trimmedKey) {
         case 'description':
-          meta.description = val.replace(/^["']|["']$/g, '');
+          meta.description = trimmedVal.replace(/^["']|["']$/g, '');
           break;
         case 'argument-hint':
         case 'argumentHint':
-          meta.argumentHint = val.replace(/^["']|["']$/g, '');
+          meta.argumentHint = trimmedVal.replace(/^["']|["']$/g, '');
           break;
         case 'tags': {
-          const stripped = val.replace(/^\[|\]$/g, '');
+          const stripped = trimmedVal.replace(/^\[|\]$/g, '');
           meta.tags = stripped.split(',').map(t => t.trim().replace(/^["']|["']$/g, '')).filter(Boolean);
           break;
         }

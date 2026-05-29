@@ -226,7 +226,7 @@ export class ClientCommandDispatcher {
       const modelArg = input.trim().split(" ")[1];
       const modelNames = context.availableModels.map((m) => m.model);
 
-      if (modelNames.includes(modelArg)) {
+      if (modelArg !== undefined && modelNames.includes(modelArg)) {
         context.agent.setModel(modelArg);
         updateCurrentModel(modelArg);
         const confirmEntry: ChatEntry = {
@@ -303,7 +303,7 @@ export class ClientCommandDispatcher {
       "echo", "grep", "find", "cp", "mv", "rm"
     ];
     const firstWord = input.trim().split(" ")[0];
-    return directBashCommands.includes(firstWord);
+    return directBashCommands.includes(firstWord ?? "");
   }
 
   private static async handleDirectBashCommand(command: string, context: ClientCommandContext) {

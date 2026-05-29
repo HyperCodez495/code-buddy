@@ -471,7 +471,7 @@ export class CodebaseExplorer {
       try {
         const goMod = await fsPromises.readFile(goModPath, "utf-8");
         const moduleMatch = goMod.match(/module\s+(.+)/);
-        if (moduleMatch) {
+        if (moduleMatch && moduleMatch[1] !== undefined) {
           info.name = moduleMatch[1].trim();
         }
       } catch {
@@ -693,6 +693,7 @@ export class CodebaseExplorer {
 
         for (let i = 0; i < filtered.length; i++) {
           const entry = filtered[i];
+          if (entry === undefined) continue;
           const isLast = i === filtered.length - 1;
           const connector = isLast ? "└── " : "├── ";
           const childPrefix = isLast ? "    " : "│   ";

@@ -66,7 +66,9 @@ export class CostPredictor {
   ): CostPrediction {
     const estimatedInputTokens = this.estimateInputTokens(messages);
     const estimatedOutputTokens = this.estimateOutputTokens();
-    const pricing = MODEL_PRICING[model] || MODEL_PRICING['default'];
+    const pricing: ModelPricing =
+      MODEL_PRICING[model] ??
+      MODEL_PRICING['default'] ?? { inputPer1k: 0.003, outputPer1k: 0.015 };
 
     const estimatedCost =
       (estimatedInputTokens / 1000) * pricing.inputPer1k +

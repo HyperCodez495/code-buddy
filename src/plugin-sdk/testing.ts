@@ -196,7 +196,7 @@ export function createMockLLMProvider(options?: MockLLMProviderOptions): MockLLM
   function getNextResponse(): string {
     const response = responses[responseIndex % responses.length];
     responseIndex++;
-    return response;
+    return response ?? 'Mock LLM response';
   }
 
   return {

@@ -151,8 +151,9 @@ function formatEvent(event: RunEvent, relativeMs?: number): string {
  * Build a full timeline string from a list of events.
  */
 export function prettyTimeline(events: RunEvent[]): string {
-  if (events.length === 0) return '  (no events)';
-  const startTs = events[0].ts;
+  const first = events[0];
+  if (first === undefined) return '  (no events)';
+  const startTs = first.ts;
   return events
     .map((e) => formatEvent(e, e.ts - startTs))
     .join('\n');

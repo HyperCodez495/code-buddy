@@ -361,7 +361,10 @@ export class CollaborativeSessionManager extends EventEmitter {
   }
 
   private assignColor(index: number): string {
-    return USER_COLORS[index % USER_COLORS.length];
+    // USER_COLORS is a non-empty literal array; the modulo keeps the index in range
+    // for non-negative indices. Coalesce to the first color to satisfy the
+    // string return type and to stay safe for any unexpected (e.g. negative) index.
+    return USER_COLORS[index % USER_COLORS.length] ?? USER_COLORS[0] ?? '#FF6B6B';
   }
 
   dispose(): void {

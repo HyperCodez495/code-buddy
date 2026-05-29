@@ -239,7 +239,13 @@ function parseVersion(version: string): [number, number, number] {
   if (!match) {
     return [0, 0, 0];
   }
-  return [parseInt(match[1]), parseInt(match[2]), parseInt(match[3])];
+  // safe: capture groups 1-3 are mandatory `(\d+)` in the regex above, so a truthy
+  // match guarantees all three are present; `?? '0'` keeps the [0,0,0] fallback shape.
+  return [
+    parseInt(match[1] ?? '0'),
+    parseInt(match[2] ?? '0'),
+    parseInt(match[3] ?? '0'),
+  ];
 }
 
 /**

@@ -227,6 +227,7 @@ export class PerformanceMonitor {
       }
 
       const s = summary[metric.name];
+      if (!s) continue;
       const duration = metric.duration || 0;
 
       s.count++;
@@ -237,8 +238,9 @@ export class PerformanceMonitor {
 
     // Calculate averages
     for (const name in summary) {
-      summary[name].averageDuration =
-        summary[name].totalDuration / summary[name].count;
+      const s = summary[name];
+      if (!s) continue;
+      s.averageDuration = s.totalDuration / s.count;
     }
 
     return summary;

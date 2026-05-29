@@ -234,19 +234,19 @@ export function generateDiff(mod: FileModification): DiffLine[] {
   // Content diff
   if (mod.type === 'create' && mod.newContent) {
     const newLines = mod.newContent.split('\n');
-    for (let i = 0; i < newLines.length; i++) {
+    for (const [i, line] of newLines.entries()) {
       lines.push({
         type: 'addition',
-        content: newLines[i],
+        content: line,
         newLineNumber: i + 1,
       });
     }
   } else if (mod.type === 'delete' && mod.originalContent) {
     const oldLines = mod.originalContent.split('\n');
-    for (let i = 0; i < oldLines.length; i++) {
+    for (const [i, line] of oldLines.entries()) {
       lines.push({
         type: 'deletion',
-        content: oldLines[i],
+        content: line,
         oldLineNumber: i + 1,
       });
     }

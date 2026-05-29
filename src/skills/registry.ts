@@ -448,7 +448,7 @@ export class SkillRegistry extends EventEmitter {
       minConfidence: 0.15,
     });
 
-    return matches.length > 0 ? matches[0] : null;
+    return matches[0] ?? null;
   }
 
   // ==========================================================================

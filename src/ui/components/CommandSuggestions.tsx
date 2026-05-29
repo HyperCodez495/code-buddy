@@ -65,8 +65,9 @@ export function filterCommandSuggestions<T extends { command: string }>(
 
   // Check if user is typing arguments for a command (e.g., "/ai-test qu")
   const parts = input.trim().split(/\s+/);
-  if (parts.length >= 1 && parts[0].startsWith('/')) {
-    const cmdName = parts[0].slice(1).toLowerCase();
+  const firstPart = parts[0];
+  if (firstPart !== undefined && firstPart.startsWith('/')) {
+    const cmdName = firstPart.slice(1).toLowerCase();
     const slashManager = getSlashCommandManager();
     const command = slashManager.getCommand(cmdName);
 

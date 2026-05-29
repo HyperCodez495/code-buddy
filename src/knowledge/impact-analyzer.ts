@@ -77,8 +77,9 @@ export function analyzeImpact(
   // Transitively follow import chains: if module A imports module B which
   // defines the changed entity, and module C imports A, C is also affected.
   const entityModule = graph.query({ subject: entity, predicate: 'definedIn' });
-  if (entityModule.length > 0) {
-    const mod = entityModule[0].object;
+  const firstEntityModule = entityModule[0];
+  if (firstEntityModule !== undefined) {
+    const mod = firstEntityModule.object;
     const importVisited = new Set<string>([mod]);
     const importQueue: Array<{ node: string; depth: number }> = [{ node: mod, depth: 0 }];
     const importMaxDepth = Math.min(maxDepth, 3); // cap import chain depth

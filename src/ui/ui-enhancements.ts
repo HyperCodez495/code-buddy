@@ -21,7 +21,7 @@ export class BrailleSpinner {
   private stream: NodeJS.WriteStream | null = null;
 
   getFrame(tick: number): string {
-    return BRAILLE_CHARS[tick % BRAILLE_CHARS.length];
+    return BRAILLE_CHARS[tick % BRAILLE_CHARS.length] ?? BRAILLE_CHARS[0] ?? '⠋';
   }
 
   getShimmer(text: string, tick: number): string {

@@ -204,16 +204,14 @@ function renderFancy(data: CodeStructureData, ctx: RenderContext): string {
   }
 
   // Render sections
-  for (let i = 0; i < sections.length; i++) {
-    const section = sections[i];
+  for (const [i, section] of sections.entries()) {
     const isLast = i === sections.length - 1;
     const prefix = isLast ? tree.last : tree.branch;
     const childPrefix = isLast ? tree.space : tree.vertical;
 
     lines.push(`${prefix} ${section.icon} ${section.title} (${section.items.length})`);
 
-    for (let j = 0; j < section.items.length; j++) {
-      const item = section.items[j];
+    for (const [j, item] of section.items.entries()) {
       const itemIsLast = j === section.items.length - 1;
       const itemPrefix = itemIsLast ? tree.last : tree.branch;
 

@@ -203,9 +203,11 @@ Document the architectural subsystems (clusters) detected by community detection
           const lines = [`# Detected ${communities.communitySizes.size} subsystems (modularity: ${communities.modularity.toFixed(3)})\n`];
           for (const [id, members] of communities.communityMembers) {
             if (members.length < 3) continue;
+            const first = members[0];
+            if (first === undefined) continue;
             const names = members.map(m => m.replace(/^mod:/, ''));
             const topMember = members.reduce((best, m) =>
-              graph.getEntityRank(m) > graph.getEntityRank(best) ? m : best, members[0]);
+              graph.getEntityRank(m) > graph.getEntityRank(best) ? m : best, first);
             lines.push(`## Community ${id} (${members.length} modules)`);
             lines.push(`Top module: ${topMember.replace(/^mod:/, '')} (rank: ${graph.getEntityRank(topMember).toFixed(3)})`);
             lines.push(`Members: ${names.slice(0, 15).join(', ')}${names.length > 15 ? ` +${names.length - 15} more` : ''}`);
@@ -555,7 +557,7 @@ function getModuleLayers(graph: KnowledgeGraph): Array<[string, number]> {
   const layers = new Map<string, number>();
   for (const m of modules) {
     const parts = m.split('/');
-    const layer = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : parts[0];
+    const layer = parts.length >= 2 ? `${parts[0]}/${parts[1]}` : m;
     layers.set(layer, (layers.get(layer) ?? 0) + 1);
   }
   return [...layers.entries()].sort((a, b) => b[1] - a[1]);

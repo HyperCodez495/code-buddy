@@ -370,14 +370,16 @@ export class TeamSessionManager extends EventEmitter {
 
       // If owner leaves and there are other members, transfer ownership
       if (session.owner === this.currentMember.id && session.members.length > 0) {
-        const newOwner = session.members.find(m => m.role === 'admin') || session.members[0];
-        session.owner = newOwner.id;
-        newOwner.role = 'owner';
+        const newOwner = session.members.find(m => m.role === 'admin') ?? session.members[0];
+        if (newOwner) {
+          session.owner = newOwner.id;
+          newOwner.role = 'owner';
 
-        this.addAuditEntry(session, 'ownership_transferred', {
-          newOwnerId: newOwner.id,
-          newOwnerName: newOwner.name,
-        });
+          this.addAuditEntry(session, 'ownership_transferred', {
+            newOwnerId: newOwner.id,
+            newOwnerName: newOwner.name,
+          });
+        }
       }
 
       // If no members left, close session
@@ -487,6 +489,9 @@ export class TeamSessionManager extends EventEmitter {
     }
 
     const member = this.currentSession.members[memberIndex];
+    if (!member) {
+      throw new Error('Member not found in this session. They may have left or been removed.');
+    }
     this.currentSession.members.splice(memberIndex, 1);
     this.currentSession.updatedAt = new Date();
 

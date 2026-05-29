@@ -264,6 +264,9 @@ export class IterativeRepairEngine extends EventEmitter {
 
     for (let i = 0; i < this.config.maxAttempts && i < strategies.length; i++) {
       const strategy = strategies[i];
+      if (strategy === undefined) {
+        continue;
+      }
 
       this.emit('attempt:start', { attempt: i + 1, strategy });
 
@@ -301,16 +304,18 @@ export class IterativeRepairEngine extends EventEmitter {
         lessonsLearned.push(this.learnFromFailure(context, attempt));
 
         // Update context with new errors for next attempt
-        if (attempt.feedback.newErrors.length > 0) {
-          context.errorMessage = attempt.feedback.newErrors[0];
+        const firstNewError = attempt.feedback.newErrors[0];
+        if (firstNewError !== undefined) {
+          context.errorMessage = firstNewError;
           context.previousAttempts = attempts;
         }
       }
     }
 
     // Rollback if enabled and all attempts failed
-    if (this.config.enableRollback && attempts.length > 0) {
-      await this.rollback(context, attempts[0].originalCode);
+    const firstAttempt = attempts[0];
+    if (this.config.enableRollback && firstAttempt !== undefined) {
+      await this.rollback(context, firstAttempt.originalCode);
     }
 
     this.emit('repair:complete', { success: false, attempts: attempts.length });
@@ -481,21 +486,22 @@ export class IterativeRepairEngine extends EventEmitter {
       const lines = code.split('\n');
       const targetLine = context.errorLine - 1;
 
-      if (targetLine >= 0 && targetLine < lines.length) {
+      const targetContent = lines[targetLine];
+      if (targetLine >= 0 && targetContent !== undefined) {
         // Simple insertion/modification
         if (patch.includes('// original code')) {
           // Wrap in try-catch or if-check
-          const indent = lines[targetLine].match(/^\s*/)?.[0] || '';
-          lines[targetLine] = patch.replace('// original code', lines[targetLine].trim())
+          const indent = targetContent.match(/^\s*/)?.[0] || '';
+          lines[targetLine] = patch.replace('// original code', targetContent.trim())
             .split('\n')
             .map(l => indent + l)
             .join('\n');
         } else if (patch.includes('?.')) {
           // Optional chaining
-          lines[targetLine] = lines[targetLine].replace(/\.(\w+)/g, '?.$1');
+          lines[targetLine] = targetContent.replace(/\.(\w+)/g, '?.$1');
         } else {
           // Append fix
-          lines[targetLine] = lines[targetLine] + ' ' + patch;
+          lines[targetLine] = targetContent + ' ' + patch;
         }
 
         return lines.join('\n');
@@ -526,6 +532,19 @@ export class IterativeRepairEngine extends EventEmitter {
       }, this.config.testTimeout);
 
       const [cmd, ...args] = testCommand.split(' ');
+      if (cmd === undefined) {
+        clearTimeout(timeout);
+        resolve({
+          compiled: false,
+          testsRun: 0,
+          testsPassed: 0,
+          testsFailed: 0,
+          newErrors: ['Invalid test command'],
+          fixedErrors: [],
+          regressions: [],
+        });
+        return;
+      }
       const proc = spawn(cmd, args, {
         cwd: path.dirname(context.file),
         shell: true,
@@ -583,7 +602,10 @@ export class IterativeRepairEngine extends EventEmitter {
     for (const pattern of patterns) {
       let match;
       while ((match = pattern.exec(output)) !== null) {
-        errors.push(match[1].trim());
+        const captured = match[1];
+        if (captured !== undefined) {
+          errors.push(captured.trim());
+        }
       }
     }
 
@@ -712,9 +734,10 @@ export class IterativeRepairEngine extends EventEmitter {
 
     for (let i = 0; i < this.config.maxAttempts; i++) {
       // Generate user message for this turn
-      const userMessage = i === 0
+      const lastAttempt = attempts[attempts.length - 1];
+      const userMessage = i === 0 || lastAttempt === undefined
         ? 'Please fix this bug.'
-        : this.buildFollowUpPrompt(attempts[attempts.length - 1]);
+        : this.buildFollowUpPrompt(lastAttempt);
 
       conversation.push({ role: 'user', content: userMessage });
 
@@ -775,8 +798,9 @@ export class IterativeRepairEngine extends EventEmitter {
     }
 
     // Rollback if all attempts failed
-    if (this.config.enableRollback && attempts.length > 0) {
-      await this.rollback(context, attempts[0].originalCode);
+    const firstChatAttempt = attempts[0];
+    if (this.config.enableRollback && firstChatAttempt !== undefined) {
+      await this.rollback(context, firstChatAttempt.originalCode);
     }
 
     return {
@@ -897,7 +921,7 @@ ${context.testCode}
   private extractPatchFromResponse(response: string): string | null {
     // Try to extract code block
     const codeBlockMatch = response.match(/```(?:\w+)?\n([\s\S]*?)```/);
-    if (codeBlockMatch) {
+    if (codeBlockMatch && codeBlockMatch[1] !== undefined) {
       return codeBlockMatch[1].trim();
     }
 

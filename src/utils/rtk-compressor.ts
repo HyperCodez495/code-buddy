@@ -97,6 +97,7 @@ export function wrapWithRTK(command: string): string {
   // Extract the base command and remaining args
   const parts = trimmed.split(/\s+/);
   const firstToken = parts[0];
+  if (firstToken === undefined) return command;
   const restArgs = parts.slice(1).join(' ');
 
   // Check direct support
@@ -125,6 +126,7 @@ export function isRTKCompatible(command: string): boolean {
 
   const parts = trimmed.split(/\s+/);
   const firstToken = parts[0];
+  if (firstToken === undefined) return false;
 
   if (RTK_SUPPORTED_COMMANDS.has(firstToken)) return true;
 

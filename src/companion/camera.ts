@@ -311,12 +311,14 @@ function decodeRendererImage(options: CameraRendererSnapshotOptions): {
 } {
   if (options.dataUrl) {
     const match = options.dataUrl.match(/^data:(image\/(?:png|jpeg|jpg|webp));base64,([A-Za-z0-9+/=\s]+)$/);
-    if (!match) {
+    const matchedMediaType = match?.[1];
+    const matchedData = match?.[2];
+    if (matchedMediaType === undefined || matchedData === undefined) {
       throw new Error('Renderer camera snapshot must be a base64 PNG, JPEG, or WEBP data URL.');
     }
     return {
-      mediaType: match[1] === 'image/jpg' ? 'image/jpeg' : match[1],
-      buffer: Buffer.from(match[2].replace(/\s/g, ''), 'base64'),
+      mediaType: matchedMediaType === 'image/jpg' ? 'image/jpeg' : matchedMediaType,
+      buffer: Buffer.from(matchedData.replace(/\s/g, ''), 'base64'),
     };
   }
 

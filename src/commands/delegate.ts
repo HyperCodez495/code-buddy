@@ -188,7 +188,7 @@ export async function createPullRequest(
 
   // Parse PR URL and number from output
   const urlMatch = stdout.match(/https:\/\/github\.com\/[^\s]+\/pull\/(\d+)/);
-  if (urlMatch) {
+  if (urlMatch && urlMatch[1] !== undefined) {
     return {
       url: urlMatch[0],
       number: parseInt(urlMatch[1], 10),

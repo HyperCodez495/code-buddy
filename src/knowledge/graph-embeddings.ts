@@ -111,7 +111,12 @@ export function createGraphEmbeddingIndex(
         }
 
         // Build vector index
-        const dim = embeddings[0].length;
+        const firstEmbedding = embeddings[0];
+        if (!firstEmbedding) {
+          ready = false;
+          return;
+        }
+        const dim = firstEmbedding.length;
         try {
           const { USearchVectorIndex } = await import('../search/usearch-index.js');
           vectorIndex = new USearchVectorIndex({ dimensions: dim, metric: 'cos' });
@@ -259,9 +264,11 @@ class BruteForceIndex {
       let normA = 0;
       let normB = 0;
       for (let i = 0; i < this.dim; i++) {
-        dot += query[i] * vec[i];
-        normA += query[i] * query[i];
-        normB += vec[i] * vec[i];
+        const q = query[i] ?? 0;
+        const v = vec[i] ?? 0;
+        dot += q * v;
+        normA += q * q;
+        normB += v * v;
       }
       const denom = Math.sqrt(normA) * Math.sqrt(normB);
       const similarity = denom > 0 ? dot / denom : 0;

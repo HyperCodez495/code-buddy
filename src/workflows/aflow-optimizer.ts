@@ -122,7 +122,10 @@ export class AFlowOptimizer {
       if (node.visits > 0 && node.children.length === 0) {
         this.expand(node, workflow);
         if (node.children.length > 0) {
-          node = node.children[Math.floor(Math.random() * node.children.length)];
+          const picked = node.children[Math.floor(Math.random() * node.children.length)];
+          if (picked) {
+            node = picked;
+          }
         }
       }
 
@@ -175,6 +178,7 @@ export class AFlowOptimizer {
       for (let j = i + 1; j < workflow.steps.length; j++) {
         const a = workflow.steps[i];
         const b = workflow.steps[j];
+        if (!a || !b) continue;
 
         const aDepsOnB = a.dependsOn?.includes(b.id) ?? false;
         const bDepsOnA = b.dependsOn?.includes(a.id) ?? false;
@@ -217,8 +221,13 @@ export class AFlowOptimizer {
       if (durations && durations.length >= 3) {
         const sorted = [...durations].sort((a, b) => a - b);
         const p95 = sorted[Math.floor(sorted.length * 0.95)];
-        const suggested = Math.max(5000, Math.ceil(p95 * 2));
-        suggestions.set(step.id, suggested);
+        if (p95 === undefined) {
+          // Default: keep existing or use 30s (sorted unexpectedly empty)
+          suggestions.set(step.id, step.timeout || 30000);
+        } else {
+          const suggested = Math.max(5000, Math.ceil(p95 * 2));
+          suggestions.set(step.id, suggested);
+        }
       } else {
         // Default: keep existing or use 30s
         suggestions.set(step.id, step.timeout || 30000);
@@ -279,7 +288,15 @@ export class AFlowOptimizer {
         }
       }
 
-      current = bestChild || current.children[0];
+      const fallback = current.children[0];
+      if (bestChild) {
+        current = bestChild;
+      } else if (fallback) {
+        current = fallback;
+      } else {
+        // No children to descend into; stop (loop guard guarantees this is unreachable)
+        break;
+      }
     }
     return current;
   }

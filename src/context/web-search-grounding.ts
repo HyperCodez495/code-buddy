@@ -292,13 +292,12 @@ export class WebSearchManager extends EventEmitter {
         '',
       ];
 
-      for (let i = 0; i < context.results.length; i++) {
-        const r = context.results[i];
+      context.results.forEach((r, i) => {
         lines.push(`[${i + 1}] ${r.title}`);
         lines.push(`    URL: ${r.url}`);
         lines.push(`    ${r.snippet}`);
         lines.push('');
-      }
+      });
 
       if (context.citations.length > 0) {
         lines.push('Sources:');
@@ -394,6 +393,9 @@ export class WebSearchManager extends EventEmitter {
     let match;
     while ((match = resultRegex.exec(html)) !== null && results.length < maxResults) {
       const [, url, title, snippet] = match;
+      if (url === undefined || title === undefined || snippet === undefined) {
+        continue;
+      }
 
       // Clean up URL (DuckDuckGo redirects)
       const cleanUrl = this.cleanDuckDuckGoUrl(url);
@@ -412,6 +414,9 @@ export class WebSearchManager extends EventEmitter {
 
       while ((match = altRegex.exec(html)) !== null && results.length < maxResults) {
         const [, url, title, snippet] = match;
+        if (url === undefined || title === undefined || snippet === undefined) {
+          continue;
+        }
 
         results.push({
           title: this.decodeHtml(title.trim()),
@@ -428,7 +433,7 @@ export class WebSearchManager extends EventEmitter {
   private cleanDuckDuckGoUrl(url: string): string {
     // DuckDuckGo wraps URLs in a redirect
     const match = url.match(/uddg=([^&]+)/);
-    if (match) {
+    if (match && match[1] !== undefined) {
       return decodeURIComponent(match[1]);
     }
     return url;

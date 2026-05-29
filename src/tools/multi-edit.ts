@@ -57,8 +57,7 @@ export class MultiEditTool {
       return { success: false, error: 'edits must be a non-empty array of {old_string, new_string} pairs' };
     }
 
-    for (let i = 0; i < edits.length; i++) {
-      const edit = edits[i];
+    for (const [i, edit] of edits.entries()) {
       if (typeof edit.old_string !== 'string') {
         return { success: false, error: `Edit #${i + 1}: old_string must be a string` };
       }
@@ -90,8 +89,8 @@ export class MultiEditTool {
     // ── Dry-run: apply all edits in memory, checking each ─────────
     let content = originalContent;
 
-    for (let i = 0; i < edits.length; i++) {
-      const { old_string, new_string } = edits[i];
+    for (const [i, edit] of edits.entries()) {
+      const { old_string, new_string } = edit;
 
       if (!content.includes(old_string)) {
         return {

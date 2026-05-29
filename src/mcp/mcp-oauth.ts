@@ -96,6 +96,14 @@ function encryptData(text: string): string {
 function decryptData(data: string): string {
   const passphrase = getEncryptionKey();
   const [saltHex, ivHex, tagHex, encrypted] = data.split(':');
+  if (
+    saltHex === undefined ||
+    ivHex === undefined ||
+    tagHex === undefined ||
+    encrypted === undefined
+  ) {
+    throw new Error('Invalid encrypted data format');
+  }
   const salt = Buffer.from(saltHex, 'hex');
   const key = deriveKey(passphrase, salt);
   const iv = Buffer.from(ivHex, 'hex');

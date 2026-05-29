@@ -478,7 +478,7 @@ export class ToolSelector {
     const reducedTokens = this.estimateTokens(selectedTools);
 
     // Compute confidence based on best match score ratio
-    const maxScore = sortedTools.length > 0 ? sortedTools[0][1] : 0;
+    const maxScore = sortedTools[0]?.[1] ?? 0;
     const confidence = Math.min(1, maxScore / 10);
 
     return {

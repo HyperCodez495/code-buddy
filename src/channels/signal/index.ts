@@ -618,8 +618,10 @@ export class SignalChannel extends BaseChannel {
   ): ContentType {
     if (data.attachments && data.attachments.length > 0) {
       const first = data.attachments[0];
-      if (first.voiceNote) return 'voice';
-      return this.mimeToContentType(first.contentType);
+      if (first) {
+        if (first.voiceNote) return 'voice';
+        return this.mimeToContentType(first.contentType);
+      }
     }
     if (data.message?.startsWith('/')) return 'command';
     return 'text';

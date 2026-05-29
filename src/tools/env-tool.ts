@@ -202,6 +202,7 @@ export class EnvTool {
       const match = trimmed.match(/^([A-Z_][A-Z0-9_]*)\s*=\s*(.*)$/i);
       if (match) {
         const [, key, value] = match;
+        if (key === undefined || value === undefined) continue;
         // Remove surrounding quotes
         const cleanValue = value.replace(/^["']|["']$/g, '');
         process.env[key] = cleanValue;
@@ -284,7 +285,9 @@ export class EnvTool {
     const variables: string[] = [];
 
     for (let i = 0; i < lines.length; i++) {
-      const line = lines[i].trim();
+      const rawLine = lines[i];
+      if (rawLine === undefined) continue;
+      const line = rawLine.trim();
       const lineNum = i + 1;
 
       // Skip comments and empty lines
@@ -298,6 +301,7 @@ export class EnvTool {
       }
 
       const [, key, value] = match;
+      if (key === undefined || value === undefined) continue;
       variables.push(key);
 
       // Check for common issues
