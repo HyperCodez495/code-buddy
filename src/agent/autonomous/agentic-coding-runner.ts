@@ -22,6 +22,14 @@ import { validateCommand } from '../../utils/input-validation/command-validator.
 import { shouldDecompose, decomposeTask } from './task-decomposer.js';
 import { saveCheckpoint, loadCheckpoint, type AgenticCodingCheckpoint } from './checkpoint-manager.js';
 import { redactSecrets } from '../../security/data-redaction.js';
+import {
+  normalizeGitPath,
+  isPathAllowedByContract,
+  resolveRepoPath,
+} from './agentic-coding-paths.js';
+// Re-export the extracted path helpers for backward compatibility — they used
+// to be defined in this module and are imported from here elsewhere.
+export { normalizeGitPath, isPathAllowedByContract, resolveRepoPath };
 import { GitNexusTool, type GitNexusContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 import { evaluateScope } from '../scope-awareness.js';
 import type { FleetDispatchProfile } from '../../fleet/dispatch-profile.js';
@@ -3180,10 +3188,6 @@ async function collectRulesFiles(repo: string): Promise<AgenticCodingRulesFile[]
   );
 }
 
-export function normalizeGitPath(value: string): string {
-  return value.trim().replace(/\\/g, '/').replace(/^"|"$/g, '');
-}
-
 function parseGitStatus(output: string, contract: AgenticCodingTaskContract | undefined): AgenticCodingDirtyFile[] {
   if (!contract) {
     return [];
@@ -3212,33 +3216,6 @@ function parseGitStatus(output: string, contract: AgenticCodingTaskContract | un
         file.path.startsWith('.codebuddy/lessons-vault/');
       return !isTransient;
     });
-}
-
-export function isPathAllowedByContract(filePath: string, allowedPaths: string[]): boolean {
-  const normalizedPath = normalizeGitPath(filePath);
-
-  return allowedPaths.some((scope) => {
-    const normalizedScope = normalizeGitPath(scope);
-
-    if (normalizedScope.endsWith('/...')) {
-      const prefix = normalizedScope.slice(0, -3);
-      return normalizedPath.startsWith(prefix);
-    }
-
-    return normalizedPath === normalizedScope || normalizedPath.startsWith(`${normalizedScope}/`);
-  });
-}
-
-export function resolveRepoPath(repo: string, filePath: string): { path?: string; reason?: string } {
-  const normalizedPath = normalizeGitPath(filePath);
-  const resolved = path.resolve(repo, normalizedPath);
-  const relative = path.relative(repo, resolved);
-
-  if (relative.startsWith('..') || path.isAbsolute(relative)) {
-    return { reason: `path escapes repository: ${filePath}` };
-  }
-
-  return { path: resolved };
 }
 
 function countOccurrences(value: string, search: string): number {

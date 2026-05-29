@@ -7,7 +7,7 @@ import { detectProviderFromEnv } from '../../utils/provider-detector.js';
 import {
   isPathAllowedByContract,
   resolveRepoPath,
-} from './agentic-coding-runner.js';
+} from './agentic-coding-paths.js';
 import {
   AgenticCodingEditProposal,
   validateAgenticCodingEditProposal,
