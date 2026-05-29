@@ -65,6 +65,9 @@ function bridgeWithCatalog(): SlashCommandBridge {
     { name: 'tts', description: 'TTS', prompt: '__TTS__', isBuiltin: true },
     { name: 'export', description: 'Export', prompt: '__EXPORT__', isBuiltin: true },
     { name: 'save', description: 'Save', prompt: '__SAVE_CONVERSATION__', isBuiltin: true },
+    { name: 'quota', description: 'Quota', prompt: '__QUOTA__', isBuiltin: true },
+    { name: 'export-formats', description: 'Export formats', prompt: '__EXPORT_FORMATS__', isBuiltin: true },
+    { name: 'export-list', description: 'Export list', prompt: '__EXPORT_LIST__', isBuiltin: true },
   ];
   return bridge;
 }
@@ -198,6 +201,17 @@ describe('SlashCommandBridge headless routing (S0)', () => {
     const res = await bridge.execute('history', []);
     expect(res).toMatchObject({ success: true, handled: true });
     expect(res.output).toBe('ran __HISTORY__');
+  });
+
+  it('runs /quota headlessly (read-only rate-limit display, allowlisted)', async () => {
+    const res = await bridge.execute('quota', []);
+    expect(res).toMatchObject({ success: true, handled: true });
+    expect(res.output).toBe('ran __QUOTA__');
+  });
+
+  it('runs /export-formats and /export-list headlessly (read-only, allowlisted)', async () => {
+    expect((await bridge.execute('export-formats', [])).output).toBe('ran __EXPORT_FORMATS__');
+    expect((await bridge.execute('export-list', [])).output).toBe('ran __EXPORT_LIST__');
   });
 
   it('routes /identity to the identity panel (C3)', async () => {

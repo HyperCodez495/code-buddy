@@ -57,8 +57,10 @@ a slash command would need `ContextPanel`'s local `activeTab` lifted to the stor
 > `/secrets-scan`, `/security-review`, `/guardian`) are deliberately 🔴, not
 > routed here — see below.
 
-**headless-allowlisted (11):** help, stats, cost, tools, whoami, status, features,
-history, log, workspace, diff.
+**headless-allowlisted (14):** help, stats, cost, tools, whoami, status, features,
+history, log, workspace, diff, quota (rate-limit display — `handleQuota()` is a
+pure read), export-formats (static text), export-list (reads ~/.codebuddy/exports,
+cwd-independent). All verified read-only.
 
 **special-intercept (3):** clear, memory, schedule.
 
@@ -71,18 +73,24 @@ Each maps to a capability with real operator value but **no existing** panel/eff
 to route to. Routing these is the remaining axis-B work (each = new panel/effect +
 opener + test, the C3 pattern).
 
-| Command(s) | Needs (verified against the renderer) |
+| Command(s) | Needs (verified against core + renderer) |
 |---|---|
-| knowledge-graph | knowledge browse/CRUD is already on-screen (Context panel → Knowledge tab); the **graph visualization** specifically is a new view that doesn't exist yet — a genuine new feature, not a routing gap. |
-| export-list, export-formats | info variants of `/export` (list destinations / formats); candidates for the headless allowlist once each core handler is confirmed read-only. |
-| telemetry, quota, coverage, bug | headless allowlist — **only after** verifying each core handler is read-only (unverified = "looks done but isn't"). |
+| knowledge-graph | **No headless handler exists** in `EnhancedCommandHandler` (the TUI drives it via React). Needs a real Cowork surface/handler — a genuine new view, not a routing gap. **This is the single remaining constructible axis-B item**, and it warrants its own design (what graph data, layout, interactivity) rather than a hasty stub. |
 
-This is now a short, honest backlog. `voice`/`export` were closed with a
-DOM-event bridge + e2e verification; `checkpoints`/`restore`/`timeline` turned out
-to be already on-screen in the docked Context panel (see above) plus undo/redo
-engine_actions. The one genuine new-view feature left is `knowledge-graph`; the
-rest are headless-info candidates pending a read-only handler check. None is
-environment- or security-gated.
+Verified and **deliberately not** headless-allowlisted (true reasons, not "tedious"):
+- **bug, coverage** — `handleBug` / `handleCoverage` read `process.cwd()`, which in
+  Cowork's main process is the Electron dir, not the active project → they'd scan
+  the wrong path and render a misleading report. Need the active-project cwd
+  plumbed first (the same boundary noted for file/exec tools).
+- **telemetry** — `handleTelemetry` is an opt-in/opt-out **toggle** (mutates a
+  setting); not a read-only info command.
+
+The backlog is now a **single item**: `knowledge-graph`, a genuine new
+visualization view. Everything else has been closed and verified — `voice`/`export`
+(DOM-event bridge + e2e), `checkpoints`/`restore`/`timeline` (already on-screen in
+the docked Context panel), and `quota`/`export-formats`/`export-list` (headless
+allowlist, handlers verified read-only). `knowledge-graph` is not env- or
+security-gated; it is a future feature that deserves its own design.
 
 ## 🔴 Deliberately CLI-only (legitimate "done", reason = true)
 - **Destructive / process:** init, reinit (workspace reset), reload (process), daily-reset, new (= Cowork sidebar new session).

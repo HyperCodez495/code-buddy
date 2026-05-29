@@ -401,6 +401,15 @@ const COWORK_HEADLESS_ALLOW: ReadonlySet<string> = new Set([
   '__LOG__',
   '__WORKSPACE__', // detect/show workspace config (read-only)
   '__DIFF__', // show git/checkpoint diff (read-only)
+  // `/quota` → handleQuota() formats rate-limit display: pure read, no cwd, no
+  // mutation (verified). NB: /bug + /coverage are NOT allowlisted — they read
+  // process.cwd() (the Electron dir in Cowork, not the project) so they'd scan
+  // the wrong path; /telemetry toggles a setting (mutates).
+  '__QUOTA__',
+  // `/export-formats` → static text; `/export-list` → reads ~/.codebuddy/exports
+  // (home-based, cwd-independent — verified). Both read-only.
+  '__EXPORT_FORMATS__',
+  '__EXPORT_LIST__',
 ]);
 
 type UiEffectResolution =
