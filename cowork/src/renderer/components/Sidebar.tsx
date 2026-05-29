@@ -64,6 +64,20 @@ export function Sidebar() {
   const [exportSessionId, setExportSessionId] = useState<string | null>(null);
   const [exportSessionTitle, setExportSessionTitle] = useState<string | undefined>(undefined);
 
+  // Slash pilotability: `/export` / `/save` fire `cowork:open-export` with the
+  // active session id (see slash-command-actions). Open the same ExportDialog the
+  // per-session menu uses — additive, the menu path is untouched.
+  useEffect(() => {
+    const openExport = (e: Event) => {
+      const sessionId = (e as CustomEvent<{ sessionId?: string }>).detail?.sessionId;
+      if (!sessionId) return;
+      setExportSessionId(sessionId);
+      setExportSessionTitle(sessions.find((s) => s.id === sessionId)?.title);
+    };
+    window.addEventListener('cowork:open-export', openExport);
+    return () => window.removeEventListener('cowork:open-export', openExport);
+  }, [sessions]);
+
   const normalizedQuery = useMemo(() => searchQuery.trim().toLowerCase(), [searchQuery]);
   const filteredSessions = useMemo(() => {
     const projectScoped = activeProjectId

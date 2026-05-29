@@ -102,6 +102,7 @@ export const ExportDialog: React.FC<ExportDialogProps> = ({
   return (
     <div
       className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm"
+      data-testid="export-dialog"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

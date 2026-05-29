@@ -130,6 +130,19 @@ function applyUiEffect(result: SlashExecuteResult, ctx: SlashActionContext): voi
     }
     case 'open_panel': {
       const key = action.args?.[0];
+      // `export` needs the active session id, so it is dispatched here (where ctx
+      // is available) rather than through the arg-less PANEL_OPENERS map. The
+      // Sidebar listens for `cowork:open-export` and opens its ExportDialog.
+      if (key === 'export') {
+        if (ctx.activeSessionId) {
+          window.dispatchEvent(
+            new CustomEvent('cowork:open-export', { detail: { sessionId: ctx.activeSessionId } }),
+          );
+        } else {
+          notice('info', 'Ouvre une session pour l’exporter.');
+        }
+        break;
+      }
       const setter = key ? PANEL_OPENERS[key] : undefined;
       if (setter) setter(true);
       break;
@@ -167,6 +180,11 @@ const PANEL_OPENERS: Record<string, (show: boolean) => void> = {
   device: (s) => useAppStore.getState().setShowDevicePanel(s),
   reasoning: (s) => useAppStore.getState().setShowReasoningViewer(s),
   test_runner: (s) => useAppStore.getState().setShowTestRunner(s),
+  // Voice overlay is owned by Titlebar-local state; it exposes the intended
+  // `cowork:open-voice-chat` DOM event as its external open hook.
+  voice: (s) => {
+    if (s) window.dispatchEvent(new Event('cowork:open-voice-chat'));
+  },
 };
 
 /**

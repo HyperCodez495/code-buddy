@@ -28,19 +28,28 @@ that needs a **new** Cowork surface (named) — honest "not done," not faked to 
 
 ## 🟢 Pilotable today (verified against the switch + allowlist + dispatch)
 
-**ui_effect-routed (45 tokens):** model, switch, plan, swarm, parallel, batch,
+**ui_effect-routed (50 tokens):** model, switch, plan, swarm, parallel, batch,
 agents, fleet, team, lessons, companion, track, config, workflow, pipeline,
 plugins, plugin, permissions, policy, approvals, elevated, batch-review, security,
 hooks, theme, avatar, vim, fast, dry-run, cache, prompt-cache, heal (self-healing),
-search, shortcuts, persona, sessions, remember, identity, pairing, test, think,
-undo, redo, subagent, agent.
+search, shortcuts, persona, sessions, remember, identity, pairing, voice, speak,
+tts, export, save, test, think, undo, redo, subagent, agent.
+
+> `voice`/`speak`/`tts` (→ voice-chat overlay) and `export`/`save` (→ ExportDialog
+> for the active session) route through **DOM-event bridges** (`cowork:open-voice-chat`
+> / `cowork:open-export`), not store flags, because their surfaces are owned by
+> Titlebar/Sidebar local state. **Verified end-to-end in real Electron** (e2e
+> `slash-commands-smoke.spec.ts`), so the listener wiring is proven, not mocked.
 
 **Already on-screen — the docked Context panel** (App.tsx renders `<ContextPanel>`
 whenever a session is active): tabs **files / git / memory / knowledge / agents /
 mcp** are always visible, so those domains are reachable now without a slash
-command. `/add`, `/context`, `/knowledge` (browse) land here. Driving a *specific*
-tab from a slash command would need `ContextPanel`'s local `activeTab` lifted to
-the store — a minor enhancement, not a pilotability gap.
+command. `/add`, `/context`, `/knowledge` (browse) land here. It also renders a
+**Checkpoints** section (list + restore + compare) whenever ghost snapshots exist,
+so `/checkpoints`, `/restore`, `/timeline` are reachable there — and `/undo` /
+`/redo` are discrete `engine_action` routes on top. Driving a *specific* tab from
+a slash command would need `ContextPanel`'s local `activeTab` lifted to the store
+— a minor enhancement, not a pilotability gap.
 
 > `/security` and `/policy` route to the Permission rules tab because they are
 > *config/dashboard* commands ("Show security dashboard and settings" / "Manage
@@ -64,17 +73,16 @@ opener + test, the C3 pattern).
 
 | Command(s) | Needs (verified against the renderer) |
 |---|---|
-| checkpoints, restore, timeline | `CheckpointPanel` exists (rendered inside `ContextPanel`) but has no global show-flag; undo/redo already route via `engine_action`. Needs a store flag / tab focus to drive checkpoint list+restore from a slash command. |
-| voice, speak, tts | `VoiceChatOverlay` / `VoiceButton` / `MicButton` exist but are toggled by **local** `Titlebar` state. Needs that `open` state lifted to the store to drive via slash. |
-| export, save, export-list, export-formats | `ExportDialog` exists but is toggled by **local** `Sidebar` state. Needs a store flag to open it from a slash command. (Sessions auto-persist, so this is convenience, not data safety.) |
-| knowledge-graph | knowledge browse/CRUD is already on-screen (Context panel → Knowledge tab); the **graph visualization** specifically is a new view. |
+| knowledge-graph | knowledge browse/CRUD is already on-screen (Context panel → Knowledge tab); the **graph visualization** specifically is a new view that doesn't exist yet — a genuine new feature, not a routing gap. |
+| export-list, export-formats | info variants of `/export` (list destinations / formats); candidates for the headless allowlist once each core handler is confirmed read-only. |
 | telemetry, quota, coverage, bug | headless allowlist — **only after** verifying each core handler is read-only (unverified = "looks done but isn't"). |
 
-Each is a real, verified surface that exists in the renderer but is gated behind
-**local component state** (not a global store flag), so a slash `ui_effect` can't
-reach it yet. The fix is a small store-flag lift per surface (the C-batch pattern),
-not a new feature — but it touches component state management, so it's honest
-backlog rather than a one-line route. None is environment- or security-gated.
+This is now a short, honest backlog. `voice`/`export` were closed with a
+DOM-event bridge + e2e verification; `checkpoints`/`restore`/`timeline` turned out
+to be already on-screen in the docked Context panel (see above) plus undo/redo
+engine_actions. The one genuine new-view feature left is `knowledge-graph`; the
+rest are headless-info candidates pending a read-only handler check. None is
+environment- or security-gated.
 
 ## 🔴 Deliberately CLI-only (legitimate "done", reason = true)
 - **Destructive / process:** init, reinit (workspace reset), reload (process), daily-reset, new (= Cowork sidebar new session).

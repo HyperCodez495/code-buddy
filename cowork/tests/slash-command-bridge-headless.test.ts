@@ -60,6 +60,11 @@ function bridgeWithCatalog(): SlashCommandBridge {
     { name: 'pairing', description: 'Pairing', prompt: '__PAIRING__', isBuiltin: true },
     { name: 'plugins', description: 'Plugins', prompt: '__PLUGINS__', isBuiltin: true },
     { name: 'plugin', description: 'Plugin', prompt: '__PLUGIN__', isBuiltin: true },
+    { name: 'voice', description: 'Voice', prompt: '__VOICE__', isBuiltin: true },
+    { name: 'speak', description: 'Speak', prompt: '__SPEAK__', isBuiltin: true },
+    { name: 'tts', description: 'TTS', prompt: '__TTS__', isBuiltin: true },
+    { name: 'export', description: 'Export', prompt: '__EXPORT__', isBuiltin: true },
+    { name: 'save', description: 'Save', prompt: '__SAVE_CONVERSATION__', isBuiltin: true },
   ];
   return bridge;
 }
@@ -249,6 +254,26 @@ describe('SlashCommandBridge headless routing (S0)', () => {
         type: 'ui_effect',
         uiEffect: 'open_settings',
         args: ['plugins'],
+      });
+    }
+  });
+
+  it('routes /voice /speak /tts to the voice overlay panel', async () => {
+    for (const name of ['voice', 'speak', 'tts']) {
+      expect((await bridge.execute(name, [])).action).toMatchObject({
+        type: 'ui_effect',
+        uiEffect: 'open_panel',
+        args: ['voice'],
+      });
+    }
+  });
+
+  it('routes /export and /save to the export panel', async () => {
+    for (const name of ['export', 'save']) {
+      expect((await bridge.execute(name, [])).action).toMatchObject({
+        type: 'ui_effect',
+        uiEffect: 'open_panel',
+        args: ['export'],
       });
     }
   });

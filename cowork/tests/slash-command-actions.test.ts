@@ -70,6 +70,7 @@ beforeEach(() => {
       permission: { setMode: permissionSetMode },
       checkpoint: { undo: checkpointUndo },
     },
+    dispatchEvent: vi.fn(),
   };
 });
 
@@ -268,5 +269,37 @@ describe('applySlashCommandResult (renderer dispatch)', () => {
         ctx()
       )
     ).not.toThrow();
+  });
+
+  it('open_panel(voice) fires the cowork:open-voice-chat DOM event', () => {
+    applySlashCommandResult(
+      { success: true, handled: true, action: { type: 'ui_effect', uiEffect: 'open_panel', args: ['voice'] } },
+      ctx()
+    );
+    const dispatch = (window as unknown as { dispatchEvent: ReturnType<typeof vi.fn> }).dispatchEvent;
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    expect(dispatch.mock.calls[0][0]).toMatchObject({ type: 'cowork:open-voice-chat' });
+  });
+
+  it('open_panel(export) fires cowork:open-export with the active session id', () => {
+    applySlashCommandResult(
+      { success: true, handled: true, action: { type: 'ui_effect', uiEffect: 'open_panel', args: ['export'] } },
+      ctx({ activeSessionId: 's42' })
+    );
+    const dispatch = (window as unknown as { dispatchEvent: ReturnType<typeof vi.fn> }).dispatchEvent;
+    expect(dispatch).toHaveBeenCalledTimes(1);
+    const evt = dispatch.mock.calls[0][0] as CustomEvent<{ sessionId: string }>;
+    expect(evt.type).toBe('cowork:open-export');
+    expect(evt.detail.sessionId).toBe('s42');
+  });
+
+  it('open_panel(export) without an active session shows a hint and fires nothing', () => {
+    applySlashCommandResult(
+      { success: true, handled: true, action: { type: 'ui_effect', uiEffect: 'open_panel', args: ['export'] } },
+      ctx({ activeSessionId: null })
+    );
+    const dispatch = (window as unknown as { dispatchEvent: ReturnType<typeof vi.fn> }).dispatchEvent;
+    expect(dispatch).not.toHaveBeenCalled();
+    expect(setGlobalNotice).toHaveBeenCalledWith(expect.objectContaining({ type: 'info' }));
   });
 });

@@ -162,6 +162,19 @@ test('Device panel opens + deviceNodes IPC is reachable (C3 read-only)', async (
   expect(listOk).toBe(true);
 });
 
+// Voice + export route through DOM-event bridges (not store flags), so these
+// e2e assertions verify the FULL chain — slash → ui_effect → dispatcher event →
+// component listener → real surface — which unit tests of the dispatcher cannot.
+test('/export opens the ExportDialog for the active session (DOM-event bridge)', async ({ appPage }) => {
+  await runSlash(appPage, '/export');
+  await expect(appPage.getByTestId('export-dialog')).toBeVisible({ timeout: 10_000 });
+});
+
+test('/voice opens the voice-chat overlay (cowork:open-voice-chat bridge)', async ({ appPage }) => {
+  await runSlash(appPage, '/voice');
+  await expect(appPage.getByTestId('voice-overlay-mic')).toBeVisible({ timeout: 10_000 });
+});
+
 test('orchestrator + subagent + knowledge IPC are reachable post-boot (getter sweep)', async ({ appPage }) => {
   const res = await appPage.evaluate(async () => {
     const api = (window as unknown as {

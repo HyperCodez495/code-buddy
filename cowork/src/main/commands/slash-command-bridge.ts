@@ -508,6 +508,17 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
     case '__PAIRING__':
       // `/pairing` → the device pairing/management panel (C3).
       return { uiEffect: 'open_panel', args: ['device'] };
+    case '__VOICE__':
+    case '__SPEAK__':
+    case '__TTS__':
+      // `/voice` → the voice-chat overlay (Titlebar listens for the intended
+      // `cowork:open-voice-chat` DOM event; the dispatcher fires it).
+      return { uiEffect: 'open_panel', args: ['voice'] };
+    case '__EXPORT__':
+    case '__SAVE_CONVERSATION__':
+      // `/export` / `/save` → open the session ExportDialog for the active session
+      // (the dispatcher fires `cowork:open-export` with the active session id).
+      return { uiEffect: 'open_panel', args: ['export'] };
     case '__TEST__':
       return { uiEffect: 'open_panel', args: ['test_runner'] };
     case '__THINK__':
