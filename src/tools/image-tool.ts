@@ -132,8 +132,11 @@ export class ImageTool {
     const base64 = buffer.toString('base64');
 
     // Try to determine media type from headers or URL
-    const contentType = response.headers['content-type'] || 'image/png';
-    const mediaType = contentType.split(';')[0].trim();
+    // axios >=1.16 widened the header value type (string | number | true | string[] | AxiosHeaders),
+    // so coerce to a string before parsing the MIME type.
+    const contentTypeHeader = response.headers['content-type'];
+    const contentType = typeof contentTypeHeader === 'string' ? contentTypeHeader : 'image/png';
+    const mediaType = contentType.split(';')[0]?.trim() || 'image/png';
 
     return {
       base64,

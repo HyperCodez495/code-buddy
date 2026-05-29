@@ -128,11 +128,31 @@ AI-generated code should be reviewed:
 - ⚠️ Ensure proper file permissions
 - ⚠️ Consider using environment variables for sensitive environments
 
+### Known transitive dependency advisories (npm audit)
+
+Last reviewed: **2026-05-29** (smoke-test finding F3). A clean `npm install` followed by
+`npm audit --omit=dev` is run; non-breaking fixes are applied via `npm audit fix` (which
+updated `package-lock.json`, reducing prod-tree HIGH advisories **12 → 5** and total **67 → 53**).
+The remaining advisories require a **breaking** major upgrade or have **no upstream fix**, and are
+all reached through transitive or optional dependencies. They are tracked here rather than forced,
+to avoid destabilizing the dependency graph (a blanket override of e.g. `picomatch` would break the
+`4.x` consumers while patching the `2.x` one):
+
+| Advisory (pkg) | Severity | Reached via | Why deferred / mitigation |
+|---|---|---|---|
+| `@langchain/core`, `langsmith` | high | `@browserbasehq/stagehand` (browser automation) | Fix needs a **major** `stagehand` change; pending compatibility review of the Browser Operator path. |
+| `@opentelemetry/sdk-node`, `@opentelemetry/exporter-prometheus` | high | OpenTelemetry observability | Fix needs a **major** OTel SDK bump (`0.218.x`); pending an observability dependency sweep. |
+| `xlsx` (SheetJS) | high | **optional** dep (spreadsheet tool) | Prototype-pollution + ReDoS, **no upstream fix** on the community build. Only reachable when the user processes a spreadsheet; consider migrating off the SheetJS community build. |
+
+Exploitability is low in a developer CLI context: ReDoS/prototype-pollution paths require
+**attacker-controlled input** (globs, spreadsheets), whereas this tool primarily processes the
+operator's own inputs. Re-run `npm audit --omit=dev` after any dependency bump.
+
 ## Security Audit History
 
 | Date | Version | Auditor | Findings | Status |
 |------|---------|---------|----------|--------|
-| TBD  | -       | -       | -        | -      |
+| 2026-05-29 | 1.0.0-rc.8 | Fresh-clone smoke test (`SMOKE-TEST-2026-05-29.md`) | F1 npm-lag, F3 deps, F6 fs-extra runtime bug, F7 model routing, F8 cost display | F6/F7/F8 fixed; F3 non-breaking fixes applied + residuals tracked above; F1 README mitigated (publish pending) |
 
 ## Vulnerability Disclosure Timeline
 
