@@ -5,7 +5,7 @@
 > This is the key lever: many cycles are type-only edges written as value `import`s and can be
 > broken by switching to `import type` (zero runtime impact).
 
-## Done this session (verified, committed `3fe87ff4`) — 10 → 8 cycles
+## Done this session (verified) — 10 → 7 cycles (cycles 1–3; cycles 1–2 in `3fe87ff4`)
 
 1. **`agentic-coding-runner ↔ checkpoint-manager`** — checkpoint-manager imported 3 interfaces
    with a value `import`. Switched to `import type` → edge erased for madge. One line.
@@ -17,12 +17,12 @@
 
 Gate: typecheck 0, `tests/agent/autonomous` 146/146 (incl. path-traversal security suite).
 
-## NOT done — cycle 3 (`agentic-coding-runner ↔ verification-loop`) — ⚠️ security-sensitive
+## DONE — cycle 3 (`agentic-coding-runner ↔ verification-loop`) — extracted test-first ✅
 
 verification-loop imports 3 **runtime** functions from runner: `applyDeclaredEdits`,
 `previewDeclaredEdits`, `runVerificationCommands` (+ types, already partly `import type`).
 
-**Why it's not a quick fix (deliberately deferred):**
+**Why it needed care (security-coupled) — handled test-first:**
 - `applyDeclaredEdits` toggles a module-level flag `isApplyingEdits` that gates a **global
   monkey-patch of `fs.writeFile`** (`agentic-coding-runner.ts:40-51`) which **redacts secrets**
   on every string write *except* while applying declared edits. Extracting the function means
@@ -36,7 +36,7 @@ verification-loop imports 3 **runtime** functions from runner: `applyDeclaredEdi
 - `persistRunArtifact` (~20 call sites) and the helpers `truncateOutput`/`execAsync`/
   `countOccurrences` (~20 uses) are used across the runner, so the move is wide.
 
-### Recommended approach (for a dedicated, fully-tested pass)
+### How it was done (test-first)
 
 Extract a cohesive `src/agent/autonomous/agentic-coding-edits.ts` containing the **whole coupled
 cluster**, kept together so the security behavior is preserved:
@@ -50,16 +50,16 @@ the helpers `countOccurrences`/`truncateOutput`/`execAsync` (export the ones the
   public ones (call sites unchanged — same identifiers).
 - verification-loop: import the 3 functions from `agentic-coding-edits.js`; convert its remaining
   runner imports to `import type`.
-- **Before merging, add a unit test for the auto-redaction patch** (write a secret via the
-  patched `fs.writeFile` during a run, assert it is redacted) so the relocation has a real gate.
-- Verify: typecheck, `tests/agent/autonomous` green, **the new auto-redaction test**, and
-  `npm run check:circular` (8 → 7).
+- **Added a test-first gate** `tests/agent/autonomous/agentic-coding-redaction.test.ts` (pins both
+  cross-module auto-redaction AND the `isApplyingEdits` skip) — written and made to pass against
+  the OLD code first, then re-run green against the extracted module.
+- ✅ Verified: typecheck 0, `tests/agent/autonomous` **148/148** (incl. the redaction gate +
+  path-traversal security suite), `autonomous-code-command` **60/60**, `check:circular` **8 → 7**.
 
-## Remaining 8 cycles (mostly genuine value cycles → dedicated effort / hand-off)
+## Remaining 7 cycles (genuine value cycles → dedicated effort / hand-off)
 
 | Cycle | Type | Note |
 |---|---|---|
-| `runner ↔ verification-loop` | value (security) | plan above |
 | `codebuddy-agent → agent-executor → tool-hooks → fleet-bridge → handler → agent-adapter → codebuddy-agent` | value (7 modules) | the worst; advisor: break via a hook **registry** (fleet-bridge registers via callback instead of importing) + type extraction |
 | `client ↔ provider-openai-compat` | value | provider imports `hasToolCalls` (runtime) — extract that helper |
 | `peer-rpc ↔ peer-chat-bridge` | value | bridge imports `registerPeerMethod` — registry pattern |

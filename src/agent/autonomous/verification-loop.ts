@@ -4,15 +4,17 @@ import { promisify } from 'node:util';
 import type {
   AgenticCodingTaskContract,
 } from './agentic-coding-contract.js';
-import {
+import type {
   AgenticCodingEditProposalProducerDispatch,
   AgenticCodingRunOptions,
   AgenticCodingRunStatus,
   AgenticCodingVerificationResult,
+} from './agentic-coding-runner.js';
+import {
   applyDeclaredEdits,
   previewDeclaredEdits,
   runVerificationCommands,
-} from './agentic-coding-runner.js';
+} from './agentic-coding-edits.js';
 import { generateEditProposal } from './edit-proposal-producer.js';
 import { CodeBuddyClient } from '../../codebuddy/client.js';
 import type { CodeBuddyMessage, CodeBuddyTool } from '../../codebuddy/client.js';
