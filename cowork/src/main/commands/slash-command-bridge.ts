@@ -426,6 +426,7 @@ type UiEffectResolution =
 function resolveUiEffectAction(token: string, args: string[]): UiEffectResolution {
   switch (token) {
     case '__CHANGE_MODEL__':
+    case '__SWITCH__':
       return { uiEffect: 'open_model_picker', args };
     case '__PLAN_MODE__':
       // `/plan` → enter read-only plan permission mode (S4).
