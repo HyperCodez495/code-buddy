@@ -48,6 +48,20 @@ export { persistRunArtifact, applyDeclaredEdits, previewDeclaredEdits, runVerifi
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
+const TRANSIENT_CODEBUDDY_PATH_PREFIXES = [
+  '.codebuddy/agent-memory/',
+  '.codebuddy/cache/',
+  '.codebuddy/lessons-vault/',
+  '.codebuddy/replays/',
+  '.codebuddy/sync/',
+  '.codebuddy/tool-results/',
+] as const;
+const TRANSIENT_CODEBUDDY_PATHS = new Set([
+  '.codebuddy/CODEBUDDY_MEMORY.md',
+  '.codebuddy/code-graph.json',
+  '.codebuddy/code-graph-snapshot.json',
+  '.codebuddy/repoProfile.json',
+]);
 
 async function getOriginalBranch(repoPath: string): Promise<string> {
   const { stdout } = await execAsync('git rev-parse --abbrev-ref HEAD', { cwd: repoPath });
@@ -3189,15 +3203,13 @@ function parseGitStatus(output: string, contract: AgenticCodingTaskContract | un
       };
     })
     .filter((file) => {
-      const isTransient =
-        file.path.startsWith('.codebuddy/agent-memory/') ||
-        file.path.startsWith('.codebuddy/cache/') ||
-        file.path.startsWith('.codebuddy/sync/') ||
-        file.path.startsWith('.codebuddy/tool-results/') ||
-        file.path.startsWith('.codebuddy/replays/') ||
-        file.path.startsWith('.codebuddy/lessons-vault/');
-      return !isTransient;
+      return !isTransientCodeBuddyPath(file.path);
     });
+}
+
+function isTransientCodeBuddyPath(filePath: string): boolean {
+  return TRANSIENT_CODEBUDDY_PATHS.has(filePath)
+    || TRANSIENT_CODEBUDDY_PATH_PREFIXES.some((prefix) => filePath.startsWith(prefix));
 }
 
 async function collectGitStatus(
@@ -3205,7 +3217,7 @@ async function collectGitStatus(
   contract: AgenticCodingTaskContract | undefined,
 ): Promise<{ dirtyFiles: AgenticCodingDirtyFile[]; gitStatus?: string; reason?: string }> {
   try {
-    const result = await execFileAsync('git', ['status', '--short', '--branch'], {
+    const result = await execFileAsync('git', ['status', '--short', '--branch', '--untracked-files=all'], {
       cwd: repo,
       timeout: 15000,
       windowsHide: true,

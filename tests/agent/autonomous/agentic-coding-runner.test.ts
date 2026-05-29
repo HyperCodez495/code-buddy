@@ -197,6 +197,43 @@ describe('runAgenticCodingCell', () => {
     ]));
   });
 
+  it('ignores known Code Buddy runtime artifacts during git preflight', async () => {
+    const repo = await createTempGitRepo();
+    await fs.mkdir(path.join(repo, '.codebuddy', 'cache'), { recursive: true });
+    await fs.mkdir(path.join(repo, '.codebuddy', 'sync'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.codebuddy', 'CODEBUDDY_MEMORY.md'), '# Memory\n', 'utf8');
+    await fs.writeFile(path.join(repo, '.codebuddy', 'repoProfile.json'), '{}\n', 'utf8');
+    await fs.writeFile(path.join(repo, '.codebuddy', 'code-graph.json'), '{}\n', 'utf8');
+    await fs.writeFile(path.join(repo, '.codebuddy', 'code-graph-snapshot.json'), '{}\n', 'utf8');
+    await fs.writeFile(path.join(repo, '.codebuddy', 'cache', 'embedding-cache.json'), '{}\n', 'utf8');
+    await fs.writeFile(path.join(repo, '.codebuddy', 'sync', 'state.json'), '{}\n', 'utf8');
+    const taskFile = await writeTaskFile(taskFor(repo));
+
+    const report = await runAgenticCodingCell({ taskFile });
+
+    expect(report.status).toBe('ready');
+    expect(report.dirtyFiles).toEqual([]);
+    expect(report.blockedReasons).toEqual([]);
+    expect(report.plan).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: 'git-preflight', status: 'completed' }),
+    ]));
+  });
+
+  it('still blocks on project configuration changes under .codebuddy', async () => {
+    const repo = await createTempGitRepo();
+    await fs.mkdir(path.join(repo, '.codebuddy'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.codebuddy', 'settings.json'), '{}\n', 'utf8');
+    const taskFile = await writeTaskFile(taskFor(repo));
+
+    const report = await runAgenticCodingCell({ taskFile });
+
+    expect(report.status).toBe('blocked');
+    expect(report.dirtyFiles).toEqual([
+      { allowed: false, path: '.codebuddy/settings.json', status: '??' },
+    ]);
+    expect(report.blockedReasons).toEqual(['dirty files outside allowedPaths: .codebuddy/settings.json']);
+  });
+
   it('runs verification only when requested and preflight passes', async () => {
     const repo = await createTempGitRepo();
     const taskFile = await writeTaskFile(taskFor(repo));

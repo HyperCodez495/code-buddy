@@ -67,8 +67,33 @@ The real ChatGPT spec exercised Cowork against the ChatGPT Codex backend with mo
 
 - Fixed: L2 evals were not isolated and could silently no-op in non-interactive self-improvement approval.
 - Fixed: required approval decision files now provide an explicit noninteractive self-improvement approval path.
-- Remaining risk: normal user checkouts with pre-existing `.codebuddy/*` runtime churn can still be noisy for strict dirty-tree preflight. The L2 harness no longer depends on that state because it uses clean temp repos.
+- Fixed in the continuation pass: normal user checkouts with known runtime `.codebuddy/*` churn no longer block strict dirty-tree preflight. Project configuration changes such as `.codebuddy/settings.json` still block.
+
+### Step 4 - Continuation: runtime `.codebuddy` churn preflight
+
+The preflight used `git status --short`, which can collapse a fully untracked `.codebuddy` directory to `?? .codebuddy/`. That made it impossible to distinguish harmless runtime artifacts from meaningful project configuration changes.
+
+Fixes landed:
+
+- `collectGitStatus` now asks Git for `--untracked-files=all` so the preflight sees individual files.
+- Known generated runtime artifacts are filtered consistently in the runner and the L2 harness:
+  - `.codebuddy/CODEBUDDY_MEMORY.md`
+  - `.codebuddy/repoProfile.json`
+  - `.codebuddy/code-graph.json`
+  - `.codebuddy/code-graph-snapshot.json`
+  - existing runtime prefixes such as `.codebuddy/cache/`, `.codebuddy/sync/`, `.codebuddy/tool-results/`.
+- Configuration remains protected: `.codebuddy/settings.json` still blocks when it is outside `allowedPaths`.
+
+Real validation:
+
+- `npm test -- --run tests/agent/autonomous/agentic-coding-runner.test.ts` -> 52 passed, using real temporary git repositories.
+- `npm run typecheck` -> exit 0.
+- `npm run build` -> exit 0.
+- Real compiled CLI preflight against a temporary git repo:
+  - runtime `.codebuddy` artifacts only -> `ready`, dirty count 0.
+  - adding `.codebuddy/settings.json` -> `blocked`, dirty file `?? .codebuddy/settings.json`.
+- `node eval/run-task.mjs` -> all 5 real tasks passed.
 
 ## Verdict
 
-The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, and the Cowork ChatGPT path passed against the real backend.
+The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, the Cowork ChatGPT path passed against the real backend, and strict preflight now tolerates Code Buddy's own runtime artifacts without hiding project configuration edits.

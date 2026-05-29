@@ -13,6 +13,20 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const tasksDir = path.join(__dirname, 'tasks');
 const sandboxTarget = path.join(__dirname, 'sandbox', 'target.txt');
+const transientCodeBuddyPathPrefixes = [
+  '.codebuddy/agent-memory/',
+  '.codebuddy/cache/',
+  '.codebuddy/lessons-vault/',
+  '.codebuddy/replays/',
+  '.codebuddy/sync/',
+  '.codebuddy/tool-results/',
+];
+const transientCodeBuddyPaths = new Set([
+  '.codebuddy/CODEBUDDY_MEMORY.md',
+  '.codebuddy/code-graph.json',
+  '.codebuddy/code-graph-snapshot.json',
+  '.codebuddy/repoProfile.json',
+]);
 
 // Helper to run shell commands
 function runCmd(cmd, cwd = projectRoot) {
@@ -40,6 +54,11 @@ function createIsolatedEvalRepo() {
   runCmd('git commit -m "initial eval sandbox"', runRoot);
 
   return { runRoot, targetPath };
+}
+
+function isTransientCodeBuddyPath(filePath) {
+  return transientCodeBuddyPaths.has(filePath)
+    || transientCodeBuddyPathPrefixes.some(prefix => filePath.startsWith(prefix));
 }
 
 // Clean sandbox state
@@ -103,7 +122,7 @@ function runTask(taskSlug) {
     }
 
     // Get git status to check modified files
-    const gitStatusOutput = runCmd('git status --porcelain', runRoot);
+    const gitStatusOutput = runCmd('git status --porcelain --untracked-files=all', runRoot);
     const modifiedFiles = gitStatusOutput
       .split('\n')
       .map(line => line.trim())
@@ -115,14 +134,7 @@ function runTask(taskSlug) {
       })
       .filter(file => {
         // Exclude transient .codebuddy paths from validation checks
-        const isTransient =
-          file.startsWith('.codebuddy/agent-memory/') ||
-          file.startsWith('.codebuddy/cache/') ||
-          file.startsWith('.codebuddy/sync/') ||
-          file.startsWith('.codebuddy/tool-results/') ||
-          file.startsWith('.codebuddy/replays/') ||
-          file.startsWith('.codebuddy/lessons-vault/');
-        return !isTransient;
+        return !isTransientCodeBuddyPath(file);
       });
 
     console.log('Modified files:', modifiedFiles);
