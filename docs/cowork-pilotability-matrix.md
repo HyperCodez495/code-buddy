@@ -28,12 +28,12 @@ that needs a **new** Cowork surface (named) — honest "not done," not faked to 
 
 ## 🟢 Pilotable today (verified against the switch + allowlist + dispatch)
 
-**ui_effect-routed (50 tokens):** model, switch, plan, swarm, parallel, batch,
+**ui_effect-routed (51 tokens):** model, switch, plan, swarm, parallel, batch,
 agents, fleet, team, lessons, companion, track, config, workflow, pipeline,
 plugins, plugin, permissions, policy, approvals, elevated, batch-review, security,
 hooks, theme, avatar, vim, fast, dry-run, cache, prompt-cache, heal (self-healing),
 search, shortcuts, persona, sessions, remember, identity, pairing, voice, speak,
-tts, export, save, test, think, undo, redo, subagent, agent.
+tts, export, save, knowledge-graph, test, think, undo, redo, subagent, agent.
 
 > `voice`/`speak`/`tts` (→ voice-chat overlay) and `export`/`save` (→ ExportDialog
 > for the active session) route through **DOM-event bridges** (`cowork:open-voice-chat`
@@ -68,14 +68,18 @@ cwd-independent). All verified read-only.
 commit, refactor, docs, debug-issue, generate-tests-as-prompt, address-todo, …) —
 the LLM answers in chat. These were never gated.
 
-## 🟡 Backlog — genuine value, needs a NEW Cowork surface (honest "not done")
-Each maps to a capability with real operator value but **no existing** panel/effect
-to route to. Routing these is the remaining axis-B work (each = new panel/effect +
-opener + test, the C3 pattern).
+## 🟡 Backlog — EMPTY (all constructible items closed + verified)
 
-| Command(s) | Needs (verified against core + renderer) |
-|---|---|
-| knowledge-graph | **No headless handler exists** in `EnhancedCommandHandler` (the TUI drives it via React). Needs a real Cowork surface/handler — a genuine new view, not a routing gap. **This is the single remaining constructible axis-B item**, and it warrants its own design (what graph data, layout, interactivity) rather than a hasty stub. |
+There is no remaining constructible axis-B backlog. The items previously listed
+here are all closed and verified:
+- `voice`/`speak`/`tts`, `export`/`save` — DOM-event bridges, **e2e-verified**.
+- `checkpoints`/`restore`/`timeline` — already on-screen in the docked Context
+  panel (Checkpoints section) + undo/redo `engine_action` routes.
+- `quota`/`export-formats`/`export-list` — headless allowlist, handlers verified
+  read-only.
+- `knowledge-graph` — routes to the existing `LessonsVaultGraph` (lessons-vault
+  view) via a store-flag lift, opened from the Fleet Command Center.
+  **e2e-verified** (`/knowledge-graph` → `lessons-vault-graph` visible).
 
 Verified and **deliberately not** headless-allowlisted (true reasons, not "tedious"):
 - **bug, coverage** — `handleBug` / `handleCoverage` read `process.cwd()`, which in
@@ -85,12 +89,9 @@ Verified and **deliberately not** headless-allowlisted (true reasons, not "tedio
 - **telemetry** — `handleTelemetry` is an opt-in/opt-out **toggle** (mutates a
   setting); not a read-only info command.
 
-The backlog is now a **single item**: `knowledge-graph`, a genuine new
-visualization view. Everything else has been closed and verified — `voice`/`export`
-(DOM-event bridge + e2e), `checkpoints`/`restore`/`timeline` (already on-screen in
-the docked Context panel), and `quota`/`export-formats`/`export-list` (headless
-allowlist, handlers verified read-only). `knowledge-graph` is not env- or
-security-gated; it is a future feature that deserves its own design.
+Every builtin slash command now has a 🟢 or 🔴 disposition. The only work beyond
+this matrix is the **gated** list below — which requires live resources or a
+security design and must not be fabricated.
 
 ## 🔴 Deliberately CLI-only (legitimate "done", reason = true)
 - **Destructive / process:** init, reinit (workspace reset), reload (process), daily-reset, new (= Cowork sidebar new session).
@@ -105,7 +106,7 @@ security-gated; it is a future feature that deserves its own design.
 
 ## CLI groups (~40) — disposition
 - 🟢 pilotable (panel/app): server/gui (app), spec, skills, lessons, user-model, cron/schedule (SettingsSchedule), provider/config (Settings), mcp (marketplace), companion, run (audit log), identity + device (C3 panels).
-- 🟡 route/new-panel: secrets (vault UI — see gated note), research, flow (live launcher — see gated note), knowledge-graph, channels, groups, autonomous-code, gitnexus.
+- 🟡 route/new-panel: secrets (vault UI — see gated note), research, flow (live launcher — see gated note), channels, groups, autonomous-code, gitnexus. (knowledge-graph is now 🟢 — the `/knowledge-graph` slash opens the LessonsVaultGraph.)
 - 🔴 CLI-only: completions, update, doctor, onboard, security-audit, deploy, nodes, daemon, backup (one-off / OS / maintenance).
 
 ## Gated (axis-A autonomy + axis-B surfaces that need live resources or a security design)
@@ -116,9 +117,11 @@ Not fabricated as unverifiable code; each needs a real resource or its own revie
 - **browser-operator EXECUTION**: the `browser_operator` agent tool (D3) proposes a consent-gated session; the live browser run stays operator-driven behind the consent gate.
 
 ## Acceptance
-Axis-B is "done" when every command is 🟢 or 🔴-with-true-reason. **Current honest
-state:** the operator-cockpit-relevant surface is 🟢; the remaining 🟡 rows each need
-a *new* surface (named above) and are genuine deferred backlog, not blockers hidden
-as 🔴. The strong claim "100% of slash commands open a panel" is **not** true and
-should not be asserted — "completely pilotable" means every command has a
-**deliberate disposition**, which this matrix now provides.
+Axis-B is "done" when every command is 🟢 or 🔴-with-true-reason. **Current state:
+met.** Every builtin slash command now has a 🟢 disposition (ui_effect / headless /
+special / prompt-forward / docked-panel) or a 🔴 with a true reason; the
+constructible 🟡 backlog is empty. "Completely pilotable" here means every command
+has a **deliberate disposition** — not the (false) claim that 100% open a panel.
+The only work beyond this matrix is the **gated** list (D4 gateway, secrets vault
+execution, research/flow live, browser-operator execution), which needs live
+resources or a security design and is documented, not fabricated.

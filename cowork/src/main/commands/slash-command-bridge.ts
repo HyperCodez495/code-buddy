@@ -532,6 +532,10 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
       return { uiEffect: 'open_panel', args: ['test_runner'] };
     case '__THINK__':
       return { uiEffect: 'open_panel', args: ['reasoning'] };
+    case '__KNOWLEDGE_GRAPH__':
+      // `/knowledge-graph` → the lessons-vault graph (rendered in the Fleet
+      // Command Center; the dispatcher opens both).
+      return { uiEffect: 'open_panel', args: ['knowledge_graph'] };
     // Engine actions: real side-effecting ops the renderer triggers via IPC.
     case '__UNDO__':
       return { uiEffect: 'engine_action', args: ['undo'] };

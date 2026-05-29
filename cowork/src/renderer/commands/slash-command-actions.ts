@@ -185,6 +185,12 @@ const PANEL_OPENERS: Record<string, (show: boolean) => void> = {
   voice: (s) => {
     if (s) window.dispatchEvent(new Event('cowork:open-voice-chat'));
   },
+  // The lessons-vault graph (knowledge graph) renders inside the Fleet Command
+  // Center, so open both. Both flags are store-backed.
+  knowledge_graph: (s) => {
+    useAppStore.getState().setShowFleetCommandCenter(s);
+    useAppStore.getState().setShowLessonsGraph(s);
+  },
 };
 
 /**

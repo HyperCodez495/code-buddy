@@ -13,6 +13,7 @@ const setSettingsTab = vi.fn();
 const setShowSettings = vi.fn();
 const setShowGlobalSearch = vi.fn();
 const setShowPersonaSwitcher = vi.fn();
+const setShowLessonsGraph = vi.fn();
 const setPermissionMode = vi.fn();
 const modelSwitch = vi.fn();
 const permissionSetMode = vi.fn();
@@ -41,6 +42,7 @@ beforeEach(() => {
   setShowSettings.mockReset();
   setShowGlobalSearch.mockReset();
   setShowPersonaSwitcher.mockReset();
+  setShowLessonsGraph.mockReset();
   setPermissionMode.mockReset();
   modelSwitch.mockReset();
   permissionSetMode.mockReset();
@@ -59,6 +61,7 @@ beforeEach(() => {
     setShowSettings,
     setShowGlobalSearch,
     setShowPersonaSwitcher,
+    setShowLessonsGraph,
     setPermissionMode,
     appConfig: { model: 'old-model' },
     lastOrchestratorOptions: { strategy: 'hierarchical', maxRounds: 5 },
@@ -260,6 +263,15 @@ describe('applySlashCommandResult (renderer dispatch)', () => {
         ctx()
       )
     ).not.toThrow();
+  });
+
+  it('open_panel(knowledge_graph) opens the Fleet Command Center + the lessons-vault graph', () => {
+    applySlashCommandResult(
+      { success: true, handled: true, action: { type: 'ui_effect', uiEffect: 'open_panel', args: ['knowledge_graph'] } },
+      ctx()
+    );
+    expect(setShowFleetCommandCenter).toHaveBeenCalledWith(true);
+    expect(setShowLessonsGraph).toHaveBeenCalledWith(true);
   });
 
   it('open_panel with an unknown key is a safe no-op', () => {

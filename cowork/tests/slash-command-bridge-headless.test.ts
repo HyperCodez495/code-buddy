@@ -68,6 +68,7 @@ function bridgeWithCatalog(): SlashCommandBridge {
     { name: 'quota', description: 'Quota', prompt: '__QUOTA__', isBuiltin: true },
     { name: 'export-formats', description: 'Export formats', prompt: '__EXPORT_FORMATS__', isBuiltin: true },
     { name: 'export-list', description: 'Export list', prompt: '__EXPORT_LIST__', isBuiltin: true },
+    { name: 'knowledge-graph', description: 'Knowledge graph', prompt: '__KNOWLEDGE_GRAPH__', isBuiltin: true },
   ];
   return bridge;
 }
@@ -251,6 +252,14 @@ describe('SlashCommandBridge headless routing (S0)', () => {
     expect((await bridge.execute('batch', [])).action).toMatchObject({
       type: 'ui_effect',
       uiEffect: 'open_orchestrator_launcher',
+    });
+  });
+
+  it('routes /knowledge-graph to the lessons-vault graph panel', async () => {
+    expect((await bridge.execute('knowledge-graph', [])).action).toMatchObject({
+      type: 'ui_effect',
+      uiEffect: 'open_panel',
+      args: ['knowledge_graph'],
     });
   });
 

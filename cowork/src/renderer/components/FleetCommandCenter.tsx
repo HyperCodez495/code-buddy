@@ -279,7 +279,10 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [privacyTag, setPrivacyTag] = useState<'public' | 'sensitive'>('public');
   const [dispatchProfile, setDispatchProfile] = useState<FleetDispatchProfile>('balanced');
   const [goalRunDraft, setGoalRunDraft] = useState<AgentRun | null>(null);
-  const [showLessonsGraph, setShowLessonsGraph] = useState(false);
+  // Store-backed so `/knowledge-graph` can open the lessons-vault graph via slash
+  // (the FCC "browse" button still toggles the same flag).
+  const showLessonsGraph = useAppStore((s) => s.showLessonsGraph);
+  const setShowLessonsGraph = useAppStore((s) => s.setShowLessonsGraph);
   const runningSagas = useMemo(
     () => sagas.filter((s) => s.status === 'pending' || s.status === 'running').length,
     [sagas]

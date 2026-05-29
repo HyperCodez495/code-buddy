@@ -175,6 +175,11 @@ test('/voice opens the voice-chat overlay (cowork:open-voice-chat bridge)', asyn
   await expect(appPage.getByTestId('voice-overlay-mic')).toBeVisible({ timeout: 10_000 });
 });
 
+test('/knowledge-graph opens the lessons-vault graph (rendered in Fleet Command Center)', async ({ appPage }) => {
+  await runSlash(appPage, '/knowledge-graph');
+  await expect(appPage.getByTestId('lessons-vault-graph')).toBeVisible({ timeout: 10_000 });
+});
+
 test('orchestrator + subagent + knowledge IPC are reachable post-boot (getter sweep)', async ({ appPage }) => {
   const res = await appPage.evaluate(async () => {
     const api = (window as unknown as {

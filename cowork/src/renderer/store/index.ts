@@ -385,6 +385,7 @@ interface AppState {
   showMobileSupervisionPanel: boolean;
   showIdentityPanel: boolean;
   showDevicePanel: boolean;
+  showLessonsGraph: boolean;
   showCompanionPanel: boolean;
 
   // Notifications (Claude Cowork parity)
@@ -648,6 +649,7 @@ interface AppState {
   setShowMobileSupervisionPanel: (show: boolean) => void;
   setShowIdentityPanel: (show: boolean) => void;
   setShowDevicePanel: (show: boolean) => void;
+  setShowLessonsGraph: (show: boolean) => void;
   setShowCompanionPanel: (show: boolean) => void;
 
   // Notification actions
@@ -829,6 +831,7 @@ export const useAppStore = create<AppState>((set) => ({
   showMobileSupervisionPanel: false,
   showIdentityPanel: false,
   showDevicePanel: false,
+  showLessonsGraph: false,
   showCompanionPanel: false,
   notifications: [],
   showNotificationCenter: false,
@@ -1779,6 +1782,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowMobileSupervisionPanel: (show) => set({ showMobileSupervisionPanel: show }),
   setShowIdentityPanel: (show) => set({ showIdentityPanel: show }),
   setShowDevicePanel: (show) => set({ showDevicePanel: show }),
+  setShowLessonsGraph: (show) => set({ showLessonsGraph: show }),
   setShowCompanionPanel: (show) => set({ showCompanionPanel: show }),
   clearSubAgents: (sessionId) =>
     set((state) => {
