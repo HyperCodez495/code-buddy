@@ -15,7 +15,7 @@ const title = 'CodeBuddy Avalonia Fixture';
 const delay = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 async function readState(): Promise<Record<string, unknown> | null> {
-  try { return JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^﻿/, '')); } catch { return null; }
+  try { return JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^\uFEFF/, '')); } catch { return null; }
 }
 async function waitReady(timeout = 30_000): Promise<void> {
   const s = Date.now();

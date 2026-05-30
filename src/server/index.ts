@@ -83,9 +83,13 @@ async function getPeerRouter() {
  * Generate a secure random secret for development use only
  * In production, JWT_SECRET environment variable MUST be set
  */
-function getJwtSecret(): string {
+function getJwtSecret(authEnabled: boolean): string {
   if (process.env.JWT_SECRET) {
     return process.env.JWT_SECRET;
+  }
+
+  if (!authEnabled) {
+    return '';
   }
 
   // In production, require explicit JWT_SECRET
@@ -134,7 +138,7 @@ const DEFAULT_CONFIG: ServerConfig = {
     process.env.NODE_ENV === 'production'
       ? true // Auth is always enabled in production (fail-closed)
       : process.env.AUTH_ENABLED !== 'false',
-  jwtSecret: getJwtSecret(),
+  jwtSecret: process.env.JWT_SECRET || '',
   jwtExpiration: process.env.JWT_EXPIRATION || SERVER_CONFIG.DEFAULT_JWT_EXPIRATION,
   websocketEnabled: process.env.WS_ENABLED !== 'false',
   channelIntakeEnabled: process.env.CODEBUDDY_SERVER_CHANNEL_INTAKE === 'true',
@@ -857,7 +861,11 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
   server: HttpServer;
   config: ServerConfig;
 }> {
-  const config: ServerConfig = { ...DEFAULT_CONFIG, ...userConfig };
+  const mergedConfig = { ...DEFAULT_CONFIG, ...userConfig };
+  const config: ServerConfig = {
+    ...mergedConfig,
+    jwtSecret: userConfig.jwtSecret ?? getJwtSecret(mergedConfig.authEnabled),
+  };
 
   try {
     await initializeDatabase();

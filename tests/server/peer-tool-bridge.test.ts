@@ -28,6 +28,7 @@ import {
 import { ToolRegistry } from '../../src/tools/registry.js';
 import type { CodeBuddyTool } from '../../src/codebuddy/client.js';
 import { ConfirmationService } from '../../src/utils/confirmation-service.js';
+import { logger } from '../../src/utils/logger.js';
 
 // ---- helpers ---------------------------------------------------------
 
@@ -120,6 +121,19 @@ describe('peer-tool-bridge — Phase (d).23 V1.3', () => {
       // Map keys are unique by construction; idempotency is about wired flag.
       expect(methods.filter((m) => m === 'peer.tool.invoke')).toHaveLength(1);
       expect(methods.filter((m) => m === 'peer.tool.invoke.stream')).toHaveLength(1);
+    });
+
+    it('warns instead of erroring when optional peer workspace root is unset', () => {
+      delete process.env.CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT;
+      const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+      const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => {});
+
+      wirePeerToolBridge();
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining('CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT is not set'),
+      );
+      expect(errorSpy).not.toHaveBeenCalled();
     });
 
     it('unwire removes both methods', () => {

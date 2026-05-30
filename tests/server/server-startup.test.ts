@@ -169,6 +169,31 @@ describe('server startup', () => {
     }
   });
 
+  it('does not warn about JWT_SECRET when authentication is disabled', async () => {
+    const { logger } = await import('../../src/utils/logger.js');
+    const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => {});
+    const { startServer, stopServer } = await import('../../src/server/index.js');
+    const started = await startServer({
+      port: 0,
+      host: '127.0.0.1',
+      authEnabled: false,
+      websocketEnabled: false,
+      logging: false,
+      rateLimit: false,
+      cors: false,
+    });
+
+    try {
+      expect(warnSpy).not.toHaveBeenCalledWith(
+        expect.stringContaining('No JWT_SECRET set'),
+      );
+      expect(started.config.jwtSecret).toBe('');
+    } finally {
+      await stopServer(started.server);
+      warnSpy.mockRestore();
+    }
+  });
+
   it('keeps health endpoints public when authentication is enabled', async () => {
     process.env.CODEBUDDY_PROVIDER = 'openai';
     process.env.OPENAI_API_KEY = 'test-openai-key';

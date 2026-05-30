@@ -13,7 +13,6 @@ const __dirname = path.dirname(__filename);
 const projectRoot = path.resolve(__dirname, '..');
 const tasksDir = path.join(__dirname, 'tasks');
 const sandboxDir = path.join(__dirname, 'sandbox');
-const sandboxTarget = path.join(__dirname, 'sandbox', 'target.txt');
 const transientCodeBuddyPathPrefixes = [
   '.codebuddy/agent-memory/',
   '.codebuddy/cache/',

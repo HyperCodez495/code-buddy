@@ -34,7 +34,7 @@ async function waitReady(timeout = 30_000): Promise<void> {
   const start = Date.now();
   while (Date.now() - start < timeout) {
     try {
-      const j = JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^﻿/, ''));
+      const j = JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^\uFEFF/, ''));
       if (j.ready && j.status === 'ready') return;
     } catch { /* not ready yet */ }
     await delay(150);
@@ -74,7 +74,7 @@ try {
   console.log(`select_list_item "Item 250": success=${sel.success} :: ${sel.output ?? sel.error ?? ''}`);
   await delay(500);
   let bigItemAfter = '';
-  try { bigItemAfter = JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^﻿/, '')).bigItem ?? ''; } catch { /* ignore */ }
+  try { bigItemAfter = JSON.parse((await fs.readFile(statePath, 'utf8')).replace(/^\uFEFF/, '')).bigItem ?? ''; } catch { /* ignore */ }
 
   const summary = {
     elements: els.length,
