@@ -183,6 +183,12 @@ The plan also declares its interaction surfaces (`cli`, `cowork`, and
 `shared-json`) so Cowork can render the same checklist and seed a Fleet
 goal without parsing CLI prose.
 
+`buddy hermes doctor [profile] [--json]` checks the active Hermes custom-agent
+mapping, effective tool filter, active model, inferred provider, detected
+credential source names, model capabilities, context/output limits, and Nous
+Portal readiness. The JSON form is safe for Cowork because it reports credential
+sources only, never secret values.
+
 `buddy hermes parity [--json|--markdown]` prints the machine-checkable official
 Hermes parity manifest created from the 2026-05-30 source/docs audit. Each row
 includes Code Buddy evidence paths, status, verification commands, notes, and

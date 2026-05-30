@@ -81,15 +81,16 @@ Current measured state:
 - [ ] **Expose provider/model readiness for Hermes**
   - Why: the provider stack is broad, but Hermes-oriented setup/status is still scattered.
   - Scope: `buddy hermes doctor` should show provider readiness, active model, context window, tool support, and missing keys without leaking secrets.
-  - Done so far: `buddy hermes portal status|tools|open` now covers the official Nous Portal status/catalog surface locally. It reports credential source names, subscription/docs URLs, Tool Gateway configuration, and managed-vs-direct routing for the official Firecrawl/FAL/TTS/Browser Use/Modal portal catalog without leaking secret values.
+  - Done so far: `buddy hermes doctor --json` now includes active model source, inferred provider, detected env/OAuth credential source names, model tool-call/reasoning/vision capabilities, context/output limits, remediation hints, and embedded Nous Portal readiness. `buddy hermes portal status|tools|open` covers the official Nous Portal status/catalog surface locally with subscription/docs URLs, Tool Gateway configuration, and managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal without leaking secret values.
   - Acceptance:
-    - `buddy hermes doctor --json` includes provider readiness and remediation hints.
+    - `buddy hermes doctor --json` includes provider readiness and remediation hints. **Done for CLI JSON.**
     - `buddy hermes portal status --json` shows whether Nous Tool Gateway routing is configured and which tools fall back to direct/local providers.
     - Cowork configuration screen can render the same status.
+  - Remaining scope: Cowork configuration/status rendering for the shared `providerReadiness` object.
   - Verification:
-    - tests around `hermes-agent-diagnostics`
+    - `npm test -- tests/agent/hermes-agent-diagnostics.test.ts tests/commands/hermes-commands.test.ts --run`
     - real CLI smoke with empty and configured env.
-    - `npm test -- tests/commands/hermes-commands.test.ts --run`
+    - `npx tsx src/index.ts hermes doctor balanced --json`
     - `npx tsx src/index.ts hermes portal status --json`
     - `npx tsx src/index.ts hermes portal tools --json`
 

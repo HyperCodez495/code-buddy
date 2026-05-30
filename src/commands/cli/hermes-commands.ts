@@ -963,6 +963,24 @@ export function registerHermesCommands(program: Command): void {
       console.log(
         `  Effective filter deny: ${formatList(diagnostics.effectiveToolFilter.disabledPatterns)}`,
       );
+      console.log('  Provider/model readiness:');
+      console.log(`    Model: ${diagnostics.providerReadiness.activeModel.model}`);
+      console.log(`    Provider: ${diagnostics.providerReadiness.activeProvider.label}`);
+      console.log(
+        `    Credentials/endpoint: ${diagnostics.providerReadiness.activeProvider.configured ? 'configured' : 'missing'}`,
+      );
+      console.log(
+        `    Capabilities: tool-calls=${diagnostics.providerReadiness.activeModel.supportsToolCalls ? 'yes' : 'no'}, ` +
+        `reasoning=${diagnostics.providerReadiness.activeModel.supportsReasoning ? 'yes' : 'no'}, ` +
+        `vision=${diagnostics.providerReadiness.activeModel.supportsVision ? 'yes' : 'no'}`,
+      );
+      console.log(
+        `    Context/output: ${diagnostics.providerReadiness.activeModel.contextWindow ?? 'unknown'} / ` +
+        `${diagnostics.providerReadiness.activeModel.maxOutputTokens ?? 'unknown'} tokens`,
+      );
+      console.log(
+        `    Nous Tool Gateway: ${diagnostics.providerReadiness.portal.portal.toolGatewayConfigured ? 'configured' : 'not configured'}`,
+      );
       console.log('  Dispatch profile selection:');
       for (const guidance of diagnostics.dispatchProfileGuidance) {
         console.log(`    ${guidance.profile}: ${guidance.useWhen}`);
@@ -983,7 +1001,26 @@ export function registerHermesCommands(program: Command): void {
         }
       }
 
-      if (diagnostics.issues.length === 0 && diagnostics.recommendations.length === 0) {
+      if (diagnostics.providerReadiness.issues.length > 0) {
+        console.log('\nProvider/model issues:');
+        for (const issue of diagnostics.providerReadiness.issues) {
+          console.log(`  - ${issue}`);
+        }
+      }
+
+      if (diagnostics.providerReadiness.recommendations.length > 0) {
+        console.log('\nProvider/model recommendations:');
+        for (const recommendation of diagnostics.providerReadiness.recommendations) {
+          console.log(`  - ${recommendation}`);
+        }
+      }
+
+      if (
+        diagnostics.issues.length === 0 &&
+        diagnostics.recommendations.length === 0 &&
+        diagnostics.providerReadiness.issues.length === 0 &&
+        diagnostics.providerReadiness.recommendations.length === 0
+      ) {
         console.log('\nNo issues or recommendations.');
       }
 

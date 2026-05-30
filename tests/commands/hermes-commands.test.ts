@@ -977,8 +977,92 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('Hermes Agent doctor:');
     expect(output).toContain('Active toolset: fleet.hermes.safe');
     expect(output).toContain('Agent default dispatch profile: balanced');
+    expect(output).toContain('Provider/model readiness:');
+    expect(output).toContain('Capabilities: tool-calls=');
+    expect(output).toContain('Nous Tool Gateway:');
     expect(output).toContain('Dispatch profile selection:');
     expect(output).toContain('safe: high-risk');
     expect(output).toContain('Native surfaces:');
+  });
+
+  it('prints Hermes doctor JSON with provider readiness and no secret leakage', async () => {
+    const managedKeys = [
+      'CODEBUDDY_MODEL',
+      'OPENAI_API_KEY',
+      'CODEBUDDY_NOUS_ACCESS_TOKEN',
+      'CODEBUDDY_NOUS_TOOL_GATEWAY_URL',
+      'CODEBUDDY_NOUS_MANAGED_TOOLS',
+    ];
+    const originalEnv = new Map(managedKeys.map((key) => [key, process.env[key]]));
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    try {
+      for (const key of managedKeys) {
+        delete process.env[key];
+      }
+      process.env.CODEBUDDY_MODEL = 'gpt-5.5';
+      process.env.OPENAI_API_KEY = 'secret-openai-key';
+      process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-nous-token';
+      process.env.CODEBUDDY_NOUS_TOOL_GATEWAY_URL = 'https://gateway.example.test';
+      process.env.CODEBUDDY_NOUS_MANAGED_TOOLS = 'web,browser';
+
+      await program.parseAsync(['node', 'test', 'hermes', 'doctor', 'balanced', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        diagnostics: {
+          providerReadiness: {
+            ok: boolean;
+            activeModel: {
+              model: string;
+              provider: string;
+              supportsToolCalls: boolean;
+              supportsReasoning: boolean;
+              supportsVision: boolean;
+            };
+            activeProvider: {
+              provider: string;
+              configured: boolean;
+              credentialSources: string[];
+            };
+            portal: {
+              portal: {
+                credentialSources: string[];
+                toolGatewayConfigured: boolean;
+              };
+              toolGateway: {
+                managedByNousCount: number;
+              };
+            };
+          };
+        };
+      };
+
+      expect(output.diagnostics.providerReadiness.ok).toBe(true);
+      expect(output.diagnostics.providerReadiness.activeModel).toMatchObject({
+        model: 'gpt-5.5',
+        provider: 'openai',
+        supportsToolCalls: true,
+        supportsReasoning: true,
+        supportsVision: true,
+      });
+      expect(output.diagnostics.providerReadiness.activeProvider).toMatchObject({
+        provider: 'openai',
+        configured: true,
+        credentialSources: expect.arrayContaining(['OPENAI_API_KEY']),
+      });
+      expect(output.diagnostics.providerReadiness.portal.portal.credentialSources).toContain('CODEBUDDY_NOUS_ACCESS_TOKEN');
+      expect(output.diagnostics.providerReadiness.portal.portal.toolGatewayConfigured).toBe(true);
+      expect(output.diagnostics.providerReadiness.portal.toolGateway.managedByNousCount).toBe(2);
+      expect(raw).not.toContain('secret-openai-key');
+      expect(raw).not.toContain('secret-nous-token');
+    } finally {
+      for (const key of managedKeys) {
+        const value = originalEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
   });
 });

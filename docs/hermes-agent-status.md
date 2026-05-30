@@ -25,9 +25,9 @@ The Hermes agent is a **built-in custom agent** — run it with `buddy --agent h
 | Built-in agent registration | `src/agent/custom/custom-agent-loader.ts` (`BUILT_IN_AGENTS`, ~L132) | `id: hermes`, `disabledTools: [git_push, delete_file]`, `fleetDispatchProfile: balanced`, `requireExplicitDispatchProfile: true`; a user `hermes.toml` overrides it |
 | Profile + system prompt | `src/agent/hermes-agent-profile.ts` | `buildHermesAgentProfile`, `buildHermesAgentSystemPrompt`, `buildHermesIntegrationPlan` |
 | CLI surface | `src/commands/cli/hermes-commands.ts` (registered `src/index.ts` ~L2389) | `buddy hermes plan / profile / doctor / hooks / prompt-size / parity / tools / portal` |
-| Diagnostics | `src/agent/hermes-agent-diagnostics.ts` | `buddy hermes doctor <profile>` |
+| Diagnostics | `src/agent/hermes-agent-diagnostics.ts` | `buddy hermes doctor <profile>`; includes provider/model readiness, credential source names, model capabilities, context/output limits, and Nous Portal status |
 | Lifecycle hooks | `src/hooks/hermes-lifecycle-hooks.ts` | canonical manifest across Code Buddy hook systems |
-| Tests | `tests/agent/custom-agent-loader-hermes.test.ts`, `tests/agent/hermes-agent-profile.test.ts`, `tests/commands/hermes-commands.test.ts`, `tests/hooks/hermes-lifecycle-hooks.test.ts`, `tests/agent/hermes-agent-diagnostics.test.ts` | 20 specs, green |
+| Tests | `tests/agent/custom-agent-loader-hermes.test.ts`, `tests/agent/hermes-agent-profile.test.ts`, `tests/commands/hermes-commands.test.ts`, `tests/hooks/hermes-lifecycle-hooks.test.ts`, `tests/agent/hermes-agent-diagnostics.test.ts` | focused Hermes command/diagnostic coverage includes 23 specs across the doctor/command tests, green |
 
 ## Hermes capability → Code Buddy implementation
 
@@ -92,7 +92,8 @@ change-control surface.
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
 | Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 65 exact, 6 native-equivalent, 0 partial, 0 gaps |
-| Nous Portal readiness | `src/agent/hermes-portal-status.ts`; `buddy hermes portal status|tools|open` | covered/partial — local auth/source readiness, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output; no live OAuth device-code or Nous proxy runtime yet |
+| Provider/model readiness | `src/agent/hermes-agent-diagnostics.ts`; `buddy hermes doctor --json` | covered/partial — active model source, inferred provider, env/OAuth credential source names, tool-call/reasoning/vision flags, context/output limits, and remediation hints; Cowork rendering remains future work |
+| Nous Portal readiness | `src/agent/hermes-portal-status.ts`; `buddy hermes portal status|tools|open`; embedded in `buddy hermes doctor --json` | covered/partial — local auth/source readiness, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output; no live OAuth device-code or Nous proxy runtime yet |
 
 ### Scheduled automations
 
@@ -197,5 +198,7 @@ buddy lessons candidate approve <id> --by "<your name>"
 - Exact `skill_manage` prompt-tool parity is closed; wider CLI hub/tap/trust product-surface behavior is still only partially proven.
 - Nous Portal status/catalog parity is covered locally; live OAuth/device-code login
   and actual Nous-managed Tool Gateway proxying remain product/credential work.
+- Provider/model readiness is now present in `buddy hermes doctor --json`;
+  Cowork still needs to render the same shared object in configuration screens.
 - OpenClaw migration is intentionally last, after the Hermes core and Cowork
   cockpit work are stable.

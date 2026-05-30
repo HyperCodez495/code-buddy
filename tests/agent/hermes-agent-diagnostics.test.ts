@@ -78,4 +78,45 @@ describe('Hermes Agent diagnostics', () => {
       ]),
     );
   });
+
+  it('reports provider, model, and Nous Portal readiness without leaking secrets', () => {
+    const dir = makeTempDir();
+    const loader = new CustomAgentLoader(dir);
+    const diagnostics = buildHermesAgentDiagnostics({
+      dispatchProfile: 'code',
+      env: {
+        CODEBUDDY_MODEL: 'gpt-5.5',
+        OPENAI_API_KEY: 'secret-openai-key',
+        CODEBUDDY_NOUS_ACCESS_TOKEN: 'secret-nous-token',
+        CODEBUDDY_NOUS_TOOL_GATEWAY_URL: 'https://gateway.example.test',
+        CODEBUDDY_NOUS_MANAGED_TOOLS: 'web,image_gen',
+      },
+      homeDir: dir,
+      loader,
+      now: () => new Date('2026-05-30T12:00:00.000Z'),
+      settingsModel: null,
+    });
+
+    expect(diagnostics.providerReadiness.ok).toBe(true);
+    expect(diagnostics.providerReadiness.activeModel).toMatchObject({
+      model: 'gpt-5.5',
+      provider: 'openai',
+      source: 'environment model',
+      supportsToolCalls: true,
+      supportsReasoning: true,
+      supportsVision: true,
+      contextWindow: 200000,
+      maxOutputTokens: 64000,
+    });
+    expect(diagnostics.providerReadiness.activeProvider).toMatchObject({
+      provider: 'openai',
+      configured: true,
+      credentialSources: ['OPENAI_API_KEY'],
+    });
+    expect(diagnostics.providerReadiness.portal.portal.credentialSources).toContain('CODEBUDDY_NOUS_ACCESS_TOKEN');
+    expect(diagnostics.providerReadiness.portal.portal.toolGatewayConfigured).toBe(true);
+    expect(diagnostics.providerReadiness.portal.toolGateway.managedByNousCount).toBe(2);
+    expect(JSON.stringify(diagnostics)).not.toContain('secret-openai-key');
+    expect(JSON.stringify(diagnostics)).not.toContain('secret-nous-token');
+  });
 });
