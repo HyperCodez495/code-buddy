@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, official create/edit/patch/write_file/remove_file aliases, review-gated enable/disable/deprecate/delete/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, official create/edit/patch/write_file/remove_file aliases, update previews, review-gated enable/disable/deprecate/delete/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -329,6 +329,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
             'write_file',
             'remove_file',
             'rollback',
+            'preview_update',
             'update',
             'candidate_list',
             'candidate_view',
@@ -376,7 +377,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         version: {
           type: 'string',
-          description: 'Optional target version for update. If omitted, update uses hub or local cache metadata.',
+          description: 'Optional target version for preview_update or update. If omitted, update uses hub or local cache metadata.',
         },
         include_disabled: {
           type: 'boolean',
@@ -416,7 +417,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         approved_by: {
           type: 'string',
-          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback, update.',
+          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback, update. Not required for preview_update.',
         },
         approved_at: {
           type: 'string',

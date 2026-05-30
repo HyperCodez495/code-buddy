@@ -468,6 +468,19 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
       'utf8',
     );
 
+    const previewUpdate = await parseToolOutput(await manageTool!.execute({
+      action: 'preview_update',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(previewUpdate.action).toBe('skill_manage_preview_update');
+    expect(previewUpdate).toMatchObject({
+      fromVersion: '0.1.0',
+      sameContent: false,
+      toVersion: '0.2.0',
+      updateAvailable: true,
+    });
+    expect((previewUpdate.diff as { preview: string }).preview).toContain('Updated cached hub workflow.');
+
     const updateWithoutApproval = await manageTool!.execute({
       action: 'update',
       name: 'research-skill-manage-candidate',

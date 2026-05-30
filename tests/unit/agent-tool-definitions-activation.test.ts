@@ -48,6 +48,7 @@ describe('Agent tool activation in LLM schemas', () => {
       'write_file',
       'remove_file',
       'rollback',
+      'preview_update',
       'update',
       'candidate_list',
       'candidate_view',

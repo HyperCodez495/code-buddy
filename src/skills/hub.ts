@@ -15,6 +15,7 @@ import * as path from 'path';
 import * as os from 'os';
 import * as yaml from 'yaml';
 import { logger } from '../utils/logger.js';
+import { generateDiff } from '../utils/diff-generator.js';
 import { parseSkillFile, validateSkill } from './parser.js';
 
 // ============================================================================
@@ -198,6 +199,34 @@ export interface SkillUpdateResult {
   fromVersion: string;
   toVersion: string;
   snapshot: SkillVersionSnapshot;
+}
+
+export interface SkillUpdatePreviewOptions {
+  maxDiffChars?: number;
+  maxDiffLines?: number;
+  version?: string;
+}
+
+export interface SkillUpdatePreviewDiff {
+  addedLines: number;
+  maxChars: number;
+  maxLines: number;
+  preview: string;
+  removedLines: number;
+  summary: string;
+  truncated: boolean;
+}
+
+export interface SkillUpdatePreviewResult {
+  currentChecksum: string;
+  diff: SkillUpdatePreviewDiff;
+  installCommand: string;
+  name: string;
+  remoteChecksum: string;
+  sameContent: boolean;
+  updateAvailable: boolean;
+  fromVersion: string;
+  toVersion: string;
 }
 
 export interface SkillHistoryCurrent {
@@ -1475,6 +1504,66 @@ export class SkillsHub extends EventEmitter {
     }
 
     return null;
+  }
+
+  async previewInstalledSkillUpdate(
+    skillName: string,
+    options: SkillUpdatePreviewOptions = {},
+  ): Promise<SkillUpdatePreviewResult | null> {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot preview update for missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const hubInfo = await this.getHubSkillInfo(skillName);
+    const targetVersion = options.version || hubInfo?.version;
+    if (!targetVersion) {
+      throw new Error(`No update metadata found for '${skillName}'`);
+    }
+
+    const currentContent = fs.readFileSync(installed.path, 'utf-8');
+    const remoteContent = await this.fetchSkillContent(skillName, targetVersion);
+    this.validateSkillContent(remoteContent, skillName);
+    const resolvedVersion = this.extractVersionFromContent(remoteContent) || targetVersion;
+    const currentChecksum = computeChecksum(currentContent);
+    const remoteChecksum = computeChecksum(remoteContent);
+    const diff = generateDiff(
+      currentContent.trimEnd().split('\n'),
+      remoteContent.trimEnd().split('\n'),
+      `${skillName}/SKILL.md`,
+      {
+        contextLines: 2,
+        summaryPrefix: 'Skill update',
+      },
+    );
+    const maxLines = options.maxDiffLines ?? 120;
+    const maxChars = options.maxDiffChars ?? 12000;
+    const linePreview = diff.diff.split('\n').slice(0, maxLines).join('\n');
+    const preview = linePreview.slice(0, maxChars);
+
+    return {
+      currentChecksum,
+      diff: {
+        addedLines: diff.addedLines,
+        maxChars,
+        maxLines,
+        preview,
+        removedLines: diff.removedLines,
+        summary: diff.summary,
+        truncated: linePreview.length > preview.length || diff.diff.split('\n').length > maxLines,
+      },
+      fromVersion: installed.version,
+      installCommand: `skill_manage action=update name=${skillName} approved_by=<reviewer>${resolvedVersion ? ` version=${resolvedVersion}` : ''}`,
+      name: skillName,
+      remoteChecksum,
+      sameContent: currentChecksum === remoteChecksum,
+      toVersion: resolvedVersion,
+      updateAvailable: compareSemver(resolvedVersion, installed.version) > 0,
+    };
   }
 
   async updateInstalledSkill(

@@ -11,6 +11,7 @@
  *   buddy skills doctor [--json]
  *   buddy skills usage [--json]
  *   buddy skills learning-usage [--json]
+ *   buddy skills update-preview <name>
  *   buddy skills enable <name>
  *   buddy skills disable <name>
  *   buddy skills tap list|add|remove|trust|refresh
@@ -168,6 +169,41 @@ export function registerSkillsCommands(program: Command): void {
         if (skill.lastError) console.log(`      last error: ${skill.lastError}`);
       }
       console.log('');
+    });
+
+  skills
+    .command('update-preview <name>')
+    .description('Preview a hub-backed skill update diff without applying it')
+    .option('--version <version>', 'target version to preview')
+    .option('--json', 'output JSON')
+    .action(async (name: string, opts: { json?: boolean; version?: string }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const preview = await getSkillsHub().previewInstalledSkillUpdate(name, {
+        version: opts.version,
+      });
+      if (!preview) {
+        const message = `Skill not found: ${name}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, preview: null }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(preview, null, 2));
+        return;
+      }
+      const state = preview.updateAvailable ? 'update available' : 'no newer version';
+      console.log(`${preview.name}: ${preview.fromVersion} -> ${preview.toVersion} (${state})`);
+      console.log(`checksums: ${preview.currentChecksum.slice(0, 12)} -> ${preview.remoteChecksum.slice(0, 12)}`);
+      console.log(`next: ${preview.installCommand}`);
+      console.log('');
+      console.log(preview.diff.preview);
+      if (preview.diff.truncated) {
+        console.log('\n[diff preview truncated]');
+      }
     });
 
   skills

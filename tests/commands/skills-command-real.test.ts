@@ -249,6 +249,64 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(hub.listTaps()).toEqual([]);
   });
 
+  it('previews hub update diffs from a real cache without mutating the installed skill', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      registryUrl: 'http://127.0.0.1:9/api/v1',
+      skillsDir: path.join(tempHome, 'skills'),
+      tapsPath: path.join(tempHome, 'taps.json'),
+    });
+    const installedContent = skillContent('preview-helper', '0.1.0', 'Old workflow.');
+    const remoteContent = skillContent('preview-helper', '0.2.0', 'New reviewed workflow.');
+    const installed = await hub.installFromContent('preview-helper', installedContent);
+    await fs.mkdir(path.join(tempHome, 'cache'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'registry-cache.json'),
+      `${JSON.stringify({
+        skills: [{
+          name: 'preview-helper',
+          version: '0.2.0',
+          description: 'Preview helper update.',
+          author: 'test',
+          tags: ['preview'],
+          downloads: 0,
+          stars: 0,
+          updatedAt: '2026-05-30T23:45:00.000Z',
+          checksum: 'preview-update',
+          size: Buffer.byteLength(remoteContent, 'utf8'),
+        }],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'preview-helper@0.2.0.skill.md'),
+      remoteContent,
+      'utf8',
+    );
+
+    const program = createProgram();
+    await program.parseAsync(['node', 'buddy', 'skills', 'update-preview', 'preview-helper', '--json']);
+    const preview = JSON.parse(getLogOutput()) as {
+      diff: { addedLines: number; preview: string; removedLines: number };
+      fromVersion: string;
+      sameContent: boolean;
+      toVersion: string;
+      updateAvailable: boolean;
+    };
+
+    expect(preview).toMatchObject({
+      fromVersion: '0.1.0',
+      sameContent: false,
+      toVersion: '0.2.0',
+      updateAvailable: true,
+    });
+    expect(preview.diff.addedLines).toBeGreaterThan(0);
+    expect(preview.diff.removedLines).toBeGreaterThan(0);
+    expect(preview.diff.preview).toContain('New reviewed workflow.');
+    expect(await fs.readFile(installed.path, 'utf8')).toBe(installedContent);
+  });
+
   it('refreshes GitHub-style tap discovery and well-known indexes through real HTTP paths', async () => {
     const server = await startSkillDiscoveryServer();
     try {
