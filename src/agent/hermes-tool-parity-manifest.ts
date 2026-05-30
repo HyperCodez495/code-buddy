@@ -48,6 +48,8 @@ const OFFICIAL_SOURCE_HOMEASSISTANT = 'tools/homeassistant_tool.py';
 const OFFICIAL_SOURCE_MOA = 'tools/mixture_of_agents_tool.py';
 const OFFICIAL_SOURCE_SPOTIFY = 'plugins/spotify/tools.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
+const OFFICIAL_SOURCE_FEISHU_DOC = 'tools/feishu_doc_tool.py';
+const OFFICIAL_SOURCE_FEISHU_DRIVE = 'tools/feishu_drive_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
 const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
@@ -510,37 +512,36 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'feishu_doc_read',
     toolset: 'feishu',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy has Feishu channel/card support, but no exact Feishu document prompt tool.',
+    officialSource: OFFICIAL_SOURCE_FEISHU_DOC,
+    notes: 'Code Buddy exposes the exact Feishu/Lark document raw-content prompt tool over the Open API.',
   },
   {
     name: 'feishu_drive_list_comments',
     toolset: 'feishu',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No exact Feishu drive comment prompt tool was found.',
+    officialSource: OFFICIAL_SOURCE_FEISHU_DRIVE,
+    notes: 'Code Buddy exposes the exact Feishu/Lark drive comment listing prompt tool over the Open API.',
   },
   {
     name: 'feishu_drive_list_comment_replies',
     toolset: 'feishu',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No exact Feishu drive comment prompt tool was found.',
+    officialSource: OFFICIAL_SOURCE_FEISHU_DRIVE,
+    notes: 'Code Buddy exposes the exact Feishu/Lark drive comment replies prompt tool over the Open API.',
   },
   {
     name: 'feishu_drive_reply_comment',
     toolset: 'feishu',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No exact Feishu drive comment prompt tool was found.',
+    officialSource: OFFICIAL_SOURCE_FEISHU_DRIVE,
+    notes: 'Code Buddy exposes the exact Feishu/Lark drive comment reply prompt tool over the Open API.',
   },
   {
     name: 'feishu_drive_add_comment',
     toolset: 'feishu',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No exact Feishu drive comment prompt tool was found.',
+    officialSource: OFFICIAL_SOURCE_FEISHU_DRIVE,
+    notes: 'Code Buddy exposes the exact Feishu/Lark drive whole-document comment prompt tool over the Open API.',
   },
   {
     name: 'yb_query_group_info',
@@ -659,6 +660,8 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_MOA,
         OFFICIAL_SOURCE_SPOTIFY,
         OFFICIAL_SOURCE_X_SEARCH,
+        OFFICIAL_SOURCE_FEISHU_DOC,
+        OFFICIAL_SOURCE_FEISHU_DRIVE,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],
     },

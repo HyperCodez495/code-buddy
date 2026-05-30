@@ -80,6 +80,11 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   spotify_playlists: ['group:web', 'group:dangerous'],
   spotify_queue: ['group:web', 'group:dangerous'],
   x_search: ['group:web', 'group:web:search'],
+  feishu_doc_read: ['group:web'],
+  feishu_drive_list_comments: ['group:web'],
+  feishu_drive_list_comment_replies: ['group:web'],
+  feishu_drive_reply_comment: ['group:web', 'group:dangerous'],
+  feishu_drive_add_comment: ['group:web', 'group:dangerous'],
 
   // Git - Read
   git_status: ['group:git', 'group:git:read'],

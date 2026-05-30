@@ -99,6 +99,11 @@ export {
   createXSearchTools,
 } from './x-search-tools.js';
 
+export {
+  FeishuTool,
+  createFeishuTools,
+} from './feishu-tools.js';
+
 // Tool Adapters - Cron jobs
 export {
   CronjobExecuteTool,
@@ -457,6 +462,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createMixtureOfAgentsTools } = await import('./moa-tools.js');
   const { createSpotifyTools } = await import('./spotify-tools.js');
   const { createXSearchTools } = await import('./x-search-tools.js');
+  const { createFeishuTools } = await import('./feishu-tools.js');
   const { createCronjobTools } = await import('./cronjob-tools.js');
   const { createDockerTools } = await import('./docker-tools.js');
   const { createKubernetesTools } = await import('./kubernetes-tools.js');
@@ -512,6 +518,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
     ...createXSearchTools(),
+    ...createFeishuTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -589,6 +596,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
     ...createXSearchTools(),
+    ...createFeishuTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -656,6 +664,7 @@ import { createHomeAssistantTools } from './homeassistant-tools.js';
 import { createMixtureOfAgentsTools } from './moa-tools.js';
 import { createSpotifyTools } from './spotify-tools.js';
 import { createXSearchTools } from './x-search-tools.js';
+import { createFeishuTools } from './feishu-tools.js';
 import { createCronjobTools } from './cronjob-tools.js';
 import { createDockerTools } from './docker-tools.js';
 import { createKubernetesTools } from './kubernetes-tools.js';

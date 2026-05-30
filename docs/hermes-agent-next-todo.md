@@ -8,7 +8,7 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 42 exact, 6 native-equivalent, 3 partial, 20 gaps.
+- Tool parity manifest: 71 official tools, 55 exact, 6 native-equivalent, 2 partial, 8 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,7 +68,7 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `video_analyze`, and media generation gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, and `text_to_speech` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `video_analyze`, and media generation gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, and `text_to_speech` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
     - Cowork shows summary counts and top core gaps such as `skill_manage`, `video_analyze`, and media generation.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
@@ -155,6 +155,13 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/x-search-tool-real.test.ts --run`
 
+- [x] **Add exact Feishu document/comment prompt tools**
+  - Why: upstream Hermes exposes a Feishu/Lark document reader plus four drive comment tools, scoped to intelligent document-comment workflows.
+  - Done: Code Buddy now exposes `feishu_doc_read`, `feishu_drive_list_comments`, `feishu_drive_list_comment_replies`, `feishu_drive_reply_comment`, and `feishu_drive_add_comment` over Feishu/Lark Open API REST paths. Credentials come from env/options only: direct tenant/access token or app id/secret tenant-token exchange.
+  - Guardrail: comment writes are policy-grouped as dangerous external actions. Tests use a real local HTTP server and production request construction rather than mocked fetch.
+  - Verification:
+    - `npm test -- tests/tools/feishu-tool-real.test.ts --run`
+
 - [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
   - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
@@ -177,7 +184,6 @@ Current measured state:
 
 - [ ] **Platform connectors**
   - Lower priority unless the user explicitly needs them:
-    - Feishu drive comments
     - Yuanbao group/DM/stickers
     - Discord admin
     - `image_generate` / `video_generate`
@@ -185,7 +191,6 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. Feishu document/comment exact tools.
-2. `image_generate` / `video_generate` media generation tools.
-3. Yuanbao and Discord admin connectors if product-relevant.
-4. Cowork Skill Package Manager panel and provider/model readiness polish.
+1. `image_generate` / `video_generate` media generation tools.
+2. Yuanbao group/DM/sticker tools and Discord admin if product-relevant.
+3. Cowork Skill Package Manager panel and provider/model readiness polish.

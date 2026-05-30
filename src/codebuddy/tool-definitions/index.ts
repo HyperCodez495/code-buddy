@@ -97,6 +97,16 @@ export {
   X_SEARCH_TOOLS,
 } from './x-search-tools.js';
 
+// Hermes Feishu/Lark document and drive comment tools
+export {
+  FEISHU_DOC_READ_TOOL,
+  FEISHU_DRIVE_LIST_COMMENTS_TOOL,
+  FEISHU_DRIVE_LIST_COMMENT_REPLIES_TOOL,
+  FEISHU_DRIVE_REPLY_COMMENT_TOOL,
+  FEISHU_DRIVE_ADD_COMMENT_TOOL,
+  FEISHU_TOOLS,
+} from './feishu-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

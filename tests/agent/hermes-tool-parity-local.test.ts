@@ -100,6 +100,16 @@ describe('local Hermes tool parity manifest', () => {
         status: 'exact',
         detectedCodeBuddyTools: ['x_search'],
       }),
+      expect.objectContaining({
+        name: 'feishu_doc_read',
+        status: 'exact',
+        detectedCodeBuddyTools: ['feishu_doc_read'],
+      }),
+      expect.objectContaining({
+        name: 'feishu_drive_reply_comment',
+        status: 'exact',
+        detectedCodeBuddyTools: ['feishu_drive_reply_comment'],
+      }),
     ]));
   });
 });
