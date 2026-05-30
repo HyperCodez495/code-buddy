@@ -1,0 +1,244 @@
+import React, { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { History, ListChecks, PackageOpen, ShieldCheck, Terminal } from 'lucide-react';
+
+type SkillPackageStatus = 'active' | 'disabled' | 'deprecated';
+
+export interface SkillPackageManagerEntry {
+  averageDurationMs?: number;
+  enabled: boolean;
+  failureCount?: number;
+  installedAt: number;
+  integrityOk: boolean;
+  invocationCount?: number;
+  lastError?: string;
+  lastLifecycleReason?: string;
+  lastLifecycleReviewer?: string;
+  lastUsedAt?: number;
+  name: string;
+  path: string;
+  rollbackableCount: number;
+  source: 'hub' | 'local' | 'git';
+  status: SkillPackageStatus;
+  successCount?: number;
+  version: string;
+}
+
+export interface SkillPackageManagerSummary {
+  cacheDir: string;
+  disabledCount: number;
+  enabledCount: number;
+  installedCount: number;
+  lockfilePath: string;
+  packages: SkillPackageManagerEntry[];
+  reviewCommands: string[];
+  rollbackableCount: number;
+  skillRoot: string;
+}
+
+interface SkillPackageManagerApi {
+  list?: (options?: {
+    cwd?: string;
+    limit?: number;
+  }) => Promise<SkillPackageManagerSummary | null>;
+}
+
+export function buildSkillPackageManagerGoal(): string {
+  return [
+    'Review installed Code Buddy SKILL.md packages from Cowork.',
+    'Inspect status, usage, integrity, rollback history and Learning Agent recommendations before changing anything.',
+    '',
+    'Use review-gated actions only:',
+    '- buddy skills list --all --json',
+    '- buddy skills learning-usage --json',
+    '- skill_manage action=history name=<skill>',
+    '- skill_manage action=enable|disable|deprecate|patch|rollback|update name=<skill> approved_by=<reviewer>',
+    '',
+    'Rules:',
+    '- Do not mutate an installed skill without a named reviewer.',
+    '- Prefer rollback over deletion when a valid snapshot exists.',
+    '- Keep candidate installation separate from installed package lifecycle changes.',
+  ].join('\n');
+}
+
+export const SkillPackageManagerStrip: React.FC<{
+  cwd?: string;
+  error?: string | null;
+  onUseAsGoal?: (goal: string) => void;
+  summary?: SkillPackageManagerSummary | null;
+}> = ({ cwd, error = null, onUseAsGoal, summary }) => {
+  const { t } = useTranslation();
+  const [loadedSummary, setLoadedSummary] = useState<SkillPackageManagerSummary | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const goalDraft = useMemo(() => buildSkillPackageManagerGoal(), []);
+  const visibleSummary = summary !== undefined ? summary : loadedSummary;
+  const visibleError = error ?? loadError;
+  const visiblePackages = visibleSummary?.packages.slice(0, 3) ?? [];
+
+  useEffect(() => {
+    if (summary !== undefined) return;
+    const api = getSkillPackageManagerApi();
+    if (!api?.list) return;
+    let cancelled = false;
+
+    void api
+      .list({ cwd, limit: 6 })
+      .then((result) => {
+        if (cancelled) return;
+        setLoadedSummary(result);
+        setLoadError(null);
+      })
+      .catch((loadErrorValue: unknown) => {
+        if (cancelled) return;
+        setLoadedSummary(null);
+        setLoadError(
+          loadErrorValue instanceof Error ? loadErrorValue.message : String(loadErrorValue)
+        );
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [cwd, summary]);
+
+  return (
+    <section
+      className="mt-3 rounded border border-border-muted bg-surface/60 p-2"
+      data-testid="fleet-skill-package-manager"
+    >
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-1.5">
+          <PackageOpen size={11} className="shrink-0 text-accent" />
+          <span className="truncate text-[10px] uppercase tracking-wider text-accent">
+            {t('fleet.skillPackage.title', 'Skill package manager')}
+          </span>
+        </div>
+        <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
+          {t('fleet.skillPackage.countChip', '{{count}} installed', {
+            count: visibleSummary?.installedCount ?? 0,
+          })}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex flex-wrap gap-1">
+        <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+          {t('fleet.skillPackage.enabledChip', '{{count}} enabled', {
+            count: visibleSummary?.enabledCount ?? 0,
+          })}
+        </span>
+        <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+          {t('fleet.skillPackage.disabledChip', '{{count}} inactive', {
+            count: visibleSummary?.disabledCount ?? 0,
+          })}
+        </span>
+        <span className="flex items-center gap-1 rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+          <History size={9} />
+          {t('fleet.skillPackage.rollbackChip', '{{count}} rollback snapshots', {
+            count: visibleSummary?.rollbackableCount ?? 0,
+          })}
+        </span>
+      </div>
+
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-secondary">
+        <ShieldCheck size={10} className="shrink-0 text-accent" />
+        <span className="line-clamp-2">
+          {t(
+            'fleet.skillPackage.guardrail',
+            'Lifecycle changes stay review-gated: use skill_manage with approved_by before enabling, disabling, patching, rolling back or deleting skills.'
+          )}
+        </span>
+      </div>
+
+      {visibleError && (
+        <div className="mt-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+          {t('fleet.skillPackage.loadFailed', 'Skill package load failed')}: {visibleError}
+        </div>
+      )}
+
+      {visiblePackages.length > 0 ? (
+        <ul className="mt-1.5 space-y-1">
+          {visiblePackages.map((skill) => (
+            <li key={skill.name} className="min-w-0 rounded bg-surface/80 px-2 py-1">
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="truncate text-[10px] text-text-secondary">
+                  {skill.name}
+                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    v{skill.version}
+                  </span>
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    {skill.status}
+                  </span>
+                </div>
+              </div>
+              <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                {skill.source}
+                {skill.integrityOk ? ' - integrity ok' : ' - integrity warning'}
+                {skill.rollbackableCount > 0 ? ` - ${skill.rollbackableCount} rollback` : ''}
+                {typeof skill.invocationCount === 'number'
+                  ? ` - ${skill.invocationCount} run(s)`
+                  : ''}
+              </div>
+              {(skill.lastLifecycleReviewer || skill.lastLifecycleReason) ? (
+                <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                  {skill.lastLifecycleReviewer ? `${skill.lastLifecycleReviewer}: ` : ''}
+                  {skill.lastLifecycleReason ?? ''}
+                </div>
+              ) : null}
+              {skill.lastError ? (
+                <div className="mt-0.5 truncate text-[9px] text-warning">
+                  {skill.lastError}
+                </div>
+              ) : null}
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-muted">
+          <ListChecks size={10} className="shrink-0 text-text-muted" />
+          <span className="truncate">
+            {t('fleet.skillPackage.empty', 'No installed workspace skills yet.')}
+          </span>
+        </div>
+      )}
+
+      <ul className="mt-1.5 space-y-1">
+        {(visibleSummary?.reviewCommands ?? ['buddy skills list --all --json']).slice(0, 2).map((command) => (
+          <li
+            key={command}
+            className="flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-muted"
+          >
+            <Terminal size={10} className="shrink-0 text-text-muted" />
+            <code className="truncate">{command}</code>
+          </li>
+        ))}
+      </ul>
+
+      {onUseAsGoal && (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          <button
+            type="button"
+            onClick={() => onUseAsGoal(goalDraft)}
+            className="flex items-center gap-1 rounded border border-accent/50 px-2 py-1 text-[10px] text-accent transition-colors hover:bg-accent/10"
+          >
+            <PackageOpen size={10} />
+            {t('fleet.skillPackage.useAsGoal', 'Manage skills as goal')}
+          </button>
+        </div>
+      )}
+    </section>
+  );
+};
+
+function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
+  return (
+    window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: SkillPackageManagerApi;
+        };
+      };
+    }
+  ).electronAPI?.tools?.skillPackage;
+}

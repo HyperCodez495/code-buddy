@@ -81,6 +81,10 @@ const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx',
 );
+const skillPackageManagerStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/skill-package-manager-strip.tsx',
+);
 const lessonCandidateReviewStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/lesson-candidate-review-strip.tsx',
@@ -134,6 +138,7 @@ describe('FleetCommandCenter saga board', () => {
       fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
       fs.readFileSync(toolProfileInspectorStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
+      fs.readFileSync(skillPackageManagerStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
       fs.readFileSync(learningSkillUsageStripPath, 'utf8'),
     ].join('\n');
@@ -181,6 +186,10 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain('LearningSkillUsageStrip');
     expect(source).toContain('fleet-learning-skill-usage');
     expect(source).toContain('buddy skills learning-usage --json');
+    expect(source).toContain('SkillPackageManagerStrip');
+    expect(source).toContain('fleet-skill-package-manager');
+    expect(source).toContain('skillPackage?: SkillPackageManagerApi');
+    expect(source).toContain('skill_manage action=enable|disable|deprecate|patch|rollback|update');
     expect(source).toContain('LessonCandidateReviewStrip');
     expect(source).toContain('fleet-lesson-candidate-review');
     expect(source).toContain('lesson-candidate-open-review');

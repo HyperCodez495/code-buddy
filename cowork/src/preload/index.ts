@@ -1503,6 +1503,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }>;
       } | null> => ipcRenderer.invoke('tools.hermesCatalog.get'),
     },
+    skillPackage: {
+      list: (options?: {
+        cwd?: string;
+        limit?: number;
+      }): Promise<{
+        cacheDir: string;
+        disabledCount: number;
+        enabledCount: number;
+        installedCount: number;
+        lockfilePath: string;
+        packages: Array<{
+          averageDurationMs?: number;
+          enabled: boolean;
+          failureCount?: number;
+          installedAt: number;
+          integrityOk: boolean;
+          invocationCount?: number;
+          lastError?: string;
+          lastLifecycleReason?: string;
+          lastLifecycleReviewer?: string;
+          lastUsedAt?: number;
+          name: string;
+          path: string;
+          rollbackableCount: number;
+          source: 'hub' | 'local' | 'git';
+          status: 'active' | 'disabled' | 'deprecated';
+          successCount?: number;
+          version: string;
+        }>;
+        reviewCommands: string[];
+        rollbackableCount: number;
+        skillRoot: string;
+      } | null> => ipcRenderer.invoke('tools.skillPackage.list', options ?? {}),
+    },
     learningUsage: {
       list: (options?: {
         cwd?: string;
@@ -3838,6 +3872,40 @@ declare global {
               status: 'exact' | 'native-equivalent' | 'partial' | 'gap';
               toolset: string;
             }>;
+          } | null>;
+        };
+        skillPackage: {
+          list: (options?: {
+            cwd?: string;
+            limit?: number;
+          }) => Promise<{
+            cacheDir: string;
+            disabledCount: number;
+            enabledCount: number;
+            installedCount: number;
+            lockfilePath: string;
+            packages: Array<{
+              averageDurationMs?: number;
+              enabled: boolean;
+              failureCount?: number;
+              installedAt: number;
+              integrityOk: boolean;
+              invocationCount?: number;
+              lastError?: string;
+              lastLifecycleReason?: string;
+              lastLifecycleReviewer?: string;
+              lastUsedAt?: number;
+              name: string;
+              path: string;
+              rollbackableCount: number;
+              source: 'hub' | 'local' | 'git';
+              status: 'active' | 'disabled' | 'deprecated';
+              successCount?: number;
+              version: string;
+            }>;
+            reviewCommands: string[];
+            rollbackableCount: number;
+            skillRoot: string;
           } | null>;
         };
         learningUsage: {

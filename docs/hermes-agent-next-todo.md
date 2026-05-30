@@ -51,13 +51,16 @@ Current measured state:
 
 - [ ] **Build a Cowork Skill Package Manager panel**
   - Why: Cowork now shows candidates and telemetry, but it cannot fully pilot installed skills, versions, and review decisions from one place.
+  - Done so far: Cowork Fleet now has a read-only installed-skill package strip backed by the real SkillsHub lockfile. It shows installed/enabled/inactive counts, deprecated skills first, integrity state, usage counts, lifecycle reviewer/reason, rollback snapshot counts, and review-safe CLI commands. The strip can seed a `skill_manage ... approved_by=<reviewer>` goal instead of mutating skills directly.
   - Scope: installed skills list, candidate queue, SKILL.md preview, candidate-vs-installed diff, approve/install/disable/deprecate actions.
+  - Remaining scope: turn the read-only strip into a full panel with SKILL.md preview, candidate-vs-installed diff, reviewer identity capture, and review-gated lifecycle actions.
   - Acceptance:
     - Operator can review a Learning Agent SKILL.md candidate and install it without leaving Cowork.
     - UI distinguishes installed, candidate, deprecated, and failed/recommended-improvement skills.
     - All write actions require explicit reviewer identity.
   - Verification:
-    - targeted Vitest for bridge + renderer strip/panel
+    - `npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run`
+    - `(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/i18n-french-support.test.ts tests/fleet-command-center-board.test.ts --run)`
     - Playwright flow over a temp workspace with a materialized skill candidate.
 
 - [x] **Add a Hermes toolset/catalog status surface**

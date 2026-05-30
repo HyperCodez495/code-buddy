@@ -185,6 +185,7 @@ import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
+import { listSkillPackagesForReview } from './tools/skill-package-manager-bridge';
 import { listSkillCandidatesForReview } from './tools/skill-candidate-review-bridge';
 import { buildLessonsVaultPreview } from './tools/lessons-vault-bridge';
 import { getGeminiOauthTokens, clearGeminiCredentials } from '../../../src/providers/gemini-oauth';
@@ -4046,6 +4047,29 @@ ipcMain.handle('tools.hermesCatalog.get', async () => {
     return null;
   }
 });
+
+ipcMain.handle(
+  'tools.skillPackage.list',
+  async (
+    _event,
+    payload?: {
+      cwd?: string;
+      limit?: number;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      return await listSkillPackagesForReview({
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        limit: payload?.limit,
+      });
+    } catch (err) {
+      logWarn('[tools.skillPackage.list] failed:', err);
+      return null;
+    }
+  }
+);
 
 ipcMain.handle(
   'tools.learningUsage.list',

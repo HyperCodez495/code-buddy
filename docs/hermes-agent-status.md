@@ -41,7 +41,7 @@ Capabilities below follow the upstream README's headline table.
 | Lesson provenance ("created by" / "used by") | `src/agent/lesson-provenance.ts`; CLI `buddy lessons provenance/use` | done |
 | **Agent proposes, human approves (no silent write)** | `src/agent/lesson-candidate-queue.ts` + `lessons_propose` tool + `buddy lessons candidate propose/list/show/approve/discard` | **done (this change)** |
 | Retrospective / Learning Agent | `src/agent/learning-agent.ts`; auto hook from `RunStore.endRun`; CLI `buddy run retrospective <run-id>` | done — analyzes real redacted trajectories, writes retrospective artifacts, proposes lessons, materializes review-gated skill candidates |
-| Skill creation from experience | `src/agent/research-script-skill-candidate.ts`; `buddy tools skill-candidate`; `skill_manage` prompt tool | partial — installs reviewed research-script and Learning Agent candidates; `skill_manage` now covers real installed-skill list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install with immediate lockfile visibility; Cowork controls remain future lifecycle work |
+| Skill creation from experience | `src/agent/research-script-skill-candidate.ts`; `buddy tools skill-candidate`; `skill_manage` prompt tool; Cowork Skill Package Manager strip | partial — installs reviewed research-script and Learning Agent candidates; `skill_manage` now covers real installed-skill list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install with immediate lockfile visibility; Cowork now shows installed package state, integrity, usage, lifecycle reviewer/reason, rollback counts, and review-safe commands, but full Cowork mutation controls remain future lifecycle work |
 | Skill outcome telemetry | `src/agent/learning-agent.ts`; `buddy skills learning-usage`; Cowork Learning skill usage strip | done — selected skills are recorded against completed/failed runs, scored with bounded history, and surfaced with recommendation, reason, evidence run, and next action |
 | Concept graph / Obsidian vault export | `LessonsTracker.buildConceptGraph` / `buddy lessons graph --vault` | done |
 | Cross-session recall | `RunStore.searchRuns`, `buildRunRecallPack`; `buddy run search / recall-pack` | done |
@@ -161,7 +161,8 @@ buddy lessons candidate approve <id> --by "<your name>"
 - Stronger automatic promotion/deprecation scoring for generated skills.
 - Live mobile remote-supervision listener (only contracts/snapshots exist).
 - Deeper Cowork skill package management. Cowork now exposes lesson-candidate
-  approval, the shared SKILL candidate review queue, and Learning Agent
-  skill-usage telemetry, but it still needs a single installed-skills /
-  candidate-diff / approve-install-disable cockpit.
+  approval, the shared SKILL candidate review queue, Learning Agent
+  skill-usage telemetry, and read-only installed skill package state, but it
+  still needs SKILL.md preview/diff plus reviewer-gated install/disable/
+  deprecate/rollback controls.
 - Serverless terminal backends (Daytona/Modal/Vercel Sandbox).

@@ -2279,6 +2279,17 @@
       "guardrail": "Lessons are written only after a human opens the review queue and approves a pending candidate.",
       "openReview": "Open review panel"
     },
+    "skillPackage": {
+      "title": "Skill package manager",
+      "countChip": "{{count}} installed",
+      "enabledChip": "{{count}} enabled",
+      "disabledChip": "{{count}} inactive",
+      "rollbackChip": "{{count}} rollback snapshots",
+      "guardrail": "Lifecycle changes stay review-gated: use skill_manage with approved_by before enabling, disabling, patching, rolling back or deleting skills.",
+      "loadFailed": "Skill package load failed",
+      "empty": "No installed workspace skills yet.",
+      "useAsGoal": "Manage skills as goal"
+    },
     "learningUsage": {
       "title": "Learning skill usage",
       "countChip": "{{count}} skills",

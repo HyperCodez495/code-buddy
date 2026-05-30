@@ -65,6 +65,7 @@ import {
   SkillCandidateReviewQueueStrip,
   type SkillCandidateReviewQueueItem,
 } from './skill-candidate-review-queue-strip';
+import { SkillPackageManagerStrip } from './skill-package-manager-strip';
 import { LearningSkillUsageStrip } from './learning-skill-usage-strip';
 import { LessonCandidateReviewStrip } from './lesson-candidate-review-strip';
 import { LessonsVaultStrip } from './lessons-vault-strip';
@@ -1089,6 +1090,10 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 />
                 <LessonCandidateReviewStrip
                   onOpenReview={() => setShowLessonCandidatePanel(true)}
+                />
+                <SkillPackageManagerStrip
+                  cwd={activeWorkspaceCwd}
+                  onUseAsGoal={handleUseSkillCandidateReviewAsGoal}
                 />
                 <LearningSkillUsageStrip cwd={activeWorkspaceCwd} />
                 <SkillCandidateReviewQueueStrip

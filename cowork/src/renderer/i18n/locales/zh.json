@@ -2266,6 +2266,17 @@
       "guardrail": "只有在人工打开审查队列并批准待审候选项后，才会写入 lesson。",
       "openReview": "打开审查面板"
     },
+    "skillPackage": {
+      "title": "SKILL 包管理器",
+      "countChip": "{{count}} 个已安装",
+      "enabledChip": "{{count}} 个启用",
+      "disabledChip": "{{count}} 个停用",
+      "rollbackChip": "{{count}} 个回滚快照",
+      "guardrail": "生命周期变更保持审查门控：启用、停用、补丁、回滚或删除 skill 前使用带 approved_by 的 skill_manage。",
+      "loadFailed": "SKILL 包加载失败",
+      "empty": "暂无已安装的工作区 skill。",
+      "useAsGoal": "将 skill 管理作为目标"
+    },
     "learningUsage": {
       "title": "Learning skill 使用情况",
       "countChip": "{{count}} 个 skill",
