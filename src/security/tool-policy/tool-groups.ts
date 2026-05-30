@@ -67,6 +67,10 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   // Messaging / external channel delivery
   send_message: ['group:web', 'group:dangerous'],
   discord: ['group:web'],
+  ha_list_entities: ['group:web'],
+  ha_get_state: ['group:web'],
+  ha_list_services: ['group:web'],
+  ha_call_service: ['group:web', 'group:dangerous'],
 
   // Git - Read
   git_status: ['group:git', 'group:git:read'],

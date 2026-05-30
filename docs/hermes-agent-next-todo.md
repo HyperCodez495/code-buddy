@@ -8,7 +8,7 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 37 exact, 6 native-equivalent, 4 partial, 24 gaps.
+- Tool parity manifest: 71 official tools, 41 exact, 6 native-equivalent, 4 partial, 20 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,7 +68,7 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `video_analyze`, and media generation gaps. Kanban, `send_message`, `discord`, `execute_code`, `vision_analyze`, `browser_vision`, and `text_to_speech` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `video_analyze`, and media generation gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, `execute_code`, `vision_analyze`, `browser_vision`, and `text_to_speech` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
     - Cowork shows summary counts and top core gaps such as `skill_manage`, `video_analyze`, and media generation.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
@@ -127,6 +127,13 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/discord-tool-real.test.ts --run`
 
+- [x] **Add exact Home Assistant prompt tools**
+  - Why: upstream Hermes exposes `ha_list_entities`, `ha_get_state`, `ha_list_services`, and `ha_call_service` for smart-home control.
+  - Done: Code Buddy now exposes all four exact `ha_*` tools over the Home Assistant REST API. They resolve `HASS_URL`/`HASS_TOKEN`, validate `entity_id` and service names, compact entity/service output, and block dangerous service domains before any network call.
+  - Guardrail: `ha_call_service` stays in the dangerous policy group; shell/command/script/rest service domains remain blocked.
+  - Verification:
+    - `npm test -- tests/tools/homeassistant-tool-real.test.ts --run`
+
 - [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
   - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
@@ -149,7 +156,6 @@ Current measured state:
 
 - [ ] **Platform connectors**
   - Lower priority unless the user explicitly needs them:
-    - Home Assistant: `ha_*`
     - Spotify: `spotify_*`
     - Feishu drive comments
     - Yuanbao group/DM/stickers

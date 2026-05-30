@@ -64,6 +64,15 @@ export {
   MESSAGING_TOOLS,
 } from './messaging-tools.js';
 
+// Home Assistant tools
+export {
+  HA_LIST_ENTITIES_TOOL,
+  HA_GET_STATE_TOOL,
+  HA_LIST_SERVICES_TOOL,
+  HA_CALL_SERVICE_TOOL,
+  HOMEASSISTANT_TOOLS,
+} from './homeassistant-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

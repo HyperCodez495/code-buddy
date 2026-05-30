@@ -44,6 +44,7 @@ export interface HermesToolParityManifest {
 
 const OFFICIAL_SOURCE_TOOLSETS = 'toolsets.py';
 const OFFICIAL_SOURCE_BROWSER_DIALOG = 'tools/browser_dialog_tool.py';
+const OFFICIAL_SOURCE_HOMEASSISTANT = 'tools/homeassistant_tool.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
@@ -308,29 +309,30 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'ha_list_entities',
     toolset: 'homeassistant',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Home Assistant prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_HOMEASSISTANT,
+    notes: 'Code Buddy exposes the exact ha_list_entities prompt tool over the Home Assistant REST API with domain/area filtering.',
   },
   {
     name: 'ha_get_state',
     toolset: 'homeassistant',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Home Assistant prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_HOMEASSISTANT,
+    notes: 'Code Buddy exposes the exact ha_get_state prompt tool over the Home Assistant REST API with entity_id validation.',
   },
   {
     name: 'ha_list_services',
     toolset: 'homeassistant',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Home Assistant prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_HOMEASSISTANT,
+    notes: 'Code Buddy exposes the exact ha_list_services prompt tool over the Home Assistant REST API with compact service metadata.',
   },
   {
     name: 'ha_call_service',
     toolset: 'homeassistant',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Home Assistant prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_HOMEASSISTANT,
+    notes: 'Code Buddy exposes the exact ha_call_service prompt tool over the Home Assistant REST API with blocked dangerous service domains.',
+    nextWork: 'Add live Home Assistant credential smoke coverage when a real HASS_URL/HASS_TOKEN pair is configured.',
   },
   {
     name: 'kanban_show',
@@ -649,6 +651,7 @@ export function buildHermesToolParityManifest(
         'toolsets.py::_HERMES_CORE_TOOLS',
         'toolsets.py::TOOLSETS',
         OFFICIAL_SOURCE_BROWSER_DIALOG,
+        OFFICIAL_SOURCE_HOMEASSISTANT,
         OFFICIAL_SOURCE_X_SEARCH,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],

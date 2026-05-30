@@ -435,6 +435,26 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['discord'],
         }),
         expect.objectContaining({
+          name: 'ha_list_entities',
+          status: 'exact',
+          detectedCodeBuddyTools: ['ha_list_entities'],
+        }),
+        expect.objectContaining({
+          name: 'ha_get_state',
+          status: 'exact',
+          detectedCodeBuddyTools: ['ha_get_state'],
+        }),
+        expect.objectContaining({
+          name: 'ha_list_services',
+          status: 'exact',
+          detectedCodeBuddyTools: ['ha_list_services'],
+        }),
+        expect.objectContaining({
+          name: 'ha_call_service',
+          status: 'exact',
+          detectedCodeBuddyTools: ['ha_call_service'],
+        }),
+        expect.objectContaining({
           name: 'vision_analyze',
           status: 'exact',
           detectedCodeBuddyTools: expect.arrayContaining(['vision_analyze']),

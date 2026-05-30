@@ -31,6 +31,7 @@ import {
   TODO_TOOLS,
   KANBAN_TOOLS,
   MESSAGING_TOOLS,
+  HOMEASSISTANT_TOOLS,
   CRON_TOOLS,
   WEB_TOOLS,
   ADVANCED_TOOLS,
@@ -69,7 +70,7 @@ export type { CodeBuddyTool, JsonSchemaProperty };
 // Explicit re-exports from tool-definitions (no blanket export *)
 export {
   CORE_TOOLS, MORPH_EDIT_TOOL, isMorphEnabled,
-  SEARCH_TOOLS, TODO_TOOLS, KANBAN_TOOLS, MESSAGING_TOOLS, CRON_TOOLS, WEB_TOOLS, ADVANCED_TOOLS, MULTIMODAL_TOOLS,
+  SEARCH_TOOLS, TODO_TOOLS, KANBAN_TOOLS, MESSAGING_TOOLS, HOMEASSISTANT_TOOLS, CRON_TOOLS, WEB_TOOLS, ADVANCED_TOOLS, MULTIMODAL_TOOLS,
   COMPUTER_CONTROL_TOOLS, BROWSER_TOOLS, CANVAS_TOOLS, REASON_TOOL, EXECUTE_CODE_TOOL,
 } from "./tool-definitions/index.js";
 
@@ -81,6 +82,7 @@ export function getBuiltinToolNames(): string[] {
     TODO_TOOLS,
     KANBAN_TOOLS,
     MESSAGING_TOOLS,
+    HOMEASSISTANT_TOOLS,
     CRON_TOOLS,
     WEB_TOOLS,
     ADVANCED_TOOLS,
@@ -152,6 +154,7 @@ export function initializeToolRegistry(): void {
   registerGroup(TODO_TOOLS);
   registerGroup(KANBAN_TOOLS);
   registerGroup(MESSAGING_TOOLS);
+  registerGroup(HOMEASSISTANT_TOOLS);
   registerGroup(CRON_TOOLS);
   registerGroup(WEB_TOOLS);
   registerGroup(ADVANCED_TOOLS);
