@@ -1490,12 +1490,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }): Promise<Array<{
         eligible: boolean;
         id: string;
+        kind: string;
         reason: string;
         skillName: string;
         skillPath: string;
         sourceJobId: string;
+        sourceRunId?: string;
         successfulRunCount: number;
         title: string;
+        toolSequence?: string[];
       }>> => ipcRenderer.invoke('tools.skillCandidate.list', options ?? {}),
     },
     lessonsVault: {
@@ -3780,12 +3783,15 @@ declare global {
           }) => Promise<Array<{
             eligible: boolean;
             id: string;
+            kind: string;
             reason: string;
             skillName: string;
             skillPath: string;
             sourceJobId: string;
+            sourceRunId?: string;
             successfulRunCount: number;
             title: string;
+            toolSequence?: string[];
           }>>;
         };
         lessonsVault: {

@@ -19,6 +19,7 @@ describe('skill candidate review bridge', () => {
       {
         eligible: false,
         id: 'candidate-old',
+        kind: 'research-script',
         reason: '1/2 successful runs.',
         skillName: 'research-old',
         skillPath: '.codebuddy/skill-candidates/research-old/SKILL.md',
@@ -29,12 +30,15 @@ describe('skill candidate review bridge', () => {
       {
         eligible: true,
         id: 'candidate-ready',
+        kind: 'learning',
         reason: '2 successful runs met the promotion threshold.',
         skillName: 'research-ready',
         skillPath: '.codebuddy/skill-candidates/research-ready/SKILL.md',
         sourceJobId: 'research-script-ready',
+        sourceRunId: 'run-learning-ready',
         successfulRunCount: 2,
         title: 'Ready candidate',
+        toolSequence: ['search', 'view_file', 'bash'],
       },
     ]);
     mockedLoadCoreModule.mockResolvedValue({ listMaterializedResearchScriptSkillCandidates });
@@ -55,12 +59,15 @@ describe('skill candidate review bridge', () => {
       {
         eligible: true,
         id: 'candidate-ready',
+        kind: 'learning',
         reason: '2 successful runs met the promotion threshold.',
         skillName: 'research-ready',
         skillPath: '.codebuddy/skill-candidates/research-ready/SKILL.md',
         sourceJobId: 'research-script-ready',
+        sourceRunId: 'run-learning-ready',
         successfulRunCount: 2,
         title: 'Ready candidate',
+        toolSequence: ['search', 'view_file', 'bash'],
       },
     ]);
   });

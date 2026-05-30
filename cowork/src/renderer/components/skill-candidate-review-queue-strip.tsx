@@ -4,11 +4,14 @@ import { ListChecks, PackageCheck, Route, ShieldCheck, Terminal } from 'lucide-r
 
 export interface SkillCandidateReviewQueueItem {
   eligible: boolean;
+  kind?: string;
   reason: string;
   skillName: string;
   skillPath: string;
   sourceJobId: string;
+  sourceRunId?: string;
   successfulRunCount: number;
+  toolSequence?: string[];
 }
 
 interface SkillCandidateReviewApi {
@@ -22,7 +25,8 @@ interface SkillCandidateReviewApi {
 
 export function buildSkillCandidateReviewQueueGoal(): string {
   return [
-    'Review the research-script SKILL.md candidate queue from Cowork.',
+    'Review the shared SKILL.md candidate queue from Cowork.',
+    'The queue may contain research-script candidates and Learning Agent retrospective candidates.',
     'Use the CLI review surface:',
     '- buddy tools skill-candidate list --eligible-only --json',
     '- buddy tools skill-candidate inspect <candidate-dir>',
@@ -144,13 +148,25 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                 <span className="truncate text-[10px] text-text-secondary">
                   {candidate.skillName}
                 </span>
-                <span className="shrink-0 rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
-                  {candidate.successfulRunCount} runs
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    {candidate.kind === 'learning'
+                      ? t('fleet.skillCandidate.learningKind', 'Learning Agent')
+                      : t('fleet.skillCandidate.researchKind', 'Research script')}
+                  </span>
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    {candidate.successfulRunCount} runs
+                  </span>
+                </div>
               </div>
               <div className="mt-0.5 truncate text-[9px] text-text-muted">
-                {candidate.sourceJobId} · {candidate.reason}
+                {(candidate.sourceRunId || candidate.sourceJobId) || 'unknown source'} · {candidate.reason}
               </div>
+              {candidate.toolSequence?.length ? (
+                <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                  {t('fleet.skillCandidate.toolSequence', 'Tools')}: {candidate.toolSequence.join(' -> ')}
+                </div>
+              ) : null}
             </li>
           ))}
         </ul>

@@ -2239,6 +2239,9 @@
       "guardrail": "候选项只有在多次成功运行并获得明确审查批准后才能成为工作区 skill。",
       "loadFailed": "候选队列加载失败",
       "empty": "使用 CLI 队列列出已物化候选项。",
+      "learningKind": "Learning Agent",
+      "researchKind": "研究脚本",
+      "toolSequence": "工具",
       "useAsGoal": "将队列审查作为目标"
     },
     "browserOperator": {

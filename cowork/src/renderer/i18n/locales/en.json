@@ -2252,6 +2252,9 @@
       "guardrail": "Candidates can become workspace skills only after repeated successful runs and explicit reviewer approval.",
       "loadFailed": "Candidate queue load failed",
       "empty": "Use the CLI queue to list materialized candidates.",
+      "learningKind": "Learning Agent",
+      "researchKind": "Research script",
+      "toolSequence": "Tools",
       "useAsGoal": "Review queue as goal"
     },
     "browserOperator": {

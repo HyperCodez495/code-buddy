@@ -4,12 +4,15 @@ import { loadCoreModule } from '../utils/core-loader';
 export interface SkillCandidateReviewSummary {
   eligible: boolean;
   id: string;
+  kind: string;
   reason: string;
   skillName: string;
   skillPath: string;
   sourceJobId: string;
+  sourceRunId?: string;
   successfulRunCount: number;
   title: string;
+  toolSequence?: string[];
 }
 
 export interface ListSkillCandidateReviewOptions {
@@ -22,12 +25,15 @@ export interface ListSkillCandidateReviewOptions {
 interface ResearchScriptSkillCandidate {
   eligible: boolean;
   id: string;
+  kind?: string;
   reason: string;
   skillName: string;
   skillPath: string;
   sourceJobId: string;
+  sourceRunId?: string;
   successfulRunCount: number;
   title: string;
+  toolSequence?: string[];
 }
 
 interface ResearchScriptSkillCandidateModule {
@@ -67,12 +73,15 @@ function summarizeSkillCandidate(
   return {
     eligible: candidate.eligible,
     id: candidate.id,
+    kind: candidate.kind ?? (candidate.sourceRunId ? 'learning' : 'research-script'),
     reason: candidate.reason,
     skillName: candidate.skillName,
     skillPath: candidate.skillPath,
     sourceJobId: candidate.sourceJobId,
+    sourceRunId: candidate.sourceRunId,
     successfulRunCount: candidate.successfulRunCount,
     title: candidate.title,
+    toolSequence: candidate.toolSequence,
   };
 }
 

@@ -54,11 +54,14 @@ describe('SkillCandidateReviewQueueStrip', () => {
           candidates: [
             {
               eligible: true,
+              kind: 'learning',
               reason: '2 successful runs met the promotion threshold.',
-              skillName: 'research-architect-public-enrichment',
-              skillPath: '.codebuddy/skill-candidates/research-architect-public-enrichment/SKILL.md',
-              sourceJobId: 'research-script-architect',
+              skillName: 'learned-search-view-file-bash',
+              skillPath: '.codebuddy/skill-candidates/learning/learned-search-view-file-bash/SKILL.md',
+              sourceJobId: '',
+              sourceRunId: 'run-learning-architect',
               successfulRunCount: 2,
+              toolSequence: ['search', 'view_file', 'bash'],
             },
           ],
           error: 'candidate manifest is unreadable',
@@ -74,8 +77,10 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(strip?.textContent).toContain('no auto-install');
     expect(strip?.textContent).toContain('Candidate queue load failed');
     expect(strip?.textContent).toContain('candidate manifest is unreadable');
-    expect(strip?.textContent).toContain('research-architect-public-enrichment');
-    expect(strip?.textContent).toContain('research-script-architect');
+    expect(strip?.textContent).toContain('learned-search-view-file-bash');
+    expect(strip?.textContent).toContain('Learning Agent');
+    expect(strip?.textContent).toContain('run-learning-architect');
+    expect(strip?.textContent).toContain('Tools: search -> view_file -> bash');
     expect(strip?.textContent).toContain('buddy tools skill-candidate list --eligible-only --json');
     expect(strip?.textContent).toContain('buddy tools skill-candidate inspect <candidate-dir>');
 
@@ -88,7 +93,8 @@ describe('SkillCandidateReviewQueueStrip', () => {
 
     expect(onUseAsGoal).toHaveBeenCalledTimes(1);
     const goal = onUseAsGoal.mock.calls[0]?.[0] as string;
-    expect(goal).toContain('Review the research-script SKILL.md candidate queue from Cowork.');
+    expect(goal).toContain('Review the shared SKILL.md candidate queue from Cowork.');
+    expect(goal).toContain('Learning Agent retrospective candidates.');
     expect(goal).toContain('buddy tools skill-candidate list --eligible-only --json');
     expect(goal).toContain('Do not install a candidate automatically.');
     expect(goal).toContain('Install only after a human reviewer approves with --approved-by.');
@@ -113,6 +119,7 @@ describe('SkillCandidateReviewQueueStrip', () => {
     const list = vi.fn().mockResolvedValue([
       {
         eligible: true,
+        kind: 'research-script',
         reason: '2 successful runs met the promotion threshold.',
         skillName: 'research-loaded-candidate',
         skillPath: '.codebuddy/skill-candidates/research-loaded-candidate/SKILL.md',
