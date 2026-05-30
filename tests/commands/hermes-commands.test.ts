@@ -419,6 +419,11 @@ describe('Hermes CLI commands', () => {
           status: 'exact',
           detectedCodeBuddyTools: ['kanban_complete'],
         }),
+        expect.objectContaining({
+          name: 'send_message',
+          status: 'exact',
+          detectedCodeBuddyTools: ['send_message'],
+        }),
       ]),
     );
   });

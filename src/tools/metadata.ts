@@ -453,6 +453,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Clear a Kanban block and move the card back to in_progress',
   },
   {
+    name: 'send_message',
+    category: 'web',
+    keywords: ['send', 'message', 'channel', 'gateway', 'telegram', 'discord', 'slack', 'email', 'hermes'],
+    priority: 8,
+    description: 'Prepare or deliver outbound channel messages with dry-run outbox logging by default',
+  },
+  {
     name: 'cronjob',
     category: 'planning',
     keywords: ['cron', 'cronjob', 'schedule', 'scheduled', 'job', 'jobs', 'reminder', 'monitor', 'heartbeat', 'watchdog', 'hermes'],

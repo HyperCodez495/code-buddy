@@ -34,6 +34,11 @@ describe('local Hermes tool parity manifest', () => {
         status: 'exact',
         detectedCodeBuddyTools: ['kanban_create'],
       }),
+      expect.objectContaining({
+        name: 'send_message',
+        status: 'exact',
+        detectedCodeBuddyTools: ['send_message'],
+      }),
     ]));
   });
 });

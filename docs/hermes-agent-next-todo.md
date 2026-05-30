@@ -110,15 +110,12 @@ Current measured state:
   - Verification:
     - Playwright local page test, no network dependency.
 
-- [ ] **Add an exact `send_message` prompt tool over existing channel adapters**
+- [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
-  - Scope: wrap existing channel adapters with dry-run/preview-by-default and explicit delivery confirmation.
+  - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
   - Guardrail: never send externally without configured channel and explicit approval policy.
-  - Acceptance:
-    - `send_message` can dry-run to a local/null channel and produce a delivery artifact.
-    - Real send remains permission-gated.
   - Verification:
-    - local/null channel integration test.
+    - `npm test -- tests/tools/send-message-real.test.ts --run`
 
 ## P3 — Decide on optional ecosystem parity
 
@@ -149,6 +146,5 @@ Current measured state:
 1. Cowork Skill Package Manager panel.
 2. `execute_code` security/product decision.
 3. Unified `vision_analyze` / `browser_vision`.
-4. `send_message` wrapper over existing channels.
-5. Runtime backend inventory.
-6. Optional platform connectors only on demand.
+4. Runtime backend inventory.
+5. Optional platform connectors only on demand.

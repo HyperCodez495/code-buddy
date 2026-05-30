@@ -60,6 +60,9 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   web_search: ['group:web', 'group:web:search'],
   tavily_search: ['group:web', 'group:web:search'],
 
+  // Messaging / external channel delivery
+  send_message: ['group:web', 'group:dangerous'],
+
   // Git - Read
   git_status: ['group:git', 'group:git:read'],
   git_log: ['group:git', 'group:git:read'],

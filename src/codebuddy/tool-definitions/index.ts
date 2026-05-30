@@ -57,6 +57,12 @@ export {
   KANBAN_TOOLS,
 } from './kanban-tools.js';
 
+// Messaging tools
+export {
+  SEND_MESSAGE_TOOL,
+  MESSAGING_TOOLS,
+} from './messaging-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

@@ -304,8 +304,8 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'messaging',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy has channel adapters and scheduled delivery, but no exact prompt tool named send_message in the built-in schema.',
+    notes: 'Code Buddy exposes an exact send_message prompt tool with dry-run outbox logging by default and live delivery gated by approval plus channel send policy.',
+    nextWork: 'Add live smoke tests for each configured external channel as credentials become available.',
   },
   {
     name: 'ha_list_entities',
