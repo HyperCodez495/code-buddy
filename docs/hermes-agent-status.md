@@ -134,6 +134,7 @@ change-control surface.
 | Messaging channels (Telegram/Discord/Slack/…) | channel layer + `delivery.targets`; `buddy channels status --json` | partial — delivery + machine-readable readiness done; full inbound gateway parity is future work |
 | Hermes `discord` core REST tool | `src/tools/discord-platform-tool.ts`, `src/tools/registry/discord-tools.ts`, `tests/tools/discord-tool-real.test.ts` | done — exact prompt tool name for `fetch_messages`, `search_members`, and `create_thread`; real HTTP path tested; `discord_admin` remains separate |
 | Hermes Home Assistant REST tools | `src/tools/homeassistant-tool.ts`, `src/tools/registry/homeassistant-tools.ts`, `tests/tools/homeassistant-tool-real.test.ts` | done — exact `ha_list_entities`, `ha_get_state`, `ha_list_services`, and `ha_call_service`; real HTTP path tested; dangerous service domains blocked before network calls |
+| Hermes `mixture_of_agents` | `src/tools/mixture-of-agents-tool.ts`, `src/tools/registry/moa-tools.ts`, `tests/tools/mixture-of-agents-real.test.ts` | done — exact prompt tool name, OpenRouter-compatible real HTTP path, parallel reference calls, failure tolerance, and aggregator synthesis |
 | Mobile-safe remote supervision | `buddy run mobile-snapshot / mobile-gateway-*` | contract/preview only; no live listener yet (parity TODO #15/#34) |
 | Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface` | local + Docker/OS; Daytona/Modal/Vercel not ported |
 

@@ -113,6 +113,7 @@ const FEATURES: HermesParityFeature[] = [
       'src/channels/send-message.ts',
       'src/tools/discord-platform-tool.ts',
       'src/tools/homeassistant-tool.ts',
+      'src/tools/mixture-of-agents-tool.ts',
       'src/tools/execute-code-runner.ts',
       'src/tools/text-to-speech-tool.ts',
       'src/tools/vision/vision-analysis.ts',
@@ -120,9 +121,9 @@ const FEATURES: HermesParityFeature[] = [
     status: 'partial',
     verificationCommands: [
       'npx tsx src/index.ts tools profile hermes-balanced --json',
-      'npm test -- tests/tools/execute-code-real.test.ts tests/tools/send-message-real.test.ts tests/tools/discord-tool-real.test.ts tests/tools/homeassistant-tool-real.test.ts tests/tools/kanban-real.test.ts tests/tools/vision-analyze-real.test.ts tests/tools/text-to-speech-real.test.ts --run',
+      'npm test -- tests/tools/execute-code-real.test.ts tests/tools/send-message-real.test.ts tests/tools/discord-tool-real.test.ts tests/tools/homeassistant-tool-real.test.ts tests/tools/mixture-of-agents-real.test.ts tests/tools/kanban-real.test.ts tests/tools/vision-analyze-real.test.ts tests/tools/text-to-speech-real.test.ts --run',
     ],
-    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core, Home Assistant REST, execute_code, vision_analyze, browser_vision, and text_to_speech tool names, but not all official third-party integrations.',
+    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core, Home Assistant REST, mixture_of_agents, execute_code, vision_analyze, browser_vision, and text_to_speech tool names, but not all official third-party integrations.',
     nextWork: 'Track tool-level parity in a second-level manifest.',
   },
   {

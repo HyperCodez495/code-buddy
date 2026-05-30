@@ -75,6 +75,11 @@ describe('local Hermes tool parity manifest', () => {
         status: 'exact',
         detectedCodeBuddyTools: ['ha_call_service'],
       }),
+      expect.objectContaining({
+        name: 'mixture_of_agents',
+        status: 'exact',
+        detectedCodeBuddyTools: expect.arrayContaining(['mixture_of_agents']),
+      }),
     ]));
   });
 });

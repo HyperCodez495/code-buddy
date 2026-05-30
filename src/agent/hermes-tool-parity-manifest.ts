@@ -45,6 +45,7 @@ export interface HermesToolParityManifest {
 const OFFICIAL_SOURCE_TOOLSETS = 'toolsets.py';
 const OFFICIAL_SOURCE_BROWSER_DIALOG = 'tools/browser_dialog_tool.py';
 const OFFICIAL_SOURCE_HOMEASSISTANT = 'tools/homeassistant_tool.py';
+const OFFICIAL_SOURCE_MOA = 'tools/mixture_of_agents_tool.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
@@ -433,10 +434,10 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'mixture_of_agents',
     toolset: 'moa',
     category: 'reasoning',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
+    officialSource: OFFICIAL_SOURCE_MOA,
     equivalentCodeBuddyTools: ['peer_chain', 'advisor', 'reason'],
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy has Fleet chains, advisor, and reasoning tools, but no exact mixture_of_agents tool schema.',
+    notes: 'Code Buddy exposes the exact mixture_of_agents prompt tool over an OpenRouter-compatible chat completions API with parallel reference calls and aggregator synthesis.',
+    nextWork: 'Add live OpenRouter smoke coverage when OPENROUTER_API_KEY is available; keep the model list configurable.',
   },
   {
     name: 'discord',
@@ -652,6 +653,7 @@ export function buildHermesToolParityManifest(
         'toolsets.py::TOOLSETS',
         OFFICIAL_SOURCE_BROWSER_DIALOG,
         OFFICIAL_SOURCE_HOMEASSISTANT,
+        OFFICIAL_SOURCE_MOA,
         OFFICIAL_SOURCE_X_SEARCH,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],

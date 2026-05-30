@@ -71,6 +71,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   ha_get_state: ['group:web'],
   ha_list_services: ['group:web'],
   ha_call_service: ['group:web', 'group:dangerous'],
+  mixture_of_agents: ['group:web'],
 
   // Git - Read
   git_status: ['group:git', 'group:git:read'],

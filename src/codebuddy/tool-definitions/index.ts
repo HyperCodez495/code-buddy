@@ -73,6 +73,12 @@ export {
   HOMEASSISTANT_TOOLS,
 } from './homeassistant-tools.js';
 
+// Hermes Mixture-of-Agents tool
+export {
+  MIXTURE_OF_AGENTS_TOOL,
+  MOA_TOOLS,
+} from './moa-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

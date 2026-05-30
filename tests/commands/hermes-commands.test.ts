@@ -455,6 +455,11 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['ha_call_service'],
         }),
         expect.objectContaining({
+          name: 'mixture_of_agents',
+          status: 'exact',
+          detectedCodeBuddyTools: expect.arrayContaining(['mixture_of_agents']),
+        }),
+        expect.objectContaining({
           name: 'vision_analyze',
           status: 'exact',
           detectedCodeBuddyTools: expect.arrayContaining(['vision_analyze']),

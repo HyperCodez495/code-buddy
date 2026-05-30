@@ -509,6 +509,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Call a Home Assistant service with blocked dangerous domains',
   },
   {
+    name: 'mixture_of_agents',
+    category: 'utility',
+    keywords: ['mixture of agents', 'moa', 'openrouter', 'frontier', 'aggregation', 'reasoning', 'hermes'],
+    priority: 8,
+    description: 'Route a difficult problem through multiple frontier model references and an aggregator',
+  },
+  {
     name: 'cronjob',
     category: 'planning',
     keywords: ['cron', 'cronjob', 'schedule', 'scheduled', 'job', 'jobs', 'reminder', 'monitor', 'heartbeat', 'watchdog', 'hermes'],
