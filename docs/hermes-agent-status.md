@@ -136,6 +136,7 @@ change-control surface.
 | Hermes Home Assistant REST tools | `src/tools/homeassistant-tool.ts`, `src/tools/registry/homeassistant-tools.ts`, `tests/tools/homeassistant-tool-real.test.ts` | done — exact `ha_list_entities`, `ha_get_state`, `ha_list_services`, and `ha_call_service`; real HTTP path tested; dangerous service domains blocked before network calls |
 | Hermes `mixture_of_agents` | `src/tools/mixture-of-agents-tool.ts`, `src/tools/registry/moa-tools.ts`, `tests/tools/mixture-of-agents-real.test.ts` | done — exact prompt tool name, OpenRouter-compatible real HTTP path, parallel reference calls, failure tolerance, and aggregator synthesis |
 | Hermes Spotify tools | `src/tools/spotify-tool.ts`, `src/tools/registry/spotify-tools.ts`, `tests/tools/spotify-tool-real.test.ts` | done — exact `spotify_playback`, `spotify_devices`, `spotify_queue`, `spotify_search`, `spotify_playlists`, `spotify_albums`, and `spotify_library`; real HTTP Web API path tested |
+| Hermes `x_search` | `src/tools/x-search-tool.ts`, `src/tools/registry/x-search-tools.ts`, `tests/tools/x-search-tool-real.test.ts` | done — exact xAI Responses `x_search` prompt tool; real HTTP path tested; handle/date validation and citation/degraded-result handling included |
 | Mobile-safe remote supervision | `buddy run mobile-snapshot / mobile-gateway-*` | contract/preview only; no live listener yet (parity TODO #15/#34) |
 | Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface` | local + Docker/OS; Daytona/Modal/Vercel not ported |
 

@@ -94,6 +94,11 @@ export {
   createSpotifyTools,
 } from './spotify-tools.js';
 
+export {
+  XSearchTool,
+  createXSearchTools,
+} from './x-search-tools.js';
+
 // Tool Adapters - Cron jobs
 export {
   CronjobExecuteTool,
@@ -451,6 +456,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createHomeAssistantTools } = await import('./homeassistant-tools.js');
   const { createMixtureOfAgentsTools } = await import('./moa-tools.js');
   const { createSpotifyTools } = await import('./spotify-tools.js');
+  const { createXSearchTools } = await import('./x-search-tools.js');
   const { createCronjobTools } = await import('./cronjob-tools.js');
   const { createDockerTools } = await import('./docker-tools.js');
   const { createKubernetesTools } = await import('./kubernetes-tools.js');
@@ -505,6 +511,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createHomeAssistantTools(),
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
+    ...createXSearchTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -581,6 +588,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createHomeAssistantTools(),
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
+    ...createXSearchTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -647,6 +655,7 @@ import { createDiscordTools } from './discord-tools.js';
 import { createHomeAssistantTools } from './homeassistant-tools.js';
 import { createMixtureOfAgentsTools } from './moa-tools.js';
 import { createSpotifyTools } from './spotify-tools.js';
+import { createXSearchTools } from './x-search-tools.js';
 import { createCronjobTools } from './cronjob-tools.js';
 import { createDockerTools } from './docker-tools.js';
 import { createKubernetesTools } from './kubernetes-tools.js';

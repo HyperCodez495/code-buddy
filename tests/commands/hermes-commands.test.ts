@@ -475,6 +475,11 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['spotify_library'],
         }),
         expect.objectContaining({
+          name: 'x_search',
+          status: 'exact',
+          detectedCodeBuddyTools: ['x_search'],
+        }),
+        expect.objectContaining({
           name: 'vision_analyze',
           status: 'exact',
           detectedCodeBuddyTools: expect.arrayContaining(['vision_analyze']),

@@ -95,6 +95,11 @@ describe('local Hermes tool parity manifest', () => {
         status: 'exact',
         detectedCodeBuddyTools: ['spotify_library'],
       }),
+      expect.objectContaining({
+        name: 'x_search',
+        status: 'exact',
+        detectedCodeBuddyTools: ['x_search'],
+      }),
     ]));
   });
 });

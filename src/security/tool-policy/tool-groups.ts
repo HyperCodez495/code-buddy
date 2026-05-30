@@ -79,6 +79,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   spotify_playback: ['group:web', 'group:dangerous'],
   spotify_playlists: ['group:web', 'group:dangerous'],
   spotify_queue: ['group:web', 'group:dangerous'],
+  x_search: ['group:web', 'group:web:search'],
 
   // Git - Read
   git_status: ['group:git', 'group:git:read'],

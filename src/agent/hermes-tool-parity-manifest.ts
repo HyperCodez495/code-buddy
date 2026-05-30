@@ -413,7 +413,8 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'x_search',
     category: 'web',
     officialSource: OFFICIAL_SOURCE_X_SEARCH,
-    notes: 'xAI Responses x_search is not exposed as a Code Buddy prompt tool.',
+    notes: 'Code Buddy exposes the exact x_search prompt tool over the xAI Responses API with handle/date validation, citation extraction, retry handling, and degraded-result signaling.',
+    nextWork: 'Add a live xAI smoke test when XAI_API_KEY or a usable Grok/xAI credential is configured.',
   },
   {
     name: 'video_analyze',

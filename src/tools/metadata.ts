@@ -565,6 +565,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'List, save, or remove Spotify library tracks and albums',
   },
   {
+    name: 'x_search',
+    category: 'web',
+    keywords: ['x', 'twitter', 'xai', 'grok', 'posts', 'threads', 'citations', 'current discussion', 'hermes'],
+    priority: 8,
+    description: "Search X posts and threads through xAI's built-in x_search Responses API tool",
+  },
+  {
     name: 'cronjob',
     category: 'planning',
     keywords: ['cron', 'cronjob', 'schedule', 'scheduled', 'job', 'jobs', 'reminder', 'monitor', 'heartbeat', 'watchdog', 'hermes'],

@@ -148,6 +148,13 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/spotify-tool-real.test.ts --run`
 
+- [x] **Add exact `x_search` prompt tool**
+  - Why: upstream Hermes exposes X Search through xAI's Responses API tool, distinct from general web search.
+  - Done: Code Buddy now exposes exact `x_search` with xAI/Grok credentials from env/options, handle filters, date validation, citation extraction, retry-on-transient errors, and degraded-result signaling when filters return no citations.
+  - Guardrail: credentials are never accepted in model input. Tests use a real local HTTP server and the production `/responses` request shape rather than mocked fetch.
+  - Verification:
+    - `npm test -- tests/tools/x-search-tool-real.test.ts --run`
+
 - [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
   - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
@@ -173,14 +180,12 @@ Current measured state:
     - Feishu drive comments
     - Yuanbao group/DM/stickers
     - Discord admin
-    - `x_search`
     - `image_generate` / `video_generate`
   - Recommendation: keep these as optional connectors/plugins, not core Code Buddy agent work.
 
 ## Immediate next implementation order
 
-1. `x_search` exact prompt tool.
-2. Feishu document/comment exact tools.
-3. `image_generate` / `video_generate` media generation tools.
-4. Yuanbao and Discord admin connectors if product-relevant.
-5. Cowork Skill Package Manager panel and provider/model readiness polish.
+1. Feishu document/comment exact tools.
+2. `image_generate` / `video_generate` media generation tools.
+3. Yuanbao and Discord admin connectors if product-relevant.
+4. Cowork Skill Package Manager panel and provider/model readiness polish.

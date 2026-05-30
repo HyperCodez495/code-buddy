@@ -91,6 +91,12 @@ export {
   SPOTIFY_TOOLS,
 } from './spotify-tools.js';
 
+// Hermes xAI X Search tool
+export {
+  X_SEARCH_TOOL,
+  X_SEARCH_TOOLS,
+} from './x-search-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,
