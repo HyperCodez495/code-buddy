@@ -342,6 +342,62 @@ export class OpenAICompatProvider implements Provider {
     return true;
   }
 
+  private isAsyncIterableStream(value: unknown): value is AsyncIterable<ChatCompletionChunk> {
+    return !!value
+      && typeof value === 'object'
+      && typeof (value as { [Symbol.asyncIterator]?: unknown })[Symbol.asyncIterator] === 'function';
+  }
+
+  private isNonStreamingChatResponse(value: unknown): value is CodeBuddyResponse {
+    if (!value || typeof value !== 'object') {
+      return false;
+    }
+    const choices = (value as { choices?: unknown }).choices;
+    if (!Array.isArray(choices) || choices.length === 0) {
+      return false;
+    }
+    return choices.every(choice =>
+      !!choice
+      && typeof choice === 'object'
+      && 'message' in choice
+      && typeof (choice as { message?: unknown }).message === 'object'
+    );
+  }
+
+  private *nonStreamingResponseToChunks(response: CodeBuddyResponse): Generator<ChatCompletionChunk, void, unknown> {
+    const created = Math.floor(Date.now() / 1000);
+
+    for (const [index, choice] of response.choices.entries()) {
+      const message = choice.message;
+      const delta: Record<string, unknown> = {
+        role: message.role || 'assistant',
+      };
+
+      if (message.content !== null && message.content !== undefined) {
+        delta.content = message.content;
+      }
+      if (message.tool_calls && message.tool_calls.length > 0) {
+        delta.tool_calls = message.tool_calls.map((toolCall, toolIndex) => ({
+          index: toolIndex,
+          ...toolCall,
+        }));
+      }
+
+      yield {
+        id: `chatcmpl-fallback-${created}-${index}`,
+        object: 'chat.completion.chunk',
+        created,
+        model: this.currentModel,
+        choices: [{
+          index,
+          delta,
+          finish_reason: choice.finish_reason as ChatCompletionChunk.Choice['finish_reason'],
+        }],
+        ...(response.usage ? { usage: response.usage } : {}),
+      } as ChatCompletionChunk;
+    }
+  }
+
   // ===========================================================================
   // Prompt cache tracking
   // ===========================================================================
@@ -543,7 +599,7 @@ export class OpenAICompatProvider implements Provider {
           return response.choices[0]?.message?.content || '';
         };
 
-        const parsed = await generateJsonWithRetry<any>(generateFn, 'initial');
+        const parsed = await generateJsonWithRetry<unknown>(generateFn, 'initial');
         const finalString = JSON.stringify(parsed);
         return {
           choices: [{
@@ -636,8 +692,35 @@ export class OpenAICompatProvider implements Provider {
         ),
       );
 
+      if (!this.isAsyncIterableStream(stream)) {
+        if (this.isNonStreamingChatResponse(stream)) {
+          logger.debug('Streaming request returned a non-streaming chat response; adapting it to chunks', {
+            source: 'OpenAICompatProvider',
+          });
+          yield* this.nonStreamingResponseToChunks(stream);
+          return;
+        }
+
+        logger.debug('Streaming request returned no async iterator; retrying as non-streaming chat', {
+          source: 'OpenAICompatProvider',
+        });
+        const response = await this.chat(messages, tools, opts, searchOptions);
+        yield* this.nonStreamingResponseToChunks(response);
+        return;
+      }
+
+      let yieldedChunks = 0;
       for await (const chunk of stream) {
+        yieldedChunks++;
         yield chunk;
+      }
+
+      if (yieldedChunks === 0) {
+        logger.debug('Streaming request yielded zero chunks; retrying as non-streaming chat', {
+          source: 'OpenAICompatProvider',
+        });
+        const response = await this.chat(messages, tools, opts, searchOptions);
+        yield* this.nonStreamingResponseToChunks(response);
       }
     } catch (error: unknown) {
       if (error instanceof CircuitOpenError) {

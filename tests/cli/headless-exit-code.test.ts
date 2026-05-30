@@ -174,9 +174,10 @@ describe('headless CLI exit codes', () => {
 
       const parsed = JSON.parse(result.stdout);
       expect(typeof parsed.result).toBe('string');
-      expect(parsed.result.length).toBeGreaterThan(0);
+      expect(parsed.result).toBe('HEADLESS_JSON_CONTRACT_OK');
       expect(parsed.content).toBeUndefined();
       expect(Array.isArray(parsed.messages)).toBe(true);
+      expect(parsed.messages.at(-1).content).toBe('HEADLESS_JSON_CONTRACT_OK');
       expect(result.stderr.trim()).toBe('');
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
@@ -226,7 +227,7 @@ describe('headless CLI exit codes', () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(JSON.parse(result.stdout).result).toBeTruthy();
+      expect(JSON.parse(result.stdout).result).toBe('HEADLESS_JSON_CONTRACT_OK');
       expect(result.stderr.trim()).toBe('');
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
@@ -299,7 +300,7 @@ describe('headless CLI exit codes', () => {
 
       expect(result.exitCode).toBe(0);
       expect(requests).toBeGreaterThan(0);
-      expect(JSON.parse(result.stdout).result).toBeTruthy();
+      expect(JSON.parse(result.stdout).result).toBe('HEADLESS_JSON_CONTRACT_OK');
       expect(fs.existsSync(path.join(tmpDir, '.codebuddy'))).toBe(false);
       const status = execFileSync('git', ['status', '--short'], { cwd: tmpDir, encoding: 'utf8' });
       expect(status.trim()).toBe('');
