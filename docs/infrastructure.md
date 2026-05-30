@@ -24,7 +24,7 @@ Default: port 3000, CORS enabled, rate-limit 100 req/min, JWT auth required in p
 | `/api/tools/{name}/execute` | POST | Execute a tool |
 | `/api/daemon/status` | GET | Daemon status (`?format=report` for Cowork-ready JSON) |
 | `/api/heartbeat/status` | GET | Heartbeat status (`?format=report` includes config and recommendations) |
-| `/api/cron/jobs` | GET/POST | Cron job management |
+| `/api/cron/jobs` | GET/POST | Cron job management; loads persisted jobs before listing |
 | `/api/hub/search` | GET | Search skills marketplace |
 | `/api/hub/installed` | GET | List installed skills |
 | `/api/identity` | GET | List identity files |

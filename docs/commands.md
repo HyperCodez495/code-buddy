@@ -132,6 +132,8 @@ no-LLM `--watchdog` monitors (disk/http/repo/build) and `--pre-check` gates
 Use `pause`, `resume`, `run`, and `update` for live job control without
 starting the daemon tick loop. `CODEBUDDY_CRON_HOME` can point CLI smoke tests
 at an isolated cron store.
+The REST cron job list and trigger endpoints load the same persisted job store
+before responding, so Cowork sees the jobs authored by `buddy cron`.
 
 `buddy daemon status --json` reports daemon liveness, PID, uptime, service
 counts, restart count, and recommendations for Cowork or external harnesses.

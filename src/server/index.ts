@@ -355,6 +355,7 @@ function createApp(config: ServerConfig): Application {
     try {
       const { getCronScheduler } = await import('../scheduler/cron-scheduler.js');
       const scheduler = getCronScheduler();
+      await scheduler.loadFromDisk();
       const jobs = scheduler.listJobs();
       res.json({ jobs, stats: scheduler.getStats() });
     } catch (_error) {
@@ -366,6 +367,7 @@ function createApp(config: ServerConfig): Application {
     try {
       const { getCronScheduler } = await import('../scheduler/cron-scheduler.js');
       const scheduler = getCronScheduler();
+      await scheduler.loadFromDisk();
       const run = await scheduler.runJobNow(req.params.id);
       if (run) {
         res.json({ success: true, run });
