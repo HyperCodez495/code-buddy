@@ -53,6 +53,7 @@ const OFFICIAL_SOURCE_FEISHU_DRIVE = 'tools/feishu_drive_tool.py';
 const OFFICIAL_SOURCE_DISCORD = 'tools/discord_tool.py';
 const OFFICIAL_SOURCE_IMAGE_GENERATION = 'tools/image_generation_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
+const OFFICIAL_SOURCE_YUANBAO = 'tools/yuanbao_tools.py';
 
 const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
   {
@@ -550,36 +551,38 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'yb_query_group_info',
     toolset: 'yuanbao',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Yuanbao platform prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_YUANBAO,
+    notes: 'Code Buddy exposes the exact Yuanbao group-info prompt tool over a configured Yuanbao-compatible gateway adapter.',
   },
   {
     name: 'yb_query_group_members',
     toolset: 'yuanbao',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Yuanbao platform prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_YUANBAO,
+    notes: 'Code Buddy exposes the exact Yuanbao group-member prompt tool, including member search, bot listing, full listing, and mention-format guidance.',
   },
   {
     name: 'yb_send_dm',
     toolset: 'yuanbao',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Yuanbao platform prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_YUANBAO,
+    notes: 'Code Buddy exposes the exact Yuanbao DM prompt tool over a configured gateway adapter, with Code Buddy approval gating for external delivery.',
+    nextWork: 'Add live Yuanbao credential smoke coverage when a disposable gateway adapter is configured.',
   },
   {
     name: 'yb_search_sticker',
     toolset: 'yuanbao',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Yuanbao platform prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_YUANBAO,
+    notes: 'Code Buddy exposes the exact Yuanbao sticker-search prompt tool over a configured gateway adapter, with a small local fallback catalog for offline discovery.',
   },
   {
     name: 'yb_send_sticker',
     toolset: 'yuanbao',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Yuanbao platform prompt tools were not found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_YUANBAO,
+    notes: 'Code Buddy exposes the exact Yuanbao sticker-send prompt tool over a configured gateway adapter, with Code Buddy approval gating for external delivery.',
+    nextWork: 'Add live Yuanbao credential smoke coverage when a disposable gateway adapter is configured.',
   },
 ];
 
@@ -668,6 +671,7 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_DISCORD,
         OFFICIAL_SOURCE_IMAGE_GENERATION,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
+        OFFICIAL_SOURCE_YUANBAO,
       ],
     },
     codeBuddySource: {

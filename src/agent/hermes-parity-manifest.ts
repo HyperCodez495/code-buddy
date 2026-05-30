@@ -100,7 +100,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts hermes tools --json',
     ],
     notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, and the official tool parity catalog is now visible from both CLI and Cowork. The official per-platform toolset catalog is still not complete.',
-    nextWork: 'Close high-value exact tool gaps or explicitly mark optional platform toolsets out of scope.',
+    nextWork: 'Keep the official tool catalog current and move remaining partial product surfaces into explicit status/readiness checks.',
   },
   {
     id: 'built-in-tools',
@@ -117,6 +117,7 @@ const FEATURES: HermesParityFeature[] = [
       'src/tools/spotify-tool.ts',
       'src/tools/x-search-tool.ts',
       'src/tools/feishu-tool.ts',
+      'src/tools/yuanbao-tool.ts',
       'src/tools/execute-code-runner.ts',
       'src/tools/text-to-speech-tool.ts',
       'src/tools/media-generation-tool.ts',
@@ -126,9 +127,9 @@ const FEATURES: HermesParityFeature[] = [
     status: 'partial',
     verificationCommands: [
       'npx tsx src/index.ts tools profile hermes-balanced --json',
-      'npm test -- tests/tools/execute-code-real.test.ts tests/tools/send-message-real.test.ts tests/tools/discord-tool-real.test.ts tests/tools/homeassistant-tool-real.test.ts tests/tools/mixture-of-agents-real.test.ts tests/tools/spotify-tool-real.test.ts tests/tools/x-search-tool-real.test.ts tests/tools/feishu-tool-real.test.ts tests/tools/kanban-real.test.ts tests/tools/vision-analyze-real.test.ts tests/tools/text-to-speech-real.test.ts tests/tools/media-generation-real.test.ts --run',
+      'npm test -- tests/tools/execute-code-real.test.ts tests/tools/send-message-real.test.ts tests/tools/discord-tool-real.test.ts tests/tools/homeassistant-tool-real.test.ts tests/tools/mixture-of-agents-real.test.ts tests/tools/spotify-tool-real.test.ts tests/tools/x-search-tool-real.test.ts tests/tools/feishu-tool-real.test.ts tests/tools/yuanbao-tool-real.test.ts tests/tools/kanban-real.test.ts tests/tools/vision-analyze-real.test.ts tests/tools/text-to-speech-real.test.ts tests/tools/media-generation-real.test.ts --run',
     ],
-    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core/admin, Home Assistant REST, Spotify, x_search, Feishu document/comment, mixture_of_agents, execute_code, vision_analyze, browser_vision, text_to_speech, image_generate, video_analyze, and video_generate tool names, but not all official third-party integrations.',
+    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core/admin, Home Assistant REST, Spotify, x_search, Feishu document/comment, Yuanbao group/DM/sticker, mixture_of_agents, execute_code, vision_analyze, browser_vision, text_to_speech, image_generate, video_analyze, and video_generate tool names, but not all official third-party integrations.',
     nextWork: 'Track tool-level parity in a second-level manifest.',
   },
   {

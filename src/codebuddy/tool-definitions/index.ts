@@ -65,6 +65,16 @@ export {
   MESSAGING_TOOLS,
 } from './messaging-tools.js';
 
+// Hermes Yuanbao platform tools
+export {
+  YB_QUERY_GROUP_INFO_TOOL,
+  YB_QUERY_GROUP_MEMBERS_TOOL,
+  YB_SEND_DM_TOOL,
+  YB_SEARCH_STICKER_TOOL,
+  YB_SEND_STICKER_TOOL,
+  YUANBAO_TOOLS,
+} from './yuanbao-tools.js';
+
 // Home Assistant tools
 export {
   HA_LIST_ENTITIES_TOOL,

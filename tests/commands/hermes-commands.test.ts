@@ -290,7 +290,7 @@ describe('Hermes CLI commands', () => {
     expect(output.summary.total).toBe(output.tools.length);
     expect(output.summary.nativeEquivalent).toBeGreaterThan(0);
     expect(output.summary.partial).toBeGreaterThan(0);
-    expect(output.summary.gaps).toBeGreaterThan(0);
+    expect(output.summary.gaps).toBe(0);
     expect(output.tools).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -480,6 +480,16 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['x_search'],
         }),
         expect.objectContaining({
+          name: 'yb_query_group_info',
+          status: 'exact',
+          detectedCodeBuddyTools: ['yb_query_group_info'],
+        }),
+        expect.objectContaining({
+          name: 'yb_send_sticker',
+          status: 'exact',
+          detectedCodeBuddyTools: ['yb_send_sticker'],
+        }),
+        expect.objectContaining({
           name: 'vision_analyze',
           status: 'exact',
           detectedCodeBuddyTools: expect.arrayContaining(['vision_analyze']),
@@ -598,7 +608,7 @@ describe('Hermes CLI commands', () => {
 
     expect(output.kind).toBe('hermes_official_tool_parity_manifest');
     expect(output.summary.total).toBeGreaterThan(0);
-    expect(output.summary.gaps).toBeGreaterThan(0);
+    expect(output.summary.gaps).toBe(0);
   });
 
   it('prints Markdown for official Hermes tool parity', async () => {

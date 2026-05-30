@@ -8,7 +8,7 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 59 exact, 6 native-equivalent, 1 partial, 5 gaps.
+- Tool parity manifest: 71 official tools, 64 exact, 6 native-equivalent, 1 partial, 0 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,10 +68,10 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage` and platform gaps. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, Yuanbao group/DM/sticker tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
-    - Cowork shows summary counts and top core gaps such as `skill_manage` and optional platform connectors.
-    - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
+    - Cowork shows summary counts and top partial items such as `skill_manage`.
+    - Platform-only tools remain optional and do not hide the prioritized coding-agent work.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
     - `npm test -- tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
@@ -200,13 +200,16 @@ Current measured state:
   - Scope: detect/configure local, Docker, SSH, WSL, sandbox, Vercel Sandbox/Modal/Daytona if product-relevant.
   - Acceptance: `buddy hermes doctor --json` reports available backends and smoke commands.
 
-- [ ] **Platform connectors**
-  - Lower priority unless the user explicitly needs them:
-    - Yuanbao group/DM/stickers
-  - Recommendation: keep these as optional connectors/plugins, not core Code Buddy agent work.
+- [x] **Yuanbao platform connector parity**
+  - Done: exact `yb_query_group_info`, `yb_query_group_members`, `yb_send_dm`, `yb_search_sticker`, and `yb_send_sticker` prompt tools now exist.
+  - Integration shape: optional Yuanbao-compatible HTTP gateway via `CODEBUDDY_YUANBAO_GATEWAY_URL` / `YUANBAO_GATEWAY_URL`, token via `CODEBUDDY_YUANBAO_TOKEN` / `YUANBAO_TOKEN`, and current chat fallback via `CODEBUDDY_YUANBAO_HOME_CHAT_ID` / `HERMES_SESSION_CHAT_ID`.
+  - Guardrail: DM and sticker delivery require `approved_by` unless an operator explicitly sets `CODEBUDDY_YUANBAO_ALLOW_SENDS=true`.
+  - Verification:
+    - `npm test -- tests/tools/yuanbao-tool-real.test.ts --run`
+    - `npx tsx src/index.ts hermes tools --json`
 
 ## Immediate next implementation order
 
-1. Yuanbao group/DM/sticker tools if product-relevant.
+1. Remaining `skill_manage` polish: larger SKILL.md diff/review UX and exact hub/tap/trust deltas.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
-3. Remaining `skill_manage` polish: larger SKILL.md diff/review UX and exact hub/tap/trust deltas.
+3. Runtime backend inventory and provider-readiness smoke matrix.

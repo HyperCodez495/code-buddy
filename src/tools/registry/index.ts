@@ -81,6 +81,11 @@ export {
 } from './discord-tools.js';
 
 export {
+  YuanbaoTool,
+  createYuanbaoTools,
+} from './yuanbao-tools.js';
+
+export {
   HomeAssistantTool,
   createHomeAssistantTools,
 } from './homeassistant-tools.js';
@@ -462,6 +467,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createKanbanTools } = await import('./kanban-tools.js');
   const { createSendMessageTools } = await import('./send-message-tools.js');
   const { createDiscordTools } = await import('./discord-tools.js');
+  const { createYuanbaoTools } = await import('./yuanbao-tools.js');
   const { createHomeAssistantTools } = await import('./homeassistant-tools.js');
   const { createMixtureOfAgentsTools } = await import('./moa-tools.js');
   const { createSpotifyTools } = await import('./spotify-tools.js');
@@ -518,6 +524,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createKanbanTools(),
     ...createSendMessageTools(),
     ...createDiscordTools(),
+    ...createYuanbaoTools(),
     ...createHomeAssistantTools(),
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
@@ -596,6 +603,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createKanbanTools(),
     ...createSendMessageTools(),
     ...createDiscordTools(),
+    ...createYuanbaoTools(),
     ...createHomeAssistantTools(),
     ...createMixtureOfAgentsTools(),
     ...createSpotifyTools(),
@@ -664,6 +672,7 @@ import { createTodoTools } from './todo-tools.js';
 import { createKanbanTools } from './kanban-tools.js';
 import { createSendMessageTools } from './send-message-tools.js';
 import { createDiscordTools } from './discord-tools.js';
+import { createYuanbaoTools } from './yuanbao-tools.js';
 import { createHomeAssistantTools } from './homeassistant-tools.js';
 import { createMixtureOfAgentsTools } from './moa-tools.js';
 import { createSpotifyTools } from './spotify-tools.js';

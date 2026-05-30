@@ -91,7 +91,7 @@ change-control surface.
 | Enforced tool filters per profile | custom-agent `fleetDispatchProfile` → `ToolFilterConfig`; `ToolHandler` enforces at execution; `buddy hermes doctor <profile>` | done |
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
-| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 59 exact, 6 native-equivalent, 1 partial, 5 gaps |
+| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 64 exact, 6 native-equivalent, 1 partial, 0 gaps |
 
 ### Scheduled automations
 
@@ -142,6 +142,7 @@ change-control surface.
 | Hermes Spotify tools | `src/tools/spotify-tool.ts`, `src/tools/registry/spotify-tools.ts`, `tests/tools/spotify-tool-real.test.ts` | done — exact `spotify_playback`, `spotify_devices`, `spotify_queue`, `spotify_search`, `spotify_playlists`, `spotify_albums`, and `spotify_library`; real HTTP Web API path tested |
 | Hermes `x_search` | `src/tools/x-search-tool.ts`, `src/tools/registry/x-search-tools.ts`, `tests/tools/x-search-tool-real.test.ts` | done — exact xAI Responses `x_search` prompt tool; real HTTP path tested; handle/date validation and citation/degraded-result handling included |
 | Hermes Feishu document/comment tools | `src/tools/feishu-tool.ts`, `src/tools/registry/feishu-tools.ts`, `tests/tools/feishu-tool-real.test.ts` | done — exact `feishu_doc_read`, `feishu_drive_list_comments`, `feishu_drive_list_comment_replies`, `feishu_drive_reply_comment`, and `feishu_drive_add_comment`; real Feishu/Lark Open API HTTP paths tested |
+| Hermes Yuanbao group/DM/sticker tools | `src/tools/yuanbao-tool.ts`, `src/tools/registry/yuanbao-tools.ts`, `tests/tools/yuanbao-tool-real.test.ts` | done — exact `yb_query_group_info`, `yb_query_group_members`, `yb_send_dm`, `yb_search_sticker`, and `yb_send_sticker`; real HTTP gateway path tested; external sends approval-gated |
 | Mobile-safe remote supervision | `buddy run mobile-snapshot / mobile-gateway-*` | contract/preview only; no live listener yet (parity TODO #15/#34) |
 | Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface` | local + Docker/OS; Daytona/Modal/Vercel not ported |
 
@@ -190,4 +191,4 @@ buddy lessons candidate approve <id> --by "<your name>"
   still needs SKILL.md preview/diff plus reviewer-gated install/disable/
   deprecate/rollback controls.
 - Serverless terminal backends (Daytona/Modal/Vercel Sandbox).
-- Optional platform tools still absent: Yuanbao group/DM/sticker tools.
+- Exact `skill_manage` hub/tap/trust behavior is still only partially proven.
