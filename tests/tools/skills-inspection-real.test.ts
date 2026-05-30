@@ -316,6 +316,119 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
       '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
     );
 
+    const editWithoutApproval = await manageTool!.execute({
+      action: 'edit',
+      content: `${viewedAfterRollback.content as string}\n## Official Hermes Edit\n\nFull rewrite alias tested.\n`,
+      name: 'research-skill-manage-candidate',
+    });
+    expect(editWithoutApproval.success).toBe(false);
+    expect(editWithoutApproval.error).toContain('approved_by is required');
+
+    const edited = await parseToolOutput(await manageTool!.execute({
+      action: 'edit',
+      approved_by: 'Patrice',
+      content: `${viewedAfterRollback.content as string}\n## Official Hermes Edit\n\nFull rewrite alias tested.\n`,
+      name: 'research-skill-manage-candidate',
+      reason: 'Exercise official Hermes edit action.',
+    }));
+    expect(edited.action).toBe('skill_manage_edit');
+    expect(edited.snapshot).toMatchObject({
+      createdBy: 'Patrice',
+      reason: 'Exercise official Hermes edit action.',
+    });
+
+    const viewedAfterEdit = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(viewedAfterEdit.integrityOk).toBe(true);
+    expect(viewedAfterEdit.content).toContain('Full rewrite alias tested.');
+
+    const writeFileWithoutApproval = await manageTool!.execute({
+      action: 'write_file',
+      file_content: 'supporting note',
+      file_path: 'references/hermes-note.md',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(writeFileWithoutApproval.success).toBe(false);
+    expect(writeFileWithoutApproval.error).toContain('approved_by is required');
+
+    const unsafeWrite = await manageTool!.execute({
+      action: 'write_file',
+      approved_by: 'Patrice',
+      file_content: 'nope',
+      file_path: '../outside.md',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(unsafeWrite.success).toBe(false);
+    expect(unsafeWrite.error).toContain('Unsafe skill file path');
+
+    const missingSupportingFilename = await manageTool!.execute({
+      action: 'write_file',
+      approved_by: 'Patrice',
+      file_content: 'nope',
+      file_path: 'references',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(missingSupportingFilename.success).toBe(false);
+    expect(missingSupportingFilename.error).toContain('Use a file under references/');
+
+    const writtenFile = await parseToolOutput(await manageTool!.execute({
+      action: 'write_file',
+      approved_by: 'Patrice',
+      file_content: 'supporting note for Hermes skill files',
+      file_path: 'references/hermes-note.md',
+      name: 'research-skill-manage-candidate',
+      reason: 'Exercise official Hermes write_file action.',
+    }));
+    expect(writtenFile.action).toBe('skill_manage_write_file');
+    expect(writtenFile).toMatchObject({
+      bytesWritten: 'supporting note for Hermes skill files'.length,
+      filePath: 'references/hermes-note.md',
+    });
+
+    const supportFilePath = path.join(
+      tempWorkspace,
+      '.codebuddy',
+      'skills',
+      'research-skill-manage-candidate',
+      'references',
+      'hermes-note.md',
+    );
+    await expect(fs.readFile(supportFilePath, 'utf8')).resolves.toBe('supporting note for Hermes skill files');
+
+    const patchedSupportFile = await parseToolOutput(await manageTool!.execute({
+      action: 'patch',
+      approved_by: 'Patrice',
+      file_path: 'references/hermes-note.md',
+      name: 'research-skill-manage-candidate',
+      old_string: 'supporting note',
+      new_string: 'supporting reference note',
+      reason: 'Exercise official Hermes old_string/new_string patch aliases.',
+    }));
+    expect(patchedSupportFile).toMatchObject({
+      action: 'skill_manage_patch',
+      filePath: 'references/hermes-note.md',
+      replacements: 1,
+    });
+    await expect(fs.readFile(supportFilePath, 'utf8')).resolves.toBe(
+      'supporting reference note for Hermes skill files',
+    );
+
+    const removedFile = await parseToolOutput(await manageTool!.execute({
+      action: 'remove_file',
+      approved_by: 'Patrice',
+      file_path: 'references/hermes-note.md',
+      name: 'research-skill-manage-candidate',
+      reason: 'Exercise official Hermes remove_file action.',
+    }));
+    expect(removedFile).toMatchObject({
+      action: 'skill_manage_remove_file',
+      filePath: 'references/hermes-note.md',
+      removed: true,
+    });
+    await expect(fs.readFile(supportFilePath, 'utf8')).rejects.toThrow();
+
     const cachedUpdateContent = [
       '---',
       'name: research-skill-manage-candidate',

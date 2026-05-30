@@ -38,18 +38,25 @@ describe('Agent tool activation in LLM schemas', () => {
       'view',
       'history',
       'create',
+      'edit',
       'discover',
       'enable',
       'disable',
       'deprecate',
       'delete',
       'patch',
+      'write_file',
+      'remove_file',
       'rollback',
       'update',
       'candidate_list',
       'candidate_view',
       'candidate_install',
     ]);
+    expect(skillManageTool!.function.parameters.properties.content).toBeDefined();
+    expect(skillManageTool!.function.parameters.properties.old_string).toBeDefined();
+    expect(skillManageTool!.function.parameters.properties.new_string).toBeDefined();
+    expect(skillManageTool!.function.parameters.properties.file_path).toBeDefined();
   });
 
   it('exposes browser proof-loop actions to the LLM schema', () => {

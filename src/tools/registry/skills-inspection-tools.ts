@@ -84,12 +84,15 @@ type SkillManageAction =
   | 'view'
   | 'history'
   | 'create'
+  | 'edit'
   | 'discover'
   | 'enable'
   | 'disable'
   | 'deprecate'
   | 'delete'
   | 'patch'
+  | 'write_file'
+  | 'remove_file'
   | 'rollback'
   | 'update'
   | 'candidate_list'
@@ -210,9 +213,24 @@ export class SkillManageExecuteTool implements ITool {
       const name = readString(input.name);
       const description = readString(input.description);
       const body = readString(input.body);
+      const content = readRawString(input.content);
 
       if (!name) {
         return { success: false, error: 'skill_manage create: name is required' };
+      }
+      if (content !== undefined) {
+        try {
+          const installed = await getSkillsHub().installFromContent(name, content, 'local');
+          return serializePayload({
+            action: 'skill_manage_create',
+            installed,
+          });
+        } catch (error) {
+          return {
+            success: false,
+            error: `skill_manage create: ${error instanceof Error ? error.message : String(error)}`,
+          };
+        }
       }
       if (!description) {
         return { success: false, error: 'skill_manage create: description is required' };
@@ -230,6 +248,42 @@ export class SkillManageExecuteTool implements ITool {
         requires: readStringArray(input.requires),
         overwrite: input.overwrite === true,
       });
+    }
+
+    if (action === 'edit') {
+      const name = readString(input.name);
+      const content = readRawString(input.content);
+      if (!name) {
+        return { success: false, error: 'skill_manage edit: name is required' };
+      }
+      if (content === undefined || content.length === 0) {
+        return { success: false, error: 'skill_manage edit: content is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const edited = getSkillsHub().editInstalledSkill(name, content, {
+          actor: approval,
+          reason: readString(input.reason) || undefined,
+        });
+        if (!edited) {
+          return { success: false, error: `skill_manage edit: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_edit',
+          ...edited,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage edit: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
     }
 
     if (action === 'discover') {
@@ -301,16 +355,16 @@ export class SkillManageExecuteTool implements ITool {
 
     if (action === 'patch') {
       const name = readString(input.name);
-      const oldText = readRawString(input.old_text);
-      const newText = readRawString(input.new_text);
+      const oldText = readRawString(input.old_text) ?? readRawString(input.old_string);
+      const newText = readRawString(input.new_text) ?? readRawString(input.new_string);
       if (!name) {
         return { success: false, error: 'skill_manage patch: name is required' };
       }
       if (oldText === undefined || oldText.length === 0) {
-        return { success: false, error: 'skill_manage patch: old_text is required' };
+        return { success: false, error: 'skill_manage patch: old_text or old_string is required' };
       }
       if (newText === undefined) {
-        return { success: false, error: 'skill_manage patch: new_text is required' };
+        return { success: false, error: 'skill_manage patch: new_text or new_string is required' };
       }
 
       const approval = readApproval(input, action);
@@ -324,7 +378,9 @@ export class SkillManageExecuteTool implements ITool {
           expectedReplacements: typeof input.expected_replacements === 'number'
             ? input.expected_replacements
             : undefined,
+          filePath: readString(input.file_path) || undefined,
           reason: readString(input.reason) || undefined,
+          replaceAll: input.replace_all === true,
         });
         if (!patched) {
           return { success: false, error: `skill_manage patch: skill not found: ${name}` };
@@ -338,6 +394,82 @@ export class SkillManageExecuteTool implements ITool {
         return {
           success: false,
           error: `skill_manage patch: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
+    if (action === 'write_file') {
+      const name = readString(input.name);
+      const filePath = readString(input.file_path);
+      const fileContent = readRawString(input.file_content);
+      if (!name) {
+        return { success: false, error: 'skill_manage write_file: name is required' };
+      }
+      if (!filePath) {
+        return { success: false, error: 'skill_manage write_file: file_path is required' };
+      }
+      if (fileContent === undefined) {
+        return { success: false, error: 'skill_manage write_file: file_content is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const written = getSkillsHub().writeSkillSupportingFile(name, filePath, fileContent, {
+          actor: approval,
+          reason: readString(input.reason) || undefined,
+        });
+        if (!written) {
+          return { success: false, error: `skill_manage write_file: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_write_file',
+          ...written,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage write_file: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
+    if (action === 'remove_file') {
+      const name = readString(input.name);
+      const filePath = readString(input.file_path);
+      if (!name) {
+        return { success: false, error: 'skill_manage remove_file: name is required' };
+      }
+      if (!filePath) {
+        return { success: false, error: 'skill_manage remove_file: file_path is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const removed = getSkillsHub().removeSkillSupportingFile(name, filePath, {
+          actor: approval,
+          reason: readString(input.reason) || undefined,
+        });
+        if (!removed) {
+          return { success: false, error: `skill_manage remove_file: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_remove_file',
+          ...removed,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage remove_file: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
     }
@@ -476,7 +608,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, history, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, update, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -500,12 +632,15 @@ export class SkillManageExecuteTool implements ITool {
       'view',
       'history',
       'create',
+      'edit',
       'discover',
       'enable',
       'disable',
       'deprecate',
       'delete',
       'patch',
+      'write_file',
+      'remove_file',
       'rollback',
       'update',
       'candidate_list',
@@ -514,7 +649,7 @@ export class SkillManageExecuteTool implements ITool {
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, history, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, update, candidate_list, candidate_view, candidate_install'],
       };
     }
     if ((action === 'view' || action === 'history') && !readString(data.name)) {
@@ -524,9 +659,21 @@ export class SkillManageExecuteTool implements ITool {
       return { valid: false, errors: ['query is required for discover'] };
     }
     if (action === 'create') {
-      const missing = ['name', 'description', 'body'].filter((key) => !readString(data[key]));
+      const hasContent = readRawString(data.content) !== undefined && readRawString(data.content) !== '';
+      const missing = hasContent
+        ? ['name'].filter((key) => !readString(data[key]))
+        : ['name', 'description', 'body'].filter((key) => !readString(data[key]));
       if (missing.length > 0) {
         return { valid: false, errors: [`${missing.join(', ')} required for create`] };
+      }
+    }
+    if (action === 'edit') {
+      const missing = ['name', 'approved_by', 'content'].filter((key) => {
+        if (key === 'content') return readRawString(data[key]) === undefined || readRawString(data[key]) === '';
+        return !readString(data[key]);
+      });
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for edit`] };
       }
     }
     if (['enable', 'disable', 'deprecate', 'delete'].includes(action)) {
@@ -537,12 +684,34 @@ export class SkillManageExecuteTool implements ITool {
     }
     if (action === 'patch') {
       const missing = ['name', 'approved_by', 'old_text', 'new_text'].filter((key) => {
-        if (key === 'old_text') return readRawString(data[key]) === undefined || readRawString(data[key]) === '';
-        if (key === 'new_text') return readRawString(data[key]) === undefined;
+        if (key === 'old_text') {
+          return (
+            (readRawString(data.old_text) === undefined || readRawString(data.old_text) === '')
+            && (readRawString(data.old_string) === undefined || readRawString(data.old_string) === '')
+          );
+        }
+        if (key === 'new_text') {
+          return readRawString(data.new_text) === undefined && readRawString(data.new_string) === undefined;
+        }
         return !readString(data[key]);
       });
       if (missing.length > 0) {
-        return { valid: false, errors: [`${missing.join(', ')} required for patch`] };
+        return { valid: false, errors: [`${missing.join(', ')} or official aliases required for patch`] };
+      }
+    }
+    if (action === 'write_file') {
+      const missing = ['name', 'approved_by', 'file_path', 'file_content'].filter((key) => {
+        if (key === 'file_content') return readRawString(data[key]) === undefined;
+        return !readString(data[key]);
+      });
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for write_file`] };
+      }
+    }
+    if (action === 'remove_file') {
+      const missing = ['name', 'approved_by', 'file_path'].filter((key) => !readString(data[key]));
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for remove_file`] };
       }
     }
     if (action === 'rollback') {
@@ -582,6 +751,7 @@ export class SkillManageExecuteTool implements ITool {
         'view',
         'history',
         'create',
+        'edit',
         'discover',
         'candidate',
         'review',
@@ -591,6 +761,8 @@ export class SkillManageExecuteTool implements ITool {
         'deprecate',
         'delete',
         'patch',
+        'write_file',
+        'remove_file',
         'rollback',
         'update',
         'hermes',

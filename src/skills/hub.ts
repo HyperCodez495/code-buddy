@@ -127,13 +127,49 @@ export interface SkillVersionSnapshot {
 export interface SkillPatchOptions {
   actor?: string;
   expectedReplacements?: number;
+  filePath?: string;
   reason?: string;
+  replaceAll?: boolean;
   updatedAt?: number;
 }
 
 export interface SkillPatchResult {
   installed: InstalledSkill;
+  filePath: string;
   replacements: number;
+  snapshot: SkillVersionSnapshot;
+}
+
+export interface SkillEditOptions {
+  actor?: string;
+  reason?: string;
+  updatedAt?: number;
+}
+
+export interface SkillEditResult {
+  installed: InstalledSkill;
+  snapshot: SkillVersionSnapshot;
+}
+
+export interface SkillFileMutationOptions {
+  actor?: string;
+  reason?: string;
+  updatedAt?: number;
+}
+
+export interface SkillWriteFileResult {
+  absolutePath: string;
+  bytesWritten: number;
+  filePath: string;
+  installed: InstalledSkill;
+  snapshot: SkillVersionSnapshot;
+}
+
+export interface SkillRemoveFileResult {
+  absolutePath: string;
+  filePath: string;
+  installed: InstalledSkill;
+  removed: boolean;
   snapshot: SkillVersionSnapshot;
 }
 
@@ -249,6 +285,8 @@ const DEFAULT_HUB_CONFIG: HubConfig = {
 };
 
 const LOCKFILE_VERSION = 1;
+const SUPPORTING_FILE_DIRS = new Set(['references', 'templates', 'scripts', 'assets']);
+const MAX_SUPPORTING_FILE_BYTES = 1_048_576;
 
 // ============================================================================
 // Utility Functions
@@ -1121,8 +1159,49 @@ export class SkillsHub extends EventEmitter {
   }
 
   /**
-   * Patch an installed SKILL.md with a literal text replacement. The current
-   * file is snapshotted before writing, so review-gated edits can roll back.
+   * Rewrite an installed SKILL.md. The current file is snapshotted before
+   * writing, so review-gated edits can roll back.
+   */
+  editInstalledSkill(
+    skillName: string,
+    content: string,
+    options: SkillEditOptions = {},
+  ): SkillEditResult | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot edit missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    this.validateSkillContent(content, skillName);
+    const snapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason,
+      updatedAt: options.updatedAt,
+    });
+
+    fs.writeFileSync(installed.path, content, 'utf-8');
+    installed.checksum = computeChecksum(content);
+    installed.version = this.extractVersionFromContent(content) || installed.version;
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, snapshot);
+    this.writeLockfile();
+    this.emit('skill:edited', { name: skillName, snapshot });
+    return { installed, snapshot };
+  }
+
+  /**
+   * Patch an installed SKILL.md or one of its supporting files with a literal
+   * text replacement. The current SKILL.md is snapshotted before writing, so
+   * review-gated guidance edits can roll back.
    */
   patchInstalledSkill(
     skillName: string,
@@ -1142,10 +1221,21 @@ export class SkillsHub extends EventEmitter {
       throw new Error(`Skill file not found: ${installed.path}`);
     }
 
-    const content = fs.readFileSync(installed.path, 'utf-8');
+    const targetPath = this.resolveSkillMutationPath(installed, options.filePath);
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Skill file not found: ${targetPath}`);
+    }
+
+    const content = fs.readFileSync(targetPath, 'utf-8');
     const replacements = content.split(oldText).length - 1;
     if (replacements === 0) {
       throw new Error(`Patch text not found in skill '${skillName}'`);
+    }
+    const replaceAll = options.replaceAll === true;
+    if (!replaceAll && replacements !== 1) {
+      throw new Error(
+        `Patch text is not unique in '${skillName}' (${replacements} matches). Set replace_all=true to replace all occurrences.`,
+      );
     }
     if (
       typeof options.expectedReplacements === 'number'
@@ -1156,17 +1246,25 @@ export class SkillsHub extends EventEmitter {
       );
     }
 
-    const updatedContent = content.split(oldText).join(newText);
-    this.validateSkillContent(updatedContent, skillName);
+    const updatedContent = replaceAll
+      ? content.split(oldText).join(newText)
+      : content.replace(oldText, newText);
+    const relativeFilePath = this.relativeSkillMutationPath(installed, targetPath);
+    const targetIsSkillMd = path.resolve(targetPath) === path.resolve(installed.path);
+    if (targetIsSkillMd) {
+      this.validateSkillContent(updatedContent, skillName);
+    }
     const snapshot = this.snapshotInstalledSkill(installed, {
       actor: options.actor,
       reason: options.reason,
       updatedAt: options.updatedAt,
     });
 
-    fs.writeFileSync(installed.path, updatedContent, 'utf-8');
-    installed.checksum = computeChecksum(updatedContent);
-    installed.version = this.extractVersionFromContent(updatedContent) || installed.version;
+    fs.writeFileSync(targetPath, updatedContent, 'utf-8');
+    if (targetIsSkillMd) {
+      installed.checksum = computeChecksum(updatedContent);
+      installed.version = this.extractVersionFromContent(updatedContent) || installed.version;
+    }
     installed.lifecycle = {
       status: installed.enabled === false ? 'disabled' : 'active',
       updatedAt: options.updatedAt ?? Date.now(),
@@ -1175,8 +1273,108 @@ export class SkillsHub extends EventEmitter {
     };
     this.appendSnapshot(installed, snapshot);
     this.writeLockfile();
-    this.emit('skill:patched', { name: skillName, snapshot, replacements });
-    return { installed, replacements, snapshot };
+    this.emit('skill:patched', { name: skillName, filePath: relativeFilePath, snapshot, replacements });
+    return { installed, filePath: relativeFilePath, replacements, snapshot };
+  }
+
+  /**
+   * Add or overwrite a supporting file in an installed skill directory.
+   */
+  writeSkillSupportingFile(
+    skillName: string,
+    filePath: string,
+    fileContent: string,
+    options: SkillFileMutationOptions = {},
+  ): SkillWriteFileResult | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot write file for missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+    const byteLength = Buffer.byteLength(fileContent, 'utf-8');
+    if (byteLength > MAX_SUPPORTING_FILE_BYTES) {
+      throw new Error(`Supporting file exceeds ${MAX_SUPPORTING_FILE_BYTES} bytes`);
+    }
+
+    const targetPath = this.resolveSkillMutationPath(installed, filePath, { requireSupportingDir: true });
+    const snapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason,
+      updatedAt: options.updatedAt,
+    });
+
+    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
+    fs.writeFileSync(targetPath, fileContent, 'utf-8');
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, snapshot);
+    this.writeLockfile();
+
+    const relativeFilePath = this.relativeSkillMutationPath(installed, targetPath);
+    this.emit('skill:file_written', { name: skillName, filePath: relativeFilePath, snapshot });
+    return {
+      absolutePath: targetPath,
+      bytesWritten: byteLength,
+      filePath: relativeFilePath,
+      installed,
+      snapshot,
+    };
+  }
+
+  /**
+   * Remove a supporting file from an installed skill directory.
+   */
+  removeSkillSupportingFile(
+    skillName: string,
+    filePath: string,
+    options: SkillFileMutationOptions = {},
+  ): SkillRemoveFileResult | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot remove file for missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const targetPath = this.resolveSkillMutationPath(installed, filePath, { requireSupportingDir: true });
+    if (!fs.existsSync(targetPath)) {
+      throw new Error(`Supporting file not found: ${filePath}`);
+    }
+
+    const snapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason,
+      updatedAt: options.updatedAt,
+    });
+    fs.rmSync(targetPath, { force: false });
+    this.removeEmptySupportingParents(installed, path.dirname(targetPath));
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, snapshot);
+    this.writeLockfile();
+
+    const relativeFilePath = this.relativeSkillMutationPath(installed, targetPath);
+    this.emit('skill:file_removed', { name: skillName, filePath: relativeFilePath, snapshot });
+    return {
+      absolutePath: targetPath,
+      filePath: relativeFilePath,
+      installed,
+      removed: true,
+      snapshot,
+    };
   }
 
   /**
@@ -1396,6 +1594,86 @@ export class SkillsHub extends EventEmitter {
   // ==========================================================================
   // Helpers
   // ==========================================================================
+
+  private resolveSkillMutationPath(
+    installed: InstalledSkill,
+    filePath?: string,
+    options: { requireSupportingDir?: boolean } = {},
+  ): string {
+    const skillDir = path.dirname(installed.path);
+    if (!filePath || filePath.trim() === '') {
+      if (options.requireSupportingDir) {
+        throw new Error('file_path is required');
+      }
+      return installed.path;
+    }
+
+    const normalized = filePath.trim().replace(/\\/g, '/');
+    if (
+      normalized.startsWith('/')
+      || path.isAbsolute(normalized)
+      || /^[A-Za-z]:/.test(normalized)
+      || normalized.split('/').some((part) => part === '..' || part === '')
+    ) {
+      throw new Error(`Unsafe skill file path: ${filePath}`);
+    }
+
+    if (normalized === 'SKILL.md') {
+      if (options.requireSupportingDir) {
+        throw new Error('SKILL.md cannot be used as a supporting file path');
+      }
+      return installed.path;
+    }
+
+    const parts = normalized.split('/');
+    const [topLevel] = parts;
+    if (!topLevel || !SUPPORTING_FILE_DIRS.has(topLevel)) {
+      throw new Error(
+        `Unsupported skill file path '${filePath}'. Use references/, templates/, scripts/, or assets/.`,
+      );
+    }
+    if (parts.length < 2 || !parts[parts.length - 1]) {
+      throw new Error(
+        `Unsupported skill file path '${filePath}'. Use a file under references/, templates/, scripts/, or assets/.`,
+      );
+    }
+
+    const targetPath = path.resolve(skillDir, ...parts);
+    const relative = path.relative(skillDir, targetPath);
+    if (relative.startsWith('..') || path.isAbsolute(relative)) {
+      throw new Error(`Unsafe skill file path: ${filePath}`);
+    }
+    return targetPath;
+  }
+
+  private relativeSkillMutationPath(installed: InstalledSkill, targetPath: string): string {
+    if (path.resolve(targetPath) === path.resolve(installed.path)) {
+      return 'SKILL.md';
+    }
+    return path.relative(path.dirname(installed.path), targetPath).replace(/\\/g, '/');
+  }
+
+  private removeEmptySupportingParents(installed: InstalledSkill, startDir: string): void {
+    const skillDir = path.dirname(installed.path);
+    let current = path.resolve(startDir);
+    while (current !== path.resolve(skillDir)) {
+      const relative = path.relative(skillDir, current).replace(/\\/g, '/');
+      const [topLevel] = relative.split('/');
+      if (!topLevel || !SUPPORTING_FILE_DIRS.has(topLevel)) {
+        return;
+      }
+      try {
+        if (fs.existsSync(current) && fs.readdirSync(current).length === 0) {
+          fs.rmdirSync(current);
+          current = path.dirname(current);
+          continue;
+        }
+      } catch {
+        return;
+      }
+      return;
+    }
+  }
 
   /**
    * Extract the version field from SKILL.md YAML frontmatter.

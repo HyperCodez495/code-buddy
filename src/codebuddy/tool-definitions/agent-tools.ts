@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, official create/edit/patch/write_file/remove_file aliases, review-gated enable/disable/deprecate/delete/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -319,12 +319,15 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
             'view',
             'history',
             'create',
+            'edit',
             'discover',
             'enable',
             'disable',
             'deprecate',
             'delete',
             'patch',
+            'write_file',
+            'remove_file',
             'rollback',
             'update',
             'candidate_list',
@@ -344,6 +347,10 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         body: {
           type: 'string',
           description: 'Full SKILL.md body. Required for create.',
+        },
+        content: {
+          type: 'string',
+          description: 'Official Hermes alias: full SKILL.md content for create or edit.',
         },
         tags: {
           type: 'array',
@@ -421,15 +428,39 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         old_text: {
           type: 'string',
-          description: 'Literal text to replace inside an installed SKILL.md. Required for patch.',
+          description: 'Literal text to replace inside an installed SKILL.md or supporting file. Required for patch unless old_string is provided.',
         },
         new_text: {
           type: 'string',
-          description: 'Replacement text for patch. Can be an empty string for deletion.',
+          description: 'Replacement text for patch. Can be an empty string for deletion. Required unless new_string is provided.',
+        },
+        old_string: {
+          type: 'string',
+          description: 'Official Hermes alias for old_text.',
+        },
+        new_string: {
+          type: 'string',
+          description: 'Official Hermes alias for new_text.',
+        },
+        replace_all: {
+          type: 'boolean',
+          description: 'Official Hermes patch flag: replace all occurrences instead of requiring a unique match. Default: false.',
         },
         expected_replacements: {
           type: 'number',
           description: 'Optional safety check for patch: fail unless exactly this many replacements would be made.',
+        },
+        file_path: {
+          type: 'string',
+          description: 'Official Hermes supporting file path for patch/write_file/remove_file. Must be SKILL.md or under references/, templates/, scripts/, or assets/.',
+        },
+        file_content: {
+          type: 'string',
+          description: 'Official Hermes supporting file content. Required for write_file.',
+        },
+        absorbed_into: {
+          type: 'string',
+          description: 'Official Hermes delete intent hint. Accepted for compatibility; Code Buddy records explicit reason/approval instead.',
         },
         snapshot_id: {
           type: 'string',

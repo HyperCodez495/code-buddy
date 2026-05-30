@@ -8,24 +8,24 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 64 exact, 6 native-equivalent, 1 partial, 0 gaps.
+- Tool parity manifest: 71 official tools, 65 exact, 6 native-equivalent, 0 partial, 0 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
 
-- [ ] **Implement review-gated `skill_manage` lifecycle**
-  - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but the lifecycle still needs Cowork controls to feel complete.
-  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into both the active SkillsHub lockfile and the workspace SkillsHub lockfile with checksum so `skill_manage list/view` and candidate review can see them immediately. Patches and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks. `skill_manage candidate_list/view` now report whether the matching workspace skill is not installed, current, different, or missing on disk before approval, with a bounded unified diff preview when content differs.
+- [x] **Implement review-gated `skill_manage` lifecycle**
+  - Why: this was the highest-value remaining Hermes core tool gap. Hermes' agent-managed procedural memory depends on exact `skill_manage` create/edit/patch/delete/supporting-file actions.
+  - Done: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, official `create(content)` / `edit(content)` / `patch(old_string,new_string,file_path,replace_all)` / `write_file` / `remove_file` aliases, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into both the active SkillsHub lockfile and the workspace SkillsHub lockfile with checksum so `skill_manage list/view` and candidate review can see them immediately. Edits, patches, supporting-file mutations, and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks. `skill_manage candidate_list/view` now report whether the matching workspace skill is not installed, current, different, or missing on disk before approval, with a bounded unified diff preview when content differs.
   - Remaining scope: optionally add remote hub release diff previews.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:
     - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, patch it, roll it back, update it from local hub cache metadata, deprecate it, re-enable it, and remove it from the installed index.
-    - Remaining: add richer remote release diff previews when a hub backend is configured.
+    - Remaining product polish: add richer remote release diff previews when a hub backend is configured.
     - Installed skills keep provenance: source run/candidate, reviewer, approval time, prior version if overwritten.
     - Cowork can show the candidate vs installed skill state and diff preview before approval.
   - Verification:
-    - `npm test -- tests/agent/research-script-skill-candidate.test.ts tests/commands/tools-commands.test.ts --run`
-    - real CLI smoke in a temp repo using `buddy tools skill-candidate ...` plus the new manage command/tool.
+    - `npm test -- tests/tools/skills-inspection-real.test.ts tests/unit/agent-tool-definitions-activation.test.ts --run`
+    - `npx tsx src/index.ts hermes tools --json`
 
 - [x] **Inject accepted user-model summaries automatically per session**
   - Why: Hermes-style "model of who you are" should influence fresh sessions without manually calling `user_model_recall`.
@@ -68,9 +68,9 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, Yuanbao group/DM/sticker tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, Yuanbao group/DM/sticker tools, `skill_manage`, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
-    - Cowork shows summary counts and top partial items such as `skill_manage`.
+    - Cowork shows summary counts and top partial/gap items if any reappear.
     - Platform-only tools remain optional and do not hide the prioritized coding-agent work.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
@@ -210,6 +210,6 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. Remaining `skill_manage` polish: larger SKILL.md diff/review UX and exact hub/tap/trust deltas.
+1. Remaining skills polish: larger SKILL.md diff/review UX and exact CLI hub/tap/trust product-surface deltas.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
 3. Runtime backend inventory and provider-readiness smoke matrix.

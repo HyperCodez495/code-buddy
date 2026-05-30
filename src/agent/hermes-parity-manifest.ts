@@ -129,7 +129,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts tools profile hermes-balanced --json',
       'npm test -- tests/tools/execute-code-real.test.ts tests/tools/send-message-real.test.ts tests/tools/discord-tool-real.test.ts tests/tools/homeassistant-tool-real.test.ts tests/tools/mixture-of-agents-real.test.ts tests/tools/spotify-tool-real.test.ts tests/tools/x-search-tool-real.test.ts tests/tools/feishu-tool-real.test.ts tests/tools/yuanbao-tool-real.test.ts tests/tools/kanban-real.test.ts tests/tools/vision-analyze-real.test.ts tests/tools/text-to-speech-real.test.ts tests/tools/media-generation-real.test.ts --run',
     ],
-    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core/admin, Home Assistant REST, Spotify, x_search, Feishu document/comment, Yuanbao group/DM/sticker, mixture_of_agents, execute_code, vision_analyze, browser_vision, text_to_speech, image_generate, video_analyze, and video_generate tool names, but not all official third-party integrations.',
+    notes: 'Code Buddy has many native tools and now exact Kanban, send_message, discord core/admin, Home Assistant REST, Spotify, x_search, Feishu document/comment, Yuanbao group/DM/sticker, skill_manage, mixture_of_agents, execute_code, vision_analyze, browser_vision, text_to_speech, image_generate, video_analyze, and video_generate tool names, but not all official third-party integrations.',
     nextWork: 'Track tool-level parity in a second-level manifest.',
   },
   {
@@ -207,7 +207,7 @@ const FEATURES: HermesParityFeature[] = [
       '(cd cowork && npm test -- tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts --run)',
       '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
     ],
-    notes: 'Native skill coverage is good and both skill_manage candidate review plus Cowork now surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update/patch from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
+    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update/patch from the real SkillsHub lockfile. Wider Hermes CLI hub/tap/update/reset/trust behavior is not proven identical.',
     nextWork: 'Add Cowork expanded side-by-side SKILL.md diff review and close high-value Hermes hub/tap/trust gaps.',
   },
   {

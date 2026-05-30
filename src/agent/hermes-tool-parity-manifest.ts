@@ -54,6 +54,7 @@ const OFFICIAL_SOURCE_DISCORD = 'tools/discord_tool.py';
 const OFFICIAL_SOURCE_IMAGE_GENERATION = 'tools/image_generation_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 const OFFICIAL_SOURCE_YUANBAO = 'tools/yuanbao_tools.py';
+const OFFICIAL_SOURCE_SKILL_MANAGER = 'tools/skill_manager_tool.py';
 
 const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
   {
@@ -147,11 +148,10 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'skill_manage',
     toolset: 'hermes-core',
     category: 'skills',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
+    officialSource: OFFICIAL_SOURCE_SKILL_MANAGER,
     equivalentCodeBuddyTools: ['skills_list', 'skill_view', 'create_skill', 'skill_discover'],
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy now exposes skill_manage for installed list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install, with local snapshot-backed rollback history.',
-    nextWork: 'Keep mutation review-gated when adding Cowork lifecycle controls and any future remote hub release diffing.',
+    notes: 'Code Buddy exposes the exact skill_manage prompt tool name with the official create/edit/patch/delete/write_file/remove_file action surface and official content/old_string/new_string/replace_all/file_path aliases, plus native review-gated lifecycle, rollback, update, discovery, and candidate review extensions.',
+    nextWork: 'Keep mutations review-gated and continue tracking wider CLI hub/tap/trust parity at the product-surface level.',
   },
   {
     name: 'browser_navigate',
@@ -672,6 +672,7 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_IMAGE_GENERATION,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
         OFFICIAL_SOURCE_YUANBAO,
+        OFFICIAL_SOURCE_SKILL_MANAGER,
       ],
     },
     codeBuddySource: {

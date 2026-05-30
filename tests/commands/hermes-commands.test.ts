@@ -285,11 +285,12 @@ describe('Hermes CLI commands', () => {
     expect(output.schemaVersion).toBe(1);
     expect(output.officialSource.inspectedCommit).toBe('5921d667');
     expect(output.officialSource.sourceFiles).toContain('toolsets.py::_HERMES_CORE_TOOLS');
+    expect(output.officialSource.sourceFiles).toContain('tools/skill_manager_tool.py');
     expect(output.codeBuddySource.localToolCount).toBeGreaterThan(0);
     expect(output.codeBuddySource.localToolNames).toContain('browser');
     expect(output.summary.total).toBe(output.tools.length);
     expect(output.summary.nativeEquivalent).toBeGreaterThan(0);
-    expect(output.summary.partial).toBeGreaterThan(0);
+    expect(output.summary.partial).toBe(0);
     expect(output.summary.gaps).toBe(0);
     expect(output.tools).toEqual(
       expect.arrayContaining([
@@ -345,7 +346,7 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           name: 'skill_manage',
-          status: 'partial',
+          status: 'exact',
           detectedCodeBuddyTools: expect.arrayContaining([
             'skill_manage',
             'skills_list',
