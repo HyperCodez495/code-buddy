@@ -1,0 +1,1037 @@
+/**
+ * Learning Agent — Hermes-style retrospective loop.
+ *
+ * This agent runs on durable RunStore trajectories, not chat guesses. It reads
+ * the redacted trajectory export, extracts tool-order/friction/pattern signals,
+ * proposes review-gated lessons, materializes review-gated SKILL.md candidates,
+ * and keeps lightweight skill/pattern telemetry for continuous improvement.
+ */
+
+import fs from 'fs';
+import path from 'path';
+import { createHash } from 'crypto';
+import {
+  buildRunTrajectoryExport,
+  type RunTrajectoryExport,
+  type RunTrajectoryExportToolCall,
+  type RunTrajectoryExportToolResult,
+} from '../observability/run-trajectory-export.js';
+import type { RunStore } from '../observability/run-store.js';
+import { getLessonCandidateQueue } from './lesson-candidate-queue.js';
+import type { LessonCategory } from './lessons-tracker.js';
+import { parseSkillFile, validateSkill } from '../skills/parser.js';
+import { logger } from '../utils/logger.js';
+
+export const LEARNING_RETROSPECTIVE_SCHEMA_VERSION = 1;
+export const LEARNING_PATTERN_LIBRARY_SCHEMA_VERSION = 1;
+export const LEARNING_SKILL_USAGE_SCHEMA_VERSION = 1;
+export const LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
+
+export const LEARNING_AGENT_SYSTEM_PROMPT = `Tu es le Learning Agent de Code Buddy. Ton rôle unique est d'analyser les trajectoires d'exécution des autres agents après chaque tâche complexe ou longue, d'en extraire les leçons, et de créer ou d'améliorer des skills réutilisables.
+Tu as accès à :
+
+Le plan initial de la tâche
+L'historique complet des pensées, décisions et outils appelés
+Les résultats obtenus et les erreurs rencontrées
+La bibliothèque existante de skills
+
+Ta mission en 4 étapes :
+
+Analyse critique : Identifie ce qui a bien fonctionné, ce qui a été redondant, inefficace ou source d'erreur.
+Pattern recognition : Repère les séquences d'actions répétitives qui méritent d'être transformées en un seul skill.
+Création / Amélioration : Génère un nouveau skill ou une version améliorée d'un skill existant. Chaque skill doit être précis, robuste, avec des cas d'usage clairs et des garde-fous.
+Documentation : Fournis un nom clair, une description, les paramètres d'entrée, et un exemple d'utilisation.
+
+Sois extrêmement rigoureux. Ne crée pas de skill pour des tâches trop simples ou trop spécifiques. Priorise les patterns qui reviennent souvent dans le développement logiciel. Chaque skill créé doit faire gagner un temps significatif à l'agent principal lors de futures tâches similaires.
+Ton output doit être structuré et directement utilisable par le système pour enregistrer le nouveau skill.`;
+
+export const LEARNING_AGENT_OUTPUT_SCHEMA = {
+  type: 'object',
+  required: ['analysis', 'patterns', 'lessonCandidates', 'skillCandidates'],
+  properties: {
+    analysis: {
+      type: 'object',
+      required: ['workedWell', 'frictions', 'redundancies'],
+      properties: {
+        workedWell: { type: 'array', items: { type: 'string' } },
+        frictions: { type: 'array', items: { type: 'string' } },
+        redundancies: { type: 'array', items: { type: 'string' } },
+      },
+    },
+    patterns: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['toolSequence', 'evidence', 'confidence'],
+        properties: {
+          toolSequence: { type: 'array', items: { type: 'string' } },
+          evidence: { type: 'string' },
+          confidence: { enum: ['low', 'medium', 'high'] },
+        },
+      },
+    },
+    lessonCandidates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['category', 'content'],
+        properties: {
+          category: { enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'] },
+          content: { type: 'string' },
+          context: { type: 'string' },
+        },
+      },
+    },
+    skillCandidates: {
+      type: 'array',
+      items: {
+        type: 'object',
+        required: ['name', 'description', 'inputs', 'procedure', 'guardrails', 'example'],
+        properties: {
+          name: { type: 'string' },
+          description: { type: 'string' },
+          inputs: { type: 'array', items: { type: 'string' } },
+          procedure: { type: 'array', items: { type: 'string' } },
+          guardrails: { type: 'array', items: { type: 'string' } },
+          example: { type: 'string' },
+        },
+      },
+    },
+  },
+} as const;
+
+type PatternStatus = 'observed' | 'reinforced' | 'deprecated';
+
+export interface LearningToolStat {
+  averageDurationMs?: number;
+  failureCount: number;
+  successCount: number;
+  toolName: string;
+  totalDurationMs: number;
+  useCount: number;
+}
+
+export interface LearningFrictionPoint {
+  detail: string;
+  evidence: string;
+  severity: 'low' | 'medium' | 'high';
+  toolName?: string;
+}
+
+export interface LearningPattern {
+  confidence: 'low' | 'medium' | 'high';
+  detail: string;
+  evidence: string;
+  toolSequence: string[];
+}
+
+export interface LearningLessonCandidate {
+  category: LessonCategory;
+  content: string;
+  context?: string;
+}
+
+export interface LearningSkillCandidate {
+  eligible: boolean;
+  reason: string;
+  reviewManifestPath?: string;
+  skillName: string;
+  skillPath: string;
+  toolSequence: string[];
+  title: string;
+}
+
+export interface LearningRetrospective {
+  schemaVersion: typeof LEARNING_RETROSPECTIVE_SCHEMA_VERSION;
+  generatedAt: string;
+  kind: 'learning_retrospective';
+  run: {
+    artifactCount: number;
+    durationMs?: number;
+    objective: string;
+    runId: string;
+    status: RunTrajectoryExport['run']['status'];
+    toolCallCount: number;
+  };
+  complexity: {
+    eventCount: number;
+    isComplex: boolean;
+    reasons: string[];
+  };
+  toolSequence: string[];
+  toolStats: LearningToolStat[];
+  frictionPoints: LearningFrictionPoint[];
+  effectivePatterns: LearningPattern[];
+  redundantPatterns: LearningPattern[];
+  lessonCandidates: LearningLessonCandidate[];
+  skillCandidates: LearningSkillCandidate[];
+  summary: string;
+}
+
+export interface LearningPatternRecord {
+  key: string;
+  candidateSkillName?: string;
+  candidateSkillPath?: string;
+  failureCount: number;
+  firstSeenAt: string;
+  lastSeenAt: string;
+  lastSeenRunId: string;
+  observationCount: number;
+  status: PatternStatus;
+  successCount: number;
+  toolSequence: string[];
+}
+
+export interface LearningPatternLibrary {
+  schemaVersion: typeof LEARNING_PATTERN_LIBRARY_SCHEMA_VERSION;
+  updatedAt: string;
+  patterns: LearningPatternRecord[];
+}
+
+export interface LearningSkillUsageRecord {
+  averageDurationMs?: number;
+  deprecated: boolean;
+  failureCount: number;
+  invocationCount: number;
+  lastDurationMs?: number;
+  lastError?: string;
+  lastRunId?: string;
+  lastUsedAt: string;
+  reinforced: boolean;
+  skillName: string;
+  successCount: number;
+}
+
+export interface LearningSkillUsageFile {
+  schemaVersion: typeof LEARNING_SKILL_USAGE_SCHEMA_VERSION;
+  updatedAt: string;
+  skills: LearningSkillUsageRecord[];
+}
+
+export interface LearningSkillUsageInput {
+  durationMs?: number;
+  error?: string;
+  runId?: string;
+  success: boolean;
+  usedAt?: number | string;
+}
+
+export interface RunLearningRetrospectiveOptions {
+  force?: boolean;
+  materializeSkillCandidates?: boolean;
+  proposeLessonCandidates?: boolean;
+  saveArtifacts?: boolean;
+  workDir?: string;
+}
+
+export interface LearningAgentRunResult {
+  lessonCandidateCount: number;
+  patternLibraryPath?: string;
+  retrospective?: LearningRetrospective;
+  retrospectiveArtifact?: string;
+  skillCandidateCount: number;
+  skillUsageCount: number;
+  skipped: boolean;
+  skippedReason?: string;
+}
+
+interface LearningSkillCandidateReviewManifest {
+  approvalRequired: true;
+  candidateId: string;
+  generatedAt: string;
+  schemaVersion: typeof LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION;
+  skillName: string;
+  sourceRunId: string;
+  status: 'awaiting_human_approval' | 'not_eligible';
+  toolSequence: string[];
+}
+
+const LEARNING_DIR = path.join('.codebuddy', 'learning');
+const SKILL_CANDIDATE_ROOT = path.join('.codebuddy', 'skill-candidates', 'learning');
+const MIN_COMPLEX_TOOL_CALLS = 3;
+const MIN_PATTERN_SEQUENCE_LENGTH = 3;
+
+export function buildLearningRetrospective(
+  runId: string,
+  options: { store?: RunStore; workDir?: string } = {},
+): LearningRetrospective | null {
+  const exported = buildRunTrajectoryExport(runId, {
+    includeArtifactContent: false,
+    store: options.store,
+  });
+  if (!exported) return null;
+
+  const toolSequence = exported.toolCalls.map((call) => call.toolName);
+  const toolStats = buildToolStats(exported.toolCalls, exported.toolResults);
+  const complexity = classifyComplexity(exported);
+  const frictionPoints = buildFrictionPoints(exported);
+  const redundantPatterns = buildRedundantPatterns(toolSequence);
+  const effectivePatterns = buildEffectivePatterns(exported, toolSequence);
+  const lessonCandidates = buildLessonCandidates(exported, frictionPoints, effectivePatterns, redundantPatterns);
+  const skillCandidates = buildSkillCandidates(exported, effectivePatterns);
+
+  return {
+    schemaVersion: LEARNING_RETROSPECTIVE_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    kind: 'learning_retrospective',
+    run: {
+      artifactCount: exported.run.artifactCount,
+      durationMs: exported.run.durationMs,
+      objective: exported.run.objective,
+      runId: exported.run.runId,
+      status: exported.run.status,
+      toolCallCount: exported.toolCalls.length,
+    },
+    complexity,
+    toolSequence,
+    toolStats,
+    frictionPoints,
+    effectivePatterns,
+    redundantPatterns,
+    lessonCandidates,
+    skillCandidates,
+    summary: summarizeRetrospective(exported, frictionPoints, effectivePatterns, redundantPatterns),
+  };
+}
+
+export async function runLearningRetrospective(
+  store: RunStore,
+  runId: string,
+  options: RunLearningRetrospectiveOptions = {},
+): Promise<LearningAgentRunResult> {
+  const workDir = path.resolve(options.workDir ?? process.cwd());
+  const retrospective = buildLearningRetrospective(runId, { store, workDir });
+  if (!retrospective) {
+    return { skipped: true, skippedReason: `Run not found: ${runId}`, lessonCandidateCount: 0, skillCandidateCount: 0, skillUsageCount: 0 };
+  }
+
+  if (!options.force && !isLearningAgentEnabled()) {
+    return { skipped: true, skippedReason: 'Learning Agent disabled', lessonCandidateCount: 0, skillCandidateCount: 0, skillUsageCount: 0 };
+  }
+
+  if (!options.force && !retrospective.complexity.isComplex) {
+    return { skipped: true, skippedReason: 'Run below retrospective complexity threshold', lessonCandidateCount: 0, skillCandidateCount: 0, skillUsageCount: 0 };
+  }
+
+  const saveArtifacts = options.saveArtifacts !== false;
+  const proposeLessons = options.proposeLessonCandidates !== false;
+  const materializeSkills = options.materializeSkillCandidates !== false;
+
+  const patternLibrary = updateLearningPatternLibrary(retrospective, workDir);
+  const skillUsageCount = recordSelectedSkillUsage(store, runId, workDir, retrospective);
+  const patternLibraryPath = path.join(workDir, LEARNING_DIR, 'pattern-library.json');
+  const materializedCandidates = materializeSkills
+    ? materializeLearningSkillCandidates(retrospective, workDir)
+    : [];
+
+  let lessonCandidateCount = 0;
+  if (proposeLessons) {
+    lessonCandidateCount = proposeRetrospectiveLessons(retrospective, workDir);
+  }
+
+  let retrospectiveArtifact: string | undefined;
+  if (saveArtifacts) {
+    const jsonName = 'learning-retrospective.json';
+    const markdownName = 'learning-retrospective.md';
+    store.saveArtifact(runId, jsonName, `${JSON.stringify({
+      ...retrospective,
+      patternLibrary: {
+        path: toPosix(path.relative(workDir, patternLibraryPath)),
+        reinforcedCount: patternLibrary.patterns.filter((pattern) => pattern.status === 'reinforced').length,
+        deprecatedCount: patternLibrary.patterns.filter((pattern) => pattern.status === 'deprecated').length,
+      },
+      materializedSkillCandidates: materializedCandidates,
+      skillUsageCount,
+    }, null, 2)}\n`);
+    store.saveArtifact(runId, markdownName, `${renderLearningRetrospective(retrospective)}\n`);
+    retrospectiveArtifact = jsonName;
+  }
+
+  return {
+    retrospective,
+    retrospectiveArtifact,
+    patternLibraryPath,
+    skipped: false,
+    lessonCandidateCount,
+    skillCandidateCount: materializedCandidates.length,
+    skillUsageCount,
+  };
+}
+
+export function renderLearningRetrospective(retrospective: LearningRetrospective): string {
+  const lines = [
+    'Learning Agent retrospective',
+    `Run: ${retrospective.run.runId} (${retrospective.run.status})`,
+    `Objective: ${retrospective.run.objective}`,
+    `Complexity: ${retrospective.complexity.isComplex ? 'complex' : 'simple'} (${retrospective.complexity.reasons.join(', ') || 'no signal'})`,
+    `Tool calls: ${retrospective.toolSequence.length}`,
+    '',
+    'Summary:',
+    retrospective.summary,
+  ];
+
+  if (retrospective.toolSequence.length > 0) {
+    lines.push('', 'Tool sequence:', `- ${retrospective.toolSequence.join(' -> ')}`);
+  }
+
+  if (retrospective.frictionPoints.length > 0) {
+    lines.push('', 'Friction:');
+    for (const point of retrospective.frictionPoints) {
+      lines.push(`- [${point.severity}] ${point.detail} (${point.evidence})`);
+    }
+  }
+
+  if (retrospective.effectivePatterns.length > 0) {
+    lines.push('', 'Effective patterns:');
+    for (const pattern of retrospective.effectivePatterns) {
+      lines.push(`- ${pattern.detail}: ${pattern.toolSequence.join(' -> ')}`);
+    }
+  }
+
+  if (retrospective.redundantPatterns.length > 0) {
+    lines.push('', 'Redundancy:');
+    for (const pattern of retrospective.redundantPatterns) {
+      lines.push(`- ${pattern.detail}: ${pattern.toolSequence.join(' -> ')}`);
+    }
+  }
+
+  if (retrospective.lessonCandidates.length > 0) {
+    lines.push('', 'Lesson candidates:');
+    for (const lesson of retrospective.lessonCandidates) {
+      lines.push(`- ${lesson.category}: ${lesson.content}`);
+    }
+  }
+
+  if (retrospective.skillCandidates.length > 0) {
+    lines.push('', 'Skill candidates:');
+    for (const candidate of retrospective.skillCandidates) {
+      lines.push(`- ${candidate.skillName}: ${candidate.reason}`);
+      lines.push(`  Path: ${candidate.skillPath}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+export function recordLearningSkillUsage(
+  skillName: string,
+  record: LearningSkillUsageInput,
+  workDir: string = process.cwd(),
+): LearningSkillUsageRecord {
+  const safeName = normalizeSkillName(skillName);
+  const root = path.resolve(workDir);
+  const filePath = path.join(root, LEARNING_DIR, 'skill-usage.json');
+  const file = readSkillUsageFile(filePath);
+  const existing = file.skills.find((item) => item.skillName === safeName);
+  const now = normalizeTimestamp(record.usedAt);
+  const invocationCount = (existing?.invocationCount ?? 0) + 1;
+  const previousAverage = existing?.averageDurationMs ?? 0;
+  const averageDurationMs = typeof record.durationMs === 'number'
+    ? ((previousAverage * (invocationCount - 1)) + record.durationMs) / invocationCount
+    : existing?.averageDurationMs;
+  const successCount = (existing?.successCount ?? 0) + (record.success ? 1 : 0);
+  const failureCount = (existing?.failureCount ?? 0) + (record.success ? 0 : 1);
+  const successRate = invocationCount === 0 ? 0 : successCount / invocationCount;
+  const failureRate = invocationCount === 0 ? 0 : failureCount / invocationCount;
+
+  const updated: LearningSkillUsageRecord = {
+    averageDurationMs,
+    deprecated: invocationCount >= 3 && failureRate >= 0.6,
+    failureCount,
+    invocationCount,
+    lastDurationMs: record.durationMs,
+    lastError: record.success ? undefined : record.error,
+    lastRunId: record.runId,
+    lastUsedAt: now,
+    reinforced: invocationCount >= 3 && successRate >= 0.8,
+    skillName: safeName,
+    successCount,
+  };
+
+  if (existing) {
+    Object.assign(existing, updated);
+  } else {
+    file.skills.push(updated);
+  }
+  file.updatedAt = now;
+  writeJsonFile(filePath, file);
+  return updated;
+}
+
+export function listLearningSkillUsage(workDir: string = process.cwd()): LearningSkillUsageRecord[] {
+  const filePath = path.join(path.resolve(workDir), LEARNING_DIR, 'skill-usage.json');
+  return readSkillUsageFile(filePath).skills
+    .slice()
+    .sort((left, right) =>
+      right.invocationCount - left.invocationCount ||
+      right.lastUsedAt.localeCompare(left.lastUsedAt),
+    );
+}
+
+export function isLearningAgentEnabled(): boolean {
+  const value = (process.env.CODEBUDDY_LEARNING_AGENT ?? '').trim().toLowerCase();
+  if (['0', 'false', 'off', 'disabled', 'no'].includes(value)) return false;
+  if (process.env.NODE_ENV === 'test' && !['1', 'true', 'on', 'force'].includes(value)) return false;
+  return true;
+}
+
+function classifyComplexity(exported: RunTrajectoryExport): LearningRetrospective['complexity'] {
+  const reasons: string[] = [];
+  if (exported.toolCalls.length >= MIN_COMPLEX_TOOL_CALLS) {
+    reasons.push(`${exported.toolCalls.length} tool calls`);
+  }
+  if (exported.toolResults.some((result) => result.success === false)) {
+    reasons.push('tool failure observed');
+  }
+  if ((exported.run.durationMs ?? 0) >= 120_000) {
+    reasons.push('long-running task');
+  }
+  if (exported.run.artifactCount > 0) {
+    reasons.push(`${exported.run.artifactCount} artifact(s)`);
+  }
+  if (exported.run.status === 'failed') {
+    reasons.push('failed run');
+  }
+  return {
+    eventCount: exported.events.length,
+    isComplex: reasons.length > 0,
+    reasons,
+  };
+}
+
+function buildToolStats(
+  calls: RunTrajectoryExportToolCall[],
+  results: RunTrajectoryExportToolResult[],
+): LearningToolStat[] {
+  const stats = new Map<string, LearningToolStat>();
+  for (const call of calls) {
+    const existing = stats.get(call.toolName) ?? {
+      failureCount: 0,
+      successCount: 0,
+      toolName: call.toolName,
+      totalDurationMs: 0,
+      useCount: 0,
+    };
+    existing.useCount += 1;
+    stats.set(call.toolName, existing);
+  }
+  for (const result of results) {
+    const existing = stats.get(result.toolName) ?? {
+      failureCount: 0,
+      successCount: 0,
+      toolName: result.toolName,
+      totalDurationMs: 0,
+      useCount: 0,
+    };
+    if (result.success === false) {
+      existing.failureCount += 1;
+    } else if (result.success === true) {
+      existing.successCount += 1;
+    }
+    if (typeof result.durationMs === 'number') {
+      existing.totalDurationMs += result.durationMs;
+    }
+    stats.set(result.toolName, existing);
+  }
+  return [...stats.values()]
+    .map((stat) => ({
+      ...stat,
+      averageDurationMs: stat.useCount > 0 && stat.totalDurationMs > 0
+        ? Math.round(stat.totalDurationMs / stat.useCount)
+        : undefined,
+    }))
+    .sort((left, right) => right.useCount - left.useCount || left.toolName.localeCompare(right.toolName));
+}
+
+function buildFrictionPoints(exported: RunTrajectoryExport): LearningFrictionPoint[] {
+  const points: LearningFrictionPoint[] = [];
+  for (const result of exported.toolResults) {
+    if (result.success === false) {
+      points.push({
+        detail: `${result.toolName} failed and required attention`,
+        evidence: result.error !== undefined ? formatInline(result.error) : `tool result #${result.sequence}`,
+        severity: 'high',
+        toolName: result.toolName,
+      });
+    }
+    if (typeof result.durationMs === 'number' && result.durationMs >= 15_000) {
+      points.push({
+        detail: `${result.toolName} was slow`,
+        evidence: `${result.durationMs}ms`,
+        severity: 'medium',
+        toolName: result.toolName,
+      });
+    }
+  }
+
+  const missingResults = Math.max(0, exported.toolCalls.length - exported.toolResults.length);
+  if (missingResults > 0) {
+    points.push({
+      detail: 'Some tool calls did not have matching recorded results',
+      evidence: `${missingResults} missing result(s)`,
+      severity: 'medium',
+    });
+  }
+
+  return points;
+}
+
+function buildEffectivePatterns(exported: RunTrajectoryExport, sequence: string[]): LearningPattern[] {
+  const patterns: LearningPattern[] = [];
+  const successfulTools = new Set(
+    exported.toolResults
+      .filter((result) => result.success !== false)
+      .map((result) => result.toolName),
+  );
+
+  const topWindow = firstStableWindow(sequence);
+  if (topWindow.length >= MIN_PATTERN_SEQUENCE_LENGTH) {
+    patterns.push({
+      confidence: successfulTools.size >= Math.max(1, Math.floor(topWindow.length * 0.6)) ? 'medium' : 'low',
+      detail: 'Reusable tool choreography observed',
+      evidence: `run ${exported.run.runId}`,
+      toolSequence: topWindow,
+    });
+  }
+
+  if (sequence.includes('search') && sequence.includes('view_file')) {
+    patterns.push({
+      confidence: 'high',
+      detail: 'Repo investigation used search before targeted file reads',
+      evidence: 'search and view_file both appeared in the trajectory',
+      toolSequence: ['search', 'view_file'],
+    });
+  }
+
+  const testCall = exported.toolCalls.find((call) =>
+    call.toolName === 'bash' && typeof call.command === 'string' && /\b(test|vitest|jest|typecheck|lint|build)\b/i.test(call.command),
+  );
+  if (testCall) {
+    patterns.push({
+      confidence: 'high',
+      detail: 'Verification command was part of the trajectory',
+      evidence: testCall.command ?? `tool call #${testCall.sequence}`,
+      toolSequence: ['bash'],
+    });
+  }
+
+  return dedupePatterns(patterns);
+}
+
+function buildRedundantPatterns(sequence: string[]): LearningPattern[] {
+  const patterns: LearningPattern[] = [];
+  for (let index = 1; index < sequence.length; index++) {
+    if (sequence[index] === sequence[index - 1]) {
+      patterns.push({
+        confidence: 'medium',
+        detail: `Consecutive ${sequence[index]} calls may be collapsible`,
+        evidence: `positions ${index} and ${index + 1}`,
+        toolSequence: [sequence[index - 1]!, sequence[index]!],
+      });
+    }
+  }
+
+  const counts = new Map<string, number>();
+  for (const name of sequence) counts.set(name, (counts.get(name) ?? 0) + 1);
+  for (const [name, count] of counts) {
+    if (count >= 4) {
+      patterns.push({
+        confidence: 'low',
+        detail: `${name} appeared ${count} times; check whether a skill could batch the repeated setup`,
+        evidence: `${count} uses in one run`,
+        toolSequence: [name],
+      });
+    }
+  }
+
+  return dedupePatterns(patterns);
+}
+
+function buildLessonCandidates(
+  exported: RunTrajectoryExport,
+  frictionPoints: LearningFrictionPoint[],
+  effectivePatterns: LearningPattern[],
+  redundantPatterns: LearningPattern[],
+): LearningLessonCandidate[] {
+  const lessons: LearningLessonCandidate[] = [];
+  if (effectivePatterns.some((pattern) => pattern.detail.includes('search before targeted file reads'))) {
+    lessons.push({
+      category: 'PATTERN',
+      content: 'For repository work, start with search and then read only the targeted files before editing.',
+      context: `Derived from run ${exported.run.runId}`,
+    });
+  }
+
+  if (effectivePatterns.some((pattern) => pattern.detail.includes('Verification command'))) {
+    lessons.push({
+      category: 'RULE',
+      content: 'Do not mark a coding task complete until a relevant real verification command has run.',
+      context: `Derived from run ${exported.run.runId}`,
+    });
+  }
+
+  if (frictionPoints.some((point) => point.severity === 'high')) {
+    lessons.push({
+      category: 'PATTERN',
+      content: 'When a tool fails, preserve the exact error, adjust the smallest input, and retry with the same real path instead of switching to a mock path.',
+      context: `Derived from run ${exported.run.runId}`,
+    });
+  }
+
+  if (redundantPatterns.length > 0) {
+    lessons.push({
+      category: 'INSIGHT',
+      content: 'Repeated identical tool calls in one trajectory are a signal to batch the setup or promote the sequence into a reviewed skill.',
+      context: `Derived from run ${exported.run.runId}`,
+    });
+  }
+
+  return dedupeLessons(lessons).slice(0, 4);
+}
+
+function buildSkillCandidates(
+  exported: RunTrajectoryExport,
+  effectivePatterns: LearningPattern[],
+): LearningSkillCandidate[] {
+  const candidates: LearningSkillCandidate[] = [];
+  for (const pattern of effectivePatterns) {
+    if (pattern.toolSequence.length < MIN_PATTERN_SEQUENCE_LENGTH) continue;
+    const skillName = `learned-${slugify(pattern.toolSequence.join('-'))}`;
+    const skillPath = toPosix(path.join(SKILL_CANDIDATE_ROOT, skillName, 'SKILL.md'));
+    const reviewManifestPath = toPosix(path.join(SKILL_CANDIDATE_ROOT, skillName, 'candidate-review.json'));
+    candidates.push({
+      eligible: true,
+      reason: `Observed in ${exported.run.runId}: ${pattern.detail}.`,
+      reviewManifestPath,
+      skillName,
+      skillPath,
+      toolSequence: pattern.toolSequence,
+      title: `${pattern.toolSequence.join(' -> ')} workflow candidate`,
+    });
+  }
+  return candidates.slice(0, 2);
+}
+
+function updateLearningPatternLibrary(
+  retrospective: LearningRetrospective,
+  workDir: string,
+): LearningPatternLibrary {
+  const filePath = path.join(workDir, LEARNING_DIR, 'pattern-library.json');
+  const library = readPatternLibrary(filePath);
+  const now = new Date().toISOString();
+
+  for (const candidate of retrospective.skillCandidates) {
+    const key = patternKey(candidate.toolSequence);
+    const existing = library.patterns.find((pattern) => pattern.key === key);
+    if (existing) {
+      existing.observationCount += 1;
+      existing.lastSeenAt = now;
+      existing.lastSeenRunId = retrospective.run.runId;
+      existing.successCount += retrospective.run.status === 'completed' ? 1 : 0;
+      existing.failureCount += retrospective.run.status === 'failed' ? 1 : 0;
+      existing.status = classifyPatternStatus(existing);
+      existing.candidateSkillName = candidate.skillName;
+      existing.candidateSkillPath = candidate.skillPath;
+    } else {
+      library.patterns.push({
+        key,
+        candidateSkillName: candidate.skillName,
+        candidateSkillPath: candidate.skillPath,
+        failureCount: retrospective.run.status === 'failed' ? 1 : 0,
+        firstSeenAt: now,
+        lastSeenAt: now,
+        lastSeenRunId: retrospective.run.runId,
+        observationCount: 1,
+        status: 'observed',
+        successCount: retrospective.run.status === 'completed' ? 1 : 0,
+        toolSequence: candidate.toolSequence,
+      });
+    }
+  }
+
+  for (const pattern of library.patterns) {
+    pattern.status = classifyPatternStatus(pattern);
+  }
+  library.updatedAt = now;
+  writeJsonFile(filePath, library);
+  return library;
+}
+
+function materializeLearningSkillCandidates(
+  retrospective: LearningRetrospective,
+  workDir: string,
+): LearningSkillCandidate[] {
+  const materialized: LearningSkillCandidate[] = [];
+  for (const candidate of retrospective.skillCandidates) {
+    if (!candidate.eligible) continue;
+
+    try {
+      const skillMarkdown = renderLearningSkillCandidateMarkdown(retrospective, candidate);
+      const absoluteSkillPath = resolveInsideRoot(workDir, candidate.skillPath);
+      const absoluteReviewPath = resolveInsideRoot(
+        workDir,
+        candidate.reviewManifestPath ?? toPosix(path.join(SKILL_CANDIDATE_ROOT, candidate.skillName, 'candidate-review.json')),
+      );
+      const parsed = parseSkillFile(skillMarkdown, candidate.skillPath, 'workspace');
+      const validation = validateSkill(parsed);
+      if (!validation.valid) {
+        logger.debug('Learning Agent: generated skill candidate failed validation', {
+          skillName: candidate.skillName,
+          errors: validation.errors,
+        });
+        continue;
+      }
+
+      const manifest: LearningSkillCandidateReviewManifest = {
+        approvalRequired: true,
+        candidateId: `learning-skill-${stableHash(`${retrospective.run.runId}|${candidate.skillName}`)}`,
+        generatedAt: retrospective.generatedAt,
+        schemaVersion: LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
+        skillName: candidate.skillName,
+        sourceRunId: retrospective.run.runId,
+        status: 'awaiting_human_approval',
+        toolSequence: candidate.toolSequence,
+      };
+
+      fs.mkdirSync(path.dirname(absoluteSkillPath), { recursive: true });
+      fs.mkdirSync(path.dirname(absoluteReviewPath), { recursive: true });
+      fs.writeFileSync(absoluteSkillPath, `${skillMarkdown.trimEnd()}\n`, 'utf-8');
+      fs.writeFileSync(absoluteReviewPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
+      materialized.push(candidate);
+    } catch (error) {
+      logger.debug('Learning Agent: failed to materialize skill candidate', {
+        skillName: candidate.skillName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return materialized;
+}
+
+function proposeRetrospectiveLessons(retrospective: LearningRetrospective, workDir: string): number {
+  if (retrospective.lessonCandidates.length === 0) return 0;
+  const queue = getLessonCandidateQueue(workDir);
+  let count = 0;
+  for (const lesson of retrospective.lessonCandidates) {
+    try {
+      const { deduped } = queue.propose({
+        category: lesson.category,
+        content: lesson.content,
+        context: lesson.context,
+        source: 'self_observed',
+        provenance: {
+          runId: retrospective.run.runId,
+          note: 'Learning Agent retrospective',
+        },
+      });
+      if (!deduped) count += 1;
+    } catch (error) {
+      logger.debug('Learning Agent: failed to propose lesson candidate', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+  }
+  return count;
+}
+
+function recordSelectedSkillUsage(
+  store: RunStore,
+  runId: string,
+  workDir: string,
+  retrospective: LearningRetrospective,
+): number {
+  const selectedSkills = new Set<string>();
+  for (const event of store.getEvents(runId)) {
+    if (event.type !== 'skill_selected') continue;
+    const skillName = typeof event.data.skillName === 'string' ? event.data.skillName.trim() : '';
+    if (skillName) selectedSkills.add(skillName);
+  }
+
+  for (const skillName of selectedSkills) {
+    recordLearningSkillUsage(skillName, {
+      durationMs: retrospective.run.durationMs,
+      error: retrospective.run.status === 'failed' ? 'Run failed after skill selection' : undefined,
+      runId,
+      success: retrospective.run.status === 'completed',
+      usedAt: retrospective.generatedAt,
+    }, workDir);
+  }
+
+  return selectedSkills.size;
+}
+
+function renderLearningSkillCandidateMarkdown(
+  retrospective: LearningRetrospective,
+  candidate: LearningSkillCandidate,
+): string {
+  return [
+    '---',
+    `name: ${candidate.skillName}`,
+    'version: 0.1.0',
+    `description: Review-gated workflow candidate learned from run ${retrospective.run.runId}.`,
+    'tags: [learning-agent, generated-candidate, review-required]',
+    '---',
+    '',
+    `# ${candidate.title}`,
+    '',
+    'Status: awaiting human approval',
+    `Source run: ${retrospective.run.runId}`,
+    `Reason: ${candidate.reason}`,
+    '',
+    '## Use When',
+    `- A future task needs the same tool sequence: ${candidate.toolSequence.join(' -> ')}.`,
+    '- The operator has reviewed this candidate and confirmed the sequence is broadly reusable.',
+    '',
+    '## Do Not Use When',
+    '- The task needs a different safety boundary, provider, or workspace.',
+    '- Any step would bypass approvals, secrets policy, or real verification.',
+    '',
+    '## Procedure',
+    ...candidate.toolSequence.map((toolName, index) => `${index + 1}. Use ${toolName} for the corresponding verified step.`),
+    '',
+    '## Evidence',
+    `- Retrospective summary: ${retrospective.summary}`,
+    `- Complexity signals: ${retrospective.complexity.reasons.join(', ') || 'none'}`,
+    '',
+    '## Review Notes',
+    '- Edit this candidate before installation; do not install blindly from one trajectory.',
+    '- If approved, copy or install it as a workspace skill and keep this source run link.',
+    '',
+  ].join('\n');
+}
+
+function summarizeRetrospective(
+  exported: RunTrajectoryExport,
+  frictionPoints: LearningFrictionPoint[],
+  effectivePatterns: LearningPattern[],
+  redundantPatterns: LearningPattern[],
+): string {
+  const parts = [
+    `${exported.toolCalls.length} tool call(s) were recorded`,
+    `${frictionPoints.length} friction point(s)`,
+    `${effectivePatterns.length} reusable pattern(s)`,
+    `${redundantPatterns.length} redundancy signal(s)`,
+  ];
+  return parts.join(', ') + '.';
+}
+
+function firstStableWindow(sequence: string[]): string[] {
+  const window = sequence.filter((name) => name !== 'unknown_tool').slice(0, 5);
+  return [...new Set(window)].length >= MIN_PATTERN_SEQUENCE_LENGTH ? window : [];
+}
+
+function dedupePatterns(patterns: LearningPattern[]): LearningPattern[] {
+  const seen = new Set<string>();
+  return patterns.filter((pattern) => {
+    const key = `${pattern.detail}|${pattern.toolSequence.join('>')}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function dedupeLessons(lessons: LearningLessonCandidate[]): LearningLessonCandidate[] {
+  const seen = new Set<string>();
+  return lessons.filter((lesson) => {
+    const key = `${lesson.category}|${lesson.content.toLowerCase()}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+function classifyPatternStatus(record: LearningPatternRecord): PatternStatus {
+  const successRate = record.observationCount === 0 ? 0 : record.successCount / record.observationCount;
+  const failureRate = record.observationCount === 0 ? 0 : record.failureCount / record.observationCount;
+  if (record.observationCount >= 2 && failureRate >= 0.6) return 'deprecated';
+  if (record.observationCount >= 2 && successRate >= 0.75) return 'reinforced';
+  return 'observed';
+}
+
+function readPatternLibrary(filePath: string): LearningPatternLibrary {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as LearningPatternLibrary;
+    if (parsed.schemaVersion === LEARNING_PATTERN_LIBRARY_SCHEMA_VERSION && Array.isArray(parsed.patterns)) {
+      return parsed;
+    }
+  } catch {
+    // Fall through to a fresh file.
+  }
+  return {
+    schemaVersion: LEARNING_PATTERN_LIBRARY_SCHEMA_VERSION,
+    updatedAt: new Date(0).toISOString(),
+    patterns: [],
+  };
+}
+
+function readSkillUsageFile(filePath: string): LearningSkillUsageFile {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as LearningSkillUsageFile;
+    if (parsed.schemaVersion === LEARNING_SKILL_USAGE_SCHEMA_VERSION && Array.isArray(parsed.skills)) {
+      return parsed;
+    }
+  } catch {
+    // Fall through to a fresh file.
+  }
+  return {
+    schemaVersion: LEARNING_SKILL_USAGE_SCHEMA_VERSION,
+    updatedAt: new Date(0).toISOString(),
+    skills: [],
+  };
+}
+
+function writeJsonFile(filePath: string, value: unknown): void {
+  fs.mkdirSync(path.dirname(filePath), { recursive: true });
+  fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+}
+
+function patternKey(sequence: string[]): string {
+  return createHash('sha256').update(sequence.join('\0')).digest('hex').slice(0, 16);
+}
+
+function stableHash(value: string): string {
+  return createHash('sha256').update(value).digest('hex').slice(0, 12);
+}
+
+function normalizeSkillName(value: string): string {
+  return slugify(value) || 'unnamed-skill';
+}
+
+function slugify(value: string): string {
+  return value
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'workflow';
+}
+
+function normalizeTimestamp(value: number | string | undefined): string {
+  if (typeof value === 'number' && Number.isFinite(value)) return new Date(value).toISOString();
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return new Date().toISOString();
+}
+
+function resolveInsideRoot(rootDir: string, relativePath: string): string {
+  const resolvedRoot = path.resolve(rootDir);
+  const resolvedPath = path.resolve(resolvedRoot, relativePath.replace(/\\/g, '/'));
+  const normalizedRoot = normalizeForCompare(resolvedRoot);
+  const normalizedPath = normalizeForCompare(resolvedPath);
+  if (normalizedPath !== normalizedRoot && !normalizedPath.startsWith(`${normalizedRoot}${path.sep}`)) {
+    throw new Error(`Learning Agent path escapes workspace: ${relativePath}`);
+  }
+  return resolvedPath;
+}
+
+function normalizeForCompare(value: string): string {
+  return process.platform === 'win32' ? value.toLowerCase() : value;
+}
+
+function toPosix(value: string): string {
+  return value.replace(/\\/g, '/');
+}
+
+function formatInline(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value);
+  return (text ?? '').replace(/\s+/g, ' ').slice(0, 160);
+}

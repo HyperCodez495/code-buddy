@@ -9,6 +9,7 @@
  *
  *   buddy skills list [--json] [--all]
  *   buddy skills usage [--json]
+ *   buddy skills learning-usage [--json]
  *   buddy skills enable <name>
  *   buddy skills disable <name>
  *
@@ -73,6 +74,35 @@ export function registerSkillsCommands(program: Command): void {
         const avg = u.averageDurationMs !== undefined ? `, avg ${Math.round(u.averageDurationMs)}ms` : '';
         console.log(`  ${skill.name}: ${u.invocationCount} run(s), ${u.successCount} ok / ${u.failureCount} fail${avg}`);
         if (u.lastError) console.log(`      last error: ${u.lastError}`);
+      }
+      console.log('');
+    });
+
+  skills
+    .command('learning-usage')
+    .description('Show Learning Agent skill outcome telemetry')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { listLearningSkillUsage } = await import('../../agent/learning-agent.js');
+      const summary = listLearningSkillUsage(process.cwd());
+
+      if (opts.json) {
+        console.log(JSON.stringify({ count: summary.length, skills: summary }, null, 2));
+        return;
+      }
+      if (summary.length === 0) {
+        console.log('No Learning Agent skill usage recorded yet.');
+        return;
+      }
+      console.log('\nLearning Agent skill usage:');
+      for (const skill of summary) {
+        const avg = skill.averageDurationMs !== undefined ? `, avg ${Math.round(skill.averageDurationMs)}ms` : '';
+        const flags = [
+          skill.reinforced ? 'reinforced' : '',
+          skill.deprecated ? 'deprecated' : '',
+        ].filter(Boolean);
+        console.log(`  ${skill.skillName}: ${skill.invocationCount} run(s), ${skill.successCount} ok / ${skill.failureCount} fail${avg}${flags.length ? ` [${flags.join(', ')}]` : ''}`);
+        if (skill.lastError) console.log(`      last error: ${skill.lastError}`);
       }
       console.log('');
     });

@@ -4,7 +4,7 @@ Date: 2026-05-23
 Upstream reference: <https://github.com/nousresearch/hermes-agent> (MIT, Nous Research)
 
 Latest official parity audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md).
-That audit inspected upstream `NousResearch/hermes-agent` at `61268ff7` and
+That audit was refreshed against upstream `NousResearch/hermes-agent` at `5f84c914` and
 concludes that Code Buddy has substantial Hermes-inspired coverage but **not**
 full feature-for-feature official Hermes parity.
 
@@ -39,7 +39,9 @@ Capabilities below follow the upstream README's headline table.
 | Persistent lessons | `src/agent/lessons-tracker.ts`, `src/tools/registry/lessons-tools.ts` (`lessons_add/_search/_list/_graph`) | done |
 | Lesson provenance ("created by" / "used by") | `src/agent/lesson-provenance.ts`; CLI `buddy lessons provenance/use` | done |
 | **Agent proposes, human approves (no silent write)** | `src/agent/lesson-candidate-queue.ts` + `lessons_propose` tool + `buddy lessons candidate propose/list/show/approve/discard` | **done (this change)** |
+| Retrospective / Learning Agent | `src/agent/learning-agent.ts`; auto hook from `RunStore.endRun`; CLI `buddy run retrospective <run-id>` | done — analyzes real redacted trajectories, writes retrospective artifacts, proposes lessons, materializes review-gated skill candidates |
 | Skill creation from experience | `src/agent/research-script-skill-candidate.ts`; `buddy tools skill-candidate` | done (review-gated) |
+| Skill outcome telemetry | `src/agent/learning-agent.ts`; `buddy skills learning-usage` | done — selected skills are recorded against completed/failed runs, reinforced/deprecated by local outcome rates |
 | Concept graph / Obsidian vault export | `LessonsTracker.buildConceptGraph` / `buddy lessons graph --vault` | done |
 | Cross-session recall | `RunStore.searchRuns`, `buildRunRecallPack`; `buddy run search / recall-pack` | done |
 | **Structured user model ("deepening model of who you are")** | `src/memory/user-model.ts` + `user_model_observe`/`user_model_recall` tools + `buddy user-model` | **done (this change)** — local file-backed, propose/review, privacy-scoped; LLM dialectic inference (Honcho-style) still future work |
@@ -60,6 +62,20 @@ The candidate queue is the new piece. Proposing a lesson — via the agent's
 runs `buddy lessons candidate approve <id> --by <reviewer>` (inline edits
 supported). This satisfies parity TODO item 7's "no silent procedural memory
 mutation" acceptance.
+
+The Retrospective/Learning Agent now closes the hot path after complex runs:
+`RunStore.endRun` invokes it automatically (disable with
+`CODEBUDDY_LEARNING_AGENT=off`, force manually with
+`buddy run retrospective <run-id> --force`). It consumes real run events through
+the redacted trajectory export, identifies tool order, failures, redundancy and
+repeatable sequences, then writes only artifacts/candidates. Skill installation
+and lesson persistence remain review-gated.
+
+Official Hermes' `agent/background_review.py` forks a background review agent
+after turns and may write memory/skills directly through a restricted tool
+whitelist. Code Buddy intentionally keeps the equivalent skill/lesson writes as
+reviewable candidates because this project treats procedural memory as a
+change-control surface.
 
 ### Toolsets and policy enforcement
 

@@ -13,6 +13,14 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'View file contents or directory listings',
     fleetSafe: true,
   },
+  {
+    name: 'read_file',
+    category: 'file_read',
+    keywords: ['read', 'view', 'show', 'display', 'content', 'file', 'hermes'],
+    priority: 10,
+    description: 'Read file contents with optional line range',
+    fleetSafe: true,
+  },
 
   // File writing
   {
@@ -23,11 +31,25 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Create new files with content'
   },
   {
+    name: 'write_file',
+    category: 'file_write',
+    keywords: ['write', 'create', 'new', 'file', 'content', 'hermes'],
+    priority: 8,
+    description: 'Create a new file with content',
+  },
+  {
     name: 'str_replace_editor',
     category: 'file_write',
     keywords: ['edit', 'modify', 'change', 'update', 'replace', 'fix', 'refactor', 'alter', 'patch'],
     priority: 10,
     description: 'Replace text in existing files'
+  },
+  {
+    name: 'patch',
+    category: 'file_write',
+    keywords: ['patch', 'edit', 'replace', 'modify', 'file', 'text', 'hermes'],
+    priority: 9,
+    description: 'Replace text in an existing file',
   },
   {
     name: 'edit_file',
@@ -59,6 +81,14 @@ export const TOOL_METADATA: ToolMetadata[] = [
     name: 'search',
     category: 'file_search',
     keywords: ['search', 'find', 'locate', 'grep', 'look for', 'where', 'which', 'query', 'pattern', 'regex'],
+    priority: 10,
+    description: 'Search for text content or files',
+    fleetSafe: true,
+  },
+  {
+    name: 'search_files',
+    category: 'file_search',
+    keywords: ['search', 'files', 'grep', 'find', 'pattern', 'text', 'hermes'],
     priority: 10,
     description: 'Search for text content or files',
     fleetSafe: true,
@@ -103,6 +133,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     keywords: ['bash', 'terminal', 'command', 'run', 'execute', 'shell', 'npm', 'yarn', 'pip', 'install', 'build', 'test', 'compile'],
     priority: 9,
     description: 'Execute bash commands'
+  },
+  {
+    name: 'terminal',
+    category: 'system',
+    keywords: ['terminal', 'bash', 'shell', 'command', 'execute', 'run', 'hermes'],
+    priority: 9,
+    description: 'Execute shell commands through the existing bash safety checks',
   },
   {
     name: 'process',
@@ -161,6 +198,14 @@ export const TOOL_METADATA: ToolMetadata[] = [
     keywords: ['fetch', 'url', 'website', 'page', 'download', 'http', 'https', 'link', 'read'],
     priority: 7,
     description: 'Fetch web page content',
+    fleetSafe: true,
+  },
+  {
+    name: 'web_extract',
+    category: 'web',
+    keywords: ['extract', 'fetch', 'url', 'website', 'page', 'http', 'https', 'read', 'hermes'],
+    priority: 7,
+    description: 'Fetch and extract web page content',
     fleetSafe: true,
   },
   {

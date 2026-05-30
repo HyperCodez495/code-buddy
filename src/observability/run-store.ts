@@ -35,7 +35,8 @@ export type RunEventType =
   | 'error'
   | 'metric'
   | 'lesson_added'
-  | 'lesson_candidate_proposed';
+  | 'lesson_candidate_proposed'
+  | 'skill_selected';
 
 export interface RunEvent {
   ts: number;
@@ -440,30 +441,43 @@ export class RunStore {
       // Ignore
     }
 
-    // Close write stream
+    const afterStreamClosed = (): void => {
+      executeHermesLifecycleHook(process.cwd(), 'after_run_complete', {
+        runId,
+        runStatus: status,
+        runObjective: summary?.objective,
+        runMetadata: summary?.metadata,
+        endedAt: summary?.endedAt,
+      }).catch((err) => logger.debug('RunStore: AfterRunComplete hook failed', {
+        runId,
+        error: err instanceof Error ? err.message : String(err),
+      }));
+
+      import('../agent/learning-agent.js')
+        .then(({ runLearningRetrospective }) => runLearningRetrospective(this, runId, {
+          workDir: process.cwd(),
+        }))
+        .catch((err) => logger.debug('RunStore: Learning Agent retrospective failed', {
+          runId,
+          error: err instanceof Error ? err.message : String(err),
+        }));
+
+      logger.debug(`RunStore: ended run ${runId} with status ${status}`);
+    };
+
+    // Close write stream before post-run analyzers read events.jsonl.
     const ws = this.handles.get(runId);
     if (ws) {
-      ws.end();
+      ws.end(afterStreamClosed);
       this.handles.delete(runId);
+    } else {
+      queueMicrotask(afterStreamClosed);
     }
 
     if (this._currentRunId === runId) {
       this._currentRunId = null;
       setActiveRunStore(null);
     }
-
-    executeHermesLifecycleHook(process.cwd(), 'after_run_complete', {
-      runId,
-      runStatus: status,
-      runObjective: summary?.objective,
-      runMetadata: summary?.metadata,
-      endedAt: summary?.endedAt,
-    }).catch((err) => logger.debug('RunStore: AfterRunComplete hook failed', {
-      runId,
-      error: err instanceof Error ? err.message : String(err),
-    }));
-
-    logger.debug(`RunStore: ended run ${runId} with status ${status}`);
   }
 
   // ──────────────────────────────────────────────────────────────

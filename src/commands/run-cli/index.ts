@@ -10,6 +10,7 @@
  *   buddy run lineage <runId>     → show the fork family tree of a run
  *   buddy run recall-pack <query> → build compact context from matching runs
  *   buddy run trajectory-export <runId> → export redacted run trajectory
+ *   buddy run retrospective <runId> → run the Learning Agent over a trajectory
  *   buddy run golden-evals [fixtureId] [runId] → list/evaluate golden workflows
  *   buddy run policy-evals [policyId] [runId] → list/evaluate trajectory policies
  *   buddy run mobile-snapshot <query> → build a review-only mobile handoff
@@ -161,6 +162,26 @@ export function registerRunCommands(program: Command): void {
         opts.includeArtifactContent === true,
         parseInt(opts.maxArtifactBytes, 10),
       );
+    });
+
+  // ── buddy run retrospective ──────────────────────────────────
+  run
+    .command('retrospective <runId>')
+    .description('Run the Learning Agent over a redacted trajectory and propose review-gated lessons/skills')
+    .option('--dry-run', 'inspect the retrospective without writing artifacts or candidates')
+    .option('--force', 'run even if the automatic complexity gate would skip it')
+    .option('--json', 'output JSON')
+    .action(async (runId: string, opts: {
+      dryRun?: boolean;
+      force?: boolean;
+      json?: boolean;
+    }) => {
+      const { showLearningRetrospective } = await import('../../observability/run-viewer.js');
+      await showLearningRetrospective(runId, {
+        dryRun: opts.dryRun === true,
+        force: opts.force === true,
+        json: opts.json === true,
+      });
     });
 
   // ── buddy run golden-evals ───────────────────────────────────

@@ -30,6 +30,14 @@ import type { ToolResult } from '../../types/index.js';
 // ============================================================================
 
 export const TOOL_ALIASES: Record<string, string> = {
+  // Hermes core names — direct compatibility with NousResearch/hermes-agent
+  terminal:     'bash',
+  read_file:    'view_file',
+  write_file:   'create_file',
+  patch:        'str_replace_editor',
+  search_files: 'search',
+  web_extract:  'web_fetch',
+
   // shell_* — subprocess execution
   shell_exec:    'bash',
   shell_git:     'git',

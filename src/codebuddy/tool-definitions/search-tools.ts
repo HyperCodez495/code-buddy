@@ -68,6 +68,16 @@ export const SEARCH_TOOL: CodeBuddyTool = {
   },
 };
 
+// Hermes-compatible search_files alias
+export const SEARCH_FILES_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "search_files",
+    description: "Search for text content or files. Hermes-compatible alias for search.",
+    parameters: SEARCH_TOOL.function.parameters,
+  },
+};
+
 // Find symbols tool
 export const FIND_SYMBOLS_TOOL: CodeBuddyTool = {
   type: "function",
@@ -171,6 +181,7 @@ export const SEARCH_MULTI_TOOL: CodeBuddyTool = {
  */
 export const SEARCH_TOOLS: CodeBuddyTool[] = [
   SEARCH_TOOL,
+  SEARCH_FILES_TOOL,
   FIND_SYMBOLS_TOOL,
   FIND_REFERENCES_TOOL,
   FIND_DEFINITION_TOOL,

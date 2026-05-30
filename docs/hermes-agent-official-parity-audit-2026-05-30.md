@@ -16,9 +16,9 @@ Hermes-parity work.
 
 - Official repo: <https://github.com/NousResearch/hermes-agent>
 - Official docs: <https://hermes-agent.nousresearch.com/docs/>
-- Local official mirror inspected at `D:/CascadeProjects/_external/hermes-agent`.
-- Fetched upstream commit: `61268ff7 feat(cli): add hermes prompt-size diagnostic (#35276)`.
-- Latest tag observed locally: `v2026.5.29.2`.
+- Local official sparse mirror inspected at `%TEMP%/hermes-agent-official-*`.
+- Fetched upstream commit: `5f84c914` on `origin/main`.
+- Latest tag observed remotely: `v2026.5.29.2`.
 - Note: `pyproject.toml` on `origin/main` still reports `0.15.1`; this audit keys
   off the inspected commit and docs, not the package version string.
 
@@ -63,7 +63,7 @@ several research/runtime backends. The first concrete gap from this audit,
 | Nous Portal Tool Gateway | OAuth setup, `hermes portal status`, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use | Separate provider/tool integrations; no Nous Portal command surface found | Gap | This is an upstream subscription-specific integration, not currently a Code Buddy equivalent. |
 | Memory | Built-in memory plus external providers: Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, Supermemory | Local memory, FTS/session recall, user model, Mem0/Honcho/Supermemory adapters | Partial | Three external providers exist; the full Hermes provider matrix does not. Some older status docs still understate newer local dialectic work. |
 | Skills | Agentskills.io-compatible skills, hub/taps, direct URL install, trust/update lifecycle, curator, agent-managed skills | `src/skills/hub.ts`, skill loader/manager, skill discovery/install tool, skill curator/candidate review | Partial | Good native coverage; not proven identical to Hermes hub/tap/update/reset/trust behavior. |
-| Closed learning loop | Agent memory nudges, autonomous skill creation, self-improving skills, session search, Honcho modeling | Lessons, user model, session recall, skill candidate queue, curator | Partial | Comparable direction; Code Buddy keeps review gates and differs from Hermes' more autonomous posture. |
+| Closed learning loop | Agent memory nudges, autonomous skill creation, self-improving skills, session search, Honcho modeling; source check: `agent/background_review.py`, `agent/trajectory.py`, `trajectory_compressor.py` | Lessons, user model, session recall, skill candidate queue, curator, `Learning Agent` over real `RunStore` trajectories | Partial/covered core loop | Comparable direction; Code Buddy now has the retrospective loop, candidate skill materialization, and outcome telemetry, but keeps review gates instead of Hermes' direct background skill writes. |
 | Cron/scheduling | Natural-language `cronjob` tool; create/list/update/pause/resume/run/remove; platform delivery; no-agent script-only jobs; chained jobs; skill-backed jobs | `buddy cron list/show/add/update/pause/resume/run/remove`, scheduler, pre-checks, watchdog, delivery, run recording; Cowork scheduled tasks | Partial | Direct CLI lifecycle parity now covers add/list/show/update/pause/resume/run/remove with isolated-store smoke coverage. Still missing exact `cronjob` agent tool semantics and skill-backed/chained/script-only details. |
 | Delegation/parallelism | `delegate_task`, isolated subagents, `execute_code` scripts calling tools by RPC | Fleet peer chat/session/tool invoke, route_peer, subagents, agentic coding runner | Partial | Delegation is strong; `execute_code` RPC collapse was not found. |
 | Runs anywhere | Local, Docker, SSH, Singularity, Modal, Daytona terminal backends with hibernate/wake semantics | Local/desktop/server/fleet/sandbox/device work exists | Gap/partial | No full official backend matrix found. |
@@ -84,11 +84,10 @@ several research/runtime backends. The first concrete gap from this audit,
 
 ## Commands used locally
 
-- `git -C D:/CascadeProjects/_external/hermes-agent fetch --all --tags --prune`
-- `git -C D:/CascadeProjects/_external/hermes-agent log -1 --oneline --decorate origin/main`
-- `git -C D:/CascadeProjects/_external/hermes-agent show origin/main:README.md`
-- `git -C D:/CascadeProjects/_external/hermes-agent show origin/main:website/docs/reference/cli-commands.md`
-- `git -C D:/CascadeProjects/_external/hermes-agent show origin/main:website/docs/reference/toolsets-reference.md`
+- `git ls-remote https://github.com/NousResearch/hermes-agent.git HEAD refs/tags/v2026.5.*`
+- `git clone --depth 1 --filter=blob:none --sparse https://github.com/NousResearch/hermes-agent.git %TEMP%/hermes-agent-official-*`
+- `git -C %TEMP%/hermes-agent-official-* show HEAD:toolsets.py`
+- `rg -n "learning loop|self-improv|skill|curator|hindsight|trajectory|session_search|cron|toolset" README.md RELEASE_v0.15.0.md RELEASE_v0.15.1.md docs agent skills tools trajectory_compressor.py run_agent.py hermes_cli cron`
 - `rg -n "prompt-size|prompt size|PromptSize|promptSize" src tests docs cowork`
 - `rg --files src/channels`
 - `rg -n "Mem0|Honcho|Supermemory|OpenViking|Hindsight|Holographic|RetainDB|ByteRover" src tests docs cowork`

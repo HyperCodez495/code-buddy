@@ -249,8 +249,33 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           name: 'terminal',
-          status: 'native-equivalent',
-          detectedCodeBuddyTools: ['bash'],
+          status: 'exact',
+          detectedCodeBuddyTools: ['terminal'],
+        }),
+        expect.objectContaining({
+          name: 'read_file',
+          status: 'exact',
+          detectedCodeBuddyTools: ['read_file'],
+        }),
+        expect.objectContaining({
+          name: 'write_file',
+          status: 'exact',
+          detectedCodeBuddyTools: ['write_file'],
+        }),
+        expect.objectContaining({
+          name: 'patch',
+          status: 'exact',
+          detectedCodeBuddyTools: ['patch'],
+        }),
+        expect.objectContaining({
+          name: 'search_files',
+          status: 'exact',
+          detectedCodeBuddyTools: ['search_files'],
+        }),
+        expect.objectContaining({
+          name: 'web_extract',
+          status: 'exact',
+          detectedCodeBuddyTools: ['web_extract'],
         }),
         expect.objectContaining({
           name: 'cronjob',
@@ -335,6 +360,12 @@ describe('Hermes CLI commands', () => {
     const output = getLogOutput();
     expect(output).toContain('# Hermes Official Tool Parity Manifest');
     expect(output).toContain('## Summary');
+    expect(output).toContain('### terminal');
+    expect(output).toContain('### read_file');
+    expect(output).toContain('### write_file');
+    expect(output).toContain('### patch');
+    expect(output).toContain('### search_files');
+    expect(output).toContain('### web_extract');
     expect(output).toContain('### browser_navigate');
     expect(output).toContain('### browser_snapshot');
     expect(output).toContain('### browser_click');

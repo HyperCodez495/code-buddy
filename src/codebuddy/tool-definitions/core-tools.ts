@@ -40,8 +40,18 @@ export const VIEW_FILE_TOOL: CodeBuddyTool = {
           description: "Ending line number for partial file view (optional)",
         },
       },
-      required: ["path", "old_str", "new_str"],
+      required: ["path"],
     },
+  },
+};
+
+// Hermes-compatible read file alias
+export const READ_FILE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "read_file",
+    description: "Read file contents with optional 1-indexed line range. Hermes-compatible alias for view_file.",
+    parameters: VIEW_FILE_TOOL.function.parameters,
   },
 };
 
@@ -73,6 +83,16 @@ export const CREATE_FILE_TOOL: CodeBuddyTool = {
       },
       required: ["path", "content"],
     },
+  },
+};
+
+// Hermes-compatible write file alias
+export const WRITE_FILE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "write_file",
+    description: "Create a new file with specified content. Hermes-compatible alias for create_file.",
+    parameters: CREATE_FILE_TOOL.function.parameters,
   },
 };
 
@@ -147,6 +167,16 @@ export const STR_REPLACE_EDITOR_TOOL: CodeBuddyTool = {
   },
 };
 
+// Hermes-compatible patch alias
+export const PATCH_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "patch",
+    description: "Replace text in an existing file. Hermes-compatible alias for str_replace_editor.",
+    parameters: STR_REPLACE_EDITOR_TOOL.function.parameters,
+  },
+};
+
 // Dedicated directory listing (read-only, no bash needed)
 export const LIST_DIRECTORY_TOOL: CodeBuddyTool = {
   type: "function",
@@ -183,6 +213,16 @@ export const BASH_TOOL: CodeBuddyTool = {
       },
       required: ["command"],
     },
+  },
+};
+
+// Hermes-compatible terminal alias
+export const TERMINAL_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "terminal",
+    description: "Execute a shell command with Code Buddy's existing shell safety checks. Hermes-compatible alias for bash.",
+    parameters: BASH_TOOL.function.parameters,
   },
 };
 
@@ -238,10 +278,14 @@ Make edits to a file in a single edit_file call instead of multiple edit_file ca
  */
 export const CORE_TOOLS: CodeBuddyTool[] = [
   VIEW_FILE_TOOL,
+  READ_FILE_TOOL,
   CREATE_FILE_TOOL,
+  WRITE_FILE_TOOL,
   STR_REPLACE_EDITOR_TOOL,
+  PATCH_TOOL,
   LIST_DIRECTORY_TOOL,
   BASH_TOOL,
+  TERMINAL_TOOL,
 ];
 
 /**

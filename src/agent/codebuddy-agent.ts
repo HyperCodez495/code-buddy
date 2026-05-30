@@ -29,6 +29,7 @@ import { BudgetAlertManager } from "../analytics/budget-alerts.js";
 import { initializeMemory, getMemoryManager } from "../memory/persistent-memory.js";
 import { getUserHooksManager } from "../hooks/user-hooks.js";
 import { isFeatureEnabled } from "../config/feature-flags.js";
+import { getActiveRunStore } from "../observability/run-store.js";
 
 // Re-export types for backwards compatibility
 export type { ChatEntry, StreamingChunk } from "./types.js";
@@ -973,6 +974,16 @@ Look at the screenshot and find the element matching the user's intent. Output o
             confidence: match.confidence,
             reason: match.reason,
           });
+
+          try {
+            getActiveRunStore()?.appendEvent('skill_selected', {
+              skillName: unifiedSkill.name,
+              confidence: match.confidence,
+              reason: match.reason,
+            });
+          } catch {
+            // Skill usage telemetry is best-effort and must not block a turn.
+          }
         }
       } else {
         // No skill matched - clear any previous skill context

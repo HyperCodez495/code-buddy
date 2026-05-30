@@ -50,6 +50,16 @@ export const WEB_FETCH_TOOL: CodeBuddyTool = {
   },
 };
 
+// Hermes-compatible web_extract alias
+export const WEB_EXTRACT_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "web_extract",
+    description: "Fetch and extract text content from a web page URL. Hermes-compatible alias for web_fetch.",
+    parameters: WEB_FETCH_TOOL.function.parameters,
+  },
+};
+
 // Browser automation tool
 export const BROWSER_TOOL: CodeBuddyTool = {
   type: "function",
@@ -123,5 +133,6 @@ export const BROWSER_TOOL: CodeBuddyTool = {
 export const WEB_TOOLS: CodeBuddyTool[] = [
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
+  WEB_EXTRACT_TOOL,
   // BROWSER_TOOL omitted — superseded by the richer browser-tools.ts (40+ actions)
 ];

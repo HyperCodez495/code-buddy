@@ -58,6 +58,11 @@ import {
   buildMobileSupervisionApprovalQueue,
   renderMobileSupervisionApprovalQueue,
 } from './mobile-supervision-approval-queue.js';
+import {
+  buildLearningRetrospective,
+  renderLearningRetrospective,
+  runLearningRetrospective,
+} from '../agent/learning-agent.js';
 
 export const RUN_SEARCH_JSON_SCHEMA_VERSION = 1;
 
@@ -77,6 +82,7 @@ const EVENT_ICONS: Record<string, string> = {
   decision: '[D]',
   error: '[!]',
   metric: '[M]',
+  skill_selected: '[S]',
 };
 
 function eventIcon(type: string): string {
@@ -142,6 +148,8 @@ function formatEvent(event: RunEvent, relativeMs?: number): string {
     detail = String(data.message || data.error || '').slice(0, 80);
   } else if (event.type === 'decision') {
     detail = String(data.description || '').slice(0, 80);
+  } else if (event.type === 'skill_selected') {
+    detail = String(data.skillName || '').slice(0, 80);
   }
 
   return `  ${icon} ${time}  ${event.type.padEnd(14)} ${detail}`;
@@ -585,6 +593,63 @@ export async function showRunTrajectoryExport(
   }
 
   console.log(renderRunTrajectoryExport(exported));
+}
+
+/**
+ * Run the Learning Agent retrospective over a durable, redacted trajectory.
+ * By default this is a real write path: it stores the retrospective artifact,
+ * updates the learning pattern library, and materializes review-gated lesson /
+ * skill candidates. `dryRun` keeps it read-only for inspection.
+ */
+export async function showLearningRetrospective(
+  runId: string,
+  options: { dryRun?: boolean; force?: boolean; json?: boolean } = {},
+): Promise<void> {
+  const store = RunStore.getInstance();
+  if (options.dryRun === true) {
+    const retrospective = buildLearningRetrospective(runId, { store, workDir: process.cwd() });
+    if (!retrospective) {
+      console.error(`Run not found: ${runId}`);
+      process.exit(1);
+    }
+    if (options.json === true) {
+      console.log(JSON.stringify({ skipped: false, dryRun: true, retrospective }, null, 2));
+      return;
+    }
+    console.log(renderLearningRetrospective(retrospective));
+    return;
+  }
+
+  const result = await runLearningRetrospective(store, runId, {
+    force: options.force === true,
+    workDir: process.cwd(),
+  });
+
+  if (result.skipped) {
+    if (options.json === true) {
+      console.log(JSON.stringify(result, null, 2));
+      return;
+    }
+    console.log(`Learning Agent skipped: ${result.skippedReason}`);
+    return;
+  }
+
+  if (options.json === true) {
+    console.log(JSON.stringify(result, null, 2));
+    return;
+  }
+
+  if (result.retrospective) {
+    console.log(renderLearningRetrospective(result.retrospective));
+  }
+  console.log('');
+  console.log(`Learning artifacts: ${result.retrospectiveArtifact ?? 'none'}`);
+  console.log(`Lesson candidates proposed: ${result.lessonCandidateCount}`);
+  console.log(`Skill candidates materialized: ${result.skillCandidateCount}`);
+  console.log(`Skill usages recorded: ${result.skillUsageCount}`);
+  if (result.patternLibraryPath) {
+    console.log(`Pattern library: ${result.patternLibraryPath}`);
+  }
 }
 
 /**

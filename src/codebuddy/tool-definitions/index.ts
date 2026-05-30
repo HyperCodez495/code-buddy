@@ -11,10 +11,14 @@ export type { CodeBuddyTool, JsonSchemaProperty } from './types.js';
 // Core tools
 export {
   VIEW_FILE_TOOL,
+  READ_FILE_TOOL,
   CREATE_FILE_TOOL,
+  WRITE_FILE_TOOL,
   STR_REPLACE_EDITOR_TOOL,
+  PATCH_TOOL,
   LIST_DIRECTORY_TOOL,
   BASH_TOOL,
+  TERMINAL_TOOL,
   MORPH_EDIT_TOOL,
   CORE_TOOLS,
   isMorphEnabled,
@@ -23,6 +27,7 @@ export {
 // Search tools
 export {
   SEARCH_TOOL,
+  SEARCH_FILES_TOOL,
   FIND_SYMBOLS_TOOL,
   FIND_REFERENCES_TOOL,
   FIND_DEFINITION_TOOL,
@@ -48,6 +53,7 @@ export {
 export {
   WEB_SEARCH_TOOL,
   WEB_FETCH_TOOL,
+  WEB_EXTRACT_TOOL,
   WEB_TOOLS,
 } from './web-tools.js';
 
