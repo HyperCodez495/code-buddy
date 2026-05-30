@@ -38,6 +38,12 @@ export interface SkillCandidateReviewQueueItem {
   toolSequence?: string[];
 }
 
+export interface SkillCandidateSideBySideDiffRow {
+  candidate: string;
+  installed: string;
+  kind: 'added' | 'context' | 'removed';
+}
+
 interface SkillCandidateReviewApi {
   install?: (options: {
     approvedBy: string;
@@ -101,6 +107,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
   const [loadedCandidates, setLoadedCandidates] = useState<SkillCandidateReviewQueueItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [reviewerName, setReviewerName] = useState('');
+  const [expandedDiffSkillName, setExpandedDiffSkillName] = useState<string | null>(null);
   const commands = useMemo(() => buildSkillCandidateReviewCommands(), []);
   const goalDraft = useMemo(() => buildSkillCandidateReviewQueueGoal(), []);
   const reviewCandidates = candidates ?? loadedCandidates;
@@ -320,7 +327,24 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                     {candidate.candidateDiffPreview.preview}
                     {candidate.candidateDiffPreview.truncated ? '\n...' : ''}
                   </pre>
+                  <button
+                    className="mt-1 rounded border border-accent/40 px-2 py-1 text-[9px] text-accent transition-colors hover:bg-accent/10"
+                    data-testid={`skill-candidate-toggle-diff-${candidate.skillName}`}
+                    onClick={() =>
+                      setExpandedDiffSkillName((current) =>
+                        current === candidate.skillName ? null : candidate.skillName
+                      )
+                    }
+                    type="button"
+                  >
+                    {expandedDiffSkillName === candidate.skillName
+                      ? t('fleet.skillCandidate.collapseDiff', 'Hide side-by-side diff')
+                      : t('fleet.skillCandidate.expandDiff', 'Show side-by-side diff')}
+                  </button>
                 </div>
+              ) : null}
+              {candidate.candidateDiffPreview && expandedDiffSkillName === candidate.skillName ? (
+                <SkillCandidateSideBySideDiff candidate={candidate} />
               ) : null}
               {isCandidateInstallActionVisible(candidate) ? (
                 <div className="mt-1 flex justify-end">
@@ -392,6 +416,96 @@ function getSkillCandidateReviewApi(): SkillCandidateReviewApi | undefined {
       };
     }
   ).electronAPI?.tools?.skillCandidate;
+}
+
+const SkillCandidateSideBySideDiff: React.FC<{
+  candidate: SkillCandidateReviewQueueItem;
+}> = ({ candidate }) => {
+  const { t } = useTranslation();
+  const diff = candidate.candidateDiffPreview;
+  const rows = useMemo(
+    () => buildSkillCandidateSideBySideDiffRows(diff?.preview ?? ''),
+    [diff?.preview],
+  );
+  if (!diff) return null;
+
+  return (
+    <div
+      className="mt-1 rounded border border-accent/20 bg-background/40 p-1.5"
+      data-testid={`skill-candidate-side-by-side-${candidate.skillName}`}
+    >
+      <div className="flex min-w-0 items-center justify-between gap-2 text-[9px] text-text-muted">
+        <span className="truncate">
+          {t('fleet.skillCandidate.diffStats', '{{added}} added / {{removed}} removed', {
+            added: diff.addedLines,
+            removed: diff.removedLines,
+          })}
+        </span>
+        {diff.truncated ? (
+          <span className="shrink-0 text-warning">
+            {t('fleet.skillCandidate.diffTruncated', 'preview truncated')}
+          </span>
+        ) : null}
+      </div>
+      <div className="mt-1 grid grid-cols-2 gap-1 text-[9px]">
+        <div className="rounded bg-surface px-2 py-1 font-medium text-text-secondary">
+          {t('fleet.skillCandidate.installedColumn', 'Installed SKILL.md')}
+        </div>
+        <div className="rounded bg-surface px-2 py-1 font-medium text-text-secondary">
+          {t('fleet.skillCandidate.candidateColumn', 'Candidate SKILL.md')}
+        </div>
+        {rows.map((row, index) => (
+          <React.Fragment key={`${row.kind}-${index}-${row.installed}-${row.candidate}`}>
+            <pre className={`min-w-0 whitespace-pre-wrap rounded px-2 py-1 leading-snug ${diffCellClass(row.kind, 'installed')}`}>
+              {row.installed || ' '}
+            </pre>
+            <pre className={`min-w-0 whitespace-pre-wrap rounded px-2 py-1 leading-snug ${diffCellClass(row.kind, 'candidate')}`}>
+              {row.candidate || ' '}
+            </pre>
+          </React.Fragment>
+        ))}
+      </div>
+    </div>
+  );
+};
+
+export function buildSkillCandidateSideBySideDiffRows(
+  unifiedDiffPreview: string,
+): SkillCandidateSideBySideDiffRow[] {
+  return unifiedDiffPreview
+    .split(/\r?\n/)
+    .flatMap((line): SkillCandidateSideBySideDiffRow[] => {
+      if (!line) return [];
+      if (line.startsWith('@@')) return [];
+      if (line.startsWith('--- a/') || line.startsWith('+++ b/')) return [];
+      if (line.startsWith('--- /dev/null') || line.startsWith('+++ /dev/null')) return [];
+
+      const prefix = line[0];
+      const content = line.slice(1);
+      if (prefix === '-') {
+        return [{ candidate: '', installed: content, kind: 'removed' }];
+      }
+      if (prefix === '+') {
+        return [{ candidate: content, installed: '', kind: 'added' }];
+      }
+      if (prefix === ' ') {
+        return [{ candidate: content, installed: content, kind: 'context' }];
+      }
+      return [];
+    });
+}
+
+function diffCellClass(
+  kind: SkillCandidateSideBySideDiffRow['kind'],
+  side: 'candidate' | 'installed',
+): string {
+  if (kind === 'removed' && side === 'installed') {
+    return 'bg-warning/10 text-warning';
+  }
+  if (kind === 'added' && side === 'candidate') {
+    return 'bg-success/10 text-success';
+  }
+  return 'bg-surface text-text-muted';
 }
 
 function formatInstallState(

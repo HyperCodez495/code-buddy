@@ -2308,6 +2308,12 @@
       "learningKind": "Learning Agent",
       "researchKind": "Research script",
       "toolSequence": "Tools",
+      "expandDiff": "Show side-by-side diff",
+      "collapseDiff": "Hide side-by-side diff",
+      "diffStats": "{{added}} added / {{removed}} removed",
+      "diffTruncated": "preview truncated",
+      "installedColumn": "Installed SKILL.md",
+      "candidateColumn": "Candidate SKILL.md",
       "useAsGoal": "Review queue as goal"
     },
     "lessonCandidate": {

@@ -2308,6 +2308,12 @@
       "learningKind": "Learning Agent",
       "researchKind": "Script de recherche",
       "toolSequence": "Outils",
+      "expandDiff": "Afficher le diff cote a cote",
+      "collapseDiff": "Masquer le diff cote a cote",
+      "diffStats": "{{added}} ajoutee(s) / {{removed}} retiree(s)",
+      "diffTruncated": "apercu tronque",
+      "installedColumn": "SKILL.md installe",
+      "candidateColumn": "SKILL.md candidate",
       "useAsGoal": "Revoir la file comme objectif"
     },
     "lessonCandidate": {

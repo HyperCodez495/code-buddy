@@ -10,6 +10,7 @@ import {
   SkillCandidateReviewQueueStrip,
   buildSkillCandidateReviewCommands,
   buildSkillCandidateReviewQueueGoal,
+  buildSkillCandidateSideBySideDiffRows,
 } from '../src/renderer/components/skill-candidate-review-queue-strip';
 
 vi.mock('react-i18next', () => ({
@@ -97,6 +98,7 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(strip?.textContent).toContain('Candidate changes learned-search-view-file-bash/SKILL.md');
     expect(strip?.textContent).toContain('- Old procedure');
     expect(strip?.textContent).toContain('+ New procedure');
+    expect(strip?.textContent).toContain('Show side-by-side diff');
     expect(strip?.textContent).toContain('run-learning-architect');
     expect(strip?.textContent).toContain('Tools: search -> view_file -> bash');
     expect(strip?.textContent).toContain('skill_manage action=candidate_view');
@@ -121,6 +123,67 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(goal).toContain('Install only after a human reviewer approves with --approved-by.');
   });
 
+  it('expands candidate-vs-installed SKILL.md diffs into a side-by-side review panel', () => {
+    const target = container();
+    root = createRoot(target);
+
+    act(() => {
+      root?.render(
+        React.createElement(SkillCandidateReviewQueueStrip, {
+          candidates: [
+            {
+              candidateDiffPreview: {
+                addedLines: 1,
+                preview: [
+                  'Candidate changes learned-search-view-file-bash/SKILL.md with 1 addition and 1 removal',
+                  '--- a/learned-search-view-file-bash/SKILL.md',
+                  '+++ b/learned-search-view-file-bash/SKILL.md',
+                  '@@ -1,3 +1,3 @@',
+                  ' # Setup',
+                  '-Old procedure',
+                  '+New procedure',
+                  ' Keep review gates',
+                ].join('\n'),
+                removedLines: 1,
+                summary: 'Candidate changes learned-search-view-file-bash/SKILL.md with 1 addition and 1 removal',
+                truncated: true,
+              },
+              eligible: true,
+              installState: 'installed-different',
+              kind: 'learning',
+              reason: '2 successful runs met the promotion threshold.',
+              skillName: 'learned-search-view-file-bash',
+              skillPath: '.codebuddy/skill-candidates/learning/learned-search-view-file-bash/SKILL.md',
+              sourceJobId: '',
+              sourceRunId: 'run-learning-architect',
+              successfulRunCount: 2,
+            },
+          ],
+        }),
+      );
+    });
+
+    const toggle = target.querySelector(
+      '[data-testid="skill-candidate-toggle-diff-learned-search-view-file-bash"]',
+    ) as HTMLButtonElement;
+    expect(toggle.textContent).toContain('Show side-by-side diff');
+
+    act(() => {
+      Simulate.click(toggle);
+    });
+
+    const panel = target.querySelector(
+      '[data-testid="skill-candidate-side-by-side-learned-search-view-file-bash"]',
+    );
+    expect(panel?.textContent).toContain('1 added / 1 removed');
+    expect(panel?.textContent).toContain('preview truncated');
+    expect(panel?.textContent).toContain('Installed SKILL.md');
+    expect(panel?.textContent).toContain('Candidate SKILL.md');
+    expect(panel?.textContent).toContain('Old procedure');
+    expect(panel?.textContent).toContain('New procedure');
+    expect(panel?.textContent).toContain('Keep review gates');
+  });
+
   it('keeps the command and goal helpers aligned', () => {
     const commands = buildSkillCandidateReviewCommands();
     const goal = buildSkillCandidateReviewQueueGoal();
@@ -133,6 +196,26 @@ describe('SkillCandidateReviewQueueStrip', () => {
     for (const command of commands.slice(0, 2)) {
       expect(goal).toContain(command);
     }
+  });
+
+  it('parses unified diff previews into side-by-side rows', () => {
+    const rows = buildSkillCandidateSideBySideDiffRows([
+      'Candidate changes review-helper/SKILL.md with 1 addition and 1 removal',
+      '--- a/review-helper/SKILL.md',
+      '+++ b/review-helper/SKILL.md',
+      '@@ -1,3 +1,3 @@',
+      ' # Review Helper',
+      '-Old checklist',
+      '+New checklist',
+      ' Keep guardrails',
+    ].join('\n'));
+
+    expect(rows).toEqual([
+      { candidate: '# Review Helper', installed: '# Review Helper', kind: 'context' },
+      { candidate: '', installed: 'Old checklist', kind: 'removed' },
+      { candidate: 'New checklist', installed: '', kind: 'added' },
+      { candidate: 'Keep guardrails', installed: 'Keep guardrails', kind: 'context' },
+    ]);
   });
 
   it('loads eligible candidates from the readonly Electron bridge when no candidates are provided', async () => {

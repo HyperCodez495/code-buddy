@@ -2295,6 +2295,12 @@
       "learningKind": "Learning Agent",
       "researchKind": "研究脚本",
       "toolSequence": "工具",
+      "expandDiff": "显示并排 diff",
+      "collapseDiff": "隐藏并排 diff",
+      "diffStats": "新增 {{added}} / 删除 {{removed}}",
+      "diffTruncated": "预览已截断",
+      "installedColumn": "已安装 SKILL.md",
+      "candidateColumn": "候选 SKILL.md",
       "useAsGoal": "将队列审查作为目标"
     },
     "lessonCandidate": {

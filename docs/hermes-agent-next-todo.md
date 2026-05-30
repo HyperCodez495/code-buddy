@@ -50,11 +50,11 @@ Current measured state:
 
 ## P1 — Make the Hermes cockpit operational in Cowork
 
-- [ ] **Build a Cowork Skill Package Manager panel**
+- [x] **Build a Cowork Skill Package Manager review panel**
   - Why: Cowork now shows candidates and telemetry, but it cannot fully pilot installed skills, versions, and review decisions from one place.
-  - Done so far: Cowork Fleet now has an installed-skill package strip backed by the real SkillsHub lockfile. It shows installed/enabled/inactive counts, deprecated skills first, integrity state, usage counts, lifecycle reviewer/reason, rollback snapshot counts, a short current `SKILL.md` preview, and review-safe CLI commands. The strip can seed a `skill_manage ... approved_by=<reviewer>` goal and now performs reviewer-gated enable/disable/deprecate, latest-snapshot rollback, delete, cached hub update, and exact-text patch actions through the real main-process skill package bridge. `skills_list` and `buddy skills list --json` now also expose `exists`/`integrityOk` so stale lockfile entries are visible before reuse, and `buddy skills doctor --json` reports missing/tampered packages with review-gated remediation commands. The candidate queue and `skill_manage candidate_list/view` now compare each materialized `SKILL.md` candidate with the real workspace SkillsHub lockfile and show not-installed/current/different/missing states, review commands, and a bounded unified diff preview for differing installed content. Cowork can now capture a reviewer identity and install or overwrite an eligible candidate through the real main-process skill candidate bridge, then refresh the candidate queue.
+  - Done: Cowork Fleet now has an installed-skill package strip backed by the real SkillsHub lockfile. It shows installed/enabled/inactive counts, deprecated skills first, integrity state, usage counts, lifecycle reviewer/reason, rollback snapshot counts, a short current `SKILL.md` preview, and review-safe CLI commands. The strip can seed a `skill_manage ... approved_by=<reviewer>` goal and now performs reviewer-gated enable/disable/deprecate, latest-snapshot rollback, delete, cached hub update, and exact-text patch actions through the real main-process skill package bridge. `skills_list` and `buddy skills list --json` now also expose `exists`/`integrityOk` so stale lockfile entries are visible before reuse, and `buddy skills doctor --json` reports missing/tampered packages with review-gated remediation commands. The candidate queue and `skill_manage candidate_list/view` now compare each materialized `SKILL.md` candidate with the real workspace SkillsHub lockfile and show not-installed/current/different/missing states, review commands, a bounded unified diff preview, and an expandable side-by-side installed-vs-candidate `SKILL.md` diff before overwrite. Cowork can capture a reviewer identity and install or overwrite an eligible candidate through the real main-process skill candidate bridge, then refresh the candidate queue.
   - Scope: installed skills list, candidate queue, SKILL.md preview, candidate-vs-installed diff, approve/install/enable/disable/deprecate/rollback/delete/update/patch actions.
-  - Remaining scope: turn the strips into a full panel with expanded side-by-side SKILL.md diff.
+  - Remaining scope: optional dedicated full-page manager route if daily usage demands more room than the Fleet cockpit strips.
   - Acceptance:
     - Operator can review a Learning Agent SKILL.md candidate and install it without leaving Cowork.
     - UI distinguishes installed, candidate, deprecated, and failed/recommended-improvement skills.
@@ -64,7 +64,7 @@ Current measured state:
     - `npm test -- tests/agent/research-script-skill-candidate.test.ts --run`
     - `npm test -- tests/commands/skills-command-real.test.ts --run`
     - `npm test -- tests/tools/skills-inspection-real.test.ts tests/skills/hub.test.ts --run`
-    - `(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/i18n-french-support.test.ts tests/fleet-command-center-board.test.ts --run)`
+    - `(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/skill-candidate-review-queue-strip.test.ts tests/i18n-french-support.test.ts tests/fleet-command-center-board.test.ts --run)`
     - Playwright flow over a temp workspace with a materialized skill candidate.
 
 - [x] **Add a Hermes toolset/catalog status surface**
@@ -220,7 +220,7 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. Remaining skills polish: larger SKILL.md diff/review UX and exact CLI hub/tap/trust product-surface deltas.
+1. Remaining skills polish: exact CLI hub/tap/trust product-surface deltas and optional remote release diff previews.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
 3. Provider/runtime readiness smoke matrix and first-class managed remote runner decisions.
 4. OpenClaw migration last, after the Hermes core and cockpit work are stable.

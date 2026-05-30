@@ -227,8 +227,8 @@ const FEATURES: HermesParityFeature[] = [
       '(cd cowork && npm test -- tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts --run)',
       '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
     ],
-    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update/patch from the real SkillsHub lockfile. Wider Hermes CLI hub/tap/update/reset/trust behavior is not proven identical.',
-    nextWork: 'Add Cowork expanded side-by-side SKILL.md diff review and close high-value Hermes hub/tap/trust gaps.',
+    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded unified and expanded side-by-side candidate diffs, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update/patch from the real SkillsHub lockfile. Wider Hermes CLI hub/tap/update/reset/trust behavior is not proven identical.',
+    nextWork: 'Close high-value Hermes hub/tap/trust gaps and optional remote release diff previews.',
   },
   {
     id: 'closed-learning-loop',
@@ -247,7 +247,7 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/learning-agent-real.test.ts --run',
     ],
     notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions. Honcho-style dialectic inference remains review-gated rather than auto-applied.',
-    nextWork: 'Expose expanded SKILL.md diff review in Cowork and keep skill mutation outcomes tied to rollback history.',
+    nextWork: 'Keep skill mutation outcomes tied to rollback history and decide whether Honcho-style inference belongs behind review gates.',
   },
   {
     id: 'cron-scheduling',
