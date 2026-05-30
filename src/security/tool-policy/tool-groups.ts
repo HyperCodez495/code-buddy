@@ -72,6 +72,13 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   ha_list_services: ['group:web'],
   ha_call_service: ['group:web', 'group:dangerous'],
   mixture_of_agents: ['group:web'],
+  spotify_devices: ['group:web'],
+  spotify_search: ['group:web', 'group:web:search'],
+  spotify_albums: ['group:web'],
+  spotify_library: ['group:web', 'group:dangerous'],
+  spotify_playback: ['group:web', 'group:dangerous'],
+  spotify_playlists: ['group:web', 'group:dangerous'],
+  spotify_queue: ['group:web', 'group:dangerous'],
 
   // Git - Read
   git_status: ['group:git', 'group:git:read'],

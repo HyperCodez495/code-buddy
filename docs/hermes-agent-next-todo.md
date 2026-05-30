@@ -141,6 +141,13 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/mixture-of-agents-real.test.ts --run`
 
+- [x] **Add exact Spotify prompt tools**
+  - Why: upstream Hermes exposes Spotify as a 7-tool native toolset, and this was the largest remaining exact-name platform gap.
+  - Done: Code Buddy now exposes `spotify_playback`, `spotify_devices`, `spotify_queue`, `spotify_search`, `spotify_playlists`, `spotify_albums`, and `spotify_library` over the Spotify Web API. Tokens are read from env/options only, never from model input.
+  - Guardrail: mutating playback, queue, playlist, and library actions are policy-grouped as dangerous external actions; tests use a real local HTTP server and production request construction rather than mocked fetch.
+  - Verification:
+    - `npm test -- tests/tools/spotify-tool-real.test.ts --run`
+
 - [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
   - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
@@ -163,7 +170,6 @@ Current measured state:
 
 - [ ] **Platform connectors**
   - Lower priority unless the user explicitly needs them:
-    - Spotify: `spotify_*`
     - Feishu drive comments
     - Yuanbao group/DM/stickers
     - Discord admin
@@ -173,7 +179,8 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. Cowork Skill Package Manager panel.
-2. Expose provider/model readiness for Hermes.
-3. Runtime backend inventory.
-4. Optional platform connectors only on demand.
+1. `x_search` exact prompt tool.
+2. Feishu document/comment exact tools.
+3. `image_generate` / `video_generate` media generation tools.
+4. Yuanbao and Discord admin connectors if product-relevant.
+5. Cowork Skill Package Manager panel and provider/model readiness polish.

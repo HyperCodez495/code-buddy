@@ -79,6 +79,18 @@ export {
   MOA_TOOLS,
 } from './moa-tools.js';
 
+// Hermes Spotify tools
+export {
+  SPOTIFY_PLAYBACK_TOOL,
+  SPOTIFY_DEVICES_TOOL,
+  SPOTIFY_QUEUE_TOOL,
+  SPOTIFY_SEARCH_TOOL,
+  SPOTIFY_PLAYLISTS_TOOL,
+  SPOTIFY_ALBUMS_TOOL,
+  SPOTIFY_LIBRARY_TOOL,
+  SPOTIFY_TOOLS,
+} from './spotify-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

@@ -46,6 +46,7 @@ const OFFICIAL_SOURCE_TOOLSETS = 'toolsets.py';
 const OFFICIAL_SOURCE_BROWSER_DIALOG = 'tools/browser_dialog_tool.py';
 const OFFICIAL_SOURCE_HOMEASSISTANT = 'tools/homeassistant_tool.py';
 const OFFICIAL_SOURCE_MOA = 'tools/mixture_of_agents_tool.py';
+const OFFICIAL_SOURCE_SPOTIFY = 'plugins/spotify/tools.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
@@ -458,50 +459,51 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'spotify_playback',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify playback prompt tool over the Spotify Web API.',
+    nextWork: 'Add live Spotify smoke coverage when a real SPOTIFY_ACCESS_TOKEN with playback scopes is configured.',
   },
   {
     name: 'spotify_devices',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify devices prompt tool over the Spotify Web API.',
   },
   {
     name: 'spotify_queue',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify queue prompt tool over the Spotify Web API.',
   },
   {
     name: 'spotify_search',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify catalog search prompt tool over the Spotify Web API.',
   },
   {
     name: 'spotify_playlists',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify playlists prompt tool over the Spotify Web API.',
   },
   {
     name: 'spotify_albums',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify albums prompt tool over the Spotify Web API.',
   },
   {
     name: 'spotify_library',
     toolset: 'spotify',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Spotify exists as a bundled skill area, not as exact built-in prompt tools.',
+    officialSource: OFFICIAL_SOURCE_SPOTIFY,
+    notes: 'Code Buddy exposes the exact Spotify library prompt tool over the Spotify Web API.',
   },
   {
     name: 'feishu_doc_read',
@@ -654,6 +656,7 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_BROWSER_DIALOG,
         OFFICIAL_SOURCE_HOMEASSISTANT,
         OFFICIAL_SOURCE_MOA,
+        OFFICIAL_SOURCE_SPOTIFY,
         OFFICIAL_SOURCE_X_SEARCH,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],
