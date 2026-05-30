@@ -112,7 +112,7 @@ buddy dev explain                  # Summarize repo conventions
 
 ```bash
 buddy daemon start [--detach] [--install-daemon] [--foreground]
-buddy daemon stop | restart | status | logs [--lines N]
+buddy daemon stop | restart | status [--json] | logs [--lines N]
 buddy heartbeat start | stop | status [--json] | tick
 buddy trigger list | add | remove
 buddy channels status [--json] [--config <path>]
@@ -132,6 +132,9 @@ no-LLM `--watchdog` monitors (disk/http/repo/build) and `--pre-check` gates
 Use `pause`, `resume`, `run`, and `update` for live job control without
 starting the daemon tick loop. `CODEBUDDY_CRON_HOME` can point CLI smoke tests
 at an isolated cron store.
+
+`buddy daemon status --json` reports daemon liveness, PID, uptime, service
+counts, restart count, and recommendations for Cowork or external harnesses.
 
 `buddy channels status --json` reports configured and registered messaging
 channels without printing secrets, so Cowork and parity checks can render
