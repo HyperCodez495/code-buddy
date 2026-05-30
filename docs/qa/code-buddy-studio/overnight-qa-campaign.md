@@ -1731,10 +1731,10 @@ J'ai ajoute une ligne `CLI / command surface bundle` pour rejouer depuis `Tests 
 
 Preuves commandes :
 
-- `npm test -- tests/cli/cli-flags.test.ts tests/cli/headless-exit-code.test.ts tests/cli/model-listing.test.ts tests/cli/session-commands.test.ts tests/commands/core-handlers.test.ts tests/commands/slash-commands.test.ts tests/commands/context-handlers.test.ts tests/commands/session-handlers.test.ts tests/commands/permissions-handlers.test.ts tests/commands/security-handlers.test.ts tests/commands/tools-commands.test.ts tests/commands/backup-handlers.test.ts tests/commands/agents-handler.test.ts tests/commands/agent-handlers.test.ts tests/commands/run-commands.test.ts tests/commands/worktree-handlers.test.ts tests/commands/fleet-commands.test.ts tests/commands/handlers/auth-handlers.test.ts tests/unit/slash-commands.test.ts tests/unit/config-command.test.ts tests/unit/memory-commands.test.ts --run` -> 21 fichiers OK, 558 tests OK.
+- `npm test -- tests/cli/cli-flags.test.ts tests/cli/headless-exit-code.test.ts tests/cli/model-listing.test.ts tests/cli/session-commands.test.ts tests/commands/core-handlers.test.ts tests/commands/slash-commands.test.ts tests/commands/context-handlers.test.ts tests/commands/session-handlers.test.ts tests/commands/permissions-handlers.test.ts tests/commands/security-handlers.test.ts tests/commands/tools-commands.test.ts tests/commands/backup-handlers.test.ts tests/commands/agents-handler.test.ts tests/commands/agent-handlers.test.ts tests/commands/run-commands.test.ts tests/commands/worktree-handlers.test.ts tests/commands/fleet-commands.test.ts tests/commands/handlers/auth-handlers.test.ts tests/unit/slash-commands.test.ts tests/unit/config-command.test.ts tests/unit/memory-commands.test.ts --run` -> 21 fichiers OK, 561 tests OK.
 - `npx vitest run tests/test-runner-bridge-catalog.test.ts --reporter=verbose` -> 7 tests OK avec la ligne CLI/commandes.
 - `npm run build:e2e` -> OK.
-- `npx playwright test e2e/test-runner-cli-command-surface-bundle.spec.ts --reporter=list --timeout=320000` -> 1 test OK depuis la fenetre `Tests & executions`, avec `558 ok / 0 ko`.
+- `npx playwright test e2e/test-runner-cli-command-surface-bundle.spec.ts --reporter=list --timeout=320000` -> 1 test OK depuis la fenetre `Tests & executions`, avec `561 ok / 0 ko`.
 - `npm run typecheck` -> OK.
 
 Capture :

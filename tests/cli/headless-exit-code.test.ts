@@ -4,14 +4,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync, spawn } from 'node:child_process';
 
+function getCleanChildEnv(): Record<string, string> {
+  return Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] =>
+      typeof entry[1] === 'string' && entry[0] !== 'FORCE_COLOR'
+    )
+  );
+}
+
 function runCliAgainstFailingProvider(port: number): Promise<{
   exitCode: number | null;
   stdout: string;
   stderr: string;
 }> {
-  const cleanEnv = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-  );
+  const cleanEnv = getCleanChildEnv();
 
   return new Promise((resolve, reject) => {
     const child = spawn(process.execPath, [
@@ -68,9 +74,7 @@ function runCliAgainstSuccessfulProvider(port: number, options: {
   stdout: string;
   stderr: string;
 }> {
-  const cleanEnv = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => typeof entry[1] === 'string')
-  );
+  const cleanEnv = getCleanChildEnv();
 
   return new Promise((resolve, reject) => {
     const args = [

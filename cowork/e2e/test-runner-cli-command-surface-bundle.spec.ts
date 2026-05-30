@@ -42,7 +42,7 @@ test('runs the CLI command surface bundle from the test runner window', async ({
     { timeout: 260_000 }
   );
   await expect(appPage.getByTestId(`test-catalog-result-${bundleId}`)).toHaveText(
-    '558 ok / 0 ko',
+    '561 ok / 0 ko',
     { timeout: 260_000 }
   );
 
