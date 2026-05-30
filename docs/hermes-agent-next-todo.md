@@ -60,15 +60,16 @@ Current measured state:
     - targeted Vitest for bridge + renderer strip/panel
     - Playwright flow over a temp workspace with a materialized skill candidate.
 
-- [ ] **Add a Hermes toolset/catalog status surface**
+- [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Scope: compact Fleet/Hermes panel using the existing tool parity manifest.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`, and Kanban gaps.
   - Acceptance:
     - Cowork shows summary counts and top core gaps: `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`, `kanban_*`.
-    - Platform-only gaps are grouped separately so they do not distract from coding-agent work.
+    - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
-    - Cowork renderer tests for the panel.
+    - `npm test -- tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
+    - `(cd cowork && npm test -- tests/hermes-tool-catalog-bridge.test.ts tests/hermes-tool-catalog-strip.test.ts --run)`
 
 - [ ] **Expose provider/model readiness for Hermes**
   - Why: the provider stack is broad, but Hermes-oriented setup/status is still scattered.
@@ -139,10 +140,9 @@ Current measured state:
 ## Immediate next implementation order
 
 1. Cowork Skill Package Manager panel.
-2. Hermes toolset/catalog status in Cowork.
-3. `execute_code` security/product decision.
-4. Unified `vision_analyze` / `browser_vision`.
-5. `send_message` wrapper over existing channels.
-6. Kanban mapping decision.
-7. Runtime backend inventory.
-8. Optional platform connectors only on demand.
+2. `execute_code` security/product decision.
+3. Unified `vision_analyze` / `browser_vision`.
+4. `send_message` wrapper over existing channels.
+5. Kanban mapping decision.
+6. Runtime backend inventory.
+7. Optional platform connectors only on demand.

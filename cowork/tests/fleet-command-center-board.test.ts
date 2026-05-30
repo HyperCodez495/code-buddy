@@ -69,6 +69,10 @@ const hermesPlanStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-plan-strip.tsx',
 );
+const hermesToolCatalogStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-tool-catalog-strip.tsx',
+);
 const toolProfileInspectorStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/tool-profile-inspector-strip.tsx',
@@ -127,6 +131,7 @@ describe('FleetCommandCenter saga board', () => {
       fs.readFileSync(memoryStripPath, 'utf8'),
       fs.readFileSync(peerPanelPath, 'utf8'),
       fs.readFileSync(hermesPlanStripPath, 'utf8'),
+      fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
       fs.readFileSync(toolProfileInspectorStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
@@ -165,6 +170,9 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain('FLEET_DISPATCH_PROFILES');
     expect(source).toContain('HermesPlanStrip');
     expect(source).toContain('fleet-hermes-plan');
+    expect(source).toContain('HermesToolCatalogStrip');
+    expect(source).toContain('fleet-hermes-tool-catalog');
+    expect(source).toContain('buddy hermes tools --json');
     expect(source).toContain('ToolProfileInspectorStrip');
     expect(source).toContain('fleet-tool-profile-inspector');
     expect(source).toContain('summarizeToolProfileDecisions');

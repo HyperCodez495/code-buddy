@@ -1481,6 +1481,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
   tools: {
     list: (): Promise<Array<{ name: string; description: string; category: string }>> =>
       ipcRenderer.invoke('tools.list'),
+    hermesCatalog: {
+      get: (): Promise<{
+        generatedAt: string;
+        inspectedCommit: string;
+        localToolCount: number;
+        source: string;
+        summary: {
+          exact: number;
+          gaps: number;
+          nativeEquivalent: number;
+          partial: number;
+          total: number;
+        };
+        topWork: Array<{
+          category: string;
+          name: string;
+          nextWork?: string;
+          status: 'exact' | 'native-equivalent' | 'partial' | 'gap';
+          toolset: string;
+        }>;
+      } | null> => ipcRenderer.invoke('tools.hermesCatalog.get'),
+    },
     learningUsage: {
       list: (options?: {
         cwd?: string;
@@ -3796,6 +3818,28 @@ declare global {
       };
       tools: {
         list: () => Promise<Array<{ name: string; description: string; category: string }>>;
+        hermesCatalog: {
+          get: () => Promise<{
+            generatedAt: string;
+            inspectedCommit: string;
+            localToolCount: number;
+            source: string;
+            summary: {
+              exact: number;
+              gaps: number;
+              nativeEquivalent: number;
+              partial: number;
+              total: number;
+            };
+            topWork: Array<{
+              category: string;
+              name: string;
+              nextWork?: string;
+              status: 'exact' | 'native-equivalent' | 'partial' | 'gap';
+              toolset: string;
+            }>;
+          } | null>;
+        };
         learningUsage: {
           list: (options?: {
             cwd?: string;
@@ -3809,7 +3853,11 @@ declare global {
             lastError?: string;
             lastRunId?: string;
             lastUsedAt: string;
+            nextAction: string;
+            recommendation: 'observe' | 'reinforce' | 'improve' | 'deprecate';
             reinforced: boolean;
+            score: number;
+            scoreReason: string;
             skillName: string;
             successCount: number;
           }>>;

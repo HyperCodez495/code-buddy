@@ -183,6 +183,7 @@ import {
 } from './utils/logger';
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
+import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import { listSkillCandidatesForReview } from './tools/skill-candidate-review-bridge';
 import { buildLessonsVaultPreview } from './tools/lessons-vault-bridge';
@@ -4034,6 +4035,15 @@ ipcMain.handle('tools.list', async () => {
   } catch (err) {
     logWarn('[tools.list] failed:', err);
     return [];
+  }
+});
+
+ipcMain.handle('tools.hermesCatalog.get', async () => {
+  try {
+    return await getHermesToolCatalogForReview();
+  } catch (err) {
+    logWarn('[tools.hermesCatalog.get] failed:', err);
+    return null;
   }
 });
 

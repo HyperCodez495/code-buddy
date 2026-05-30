@@ -97,9 +97,10 @@ const FEATURES: HermesParityFeature[] = [
     verificationCommands: [
       'npm test -- tests/fleet/dispatch-profile.test.ts --run',
       'npx tsx src/index.ts hermes doctor review --json',
+      'npx tsx src/index.ts hermes tools --json',
     ],
-    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, but the official per-platform toolset catalog is not complete.',
-    nextWork: 'Add a dedicated toolset catalog/status surface for Cowork and CLI.',
+    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, and the official tool parity catalog is now visible from both CLI and Cowork. The official per-platform toolset catalog is still not complete.',
+    nextWork: 'Close high-value exact tool gaps or explicitly mark optional platform toolsets out of scope.',
   },
   {
     id: 'built-in-tools',

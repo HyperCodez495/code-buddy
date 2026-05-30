@@ -53,6 +53,10 @@ const hermesPlanStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-plan-strip.tsx'
 );
+const hermesToolCatalogStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-tool-catalog-strip.tsx'
+);
 const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx'
@@ -211,6 +215,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(fleetSagaDetailPath, 'utf8'),
       fs.readFileSync(fleetMemoryStripPath, 'utf8'),
       fs.readFileSync(hermesPlanStripPath, 'utf8'),
+      fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
       fs.readFileSync(learningSkillUsageStripPath, 'utf8'),
@@ -259,6 +264,16 @@ describe('French renderer i18n support', () => {
       'fleet.hermesPlan.interactiveChip',
       'fleet.hermesPlan.useAsGoal',
       'fleet.hermesPlan.schedule',
+      'fleet.hermesToolCatalog.title',
+      'fleet.hermesToolCatalog.countChip',
+      'fleet.hermesToolCatalog.loadingChip',
+      'fleet.hermesToolCatalog.exactChip',
+      'fleet.hermesToolCatalog.nativeChip',
+      'fleet.hermesToolCatalog.partialChip',
+      'fleet.hermesToolCatalog.gapChip',
+      'fleet.hermesToolCatalog.loadFailed',
+      'fleet.hermesToolCatalog.empty',
+      'fleet.hermesToolCatalog.unavailable',
       'fleet.skillCandidate.title',
       'fleet.skillCandidate.countChip',
       'fleet.skillCandidate.reviewChip',

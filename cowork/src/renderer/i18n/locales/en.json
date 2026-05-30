@@ -2243,6 +2243,18 @@
       "useAsGoal": "Use as Fleet goal",
       "schedule": "Schedule plan"
     },
+    "hermesToolCatalog": {
+      "title": "Hermes tool catalog",
+      "countChip": "{{covered}}/{{total}} covered",
+      "loadingChip": "catalog",
+      "exactChip": "{{count}} exact",
+      "nativeChip": "{{count}} native",
+      "partialChip": "{{count}} partial",
+      "gapChip": "{{count}} gaps",
+      "loadFailed": "Hermes tool catalog load failed",
+      "empty": "No prioritized Hermes tool gaps.",
+      "unavailable": "Hermes tool catalog is not loaded yet."
+    },
     "skillCandidate": {
       "title": "Skill candidate review",
       "countChip": "{{count}} eligible",

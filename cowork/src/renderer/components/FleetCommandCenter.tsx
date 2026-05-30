@@ -51,6 +51,7 @@ import { FleetOutcomeDetail, FleetOutcomeStrip } from './fleet-outcome-panel';
 import { ScheduledWorkStrip } from './fleet-scheduled-work-strip';
 import { FleetMemoryStrip } from './fleet-memory-strip';
 import { HermesPlanStrip } from './hermes-plan-strip';
+import { HermesToolCatalogStrip } from './hermes-tool-catalog-strip';
 import { ToolProfileInspectorStrip } from './tool-profile-inspector-strip';
 import {
   LeadDiscoveryWorkflowStrip,
@@ -1080,6 +1081,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   onUseAsGoal={handleUseHermesPlanAsGoal}
                   onScheduleGoal={handleScheduleHermesPlan}
                 />
+                <HermesToolCatalogStrip />
                 <LessonsVaultStrip
                   cwd={activeWorkspaceCwd}
                   onBrowse={() => setShowLessonsGraph(true)}

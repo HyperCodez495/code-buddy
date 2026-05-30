@@ -91,6 +91,7 @@ change-control surface.
 | Enforced tool filters per profile | custom-agent `fleetDispatchProfile` → `ToolFilterConfig`; `ToolHandler` enforces at execution; `buddy hermes doctor <profile>` | done |
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
+| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps |
 
 ### Scheduled automations
 

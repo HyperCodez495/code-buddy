@@ -2243,6 +2243,18 @@
       "useAsGoal": "Utiliser comme objectif Fleet",
       "schedule": "Planifier le plan"
     },
+    "hermesToolCatalog": {
+      "title": "Catalogue d'outils Hermes",
+      "countChip": "{{covered}}/{{total}} couverts",
+      "loadingChip": "catalogue",
+      "exactChip": "{{count}} exact(s)",
+      "nativeChip": "{{count}} natif(s)",
+      "partialChip": "{{count}} partiel(s)",
+      "gapChip": "{{count}} manque(s)",
+      "loadFailed": "Chargement du catalogue d'outils Hermes échoué",
+      "empty": "Aucun manque Hermes prioritaire.",
+      "unavailable": "Le catalogue d'outils Hermes n'est pas encore chargé."
+    },
     "skillCandidate": {
       "title": "Revue des candidates SKILL",
       "countChip": "{{count}} éligible(s)",

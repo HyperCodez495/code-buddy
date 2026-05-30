@@ -2230,6 +2230,18 @@
       "useAsGoal": "用作 Fleet 目标",
       "schedule": "计划此方案"
     },
+    "hermesToolCatalog": {
+      "title": "Hermes 工具目录",
+      "countChip": "{{covered}}/{{total}} 已覆盖",
+      "loadingChip": "目录",
+      "exactChip": "{{count}} 个精确",
+      "nativeChip": "{{count}} 个原生",
+      "partialChip": "{{count}} 个部分",
+      "gapChip": "{{count}} 个缺口",
+      "loadFailed": "Hermes 工具目录加载失败",
+      "empty": "没有优先 Hermes 工具缺口。",
+      "unavailable": "Hermes 工具目录尚未加载。"
+    },
     "skillCandidate": {
       "title": "SKILL 候选审查",
       "countChip": "{{count}} 个合格",
