@@ -308,13 +308,25 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, and review-gated candidate list/view/install through Code Buddy skills primitives; full update/delete/rollback lifecycle remains future work.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
         action: {
           type: 'string',
-          enum: ['list', 'view', 'create', 'discover', 'candidate_list', 'candidate_view', 'candidate_install'],
+          enum: [
+            'list',
+            'view',
+            'create',
+            'discover',
+            'enable',
+            'disable',
+            'deprecate',
+            'delete',
+            'candidate_list',
+            'candidate_view',
+            'candidate_install',
+          ],
           description: 'Skill management action to run.',
         },
         name: {
@@ -385,11 +397,15 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         approved_by: {
           type: 'string',
-          description: 'Human reviewer identity. Required for candidate_install.',
+          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete.',
         },
         approved_at: {
           type: 'string',
           description: 'Optional approval timestamp for candidate_install.',
+        },
+        reason: {
+          type: 'string',
+          description: 'Optional human-readable reason for enable, disable, deprecate, or delete.',
         },
         workspace_skill_root: {
           type: 'string',

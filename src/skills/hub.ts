@@ -78,6 +78,8 @@ export interface InstalledSkill {
    * installed but can be filtered out of selection via `listEnabled()`.
    */
   enabled?: boolean;
+  /** Local lifecycle metadata for review-gated management actions. */
+  lifecycle?: SkillLifecycleState;
 }
 
 export interface SkillUsageStats {
@@ -95,6 +97,13 @@ export interface SkillUsageStats {
   averageDurationMs?: number;
   /** Last failure message, cleared on success */
   lastError?: string;
+}
+
+export interface SkillLifecycleState {
+  status: 'active' | 'disabled' | 'deprecated';
+  updatedAt: number;
+  updatedBy?: string;
+  reason?: string;
 }
 
 export interface SkillUsageRecord {
@@ -891,7 +900,14 @@ export class SkillsHub extends EventEmitter {
   setEnabled(
     skillName: string,
     enabled: boolean,
-    options?: { path?: string; version?: string }
+    options?: {
+      path?: string;
+      version?: string;
+      actor?: string;
+      reason?: string;
+      status?: SkillLifecycleState['status'];
+      updatedAt?: number;
+    }
   ): InstalledSkill | null {
     let installed = this.lockfile.skills[skillName];
     if (!installed) {
@@ -912,6 +928,12 @@ export class SkillsHub extends EventEmitter {
     } else {
       installed.enabled = enabled;
     }
+    installed.lifecycle = {
+      status: enabled ? 'active' : options?.status ?? 'disabled',
+      updatedAt: options?.updatedAt ?? Date.now(),
+      ...(options?.actor ? { updatedBy: options.actor } : {}),
+      ...(options?.reason ? { reason: options.reason } : {}),
+    };
     this.writeLockfile();
     this.emit('skill:enabled', { name: skillName, enabled });
     return installed;

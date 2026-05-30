@@ -193,5 +193,73 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     }));
     expect(viewedAfterInstall.integrityOk).toBe(true);
     expect(viewedAfterInstall.content).toContain('- Approved by: Patrice');
+
+    const deprecateWithoutApproval = await manageTool!.execute({
+      action: 'deprecate',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(deprecateWithoutApproval.success).toBe(false);
+    expect(deprecateWithoutApproval.error).toContain('approved_by is required');
+
+    const deprecated = await parseToolOutput(await manageTool!.execute({
+      action: 'deprecate',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Superseded by a broader workflow.',
+    }));
+    expect(deprecated.action).toBe('skill_manage_deprecate');
+    expect(deprecated.installed).toMatchObject({
+      name: 'research-skill-manage-candidate',
+      enabled: false,
+      lifecycle: {
+        status: 'deprecated',
+        updatedBy: 'Patrice',
+        reason: 'Superseded by a broader workflow.',
+      },
+    });
+
+    const hiddenAfterDeprecate = await parseToolOutput(await manageTool!.execute({ action: 'list' }));
+    expect((hiddenAfterDeprecate.skills as Array<{ name: string }>).map((skill) => skill.name)).not.toContain(
+      'research-skill-manage-candidate',
+    );
+
+    const enabledAgain = await parseToolOutput(await manageTool!.execute({
+      action: 'enable',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Rollback deprecation after review.',
+    }));
+    expect(enabledAgain.installed).toMatchObject({
+      name: 'research-skill-manage-candidate',
+      enabled: true,
+      lifecycle: {
+        status: 'active',
+        updatedBy: 'Patrice',
+        reason: 'Rollback deprecation after review.',
+      },
+    });
+
+    const deleted = await parseToolOutput(await manageTool!.execute({
+      action: 'delete',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Retire test candidate.',
+    }));
+    expect(deleted.action).toBe('skill_manage_delete');
+    expect(deleted.removed).toBe(true);
+
+    const viewDeleted = await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(viewDeleted.success).toBe(false);
+    expect(viewDeleted.error).toContain('skill not found');
+
+    await expect(
+      fs.readFile(
+        path.join(tempWorkspace, '.codebuddy', 'skills', 'research-skill-manage-candidate', 'SKILL.md'),
+        'utf8',
+      ),
+    ).resolves.toContain('- Approved by: Patrice');
   });
 });

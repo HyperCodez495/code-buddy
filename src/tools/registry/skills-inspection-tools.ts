@@ -16,6 +16,7 @@ import {
   readMaterializedResearchScriptSkillCandidate,
   type ResearchScriptSkillCandidate,
 } from '../../agent/research-script-skill-candidate.js';
+import { getSkillsHub } from '../../skills/hub.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
 
 class CodeBuddyToolAdapter implements ITool {
@@ -81,6 +82,10 @@ type SkillManageAction =
   | 'view'
   | 'create'
   | 'discover'
+  | 'enable'
+  | 'disable'
+  | 'deprecate'
+  | 'delete'
   | 'candidate_list'
   | 'candidate_view'
   | 'candidate_install';
@@ -116,6 +121,14 @@ function serializePayload(payload: Record<string, unknown>): ToolResult {
     output: JSON.stringify(payload, null, 2),
     data: payload,
   };
+}
+
+function readApproval(input: Record<string, unknown>, action: string): string | ToolResult {
+  const approvedBy = readString(input.approved_by);
+  if (!approvedBy) {
+    return { success: false, error: `skill_manage ${action}: approved_by is required` };
+  }
+  return approvedBy;
 }
 
 function summarizeCandidate(candidate: ResearchScriptSkillCandidate): Record<string, unknown> {
@@ -193,6 +206,59 @@ export class SkillManageExecuteTool implements ITool {
       });
     }
 
+    if (action === 'enable' || action === 'disable' || action === 'deprecate') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: `skill_manage ${action}: name is required` };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      const enabled = action === 'enable';
+      const installed = getSkillsHub().setEnabled(name, enabled, {
+        actor: approval,
+        reason: readString(input.reason) || undefined,
+        status: action === 'deprecate' ? 'deprecated' : enabled ? 'active' : 'disabled',
+      });
+      if (!installed) {
+        return { success: false, error: `skill_manage ${action}: skill not found: ${name}` };
+      }
+
+      return serializePayload({
+        action: `skill_manage_${action}`,
+        installed,
+      });
+    }
+
+    if (action === 'delete') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: 'skill_manage delete: name is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      const before = getSkillsHub().info(name);
+      const removed = await getSkillsHub().uninstall(name);
+      if (!removed) {
+        return { success: false, error: `skill_manage delete: skill not found: ${name}` };
+      }
+
+      return serializePayload({
+        action: 'skill_manage_delete',
+        removed: true,
+        approvedBy: approval,
+        name,
+        previous: before?.installed,
+      });
+    }
+
     if (action === 'candidate_list') {
       const candidates = await listMaterializedResearchScriptSkillCandidates({
         rootDir: process.cwd(),
@@ -257,7 +323,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, create, discover, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -281,13 +347,17 @@ export class SkillManageExecuteTool implements ITool {
       'view',
       'create',
       'discover',
+      'enable',
+      'disable',
+      'deprecate',
+      'delete',
       'candidate_list',
       'candidate_view',
       'candidate_install',
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, create, discover, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, candidate_list, candidate_view, candidate_install'],
       };
     }
     if (action === 'view' && !readString(data.name)) {
@@ -300,6 +370,12 @@ export class SkillManageExecuteTool implements ITool {
       const missing = ['name', 'description', 'body'].filter((key) => !readString(data[key]));
       if (missing.length > 0) {
         return { valid: false, errors: [`${missing.join(', ')} required for create`] };
+      }
+    }
+    if (['enable', 'disable', 'deprecate', 'delete'].includes(action)) {
+      const missing = ['name', 'approved_by'].filter((key) => !readString(data[key]));
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for ${action}`] };
       }
     }
     if (action === 'candidate_view' && !readString(data.candidate_path)) {
@@ -319,7 +395,23 @@ export class SkillManageExecuteTool implements ITool {
       name: this.name,
       description: this.description,
       category: 'utility' as ToolCategoryType,
-      keywords: ['skills', 'skill', 'manage', 'list', 'view', 'create', 'discover', 'candidate', 'review', 'install', 'hermes'],
+      keywords: [
+        'skills',
+        'skill',
+        'manage',
+        'list',
+        'view',
+        'create',
+        'discover',
+        'candidate',
+        'review',
+        'install',
+        'enable',
+        'disable',
+        'deprecate',
+        'delete',
+        'hermes',
+      ],
       priority: 6,
       modifiesFiles: true,
       makesNetworkRequests: true,
