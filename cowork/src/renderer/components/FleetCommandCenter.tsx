@@ -476,7 +476,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   }, [isOpen, memoryRefreshToken]);
 
   useEffect(() => {
-    if (!isOpen || dispatchProfile !== 'research') return;
+    if (!isOpen) return;
     let cancelled = false;
     const loadSkillCandidates = async () => {
       try {
@@ -501,7 +501,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [activeWorkspaceCwd, dispatchProfile, isOpen]);
+  }, [activeWorkspaceCwd, isOpen]);
 
   const handleRefreshPeers = async (peerId?: string) => {
     if (refreshingPeerId) return;
@@ -1084,6 +1084,11 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   onUseAsGoal={handleUseLessonsVaultAsGoal}
                 />
                 <LearningSkillUsageStrip cwd={activeWorkspaceCwd} />
+                <SkillCandidateReviewQueueStrip
+                  candidates={skillCandidates}
+                  error={skillCandidateLoadError}
+                  onUseAsGoal={handleUseSkillCandidateReviewAsGoal}
+                />
                 {dispatchProfile === 'research' && (
                   <>
                     <LeadDiscoveryWorkflowStrip
@@ -1095,11 +1100,6 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                       goal={goalText}
                       onUseAsGoal={handleUseBrowserOperatorDraftAsGoal}
                       onScheduleGoal={handleScheduleBrowserOperatorDraft}
-                    />
-                    <SkillCandidateReviewQueueStrip
-                      candidates={skillCandidates}
-                      error={skillCandidateLoadError}
-                      onUseAsGoal={handleUseSkillCandidateReviewAsGoal}
                     />
                   </>
                 )}

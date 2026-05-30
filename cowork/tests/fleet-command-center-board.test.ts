@@ -176,6 +176,10 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain('error={skillCandidateLoadError}');
     expect(source).toContain('handleUseSkillCandidateReviewAsGoal');
     expect(source).toContain('buildSkillCandidateReviewQueueGoal');
+    expect(source).not.toContain("if (!isOpen || dispatchProfile !== 'research') return;");
+    expect(source.indexOf('<SkillCandidateReviewQueueStrip')).toBeLessThan(
+      source.indexOf("{dispatchProfile === 'research'")
+    );
     expect(source).toContain('handleUseHermesPlanAsGoal');
     expect(source).toContain('buildHermesIntegrationPlan');
     expect(source).toContain('buildHermesPlanGoal');
