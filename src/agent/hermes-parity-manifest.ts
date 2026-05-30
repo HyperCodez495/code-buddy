@@ -180,8 +180,8 @@ const FEATURES: HermesParityFeature[] = [
       '(cd cowork && npm test -- tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts --run)',
       '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
     ],
-    notes: 'Native skill coverage is good and both skill_manage candidate review plus Cowork now surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
-    nextWork: 'Add Cowork expanded side-by-side SKILL.md diff plus reviewer-gated patch/update controls.',
+    notes: 'Native skill coverage is good and both skill_manage candidate review plus Cowork now surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
+    nextWork: 'Add Cowork expanded side-by-side SKILL.md diff plus reviewer-gated patch controls.',
   },
   {
     id: 'closed-learning-loop',
@@ -200,7 +200,7 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/learning-agent-real.test.ts --run',
     ],
     notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions. Honcho-style dialectic inference remains review-gated rather than auto-applied.',
-    nextWork: 'Expose full skill package manager lifecycle controls in Cowork.',
+    nextWork: 'Expose the remaining review-gated patch control and expanded SKILL.md diff review in Cowork.',
   },
   {
     id: 'cron-scheduling',

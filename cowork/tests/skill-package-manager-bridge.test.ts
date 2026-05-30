@@ -6,6 +6,7 @@ import {
   listSkillPackagesForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
+  updateSkillPackageForReview,
 } from '../src/main/tools/skill-package-manager-bridge';
 
 vi.mock('../src/main/utils/core-loader', () => ({
@@ -226,6 +227,64 @@ describe('skill package manager bridge', () => {
       deletedName: 'obsolete-helper',
       summary: {
         installedCount: 0,
+      },
+    });
+  });
+
+  it('updates a package through the core package summary module', async () => {
+    const updateHermesSkillPackage = vi.fn().mockResolvedValue({
+      enabled: true,
+      exists: true,
+      installedAt: 1,
+      integrityOk: true,
+      lastLifecycleReason: 'Use cached hub update.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'cached-helper',
+      path: 'D:/workspace/.codebuddy/skills/cached-helper/SKILL.md',
+      rollbackableCount: 1,
+      source: 'hub',
+      status: 'active',
+      version: '0.2.0',
+    });
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 0,
+      enabledCount: 1,
+      installedCount: 1,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 1,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      updateHermesSkillPackage,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await updateSkillPackageForReview({
+      approvedBy: 'Patrice',
+      name: 'cached-helper',
+      reason: 'Use cached hub update.',
+      rootDir,
+      version: '0.2.0',
+    });
+
+    expect(updateHermesSkillPackage).toHaveBeenCalledWith(rootDir, 'cached-helper', {
+      actor: 'Patrice',
+      force: undefined,
+      reason: 'Use cached hub update.',
+      version: '0.2.0',
+    });
+    expect(result).toMatchObject({
+      package: {
+        lastLifecycleReviewer: 'Patrice',
+        name: 'cached-helper',
+        version: '0.2.0',
+      },
+      summary: {
+        rollbackableCount: 1,
       },
     });
   });

@@ -190,6 +190,7 @@ import {
   listSkillPackagesForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
+  updateSkillPackageForReview,
 } from './tools/skill-package-manager-bridge';
 import {
   installSkillCandidateForReview,
@@ -4172,6 +4173,41 @@ ipcMain.handle(
       return { ok: true as const, ...result };
     } catch (err) {
       logWarn('[tools.skillPackage.delete] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.update',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      cwd?: string;
+      force?: boolean;
+      name?: string;
+      reason?: string;
+      version?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await updateSkillPackageForReview({
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        force: payload?.force === true,
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        version: typeof payload?.version === 'string' ? payload.version : undefined,
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.update] failed:', err);
       return {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err),

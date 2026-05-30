@@ -10,6 +10,7 @@ import {
   PackageOpen,
   PauseCircle,
   PlayCircle,
+  RefreshCw,
   RotateCcw,
   ShieldCheck,
   Terminal,
@@ -89,6 +90,19 @@ interface SkillPackageManagerApi {
     name: string;
     reason?: string;
     snapshotId?: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    package?: SkillPackageManagerEntry;
+    summary?: SkillPackageManagerSummary;
+  }>;
+  update?: (options: {
+    approvedBy: string;
+    cwd?: string;
+    force?: boolean;
+    name: string;
+    reason?: string;
+    version?: string;
   }) => Promise<{
     error?: string;
     ok: boolean;
@@ -175,10 +189,12 @@ export const SkillPackageManagerStrip: React.FC<{
     const lifecycle = api?.lifecycle;
     const list = api?.list;
     const rollback = api?.rollback;
+    const update = api?.update;
     if (
       (action === 'delete' && !deletePackage)
       || (action === 'rollback' && !rollback)
-      || (action !== 'delete' && action !== 'rollback' && !lifecycle)
+      || (action === 'update' && !update)
+      || (action !== 'delete' && action !== 'rollback' && action !== 'update' && !lifecycle)
     ) {
       onUseAsGoal?.(buildSkillLifecycleGoal(skill.name, action, approvedBy));
       return;
@@ -206,6 +222,12 @@ export const SkillPackageManagerStrip: React.FC<{
         });
       } else if (action === 'rollback') {
         result = await rollback!({
+          approvedBy,
+          cwd,
+          name: skill.name,
+        });
+      } else if (action === 'update') {
+        result = await update!({
           approvedBy,
           cwd,
           name: skill.name,
@@ -411,6 +433,15 @@ export const SkillPackageManagerStrip: React.FC<{
                     onClick={() => void handlePackageAction(skill, 'rollback')}
                   />
                 ) : null}
+                {skill.exists ? (
+                  <LifecycleButton
+                    action="update"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={RefreshCw}
+                    loading={updatingSkillKey === `${skill.name}:update`}
+                    onClick={() => void handlePackageAction(skill, 'update')}
+                  />
+                ) : null}
                 <LifecycleButton
                   action="delete"
                   disabled={!reviewerName.trim() || updatingSkillKey !== null}
@@ -471,7 +502,7 @@ function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
   ).electronAPI?.tools?.skillPackage;
 }
 
-type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback' | 'delete';
+type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback' | 'delete' | 'update';
 
 const LifecycleButton: React.FC<{
   action: SkillPackageReviewAction;

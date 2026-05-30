@@ -1616,6 +1616,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
         error?: string;
         ok: boolean;
       }> => ipcRenderer.invoke('tools.skillPackage.delete', options),
+      update: (options: {
+        approvedBy: string;
+        cwd?: string;
+        force?: boolean;
+        name: string;
+        reason?: string;
+        version?: string;
+      }): Promise<{
+        error?: string;
+        ok: boolean;
+        package?: {
+          averageDurationMs?: number;
+          contentPreview?: string;
+          contentPreviewTruncated?: boolean;
+          enabled: boolean;
+          exists: boolean;
+          failureCount?: number;
+          installedAt: number;
+          integrityOk: boolean;
+          invocationCount?: number;
+          lastError?: string;
+          lastLifecycleReason?: string;
+          lastLifecycleReviewer?: string;
+          lastUsedAt?: number;
+          name: string;
+          path: string;
+          rollbackableCount: number;
+          sizeBytes?: number;
+          source: 'hub' | 'local' | 'git';
+          status: 'active' | 'disabled' | 'deprecated';
+          successCount?: number;
+          version: string;
+        };
+      }> => ipcRenderer.invoke('tools.skillPackage.update', options),
     },
     learningUsage: {
       list: (options?: {
@@ -4126,6 +4160,40 @@ declare global {
             deletedName?: string;
             error?: string;
             ok: boolean;
+          }>;
+          update: (options: {
+            approvedBy: string;
+            cwd?: string;
+            force?: boolean;
+            name: string;
+            reason?: string;
+            version?: string;
+          }) => Promise<{
+            error?: string;
+            ok: boolean;
+            package?: {
+              averageDurationMs?: number;
+              contentPreview?: string;
+              contentPreviewTruncated?: boolean;
+              enabled: boolean;
+              exists: boolean;
+              failureCount?: number;
+              installedAt: number;
+              integrityOk: boolean;
+              invocationCount?: number;
+              lastError?: string;
+              lastLifecycleReason?: string;
+              lastLifecycleReviewer?: string;
+              lastUsedAt?: number;
+              name: string;
+              path: string;
+              rollbackableCount: number;
+              sizeBytes?: number;
+              source: 'hub' | 'local' | 'git';
+              status: 'active' | 'disabled' | 'deprecated';
+              successCount?: number;
+              version: string;
+            };
           }>;
         };
         learningUsage: {

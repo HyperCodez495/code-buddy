@@ -466,4 +466,95 @@ describe('SkillPackageManagerStrip', () => {
     });
     expect(target.textContent).toContain('delete obsolete-helper by Patrice.');
   });
+
+  it('requires reviewer identity before updating an installed skill', async () => {
+    const target = container();
+    const update = vi.fn().mockResolvedValue({
+      ok: true,
+      package: {
+        enabled: true,
+        exists: true,
+        installedAt: 1,
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'cached-helper',
+        path: 'D:/workspace/.codebuddy/skills/cached-helper/SKILL.md',
+        rollbackableCount: 1,
+        source: 'hub',
+        status: 'active',
+        version: '0.2.0',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            update: typeof update;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          update,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: true,
+              name: 'cached-helper',
+              path: 'D:/workspace/.codebuddy/skills/cached-helper/SKILL.md',
+              rollbackableCount: 0,
+              source: 'hub',
+              status: 'active',
+              version: '0.1.0',
+            },
+          ],
+          reviewCommands: ['buddy skills list --all --json'],
+          rollbackableCount: 0,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let updateButton = target.querySelector('[data-testid="skill-package-update"]') as HTMLButtonElement;
+    expect(updateButton.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    updateButton = target.querySelector('[data-testid="skill-package-update"]') as HTMLButtonElement;
+    expect(updateButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(updateButton);
+      await Promise.resolve();
+    });
+
+    expect(update).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      name: 'cached-helper',
+    });
+    expect(target.textContent).toContain('update cached-helper by Patrice.');
+  });
 });

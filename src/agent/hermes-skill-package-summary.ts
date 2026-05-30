@@ -68,6 +68,14 @@ export interface DeleteHermesSkillPackageOptions {
   reason?: string;
 }
 
+export interface UpdateHermesSkillPackageOptions {
+  actor: string;
+  force?: boolean;
+  reason?: string;
+  updatedAt?: number;
+  version?: string;
+}
+
 export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
@@ -189,6 +197,38 @@ export async function deleteHermesSkillPackage(
 
   const { hub } = buildWorkspaceSkillsHub(workDir);
   return hub.uninstall(name);
+}
+
+export async function updateHermesSkillPackage(
+  workDir: string,
+  skillName: string,
+  options: UpdateHermesSkillPackageOptions,
+): Promise<HermesSkillPackageEntry | null> {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill update.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill update.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  const updated = await hub.updateInstalledSkill(name, {
+    actor,
+    force: options.force,
+    reason: options.reason?.trim() || undefined,
+    updatedAt: options.updatedAt,
+    version: options.version?.trim() || undefined,
+  });
+  if (!updated) return null;
+
+  return summarizeInstalledSkill(
+    updated.installed,
+    hub.getInstalledSkillHistory(updated.installed.name),
+    hub.info(updated.installed.name)?.content,
+    normalizePreviewChars(undefined),
+  );
 }
 
 function summarizeInstalledSkill(

@@ -8,6 +8,7 @@ import {
   deleteHermesSkillPackage,
   rollbackHermesSkillPackage,
   setHermesSkillPackageLifecycle,
+  updateHermesSkillPackage,
 } from '../../src/agent/hermes-skill-package-summary.js';
 import { SkillsHub } from '../../src/skills/hub.js';
 
@@ -294,6 +295,76 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       enabledCount: 0,
       installedCount: 0,
       rollbackableCount: 0,
+    });
+  });
+
+  it('updates an installed skill from a real local hub cache entry', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    await hub.installFromContent(
+      'update-helper',
+      skillContent('update-helper', '0.1.0', 'Original cached update wording.'),
+    );
+    const cachedUpdateContent = skillContent(
+      'update-helper',
+      '0.2.0',
+      'Updated cached update wording.',
+    );
+    await fs.writeFile(
+      path.join(tempDir, '.codebuddy', 'skills-cache', 'registry-cache.json'),
+      `${JSON.stringify({
+        skills: [{
+          author: 'test',
+          checksum: 'cached-update-helper',
+          description: 'Updated update-helper test skill',
+          downloads: 0,
+          name: 'update-helper',
+          size: Buffer.byteLength(cachedUpdateContent, 'utf8'),
+          stars: 0,
+          tags: ['hermes', 'skills'],
+          updatedAt: '2026-05-30T18:30:00.000Z',
+          version: '0.2.0',
+        }],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(tempDir, '.codebuddy', 'skills-cache', 'update-helper@0.2.0.skill.md'),
+      `${cachedUpdateContent.trimEnd()}\n`,
+      'utf8',
+    );
+
+    const updated = await updateHermesSkillPackage(
+      tempDir,
+      'update-helper',
+      {
+        actor: 'Patrice',
+        reason: 'Use reviewed cached update.',
+        updatedAt: 11_000,
+      },
+    );
+
+    expect(updated).toMatchObject({
+      contentPreview: expect.stringContaining('Updated cached update wording.'),
+      lastLifecycleReason: 'Use reviewed cached update.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'update-helper',
+      rollbackableCount: 1,
+      status: 'active',
+      version: '0.2.0',
+    });
+
+    const installedPath = path.join(tempDir, '.codebuddy', 'skills', 'update-helper', 'SKILL.md');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Updated cached update wording.');
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary.packages[0]).toMatchObject({
+      integrityOk: true,
+      name: 'update-helper',
+      version: '0.2.0',
     });
   });
 });
