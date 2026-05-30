@@ -184,6 +184,13 @@ interface MemoryApiBridge {
 }
 
 interface SkillCandidateApiBridge {
+  install?: (options: {
+    approvedBy: string;
+    candidatePath: string;
+    cwd?: string;
+    overwrite?: boolean;
+    workspaceSkillRoot?: string;
+  }) => Promise<{ error?: string; ok: boolean }>;
   list?: (options?: {
     cwd?: string;
     eligibleOnly?: boolean;
@@ -274,6 +281,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
   const [memoryRefreshToken, setMemoryRefreshToken] = useState(0);
   const [skillCandidates, setSkillCandidates] = useState<SkillCandidateReviewQueueItem[]>([]);
   const [skillCandidateLoadError, setSkillCandidateLoadError] = useState<string | null>(null);
+  const [skillCandidateRefreshToken, setSkillCandidateRefreshToken] = useState(0);
   const [includeMemoryContext, setIncludeMemoryContext] = useState(true);
   const [dispatching, setDispatching] = useState(false);
   const [refreshingPeerId, setRefreshingPeerId] = useState<string | null>(null);
@@ -505,7 +513,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       cancelled = true;
       clearInterval(id);
     };
-  }, [activeWorkspaceCwd, isOpen]);
+  }, [activeWorkspaceCwd, isOpen, skillCandidateRefreshToken]);
 
   const handleRefreshPeers = async (peerId?: string) => {
     if (refreshingPeerId) return;
@@ -1098,7 +1106,9 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <LearningSkillUsageStrip cwd={activeWorkspaceCwd} />
                 <SkillCandidateReviewQueueStrip
                   candidates={skillCandidates}
+                  cwd={activeWorkspaceCwd}
                   error={skillCandidateLoadError}
+                  onInstalled={() => setSkillCandidateRefreshToken((value) => value + 1)}
                   onUseAsGoal={handleUseSkillCandidateReviewAsGoal}
                 />
                 {dispatchProfile === 'research' && (

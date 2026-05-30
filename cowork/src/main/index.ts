@@ -186,7 +186,10 @@ import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import { listSkillPackagesForReview } from './tools/skill-package-manager-bridge';
-import { listSkillCandidatesForReview } from './tools/skill-candidate-review-bridge';
+import {
+  installSkillCandidateForReview,
+  listSkillCandidatesForReview,
+} from './tools/skill-candidate-review-bridge';
 import { buildLessonsVaultPreview } from './tools/lessons-vault-bridge';
 import { getGeminiOauthTokens, clearGeminiCredentials } from '../../../src/providers/gemini-oauth';
 import {
@@ -4117,6 +4120,43 @@ ipcMain.handle(
     } catch (err) {
       logWarn('[tools.skillCandidate.list] failed:', err);
       return [];
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillCandidate.install',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      candidatePath?: string;
+      cwd?: string;
+      overwrite?: boolean;
+      workspaceSkillRoot?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const candidatePath = typeof payload?.candidatePath === 'string' ? payload.candidatePath : '';
+      const approvedBy = typeof payload?.approvedBy === 'string' ? payload.approvedBy : '';
+      const result = await installSkillCandidateForReview({
+        approvedBy,
+        candidatePath,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        overwrite: Boolean(payload?.overwrite),
+        workspaceSkillRoot: typeof payload?.workspaceSkillRoot === 'string'
+          ? payload.workspaceSkillRoot
+          : undefined,
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillCandidate.install] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 );

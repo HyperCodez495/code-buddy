@@ -1570,10 +1570,24 @@ contextBridge.exposeInMainWorld('electronAPI', {
         limit?: number;
         skillRoot?: string;
       }): Promise<Array<{
+        candidateChecksum?: string;
+        candidateDiffPreview?: {
+          addedLines: number;
+          preview: string;
+          removedLines: number;
+          summary: string;
+          truncated: boolean;
+        };
         eligible: boolean;
         id: string;
+        installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+        installedChecksum?: string;
+        installedIntegrityOk?: boolean;
+        installedPath?: string;
+        installedVersion?: string;
         kind: string;
         reason: string;
+        reviewCommands?: string[];
         skillName: string;
         skillPath: string;
         sourceJobId: string;
@@ -1582,6 +1596,52 @@ contextBridge.exposeInMainWorld('electronAPI', {
         title: string;
         toolSequence?: string[];
       }>> => ipcRenderer.invoke('tools.skillCandidate.list', options ?? {}),
+      install: (options: {
+        approvedBy: string;
+        candidatePath: string;
+        cwd?: string;
+        overwrite?: boolean;
+        workspaceSkillRoot?: string;
+      }): Promise<{
+        candidate?: {
+          candidateChecksum?: string;
+          candidateDiffPreview?: {
+            addedLines: number;
+            preview: string;
+            removedLines: number;
+            summary: string;
+            truncated: boolean;
+          };
+          eligible: boolean;
+          id: string;
+          installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+          installedChecksum?: string;
+          installedIntegrityOk?: boolean;
+          installedPath?: string;
+          installedVersion?: string;
+          kind: string;
+          reason: string;
+          reviewCommands?: string[];
+          skillName: string;
+          skillPath: string;
+          sourceJobId: string;
+          sourceRunId?: string;
+          successfulRunCount: number;
+          title: string;
+          toolSequence?: string[];
+        };
+        error?: string;
+        installed?: {
+          absoluteInstalledPath: string;
+          approvedAt: string;
+          approvedBy: string;
+          candidateId: string;
+          installedPath: string;
+          skillName: string;
+          sourceCandidatePath: string;
+        };
+        ok: boolean;
+      }> => ipcRenderer.invoke('tools.skillCandidate.install', options),
     },
     lessonsVault: {
       preview: (options?: {
@@ -3945,10 +4005,24 @@ declare global {
             limit?: number;
             skillRoot?: string;
           }) => Promise<Array<{
+            candidateChecksum?: string;
+            candidateDiffPreview?: {
+              addedLines: number;
+              preview: string;
+              removedLines: number;
+              summary: string;
+              truncated: boolean;
+            };
             eligible: boolean;
             id: string;
+            installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+            installedChecksum?: string;
+            installedIntegrityOk?: boolean;
+            installedPath?: string;
+            installedVersion?: string;
             kind: string;
             reason: string;
+            reviewCommands?: string[];
             skillName: string;
             skillPath: string;
             sourceJobId: string;
@@ -3957,6 +4031,52 @@ declare global {
             title: string;
             toolSequence?: string[];
           }>>;
+          install: (options: {
+            approvedBy: string;
+            candidatePath: string;
+            cwd?: string;
+            overwrite?: boolean;
+            workspaceSkillRoot?: string;
+          }) => Promise<{
+            candidate?: {
+              candidateChecksum?: string;
+              candidateDiffPreview?: {
+                addedLines: number;
+                preview: string;
+                removedLines: number;
+                summary: string;
+                truncated: boolean;
+              };
+              eligible: boolean;
+              id: string;
+              installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+              installedChecksum?: string;
+              installedIntegrityOk?: boolean;
+              installedPath?: string;
+              installedVersion?: string;
+              kind: string;
+              reason: string;
+              reviewCommands?: string[];
+              skillName: string;
+              skillPath: string;
+              sourceJobId: string;
+              sourceRunId?: string;
+              successfulRunCount: number;
+              title: string;
+              toolSequence?: string[];
+            };
+            error?: string;
+            installed?: {
+              absoluteInstalledPath: string;
+              approvedAt: string;
+              approvedBy: string;
+              candidateId: string;
+              installedPath: string;
+              skillName: string;
+              sourceCandidatePath: string;
+            };
+            ok: boolean;
+          }>;
         };
         lessonsVault: {
           preview: (options?: {

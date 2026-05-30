@@ -1,6 +1,16 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { ListChecks, PackageCheck, Route, ShieldCheck, Terminal } from 'lucide-react';
+import {
+  AlertCircle,
+  CheckCircle2,
+  Download,
+  ListChecks,
+  Loader2,
+  PackageCheck,
+  Route,
+  ShieldCheck,
+  Terminal,
+} from 'lucide-react';
 
 export interface SkillCandidateReviewQueueItem {
   candidateChecksum?: string;
@@ -29,6 +39,22 @@ export interface SkillCandidateReviewQueueItem {
 }
 
 interface SkillCandidateReviewApi {
+  install?: (options: {
+    approvedBy: string;
+    candidatePath: string;
+    cwd?: string;
+    overwrite?: boolean;
+    workspaceSkillRoot?: string;
+  }) => Promise<{
+    candidate?: SkillCandidateReviewQueueItem;
+    error?: string;
+    installed?: {
+      approvedBy: string;
+      installedPath: string;
+      skillName: string;
+    };
+    ok: boolean;
+  }>;
   list?: (options?: {
     cwd?: string;
     eligibleOnly?: boolean;
@@ -65,11 +91,16 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
   candidates?: SkillCandidateReviewQueueItem[];
   cwd?: string;
   error?: string | null;
+  onInstalled?: () => void;
   onUseAsGoal?: (goal: string) => void;
-}> = ({ candidates, cwd, error = null, onUseAsGoal }) => {
+}> = ({ candidates, cwd, error = null, onInstalled, onUseAsGoal }) => {
   const { t } = useTranslation();
+  const [installError, setInstallError] = useState<string | null>(null);
+  const [installFeedback, setInstallFeedback] = useState<string | null>(null);
+  const [installingSkillName, setInstallingSkillName] = useState<string | null>(null);
   const [loadedCandidates, setLoadedCandidates] = useState<SkillCandidateReviewQueueItem[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reviewerName, setReviewerName] = useState('');
   const commands = useMemo(() => buildSkillCandidateReviewCommands(), []);
   const goalDraft = useMemo(() => buildSkillCandidateReviewQueueGoal(), []);
   const reviewCandidates = candidates ?? loadedCandidates;
@@ -107,6 +138,61 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
     };
   }, [candidates, cwd]);
 
+  const handleInstallCandidate = async (candidate: SkillCandidateReviewQueueItem) => {
+    const approvedBy = reviewerName.trim();
+    if (!approvedBy) {
+      setInstallError(t('fleet.skillCandidate.reviewerRequired', 'Reviewer is required.'));
+      setInstallFeedback(null);
+      return;
+    }
+
+    const api = getSkillCandidateReviewApi();
+    if (!api?.install) {
+      onUseAsGoal?.(buildCandidateInstallGoal(candidate, approvedBy));
+      return;
+    }
+
+    setInstallingSkillName(candidate.skillName);
+    setInstallError(null);
+    setInstallFeedback(null);
+
+    try {
+      const result = await api.install({
+        approvedBy,
+        candidatePath: candidate.skillPath,
+        cwd,
+        overwrite: candidate.installState === 'installed-different',
+      });
+      if (!result.ok) {
+        setInstallError(result.error ?? t('fleet.skillCandidate.installFailed', 'Install failed.'));
+        return;
+      }
+
+      setInstallFeedback(
+        t('fleet.skillCandidate.installedFeedback', 'Installed {{skill}} by {{reviewer}}.', {
+          reviewer: result.installed?.approvedBy ?? approvedBy,
+          skill: result.installed?.skillName ?? candidate.skillName,
+        })
+      );
+
+      if (candidates === undefined && api.list) {
+        const refreshed = await api.list({
+          cwd,
+          eligibleOnly: true,
+          limit: 3,
+        });
+        setLoadedCandidates(Array.isArray(refreshed) ? refreshed : []);
+      }
+      onInstalled?.();
+    } catch (installErrorValue: unknown) {
+      setInstallError(
+        installErrorValue instanceof Error ? installErrorValue.message : String(installErrorValue)
+      );
+    } finally {
+      setInstallingSkillName(null);
+    }
+  };
+
   return (
     <section
       className="mt-3 rounded border border-border-muted bg-surface/60 p-2"
@@ -124,6 +210,18 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
             count: eligibleCount,
           })}
         </span>
+      </div>
+
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+        <input
+          aria-label={t('fleet.skillCandidate.reviewerLabel', 'Reviewer')}
+          className="min-w-0 flex-1 rounded border border-border-muted bg-surface px-2 py-1 text-[10px] text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+          data-testid="skill-candidate-reviewer-input"
+          onChange={(event) => setReviewerName(event.target.value)}
+          placeholder={t('fleet.skillCandidate.reviewerPlaceholder', 'Reviewer')}
+          type="text"
+          value={reviewerName}
+        />
       </div>
 
       <div className="mt-1.5 flex flex-wrap gap-1">
@@ -153,6 +251,20 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
           {t('fleet.skillCandidate.loadFailed', 'Candidate queue load failed')}: {visibleError}
         </div>
       )}
+
+      {installError ? (
+        <div className="mt-1.5 flex items-start gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+          <AlertCircle size={10} className="mt-0.5 shrink-0" />
+          <span>{installError}</span>
+        </div>
+      ) : null}
+
+      {installFeedback ? (
+        <div className="mt-1.5 flex items-start gap-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
+          <CheckCircle2 size={10} className="mt-0.5 shrink-0" />
+          <span>{installFeedback}</span>
+        </div>
+      ) : null}
 
       {visibleCandidates.length > 0 ? (
         <ul className="mt-1.5 space-y-1">
@@ -208,6 +320,26 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                     {candidate.candidateDiffPreview.preview}
                     {candidate.candidateDiffPreview.truncated ? '\n...' : ''}
                   </pre>
+                </div>
+              ) : null}
+              {isCandidateInstallActionVisible(candidate) ? (
+                <div className="mt-1 flex justify-end">
+                  <button
+                    className="flex items-center gap-1 rounded border border-accent/50 px-2 py-1 text-[10px] text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
+                    data-testid={`skill-candidate-install-${candidate.skillName}`}
+                    disabled={!reviewerName.trim() || installingSkillName !== null}
+                    onClick={() => void handleInstallCandidate(candidate)}
+                    type="button"
+                  >
+                    {installingSkillName === candidate.skillName ? (
+                      <Loader2 size={10} className="animate-spin" />
+                    ) : (
+                      <Download size={10} />
+                    )}
+                    {candidate.installState === 'installed-different'
+                      ? t('fleet.skillCandidate.overwriteCandidate', 'Overwrite')
+                      : t('fleet.skillCandidate.installCandidate', 'Install')}
+                  </button>
                 </div>
               ) : null}
             </li>
@@ -275,4 +407,45 @@ function formatInstallState(
     case 'not-installed':
       return 'not installed';
   }
+}
+
+function isCandidateInstallActionVisible(candidate: SkillCandidateReviewQueueItem): boolean {
+  if (!candidate.eligible) return false;
+  return candidate.installState !== 'installed-current';
+}
+
+function buildCandidateInstallGoal(
+  candidate: SkillCandidateReviewQueueItem,
+  approvedBy: string,
+): string {
+  const command = buildCandidateInstallCommand(candidate, approvedBy);
+  return [
+    `Install reviewed skill candidate ${candidate.skillName} from Cowork.`,
+    '',
+    'Use the review-gated command:',
+    `- ${command}`,
+  ].join('\n');
+}
+
+function buildCandidateInstallCommand(
+  candidate: SkillCandidateReviewQueueItem,
+  approvedBy: string,
+): string {
+  const existing = candidate.reviewCommands?.find((command) =>
+    command.includes('action=candidate_install')
+  );
+  const fallback = [
+    'skill_manage action=candidate_install',
+    `candidate_path=${candidate.skillPath}`,
+    'approved_by=<reviewer>',
+    candidate.installState === 'installed-different' ? 'overwrite=true' : '',
+  ].filter(Boolean).join(' ');
+  return (existing ?? fallback).replace(
+    'approved_by=<reviewer>',
+    `approved_by=${formatReviewerForCommand(approvedBy)}`
+  );
+}
+
+function formatReviewerForCommand(value: string): string {
+  return /^[A-Za-z0-9._-]+$/.test(value) ? value : JSON.stringify(value);
 }

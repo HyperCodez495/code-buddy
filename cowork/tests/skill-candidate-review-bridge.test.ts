@@ -1,7 +1,10 @@
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
-import { listSkillCandidatesForReview } from '../src/main/tools/skill-candidate-review-bridge';
+import {
+  installSkillCandidateForReview,
+  listSkillCandidatesForReview,
+} from '../src/main/tools/skill-candidate-review-bridge';
 
 vi.mock('../src/main/utils/core-loader', () => ({
   loadCoreModule: vi.fn(),
@@ -146,6 +149,86 @@ describe('skill candidate review bridge', () => {
     });
 
     expect(candidates).toEqual([]);
+    expect(mockedLoadCoreModule).not.toHaveBeenCalled();
+  });
+
+  it('installs an approved candidate through the core skill candidate module', async () => {
+    const candidate = {
+      eligible: true,
+      id: 'candidate-ready',
+      kind: 'learning',
+      reason: '2 successful runs met the promotion threshold.',
+      skillName: 'research-ready',
+      skillPath: '.codebuddy/skill-candidates/research-ready/SKILL.md',
+      sourceJobId: 'research-script-ready',
+      sourceRunId: 'run-learning-ready',
+      successfulRunCount: 2,
+      title: 'Ready candidate',
+    };
+    const readMaterializedResearchScriptSkillCandidate = vi.fn(async () => candidate);
+    const readMaterializedResearchScriptSkillCandidateWithInstallState = vi.fn(async () => ({
+      ...candidate,
+      candidateChecksum: 'candidate-sha',
+      installState: 'installed-current',
+      installedChecksum: 'candidate-sha',
+      installedIntegrityOk: true,
+      installedPath: 'D:/workspace/.codebuddy/skills/research-ready/SKILL.md',
+      installedVersion: '0.1.0',
+      reviewCommands: ['skill_manage action=history name=research-ready'],
+    }));
+    const installResearchScriptSkillCandidate = vi.fn(async () => ({
+      absoluteInstalledPath: 'D:/workspace/.codebuddy/skills/research-ready/SKILL.md',
+      approvedAt: '2026-05-30T17:45:00.000Z',
+      approvedBy: 'Patrice',
+      candidateId: 'candidate-ready',
+      installedPath: '.codebuddy/skills/research-ready/SKILL.md',
+      skillName: 'research-ready',
+      sourceCandidatePath: '.codebuddy/skill-candidates/research-ready/SKILL.md',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      installResearchScriptSkillCandidate,
+      readMaterializedResearchScriptSkillCandidate,
+      readMaterializedResearchScriptSkillCandidateWithInstallState,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await installSkillCandidateForReview({
+      approvedBy: 'Patrice',
+      candidatePath: '.codebuddy/skill-candidates/research-ready',
+      overwrite: true,
+      rootDir,
+    });
+
+    expect(readMaterializedResearchScriptSkillCandidate).toHaveBeenCalledWith(
+      '.codebuddy/skill-candidates/research-ready',
+      { rootDir },
+    );
+    expect(installResearchScriptSkillCandidate).toHaveBeenCalledWith(candidate, {
+      approvedBy: 'Patrice',
+      overwrite: true,
+      rootDir,
+      workspaceSkillRoot: undefined,
+    });
+    expect(result).toMatchObject({
+      candidate: {
+        installState: 'installed-current',
+        installedIntegrityOk: true,
+        skillName: 'research-ready',
+      },
+      installed: {
+        approvedBy: 'Patrice',
+        skillName: 'research-ready',
+      },
+    });
+  });
+
+  it('requires a reviewer before installing a candidate', async () => {
+    await expect(installSkillCandidateForReview({
+      approvedBy: ' ',
+      candidatePath: '.codebuddy/skill-candidates/research-ready',
+      rootDir: path.resolve('workspace'),
+    })).rejects.toThrow('approvedBy is required');
+
     expect(mockedLoadCoreModule).not.toHaveBeenCalled();
   });
 });

@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import React from 'react';
-import { act } from 'react-dom/test-utils';
+import { act, Simulate } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -103,7 +103,9 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(strip?.textContent).toContain('buddy tools skill-candidate list --eligible-only --json');
     expect(strip?.textContent).toContain('buddy tools skill-candidate inspect <candidate-dir>');
 
-    const button = target.querySelector('button');
+    const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Review queue as goal')
+    );
     expect(button?.textContent).toContain('Review queue as goal');
 
     act(() => {
@@ -176,5 +178,82 @@ describe('SkillCandidateReviewQueueStrip', () => {
     });
     expect(target.textContent).toContain('research-loaded-candidate');
     expect(target.textContent).toContain('research-script-loaded');
+  });
+
+  it('requires reviewer identity before installing a candidate through Cowork', async () => {
+    const target = container();
+    const install = vi.fn().mockResolvedValue({
+      installed: {
+        approvedBy: 'Patrice',
+        installedPath: '.codebuddy/skills/research-loaded-candidate/SKILL.md',
+        skillName: 'research-loaded-candidate',
+      },
+      ok: true,
+    });
+    const onInstalled = vi.fn();
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillCandidate?: {
+            install: typeof install;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillCandidate: {
+          install,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(
+        React.createElement(SkillCandidateReviewQueueStrip, {
+          candidates: [
+            {
+              eligible: true,
+              installState: 'not-installed',
+              kind: 'research-script',
+              reason: '2 successful runs met the promotion threshold.',
+              skillName: 'research-loaded-candidate',
+              skillPath: '.codebuddy/skill-candidates/research-loaded-candidate/SKILL.md',
+              sourceJobId: 'research-script-loaded',
+              successfulRunCount: 2,
+            },
+          ],
+          cwd: 'D:/CascadeProjects/grok-cli-weekend',
+          onInstalled,
+        }),
+      );
+      await Promise.resolve();
+    });
+
+    let button = target.querySelector('[data-testid="skill-candidate-install-research-loaded-candidate"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-candidate-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    button = target.querySelector('[data-testid="skill-candidate-install-research-loaded-candidate"]') as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(button);
+      await Promise.resolve();
+    });
+
+    expect(install).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      candidatePath: '.codebuddy/skill-candidates/research-loaded-candidate/SKILL.md',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      overwrite: false,
+    });
+    expect(onInstalled).toHaveBeenCalledTimes(1);
+    expect(target.textContent).toContain('Installed research-loaded-candidate by Patrice.');
   });
 });

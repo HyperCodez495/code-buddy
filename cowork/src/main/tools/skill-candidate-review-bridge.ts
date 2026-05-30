@@ -36,6 +36,29 @@ export interface ListSkillCandidateReviewOptions {
   skillRoot?: string;
 }
 
+export interface InstallSkillCandidateForReviewOptions {
+  approvedBy: string;
+  candidatePath: string;
+  overwrite?: boolean;
+  rootDir: string;
+  workspaceSkillRoot?: string;
+}
+
+export interface InstalledSkillCandidateForReview {
+  absoluteInstalledPath: string;
+  approvedAt: string;
+  approvedBy: string;
+  candidateId: string;
+  installedPath: string;
+  skillName: string;
+  sourceCandidatePath: string;
+}
+
+export interface InstallSkillCandidateForReviewResult {
+  candidate: SkillCandidateReviewSummary;
+  installed: InstalledSkillCandidateForReview;
+}
+
 interface ResearchScriptSkillCandidate {
   candidateChecksum?: string;
   candidateDiffPreview?: {
@@ -65,6 +88,15 @@ interface ResearchScriptSkillCandidate {
 }
 
 interface ResearchScriptSkillCandidateModule {
+  installResearchScriptSkillCandidate?: (
+    candidate: ResearchScriptSkillCandidate,
+    options: {
+      approvedBy?: string;
+      overwrite?: boolean;
+      rootDir: string;
+      workspaceSkillRoot?: string;
+    },
+  ) => Promise<InstalledSkillCandidateForReview>;
   listMaterializedResearchScriptSkillCandidates: (options: {
     rootDir: string;
     skillRoot?: string;
@@ -73,6 +105,14 @@ interface ResearchScriptSkillCandidateModule {
     rootDir: string;
     skillRoot?: string;
   }) => Promise<ResearchScriptSkillCandidate[]>;
+  readMaterializedResearchScriptSkillCandidate?: (
+    candidatePath: string,
+    options: { rootDir: string },
+  ) => Promise<ResearchScriptSkillCandidate>;
+  readMaterializedResearchScriptSkillCandidateWithInstallState?: (
+    candidatePath: string,
+    options: { rootDir: string },
+  ) => Promise<ResearchScriptSkillCandidate>;
 }
 
 export async function listSkillCandidatesForReview(
@@ -99,6 +139,48 @@ export async function listSkillCandidatesForReview(
   return visible
     .slice(0, normalizeLimit(options.limit))
     .map(summarizeSkillCandidate);
+}
+
+export async function installSkillCandidateForReview(
+  options: InstallSkillCandidateForReviewOptions,
+): Promise<InstallSkillCandidateForReviewResult> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir);
+  if (!rootDir) {
+    throw new Error('An absolute workspace root is required to install a skill candidate.');
+  }
+
+  const approvedBy = options.approvedBy?.trim();
+  if (!approvedBy) {
+    throw new Error('approvedBy is required to install a skill candidate from Cowork.');
+  }
+
+  const candidatePath = options.candidatePath?.trim();
+  if (!candidatePath) {
+    throw new Error('candidatePath is required to install a skill candidate from Cowork.');
+  }
+
+  const mod = await loadCoreModule<ResearchScriptSkillCandidateModule>(
+    'agent/research-script-skill-candidate.js',
+  );
+  if (!mod?.readMaterializedResearchScriptSkillCandidate || !mod.installResearchScriptSkillCandidate) {
+    throw new Error('Core skill candidate install module is unavailable.');
+  }
+
+  const candidate = await mod.readMaterializedResearchScriptSkillCandidate(candidatePath, { rootDir });
+  const installed = await mod.installResearchScriptSkillCandidate(candidate, {
+    approvedBy,
+    overwrite: Boolean(options.overwrite),
+    rootDir,
+    workspaceSkillRoot: normalizeSkillRoot(options.workspaceSkillRoot),
+  });
+  const refreshed = mod.readMaterializedResearchScriptSkillCandidateWithInstallState
+    ? await mod.readMaterializedResearchScriptSkillCandidateWithInstallState(candidatePath, { rootDir })
+    : candidate;
+
+  return {
+    candidate: summarizeSkillCandidate(refreshed),
+    installed,
+  };
 }
 
 function summarizeSkillCandidate(
