@@ -250,6 +250,76 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
       '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
     );
 
+    const cachedUpdateContent = [
+      '---',
+      'name: research-skill-manage-candidate',
+      'version: 0.2.0',
+      'description: Updated real skill_manage candidate from local cache.',
+      '---',
+      '',
+      '# Updated Skill Manage Candidate',
+      '',
+      'Updated cached hub workflow.',
+      '',
+      '## Human Approval',
+      '- Approved by: Patrice',
+      '',
+    ].join('\n');
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'registry-cache.json'),
+      `${JSON.stringify({
+        skills: [{
+          name: 'research-skill-manage-candidate',
+          version: '0.2.0',
+          description: 'Updated real skill_manage candidate from local cache.',
+          author: 'test',
+          tags: ['hermes', 'skill-manage'],
+          downloads: 0,
+          stars: 0,
+          updatedAt: '2026-05-30T15:40:00.000Z',
+          checksum: 'cached-update',
+          size: Buffer.byteLength(cachedUpdateContent, 'utf8'),
+        }],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'research-skill-manage-candidate@0.2.0.skill.md'),
+      `${cachedUpdateContent.trimEnd()}\n`,
+      'utf8',
+    );
+
+    const updateWithoutApproval = await manageTool!.execute({
+      action: 'update',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(updateWithoutApproval.success).toBe(false);
+    expect(updateWithoutApproval.error).toContain('approved_by is required');
+
+    const updated = await parseToolOutput(await manageTool!.execute({
+      action: 'update',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Use reviewed cached hub update.',
+    }));
+    expect(updated.action).toBe('skill_manage_update');
+    expect(updated).toMatchObject({
+      fromVersion: '0.1.0',
+      toVersion: '0.2.0',
+      snapshot: {
+        createdBy: 'Patrice',
+        reason: 'Use reviewed cached hub update.',
+      },
+    });
+
+    const viewedAfterUpdate = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect((viewedAfterUpdate.installed as { version: string }).version).toBe('0.2.0');
+    expect(viewedAfterUpdate.integrityOk).toBe(true);
+    expect(viewedAfterUpdate.content).toContain('Updated cached hub workflow.');
+
     const deprecateWithoutApproval = await manageTool!.execute({
       action: 'deprecate',
       name: 'research-skill-manage-candidate',

@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -325,6 +325,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
             'delete',
             'patch',
             'rollback',
+            'update',
             'candidate_list',
             'candidate_view',
             'candidate_install',
@@ -360,6 +361,14 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         overwrite: {
           type: 'boolean',
           description: 'Overwrite an existing workspace skill on create. Default: false.',
+        },
+        force: {
+          type: 'boolean',
+          description: 'Force update even when the target version is not newer. Default: false.',
+        },
+        version: {
+          type: 'string',
+          description: 'Optional target version for update. If omitted, update uses hub or local cache metadata.',
         },
         include_disabled: {
           type: 'boolean',
@@ -399,7 +408,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         approved_by: {
           type: 'string',
-          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback.',
+          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback, update.',
         },
         approved_at: {
           type: 'string',
@@ -407,7 +416,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         reason: {
           type: 'string',
-          description: 'Optional human-readable reason for enable, disable, deprecate, delete, patch, or rollback.',
+          description: 'Optional human-readable reason for enable, disable, deprecate, delete, patch, rollback, or update.',
         },
         old_text: {
           type: 'string',

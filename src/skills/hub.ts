@@ -143,6 +143,21 @@ export interface SkillRollbackResult {
   currentSnapshot: SkillVersionSnapshot;
 }
 
+export interface SkillUpdateOptions {
+  actor?: string;
+  force?: boolean;
+  reason?: string;
+  updatedAt?: number;
+  version?: string;
+}
+
+export interface SkillUpdateResult {
+  installed: InstalledSkill;
+  fromVersion: string;
+  toVersion: string;
+  snapshot: SkillVersionSnapshot;
+}
+
 export interface SkillUsageRecord {
   success: boolean;
   durationMs?: number;
@@ -475,6 +490,15 @@ export class SkillsHub extends EventEmitter {
     }
   }
 
+  private getCachedSkillContentPath(skillName: string, version?: string): string | null {
+    const candidates = [
+      version ? path.join(this.config.cacheDir, `${skillName}@${version}.skill.md`) : null,
+      path.join(this.config.cacheDir, `${skillName}.skill.md`),
+    ].filter((candidate): candidate is string => Boolean(candidate));
+
+    return candidates.find((candidate) => fs.existsSync(candidate)) ?? null;
+  }
+
   // ==========================================================================
   // Install
   // ==========================================================================
@@ -539,6 +563,12 @@ export class SkillsHub extends EventEmitter {
    * In a real implementation, this would download from the registry.
    */
   private async fetchSkillContent(skillName: string, version?: string): Promise<string> {
+    const cachedContentPath = this.getCachedSkillContentPath(skillName, version);
+    if (cachedContentPath) {
+      logger.debug('Using cached skill content', { name: skillName, version, path: cachedContentPath });
+      return fs.readFileSync(cachedContentPath, 'utf-8');
+    }
+
     const versionParam = version ? `&version=${encodeURIComponent(version)}` : '';
     const url = `${this.config.registryUrl}/skills/${encodeURIComponent(skillName)}/download?format=skillmd${versionParam}`;
 
@@ -559,12 +589,6 @@ export class SkillsHub extends EventEmitter {
       throw new Error(`Hub returned status ${response.status}: ${response.statusText}`);
     } catch (err) {
       // Check local cache
-      const cached = path.join(this.config.cacheDir, `${skillName}.skill.md`);
-      if (fs.existsSync(cached)) {
-        logger.debug('Using cached skill content', { name: skillName });
-        return fs.readFileSync(cached, 'utf-8');
-      }
-
       throw new Error(
         `Failed to fetch skill '${skillName}': ${err instanceof Error ? err.message : String(err)}`
       );
@@ -753,6 +777,11 @@ export class SkillsHub extends EventEmitter {
    * Get skill info from the hub API.
    */
   private async getHubSkillInfo(skillName: string): Promise<HubSkill | null> {
+    const cachedInfo = this.getLocalCacheSkills().find((skill) => skill.name === skillName);
+    if (cachedInfo) {
+      return cachedInfo;
+    }
+
     const url = `${this.config.registryUrl}/skills/${encodeURIComponent(skillName)}`;
 
     try {
@@ -773,6 +802,63 @@ export class SkillsHub extends EventEmitter {
     }
 
     return null;
+  }
+
+  async updateInstalledSkill(
+    skillName: string,
+    options: SkillUpdateOptions = {},
+  ): Promise<SkillUpdateResult | null> {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot update missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const hubInfo = await this.getHubSkillInfo(skillName);
+    const targetVersion = options.version || hubInfo?.version;
+    if (!targetVersion) {
+      throw new Error(`No update metadata found for '${skillName}'`);
+    }
+    if (!options.force && compareSemver(targetVersion, installed.version) <= 0) {
+      throw new Error(`Skill '${skillName}' is already up to date (${installed.version})`);
+    }
+
+    const content = await this.fetchSkillContent(skillName, targetVersion);
+    this.validateSkillContent(content, skillName);
+    const resolvedVersion = this.extractVersionFromContent(content) || targetVersion;
+    if (!options.force && compareSemver(resolvedVersion, installed.version) <= 0) {
+      throw new Error(`Skill '${skillName}' update content is not newer (${resolvedVersion} <= ${installed.version})`);
+    }
+
+    const snapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason,
+      updatedAt: options.updatedAt,
+    });
+    const fromVersion = installed.version;
+
+    fs.writeFileSync(installed.path, content, 'utf-8');
+    installed.version = resolvedVersion;
+    installed.checksum = computeChecksum(content);
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, snapshot);
+    this.writeLockfile();
+    this.emit('skill:updated', installed);
+
+    return {
+      installed,
+      fromVersion,
+      toVersion: resolvedVersion,
+      snapshot,
+    };
   }
 
   // ==========================================================================

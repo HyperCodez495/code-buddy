@@ -88,6 +88,7 @@ type SkillManageAction =
   | 'delete'
   | 'patch'
   | 'rollback'
+  | 'update'
   | 'candidate_list'
   | 'candidate_view'
   | 'candidate_install';
@@ -344,6 +345,40 @@ export class SkillManageExecuteTool implements ITool {
       }
     }
 
+    if (action === 'update') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: 'skill_manage update: name is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const updated = await getSkillsHub().updateInstalledSkill(name, {
+          actor: approval,
+          force: input.force === true,
+          reason: readString(input.reason) || undefined,
+          version: readString(input.version) || undefined,
+        });
+        if (!updated) {
+          return { success: false, error: `skill_manage update: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_update',
+          ...updated,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage update: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
     if (action === 'candidate_list') {
       const candidates = await listMaterializedResearchScriptSkillCandidates({
         rootDir: process.cwd(),
@@ -408,7 +443,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -438,13 +473,14 @@ export class SkillManageExecuteTool implements ITool {
       'delete',
       'patch',
       'rollback',
+      'update',
       'candidate_list',
       'candidate_view',
       'candidate_install',
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install'],
       };
     }
     if (action === 'view' && !readString(data.name)) {
@@ -481,6 +517,12 @@ export class SkillManageExecuteTool implements ITool {
         return { valid: false, errors: [`${missing.join(', ')} required for rollback`] };
       }
     }
+    if (action === 'update') {
+      const missing = ['name', 'approved_by'].filter((key) => !readString(data[key]));
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for update`] };
+      }
+    }
     if (action === 'candidate_view' && !readString(data.candidate_path)) {
       return { valid: false, errors: ['candidate_path is required for candidate_view'] };
     }
@@ -515,6 +557,7 @@ export class SkillManageExecuteTool implements ITool {
         'delete',
         'patch',
         'rollback',
+        'update',
         'hermes',
       ],
       priority: 6,

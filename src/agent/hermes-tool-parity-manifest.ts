@@ -143,8 +143,8 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
     equivalentCodeBuddyTools: ['skills_list', 'skill_view', 'create_skill', 'skill_discover'],
     equivalenceStatus: 'partial',
-    notes: 'Code Buddy now exposes skill_manage for installed list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback, and review-gated candidate list/view/install, with local snapshot-backed rollback rather than full hub version history.',
-    nextWork: 'Keep mutation review-gated when adding full skill_manage update and version-history parity.',
+    notes: 'Code Buddy now exposes skill_manage for installed list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install, with local snapshot-backed rollback rather than full hub version history.',
+    nextWork: 'Keep mutation review-gated when adding richer version-history parity and Cowork lifecycle controls.',
   },
   {
     name: 'browser_navigate',
