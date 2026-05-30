@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -323,6 +323,8 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
             'disable',
             'deprecate',
             'delete',
+            'patch',
+            'rollback',
             'candidate_list',
             'candidate_view',
             'candidate_install',
@@ -397,7 +399,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         approved_by: {
           type: 'string',
-          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete.',
+          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback.',
         },
         approved_at: {
           type: 'string',
@@ -405,7 +407,23 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         reason: {
           type: 'string',
-          description: 'Optional human-readable reason for enable, disable, deprecate, or delete.',
+          description: 'Optional human-readable reason for enable, disable, deprecate, delete, patch, or rollback.',
+        },
+        old_text: {
+          type: 'string',
+          description: 'Literal text to replace inside an installed SKILL.md. Required for patch.',
+        },
+        new_text: {
+          type: 'string',
+          description: 'Replacement text for patch. Can be an empty string for deletion.',
+        },
+        expected_replacements: {
+          type: 'number',
+          description: 'Optional safety check for patch: fail unless exactly this many replacements would be made.',
+        },
+        snapshot_id: {
+          type: 'string',
+          description: 'Optional rollback snapshot id. If omitted, rollback restores the latest snapshot.',
         },
         workspace_skill_root: {
           type: 'string',

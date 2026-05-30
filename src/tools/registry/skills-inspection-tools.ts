@@ -86,12 +86,18 @@ type SkillManageAction =
   | 'disable'
   | 'deprecate'
   | 'delete'
+  | 'patch'
+  | 'rollback'
   | 'candidate_list'
   | 'candidate_view'
   | 'candidate_install';
 
 function readString(value: unknown): string {
   return typeof value === 'string' ? value.trim() : '';
+}
+
+function readRawString(value: unknown): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 function readStringArray(value: unknown): string[] | undefined {
@@ -259,6 +265,85 @@ export class SkillManageExecuteTool implements ITool {
       });
     }
 
+    if (action === 'patch') {
+      const name = readString(input.name);
+      const oldText = readRawString(input.old_text);
+      const newText = readRawString(input.new_text);
+      if (!name) {
+        return { success: false, error: 'skill_manage patch: name is required' };
+      }
+      if (oldText === undefined || oldText.length === 0) {
+        return { success: false, error: 'skill_manage patch: old_text is required' };
+      }
+      if (newText === undefined) {
+        return { success: false, error: 'skill_manage patch: new_text is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const patched = getSkillsHub().patchInstalledSkill(name, oldText, newText, {
+          actor: approval,
+          expectedReplacements: typeof input.expected_replacements === 'number'
+            ? input.expected_replacements
+            : undefined,
+          reason: readString(input.reason) || undefined,
+        });
+        if (!patched) {
+          return { success: false, error: `skill_manage patch: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_patch',
+          ...patched,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage patch: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
+    if (action === 'rollback') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: 'skill_manage rollback: name is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const rolledBack = getSkillsHub().rollbackInstalledSkill(
+          name,
+          readString(input.snapshot_id) || undefined,
+          {
+            actor: approval,
+            reason: readString(input.reason) || undefined,
+          },
+        );
+        if (!rolledBack) {
+          return { success: false, error: `skill_manage rollback: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_rollback',
+          ...rolledBack,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage rollback: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
     if (action === 'candidate_list') {
       const candidates = await listMaterializedResearchScriptSkillCandidates({
         rootDir: process.cwd(),
@@ -323,7 +408,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -351,13 +436,15 @@ export class SkillManageExecuteTool implements ITool {
       'disable',
       'deprecate',
       'delete',
+      'patch',
+      'rollback',
       'candidate_list',
       'candidate_view',
       'candidate_install',
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, candidate_list, candidate_view, candidate_install'],
       };
     }
     if (action === 'view' && !readString(data.name)) {
@@ -376,6 +463,22 @@ export class SkillManageExecuteTool implements ITool {
       const missing = ['name', 'approved_by'].filter((key) => !readString(data[key]));
       if (missing.length > 0) {
         return { valid: false, errors: [`${missing.join(', ')} required for ${action}`] };
+      }
+    }
+    if (action === 'patch') {
+      const missing = ['name', 'approved_by', 'old_text', 'new_text'].filter((key) => {
+        if (key === 'old_text') return readRawString(data[key]) === undefined || readRawString(data[key]) === '';
+        if (key === 'new_text') return readRawString(data[key]) === undefined;
+        return !readString(data[key]);
+      });
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for patch`] };
+      }
+    }
+    if (action === 'rollback') {
+      const missing = ['name', 'approved_by'].filter((key) => !readString(data[key]));
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for rollback`] };
       }
     }
     if (action === 'candidate_view' && !readString(data.candidate_path)) {
@@ -410,6 +513,8 @@ export class SkillManageExecuteTool implements ITool {
         'disable',
         'deprecate',
         'delete',
+        'patch',
+        'rollback',
         'hermes',
       ],
       priority: 6,

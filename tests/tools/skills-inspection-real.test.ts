@@ -194,6 +194,62 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect(viewedAfterInstall.integrityOk).toBe(true);
     expect(viewedAfterInstall.content).toContain('- Approved by: Patrice');
 
+    const patchWithoutApproval = await manageTool!.execute({
+      action: 'patch',
+      name: 'research-skill-manage-candidate',
+      old_text: '- Promote a repeated real workflow through skill_manage.',
+      new_text: '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
+    });
+    expect(patchWithoutApproval.success).toBe(false);
+    expect(patchWithoutApproval.error).toContain('approved_by is required');
+
+    const patched = await parseToolOutput(await manageTool!.execute({
+      action: 'patch',
+      approved_by: 'Patrice',
+      expected_replacements: 1,
+      name: 'research-skill-manage-candidate',
+      old_text: '- Promote a repeated real workflow through skill_manage.',
+      new_text: '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
+      reason: 'Refine the reviewed usage trigger.',
+    }));
+    expect(patched.action).toBe('skill_manage_patch');
+    expect(patched.replacements).toBe(1);
+    expect(patched.snapshot).toMatchObject({
+      createdBy: 'Patrice',
+      reason: 'Refine the reviewed usage trigger.',
+    });
+
+    const viewedAfterPatch = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(viewedAfterPatch.integrityOk).toBe(true);
+    expect(viewedAfterPatch.content).toContain(
+      '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
+    );
+
+    const rolledBack = await parseToolOutput(await manageTool!.execute({
+      action: 'rollback',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Restore original reviewed wording.',
+      snapshot_id: (patched.snapshot as { id: string }).id,
+    }));
+    expect(rolledBack.action).toBe('skill_manage_rollback');
+    expect(rolledBack.restoredSnapshot).toMatchObject({
+      id: (patched.snapshot as { id: string }).id,
+    });
+
+    const viewedAfterRollback = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(viewedAfterRollback.integrityOk).toBe(true);
+    expect(viewedAfterRollback.content).toContain('- Promote a repeated real workflow through skill_manage.');
+    expect(viewedAfterRollback.content).not.toContain(
+      '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
+    );
+
     const deprecateWithoutApproval = await manageTool!.execute({
       action: 'deprecate',
       name: 'research-skill-manage-candidate',

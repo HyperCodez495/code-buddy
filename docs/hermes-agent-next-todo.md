@@ -15,12 +15,12 @@ Current measured state:
 
 - [ ] **Implement review-gated `skill_manage` lifecycle**
   - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but not manage edit/patch/delete/rollback as one coherent lifecycle.
-  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately.
-  - Remaining scope: add review-gated update/patch/version rollback operations as one coherent lifecycle.
+  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately. Patches snapshot the real SKILL.md before writing, and rollback restores a cached snapshot.
+  - Remaining scope: add review-gated hub update/version-history operations as one coherent lifecycle.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:
-    - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, deprecate it, re-enable it, and remove it from the installed index.
-    - Remaining: patch/update an installed skill and roll back to a prior version.
+    - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, patch it, roll it back, deprecate it, re-enable it, and remove it from the installed index.
+    - Remaining: update an installed skill from hub metadata and expose richer version history.
     - Installed skills keep provenance: source run/candidate, reviewer, approval time, prior version if overwritten.
     - Cowork can show the candidate vs installed skill diff before approval.
   - Verification:

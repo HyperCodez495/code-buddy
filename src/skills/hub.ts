@@ -9,7 +9,7 @@
  */
 
 import { EventEmitter } from 'events';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -80,6 +80,8 @@ export interface InstalledSkill {
   enabled?: boolean;
   /** Local lifecycle metadata for review-gated management actions. */
   lifecycle?: SkillLifecycleState;
+  /** Previous on-disk SKILL.md snapshots available for rollback. */
+  history?: SkillVersionSnapshot[];
 }
 
 export interface SkillUsageStats {
@@ -104,6 +106,41 @@ export interface SkillLifecycleState {
   updatedAt: number;
   updatedBy?: string;
   reason?: string;
+}
+
+export interface SkillVersionSnapshot {
+  id: string;
+  createdAt: number;
+  checksum: string;
+  version: string;
+  snapshotPath: string;
+  createdBy?: string;
+  reason?: string;
+}
+
+export interface SkillPatchOptions {
+  actor?: string;
+  expectedReplacements?: number;
+  reason?: string;
+  updatedAt?: number;
+}
+
+export interface SkillPatchResult {
+  installed: InstalledSkill;
+  replacements: number;
+  snapshot: SkillVersionSnapshot;
+}
+
+export interface SkillRollbackOptions {
+  actor?: string;
+  reason?: string;
+  updatedAt?: number;
+}
+
+export interface SkillRollbackResult {
+  installed: InstalledSkill;
+  restoredSnapshot: SkillVersionSnapshot;
+  currentSnapshot: SkillVersionSnapshot;
 }
 
 export interface SkillUsageRecord {
@@ -286,7 +323,12 @@ export class SkillsHub extends EventEmitter {
       skills: Object.fromEntries(
         Object.entries(this.lockfile.skills).map(([name, skill]) => [
           name,
-          { ...skill, usage: skill.usage ? { ...skill.usage } : undefined },
+          {
+            ...skill,
+            usage: skill.usage ? { ...skill.usage } : undefined,
+            lifecycle: skill.lifecycle ? { ...skill.lifecycle } : undefined,
+            history: skill.history?.map((snapshot) => ({ ...snapshot })),
+          },
         ]),
       ),
     };
@@ -605,6 +647,8 @@ export class SkillsHub extends EventEmitter {
       path: resolvedPath,
       ...(previous?.usage ? { usage: previous.usage } : {}),
       ...(previous?.enabled === false ? { enabled: false } : {}),
+      ...(previous?.lifecycle ? { lifecycle: previous.lifecycle } : {}),
+      ...(previous?.history ? { history: previous.history } : {}),
     };
 
     this.lockfile.skills[skillName] = installed;
@@ -940,6 +984,121 @@ export class SkillsHub extends EventEmitter {
   }
 
   /**
+   * Patch an installed SKILL.md with a literal text replacement. The current
+   * file is snapshotted before writing, so review-gated edits can roll back.
+   */
+  patchInstalledSkill(
+    skillName: string,
+    oldText: string,
+    newText: string,
+    options: SkillPatchOptions = {},
+  ): SkillPatchResult | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot patch missing skill', { name: skillName });
+      return null;
+    }
+    if (!oldText) {
+      throw new Error('Patch oldText must not be empty');
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const content = fs.readFileSync(installed.path, 'utf-8');
+    const replacements = content.split(oldText).length - 1;
+    if (replacements === 0) {
+      throw new Error(`Patch text not found in skill '${skillName}'`);
+    }
+    if (
+      typeof options.expectedReplacements === 'number'
+      && options.expectedReplacements !== replacements
+    ) {
+      throw new Error(
+        `Patch replacement count mismatch for '${skillName}': expected ${options.expectedReplacements}, found ${replacements}`,
+      );
+    }
+
+    const updatedContent = content.split(oldText).join(newText);
+    this.validateSkillContent(updatedContent, skillName);
+    const snapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason,
+      updatedAt: options.updatedAt,
+    });
+
+    fs.writeFileSync(installed.path, updatedContent, 'utf-8');
+    installed.checksum = computeChecksum(updatedContent);
+    installed.version = this.extractVersionFromContent(updatedContent) || installed.version;
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, snapshot);
+    this.writeLockfile();
+    this.emit('skill:patched', { name: skillName, snapshot, replacements });
+    return { installed, replacements, snapshot };
+  }
+
+  /**
+   * Restore a previous SKILL.md snapshot, snapshotting the current file first
+   * so rollback itself remains reversible.
+   */
+  rollbackInstalledSkill(
+    skillName: string,
+    snapshotId?: string,
+    options: SkillRollbackOptions = {},
+  ): SkillRollbackResult | null {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot rollback missing skill', { name: skillName });
+      return null;
+    }
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const history = installed.history ?? [];
+    const restoredSnapshot = snapshotId
+      ? history.find((snapshot) => snapshot.id === snapshotId)
+      : history[history.length - 1];
+    if (!restoredSnapshot) {
+      throw new Error(snapshotId
+        ? `Rollback snapshot not found for '${skillName}': ${snapshotId}`
+        : `No rollback snapshots available for '${skillName}'`);
+    }
+    if (!fs.existsSync(restoredSnapshot.snapshotPath)) {
+      throw new Error(`Rollback snapshot file not found: ${restoredSnapshot.snapshotPath}`);
+    }
+
+    const restoredContent = fs.readFileSync(restoredSnapshot.snapshotPath, 'utf-8');
+    this.validateSkillContent(restoredContent, skillName);
+    const currentSnapshot = this.snapshotInstalledSkill(installed, {
+      actor: options.actor,
+      reason: options.reason
+        ? `before rollback: ${options.reason}`
+        : `before rollback to ${restoredSnapshot.id}`,
+      updatedAt: options.updatedAt,
+    });
+
+    fs.writeFileSync(installed.path, restoredContent, 'utf-8');
+    installed.checksum = computeChecksum(restoredContent);
+    installed.version = this.extractVersionFromContent(restoredContent) || restoredSnapshot.version;
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    this.appendSnapshot(installed, currentSnapshot);
+    this.writeLockfile();
+    this.emit('skill:rolled_back', { name: skillName, restoredSnapshot, currentSnapshot });
+    return { installed, restoredSnapshot, currentSnapshot };
+  }
+
+  /**
    * Record local skill usage so frequently useful skills can be curated.
    * Hermes-style learning starts with this small durable signal.
    */
@@ -986,6 +1145,39 @@ export class SkillsHub extends EventEmitter {
         if (countDelta !== 0) return countDelta;
         return (right.usage?.lastUsedAt ?? 0) - (left.usage?.lastUsedAt ?? 0);
       });
+  }
+
+  private snapshotInstalledSkill(
+    installed: InstalledSkill,
+    options: { actor?: string; reason?: string; updatedAt?: number } = {},
+  ): SkillVersionSnapshot {
+    if (!fs.existsSync(installed.path)) {
+      throw new Error(`Skill file not found: ${installed.path}`);
+    }
+
+    const content = fs.readFileSync(installed.path, 'utf-8');
+    const checksum = computeChecksum(content);
+    const createdAt = options.updatedAt ?? Date.now();
+    const id = `${createdAt.toString(36)}-${randomUUID().slice(0, 8)}-${checksum.slice(0, 12)}`;
+    const snapshotDir = path.join(this.config.cacheDir, 'history', installed.name.replace(/[^a-zA-Z0-9_-]/g, '_'));
+    const snapshotPath = path.join(snapshotDir, `${id}.SKILL.md`);
+
+    fs.mkdirSync(snapshotDir, { recursive: true });
+    fs.writeFileSync(snapshotPath, content, 'utf-8');
+
+    return {
+      id,
+      createdAt,
+      checksum,
+      version: this.extractVersionFromContent(content) || installed.version,
+      snapshotPath,
+      ...(options.actor ? { createdBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+  }
+
+  private appendSnapshot(installed: InstalledSkill, snapshot: SkillVersionSnapshot): void {
+    installed.history = [...(installed.history ?? []), snapshot].slice(-20);
   }
 
   /**
