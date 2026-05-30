@@ -8,7 +8,7 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 58 exact, 6 native-equivalent, 1 partial, 6 gaps.
+- Tool parity manifest: 71 official tools, 59 exact, 6 native-equivalent, 1 partial, 5 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,7 +68,7 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage` and platform gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage` and platform gaps. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
     - Cowork shows summary counts and top core gaps such as `skill_manage` and optional platform connectors.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
@@ -123,9 +123,18 @@ Current measured state:
 - [x] **Add exact Discord core prompt tool**
   - Why: upstream Hermes exposes a `discord` tool for core Discord REST participation; having only channel adapters was not exact parity.
   - Done: Code Buddy now exposes exact `discord` with `fetch_messages`, `search_members`, and `create_thread`, backed by Discord REST API calls and token-based auth.
-  - Guardrail: the tool never accepts a token in model input; it uses configured environment/options only. Server-management actions remain separate under the still-missing `discord_admin`.
+  - Guardrail: the tool never accepts a token in model input; it uses configured environment/options only. Server-management actions remain separate under `discord_admin`.
   - Verification:
     - `npm test -- tests/tools/discord-tool-real.test.ts --run`
+
+- [x] **Add exact Discord admin prompt tool**
+  - Why: upstream Hermes exposes `discord_admin` separately for server-management actions, and this was a remaining official tool gap.
+  - Done: Code Buddy now exposes exact `discord_admin` with `list_guilds`, `server_info`, `list_channels`, `channel_info`, `list_roles`, `member_info`, `list_pins`, `pin_message`, `unpin_message`, `delete_message`, `add_role`, and `remove_role`, all backed by Discord REST API paths.
+  - Guardrail: tokens stay in env/options only; mutating admin actions require `approved_by` unless an operator explicitly enables `CODEBUDDY_DISCORD_ADMIN_ALLOW_MUTATIONS=true`.
+  - Verification:
+    - `npm test -- tests/tools/discord-tool-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
+    - `npm run typecheck`
+    - `npx tsx src/index.ts hermes tools --json`
 
 - [x] **Add exact Home Assistant prompt tools**
   - Why: upstream Hermes exposes `ha_list_entities`, `ha_get_state`, `ha_list_services`, and `ha_call_service` for smart-home control.
@@ -194,11 +203,10 @@ Current measured state:
 - [ ] **Platform connectors**
   - Lower priority unless the user explicitly needs them:
     - Yuanbao group/DM/stickers
-    - Discord admin
   - Recommendation: keep these as optional connectors/plugins, not core Code Buddy agent work.
 
 ## Immediate next implementation order
 
-1. Yuanbao group/DM/sticker tools and Discord admin if product-relevant.
+1. Yuanbao group/DM/sticker tools if product-relevant.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
 3. Remaining `skill_manage` polish: larger SKILL.md diff/review UX and exact hub/tap/trust deltas.

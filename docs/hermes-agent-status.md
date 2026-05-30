@@ -91,7 +91,7 @@ change-control surface.
 | Enforced tool filters per profile | custom-agent `fleetDispatchProfile` → `ToolFilterConfig`; `ToolHandler` enforces at execution; `buddy hermes doctor <profile>` | done |
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
-| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 58 exact, 6 native-equivalent, 1 partial, 6 gaps |
+| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 59 exact, 6 native-equivalent, 1 partial, 5 gaps |
 
 ### Scheduled automations
 
@@ -135,7 +135,8 @@ change-control surface.
 |---|---|---|
 | HTTP + Gateway WS server | `src/server/` (`buddy server`) | done |
 | Messaging channels (Telegram/Discord/Slack/…) | channel layer + `delivery.targets`; `buddy channels status --json` | partial — delivery + machine-readable readiness done; full inbound gateway parity is future work |
-| Hermes `discord` core REST tool | `src/tools/discord-platform-tool.ts`, `src/tools/registry/discord-tools.ts`, `tests/tools/discord-tool-real.test.ts` | done — exact prompt tool name for `fetch_messages`, `search_members`, and `create_thread`; real HTTP path tested; `discord_admin` remains separate |
+| Hermes `discord` core REST tool | `src/tools/discord-platform-tool.ts`, `src/tools/registry/discord-tools.ts`, `tests/tools/discord-tool-real.test.ts` | done — exact prompt tool name for `fetch_messages`, `search_members`, and `create_thread`; real HTTP path tested |
+| Hermes `discord_admin` REST tool | `src/tools/discord-platform-tool.ts`, `src/tools/registry/discord-tools.ts`, `tests/tools/discord-tool-real.test.ts` | done — exact prompt tool name for guild/channel/role/member/pin inspection plus approval-gated pin, unpin, delete-message, add-role, and remove-role actions; real HTTP path tested |
 | Hermes Home Assistant REST tools | `src/tools/homeassistant-tool.ts`, `src/tools/registry/homeassistant-tools.ts`, `tests/tools/homeassistant-tool-real.test.ts` | done — exact `ha_list_entities`, `ha_get_state`, `ha_list_services`, and `ha_call_service`; real HTTP path tested; dangerous service domains blocked before network calls |
 | Hermes `mixture_of_agents` | `src/tools/mixture-of-agents-tool.ts`, `src/tools/registry/moa-tools.ts`, `tests/tools/mixture-of-agents-real.test.ts` | done — exact prompt tool name, OpenRouter-compatible real HTTP path, parallel reference calls, failure tolerance, and aggregator synthesis |
 | Hermes Spotify tools | `src/tools/spotify-tool.ts`, `src/tools/registry/spotify-tools.ts`, `tests/tools/spotify-tool-real.test.ts` | done — exact `spotify_playback`, `spotify_devices`, `spotify_queue`, `spotify_search`, `spotify_playlists`, `spotify_albums`, and `spotify_library`; real HTTP Web API path tested |
@@ -189,4 +190,4 @@ buddy lessons candidate approve <id> --by "<your name>"
   still needs SKILL.md preview/diff plus reviewer-gated install/disable/
   deprecate/rollback controls.
 - Serverless terminal backends (Daytona/Modal/Vercel Sandbox).
-- Optional platform tools still absent: `discord_admin` plus Yuanbao group/DM/sticker tools.
+- Optional platform tools still absent: Yuanbao group/DM/sticker tools.

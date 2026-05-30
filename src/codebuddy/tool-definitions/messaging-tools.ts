@@ -129,7 +129,68 @@ export const DISCORD_TOOL: CodeBuddyTool = {
   },
 };
 
+export const DISCORD_ADMIN_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'discord_admin',
+    description: [
+      'Manage Discord server metadata and moderation actions through the Discord REST API.',
+      'Read actions include list_guilds, server_info, list_channels, channel_info, list_roles, member_info, and list_pins.',
+      'Mutating actions pin_message, unpin_message, delete_message, add_role, and remove_role require approved_by.',
+    ].join(' '),
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: [
+            'list_guilds',
+            'server_info',
+            'list_channels',
+            'channel_info',
+            'list_roles',
+            'member_info',
+            'list_pins',
+            'pin_message',
+            'unpin_message',
+            'delete_message',
+            'add_role',
+            'remove_role',
+          ],
+          description: 'Discord admin action to run',
+        },
+        guild_id: {
+          type: 'string',
+          description: 'Discord server (guild) ID',
+        },
+        channel_id: {
+          type: 'string',
+          description: 'Discord channel ID',
+        },
+        user_id: {
+          type: 'string',
+          description: 'Discord user ID',
+        },
+        role_id: {
+          type: 'string',
+          description: 'Discord role ID',
+        },
+        message_id: {
+          type: 'string',
+          description: 'Discord message ID',
+        },
+        approved_by: {
+          type: 'string',
+          description: 'Required for mutating admin actions; records who approved the external Discord change',
+        },
+      },
+      required: ['action'],
+    },
+  },
+};
+
 export const MESSAGING_TOOLS: CodeBuddyTool[] = [
   SEND_MESSAGE_TOOL,
   DISCORD_TOOL,
+  DISCORD_ADMIN_TOOL,
 ];

@@ -61,6 +61,7 @@ export {
 export {
   SEND_MESSAGE_TOOL,
   DISCORD_TOOL,
+  DISCORD_ADMIN_TOOL,
   MESSAGING_TOOLS,
 } from './messaging-tools.js';
 

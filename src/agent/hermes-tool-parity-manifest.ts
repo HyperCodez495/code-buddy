@@ -50,6 +50,7 @@ const OFFICIAL_SOURCE_SPOTIFY = 'plugins/spotify/tools.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
 const OFFICIAL_SOURCE_FEISHU_DOC = 'tools/feishu_doc_tool.py';
 const OFFICIAL_SOURCE_FEISHU_DRIVE = 'tools/feishu_drive_tool.py';
+const OFFICIAL_SOURCE_DISCORD = 'tools/discord_tool.py';
 const OFFICIAL_SOURCE_IMAGE_GENERATION = 'tools/image_generation_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
@@ -448,16 +449,17 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'discord',
     toolset: 'discord',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
+    officialSource: OFFICIAL_SOURCE_DISCORD,
     notes: 'Code Buddy exposes an exact discord prompt tool for core Discord REST actions: fetch_messages, search_members, and create_thread.',
-    nextWork: 'Add live Discord credential smoke coverage when a real bot token and guild are available; keep discord_admin separate for server-management actions.',
+    nextWork: 'Add live Discord credential smoke coverage when a real bot token and guild are available.',
   },
   {
     name: 'discord_admin',
     toolset: 'discord_admin',
     category: 'platform',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No Discord admin prompt tool was found in Code Buddy built-ins.',
+    officialSource: OFFICIAL_SOURCE_DISCORD,
+    notes: 'Code Buddy exposes the exact discord_admin prompt tool for Discord REST server actions: guild/channel/role/member/pin inspection plus approval-gated pin, unpin, delete-message, add-role, and remove-role mutations.',
+    nextWork: 'Add live Discord credential smoke coverage when a real bot token and disposable guild are available.',
   },
   {
     name: 'spotify_playback',
@@ -663,6 +665,7 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_X_SEARCH,
         OFFICIAL_SOURCE_FEISHU_DOC,
         OFFICIAL_SOURCE_FEISHU_DRIVE,
+        OFFICIAL_SOURCE_DISCORD,
         OFFICIAL_SOURCE_IMAGE_GENERATION,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],

@@ -75,6 +75,7 @@ export {
 } from './send-message-tools.js';
 
 export {
+  DiscordAdminTool,
   DiscordTool,
   createDiscordTools,
 } from './discord-tools.js';

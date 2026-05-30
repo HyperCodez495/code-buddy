@@ -481,6 +481,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Read Discord channel messages, search members, and create threads via the Discord REST API',
   },
   {
+    name: 'discord_admin',
+    category: 'web',
+    keywords: ['discord', 'admin', 'server', 'guild', 'channels', 'roles', 'pins', 'moderation', 'hermes'],
+    priority: 8,
+    description: 'Inspect and manage Discord server metadata, pins, messages, and member roles through the Discord REST API',
+  },
+  {
     name: 'ha_list_entities',
     category: 'web',
     keywords: ['homeassistant', 'home assistant', 'hass', 'entity', 'entities', 'smart home', 'hermes'],
