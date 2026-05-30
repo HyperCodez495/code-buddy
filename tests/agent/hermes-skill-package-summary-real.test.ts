@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildHermesSkillPackageSummary,
   deleteHermesSkillPackage,
+  patchHermesSkillPackage,
   rollbackHermesSkillPackage,
   setHermesSkillPackageLifecycle,
   updateHermesSkillPackage,
@@ -365,6 +366,50 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       integrityOk: true,
       name: 'update-helper',
       version: '0.2.0',
+    });
+  });
+
+  it('patches an installed skill with a real SKILL.md snapshot', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    await hub.installFromContent(
+      'patch-helper',
+      skillContent('patch-helper', '1.0.0', 'Original patch wording.'),
+    );
+
+    const patched = patchHermesSkillPackage(
+      tempDir,
+      'patch-helper',
+      {
+        actor: 'Patrice',
+        expectedReplacements: 1,
+        newText: 'Reviewed patch wording.',
+        oldText: 'Original patch wording.',
+        reason: 'Review exact SKILL.md wording.',
+        updatedAt: 12_000,
+      },
+    );
+
+    expect(patched).toMatchObject({
+      contentPreview: expect.stringContaining('Reviewed patch wording.'),
+      lastLifecycleReason: 'Review exact SKILL.md wording.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'patch-helper',
+      rollbackableCount: 1,
+      status: 'active',
+    });
+
+    const installedPath = path.join(tempDir, '.codebuddy', 'skills', 'patch-helper', 'SKILL.md');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Reviewed patch wording.');
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary.packages[0]).toMatchObject({
+      integrityOk: true,
+      name: 'patch-helper',
+      rollbackableCount: 1,
     });
   });
 });

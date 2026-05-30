@@ -77,6 +77,16 @@ export interface UpdateSkillPackageForReviewOptions {
   version?: string;
 }
 
+export interface PatchSkillPackageForReviewOptions {
+  approvedBy: string;
+  expectedReplacements?: number;
+  name: string;
+  newText?: string;
+  oldText?: string;
+  reason?: string;
+  rootDir: string;
+}
+
 export interface SetSkillPackageLifecycleForReviewResult {
   package: SkillPackageManagerEntry;
   summary: SkillPackageManagerSummary;
@@ -85,6 +95,8 @@ export interface SetSkillPackageLifecycleForReviewResult {
 export type RollbackSkillPackageForReviewResult = SetSkillPackageLifecycleForReviewResult;
 
 export type UpdateSkillPackageForReviewResult = SetSkillPackageLifecycleForReviewResult;
+
+export type PatchSkillPackageForReviewResult = SetSkillPackageLifecycleForReviewResult;
 
 export interface DeleteSkillPackageForReviewResult {
   deletedName: string;
@@ -117,6 +129,17 @@ interface HermesSkillPackageModule {
     skillName: string,
     options: { actor: string; force?: boolean; reason?: string; version?: string },
   ) => Promise<SkillPackageManagerEntry | null> | SkillPackageManagerEntry | null;
+  patchHermesSkillPackage?: (
+    workDir: string,
+    skillName: string,
+    options: {
+      actor: string;
+      expectedReplacements?: number;
+      newText: string;
+      oldText: string;
+      reason?: string;
+    },
+  ) => SkillPackageManagerEntry | null;
 }
 
 export async function listSkillPackagesForReview(
@@ -284,6 +307,53 @@ export async function updateSkillPackageForReview(
 
   return {
     package: updated,
+    summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
+  };
+}
+
+export async function patchSkillPackageForReview(
+  options: PatchSkillPackageForReviewOptions,
+): Promise<PatchSkillPackageForReviewResult> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir);
+  if (!rootDir) {
+    throw new Error('An absolute workspace root is required to patch a skill package.');
+  }
+
+  const approvedBy = options.approvedBy.trim();
+  if (!approvedBy) {
+    throw new Error('approvedBy is required to patch a skill package from Cowork.');
+  }
+
+  const name = options.name.trim();
+  if (!name) {
+    throw new Error('name is required to patch a skill package from Cowork.');
+  }
+
+  if (typeof options.oldText !== 'string' || options.oldText.length === 0) {
+    throw new Error('oldText is required to patch a skill package from Cowork.');
+  }
+  if (typeof options.newText !== 'string') {
+    throw new Error('newText is required to patch a skill package from Cowork.');
+  }
+
+  const mod = await loadCoreModule<HermesSkillPackageModule>('agent/hermes-skill-package-summary.js');
+  if (!mod?.patchHermesSkillPackage || !mod.buildHermesSkillPackageSummary) {
+    throw new Error('Core skill package patch module is unavailable.');
+  }
+
+  const patched = mod.patchHermesSkillPackage(rootDir, name, {
+    actor: approvedBy,
+    expectedReplacements: options.expectedReplacements,
+    newText: options.newText,
+    oldText: options.oldText,
+    reason: options.reason?.trim() || undefined,
+  });
+  if (!patched) {
+    throw new Error(`Skill package not found: ${name}`);
+  }
+
+  return {
+    package: patched,
     summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
   };
 }

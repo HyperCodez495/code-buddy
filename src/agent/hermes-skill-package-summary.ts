@@ -76,6 +76,15 @@ export interface UpdateHermesSkillPackageOptions {
   version?: string;
 }
 
+export interface PatchHermesSkillPackageOptions {
+  actor: string;
+  expectedReplacements?: number;
+  newText: string;
+  oldText: string;
+  reason?: string;
+  updatedAt?: number;
+}
+
 export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
@@ -227,6 +236,45 @@ export async function updateHermesSkillPackage(
     updated.installed,
     hub.getInstalledSkillHistory(updated.installed.name),
     hub.info(updated.installed.name)?.content,
+    normalizePreviewChars(undefined),
+  );
+}
+
+export function patchHermesSkillPackage(
+  workDir: string,
+  skillName: string,
+  options: PatchHermesSkillPackageOptions,
+): HermesSkillPackageEntry | null {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill patch.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill patch.');
+  }
+  if (options.oldText.length === 0) {
+    throw new Error('oldText is required for skill patch.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  const patched = hub.patchInstalledSkill(
+    name,
+    options.oldText,
+    options.newText,
+    {
+      actor,
+      expectedReplacements: options.expectedReplacements,
+      reason: options.reason?.trim() || undefined,
+      updatedAt: options.updatedAt,
+    },
+  );
+  if (!patched) return null;
+
+  return summarizeInstalledSkill(
+    patched.installed,
+    hub.getInstalledSkillHistory(patched.installed.name),
+    hub.info(patched.installed.name)?.content,
     normalizePreviewChars(undefined),
   );
 }

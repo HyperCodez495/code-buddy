@@ -188,6 +188,7 @@ import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import {
   deleteSkillPackageForReview,
   listSkillPackagesForReview,
+  patchSkillPackageForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
   updateSkillPackageForReview,
@@ -4208,6 +4209,45 @@ ipcMain.handle(
       return { ok: true as const, ...result };
     } catch (err) {
       logWarn('[tools.skillPackage.update] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.patch',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      cwd?: string;
+      expectedReplacements?: number;
+      name?: string;
+      newText?: string;
+      oldText?: string;
+      reason?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await patchSkillPackageForReview({
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        expectedReplacements: typeof payload?.expectedReplacements === 'number'
+          ? payload.expectedReplacements
+          : undefined,
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        newText: typeof payload?.newText === 'string' ? payload.newText : undefined,
+        oldText: typeof payload?.oldText === 'string' ? payload.oldText : undefined,
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.patch] failed:', err);
       return {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err),

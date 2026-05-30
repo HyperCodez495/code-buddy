@@ -9,6 +9,7 @@ import {
   Loader2,
   PackageOpen,
   PauseCircle,
+  PencilLine,
   PlayCircle,
   RefreshCw,
   RotateCcw,
@@ -84,6 +85,20 @@ interface SkillPackageManagerApi {
     cwd?: string;
     limit?: number;
   }) => Promise<SkillPackageManagerSummary | null>;
+  patch?: (options: {
+    approvedBy: string;
+    cwd?: string;
+    expectedReplacements?: number;
+    name: string;
+    newText: string;
+    oldText: string;
+    reason?: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    package?: SkillPackageManagerEntry;
+    summary?: SkillPackageManagerSummary;
+  }>;
   rollback?: (options: {
     approvedBy: string;
     cwd?: string;
@@ -140,6 +155,7 @@ export const SkillPackageManagerStrip: React.FC<{
   const [lifecycleFeedback, setLifecycleFeedback] = useState<string | null>(null);
   const [loadedSummary, setLoadedSummary] = useState<SkillPackageManagerSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [patchDrafts, setPatchDrafts] = useState<Record<string, { newText: string; oldText: string }>>({});
   const [reviewerName, setReviewerName] = useState('');
   const [updatingSkillKey, setUpdatingSkillKey] = useState<string | null>(null);
   const goalDraft = useMemo(() => buildSkillPackageManagerGoal(), []);
@@ -188,13 +204,21 @@ export const SkillPackageManagerStrip: React.FC<{
     const deletePackage = api?.delete;
     const lifecycle = api?.lifecycle;
     const list = api?.list;
+    const patch = api?.patch;
     const rollback = api?.rollback;
     const update = api?.update;
     if (
       (action === 'delete' && !deletePackage)
+      || (action === 'patch' && !patch)
       || (action === 'rollback' && !rollback)
       || (action === 'update' && !update)
-      || (action !== 'delete' && action !== 'rollback' && action !== 'update' && !lifecycle)
+      || (
+        action !== 'delete'
+        && action !== 'patch'
+        && action !== 'rollback'
+        && action !== 'update'
+        && !lifecycle
+      )
     ) {
       onUseAsGoal?.(buildSkillLifecycleGoal(skill.name, action, approvedBy));
       return;
@@ -219,6 +243,20 @@ export const SkillPackageManagerStrip: React.FC<{
           approvedBy,
           cwd,
           name: skill.name,
+        });
+      } else if (action === 'patch') {
+        const draft = patchDrafts[skill.name] ?? { newText: '', oldText: '' };
+        if (draft.oldText.length === 0) {
+          setLifecycleError(t('fleet.skillPackage.patchOldTextRequired', 'Old text is required.'));
+          return;
+        }
+        result = await patch!({
+          approvedBy,
+          cwd,
+          expectedReplacements: 1,
+          name: skill.name,
+          newText: draft.newText,
+          oldText: draft.oldText,
         });
       } else if (action === 'rollback') {
         result = await rollback!({
@@ -268,6 +306,21 @@ export const SkillPackageManagerStrip: React.FC<{
     } finally {
       setUpdatingSkillKey(null);
     }
+  };
+
+  const updatePatchDraft = (
+    skillName: string,
+    key: 'newText' | 'oldText',
+    value: string,
+  ) => {
+    setPatchDrafts((current) => ({
+      ...current,
+      [skillName]: {
+        newText: current[skillName]?.newText ?? '',
+        oldText: current[skillName]?.oldText ?? '',
+        [key]: value,
+      },
+    }));
   };
 
   return (
@@ -385,6 +438,26 @@ export const SkillPackageManagerStrip: React.FC<{
                   {skill.contentPreviewTruncated ? '...' : ''}
                 </pre>
               ) : null}
+              {skill.exists ? (
+                <div className="mt-1 grid gap-1 sm:grid-cols-2">
+                  <textarea
+                    aria-label={t('fleet.skillPackage.patchOldText', 'Old text')}
+                    className="min-h-14 resize-y rounded border border-border-muted bg-surface px-2 py-1 text-[9px] leading-snug text-text-secondary outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+                    data-testid={`skill-package-patch-old-${skill.name}`}
+                    onChange={(event) => updatePatchDraft(skill.name, 'oldText', event.target.value)}
+                    placeholder={t('fleet.skillPackage.patchOldText', 'Old text')}
+                    value={patchDrafts[skill.name]?.oldText ?? ''}
+                  />
+                  <textarea
+                    aria-label={t('fleet.skillPackage.patchNewText', 'New text')}
+                    className="min-h-14 resize-y rounded border border-border-muted bg-surface px-2 py-1 text-[9px] leading-snug text-text-secondary outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+                    data-testid={`skill-package-patch-new-${skill.name}`}
+                    onChange={(event) => updatePatchDraft(skill.name, 'newText', event.target.value)}
+                    placeholder={t('fleet.skillPackage.patchNewText', 'New text')}
+                    value={patchDrafts[skill.name]?.newText ?? ''}
+                  />
+                </div>
+              ) : null}
               {(skill.lastLifecycleReviewer || skill.lastLifecycleReason) ? (
                 <div className="mt-0.5 truncate text-[9px] text-text-muted">
                   {skill.lastLifecycleReviewer ? `${skill.lastLifecycleReviewer}: ` : ''}
@@ -431,6 +504,19 @@ export const SkillPackageManagerStrip: React.FC<{
                     icon={RotateCcw}
                     loading={updatingSkillKey === `${skill.name}:rollback`}
                     onClick={() => void handlePackageAction(skill, 'rollback')}
+                  />
+                ) : null}
+                {skill.exists ? (
+                  <LifecycleButton
+                    action="patch"
+                    disabled={
+                      !reviewerName.trim()
+                      || updatingSkillKey !== null
+                      || !(patchDrafts[skill.name]?.oldText.length)
+                    }
+                    icon={PencilLine}
+                    loading={updatingSkillKey === `${skill.name}:patch`}
+                    onClick={() => void handlePackageAction(skill, 'patch')}
                   />
                 ) : null}
                 {skill.exists ? (
@@ -502,7 +588,14 @@ function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
   ).electronAPI?.tools?.skillPackage;
 }
 
-type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback' | 'delete' | 'update';
+type SkillPackageReviewAction =
+  | 'enable'
+  | 'disable'
+  | 'deprecate'
+  | 'rollback'
+  | 'delete'
+  | 'update'
+  | 'patch';
 
 const LifecycleButton: React.FC<{
   action: SkillPackageReviewAction;

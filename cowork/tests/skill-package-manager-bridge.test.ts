@@ -4,6 +4,7 @@ import { loadCoreModule } from '../src/main/utils/core-loader';
 import {
   deleteSkillPackageForReview,
   listSkillPackagesForReview,
+  patchSkillPackageForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
   updateSkillPackageForReview,
@@ -282,6 +283,68 @@ describe('skill package manager bridge', () => {
         lastLifecycleReviewer: 'Patrice',
         name: 'cached-helper',
         version: '0.2.0',
+      },
+      summary: {
+        rollbackableCount: 1,
+      },
+    });
+  });
+
+  it('patches a package through the core package summary module', async () => {
+    const patchHermesSkillPackage = vi.fn(() => ({
+      contentPreview: 'Reviewed patch wording.',
+      enabled: true,
+      exists: true,
+      installedAt: 1,
+      integrityOk: true,
+      lastLifecycleReason: 'Review exact wording.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'patch-helper',
+      path: 'D:/workspace/.codebuddy/skills/patch-helper/SKILL.md',
+      rollbackableCount: 1,
+      source: 'local',
+      status: 'active',
+      version: '1.0.0',
+    }));
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 0,
+      enabledCount: 1,
+      installedCount: 1,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 1,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      patchHermesSkillPackage,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await patchSkillPackageForReview({
+      approvedBy: 'Patrice',
+      expectedReplacements: 1,
+      name: 'patch-helper',
+      newText: 'Reviewed patch wording.',
+      oldText: 'Original patch wording.',
+      reason: 'Review exact wording.',
+      rootDir,
+    });
+
+    expect(patchHermesSkillPackage).toHaveBeenCalledWith(rootDir, 'patch-helper', {
+      actor: 'Patrice',
+      expectedReplacements: 1,
+      newText: 'Reviewed patch wording.',
+      oldText: 'Original patch wording.',
+      reason: 'Review exact wording.',
+    });
+    expect(result).toMatchObject({
+      package: {
+        lastLifecycleReviewer: 'Patrice',
+        name: 'patch-helper',
+        rollbackableCount: 1,
       },
       summary: {
         rollbackableCount: 1,

@@ -557,4 +557,114 @@ describe('SkillPackageManagerStrip', () => {
     });
     expect(target.textContent).toContain('update cached-helper by Patrice.');
   });
+
+  it('requires reviewer identity and old text before patching an installed skill', async () => {
+    const target = container();
+    const patch = vi.fn().mockResolvedValue({
+      ok: true,
+      package: {
+        contentPreview: 'Reviewed patch wording.',
+        enabled: true,
+        exists: true,
+        installedAt: 1,
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'patch-helper',
+        path: 'D:/workspace/.codebuddy/skills/patch-helper/SKILL.md',
+        rollbackableCount: 1,
+        source: 'local',
+        status: 'active',
+        version: '1.0.0',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            patch: typeof patch;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          patch,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: true,
+              name: 'patch-helper',
+              path: 'D:/workspace/.codebuddy/skills/patch-helper/SKILL.md',
+              rollbackableCount: 0,
+              source: 'local',
+              status: 'active',
+              version: '1.0.0',
+            },
+          ],
+          reviewCommands: ['buddy skills list --all --json'],
+          rollbackableCount: 0,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let patchButton = target.querySelector('[data-testid="skill-package-patch"]') as HTMLButtonElement;
+    expect(patchButton.disabled).toBe(true);
+
+    const reviewerInput = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    const oldTextInput = target.querySelector(
+      '[data-testid="skill-package-patch-old-patch-helper"]',
+    ) as HTMLTextAreaElement;
+    const newTextInput = target.querySelector(
+      '[data-testid="skill-package-patch-new-patch-helper"]',
+    ) as HTMLTextAreaElement;
+
+    await act(async () => {
+      Simulate.change(reviewerInput, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+    patchButton = target.querySelector('[data-testid="skill-package-patch"]') as HTMLButtonElement;
+    expect(patchButton.disabled).toBe(true);
+
+    await act(async () => {
+      Simulate.change(oldTextInput, { target: { value: 'Original patch wording.' } } as unknown as Event);
+      Simulate.change(newTextInput, { target: { value: 'Reviewed patch wording.' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    patchButton = target.querySelector('[data-testid="skill-package-patch"]') as HTMLButtonElement;
+    expect(patchButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(patchButton);
+      await Promise.resolve();
+    });
+
+    expect(patch).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      expectedReplacements: 1,
+      name: 'patch-helper',
+      newText: 'Reviewed patch wording.',
+      oldText: 'Original patch wording.',
+    });
+    expect(target.textContent).toContain('patch patch-helper by Patrice.');
+  });
 });
