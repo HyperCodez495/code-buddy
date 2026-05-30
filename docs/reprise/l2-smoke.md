@@ -1,85 +1,63 @@
-# Smoke Test L2 — Reprise Code Buddy
+# Smoke Test L2 - Reprise Code Buddy
 
-Ce document détaille les résultats de l'exécution des tests de fumée (smoke tests) pour l'autonomie L2 sur le moteur Code Buddy. Ces tests valident le fonctionnement de la boucle de self-correction (vérification et retour d'erreur), les limites budgétaires, et le nouveau statut `blocked`.
+Ce document détaille le smoke réel de l'autonomie L2 sur le moteur Code Buddy.
+Il valide les chemins `verified` et `blocked`, les limites budgétaires, le rollback,
+les chemins Windows avec espaces, et le harnais `eval/run-task.mjs`.
 
----
+## Commande Canonique
+
+Le format courant des tâches est :
+
+- `eval/tasks/<slug>/contract.json`
+- `eval/tasks/<slug>/expected.json`
+
+Le lancement recommandé est le harnais isolé :
+
+```bash
+node eval/run-task.mjs
+```
+
+Le harnais crée un vrai dépôt Git temporaire pour chaque tâche, copie `eval/sandbox/`,
+réécrit le champ `repo` du contrat vers ce dépôt temporaire, lance le vrai CLI compilé
+`node dist/index.js autonomous-code ...`, inspecte le vrai `git status`, puis nettoie.
+
+Pour lancer une ou plusieurs tâches ciblées :
+
+```bash
+node eval/run-task.mjs simple-edit space-path-edit
+```
+
+Une tâche inconnue échoue avant tout setup et affiche la liste disponible.
 
 ## Synthèse Globale
 
-| Tâche d'évaluation | Fichier de configuration | Résultat attendu | Statut final | Itérations | Coût (USD) | Remarque |
-| :--- | :--- | :--- | :--- | :---: | :---: | :--- |
-| **Simple Edit** | `eval/tasks/simple-edit.json` | `verified` | `verified` | 1 | $0.00 | Édition et validation directe réussies. |
-| **Failing Verification** | `eval/tasks/failing-verification.json` | `blocked` | `blocked` | 4 | $0.00 | La vérification échoue systématiquement. L'agent atteint la limite d'itérations, applique un rollback et passe au statut `blocked`. |
-| **Cost Limit** | `eval/tasks/cost-limit.json` | `blocked` / `verified` | `blocked` (si coût > max) | 1 | $0.00 | Bloqué immédiatement lorsque `--max-cost-usd 0.00001` est spécifié pour forcer la limite. |
-| **Invalid Find** | `eval/tasks/invalid-find.json` | `blocked` | `blocked` | 4 | $0.00 | Tentative de remplacement d'une chaîne inexistante. Rejetée par le validateurs d'édition, rollback immédiat. |
-| **Multiple Edits** | `eval/tasks/multiple-edits.json` | `verified` | `verified` | 1 | $0.00 | Remplacement de texte multi-lignes réussi avec vérification finale positive. |
+| Tâche | Fichiers | Résultat attendu | Statut final réel | Remarque |
+| :--- | :--- | :--- | :--- | :--- |
+| `cost-limit` | `eval/tasks/cost-limit/contract.json` | `blocked` | `blocked` | Bloqué avec `--max-cost-usd 0.00001`, sans fichier modifié. |
+| `failing-verification` | `eval/tasks/failing-verification/contract.json` | `blocked` | `blocked` | Vérification volontairement en échec, rollback attendu. |
+| `invalid-find` | `eval/tasks/invalid-find/contract.json` | `blocked` | `blocked` | Remplacement impossible car la chaîne source est absente. |
+| `multiple-edits` | `eval/tasks/multiple-edits/contract.json` | `verified` | `verified` | Remplacement multi-lignes validé. |
+| `simple-edit` | `eval/tasks/simple-edit/contract.json` | `verified` | `verified` | Édition simple de `eval/sandbox/target.txt`. |
+| `space-path-edit` | `eval/tasks/space-path-edit/contract.json` | `verified` | `verified` | Édition d'un fichier dont le chemin contient des espaces. |
 
----
+## Garde-fous Validés
 
-## Détails des Exécutions
+1. **Isolation réelle** : chaque tâche tourne dans un dépôt Git temporaire propre.
+2. **Rollback** : les tâches `blocked` ne laissent pas de modification hors scope.
+3. **Budget coût** : `cost-limit` coupe le run avant une exécution coûteuse.
+4. **Scope strict** : le harnais compare les fichiers réellement modifiés aux `allowedPaths`.
+5. **Robustesse Windows** : exécution sans shell quoting fragile, chemins temporaires avec espaces, Node sous `Program Files`, et fichiers sandbox avec espaces.
+6. **Parsing Git robuste** : le harnais lit `git status --porcelain=v1 -z --untracked-files=all`.
+7. **Ordre stable** : les tâches sont découvertes et exécutées dans un ordre déterministe.
 
-### 1. Simple Edit
-* **Objectif** : Remplacer `"Hello, World!"` par `"Hello, Code Buddy!"` dans `eval/sandbox/target.txt`.
-* **Commande** :
-  ```bash
-  node dist/index.js autonomous-code --task-file eval/tasks/simple-edit.json --apply-edits --run-verification --json
-  ```
-* **Comportement** :
-  - L'agent propose une modification valide.
-  - L'outil applique l'édition avec succès.
-  - La commande de vérification (vérification du contenu du fichier) retourne un code de sortie 0.
-  - Statut de sortie : `verified`.
+## Dernière Validation Réelle
 
-### 2. Failing Verification
-* **Objectif** : Simuler une tâche dont la commande de vérification échoue systématiquement afin de valider le comportement de la boucle de correction et de rollback.
-* **Commande** :
-  ```bash
-  node dist/index.js autonomous-code --task-file eval/tasks/failing-verification.json --apply-edits --run-verification --json
-  ```
-* **Comportement** :
-  - L'agent tente d'éditer le fichier.
-  - La vérification échoue de manière programmée (`throw new Error(...)`).
-  - La boucle se répète jusqu'à la limite d'itérations (`maxIterations = 4`
-    par défaut, configurable via `--max-iterations <count>`).
-  - À l'issue des 4 essais infructueux, le runner effectue un rollback complet des fichiers modifiés (via git) et retourne le statut `blocked`.
+Commandes relancées après la mise à jour de cette documentation :
 
-### 3. Cost Limit
-* **Objectif** : Valider l'arrêt de sécurité lorsque le budget financier alloué à l'agent est épuisé.
-* **Commande** :
-  ```bash
-  node dist/index.js autonomous-code --task-file eval/tasks/cost-limit.json --apply-edits --run-verification --max-cost-usd 0.00001 --json
-  ```
-* **Comportement** :
-  - Grâce au paramètre `--max-cost-usd 0.00001`, l'agent dépasse instantanément son budget dès la première estimation d'API.
-  - La boucle de self-correction avorte immédiatement sans propager d'appels d'API supplémentaires coûteux.
-  - Les modifications locales sont annulées, et l'agent s'arrête avec le statut `blocked` (raison : `cost_limit_exceeded`).
+```bash
+node --check eval/run-task.mjs
+node eval/run-task.mjs not-a-task
+node eval/run-task.mjs
+```
 
-### 4. Invalid Find
-* **Objectif** : Vérifier la robustesse de l'agent face à des instructions d'édition erronées (recherche d'une sous-chaîne inexistante).
-* **Commande** :
-  ```bash
-  node dist/index.js autonomous-code --task-file eval/tasks/invalid-find.json --apply-edits --run-verification --json
-  ```
-* **Comportement** :
-  - Le modèle propose d'éditer `eval/sandbox/target.txt` en cherchant `Hello, Unknown!`.
-  - Le validateur interne d'édition rejette la modification car la chaîne recherchée n'est pas présente dans le fichier (0 occurrences trouvées).
-  - La boucle capture l'erreur de validation d'édition, tente de se corriger, et après 4 essais infructueux, effectue un rollback et s'arrête avec le statut `blocked`.
-
-### 5. Multiple Edits
-* **Objectif** : Valider l'édition sur plusieurs lignes et l'application d'un remplacement multi-lignes.
-* **Commande** :
-  ```bash
-  node dist/index.js autonomous-code --task-file eval/tasks/multiple-edits.json --apply-edits --run-verification --json
-  ```
-* **Comportement** :
-  - L'agent applique le remplacement multi-lignes : `"Hello, World!"` est remplacé par `"Hello, Code Buddy!\nGoodbye, Code Buddy!"`.
-  - La vérification confirme l'exactitude du texte.
-  - Statut de sortie : `verified`.
-
----
-
-## Garanties et Garde-fous Validés
-
-1. **Rollback Systématique** : Dans toutes les tâches menant au statut `blocked` (`failing-verification`, `cost-limit`, `invalid-find`), le runner a restauré l'état de `eval/sandbox/target.txt` à son état d'origine propre.
-2. **Aucune action destructive** : Aucun fichier n'a été créé ou supprimé en dehors de l'arborescence autorisée (`allowedPaths` contenant uniquement `eval/sandbox/target.txt`).
-3. **Budget Coût strict** : L'épuisement du budget coupe immédiatement le run sans appeler davantage l'API LLM, évitant les surcoûts.
+Résultat attendu du lot complet : `ALL EVALUATION TASKS PASSED SUCCESSFULLY.`

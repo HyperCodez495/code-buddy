@@ -45,7 +45,7 @@ Real validation:
 - `npm run typecheck` -> exit 0.
 - `node --check eval/run-task.mjs` -> exit 0.
 - `npm run build` -> exit 0.
-- `node eval/run-task.mjs` -> all 5 real tasks passed:
+- `node eval/run-task.mjs` -> all then-current real tasks passed:
   - `cost-limit` -> blocked, no file touched.
   - `failing-verification` -> blocked, no file touched.
   - `invalid-find` -> blocked, no file touched.
@@ -92,7 +92,7 @@ Real validation:
 - Real compiled CLI preflight against a temporary git repo:
   - runtime `.codebuddy` artifacts only -> `ready`, dirty count 0.
   - adding `.codebuddy/settings.json` -> `blocked`, dirty file `?? .codebuddy/settings.json`.
-- `node eval/run-task.mjs` -> all 5 real tasks passed.
+- `node eval/run-task.mjs` -> all then-current real tasks passed.
 
 ### Step 5 - Continuation: fail-fast eval harness setup
 
@@ -106,7 +106,7 @@ Fix landed:
 Real validation:
 
 - `node --check eval/run-task.mjs` -> exit 0.
-- `node eval/run-task.mjs` -> all 5 real tasks passed.
+- `node eval/run-task.mjs` -> all then-current real tasks passed.
 
 ### Step 6 - Continuation: shell-free eval command execution
 
@@ -122,7 +122,7 @@ Real validation:
 
 - `node --check eval/run-task.mjs` -> exit 0.
 - `TEMP` / `TMP` redirected to a directory with a space, then `node eval/run-task.mjs simple-edit` -> passed. This also exercised `D:\Program Files\nodejs\node.exe`.
-- `node eval/run-task.mjs` -> all 5 real tasks passed.
+- `node eval/run-task.mjs` -> all then-current real tasks passed.
 
 ### Step 7 - Continuation: file paths with spaces in L2 evals
 
