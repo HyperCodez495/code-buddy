@@ -258,6 +258,16 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['cronjob'],
         }),
         expect.objectContaining({
+          name: 'skills_list',
+          status: 'exact',
+          detectedCodeBuddyTools: ['skills_list'],
+        }),
+        expect.objectContaining({
+          name: 'skill_view',
+          status: 'exact',
+          detectedCodeBuddyTools: ['skill_view'],
+        }),
+        expect.objectContaining({
           name: 'browser_dialog',
           status: 'gap',
         }),

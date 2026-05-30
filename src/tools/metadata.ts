@@ -509,6 +509,22 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Search Skills Hub for capabilities'
   },
   {
+    name: 'skills_list',
+    category: 'utility',
+    keywords: ['skill', 'skills', 'list', 'installed', 'enabled', 'disabled', 'hub', 'hermes'],
+    priority: 5,
+    description: 'List installed SKILL.md packages from the local SkillsHub',
+    fleetSafe: true,
+  },
+  {
+    name: 'skill_view',
+    category: 'utility',
+    keywords: ['skill', 'skills', 'view', 'read', 'content', 'inspect', 'show', 'hub', 'hermes'],
+    priority: 6,
+    description: 'Read one installed SKILL.md package and its integrity metadata from the local SkillsHub',
+    fleetSafe: true,
+  },
+  {
     name: 'device_manage',
     category: 'utility',
     keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'pair'],

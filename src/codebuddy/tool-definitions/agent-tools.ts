@@ -260,6 +260,50 @@ export const SKILL_DISCOVER_TOOL: CodeBuddyTool = {
   },
 };
 
+export const SKILLS_LIST_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'skills_list',
+    description: 'List installed SKILL.md packages from the local SkillsHub lockfile. Read-only; use to inspect available skills without searching the remote hub.',
+    parameters: {
+      type: 'object',
+      properties: {
+        include_disabled: {
+          type: 'boolean',
+          description: 'Include disabled skills. Default: false.',
+        },
+        include_usage: {
+          type: 'boolean',
+          description: 'Include local usage telemetry when present. Default: true.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const SKILL_VIEW_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'skill_view',
+    description: 'Read one installed SKILL.md package from the local SkillsHub, including lockfile metadata, integrity status, and optionally the SKILL.md content.',
+    parameters: {
+      type: 'object',
+      properties: {
+        name: {
+          type: 'string',
+          description: 'Installed skill name.',
+        },
+        include_content: {
+          type: 'boolean',
+          description: 'Include SKILL.md file content. Default: true.',
+        },
+      },
+      required: ['name'],
+    },
+  },
+};
+
 export const DEVICE_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -1083,6 +1127,8 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   ASK_HUMAN_TOOL,
   CREATE_SKILL_TOOL,
   SKILL_DISCOVER_TOOL,
+  SKILLS_LIST_TOOL,
+  SKILL_VIEW_TOOL,
   DEVICE_MANAGE_TOOL,
   SPAWN_PARALLEL_AGENTS_TOOL,
   REMEMBER_TOOL,

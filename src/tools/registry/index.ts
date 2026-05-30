@@ -198,6 +198,11 @@ export {
   createUserModelTools,
 } from './user-model-tools.js';
 
+// Tool Adapters - Skills inspection (Hermes skills_list / skill_view)
+export {
+  createSkillsInspectionTools,
+} from './skills-inspection-tools.js';
+
 // Tool Adapters - Multimodal (audio, video, PDF, OCR, QR, clipboard, diagram, document, export, archive)
 export {
   AudioExecuteTool,
@@ -406,6 +411,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createScriptTools } = await import('./script-tools.js');
   const { createPlanTools } = await import('./plan-tools.js');
   const { createAttentionTools } = await import('./attention-tools.js');
+  const { createSkillsInspectionTools } = await import('./skills-inspection-tools.js');
   const { createAliasTools } = await import('./tool-aliases.js');
   const { createLessonsTools } = await import('./lessons-tools.js');
   const { createUserModelTools } = await import('./user-model-tools.js');
@@ -455,6 +461,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createScriptTools(),
     ...createPlanTools(),
     ...createAttentionTools(),
+    ...createSkillsInspectionTools(),
     ...createLessonsTools(),
     ...createUserModelTools(),
     ...createMultimodalTools(),
@@ -524,6 +531,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createMemoryTools(),
     ...createParallelTools(),
     ...createAttentionTools(),
+    ...createSkillsInspectionTools(),
     ...createLessonsTools(),
     ...createUserModelTools(),
     ...createMultimodalTools(),
@@ -583,6 +591,7 @@ import { createBrowserOperatorTools } from './browser-operator-tools.js';
 import { createMemoryTools } from './memory-tools.js';
 import { createParallelTools } from './parallel-tools.js';
 import { createAttentionTools } from './attention-tools.js';
+import { createSkillsInspectionTools } from './skills-inspection-tools.js';
 import { createLessonsTools } from './lessons-tools.js';
 import { createUserModelTools } from './user-model-tools.js';
 import { createMultimodalTools } from './multimodal-tools.js';
