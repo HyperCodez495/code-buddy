@@ -17,6 +17,7 @@ import { useAppStore } from '../store';
 import {
   NO_ACTIVE_PROJECT,
   type LessonCandidate,
+  type LessonCandidateStats,
   type LessonCandidateStatus,
   type LessonCategory,
 } from '../types/hermes';
@@ -43,6 +44,7 @@ export function LessonCandidatePanel() {
 
   const [tab, setTab] = useState<LessonCandidateStatus | 'all'>('pending');
   const [items, setItems] = useState<LessonCandidate[]>([]);
+  const [stats, setStats] = useState<LessonCandidateStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [noProject, setNoProject] = useState(false);
@@ -55,16 +57,28 @@ export function LessonCandidatePanel() {
     setLoading(true);
     setError(null);
     const status = tab === 'all' ? undefined : tab;
-    const res = await window.electronAPI.lessonCandidate.list(status);
-    setLoading(false);
-    if (!res.ok) {
-      setNoProject(res.error === NO_ACTIVE_PROJECT);
-      setError(res.error === NO_ACTIVE_PROJECT ? null : res.error ?? 'Failed to load candidates');
+    try {
+      const [res, statsRes] = await Promise.all([
+        window.electronAPI.lessonCandidate.list(status),
+        window.electronAPI.lessonCandidate.stats(),
+      ]);
+      setLoading(false);
+      setStats(statsRes.ok ? statsRes.stats ?? null : null);
+      if (!res.ok) {
+        setNoProject(res.error === NO_ACTIVE_PROJECT);
+        setError(res.error === NO_ACTIVE_PROJECT ? null : res.error ?? 'Failed to load candidates');
+        setItems([]);
+        return;
+      }
+      setNoProject(false);
+      setItems(res.items);
+    } catch (err) {
+      setLoading(false);
+      setNoProject(false);
       setItems([]);
-      return;
+      setStats(null);
+      setError(err instanceof Error ? err.message : 'Failed to load candidates');
     }
-    setNoProject(false);
-    setItems(res.items);
   }, [tab]);
 
   useEffect(() => {
@@ -120,7 +134,10 @@ export function LessonCandidatePanel() {
     await refresh();
   };
 
-  const pendingCount = useMemo(() => items.filter((i) => i.status === 'pending').length, [items]);
+  const pendingCount = useMemo(
+    () => stats?.byStatus.pending ?? items.filter((i) => i.status === 'pending').length,
+    [items, stats],
+  );
 
   if (!show) return null;
 
