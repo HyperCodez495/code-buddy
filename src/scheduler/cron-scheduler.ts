@@ -411,7 +411,7 @@ export class CronScheduler extends EventEmitter {
    */
   async updateJob(
     jobId: string,
-    updates: Partial<Pick<CronJob, 'name' | 'description' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled' | 'preCheck'>>
+    updates: Partial<Pick<CronJob, 'name' | 'description' | 'type' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled' | 'preCheck'>>
   ): Promise<CronJob | null> {
     const job = this.jobs.get(jobId);
     if (!job) return null;

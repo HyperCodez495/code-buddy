@@ -11,6 +11,7 @@
  *   buddy cron pause <id> [--json]
  *   buddy cron resume <id> [--json]
  *   buddy cron run <id> [--json]
+ *   buddy cron update <id> [--name <name>] [--every <ms>|--cron <expr>|--at <iso>]
  *   buddy cron remove <id>
  *   buddy cron add <name> --every <ms>|--cron <expr>|--at <iso>
  *        [--message <text>] [--watchdog <json|@file>] [--pre-check <json|@file>]
@@ -35,6 +36,13 @@ export interface CronAddOptions {
   format?: string;
 }
 
+export interface CronUpdateOptions extends CronAddOptions {
+  name?: string;
+  clearPreCheck?: boolean;
+  clearDelivery?: boolean;
+  json?: boolean;
+}
+
 export interface CronJobSpec {
   name: string;
   type: ScheduleType;
@@ -44,7 +52,13 @@ export interface CronJobSpec {
   preCheck?: CronJob['preCheck'];
 }
 
+export type CronJobUpdates = Partial<Pick<
+  CronJob,
+  'name' | 'type' | 'schedule' | 'task' | 'delivery' | 'preCheck'
+>>;
+
 export type CronJobSpecResult = { spec: CronJobSpec } | { error: string };
+export type CronJobUpdateResult = { updates: CronJobUpdates } | { error: string };
 
 /**
  * Build (and validate) a CronJob spec from CLI options. Pure: no side effects,
@@ -132,6 +146,99 @@ export function buildCronJobSpec(name: string, opts: CronAddOptions): CronJobSpe
   }
 
   return { spec };
+}
+
+export function buildCronJobUpdates(job: CronJob, opts: CronUpdateOptions): CronJobUpdateResult {
+  const updates: CronJobUpdates = {};
+
+  if (opts.name !== undefined) {
+    if (!opts.name.trim()) {
+      return { error: 'cron update: --name cannot be blank' };
+    }
+    updates.name = opts.name.trim();
+  }
+
+  const scheduleFlags = [opts.every, opts.cron, opts.at].filter((v) => v !== undefined);
+  if (scheduleFlags.length > 1) {
+    return { error: 'cron update: --every, --cron and --at are mutually exclusive' };
+  }
+  if (opts.every !== undefined) {
+    const ms = Number(opts.every);
+    if (!Number.isFinite(ms) || ms <= 0) {
+      return { error: `cron update: --every must be a positive number of milliseconds (got "${opts.every}")` };
+    }
+    updates.type = 'every';
+    updates.schedule = { every: Math.trunc(ms) };
+  } else if (opts.cron !== undefined) {
+    if (opts.cron.trim().split(/\s+/).length !== 5) {
+      return { error: `cron update: --cron must be a 5-field expression (got "${opts.cron}")` };
+    }
+    updates.type = 'cron';
+    updates.schedule = { cron: opts.cron.trim() };
+  } else if (opts.at !== undefined) {
+    const at = new Date(opts.at);
+    if (Number.isNaN(at.getTime())) {
+      return { error: `cron update: --at must be a valid ISO 8601 timestamp (got "${opts.at}")` };
+    }
+    updates.type = 'at';
+    updates.schedule = { at: at.toISOString() };
+  }
+
+  if (opts.message !== undefined && opts.watchdog !== undefined) {
+    return { error: 'cron update: --message and --watchdog are mutually exclusive' };
+  }
+  if (opts.watchdog !== undefined) {
+    const parsed = parseJsonOption(opts.watchdog, '--watchdog');
+    if ('error' in parsed) return parsed;
+    const watchdog = parsed.value as CronJob['task']['watchdog'];
+    if (!watchdog || !Array.isArray(watchdog.checks) || watchdog.checks.length === 0) {
+      return { error: '--watchdog config must include a non-empty "checks" array' };
+    }
+    updates.task = { type: 'watchdog', watchdog };
+  } else if (opts.message !== undefined) {
+    if (!opts.message.trim()) {
+      return { error: 'cron update: --message cannot be blank' };
+    }
+    updates.task = { type: 'message', message: opts.message };
+  }
+
+  if (opts.preCheck !== undefined && opts.clearPreCheck) {
+    return { error: 'cron update: --pre-check and --clear-pre-check are mutually exclusive' };
+  }
+  if (opts.clearPreCheck) {
+    updates.preCheck = undefined;
+  } else if (opts.preCheck !== undefined) {
+    const parsed = parseJsonOption(opts.preCheck, '--pre-check');
+    if ('error' in parsed) return parsed;
+    const preCheck = parsed.value as CronJob['preCheck'];
+    if (!preCheck || (preCheck.type !== 'file_changed' && preCheck.type !== 'command')) {
+      return { error: '--pre-check config must have type "file_changed" or "command"' };
+    }
+    updates.preCheck = preCheck;
+  }
+
+  const targets = (opts.deliver ?? []).filter((t) => typeof t === 'string' && t.trim().length > 0);
+  if (opts.clearDelivery && (targets.length > 0 || opts.format !== undefined)) {
+    return { error: 'cron update: --clear-delivery cannot be combined with --deliver or --format' };
+  }
+  if (opts.clearDelivery) {
+    updates.delivery = undefined;
+  } else if (targets.length > 0 || opts.format !== undefined) {
+    if (opts.format && opts.format !== 'full' && opts.format !== 'summary') {
+      return { error: '--format must be "full" or "summary"' };
+    }
+    updates.delivery = {
+      ...(job.delivery ?? {}),
+      ...(targets.length > 0 ? { targets } : {}),
+      ...(opts.format === 'summary' || opts.format === 'full' ? { format: opts.format } : {}),
+    };
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return { error: 'cron update: specify at least one field to update' };
+  }
+
+  return { updates };
 }
 
 function parseJsonOption(
@@ -273,6 +380,43 @@ export function registerCronCommands(program: Command): void {
       if (run.status === 'error') {
         process.exit(1);
       }
+    });
+
+  cron
+    .command('update <id>')
+    .description('Update a cron job by id (or id prefix)')
+    .option('--name <name>', 'replace the job name')
+    .option('--every <ms>', 'replace schedule with every N milliseconds')
+    .option('--cron <expr>', 'replace schedule with a 5-field cron expression')
+    .option('--at <iso>', 'replace schedule with a one-shot ISO 8601 timestamp')
+    .option('--message <text>', 'replace task with an agent message')
+    .option('--watchdog <json>', 'replace task with watchdog config as inline JSON or @file')
+    .option('--pre-check <json>', 'replace pre-check gate as inline JSON or @file')
+    .option('--clear-pre-check', 'remove the pre-check gate')
+    .option('--deliver <target>', 'replace delivery targets type:id (repeatable)', collectOption, [])
+    .option('--clear-delivery', 'remove delivery configuration')
+    .option('--format <fmt>', 'delivery body format: full|summary')
+    .option('--json', 'output JSON')
+    .action(async (id: string, opts: CronUpdateOptions) => {
+      const scheduler = await getLoadedCronScheduler();
+      const job = requireCronJob(scheduler.listJobs(), id);
+      const result = buildCronJobUpdates(job, opts);
+      if ('error' in result) {
+        console.error(result.error);
+        process.exit(1);
+        return;
+      }
+      const updated = await scheduler.updateJob(job.id, result.updates);
+      if (!updated) {
+        console.error(`Cron job not found: ${id}`);
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({ action: 'update', job: updated }, null, 2));
+        return;
+      }
+      console.log(`Cron job updated: [${updated.id.slice(0, 8)}] ${updated.name}`);
     });
 
   cron

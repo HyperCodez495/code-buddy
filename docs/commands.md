@@ -119,15 +119,18 @@ buddy cron list [--json] | show <id> | pause <id> | resume <id> | run <id> [--js
 buddy cron add <name> --every <ms>|--cron <expr>|--at <iso> \
   [--message <text>] [--watchdog <json|@file>] [--pre-check <json|@file>] \
   [--deliver <type:id>...] [--format full|summary]
+buddy cron update <id> [--name <name>] [--every <ms>|--cron <expr>|--at <iso>] \
+  [--message <text>|--watchdog <json|@file>] [--pre-check <json|@file>|--clear-pre-check] \
+  [--deliver <type:id>...] [--format full|summary] [--clear-delivery] [--json]
 buddy skills list [--all] [--json] | usage [--json] | enable <name> | disable <name>
 ```
 
 `buddy cron` authors scheduled jobs for the daemon's CronScheduler, including
 no-LLM `--watchdog` monitors (disk/http/repo/build) and `--pre-check` gates
 (file_changed/command) that skip expensive LLM runs when nothing changed.
-Use `pause`, `resume`, and `run` for live job control without starting the
-daemon tick loop. `CODEBUDDY_CRON_HOME` can point CLI smoke tests at an
-isolated cron store.
+Use `pause`, `resume`, `run`, and `update` for live job control without
+starting the daemon tick loop. `CODEBUDDY_CRON_HOME` can point CLI smoke tests
+at an isolated cron store.
 
 ### Research and Orchestration
 
