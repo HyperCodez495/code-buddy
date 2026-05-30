@@ -3,10 +3,13 @@ import path from 'path';
 import type { Dirent } from 'fs';
 import { parseSkillFile, validateSkill } from '../skills/parser.js';
 import { computeChecksum, getSkillsHub, SkillsHub } from '../skills/hub.js';
+import { generateDiff } from '../utils/diff-generator.js';
 import type { ResearchScriptJobArtifact } from './research-script-job-artifact.js';
 import type { ResearchScriptJobRunResult } from './research-script-job-runner.js';
 
 export const RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
+const SKILL_CANDIDATE_DIFF_PREVIEW_CHARS = 900;
+const SKILL_CANDIDATE_DIFF_PREVIEW_LINES = 32;
 
 export type MaterializedSkillCandidateKind = 'research-script' | 'learning';
 
@@ -85,8 +88,17 @@ export type SkillCandidateInstallState =
   | 'installed-different'
   | 'installed-missing';
 
+export interface SkillCandidateDiffPreview {
+  addedLines: number;
+  preview: string;
+  removedLines: number;
+  summary: string;
+  truncated: boolean;
+}
+
 export interface ResearchScriptSkillCandidateWithInstallState extends ResearchScriptSkillCandidate {
   candidateChecksum: string;
+  candidateDiffPreview?: SkillCandidateDiffPreview;
   installState: SkillCandidateInstallState;
   installedChecksum?: string;
   installedIntegrityOk?: boolean;
@@ -439,10 +451,14 @@ function summarizeCandidateInstallState(
   const installState = isInstalledFromCandidate(content, candidate.markdown)
     ? 'installed-current'
     : 'installed-different';
+  const candidateDiffPreview = installState === 'installed-different'
+    ? buildCandidateDiffPreview(candidate, content)
+    : undefined;
 
   return {
     ...candidate,
     candidateChecksum,
+    ...(candidateDiffPreview ? { candidateDiffPreview } : {}),
     installState,
     installedChecksum,
     installedIntegrityOk: integrityOk,
@@ -456,6 +472,38 @@ function isInstalledFromCandidate(installedContent: string, candidateMarkdown: s
   const candidateBody = candidateMarkdown.trimEnd();
   const installedBody = installedContent.trimEnd();
   return installedBody === candidateBody || installedBody.startsWith(`${candidateBody}\n\n## Human Approval`);
+}
+
+function buildCandidateDiffPreview(
+  candidate: ResearchScriptSkillCandidate,
+  installedContent: string,
+): SkillCandidateDiffPreview {
+  const installedComparableContent = stripHumanApprovalSection(installedContent);
+  const diff = generateDiff(
+    installedComparableContent.split('\n'),
+    candidate.markdown.trimEnd().split('\n'),
+    `${candidate.skillName}/SKILL.md`,
+    {
+      contextLines: 2,
+      summaryPrefix: 'Candidate changes',
+    },
+  );
+  const linePreview = diff.diff
+    .split('\n')
+    .slice(0, SKILL_CANDIDATE_DIFF_PREVIEW_LINES)
+    .join('\n');
+  const preview = linePreview.slice(0, SKILL_CANDIDATE_DIFF_PREVIEW_CHARS);
+  return {
+    addedLines: diff.addedLines,
+    preview,
+    removedLines: diff.removedLines,
+    summary: diff.summary,
+    truncated: linePreview.length > preview.length || diff.diff.split('\n').length > SKILL_CANDIDATE_DIFF_PREVIEW_LINES,
+  };
+}
+
+function stripHumanApprovalSection(content: string): string {
+  return content.trimEnd().replace(/\n\n## Human Approval\n[\s\S]*$/m, '');
 }
 
 function buildCandidateReviewCommands(

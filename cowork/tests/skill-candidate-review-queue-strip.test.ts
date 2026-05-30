@@ -53,6 +53,13 @@ describe('SkillCandidateReviewQueueStrip', () => {
         React.createElement(SkillCandidateReviewQueueStrip, {
           candidates: [
             {
+              candidateDiffPreview: {
+                addedLines: 1,
+                preview: 'Candidate changes learned-search-view-file-bash/SKILL.md with 1 addition and 1 removal\n--- a/learned-search-view-file-bash/SKILL.md\n+++ b/learned-search-view-file-bash/SKILL.md\n- Old procedure\n+ New procedure',
+                removedLines: 1,
+                summary: 'Candidate changes learned-search-view-file-bash/SKILL.md with 1 addition and 1 removal',
+                truncated: false,
+              },
               eligible: true,
               installState: 'installed-different',
               installedIntegrityOk: true,
@@ -87,6 +94,9 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(strip?.textContent).toContain('Learning Agent');
     expect(strip?.textContent).toContain('installed differs');
     expect(strip?.textContent).toContain('Installed: v0.1.0');
+    expect(strip?.textContent).toContain('Candidate changes learned-search-view-file-bash/SKILL.md');
+    expect(strip?.textContent).toContain('- Old procedure');
+    expect(strip?.textContent).toContain('+ New procedure');
     expect(strip?.textContent).toContain('run-learning-architect');
     expect(strip?.textContent).toContain('Tools: search -> view_file -> bash');
     expect(strip?.textContent).toContain('skill_manage action=candidate_view');

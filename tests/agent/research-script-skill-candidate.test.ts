@@ -350,6 +350,17 @@ describe('research script skill candidate', () => {
         installState: 'installed-different',
         installedIntegrityOk: true,
       });
+      expect(byName.get(changedCandidate.skillName)?.candidateDiffPreview).toMatchObject({
+        addedLines: 1,
+        removedLines: 1,
+        truncated: false,
+      });
+      expect(byName.get(changedCandidate.skillName)?.candidateDiffPreview?.preview).toContain(
+        '- Old installed workflow.',
+      );
+      expect(byName.get(changedCandidate.skillName)?.candidateDiffPreview?.preview).toContain(
+        '+- Review changed workflow.',
+      );
       expect(byName.get(changedCandidate.skillName)?.reviewCommands).toEqual(expect.arrayContaining([
         `skill_manage action=candidate_install candidate_path=${changedCandidate.skillPath} approved_by=<reviewer> overwrite=true`,
         `skill_manage action=history name=${changedCandidate.skillName}`,

@@ -3,6 +3,13 @@ import { loadCoreModule } from '../utils/core-loader';
 
 export interface SkillCandidateReviewSummary {
   candidateChecksum?: string;
+  candidateDiffPreview?: {
+    addedLines: number;
+    preview: string;
+    removedLines: number;
+    summary: string;
+    truncated: boolean;
+  };
   eligible: boolean;
   id: string;
   installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
@@ -31,6 +38,13 @@ export interface ListSkillCandidateReviewOptions {
 
 interface ResearchScriptSkillCandidate {
   candidateChecksum?: string;
+  candidateDiffPreview?: {
+    addedLines: number;
+    preview: string;
+    removedLines: number;
+    summary: string;
+    truncated: boolean;
+  };
   eligible: boolean;
   id: string;
   installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
@@ -92,6 +106,7 @@ function summarizeSkillCandidate(
 ): SkillCandidateReviewSummary {
   return {
     candidateChecksum: candidate.candidateChecksum,
+    candidateDiffPreview: candidate.candidateDiffPreview,
     eligible: candidate.eligible,
     id: candidate.id,
     installState: candidate.installState,

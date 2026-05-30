@@ -4,6 +4,13 @@ import { ListChecks, PackageCheck, Route, ShieldCheck, Terminal } from 'lucide-r
 
 export interface SkillCandidateReviewQueueItem {
   candidateChecksum?: string;
+  candidateDiffPreview?: {
+    addedLines: number;
+    preview: string;
+    removedLines: number;
+    summary: string;
+    truncated: boolean;
+  };
   eligible: boolean;
   installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
   installedChecksum?: string;
@@ -189,6 +196,18 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                 <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-text-muted">
                   <Terminal size={9} className="shrink-0 text-text-muted" />
                   <code className="truncate">{candidate.reviewCommands[0]}</code>
+                </div>
+              ) : null}
+              {candidate.candidateDiffPreview ? (
+                <div className="mt-1 rounded bg-surface px-2 py-1">
+                  <div className="truncate text-[9px] text-text-muted">
+                    {candidate.candidateDiffPreview.summary}
+                    {candidate.candidateDiffPreview.truncated ? '...' : ''}
+                  </div>
+                  <pre className="mt-0.5 max-h-24 overflow-hidden whitespace-pre-wrap text-[9px] leading-snug text-text-muted">
+                    {candidate.candidateDiffPreview.preview}
+                    {candidate.candidateDiffPreview.truncated ? '\n...' : ''}
+                  </pre>
                 </div>
               ) : null}
             </li>
