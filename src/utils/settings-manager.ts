@@ -26,6 +26,7 @@ import {
   mergeWithDefaults,
   validateConnectionConfig,
 } from "../config/index.js";
+import { shouldWriteProjectRuntimeFiles } from "./runtime-flags.js";
 
 /**
  * User-level settings stored in ~/.codebuddy/user-settings.json
@@ -282,8 +283,6 @@ export class SettingsManager {
   public loadProjectSettings(): ProjectSettings {
     try {
       if (!fs.existsSync(this.projectSettingsPath)) {
-        // Create default project settings if file doesn't exist
-        this.saveProjectSettings(DEFAULT_PROJECT_SETTINGS);
         return { ...DEFAULT_PROJECT_SETTINGS };
       }
 
@@ -334,6 +333,10 @@ export class SettingsManager {
    */
   public saveProjectSettings(settings: Partial<ProjectSettings>): void {
     try {
+      if (!shouldWriteProjectRuntimeFiles() && !fs.existsSync(this.projectSettingsPath)) {
+        return;
+      }
+
       this.ensureDirectoryExists(this.projectSettingsPath);
 
       // Read existing settings directly to avoid recursion

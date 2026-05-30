@@ -19,7 +19,6 @@ export class RunScriptTool extends BaseTool {
     super();
     // Default to a temporary workspace if not provided
     this.workspacePath = workspacePath || path.join(process.cwd(), '.codebuddy', 'workspace');
-    fs.ensureDirSync(this.workspacePath);
   }
 
   protected getParameters(): Record<string, ParameterDefinition> {
@@ -85,6 +84,7 @@ export class RunScriptTool extends BaseTool {
 
     try {
       // 1. Write script to host workspace
+      fs.ensureDirSync(this.workspacePath);
       await fs.writeFile(hostFilePath, script);
 
       // 2. Select Docker Image

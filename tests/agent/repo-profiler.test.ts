@@ -21,12 +21,19 @@ function cleanDir(dir: string): void {
 
 describe('RepoProfiler', () => {
   let tmpDir: string;
+  let previousHeadless: string | undefined;
 
   beforeEach(() => {
     tmpDir = makeTmpDir();
+    previousHeadless = process.env.CODEBUDDY_HEADLESS;
   });
 
   afterEach(() => {
+    if (previousHeadless === undefined) {
+      delete process.env.CODEBUDDY_HEADLESS;
+    } else {
+      process.env.CODEBUDDY_HEADLESS = previousHeadless;
+    }
     cleanDir(tmpDir);
   });
 
@@ -218,6 +225,25 @@ describe('RepoProfiler', () => {
 
       // Both should have the same detectedAt timestamp
       expect(first.detectedAt).toBe(second.detectedAt);
+    });
+
+    it('should not write repo caches during headless runs', async () => {
+      process.env.CODEBUDDY_HEADLESS = 'true';
+      const pkg = {
+        name: 'headless-cache-app',
+        scripts: { test: 'vitest' },
+        dependencies: {},
+      };
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify(pkg));
+      fs.mkdirSync(path.join(tmpDir, 'src'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), 'export const value = 1;\n');
+
+      const profiler = new RepoProfiler(tmpDir);
+      const profile = await profiler.getProfile();
+
+      expect(profile.languages).toContain('TypeScript');
+      expect(fs.existsSync(path.join(tmpDir, '.codebuddy', 'repoProfile.json'))).toBe(false);
+      expect(fs.existsSync(path.join(tmpDir, '.codebuddy', 'code-graph.json'))).toBe(false);
     });
   });
 

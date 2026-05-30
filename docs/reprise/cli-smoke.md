@@ -122,6 +122,21 @@ Resultat attendu:
 - La session sauvegardee est visible.
 - La reprise ne duplique pas l'historique ni les messages d'outils.
 
+## 7. Headless ephemeral propre
+
+Pour tester un depot utilisateur ou temporaire sans le modifier:
+
+```bash
+node dist/index.js --directory /chemin/vers/depot --prompt "bonjour" --ephemeral --quiet --output-format json
+```
+
+Resultat attendu:
+
+- La sortie JSON reste pipeable via `.result`.
+- Le run peut utiliser un provider HTTP local ou reel.
+- Si le depot ne contenait pas deja `.codebuddy/`, le run ne cree pas
+  `.codebuddy/` et `git status --short` reste vide.
+
 ## Verification developpeur
 
 Avant de dire que le CLI est sain pour une reprise:
@@ -130,6 +145,7 @@ Avant de dire que le CLI est sain pour une reprise:
 npm run typecheck
 npm run build
 npm test -- tests/agent/execution/agent-executor.test.ts tests/codebuddy/client.test.ts
+npm test -- tests/cli/headless-exit-code.test.ts
 ```
 
 Le lint global peut encore contenir de la dette historique. Pour une

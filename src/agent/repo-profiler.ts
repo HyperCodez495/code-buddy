@@ -16,6 +16,7 @@ import type { CartographyResult } from './repo-profiling/cartography.js';
 import { KnowledgeGraph } from '../knowledge/knowledge-graph.js';
 import { populateCodeGraph } from '../knowledge/code-graph-populator.js';
 import { saveCodeGraph, loadCodeGraph, codeGraphExists } from '../knowledge/code-graph-persistence.js';
+import { shouldWriteProjectRuntimeFiles } from '../utils/runtime-flags.js';
 
 export interface RepoProfile {
   detectedAt: string;
@@ -103,7 +104,9 @@ export class RepoProfiler {
     }
 
     const profile = await this.computeProfile();
-    this.saveCache(profile);
+    if (this.shouldWriteRuntimeCaches()) {
+      this.saveCache(profile);
+    }
     return profile;
   }
 
@@ -128,7 +131,9 @@ export class RepoProfiler {
    */
   async refresh(): Promise<RepoProfile> {
     const profile = await this.computeProfile();
-    this.saveCache(profile);
+    if (this.shouldWriteRuntimeCaches()) {
+      this.saveCache(profile);
+    }
     return profile;
   }
 
@@ -369,7 +374,9 @@ export class RepoProfiler {
         const graph = KnowledgeGraph.getInstance();
         graph.clear(); // Fresh rebuild
         const tripleCount = populateCodeGraph(graph, cartography);
-        saveCodeGraph(graph, this.cwd);
+        if (this.shouldWriteRuntimeCaches()) {
+          saveCodeGraph(graph, this.cwd);
+        }
 
         // Strip importEdges from profile to keep repoProfile.json lean
         delete cartography.importEdges;
@@ -408,22 +415,21 @@ export class RepoProfiler {
     };
 
     profile.contextPack = this.buildContextPack(profile);
-    
-    // Save to cache before starting background task
-    this.saveCache(profile);
 
-    // Trigger background semantic indexing of the workspace
-    try {
-      const { getWorkspaceIndexer } = await import('../knowledge/workspace-indexer.js');
-      const indexer = getWorkspaceIndexer({
-        workspaceRoot: this.cwd,
-        indexPath: path.join(this.cwd, '.codebuddy', 'index', 'workspace.bin'),
-      });
-      indexer.initialize()
-        .then(() => indexer.startIndexing())
-        .catch(e => logger.error('Background indexing failed', { error: String(e) }));
-    } catch (e) {
-      logger.debug('Failed to load workspace indexer', { error: String(e) });
+    // Trigger background semantic indexing of the workspace only for persistent runs.
+    if (this.shouldWriteRuntimeCaches()) {
+      try {
+        const { getWorkspaceIndexer } = await import('../knowledge/workspace-indexer.js');
+        const indexer = getWorkspaceIndexer({
+          workspaceRoot: this.cwd,
+          indexPath: path.join(this.cwd, '.codebuddy', 'index', 'workspace.bin'),
+        });
+        indexer.initialize()
+          .then(() => indexer.startIndexing())
+          .catch(e => logger.error('Background indexing failed', { error: String(e) }));
+      } catch (e) {
+        logger.debug('Failed to load workspace indexer', { error: String(e) });
+      }
     }
 
     return profile;
@@ -496,6 +502,11 @@ export class RepoProfiler {
     } catch (err) {
       logger.debug('RepoProfiler: failed to save cache', { err });
     }
+  }
+
+  private shouldWriteRuntimeCaches(): boolean {
+    return shouldWriteProjectRuntimeFiles()
+      && process.env.CODEBUDDY_REPO_PROFILE_READONLY !== 'true';
   }
 
   private exists(p: string): boolean {

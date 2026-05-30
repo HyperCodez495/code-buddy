@@ -5,6 +5,7 @@ import { EventEmitter } from "events";
 import { getHooksManager } from "../hooks/lifecycle-hooks.js";
 import { Fact, FactCategory } from "./facts-memory.js";
 import { logger } from "../utils/logger.js";
+import { shouldWriteProjectRuntimeFiles } from "../utils/runtime-flags.js";
 
 function mapMemoryCategoryToFactCategory(cat: MemoryCategory): FactCategory {
   switch (cat) {
@@ -141,12 +142,15 @@ export class PersistentMemoryManager extends EventEmitter {
   }
 
   private async ensureMemoryFiles(): Promise<void> {
-    // Ensure project memory file
-    const projectDir = path.dirname(this.config.projectMemoryPath);
-    await fs.ensureDir(projectDir);
+    // Ensure project memory file only for persistent sessions. Headless one-shot
+    // runs may read an existing project memory file, but should not create one.
+    if (shouldWriteProjectRuntimeFiles() || await fs.pathExists(this.config.projectMemoryPath)) {
+      const projectDir = path.dirname(this.config.projectMemoryPath);
+      await fs.ensureDir(projectDir);
 
-    if (!(await fs.pathExists(this.config.projectMemoryPath))) {
-      await fs.writeFile(this.config.projectMemoryPath, MEMORY_TEMPLATE);
+      if (!(await fs.pathExists(this.config.projectMemoryPath))) {
+        await fs.writeFile(this.config.projectMemoryPath, MEMORY_TEMPLATE);
+      }
     }
 
     // Ensure user memory file

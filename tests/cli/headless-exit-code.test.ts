@@ -1,6 +1,8 @@
 import http from 'node:http';
+import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { spawn } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 
 function runCliAgainstFailingProvider(port: number): Promise<{
   exitCode: number | null;
@@ -57,7 +59,10 @@ function runCliAgainstFailingProvider(port: number): Promise<{
   });
 }
 
-function runCliAgainstSuccessfulProvider(port: number): Promise<{
+function runCliAgainstSuccessfulProvider(port: number, options: {
+  directory?: string;
+  disableTools?: boolean;
+} = {}): Promise<{
   exitCode: number | null;
   stdout: string;
   stderr: string;
@@ -67,9 +72,14 @@ function runCliAgainstSuccessfulProvider(port: number): Promise<{
   );
 
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, [
+    const args = [
       path.resolve('node_modules/tsx/dist/cli.mjs'),
       'src/index.ts',
+    ];
+    if (options.directory) {
+      args.push('--directory', options.directory);
+    }
+    args.push(
       '--prompt',
       'Return HEADLESS_JSON_CONTRACT_OK exactly.',
       '--api-key',
@@ -83,11 +93,14 @@ function runCliAgainstSuccessfulProvider(port: number): Promise<{
       '--no-self-heal',
       '--ephemeral',
       '--quiet',
-      '--disabled-tools',
-      '*',
       '--output-format',
       'json',
-    ], {
+    );
+    if (options.disableTools ?? true) {
+      args.splice(args.length - 2, 0, '--disabled-tools', '*');
+    }
+
+    const child = spawn(process.execPath, args, {
       cwd: process.cwd(),
       env: {
         ...cleanEnv,
@@ -164,6 +177,82 @@ describe('headless CLI exit codes', () => {
       expect(Array.isArray(parsed.messages)).toBe(true);
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }, 90_000);
+
+  it('does not dirty a real Git workspace during ephemeral headless startup', async () => {
+    let requests = 0;
+    const server = http.createServer((req, res) => {
+      requests += 1;
+      req.resume();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'chatcmpl-headless-clean-workspace',
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: 'qa-mock-model',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: 'HEADLESS_JSON_CONTRACT_OK',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 1,
+          total_tokens: 2,
+        },
+      }));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-headless-git-'));
+    try {
+      fs.writeFileSync(path.join(tmpDir, 'package.json'), JSON.stringify({
+        name: 'headless-clean-workspace',
+        type: 'module',
+        scripts: { test: 'node --test' },
+        dependencies: {},
+      }, null, 2));
+      fs.mkdirSync(path.join(tmpDir, 'src'));
+      fs.writeFileSync(path.join(tmpDir, 'src', 'index.ts'), 'export const value = 1;\n');
+      execFileSync('git', ['init'], { cwd: tmpDir, stdio: 'ignore' });
+      execFileSync('git', ['add', '.'], { cwd: tmpDir, stdio: 'ignore' });
+      execFileSync('git', [
+        '-c', 'user.name=Code Buddy Smoke',
+        '-c', 'user.email=smoke@example.test',
+        'commit',
+        '-m',
+        'init',
+      ], { cwd: tmpDir, stdio: 'ignore' });
+
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Expected TCP server address');
+      }
+
+      const result = await runCliAgainstSuccessfulProvider(address.port, {
+        directory: tmpDir,
+        disableTools: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(requests).toBeGreaterThan(0);
+      expect(JSON.parse(result.stdout).result).toBeTruthy();
+      expect(fs.existsSync(path.join(tmpDir, '.codebuddy'))).toBe(false);
+      const status = execFileSync('git', ['status', '--short'], { cwd: tmpDir, encoding: 'utf8' });
+      expect(status.trim()).toBe('');
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+      fs.rmSync(tmpDir, { recursive: true, force: true });
     }
   }, 90_000);
 

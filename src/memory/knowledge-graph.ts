@@ -23,9 +23,10 @@
  */
 
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync } from 'fs';
-import { join } from 'path';
+import { existsSync } from 'fs';
+import { dirname, join } from 'path';
 import { logger } from '../utils/logger.js';
+import { shouldWriteProjectRuntimeFiles } from '../utils/runtime-flags.js';
 
 // ============================================================================
 // Types
@@ -292,9 +293,6 @@ export class KnowledgeGraph {
 
   constructor(cwd: string = process.cwd()) {
     const dir = join(cwd, '.codebuddy');
-    if (!existsSync(dir)) {
-      mkdirSync(dir, { recursive: true });
-    }
     this.dbPath = join(dir, 'knowledge-graph.json');
   }
 
@@ -1024,9 +1022,13 @@ export class KnowledgeGraph {
 
   async save(): Promise<void> {
     if (!this.dirty) return;
+    if (!shouldWriteProjectRuntimeFiles()) {
+      this.dirty = false;
+      return;
+    }
 
     try {
-      const { writeFile } = await import('fs/promises');
+      const { mkdir, writeFile } = await import('fs/promises');
       const data = {
         version: 2,
         savedAt: new Date().toISOString(),
@@ -1035,6 +1037,7 @@ export class KnowledgeGraph {
         categories: [...this.categories.values()],
         contentHashes: [...this.contentHashes],
       };
+      await mkdir(dirname(this.dbPath), { recursive: true });
       await writeFile(this.dbPath, JSON.stringify(data, null, 2), 'utf-8');
       this.dirty = false;
       logger.debug(`KnowledgeGraph: saved ${data.entities.length} entities, ${data.relations.length} relations, ${data.categories.length} categories`);
