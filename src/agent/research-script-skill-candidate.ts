@@ -255,13 +255,18 @@ export async function listMaterializedResearchScriptSkillCandidatesWithInstallSt
 ): Promise<ResearchScriptSkillCandidateWithInstallState[]> {
   const rootDir = path.resolve(options.rootDir);
   const candidates = await listMaterializedResearchScriptSkillCandidates(options);
-  const hub = new SkillsHub({
-    cacheDir: path.join(rootDir, '.codebuddy', 'skills-cache'),
-    lockfilePath: path.join(rootDir, '.codebuddy', 'skills-lock.json'),
-    skillsDir: path.join(rootDir, '.codebuddy', 'skills'),
-  });
+  const hub = buildWorkspaceSkillsHub(rootDir);
 
   return candidates.map((candidate) => summarizeCandidateInstallState(candidate, hub));
+}
+
+export async function readMaterializedResearchScriptSkillCandidateWithInstallState(
+  candidatePath: string,
+  options: ReadMaterializedResearchScriptSkillCandidateOptions,
+): Promise<ResearchScriptSkillCandidateWithInstallState> {
+  const rootDir = path.resolve(options.rootDir);
+  const candidate = await readMaterializedResearchScriptSkillCandidate(candidatePath, { rootDir });
+  return summarizeCandidateInstallState(candidate, buildWorkspaceSkillsHub(rootDir));
 }
 
 export async function installResearchScriptSkillCandidate(
@@ -307,6 +312,7 @@ export async function installResearchScriptSkillCandidate(
     encoding: 'utf8',
     flag: options.overwrite ? 'w' : 'wx',
   });
+  buildWorkspaceSkillsHub(rootDir).registerLocalSkillFile(candidate.skillName, absoluteInstalledPath);
   getSkillsHub().registerLocalSkillFile(candidate.skillName, absoluteInstalledPath);
 
   return {
@@ -466,6 +472,14 @@ function summarizeCandidateInstallState(
     installedVersion: installed.version,
     reviewCommands: buildCandidateReviewCommands(candidate, installState),
   };
+}
+
+function buildWorkspaceSkillsHub(rootDir: string): SkillsHub {
+  return new SkillsHub({
+    cacheDir: path.join(rootDir, '.codebuddy', 'skills-cache'),
+    lockfilePath: path.join(rootDir, '.codebuddy', 'skills-lock.json'),
+    skillsDir: path.join(rootDir, '.codebuddy', 'skills'),
+  });
 }
 
 function isInstalledFromCandidate(installedContent: string, candidateMarkdown: string): boolean {

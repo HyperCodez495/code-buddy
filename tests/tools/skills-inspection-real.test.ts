@@ -168,13 +168,25 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     const candidateList = await parseToolOutput(await manageTool!.execute({ action: 'candidate_list' }));
     expect(candidateList.action).toBe('skill_manage_candidate_list');
     expect(candidateList.count).toBe(1);
+    expect(candidateList.candidates).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        installState: 'not-installed',
+        reviewCommands: expect.arrayContaining([
+          `skill_manage action=candidate_install candidate_path=${candidate.skillPath} approved_by=<reviewer>`,
+        ]),
+        skillName: 'research-skill-manage-candidate',
+      }),
+    ]));
 
     const candidateView = await parseToolOutput(await manageTool!.execute({
       action: 'candidate_view',
       candidate_path: candidateDir,
     }));
     expect(candidateView.action).toBe('skill_manage_candidate_view');
-    expect((candidateView.candidate as { skillName: string }).skillName).toBe('research-skill-manage-candidate');
+    expect(candidateView.candidate).toMatchObject({
+      installState: 'not-installed',
+      skillName: 'research-skill-manage-candidate',
+    });
     expect(candidateView.content).toContain('Status: eligible for human review');
 
     const installWithoutApproval = await manageTool!.execute({
@@ -192,6 +204,10 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     }));
     expect(installed.action).toBe('skill_manage_candidate_install');
     expect((installed.installed as { approvedBy: string }).approvedBy).toBe('Patrice');
+    const workspaceLock = JSON.parse(
+      await fs.readFile(path.join(tempWorkspace, '.codebuddy', 'skills-lock.json'), 'utf8'),
+    ) as { skills: Record<string, unknown> };
+    expect(workspaceLock.skills).toHaveProperty('research-skill-manage-candidate');
     await expect(
       fs.readFile(
         path.join(tempWorkspace, '.codebuddy', 'skills', 'research-skill-manage-candidate', 'SKILL.md'),
@@ -213,6 +229,17 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     }));
     expect(viewedAfterInstall.integrityOk).toBe(true);
     expect(viewedAfterInstall.content).toContain('- Approved by: Patrice');
+
+    const candidateViewAfterInstall = await parseToolOutput(await manageTool!.execute({
+      action: 'candidate_view',
+      candidate_path: candidateDir,
+    }));
+    expect(candidateViewAfterInstall.candidate).toMatchObject({
+      installState: 'installed-current',
+      installedIntegrityOk: true,
+      installedVersion: '0.1.0',
+      skillName: 'research-skill-manage-candidate',
+    });
 
     const historyWithoutName = await manageTool!.execute({ action: 'history' });
     expect(historyWithoutName.success).toBe(false);
@@ -251,6 +278,21 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect(viewedAfterPatch.content).toContain(
       '- Promote a repeated Hermes lifecycle workflow through skill_manage.',
     );
+
+    const candidateViewAfterPatch = await parseToolOutput(await manageTool!.execute({
+      action: 'candidate_view',
+      candidate_path: candidateDir,
+    }));
+    expect(candidateViewAfterPatch.candidate).toMatchObject({
+      installState: 'installed-different',
+      skillName: 'research-skill-manage-candidate',
+    });
+    expect(candidateViewAfterPatch.candidate).toHaveProperty('candidateDiffPreview');
+    expect(
+      (candidateViewAfterPatch.candidate as {
+        candidateDiffPreview: { preview: string };
+      }).candidateDiffPreview.preview,
+    ).toContain('+- Promote a repeated real workflow through skill_manage.');
 
     const rolledBack = await parseToolOutput(await manageTool!.execute({
       action: 'rollback',

@@ -12,9 +12,11 @@ import { getCreateSkillTool } from '../create-skill-tool.js';
 import { SkillDiscoveryTool } from '../skill-discovery-tool.js';
 import {
   installResearchScriptSkillCandidate,
-  listMaterializedResearchScriptSkillCandidates,
+  listMaterializedResearchScriptSkillCandidatesWithInstallState,
   readMaterializedResearchScriptSkillCandidate,
+  readMaterializedResearchScriptSkillCandidateWithInstallState,
   type ResearchScriptSkillCandidate,
+  type ResearchScriptSkillCandidateWithInstallState,
 } from '../../agent/research-script-skill-candidate.js';
 import { getSkillsHub } from '../../skills/hub.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
@@ -139,12 +141,25 @@ function readApproval(input: Record<string, unknown>, action: string): string | 
   return approvedBy;
 }
 
-function summarizeCandidate(candidate: ResearchScriptSkillCandidate): Record<string, unknown> {
+type SkillCandidateSummarySource = ResearchScriptSkillCandidate
+  & Partial<ResearchScriptSkillCandidateWithInstallState>;
+
+function summarizeCandidate(candidate: SkillCandidateSummarySource): Record<string, unknown> {
   return {
+    ...(candidate.candidateChecksum ? { candidateChecksum: candidate.candidateChecksum } : {}),
+    ...(candidate.candidateDiffPreview ? { candidateDiffPreview: candidate.candidateDiffPreview } : {}),
     eligible: candidate.eligible,
     id: candidate.id,
+    ...(candidate.installState ? { installState: candidate.installState } : {}),
+    ...(candidate.installedChecksum ? { installedChecksum: candidate.installedChecksum } : {}),
+    ...(typeof candidate.installedIntegrityOk === 'boolean'
+      ? { installedIntegrityOk: candidate.installedIntegrityOk }
+      : {}),
+    ...(candidate.installedPath ? { installedPath: candidate.installedPath } : {}),
+    ...(candidate.installedVersion ? { installedVersion: candidate.installedVersion } : {}),
     kind: candidate.kind,
     reason: candidate.reason,
+    ...(candidate.reviewCommands ? { reviewCommands: candidate.reviewCommands } : {}),
     skillName: candidate.skillName,
     skillPath: candidate.skillPath,
     sourceJobId: candidate.sourceJobId,
@@ -398,7 +413,7 @@ export class SkillManageExecuteTool implements ITool {
     }
 
     if (action === 'candidate_list') {
-      const candidates = await listMaterializedResearchScriptSkillCandidates({
+      const candidates = await listMaterializedResearchScriptSkillCandidatesWithInstallState({
         rootDir: process.cwd(),
         skillRoot: readString(input.skill_root) || undefined,
       });
@@ -419,7 +434,7 @@ export class SkillManageExecuteTool implements ITool {
       if (!candidatePath) {
         return { success: false, error: 'skill_manage candidate_view: candidate_path is required' };
       }
-      const candidate = await readMaterializedResearchScriptSkillCandidate(candidatePath, {
+      const candidate = await readMaterializedResearchScriptSkillCandidateWithInstallState(candidatePath, {
         rootDir: process.cwd(),
       });
 
