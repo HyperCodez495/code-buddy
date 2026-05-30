@@ -230,8 +230,152 @@ describe('Hermes CLI commands', () => {
             'npm test -- tests/tools/kanban-real.test.ts --run',
           ]),
         }),
+        expect.objectContaining({
+          id: 'nous-portal',
+          status: 'covered-partial',
+          codeBuddyEvidence: expect.arrayContaining(['src/agent/hermes-portal-status.ts']),
+          verificationCommands: expect.arrayContaining([
+            'npx tsx src/index.ts hermes portal status --json',
+          ]),
+        }),
       ]),
     );
+  });
+
+  it('prints real local Nous Portal readiness without leaking secrets', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hermes-portal-cli-'));
+    const managedKeys = [
+      'CODEBUDDY_NOUS_ACCESS_TOKEN',
+      'CODEBUDDY_NOUS_API_KEY',
+      'NOUS_ACCESS_TOKEN',
+      'NOUS_PORTAL_ACCESS_TOKEN',
+      'NOUS_API_KEY',
+      'CODEBUDDY_NOUS_AUTH_FILE',
+      'CODEBUDDY_NOUS_TOOL_GATEWAY_URL',
+      'NOUS_TOOL_GATEWAY_URL',
+      'CODEBUDDY_NOUS_TOOL_GATEWAY',
+      'NOUS_TOOL_GATEWAY',
+      'CODEBUDDY_NOUS_MANAGED_TOOLS',
+      'NOUS_MANAGED_TOOLS',
+      'FIRECRAWL_API_KEY',
+      'XAI_API_KEY',
+      'OPENAI_API_KEY',
+      'CODEBUDDY_IMAGE_API_KEY',
+      'CODEBUDDY_TTS_PROVIDER',
+      'CODEBUDDY_AUDIOREADER_URL',
+      'BROWSER_USE_API_KEY',
+      'BROWSERBASE_API_KEY',
+      'CODEBUDDY_BROWSER_CDP_URL',
+      'MODAL_TOKEN_ID',
+      'MODAL_TOKEN_SECRET',
+      'CODEBUDDY_MODAL_TOKEN',
+    ];
+    const originalEnv = new Map(managedKeys.map((key) => [key, process.env[key]]));
+
+    try {
+      for (const key of managedKeys) {
+        delete process.env[key];
+      }
+      process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-nous-token';
+      process.env.CODEBUDDY_NOUS_AUTH_FILE = path.join(tmpDir, 'missing-nous-auth.json');
+      process.env.CODEBUDDY_NOUS_TOOL_GATEWAY_URL = 'https://gateway.example.test';
+      process.env.CODEBUDDY_NOUS_MANAGED_TOOLS = 'web,tts';
+      process.env.FIRECRAWL_API_KEY = 'secret-firecrawl-key';
+      process.env.XAI_API_KEY = 'secret-xai-key';
+
+      await program.parseAsync(['node', 'test', 'hermes', 'portal', 'status', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        kind: string;
+        officialSource: { inspectedCommit: string; sourceFiles: string[] };
+        portal: {
+          credentialPresent: boolean;
+          credentialSources: string[];
+          authFilePresent: boolean;
+          toolGatewayConfigured: boolean;
+          toolGatewayUrl: string;
+        };
+        toolGateway: {
+          managedByNousCount: number;
+          tools: Array<{
+            key: string;
+            managedByNous: boolean;
+            currentProvider: string | null;
+            credentialEnv: string[];
+          }>;
+        };
+      };
+
+      expect(output.kind).toBe('hermes_portal_status');
+      expect(output.officialSource.inspectedCommit).toBe('5921d667');
+      expect(output.officialSource.sourceFiles).toContain('hermes_cli/portal_cli.py');
+      expect(output.portal.credentialPresent).toBe(true);
+      expect(output.portal.credentialSources).toContain('CODEBUDDY_NOUS_ACCESS_TOKEN');
+      expect(output.portal.authFilePresent).toBe(false);
+      expect(output.portal.toolGatewayConfigured).toBe(true);
+      expect(output.portal.toolGatewayUrl).toBe('https://gateway.example.test');
+      expect(output.toolGateway.managedByNousCount).toBe(2);
+      expect(output.toolGateway.tools).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            key: 'web',
+            managedByNous: true,
+            currentProvider: 'Nous Portal Tool Gateway',
+            credentialEnv: ['FIRECRAWL_API_KEY'],
+          }),
+          expect.objectContaining({
+            key: 'tts',
+            managedByNous: true,
+            currentProvider: 'Nous Portal Tool Gateway',
+          }),
+          expect.objectContaining({
+            key: 'image_gen',
+            managedByNous: false,
+            currentProvider: 'xAI image direct',
+            credentialEnv: ['XAI_API_KEY'],
+          }),
+        ]),
+      );
+      expect(raw).not.toContain('secret-nous-token');
+      expect(raw).not.toContain('secret-firecrawl-key');
+      expect(raw).not.toContain('secret-xai-key');
+    } finally {
+      for (const key of managedKeys) {
+        const value = originalEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      await fs.remove(tmpDir);
+    }
+  });
+
+  it('prints the Hermes Portal tool catalog and subscription URL', async () => {
+    let program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'portal', 'tools']);
+
+    const toolsOutput = getLogOutput();
+    expect(toolsOutput).toContain('Hermes Nous Portal Tool Gateway tools:');
+    expect(toolsOutput).toContain('Web search & extract');
+    expect(toolsOutput).toContain('Browser automation');
+
+    consoleLogSpy.mockClear();
+    program = createProgram();
+    registerHermesCommands(program);
+    await program.parseAsync(['node', 'test', 'hermes', 'portal', 'open', '--json']);
+
+    const openOutput = JSON.parse(getLogOutput()) as {
+      kind: string;
+      url: string;
+      docsUrl: string;
+    };
+    expect(openOutput.kind).toBe('hermes_portal_open');
+    expect(openOutput.url).toBe('https://portal.nousresearch.com/manage-subscription');
+    expect(openOutput.docsUrl).toContain('tool-gateway');
   });
 
   it('prints Markdown for the Hermes parity manifest', async () => {

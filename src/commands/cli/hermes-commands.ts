@@ -41,6 +41,11 @@ import {
   renderHermesHookLifecycleManifest,
 } from '../../hooks/hermes-lifecycle-hooks.js';
 import {
+  buildHermesPortalStatus,
+  renderHermesPortalStatus,
+  type HermesPortalStatus,
+} from '../../agent/hermes-portal-status.js';
+import {
   KanbanStore,
   type CreateKanbanCardInput,
   type KanbanPriority,
@@ -491,6 +496,76 @@ function printKanbanResult(payload: unknown, options: HermesKanbanOptions, text:
   console.log(text);
 }
 
+function renderHermesPortalTools(status: HermesPortalStatus): string {
+  const lines = [
+    'Hermes Nous Portal Tool Gateway tools:',
+    `  Configured: ${status.toolGateway.configuredCount}/${status.toolGateway.tools.length}`,
+    `  Via Nous: ${status.toolGateway.managedByNousCount}/${status.toolGateway.tools.length}`,
+    '',
+  ];
+
+  for (const tool of status.toolGateway.tools) {
+    const state = tool.managedByNous
+      ? 'via Nous Portal'
+      : tool.currentProvider ?? 'not configured';
+    lines.push(`${tool.label.padEnd(22)} ${tool.partner.padEnd(28)} ${state}`);
+    if (tool.notes.length > 0) {
+      lines.push(`  ${tool.notes.join(' ')}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
+function printHermesPortalStatus(status: HermesPortalStatus, options: HermesCommandOptions, toolsOnly = false): void {
+  if (options.json) {
+    console.log(stableJson(status));
+    return;
+  }
+
+  console.log(toolsOnly ? renderHermesPortalTools(status) : renderHermesPortalStatus(status));
+}
+
+function registerHermesPortalCommands(hermes: Command): void {
+  const portal = hermes
+    .command('portal')
+    .description('Inspect Nous Portal auth, subscription, and Tool Gateway routing readiness');
+
+  portal
+    .command('status')
+    .description('Show Nous Portal auth and Tool Gateway routing readiness')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      printHermesPortalStatus(buildHermesPortalStatus(), options);
+    });
+
+  portal
+    .command('tools')
+    .description('List Tool Gateway tools and whether Code Buddy routes them via Nous or direct providers')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      printHermesPortalStatus(buildHermesPortalStatus(), options, true);
+    });
+
+  portal
+    .command('open')
+    .description('Print the Nous Portal subscription URL')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const status = buildHermesPortalStatus();
+      const payload = {
+        kind: 'hermes_portal_open',
+        url: status.portal.subscriptionUrl,
+        docsUrl: status.portal.docsUrl,
+      };
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+      console.log(status.portal.subscriptionUrl);
+    });
+}
+
 function registerHermesKanbanCommands(hermes: Command): void {
   const kanban = hermes
     .command('kanban')
@@ -671,6 +746,7 @@ export function registerHermesCommands(program: Command): void {
     .description('Inspect the native Hermes-inspired Code Buddy agent profile');
 
   registerHermesKanbanCommands(hermes);
+  registerHermesPortalCommands(hermes);
 
   hermes
     .command('parity')

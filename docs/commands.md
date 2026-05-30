@@ -161,6 +161,7 @@ The REST endpoint mirrors that shape with
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
 buddy hermes profile|agent|doctor|plan|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
+buddy hermes portal status|tools|open [--json]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
 ```
@@ -194,6 +195,13 @@ It compares upstream Hermes tool names from
 tool schemas, marking each row as exact, native equivalent, partial, or gap.
 This is the fastest way to see whether an upstream Hermes capability exists as
 an LLM-callable Code Buddy tool or only as a nearby CLI/runtime feature.
+
+`buddy hermes portal status [--json]` is the local Nous Portal readiness check.
+It reports credential source names, subscription/docs URLs, Tool Gateway routing
+configuration, and whether the official Firecrawl/FAL/TTS/Browser Use/Modal
+catalog is currently routed through Nous or through Code Buddy's direct/local
+providers. It never prints secret values. `portal tools` prints only the catalog
+view, and `portal open` prints the subscription URL without launching a browser.
 
 `buddy hermes hooks [--json]` prints the canonical Hermes-style lifecycle
 hook manifest. It maps Code Buddy's existing user/tool hooks onto

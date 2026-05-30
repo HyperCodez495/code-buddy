@@ -4,10 +4,11 @@ Date: 2026-05-30
 Source of truth:
 - `npx tsx src/index.ts hermes parity --json`
 - `npx tsx src/index.ts hermes tools --json`
+- `npx tsx src/index.ts hermes portal status --json`
 - Official audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md)
 
 Current measured state:
-- Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
+- Feature parity manifest: 19 areas, 4 covered-partial, 14 partial, 1 gap.
 - Tool parity manifest: 71 official tools, 65 exact, 6 native-equivalent, 0 partial, 0 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
@@ -80,12 +81,17 @@ Current measured state:
 - [ ] **Expose provider/model readiness for Hermes**
   - Why: the provider stack is broad, but Hermes-oriented setup/status is still scattered.
   - Scope: `buddy hermes doctor` should show provider readiness, active model, context window, tool support, and missing keys without leaking secrets.
+  - Done so far: `buddy hermes portal status|tools|open` now covers the official Nous Portal status/catalog surface locally. It reports credential source names, subscription/docs URLs, Tool Gateway configuration, and managed-vs-direct routing for the official Firecrawl/FAL/TTS/Browser Use/Modal portal catalog without leaking secret values.
   - Acceptance:
     - `buddy hermes doctor --json` includes provider readiness and remediation hints.
+    - `buddy hermes portal status --json` shows whether Nous Tool Gateway routing is configured and which tools fall back to direct/local providers.
     - Cowork configuration screen can render the same status.
   - Verification:
     - tests around `hermes-agent-diagnostics`
     - real CLI smoke with empty and configured env.
+    - `npm test -- tests/commands/hermes-commands.test.ts --run`
+    - `npx tsx src/index.ts hermes portal status --json`
+    - `npx tsx src/index.ts hermes portal tools --json`
 
 ## P2 — Close high-value tool partials
 
@@ -213,3 +219,4 @@ Current measured state:
 1. Remaining skills polish: larger SKILL.md diff/review UX and exact CLI hub/tap/trust product-surface deltas.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
 3. Runtime backend inventory and provider-readiness smoke matrix.
+4. OpenClaw migration last, after the Hermes core and cockpit work are stable.

@@ -43,7 +43,7 @@ is explicitly a native TypeScript/Fleet mapping, not a vendored Hermes runtime
 
 The missing pieces are mostly **exact upstream product surfaces**: full
 official gateway/toolset matrix, complete browser backend matrix, Nous Portal
-Tool Gateway, all memory providers, OpenClaw migration, and several optional
+Tool Gateway live proxy/OAuth, all memory providers, OpenClaw migration, and several optional
 platform connectors. Several concrete gaps from this audit now have native
 Code Buddy equivalents: `buddy hermes prompt-size`, exact `kanban_*`,
 exact `send_message`, exact core `discord`, exact `execute_code` with
@@ -51,7 +51,8 @@ persisted run artifacts, and exact local `vision_analyze` / `browser_vision` /
 `text_to_speech`, exact `image_generate` / `video_analyze` / `video_generate`,
 exact Home Assistant `ha_*` tools, exact Spotify tools, exact `x_search`, exact
 Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact
-`skill_manage` prompt-tool actions, plus exact `mixture_of_agents`.
+`skill_manage` prompt-tool actions, exact `mixture_of_agents`, plus a local
+`buddy hermes portal` readiness/catalog surface for the Nous Portal Tool Gateway.
 
 ## Parity matrix
 
@@ -65,7 +66,7 @@ Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact
 | Built-in tools | Browser, file, terminal/process, web, Home Assistant, Spotify, Kanban, `execute_code`, `cronjob`, `session_search`, skills, TTS, image/video, vision, messaging, MOA, X search, Feishu, Yuanbao, MCP | Code Buddy has many native tools plus Firecrawl, browser/CDP, sessions, skills, Fleet, image/vision/voice pieces, exact `kanban_*`, exact `send_message`, exact core `discord`, exact `discord_admin`, exact Home Assistant `ha_*`, exact Spotify tools, exact `x_search`, exact Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact `skill_manage`, exact `mixture_of_agents`, exact `execute_code`, exact `vision_analyze`, exact `browser_vision`, exact `text_to_speech`, and exact `image_generate` / `video_analyze` / `video_generate` | Partial | Not a one-to-one tool-name or capability set. Kanban, send_message, Discord core/admin actions, Home Assistant REST actions, Spotify, X Search, Feishu, Yuanbao, `skill_manage`, MoA, execute_code, vision_analyze, browser_vision, text_to_speech, and media generation/video analysis now have exact prompt-tool names with native safety boundaries. Yuanbao is optional and routes through a configured gateway adapter; DM/sticker sends are approval-gated. |
 | Messaging gateway | Single gateway process across Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Mattermost, Matrix, DingTalk, Feishu, WeCom, Weixin, BlueBubbles, QQ, Yuanbao, Teams, LINE, ntfy, Open WebUI, etc. | `src/channels/*`, `src/channels/send-message.ts`, `src/tools/discord-platform-tool.ts`, `docs/channels.md`, `src/server/channel-a2a-bridge.ts`, `buddy channels status --json`; many channels including Telegram/Discord/Slack/WhatsApp/Signal/Matrix/Teams/LINE/Feishu/iMessage/etc. | Partial | Code Buddy is broad, gateway readiness is machine-readable without secret leakage, `send_message` dry-runs to a real outbox by default with approval-gated live delivery, and exact `discord` plus `discord_admin` cover upstream Discord REST actions. The official Hermes platform list, gateway lifecycle, and slash parity are still not identical. |
 | Browser automation | Browserbase, Browser Use, Firecrawl, Camofox/Camoufox, local CDP, agent-browser, hybrid public/private routing, dialog handling, session recording | Stagehand/CDP/browser automation, Firecrawl tools, browser watchdogs, exact browser dialog and browser vision surfaces, security audit around CDP | Partial | Strong local browser work, but no complete proof of Hermes backend parity for Camofox, Browser Use gateway mode, hybrid private routing, and session recording. |
-| Nous Portal Tool Gateway | OAuth setup, `hermes portal status`, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use | Separate provider/tool integrations; no Nous Portal command surface found | Gap | This is an upstream subscription-specific integration, not currently a Code Buddy equivalent. |
+| Nous Portal Tool Gateway | OAuth setup, `hermes portal status`, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use | `src/agent/hermes-portal-status.ts`, `buddy hermes portal status|tools|open`, direct provider/tool integrations | Covered/partial | Code Buddy now has local readiness/catalog parity with credential-source reporting, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output. Live OAuth device-code and an actual Nous-managed proxy runtime are not implemented. |
 | Memory | Built-in memory plus external providers: Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, Supermemory | Local memory, FTS/session recall, user model, Mem0/Honcho/Supermemory adapters | Partial | Three external providers exist; the full Hermes provider matrix does not. Some older status docs still understate newer local dialectic work. |
 | Skills | Agentskills.io-compatible skills, hub/taps, direct URL install, trust/update lifecycle, curator, agent-managed skills | `src/skills/hub.ts`, skill loader/manager, skill discovery/install tool, skill curator/candidate review | Partial | Exact `skill_manage` prompt-tool action parity is now covered, including `edit`, `write_file`, `remove_file`, and supporting-file patch aliases. Wider CLI hub/tap/update/reset/trust behavior is still not proven identical. |
 | Closed learning loop | Agent memory nudges, autonomous skill creation, self-improving skills, session search, Honcho modeling; source check: `agent/background_review.py`, `agent/trajectory.py`, `trajectory_compressor.py` | Lessons, user model, session recall, skill candidate queue, curator, `Learning Agent` over real `RunStore` trajectories | Partial/covered core loop | Comparable direction; Code Buddy now has the retrospective loop, candidate skill materialization, and outcome telemetry, but keeps review gates instead of Hermes' direct background skill writes. |
@@ -75,7 +76,7 @@ Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact
 | Research trajectories | Batch trajectory generation and trajectory compression for training/research | `buddy run trajectory-export`, golden/policy evals, run recall packs | Partial | Trajectory export/evals are real; official batch runner/compression parity not found. |
 | Kanban | `hermes kanban` and `kanban_*` coordination tools | `src/kanban/kanban-store.ts`, `src/tools/registry/kanban-tools.ts`, `buddy hermes kanban *`, `tests/tools/kanban-real.test.ts` | Covered/partial | Exact `kanban_show/list/create/complete/block/comment/link/unblock/heartbeat` tool names exist with a persistent workspace board. Upstream UI/lifecycle semantics may still differ. |
 | MCP/ACP | MCP config/catalog/server mode; ACP server/editor integration | MCP infrastructure and A2A/Fleet surfaces; ACP-related channel tests/docs | Partial | MCP is present; exact `hermes-acp` parity is not established. |
-| OpenClaw migration | `hermes claw migrate` with 30+ categories | OpenClaw audit/imported patterns and identity files | Gap | No equivalent migration command found. |
+| OpenClaw migration | `hermes claw migrate` with 30+ categories | OpenClaw audit/imported patterns and identity files | Gap | No equivalent migration command found; this is intentionally deferred until the end. |
 
 ## Highest-value next work
 
@@ -84,8 +85,10 @@ Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact
      evidence paths, status, and verification commands.
 2. Close the remaining user-facing gaps first: provider/model setup clarity and
    Cowork screens for the active Hermes/Fleet toolset.
-3. Treat deep parity items as optional product decisions: Nous Portal, Camofox,
-   full OpenClaw migration, all memory providers, Modal/Daytona.
+3. Treat deep parity items as optional product decisions: live Nous Portal
+   OAuth/proxying, Camofox, all memory providers, Modal/Daytona.
+4. Keep full OpenClaw migration for the end, after the Hermes core and Cowork
+   cockpit are stable.
 
 ## Commands used locally
 
@@ -109,6 +112,8 @@ Feishu document/comment tools, exact Yuanbao group/DM/sticker tools, exact
 - `npm test -- tests/tools/media-generation-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
 - `npx tsx src/index.ts hermes kanban list --json`
 - `npx tsx src/index.ts hermes tools --json`
+- `npx tsx src/index.ts hermes portal status --json`
+- `npx tsx src/index.ts hermes portal tools --json`
 - `npx tsx src/index.ts hermes parity --json`
 
 ## Caveats

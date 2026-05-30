@@ -163,11 +163,20 @@ const FEATURES: HermesParityFeature[] = [
     id: 'nous-portal',
     area: 'Nous Portal Tool Gateway',
     officialSurface: 'OAuth setup, hermes portal status, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use',
-    codeBuddyEvidence: ['src/codebuddy/providers/', 'src/tools/'],
-    status: 'gap',
-    verificationCommands: ['rg -n "Nous Portal|portal status|NOUS" src tests docs'],
-    notes: 'No equivalent Nous Portal command surface was found; this is upstream subscription-specific.',
-    nextWork: 'Treat as a product decision before implementation.',
+    codeBuddyEvidence: [
+      'src/agent/hermes-portal-status.ts',
+      'src/commands/cli/hermes-commands.ts',
+      'src/codebuddy/providers/',
+      'src/tools/',
+    ],
+    status: 'covered-partial',
+    verificationCommands: [
+      'npm test -- tests/commands/hermes-commands.test.ts --run',
+      'npx tsx src/index.ts hermes portal status --json',
+      'npx tsx src/index.ts hermes portal tools --json',
+    ],
+    notes: 'Code Buddy now exposes a Hermes-compatible local readiness surface for Nous Portal auth, subscription links, Tool Gateway configuration, managed-vs-direct routing, and the official Firecrawl/FAL/TTS/Browser Use/Modal catalog without printing secret values. It does not yet implement the upstream OAuth device-code flow or an actual Nous-managed proxy runtime.',
+    nextWork: 'Add live OAuth/device-code login and managed Tool Gateway proxy only after a product decision and credentials are available.',
   },
   {
     id: 'memory-providers',
@@ -318,7 +327,7 @@ const FEATURES: HermesParityFeature[] = [
     status: 'gap',
     verificationCommands: ['rg -n "claw migrate|OpenClaw|openclaw" src tests docs'],
     notes: 'No equivalent migration command was found.',
-    nextWork: 'Treat as optional product decision.',
+    nextWork: 'Do this at the end; the user explicitly deferred migration from OpenClaw until after the Hermes core is finished.',
   },
 ];
 
