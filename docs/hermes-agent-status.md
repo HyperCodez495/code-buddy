@@ -4,6 +4,7 @@ Date: 2026-05-23
 Upstream reference: <https://github.com/nousresearch/hermes-agent> (MIT, Nous Research)
 
 Latest official parity audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md).
+Prioritized implementation backlog: [`hermes-agent-next-todo.md`](hermes-agent-next-todo.md).
 That audit was refreshed against upstream `NousResearch/hermes-agent` at `5f84c914` and
 concludes that Code Buddy has substantial Hermes-inspired coverage but **not**
 full feature-for-feature official Hermes parity.
@@ -23,7 +24,7 @@ The Hermes agent is a **built-in custom agent** — run it with `buddy --agent h
 |---|---|---|
 | Built-in agent registration | `src/agent/custom/custom-agent-loader.ts` (`BUILT_IN_AGENTS`, ~L132) | `id: hermes`, `disabledTools: [git_push, delete_file]`, `fleetDispatchProfile: balanced`, `requireExplicitDispatchProfile: true`; a user `hermes.toml` overrides it |
 | Profile + system prompt | `src/agent/hermes-agent-profile.ts` | `buildHermesAgentProfile`, `buildHermesAgentSystemPrompt`, `buildHermesIntegrationPlan` |
-| CLI surface | `src/commands/cli/hermes-commands.ts` (registered `src/index.ts` ~L2389) | `buddy hermes plan / profile / doctor / hooks / prompt-size / parity` |
+| CLI surface | `src/commands/cli/hermes-commands.ts` (registered `src/index.ts` ~L2389) | `buddy hermes plan / profile / doctor / hooks / prompt-size / parity / tools` |
 | Diagnostics | `src/agent/hermes-agent-diagnostics.ts` | `buddy hermes doctor <profile>` |
 | Lifecycle hooks | `src/hooks/hermes-lifecycle-hooks.ts` | canonical manifest across Code Buddy hook systems |
 | Tests | `tests/agent/custom-agent-loader-hermes.test.ts`, `tests/agent/hermes-agent-profile.test.ts`, `tests/commands/hermes-commands.test.ts`, `tests/hooks/hermes-lifecycle-hooks.test.ts`, `tests/agent/hermes-agent-diagnostics.test.ts` | 20 specs, green |
@@ -136,6 +137,7 @@ npx vitest run tests/agent/custom-agent-loader-hermes.test.ts
 buddy hermes profile balanced --json
 buddy hermes doctor balanced --json
 buddy hermes parity --json
+buddy hermes tools --json
 
 # Run it (needs a configured provider):
 buddy --agent hermes
@@ -153,8 +155,8 @@ buddy lessons candidate approve <id> --by "<your name>"
 - Automatic per-session injection of the user-model summary (currently
   on-demand via `user_model_recall`).
 - Live mobile remote-supervision listener (only contracts/snapshots exist).
-- Cowork visual panel for the lesson-candidate queue and deeper skill package
-  management. Cowork now exposes the shared SKILL candidate review queue and
-  Learning Agent skill-usage telemetry, but lesson-candidate approval and
-  per-profile skill scoping remain CLI/settings surfaces.
+- Deeper Cowork skill package management. Cowork now exposes lesson-candidate
+  approval, the shared SKILL candidate review queue, and Learning Agent
+  skill-usage telemetry, but it still needs a single installed-skills /
+  candidate-diff / approve-install-disable cockpit.
 - Serverless terminal backends (Daytona/Modal/Vercel Sandbox).
