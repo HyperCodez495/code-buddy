@@ -120,4 +120,82 @@ describe('buddy skills command with real SkillsHub state', () => {
     ]));
     expect(getSkillsHub().list()).toHaveLength(3);
   });
+
+  it('manages skill taps with a real persisted taps file', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      skillsDir: path.join(tempHome, 'skills'),
+      tapsPath: path.join(tempHome, 'taps.json'),
+    });
+    const program = createProgram();
+
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'tap',
+      'add',
+      'my-org/platform-skills',
+      '--path',
+      'internal/skills',
+      '--approved-by',
+      'Patrice',
+      '--json',
+    ]);
+
+    let result = JSON.parse(getLogOutput()) as {
+      tap: { addedBy?: string; path: string; repo: string; trust: string };
+    };
+    expect(result.tap).toMatchObject({
+      addedBy: 'Patrice',
+      path: 'internal/skills/',
+      repo: 'my-org/platform-skills',
+      trust: 'community',
+    });
+    expect(hub.listTaps()).toHaveLength(1);
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'tap',
+      'trust',
+      'my-org/platform-skills',
+      'trusted',
+      '--approved-by',
+      'Patrice',
+      '--json',
+    ]);
+    result = JSON.parse(getLogOutput()) as {
+      tap: { addedBy?: string; path: string; repo: string; trust: string };
+    };
+    expect(result.tap.trust).toBe('trusted');
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync(['node', 'buddy', 'skills', 'tap', 'list', '--json']);
+    const list = JSON.parse(getLogOutput()) as {
+      count: number;
+      taps: Array<{ repo: string; trust: string }>;
+      tapsPath: string;
+    };
+    expect(list).toMatchObject({
+      count: 1,
+      tapsPath: path.join(tempHome, 'taps.json'),
+    });
+    expect(list.taps[0]).toMatchObject({
+      repo: 'my-org/platform-skills',
+      trust: 'trusted',
+    });
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync(['node', 'buddy', 'skills', 'tap', 'remove', 'my-org/platform-skills', '--json']);
+    const removed = JSON.parse(getLogOutput()) as { removed: boolean; repo: string };
+    expect(removed).toEqual({
+      removed: true,
+      repo: 'my-org/platform-skills',
+    });
+    expect(hub.listTaps()).toEqual([]);
+  });
 });

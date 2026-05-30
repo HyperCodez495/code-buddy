@@ -13,6 +13,7 @@
  *   buddy skills learning-usage [--json]
  *   buddy skills enable <name>
  *   buddy skills disable <name>
+ *   buddy skills tap list|add|remove|trust
  *
  * Selection-time enforcement of the disabled flag (so a disabled package is
  * excluded from prompt injection) reads `SkillsHub.listEnabled()`.
@@ -23,7 +24,7 @@ import type { Command } from 'commander';
 export function registerSkillsCommands(program: Command): void {
   const skills = program
     .command('skills')
-    .description('Browse, inspect and enable/disable installed SKILL.md packages');
+    .description('Browse, inspect and manage installed SKILL.md packages');
 
   skills
     .command('list')
@@ -181,6 +182,109 @@ export function registerSkillsCommands(program: Command): void {
     .action(async (name: string) => {
       await toggleSkill(name, false);
     });
+
+  const tap = skills
+    .command('tap')
+    .description('Manage repository-backed skill taps');
+
+  tap
+    .command('list')
+    .description('List configured skill taps')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const hub = getSkillsHub();
+      const taps = hub.listTaps();
+      const result = {
+        count: taps.length,
+        taps,
+        tapsPath: hub.getConfig().tapsPath,
+      };
+
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      if (taps.length === 0) {
+        console.log(`No skill taps configured. Tap registry: ${result.tapsPath}`);
+        return;
+      }
+      console.log(`\nSkill taps (${taps.length}):`);
+      for (const item of taps) {
+        console.log(`  ${item.repo}  path=${item.path}  trust=${item.trust}`);
+      }
+      console.log('');
+    });
+
+  tap
+    .command('add <repo>')
+    .description('Add or update a skill tap (owner/repo)')
+    .option('--path <path>', 'skill directory inside the tap repository', 'skills/')
+    .option('--trust <trust>', 'trust level: builtin, official, trusted, or community')
+    .option('--approved-by <reviewer>', 'reviewer/operator approving the tap')
+    .option('--json', 'output JSON')
+    .action(async (
+      repo: string,
+      opts: { approvedBy?: string; json?: boolean; path?: string; trust?: string },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const tap = getSkillsHub().addTap(repo, {
+        actor: opts.approvedBy,
+        path: opts.path,
+        trust: parseTapTrust(opts.trust),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify({ tap }, null, 2));
+        return;
+      }
+      console.log(`Skill tap configured: ${tap.repo} path=${tap.path} trust=${tap.trust}`);
+    });
+
+  tap
+    .command('remove <repo>')
+    .description('Remove a configured skill tap')
+    .option('--json', 'output JSON')
+    .action(async (repo: string, opts: { json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const removed = getSkillsHub().removeTap(repo);
+      if (opts.json) {
+        console.log(JSON.stringify({ removed, repo }, null, 2));
+        return;
+      }
+      console.log(removed ? `Skill tap removed: ${repo}` : `Skill tap not found: ${repo}`);
+    });
+
+  tap
+    .command('trust <repo> <trust>')
+    .description('Set trust level for an existing skill tap')
+    .option('--approved-by <reviewer>', 'reviewer/operator approving the trust change')
+    .option('--json', 'output JSON')
+    .action(async (
+      repo: string,
+      trust: string,
+      opts: { approvedBy?: string; json?: boolean },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const parsedTrust = parseTapTrustRequired(trust);
+      const updated = getSkillsHub().setTapTrust(repo, parsedTrust, {
+        actor: opts.approvedBy,
+      });
+      if (!updated) {
+        const message = `Skill tap not found: ${repo}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, repo, tap: null }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({ repo, tap: updated }, null, 2));
+        return;
+      }
+      console.log(`Skill tap trust updated: ${updated.repo} trust=${updated.trust}`);
+    });
 }
 
 async function toggleSkill(name: string, enabled: boolean): Promise<void> {
@@ -192,4 +296,28 @@ async function toggleSkill(name: string, enabled: boolean): Promise<void> {
     return;
   }
   console.log(`Skill ${enabled ? 'enabled' : 'disabled'}: ${name}`);
+}
+
+function parseTapTrust(value?: string): import('../../skills/hub.js').SkillTapTrust | undefined {
+  if (value === undefined || value.trim() === '') {
+    return undefined;
+  }
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'builtin'
+    || normalized === 'official'
+    || normalized === 'trusted'
+    || normalized === 'community'
+  ) {
+    return normalized;
+  }
+  throw new Error(`Invalid trust level '${value}'. Use builtin, official, trusted, or community.`);
+}
+
+function parseTapTrustRequired(value: string): import('../../skills/hub.js').SkillTapTrust {
+  const parsed = parseTapTrust(value);
+  if (!parsed) {
+    throw new Error('Trust level is required.');
+  }
+  return parsed;
 }

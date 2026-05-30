@@ -235,6 +235,23 @@ export interface SkillUsageRecord {
   usedAt?: number;
 }
 
+export type SkillTapTrust = 'builtin' | 'official' | 'trusted' | 'community';
+
+export interface SkillTap {
+  /** GitHub owner/repo or another stable tap identifier. */
+  repo: string;
+  /** Directory inside the tap repository that contains skill folders. */
+  path: string;
+  /** Trust level used by review/install surfaces before accepting third-party SKILL.md content. */
+  trust: SkillTapTrust;
+  /** First time this tap was added (epoch ms). */
+  addedAt: number;
+  /** Last local metadata update (epoch ms). */
+  updatedAt: number;
+  /** Optional reviewer/operator who approved adding the tap. */
+  addedBy?: string;
+}
+
 export interface HubConfig {
   /** Remote registry API base URL */
   registryUrl: string;
@@ -244,6 +261,8 @@ export interface HubConfig {
   skillsDir: string;
   /** Path to the lockfile tracking installed skills */
   lockfilePath: string;
+  /** Path to the tap registry file for GitHub/repository-based skill sources */
+  tapsPath: string;
   /** Whether to auto-update on sync */
   autoUpdate: boolean;
   /** Interval in ms between update checks */
@@ -271,6 +290,12 @@ interface Lockfile {
   skills: Record<string, InstalledSkill>;
 }
 
+interface TapsFile {
+  version: number;
+  updatedAt: string;
+  taps: SkillTap[];
+}
+
 // ============================================================================
 // Constants
 // ============================================================================
@@ -280,13 +305,21 @@ const DEFAULT_HUB_CONFIG: HubConfig = {
   cacheDir: path.join(os.homedir(), '.codebuddy', 'hub', 'cache'),
   skillsDir: path.join(os.homedir(), '.codebuddy', 'skills', 'managed'),
   lockfilePath: path.join(os.homedir(), '.codebuddy', 'hub', 'lock.json'),
+  tapsPath: path.join(os.homedir(), '.codebuddy', 'hub', 'taps.json'),
   autoUpdate: false,
   checkIntervalMs: 24 * 60 * 60 * 1000, // 24 hours
 };
 
 const LOCKFILE_VERSION = 1;
+const TAPS_FILE_VERSION = 1;
 const SUPPORTING_FILE_DIRS = new Set(['references', 'templates', 'scripts', 'assets']);
 const MAX_SUPPORTING_FILE_BYTES = 1_048_576;
+const DEFAULT_TAP_PATH = 'skills/';
+const TRUSTED_TAP_REPOS = new Set([
+  'anthropics/skills',
+  'huggingface/skills',
+  'openai/skills',
+]);
 
 // ============================================================================
 // Utility Functions
@@ -363,6 +396,11 @@ export class SkillsHub extends EventEmitter {
     if (!fs.existsSync(lockDir)) {
       fs.mkdirSync(lockDir, { recursive: true });
     }
+
+    const tapsDir = path.dirname(this.config.tapsPath);
+    if (!fs.existsSync(tapsDir)) {
+      fs.mkdirSync(tapsDir, { recursive: true });
+    }
   }
 
   /**
@@ -419,6 +457,192 @@ export class SkillsHub extends EventEmitter {
         ]),
       ),
     };
+  }
+
+  // ==========================================================================
+  // Taps & Trust
+  // ==========================================================================
+
+  /**
+   * List configured skill taps. Taps are repository-backed skill catalogs
+   * compatible with Hermes' owner/repo + path model.
+   */
+  listTaps(): SkillTap[] {
+    return this.readTapsFile().taps.map((tap) => ({ ...tap }));
+  }
+
+  addTap(
+    repo: string,
+    options: {
+      actor?: string;
+      path?: string;
+      trust?: SkillTapTrust;
+      updatedAt?: number;
+    } = {},
+  ): SkillTap {
+    const normalizedRepo = this.normalizeTapRepo(repo);
+    const tapsFile = this.readTapsFile();
+    const existing = tapsFile.taps.find((tap) => tap.repo === normalizedRepo);
+    const now = options.updatedAt ?? Date.now();
+    const trust = options.trust ?? this.defaultTapTrust(normalizedRepo);
+    const tapPath = this.normalizeTapPath(options.path ?? existing?.path ?? DEFAULT_TAP_PATH);
+
+    if (existing) {
+      existing.path = tapPath;
+      existing.trust = trust;
+      existing.updatedAt = now;
+      if (options.actor) existing.addedBy = options.actor;
+      this.writeTapsFile(tapsFile);
+      this.emit('tap:updated', { ...existing });
+      return { ...existing };
+    }
+
+    const tap: SkillTap = {
+      repo: normalizedRepo,
+      path: tapPath,
+      trust,
+      addedAt: now,
+      updatedAt: now,
+      ...(options.actor ? { addedBy: options.actor } : {}),
+    };
+    tapsFile.taps.push(tap);
+    tapsFile.taps.sort((left, right) => left.repo.localeCompare(right.repo));
+    this.writeTapsFile(tapsFile);
+    this.emit('tap:added', { ...tap });
+    return { ...tap };
+  }
+
+  removeTap(repo: string): boolean {
+    const normalizedRepo = this.normalizeTapRepo(repo);
+    const tapsFile = this.readTapsFile();
+    const next = tapsFile.taps.filter((tap) => tap.repo !== normalizedRepo);
+    if (next.length === tapsFile.taps.length) {
+      return false;
+    }
+    tapsFile.taps = next;
+    this.writeTapsFile(tapsFile);
+    this.emit('tap:removed', normalizedRepo);
+    return true;
+  }
+
+  setTapTrust(
+    repo: string,
+    trust: SkillTapTrust,
+    options: { actor?: string; updatedAt?: number } = {},
+  ): SkillTap | null {
+    const normalizedRepo = this.normalizeTapRepo(repo);
+    const tapsFile = this.readTapsFile();
+    const tap = tapsFile.taps.find((item) => item.repo === normalizedRepo);
+    if (!tap) {
+      return null;
+    }
+    tap.trust = this.normalizeTapTrust(trust);
+    tap.updatedAt = options.updatedAt ?? Date.now();
+    if (options.actor) tap.addedBy = options.actor;
+    this.writeTapsFile(tapsFile);
+    this.emit('tap:trust_updated', { ...tap });
+    return { ...tap };
+  }
+
+  getTapTrust(repo: string): SkillTapTrust {
+    const normalizedRepo = this.normalizeTapRepo(repo);
+    const tap = this.readTapsFile().taps.find((item) => item.repo === normalizedRepo);
+    return tap?.trust ?? this.defaultTapTrust(normalizedRepo);
+  }
+
+  private readTapsFile(): TapsFile {
+    try {
+      if (fs.existsSync(this.config.tapsPath)) {
+        const raw = fs.readFileSync(this.config.tapsPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Partial<TapsFile>;
+        if (
+          parsed.version === TAPS_FILE_VERSION
+          && Array.isArray(parsed.taps)
+        ) {
+          const taps = parsed.taps
+            .map((tap) => this.normalizeTapRecord(tap))
+            .filter((tap): tap is SkillTap => Boolean(tap));
+          return {
+            version: TAPS_FILE_VERSION,
+            updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+            taps,
+          };
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to read hub taps file, starting fresh', {
+        path: this.config.tapsPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return {
+      version: TAPS_FILE_VERSION,
+      updatedAt: new Date().toISOString(),
+      taps: [],
+    };
+  }
+
+  private writeTapsFile(tapsFile: TapsFile): void {
+    tapsFile.updatedAt = new Date().toISOString();
+    tapsFile.taps.sort((left, right) => left.repo.localeCompare(right.repo));
+    fs.writeFileSync(this.config.tapsPath, JSON.stringify(tapsFile, null, 2), 'utf-8');
+    logger.debug('Hub taps file written', { path: this.config.tapsPath });
+  }
+
+  private normalizeTapRecord(tap: unknown): SkillTap | null {
+    if (!tap || typeof tap !== 'object') {
+      return null;
+    }
+    const candidate = tap as Partial<SkillTap>;
+    if (typeof candidate.repo !== 'string') {
+      return null;
+    }
+
+    const addedAt = typeof candidate.addedAt === 'number' ? candidate.addedAt : Date.now();
+    const updatedAt = typeof candidate.updatedAt === 'number' ? candidate.updatedAt : addedAt;
+    return {
+      repo: this.normalizeTapRepo(candidate.repo),
+      path: this.normalizeTapPath(candidate.path ?? DEFAULT_TAP_PATH),
+      trust: this.normalizeTapTrust(candidate.trust ?? this.defaultTapTrust(candidate.repo)),
+      addedAt,
+      updatedAt,
+      ...(typeof candidate.addedBy === 'string' && candidate.addedBy.trim()
+        ? { addedBy: candidate.addedBy.trim() }
+        : {}),
+    };
+  }
+
+  private normalizeTapRepo(repo: string): string {
+    const trimmed = repo.trim().replace(/^https:\/\/github\.com\//i, '').replace(/\.git$/i, '');
+    const normalized = trimmed.replace(/^\/+|\/+$/g, '');
+    if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(normalized)) {
+      throw new Error(`Invalid skill tap repo '${repo}'. Use owner/repo.`);
+    }
+    return normalized;
+  }
+
+  private normalizeTapPath(tapPath: string): string {
+    const normalized = tapPath.trim().replace(/\\/g, '/').replace(/^\/+|\/+$/g, '');
+    if (
+      !normalized
+      || normalized.includes('..')
+      || normalized.split('/').some((part) => part.trim() === '')
+    ) {
+      throw new Error(`Invalid skill tap path '${tapPath}'. Use a relative directory such as skills/.`);
+    }
+    return `${normalized}/`;
+  }
+
+  private normalizeTapTrust(trust: SkillTapTrust): SkillTapTrust {
+    if (['builtin', 'official', 'trusted', 'community'].includes(trust)) {
+      return trust;
+    }
+    throw new Error(`Invalid skill tap trust '${trust}'. Use builtin, official, trusted, or community.`);
+  }
+
+  private defaultTapTrust(repo: string): SkillTapTrust {
+    return TRUSTED_TAP_REPOS.has(repo.toLowerCase()) ? 'trusted' : 'community';
   }
 
   // ==========================================================================

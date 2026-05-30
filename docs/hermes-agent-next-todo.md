@@ -16,8 +16,8 @@ Current measured state:
 
 - [x] **Implement review-gated `skill_manage` lifecycle**
   - Why: this was the highest-value remaining Hermes core tool gap. Hermes' agent-managed procedural memory depends on exact `skill_manage` create/edit/patch/delete/supporting-file actions.
-  - Done: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, official `create(content)` / `edit(content)` / `patch(old_string,new_string,file_path,replace_all)` / `write_file` / `remove_file` aliases, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into both the active SkillsHub lockfile and the workspace SkillsHub lockfile with checksum so `skill_manage list/view` and candidate review can see them immediately. Edits, patches, supporting-file mutations, and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks. `skill_manage candidate_list/view` now report whether the matching workspace skill is not installed, current, different, or missing on disk before approval, with a bounded unified diff preview when content differs.
-  - Remaining scope: optionally add remote hub release diff previews.
+  - Done: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, official `create(content)` / `edit(content)` / `patch(old_string,new_string,file_path,replace_all)` / `write_file` / `remove_file` aliases, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into both the active SkillsHub lockfile and the workspace SkillsHub lockfile with checksum so `skill_manage list/view` and candidate review can see them immediately. Edits, patches, supporting-file mutations, and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks. `skill_manage candidate_list/view` now report whether the matching workspace skill is not installed, current, different, or missing on disk before approval, with a bounded unified diff preview when content differs. `SkillsHub` now also persists Hermes-style repository taps with path and trust metadata, and `buddy skills tap list/add/remove/trust` exposes the real tap registry for reviewer-managed third-party skill sources.
+  - Remaining scope: optionally add direct GitHub/well-known tap skill discovery and remote hub release diff previews.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:
     - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, patch it, roll it back, update it from local hub cache metadata, deprecate it, re-enable it, and remove it from the installed index.
@@ -26,6 +26,7 @@ Current measured state:
     - Cowork can show the candidate vs installed skill state and diff preview before approval.
   - Verification:
     - `npm test -- tests/tools/skills-inspection-real.test.ts tests/unit/agent-tool-definitions-activation.test.ts --run`
+    - `npm test -- tests/skills/hub.test.ts tests/commands/skills-command-real.test.ts --run`
     - `npx tsx src/index.ts hermes tools --json`
 
 - [x] **Inject accepted user-model summaries automatically per session**
@@ -220,7 +221,7 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. Remaining skills polish: exact CLI hub/tap/trust product-surface deltas and optional remote release diff previews.
+1. Remaining skills polish: direct GitHub/well-known tap skill discovery plus optional remote release diff previews.
 2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
 3. Provider/runtime readiness smoke matrix and first-class managed remote runner decisions.
 4. OpenClaw migration last, after the Hermes core and cockpit work are stable.

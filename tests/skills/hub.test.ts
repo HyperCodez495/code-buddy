@@ -129,6 +129,7 @@ function createTestConfig(tempDir: string): Partial<HubConfig> {
     cacheDir: join(tempDir, 'cache'),
     skillsDir: join(tempDir, 'skills'),
     lockfilePath: join(tempDir, 'lock.json'),
+    tapsPath: join(tempDir, 'taps.json'),
     autoUpdate: false,
     checkIntervalMs: 60000,
   };
@@ -247,6 +248,62 @@ describe('SkillsHub', () => {
     it('returns null when toggling an unknown skill', () => {
       seedSkill('alpha');
       expect(hub.setEnabled('missing', false)).toBeNull();
+    });
+  });
+
+  // ==========================================================================
+  // Taps & Trust
+  // ==========================================================================
+
+  describe('taps and trust', () => {
+    it('adds, persists, updates, and removes repository-backed skill taps', () => {
+      const tap = hub.addTap('https://github.com/my-org/platform-skills.git', {
+        actor: 'Patrice',
+        path: 'internal/skills',
+      });
+
+      expect(tap).toMatchObject({
+        addedBy: 'Patrice',
+        path: 'internal/skills/',
+        repo: 'my-org/platform-skills',
+        trust: 'community',
+      });
+      expect(hub.listTaps()).toHaveLength(1);
+
+      const reloaded = new SkillsHub(config);
+      try {
+        expect(reloaded.listTaps()[0]).toMatchObject({
+          repo: 'my-org/platform-skills',
+          path: 'internal/skills/',
+          trust: 'community',
+        });
+
+        const trusted = reloaded.setTapTrust('my-org/platform-skills', 'trusted', {
+          actor: 'Patrice',
+        });
+        expect(trusted).toMatchObject({
+          addedBy: 'Patrice',
+          repo: 'my-org/platform-skills',
+          trust: 'trusted',
+        });
+        expect(reloaded.getTapTrust('my-org/platform-skills')).toBe('trusted');
+        expect(reloaded.removeTap('my-org/platform-skills')).toBe(true);
+        expect(reloaded.listTaps()).toEqual([]);
+      } finally {
+        reloaded.shutdown();
+      }
+    });
+
+    it('assigns built-in trusted policy for known public skill repos', () => {
+      expect(hub.addTap('openai/skills')).toMatchObject({
+        repo: 'openai/skills',
+        trust: 'trusted',
+      });
+    });
+
+    it('rejects unsafe tap repos and paths', () => {
+      expect(() => hub.addTap('../bad/repo')).toThrow(/Invalid skill tap repo/);
+      expect(() => hub.addTap('my-org/platform-skills', { path: '../skills' })).toThrow(/Invalid skill tap path/);
     });
   });
 
