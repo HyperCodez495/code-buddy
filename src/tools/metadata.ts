@@ -799,6 +799,14 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: true,
   },
   {
+    name: 'session_search',
+    category: 'utility' as ToolCategory,
+    keywords: ['session', 'sessions', 'search', 'history', 'saved', 'recall', 'fts', 'conversation', 'hermes'],
+    priority: 6,
+    description: 'Search saved local sessions by title or message content with real session-store snippets',
+    fleetSafe: true,
+  },
+  {
     name: 'sessions_send',
     category: 'utility' as ToolCategory,
     keywords: ['sessions', 'send', 'message', 'communicate', 'notify', 'multi-agent', 'broadcast'],

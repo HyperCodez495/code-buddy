@@ -1,8 +1,8 @@
 /**
  * Session tool adapters (Phase E wake of SessionToolExecutor) tests.
  *
- * Validates the 4 ITool adapters (sessions_list / sessions_history /
- * sessions_send / sessions_spawn) that bridge LLM tool calls to the
+ * Validates the ITool adapters (sessions_list / sessions_history /
+ * session_search / sessions_send / sessions_spawn) that bridge LLM tool calls to the
  * SessionToolExecutor + SessionRegistry.
  *
  * Also covers the V0.1 safety caps added to SessionRegistry.spawnSession:
@@ -25,11 +25,17 @@ describe('Session tool adapters (Phase E)', () => {
     resetSessionToolExecutor();
   });
 
-  it('createSessionTools returns 4 ITool instances with correct names', () => {
+  it('createSessionTools returns the session ITool instances with correct names', () => {
     const tools = createSessionTools();
-    expect(tools).toHaveLength(4);
+    expect(tools).toHaveLength(5);
     const names = tools.map((t) => t.name).sort();
-    expect(names).toEqual(['sessions_history', 'sessions_list', 'sessions_send', 'sessions_spawn']);
+    expect(names).toEqual([
+      'session_search',
+      'sessions_history',
+      'sessions_list',
+      'sessions_send',
+      'sessions_spawn',
+    ]);
   });
 
   it('every adapter exposes a JSON-Schema parameters block via getSchema', () => {

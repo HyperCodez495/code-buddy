@@ -1,9 +1,9 @@
 /**
- * Session tool definitions — re-export the 4 SESSION_TOOLS from the
+ * Session tool definitions — re-export SESSION_TOOLS from the
  * multi-agent module so they appear in Code Buddy's main tool registry.
  *
  * The actual tool definitions (sessions_list / sessions_history /
- * sessions_send / sessions_spawn) live in
+ * session_search / sessions_send / sessions_spawn) live in
  * `src/agent/multi-agent/session-tools.ts` alongside the SessionToolExecutor
  * that runs them. This file just bridges the namespace.
  *

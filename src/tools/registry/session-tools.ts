@@ -1,7 +1,7 @@
 /**
  * Session Tool Adapters
  *
- * ITool-compliant adapters for the 4 session coordination tools that wake
+ * ITool-compliant adapters for the 5 session tools that wake
  * SessionToolExecutor (Phase E of the multi-agent integration plan).
  *
  * Each adapter delegates to the shared SessionToolExecutor singleton,
@@ -25,6 +25,7 @@ import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryT
 import {
   SESSIONS_LIST_TOOL,
   SESSIONS_HISTORY_TOOL,
+  SESSION_SEARCH_TOOL,
   SESSIONS_SEND_TOOL,
   SESSIONS_SPAWN_TOOL,
 } from '../../agent/multi-agent/session-tools.js';
@@ -37,7 +38,7 @@ async function getExecutor() {
 }
 
 /**
- * Generic adapter for any of the 4 SESSION_TOOLS. Wraps the existing
+ * Generic adapter for any SESSION_TOOLS entry. Wraps the existing
  * CodeBuddyTool definition (parameters schema, description) and routes
  * execution through SessionToolExecutor.execute(toolName, args).
  */
@@ -85,7 +86,7 @@ class SessionToolAdapter implements ITool {
       description: this.description,
       category: 'utility' as ToolCategoryType,
       keywords: ['sessions', 'multi-agent', this.name.replace('sessions_', '')],
-      priority: this.name === 'sessions_spawn' ? 7 : 5,
+      priority: this.name === 'sessions_spawn' ? 7 : this.name === 'session_search' ? 6 : 5,
       modifiesFiles: false,
       makesNetworkRequests: false,
     };
@@ -100,6 +101,7 @@ export function createSessionTools(): ITool[] {
   return [
     new SessionToolAdapter(SESSIONS_LIST_TOOL),
     new SessionToolAdapter(SESSIONS_HISTORY_TOOL),
+    new SessionToolAdapter(SESSION_SEARCH_TOOL),
     new SessionToolAdapter(SESSIONS_SEND_TOOL),
     new SessionToolAdapter(SESSIONS_SPAWN_TOOL),
   ];

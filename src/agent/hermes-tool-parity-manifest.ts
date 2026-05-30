@@ -281,9 +281,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     category: 'memory',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
     equivalentCodeBuddyTools: ['sessions_history', 'recall'],
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy can inspect session history and memory, but not the exact Hermes full-text session_search prompt tool.',
-    nextWork: 'Expose run/session FTS as a prompt tool if direct conversational recall is required.',
+    notes: 'Code Buddy now exposes an exact session_search prompt tool backed by the real saved-session store with SQLite FTS and JSON fallback.',
   },
   {
     name: 'clarify',

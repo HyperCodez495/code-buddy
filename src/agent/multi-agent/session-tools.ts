@@ -9,6 +9,7 @@
  * - sessions_history: Get session transcript
  * - sessions_send: Message another session
  * - sessions_spawn: Create isolated sub-agent
+ * - session_search: Search saved local sessions by full text
  */
 
 import type { CodeBuddyTool } from '../../codebuddy/client.js';
@@ -105,6 +106,36 @@ Example: Get last 20 messages from main session
         },
       },
       required: [],
+    },
+  },
+};
+
+export const SESSION_SEARCH_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'session_search',
+    description: `Search saved Code Buddy sessions by title or message content.
+
+Use this to recover previous conversations, decisions, and context from the real
+local session store. Results include session metadata and a compact match
+snippet; full transcripts can then be opened with the CLI session commands or
+session history flows.
+
+Example: Find sessions that discussed a Hermes tool
+{ "query": "Hermes session_search", "limit": 5 }`,
+    parameters: {
+      type: 'object',
+      properties: {
+        query: {
+          type: 'string',
+          description: 'Full-text query to search in saved session titles and messages',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum sessions to return (default: 10, max: 50)',
+        },
+      },
+      required: ['query'],
     },
   },
 };
@@ -216,6 +247,7 @@ Example: Spawn a code reviewer
 export const SESSION_TOOLS: CodeBuddyTool[] = [
   SESSIONS_LIST_TOOL,
   SESSIONS_HISTORY_TOOL,
+  SESSION_SEARCH_TOOL,
   SESSIONS_SEND_TOOL,
   SESSIONS_SPAWN_TOOL,
 ];
@@ -277,6 +309,8 @@ export class SessionToolExecutor {
         return this.executeSessionsList(args);
       case 'sessions_history':
         return this.executeSessionsHistory(args);
+      case 'session_search':
+        return this.executeSessionSearch(args);
       case 'sessions_send':
         return this.executeSessionsSend(args);
       case 'sessions_spawn':
@@ -369,6 +403,54 @@ export class SessionToolExecutor {
         },
         messages: formatted,
       },
+    };
+  }
+
+  private async executeSessionSearch(args: Record<string, unknown>): Promise<SessionToolResult> {
+    const query = typeof args.query === 'string' ? args.query.trim() : '';
+    if (!query) {
+      return { success: false, error: 'query is required' };
+    }
+
+    const limit = this.parseSessionSearchLimit(args.limit);
+    const { getSessionStore } = await import('../../persistence/session-store.js');
+    const sessions = (await getSessionStore().searchSessions(query)).slice(0, limit);
+
+    const formatted = sessions.map(session => {
+      const metadata = session.metadata && typeof session.metadata === 'object'
+        ? session.metadata
+        : {};
+      const match: Record<string, unknown> = {
+        snippet: metadata.searchSnippet ?? '',
+      };
+
+      if (metadata.searchRole) match.role = metadata.searchRole;
+      if (typeof metadata.searchScore === 'number') match.score = metadata.searchScore;
+      if (typeof metadata.searchMessageId === 'number') match.messageId = metadata.searchMessageId;
+      if (metadata.parentSessionId) match.parentSessionId = metadata.parentSessionId;
+
+      return {
+        id: session.id,
+        name: session.name,
+        workingDirectory: session.workingDirectory,
+        model: session.model,
+        messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
+        createdAt: session.createdAt.toISOString(),
+        lastAccessedAt: session.lastAccessedAt.toISOString(),
+        match,
+      };
+    });
+
+    const payload = {
+      query,
+      total: formatted.length,
+      sessions: formatted,
+    };
+
+    return {
+      success: true,
+      output: JSON.stringify(payload, null, 2),
+      data: payload,
     };
   }
 
@@ -483,6 +565,18 @@ export class SessionToolExecutor {
     if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
     if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
     return `${Math.floor(seconds / 86400)}d ago`;
+  }
+
+  private parseSessionSearchLimit(value: unknown): number {
+    const raw = typeof value === 'number'
+      ? value
+      : typeof value === 'string'
+        ? Number(value)
+        : 10;
+    if (!Number.isFinite(raw) || raw < 1) {
+      return 10;
+    }
+    return Math.min(Math.floor(raw), 50);
   }
 }
 
