@@ -1052,6 +1052,8 @@ export class TestRunnerBridge extends EventEmitter {
             'vitest',
             'run',
             'tests/hermes-plan-strip.test.ts',
+            'tests/hermes-provider-readiness-bridge.test.ts',
+            'tests/hermes-provider-readiness-strip.test.ts',
             'tests/hermes-surfaces-ipc.test.ts',
             'tests/lessons-vault-bridge.test.ts',
             'tests/lessons-vault-graph.test.ts',
@@ -1073,6 +1075,8 @@ export class TestRunnerBridge extends EventEmitter {
         },
         [
           path.join(coworkDir, 'tests', 'hermes-plan-strip.test.ts'),
+          path.join(coworkDir, 'tests', 'hermes-provider-readiness-bridge.test.ts'),
+          path.join(coworkDir, 'tests', 'hermes-provider-readiness-strip.test.ts'),
           path.join(coworkDir, 'tests', 'hermes-surfaces-ipc.test.ts'),
           path.join(coworkDir, 'tests', 'lessons-vault-bridge.test.ts'),
           path.join(coworkDir, 'tests', 'lessons-vault-graph.test.ts'),

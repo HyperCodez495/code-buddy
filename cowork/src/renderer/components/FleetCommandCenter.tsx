@@ -51,6 +51,7 @@ import { FleetOutcomeDetail, FleetOutcomeStrip } from './fleet-outcome-panel';
 import { ScheduledWorkStrip } from './fleet-scheduled-work-strip';
 import { FleetMemoryStrip } from './fleet-memory-strip';
 import { HermesPlanStrip } from './hermes-plan-strip';
+import { HermesProviderReadinessStrip } from './hermes-provider-readiness-strip';
 import { HermesToolCatalogStrip } from './hermes-tool-catalog-strip';
 import { ToolProfileInspectorStrip } from './tool-profile-inspector-strip';
 import {
@@ -659,6 +660,12 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
     onClose();
   };
 
+  const handleOpenApiSettings = () => {
+    setSettingsTab('api');
+    setShowSettings(true);
+    onClose();
+  };
+
   const scheduleDispatchGoal = (rawGoal: string, metadataExtras: Record<string, unknown> = {}) => {
     const trimmedGoal = rawGoal.trim();
     if (!trimmedGoal) return;
@@ -1085,6 +1092,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   </div>
                 )}
                 <ToolProfileInspectorStrip profile={dispatchProfile} />
+                <HermesProviderReadinessStrip onOpenSettings={handleOpenApiSettings} />
                 <HermesPlanStrip
                   profile={dispatchProfile}
                   onUseAsGoal={handleUseHermesPlanAsGoal}

@@ -112,6 +112,8 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'custom-commands-service.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'slash-command-bridge-schedule.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-plan-strip.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-surfaces-ipc.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'lessons-vault-bridge.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'lessons-vault-graph.test.ts'), '');

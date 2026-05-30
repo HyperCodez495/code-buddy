@@ -92,7 +92,7 @@ change-control surface.
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
 | Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 65 exact, 6 native-equivalent, 0 partial, 0 gaps |
-| Provider/model readiness | `src/agent/hermes-agent-diagnostics.ts`; `buddy hermes doctor --json` | covered/partial — active model source, inferred provider, env/OAuth credential source names, tool-call/reasoning/vision flags, context/output limits, and remediation hints; Cowork rendering remains future work |
+| Provider/model readiness | `src/agent/hermes-agent-diagnostics.ts`; `buddy hermes doctor --json`; `cowork/src/main/tools/hermes-provider-readiness-bridge.ts`; `cowork/src/renderer/components/hermes-provider-readiness-strip.tsx` | covered/partial — active model source, inferred provider, env/OAuth credential source names, tool-call/reasoning/vision flags, context/output limits, Nous Portal status, remediation hints, and Cowork rendering in Settings -> API plus Fleet Command Center |
 | Nous Portal readiness | `src/agent/hermes-portal-status.ts`; `buddy hermes portal status|tools|open`; embedded in `buddy hermes doctor --json` | covered/partial — local auth/source readiness, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output; no live OAuth device-code or Nous proxy runtime yet |
 
 ### Scheduled automations
@@ -198,7 +198,7 @@ buddy lessons candidate approve <id> --by "<your name>"
 - Exact `skill_manage` prompt-tool parity is closed; wider CLI hub/tap/trust product-surface behavior is still only partially proven.
 - Nous Portal status/catalog parity is covered locally; live OAuth/device-code login
   and actual Nous-managed Tool Gateway proxying remain product/credential work.
-- Provider/model readiness is now present in `buddy hermes doctor --json`;
-  Cowork still needs to render the same shared object in configuration screens.
+- Provider/model readiness is now present in `buddy hermes doctor --json` and
+  rendered in Cowork's Settings -> API and Fleet Command Center surfaces.
 - OpenClaw migration is intentionally last, after the Hermes core and Cowork
   cockpit work are stable.

@@ -57,6 +57,10 @@ const hermesToolCatalogStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-tool-catalog-strip.tsx'
 );
+const hermesProviderReadinessStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-provider-readiness-strip.tsx'
+);
 const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx'
@@ -220,6 +224,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(fleetMemoryStripPath, 'utf8'),
       fs.readFileSync(hermesPlanStripPath, 'utf8'),
       fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
+      fs.readFileSync(hermesProviderReadinessStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(skillPackageManagerStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
@@ -279,6 +284,26 @@ describe('French renderer i18n support', () => {
       'fleet.hermesToolCatalog.loadFailed',
       'fleet.hermesToolCatalog.empty',
       'fleet.hermesToolCatalog.unavailable',
+      'fleet.hermesProviderReadiness.title',
+      'fleet.hermesProviderReadiness.readyChip',
+      'fleet.hermesProviderReadiness.attentionChip',
+      'fleet.hermesProviderReadiness.loadingChip',
+      'fleet.hermesProviderReadiness.modelLabel',
+      'fleet.hermesProviderReadiness.providerLabel',
+      'fleet.hermesProviderReadiness.credentialsLabel',
+      'fleet.hermesProviderReadiness.credentialsConfigured',
+      'fleet.hermesProviderReadiness.credentialsMissing',
+      'fleet.hermesProviderReadiness.nousLabel',
+      'fleet.hermesProviderReadiness.nousConfigured',
+      'fleet.hermesProviderReadiness.nousFallback',
+      'fleet.hermesProviderReadiness.toolCallsChip',
+      'fleet.hermesProviderReadiness.reasoningChip',
+      'fleet.hermesProviderReadiness.visionChip',
+      'fleet.hermesProviderReadiness.providersChip',
+      'fleet.hermesProviderReadiness.contextLine',
+      'fleet.hermesProviderReadiness.unavailable',
+      'fleet.hermesProviderReadiness.loadFailed',
+      'fleet.hermesProviderReadiness.openSettings',
       'fleet.skillCandidate.title',
       'fleet.skillCandidate.countChip',
       'fleet.skillCandidate.reviewChip',

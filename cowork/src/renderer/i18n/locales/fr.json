@@ -2255,6 +2255,28 @@
       "empty": "Aucun manque Hermes prioritaire.",
       "unavailable": "Le catalogue d'outils Hermes n'est pas encore chargé."
     },
+    "hermesProviderReadiness": {
+      "title": "Readiness provider Hermes",
+      "readyChip": "pret",
+      "attentionChip": "attention",
+      "loadingChip": "provider",
+      "modelLabel": "Modele",
+      "providerLabel": "Provider",
+      "credentialsLabel": "Credentials",
+      "credentialsConfigured": "configure",
+      "credentialsMissing": "manquant",
+      "nousLabel": "Gateway Nous",
+      "nousConfigured": "{{count}} gere(s)",
+      "nousFallback": "{{count}} direct(s)",
+      "toolCallsChip": "tool-calls",
+      "reasoningChip": "reasoning",
+      "visionChip": "vision",
+      "providersChip": "{{configured}}/{{total}} providers",
+      "contextLine": "Contexte/output : {{context}} / {{output}} tokens",
+      "unavailable": "La readiness provider Hermes n'est pas encore chargee.",
+      "loadFailed": "Chargement de la readiness provider Hermes echoue",
+      "openSettings": "Ouvrir les reglages API"
+    },
     "skillCandidate": {
       "title": "Revue des candidates SKILL",
       "countChip": "{{count}} éligible(s)",

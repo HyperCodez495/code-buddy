@@ -1503,6 +1503,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
         }>;
       } | null> => ipcRenderer.invoke('tools.hermesCatalog.get'),
     },
+    hermesProviderReadiness: {
+      get: (): Promise<{
+        command: string;
+        ok: boolean;
+        activeModel: {
+          contextWindow: number | null;
+          maxOutputTokens: number | null;
+          model: string;
+          provider: string;
+          source: string;
+          supportsReasoning: boolean;
+          supportsToolCalls: boolean;
+          supportsVision: boolean;
+        };
+        activeProvider: {
+          baseUrl: string | null;
+          configured: boolean;
+          credentialSources: string[];
+          label: string;
+          local: boolean;
+        };
+        configuredProviderCount: number;
+        issues: string[];
+        portal: {
+          credentialPresent: boolean;
+          credentialSources: string[];
+          directFallbackCount: number;
+          managedByNousCount: number;
+          toolGatewayConfigured: boolean;
+        };
+        providerCount: number;
+        recommendations: string[];
+      } | null> => ipcRenderer.invoke('tools.hermesProviderReadiness.get'),
+    },
     skillPackage: {
       list: (options?: {
         cwd?: string;
@@ -4081,6 +4115,40 @@ declare global {
               status: 'exact' | 'native-equivalent' | 'partial' | 'gap';
               toolset: string;
             }>;
+          } | null>;
+        };
+        hermesProviderReadiness: {
+          get: () => Promise<{
+            command: string;
+            ok: boolean;
+            activeModel: {
+              contextWindow: number | null;
+              maxOutputTokens: number | null;
+              model: string;
+              provider: string;
+              source: string;
+              supportsReasoning: boolean;
+              supportsToolCalls: boolean;
+              supportsVision: boolean;
+            };
+            activeProvider: {
+              baseUrl: string | null;
+              configured: boolean;
+              credentialSources: string[];
+              label: string;
+              local: boolean;
+            };
+            configuredProviderCount: number;
+            issues: string[];
+            portal: {
+              credentialPresent: boolean;
+              credentialSources: string[];
+              directFallbackCount: number;
+              managedByNousCount: number;
+              toolGatewayConfigured: boolean;
+            };
+            providerCount: number;
+            recommendations: string[];
           } | null>;
         };
         skillPackage: {

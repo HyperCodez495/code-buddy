@@ -2255,6 +2255,28 @@
       "empty": "No prioritized Hermes tool gaps.",
       "unavailable": "Hermes tool catalog is not loaded yet."
     },
+    "hermesProviderReadiness": {
+      "title": "Hermes provider readiness",
+      "readyChip": "ready",
+      "attentionChip": "attention",
+      "loadingChip": "provider",
+      "modelLabel": "Model",
+      "providerLabel": "Provider",
+      "credentialsLabel": "Credentials",
+      "credentialsConfigured": "configured",
+      "credentialsMissing": "missing",
+      "nousLabel": "Nous gateway",
+      "nousConfigured": "{{count}} managed",
+      "nousFallback": "{{count}} direct",
+      "toolCallsChip": "tool-calls",
+      "reasoningChip": "reasoning",
+      "visionChip": "vision",
+      "providersChip": "{{configured}}/{{total}} providers",
+      "contextLine": "Context/output: {{context}} / {{output}} tokens",
+      "unavailable": "Hermes provider readiness is not loaded yet.",
+      "loadFailed": "Hermes provider readiness load failed",
+      "openSettings": "Open API settings"
+    },
     "skillCandidate": {
       "title": "Skill candidate review",
       "countChip": "{{count}} eligible",
