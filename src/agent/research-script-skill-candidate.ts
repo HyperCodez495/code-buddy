@@ -7,15 +7,20 @@ import type { ResearchScriptJobRunResult } from './research-script-job-runner.js
 
 export const RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
 
+export type MaterializedSkillCandidateKind = 'research-script' | 'learning';
+
 export interface ResearchScriptSkillCandidate {
   eligible: boolean;
   id: string;
+  kind: MaterializedSkillCandidateKind;
   reason: string;
   skillName: string;
   skillPath: string;
   sourceJobId: string;
+  sourceRunId?: string;
   successfulRunCount: number;
   title: string;
+  toolSequence?: string[];
   markdown: string;
 }
 
@@ -29,11 +34,14 @@ export interface ResearchScriptSkillCandidateReviewManifest {
   candidateId: string;
   eligible: boolean;
   generatedAt: string;
+  kind?: MaterializedSkillCandidateKind;
   schemaVersion: typeof RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION;
   skillName: string;
   sourceJobId: string;
+  sourceRunId?: string;
   status: 'awaiting_human_approval' | 'not_eligible';
   successfulRunCount: number;
+  toolSequence?: string[];
 }
 
 export interface MaterializeResearchScriptSkillCandidateOptions {
@@ -85,11 +93,14 @@ interface RawResearchScriptSkillCandidateReviewManifest {
   candidateId?: unknown;
   eligible?: unknown;
   generatedAt?: unknown;
+  kind?: unknown;
   schemaVersion?: unknown;
   skillName?: unknown;
   sourceJobId?: unknown;
+  sourceRunId?: unknown;
   status?: unknown;
   successfulRunCount?: unknown;
+  toolSequence?: unknown;
 }
 
 export function buildResearchScriptSkillCandidate(
@@ -110,6 +121,7 @@ export function buildResearchScriptSkillCandidate(
   const candidate = {
     eligible,
     id: `skill-candidate-${stableHash([job.id, skillName].join('|'))}`,
+    kind: 'research-script' as const,
     reason,
     skillName,
     skillPath,
@@ -179,12 +191,15 @@ export async function readMaterializedResearchScriptSkillCandidate(
   return {
     eligible: manifest.eligible,
     id: manifest.candidateId,
+    kind: manifest.kind ?? 'research-script',
     reason: extractMarkdownField(markdown, 'Reason') || reviewStatusReason(manifest),
     skillName: manifest.skillName,
     skillPath,
     sourceJobId: manifest.sourceJobId,
+    sourceRunId: manifest.sourceRunId,
     successfulRunCount: manifest.successfulRunCount,
     title: extractMarkdownTitle(markdown) || `${manifest.skillName} skill candidate`,
+    toolSequence: manifest.toolSequence,
     markdown,
   };
 }
@@ -211,12 +226,12 @@ export async function installResearchScriptSkillCandidate(
   options: InstallResearchScriptSkillCandidateOptions,
 ): Promise<InstalledResearchScriptSkillCandidate> {
   if (!candidate.eligible) {
-    throw new Error(`Research script skill candidate is not eligible for install: ${candidate.reason}`);
+    throw new Error(`${formatCandidateKind(candidate)} skill candidate is not eligible for install: ${candidate.reason}`);
   }
 
   const approvedBy = normalizeApproval(options.approvedBy);
   if (!approvedBy) {
-    throw new Error('Human approval is required before installing a research script skill candidate.');
+    throw new Error(`Human approval is required before installing a ${formatCandidateKind(candidate)} skill candidate.`);
   }
 
   const rootDir = path.resolve(options.rootDir);
@@ -327,6 +342,7 @@ function buildResearchScriptSkillCandidateReviewManifest(
     candidateId: candidate.id,
     eligible: candidate.eligible,
     generatedAt: normalizeCreatedAt(generatedAt),
+    kind: 'research-script',
     schemaVersion: RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
     skillName: candidate.skillName,
     sourceJobId: candidate.sourceJobId,
@@ -345,7 +361,9 @@ function renderApprovedSkillMarkdown(
     '',
     '## Human Approval',
     `- Candidate id: ${candidate.id}`,
-    `- Source job: ${candidate.sourceJobId}`,
+    candidate.sourceRunId
+      ? `- Source run: ${candidate.sourceRunId}`
+      : `- Source job: ${candidate.sourceJobId}`,
     `- Approved by: ${approvedBy}`,
     `- Approved at: ${approvedAt}`,
     '- Installation boundary: workspace skill; review before editing generated commands or source policies.',
@@ -371,8 +389,33 @@ function parseReviewManifest(raw: string): ResearchScriptSkillCandidateReviewMan
   if (typeof parsed.skillName !== 'string' || parsed.skillName.trim().length === 0) {
     throw new Error('Research script skill candidate review manifest is missing skillName.');
   }
+
+  const base = {
+    approvalRequired: true as const,
+    candidateId: parsed.candidateId.trim(),
+    generatedAt: typeof parsed.generatedAt === 'string' ? parsed.generatedAt : '',
+    schemaVersion: RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION as typeof RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
+    skillName: parsed.skillName.trim(),
+  };
+
+  if (typeof parsed.sourceRunId === 'string' && parsed.sourceRunId.trim().length > 0) {
+    const status = parsed.status === 'not_eligible' ? 'not_eligible' : 'awaiting_human_approval';
+    return {
+      ...base,
+      eligible: status === 'awaiting_human_approval',
+      kind: 'learning',
+      sourceJobId: '',
+      sourceRunId: parsed.sourceRunId.trim(),
+      status,
+      successfulRunCount: typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
+        ? Math.trunc(parsed.successfulRunCount)
+        : 1,
+      toolSequence: normalizeToolSequence(parsed.toolSequence),
+    };
+  }
+
   if (typeof parsed.sourceJobId !== 'string' || parsed.sourceJobId.trim().length === 0) {
-    throw new Error('Research script skill candidate review manifest is missing sourceJobId.');
+    throw new Error('Skill candidate review manifest is missing sourceJobId or sourceRunId.');
   }
   if (typeof parsed.successfulRunCount !== 'number' || !Number.isFinite(parsed.successfulRunCount)) {
     throw new Error('Research script skill candidate review manifest is missing successfulRunCount.');
@@ -380,14 +423,10 @@ function parseReviewManifest(raw: string): ResearchScriptSkillCandidateReviewMan
   if (typeof parsed.eligible !== 'boolean') {
     throw new Error('Research script skill candidate review manifest is missing eligible.');
   }
-
   return {
-    approvalRequired: true,
-    candidateId: parsed.candidateId.trim(),
+    ...base,
     eligible: parsed.eligible,
-    generatedAt: typeof parsed.generatedAt === 'string' ? parsed.generatedAt : '',
-    schemaVersion: RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
-    skillName: parsed.skillName.trim(),
+    kind: 'research-script',
     sourceJobId: parsed.sourceJobId.trim(),
     status: parsed.eligible ? 'awaiting_human_approval' : 'not_eligible',
     successfulRunCount: Math.trunc(parsed.successfulRunCount),
@@ -418,9 +457,26 @@ async function findReviewManifestPaths(absoluteDirectory: string): Promise<strin
 }
 
 function reviewStatusReason(manifest: ResearchScriptSkillCandidateReviewManifest): string {
+  if (manifest.kind === 'learning' && manifest.sourceRunId) {
+    return manifest.eligible
+      ? `Learning Agent candidate from run ${manifest.sourceRunId} is awaiting human approval.`
+      : `Learning Agent candidate from run ${manifest.sourceRunId} is not eligible yet.`;
+  }
   return manifest.eligible
     ? `${manifest.successfulRunCount} successful runs met the promotion threshold.`
     : `${manifest.successfulRunCount} successful runs; candidate is not eligible yet.`;
+}
+
+function normalizeToolSequence(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) return undefined;
+  const sequence = value
+    .map((item) => typeof item === 'string' ? item.trim() : '')
+    .filter(Boolean);
+  return sequence.length > 0 ? sequence : undefined;
+}
+
+function formatCandidateKind(candidate: ResearchScriptSkillCandidate): string {
+  return candidate.kind === 'learning' ? 'Learning Agent' : 'research script';
 }
 
 function extractMarkdownTitle(markdown: string): string {

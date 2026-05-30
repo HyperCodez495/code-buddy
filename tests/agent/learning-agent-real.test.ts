@@ -113,7 +113,10 @@ describe('Learning Agent on real RunStore trajectories', () => {
     const candidatePath = path.join(tempDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-search-view-file-bash', 'SKILL.md');
     const reviewPath = path.join(tempDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-search-view-file-bash', 'candidate-review.json');
     expect(fs.existsSync(candidatePath)).toBe(true);
-    expect(fs.readFileSync(candidatePath, 'utf8')).toContain('Status: awaiting human approval');
+    const candidateMarkdown = fs.readFileSync(candidatePath, 'utf8');
+    expect(candidateMarkdown).toContain('author: Code Buddy Learning Agent');
+    expect(candidateMarkdown).toContain('metadata:\n  hermes:');
+    expect(candidateMarkdown).toContain('## Quick Reference');
     expect(JSON.parse(fs.readFileSync(reviewPath, 'utf8'))).toMatchObject({
       approvalRequired: true,
       skillName: 'learned-search-view-file-bash',

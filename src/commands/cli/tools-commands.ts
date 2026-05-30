@@ -76,12 +76,15 @@ interface NormalizedToolsProfile {
 interface ResearchScriptSkillCandidateSummary {
   eligible: boolean;
   id: string;
+  kind: string;
   reason: string;
   skillName: string;
   skillPath: string;
   sourceJobId: string;
+  sourceRunId?: string;
   successfulRunCount: number;
   title: string;
+  toolSequence?: string[];
 }
 
 function formatList(values: readonly string[]): string {
@@ -105,12 +108,15 @@ function summarizeSkillCandidate(candidate: ResearchScriptSkillCandidate): Resea
   return {
     eligible: candidate.eligible,
     id: candidate.id,
+    kind: candidate.kind,
     reason: candidate.reason,
     skillName: candidate.skillName,
     skillPath: candidate.skillPath,
     sourceJobId: candidate.sourceJobId,
+    sourceRunId: candidate.sourceRunId,
     successfulRunCount: candidate.successfulRunCount,
     title: candidate.title,
+    toolSequence: candidate.toolSequence,
   };
 }
 
@@ -153,11 +159,18 @@ function normalizeInternetScoutIntent(value: string | undefined): InternetScoutI
 }
 
 function printSkillCandidate(candidate: ResearchScriptSkillCandidate): void {
-  console.log(`\nResearch script skill candidate: ${candidate.skillName}`);
+  console.log(`\n${formatCandidateKind(candidate)} skill candidate: ${candidate.skillName}`);
   console.log(`  Candidate id: ${candidate.id}`);
-  console.log(`  Source job: ${candidate.sourceJobId}`);
+  if (candidate.sourceRunId) {
+    console.log(`  Source run: ${candidate.sourceRunId}`);
+  } else {
+    console.log(`  Source job: ${candidate.sourceJobId}`);
+  }
   console.log(`  Status: ${candidate.eligible ? 'eligible for human approval' : 'not eligible yet'}`);
   console.log(`  Successful runs: ${candidate.successfulRunCount}`);
+  if (candidate.toolSequence?.length) {
+    console.log(`  Tool sequence: ${candidate.toolSequence.join(' -> ')}`);
+  }
   console.log(`  Reason: ${candidate.reason}`);
   console.log(`  SKILL.md: ${candidate.skillPath}`);
   console.log(`  Review manifest: ${formatCandidateReviewPath(candidate)}`);
@@ -168,15 +181,26 @@ function printSkillCandidate(candidate: ResearchScriptSkillCandidate): void {
 }
 
 function printSkillCandidateList(candidates: ResearchScriptSkillCandidate[]): void {
-  console.log(`\nResearch script skill candidates: ${candidates.length}`);
+  console.log(`\nReview-gated skill candidates: ${candidates.length}`);
   for (const candidate of candidates) {
-    console.log(`  - ${candidate.skillName}: ${candidate.eligible ? 'eligible' : 'not eligible'}`);
-    console.log(`    Source job: ${candidate.sourceJobId}`);
+    console.log(`  - ${candidate.skillName}: ${candidate.eligible ? 'eligible' : 'not eligible'} (${candidate.kind})`);
+    if (candidate.sourceRunId) {
+      console.log(`    Source run: ${candidate.sourceRunId}`);
+    } else {
+      console.log(`    Source job: ${candidate.sourceJobId}`);
+    }
     console.log(`    Successful runs: ${candidate.successfulRunCount}`);
+    if (candidate.toolSequence?.length) {
+      console.log(`    Tool sequence: ${candidate.toolSequence.join(' -> ')}`);
+    }
     console.log(`    Path: ${candidate.skillPath}`);
     console.log(`    Reason: ${candidate.reason}`);
   }
   console.log('');
+}
+
+function formatCandidateKind(candidate: ResearchScriptSkillCandidate): string {
+  return candidate.kind === 'learning' ? 'Learning Agent' : 'Research script';
 }
 
 export function registerToolsCommands(program: Command): void {
@@ -295,11 +319,11 @@ export function registerToolsCommands(program: Command): void {
 
   const skillCandidate = tools
     .command('skill-candidate')
-    .description('Inspect and install reviewed research-script SKILL.md candidates');
+    .description('Inspect and install reviewed SKILL.md candidates');
 
   skillCandidate
     .command('list')
-    .description('List materialized research-script SKILL.md candidates awaiting review')
+    .description('List materialized SKILL.md candidates awaiting review')
     .option('--eligible-only', 'show only candidates that can be installed after approval')
     .option('--skill-root <path>', 'candidate root to scan', '.codebuddy/skill-candidates')
     .option('--json', 'output JSON')
@@ -325,7 +349,7 @@ export function registerToolsCommands(program: Command): void {
 
   skillCandidate
     .command('inspect')
-    .description('Inspect a materialized research-script SKILL.md candidate')
+    .description('Inspect a materialized SKILL.md candidate')
     .argument('<candidatePath>', 'path to the candidate SKILL.md file or candidate directory')
     .option('--json', 'output JSON')
     .action(async (candidatePath: string, options: ToolsSkillCandidateInspectOptions) => {
@@ -346,7 +370,7 @@ export function registerToolsCommands(program: Command): void {
 
   skillCandidate
     .command('install')
-    .description('Install an approved research-script SKILL.md candidate as a workspace skill')
+    .description('Install an approved SKILL.md candidate as a workspace skill')
     .argument('<candidatePath>', 'path to the candidate SKILL.md file or candidate directory')
     .requiredOption('--approved-by <name>', 'human reviewer approving this workspace skill install')
     .option('--overwrite', 'replace an existing workspace skill with the same name')
@@ -369,7 +393,7 @@ export function registerToolsCommands(program: Command): void {
         return;
       }
 
-      console.log(`\nInstalled research script skill: ${installed.skillName}`);
+      console.log(`\nInstalled reviewed skill: ${installed.skillName}`);
       console.log(`  Candidate id: ${installed.candidateId}`);
       console.log(`  Approved by: ${installed.approvedBy}`);
       console.log(`  Approved at: ${installed.approvedAt}`);

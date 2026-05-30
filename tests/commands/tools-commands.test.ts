@@ -69,6 +69,64 @@ async function materializeCliSkillCandidate(rootDir: string): Promise<string> {
   return materialized.skillPath.replace(/\/SKILL\.md$/i, '');
 }
 
+async function materializeLearningSkillCandidate(rootDir: string): Promise<string> {
+  const candidateDir = path.join(rootDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-real-review');
+  await fs.mkdir(candidateDir, { recursive: true });
+  await fs.writeFile(
+    path.join(candidateDir, 'SKILL.md'),
+    [
+      '---',
+      'name: learned-real-review',
+      'description: Reusable search -> view_file -> bash workflow learned from a real run.',
+      'version: 1.0.0',
+      'author: Code Buddy Learning Agent',
+      'license: MIT',
+      'platforms: [linux, macos]',
+      'metadata:',
+      '  hermes:',
+      '    tags: [learning-agent, review-required, search, view-file, bash]',
+      '    category: testing',
+      '---',
+      '',
+      '# Learned Real Review',
+      '',
+      '## When to Use',
+      'Use this skill when a future task needs the same proven tool sequence: search -> view_file -> bash.',
+      '',
+      '## Procedure',
+      '1. Use `search` for discovery.',
+      '2. Use `view_file` for targeted reads.',
+      '3. Use `bash` for real verification.',
+      '',
+      '## Pitfalls',
+      '- Do not install this candidate blindly from one trajectory.',
+      '',
+      '## Verification',
+      '- The final task result is backed by a real verification command.',
+      '',
+      '## Quick Reference',
+      'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-real-review',
+      '',
+    ].join('\n'),
+    'utf8',
+  );
+  await fs.writeFile(
+    path.join(candidateDir, 'candidate-review.json'),
+    `${JSON.stringify({
+      approvalRequired: true,
+      candidateId: 'learning-skill-real-review',
+      generatedAt: '2026-05-30T13:50:00.000Z',
+      schemaVersion: 1,
+      skillName: 'learned-real-review',
+      sourceRunId: 'run-real-review',
+      status: 'awaiting_human_approval',
+      toolSequence: ['search', 'view_file', 'bash'],
+    }, null, 2)}\n`,
+    'utf8',
+  );
+
+  return path.relative(rootDir, candidateDir).replace(/\\/g, '/');
+}
 describe('Tools CLI commands', () => {
   beforeEach(() => {
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
@@ -344,6 +402,99 @@ describe('Tools CLI commands', () => {
       });
       await expect(
         fs.readFile(path.join(rootDir, '.codebuddy', 'skills', 'research-cli-reviewed-workflow', 'SKILL.md'), 'utf8'),
+      ).resolves.toContain('- Approved by: Patrice');
+    } finally {
+      process.chdir(previousCwd);
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('lists, inspects and installs a Learning Agent skill candidate from the shared review queue', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tools-learning-skill-candidate-'));
+    const previousCwd = process.cwd();
+    try {
+      const candidateDir = await materializeLearningSkillCandidate(rootDir);
+      process.chdir(rootDir);
+      const program = createProgram();
+      registerToolsCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'tools',
+        'skill-candidate',
+        'list',
+        '--json',
+      ]);
+      const listOutput = JSON.parse(getLogOutput()) as {
+        candidates: Array<{
+          kind: string;
+          skillName: string;
+          sourceRunId?: string;
+          toolSequence?: string[];
+        }>;
+        count: number;
+      };
+
+      expect(listOutput.count).toBe(1);
+      expect(listOutput.candidates).toEqual([
+        expect.objectContaining({
+          kind: 'learning',
+          skillName: 'learned-real-review',
+          sourceRunId: 'run-real-review',
+          toolSequence: ['search', 'view_file', 'bash'],
+        }),
+      ]);
+
+      consoleLogSpy.mockClear();
+      await program.parseAsync([
+        'node',
+        'test',
+        'tools',
+        'skill-candidate',
+        'inspect',
+        candidateDir,
+        '--json',
+      ]);
+      const inspectOutput = JSON.parse(getLogOutput()) as {
+        candidate: {
+          kind: string;
+          skillName: string;
+          sourceRunId?: string;
+        };
+      };
+      expect(inspectOutput.candidate).toMatchObject({
+        kind: 'learning',
+        skillName: 'learned-real-review',
+        sourceRunId: 'run-real-review',
+      });
+
+      consoleLogSpy.mockClear();
+      await program.parseAsync([
+        'node',
+        'test',
+        'tools',
+        'skill-candidate',
+        'install',
+        candidateDir,
+        '--approved-by',
+        'Patrice',
+        '--json',
+      ]);
+      const installOutput = JSON.parse(getLogOutput()) as {
+        installed: {
+          approvedBy: string;
+          installedPath: string;
+          skillName: string;
+        };
+      };
+      expect(installOutput.installed).toMatchObject({
+        approvedBy: 'Patrice',
+        installedPath: '.codebuddy/skills/learned-real-review/SKILL.md',
+        skillName: 'learned-real-review',
+      });
+      await expect(
+        fs.readFile(path.join(rootDir, '.codebuddy', 'skills', 'learned-real-review', 'SKILL.md'), 'utf8'),
       ).resolves.toContain('- Approved by: Patrice');
     } finally {
       process.chdir(previousCwd);

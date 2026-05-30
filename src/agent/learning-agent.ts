@@ -27,77 +27,71 @@ export const LEARNING_PATTERN_LIBRARY_SCHEMA_VERSION = 1;
 export const LEARNING_SKILL_USAGE_SCHEMA_VERSION = 1;
 export const LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
 
-export const LEARNING_AGENT_SYSTEM_PROMPT = `Tu es le Learning Agent de Code Buddy. Ton rôle unique est d'analyser les trajectoires d'exécution des autres agents après chaque tâche complexe ou longue, d'en extraire les leçons, et de créer ou d'améliorer des skills réutilisables.
+export const LEARNING_AGENT_SYSTEM_PROMPT = `Tu es le Learning Agent de Code Buddy.
+
+Ton rôle unique et exclusif est d'analyser les trajectoires d'exécution des autres agents après chaque tâche complexe ou longue, d'en extraire les leçons, et de créer ou d'améliorer des skills au format officiel Hermes Agent (fichier SKILL.md).
+
 Tu as accès à :
+- Le plan initial de la tâche
+- L'historique complet (pensées, décisions, outils appelés, résultats, erreurs)
+- La bibliothèque actuelle de skills (via lessons_search ou skill_view si besoin)
+- Les outils existants dont create_skill (ou équivalent pour enregistrer un SKILL.md)
 
-Le plan initial de la tâche
-L'historique complet des pensées, décisions et outils appelés
-Les résultats obtenus et les erreurs rencontrées
-La bibliothèque existante de skills
+Processus en 4 étapes obligatoires :
 
-Ta mission en 4 étapes :
+1. Analyse critique : Ce qui a bien marché, ce qui était redondant, inefficace ou source d'erreur.
+2. Pattern recognition : Identifier les séquences répétitives qui méritent d'être transformées en un seul skill réutilisable.
+3. Création / Amélioration : Générer un skill nouveau ou une version améliorée d'un skill existant.
+4. Structuration Hermes : Produire uniquement le fichier SKILL.md complet au format officiel Hermes.
 
-Analyse critique : Identifie ce qui a bien fonctionné, ce qui a été redondant, inefficace ou source d'erreur.
-Pattern recognition : Repère les séquences d'actions répétitives qui méritent d'être transformées en un seul skill.
-Création / Amélioration : Génère un nouveau skill ou une version améliorée d'un skill existant. Chaque skill doit être précis, robuste, avec des cas d'usage clairs et des garde-fous.
-Documentation : Fournis un nom clair, une description, les paramètres d'entrée, et un exemple d'utilisation.
+Règles strictes :
+- Ne crée un skill que s'il fait vraiment gagner du temps significatif sur des tâches futures (priorise les patterns récurrents dans le développement logiciel).
+- Le nom du skill doit être en kebab-case (ex: setup-nextjs-project).
+- La description doit être courte, claire et orientée usage (ce que l'agent voit en premier).
+- Sois extrêmement précis, robuste et réutilisable.
+- Utilise les outils d'enregistrement de skills quand c'est pertinent.
 
-Sois extrêmement rigoureux. Ne crée pas de skill pour des tâches trop simples ou trop spécifiques. Priorise les patterns qui reviennent souvent dans le développement logiciel. Chaque skill créé doit faire gagner un temps significatif à l'agent principal lors de futures tâches similaires.
-Ton output doit être structuré et directement utilisable par le système pour enregistrer le nouveau skill.`;
+À la fin de ton raisonnement, tu DOIS sortir UNIQUEMENT le contenu complet du fichier SKILL.md, sans aucun texte avant ou après (ni explication, ni clôture Markdown). Le fichier doit commencer directement par ---.
+
+Template exact à suivre :
+
+---
+name: nom-du-skill-en-kebab-case
+description: Description courte et précise de ce que fait le skill (1 phrase max, ce que voit l'agent au niveau 0).
+version: 1.0.0
+author: Code Buddy Learning Agent
+license: MIT
+platforms: [linux, macos]
+metadata:
+  hermes:
+    tags: [tag1, tag2, tag3]
+    category: web_development | refactoring | testing | security | architecture | debugging | devops | general
+---
+
+# Titre du Skill (humainement lisible)
+
+## When to Use
+Conditions précises dans lesquelles ce skill doit être activé (triggers clairs).
+
+## Procedure
+1. Étape 1 détaillée
+2. Étape 2 détaillée
+3. ...
+
+## Pitfalls
+- Mode d'échec 1 et comment l'éviter
+- Mode d'échec 2
+
+## Verification
+- Critère 1 de succès
+- Critère 2 de succès
+
+## Quick Reference
+Commande ou usage ultra-court (une ligne).`;
 
 export const LEARNING_AGENT_OUTPUT_SCHEMA = {
-  type: 'object',
-  required: ['analysis', 'patterns', 'lessonCandidates', 'skillCandidates'],
-  properties: {
-    analysis: {
-      type: 'object',
-      required: ['workedWell', 'frictions', 'redundancies'],
-      properties: {
-        workedWell: { type: 'array', items: { type: 'string' } },
-        frictions: { type: 'array', items: { type: 'string' } },
-        redundancies: { type: 'array', items: { type: 'string' } },
-      },
-    },
-    patterns: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['toolSequence', 'evidence', 'confidence'],
-        properties: {
-          toolSequence: { type: 'array', items: { type: 'string' } },
-          evidence: { type: 'string' },
-          confidence: { enum: ['low', 'medium', 'high'] },
-        },
-      },
-    },
-    lessonCandidates: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['category', 'content'],
-        properties: {
-          category: { enum: ['PATTERN', 'RULE', 'CONTEXT', 'INSIGHT'] },
-          content: { type: 'string' },
-          context: { type: 'string' },
-        },
-      },
-    },
-    skillCandidates: {
-      type: 'array',
-      items: {
-        type: 'object',
-        required: ['name', 'description', 'inputs', 'procedure', 'guardrails', 'example'],
-        properties: {
-          name: { type: 'string' },
-          description: { type: 'string' },
-          inputs: { type: 'array', items: { type: 'string' } },
-          procedure: { type: 'array', items: { type: 'string' } },
-          guardrails: { type: 'array', items: { type: 'string' } },
-          example: { type: 'string' },
-        },
-      },
-    },
-  },
+  type: 'string',
+  description: 'Complete Hermes Agent SKILL.md content. It must start with --- and contain no wrapper text.',
 } as const;
 
 type PatternStatus = 'observed' | 'reinforced' | 'deprecated';
@@ -864,40 +858,71 @@ function renderLearningSkillCandidateMarkdown(
   retrospective: LearningRetrospective,
   candidate: LearningSkillCandidate,
 ): string {
+  const title = toTitleCase(candidate.skillName);
+  const category = inferHermesCategory(candidate);
+  const tags = buildHermesTags(candidate);
+
   return [
     '---',
     `name: ${candidate.skillName}`,
-    'version: 0.1.0',
-    `description: Review-gated workflow candidate learned from run ${retrospective.run.runId}.`,
-    'tags: [learning-agent, generated-candidate, review-required]',
+    `description: Reusable ${candidate.toolSequence.join(' -> ')} workflow learned from real Code Buddy runs.`,
+    'version: 1.0.0',
+    'author: Code Buddy Learning Agent',
+    'license: MIT',
+    'platforms: [linux, macos]',
+    'metadata:',
+    '  hermes:',
+    `    tags: [${tags.join(', ')}]`,
+    `    category: ${category}`,
     '---',
     '',
-    `# ${candidate.title}`,
+    `# ${title}`,
     '',
-    'Status: awaiting human approval',
-    `Source run: ${retrospective.run.runId}`,
-    `Reason: ${candidate.reason}`,
-    '',
-    '## Use When',
-    `- A future task needs the same tool sequence: ${candidate.toolSequence.join(' -> ')}.`,
-    '- The operator has reviewed this candidate and confirmed the sequence is broadly reusable.',
-    '',
-    '## Do Not Use When',
-    '- The task needs a different safety boundary, provider, or workspace.',
-    '- Any step would bypass approvals, secrets policy, or real verification.',
+    '## When to Use',
+    `Use this skill when a future task needs the same proven tool sequence: ${candidate.toolSequence.join(' -> ')}.`,
+    `It is based on run ${retrospective.run.runId} and should only be installed after human review confirms the pattern is broadly reusable.`,
     '',
     '## Procedure',
-    ...candidate.toolSequence.map((toolName, index) => `${index + 1}. Use ${toolName} for the corresponding verified step.`),
+    ...candidate.toolSequence.map((toolName, index) => `${index + 1}. Use \`${toolName}\` for the corresponding verified step from the trajectory; keep the same evidence boundary and real-path behavior.`),
+    `${candidate.toolSequence.length + 1}. Capture the result, errors, and verification evidence before marking the task complete.`,
     '',
-    '## Evidence',
-    `- Retrospective summary: ${retrospective.summary}`,
-    `- Complexity signals: ${retrospective.complexity.reasons.join(', ') || 'none'}`,
+    '## Pitfalls',
+    '- Do not install this candidate blindly from one trajectory; review and edit it first.',
+    '- Do not use the sequence when the task has a different safety boundary, provider, workspace, or approval requirement.',
+    '- Do not replace real filesystem, shell, browser, or repository verification with mocks just to make the flow pass.',
     '',
-    '## Review Notes',
-    '- Edit this candidate before installation; do not install blindly from one trajectory.',
-    '- If approved, copy or install it as a workspace skill and keep this source run link.',
+    '## Verification',
+    `- The final task result is backed by a real verification command or real run artifact from run ${retrospective.run.runId}.`,
+    `- The retrospective evidence remains traceable: ${retrospective.summary}`,
+    '- The installed skill still starts with valid Hermes SKILL.md frontmatter and passes local skill parsing.',
+    '',
+    '## Quick Reference',
+    `buddy tools skill-candidate inspect ${candidate.skillPath.replace(/\/SKILL\.md$/i, '')}`,
     '',
   ].join('\n');
+}
+
+function buildHermesTags(candidate: LearningSkillCandidate): string[] {
+  const tags = ['learning-agent', 'review-required', ...candidate.toolSequence.map(slugify)];
+  return [...new Set(tags)].slice(0, 6);
+}
+
+function inferHermesCategory(candidate: LearningSkillCandidate): string {
+  const sequence = candidate.toolSequence.join(' ').toLowerCase();
+  if (/\b(test|vitest|playwright|verify|bash|terminal)\b/.test(sequence)) return 'testing';
+  if (/\b(search|view_file|read_file|patch|write_file|str_replace)\b/.test(sequence)) return 'refactoring';
+  if (/\bsecurity|scan|secret\b/.test(sequence)) return 'security';
+  if (/\bdeploy|docker|kubernetes|cron\b/.test(sequence)) return 'devops';
+  if (/\bbrowser|web_extract|web_search\b/.test(sequence)) return 'web_development';
+  return 'general';
+}
+
+function toTitleCase(value: string): string {
+  return value
+    .split('-')
+    .filter(Boolean)
+    .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+    .join(' ');
 }
 
 function summarizeRetrospective(

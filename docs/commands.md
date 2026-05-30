@@ -162,6 +162,7 @@ buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
 buddy hermes profile|agent|doctor|plan|hooks|prompt-size|parity|tools-parity [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
+buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
 ```
 
 `buddy hermes plan` prints a short Hermes integration checklist for a
@@ -204,6 +205,14 @@ Manus-style browser session preview from an Internet Scout goal. It
 does not start a browser. The JSON output includes the source scout plan
 and Browser Operator draft with consent scopes, dedicated tab label,
 planned action log, stop conditions, and proof export manifest.
+
+`buddy tools skill-candidate` is the shared review queue for materialized
+SKILL.md candidates. It supports both research-script candidates and Learning
+Agent candidates under `.codebuddy/skill-candidates/learning/`; `install`
+requires `--approved-by` and copies the reviewed file into `.codebuddy/skills/`.
+Learning Agent candidates are generated with Hermes-style SKILL.md frontmatter
+(`author`, `license`, `platforms`, `metadata.hermes`) so they are reviewable
+before becoming active workspace skills.
 
 ### Knowledge and Memory
 
