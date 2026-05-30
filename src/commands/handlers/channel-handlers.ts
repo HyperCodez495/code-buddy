@@ -12,6 +12,7 @@ import { logger } from '../../utils/logger.js';
 interface ChannelOptions {
   type?: string;
   config?: string;
+  json?: boolean;
 }
 
 interface ChannelConfigEntry {
@@ -26,6 +27,41 @@ interface ChannelConfigEntry {
 
 interface ChannelsConfig {
   channels: ChannelConfigEntry[];
+}
+
+export interface ChannelStatusReport {
+  kind: 'codebuddy_channel_status';
+  schemaVersion: 1;
+  generatedAt: string;
+  config: {
+    path?: string;
+    configuredCount: number;
+    enabledCount: number;
+    disabledCount: number;
+    channels: Array<{
+      type: string;
+      enabled: boolean;
+      hasToken: boolean;
+      hasWebhookUrl: boolean;
+      allowedUsersCount: number;
+      allowedChannelsCount: number;
+      optionKeys: string[];
+    }>;
+  };
+  runtime: {
+    registeredCount: number;
+    connectedCount: number;
+    authenticatedCount: number;
+    channels: Array<{
+      type: string;
+      connected: boolean;
+      authenticated: boolean;
+      lastActivity?: string;
+      error?: string;
+      info?: Record<string, unknown>;
+    }>;
+  };
+  recommendations: string[];
 }
 
 export interface StartConfiguredChannelsResult {
@@ -80,25 +116,103 @@ export async function startConfiguredChannels(configPath?: string): Promise<Star
   return result;
 }
 
-export function loadChannelConfig(configPath?: string): ChannelsConfig | null {
-  const paths = configPath
+function getChannelConfigPaths(configPath?: string): string[] {
+  return configPath
     ? [configPath]
     : [
         path.join(process.cwd(), '.codebuddy', 'channels.json'),
         path.join(process.env.HOME || process.env.USERPROFILE || '', '.codebuddy', 'channels.json'),
       ];
+}
 
-  for (const p of paths) {
+export function loadChannelConfigWithPath(configPath?: string): { config: ChannelsConfig; path: string } | null {
+  for (const p of getChannelConfigPaths(configPath)) {
     try {
       if (fs.existsSync(p)) {
         const content = fs.readFileSync(p, 'utf-8');
-        return JSON.parse(content) as ChannelsConfig;
+        return { config: JSON.parse(content) as ChannelsConfig, path: p };
       }
     } catch (err) {
       logger.debug(`Failed to load channel config from ${p}`, { error: err instanceof Error ? err.message : String(err) });
     }
   }
   return null;
+}
+
+export function loadChannelConfig(configPath?: string): ChannelsConfig | null {
+  return loadChannelConfigWithPath(configPath)?.config ?? null;
+}
+
+function summarizeConfig(config: ChannelsConfig | null): ChannelStatusReport['config'] {
+  const channels = (config?.channels ?? []).map((channel) => ({
+    type: channel.type,
+    enabled: channel.enabled,
+    hasToken: Boolean(channel.token),
+    hasWebhookUrl: Boolean(channel.webhookUrl),
+    allowedUsersCount: channel.allowedUsers?.length ?? 0,
+    allowedChannelsCount: channel.allowedChannels?.length ?? 0,
+    optionKeys: Object.keys(channel.options ?? {}).sort(),
+  }));
+  return {
+    configuredCount: channels.length,
+    enabledCount: channels.filter((channel) => channel.enabled).length,
+    disabledCount: channels.filter((channel) => !channel.enabled).length,
+    channels,
+  };
+}
+
+export function buildChannelStatusReport(
+  allStatus: Record<string, import('../../channels/index.js').ChannelStatus>,
+  configPath?: string,
+  generatedAt: string = new Date().toISOString(),
+): ChannelStatusReport {
+  const loadedConfig = loadChannelConfigWithPath(configPath);
+  const config = summarizeConfig(loadedConfig?.config ?? null);
+  const runtimeChannels = Object.values(allStatus)
+    .map((status) => ({
+      type: status.type,
+      connected: status.connected,
+      authenticated: status.authenticated,
+      ...(status.lastActivity ? { lastActivity: status.lastActivity.toISOString() } : {}),
+      ...(status.error ? { error: status.error } : {}),
+      ...(status.info ? { info: status.info } : {}),
+    }))
+    .sort((a, b) => a.type.localeCompare(b.type));
+  const registeredTypes = new Set(runtimeChannels.map((status) => String(status.type)));
+  const enabledButNotRegistered = config.channels
+    .filter((channel) => channel.enabled && !registeredTypes.has(channel.type))
+    .map((channel) => channel.type);
+
+  const recommendations: string[] = [];
+  if (config.configuredCount === 0) {
+    recommendations.push('Create .codebuddy/channels.json or pass --config to configure remote channels.');
+  }
+  if (enabledButNotRegistered.length > 0) {
+    recommendations.push(`Configured but not registered: ${enabledButNotRegistered.join(', ')}. Run buddy channels start.`);
+  }
+  if (runtimeChannels.length === 0) {
+    recommendations.push('No runtime channels are registered in this process.');
+  }
+  if (runtimeChannels.some((status) => status.error)) {
+    recommendations.push('At least one registered channel reports an error; inspect runtime.channels[].error.');
+  }
+
+  return {
+    kind: 'codebuddy_channel_status',
+    schemaVersion: 1,
+    generatedAt,
+    config: {
+      ...(loadedConfig ? { path: loadedConfig.path } : {}),
+      ...config,
+    },
+    runtime: {
+      registeredCount: runtimeChannels.length,
+      connectedCount: runtimeChannels.filter((status) => status.connected).length,
+      authenticatedCount: runtimeChannels.filter((status) => status.authenticated).length,
+      channels: runtimeChannels,
+    },
+    recommendations,
+  };
 }
 
 export async function handleChannels(action: string, options: ChannelOptions): Promise<void> {
@@ -127,6 +241,10 @@ export async function handleChannels(action: string, options: ChannelOptions): P
 
     case 'status': {
       const allStatus = manager.getStatus();
+      if (options.json) {
+        console.log(JSON.stringify(buildChannelStatusReport(allStatus, options.config), null, 2));
+        break;
+      }
       console.log('Channel Status:\n');
       for (const [type, status] of Object.entries(allStatus)) {
         console.log(`  ${type}: ${status.connected ? 'connected' : 'disconnected'}${status.error ? ` (error: ${status.error})` : ''}`);

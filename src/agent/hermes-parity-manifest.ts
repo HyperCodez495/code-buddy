@@ -117,9 +117,9 @@ const FEATURES: HermesParityFeature[] = [
     officialSurface: 'Single gateway process across Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Matrix, Teams, LINE, ntfy, and more',
     codeBuddyEvidence: ['src/channels/', 'docs/channels.md', 'src/server/channel-a2a-bridge.ts'],
     status: 'partial',
-    verificationCommands: ['rg --files src/channels', 'npx tsx src/index.ts channels status'],
-    notes: 'Channel coverage is broad, but official Hermes platform list, gateway lifecycle, and slash parity are not identical.',
-    nextWork: 'Add a real gateway readiness command that reports configured and missing channels.',
+    verificationCommands: ['rg --files src/channels', 'npx tsx src/index.ts channels status --json'],
+    notes: 'Channel coverage is broad and gateway readiness is machine-readable, but official Hermes platform list, gateway lifecycle, and slash parity are not identical.',
+    nextWork: 'Add Cowork gateway readiness rendering and per-platform slash parity checks.',
   },
   {
     id: 'browser-automation',

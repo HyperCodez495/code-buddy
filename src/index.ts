@@ -2126,6 +2126,7 @@ program
   .argument("[action]", "start|stop|status|list", "list")
   .option("--type <type>", "Channel type (telegram|discord|slack|whatsapp|signal|google-chat|teams|matrix|webchat)")
   .option("--config <path>", "Channel config file path")
+  .option("--json", "Output JSON for status")
   .action(async (action, options) => {
     const { handleChannels } = await import("./commands/handlers/channel-handlers.js");
     await handleChannels(action, options);

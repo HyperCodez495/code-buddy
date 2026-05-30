@@ -94,7 +94,7 @@ mutation" acceptance.
 | Sub-capability | Where | Status |
 |---|---|---|
 | HTTP + Gateway WS server | `src/server/` (`buddy server`) | done |
-| Messaging channels (Telegram/Discord/Slack/…) | channel layer + `delivery.targets` | partial — delivery done; full inbound gateway parity is future work |
+| Messaging channels (Telegram/Discord/Slack/…) | channel layer + `delivery.targets`; `buddy channels status --json` | partial — delivery + machine-readable readiness done; full inbound gateway parity is future work |
 | Mobile-safe remote supervision | `buddy run mobile-snapshot / mobile-gateway-*` | contract/preview only; no live listener yet (parity TODO #15/#34) |
 | Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface` | local + Docker/OS; Daytona/Modal/Vercel not ported |
 
