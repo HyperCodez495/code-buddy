@@ -7,11 +7,12 @@ import {
   buildResearchScriptSkillCandidate,
   installResearchScriptSkillCandidate,
   listMaterializedResearchScriptSkillCandidates,
+  listMaterializedResearchScriptSkillCandidatesWithInstallState,
   materializeResearchScriptSkillCandidate,
 } from '../../src/agent/research-script-skill-candidate.js';
 import type { ResearchScriptJobRunResult } from '../../src/agent/research-script-job-runner.js';
 import { SkillRegistry } from '../../src/skills/registry.js';
-import { getSkillsHub, resetSkillsHub } from '../../src/skills/hub.js';
+import { getSkillsHub, resetSkillsHub, SkillsHub } from '../../src/skills/hub.js';
 
 let tempHubDir: string;
 
@@ -267,6 +268,98 @@ describe('research script skill candidate', () => {
         'research-zulu-workflow',
       ]);
       expect(candidates.map((candidate) => candidate.eligible)).toEqual([false, true]);
+    } finally {
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('compares materialized candidates with real installed workspace skills', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-install-state-'));
+    try {
+      const currentJob = buildResearchScriptJobArtifact({
+        id: 'research-script-current',
+        goal: 'Keep current workflow installed.',
+        title: 'Current workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const changedJob = buildResearchScriptJobArtifact({
+        id: 'research-script-changed',
+        goal: 'Review changed workflow.',
+        title: 'Changed workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const newJob = buildResearchScriptJobArtifact({
+        id: 'research-script-new',
+        goal: 'Review new workflow.',
+        title: 'New workflow',
+        language: 'javascript',
+        inputContract: { INPUT_JSON: 'Input.' },
+        outputContract: { OUTPUT_JSON: 'Output.' },
+        sandboxPolicy: {
+          network: 'disabled',
+        },
+      });
+      const currentCandidate = buildResearchScriptSkillCandidate(currentJob, [
+        runResult({ jobId: currentJob.id }),
+        runResult({ jobId: currentJob.id }),
+      ]);
+      const changedCandidate = buildResearchScriptSkillCandidate(changedJob, [
+        runResult({ jobId: changedJob.id }),
+        runResult({ jobId: changedJob.id }),
+      ]);
+      const newCandidate = buildResearchScriptSkillCandidate(newJob, [
+        runResult({ jobId: newJob.id }),
+        runResult({ jobId: newJob.id }),
+      ]);
+      await Promise.all([
+        materializeResearchScriptSkillCandidate(currentCandidate, { rootDir }),
+        materializeResearchScriptSkillCandidate(changedCandidate, { rootDir }),
+        materializeResearchScriptSkillCandidate(newCandidate, { rootDir }),
+      ]);
+
+      const workspaceHub = new SkillsHub({
+        cacheDir: path.join(rootDir, '.codebuddy', 'skills-cache'),
+        lockfilePath: path.join(rootDir, '.codebuddy', 'skills-lock.json'),
+        skillsDir: path.join(rootDir, '.codebuddy', 'skills'),
+      });
+      await workspaceHub.installFromContent(currentCandidate.skillName, currentCandidate.markdown);
+      await workspaceHub.installFromContent(
+        changedCandidate.skillName,
+        changedCandidate.markdown.replace('Review changed workflow.', 'Old installed workflow.'),
+      );
+
+      const candidates = await listMaterializedResearchScriptSkillCandidatesWithInstallState({ rootDir });
+      const byName = new Map(candidates.map((candidate) => [candidate.skillName, candidate]));
+
+      expect(byName.get(currentCandidate.skillName)).toMatchObject({
+        installState: 'installed-current',
+        installedIntegrityOk: true,
+        installedVersion: '0.1.0',
+      });
+      expect(byName.get(changedCandidate.skillName)).toMatchObject({
+        installState: 'installed-different',
+        installedIntegrityOk: true,
+      });
+      expect(byName.get(changedCandidate.skillName)?.reviewCommands).toEqual(expect.arrayContaining([
+        `skill_manage action=candidate_install candidate_path=${changedCandidate.skillPath} approved_by=<reviewer> overwrite=true`,
+        `skill_manage action=history name=${changedCandidate.skillName}`,
+      ]));
+      expect(byName.get(newCandidate.skillName)).toMatchObject({
+        installState: 'not-installed',
+      });
+      expect(byName.get(newCandidate.skillName)?.reviewCommands).toContain(
+        `skill_manage action=candidate_install candidate_path=${newCandidate.skillPath} approved_by=<reviewer>`,
+      );
     } finally {
       await fs.rm(rootDir, { recursive: true, force: true });
     }

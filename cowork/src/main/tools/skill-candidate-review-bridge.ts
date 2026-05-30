@@ -2,10 +2,17 @@ import { isAbsolute, resolve } from 'path';
 import { loadCoreModule } from '../utils/core-loader';
 
 export interface SkillCandidateReviewSummary {
+  candidateChecksum?: string;
   eligible: boolean;
   id: string;
+  installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+  installedChecksum?: string;
+  installedIntegrityOk?: boolean;
+  installedPath?: string;
+  installedVersion?: string;
   kind: string;
   reason: string;
+  reviewCommands?: string[];
   skillName: string;
   skillPath: string;
   sourceJobId: string;
@@ -23,10 +30,17 @@ export interface ListSkillCandidateReviewOptions {
 }
 
 interface ResearchScriptSkillCandidate {
+  candidateChecksum?: string;
   eligible: boolean;
   id: string;
+  installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+  installedChecksum?: string;
+  installedIntegrityOk?: boolean;
+  installedPath?: string;
+  installedVersion?: string;
   kind?: string;
   reason: string;
+  reviewCommands?: string[];
   skillName: string;
   skillPath: string;
   sourceJobId: string;
@@ -38,6 +52,10 @@ interface ResearchScriptSkillCandidate {
 
 interface ResearchScriptSkillCandidateModule {
   listMaterializedResearchScriptSkillCandidates: (options: {
+    rootDir: string;
+    skillRoot?: string;
+  }) => Promise<ResearchScriptSkillCandidate[]>;
+  listMaterializedResearchScriptSkillCandidatesWithInstallState?: (options: {
     rootDir: string;
     skillRoot?: string;
   }) => Promise<ResearchScriptSkillCandidate[]>;
@@ -54,7 +72,9 @@ export async function listSkillCandidatesForReview(
   );
   if (!mod?.listMaterializedResearchScriptSkillCandidates) return [];
 
-  const candidates = await mod.listMaterializedResearchScriptSkillCandidates({
+  const listCandidates = mod.listMaterializedResearchScriptSkillCandidatesWithInstallState
+    ?? mod.listMaterializedResearchScriptSkillCandidates;
+  const candidates = await listCandidates({
     rootDir,
     skillRoot: normalizeSkillRoot(options.skillRoot),
   });
@@ -71,10 +91,17 @@ function summarizeSkillCandidate(
   candidate: ResearchScriptSkillCandidate,
 ): SkillCandidateReviewSummary {
   return {
+    candidateChecksum: candidate.candidateChecksum,
     eligible: candidate.eligible,
     id: candidate.id,
+    installState: candidate.installState,
+    installedChecksum: candidate.installedChecksum,
+    installedIntegrityOk: candidate.installedIntegrityOk,
+    installedPath: candidate.installedPath,
+    installedVersion: candidate.installedVersion,
     kind: candidate.kind ?? (candidate.sourceRunId ? 'learning' : 'research-script'),
     reason: candidate.reason,
+    reviewCommands: candidate.reviewCommands,
     skillName: candidate.skillName,
     skillPath: candidate.skillPath,
     sourceJobId: candidate.sourceJobId,

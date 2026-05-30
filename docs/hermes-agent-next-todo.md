@@ -15,14 +15,14 @@ Current measured state:
 
 - [ ] **Implement review-gated `skill_manage` lifecycle**
   - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but the lifecycle still needs Cowork controls to feel complete.
-  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately. Patches and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks.
+  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately. Patches and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks. Materialized candidates now report whether the matching workspace skill is not installed, current, different, or missing on disk before approval.
   - Remaining scope: expose the same controls in Cowork and optionally add remote hub release diff previews.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:
     - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, patch it, roll it back, update it from local hub cache metadata, deprecate it, re-enable it, and remove it from the installed index.
     - Remaining: expose the same controls in Cowork.
     - Installed skills keep provenance: source run/candidate, reviewer, approval time, prior version if overwritten.
-    - Cowork can show the candidate vs installed skill diff before approval.
+    - Cowork can show the candidate vs installed skill state before approval.
   - Verification:
     - `npm test -- tests/agent/research-script-skill-candidate.test.ts tests/commands/tools-commands.test.ts --run`
     - real CLI smoke in a temp repo using `buddy tools skill-candidate ...` plus the new manage command/tool.
@@ -51,15 +51,16 @@ Current measured state:
 
 - [ ] **Build a Cowork Skill Package Manager panel**
   - Why: Cowork now shows candidates and telemetry, but it cannot fully pilot installed skills, versions, and review decisions from one place.
-  - Done so far: Cowork Fleet now has a read-only installed-skill package strip backed by the real SkillsHub lockfile. It shows installed/enabled/inactive counts, deprecated skills first, integrity state, usage counts, lifecycle reviewer/reason, rollback snapshot counts, a short current `SKILL.md` preview, and review-safe CLI commands. The strip can seed a `skill_manage ... approved_by=<reviewer>` goal instead of mutating skills directly. `skills_list` and `buddy skills list --json` now also expose `exists`/`integrityOk` so stale lockfile entries are visible before reuse, and `buddy skills doctor --json` reports missing/tampered packages with review-gated remediation commands.
+  - Done so far: Cowork Fleet now has a read-only installed-skill package strip backed by the real SkillsHub lockfile. It shows installed/enabled/inactive counts, deprecated skills first, integrity state, usage counts, lifecycle reviewer/reason, rollback snapshot counts, a short current `SKILL.md` preview, and review-safe CLI commands. The strip can seed a `skill_manage ... approved_by=<reviewer>` goal instead of mutating skills directly. `skills_list` and `buddy skills list --json` now also expose `exists`/`integrityOk` so stale lockfile entries are visible before reuse, and `buddy skills doctor --json` reports missing/tampered packages with review-gated remediation commands. The candidate queue now compares each materialized `SKILL.md` candidate with the real workspace SkillsHub lockfile and shows not-installed/current/different/missing states plus review commands.
   - Scope: installed skills list, candidate queue, SKILL.md preview, candidate-vs-installed diff, approve/install/disable/deprecate actions.
-  - Remaining scope: turn the read-only strip into a full panel with SKILL.md preview, candidate-vs-installed diff, reviewer identity capture, and review-gated lifecycle actions.
+  - Remaining scope: turn the read-only strips into a full panel with side-by-side SKILL.md diff, reviewer identity capture, and review-gated lifecycle actions.
   - Acceptance:
     - Operator can review a Learning Agent SKILL.md candidate and install it without leaving Cowork.
     - UI distinguishes installed, candidate, deprecated, and failed/recommended-improvement skills.
     - All write actions require explicit reviewer identity.
   - Verification:
     - `npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run`
+    - `npm test -- tests/agent/research-script-skill-candidate.test.ts --run`
     - `npm test -- tests/commands/skills-command-real.test.ts --run`
     - `npm test -- tests/tools/skills-inspection-real.test.ts tests/skills/hub.test.ts --run`
     - `(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/i18n-french-support.test.ts tests/fleet-command-center-board.test.ts --run)`

@@ -2,7 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Dirent } from 'fs';
 import { parseSkillFile, validateSkill } from '../skills/parser.js';
-import { getSkillsHub } from '../skills/hub.js';
+import { computeChecksum, getSkillsHub, SkillsHub } from '../skills/hub.js';
 import type { ResearchScriptJobArtifact } from './research-script-job-artifact.js';
 import type { ResearchScriptJobRunResult } from './research-script-job-runner.js';
 
@@ -77,6 +77,22 @@ export interface ReadMaterializedResearchScriptSkillCandidateOptions {
 export interface ListMaterializedResearchScriptSkillCandidatesOptions {
   rootDir: string;
   skillRoot?: string;
+}
+
+export type SkillCandidateInstallState =
+  | 'not-installed'
+  | 'installed-current'
+  | 'installed-different'
+  | 'installed-missing';
+
+export interface ResearchScriptSkillCandidateWithInstallState extends ResearchScriptSkillCandidate {
+  candidateChecksum: string;
+  installState: SkillCandidateInstallState;
+  installedChecksum?: string;
+  installedIntegrityOk?: boolean;
+  installedPath?: string;
+  installedVersion?: string;
+  reviewCommands: string[];
 }
 
 export interface InstalledResearchScriptSkillCandidate {
@@ -220,6 +236,20 @@ export async function listMaterializedResearchScriptSkillCandidates(
   );
 
   return candidates.sort((left, right) => left.skillName.localeCompare(right.skillName));
+}
+
+export async function listMaterializedResearchScriptSkillCandidatesWithInstallState(
+  options: ListMaterializedResearchScriptSkillCandidatesOptions,
+): Promise<ResearchScriptSkillCandidateWithInstallState[]> {
+  const rootDir = path.resolve(options.rootDir);
+  const candidates = await listMaterializedResearchScriptSkillCandidates(options);
+  const hub = new SkillsHub({
+    cacheDir: path.join(rootDir, '.codebuddy', 'skills-cache'),
+    lockfilePath: path.join(rootDir, '.codebuddy', 'skills-lock.json'),
+    skillsDir: path.join(rootDir, '.codebuddy', 'skills'),
+  });
+
+  return candidates.map((candidate) => summarizeCandidateInstallState(candidate, hub));
 }
 
 export async function installResearchScriptSkillCandidate(
@@ -375,6 +405,93 @@ function renderApprovedSkillMarkdown(
 
 function buildReviewManifestPath(skillPath: string): string {
   return `${skillPath.replace(/\\/g, '/').replace(/\/?SKILL\.md$/i, '')}/candidate-review.json`;
+}
+
+function summarizeCandidateInstallState(
+  candidate: ResearchScriptSkillCandidate,
+  hub: SkillsHub,
+): ResearchScriptSkillCandidateWithInstallState {
+  const candidateChecksum = computeChecksum(candidate.markdown);
+  const installedDetail = hub.info(candidate.skillName);
+  if (!installedDetail) {
+    return {
+      ...candidate,
+      candidateChecksum,
+      installState: 'not-installed',
+      reviewCommands: buildCandidateReviewCommands(candidate, 'not-installed'),
+    };
+  }
+
+  const { content, installed, integrityOk } = installedDetail;
+  if (typeof content !== 'string') {
+    return {
+      ...candidate,
+      candidateChecksum,
+      installState: 'installed-missing',
+      installedIntegrityOk: false,
+      installedPath: installed.path,
+      installedVersion: installed.version,
+      reviewCommands: buildCandidateReviewCommands(candidate, 'installed-missing'),
+    };
+  }
+
+  const installedChecksum = computeChecksum(content);
+  const installState = isInstalledFromCandidate(content, candidate.markdown)
+    ? 'installed-current'
+    : 'installed-different';
+
+  return {
+    ...candidate,
+    candidateChecksum,
+    installState,
+    installedChecksum,
+    installedIntegrityOk: integrityOk,
+    installedPath: installed.path,
+    installedVersion: installed.version,
+    reviewCommands: buildCandidateReviewCommands(candidate, installState),
+  };
+}
+
+function isInstalledFromCandidate(installedContent: string, candidateMarkdown: string): boolean {
+  const candidateBody = candidateMarkdown.trimEnd();
+  const installedBody = installedContent.trimEnd();
+  return installedBody === candidateBody || installedBody.startsWith(`${candidateBody}\n\n## Human Approval`);
+}
+
+function buildCandidateReviewCommands(
+  candidate: ResearchScriptSkillCandidate,
+  installState: SkillCandidateInstallState,
+): string[] {
+  const commands = [
+    `skill_manage action=candidate_view candidate_path=${candidate.skillPath}`,
+  ];
+  if (!candidate.eligible) {
+    return commands;
+  }
+  if (installState === 'not-installed') {
+    return [
+      ...commands,
+      `skill_manage action=candidate_install candidate_path=${candidate.skillPath} approved_by=<reviewer>`,
+    ];
+  }
+  if (installState === 'installed-different') {
+    return [
+      ...commands,
+      `skill_manage action=candidate_install candidate_path=${candidate.skillPath} approved_by=<reviewer> overwrite=true`,
+      `skill_manage action=history name=${candidate.skillName}`,
+    ];
+  }
+  if (installState === 'installed-missing') {
+    return [
+      ...commands,
+      `skill_manage action=history name=${candidate.skillName}`,
+      `skill_manage action=rollback name=${candidate.skillName} approved_by=<reviewer>`,
+    ];
+  }
+  return [
+    ...commands,
+    `skill_manage action=view name=${candidate.skillName}`,
+  ];
 }
 
 function parseReviewManifest(raw: string): ResearchScriptSkillCandidateReviewManifest {

@@ -54,8 +54,14 @@ describe('SkillCandidateReviewQueueStrip', () => {
           candidates: [
             {
               eligible: true,
+              installState: 'installed-different',
+              installedIntegrityOk: true,
+              installedVersion: '0.1.0',
               kind: 'learning',
               reason: '2 successful runs met the promotion threshold.',
+              reviewCommands: [
+                'skill_manage action=candidate_view candidate_path=.codebuddy/skill-candidates/learning/learned-search-view-file-bash/SKILL.md',
+              ],
               skillName: 'learned-search-view-file-bash',
               skillPath: '.codebuddy/skill-candidates/learning/learned-search-view-file-bash/SKILL.md',
               sourceJobId: '',
@@ -79,8 +85,11 @@ describe('SkillCandidateReviewQueueStrip', () => {
     expect(strip?.textContent).toContain('candidate manifest is unreadable');
     expect(strip?.textContent).toContain('learned-search-view-file-bash');
     expect(strip?.textContent).toContain('Learning Agent');
+    expect(strip?.textContent).toContain('installed differs');
+    expect(strip?.textContent).toContain('Installed: v0.1.0');
     expect(strip?.textContent).toContain('run-learning-architect');
     expect(strip?.textContent).toContain('Tools: search -> view_file -> bash');
+    expect(strip?.textContent).toContain('skill_manage action=candidate_view');
     expect(strip?.textContent).toContain('buddy tools skill-candidate list --eligible-only --json');
     expect(strip?.textContent).toContain('buddy tools skill-candidate inspect <candidate-dir>');
 
@@ -119,6 +128,7 @@ describe('SkillCandidateReviewQueueStrip', () => {
     const list = vi.fn().mockResolvedValue([
       {
         eligible: true,
+        installState: 'not-installed',
         kind: 'research-script',
         reason: '2 successful runs met the promotion threshold.',
         skillName: 'research-loaded-candidate',

@@ -3,9 +3,16 @@ import { useTranslation } from 'react-i18next';
 import { ListChecks, PackageCheck, Route, ShieldCheck, Terminal } from 'lucide-react';
 
 export interface SkillCandidateReviewQueueItem {
+  candidateChecksum?: string;
   eligible: boolean;
+  installState?: 'not-installed' | 'installed-current' | 'installed-different' | 'installed-missing';
+  installedChecksum?: string;
+  installedIntegrityOk?: boolean;
+  installedPath?: string;
+  installedVersion?: string;
   kind?: string;
   reason: string;
+  reviewCommands?: string[];
   skillName: string;
   skillPath: string;
   sourceJobId: string;
@@ -157,14 +164,31 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                   <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
                     {candidate.successfulRunCount} runs
                   </span>
+                  {candidate.installState ? (
+                    <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                      {formatInstallState(candidate.installState)}
+                    </span>
+                  ) : null}
                 </div>
               </div>
               <div className="mt-0.5 truncate text-[9px] text-text-muted">
                 {(candidate.sourceRunId || candidate.sourceJobId) || 'unknown source'} · {candidate.reason}
               </div>
+              {candidate.installedVersion ? (
+                <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                  {t('fleet.skillCandidate.installedVersion', 'Installed')}: v{candidate.installedVersion}
+                  {candidate.installedIntegrityOk === false ? ' · integrity warning' : ''}
+                </div>
+              ) : null}
               {candidate.toolSequence?.length ? (
                 <div className="mt-0.5 truncate text-[9px] text-text-muted">
                   {t('fleet.skillCandidate.toolSequence', 'Tools')}: {candidate.toolSequence.join(' -> ')}
+                </div>
+              ) : null}
+              {candidate.reviewCommands?.[0] ? (
+                <div className="mt-0.5 flex min-w-0 items-center gap-1 text-[9px] text-text-muted">
+                  <Terminal size={9} className="shrink-0 text-text-muted" />
+                  <code className="truncate">{candidate.reviewCommands[0]}</code>
                 </div>
               ) : null}
             </li>
@@ -217,4 +241,19 @@ function getSkillCandidateReviewApi(): SkillCandidateReviewApi | undefined {
       };
     }
   ).electronAPI?.tools?.skillCandidate;
+}
+
+function formatInstallState(
+  state: NonNullable<SkillCandidateReviewQueueItem['installState']>,
+): string {
+  switch (state) {
+    case 'installed-current':
+      return 'installed current';
+    case 'installed-different':
+      return 'installed differs';
+    case 'installed-missing':
+      return 'installed missing';
+    case 'not-installed':
+      return 'not installed';
+  }
 }

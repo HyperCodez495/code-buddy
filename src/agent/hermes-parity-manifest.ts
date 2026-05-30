@@ -163,6 +163,7 @@ const FEATURES: HermesParityFeature[] = [
       'src/skills/',
       'src/agent/research-script-skill-candidate.ts',
       'src/agent/hermes-skill-package-summary.ts',
+      'cowork/src/renderer/components/skill-candidate-review-queue-strip.tsx',
       'cowork/src/renderer/components/skill-package-manager-strip.tsx',
       'docs/hermes-agent-status.md',
     ],
@@ -170,10 +171,11 @@ const FEATURES: HermesParityFeature[] = [
     verificationCommands: [
       'npx tsx src/index.ts skills list --json',
       'npx tsx src/index.ts skills doctor --json',
+      'npm test -- tests/agent/research-script-skill-candidate.test.ts --run',
       'npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run',
     ],
-    notes: 'Native skill coverage is good and Cowork now surfaces installed package state plus current SKILL.md previews from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
-    nextWork: 'Add Cowork SKILL.md preview/diff plus reviewer-gated lifecycle controls.',
+    notes: 'Native skill coverage is good and Cowork now surfaces installed package state, current SKILL.md previews, and candidate install-state comparisons from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
+    nextWork: 'Add Cowork side-by-side SKILL.md diff plus reviewer-gated lifecycle controls.',
   },
   {
     id: 'closed-learning-loop',
