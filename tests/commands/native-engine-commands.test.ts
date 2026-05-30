@@ -29,6 +29,7 @@ const mockEngine = {
   start: jest.fn(),
   stop: jest.fn(),
   getStatus: jest.fn(),
+  getConfig: jest.fn(),
   tick: jest.fn(),
 };
 
@@ -324,6 +325,62 @@ describe('Native Engine CLI Commands', () => {
         // The code does status.lastResult.slice(0, 200)
         expect(output).toContain('Last result: ' + 'A'.repeat(200));
         expect(output).not.toContain('A'.repeat(201));
+      });
+
+      it('should emit machine-readable JSON status', async () => {
+        const lastRun = new Date('2025-01-15T10:00:00Z');
+        const nextRun = new Date('2025-01-15T10:30:00Z');
+        mockEngine.getStatus.mockReturnValue({
+          running: true,
+          enabled: true,
+          totalTicks: 42,
+          totalSuppressions: 3,
+          consecutiveSuppressions: 4,
+          lastRunTime: lastRun,
+          nextRunTime: nextRun,
+          lastResult: 'A'.repeat(250),
+        });
+        mockEngine.getConfig.mockReturnValue({
+          intervalMs: 1800000,
+          activeHoursStart: 8,
+          activeHoursEnd: 22,
+          timezone: 'Europe/Paris',
+          heartbeatFilePath: '.codebuddy/HEARTBEAT.md',
+          suppressionKeyword: 'HEARTBEAT_OK',
+          maxConsecutiveSuppressions: 5,
+          enabled: true,
+        });
+
+        await program.parseAsync(['node', 'test', 'heartbeat', 'status', '--json']);
+
+        const output = JSON.parse(getLogOutput()) as {
+          kind: string;
+          schemaVersion: number;
+          status: {
+            running: boolean;
+            lastRunTime: string;
+            nextRunTime: string;
+            lastResultPreview: string;
+            lastResultBytes: number;
+          };
+          config: {
+            intervalMs: number;
+            timezone: string;
+            heartbeatFilePath: string;
+          };
+          recommendations: string[];
+        };
+        expect(output.kind).toBe('codebuddy_heartbeat_status');
+        expect(output.schemaVersion).toBe(1);
+        expect(output.status.running).toBe(true);
+        expect(output.status.lastRunTime).toBe('2025-01-15T10:00:00.000Z');
+        expect(output.status.nextRunTime).toBe('2025-01-15T10:30:00.000Z');
+        expect(output.status.lastResultPreview).toHaveLength(200);
+        expect(output.status.lastResultBytes).toBe(250);
+        expect(output.config.intervalMs).toBe(1800000);
+        expect(output.config.timezone).toBe('Europe/Paris');
+        expect(output.config.heartbeatFilePath).toBe('.codebuddy/HEARTBEAT.md');
+        expect(output.recommendations).toContain('Consecutive suppressions are near the configured limit.');
       });
     });
 

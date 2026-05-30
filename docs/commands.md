@@ -113,7 +113,7 @@ buddy dev explain                  # Summarize repo conventions
 ```bash
 buddy daemon start [--detach] [--install-daemon] [--foreground]
 buddy daemon stop | restart | status | logs [--lines N]
-buddy heartbeat start | stop | status | tick
+buddy heartbeat start | stop | status [--json] | tick
 buddy trigger list | add | remove
 buddy channels status [--json] [--config <path>]
 buddy cron list [--json] | show <id> | pause <id> | resume <id> | run <id> [--json] | remove <id>
@@ -136,6 +136,9 @@ at an isolated cron store.
 `buddy channels status --json` reports configured and registered messaging
 channels without printing secrets, so Cowork and parity checks can render
 gateway readiness directly.
+
+`buddy heartbeat status --json` reports the autonomous heartbeat engine state,
+schedule config, counters, and recommendations in a Cowork-friendly shape.
 
 ### Research and Orchestration
 
