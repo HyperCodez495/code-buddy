@@ -43,6 +43,20 @@ export {
   TODO_TOOLS,
 } from './todo-tools.js';
 
+// Hermes Kanban tools
+export {
+  KANBAN_SHOW_TOOL,
+  KANBAN_LIST_TOOL,
+  KANBAN_COMPLETE_TOOL,
+  KANBAN_BLOCK_TOOL,
+  KANBAN_HEARTBEAT_TOOL,
+  KANBAN_COMMENT_TOOL,
+  KANBAN_CREATE_TOOL,
+  KANBAN_LINK_TOOL,
+  KANBAN_UNBLOCK_TOOL,
+  KANBAN_TOOLS,
+} from './kanban-tools.js';
+
 // Cron/scheduler tools
 export {
   CRONJOB_TOOL,

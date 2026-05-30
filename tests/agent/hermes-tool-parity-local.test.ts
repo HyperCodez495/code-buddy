@@ -26,7 +26,13 @@ describe('local Hermes tool parity manifest', () => {
       }),
       expect.objectContaining({
         name: 'kanban_show',
-        status: 'gap',
+        status: 'exact',
+        detectedCodeBuddyTools: ['kanban_show'],
+      }),
+      expect.objectContaining({
+        name: 'kanban_create',
+        status: 'exact',
+        detectedCodeBuddyTools: ['kanban_create'],
       }),
     ]));
   });

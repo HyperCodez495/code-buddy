@@ -222,6 +222,14 @@ describe('Hermes CLI commands', () => {
             'npx tsx src/index.ts hermes prompt-size safe --json',
           ]),
         }),
+        expect.objectContaining({
+          id: 'kanban',
+          status: 'covered-partial',
+          codeBuddyEvidence: expect.arrayContaining(['src/kanban/kanban-store.ts']),
+          verificationCommands: expect.arrayContaining([
+            'npm test -- tests/tools/kanban-real.test.ts --run',
+          ]),
+        }),
       ]),
     );
   });
@@ -401,8 +409,107 @@ describe('Hermes CLI commands', () => {
           status: 'partial',
           detectedCodeBuddyTools: expect.arrayContaining(['run_script', 'js_repl']),
         }),
+        expect.objectContaining({
+          name: 'kanban_create',
+          status: 'exact',
+          detectedCodeBuddyTools: ['kanban_create'],
+        }),
+        expect.objectContaining({
+          name: 'kanban_complete',
+          status: 'exact',
+          detectedCodeBuddyTools: ['kanban_complete'],
+        }),
       ]),
     );
+  });
+
+  it('manages a real Hermes Kanban board through the CLI surface', async () => {
+    const originalCwd = process.cwd();
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hermes-kanban-cli-'));
+    try {
+      process.chdir(tmpDir);
+
+      let program = createProgram();
+      registerHermesCommands(program);
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'kanban',
+        'create',
+        'Close Hermes Kanban parity',
+        '--id',
+        'kb-cli',
+        '--priority',
+        'high',
+        '--tag',
+        'hermes,parity',
+        '--json',
+      ]);
+      let output = JSON.parse(getLogOutput()) as {
+        kind: string;
+        boardPath: string;
+        card: { id: string; priority: string; tags: string[] };
+      };
+      expect(output.kind).toBe('hermes_kanban_create');
+      expect(output.card).toMatchObject({
+        id: 'kb-cli',
+        priority: 'high',
+        tags: ['hermes', 'parity'],
+      });
+      expect(output.boardPath).toBe(path.join(tmpDir, '.codebuddy', 'kanban-board.json'));
+
+      consoleLogSpy.mockClear();
+      program = createProgram();
+      registerHermesCommands(program);
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'kanban',
+        'complete',
+        'kb-cli',
+        '--comment',
+        'CLI path verified',
+        '--json',
+      ]);
+      const completedOutput = JSON.parse(getLogOutput()) as {
+        kind: string;
+        card: { status: string; comments: Array<{ text: string }> };
+      };
+      expect(completedOutput.kind).toBe('hermes_kanban_complete');
+      expect(completedOutput.card.status).toBe('done');
+      expect(completedOutput.card.comments).toEqual([
+        expect.objectContaining({ text: 'CLI path verified' }),
+      ]);
+
+      consoleLogSpy.mockClear();
+      program = createProgram();
+      registerHermesCommands(program);
+      await program.parseAsync(['node', 'test', 'hermes', 'kanban', 'list', '--json']);
+      const listed = JSON.parse(getLogOutput()) as {
+        kind: string;
+        count: number;
+        cards: Array<{ id: string; status: string }>;
+      };
+      expect(listed.kind).toBe('hermes_kanban_list');
+      expect(listed.count).toBe(1);
+      expect(listed.cards).toEqual([
+        expect.objectContaining({ id: 'kb-cli', status: 'done' }),
+      ]);
+
+      await expect(fs.readJson(path.join(tmpDir, '.codebuddy', 'kanban-board.json'))).resolves.toEqual(
+        expect.objectContaining({
+          schemaVersion: 1,
+          cards: expect.arrayContaining([
+            expect.objectContaining({ id: 'kb-cli', status: 'done' }),
+          ]),
+        }),
+      );
+    } finally {
+      process.chdir(originalCwd);
+      await fs.remove(tmpDir);
+    }
   });
 
   it('accepts hermes tools as a discoverable alias for tool parity', async () => {

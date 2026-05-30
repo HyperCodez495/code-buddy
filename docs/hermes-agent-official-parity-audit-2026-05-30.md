@@ -43,7 +43,7 @@ is explicitly a native TypeScript/Fleet mapping, not a vendored Hermes runtime
 
 The missing pieces are mostly **exact upstream product surfaces**: full
 official gateway/toolset matrix, complete browser backend matrix, Nous Portal
-Tool Gateway, all memory providers, Kanban tools, OpenClaw migration, and
+Tool Gateway, all memory providers, OpenClaw migration, and
 several research/runtime backends. The first concrete gap from this audit,
 `hermes prompt-size`, now has a native Code Buddy equivalent:
 `buddy hermes prompt-size`.
@@ -57,7 +57,7 @@ several research/runtime backends. The first concrete gap from this audit,
 | Prompt-size diagnostic | `hermes prompt-size` offline byte breakdown for system prompt and tool schemas | `buddy hermes prompt-size [profile] [--json]`; `tests/commands/hermes-commands.test.ts` | Covered/partial | Runs offline and reports Hermes prompt, profile/toolset/plan JSON, local skills/memory footprint metadata, active tool schemas, and profile-filtered tools. It is native Code Buddy output, not byte-for-byte upstream Hermes output. |
 | Providers/models | Nous Portal, OpenRouter, OpenAI/Codex, Copilot, Anthropic, Gemini, Hugging Face, Novita, z.ai, Kimi, MiniMax, Bedrock, Azure, local/custom, etc. | Code Buddy provider routing, OpenAI-compatible client, Gemini native path, model tools config | Covered/partial | Strong coverage, but exact provider list and setup flows differ. |
 | Toolsets | Core/composite/platform/dynamic toolsets; per-platform `hermes-cli`, `hermes-discord`, `hermes-feishu`, etc. | Fleet dispatch profiles and `fleet.hermes.<profile>` descriptors; active tool filter enforcement | Partial | Code Buddy has useful Hermes-style filters, not the full official per-platform toolset catalog. |
-| Built-in tools | Browser, file, terminal/process, web, Home Assistant, Spotify, Kanban, `execute_code`, `cronjob`, `session_search`, skills, TTS, image/video, vision, messaging, MOA, X search, Yuanbao, MCP | Code Buddy has many native tools plus Firecrawl, browser/CDP, sessions, skills, Fleet, image/vision/voice pieces | Partial | Not a one-to-one tool-name or capability set; no proof for Home Assistant, Spotify, Yuanbao, `execute_code` RPC, or Kanban tools. |
+| Built-in tools | Browser, file, terminal/process, web, Home Assistant, Spotify, Kanban, `execute_code`, `cronjob`, `session_search`, skills, TTS, image/video, vision, messaging, MOA, X search, Yuanbao, MCP | Code Buddy has many native tools plus Firecrawl, browser/CDP, sessions, skills, Fleet, image/vision/voice pieces, and exact `kanban_*` tool names | Partial | Not a one-to-one tool-name or capability set; no proof for Home Assistant, Spotify, Yuanbao, or `execute_code` RPC. Kanban now has exact prompt-tool names and a persistent native board, but upstream UI/lifecycle parity may still differ. |
 | Messaging gateway | Single gateway process across Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Mattermost, Matrix, DingTalk, Feishu, WeCom, Weixin, BlueBubbles, QQ, Yuanbao, Teams, LINE, ntfy, Open WebUI, etc. | `src/channels/*`, `docs/channels.md`, `src/server/channel-a2a-bridge.ts`, `buddy channels status --json`; many channels including Telegram/Discord/Slack/WhatsApp/Signal/Matrix/Teams/LINE/Feishu/iMessage/etc. | Partial | Code Buddy is broad, and gateway readiness is now machine-readable without secret leakage. The official Hermes platform list, per-platform toolsets, gateway lifecycle, and slash parity are still not identical. |
 | Browser automation | Browserbase, Browser Use, Firecrawl, Camofox/Camoufox, local CDP, agent-browser, hybrid public/private routing, dialog handling, session recording | Stagehand/CDP/browser automation, Firecrawl tools, browser watchdogs, security audit around CDP | Partial | Strong local browser work, but no complete proof of Hermes backend parity, especially Camofox, Browser Use gateway mode, hybrid private routing, and `browser_dialog`. |
 | Nous Portal Tool Gateway | OAuth setup, `hermes portal status`, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use | Separate provider/tool integrations; no Nous Portal command surface found | Gap | This is an upstream subscription-specific integration, not currently a Code Buddy equivalent. |
@@ -68,7 +68,7 @@ several research/runtime backends. The first concrete gap from this audit,
 | Delegation/parallelism | `delegate_task`, isolated subagents, `execute_code` scripts calling tools by RPC | Fleet peer chat/session/tool invoke, route_peer, subagents, agentic coding runner | Partial | Delegation is strong; `execute_code` RPC collapse was not found. |
 | Runs anywhere | Local, Docker, SSH, Singularity, Modal, Daytona terminal backends with hibernate/wake semantics | Local/desktop/server/fleet/sandbox/device work exists | Gap/partial | No full official backend matrix found. |
 | Research trajectories | Batch trajectory generation and trajectory compression for training/research | `buddy run trajectory-export`, golden/policy evals, run recall packs | Partial | Trajectory export/evals are real; official batch runner/compression parity not found. |
-| Kanban | `hermes kanban` and `kanban_*` coordination tools | Fleet saga/spec/agentic harness surfaces | Gap/partial | Similar coordination concepts, not the official Kanban board/toolset. |
+| Kanban | `hermes kanban` and `kanban_*` coordination tools | `src/kanban/kanban-store.ts`, `src/tools/registry/kanban-tools.ts`, `buddy hermes kanban *`, `tests/tools/kanban-real.test.ts` | Covered/partial | Exact `kanban_show/list/create/complete/block/comment/link/unblock/heartbeat` tool names exist with a persistent workspace board. Upstream UI/lifecycle semantics may still differ. |
 | MCP/ACP | MCP config/catalog/server mode; ACP server/editor integration | MCP infrastructure and A2A/Fleet surfaces; ACP-related channel tests/docs | Partial | MCP is present; exact `hermes-acp` parity is not established. |
 | OpenClaw migration | `hermes claw migrate` with 30+ categories | OpenClaw audit/imported patterns and identity files | Gap | No equivalent migration command found. |
 
@@ -80,7 +80,7 @@ several research/runtime backends. The first concrete gap from this audit,
 2. Close the user-facing gaps first: provider/model setup clarity and Cowork screens for the active
    Hermes/Fleet toolset.
 3. Treat deep parity items as optional product decisions: Nous Portal, Camofox,
-   full OpenClaw migration, official Kanban, all memory providers, Modal/Daytona.
+   full OpenClaw migration, all memory providers, Modal/Daytona.
 
 ## Commands used locally
 
@@ -94,6 +94,8 @@ several research/runtime backends. The first concrete gap from this audit,
 - `rg -n "execute_code|delegate_task|mixture_of_agents|session_search|skill_manage|skills_list|skill_view|send_message|text_to_speech|image_generate|video_generate|vision_analyze|video_analyze|computer_use|homeassistant|spotify|x_search|kanban_" src/codebuddy src/tools src/commands tests docs`
 - `npm test -- tests/commands/hermes-commands.test.ts --run`
 - `npx tsx src/index.ts hermes prompt-size safe --json`
+- `npm test -- tests/tools/kanban-real.test.ts --run`
+- `npx tsx src/index.ts hermes kanban list --json`
 - `npx tsx src/index.ts hermes parity --json`
 
 ## Caveats

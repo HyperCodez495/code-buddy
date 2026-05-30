@@ -63,6 +63,11 @@ export {
   resetTodoInstance,
 } from './todo-tools.js';
 
+// Tool Adapters - Hermes Kanban
+export {
+  createKanbanTools,
+} from './kanban-tools.js';
+
 // Tool Adapters - Cron jobs
 export {
   CronjobExecuteTool,
@@ -405,6 +410,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createSearchTools } = await import('./search-tools.js');
   const { createWebTools } = await import('./web-tools.js');
   const { createTodoTools } = await import('./todo-tools.js');
+  const { createKanbanTools } = await import('./kanban-tools.js');
   const { createCronjobTools } = await import('./cronjob-tools.js');
   const { createDockerTools } = await import('./docker-tools.js');
   const { createKubernetesTools } = await import('./kubernetes-tools.js');
@@ -453,6 +459,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
+    ...createKanbanTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -523,6 +530,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
+    ...createKanbanTools(),
     ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
@@ -583,6 +591,7 @@ import { createLsTools } from './ls-tools.js';
 import { createSearchTools } from './search-tools.js';
 import { createWebTools } from './web-tools.js';
 import { createTodoTools } from './todo-tools.js';
+import { createKanbanTools } from './kanban-tools.js';
 import { createCronjobTools } from './cronjob-tools.js';
 import { createDockerTools } from './docker-tools.js';
 import { createKubernetesTools } from './kubernetes-tools.js';

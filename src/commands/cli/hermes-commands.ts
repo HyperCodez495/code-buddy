@@ -40,6 +40,13 @@ import {
   buildHermesHookLifecycleManifest,
   renderHermesHookLifecycleManifest,
 } from '../../hooks/hermes-lifecycle-hooks.js';
+import {
+  KanbanStore,
+  type CreateKanbanCardInput,
+  type KanbanPriority,
+  type KanbanStatus,
+  type ListKanbanCardsFilter,
+} from '../../kanban/kanban-store.js';
 import { isFeatureEnabled } from '../../config/feature-flags.js';
 import { getUserModel } from '../../memory/user-model.js';
 import { filterTools } from '../../utils/tool-filter.js';
@@ -48,6 +55,21 @@ interface HermesCommandOptions {
   json?: boolean;
   markdown?: boolean;
   planOutput?: string;
+}
+
+interface HermesKanbanOptions extends HermesCommandOptions {
+  id?: string;
+  description?: string;
+  status?: string;
+  priority?: string;
+  assignee?: string;
+  tag?: string | string[];
+  active?: boolean;
+  comment?: string;
+  author?: string;
+  reason?: string;
+  target?: string;
+  label?: string;
 }
 
 interface HermesPromptSizeSection {
@@ -398,10 +420,257 @@ function renderHermesToolParityManifest(manifest: HermesToolParityManifest): str
   return lines.join('\n');
 }
 
+function buildKanbanStore(): KanbanStore {
+  return new KanbanStore({ rootDir: process.cwd() });
+}
+
+function parseKanbanStatus(value: string | undefined): KanbanStatus | undefined {
+  if (!value) return undefined;
+  if (value === 'todo' || value === 'in_progress' || value === 'blocked' || value === 'done') {
+    return value;
+  }
+  throw new Error('status must be one of: todo, in_progress, blocked, done');
+}
+
+function parseKanbanPriority(value: string | undefined): KanbanPriority | undefined {
+  if (!value) return undefined;
+  if (value === 'low' || value === 'medium' || value === 'high' || value === 'urgent') {
+    return value;
+  }
+  throw new Error('priority must be one of: low, medium, high, urgent');
+}
+
+function coerceKanbanTagValues(values: string | string[] | undefined): string[] {
+  if (!values) return [];
+  return Array.isArray(values) ? values : [values];
+}
+
+function parseKanbanTags(values: string | string[] | undefined): string[] {
+  return coerceKanbanTagValues(values)
+    .flatMap((value) => value.split(','))
+    .map((tag) => tag.trim())
+    .filter(Boolean);
+}
+
+function parseKanbanCreateInput(title: string, options: HermesKanbanOptions): CreateKanbanCardInput {
+  const status = parseKanbanStatus(options.status);
+  const priority = parseKanbanPriority(options.priority);
+  return {
+    title,
+    ...(options.id ? { id: options.id } : {}),
+    ...(options.description ? { description: options.description } : {}),
+    ...(status ? { status } : {}),
+    ...(priority ? { priority } : {}),
+    ...(options.assignee ? { assignee: options.assignee } : {}),
+    tags: parseKanbanTags(options.tag),
+  };
+}
+
+function parseKanbanListFilter(options: HermesKanbanOptions): ListKanbanCardsFilter {
+  const status = parseKanbanStatus(options.status);
+  const priority = parseKanbanPriority(options.priority);
+  const [tag] = parseKanbanTags(options.tag);
+  return {
+    ...(status ? { status } : {}),
+    ...(priority ? { priority } : {}),
+    ...(options.assignee ? { assignee: options.assignee } : {}),
+    ...(tag ? { tag } : {}),
+    ...(options.active ? { includeDone: false } : {}),
+  };
+}
+
+function renderKanbanCardSummary(card: { id: string; title: string; status: string; priority: string }): string {
+  return `${card.status.padEnd(11)} ${card.priority.padEnd(6)} ${card.id} - ${card.title}`;
+}
+
+function printKanbanResult(payload: unknown, options: HermesKanbanOptions, text: string): void {
+  if (options.json) {
+    console.log(stableJson(payload));
+    return;
+  }
+  console.log(text);
+}
+
+function registerHermesKanbanCommands(hermes: Command): void {
+  const kanban = hermes
+    .command('kanban')
+    .description('Manage the persistent Hermes-compatible Kanban board for this workspace');
+
+  kanban
+    .command('list')
+    .description('List Kanban cards')
+    .option('--json', 'output JSON')
+    .option('--status <status>', 'filter by todo, in_progress, blocked, or done')
+    .option('--priority <priority>', 'filter by low, medium, high, or urgent')
+    .option('--assignee <assignee>', 'filter by assignee')
+    .option('--tag <tag>', 'filter by tag')
+    .option('--active', 'hide done cards')
+    .action(async (options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const cards = await store.listCards(parseKanbanListFilter(options));
+      printKanbanResult(
+        { kind: 'hermes_kanban_list', boardPath: store.path, count: cards.length, cards },
+        options,
+        cards.length > 0
+          ? cards.map(renderKanbanCardSummary).join('\n')
+          : `No Kanban cards in ${store.path}`,
+      );
+    });
+
+  kanban
+    .command('show')
+    .description('Show one Kanban card')
+    .argument('<id>', 'card id')
+    .option('--json', 'output JSON')
+    .action(async (id: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.showCard(id);
+      printKanbanResult(
+        { kind: 'hermes_kanban_show', boardPath: store.path, card },
+        options,
+        [
+          renderKanbanCardSummary(card),
+          card.description ? `Description: ${card.description}` : '',
+          card.assignee ? `Assignee: ${card.assignee}` : '',
+          card.blockedReason ? `Blocked: ${card.blockedReason}` : '',
+          card.tags.length > 0 ? `Tags: ${card.tags.join(', ')}` : '',
+          card.comments.length > 0 ? `Comments: ${card.comments.length}` : '',
+          card.heartbeats.length > 0 ? `Heartbeats: ${card.heartbeats.length}` : '',
+          card.links.length > 0 ? `Links: ${card.links.length}` : '',
+        ].filter(Boolean).join('\n'),
+      );
+    });
+
+  kanban
+    .command('create')
+    .description('Create a Kanban card')
+    .argument('<title>', 'card title')
+    .option('--json', 'output JSON')
+    .option('--id <id>', 'stable card id')
+    .option('--description <description>', 'detailed description')
+    .option('--status <status>', 'initial status')
+    .option('--priority <priority>', 'initial priority')
+    .option('--assignee <assignee>', 'assignee')
+    .option('--tag <tag...>', 'tag list, repeated or comma-separated')
+    .action(async (title: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.createCard(parseKanbanCreateInput(title, options));
+      printKanbanResult(
+        { kind: 'hermes_kanban_create', boardPath: store.path, card },
+        options,
+        `Created ${renderKanbanCardSummary(card)}`,
+      );
+    });
+
+  kanban
+    .command('complete')
+    .description('Mark a Kanban card as done')
+    .argument('<id>', 'card id')
+    .option('--json', 'output JSON')
+    .option('--comment <comment>', 'completion note')
+    .option('--author <author>', 'note author')
+    .action(async (id: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.completeCard(id, options.comment, options.author);
+      printKanbanResult(
+        { kind: 'hermes_kanban_complete', boardPath: store.path, card },
+        options,
+        `Completed ${renderKanbanCardSummary(card)}`,
+      );
+    });
+
+  kanban
+    .command('block')
+    .description('Mark a Kanban card as blocked')
+    .argument('<id>', 'card id')
+    .requiredOption('--reason <reason>', 'blocking reason')
+    .option('--json', 'output JSON')
+    .option('--author <author>', 'note author')
+    .action(async (id: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.blockCard(id, options.reason ?? '', options.author);
+      printKanbanResult(
+        { kind: 'hermes_kanban_block', boardPath: store.path, card },
+        options,
+        `Blocked ${renderKanbanCardSummary(card)}\nReason: ${card.blockedReason ?? ''}`,
+      );
+    });
+
+  kanban
+    .command('unblock')
+    .description('Clear a Kanban card block')
+    .argument('<id>', 'card id')
+    .option('--json', 'output JSON')
+    .option('--comment <comment>', 'unblock note')
+    .option('--author <author>', 'note author')
+    .action(async (id: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.unblockCard(id, options.comment, options.author);
+      printKanbanResult(
+        { kind: 'hermes_kanban_unblock', boardPath: store.path, card },
+        options,
+        `Unblocked ${renderKanbanCardSummary(card)}`,
+      );
+    });
+
+  kanban
+    .command('comment')
+    .description('Append a comment to a Kanban card')
+    .argument('<id>', 'card id')
+    .argument('<text>', 'comment text')
+    .option('--json', 'output JSON')
+    .option('--author <author>', 'comment author')
+    .action(async (id: string, text: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.commentCard(id, text, options.author);
+      printKanbanResult(
+        { kind: 'hermes_kanban_comment', boardPath: store.path, card },
+        options,
+        `Commented ${renderKanbanCardSummary(card)}`,
+      );
+    });
+
+  kanban
+    .command('heartbeat')
+    .description('Record progress heartbeat on a Kanban card')
+    .argument('<id>', 'card id')
+    .option('--json', 'output JSON')
+    .option('--comment <comment>', 'progress note')
+    .option('--author <author>', 'heartbeat author')
+    .action(async (id: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.heartbeatCard(id, options.comment, options.author);
+      printKanbanResult(
+        { kind: 'hermes_kanban_heartbeat', boardPath: store.path, card },
+        options,
+        `Heartbeat ${renderKanbanCardSummary(card)}`,
+      );
+    });
+
+  kanban
+    .command('link')
+    .description('Attach an artifact, URL, commit, issue, or related reference')
+    .argument('<id>', 'card id')
+    .argument('<target>', 'target reference')
+    .option('--json', 'output JSON')
+    .option('--label <label>', 'link label')
+    .action(async (id: string, target: string, options: HermesKanbanOptions) => {
+      const store = buildKanbanStore();
+      const card = await store.linkCard(id, target, options.label);
+      printKanbanResult(
+        { kind: 'hermes_kanban_link', boardPath: store.path, card },
+        options,
+        `Linked ${renderKanbanCardSummary(card)} -> ${target}`,
+      );
+    });
+}
+
 export function registerHermesCommands(program: Command): void {
   const hermes = program
     .command('hermes')
     .description('Inspect the native Hermes-inspired Code Buddy agent profile');
+
+  registerHermesKanbanCommands(hermes);
 
   hermes
     .command('parity')

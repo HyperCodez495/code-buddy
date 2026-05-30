@@ -68,9 +68,9 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`, and Kanban gaps.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `execute_code`, `vision_analyze`, and `browser_vision`. Kanban exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
-    - Cowork shows summary counts and top core gaps: `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`, `kanban_*`.
+    - Cowork shows summary counts and top core gaps: `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
@@ -122,11 +122,12 @@ Current measured state:
 
 ## P3 — Decide on optional ecosystem parity
 
-- [ ] **Kanban parity decision**
-  - Options:
-    - Implement official `kanban_show/list/create/complete/block/comment/link/unblock/heartbeat` tools.
-    - Or map them explicitly to native Fleet/Spec queues and mark as native-equivalent.
-  - Recommendation: map to native Fleet/Spec first; implement exact names only if a Hermes import/export workflow needs them.
+- [x] **Kanban parity decision**
+  - Done: Implemented exact `kanban_show/list/create/complete/block/comment/link/unblock/heartbeat` prompt tools on top of a persistent `.codebuddy/kanban-board.json` workspace board, plus `buddy hermes kanban *` CLI commands.
+  - Remaining optional UX: add a Cowork board renderer if the Kanban becomes a daily coordination surface.
+  - Verification:
+    - `npm test -- tests/tools/kanban-real.test.ts --run`
+    - `npx tsx src/index.ts hermes kanban list --json`
 
 - [ ] **Runtime backend inventory**
   - Scope: detect/configure local, Docker, SSH, WSL, sandbox, Vercel Sandbox/Modal/Daytona if product-relevant.
@@ -149,6 +150,5 @@ Current measured state:
 2. `execute_code` security/product decision.
 3. Unified `vision_analyze` / `browser_vision`.
 4. `send_message` wrapper over existing channels.
-5. Kanban mapping decision.
-6. Runtime backend inventory.
-7. Optional platform connectors only on demand.
+5. Runtime backend inventory.
+6. Optional platform connectors only on demand.
