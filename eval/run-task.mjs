@@ -77,9 +77,26 @@ function cleanSandbox(runRoot) {
   runCmd('git', ['restore', '--', 'eval/sandbox'], runRoot);
 }
 
-function parseGitStatusPath(line) {
-  const rawPath = line.slice(3).split(' -> ').pop() || line.slice(3);
-  return rawPath.trim().replace(/\\/g, '/').replace(/^"|"$/g, '');
+function normalizeGitStatusPath(filePath) {
+  return filePath.replace(/\\/g, '/').replace(/^"|"$/g, '');
+}
+
+function parseGitStatusPaths(output) {
+  const entries = output.split('\0').filter(entry => entry.length > 0);
+  const paths = [];
+
+  for (let index = 0; index < entries.length; index += 1) {
+    const entry = entries[index];
+    const status = entry.slice(0, 2);
+    const rawPath = entry.slice(3);
+    paths.push(normalizeGitStatusPath(rawPath));
+
+    if ((status[0] === 'R' || status[0] === 'C') && index + 1 < entries.length) {
+      index += 1;
+    }
+  }
+
+  return paths;
 }
 
 // Run a single task
@@ -147,11 +164,8 @@ function runTask(taskSlug) {
     }
 
     // Get git status to check modified files
-    const gitStatusOutput = runCmd('git', ['status', '--porcelain', '--untracked-files=all'], runRoot);
-    const modifiedFiles = gitStatusOutput
-      .split('\n')
-      .filter(line => line.trim().length > 0)
-      .map(parseGitStatusPath)
+    const gitStatusOutput = runCmd('git', ['status', '--porcelain=v1', '-z', '--untracked-files=all'], runRoot);
+    const modifiedFiles = parseGitStatusPaths(gitStatusOutput)
       .filter(file => {
         // Exclude transient .codebuddy paths from validation checks
         return !isTransientCodeBuddyPath(file);

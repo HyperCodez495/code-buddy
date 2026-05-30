@@ -159,6 +159,22 @@ Real validation:
 - `node eval/run-task.mjs not-a-task` -> exit 1 with `Unknown task(s): not-a-task` and the available task list.
 - `node eval/run-task.mjs` -> all 6 real tasks passed.
 
+### Step 9 - Continuation: NUL-delimited git status parsing
+
+After adding the file-with-spaces case, the harness still used line-oriented `git status --porcelain` output. Spaces were covered, but Git's robust machine-readable form is the NUL-delimited status output.
+
+Fix landed:
+
+- `eval/run-task.mjs` now reads `git status --porcelain=v1 -z --untracked-files=all`.
+- Modified-file parsing now consumes NUL-delimited records and handles rename/copy records by ignoring the source-side path for the changed-file count.
+
+Real validation:
+
+- `node --check eval/run-task.mjs` -> exit 0.
+- `node eval/run-task.mjs simple-edit` -> passed.
+- `node eval/run-task.mjs space-path-edit` -> passed.
+- `node eval/run-task.mjs` -> all 6 real tasks passed.
+
 ## Verdict
 
-The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, the Cowork ChatGPT path passed against the real backend, strict preflight now tolerates Code Buddy's own runtime artifacts without hiding project configuration edits, and the eval harness no longer hides failed setup commands, depends on shell quoting, loses filenames containing spaces, or produces unstable task ordering.
+The branch is healthier than at the start of the pass: build/typecheck are green, the CLI L2 eval is a real executable signal again, Cowork smoke passes in real Electron, the Cowork ChatGPT path passed against the real backend, strict preflight now tolerates Code Buddy's own runtime artifacts without hiding project configuration edits, and the eval harness no longer hides failed setup commands, depends on shell quoting, loses filenames containing spaces, produces unstable task ordering, or parses Git status through fragile line-oriented text.
