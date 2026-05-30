@@ -37,6 +37,8 @@ import {
   buildHermesHookLifecycleManifest,
   renderHermesHookLifecycleManifest,
 } from '../../hooks/hermes-lifecycle-hooks.js';
+import { isFeatureEnabled } from '../../config/feature-flags.js';
+import { getUserModel } from '../../memory/user-model.js';
 import type { CodeBuddyTool } from '../../codebuddy/client.js';
 import {
   CORE_TOOLS,
@@ -268,6 +270,19 @@ function buildLocalMemoryFootprint(cwd: string): Record<string, number> {
   };
 }
 
+function buildInjectedUserModelContext(cwd: string): string {
+  if (!isFeatureEnabled('USER_MODEL_INJECTION')) {
+    return '';
+  }
+
+  try {
+    const summary = getUserModel(cwd).summarize();
+    return summary ? `<user_model_context>\n${summary}\n</user_model_context>` : '';
+  } catch {
+    return '';
+  }
+}
+
 function buildInstalledSkillsIndexFootprint(): Record<string, unknown> {
   const lockfilePath = path.join(os.homedir(), '.codebuddy', 'hub', 'lock.json');
   try {
@@ -319,6 +334,7 @@ export function buildHermesPromptSizeDiagnostic(
   const toolSchemas = stableJson(activeTools);
   const skillsIndex = stableJson(buildInstalledSkillsIndexFootprint());
   const memoryFootprint = stableJson(buildLocalMemoryFootprint(cwd));
+  const userModelContext = buildInjectedUserModelContext(cwd);
   const profileJson = stableJson(profile);
   const toolsetJson = stableJson(toolset);
   const planJson = stableJson(plan);
@@ -330,6 +346,7 @@ export function buildHermesPromptSizeDiagnostic(
     sectionFromText('integrationPlan', 'Hermes integration plan JSON', planJson),
     sectionFromText('skillsIndex', 'Installed skills index footprint', skillsIndex),
     sectionFromText('memoryFootprint', 'Memory/profile file footprint', memoryFootprint),
+    sectionFromText('userModelContext', 'Injected accepted user-model context size', userModelContext),
     sectionFromText('toolSchemas', 'Active built-in tool schemas JSON', toolSchemas),
   ];
   const totals = sections.reduce(
@@ -371,6 +388,7 @@ export function buildHermesPromptSizeDiagnostic(
       'Runs offline: no LLM call, no MCP startup, no remote provider request.',
       'Tool schemas are built-in Code Buddy definitions after Hermes dispatch-profile filtering.',
       'Skills and memory are reported as local footprint metadata only; their content is not printed.',
+      'Accepted user-model context is counted when USER_MODEL_INJECTION is enabled, but its content is not printed.',
     ],
   };
 }

@@ -27,17 +27,13 @@ Current measured state:
     - `npm test -- tests/agent/research-script-skill-candidate.test.ts tests/commands/tools-commands.test.ts --run`
     - real CLI smoke in a temp repo using `buddy tools skill-candidate ...` plus the new manage command/tool.
 
-- [ ] **Inject accepted user-model summaries automatically per session**
-  - Why: the local user model exists, but Hermes-style "model of who you are" is still on-demand through `user_model_recall`.
-  - Scope: inject accepted, privacy-safe user model summary into the per-turn context budget with a setting to disable it.
+- [x] **Inject accepted user-model summaries automatically per session**
+  - Why: Hermes-style "model of who you are" should influence fresh sessions without manually calling `user_model_recall`.
+  - Done: accepted, privacy-safe user model summaries are injected as `<user_model_context>` through the shared per-turn context pipeline, behind the default-on `USER_MODEL_INJECTION` flag. Pending/rejected observations stay out of prompts, and `buddy hermes prompt-size` now counts the injected section without printing the private content.
   - Guardrail: never inject pending/rejected observations; keep sensitive categories blocked by existing privacy filters.
-  - Acceptance:
-    - Accepted observations influence a fresh session without manually calling `user_model_recall`.
-    - Pending observations stay out of prompts.
-    - Prompt-size diagnostics account for the injected user-model section.
   - Verification:
-    - `npm test -- tests/memory/user-model.test.ts tests/agent/*prompt* --run`
-    - real temp workspace: observe -> accept -> start session/export prompt context.
+    - `npm test -- tests/memory/user-model.test.ts tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run`
+    - real temp workspace: observe -> accept -> run `buddy hermes prompt-size --json` and confirm the user-model section is counted but content is not printed.
 
 - [ ] **Strengthen Learning Agent skill scoring**
   - Why: usage telemetry exists, but reinforcement/deprecation should become a robust promotion signal, not just displayed metadata.

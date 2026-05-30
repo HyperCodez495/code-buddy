@@ -73,7 +73,7 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/commands/hermes-commands.test.ts --run',
       'npx tsx src/index.ts hermes prompt-size safe --json',
     ],
-    notes: 'Runs offline and reports native Hermes prompt/profile/toolset/plan, local skills/memory footprint metadata, and filtered tool schemas.',
+    notes: 'Runs offline and reports native Hermes prompt/profile/toolset/plan, local skills/memory footprint metadata, accepted user-model context size, and filtered tool schemas.',
   },
   {
     id: 'providers-models',
@@ -177,9 +177,10 @@ const FEATURES: HermesParityFeature[] = [
     status: 'partial',
     verificationCommands: [
       'npm test -- tests/agent/lesson-candidate-queue.test.ts tests/memory/user-model.test.ts --run',
+      'npm test -- tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run',
     ],
-    notes: 'Comparable direction with stricter review gates; Honcho-style dialectic inference is still not complete.',
-    nextWork: 'Wire accepted user-model summaries into per-session context.',
+    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; Honcho-style dialectic inference remains review-gated rather than auto-applied.',
+    nextWork: 'Strengthen scoring and promotion/deprecation signals for reusable skills.',
   },
   {
     id: 'cron-scheduling',

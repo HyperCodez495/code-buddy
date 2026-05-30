@@ -45,7 +45,7 @@ Capabilities below follow the upstream README's headline table.
 | Skill outcome telemetry | `src/agent/learning-agent.ts`; `buddy skills learning-usage` | done — selected skills are recorded against completed/failed runs, reinforced/deprecated by local outcome rates |
 | Concept graph / Obsidian vault export | `LessonsTracker.buildConceptGraph` / `buddy lessons graph --vault` | done |
 | Cross-session recall | `RunStore.searchRuns`, `buildRunRecallPack`; `buddy run search / recall-pack` | done |
-| **Structured user model ("deepening model of who you are")** | `src/memory/user-model.ts` + `user_model_observe`/`user_model_recall` tools + `buddy user-model` | **done (this change)** — local file-backed, propose/review, privacy-scoped; LLM dialectic inference (Honcho-style) still future work |
+| **Structured user model ("deepening model of who you are")** | `src/memory/user-model.ts` + `user_model_observe`/`user_model_recall` tools + `buddy user-model` + shared context pipeline | done — local file-backed, propose/review, privacy-scoped; accepted observations are injected per turn behind `USER_MODEL_INJECTION` and counted by `buddy hermes prompt-size`; LLM dialectic inference remains review-gated |
 
 The user model is the paired half of the learning loop. The agent proposes
 observations about the user's *working preferences* via `user_model_observe`
@@ -53,9 +53,11 @@ observations about the user's *working preferences* via `user_model_observe`
 as **pending** and never enter the active model until a human runs
 `buddy user-model accept <id> --by <reviewer>`. A conservative privacy screen
 refuses health/finance/relationship/credential content at both propose and
-accept time. `user_model_recall` exposes the accepted summary to the agent on
-demand (automatic per-session prompt injection is future work). This is a local
-observation store, **not** Honcho's LLM-driven dialectic inference.
+accept time. Accepted observations are injected automatically as
+`<user_model_context>` through the shared per-turn context pipeline when
+`USER_MODEL_INJECTION` is enabled; pending/rejected observations are not
+injected. `user_model_recall` remains available for on-demand inspection. This
+is a local observation store, **not** Honcho's auto-applied dialectic inference.
 
 The candidate queue is the new piece. Proposing a lesson — via the agent's
 `lessons_propose` tool or `buddy lessons candidate propose` — writes only to
@@ -152,8 +154,7 @@ buddy lessons candidate approve <id> --by "<your name>"
 
 - LLM dialectic inference over the user model (Honcho-style); the local
   observation store + review queue now exist, the inference layer does not.
-- Automatic per-session injection of the user-model summary (currently
-  on-demand via `user_model_recall`).
+- Stronger automatic promotion/deprecation scoring for generated skills.
 - Live mobile remote-supervision listener (only contracts/snapshots exist).
 - Deeper Cowork skill package management. Cowork now exposes lesson-candidate
   approval, the shared SKILL candidate review queue, and Learning Agent

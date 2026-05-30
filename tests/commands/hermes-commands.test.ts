@@ -5,6 +5,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
+import { getUserModel, resetUserModels } from '../../src/memory/user-model.js';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
@@ -125,6 +126,48 @@ describe('Hermes CLI commands', () => {
       ]),
     );
     expect(output.notes.join(' ')).toContain('Runs offline');
+  });
+
+  it('counts injected accepted user-model context in the prompt-size diagnostic', async () => {
+    const originalCwd = process.cwd();
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hermes-prompt-size-user-model-'));
+    resetUserModels();
+    try {
+      process.chdir(tmpDir);
+      const model = getUserModel(tmpDir);
+      const accepted = model.observe({
+        content: 'Wants real tests before marking a task done.',
+        kind: 'working-style',
+      });
+      model.accept(accepted.observation.id, { reviewedBy: 'Patrice' });
+      model.observe({
+        content: 'Pending observations must stay out of prompts.',
+        kind: 'preference',
+      });
+
+      const program = createProgram();
+      registerHermesCommands(program);
+      await program.parseAsync(['node', 'test', 'hermes', 'prompt-size', 'safe', '--json']);
+
+      const output = JSON.parse(getLogOutput()) as {
+        sections: Array<{ id: string; bytes: number; chars: number; lines: number }>;
+        totals: { bytes: number };
+        notes: string[];
+      };
+      const userModelSection = output.sections.find((section) => section.id === 'userModelContext');
+      expect(userModelSection).toBeTruthy();
+      expect(userModelSection!.bytes).toBeGreaterThan(0);
+      expect(userModelSection!.chars).toBeGreaterThan(0);
+      expect(userModelSection!.lines).toBeGreaterThan(0);
+      expect(output.totals.bytes).toBeGreaterThanOrEqual(userModelSection!.bytes);
+      expect(getLogOutput()).not.toContain('Wants real tests before marking a task done.');
+      expect(getLogOutput()).not.toContain('Pending observations must stay out of prompts.');
+      expect(output.notes.join(' ')).toContain('Accepted user-model context is counted');
+    } finally {
+      process.chdir(originalCwd);
+      resetUserModels();
+      await fs.remove(tmpDir);
+    }
   });
 
   it('prints the machine-checkable Hermes parity manifest', async () => {
