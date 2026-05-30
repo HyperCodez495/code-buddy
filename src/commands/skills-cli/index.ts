@@ -101,7 +101,9 @@ export function registerSkillsCommands(program: Command): void {
           skill.reinforced ? 'reinforced' : '',
           skill.deprecated ? 'deprecated' : '',
         ].filter(Boolean);
-        console.log(`  ${skill.skillName}: ${skill.invocationCount} run(s), ${skill.successCount} ok / ${skill.failureCount} fail${avg}${flags.length ? ` [${flags.join(', ')}]` : ''}`);
+        console.log(`  ${skill.skillName}: ${skill.invocationCount} run(s), ${skill.successCount} ok / ${skill.failureCount} fail${avg}, score ${skill.score}/100, ${skill.recommendation}${flags.length ? ` [${flags.join(', ')}]` : ''}`);
+        console.log(`      reason: ${skill.scoreReason}`);
+        console.log(`      next: ${skill.nextAction}`);
         if (skill.lastError) console.log(`      last error: ${skill.lastError}`);
       }
       console.log('');

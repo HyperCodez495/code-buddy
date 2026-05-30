@@ -178,9 +178,10 @@ const FEATURES: HermesParityFeature[] = [
     verificationCommands: [
       'npm test -- tests/agent/lesson-candidate-queue.test.ts tests/memory/user-model.test.ts --run',
       'npm test -- tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run',
+      'npm test -- tests/agent/learning-agent-real.test.ts --run',
     ],
-    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; Honcho-style dialectic inference remains review-gated rather than auto-applied.',
-    nextWork: 'Strengthen scoring and promotion/deprecation signals for reusable skills.',
+    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions. Honcho-style dialectic inference remains review-gated rather than auto-applied.',
+    nextWork: 'Expose full skill package manager lifecycle controls in Cowork.',
   },
   {
     id: 'cron-scheduling',

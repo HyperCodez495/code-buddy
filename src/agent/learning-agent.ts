@@ -95,6 +95,7 @@ export const LEARNING_AGENT_OUTPUT_SCHEMA = {
 } as const;
 
 type PatternStatus = 'observed' | 'reinforced' | 'deprecated';
+type LearningSkillRecommendation = 'observe' | 'reinforce' | 'improve' | 'deprecate';
 
 export interface LearningToolStat {
   averageDurationMs?: number;
@@ -192,8 +193,13 @@ export interface LearningSkillUsageRecord {
   lastRunId?: string;
   lastUsedAt: string;
   reinforced: boolean;
+  score: number;
+  scoreHistory: LearningSkillScoreEvent[];
+  scoreReason: string;
   skillName: string;
   successCount: number;
+  recommendation: LearningSkillRecommendation;
+  nextAction: string;
 }
 
 export interface LearningSkillUsageFile {
@@ -208,6 +214,17 @@ export interface LearningSkillUsageInput {
   runId?: string;
   success: boolean;
   usedAt?: number | string;
+}
+
+export interface LearningSkillScoreEvent {
+  failureCount: number;
+  invocationCount: number;
+  recommendation: LearningSkillRecommendation;
+  runId?: string;
+  score: number;
+  scoredAt: string;
+  successCount: number;
+  reason: string;
 }
 
 export interface RunLearningRetrospectiveOptions {
@@ -425,19 +442,39 @@ export function recordLearningSkillUsage(
     : existing?.averageDurationMs;
   const successCount = (existing?.successCount ?? 0) + (record.success ? 1 : 0);
   const failureCount = (existing?.failureCount ?? 0) + (record.success ? 0 : 1);
-  const successRate = invocationCount === 0 ? 0 : successCount / invocationCount;
-  const failureRate = invocationCount === 0 ? 0 : failureCount / invocationCount;
+  const score = scoreLearningSkillUsage({
+    failureCount,
+    invocationCount,
+    lastError: record.success ? undefined : record.error,
+    runId: record.runId,
+    successCount,
+  });
+  const scoreEvent: LearningSkillScoreEvent = {
+    failureCount,
+    invocationCount,
+    recommendation: score.recommendation,
+    ...(record.runId ? { runId: record.runId } : {}),
+    score: score.score,
+    scoredAt: now,
+    successCount,
+    reason: score.reason,
+  };
 
   const updated: LearningSkillUsageRecord = {
     averageDurationMs,
-    deprecated: invocationCount >= 3 && failureRate >= 0.6,
+    deprecated: score.recommendation === 'deprecate',
     failureCount,
     invocationCount,
     lastDurationMs: record.durationMs,
     lastError: record.success ? undefined : record.error,
     lastRunId: record.runId,
     lastUsedAt: now,
-    reinforced: invocationCount >= 3 && successRate >= 0.8,
+    nextAction: score.nextAction,
+    recommendation: score.recommendation,
+    reinforced: score.recommendation === 'reinforce',
+    score: score.score,
+    scoreHistory: [...(existing?.scoreHistory ?? []), scoreEvent].slice(-20),
+    scoreReason: score.reason,
     skillName: safeName,
     successCount,
   };
@@ -460,6 +497,61 @@ export function listLearningSkillUsage(workDir: string = process.cwd()): Learnin
       right.invocationCount - left.invocationCount ||
       right.lastUsedAt.localeCompare(left.lastUsedAt),
     );
+}
+
+function scoreLearningSkillUsage(input: {
+  failureCount: number;
+  invocationCount: number;
+  lastError?: string;
+  runId?: string;
+  successCount: number;
+}): {
+  nextAction: string;
+  reason: string;
+  recommendation: LearningSkillRecommendation;
+  score: number;
+} {
+  const successRate = input.invocationCount === 0 ? 0 : input.successCount / input.invocationCount;
+  const failureRate = input.invocationCount === 0 ? 0 : input.failureCount / input.invocationCount;
+  const sampleConfidence = Math.min(1, input.invocationCount / 5);
+  const score = Math.round((successRate * 0.75 + sampleConfidence * 0.25) * 100);
+  const rateText = `${Math.round(successRate * 100)}% success over ${input.invocationCount} run(s)`;
+  const runText = input.runId ? `; last evidence run ${input.runId}` : '';
+  const errorText = input.lastError ? `; last error: ${formatInline(input.lastError)}` : '';
+
+  if (input.invocationCount >= 3 && failureRate >= 0.6) {
+    return {
+      nextAction: 'Open a reviewed improvement candidate or explicitly deprecate the skill; do not auto-disable it.',
+      reason: `${rateText}, failure rate ${Math.round(failureRate * 100)}%${runText}${errorText}.`,
+      recommendation: 'deprecate',
+      score,
+    };
+  }
+
+  if (input.failureCount >= 2 && failureRate >= 0.4) {
+    return {
+      nextAction: 'Generate a reviewed improvement candidate before using this skill for important work.',
+      reason: `${rateText}, repeated failures detected${runText}${errorText}.`,
+      recommendation: 'improve',
+      score,
+    };
+  }
+
+  if (input.invocationCount >= 3 && successRate >= 0.8) {
+    return {
+      nextAction: 'Prefer this skill for matching future tasks and keep recording outcomes.',
+      reason: `${rateText} with enough repeated evidence${runText}.`,
+      recommendation: 'reinforce',
+      score,
+    };
+  }
+
+  return {
+    nextAction: 'Keep observing until at least three real outcomes are available.',
+    reason: `${rateText}; evidence is still below the promotion threshold${runText}${errorText}.`,
+    recommendation: 'observe',
+    score,
+  };
 }
 
 export function isLearningAgentEnabled(): boolean {
@@ -993,6 +1085,7 @@ function readSkillUsageFile(filePath: string): LearningSkillUsageFile {
   try {
     const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8')) as LearningSkillUsageFile;
     if (parsed.schemaVersion === LEARNING_SKILL_USAGE_SCHEMA_VERSION && Array.isArray(parsed.skills)) {
+      parsed.skills = parsed.skills.map(normalizeLearningSkillUsageRecord);
       return parsed;
     }
   } catch {
@@ -1002,6 +1095,39 @@ function readSkillUsageFile(filePath: string): LearningSkillUsageFile {
     schemaVersion: LEARNING_SKILL_USAGE_SCHEMA_VERSION,
     updatedAt: new Date(0).toISOString(),
     skills: [],
+  };
+}
+
+function normalizeLearningSkillUsageRecord(record: LearningSkillUsageRecord): LearningSkillUsageRecord {
+  const score = scoreLearningSkillUsage({
+    failureCount: record.failureCount,
+    invocationCount: record.invocationCount,
+    lastError: record.lastError,
+    runId: record.lastRunId,
+    successCount: record.successCount,
+  });
+  const scoreHistory = Array.isArray(record.scoreHistory) && record.scoreHistory.length > 0
+    ? record.scoreHistory
+    : [{
+        failureCount: record.failureCount,
+        invocationCount: record.invocationCount,
+        recommendation: score.recommendation,
+        ...(record.lastRunId ? { runId: record.lastRunId } : {}),
+        score: score.score,
+        scoredAt: record.lastUsedAt,
+        successCount: record.successCount,
+        reason: score.reason,
+      }];
+
+  return {
+    ...record,
+    deprecated: record.deprecated ?? (score.recommendation === 'deprecate'),
+    nextAction: record.nextAction ?? score.nextAction,
+    recommendation: record.recommendation ?? score.recommendation,
+    reinforced: record.reinforced ?? (score.recommendation === 'reinforce'),
+    score: record.score ?? score.score,
+    scoreHistory,
+    scoreReason: record.scoreReason ?? score.reason,
   };
 }
 

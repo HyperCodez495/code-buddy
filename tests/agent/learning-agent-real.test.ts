@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   buildLearningRetrospective,
   listLearningSkillUsage,
+  recordLearningSkillUsage,
   runLearningRetrospective,
   type LearningPatternLibrary,
 } from '../../src/agent/learning-agent.js';
@@ -156,6 +157,77 @@ describe('Learning Agent on real RunStore trajectories', () => {
     const retrospective = buildLearningRetrospective(runId, { store, workDir: tempDir });
     expect(retrospective?.complexity.isComplex).toBe(true);
     expect(store.getArtifact(runId, 'learning-retrospective.json')).toContain('"skillUsageCount": 1');
+  });
+
+  it('scores repeated real skill outcomes with history and recommended next actions', () => {
+    recordLearningSkillUsage('web-audit', { runId: 'run-ok-1', success: true, durationMs: 100, usedAt: '2026-05-30T10:00:00.000Z' }, tempDir);
+    recordLearningSkillUsage('web-audit', { runId: 'run-ok-2', success: true, durationMs: 120, usedAt: '2026-05-30T10:10:00.000Z' }, tempDir);
+    const reinforced = recordLearningSkillUsage('web-audit', {
+      runId: 'run-ok-3',
+      success: true,
+      durationMs: 80,
+      usedAt: '2026-05-30T10:20:00.000Z',
+    }, tempDir);
+
+    expect(reinforced).toMatchObject({
+      deprecated: false,
+      invocationCount: 3,
+      recommendation: 'reinforce',
+      reinforced: true,
+      score: 90,
+      scoreHistory: [
+        expect.objectContaining({ recommendation: 'observe', runId: 'run-ok-1' }),
+        expect.objectContaining({ recommendation: 'observe', runId: 'run-ok-2' }),
+        expect.objectContaining({ recommendation: 'reinforce', runId: 'run-ok-3' }),
+      ],
+      scoreReason: expect.stringContaining('100% success over 3 run(s)'),
+      nextAction: expect.stringContaining('Prefer this skill'),
+    });
+
+    recordLearningSkillUsage('flaky-skill', { runId: 'run-fail-1', success: false, error: 'real command failed', usedAt: '2026-05-30T11:00:00.000Z' }, tempDir);
+    recordLearningSkillUsage('flaky-skill', { runId: 'run-fail-2', success: false, error: 'real command failed again', usedAt: '2026-05-30T11:10:00.000Z' }, tempDir);
+    const deprecated = recordLearningSkillUsage('flaky-skill', {
+      runId: 'run-fail-3',
+      success: false,
+      error: 'real command still failed',
+      usedAt: '2026-05-30T11:20:00.000Z',
+    }, tempDir);
+
+    expect(deprecated).toMatchObject({
+      deprecated: true,
+      invocationCount: 3,
+      recommendation: 'deprecate',
+      reinforced: false,
+      score: 15,
+      scoreHistory: [
+        expect.objectContaining({ recommendation: 'observe', runId: 'run-fail-1' }),
+        expect.objectContaining({ recommendation: 'improve', runId: 'run-fail-2' }),
+        expect.objectContaining({ recommendation: 'deprecate', runId: 'run-fail-3' }),
+      ],
+      scoreReason: expect.stringContaining('failure rate 100%'),
+      nextAction: expect.stringContaining('do not auto-disable'),
+    });
+
+    const persisted = JSON.parse(
+      fs.readFileSync(path.join(tempDir, '.codebuddy', 'learning', 'skill-usage.json'), 'utf8'),
+    );
+    expect(persisted.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        skillName: 'web-audit',
+        recommendation: 'reinforce',
+        scoreHistory: expect.arrayContaining([expect.objectContaining({ runId: 'run-ok-3' })]),
+      }),
+      expect.objectContaining({
+        skillName: 'flaky-skill',
+        recommendation: 'deprecate',
+        scoreHistory: expect.arrayContaining([expect.objectContaining({ runId: 'run-fail-3' })]),
+      }),
+    ]));
+
+    expect(listLearningSkillUsage(tempDir).map((skill) => skill.skillName)).toEqual([
+      'flaky-skill',
+      'web-audit',
+    ]);
   });
 });
 

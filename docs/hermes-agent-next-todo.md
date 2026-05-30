@@ -35,16 +35,17 @@ Current measured state:
     - `npm test -- tests/memory/user-model.test.ts tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run`
     - real temp workspace: observe -> accept -> run `buddy hermes prompt-size --json` and confirm the user-model section is counted but content is not printed.
 
-- [ ] **Strengthen Learning Agent skill scoring**
+- [x] **Strengthen Learning Agent skill scoring**
   - Why: usage telemetry exists, but reinforcement/deprecation should become a robust promotion signal, not just displayed metadata.
-  - Scope: define thresholds for reinforce/deprecate/improve, store score history, and show why a skill changed state.
+  - Done: core telemetry now scores every real skill outcome, stores bounded score history, records the recommendation (`observe`/`reinforce`/`improve`/`deprecate`), keeps the reason and next action, and shows the same fields in `buddy skills learning-usage` plus Cowork's Learning skill usage strip.
   - Guardrail: scoring can recommend, but should not silently mutate installed skills.
   - Acceptance:
     - Repeated successful use increases confidence.
     - Repeated failures mark a skill as deprecated or propose an improvement candidate.
     - Cowork displays score reason, last evidence run, and next action.
   - Verification:
-    - `npm test -- tests/agent/learning-agent-real.test.ts cowork/tests/learning-skill-usage-strip.test.ts --run`
+    - `npm test -- tests/agent/learning-agent-real.test.ts --run`
+    - `(cd cowork && npm test -- tests/learning-usage-bridge.test.ts tests/learning-skill-usage-strip.test.ts --run)`
 
 ## P1 — Make the Hermes cockpit operational in Cowork
 
@@ -137,13 +138,11 @@ Current measured state:
 
 ## Immediate next implementation order
 
-1. `skill_manage` review-gated lifecycle.
-2. Cowork Skill Package Manager panel.
-3. Automatic accepted user-model injection.
-4. Hermes toolset/catalog status in Cowork.
-5. `execute_code` security/product decision.
-6. Unified `vision_analyze` / `browser_vision`.
-7. `send_message` wrapper over existing channels.
-8. Kanban mapping decision.
-9. Runtime backend inventory.
-10. Optional platform connectors only on demand.
+1. Cowork Skill Package Manager panel.
+2. Hermes toolset/catalog status in Cowork.
+3. `execute_code` security/product decision.
+4. Unified `vision_analyze` / `browser_vision`.
+5. `send_message` wrapper over existing channels.
+6. Kanban mapping decision.
+7. Runtime backend inventory.
+8. Optional platform connectors only on demand.

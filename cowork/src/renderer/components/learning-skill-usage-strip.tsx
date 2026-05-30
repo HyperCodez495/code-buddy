@@ -2,6 +2,8 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { BrainCircuit, ListChecks, Terminal, TrendingDown, TrendingUp } from 'lucide-react';
 
+type LearningSkillRecommendation = 'observe' | 'reinforce' | 'improve' | 'deprecate';
+
 export interface LearningSkillUsageItem {
   averageDurationMs?: number;
   deprecated: boolean;
@@ -11,7 +13,11 @@ export interface LearningSkillUsageItem {
   lastError?: string;
   lastRunId?: string;
   lastUsedAt: string;
+  nextAction: string;
+  recommendation: LearningSkillRecommendation;
   reinforced: boolean;
+  score: number;
+  scoreReason: string;
   skillName: string;
   successCount: number;
 }
@@ -116,19 +122,39 @@ export const LearningSkillUsageStrip: React.FC<{
                 <span className="truncate text-[10px] text-text-secondary">
                   {item.skillName}
                 </span>
-                <span className="shrink-0 rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
-                  {t('fleet.learningUsage.runsChip', '{{count}} runs', {
-                    count: item.invocationCount,
-                  })}
-                </span>
+                <div className="flex shrink-0 items-center gap-1">
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    {t('fleet.learningUsage.runsChip', '{{count}} runs', {
+                      count: item.invocationCount,
+                    })}
+                  </span>
+                  <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+                    {t('fleet.learningUsage.scoreChip', '{{score}}/100 {{state}}', {
+                      score: item.score,
+                      state: item.recommendation,
+                    })}
+                  </span>
+                </div>
               </div>
               <div className="mt-0.5 truncate text-[9px] text-text-muted">
                 {item.successCount} ok / {item.failureCount} fail
                 {item.averageDurationMs !== undefined
                   ? ` - avg ${Math.round(item.averageDurationMs)}ms`
                   : ''}
-                {item.lastRunId ? ` - ${item.lastRunId}` : ''}
+                {item.lastRunId
+                  ? ` - ${t('fleet.learningUsage.evidenceLabel', 'evidence')}: ${item.lastRunId}`
+                  : ''}
               </div>
+              {item.scoreReason ? (
+                <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                  {t('fleet.learningUsage.reasonLabel', 'reason')}: {item.scoreReason}
+                </div>
+              ) : null}
+              {item.nextAction ? (
+                <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                  {t('fleet.learningUsage.nextLabel', 'next')}: {item.nextAction}
+                </div>
+              ) : null}
               {item.lastError ? (
                 <div className="mt-0.5 truncate text-[9px] text-warning">
                   {item.lastError}

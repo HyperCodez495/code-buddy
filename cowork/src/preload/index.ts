@@ -1494,7 +1494,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
         lastError?: string;
         lastRunId?: string;
         lastUsedAt: string;
+        nextAction: string;
+        recommendation: 'observe' | 'reinforce' | 'improve' | 'deprecate';
         reinforced: boolean;
+        score: number;
+        scoreReason: string;
         skillName: string;
         successCount: number;
       }>> => ipcRenderer.invoke('tools.learningUsage.list', options ?? {}),

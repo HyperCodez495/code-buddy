@@ -57,7 +57,11 @@ describe('LearningSkillUsageStrip', () => {
               invocationCount: 4,
               lastRunId: 'run-reinforced',
               lastUsedAt: '2026-05-30T14:00:00.000Z',
+              nextAction: 'Prefer this skill for matching future tasks.',
+              recommendation: 'reinforce',
               reinforced: true,
+              score: 95,
+              scoreReason: '100% success over 4 run(s); last evidence run run-reinforced.',
               skillName: 'learned-search-view-file-bash',
               successCount: 4,
             },
@@ -68,7 +72,11 @@ describe('LearningSkillUsageStrip', () => {
               lastError: 'verification failed',
               lastRunId: 'run-deprecated',
               lastUsedAt: '2026-05-30T14:05:00.000Z',
+              nextAction: 'Open a reviewed improvement candidate.',
+              recommendation: 'deprecate',
               reinforced: false,
+              score: 20,
+              scoreReason: '0% success over 2 run(s), repeated failures detected.',
               skillName: 'learned-flaky-path',
               successCount: 0,
             },
@@ -87,10 +95,15 @@ describe('LearningSkillUsageStrip', () => {
     expect(strip?.textContent).toContain('usage file unreadable');
     expect(strip?.textContent).toContain('learned-search-view-file-bash');
     expect(strip?.textContent).toContain('4 runs');
+    expect(strip?.textContent).toContain('95/100 reinforce');
     expect(strip?.textContent).toContain('4 ok / 0 fail');
     expect(strip?.textContent).toContain('avg 1250ms');
+    expect(strip?.textContent).toContain('evidence: run-reinforced');
+    expect(strip?.textContent).toContain('reason: 100% success over 4 run(s)');
+    expect(strip?.textContent).toContain('next: Prefer this skill');
     expect(strip?.textContent).toContain('run-reinforced');
     expect(strip?.textContent).toContain('learned-flaky-path');
+    expect(strip?.textContent).toContain('20/100 deprecate');
     expect(strip?.textContent).toContain('verification failed');
     expect(strip?.textContent).toContain('buddy skills learning-usage --json');
   });
@@ -108,7 +121,11 @@ describe('LearningSkillUsageStrip', () => {
         invocationCount: 1,
         lastRunId: 'run-loaded',
         lastUsedAt: '2026-05-30T14:10:00.000Z',
+        nextAction: 'Keep observing.',
+        recommendation: 'observe',
         reinforced: false,
+        score: 35,
+        scoreReason: '100% success over 1 run(s); evidence is still below the promotion threshold.',
         skillName: 'learned-loaded-skill',
         successCount: 1,
       },

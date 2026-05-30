@@ -1,6 +1,8 @@
 import { isAbsolute, resolve } from 'path';
 import { loadCoreModule } from '../utils/core-loader';
 
+type LearningSkillRecommendation = 'observe' | 'reinforce' | 'improve' | 'deprecate';
+
 export interface LearningSkillUsageSummary {
   averageDurationMs?: number;
   deprecated: boolean;
@@ -10,7 +12,11 @@ export interface LearningSkillUsageSummary {
   lastError?: string;
   lastRunId?: string;
   lastUsedAt: string;
+  nextAction: string;
+  recommendation: LearningSkillRecommendation;
   reinforced: boolean;
+  score: number;
+  scoreReason: string;
   skillName: string;
   successCount: number;
 }

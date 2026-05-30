@@ -2261,7 +2261,11 @@
       "deprecatedChip": "{{count}} 个废弃",
       "loadFailed": "Learning 使用情况加载失败",
       "empty": "暂无 Learning Agent skill 使用记录。",
-      "runsChip": "{{count}} 次运行"
+      "runsChip": "{{count}} 次运行",
+      "scoreChip": "{{score}}/100 {{state}}",
+      "evidenceLabel": "证据",
+      "reasonLabel": "原因",
+      "nextLabel": "下一步"
     },
     "browserOperator": {
       "title": "Browser Operator 草稿",

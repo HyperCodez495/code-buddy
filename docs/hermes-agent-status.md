@@ -42,7 +42,7 @@ Capabilities below follow the upstream README's headline table.
 | **Agent proposes, human approves (no silent write)** | `src/agent/lesson-candidate-queue.ts` + `lessons_propose` tool + `buddy lessons candidate propose/list/show/approve/discard` | **done (this change)** |
 | Retrospective / Learning Agent | `src/agent/learning-agent.ts`; auto hook from `RunStore.endRun`; CLI `buddy run retrospective <run-id>` | done — analyzes real redacted trajectories, writes retrospective artifacts, proposes lessons, materializes review-gated skill candidates |
 | Skill creation from experience | `src/agent/research-script-skill-candidate.ts`; `buddy tools skill-candidate`; `skill_manage` prompt tool | partial — installs reviewed research-script and Learning Agent candidates; `skill_manage` now covers real installed-skill list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install with immediate lockfile visibility; Cowork controls remain future lifecycle work |
-| Skill outcome telemetry | `src/agent/learning-agent.ts`; `buddy skills learning-usage` | done — selected skills are recorded against completed/failed runs, reinforced/deprecated by local outcome rates |
+| Skill outcome telemetry | `src/agent/learning-agent.ts`; `buddy skills learning-usage`; Cowork Learning skill usage strip | done — selected skills are recorded against completed/failed runs, scored with bounded history, and surfaced with recommendation, reason, evidence run, and next action |
 | Concept graph / Obsidian vault export | `LessonsTracker.buildConceptGraph` / `buddy lessons graph --vault` | done |
 | Cross-session recall | `RunStore.searchRuns`, `buildRunRecallPack`; `buddy run search / recall-pack` | done |
 | **Structured user model ("deepening model of who you are")** | `src/memory/user-model.ts` + `user_model_observe`/`user_model_recall` tools + `buddy user-model` + shared context pipeline | done — local file-backed, propose/review, privacy-scoped; accepted observations are injected per turn behind `USER_MODEL_INJECTION` and counted by `buddy hermes prompt-size`; LLM dialectic inference remains review-gated |
@@ -72,7 +72,10 @@ The Retrospective/Learning Agent now closes the hot path after complex runs:
 `buddy run retrospective <run-id> --force`). It consumes real run events through
 the redacted trajectory export, identifies tool order, failures, redundancy and
 repeatable sequences, then writes only artifacts/candidates. Skill installation
-and lesson persistence remain review-gated.
+and lesson persistence remain review-gated. Skill outcome telemetry now keeps a
+bounded score history and produces explicit recommendations (`observe`,
+`reinforce`, `improve`, `deprecate`) with the evidence run, reason, and next
+operator action visible in both CLI and Cowork.
 
 Official Hermes' `agent/background_review.py` forks a background review agent
 after turns and may write memory/skills directly through a restricted tool

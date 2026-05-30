@@ -2274,7 +2274,11 @@
       "deprecatedChip": "{{count}} deprecated",
       "loadFailed": "Learning usage load failed",
       "empty": "No Learning Agent skill usage recorded yet.",
-      "runsChip": "{{count}} runs"
+      "runsChip": "{{count}} runs",
+      "scoreChip": "{{score}}/100 {{state}}",
+      "evidenceLabel": "evidence",
+      "reasonLabel": "reason",
+      "nextLabel": "next"
     },
     "browserOperator": {
       "title": "Browser Operator draft",

@@ -2274,7 +2274,11 @@
       "deprecatedChip": "{{count}} dépréciée(s)",
       "loadFailed": "Chargement de l'usage Learning échoué",
       "empty": "Aucun usage de skill Learning Agent enregistré.",
-      "runsChip": "{{count}} run(s)"
+      "runsChip": "{{count}} run(s)",
+      "scoreChip": "{{score}}/100 {{state}}",
+      "evidenceLabel": "preuve",
+      "reasonLabel": "raison",
+      "nextLabel": "suite"
     },
     "browserOperator": {
       "title": "Brouillon Browser Operator",
