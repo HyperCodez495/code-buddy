@@ -84,6 +84,12 @@ export interface InstalledSkill {
   history?: SkillVersionSnapshot[];
 }
 
+export interface InstalledSkillStatus extends InstalledSkill {
+  exists: boolean;
+  integrityOk: boolean;
+  sizeBytes?: number;
+}
+
 export interface SkillUsageStats {
   /** Total invocations recorded locally */
   invocationCount: number;
@@ -1044,6 +1050,23 @@ export class SkillsHub extends EventEmitter {
    */
   list(): InstalledSkill[] {
     return Object.values(this.lockfile.skills);
+  }
+
+  /**
+   * List installed skills with cheap on-disk health checks so stale lockfile
+   * entries are visible before an agent or operator tries to reuse them.
+   */
+  listWithIntegrity(): InstalledSkillStatus[] {
+    return this.list().map((skill) => {
+      const detail = this.info(skill.name);
+      const exists = typeof detail?.content === 'string';
+      return {
+        ...skill,
+        exists,
+        integrityOk: detail?.integrityOk ?? false,
+        ...(exists ? { sizeBytes: Buffer.byteLength(detail.content as string, 'utf-8') } : {}),
+      };
+    });
   }
 
   /**

@@ -32,7 +32,7 @@ export function registerSkillsCommands(program: Command): void {
     .action(async (opts: { all?: boolean; json?: boolean }) => {
       const { getSkillsHub } = await import('../../skills/hub.js');
       const hub = getSkillsHub();
-      const all = hub.list();
+      const all = hub.listWithIntegrity();
       const shown = opts.all ? all : all.filter((s) => s.enabled !== false);
 
       if (opts.json) {
@@ -45,9 +45,10 @@ export function registerSkillsCommands(program: Command): void {
       }
       console.log(`\nInstalled skills (${shown.length}${opts.all ? '' : ` enabled / ${all.length} total`}):`);
       for (const skill of shown) {
-        const status = skill.enabled === false ? '-' : '+';
+        const status = skill.enabled === false ? '-' : skill.integrityOk ? '+' : '!';
         const inv = skill.usage ? `  used ${skill.usage.invocationCount}×` : '';
-        console.log(`  ${status} ${skill.name} v${skill.version} (${skill.source})${inv}`);
+        const health = skill.integrityOk ? '' : skill.exists ? '  integrity mismatch' : '  missing SKILL.md';
+        console.log(`  ${status} ${skill.name} v${skill.version} (${skill.source})${inv}${health}`);
       }
       console.log('');
     });

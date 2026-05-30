@@ -1,5 +1,5 @@
 import { getErrorMessage, type ToolResult } from '../types/index.js';
-import type { InstalledSkill } from '../skills/hub.js';
+import type { InstalledSkill, InstalledSkillStatus } from '../skills/hub.js';
 
 export interface SkillsListToolInput extends Record<string, unknown> {
   include_disabled?: unknown;
@@ -19,7 +19,7 @@ function serializePayload(payload: Record<string, unknown>): ToolResult {
   };
 }
 
-function stripUsage(skill: InstalledSkill): InstalledSkill {
+function stripUsage<T extends InstalledSkill>(skill: T): Omit<T, 'usage'> {
   const { usage: _usage, ...rest } = skill;
   return rest;
 }
@@ -28,7 +28,7 @@ export async function executeSkillsListTool(input: SkillsListToolInput): Promise
   try {
     const { getSkillsHub } = await import('../skills/hub.js');
     const hub = getSkillsHub();
-    const all = hub.list();
+    const all: InstalledSkillStatus[] = hub.listWithIntegrity();
     const includeDisabled = input.include_disabled === true;
     const includeUsage = input.include_usage !== false;
     const shown = includeDisabled ? all : all.filter((skill) => skill.enabled !== false);

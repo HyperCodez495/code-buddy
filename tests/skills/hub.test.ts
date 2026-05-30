@@ -701,6 +701,37 @@ describe('SkillsHub', () => {
       expect(names).toContain('test-skill');
       expect(names).toContain('another-skill');
     });
+
+    it('should list installed skills with on-disk integrity state', async () => {
+      const good = await hub.installFromContent('test-skill', VALID_SKILL_CONTENT);
+      const changed = await hub.installFromContent('another-skill', ANOTHER_SKILL_CONTENT);
+      const missing = await hub.installFromContent('third-skill', VALID_SKILL_CONTENT);
+
+      writeFileSync(changed.path, 'modified content', 'utf-8');
+      rmSync(missing.path, { force: true });
+
+      const skills = hub.listWithIntegrity();
+
+      expect(skills).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          exists: true,
+          integrityOk: true,
+          name: good.name,
+          sizeBytes: Buffer.byteLength(VALID_SKILL_CONTENT, 'utf-8'),
+        }),
+        expect.objectContaining({
+          exists: true,
+          integrityOk: false,
+          name: changed.name,
+          sizeBytes: Buffer.byteLength('modified content', 'utf-8'),
+        }),
+        expect.objectContaining({
+          exists: false,
+          integrityOk: false,
+          name: missing.name,
+        }),
+      ]));
+    });
   });
 
   describe('info', () => {

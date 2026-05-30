@@ -89,6 +89,19 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
 
     const allSkills = await parseToolOutput(await listTool!.execute({ include_disabled: true }));
     expect(allSkills.count).toBe(2);
+    expect(allSkills.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        exists: true,
+        integrityOk: true,
+        name: 'audit-helper',
+      }),
+      expect.objectContaining({
+        enabled: false,
+        exists: false,
+        integrityOk: false,
+        name: 'disabled-helper',
+      }),
+    ]));
 
     const viewed = await parseToolOutput(await viewTool!.execute({ name: 'audit-helper' }));
     expect((viewed.installed as { version: string }).version).toBe('1.2.3');
@@ -98,6 +111,13 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     const managedList = await parseToolOutput(await manageTool!.execute({ action: 'list', include_disabled: true }));
     expect(managedList.action).toBe('skills_list');
     expect(managedList.count).toBe(2);
+    expect(managedList.skills).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        exists: false,
+        integrityOk: false,
+        name: 'disabled-helper',
+      }),
+    ]));
 
     const managedView = await parseToolOutput(await manageTool!.execute({ action: 'view', name: 'audit-helper' }));
     expect(managedView.action).toBe('skill_view');
