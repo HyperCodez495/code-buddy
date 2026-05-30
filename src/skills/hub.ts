@@ -15,7 +15,6 @@ import * as path from 'path';
 import * as os from 'os';
 import * as yaml from 'yaml';
 import { logger } from '../utils/logger.js';
-import { SkillRegistry } from './skill-registry.js';
 import { parseSkillFile, validateSkill } from './parser.js';
 
 // ============================================================================
@@ -562,6 +561,46 @@ export class SkillsHub extends EventEmitter {
     logger.info('Skill installed from content', { name: skillName, version, source });
     this.emit('skill:installed', installed);
 
+    return installed;
+  }
+
+  /**
+   * Track an existing local SKILL.md file in the lockfile without copying it.
+   * This keeps review-gated workspace installs visible to skills_list/skill_view
+   * while preserving the workspace path as the source of truth.
+   */
+  registerLocalSkillFile(
+    skillName: string,
+    skillPath: string,
+    source: InstalledSkill['source'] = 'local',
+  ): InstalledSkill {
+    if (!/^[a-zA-Z0-9_-]+$/.test(skillName)) {
+      throw new Error(`Invalid skill name: ${skillName}. Only alphanumeric, dash, and underscore allowed.`);
+    }
+
+    const resolvedPath = path.resolve(skillPath);
+    if (!fs.existsSync(resolvedPath)) {
+      throw new Error(`Skill file not found: ${resolvedPath}`);
+    }
+
+    const content = fs.readFileSync(resolvedPath, 'utf-8');
+    this.validateSkillContent(content, skillName);
+
+    const previous = this.lockfile.skills[skillName];
+    const installed: InstalledSkill = {
+      name: skillName,
+      version: this.extractVersionFromContent(content) || previous?.version || '0.0.0',
+      installedAt: previous?.installedAt ?? Date.now(),
+      source,
+      checksum: computeChecksum(content),
+      path: resolvedPath,
+      ...(previous?.usage ? { usage: previous.usage } : {}),
+      ...(previous?.enabled === false ? { enabled: false } : {}),
+    };
+
+    this.lockfile.skills[skillName] = installed;
+    this.writeLockfile();
+    this.emit('skill:installed', installed);
     return installed;
   }
 

@@ -2,6 +2,7 @@ import fs from 'fs/promises';
 import path from 'path';
 import type { Dirent } from 'fs';
 import { parseSkillFile, validateSkill } from '../skills/parser.js';
+import { getSkillsHub } from '../skills/hub.js';
 import type { ResearchScriptJobArtifact } from './research-script-job-artifact.js';
 import type { ResearchScriptJobRunResult } from './research-script-job-runner.js';
 
@@ -264,6 +265,7 @@ export async function installResearchScriptSkillCandidate(
     encoding: 'utf8',
     flag: options.overwrite ? 'w' : 'wx',
   });
+  getSkillsHub().registerLocalSkillFile(candidate.skillName, absoluteInstalledPath);
 
   return {
     absoluteInstalledPath,

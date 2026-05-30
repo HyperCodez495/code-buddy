@@ -15,7 +15,7 @@ Current measured state:
 
 - [ ] **Implement review-gated `skill_manage` lifecycle**
   - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but not manage edit/patch/delete/rollback as one coherent lifecycle.
-  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`, direct `create`/`discover`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives.
+  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`, direct `create`/`discover`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately.
   - Remaining scope: add review-gated update/patch/deprecate/delete/rollback operations as one coherent lifecycle.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:

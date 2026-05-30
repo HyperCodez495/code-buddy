@@ -178,5 +178,20 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
         'utf8',
       ),
     ).resolves.toContain('- Approved by: Patrice');
+
+    const visibleAfterInstall = await parseToolOutput(await manageTool!.execute({
+      action: 'list',
+      include_disabled: true,
+    }));
+    expect((visibleAfterInstall.skills as Array<{ name: string }>).map((skill) => skill.name)).toContain(
+      'research-skill-manage-candidate',
+    );
+
+    const viewedAfterInstall = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(viewedAfterInstall.integrityOk).toBe(true);
+    expect(viewedAfterInstall.content).toContain('- Approved by: Patrice');
   });
 });

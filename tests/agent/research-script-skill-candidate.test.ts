@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
@@ -11,6 +11,9 @@ import {
 } from '../../src/agent/research-script-skill-candidate.js';
 import type { ResearchScriptJobRunResult } from '../../src/agent/research-script-job-runner.js';
 import { SkillRegistry } from '../../src/skills/registry.js';
+import { getSkillsHub, resetSkillsHub } from '../../src/skills/hub.js';
+
+let tempHubDir: string;
 
 function runResult(overrides: Partial<ResearchScriptJobRunResult> = {}): ResearchScriptJobRunResult {
   return {
@@ -30,6 +33,21 @@ function runResult(overrides: Partial<ResearchScriptJobRunResult> = {}): Researc
 }
 
 describe('research script skill candidate', () => {
+  beforeEach(async () => {
+    resetSkillsHub();
+    tempHubDir = await fs.mkdtemp(path.join(os.tmpdir(), 'research-skill-hub-'));
+    getSkillsHub({
+      cacheDir: path.join(tempHubDir, 'cache'),
+      skillsDir: path.join(tempHubDir, 'skills'),
+      lockfilePath: path.join(tempHubDir, 'lock.json'),
+    });
+  });
+
+  afterEach(async () => {
+    resetSkillsHub();
+    await fs.rm(tempHubDir, { recursive: true, force: true });
+  });
+
   it('builds an eligible SKILL.md candidate after repeated successful runs', () => {
     const job = buildResearchScriptJobArtifact({
       id: 'research-script-demo',
@@ -180,6 +198,13 @@ describe('research script skill candidate', () => {
       expect(installedMarkdown).toContain('## Reviewer Edit');
       expect(installedMarkdown).toContain('## Human Approval');
       expect(installedMarkdown).toContain('- Approved by: Patrice');
+      expect(getSkillsHub().info(candidate.skillName)).toMatchObject({
+        integrityOk: true,
+        installed: {
+          name: candidate.skillName,
+          path: installed.absoluteInstalledPath,
+        },
+      });
 
       const registry = new SkillRegistry({
         bundledPath: '',
