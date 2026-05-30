@@ -10,7 +10,10 @@ export type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 
 export interface HermesSkillPackageEntry {
   averageDurationMs?: number;
+  contentPreview?: string;
+  contentPreviewTruncated?: boolean;
   enabled: boolean;
+  exists: boolean;
   failureCount?: number;
   installedAt: number;
   integrityOk: boolean;
@@ -22,6 +25,7 @@ export interface HermesSkillPackageEntry {
   name: string;
   path: string;
   rollbackableCount: number;
+  sizeBytes?: number;
   source: InstalledSkill['source'];
   status: HermesSkillPackageStatus;
   successCount?: number;
@@ -42,6 +46,7 @@ export interface HermesSkillPackageSummary {
 
 export interface HermesSkillPackageSummaryOptions {
   limit?: number;
+  previewChars?: number;
 }
 
 export function buildHermesSkillPackageSummary(
@@ -59,7 +64,12 @@ export function buildHermesSkillPackageSummary(
   });
   const allPackages = hub
     .list()
-    .map((skill) => summarizeInstalledSkill(skill, hub.getInstalledSkillHistory(skill.name)))
+    .map((skill) => summarizeInstalledSkill(
+      skill,
+      hub.getInstalledSkillHistory(skill.name),
+      hub.info(skill.name)?.content,
+      normalizePreviewChars(options.previewChars),
+    ))
     .sort((left, right) =>
       statusRank(left.status) - statusRank(right.status)
       || right.installedAt - left.installedAt
@@ -87,14 +97,19 @@ export function buildHermesSkillPackageSummary(
 function summarizeInstalledSkill(
   skill: InstalledSkill,
   history: SkillHistoryResult | null,
+  content: string | undefined,
+  previewChars: number,
 ): HermesSkillPackageEntry {
   const lifecycle = skill.lifecycle;
   const usage = skill.usage;
   const enabled = skill.enabled !== false;
+  const preview = buildContentPreview(content, previewChars);
 
   return {
     ...(typeof usage?.averageDurationMs === 'number' ? { averageDurationMs: usage.averageDurationMs } : {}),
+    ...preview,
     enabled,
+    exists: history?.current.exists ?? false,
     ...(typeof usage?.failureCount === 'number' ? { failureCount: usage.failureCount } : {}),
     installedAt: skill.installedAt,
     integrityOk: history?.current.integrityOk ?? false,
@@ -106,6 +121,7 @@ function summarizeInstalledSkill(
     name: skill.name,
     path: skill.path,
     rollbackableCount: history?.rollbackableCount ?? 0,
+    ...(typeof history?.current.sizeBytes === 'number' ? { sizeBytes: history.current.sizeBytes } : {}),
     source: skill.source,
     status: lifecycleStatus(skill, lifecycle),
     ...(typeof usage?.successCount === 'number' ? { successCount: usage.successCount } : {}),
@@ -131,4 +147,30 @@ function statusRank(status: HermesSkillPackageStatus): number {
 function normalizeLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) return 20;
   return Math.min(100, Math.max(1, Math.trunc(value as number)));
+}
+
+function normalizePreviewChars(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 360;
+  return Math.min(2_000, Math.max(0, Math.trunc(value as number)));
+}
+
+function buildContentPreview(
+  content: string | undefined,
+  maxChars: number,
+): Pick<HermesSkillPackageEntry, 'contentPreview' | 'contentPreviewTruncated'> {
+  if (!content || maxChars <= 0) return {};
+  const body = content
+    .replace(/^---\r?\n[\s\S]*?\r?\n---\r?\n?/, '')
+    .replace(/\r\n/g, '\n')
+    .split('\n')
+    .map((line) => line.trimEnd())
+    .join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+  if (!body) return {};
+
+  return {
+    contentPreview: body.slice(0, maxChars),
+    ...(body.length > maxChars ? { contentPreviewTruncated: true } : {}),
+  };
 }

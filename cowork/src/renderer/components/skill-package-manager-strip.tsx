@@ -6,7 +6,10 @@ type SkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 
 export interface SkillPackageManagerEntry {
   averageDurationMs?: number;
+  contentPreview?: string;
+  contentPreviewTruncated?: boolean;
   enabled: boolean;
+  exists: boolean;
   failureCount?: number;
   installedAt: number;
   integrityOk: boolean;
@@ -18,6 +21,7 @@ export interface SkillPackageManagerEntry {
   name: string;
   path: string;
   rollbackableCount: number;
+  sizeBytes?: number;
   source: 'hub' | 'local' | 'git';
   status: SkillPackageStatus;
   successCount?: number;
@@ -174,12 +178,22 @@ export const SkillPackageManagerStrip: React.FC<{
               </div>
               <div className="mt-0.5 truncate text-[9px] text-text-muted">
                 {skill.source}
-                {skill.integrityOk ? ' - integrity ok' : ' - integrity warning'}
+                {!skill.exists
+                  ? ' - missing SKILL.md'
+                  : skill.integrityOk
+                    ? ' - integrity ok'
+                    : ' - integrity warning'}
                 {skill.rollbackableCount > 0 ? ` - ${skill.rollbackableCount} rollback` : ''}
                 {typeof skill.invocationCount === 'number'
                   ? ` - ${skill.invocationCount} run(s)`
                   : ''}
               </div>
+              {skill.contentPreview ? (
+                <pre className="mt-1 max-h-16 overflow-hidden whitespace-pre-wrap rounded bg-surface px-2 py-1 text-[9px] leading-snug text-text-muted">
+                  {skill.contentPreview}
+                  {skill.contentPreviewTruncated ? '...' : ''}
+                </pre>
+              ) : null}
               {(skill.lastLifecycleReviewer || skill.lastLifecycleReason) ? (
                 <div className="mt-0.5 truncate text-[9px] text-text-muted">
                   {skill.lastLifecycleReviewer ? `${skill.lastLifecycleReviewer}: ` : ''}

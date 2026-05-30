@@ -171,7 +171,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts skills list --json',
       'npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run',
     ],
-    notes: 'Native skill coverage is good and Cowork now surfaces installed package state from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
+    notes: 'Native skill coverage is good and Cowork now surfaces installed package state plus current SKILL.md previews from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
     nextWork: 'Add Cowork SKILL.md preview/diff plus reviewer-gated lifecycle controls.',
   },
   {

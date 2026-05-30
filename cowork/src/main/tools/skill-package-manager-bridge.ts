@@ -5,7 +5,10 @@ type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 
 export interface SkillPackageManagerEntry {
   averageDurationMs?: number;
+  contentPreview?: string;
+  contentPreviewTruncated?: boolean;
   enabled: boolean;
+  exists: boolean;
   failureCount?: number;
   installedAt: number;
   integrityOk: boolean;
@@ -17,6 +20,7 @@ export interface SkillPackageManagerEntry {
   name: string;
   path: string;
   rollbackableCount: number;
+  sizeBytes?: number;
   source: 'hub' | 'local' | 'git';
   status: HermesSkillPackageStatus;
   successCount?: number;

@@ -60,7 +60,9 @@ describe('SkillPackageManagerStrip', () => {
             lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
             packages: [
               {
+                contentPreview: '# Audit Helper\n\nRun real checks and capture evidence.',
                 enabled: true,
+                exists: true,
                 installedAt: 1,
                 integrityOk: true,
                 invocationCount: 2,
@@ -75,6 +77,7 @@ describe('SkillPackageManagerStrip', () => {
               },
               {
                 enabled: false,
+                exists: true,
                 installedAt: 2,
                 integrityOk: true,
                 name: 'deprecated-helper',
@@ -107,6 +110,7 @@ describe('SkillPackageManagerStrip', () => {
     expect(strip?.textContent).toContain('audit-helper');
     expect(strip?.textContent).toContain('v1.0.0');
     expect(strip?.textContent).toContain('integrity ok');
+    expect(strip?.textContent).toContain('Run real checks and capture evidence.');
     expect(strip?.textContent).toContain('1 rollback');
     expect(strip?.textContent).toContain('2 run(s)');
     expect(strip?.textContent).toContain('Patrice: Reviewed wording.');
@@ -138,6 +142,7 @@ describe('SkillPackageManagerStrip', () => {
       packages: [
         {
           enabled: true,
+          exists: true,
           installedAt: 1,
           integrityOk: true,
           name: 'loaded-helper',

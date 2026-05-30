@@ -78,8 +78,11 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       status: 'deprecated',
       updatedAt: 5_000,
     });
+    await fs.rm(path.join(tempDir, '.codebuddy', 'skills', 'disabled-helper', 'SKILL.md'), {
+      force: true,
+    });
 
-    const summary = buildHermesSkillPackageSummary(tempDir);
+    const summary = buildHermesSkillPackageSummary(tempDir, { previewChars: 80 });
 
     expect(summary).toMatchObject({
       disabledCount: 2,
@@ -94,6 +97,8 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
     ]);
     expect(summary.packages).toEqual(expect.arrayContaining([
       expect.objectContaining({
+        contentPreview: expect.stringContaining('Run real checks and capture evidence'),
+        exists: true,
         failureCount: 1,
         integrityOk: true,
         invocationCount: 2,
@@ -105,6 +110,8 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       }),
       expect.objectContaining({
         enabled: false,
+        exists: false,
+        integrityOk: false,
         lastLifecycleReason: 'Paused during review.',
         lastLifecycleReviewer: 'Patrice',
         name: 'disabled-helper',

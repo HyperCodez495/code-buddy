@@ -24,6 +24,7 @@ describe('skill package manager bridge', () => {
       packages: [
         {
           enabled: true,
+          exists: true,
           installedAt: 1,
           integrityOk: true,
           name: 'audit-helper',

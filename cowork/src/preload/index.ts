@@ -1515,7 +1515,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
         lockfilePath: string;
         packages: Array<{
           averageDurationMs?: number;
+          contentPreview?: string;
+          contentPreviewTruncated?: boolean;
           enabled: boolean;
+          exists: boolean;
           failureCount?: number;
           installedAt: number;
           integrityOk: boolean;
@@ -1527,6 +1530,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           name: string;
           path: string;
           rollbackableCount: number;
+          sizeBytes?: number;
           source: 'hub' | 'local' | 'git';
           status: 'active' | 'disabled' | 'deprecated';
           successCount?: number;
@@ -3886,7 +3890,10 @@ declare global {
             lockfilePath: string;
             packages: Array<{
               averageDurationMs?: number;
+              contentPreview?: string;
+              contentPreviewTruncated?: boolean;
               enabled: boolean;
+              exists: boolean;
               failureCount?: number;
               installedAt: number;
               integrityOk: boolean;
@@ -3898,6 +3905,7 @@ declare global {
               name: string;
               path: string;
               rollbackableCount: number;
+              sizeBytes?: number;
               source: 'hub' | 'local' | 'git';
               status: 'active' | 'disabled' | 'deprecated';
               successCount?: number;
