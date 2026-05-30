@@ -141,10 +141,10 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'skills',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    equivalentCodeBuddyTools: ['create_skill', 'skill_discover'],
+    equivalentCodeBuddyTools: ['skills_list', 'skill_view', 'create_skill', 'skill_discover'],
     equivalenceStatus: 'partial',
-    notes: 'Code Buddy can create/discover skills, but not full Hermes skill_manage create/edit/patch/delete lifecycle through one tool.',
-    nextWork: 'Keep mutation review-gated if adding full skill_manage parity.',
+    notes: 'Code Buddy now exposes skill_manage for list/view/create/discover, but not the full Hermes edit/patch/delete/rollback lifecycle.',
+    nextWork: 'Keep mutation review-gated when adding full skill_manage update, deprecate, delete, and rollback parity.',
   },
   {
     name: 'browser_navigate',
@@ -603,7 +603,7 @@ function classifyTool(
 
   let status: HermesToolParityStatus;
   if (localToolNames.has(reference.name)) {
-    status = 'exact';
+    status = reference.equivalenceStatus === 'partial' ? 'partial' : 'exact';
   } else if (equivalents.length > 0 && missingExpectedCodeBuddyTools.length === 0) {
     status = reference.equivalenceStatus ?? 'native-equivalent';
   } else if (detectedEquivalentTools.length > 0 || reference.equivalenceStatus === 'partial') {

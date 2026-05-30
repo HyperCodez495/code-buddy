@@ -304,6 +304,79 @@ export const SKILL_VIEW_TOOL: CodeBuddyTool = {
   },
 };
 
+export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'skill_manage',
+    description: 'Hermes-style skill management facade. Supports list, view, create, and discover through Code Buddy skills primitives; full update/delete/rollback lifecycle remains review-gated future work.',
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'view', 'create', 'discover'],
+          description: 'Skill management action to run.',
+        },
+        name: {
+          type: 'string',
+          description: 'Skill name. Required for view and create.',
+        },
+        description: {
+          type: 'string',
+          description: 'One-sentence skill description. Required for create.',
+        },
+        body: {
+          type: 'string',
+          description: 'Full SKILL.md body. Required for create.',
+        },
+        tags: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Tags for create or discover.',
+        },
+        requires: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Required tools or capabilities for create.',
+        },
+        env: {
+          type: 'object',
+          description: 'Environment variables required by the created skill.',
+        },
+        overwrite: {
+          type: 'boolean',
+          description: 'Overwrite an existing workspace skill on create. Default: false.',
+        },
+        include_disabled: {
+          type: 'boolean',
+          description: 'Include disabled installed skills on list. Default: false.',
+        },
+        include_usage: {
+          type: 'boolean',
+          description: 'Include local usage telemetry on list. Default: true.',
+        },
+        include_content: {
+          type: 'boolean',
+          description: 'Include SKILL.md file content on view. Default: true.',
+        },
+        query: {
+          type: 'string',
+          description: 'Search query. Required for discover.',
+        },
+        auto_install: {
+          type: 'boolean',
+          description: 'Automatically install the top discovered skill. Default: false.',
+        },
+        limit: {
+          type: 'number',
+          description: 'Maximum discovered skills to return. Default: 5.',
+        },
+      },
+      required: ['action'],
+    },
+  },
+};
+
 export const DEVICE_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -1129,6 +1202,7 @@ export const AGENT_TOOLS: CodeBuddyTool[] = [
   SKILL_DISCOVER_TOOL,
   SKILLS_LIST_TOOL,
   SKILL_VIEW_TOOL,
+  SKILL_MANAGE_TOOL,
   DEVICE_MANAGE_TOOL,
   SPAWN_PARALLEL_AGENTS_TOOL,
   REMEMBER_TOOL,

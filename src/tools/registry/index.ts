@@ -209,6 +209,7 @@ export {
 
 // Tool Adapters - Skills inspection (Hermes skills_list / skill_view)
 export {
+  SkillManageExecuteTool,
   createSkillsInspectionTools,
 } from './skills-inspection-tools.js';
 

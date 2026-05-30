@@ -4,6 +4,8 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 let tempHome: string;
+let tempWorkspace: string;
+let originalCwd: string;
 
 async function parseToolOutput(result: { success: boolean; output?: string; error?: string }) {
   expect(result.success, result.error).toBe(true);
@@ -13,13 +15,18 @@ async function parseToolOutput(result: { success: boolean; output?: string; erro
 
 describe('skills_list and skill_view real SkillsHub integration', () => {
   beforeEach(async () => {
+    originalCwd = process.cwd();
     tempHome = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-skills-tools-'));
+    tempWorkspace = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-skill-manage-'));
+    process.chdir(tempWorkspace);
   });
 
   afterEach(async () => {
     const { resetSkillsHub } = await import('../../src/skills/hub.js');
+    process.chdir(originalCwd);
     resetSkillsHub();
     await fs.rm(tempHome, { recursive: true, force: true });
+    await fs.rm(tempWorkspace, { recursive: true, force: true });
   });
 
   it('lists and reads installed SKILL.md packages from the real lockfile', async () => {
@@ -51,7 +58,7 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     });
 
     const { createSkillsInspectionTools } = await import('../../src/tools/registry/skills-inspection-tools.js');
-    const [listTool, viewTool] = createSkillsInspectionTools();
+    const [listTool, viewTool, manageTool] = createSkillsInspectionTools();
 
     const enabledOnly = await parseToolOutput(await listTool!.execute({}));
     expect(enabledOnly.count).toBe(1);
@@ -64,5 +71,37 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect((viewed.installed as { version: string }).version).toBe('1.2.3');
     expect(viewed.integrityOk).toBe(true);
     expect(viewed.content).toContain('# Audit Helper');
+
+    const managedList = await parseToolOutput(await manageTool!.execute({ action: 'list', include_disabled: true }));
+    expect(managedList.action).toBe('skills_list');
+    expect(managedList.count).toBe(2);
+
+    const managedView = await parseToolOutput(await manageTool!.execute({ action: 'view', name: 'audit-helper' }));
+    expect(managedView.action).toBe('skill_view');
+    expect(managedView.content).toContain('Run concrete checks and report evidence.');
+
+    const missingDiscoverQuery = await manageTool!.execute({ action: 'discover' });
+    expect(missingDiscoverQuery.success).toBe(false);
+    expect(missingDiscoverQuery.error).toContain('query is required');
+
+    const created = await manageTool!.execute({
+      action: 'create',
+      name: 'real-test-skill',
+      description: 'Real skill_manage creation test',
+      body: ['# Real Test Skill', '', 'Use this to verify real SKILL.md file creation.'].join('\n'),
+      tags: ['hermes', 'test'],
+    });
+    expect(created.success, created.error).toBe(true);
+    expect(created.output).toContain('Skill created');
+
+    const createdFile = path.join(
+      tempWorkspace,
+      '.codebuddy',
+      'skills',
+      'workspace',
+      'real-test-skill',
+      'SKILL.md',
+    );
+    await expect(fs.readFile(createdFile, 'utf8')).resolves.toContain('Real Test Skill');
   });
 });

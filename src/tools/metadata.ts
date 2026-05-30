@@ -640,6 +640,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: true,
   },
   {
+    name: 'skill_manage',
+    category: 'utility',
+    keywords: ['skill', 'skills', 'manage', 'list', 'view', 'create', 'discover', 'lifecycle', 'hub', 'hermes'],
+    priority: 6,
+    description: 'Hermes-style facade for listing, viewing, creating, and discovering SKILL.md packages',
+  },
+  {
     name: 'device_manage',
     category: 'utility',
     keywords: ['device', 'ssh', 'adb', 'android', 'remote', 'screenshot', 'camera', 'pair'],

@@ -29,6 +29,18 @@ describe('Agent tool activation in LLM schemas', () => {
     expect(names.has('lessons_graph')).toBe(true);
   });
 
+  it('exposes the Hermes skill management facade to the LLM tool list', () => {
+    const skillManageTool = AGENT_TOOLS.find((tool) => tool.function.name === 'skill_manage');
+
+    expect(skillManageTool).toBeDefined();
+    expect(skillManageTool!.function.parameters.properties.action.enum).toEqual([
+      'list',
+      'view',
+      'create',
+      'discover',
+    ]);
+  });
+
   it('exposes browser proof-loop actions to the LLM schema', () => {
     const browserTool = BROWSER_TOOLS.find((tool) => tool.function.name === 'browser');
     expect(browserTool).toBeDefined();

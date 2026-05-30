@@ -293,6 +293,17 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['skill_view'],
         }),
         expect.objectContaining({
+          name: 'skill_manage',
+          status: 'partial',
+          detectedCodeBuddyTools: expect.arrayContaining([
+            'skill_manage',
+            'skills_list',
+            'skill_view',
+            'create_skill',
+            'skill_discover',
+          ]),
+        }),
+        expect.objectContaining({
           name: 'browser_get_images',
           status: 'exact',
           detectedCodeBuddyTools: ['browser_get_images'],

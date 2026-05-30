@@ -1,4 +1,5 @@
 import {
+  SKILL_MANAGE_TOOL,
   SKILLS_LIST_TOOL,
   SKILL_VIEW_TOOL,
 } from '../../codebuddy/tool-definitions/agent-tools.js';
@@ -7,6 +8,8 @@ import {
   executeSkillsListTool,
   executeSkillViewTool,
 } from '../skills-inspection-tool.js';
+import { getCreateSkillTool } from '../create-skill-tool.js';
+import { SkillDiscoveryTool } from '../skill-discovery-tool.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
 
 class CodeBuddyToolAdapter implements ITool {
@@ -67,6 +70,145 @@ class CodeBuddyToolAdapter implements ITool {
   }
 }
 
+type SkillManageAction = 'list' | 'view' | 'create' | 'discover';
+
+function readString(value: unknown): string {
+  return typeof value === 'string' ? value.trim() : '';
+}
+
+function readStringArray(value: unknown): string[] | undefined {
+  if (!Array.isArray(value)) {
+    return undefined;
+  }
+  const strings = value
+    .filter((item): item is string => typeof item === 'string')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  return strings.length > 0 ? strings : undefined;
+}
+
+function readStringRecord(value: unknown): Record<string, string> | undefined {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    return undefined;
+  }
+  const entries = Object.entries(value).filter(
+    (entry): entry is [string, string] => typeof entry[1] === 'string',
+  );
+  return entries.length > 0 ? Object.fromEntries(entries) : undefined;
+}
+
+export class SkillManageExecuteTool implements ITool {
+  readonly name = SKILL_MANAGE_TOOL.function.name;
+  readonly description = SKILL_MANAGE_TOOL.function.description;
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const action = readString(input.action) as SkillManageAction | '';
+
+    if (action === 'list') {
+      return await executeSkillsListTool(input);
+    }
+
+    if (action === 'view') {
+      return await executeSkillViewTool(input);
+    }
+
+    if (action === 'create') {
+      const name = readString(input.name);
+      const description = readString(input.description);
+      const body = readString(input.body);
+
+      if (!name) {
+        return { success: false, error: 'skill_manage create: name is required' };
+      }
+      if (!description) {
+        return { success: false, error: 'skill_manage create: description is required' };
+      }
+      if (!body) {
+        return { success: false, error: 'skill_manage create: body is required' };
+      }
+
+      return await getCreateSkillTool().execute({
+        name,
+        description,
+        body,
+        tags: readStringArray(input.tags),
+        env: readStringRecord(input.env),
+        requires: readStringArray(input.requires),
+        overwrite: input.overwrite === true,
+      });
+    }
+
+    if (action === 'discover') {
+      const query = readString(input.query);
+      if (!query) {
+        return { success: false, error: 'skill_manage discover: query is required' };
+      }
+
+      return await new SkillDiscoveryTool().execute({
+        query,
+        tags: readStringArray(input.tags),
+        auto_install: input.auto_install === true,
+        limit: typeof input.limit === 'number' ? input.limit : undefined,
+      });
+    }
+
+    return {
+      success: false,
+      error: 'skill_manage: action must be one of list, view, create, discover',
+    };
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: SKILL_MANAGE_TOOL.function.parameters as ToolSchema['parameters'],
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+
+    const data = input as Record<string, unknown>;
+    const action = readString(data.action);
+    if (!['list', 'view', 'create', 'discover'].includes(action)) {
+      return { valid: false, errors: ['action must be one of list, view, create, discover'] };
+    }
+    if (action === 'view' && !readString(data.name)) {
+      return { valid: false, errors: ['name is required for view'] };
+    }
+    if (action === 'discover' && !readString(data.query)) {
+      return { valid: false, errors: ['query is required for discover'] };
+    }
+    if (action === 'create') {
+      const missing = ['name', 'description', 'body'].filter((key) => !readString(data[key]));
+      if (missing.length > 0) {
+        return { valid: false, errors: [`${missing.join(', ')} required for create`] };
+      }
+    }
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'utility' as ToolCategoryType,
+      keywords: ['skills', 'skill', 'manage', 'list', 'view', 'create', 'discover', 'hermes'],
+      priority: 6,
+      modifiesFiles: true,
+      makesNetworkRequests: true,
+      fleetSafe: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
 export function createSkillsInspectionTools(): ITool[] {
   return [
     new CodeBuddyToolAdapter(
@@ -79,5 +221,6 @@ export function createSkillsInspectionTools(): ITool[] {
       executeSkillViewTool,
       ['skills', 'skill', 'view', 'read', 'content', 'inspect', 'show', 'hermes'],
     ),
+    new SkillManageExecuteTool(),
   ];
 }
