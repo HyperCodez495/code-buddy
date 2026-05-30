@@ -198,6 +198,87 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('`npx tsx src/index.ts hermes prompt-size safe --json`');
   });
 
+  it('prints JSON for official Hermes tool parity', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'tools-parity', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      officialSource: {
+        inspectedCommit: string;
+        sourceFiles: string[];
+      };
+      codeBuddySource: {
+        localToolCount: number;
+        localToolNames: string[];
+      };
+      summary: {
+        total: number;
+        exact: number;
+        nativeEquivalent: number;
+        partial: number;
+        gaps: number;
+      };
+      tools: Array<{
+        name: string;
+        status: string;
+        detectedCodeBuddyTools: string[];
+        missingExpectedCodeBuddyTools: string[];
+      }>;
+    };
+
+    expect(output.kind).toBe('hermes_official_tool_parity_manifest');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.officialSource.inspectedCommit).toBe('61268ff7');
+    expect(output.officialSource.sourceFiles).toContain('toolsets.py::_HERMES_CORE_TOOLS');
+    expect(output.codeBuddySource.localToolCount).toBeGreaterThan(0);
+    expect(output.codeBuddySource.localToolNames).toContain('browser');
+    expect(output.summary.total).toBe(output.tools.length);
+    expect(output.summary.nativeEquivalent).toBeGreaterThan(0);
+    expect(output.summary.partial).toBeGreaterThan(0);
+    expect(output.summary.gaps).toBeGreaterThan(0);
+    expect(output.tools).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          name: 'web_search',
+          status: 'exact',
+          detectedCodeBuddyTools: ['web_search'],
+        }),
+        expect.objectContaining({
+          name: 'terminal',
+          status: 'native-equivalent',
+          detectedCodeBuddyTools: ['bash'],
+        }),
+        expect.objectContaining({
+          name: 'browser_dialog',
+          status: 'gap',
+        }),
+        expect.objectContaining({
+          name: 'execute_code',
+          status: 'partial',
+          detectedCodeBuddyTools: expect.arrayContaining(['run_script', 'js_repl']),
+        }),
+      ]),
+    );
+  });
+
+  it('prints Markdown for official Hermes tool parity', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'tools-parity', '--markdown']);
+
+    const output = getLogOutput();
+    expect(output).toContain('# Hermes Official Tool Parity Manifest');
+    expect(output).toContain('## Summary');
+    expect(output).toContain('### browser_dialog');
+    expect(output).toContain('- Status: `gap`');
+    expect(output).toContain('`toolsets.py::_HERMES_CORE_TOOLS`');
+  });
+
   it('prints JSON for the Hermes integration plan', async () => {
     const program = createProgram();
     registerHermesCommands(program);

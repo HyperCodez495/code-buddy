@@ -29,6 +29,11 @@ import {
   renderHermesParityManifestMarkdown,
 } from '../../agent/hermes-parity-manifest.js';
 import {
+  buildHermesToolParityManifest,
+  renderHermesToolParityManifestMarkdown,
+  type HermesToolParityManifest,
+} from '../../agent/hermes-tool-parity-manifest.js';
+import {
   buildHermesHookLifecycleManifest,
   renderHermesHookLifecycleManifest,
 } from '../../hooks/hermes-lifecycle-hooks.js';
@@ -407,6 +412,29 @@ function renderHermesPromptSizeDiagnostic(diagnostic: HermesPromptSizeDiagnostic
   return lines.join('\n');
 }
 
+function renderHermesToolParityManifest(manifest: HermesToolParityManifest): string {
+  const lines = [
+    `Hermes tool parity: ${manifest.summary.total} official tools tracked ` +
+      `(${manifest.summary.exact} exact, ${manifest.summary.nativeEquivalent} native equivalents, ` +
+      `${manifest.summary.partial} partial, ${manifest.summary.gaps} gaps)`,
+    `Official source: ${manifest.officialSource.repository} @ ${manifest.officialSource.inspectedCommit}`,
+    `Local tool schemas: ${manifest.codeBuddySource.localToolCount}`,
+    '',
+  ];
+
+  for (const tool of manifest.tools) {
+    lines.push(`${tool.status.padEnd(17)} ${tool.name} (${tool.toolset})`);
+    if (tool.detectedCodeBuddyTools.length > 0) {
+      lines.push(`  Code Buddy: ${formatList(tool.detectedCodeBuddyTools)}`);
+    }
+    if (tool.nextWork) {
+      lines.push(`  Next: ${tool.nextWork}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 export function registerHermesCommands(program: Command): void {
   const hermes = program
     .command('hermes')
@@ -445,6 +473,28 @@ export function registerHermesCommands(program: Command): void {
           console.log(`  Next: ${feature.nextWork}`);
         }
       }
+    });
+
+  hermes
+    .command('tools-parity')
+    .description('Compare official Hermes tool names against built-in Code Buddy tool schemas')
+    .option('--json', 'output JSON')
+    .option('--markdown', 'output Markdown')
+    .action((options: HermesCommandOptions) => {
+      const localTools = collectOfflineBuiltinTools().map((tool) => tool.function.name);
+      const manifest = buildHermesToolParityManifest(localTools);
+
+      if (options.json) {
+        console.log(stableJson(manifest));
+        return;
+      }
+
+      if (options.markdown) {
+        console.log(renderHermesToolParityManifestMarkdown(manifest));
+        return;
+      }
+
+      console.log(renderHermesToolParityManifest(manifest));
     });
 
   hermes
