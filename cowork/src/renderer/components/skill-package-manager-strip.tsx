@@ -1,6 +1,19 @@
 import React, { useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { History, ListChecks, PackageOpen, ShieldCheck, Terminal } from 'lucide-react';
+import {
+  AlertCircle,
+  Archive,
+  CheckCircle2,
+  History,
+  ListChecks,
+  Loader2,
+  PackageOpen,
+  PauseCircle,
+  PlayCircle,
+  ShieldCheck,
+  Terminal,
+} from 'lucide-react';
+import type { LucideIcon } from 'lucide-react';
 
 type SkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 
@@ -41,6 +54,17 @@ export interface SkillPackageManagerSummary {
 }
 
 interface SkillPackageManagerApi {
+  lifecycle?: (options: {
+    action: 'enable' | 'disable' | 'deprecate';
+    approvedBy: string;
+    cwd?: string;
+    name: string;
+    reason?: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    package?: SkillPackageManagerEntry;
+  }>;
   list?: (options?: {
     cwd?: string;
     limit?: number;
@@ -72,8 +96,12 @@ export const SkillPackageManagerStrip: React.FC<{
   summary?: SkillPackageManagerSummary | null;
 }> = ({ cwd, error = null, onUseAsGoal, summary }) => {
   const { t } = useTranslation();
+  const [lifecycleError, setLifecycleError] = useState<string | null>(null);
+  const [lifecycleFeedback, setLifecycleFeedback] = useState<string | null>(null);
   const [loadedSummary, setLoadedSummary] = useState<SkillPackageManagerSummary | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [reviewerName, setReviewerName] = useState('');
+  const [updatingSkillKey, setUpdatingSkillKey] = useState<string | null>(null);
   const goalDraft = useMemo(() => buildSkillPackageManagerGoal(), []);
   const visibleSummary = summary !== undefined ? summary : loadedSummary;
   const visibleError = error ?? loadError;
@@ -105,6 +133,61 @@ export const SkillPackageManagerStrip: React.FC<{
     };
   }, [cwd, summary]);
 
+  const handleLifecycle = async (
+    skill: SkillPackageManagerEntry,
+    action: 'enable' | 'disable' | 'deprecate',
+  ) => {
+    const approvedBy = reviewerName.trim();
+    if (!approvedBy) {
+      setLifecycleError(t('fleet.skillPackage.reviewerRequired', 'Reviewer is required.'));
+      setLifecycleFeedback(null);
+      return;
+    }
+
+    const api = getSkillPackageManagerApi();
+    if (!api?.lifecycle) {
+      onUseAsGoal?.(buildSkillLifecycleGoal(skill.name, action, approvedBy));
+      return;
+    }
+
+    const updateKey = `${skill.name}:${action}`;
+    setUpdatingSkillKey(updateKey);
+    setLifecycleError(null);
+    setLifecycleFeedback(null);
+
+    try {
+      const result = await api.lifecycle({
+        action,
+        approvedBy,
+        cwd,
+        name: skill.name,
+      });
+      if (!result.ok) {
+        setLifecycleError(result.error ?? t('fleet.skillPackage.lifecycleFailed', 'Lifecycle update failed.'));
+        return;
+      }
+
+      setLifecycleFeedback(
+        t('fleet.skillPackage.lifecycleFeedback', '{{action}} {{skill}} by {{reviewer}}.', {
+          action,
+          reviewer: approvedBy,
+          skill: result.package?.name ?? skill.name,
+        })
+      );
+
+      if (summary === undefined && api.list) {
+        const refreshed = await api.list({ cwd, limit: 6 });
+        setLoadedSummary(refreshed);
+      }
+    } catch (lifecycleErrorValue: unknown) {
+      setLifecycleError(
+        lifecycleErrorValue instanceof Error ? lifecycleErrorValue.message : String(lifecycleErrorValue)
+      );
+    } finally {
+      setUpdatingSkillKey(null);
+    }
+  };
+
   return (
     <section
       className="mt-3 rounded border border-border-muted bg-surface/60 p-2"
@@ -122,6 +205,18 @@ export const SkillPackageManagerStrip: React.FC<{
             count: visibleSummary?.installedCount ?? 0,
           })}
         </span>
+      </div>
+
+      <div className="mt-1.5 flex min-w-0 items-center gap-1.5">
+        <input
+          aria-label={t('fleet.skillPackage.reviewerLabel', 'Reviewer')}
+          className="min-w-0 flex-1 rounded border border-border-muted bg-surface px-2 py-1 text-[10px] text-text-primary outline-none transition-colors placeholder:text-text-muted focus:border-accent"
+          data-testid="skill-package-reviewer-input"
+          onChange={(event) => setReviewerName(event.target.value)}
+          placeholder={t('fleet.skillPackage.reviewerPlaceholder', 'Reviewer')}
+          type="text"
+          value={reviewerName}
+        />
       </div>
 
       <div className="mt-1.5 flex flex-wrap gap-1">
@@ -158,6 +253,20 @@ export const SkillPackageManagerStrip: React.FC<{
           {t('fleet.skillPackage.loadFailed', 'Skill package load failed')}: {visibleError}
         </div>
       )}
+
+      {lifecycleError ? (
+        <div className="mt-1.5 flex items-start gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+          <AlertCircle size={10} className="mt-0.5 shrink-0" />
+          <span>{lifecycleError}</span>
+        </div>
+      ) : null}
+
+      {lifecycleFeedback ? (
+        <div className="mt-1.5 flex items-start gap-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
+          <CheckCircle2 size={10} className="mt-0.5 shrink-0" />
+          <span>{lifecycleFeedback}</span>
+        </div>
+      ) : null}
 
       {visiblePackages.length > 0 ? (
         <ul className="mt-1.5 space-y-1">
@@ -205,6 +314,35 @@ export const SkillPackageManagerStrip: React.FC<{
                   {skill.lastError}
                 </div>
               ) : null}
+              <div className="mt-1 flex flex-wrap justify-end gap-1">
+                {skill.status !== 'active' ? (
+                  <LifecycleButton
+                    action="enable"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={PlayCircle}
+                    loading={updatingSkillKey === `${skill.name}:enable`}
+                    onClick={() => void handleLifecycle(skill, 'enable')}
+                  />
+                ) : null}
+                {skill.enabled ? (
+                  <LifecycleButton
+                    action="disable"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={PauseCircle}
+                    loading={updatingSkillKey === `${skill.name}:disable`}
+                    onClick={() => void handleLifecycle(skill, 'disable')}
+                  />
+                ) : null}
+                {skill.status !== 'deprecated' ? (
+                  <LifecycleButton
+                    action="deprecate"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={Archive}
+                    loading={updatingSkillKey === `${skill.name}:deprecate`}
+                    onClick={() => void handleLifecycle(skill, 'deprecate')}
+                  />
+                ) : null}
+              </div>
             </li>
           ))}
         </ul>
@@ -255,4 +393,40 @@ function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
       };
     }
   ).electronAPI?.tools?.skillPackage;
+}
+
+const LifecycleButton: React.FC<{
+  action: 'enable' | 'disable' | 'deprecate';
+  disabled: boolean;
+  icon: LucideIcon;
+  loading: boolean;
+  onClick: () => void;
+}> = ({ action, disabled, icon: Icon, loading, onClick }) => (
+  <button
+    className="flex items-center gap-1 rounded border border-accent/50 px-2 py-1 text-[10px] text-accent transition-colors hover:bg-accent/10 disabled:cursor-not-allowed disabled:opacity-50"
+    data-testid={`skill-package-${action}`}
+    disabled={disabled}
+    onClick={onClick}
+    type="button"
+  >
+    {loading ? <Loader2 size={10} className="animate-spin" /> : <Icon size={10} />}
+    {action}
+  </button>
+);
+
+function buildSkillLifecycleGoal(
+  skillName: string,
+  action: 'enable' | 'disable' | 'deprecate',
+  approvedBy: string,
+): string {
+  return [
+    `Apply the reviewed ${action} lifecycle action to skill ${skillName}.`,
+    '',
+    'Use the review-gated command:',
+    `- skill_manage action=${action} name=${skillName} approved_by=${formatReviewerForCommand(approvedBy)}`,
+  ].join('\n');
+}
+
+function formatReviewerForCommand(value: string): string {
+  return /^[A-Za-z0-9._-]+$/.test(value) ? value : JSON.stringify(value);
 }

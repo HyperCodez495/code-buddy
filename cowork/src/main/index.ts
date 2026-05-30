@@ -185,7 +185,10 @@ import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
-import { listSkillPackagesForReview } from './tools/skill-package-manager-bridge';
+import {
+  listSkillPackagesForReview,
+  setSkillPackageLifecycleForReview,
+} from './tools/skill-package-manager-bridge';
 import {
   installSkillCandidateForReview,
   listSkillCandidatesForReview,
@@ -4070,6 +4073,43 @@ ipcMain.handle(
     } catch (err) {
       logWarn('[tools.skillPackage.list] failed:', err);
       return null;
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.lifecycle',
+  async (
+    _event,
+    payload?: {
+      action?: 'enable' | 'disable' | 'deprecate';
+      approvedBy?: string;
+      cwd?: string;
+      name?: string;
+      reason?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const action = payload?.action;
+      if (action !== 'enable' && action !== 'disable' && action !== 'deprecate') {
+        throw new Error('Unsupported skill package lifecycle action.');
+      }
+      const result = await setSkillPackageLifecycleForReview({
+        action,
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.lifecycle] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 );

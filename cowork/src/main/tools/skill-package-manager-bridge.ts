@@ -2,6 +2,7 @@ import { isAbsolute, resolve } from 'path';
 import { loadCoreModule } from '../utils/core-loader';
 
 type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
+export type SkillPackageLifecycleAction = 'enable' | 'disable' | 'deprecate';
 
 export interface SkillPackageManagerEntry {
   averageDurationMs?: number;
@@ -44,11 +45,30 @@ export interface ListSkillPackagesForReviewOptions {
   rootDir: string;
 }
 
+export interface SetSkillPackageLifecycleForReviewOptions {
+  action: SkillPackageLifecycleAction;
+  approvedBy: string;
+  name: string;
+  reason?: string;
+  rootDir: string;
+}
+
+export interface SetSkillPackageLifecycleForReviewResult {
+  package: SkillPackageManagerEntry;
+  summary: SkillPackageManagerSummary;
+}
+
 interface HermesSkillPackageModule {
   buildHermesSkillPackageSummary: (
     workDir: string,
     options?: { limit?: number },
   ) => SkillPackageManagerSummary;
+  setHermesSkillPackageLifecycle?: (
+    workDir: string,
+    skillName: string,
+    action: SkillPackageLifecycleAction,
+    options: { actor: string; reason?: string },
+  ) => SkillPackageManagerEntry | null;
 }
 
 export async function listSkillPackagesForReview(
@@ -63,6 +83,47 @@ export async function listSkillPackagesForReview(
   return mod.buildHermesSkillPackageSummary(rootDir, {
     limit: normalizeLimit(options.limit),
   });
+}
+
+export async function setSkillPackageLifecycleForReview(
+  options: SetSkillPackageLifecycleForReviewOptions,
+): Promise<SetSkillPackageLifecycleForReviewResult> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir);
+  if (!rootDir) {
+    throw new Error('An absolute workspace root is required to manage a skill package.');
+  }
+
+  const approvedBy = options.approvedBy.trim();
+  if (!approvedBy) {
+    throw new Error('approvedBy is required to manage a skill package from Cowork.');
+  }
+
+  const name = options.name.trim();
+  if (!name) {
+    throw new Error('name is required to manage a skill package from Cowork.');
+  }
+
+  if (!['enable', 'disable', 'deprecate'].includes(options.action)) {
+    throw new Error(`Unsupported skill package lifecycle action: ${options.action}`);
+  }
+
+  const mod = await loadCoreModule<HermesSkillPackageModule>('agent/hermes-skill-package-summary.js');
+  if (!mod?.setHermesSkillPackageLifecycle || !mod.buildHermesSkillPackageSummary) {
+    throw new Error('Core skill package lifecycle module is unavailable.');
+  }
+
+  const updated = mod.setHermesSkillPackageLifecycle(rootDir, name, options.action, {
+    actor: approvedBy,
+    reason: options.reason?.trim() || undefined,
+  });
+  if (!updated) {
+    throw new Error(`Skill package not found: ${name}`);
+  }
+
+  return {
+    package: updated,
+    summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
+  };
 }
 
 function normalizeAbsoluteRoot(value: string | undefined): string | null {

@@ -1,7 +1,10 @@
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
-import { listSkillPackagesForReview } from '../src/main/tools/skill-package-manager-bridge';
+import {
+  listSkillPackagesForReview,
+  setSkillPackageLifecycleForReview,
+} from '../src/main/tools/skill-package-manager-bridge';
 
 vi.mock('../src/main/utils/core-loader', () => ({
   loadCoreModule: vi.fn(),
@@ -59,6 +62,73 @@ describe('skill package manager bridge', () => {
     });
 
     expect(summary).toBeNull();
+    expect(mockedLoadCoreModule).not.toHaveBeenCalled();
+  });
+
+  it('applies reviewer-gated lifecycle actions through the core package summary module', async () => {
+    const setHermesSkillPackageLifecycle = vi.fn(() => ({
+      enabled: false,
+      exists: true,
+      installedAt: 1,
+      integrityOk: true,
+      lastLifecycleReason: 'Paused during review.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'audit-helper',
+      path: 'D:/workspace/.codebuddy/skills/audit-helper/SKILL.md',
+      rollbackableCount: 0,
+      source: 'local',
+      status: 'disabled',
+      version: '1.0.0',
+    }));
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 1,
+      enabledCount: 0,
+      installedCount: 1,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 0,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      setHermesSkillPackageLifecycle,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await setSkillPackageLifecycleForReview({
+      action: 'disable',
+      approvedBy: 'Patrice',
+      name: 'audit-helper',
+      reason: 'Paused during review.',
+      rootDir,
+    });
+
+    expect(setHermesSkillPackageLifecycle).toHaveBeenCalledWith(rootDir, 'audit-helper', 'disable', {
+      actor: 'Patrice',
+      reason: 'Paused during review.',
+    });
+    expect(result).toMatchObject({
+      package: {
+        lastLifecycleReviewer: 'Patrice',
+        name: 'audit-helper',
+        status: 'disabled',
+      },
+      summary: {
+        disabledCount: 1,
+      },
+    });
+  });
+
+  it('requires reviewer identity before package lifecycle changes', async () => {
+    await expect(setSkillPackageLifecycleForReview({
+      action: 'disable',
+      approvedBy: ' ',
+      name: 'audit-helper',
+      rootDir: path.resolve('workspace'),
+    })).rejects.toThrow('approvedBy is required');
+
     expect(mockedLoadCoreModule).not.toHaveBeenCalled();
   });
 });

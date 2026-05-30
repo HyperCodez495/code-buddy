@@ -3,7 +3,10 @@ import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { buildHermesSkillPackageSummary } from '../../src/agent/hermes-skill-package-summary.js';
+import {
+  buildHermesSkillPackageSummary,
+  setHermesSkillPackageLifecycle,
+} from '../../src/agent/hermes-skill-package-summary.js';
 import { SkillsHub } from '../../src/skills/hub.js';
 
 let tempDir: string;
@@ -127,5 +130,85 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       }),
     ]));
     expect(summary.packages[0]?.status).toBe('deprecated');
+  });
+
+  it('applies review-gated lifecycle changes to the real workspace lockfile', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    await hub.installFromContent(
+      'lifecycle-helper',
+      skillContent('lifecycle-helper', '1.0.0', 'Lifecycle-managed helper.'),
+    );
+
+    const disabled = setHermesSkillPackageLifecycle(
+      tempDir,
+      'lifecycle-helper',
+      'disable',
+      {
+        actor: 'Patrice',
+        reason: 'Pause for review.',
+        updatedAt: 6_000,
+      },
+    );
+
+    expect(disabled).toMatchObject({
+      enabled: false,
+      lastLifecycleReason: 'Pause for review.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'lifecycle-helper',
+      status: 'disabled',
+    });
+
+    const deprecated = setHermesSkillPackageLifecycle(
+      tempDir,
+      'lifecycle-helper',
+      'deprecate',
+      {
+        actor: 'Patrice',
+        reason: 'Superseded by a reviewed skill.',
+        updatedAt: 7_000,
+      },
+    );
+
+    expect(deprecated).toMatchObject({
+      enabled: false,
+      lastLifecycleReason: 'Superseded by a reviewed skill.',
+      lastLifecycleReviewer: 'Patrice',
+      status: 'deprecated',
+    });
+
+    const enabled = setHermesSkillPackageLifecycle(
+      tempDir,
+      'lifecycle-helper',
+      'enable',
+      {
+        actor: 'Patrice',
+        reason: 'Review passed.',
+        updatedAt: 8_000,
+      },
+    );
+
+    expect(enabled).toMatchObject({
+      enabled: true,
+      lastLifecycleReason: 'Review passed.',
+      lastLifecycleReviewer: 'Patrice',
+      status: 'active',
+    });
+
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary).toMatchObject({
+      disabledCount: 0,
+      enabledCount: 1,
+      installedCount: 1,
+    });
+    expect(summary.packages[0]).toMatchObject({
+      lastLifecycleReviewer: 'Patrice',
+      name: 'lifecycle-helper',
+      status: 'active',
+    });
   });
 });

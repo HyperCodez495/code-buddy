@@ -7,6 +7,7 @@ import {
 } from '../skills/hub.js';
 
 export type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
+export type HermesSkillPackageLifecycleAction = 'enable' | 'disable' | 'deprecate';
 
 export interface HermesSkillPackageEntry {
   averageDurationMs?: number;
@@ -49,19 +50,17 @@ export interface HermesSkillPackageSummaryOptions {
   previewChars?: number;
 }
 
+export interface SetHermesSkillPackageLifecycleOptions {
+  actor: string;
+  reason?: string;
+  updatedAt?: number;
+}
+
 export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
 ): HermesSkillPackageSummary {
-  const root = path.resolve(workDir);
-  const lockfilePath = path.join(root, '.codebuddy', 'skills-lock.json');
-  const skillRoot = path.join(root, '.codebuddy', 'skills');
-  const cacheDir = path.join(root, '.codebuddy', 'skills-cache');
-  const hub = new SkillsHub({
-    cacheDir,
-    lockfilePath,
-    skillsDir: skillRoot,
-  });
+  const { cacheDir, hub, lockfilePath, skillRoot } = buildWorkspaceSkillsHub(workDir);
   const allPackages = hub
     .list()
     .map((skill) => summarizeInstalledSkill(
@@ -93,6 +92,39 @@ export function buildHermesSkillPackageSummary(
     rollbackableCount: allPackages.reduce((total, skill) => total + skill.rollbackableCount, 0),
     skillRoot,
   };
+}
+
+export function setHermesSkillPackageLifecycle(
+  workDir: string,
+  skillName: string,
+  action: HermesSkillPackageLifecycleAction,
+  options: SetHermesSkillPackageLifecycleOptions,
+): HermesSkillPackageEntry | null {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill lifecycle changes.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill lifecycle changes.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  const enabled = action === 'enable';
+  const installed = hub.setEnabled(name, enabled, {
+    actor,
+    reason: options.reason?.trim() || undefined,
+    status: action === 'deprecate' ? 'deprecated' : enabled ? 'active' : 'disabled',
+    updatedAt: options.updatedAt,
+  });
+  if (!installed) return null;
+
+  return summarizeInstalledSkill(
+    installed,
+    hub.getInstalledSkillHistory(installed.name),
+    hub.info(installed.name)?.content,
+    normalizePreviewChars(undefined),
+  );
 }
 
 function summarizeInstalledSkill(
@@ -128,6 +160,24 @@ function summarizeInstalledSkill(
     ...(typeof usage?.successCount === 'number' ? { successCount: usage.successCount } : {}),
     version: skill.version,
   };
+}
+
+function buildWorkspaceSkillsHub(workDir: string): {
+  cacheDir: string;
+  hub: SkillsHub;
+  lockfilePath: string;
+  skillRoot: string;
+} {
+  const root = path.resolve(workDir);
+  const lockfilePath = path.join(root, '.codebuddy', 'skills-lock.json');
+  const skillRoot = path.join(root, '.codebuddy', 'skills');
+  const cacheDir = path.join(root, '.codebuddy', 'skills-cache');
+  const hub = new SkillsHub({
+    cacheDir,
+    lockfilePath,
+    skillsDir: skillRoot,
+  });
+  return { cacheDir, hub, lockfilePath, skillRoot };
 }
 
 function lifecycleStatus(

@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import React from 'react';
-import { act } from 'react-dom/test-utils';
+import { act, Simulate } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -119,7 +119,9 @@ describe('SkillPackageManagerStrip', () => {
     expect(strip?.textContent).toContain('buddy skills doctor --json');
     expect(strip?.textContent).toContain('buddy skills learning-usage --json');
 
-    const button = target.querySelector('button');
+    const button = Array.from(target.querySelectorAll('button')).find((candidate) =>
+      candidate.textContent?.includes('Manage skills as goal')
+    );
     expect(button?.textContent).toContain('Manage skills as goal');
 
     act(() => {
@@ -190,5 +192,97 @@ describe('SkillPackageManagerStrip', () => {
 
   it('keeps the goal helper focused on review-gated lifecycle work', () => {
     expect(buildSkillPackageManagerGoal()).toContain('approved_by=<reviewer>');
+  });
+
+  it('requires reviewer identity before changing an installed skill lifecycle', async () => {
+    const target = container();
+    const lifecycle = vi.fn().mockResolvedValue({
+      ok: true,
+      package: {
+        enabled: false,
+        exists: true,
+        installedAt: 1,
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'loaded-helper',
+        path: 'D:/workspace/.codebuddy/skills/loaded-helper/SKILL.md',
+        rollbackableCount: 0,
+        source: 'local',
+        status: 'disabled',
+        version: '1.0.0',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            lifecycle: typeof lifecycle;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          lifecycle,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: true,
+              name: 'loaded-helper',
+              path: 'D:/workspace/.codebuddy/skills/loaded-helper/SKILL.md',
+              rollbackableCount: 0,
+              source: 'local',
+              status: 'active',
+              version: '1.0.0',
+            },
+          ],
+          reviewCommands: ['buddy skills list --all --json'],
+          rollbackableCount: 0,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let disableButton = target.querySelector('[data-testid="skill-package-disable"]') as HTMLButtonElement;
+    expect(disableButton.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    disableButton = target.querySelector('[data-testid="skill-package-disable"]') as HTMLButtonElement;
+    expect(disableButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(disableButton);
+      await Promise.resolve();
+    });
+
+    expect(lifecycle).toHaveBeenCalledWith({
+      action: 'disable',
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      name: 'loaded-helper',
+    });
+    expect(target.textContent).toContain('disable loaded-helper by Patrice.');
   });
 });
