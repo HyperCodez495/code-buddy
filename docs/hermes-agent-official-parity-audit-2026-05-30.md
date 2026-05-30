@@ -48,7 +48,9 @@ platform connectors. Several concrete gaps from this audit now have native
 Code Buddy equivalents: `buddy hermes prompt-size`, exact `kanban_*`,
 exact `send_message`, exact core `discord`, exact `execute_code` with
 persisted run artifacts, and exact local `vision_analyze` / `browser_vision` /
-`text_to_speech`, exact Home Assistant `ha_*` tools, exact Spotify tools, exact `x_search`, exact Feishu document/comment tools, plus exact `mixture_of_agents`.
+`text_to_speech`, exact `image_generate` / `video_analyze` / `video_generate`,
+exact Home Assistant `ha_*` tools, exact Spotify tools, exact `x_search`, exact
+Feishu document/comment tools, plus exact `mixture_of_agents`.
 
 ## Parity matrix
 
@@ -59,7 +61,7 @@ persisted run artifacts, and exact local `vision_analyze` / `browser_vision` /
 | Prompt-size diagnostic | `hermes prompt-size` offline byte breakdown for system prompt and tool schemas | `buddy hermes prompt-size [profile] [--json]`; `tests/commands/hermes-commands.test.ts` | Covered/partial | Runs offline and reports Hermes prompt, profile/toolset/plan JSON, local skills/memory footprint metadata, active tool schemas, and profile-filtered tools. It is native Code Buddy output, not byte-for-byte upstream Hermes output. |
 | Providers/models | Nous Portal, OpenRouter, OpenAI/Codex, Copilot, Anthropic, Gemini, Hugging Face, Novita, z.ai, Kimi, MiniMax, Bedrock, Azure, local/custom, etc. | Code Buddy provider routing, OpenAI-compatible client, Gemini native path, model tools config | Covered/partial | Strong coverage, but exact provider list and setup flows differ. |
 | Toolsets | Core/composite/platform/dynamic toolsets; per-platform `hermes-cli`, `hermes-discord`, `hermes-feishu`, etc. | Fleet dispatch profiles and `fleet.hermes.<profile>` descriptors; active tool filter enforcement | Partial | Code Buddy has useful Hermes-style filters, not the full official per-platform toolset catalog. |
-| Built-in tools | Browser, file, terminal/process, web, Home Assistant, Spotify, Kanban, `execute_code`, `cronjob`, `session_search`, skills, TTS, image/video, vision, messaging, MOA, X search, Feishu, Yuanbao, MCP | Code Buddy has many native tools plus Firecrawl, browser/CDP, sessions, skills, Fleet, image/vision/voice pieces, exact `kanban_*`, exact `send_message`, exact core `discord`, exact Home Assistant `ha_*`, exact Spotify tools, exact `x_search`, exact Feishu document/comment tools, exact `mixture_of_agents`, exact `execute_code`, exact `vision_analyze`, exact `browser_vision`, and exact `text_to_speech` | Partial | Not a one-to-one tool-name or capability set; no proof for Yuanbao. Kanban, send_message, discord core actions, Home Assistant REST actions, Spotify, X Search, Feishu, MoA, execute_code, vision_analyze, browser_vision, and text_to_speech now have exact prompt-tool names with native safety boundaries. |
+| Built-in tools | Browser, file, terminal/process, web, Home Assistant, Spotify, Kanban, `execute_code`, `cronjob`, `session_search`, skills, TTS, image/video, vision, messaging, MOA, X search, Feishu, Yuanbao, MCP | Code Buddy has many native tools plus Firecrawl, browser/CDP, sessions, skills, Fleet, image/vision/voice pieces, exact `kanban_*`, exact `send_message`, exact core `discord`, exact Home Assistant `ha_*`, exact Spotify tools, exact `x_search`, exact Feishu document/comment tools, exact `mixture_of_agents`, exact `execute_code`, exact `vision_analyze`, exact `browser_vision`, exact `text_to_speech`, and exact `image_generate` / `video_analyze` / `video_generate` | Partial | Not a one-to-one tool-name or capability set; no proof for Yuanbao. Kanban, send_message, discord core actions, Home Assistant REST actions, Spotify, X Search, Feishu, MoA, execute_code, vision_analyze, browser_vision, text_to_speech, and media generation/video analysis now have exact prompt-tool names with native safety boundaries. |
 | Messaging gateway | Single gateway process across Telegram, Discord, Slack, WhatsApp, Signal, SMS, Email, Home Assistant, Mattermost, Matrix, DingTalk, Feishu, WeCom, Weixin, BlueBubbles, QQ, Yuanbao, Teams, LINE, ntfy, Open WebUI, etc. | `src/channels/*`, `src/channels/send-message.ts`, `src/tools/discord-platform-tool.ts`, `docs/channels.md`, `src/server/channel-a2a-bridge.ts`, `buddy channels status --json`; many channels including Telegram/Discord/Slack/WhatsApp/Signal/Matrix/Teams/LINE/Feishu/iMessage/etc. | Partial | Code Buddy is broad, gateway readiness is machine-readable without secret leakage, `send_message` dry-runs to a real outbox by default with approval-gated live delivery, and the exact `discord` tool covers upstream core actions. The official Hermes platform list, gateway lifecycle, admin actions, and slash parity are still not identical. |
 | Browser automation | Browserbase, Browser Use, Firecrawl, Camofox/Camoufox, local CDP, agent-browser, hybrid public/private routing, dialog handling, session recording | Stagehand/CDP/browser automation, Firecrawl tools, browser watchdogs, exact browser dialog and browser vision surfaces, security audit around CDP | Partial | Strong local browser work, but no complete proof of Hermes backend parity for Camofox, Browser Use gateway mode, hybrid private routing, and session recording. |
 | Nous Portal Tool Gateway | OAuth setup, `hermes portal status`, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use | Separate provider/tool integrations; no Nous Portal command surface found | Gap | This is an upstream subscription-specific integration, not currently a Code Buddy equivalent. |
@@ -79,8 +81,8 @@ persisted run artifacts, and exact local `vision_analyze` / `browser_vision` /
 1. Keep the machine-checkable parity manifest current.
    - `buddy hermes parity --json` exposes each Hermes feature row with local
      evidence paths, status, and verification commands.
-2. Close the user-facing gaps first: provider/model setup clarity and Cowork screens for the active
-   Hermes/Fleet toolset.
+2. Close the remaining user-facing gaps first: provider/model setup clarity and
+   Cowork screens for the active Hermes/Fleet toolset.
 3. Treat deep parity items as optional product decisions: Nous Portal, Camofox,
    full OpenClaw migration, all memory providers, Modal/Daytona.
 
@@ -103,7 +105,9 @@ persisted run artifacts, and exact local `vision_analyze` / `browser_vision` /
 - `npm test -- tests/tools/execute-code-real.test.ts --run`
 - `npm test -- tests/tools/vision-analyze-real.test.ts --run`
 - `npm test -- tests/tools/text-to-speech-real.test.ts --run`
+- `npm test -- tests/tools/media-generation-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
 - `npx tsx src/index.ts hermes kanban list --json`
+- `npx tsx src/index.ts hermes tools --json`
 - `npx tsx src/index.ts hermes parity --json`
 
 ## Caveats

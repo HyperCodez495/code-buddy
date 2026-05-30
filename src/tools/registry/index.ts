@@ -266,6 +266,9 @@ export {
 export {
   AudioExecuteTool,
   TextToSpeechTool,
+  ImageGenerateTool,
+  VideoAnalyzeTool,
+  VideoGenerateTool,
   VideoExecuteTool,
   PDFExecuteTool,
   OCRExecuteTool,

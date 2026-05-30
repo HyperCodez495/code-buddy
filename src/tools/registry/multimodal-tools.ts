@@ -15,6 +15,14 @@ import {
   type TextToSpeechOptions,
   type TextToSpeechProvider,
 } from '../text-to-speech-tool.js';
+import {
+  generateImage,
+  generateVideo,
+  type MediaGenerationRuntime,
+} from '../media-generation-tool.js';
+import {
+  analyzeVideoWithModel,
+} from '../video-analysis-tool.js';
 
 // ============================================================================
 // Lazy-loaded tool instances
@@ -293,6 +301,243 @@ export class TextToSpeechTool implements ITool {
       category: 'media' as ToolCategoryType,
       keywords: ['tts', 'speech', 'audio', 'voice', 'hermes', 'text_to_speech'],
       priority: 7,
+      modifiesFiles: true,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
+// ImageGenerateTool
+// ============================================================================
+
+export class ImageGenerateTool implements ITool {
+  readonly name = 'image_generate';
+  readonly description = 'Generate an image from a text prompt through the configured image backend.';
+
+  constructor(private readonly options: MediaGenerationRuntime = {}) {}
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    try {
+      const result = await generateImage({
+        prompt: requiredString(input, 'prompt'),
+        aspectRatio: optionalString(input, 'aspect_ratio'),
+      }, {
+        ...this.options,
+        rootDir: this.options.rootDir ?? context?.cwd,
+      });
+      return {
+        success: true,
+        output: JSON.stringify(result, null, 2),
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: {
+            type: 'string',
+            description: 'Text prompt describing the desired image.',
+          },
+          aspect_ratio: {
+            type: 'string',
+            enum: ['landscape', 'square', 'portrait'],
+            description: 'Output aspect ratio: landscape, square, or portrait. Default landscape.',
+          },
+        },
+        required: ['prompt'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) return { valid: false, errors: ['Input must be an object'] };
+    const data = input as Record<string, unknown>;
+    if (typeof data.prompt !== 'string' || !data.prompt.trim()) return { valid: false, errors: ['prompt is required'] };
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['image', 'generate', 'media', 'openai', 'xai', 'hermes'],
+      priority: 8,
+      modifiesFiles: true,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
+// VideoAnalyzeTool
+// ============================================================================
+
+export class VideoAnalyzeTool implements ITool {
+  readonly name = 'video_analyze';
+  readonly description = 'Analyze a video from a URL or local file path using a configured video-capable model.';
+
+  constructor(private readonly options: MediaGenerationRuntime = {}) {}
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    try {
+      const result = await analyzeVideoWithModel({
+        videoUrl: requiredString(input, 'video_url'),
+        question: requiredString(input, 'question'),
+      }, {
+        ...this.options,
+        rootDir: this.options.rootDir ?? context?.cwd,
+      });
+      return {
+        success: true,
+        output: JSON.stringify(result, null, 2),
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          video_url: {
+            type: 'string',
+            description: 'HTTP/HTTPS URL, file:// URL, or local file path to the video.',
+          },
+          question: {
+            type: 'string',
+            description: 'Specific question to answer about the video.',
+          },
+        },
+        required: ['video_url', 'question'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) return { valid: false, errors: ['Input must be an object'] };
+    const data = input as Record<string, unknown>;
+    if (typeof data.video_url !== 'string' || !data.video_url.trim()) return { valid: false, errors: ['video_url is required'] };
+    if (typeof data.question !== 'string' || !data.question.trim()) return { valid: false, errors: ['question is required'] };
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['video', 'analyze', 'vision', 'gemini', 'openai', 'hermes'],
+      priority: 8,
+      modifiesFiles: true,
+      makesNetworkRequests: true,
+    };
+  }
+
+  isAvailable(): boolean { return true; }
+}
+
+// ============================================================================
+// VideoGenerateTool
+// ============================================================================
+
+export class VideoGenerateTool implements ITool {
+  readonly name = 'video_generate';
+  readonly description = 'Generate a video from text or animate an image through the configured video backend.';
+
+  constructor(private readonly options: MediaGenerationRuntime = {}) {}
+
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    try {
+      const result = await generateVideo({
+        prompt: requiredString(input, 'prompt'),
+        imageUrl: optionalString(input, 'image_url'),
+        referenceImageUrls: optionalStringList(input.reference_image_urls),
+        duration: optionalNumber(input, 'duration'),
+        aspectRatio: optionalString(input, 'aspect_ratio'),
+        resolution: optionalString(input, 'resolution'),
+        negativePrompt: optionalString(input, 'negative_prompt'),
+        audio: optionalBoolean(input.audio),
+        seed: optionalNumber(input, 'seed'),
+        model: optionalString(input, 'model'),
+      }, {
+        ...this.options,
+        rootDir: this.options.rootDir ?? context?.cwd,
+      });
+      return {
+        success: true,
+        output: JSON.stringify(result, null, 2),
+        data: result,
+      };
+    } catch (error) {
+      return {
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          prompt: { type: 'string', description: 'Text instruction describing the desired video.' },
+          image_url: { type: 'string', description: 'Optional image URL for image-to-video.' },
+          reference_image_urls: { type: 'array', items: { type: 'string' }, description: 'Optional reference image URLs.' },
+          duration: { type: 'number', description: 'Desired duration in seconds.' },
+          aspect_ratio: { type: 'string', enum: ['16:9', '9:16', '1:1', '4:3', '3:4', '3:2', '2:3'], description: 'Output aspect ratio.' },
+          resolution: { type: 'string', enum: ['360p', '480p', '540p', '720p', '1080p', '4k'], description: 'Output resolution.' },
+          negative_prompt: { type: 'string', description: 'Optional negative prompt.' },
+          audio: { type: 'boolean', description: 'Optional native audio generation toggle.' },
+          seed: { type: 'number', description: 'Optional seed.' },
+          model: { type: 'string', description: 'Optional configured model/family override for the active backend.' },
+        },
+        required: ['prompt'],
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) return { valid: false, errors: ['Input must be an object'] };
+    const data = input as Record<string, unknown>;
+    if (typeof data.prompt !== 'string' || !data.prompt.trim()) return { valid: false, errors: ['prompt is required'] };
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'media' as ToolCategoryType,
+      keywords: ['video', 'generate', 'xai', 'fal', 'media', 'hermes'],
+      priority: 8,
       modifiesFiles: true,
       makesNetworkRequests: true,
     };
@@ -946,6 +1191,9 @@ export function createMultimodalTools(): ITool[] {
   return [
     new AudioExecuteTool(),
     new TextToSpeechTool(),
+    new ImageGenerateTool(),
+    new VideoAnalyzeTool(),
+    new VideoGenerateTool(),
     new VideoExecuteTool(),
     new PDFExecuteTool(),
     new OCRExecuteTool(),
@@ -974,6 +1222,18 @@ function optionalString(data: Record<string, unknown>, key: string): string | un
 function optionalNumber(data: Record<string, unknown>, key: string): number | undefined {
   const value = data[key];
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function optionalBoolean(value: unknown): boolean | undefined {
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function optionalStringList(value: unknown): string[] | undefined {
+  if (value === undefined) return undefined;
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  if (!Array.isArray(value)) return undefined;
+  const values = value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0).map(item => item.trim());
+  return values.length > 0 ? values : undefined;
 }
 
 function optionalProvider(value: unknown): TextToSpeechProvider | undefined {

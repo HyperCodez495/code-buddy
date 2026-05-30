@@ -669,11 +669,32 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Convert text to a local speech audio file'
   },
   {
+    name: 'image_generate',
+    category: 'media',
+    keywords: ['image', 'generate', 'picture', 'photo', 'openai', 'xai', 'hermes'],
+    priority: 8,
+    description: 'Generate an image through the configured image backend and cache returned media when possible'
+  },
+  {
     name: 'video',
     category: 'media',
     keywords: ['video', 'movie', 'frames', 'thumbnail', 'mp4', 'extract'],
     priority: 5,
     description: 'Process video files'
+  },
+  {
+    name: 'video_analyze',
+    category: 'media',
+    keywords: ['video', 'analyze', 'vision', 'movie', 'mp4', 'gemini', 'openai', 'hermes'],
+    priority: 8,
+    description: 'Analyze a local or remote video with a configured video-capable model'
+  },
+  {
+    name: 'video_generate',
+    category: 'media',
+    keywords: ['video', 'generate', 'text-to-video', 'image-to-video', 'xai', 'fal', 'hermes'],
+    priority: 8,
+    description: 'Generate a video through the configured video backend and cache returned media when possible'
   },
   {
     name: 'ocr',

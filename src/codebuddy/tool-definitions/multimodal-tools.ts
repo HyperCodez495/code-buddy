@@ -135,6 +135,31 @@ export const TEXT_TO_SPEECH_TOOL: CodeBuddyTool = {
   }
 };
 
+// Hermes Image Generation Tool - Generate an image through the configured backend
+export const IMAGE_GENERATE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "image_generate",
+    description: "Generate an image from a text prompt through the configured image backend. Returns a URL or local MEDIA path in the image field.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Text prompt describing the desired image"
+        },
+        aspect_ratio: {
+          type: "string",
+          enum: ["landscape", "square", "portrait"],
+          description: "Output aspect ratio: landscape (wide), square (1:1), or portrait (tall). Defaults to landscape.",
+          default: "landscape"
+        }
+      },
+      required: ["prompt"]
+    }
+  }
+};
+
 // Video Tool - Process video files and extract frames
 export const VIDEO_TOOL: CodeBuddyTool = {
   type: "function",
@@ -172,6 +197,87 @@ export const VIDEO_TOOL: CodeBuddyTool = {
         }
       },
       required: ["operation", "path"]
+    }
+  }
+};
+
+// Hermes Video Analyze Tool - Analyze a video via a video-capable model
+export const VIDEO_ANALYZE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "video_analyze",
+    description: "Analyze a video from a URL or local file path using a configured video-capable model. Supports mp4, webm, mov, avi, mkv, mpeg, and mpg.",
+    parameters: {
+      type: "object",
+      properties: {
+        video_url: {
+          type: "string",
+          description: "HTTP/HTTPS URL, file:// URL, or local file path to analyze"
+        },
+        question: {
+          type: "string",
+          description: "Specific question to answer about the video after describing the scene"
+        }
+      },
+      required: ["video_url", "question"]
+    }
+  }
+};
+
+// Hermes Video Generation Tool - Generate videos through the configured backend
+export const VIDEO_GENERATE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "video_generate",
+    description: "Generate a video from a text prompt or animate an image through the configured video backend. Pass image_url for image-to-video.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "Text instruction describing the desired video, motion, style, and camera movement"
+        },
+        image_url: {
+          type: "string",
+          description: "Optional public image URL. When provided, the backend routes to image-to-video."
+        },
+        reference_image_urls: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional reference image URLs for supported backends"
+        },
+        duration: {
+          type: "number",
+          description: "Desired duration in seconds. Providers clamp to supported ranges."
+        },
+        aspect_ratio: {
+          type: "string",
+          enum: ["16:9", "9:16", "1:1", "4:3", "3:4", "3:2", "2:3"],
+          description: "Output aspect ratio. Defaults to 16:9."
+        },
+        resolution: {
+          type: "string",
+          enum: ["360p", "480p", "540p", "720p", "1080p", "4k"],
+          description: "Output resolution. Defaults to 720p."
+        },
+        negative_prompt: {
+          type: "string",
+          description: "Optional negative prompt for providers that support it"
+        },
+        audio: {
+          type: "boolean",
+          description: "Optional native audio generation toggle for supported providers"
+        },
+        seed: {
+          type: "number",
+          description: "Optional seed for reproducible generations"
+        },
+        model: {
+          type: "string",
+          description: "Optional configured model/family override for the active backend"
+        }
+      },
+      required: ["prompt"]
     }
   }
 };
@@ -707,7 +813,10 @@ export const MULTIMODAL_TOOLS: CodeBuddyTool[] = [
   PDF_TOOL,
   AUDIO_TOOL,
   TEXT_TO_SPEECH_TOOL,
+  IMAGE_GENERATE_TOOL,
   VIDEO_TOOL,
+  VIDEO_ANALYZE_TOOL,
+  VIDEO_GENERATE_TOOL,
   SCREENSHOT_TOOL,
   CAMERA_SNAPSHOT_TOOL,
   CLIPBOARD_TOOL,

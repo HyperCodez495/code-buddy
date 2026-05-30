@@ -91,7 +91,7 @@ change-control surface.
 | Enforced tool filters per profile | custom-agent `fleetDispatchProfile` → `ToolFilterConfig`; `ToolHandler` enforces at execution; `buddy hermes doctor <profile>` | done |
 | Dynamic schema patching (hide disabled tools from the model) | prompt + RAG + skill-augmentation re-filter | done (parity TODO #9/#32) |
 | Profile inspector | `buddy tools profile <id> --json` | done |
-| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 55 exact, 6 native-equivalent, 2 partial, 8 gaps |
+| Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 58 exact, 6 native-equivalent, 1 partial, 6 gaps |
 
 ### Scheduled automations
 
@@ -118,6 +118,9 @@ change-control surface.
 | Sub-capability | Where | Status |
 |---|---|---|
 | Hermes `text_to_speech` audio generation | `src/tools/text-to-speech-tool.ts`, `src/tools/registry/multimodal-tools.ts`, `tests/tools/text-to-speech-real.test.ts` | done — exact prompt tool name, real local speech audio file, `MEDIA:<path>` result, provider detection for Windows SAPI/macOS `say`/`edge-tts`/`espeak`, plus explicit Kokoro/AudioReader paths |
+| Hermes `image_generate` | `src/tools/media-generation-tool.ts`, `src/tools/registry/multimodal-tools.ts`, `tests/tools/media-generation-real.test.ts` | done — exact prompt tool name, configured OpenAI/xAI-compatible HTTP endpoint, b64/URL result handling, and local media cache under `.codebuddy/media-generation/images` |
+| Hermes `video_analyze` | `src/tools/video-analysis-tool.ts`, `src/tools/registry/multimodal-tools.ts`, `tests/tools/media-generation-real.test.ts` | done — exact prompt tool name, local/remote video normalization, format and 50 MB caps, base64 `video_url` payload, and configured video-capable model dispatch |
+| Hermes `video_generate` | `src/tools/media-generation-tool.ts`, `src/tools/registry/multimodal-tools.ts`, `tests/tools/media-generation-real.test.ts` | done — exact prompt tool name, text-to-video and image-to-video over configured xAI or FAL-compatible HTTP backends, returned video cache under `.codebuddy/media-generation/videos` |
 
 ### Vision and browser inspection
 
@@ -186,3 +189,4 @@ buddy lessons candidate approve <id> --by "<your name>"
   still needs SKILL.md preview/diff plus reviewer-gated install/disable/
   deprecate/rollback controls.
 - Serverless terminal backends (Daytona/Modal/Vercel Sandbox).
+- Optional platform tools still absent: `discord_admin` plus Yuanbao group/DM/sticker tools.

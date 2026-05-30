@@ -58,6 +58,9 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   fetch_url: ['group:web', 'group:web:fetch'],
   browser_vision: ['group:web'],
   text_to_speech: ['group:fs', 'group:web'],
+  image_generate: ['group:fs', 'group:web'],
+  video_generate: ['group:fs', 'group:web'],
+  video_analyze: ['group:fs', 'group:fs:read', 'group:web'],
   vision_analyze: ['group:fs', 'group:fs:read'],
 
   // Web - Search

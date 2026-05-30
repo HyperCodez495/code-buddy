@@ -8,7 +8,7 @@ Source of truth:
 
 Current measured state:
 - Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
-- Tool parity manifest: 71 official tools, 55 exact, 6 native-equivalent, 2 partial, 8 gaps.
+- Tool parity manifest: 71 official tools, 58 exact, 6 native-equivalent, 1 partial, 6 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,9 +68,9 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `video_analyze`, and media generation gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, and `text_to_speech` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage` and platform gaps. Kanban, `send_message`, `discord`, Home Assistant `ha_*`, Feishu document/comment tools, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
-    - Cowork shows summary counts and top core gaps such as `skill_manage`, `video_analyze`, and media generation.
+    - Cowork shows summary counts and top core gaps such as `skill_manage` and optional platform connectors.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
@@ -162,6 +162,15 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/feishu-tool-real.test.ts --run`
 
+- [x] **Add exact media generation and video analysis prompt tools**
+  - Why: upstream Hermes exposes `image_generate`, `video_analyze`, and `video_generate` as agent-facing media tools.
+  - Done: Code Buddy now exposes exact `image_generate`, `video_analyze`, and `video_generate` schemas. Image generation uses configured OpenAI/xAI-compatible image endpoints; video generation uses configured xAI or FAL-compatible HTTP paths; video analysis normalizes local/remote videos into video-capable model payloads. Returned image/video assets are cached under `.codebuddy/media-generation/` when providers return b64 or downloadable URLs.
+  - Guardrail: provider credentials stay in env/config; generated media writes are local files; video analysis enforces format and 50 MB base64 caps.
+  - Verification:
+    - `npm test -- tests/tools/media-generation-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
+    - `npm run typecheck`
+    - `npx tsx src/index.ts hermes tools --json`
+
 - [x] **Add an exact `send_message` prompt tool over existing channel adapters**
   - Why: channels and scheduled delivery exist, but Hermes has a direct messaging tool surface.
   - Done: `send_message` is now an exact prompt tool. It dry-runs to a real `.codebuddy/messages/outbox.jsonl` artifact by default; live delivery requires `approved_by`, passes through `SendPolicyEngine`, and then uses `ChannelManager`.
@@ -186,11 +195,10 @@ Current measured state:
   - Lower priority unless the user explicitly needs them:
     - Yuanbao group/DM/stickers
     - Discord admin
-    - `image_generate` / `video_generate`
   - Recommendation: keep these as optional connectors/plugins, not core Code Buddy agent work.
 
 ## Immediate next implementation order
 
-1. `image_generate` / `video_generate` media generation tools.
-2. Yuanbao group/DM/sticker tools and Discord admin if product-relevant.
-3. Cowork Skill Package Manager panel and provider/model readiness polish.
+1. Yuanbao group/DM/sticker tools and Discord admin if product-relevant.
+2. Cowork provider/model readiness polish for media, tool parity, and skill lifecycle.
+3. Remaining `skill_manage` polish: larger SKILL.md diff/review UX and exact hub/tap/trust deltas.

@@ -50,6 +50,7 @@ const OFFICIAL_SOURCE_SPOTIFY = 'plugins/spotify/tools.py';
 const OFFICIAL_SOURCE_X_SEARCH = 'tools/x_search_tool.py';
 const OFFICIAL_SOURCE_FEISHU_DOC = 'tools/feishu_doc_tool.py';
 const OFFICIAL_SOURCE_FEISHU_DRIVE = 'tools/feishu_drive_tool.py';
+const OFFICIAL_SOURCE_IMAGE_GENERATION = 'tools/image_generation_tool.py';
 const OFFICIAL_SOURCE_VIDEO_GENERATION = 'tools/video_generation_tool.py';
 
 const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
@@ -122,9 +123,9 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     name: 'image_generate',
     toolset: 'hermes-core',
     category: 'media',
-    officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'No built-in Code Buddy LLM tool schema named image_generate was found.',
-    nextWork: 'Decide whether image generation belongs in Code Buddy core, Cowork, or external connectors.',
+    officialSource: OFFICIAL_SOURCE_IMAGE_GENERATION,
+    notes: 'Code Buddy exposes the exact image_generate prompt tool over configured OpenAI/xAI-compatible image endpoints and caches generated media when providers return b64 or downloadable URLs.',
+    nextWork: 'Add GUI provider-readiness controls in Cowork if image generation becomes a daily workflow.',
   },
   {
     name: 'skills_list',
@@ -424,15 +425,15 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     category: 'media',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
     equivalentCodeBuddyTools: ['video'],
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy can process video files, but exact video_analyze model-backed semantics are not established.',
+    notes: 'Code Buddy exposes the exact video_analyze prompt tool: local/remote video normalization, base64 video_url payload construction, size/type checks, and OpenAI-compatible video-capable model dispatch.',
   },
   {
     name: 'video_generate',
     toolset: 'video_gen',
     category: 'media',
     officialSource: OFFICIAL_SOURCE_VIDEO_GENERATION,
-    notes: 'No built-in Code Buddy prompt tool for video generation was found.',
+    notes: 'Code Buddy exposes the exact video_generate prompt tool for text-to-video and image-to-video using configured xAI or FAL-compatible HTTP backends, with returned videos cached when downloadable.',
+    nextWork: 'Add provider picker/readiness UX in Cowork and live credential smoke tests when XAI_API_KEY or FAL_KEY is configured.',
   },
   {
     name: 'mixture_of_agents',
@@ -662,6 +663,7 @@ export function buildHermesToolParityManifest(
         OFFICIAL_SOURCE_X_SEARCH,
         OFFICIAL_SOURCE_FEISHU_DOC,
         OFFICIAL_SOURCE_FEISHU_DRIVE,
+        OFFICIAL_SOURCE_IMAGE_GENERATION,
         OFFICIAL_SOURCE_VIDEO_GENERATION,
       ],
     },
