@@ -42,7 +42,7 @@ test('runs the Cowork local provider config bundle from the test runner window',
     { timeout: 190_000 }
   );
   await expect(appPage.getByTestId(`test-catalog-result-${bundleId}`)).toHaveText(
-    '142 ok / 0 ko',
+    '143 ok / 0 ko',
     { timeout: 190_000 }
   );
 

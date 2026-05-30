@@ -57,7 +57,7 @@ Les donnees sont volontairement reconnaissables pour prouver que le test a bien 
 | UI/localisation/layout Cowork depuis Test Runner | ligne `Cowork / UI localization layout bundle`, layout app/chat/welcome/message/config, theme sombre, i18n francais, Fleet Command Center translations, settings, links/markdown | le panneau lance les 20 fichiers Cowork UI/i18n/layout et affiche `95 ok / 0 ko`. |
 | Artefacts/documents Cowork depuis Test Runner | ligne `Cowork / artifact document bundle`, artefacts, document workshop, liens/fichiers, preuves DOCX, sorties d'outils et etats MessageCard | le panneau lance les 15 fichiers artefacts/documents Cowork et affiche `125 ok / 0 ko`. |
 | Scheduling/session Cowork depuis Test Runner | ligne `Cowork / scheduling session bundle`, scheduled tasks, settings schedule, runNow, Fleet metadata, slash `/schedule` et titres de session | le panneau lance les 14 fichiers scheduling/session Cowork et affiche `90 ok / 0 ko`. |
-| Config/providers locaux Cowork depuis Test Runner | ligne `Cowork / local provider config bundle`, API config, diagnostics, ConfigStore profiles/env, Ollama, LM Studio, loopback gateways, retry, modal config | le panneau lance les 18 fichiers config/providers locaux Cowork et affiche `142 ok / 0 ko`. |
+| Config/providers locaux Cowork depuis Test Runner | ligne `Cowork / local provider config bundle`, API config, diagnostics, ConfigStore profiles/env, Ollama, LM Studio, loopback gateways, retry, modal config | le panneau lance les 18 fichiers config/providers locaux Cowork et affiche `143 ok / 0 ko`. |
 | Activite/audit/diagnostics Cowork depuis Test Runner | ligne `Cowork / activity audit diagnostics bundle`, activity feed, global search, audit recall, diagnostics renderer, preview service, event mapping, recent files | le panneau lance les 11 fichiers activite/audit/diagnostics Cowork et affiche `67 ok / 0 ko`. |
 | Fleet command/team Cowork depuis Test Runner | ligne `Cowork / Fleet command team bundle`, FleetBridge, IPC dispatch, command center board, discovery YAML, SagaRunner, outcomes/scheduled work, TeamBridge | le panneau lance les 10 fichiers Fleet/Team Cowork et affiche `61 ok / 0 ko`. |
 | Permissions/path rules Cowork depuis Test Runner | ligne `Cowork / permission path rules bundle`, PermissionDialog computer-use, quick rules, classification/preview/target rules, fallback declaratif, path containment, UNC | le panneau lance les 12 fichiers permissions/path rules Cowork et affiche `58 ok / 0 ko`. |
@@ -117,7 +117,7 @@ Les donnees sont volontairement reconnaissables pour prouver que le test a bien 
 | `npx playwright test e2e/test-runner-ui-localization-layout-bundle.spec.ts --reporter=list --timeout=240000` | 1/1 OK | Ligne `Cowork / UI localization layout bundle` lancee depuis la fenetre de tests, resultat `95 ok / 0 ko`, capture 98. |
 | `npx playwright test e2e/test-runner-artifact-document-bundle.spec.ts --reporter=list --timeout=240000` | 1/1 OK | Ligne `Cowork / artifact document bundle` lancee depuis la fenetre de tests, resultat `125 ok / 0 ko`, capture 99. |
 | `npx playwright test e2e/test-runner-scheduling-session-bundle.spec.ts --reporter=list --timeout=240000` | 1/1 OK | Ligne `Cowork / scheduling session bundle` lancee depuis la fenetre de tests, resultat `90 ok / 0 ko`, capture 100. |
-| `npx playwright test e2e/test-runner-local-provider-config-bundle.spec.ts --reporter=list --timeout=260000` | 1/1 OK | Ligne `Cowork / local provider config bundle` lancee depuis la fenetre de tests, resultat `142 ok / 0 ko`, capture 101. |
+| `npx playwright test e2e/test-runner-local-provider-config-bundle.spec.ts --reporter=list --timeout=260000` | 1/1 OK | Ligne `Cowork / local provider config bundle` lancee depuis la fenetre de tests, resultat `143 ok / 0 ko`, capture 101. |
 | `npx playwright test e2e/test-runner-activity-audit-diagnostics-bundle.spec.ts --reporter=list --timeout=260000` | 1/1 OK | Ligne `Cowork / activity audit diagnostics bundle` lancee depuis la fenetre de tests, resultat `67 ok / 0 ko`, capture 102. |
 | `npx playwright test e2e/test-runner-fleet-command-team-bundle.spec.ts --reporter=list --timeout=260000` | 1/1 OK | Ligne `Cowork / Fleet command team bundle` lancee depuis la fenetre de tests, resultat `61 ok / 0 ko`, capture 103. |
 | `npx playwright test e2e/test-runner-permission-path-rules-bundle.spec.ts --reporter=list --timeout=260000` | 1/1 OK | Ligne `Cowork / permission path rules bundle` lancee depuis la fenetre de tests, resultat `58 ok / 0 ko`, capture 104. |
@@ -791,7 +791,7 @@ Capture :
 
 ### Bundle config/providers locaux Cowork depuis le runner
 
-J'ai ajoute [`cowork/e2e/test-runner-local-provider-config-bundle.spec.ts`](../../../cowork/e2e/test-runner-local-provider-config-bundle.spec.ts). Le test ouvre la vraie fenetre `Tests & executions`, clique la ligne `Cowork / local provider config bundle`, puis attend `passed` et `142 ok / 0 ko`.
+J'ai ajoute [`cowork/e2e/test-runner-local-provider-config-bundle.spec.ts`](../../../cowork/e2e/test-runner-local-provider-config-bundle.spec.ts). Le test ouvre la vraie fenetre `Tests & executions`, clique la ligne `Cowork / local provider config bundle`, puis attend `passed` et `143 ok / 0 ko`.
 
 Ce parcours valide :
 
@@ -803,12 +803,12 @@ Ce parcours valide :
 
 Preuves commandes :
 
-- `npx vitest run tests/api-config-state.test.ts tests/api-config-state-config-sets.test.ts tests/api-diagnostics.test.ts tests/auth-utils.test.ts tests/config-store-config-sets.test.ts tests/config-store-env.test.ts tests/config-store-performance.test.ts tests/config-store-profiles.test.ts tests/config-test-routing.test.ts tests/settings-api-local-providers.test.ts tests/lmstudio-api.test.ts tests/lmstudio-discovery.test.ts tests/ollama-api.test.ts tests/ollama-base-url.test.ts tests/ollama-discovery.test.ts tests/loopback-url.test.ts tests/retry.test.ts tests/use-ipc-config-modal-gate.test.ts --reporter=verbose` -> 18 fichiers OK, 142 tests OK.
+- `npx vitest run tests/api-config-state.test.ts tests/api-config-state-config-sets.test.ts tests/api-diagnostics.test.ts tests/auth-utils.test.ts tests/config-store-config-sets.test.ts tests/config-store-env.test.ts tests/config-store-performance.test.ts tests/config-store-profiles.test.ts tests/config-test-routing.test.ts tests/settings-api-local-providers.test.ts tests/lmstudio-api.test.ts tests/lmstudio-discovery.test.ts tests/ollama-api.test.ts tests/ollama-base-url.test.ts tests/ollama-discovery.test.ts tests/loopback-url.test.ts tests/retry.test.ts tests/use-ipc-config-modal-gate.test.ts --reporter=verbose` -> 18 fichiers OK, 143 tests OK.
 - `npx vitest run tests/test-runner-bridge-catalog.test.ts --reporter=verbose` -> 7 tests OK avec la ligne config/providers locaux.
 - `npm run typecheck` dans `cowork/` -> OK.
 - `npm run typecheck` racine -> OK.
 - `npm run build:e2e` -> OK.
-- `npx playwright test e2e/test-runner-local-provider-config-bundle.spec.ts --reporter=list --timeout=260000` -> 1 test OK depuis la fenetre `Tests & executions`, avec `142 ok / 0 ko`.
+- `npx playwright test e2e/test-runner-local-provider-config-bundle.spec.ts --reporter=list --timeout=260000` -> 1 test OK depuis la fenetre `Tests & executions`, avec `143 ok / 0 ko`.
 
 Capture :
 
