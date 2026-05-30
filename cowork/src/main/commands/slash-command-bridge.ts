@@ -442,7 +442,7 @@ function resolveUiEffectAction(token: string, args: string[]): UiEffectResolutio
       return { uiEffect: 'set_plan_mode', args: [] };
     case '__SWARM__':
     case '__PARALLEL__':
-    // `/batch <goal>` also decomposes into parallel sub-agents (same cockpit).
+      // fall through: `/batch <goal>` also decomposes into parallel sub-agents (same cockpit).
     case '__BATCH__':
       // `/swarm <task>` launches immediately (parallel strategy); bare `/swarm`
       // opens the launcher (mirrors the CLI's accidental-trigger guard).

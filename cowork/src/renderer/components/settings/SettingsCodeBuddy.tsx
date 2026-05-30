@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { Zap, CheckCircle, XCircle, Loader2, RefreshCw, Globe, Server } from 'lucide-react';
 
 interface CodeBuddyConfig {
@@ -65,29 +65,6 @@ const ENDPOINT_PRESETS: EndpointPreset[] = [
   },
 ];
 
-function endpointUrl(endpoint: string, path: string): string {
-  const base = endpoint.trim().replace(/\/+$/, '');
-  const suffix = path.startsWith('/') ? path : `/${path}`;
-  return `${base}${suffix}`;
-}
-
-function normalizeModelIds(payload: unknown): string[] {
-  const rawModels = (payload as { data?: unknown; models?: unknown })?.data
-    ?? (payload as { models?: unknown })?.models
-    ?? [];
-  if (!Array.isArray(rawModels)) return [];
-  return rawModels
-    .map((model) => {
-      if (typeof model === 'string') return model;
-      if (model && typeof model === 'object' && 'id' in model) {
-        return String((model as { id?: unknown }).id ?? '');
-      }
-      return '';
-    })
-    .map((id) => id.trim())
-    .filter(Boolean);
-}
-
 function parseLocalServerEndpoint(endpoint: string): { host: string; port: number } | null {
   try {
     const url = new URL(endpoint);
@@ -125,13 +102,28 @@ export function SettingsCodeBuddy() {
   const [isTesting, setIsTesting] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [savedMsg, setSavedMsg] = useState('');
+  const latestConfigRef = useRef(config);
+
+  const updateConfig = useCallback((
+    nextConfig: CodeBuddyConfig | ((current: CodeBuddyConfig) => CodeBuddyConfig),
+  ) => {
+    const next = typeof nextConfig === 'function'
+      ? nextConfig(latestConfigRef.current)
+      : nextConfig;
+    latestConfigRef.current = next;
+    setConfig(next);
+  }, []);
+
+  useEffect(() => {
+    latestConfigRef.current = config;
+  }, [config]);
 
   // Load config on mount
   useEffect(() => {
     window.electronAPI?.config.get().then((appConfig) => {
       const cb = (appConfig as unknown as { codebuddy?: Partial<CodeBuddyConfig> })?.codebuddy;
       if (cb) {
-        setConfig({
+        updateConfig({
           enabled: cb.enabled ?? false,
           endpoint: cb.endpoint || 'http://localhost:3000',
           apiKey: cb.apiKey || '',
@@ -142,57 +134,33 @@ export function SettingsCodeBuddy() {
         });
       }
     }).catch(() => {});
-  }, []);
+  }, [updateConfig]);
 
   const probeConnection = useCallback(async (): Promise<ConnectionProbeSuccess> => {
-    const res = await fetch(endpointUrl(config.endpoint, '/api/health'), {
-      signal: AbortSignal.timeout(5000),
-      headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-    });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+    const currentConfig = latestConfigRef.current;
+    const codeBuddyApi = window.electronAPI?.codebuddy;
+    if (!codeBuddyApi?.probeConnection) {
+      throw new Error('Code Buddy connection IPC is unavailable.');
     }
-
-    const data = await res.json();
-    let models: string[] = [];
-    let tools = 0;
-    try {
-      const modelsRes = await fetch(endpointUrl(config.endpoint, '/v1/models'), {
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-      });
-      if (modelsRes.ok) {
-        const modelsData = await modelsRes.json();
-        models = normalizeModelIds(modelsData);
-      }
-    } catch { /* optional */ }
-    try {
-      const metricsRes = await fetch(endpointUrl(config.endpoint, '/api/metrics'), {
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-      });
-      if (metricsRes.ok) {
-        const metricsData = await metricsRes.json();
-        tools = metricsData.toolCount || metricsData.tools || 0;
-      }
-    } catch { /* optional */ }
-
-    return {
-      version: data.version || 'unknown',
-      models,
-      tools,
-    };
-  }, [config.endpoint, config.apiKey]);
+    return codeBuddyApi.probeConnection({
+      endpoint: currentConfig.endpoint,
+      apiKey: currentConfig.apiKey || undefined,
+    });
+  }, []);
 
   const refreshModels = useCallback(async () => {
     setIsLoadingModels(true);
     setModelsMessage('');
+    const currentConfig = latestConfigRef.current;
     try {
-      const res = await fetch(endpointUrl(config.endpoint, '/v1/models'), {
-        headers: config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {},
-      });
-      if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+      const codeBuddyApi = window.electronAPI?.codebuddy;
+      if (!codeBuddyApi?.listModels) {
+        throw new Error('Code Buddy model discovery IPC is unavailable.');
       }
-      const models = normalizeModelIds(await res.json());
+      const models = (await codeBuddyApi.listModels({
+        endpoint: currentConfig.endpoint,
+        apiKey: currentConfig.apiKey || undefined,
+      })).map((model) => model.id);
       setAvailableModels(models);
       setHealth(h => ({ ...h, models }));
       setModelsMessage(
@@ -206,7 +174,7 @@ export function SettingsCodeBuddy() {
     } finally {
       setIsLoadingModels(false);
     }
-  }, [config.endpoint, config.apiKey]);
+  }, []);
 
   const probeAfterStart = useCallback(async (): Promise<ConnectionProbeSuccess> => {
     let lastError: unknown = null;
@@ -234,7 +202,7 @@ export function SettingsCodeBuddy() {
       });
       setAvailableModels(connected.models);
     } catch (initialErr) {
-      const localEndpoint = parseLocalServerEndpoint(config.endpoint);
+      const localEndpoint = parseLocalServerEndpoint(latestConfigRef.current.endpoint);
       const serverApi = window.electronAPI?.server;
       if (!localEndpoint || !serverApi?.start) {
         setHealth({
@@ -282,24 +250,25 @@ export function SettingsCodeBuddy() {
     } finally {
       setIsTesting(false);
     }
-  }, [config.endpoint, probeConnection, probeAfterStart]);
+  }, [probeConnection, probeAfterStart]);
 
   const saveConfig = useCallback(async () => {
     setIsSaving(true);
     setSavedMsg('');
+    const currentCodeBuddyConfig = latestConfigRef.current;
     try {
       const currentConfig = await window.electronAPI?.config.get();
       const base = (currentConfig ?? {}) as unknown as Record<string, unknown>;
       await window.electronAPI?.config.save({
         ...base,
         codebuddy: {
-          enabled: config.enabled,
-          endpoint: config.endpoint,
-          apiKey: config.apiKey || undefined,
-          model: config.model || undefined,
-          geminiGroundingEnabled: config.geminiGroundingEnabled,
-          visionGroundingEnabled: config.visionGroundingEnabled,
-          visionGroundingModel: config.visionGroundingModel || undefined,
+          enabled: currentCodeBuddyConfig.enabled,
+          endpoint: currentCodeBuddyConfig.endpoint,
+          apiKey: currentCodeBuddyConfig.apiKey || undefined,
+          model: currentCodeBuddyConfig.model || undefined,
+          geminiGroundingEnabled: currentCodeBuddyConfig.geminiGroundingEnabled,
+          visionGroundingEnabled: currentCodeBuddyConfig.visionGroundingEnabled,
+          visionGroundingModel: currentCodeBuddyConfig.visionGroundingModel || undefined,
         },
       } as Parameters<NonNullable<typeof window.electronAPI>['config']['save']>[0]);
 
@@ -309,7 +278,7 @@ export function SettingsCodeBuddy() {
       // already persisted to config and will apply at next boot.
       try {
         await window.electronAPI?.codebuddy?.setGeminiGrounding?.({
-          enabled: config.geminiGroundingEnabled,
+          enabled: currentCodeBuddyConfig.geminiGroundingEnabled,
         });
       } catch {
         /* hot-apply best-effort; persisted setting is the source of truth */
@@ -317,8 +286,8 @@ export function SettingsCodeBuddy() {
 
       try {
         await window.electronAPI?.codebuddy?.setVisionGrounding?.({
-          enabled: config.visionGroundingEnabled,
-          model: config.visionGroundingModel || undefined,
+          enabled: currentCodeBuddyConfig.visionGroundingEnabled,
+          model: currentCodeBuddyConfig.visionGroundingModel || undefined,
         });
       } catch {
         /* hot-apply best-effort; persisted setting is the source of truth */
@@ -331,7 +300,7 @@ export function SettingsCodeBuddy() {
     } finally {
       setIsSaving(false);
     }
-  }, [config]);
+  }, []);
 
   const modelChoices = config.model && !availableModels.includes(config.model)
     ? [config.model, ...availableModels]
@@ -367,7 +336,7 @@ export function SettingsCodeBuddy() {
           </p>
         </div>
         <button
-          onClick={() => setConfig(c => ({ ...c, enabled: !c.enabled }))}
+          onClick={() => updateConfig(c => ({ ...c, enabled: !c.enabled }))}
           className={`relative w-11 h-6 rounded-full transition-colors ${
             config.enabled ? 'bg-accent' : 'bg-gray-400'
           }`}
@@ -396,7 +365,7 @@ export function SettingsCodeBuddy() {
                     type="button"
                     data-testid={`codebuddy-endpoint-preset-${preset.id}`}
                     onClick={() => {
-                      setConfig(c => ({ ...c, endpoint: preset.endpoint }));
+                      updateConfig(c => ({ ...c, endpoint: preset.endpoint }));
                       setHealth({ status: 'unknown' });
                       setAvailableModels([]);
                       setModelsMessage('');
@@ -423,7 +392,7 @@ export function SettingsCodeBuddy() {
             data-testid="codebuddy-endpoint-input"
             value={config.endpoint}
             onChange={e => {
-              setConfig(c => ({ ...c, endpoint: e.target.value }));
+              updateConfig(c => ({ ...c, endpoint: e.target.value }));
               setHealth({ status: 'unknown' });
               setAvailableModels([]);
               setModelsMessage('');
@@ -443,7 +412,7 @@ export function SettingsCodeBuddy() {
           <input
             type="password"
             value={config.apiKey}
-            onChange={e => setConfig(c => ({ ...c, apiKey: e.target.value }))}
+            onChange={e => updateConfig(c => ({ ...c, apiKey: e.target.value }))}
             placeholder="Leave empty for local server"
             className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
           />
@@ -471,7 +440,7 @@ export function SettingsCodeBuddy() {
             <select
               data-testid="codebuddy-model-select"
               value={config.model}
-              onChange={e => setConfig(c => ({ ...c, model: e.target.value }))}
+              onChange={e => updateConfig(c => ({ ...c, model: e.target.value }))}
               className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
             >
               <option value="">Use server default</option>
@@ -484,7 +453,7 @@ export function SettingsCodeBuddy() {
               type="text"
               data-testid="codebuddy-model-input"
               value={config.model}
-              onChange={e => setConfig(c => ({ ...c, model: e.target.value }))}
+              onChange={e => updateConfig(c => ({ ...c, model: e.target.value }))}
               placeholder="Uses server default (e.g. gemini-3.1-flash-lite-preview)"
               className="w-full px-3 py-2 rounded-lg bg-background border border-border-muted text-text-primary text-sm focus:outline-none focus:ring-2 focus:ring-accent/40"
             />
@@ -520,7 +489,7 @@ export function SettingsCodeBuddy() {
               </p>
             </div>
             <button
-              onClick={() => setConfig(c => ({ ...c, geminiGroundingEnabled: !c.geminiGroundingEnabled }))}
+              onClick={() => updateConfig(c => ({ ...c, geminiGroundingEnabled: !c.geminiGroundingEnabled }))}
               className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${
                 config.geminiGroundingEnabled ? 'bg-accent' : 'bg-gray-400'
               }`}
@@ -548,7 +517,7 @@ export function SettingsCodeBuddy() {
                 </p>
               </div>
               <button
-                onClick={() => setConfig(c => ({ ...c, visionGroundingEnabled: !c.visionGroundingEnabled }))}
+                onClick={() => updateConfig(c => ({ ...c, visionGroundingEnabled: !c.visionGroundingEnabled }))}
                 className={`shrink-0 relative w-11 h-6 rounded-full transition-colors ${
                   config.visionGroundingEnabled ? 'bg-accent' : 'bg-gray-400'
                 }`}
@@ -571,7 +540,7 @@ export function SettingsCodeBuddy() {
                 </label>
                 <select
                   value={config.visionGroundingModel || ''}
-                  onChange={e => setConfig(c => ({ ...c, visionGroundingModel: e.target.value }))}
+                  onChange={e => updateConfig(c => ({ ...c, visionGroundingModel: e.target.value }))}
                   className="w-full px-3 py-1.5 rounded-lg bg-background border border-border-muted text-text-primary text-xs focus:outline-none focus:ring-2 focus:ring-accent/40"
                 >
                   <option value="">Use server default</option>

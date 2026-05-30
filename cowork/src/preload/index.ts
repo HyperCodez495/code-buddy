@@ -284,6 +284,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // settings file is the source of truth, but some flags benefit from
   // hot-apply without restarting the app).
   codebuddy: {
+    listModels: (
+      payload: { endpoint: string; apiKey?: string },
+    ): Promise<ProviderModelInfo[]> =>
+      ipcRenderer.invoke('codebuddy:list-models', payload),
+    probeConnection: (
+      payload: { endpoint: string; apiKey?: string },
+    ): Promise<{ version: string; models: string[]; tools: number }> =>
+      ipcRenderer.invoke('codebuddy:probe-connection', payload),
     setGeminiGrounding: (
       payload: { enabled: boolean },
     ): Promise<{ ok: boolean; reason?: string }> =>
@@ -2790,6 +2798,12 @@ declare global {
         ) => () => void;
       };
       codebuddy: {
+        listModels: (
+          payload: { endpoint: string; apiKey?: string },
+        ) => Promise<ProviderModelInfo[]>;
+        probeConnection: (
+          payload: { endpoint: string; apiKey?: string },
+        ) => Promise<{ version: string; models: string[]; tools: number }>;
         setGeminiGrounding: (
           payload: { enabled: boolean },
         ) => Promise<{ ok: boolean; reason?: string }>;

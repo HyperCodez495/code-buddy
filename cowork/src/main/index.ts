@@ -62,6 +62,11 @@ import {
   shouldLoadEngine,
 } from './engine/embedded-mode';
 import { applyGroundingToggle, applyVisionGroundingSetting } from './codebuddy/grounding-handler';
+import {
+  listCodeBuddyModels,
+  probeCodeBuddyConnection,
+  type CodeBuddyDiscoveryInput,
+} from './codebuddy/model-discovery';
 import { ProjectManager } from './project/project-manager';
 import { ProjectMemoryService } from './project/project-memory';
 import { SubAgentBridge } from './agent/sub-agent-bridge';
@@ -1405,6 +1410,20 @@ app
       'codebuddy:set-vision-grounding',
       async (_event, payload: { enabled: boolean; model?: string }) => {
         return applyVisionGroundingSetting(engineAdapter, payload.enabled === true, payload.model);
+      }
+    );
+
+    ipcMain.handle(
+      'codebuddy:list-models',
+      async (_event, payload: CodeBuddyDiscoveryInput) => {
+        return listCodeBuddyModels(payload);
+      }
+    );
+
+    ipcMain.handle(
+      'codebuddy:probe-connection',
+      async (_event, payload: CodeBuddyDiscoveryInput) => {
+        return probeCodeBuddyConnection(payload);
       }
     );
 
