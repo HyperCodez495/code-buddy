@@ -1250,10 +1250,12 @@ program
     // Apply --quiet / --verbose flags
     if (options.quiet) {
       process.env.LOG_LEVEL = 'error';
+      logger.setLevel('error');
     }
     if (options.verbose) {
       process.env.VERBOSE = 'true';
       process.env.DEBUG = 'true';
+      logger.setLevel('debug');
     }
     // Apply --speak / --tts-provider flags
     if (options.speak || options.ttsProvider) {
@@ -1555,10 +1557,10 @@ program
         });
         setToolFilter(newFilter);
         if (options.allowedTools) {
-          cli.error(`Allowed tools: ${options.allowedTools}`);
+          cli.info(`Allowed tools: ${options.allowedTools}`);
         }
         if (options.disallowedTools) {
-          cli.error(`Disallowed tools: ${options.disallowedTools}`);
+          cli.info(`Disallowed tools: ${options.disallowedTools}`);
         }
       }
 
@@ -1585,7 +1587,7 @@ program
 
         const allTools = await getAllCodeBuddyTools();
         const result = filterTools(allTools, filter);
-        cli.error(formatFilterResult(result));
+        cli.info(formatFilterResult(result));
       }
 
       // Handle --yolo flag (equivalent to /yolo on, skip confirmation in non-interactive)

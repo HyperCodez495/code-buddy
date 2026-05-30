@@ -540,6 +540,7 @@ export const logger = {
     }
   },
   isDebugEnabled: () => getLogger().isDebugEnabled(),
+  setLevel: (level: LogLevel) => getLogger().setLevel(level),
   time: (label: string) => getLogger().time(label),
   child: (source: string) => getLogger().child(source),
 };

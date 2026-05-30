@@ -62,6 +62,7 @@ function runCliAgainstFailingProvider(port: number): Promise<{
 function runCliAgainstSuccessfulProvider(port: number, options: {
   directory?: string;
   disableTools?: boolean;
+  inheritLogLevel?: boolean;
 } = {}): Promise<{
   exitCode: number | null;
   stdout: string;
@@ -104,10 +105,11 @@ function runCliAgainstSuccessfulProvider(port: number, options: {
       cwd: process.cwd(),
       env: {
         ...cleanEnv,
+        ...(options.inheritLogLevel === false ? { LOG_LEVEL: undefined } : {}),
         CODEBUDDY_DISABLE_MCP: 'true',
         CODEBUDDY_HEADLESS: 'true',
         CODEBUDDY_REQUEST_TIMEOUT_MS: '5000',
-        LOG_LEVEL: 'error',
+        ...(options.inheritLogLevel === false ? {} : { LOG_LEVEL: 'error' }),
         NO_COLOR: '1',
       },
       stdio: ['ignore', 'pipe', 'pipe'],
@@ -175,6 +177,57 @@ describe('headless CLI exit codes', () => {
       expect(parsed.result.length).toBeGreaterThan(0);
       expect(parsed.content).toBeUndefined();
       expect(Array.isArray(parsed.messages)).toBe(true);
+      expect(result.stderr.trim()).toBe('');
+    } finally {
+      await new Promise<void>(resolve => server.close(() => resolve()));
+    }
+  }, 90_000);
+
+  it('keeps --quiet headless stderr clean without requiring LOG_LEVEL in the parent env', async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({
+        id: 'chatcmpl-headless-quiet-contract',
+        object: 'chat.completion',
+        created: Math.floor(Date.now() / 1000),
+        model: 'qa-mock-model',
+        choices: [
+          {
+            index: 0,
+            message: {
+              role: 'assistant',
+              content: 'HEADLESS_JSON_CONTRACT_OK',
+            },
+            finish_reason: 'stop',
+          },
+        ],
+        usage: {
+          prompt_tokens: 1,
+          completion_tokens: 1,
+          total_tokens: 2,
+        },
+      }));
+    });
+
+    await new Promise<void>((resolve, reject) => {
+      server.once('error', reject);
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+
+    try {
+      const address = server.address();
+      if (!address || typeof address === 'string') {
+        throw new Error('Expected TCP server address');
+      }
+
+      const result = await runCliAgainstSuccessfulProvider(address.port, {
+        inheritLogLevel: false,
+      });
+
+      expect(result.exitCode).toBe(0);
+      expect(JSON.parse(result.stdout).result).toBeTruthy();
+      expect(result.stderr.trim()).toBe('');
     } finally {
       await new Promise<void>(resolve => server.close(() => resolve()));
     }

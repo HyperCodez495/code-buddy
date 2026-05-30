@@ -133,6 +133,8 @@ node dist/index.js --directory /chemin/vers/depot --prompt "bonjour" --ephemeral
 Resultat attendu:
 
 - La sortie JSON reste pipeable via `.result`.
+- Avec `--quiet`, `stderr` reste vide sur succes, meme sans `LOG_LEVEL`
+  preconfigure.
 - Le run peut utiliser un provider HTTP local ou reel.
 - Si le depot ne contenait pas deja `.codebuddy/`, le run ne cree pas
   `.codebuddy/` et `git status --short` reste vide.
