@@ -63,6 +63,12 @@ export {
   resetTodoInstance,
 } from './todo-tools.js';
 
+// Tool Adapters - Cron jobs
+export {
+  CronjobExecuteTool,
+  createCronjobTools,
+} from './cronjob-tools.js';
+
 // Tool Adapters - Docker
 export {
   DockerOperationTool,
@@ -384,6 +390,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createSearchTools } = await import('./search-tools.js');
   const { createWebTools } = await import('./web-tools.js');
   const { createTodoTools } = await import('./todo-tools.js');
+  const { createCronjobTools } = await import('./cronjob-tools.js');
   const { createDockerTools } = await import('./docker-tools.js');
   const { createKubernetesTools } = await import('./kubernetes-tools.js');
   const { createGitTools } = await import('./git-tools.js');
@@ -430,6 +437,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
+    ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
     ...createGitTools(),
@@ -498,6 +506,7 @@ export function registerBuiltinTools(registry: FormalToolRegistry): number {
     ...createSearchTools(),
     ...createWebTools(),
     ...createTodoTools(),
+    ...createCronjobTools(),
     ...createDockerTools(),
     ...createKubernetesTools(),
     ...createGitTools(),
@@ -556,6 +565,7 @@ import { createLsTools } from './ls-tools.js';
 import { createSearchTools } from './search-tools.js';
 import { createWebTools } from './web-tools.js';
 import { createTodoTools } from './todo-tools.js';
+import { createCronjobTools } from './cronjob-tools.js';
 import { createDockerTools } from './docker-tools.js';
 import { createKubernetesTools } from './kubernetes-tools.js';
 import { createGitTools } from './git-tools.js';

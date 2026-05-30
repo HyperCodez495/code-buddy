@@ -321,8 +321,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'scheduler',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    notes: 'Code Buddy has cron CLI/REST/daemon surfaces, but no exact agent-facing cronjob prompt tool.',
-    nextWork: 'Add a cronjob tool wrapper if schedules should be created from normal LLM tool calls.',
+    notes: 'Code Buddy exposes a native cronjob prompt tool backed by the persisted CronScheduler store for list/show/create/pause/resume/run/remove.',
   },
   {
     name: 'send_message',

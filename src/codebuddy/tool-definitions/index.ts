@@ -38,6 +38,12 @@ export {
   TODO_TOOLS,
 } from './todo-tools.js';
 
+// Cron/scheduler tools
+export {
+  CRONJOB_TOOL,
+  CRON_TOOLS,
+} from './cron-tools.js';
+
 // Web tools
 export {
   WEB_SEARCH_TOOL,

@@ -253,6 +253,11 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['bash'],
         }),
         expect.objectContaining({
+          name: 'cronjob',
+          status: 'exact',
+          detectedCodeBuddyTools: ['cronjob'],
+        }),
+        expect.objectContaining({
           name: 'browser_dialog',
           status: 'gap',
         }),

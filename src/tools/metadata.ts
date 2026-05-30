@@ -274,6 +274,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     priority: 6,
     description: 'Update todo list progress'
   },
+  {
+    name: 'cronjob',
+    category: 'planning',
+    keywords: ['cron', 'cronjob', 'schedule', 'scheduled', 'job', 'jobs', 'reminder', 'monitor', 'heartbeat', 'watchdog', 'hermes'],
+    priority: 8,
+    description: 'Create, list, pause, resume, run, and remove persisted scheduled jobs through CronScheduler'
+  },
 
   // Codebase analysis
   {
