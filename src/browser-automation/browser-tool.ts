@@ -69,6 +69,7 @@ export type BrowserAction =
   | 'get_content'
   | 'extract'
   | 'assert_text'
+  | 'get_images'
   | 'dialog'
   // Info
   | 'get_url'
@@ -168,6 +169,9 @@ export interface BrowserToolInput {
   longitude?: number;
   // JS
   expression?: string;
+  // Images
+  limit?: number;
+  visibleOnly?: boolean;
   // Browser dialog
   dialogAction?: 'list' | 'accept' | 'dismiss';
   dialogId?: string;
@@ -203,6 +207,20 @@ interface ExtractedPage {
   fields: string[];
   text: string;
   textLength: number;
+}
+
+interface BrowserImageInfo {
+  index: number;
+  src: string;
+  currentSrc: string;
+  alt: string;
+  title: string;
+  width: number;
+  height: number;
+  naturalWidth: number;
+  naturalHeight: number;
+  visible: boolean;
+  loading: string;
 }
 
 interface AssertPage {
@@ -252,6 +270,33 @@ function normalizeExtractedPage(value: unknown): ExtractedPage {
     text,
     textLength,
   };
+}
+
+function normalizeBrowserImages(value: unknown): BrowserImageInfo[] {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value.map((item, index) => {
+    const image = typeof item === 'object' && item !== null
+      ? item as Record<string, unknown>
+      : {};
+    const toNumber = (field: string): number => typeof image[field] === 'number' ? image[field] : 0;
+
+    return {
+      index: toNumber('index') || index,
+      src: normalizeString(image.src),
+      currentSrc: normalizeString(image.currentSrc),
+      alt: normalizeString(image.alt),
+      title: normalizeString(image.title),
+      width: toNumber('width'),
+      height: toNumber('height'),
+      naturalWidth: toNumber('naturalWidth'),
+      naturalHeight: toNumber('naturalHeight'),
+      visible: typeof image.visible === 'boolean' ? image.visible : false,
+      loading: normalizeString(image.loading),
+    };
+  }).filter((image) => image.src || image.currentSrc);
 }
 
 function normalizeAssertPage(value: unknown): AssertPage {
@@ -399,6 +444,8 @@ export class BrowserTool {
           return this.extract(input);
         case 'assert_text':
           return this.assertText(input);
+        case 'get_images':
+          return this.getImages(input);
         case 'dialog':
           return this.dialog(input);
 
@@ -1094,6 +1141,61 @@ export class BrowserTool {
       success: true,
       output: `${dialogAction === 'accept' ? 'Accepted' : 'Dismissed'} ${handled.type} dialog: ${handled.message}`,
       data: { dialog: handled },
+    };
+  }
+
+  private async getImages(input: BrowserToolInput): Promise<ToolResult> {
+    const limit = Math.max(1, Math.min(Number(input.limit) || 50, 200));
+    const visibleOnly = input.visibleOnly === true;
+    const result = await this.manager.evaluate({
+      expression: `(() => {
+        const limit = ${limit};
+        const visibleOnly = ${visibleOnly ? 'true' : 'false'};
+        const images = Array.from(document.images).map((img, index) => {
+          const rect = img.getBoundingClientRect();
+          const style = window.getComputedStyle(img);
+          const visible = rect.width > 0
+            && rect.height > 0
+            && style.visibility !== 'hidden'
+            && style.display !== 'none'
+            && Number(style.opacity || '1') > 0;
+          return {
+            index,
+            src: img.src || img.getAttribute('src') || '',
+            currentSrc: img.currentSrc || '',
+            alt: img.alt || '',
+            title: img.title || '',
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            naturalWidth: img.naturalWidth || 0,
+            naturalHeight: img.naturalHeight || 0,
+            visible,
+            loading: img.loading || '',
+          };
+        });
+        return images
+          .filter((img) => !visibleOnly || img.visible)
+          .slice(0, limit);
+      })()`,
+    });
+
+    if (!result.success) {
+      return { success: false, error: result.error };
+    }
+
+    const images = normalizeBrowserImages(result.value);
+    const output = images.length > 0
+      ? images.map((image) => {
+          const label = image.alt || image.title || '(no alt)';
+          const source = image.currentSrc || image.src;
+          return `[${image.index}] ${label} ${image.width}x${image.height} -> ${source}`;
+        }).join('\n')
+      : 'No images found on the active browser page.';
+
+    return {
+      success: true,
+      output,
+      data: { images },
     };
   }
 

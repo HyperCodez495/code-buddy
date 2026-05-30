@@ -213,9 +213,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'browser',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    equivalentCodeBuddyTools: ['browser'],
-    equivalenceStatus: 'partial',
-    notes: 'The unified browser can extract page state and media evidence, but no exact browser_get_images tool is exposed.',
+    notes: 'Code Buddy exposes a dedicated browser_get_images prompt tool backed by the active Playwright page image elements.',
   },
   {
     name: 'browser_vision',

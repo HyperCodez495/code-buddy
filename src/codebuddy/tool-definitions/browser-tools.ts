@@ -415,6 +415,32 @@ promptText when accepting.`,
   },
 };
 
+export const BROWSER_GET_IMAGES_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_get_images',
+    description: `List image elements on the active browser page.
+
+Use this after navigation when visual/media evidence matters. Returns resolved
+image URLs, alt/title text, rendered dimensions, natural dimensions, and
+visibility so the agent can inspect page media without taking a screenshot.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        limit: {
+          type: 'number',
+          description: 'Maximum number of images to return. Defaults to 50; capped at 200.',
+        },
+        visibleOnly: {
+          type: 'boolean',
+          description: 'Only return images with visible layout boxes.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 /**
  * Internet Scout Run Tool
  *
@@ -564,6 +590,7 @@ The plan sequences web_search, web_fetch, browser.observe, browser.extract, brow
 export const BROWSER_TOOLS: CodeBuddyTool[] = [
   INTERNET_SCOUT_RUN_TOOL,
   INTERNET_SCOUT_PLAN_TOOL,
+  BROWSER_GET_IMAGES_TOOL,
   BROWSER_DIALOG_TOOL,
   BROWSER_TOOL,
 ];

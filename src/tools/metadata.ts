@@ -187,6 +187,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'List, accept, or dismiss native browser dialogs blocking the active browser page',
   },
   {
+    name: 'browser_get_images',
+    category: 'web',
+    keywords: ['browser', 'image', 'images', 'img', 'media', 'alt', 'playwright', 'hermes'],
+    priority: 7,
+    description: 'List image elements on the active browser page with resolved URLs, alt text, dimensions, and visibility',
+  },
+  {
     name: 'lead_scout_plan',
     category: 'planning',
     keywords: ['lead scout', 'prospecting', 'prospect', 'leads', 'b2b', 'architectes', 'syndics', 'agences immobilieres', 'maitres oeuvre', 'promoteurs', 'bureaux etudes', 'sirene', 'rnc', 'osint', 'public data', 'script recipe', 'scoring', 'human review'],

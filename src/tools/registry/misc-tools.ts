@@ -94,7 +94,7 @@ const BROWSER_ACTIONS = [
   'screenshot', 'pdf',
   'get_cookies', 'set_cookie', 'clear_cookies', 'set_headers', 'set_offline',
   'emulate_device', 'set_geolocation',
-  'evaluate', 'get_content', 'extract', 'assert_text', 'dialog', 'get_url', 'get_title',
+  'evaluate', 'get_content', 'extract', 'assert_text', 'get_images', 'dialog', 'get_url', 'get_title',
 ] as const;
 
 /**
@@ -154,6 +154,8 @@ export class BrowserExecuteTool implements ITool {
           format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: 'Image format' },
           quality: { type: 'number', description: 'Image quality (0-100)' },
           expression: { type: 'string', description: 'JavaScript code to evaluate in page' },
+          limit: { type: 'number', description: 'Maximum number of images to return for action=get_images' },
+          visibleOnly: { type: 'boolean', description: 'Only return visible images for action=get_images' },
           dialogAction: { type: 'string', enum: ['list', 'accept', 'dismiss'], description: 'Browser dialog operation for action=dialog' },
           dialogId: { type: 'string', description: 'Pending browser dialog id from browser_dialog list or browser snapshot' },
           promptText: { type: 'string', description: 'Text to enter when accepting a prompt dialog' },
@@ -205,6 +207,74 @@ export class BrowserExecuteTool implements ITool {
       resetBrowserTool();
       browserInstance = null;
     }
+  }
+}
+
+// ============================================================================
+// BrowserGetImagesExecuteTool (Hermes browser_get_images parity)
+// ============================================================================
+
+export class BrowserGetImagesExecuteTool implements ITool {
+  readonly name = 'browser_get_images';
+  readonly description = 'List image elements on the active Playwright page with resolved source URLs, alt text, dimensions, and visibility.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const browser = await getBrowserAutomation();
+    return await browser.execute({
+      action: 'get_images',
+      limit: input.limit as number | undefined,
+      visibleOnly: input.visibleOnly as boolean | undefined,
+    });
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          limit: {
+            type: 'number',
+            description: 'Maximum number of images to return. Defaults to 50; capped at 200.',
+          },
+          visibleOnly: {
+            type: 'boolean',
+            description: 'Only return images that have visible layout boxes.',
+          },
+        },
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+
+    const data = input as Record<string, unknown>;
+    if (data.limit !== undefined && (typeof data.limit !== 'number' || data.limit < 1)) {
+      return { valid: false, errors: ['limit must be a positive number'] };
+    }
+
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'web' as ToolCategoryType,
+      keywords: ['browser', 'image', 'images', 'img', 'media', 'alt', 'playwright', 'hermes'],
+      priority: 7,
+      requiresConfirmation: true,
+      modifiesFiles: false,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
   }
 }
 
@@ -1200,6 +1270,7 @@ export class DocsSearchExecuteTool implements ITool {
 export function createMiscTools(): ITool[] {
   return [
     new BrowserExecuteTool(),
+    new BrowserGetImagesExecuteTool(),
     new BrowserDialogExecuteTool(),
     new ComputerControlExecuteTool(),
     new ScreenshotExecuteTool(),
