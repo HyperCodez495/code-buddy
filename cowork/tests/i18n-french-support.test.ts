@@ -61,6 +61,10 @@ const hermesProviderReadinessStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-provider-readiness-strip.tsx'
 );
+const hermesRuntimeBackendsStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-runtime-backends-strip.tsx'
+);
 const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx'
@@ -225,6 +229,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(hermesPlanStripPath, 'utf8'),
       fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
       fs.readFileSync(hermesProviderReadinessStripPath, 'utf8'),
+      fs.readFileSync(hermesRuntimeBackendsStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(skillPackageManagerStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
@@ -304,6 +309,21 @@ describe('French renderer i18n support', () => {
       'fleet.hermesProviderReadiness.unavailable',
       'fleet.hermesProviderReadiness.loadFailed',
       'fleet.hermesProviderReadiness.openSettings',
+      'fleet.hermesRuntimeBackends.title',
+      'fleet.hermesRuntimeBackends.readyChip',
+      'fleet.hermesRuntimeBackends.attentionChip',
+      'fleet.hermesRuntimeBackends.loadingChip',
+      'fleet.hermesRuntimeBackends.runnableLabel',
+      'fleet.hermesRuntimeBackends.runnableValue',
+      'fleet.hermesRuntimeBackends.remoteLabel',
+      'fleet.hermesRuntimeBackends.platformLabel',
+      'fleet.hermesRuntimeBackends.noVersion',
+      'fleet.hermesRuntimeBackends.unavailable',
+      'fleet.hermesRuntimeBackends.loadFailed',
+      'fleet.hermesRuntimeBackends.status.available',
+      'fleet.hermesRuntimeBackends.status.configured',
+      'fleet.hermesRuntimeBackends.status.missing',
+      'fleet.hermesRuntimeBackends.status.unsupported',
       'fleet.skillCandidate.title',
       'fleet.skillCandidate.countChip',
       'fleet.skillCandidate.reviewChip',

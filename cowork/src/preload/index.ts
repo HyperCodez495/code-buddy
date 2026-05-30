@@ -1537,6 +1537,35 @@ contextBridge.exposeInMainWorld('electronAPI', {
         recommendations: string[];
       } | null> => ipcRenderer.invoke('tools.hermesProviderReadiness.get'),
     },
+    hermesRuntimeBackends: {
+      get: (): Promise<{
+        arch: string;
+        availableCount: number;
+        backends: Array<{
+          command: string | null;
+          configured: boolean;
+          credentialSources: string[];
+          id: string;
+          installed: boolean;
+          label: string;
+          notes: string[];
+          officialSurface: string;
+          remediation: string[];
+          runnable: boolean;
+          smokeCommand: string | null;
+          status: 'available' | 'configured' | 'missing' | 'unsupported';
+          version: string | null;
+        }>;
+        command: string;
+        configuredRemoteCount: number;
+        generatedAt: string;
+        issues: string[];
+        ok: boolean;
+        platform: string;
+        recommendations: string[];
+        runnableCount: number;
+      } | null> => ipcRenderer.invoke('tools.hermesRuntimeBackends.get'),
+    },
     skillPackage: {
       list: (options?: {
         cwd?: string;
@@ -4149,6 +4178,35 @@ declare global {
             };
             providerCount: number;
             recommendations: string[];
+          } | null>;
+        };
+        hermesRuntimeBackends: {
+          get: () => Promise<{
+            arch: string;
+            availableCount: number;
+            backends: Array<{
+              command: string | null;
+              configured: boolean;
+              credentialSources: string[];
+              id: string;
+              installed: boolean;
+              label: string;
+              notes: string[];
+              officialSurface: string;
+              remediation: string[];
+              runnable: boolean;
+              smokeCommand: string | null;
+              status: 'available' | 'configured' | 'missing' | 'unsupported';
+              version: string | null;
+            }>;
+            command: string;
+            configuredRemoteCount: number;
+            generatedAt: string;
+            issues: string[];
+            ok: boolean;
+            platform: string;
+            recommendations: string[];
+            runnableCount: number;
           } | null>;
         };
         skillPackage: {

@@ -5,6 +5,7 @@ import { useIPC } from '../../hooks/useIPC';
 import { ApiConfigSetManager } from '../ApiConfigSetManager';
 import ApiDiagnosticsPanel from '../ApiDiagnosticsPanel';
 import { HermesProviderReadinessStrip } from '../hermes-provider-readiness-strip';
+import { HermesRuntimeBackendsStrip } from '../hermes-runtime-backends-strip';
 import { LLMConfigPanel } from '../LLMConfigPanel';
 import { SettingsLocalProviders } from './SettingsLocalProviders';
 
@@ -66,6 +67,7 @@ export function SettingsAPI() {
       />
 
       <HermesProviderReadinessStrip />
+      <HermesRuntimeBackendsStrip />
 
       <details className="rounded-xl border border-border-muted bg-background px-4 py-4">
         <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-text-primary">

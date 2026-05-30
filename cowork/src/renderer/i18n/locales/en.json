@@ -2277,6 +2277,25 @@
       "loadFailed": "Hermes provider readiness load failed",
       "openSettings": "Open API settings"
     },
+    "hermesRuntimeBackends": {
+      "title": "Hermes runtime backends",
+      "readyChip": "runtime ready",
+      "attentionChip": "runtime attention",
+      "loadingChip": "runtime",
+      "runnableLabel": "Runnable",
+      "runnableValue": "{{count}}/{{total}}",
+      "remoteLabel": "Remote",
+      "platformLabel": "Platform",
+      "noVersion": "no version",
+      "unavailable": "Hermes runtime backends are not loaded yet.",
+      "loadFailed": "Hermes runtime backend load failed",
+      "status": {
+        "available": "available",
+        "configured": "configured",
+        "missing": "missing",
+        "unsupported": "unsupported"
+      }
+    },
     "skillCandidate": {
       "title": "Skill candidate review",
       "countChip": "{{count}} eligible",

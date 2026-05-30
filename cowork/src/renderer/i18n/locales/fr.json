@@ -2277,6 +2277,25 @@
       "loadFailed": "Chargement de la readiness provider Hermes echoue",
       "openSettings": "Ouvrir les reglages API"
     },
+    "hermesRuntimeBackends": {
+      "title": "Backends d'execution Hermes",
+      "readyChip": "runtime pret",
+      "attentionChip": "runtime a verifier",
+      "loadingChip": "runtime",
+      "runnableLabel": "Executables",
+      "runnableValue": "{{count}}/{{total}}",
+      "remoteLabel": "Distants",
+      "platformLabel": "Plateforme",
+      "noVersion": "pas de version",
+      "unavailable": "Les backends d'execution Hermes ne sont pas encore charges.",
+      "loadFailed": "Chargement des backends d'execution Hermes echoue",
+      "status": {
+        "available": "disponible",
+        "configured": "configure",
+        "missing": "absent",
+        "unsupported": "non supporte"
+      }
+    },
     "skillCandidate": {
       "title": "Revue des candidates SKILL",
       "countChip": "{{count}} éligible(s)",
