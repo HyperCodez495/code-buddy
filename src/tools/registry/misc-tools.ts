@@ -94,7 +94,7 @@ const BROWSER_ACTIONS = [
   'screenshot', 'pdf',
   'get_cookies', 'set_cookie', 'clear_cookies', 'set_headers', 'set_offline',
   'emulate_device', 'set_geolocation',
-  'evaluate', 'get_content', 'extract', 'assert_text', 'get_url', 'get_title',
+  'evaluate', 'get_content', 'extract', 'assert_text', 'dialog', 'get_url', 'get_title',
 ] as const;
 
 /**
@@ -154,6 +154,9 @@ export class BrowserExecuteTool implements ITool {
           format: { type: 'string', enum: ['png', 'jpeg', 'webp'], description: 'Image format' },
           quality: { type: 'number', description: 'Image quality (0-100)' },
           expression: { type: 'string', description: 'JavaScript code to evaluate in page' },
+          dialogAction: { type: 'string', enum: ['list', 'accept', 'dismiss'], description: 'Browser dialog operation for action=dialog' },
+          dialogId: { type: 'string', description: 'Pending browser dialog id from browser_dialog list or browser snapshot' },
+          promptText: { type: 'string', description: 'Text to enter when accepting a prompt dialog' },
           timeout: { type: 'number', description: 'Timeout in milliseconds' },
         },
         required: ['action'],
@@ -202,6 +205,80 @@ export class BrowserExecuteTool implements ITool {
       resetBrowserTool();
       browserInstance = null;
     }
+  }
+}
+
+// ============================================================================
+// BrowserDialogExecuteTool (Hermes browser_dialog parity)
+// ============================================================================
+
+export class BrowserDialogExecuteTool implements ITool {
+  readonly name = 'browser_dialog';
+  readonly description = 'List, accept, or dismiss native browser dialogs (alert, confirm, prompt) on the active Playwright page.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const browser = await getBrowserAutomation();
+    return await browser.execute({
+      action: 'dialog',
+      dialogAction: (input.action as BrowserToolInput['dialogAction']) ?? 'list',
+      dialogId: input.dialogId as string | undefined,
+      promptText: input.promptText as string | undefined,
+    });
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          action: {
+            type: 'string',
+            enum: ['list', 'accept', 'dismiss'],
+            description: 'Dialog operation. Defaults to list.',
+          },
+          dialogId: {
+            type: 'string',
+            description: 'Specific pending dialog id. Defaults to the active tab dialog.',
+          },
+          promptText: {
+            type: 'string',
+            description: 'Text to enter when accepting a prompt dialog.',
+          },
+        },
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+
+    const data = input as Record<string, unknown>;
+    if (data.action !== undefined && !['list', 'accept', 'dismiss'].includes(data.action as string)) {
+      return { valid: false, errors: ['action must be one of list, accept, dismiss'] };
+    }
+
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'web' as ToolCategoryType,
+      keywords: ['browser', 'dialog', 'alert', 'confirm', 'prompt', 'modal', 'playwright', 'hermes'],
+      priority: 7,
+      requiresConfirmation: true,
+      modifiesFiles: false,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
   }
 }
 
@@ -1123,6 +1200,7 @@ export class DocsSearchExecuteTool implements ITool {
 export function createMiscTools(): ITool[] {
   return [
     new BrowserExecuteTool(),
+    new BrowserDialogExecuteTool(),
     new ComputerControlExecuteTool(),
     new ScreenshotExecuteTool(),
     new ReasoningExecuteTool(),

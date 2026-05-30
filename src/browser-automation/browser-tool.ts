@@ -69,6 +69,7 @@ export type BrowserAction =
   | 'get_content'
   | 'extract'
   | 'assert_text'
+  | 'dialog'
   // Info
   | 'get_url'
   | 'get_title'
@@ -167,6 +168,10 @@ export interface BrowserToolInput {
   longitude?: number;
   // JS
   expression?: string;
+  // Browser dialog
+  dialogAction?: 'list' | 'accept' | 'dismiss';
+  dialogId?: string;
+  promptText?: string;
   // Timeout
   timeout?: number;
   // Drag
@@ -394,6 +399,8 @@ export class BrowserTool {
           return this.extract(input);
         case 'assert_text':
           return this.assertText(input);
+        case 'dialog':
+          return this.dialog(input);
 
         // Info
         case 'get_url':
@@ -1045,6 +1052,48 @@ export class BrowserTool {
       success: true,
       output: truncated,
       data: { length: content.length },
+    };
+  }
+
+  private async dialog(input: BrowserToolInput): Promise<ToolResult> {
+    const dialogAction = input.dialogAction ?? 'list';
+
+    if (dialogAction === 'list') {
+      const dialogs = this.manager.listPendingDialogs();
+      if (dialogs.length === 0) {
+        return {
+          success: true,
+          output: 'No pending browser dialogs.',
+          data: { dialogs },
+        };
+      }
+
+      return {
+        success: true,
+        output: dialogs
+          .map((dialog) => {
+            const defaultValue = dialog.defaultValue ? ` default="${dialog.defaultValue}"` : '';
+            return `[${dialog.id ?? 'dialog'}] ${dialog.type}: ${dialog.message}${defaultValue}`;
+          })
+          .join('\n'),
+        data: { dialogs },
+      };
+    }
+
+    if (dialogAction !== 'accept' && dialogAction !== 'dismiss') {
+      return { success: false, error: `Unknown dialog action: ${dialogAction}` };
+    }
+
+    const handled = await this.manager.handleDialog({
+      dialogId: input.dialogId,
+      accept: dialogAction === 'accept',
+      promptText: input.promptText,
+    });
+
+    return {
+      success: true,
+      output: `${dialogAction === 'accept' ? 'Accepted' : 'Dismissed'} ${handled.type} dialog: ${handled.message}`,
+      data: { dialog: handled },
     };
   }
 

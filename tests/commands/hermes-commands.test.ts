@@ -269,7 +269,8 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           name: 'browser_dialog',
-          status: 'gap',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_dialog'],
         }),
         expect.objectContaining({
           name: 'execute_code',
@@ -290,7 +291,7 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('# Hermes Official Tool Parity Manifest');
     expect(output).toContain('## Summary');
     expect(output).toContain('### browser_dialog');
-    expect(output).toContain('- Status: `gap`');
+    expect(output).toContain('- Status: `exact`');
     expect(output).toContain('`toolsets.py::_HERMES_CORE_TOOLS`');
   });
 

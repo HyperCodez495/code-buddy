@@ -247,8 +247,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'browser',
     officialSource: OFFICIAL_SOURCE_BROWSER_DIALOG,
-    notes: 'Official Hermes has a dedicated browser dialog handler; no exact Code Buddy prompt tool was found.',
-    nextWork: 'Add dialog detection/accept/dismiss actions to the browser tool or document it as out of scope.',
+    notes: 'Code Buddy exposes a dedicated browser_dialog prompt tool for listing, accepting, and dismissing native Playwright dialogs on the active browser page.',
   },
   {
     name: 'text_to_speech',

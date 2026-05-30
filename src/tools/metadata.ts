@@ -180,6 +180,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     fleetSafe: false,
   },
   {
+    name: 'browser_dialog',
+    category: 'web',
+    keywords: ['browser', 'dialog', 'alert', 'confirm', 'prompt', 'beforeunload', 'modal', 'playwright', 'hermes'],
+    priority: 7,
+    description: 'List, accept, or dismiss native browser dialogs blocking the active browser page',
+  },
+  {
     name: 'lead_scout_plan',
     category: 'planning',
     keywords: ['lead scout', 'prospecting', 'prospect', 'leads', 'b2b', 'architectes', 'syndics', 'agences immobilieres', 'maitres oeuvre', 'promoteurs', 'bureaux etudes', 'sirene', 'rnc', 'osint', 'public data', 'script recipe', 'scoring', 'human review'],

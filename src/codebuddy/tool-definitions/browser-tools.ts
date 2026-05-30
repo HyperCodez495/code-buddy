@@ -383,6 +383,38 @@ Download:
   },
 };
 
+export const BROWSER_DIALOG_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_dialog',
+    description: `Handle native browser dialogs on the active browser page.
+
+Use this when a page opens an alert, confirm, prompt, or beforeunload dialog
+that blocks further browser automation. First call with action=list to inspect
+the pending dialog, then accept or dismiss it. For prompt dialogs, pass
+promptText when accepting.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        action: {
+          type: 'string',
+          enum: ['list', 'accept', 'dismiss'],
+          description: 'Dialog operation. Defaults to list.',
+        },
+        dialogId: {
+          type: 'string',
+          description: 'Specific dialog id from browser_dialog list or browser snapshot. Defaults to the active tab dialog.',
+        },
+        promptText: {
+          type: 'string',
+          description: 'Text to enter when accepting a prompt dialog.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 /**
  * Internet Scout Run Tool
  *
@@ -532,6 +564,7 @@ The plan sequences web_search, web_fetch, browser.observe, browser.extract, brow
 export const BROWSER_TOOLS: CodeBuddyTool[] = [
   INTERNET_SCOUT_RUN_TOOL,
   INTERNET_SCOUT_PLAN_TOOL,
+  BROWSER_DIALOG_TOOL,
   BROWSER_TOOL,
 ];
 

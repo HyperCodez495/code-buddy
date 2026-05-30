@@ -67,6 +67,11 @@ type Page = any;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PlaywrightModule = any;
 
+interface PendingDialog {
+  info: DialogInfo;
+  dialog: PlaywrightDialog;
+}
+
 // ============================================================================
 // Browser Manager
 // ============================================================================
@@ -79,6 +84,8 @@ export class BrowserManager extends EventEmitter {
   private currentPageId: string | null = null;
   private currentSnapshot: WebSnapshot | null = null;
   private nextRef: number = 1;
+  private pendingDialogs: Map<string, PendingDialog> = new Map();
+  private dialogCounter = 0;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- playwright is dynamically imported
   private playwright: Record<string, any> | null = null;
 
@@ -200,6 +207,7 @@ export class BrowserManager extends EventEmitter {
       this.browser = null;
       this.context = null;
       this.pages.clear();
+      this.pendingDialogs.clear();
       this.currentPageId = null;
       logger.info('Browser closed');
     }
@@ -219,11 +227,17 @@ export class BrowserManager extends EventEmitter {
     });
 
     page.on('dialog', (dialog: PlaywrightDialog) => {
-      this.emit('dialog', {
-        type: dialog.type(),
+      const id = `dialog-${++this.dialogCounter}`;
+      const info: DialogInfo = {
+        id,
+        pageId,
+        type: this.toDialogType(dialog.type()),
         message: dialog.message(),
         defaultValue: dialog.defaultValue(),
-      });
+        createdAt: new Date().toISOString(),
+      };
+      this.pendingDialogs.set(id, { info, dialog });
+      this.emit('dialog', info);
     });
 
     page.on('console', (msg: PlaywrightConsoleMessage) => {
@@ -339,6 +353,7 @@ export class BrowserManager extends EventEmitter {
 
     await page.close();
     this.pages.delete(tabId);
+    this.removePendingDialogsForPage(tabId);
 
     if (this.currentPageId === tabId) {
       this.currentPageId = this.pages.size > 0 ? Array.from(this.pages.keys())[0] ?? null : null;
@@ -366,6 +381,37 @@ export class BrowserManager extends EventEmitter {
     const ttl = options.ttl ?? 5000;
     const format = options.format ?? 'ai';
 
+    const pendingDialogs = this.listPendingDialogs();
+    if (pendingDialogs.length > 0) {
+      const viewport = page.viewportSize() || { width: 1280, height: 720 };
+      const snapshot: WebSnapshot = {
+        id: `websnap-${Date.now()}`,
+        timestamp: new Date(),
+        url: page.url(),
+        title: '(browser dialog pending)',
+        elements: [],
+        elementMap: new Map(),
+        viewport,
+        valid: true,
+        ttl,
+        format,
+        pendingDialogs,
+      };
+
+      setTimeout(() => {
+        snapshot.valid = false;
+        this.emit('snapshot-expired', { id: snapshot.id });
+      }, ttl);
+
+      this.currentSnapshot = snapshot;
+      logger.info('Web snapshot taken with pending browser dialog', {
+        id: snapshot.id,
+        pendingDialogs: pendingDialogs.length,
+      });
+
+      return snapshot;
+    }
+
     // Get all interactive elements using accessibility tree
     const elements = await this.extractElements(page, options);
 
@@ -390,6 +436,7 @@ export class BrowserManager extends EventEmitter {
       valid: true,
       ttl,
       format,
+      pendingDialogs: [],
     };
 
     // Invalidate after TTL
@@ -641,9 +688,20 @@ export class BrowserManager extends EventEmitter {
       `Title: ${snap.title}`,
       `Elements: ${snap.elements.length}`,
       '',
-      '## Interactive Elements',
-      '',
     ];
+
+    if (snap.pendingDialogs?.length) {
+      lines.push('## Pending Browser Dialogs');
+      lines.push('');
+      for (const dialog of snap.pendingDialogs) {
+        const defaultValue = dialog.defaultValue ? ` default="${dialog.defaultValue}"` : '';
+        lines.push(`  [${dialog.id ?? 'dialog'}] ${dialog.type}: ${dialog.message}${defaultValue}`);
+      }
+      lines.push('');
+    }
+
+    lines.push('## Interactive Elements');
+    lines.push('');
 
     // Group by role
     const byRole = new Map<string, WebElement[]>();
@@ -1247,16 +1305,32 @@ export class BrowserManager extends EventEmitter {
   /**
    * Handle dialog
    */
-  async handleDialog(action: DialogAction): Promise<void> {
-    const page = this.getCurrentPage();
+  async handleDialog(action: DialogAction): Promise<DialogInfo> {
+    const pending = this.findPendingDialog(action.dialogId);
+    if (!pending) {
+      throw new Error('No pending browser dialog found. Trigger the dialog first, then call browser_dialog.');
+    }
 
-    page.once('dialog', async (dialog: PlaywrightDialog) => {
+    try {
       if (action.accept) {
-        await dialog.accept(action.promptText);
+        await pending.dialog.accept(action.promptText);
       } else {
-        await dialog.dismiss();
+        await pending.dialog.dismiss();
       }
-    });
+      return pending.info;
+    } finally {
+      if (pending.info.id) {
+        this.pendingDialogs.delete(pending.info.id);
+      }
+    }
+  }
+
+  listPendingDialogs(options: { currentPageOnly?: boolean } = {}): DialogInfo[] {
+    const currentPageOnly = options.currentPageOnly ?? true;
+    const currentPageId = this.currentPageId;
+    return Array.from(this.pendingDialogs.values())
+      .map(entry => entry.info)
+      .filter(info => !currentPageOnly || !currentPageId || info.pageId === currentPageId);
   }
 
   // ============================================================================
@@ -1366,6 +1440,31 @@ export class BrowserManager extends EventEmitter {
       throw new Error('No active page. Open a tab first.');
     }
     return this.pages.get(this.currentPageId)!;
+  }
+
+  private findPendingDialog(dialogId?: string): PendingDialog | undefined {
+    if (dialogId) {
+      return this.pendingDialogs.get(dialogId);
+    }
+
+    const currentPageId = this.currentPageId;
+    return Array.from(this.pendingDialogs.values())
+      .find(entry => !currentPageId || entry.info.pageId === currentPageId);
+  }
+
+  private removePendingDialogsForPage(pageId: string): void {
+    for (const [dialogId, entry] of this.pendingDialogs.entries()) {
+      if (entry.info.pageId === pageId) {
+        this.pendingDialogs.delete(dialogId);
+      }
+    }
+  }
+
+  private toDialogType(type: string): DialogInfo['type'] {
+    if (type === 'alert' || type === 'confirm' || type === 'prompt' || type === 'beforeunload') {
+      return type;
+    }
+    return 'alert';
   }
 
   /**

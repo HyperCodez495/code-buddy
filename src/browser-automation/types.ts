@@ -107,6 +107,8 @@ export interface WebSnapshot {
   ttl: number;
   /** Format used */
   format: 'ai' | 'aria' | 'role';
+  /** Native browser dialogs currently blocking the active page */
+  pendingDialogs?: DialogInfo[];
 }
 
 export interface SnapshotOptions {
@@ -366,12 +368,17 @@ export interface EvaluateResult {
 export type DialogType = 'alert' | 'confirm' | 'prompt' | 'beforeunload';
 
 export interface DialogInfo {
+  id?: string;
+  pageId?: string;
   type: DialogType;
   message: string;
   defaultValue?: string;
+  createdAt?: string;
 }
 
 export interface DialogAction {
+  /** Specific pending dialog id. Defaults to the active tab's oldest dialog. */
+  dialogId?: string;
   /** Accept or dismiss */
   accept: boolean;
   /** Text to enter (for prompt) */
