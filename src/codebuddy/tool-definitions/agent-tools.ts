@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, review-gated enable/disable/deprecate/delete/patch/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -317,6 +317,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
           enum: [
             'list',
             'view',
+            'history',
             'create',
             'discover',
             'enable',
@@ -334,7 +335,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         name: {
           type: 'string',
-          description: 'Skill name. Required for view and create.',
+          description: 'Skill name. Required for view, history, and create.',
         },
         description: {
           type: 'string',

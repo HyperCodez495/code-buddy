@@ -194,6 +194,10 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect(viewedAfterInstall.integrityOk).toBe(true);
     expect(viewedAfterInstall.content).toContain('- Approved by: Patrice');
 
+    const historyWithoutName = await manageTool!.execute({ action: 'history' });
+    expect(historyWithoutName.success).toBe(false);
+    expect(historyWithoutName.error).toContain('name is required');
+
     const patchWithoutApproval = await manageTool!.execute({
       action: 'patch',
       name: 'research-skill-manage-candidate',
@@ -319,6 +323,41 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect((viewedAfterUpdate.installed as { version: string }).version).toBe('0.2.0');
     expect(viewedAfterUpdate.integrityOk).toBe(true);
     expect(viewedAfterUpdate.content).toContain('Updated cached hub workflow.');
+
+    const history = await parseToolOutput(await manageTool!.execute({
+      action: 'history',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(history.action).toBe('skill_manage_history');
+    expect(history.current).toMatchObject({
+      enabled: true,
+      exists: true,
+      integrityOk: true,
+      version: '0.2.0',
+    });
+    expect(history.rollbackableCount).toBeGreaterThanOrEqual(3);
+    expect(history.missingSnapshotCount).toBe(0);
+    const historySnapshots = history.snapshots as Array<{
+      createdAt: number;
+      id: string;
+      rollbackable: boolean;
+      snapshotExists: boolean;
+      snapshotIntegrityOk: boolean;
+      sizeBytes?: number;
+    }>;
+    expect(historySnapshots.map((snapshot) => snapshot.id)).toEqual(expect.arrayContaining([
+      (patched.snapshot as { id: string }).id,
+      (rolledBack.currentSnapshot as { id: string }).id,
+      (updated.snapshot as { id: string }).id,
+    ]));
+    expect(historySnapshots.every((snapshot) => snapshot.rollbackable)).toBe(true);
+    expect(historySnapshots.every((snapshot) => snapshot.snapshotExists)).toBe(true);
+    expect(historySnapshots.every((snapshot) => snapshot.snapshotIntegrityOk)).toBe(true);
+    expect(historySnapshots.every((snapshot) => typeof snapshot.sizeBytes === 'number' && snapshot.sizeBytes > 0))
+      .toBe(true);
+    expect(historySnapshots[0]!.createdAt).toBeGreaterThanOrEqual(
+      historySnapshots[historySnapshots.length - 1]!.createdAt,
+    );
 
     const deprecateWithoutApproval = await manageTool!.execute({
       action: 'deprecate',

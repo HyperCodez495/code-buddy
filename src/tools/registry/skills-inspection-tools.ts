@@ -80,6 +80,7 @@ class CodeBuddyToolAdapter implements ITool {
 type SkillManageAction =
   | 'list'
   | 'view'
+  | 'history'
   | 'create'
   | 'discover'
   | 'enable'
@@ -171,6 +172,23 @@ export class SkillManageExecuteTool implements ITool {
 
     if (action === 'view') {
       return await executeSkillViewTool(input);
+    }
+
+    if (action === 'history') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: 'skill_manage history: name is required' };
+      }
+
+      const history = getSkillsHub().getInstalledSkillHistory(name);
+      if (!history) {
+        return { success: false, error: `skill_manage history: skill not found: ${name}` };
+      }
+
+      return serializePayload({
+        action: 'skill_manage_history',
+        ...history,
+      });
     }
 
     if (action === 'create') {
@@ -443,7 +461,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, history, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -465,6 +483,7 @@ export class SkillManageExecuteTool implements ITool {
     if (![
       'list',
       'view',
+      'history',
       'create',
       'discover',
       'enable',
@@ -480,11 +499,11 @@ export class SkillManageExecuteTool implements ITool {
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, history, create, discover, enable, disable, deprecate, delete, patch, rollback, update, candidate_list, candidate_view, candidate_install'],
       };
     }
-    if (action === 'view' && !readString(data.name)) {
-      return { valid: false, errors: ['name is required for view'] };
+    if ((action === 'view' || action === 'history') && !readString(data.name)) {
+      return { valid: false, errors: [`name is required for ${action}`] };
     }
     if (action === 'discover' && !readString(data.query)) {
       return { valid: false, errors: ['query is required for discover'] };
@@ -546,6 +565,7 @@ export class SkillManageExecuteTool implements ITool {
         'manage',
         'list',
         'view',
+        'history',
         'create',
         'discover',
         'candidate',

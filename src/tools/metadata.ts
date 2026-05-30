@@ -642,7 +642,7 @@ export const TOOL_METADATA: ToolMetadata[] = [
   {
     name: 'skill_manage',
     category: 'utility',
-    keywords: ['skill', 'skills', 'manage', 'list', 'view', 'create', 'discover', 'candidate', 'review', 'install', 'enable', 'disable', 'deprecate', 'delete', 'patch', 'rollback', 'update', 'lifecycle', 'hub', 'hermes'],
+    keywords: ['skill', 'skills', 'manage', 'list', 'view', 'history', 'create', 'discover', 'candidate', 'review', 'install', 'enable', 'disable', 'deprecate', 'delete', 'patch', 'rollback', 'update', 'lifecycle', 'hub', 'hermes'],
     priority: 6,
     description: 'Hermes-style facade for installed skills, lifecycle actions, and review-gated SKILL.md candidates',
   },

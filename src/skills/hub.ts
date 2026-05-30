@@ -158,6 +158,34 @@ export interface SkillUpdateResult {
   snapshot: SkillVersionSnapshot;
 }
 
+export interface SkillHistoryCurrent {
+  checksum: string;
+  enabled: boolean;
+  exists: boolean;
+  installedAt: number;
+  integrityOk: boolean;
+  path: string;
+  source: InstalledSkill['source'];
+  version: string;
+  lifecycle?: SkillLifecycleState;
+  sizeBytes?: number;
+}
+
+export interface SkillHistorySnapshot extends SkillVersionSnapshot {
+  rollbackable: boolean;
+  snapshotExists: boolean;
+  snapshotIntegrityOk: boolean;
+  sizeBytes?: number;
+}
+
+export interface SkillHistoryResult {
+  installed: InstalledSkill;
+  current: SkillHistoryCurrent;
+  snapshots: SkillHistorySnapshot[];
+  rollbackableCount: number;
+  missingSnapshotCount: number;
+}
+
 export interface SkillUsageRecord {
   success: boolean;
   durationMs?: number;
@@ -1182,6 +1210,60 @@ export class SkillsHub extends EventEmitter {
     this.writeLockfile();
     this.emit('skill:rolled_back', { name: skillName, restoredSnapshot, currentSnapshot });
     return { installed, restoredSnapshot, currentSnapshot };
+  }
+
+  /**
+   * Return current installed skill state plus rollback snapshots with on-disk
+   * integrity checks. This is the read model Cowork/CLI use before offering a
+   * version restore decision to a human reviewer.
+   */
+  getInstalledSkillHistory(skillName: string): SkillHistoryResult | null {
+    const detail = this.info(skillName);
+    if (!detail) {
+      return null;
+    }
+
+    const { installed, content, integrityOk } = detail;
+    const snapshots = [...(installed.history ?? [])]
+      .map((snapshot): SkillHistorySnapshot => {
+        const snapshotExists = fs.existsSync(snapshot.snapshotPath);
+        let snapshotIntegrityOk = false;
+        let sizeBytes: number | undefined;
+
+        if (snapshotExists) {
+          const snapshotContent = fs.readFileSync(snapshot.snapshotPath, 'utf-8');
+          snapshotIntegrityOk = computeChecksum(snapshotContent) === snapshot.checksum;
+          sizeBytes = Buffer.byteLength(snapshotContent, 'utf-8');
+        }
+
+        return {
+          ...snapshot,
+          rollbackable: snapshotExists && snapshotIntegrityOk,
+          snapshotExists,
+          snapshotIntegrityOk,
+          ...(typeof sizeBytes === 'number' ? { sizeBytes } : {}),
+        };
+      })
+      .sort((left, right) => right.createdAt - left.createdAt);
+
+    return {
+      installed,
+      current: {
+        checksum: installed.checksum,
+        enabled: installed.enabled !== false,
+        exists: typeof content === 'string',
+        installedAt: installed.installedAt,
+        integrityOk,
+        path: installed.path,
+        source: installed.source,
+        version: installed.version,
+        ...(installed.lifecycle ? { lifecycle: installed.lifecycle } : {}),
+        ...(typeof content === 'string' ? { sizeBytes: Buffer.byteLength(content, 'utf-8') } : {}),
+      },
+      snapshots,
+      rollbackableCount: snapshots.filter((snapshot) => snapshot.rollbackable).length,
+      missingSnapshotCount: snapshots.filter((snapshot) => !snapshot.snapshotExists).length,
+    };
   }
 
   /**

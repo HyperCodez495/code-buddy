@@ -14,13 +14,13 @@ Current measured state:
 ## P0 — Finish the core learning loop
 
 - [ ] **Implement review-gated `skill_manage` lifecycle**
-  - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but the lifecycle still needs Cowork controls and richer version history to feel complete.
-  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately. Patches and updates snapshot the real SKILL.md before writing, and rollback restores a cached snapshot.
-  - Remaining scope: expose richer version history and Cowork UI controls as one coherent lifecycle.
+  - Why: this is the highest-value remaining Hermes core gap. Code Buddy can create/discover/install candidates, but the lifecycle still needs Cowork controls to feel complete.
+  - Done so far: agent-facing `skill_manage` facade for installed `list`/`view`/`history`, direct `create`/`discover`, review-gated `enable`/`disable`/`deprecate`/`delete`/`patch`/`rollback`/`update`, and review-gated candidate `list`/`view`/`install`, backed by the real SkillsHub/create-skill/candidate primitives. Candidate installs are indexed back into the SkillsHub lockfile with checksum so `skill_manage list/view` can see them immediately. Patches and updates snapshot the real SKILL.md before writing, rollback restores a cached snapshot, and history exposes the current file plus rollbackable snapshots with on-disk integrity checks.
+  - Remaining scope: expose the same controls in Cowork and optionally add remote hub release diff previews.
   - Guardrail: every mutation must be review-gated or reversible; no silent skill overwrite from the agent loop.
   - Acceptance:
     - A temp workspace can create a candidate skill, inspect it, approve/install it, list the installed version, patch it, roll it back, update it from local hub cache metadata, deprecate it, re-enable it, and remove it from the installed index.
-    - Remaining: expose richer version history and the same controls in Cowork.
+    - Remaining: expose the same controls in Cowork.
     - Installed skills keep provenance: source run/candidate, reviewer, approval time, prior version if overwritten.
     - Cowork can show the candidate vs installed skill diff before approval.
   - Verification:
