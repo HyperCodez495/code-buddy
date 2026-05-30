@@ -13,6 +13,7 @@ import {
   RotateCcw,
   ShieldCheck,
   Terminal,
+  Trash2,
 } from 'lucide-react';
 import type { LucideIcon } from 'lucide-react';
 
@@ -55,6 +56,17 @@ export interface SkillPackageManagerSummary {
 }
 
 interface SkillPackageManagerApi {
+  delete?: (options: {
+    approvedBy: string;
+    cwd?: string;
+    name: string;
+    reason?: string;
+  }) => Promise<{
+    deletedName?: string;
+    error?: string;
+    ok: boolean;
+    summary?: SkillPackageManagerSummary;
+  }>;
   lifecycle?: (options: {
     action: 'enable' | 'disable' | 'deprecate';
     approvedBy: string;
@@ -65,6 +77,7 @@ interface SkillPackageManagerApi {
     error?: string;
     ok: boolean;
     package?: SkillPackageManagerEntry;
+    summary?: SkillPackageManagerSummary;
   }>;
   list?: (options?: {
     cwd?: string;
@@ -80,6 +93,7 @@ interface SkillPackageManagerApi {
     error?: string;
     ok: boolean;
     package?: SkillPackageManagerEntry;
+    summary?: SkillPackageManagerSummary;
   }>;
 }
 
@@ -92,7 +106,7 @@ export function buildSkillPackageManagerGoal(): string {
     '- buddy skills list --all --json',
     '- buddy skills learning-usage --json',
     '- skill_manage action=history name=<skill>',
-    '- skill_manage action=enable|disable|deprecate|patch|rollback|update name=<skill> approved_by=<reviewer>',
+    '- skill_manage action=enable|disable|deprecate|delete|patch|rollback|update name=<skill> approved_by=<reviewer>',
     '',
     'Rules:',
     '- Do not mutate an installed skill without a named reviewer.',
@@ -157,10 +171,15 @@ export const SkillPackageManagerStrip: React.FC<{
     }
 
     const api = getSkillPackageManagerApi();
+    const deletePackage = api?.delete;
     const lifecycle = api?.lifecycle;
     const list = api?.list;
     const rollback = api?.rollback;
-    if ((action === 'rollback' && !rollback) || (action !== 'rollback' && !lifecycle)) {
+    if (
+      (action === 'delete' && !deletePackage)
+      || (action === 'rollback' && !rollback)
+      || (action !== 'delete' && action !== 'rollback' && !lifecycle)
+    ) {
       onUseAsGoal?.(buildSkillLifecycleGoal(skill.name, action, approvedBy));
       return;
     }
@@ -171,18 +190,34 @@ export const SkillPackageManagerStrip: React.FC<{
     setLifecycleFeedback(null);
 
     try {
-      const result = action === 'rollback'
-        ? await rollback!({
+      let result: {
+        deletedName?: string;
+        error?: string;
+        ok: boolean;
+        package?: SkillPackageManagerEntry;
+        summary?: SkillPackageManagerSummary;
+      };
+
+      if (action === 'delete') {
+        result = await deletePackage!({
           approvedBy,
           cwd,
           name: skill.name,
-        })
-        : await lifecycle!({
+        });
+      } else if (action === 'rollback') {
+        result = await rollback!({
+          approvedBy,
+          cwd,
+          name: skill.name,
+        });
+      } else {
+        result = await lifecycle!({
           action,
           approvedBy,
           cwd,
           name: skill.name,
         });
+      }
       if (!result.ok) {
         setLifecycleError(result.error ?? t('fleet.skillPackage.lifecycleFailed', 'Lifecycle update failed.'));
         return;
@@ -192,13 +227,17 @@ export const SkillPackageManagerStrip: React.FC<{
         t('fleet.skillPackage.lifecycleFeedback', '{{action}} {{skill}} by {{reviewer}}.', {
           action,
           reviewer: approvedBy,
-          skill: result.package?.name ?? skill.name,
+          skill: ('deletedName' in result ? result.deletedName : result.package?.name) ?? skill.name,
         })
       );
 
-      if (summary === undefined && list) {
-        const refreshed = await list({ cwd, limit: 6 });
-        setLoadedSummary(refreshed);
+      if (summary === undefined) {
+        if (result.summary) {
+          setLoadedSummary(result.summary);
+        } else if (list) {
+          const refreshed = await list({ cwd, limit: 6 });
+          setLoadedSummary(refreshed);
+        }
       }
     } catch (lifecycleErrorValue: unknown) {
       setLifecycleError(
@@ -372,6 +411,13 @@ export const SkillPackageManagerStrip: React.FC<{
                     onClick={() => void handlePackageAction(skill, 'rollback')}
                   />
                 ) : null}
+                <LifecycleButton
+                  action="delete"
+                  disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                  icon={Trash2}
+                  loading={updatingSkillKey === `${skill.name}:delete`}
+                  onClick={() => void handlePackageAction(skill, 'delete')}
+                />
               </div>
             </li>
           ))}
@@ -425,7 +471,7 @@ function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
   ).electronAPI?.tools?.skillPackage;
 }
 
-type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback';
+type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback' | 'delete';
 
 const LifecycleButton: React.FC<{
   action: SkillPackageReviewAction;

@@ -1606,6 +1606,16 @@ contextBridge.exposeInMainWorld('electronAPI', {
           version: string;
         };
       }> => ipcRenderer.invoke('tools.skillPackage.rollback', options),
+      delete: (options: {
+        approvedBy: string;
+        cwd?: string;
+        name: string;
+        reason?: string;
+      }): Promise<{
+        deletedName?: string;
+        error?: string;
+        ok: boolean;
+      }> => ipcRenderer.invoke('tools.skillPackage.delete', options),
     },
     learningUsage: {
       list: (options?: {
@@ -4106,6 +4116,16 @@ declare global {
               successCount?: number;
               version: string;
             };
+          }>;
+          delete: (options: {
+            approvedBy: string;
+            cwd?: string;
+            name: string;
+            reason?: string;
+          }) => Promise<{
+            deletedName?: string;
+            error?: string;
+            ok: boolean;
           }>;
         };
         learningUsage: {

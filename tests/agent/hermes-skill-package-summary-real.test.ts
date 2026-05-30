@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   buildHermesSkillPackageSummary,
+  deleteHermesSkillPackage,
   rollbackHermesSkillPackage,
   setHermesSkillPackageLifecycle,
 } from '../../src/agent/hermes-skill-package-summary.js';
@@ -98,7 +99,7 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       'buddy skills list --all --json',
       'buddy skills doctor --json',
       'buddy skills learning-usage --json',
-      'Use skill_manage with approved_by for enable/disable/deprecate/patch/rollback/update.',
+      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/update.',
     ]);
     expect(summary.packages).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -260,6 +261,39 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
     expect(summary.packages[0]).toMatchObject({
       name: 'rollback-helper',
       rollbackableCount: 2,
+    });
+  });
+
+  it('deletes an installed skill from the real workspace lockfile', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    await hub.installFromContent(
+      'delete-helper',
+      skillContent('delete-helper', '1.0.0', 'Delete-reviewed helper.'),
+    );
+    const installedPath = path.join(tempDir, '.codebuddy', 'skills', 'delete-helper', 'SKILL.md');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Delete-reviewed helper.');
+
+    await expect(deleteHermesSkillPackage(
+      tempDir,
+      'delete-helper',
+      {
+        actor: 'Patrice',
+        reason: 'Remove obsolete reviewed skill.',
+      },
+    )).resolves.toBe(true);
+
+    await expect(fs.readFile(installedPath, 'utf8')).rejects.toThrow();
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary).toMatchObject({
+      disabledCount: 0,
+      enabledCount: 0,
+      installedCount: 0,
+      rollbackableCount: 0,
     });
   });
 });

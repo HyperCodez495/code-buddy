@@ -63,6 +63,11 @@ export interface RollbackHermesSkillPackageOptions {
   updatedAt?: number;
 }
 
+export interface DeleteHermesSkillPackageOptions {
+  actor: string;
+  reason?: string;
+}
+
 export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
@@ -94,7 +99,7 @@ export function buildHermesSkillPackageSummary(
       'buddy skills list --all --json',
       'buddy skills doctor --json',
       'buddy skills learning-usage --json',
-      'Use skill_manage with approved_by for enable/disable/deprecate/patch/rollback/update.',
+      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/update.',
     ],
     rollbackableCount: allPackages.reduce((total, skill) => total + skill.rollbackableCount, 0),
     skillRoot,
@@ -166,6 +171,24 @@ export function rollbackHermesSkillPackage(
     hub.info(rolledBack.installed.name)?.content,
     normalizePreviewChars(undefined),
   );
+}
+
+export async function deleteHermesSkillPackage(
+  workDir: string,
+  skillName: string,
+  options: DeleteHermesSkillPackageOptions,
+): Promise<boolean> {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill deletion.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill deletion.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  return hub.uninstall(name);
 }
 
 function summarizeInstalledSkill(

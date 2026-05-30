@@ -186,6 +186,7 @@ import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import {
+  deleteSkillPackageForReview,
   listSkillPackagesForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
@@ -4140,6 +4141,37 @@ ipcMain.handle(
       return { ok: true as const, ...result };
     } catch (err) {
       logWarn('[tools.skillPackage.rollback] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.delete',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      cwd?: string;
+      name?: string;
+      reason?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await deleteSkillPackageForReview({
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.delete] failed:', err);
       return {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err),

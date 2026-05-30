@@ -2,6 +2,7 @@ import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
 import {
+  deleteSkillPackageForReview,
   listSkillPackagesForReview,
   rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
@@ -187,6 +188,44 @@ describe('skill package manager bridge', () => {
       },
       summary: {
         rollbackableCount: 2,
+      },
+    });
+  });
+
+  it('deletes a package through the core package summary module', async () => {
+    const deleteHermesSkillPackage = vi.fn().mockResolvedValue(true);
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 0,
+      enabledCount: 0,
+      installedCount: 0,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 0,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      deleteHermesSkillPackage,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await deleteSkillPackageForReview({
+      approvedBy: 'Patrice',
+      name: 'obsolete-helper',
+      reason: 'Obsolete after review.',
+      rootDir,
+    });
+
+    expect(deleteHermesSkillPackage).toHaveBeenCalledWith(rootDir, 'obsolete-helper', {
+      actor: 'Patrice',
+      reason: 'Obsolete after review.',
+    });
+    expect(result).toMatchObject({
+      deletedName: 'obsolete-helper',
+      summary: {
+        installedCount: 0,
       },
     });
   });

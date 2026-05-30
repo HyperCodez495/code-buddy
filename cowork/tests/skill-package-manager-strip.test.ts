@@ -131,7 +131,7 @@ describe('SkillPackageManagerStrip', () => {
     expect(onUseAsGoal).toHaveBeenCalledTimes(1);
     const goal = onUseAsGoal.mock.calls[0]?.[0] as string;
     expect(goal).toContain('Review installed Code Buddy SKILL.md packages from Cowork.');
-    expect(goal).toContain('skill_manage action=enable|disable|deprecate|patch|rollback|update');
+    expect(goal).toContain('skill_manage action=enable|disable|deprecate|delete|patch|rollback|update');
     expect(goal).toContain('Do not mutate an installed skill without a named reviewer.');
   });
 
@@ -375,5 +375,95 @@ describe('SkillPackageManagerStrip', () => {
       name: 'rollback-helper',
     });
     expect(target.textContent).toContain('rollback rollback-helper by Patrice.');
+  });
+
+  it('requires reviewer identity before deleting an installed skill', async () => {
+    const target = container();
+    const deletePackage = vi.fn().mockResolvedValue({
+      deletedName: 'obsolete-helper',
+      ok: true,
+      summary: {
+        cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+        disabledCount: 0,
+        enabledCount: 0,
+        installedCount: 0,
+        lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+        packages: [],
+        reviewCommands: ['buddy skills list --all --json'],
+        rollbackableCount: 0,
+        skillRoot: 'D:/workspace/.codebuddy/skills',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            delete: typeof deletePackage;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          delete: deletePackage,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: true,
+              name: 'obsolete-helper',
+              path: 'D:/workspace/.codebuddy/skills/obsolete-helper/SKILL.md',
+              rollbackableCount: 0,
+              source: 'local',
+              status: 'active',
+              version: '1.0.0',
+            },
+          ],
+          reviewCommands: ['buddy skills list --all --json'],
+          rollbackableCount: 0,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let deleteButton = target.querySelector('[data-testid="skill-package-delete"]') as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    deleteButton = target.querySelector('[data-testid="skill-package-delete"]') as HTMLButtonElement;
+    expect(deleteButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(deleteButton);
+      await Promise.resolve();
+    });
+
+    expect(deletePackage).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      name: 'obsolete-helper',
+    });
+    expect(target.textContent).toContain('delete obsolete-helper by Patrice.');
   });
 });

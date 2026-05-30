@@ -61,12 +61,24 @@ export interface RollbackSkillPackageForReviewOptions {
   snapshotId?: string;
 }
 
+export interface DeleteSkillPackageForReviewOptions {
+  approvedBy: string;
+  name: string;
+  reason?: string;
+  rootDir: string;
+}
+
 export interface SetSkillPackageLifecycleForReviewResult {
   package: SkillPackageManagerEntry;
   summary: SkillPackageManagerSummary;
 }
 
 export type RollbackSkillPackageForReviewResult = SetSkillPackageLifecycleForReviewResult;
+
+export interface DeleteSkillPackageForReviewResult {
+  deletedName: string;
+  summary: SkillPackageManagerSummary;
+}
 
 interface HermesSkillPackageModule {
   buildHermesSkillPackageSummary: (
@@ -84,6 +96,11 @@ interface HermesSkillPackageModule {
     skillName: string,
     options: { actor: string; reason?: string; snapshotId?: string },
   ) => SkillPackageManagerEntry | null;
+  deleteHermesSkillPackage?: (
+    workDir: string,
+    skillName: string,
+    options: { actor: string; reason?: string },
+  ) => Promise<boolean> | boolean;
 }
 
 export async function listSkillPackagesForReview(
@@ -175,6 +192,43 @@ export async function rollbackSkillPackageForReview(
 
   return {
     package: updated,
+    summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
+  };
+}
+
+export async function deleteSkillPackageForReview(
+  options: DeleteSkillPackageForReviewOptions,
+): Promise<DeleteSkillPackageForReviewResult> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir);
+  if (!rootDir) {
+    throw new Error('An absolute workspace root is required to delete a skill package.');
+  }
+
+  const approvedBy = options.approvedBy.trim();
+  if (!approvedBy) {
+    throw new Error('approvedBy is required to delete a skill package from Cowork.');
+  }
+
+  const name = options.name.trim();
+  if (!name) {
+    throw new Error('name is required to delete a skill package from Cowork.');
+  }
+
+  const mod = await loadCoreModule<HermesSkillPackageModule>('agent/hermes-skill-package-summary.js');
+  if (!mod?.deleteHermesSkillPackage || !mod.buildHermesSkillPackageSummary) {
+    throw new Error('Core skill package deletion module is unavailable.');
+  }
+
+  const deleted = await mod.deleteHermesSkillPackage(rootDir, name, {
+    actor: approvedBy,
+    reason: options.reason?.trim() || undefined,
+  });
+  if (!deleted) {
+    throw new Error(`Skill package not found: ${name}`);
+  }
+
+  return {
+    deletedName: name,
     summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
   };
 }
