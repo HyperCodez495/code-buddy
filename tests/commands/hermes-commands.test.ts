@@ -127,6 +127,77 @@ describe('Hermes CLI commands', () => {
     expect(output.notes.join(' ')).toContain('Runs offline');
   });
 
+  it('prints the machine-checkable Hermes parity manifest', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'parity', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      officialSource: {
+        repository: string;
+        inspectedCommit: string;
+        auditDocument: string;
+      };
+      summary: {
+        total: number;
+        partial: number;
+        gaps: number;
+      };
+      features: Array<{
+        id: string;
+        status: string;
+        codeBuddyEvidence: string[];
+        verificationCommands: string[];
+      }>;
+    };
+
+    expect(output.kind).toBe('hermes_official_parity_manifest');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.officialSource.repository).toBe('https://github.com/NousResearch/hermes-agent');
+    expect(output.officialSource.inspectedCommit).toBe('61268ff7');
+    expect(output.officialSource.auditDocument).toBe('docs/hermes-agent-official-parity-audit-2026-05-30.md');
+    expect(output.summary.total).toBe(output.features.length);
+    expect(output.summary.partial).toBeGreaterThan(0);
+    expect(output.summary.gaps).toBeGreaterThan(0);
+    expect(output.features).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'cron-scheduling',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining(['src/commands/cron-cli/index.ts']),
+          verificationCommands: expect.arrayContaining([
+            'npm test -- tests/commands/cron-cli.test.ts tests/scheduler/cron-scheduler-manual-run.test.ts --run',
+          ]),
+        }),
+        expect.objectContaining({
+          id: 'prompt-size',
+          status: 'covered-partial',
+          verificationCommands: expect.arrayContaining([
+            'npx tsx src/index.ts hermes prompt-size safe --json',
+          ]),
+        }),
+      ]),
+    );
+  });
+
+  it('prints Markdown for the Hermes parity manifest', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'parity', '--markdown']);
+
+    const output = getLogOutput();
+    expect(output).toContain('# Hermes Official Parity Manifest');
+    expect(output).toContain('## Summary');
+    expect(output).toContain('### Cron/scheduling');
+    expect(output).toContain('- ID: `cron-scheduling`');
+    expect(output).toContain('- Verification commands:');
+    expect(output).toContain('`npx tsx src/index.ts hermes prompt-size safe --json`');
+  });
+
   it('prints JSON for the Hermes integration plan', async () => {
     const program = createProgram();
     registerHermesCommands(program);

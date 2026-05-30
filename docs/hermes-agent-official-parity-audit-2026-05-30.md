@@ -74,9 +74,9 @@ several research/runtime backends. The first concrete gap from this audit,
 
 ## Highest-value next work
 
-1. Convert this audit into a machine-checkable parity manifest.
-   - Each Hermes feature row should have local evidence paths, a status, and a
-     verification command.
+1. Keep the machine-checkable parity manifest current.
+   - `buddy hermes parity --json` exposes each Hermes feature row with local
+     evidence paths, status, and verification commands.
 2. Close the user-facing gaps first: provider/model setup clarity, gateway
    status, and Cowork screens for the active
    Hermes/Fleet toolset.
@@ -96,6 +96,7 @@ several research/runtime backends. The first concrete gap from this audit,
 - `rg -n "execute_code|delegate_task|mixture_of_agents|session_search|skill_manage|skills_list|skill_view|send_message|text_to_speech|image_generate|video_generate|vision_analyze|video_analyze|computer_use|homeassistant|spotify|x_search|kanban_" src/codebuddy src/tools src/commands tests docs`
 - `npm test -- tests/commands/hermes-commands.test.ts --run`
 - `npx tsx src/index.ts hermes prompt-size safe --json`
+- `npx tsx src/index.ts hermes parity --json`
 
 ## Caveats
 

@@ -137,7 +137,7 @@ at an isolated cron store.
 ```bash
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
-buddy hermes profile|agent|doctor|plan|hooks [dispatchProfile] [--json] [--markdown] [--plan-output file]
+buddy hermes profile|agent|doctor|plan|hooks|prompt-size|parity [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 ```
 
@@ -157,6 +157,11 @@ format flag is provided.
 The plan also declares its interaction surfaces (`cli`, `cowork`, and
 `shared-json`) so Cowork can render the same checklist and seed a Fleet
 goal without parsing CLI prose.
+
+`buddy hermes parity [--json|--markdown]` prints the machine-checkable official
+Hermes parity manifest created from the 2026-05-30 source/docs audit. Each row
+includes Code Buddy evidence paths, status, verification commands, notes, and
+next-work hints so future parity work does not rely on prose archaeology.
 
 `buddy hermes hooks [--json]` prints the canonical Hermes-style lifecycle
 hook manifest. It maps Code Buddy's existing user/tool hooks onto

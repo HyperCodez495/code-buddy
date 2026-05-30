@@ -25,6 +25,10 @@ import {
 } from '../../agent/hermes-agent-profile.js';
 import { buildHermesAgentDiagnostics } from '../../agent/hermes-agent-diagnostics.js';
 import {
+  buildHermesParityManifest,
+  renderHermesParityManifestMarkdown,
+} from '../../agent/hermes-parity-manifest.js';
+import {
   buildHermesHookLifecycleManifest,
   renderHermesHookLifecycleManifest,
 } from '../../hooks/hermes-lifecycle-hooks.js';
@@ -407,6 +411,41 @@ export function registerHermesCommands(program: Command): void {
   const hermes = program
     .command('hermes')
     .description('Inspect the native Hermes-inspired Code Buddy agent profile');
+
+  hermes
+    .command('parity')
+    .description('Show the machine-checkable official Hermes parity manifest')
+    .option('--json', 'output JSON')
+    .option('--markdown', 'output Markdown')
+    .action((options: HermesCommandOptions) => {
+      const manifest = buildHermesParityManifest();
+
+      if (options.json) {
+        console.log(stableJson(manifest));
+        return;
+      }
+
+      if (options.markdown) {
+        console.log(renderHermesParityManifestMarkdown(manifest));
+        return;
+      }
+
+      console.log(
+        `Hermes parity manifest: ${manifest.summary.total} areas ` +
+          `(${manifest.summary.covered} covered, ${manifest.summary.coveredPartial} covered/partial, ` +
+          `${manifest.summary.partial} partial, ${manifest.summary.gaps} gaps)`,
+      );
+      console.log(`Official source: ${manifest.officialSource.repository} @ ${manifest.officialSource.inspectedCommit}`);
+      console.log(`Audit: ${manifest.officialSource.auditDocument}`);
+      console.log('');
+      for (const feature of manifest.features) {
+        console.log(`${feature.status.padEnd(15)} ${feature.id} - ${feature.area}`);
+        console.log(`  Verify: ${feature.verificationCommands[0] ?? 'n/a'}`);
+        if (feature.nextWork) {
+          console.log(`  Next: ${feature.nextWork}`);
+        }
+      }
+    });
 
   hermes
     .command('profile')
