@@ -5,83 +5,9 @@
  */
 
 import type { Command } from 'commander';
-import type { DaemonStatus } from '../../daemon/index.js';
+import { buildDaemonStatusReport } from '../../daemon/status-reports.js';
 
-export interface DaemonStatusReport {
-  kind: 'codebuddy_daemon_status';
-  schemaVersion: 1;
-  generatedAt: string;
-  status: {
-    running: boolean;
-    pid: number | null;
-    uptimeMs: number | null;
-    uptimeSeconds: number | null;
-    startedAt: string | null;
-    restartCount: number;
-    services: Array<{
-      name: string;
-      running: boolean;
-      startedAt: string | null;
-      error: string | null;
-    }>;
-  };
-  summary: {
-    serviceCount: number;
-    runningServiceCount: number;
-    stoppedServiceCount: number;
-  };
-  recommendations: string[];
-}
-
-function formatDate(value: Date | undefined): string | null {
-  if (!value) return null;
-  const timestamp = value.getTime();
-  return Number.isFinite(timestamp) ? value.toISOString() : null;
-}
-
-export function buildDaemonStatusReport(
-  status: DaemonStatus,
-  generatedAt: string = new Date().toISOString(),
-): DaemonStatusReport {
-  const services = status.services.map((service) => ({
-    name: service.name,
-    running: service.running,
-    startedAt: formatDate(service.startedAt),
-    error: service.error ?? null,
-  }));
-  const runningServiceCount = services.filter((service) => service.running).length;
-  const stoppedServiceCount = services.length - runningServiceCount;
-  const recommendations: string[] = [];
-
-  if (!status.running) {
-    recommendations.push('Start the daemon with `buddy daemon start --detach` before relying on scheduled jobs or background services.');
-  } else if (services.length === 0) {
-    recommendations.push('Daemon is running, but no service health details are currently reported.');
-  } else if (stoppedServiceCount > 0) {
-    recommendations.push('One or more daemon services are stopped; inspect daemon logs for service-level errors.');
-  }
-
-  return {
-    kind: 'codebuddy_daemon_status',
-    schemaVersion: 1,
-    generatedAt,
-    status: {
-      running: status.running,
-      pid: status.pid ?? null,
-      uptimeMs: status.uptime ?? null,
-      uptimeSeconds: typeof status.uptime === 'number' ? Math.round(status.uptime / 1000) : null,
-      startedAt: formatDate(status.startedAt),
-      restartCount: status.restartCount,
-      services,
-    },
-    summary: {
-      serviceCount: services.length,
-      runningServiceCount,
-      stoppedServiceCount,
-    },
-    recommendations,
-  };
-}
+export { buildDaemonStatusReport };
 
 /**
  * Register daemon subcommands on the given program

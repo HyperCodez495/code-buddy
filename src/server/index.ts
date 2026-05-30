@@ -154,6 +154,21 @@ const DEFAULT_CONFIG: ServerConfig = {
   },
 };
 
+function getFirstQueryValue(value: unknown): string | undefined {
+  if (typeof value === 'string') return value;
+  if (Array.isArray(value)) {
+    const first = value[0];
+    return typeof first === 'string' ? first : undefined;
+  }
+  return undefined;
+}
+
+function wantsStatusReport(query: Record<string, unknown>): boolean {
+  const format = getFirstQueryValue(query.format)?.toLowerCase();
+  const report = getFirstQueryValue(query.report)?.toLowerCase();
+  return format === 'report' || report === '1' || report === 'true' || report === 'yes';
+}
+
 /**
  * Create and configure the Express application
  */
@@ -301,14 +316,26 @@ function createApp(config: ServerConfig): Application {
   });
 
   // Daemon status endpoint
-  app.get('/api/daemon/status', async (_req, res) => {
+  app.get('/api/daemon/status', async (req, res) => {
+    const report = wantsStatusReport(req.query as Record<string, unknown>);
     try {
       const { getDaemonManager } = await import('../daemon/index.js');
       const manager = getDaemonManager();
       const status = await manager.status();
+      if (report) {
+        const { buildDaemonStatusReport } = await import('../daemon/status-reports.js');
+        res.json(buildDaemonStatusReport(status));
+        return;
+      }
       res.json(status);
     } catch (_error) {
-      res.json({ running: false, services: [], restartCount: 0 });
+      const status = { running: false, services: [], restartCount: 0 };
+      if (report) {
+        const { buildDaemonStatusReport } = await import('../daemon/status-reports.js');
+        res.json(buildDaemonStatusReport(status));
+        return;
+      }
+      res.json(status);
     }
   });
 
@@ -439,12 +466,43 @@ function createApp(config: ServerConfig): Application {
   });
 
   // Heartbeat endpoints
-  app.get('/api/heartbeat/status', async (_req, res) => {
+  app.get('/api/heartbeat/status', async (req, res) => {
+    const report = wantsStatusReport(req.query as Record<string, unknown>);
     try {
       const { getHeartbeatEngine } = await import('../daemon/heartbeat.js');
       const engine = getHeartbeatEngine();
-      res.json(engine.getStatus());
+      const status = engine.getStatus();
+      if (report) {
+        const { buildHeartbeatStatusReport } = await import('../daemon/status-reports.js');
+        res.json(buildHeartbeatStatusReport(status, engine.getConfig()));
+        return;
+      }
+      res.json(status);
     } catch (_error) {
+      const status = {
+        running: false,
+        enabled: false,
+        lastRunTime: null,
+        nextRunTime: null,
+        consecutiveSuppressions: 0,
+        totalTicks: 0,
+        totalSuppressions: 0,
+        lastResult: null,
+      };
+      if (report) {
+        const { buildHeartbeatStatusReport } = await import('../daemon/status-reports.js');
+        res.json(buildHeartbeatStatusReport(status, {
+          intervalMs: 0,
+          activeHoursStart: 0,
+          activeHoursEnd: 0,
+          timezone: 'unknown',
+          heartbeatFilePath: '',
+          suppressionKeyword: 'HEARTBEAT_OK',
+          maxConsecutiveSuppressions: 0,
+          enabled: false,
+        }));
+        return;
+      }
       res.json({ running: false, enabled: false, totalTicks: 0 });
     }
   });

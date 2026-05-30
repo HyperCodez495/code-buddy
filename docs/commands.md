@@ -135,6 +135,8 @@ at an isolated cron store.
 
 `buddy daemon status --json` reports daemon liveness, PID, uptime, service
 counts, restart count, and recommendations for Cowork or external harnesses.
+The REST endpoint mirrors that shape with
+`GET /api/daemon/status?format=report`.
 
 `buddy channels status --json` reports configured and registered messaging
 channels without printing secrets, so Cowork and parity checks can render
@@ -142,6 +144,8 @@ gateway readiness directly.
 
 `buddy heartbeat status --json` reports the autonomous heartbeat engine state,
 schedule config, counters, and recommendations in a Cowork-friendly shape.
+The REST endpoint mirrors that shape with
+`GET /api/heartbeat/status?format=report`.
 
 ### Research and Orchestration
 

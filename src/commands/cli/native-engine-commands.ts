@@ -7,7 +7,7 @@
 
 import type { Command } from 'commander';
 import type { ChannelType, ContentType } from '../../channels/core.js';
-import type { HeartbeatConfig, HeartbeatStatus } from '../../daemon/heartbeat.js';
+import { buildHeartbeatStatusReport } from '../../daemon/status-reports.js';
 import type {
   CompanionCardKind,
   CompanionCardPriority,
@@ -18,83 +18,7 @@ import type {
 // Heartbeat commands
 // ============================================================================
 
-export interface HeartbeatStatusReport {
-  kind: 'codebuddy_heartbeat_status';
-  schemaVersion: 1;
-  generatedAt: string;
-  status: {
-    running: boolean;
-    enabled: boolean;
-    lastRunTime: string | null;
-    nextRunTime: string | null;
-    consecutiveSuppressions: number;
-    totalTicks: number;
-    totalSuppressions: number;
-    lastResultPreview: string | null;
-    lastResultBytes: number;
-  };
-  config: {
-    intervalMs: number;
-    activeHoursStart: number;
-    activeHoursEnd: number;
-    timezone: string;
-    heartbeatFilePath: string;
-    suppressionKeyword: string;
-    maxConsecutiveSuppressions: number;
-  };
-  recommendations: string[];
-}
-
-function previewHeartbeatResult(value: string | null): string | null {
-  if (!value) return null;
-  return value.length > 200 ? value.slice(0, 200) : value;
-}
-
-export function buildHeartbeatStatusReport(
-  status: HeartbeatStatus,
-  config: HeartbeatConfig,
-  generatedAt: string = new Date().toISOString(),
-): HeartbeatStatusReport {
-  const recommendations: string[] = [];
-  if (!status.enabled) {
-    recommendations.push('Heartbeat engine is disabled. Run buddy heartbeat start to enable and schedule it.');
-  } else if (!status.running) {
-    recommendations.push('Heartbeat engine is enabled but not running. Run buddy heartbeat start.');
-  }
-  if (status.running && !status.nextRunTime) {
-    recommendations.push('Heartbeat engine is running but no next run is scheduled.');
-  }
-  if (status.consecutiveSuppressions >= Math.max(1, config.maxConsecutiveSuppressions - 1)) {
-    recommendations.push('Consecutive suppressions are near the configured limit.');
-  }
-
-  return {
-    kind: 'codebuddy_heartbeat_status',
-    schemaVersion: 1,
-    generatedAt,
-    status: {
-      running: status.running,
-      enabled: status.enabled,
-      lastRunTime: status.lastRunTime ? status.lastRunTime.toISOString() : null,
-      nextRunTime: status.nextRunTime ? status.nextRunTime.toISOString() : null,
-      consecutiveSuppressions: status.consecutiveSuppressions,
-      totalTicks: status.totalTicks,
-      totalSuppressions: status.totalSuppressions,
-      lastResultPreview: previewHeartbeatResult(status.lastResult),
-      lastResultBytes: status.lastResult ? Buffer.byteLength(status.lastResult, 'utf8') : 0,
-    },
-    config: {
-      intervalMs: config.intervalMs,
-      activeHoursStart: config.activeHoursStart,
-      activeHoursEnd: config.activeHoursEnd,
-      timezone: config.timezone,
-      heartbeatFilePath: config.heartbeatFilePath,
-      suppressionKeyword: config.suppressionKeyword,
-      maxConsecutiveSuppressions: config.maxConsecutiveSuppressions,
-    },
-    recommendations,
-  };
-}
+export { buildHeartbeatStatusReport };
 
 export function registerHeartbeatCommands(program: Command): void {
   const heartbeat = program
