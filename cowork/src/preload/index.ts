@@ -1573,6 +1573,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
           version: string;
         };
       }> => ipcRenderer.invoke('tools.skillPackage.lifecycle', options),
+      rollback: (options: {
+        approvedBy: string;
+        cwd?: string;
+        name: string;
+        reason?: string;
+        snapshotId?: string;
+      }): Promise<{
+        error?: string;
+        ok: boolean;
+        package?: {
+          averageDurationMs?: number;
+          contentPreview?: string;
+          contentPreviewTruncated?: boolean;
+          enabled: boolean;
+          exists: boolean;
+          failureCount?: number;
+          installedAt: number;
+          integrityOk: boolean;
+          invocationCount?: number;
+          lastError?: string;
+          lastLifecycleReason?: string;
+          lastLifecycleReviewer?: string;
+          lastUsedAt?: number;
+          name: string;
+          path: string;
+          rollbackableCount: number;
+          sizeBytes?: number;
+          source: 'hub' | 'local' | 'git';
+          status: 'active' | 'disabled' | 'deprecated';
+          successCount?: number;
+          version: string;
+        };
+      }> => ipcRenderer.invoke('tools.skillPackage.rollback', options),
     },
     learningUsage: {
       list: (options?: {
@@ -4014,6 +4047,39 @@ declare global {
             cwd?: string;
             name: string;
             reason?: string;
+          }) => Promise<{
+            error?: string;
+            ok: boolean;
+            package?: {
+              averageDurationMs?: number;
+              contentPreview?: string;
+              contentPreviewTruncated?: boolean;
+              enabled: boolean;
+              exists: boolean;
+              failureCount?: number;
+              installedAt: number;
+              integrityOk: boolean;
+              invocationCount?: number;
+              lastError?: string;
+              lastLifecycleReason?: string;
+              lastLifecycleReviewer?: string;
+              lastUsedAt?: number;
+              name: string;
+              path: string;
+              rollbackableCount: number;
+              sizeBytes?: number;
+              source: 'hub' | 'local' | 'git';
+              status: 'active' | 'disabled' | 'deprecated';
+              successCount?: number;
+              version: string;
+            };
+          }>;
+          rollback: (options: {
+            approvedBy: string;
+            cwd?: string;
+            name: string;
+            reason?: string;
+            snapshotId?: string;
           }) => Promise<{
             error?: string;
             ok: boolean;

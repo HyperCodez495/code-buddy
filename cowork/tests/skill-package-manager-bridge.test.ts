@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
 import {
   listSkillPackagesForReview,
+  rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
 } from '../src/main/tools/skill-package-manager-bridge';
 
@@ -130,5 +131,63 @@ describe('skill package manager bridge', () => {
     })).rejects.toThrow('approvedBy is required');
 
     expect(mockedLoadCoreModule).not.toHaveBeenCalled();
+  });
+
+  it('rolls back a package through the core package summary module', async () => {
+    const rollbackHermesSkillPackage = vi.fn(() => ({
+      enabled: true,
+      exists: true,
+      installedAt: 1,
+      integrityOk: true,
+      lastLifecycleReason: 'Restore snapshot.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'audit-helper',
+      path: 'D:/workspace/.codebuddy/skills/audit-helper/SKILL.md',
+      rollbackableCount: 2,
+      source: 'local',
+      status: 'active',
+      version: '1.0.0',
+    }));
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 0,
+      enabledCount: 1,
+      installedCount: 1,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 2,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      rollbackHermesSkillPackage,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await rollbackSkillPackageForReview({
+      approvedBy: 'Patrice',
+      name: 'audit-helper',
+      reason: 'Restore snapshot.',
+      rootDir,
+      snapshotId: 'snapshot-1',
+    });
+
+    expect(rollbackHermesSkillPackage).toHaveBeenCalledWith(rootDir, 'audit-helper', {
+      actor: 'Patrice',
+      reason: 'Restore snapshot.',
+      snapshotId: 'snapshot-1',
+    });
+    expect(result).toMatchObject({
+      package: {
+        lastLifecycleReviewer: 'Patrice',
+        name: 'audit-helper',
+        rollbackableCount: 2,
+        status: 'active',
+      },
+      summary: {
+        rollbackableCount: 2,
+      },
+    });
   });
 });

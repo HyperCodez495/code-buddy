@@ -10,6 +10,7 @@ import {
   PackageOpen,
   PauseCircle,
   PlayCircle,
+  RotateCcw,
   ShieldCheck,
   Terminal,
 } from 'lucide-react';
@@ -69,6 +70,17 @@ interface SkillPackageManagerApi {
     cwd?: string;
     limit?: number;
   }) => Promise<SkillPackageManagerSummary | null>;
+  rollback?: (options: {
+    approvedBy: string;
+    cwd?: string;
+    name: string;
+    reason?: string;
+    snapshotId?: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    package?: SkillPackageManagerEntry;
+  }>;
 }
 
 export function buildSkillPackageManagerGoal(): string {
@@ -133,9 +145,9 @@ export const SkillPackageManagerStrip: React.FC<{
     };
   }, [cwd, summary]);
 
-  const handleLifecycle = async (
+  const handlePackageAction = async (
     skill: SkillPackageManagerEntry,
-    action: 'enable' | 'disable' | 'deprecate',
+    action: SkillPackageReviewAction,
   ) => {
     const approvedBy = reviewerName.trim();
     if (!approvedBy) {
@@ -145,7 +157,10 @@ export const SkillPackageManagerStrip: React.FC<{
     }
 
     const api = getSkillPackageManagerApi();
-    if (!api?.lifecycle) {
+    const lifecycle = api?.lifecycle;
+    const list = api?.list;
+    const rollback = api?.rollback;
+    if ((action === 'rollback' && !rollback) || (action !== 'rollback' && !lifecycle)) {
       onUseAsGoal?.(buildSkillLifecycleGoal(skill.name, action, approvedBy));
       return;
     }
@@ -156,12 +171,18 @@ export const SkillPackageManagerStrip: React.FC<{
     setLifecycleFeedback(null);
 
     try {
-      const result = await api.lifecycle({
-        action,
-        approvedBy,
-        cwd,
-        name: skill.name,
-      });
+      const result = action === 'rollback'
+        ? await rollback!({
+          approvedBy,
+          cwd,
+          name: skill.name,
+        })
+        : await lifecycle!({
+          action,
+          approvedBy,
+          cwd,
+          name: skill.name,
+        });
       if (!result.ok) {
         setLifecycleError(result.error ?? t('fleet.skillPackage.lifecycleFailed', 'Lifecycle update failed.'));
         return;
@@ -175,8 +196,8 @@ export const SkillPackageManagerStrip: React.FC<{
         })
       );
 
-      if (summary === undefined && api.list) {
-        const refreshed = await api.list({ cwd, limit: 6 });
+      if (summary === undefined && list) {
+        const refreshed = await list({ cwd, limit: 6 });
         setLoadedSummary(refreshed);
       }
     } catch (lifecycleErrorValue: unknown) {
@@ -321,7 +342,7 @@ export const SkillPackageManagerStrip: React.FC<{
                     disabled={!reviewerName.trim() || updatingSkillKey !== null}
                     icon={PlayCircle}
                     loading={updatingSkillKey === `${skill.name}:enable`}
-                    onClick={() => void handleLifecycle(skill, 'enable')}
+                    onClick={() => void handlePackageAction(skill, 'enable')}
                   />
                 ) : null}
                 {skill.enabled ? (
@@ -330,7 +351,7 @@ export const SkillPackageManagerStrip: React.FC<{
                     disabled={!reviewerName.trim() || updatingSkillKey !== null}
                     icon={PauseCircle}
                     loading={updatingSkillKey === `${skill.name}:disable`}
-                    onClick={() => void handleLifecycle(skill, 'disable')}
+                    onClick={() => void handlePackageAction(skill, 'disable')}
                   />
                 ) : null}
                 {skill.status !== 'deprecated' ? (
@@ -339,7 +360,16 @@ export const SkillPackageManagerStrip: React.FC<{
                     disabled={!reviewerName.trim() || updatingSkillKey !== null}
                     icon={Archive}
                     loading={updatingSkillKey === `${skill.name}:deprecate`}
-                    onClick={() => void handleLifecycle(skill, 'deprecate')}
+                    onClick={() => void handlePackageAction(skill, 'deprecate')}
+                  />
+                ) : null}
+                {skill.rollbackableCount > 0 ? (
+                  <LifecycleButton
+                    action="rollback"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={RotateCcw}
+                    loading={updatingSkillKey === `${skill.name}:rollback`}
+                    onClick={() => void handlePackageAction(skill, 'rollback')}
                   />
                 ) : null}
               </div>
@@ -395,8 +425,10 @@ function getSkillPackageManagerApi(): SkillPackageManagerApi | undefined {
   ).electronAPI?.tools?.skillPackage;
 }
 
+type SkillPackageReviewAction = 'enable' | 'disable' | 'deprecate' | 'rollback';
+
 const LifecycleButton: React.FC<{
-  action: 'enable' | 'disable' | 'deprecate';
+  action: SkillPackageReviewAction;
   disabled: boolean;
   icon: LucideIcon;
   loading: boolean;
@@ -416,7 +448,7 @@ const LifecycleButton: React.FC<{
 
 function buildSkillLifecycleGoal(
   skillName: string,
-  action: 'enable' | 'disable' | 'deprecate',
+  action: SkillPackageReviewAction,
   approvedBy: string,
 ): string {
   return [

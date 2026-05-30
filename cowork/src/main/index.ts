@@ -187,6 +187,7 @@ import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridg
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import {
   listSkillPackagesForReview,
+  rollbackSkillPackageForReview,
   setSkillPackageLifecycleForReview,
 } from './tools/skill-package-manager-bridge';
 import {
@@ -4106,6 +4107,39 @@ ipcMain.handle(
       return { ok: true as const, ...result };
     } catch (err) {
       logWarn('[tools.skillPackage.lifecycle] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.rollback',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      cwd?: string;
+      name?: string;
+      reason?: string;
+      snapshotId?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await rollbackSkillPackageForReview({
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        snapshotId: typeof payload?.snapshotId === 'string' ? payload.snapshotId : undefined,
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.rollback] failed:', err);
       return {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err),

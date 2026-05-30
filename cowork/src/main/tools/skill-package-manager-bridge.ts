@@ -53,10 +53,20 @@ export interface SetSkillPackageLifecycleForReviewOptions {
   rootDir: string;
 }
 
+export interface RollbackSkillPackageForReviewOptions {
+  approvedBy: string;
+  name: string;
+  reason?: string;
+  rootDir: string;
+  snapshotId?: string;
+}
+
 export interface SetSkillPackageLifecycleForReviewResult {
   package: SkillPackageManagerEntry;
   summary: SkillPackageManagerSummary;
 }
+
+export type RollbackSkillPackageForReviewResult = SetSkillPackageLifecycleForReviewResult;
 
 interface HermesSkillPackageModule {
   buildHermesSkillPackageSummary: (
@@ -68,6 +78,11 @@ interface HermesSkillPackageModule {
     skillName: string,
     action: SkillPackageLifecycleAction,
     options: { actor: string; reason?: string },
+  ) => SkillPackageManagerEntry | null;
+  rollbackHermesSkillPackage?: (
+    workDir: string,
+    skillName: string,
+    options: { actor: string; reason?: string; snapshotId?: string },
   ) => SkillPackageManagerEntry | null;
 }
 
@@ -115,6 +130,44 @@ export async function setSkillPackageLifecycleForReview(
   const updated = mod.setHermesSkillPackageLifecycle(rootDir, name, options.action, {
     actor: approvedBy,
     reason: options.reason?.trim() || undefined,
+  });
+  if (!updated) {
+    throw new Error(`Skill package not found: ${name}`);
+  }
+
+  return {
+    package: updated,
+    summary: mod.buildHermesSkillPackageSummary(rootDir, { limit: 20 }),
+  };
+}
+
+export async function rollbackSkillPackageForReview(
+  options: RollbackSkillPackageForReviewOptions,
+): Promise<RollbackSkillPackageForReviewResult> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir);
+  if (!rootDir) {
+    throw new Error('An absolute workspace root is required to rollback a skill package.');
+  }
+
+  const approvedBy = options.approvedBy.trim();
+  if (!approvedBy) {
+    throw new Error('approvedBy is required to rollback a skill package from Cowork.');
+  }
+
+  const name = options.name.trim();
+  if (!name) {
+    throw new Error('name is required to rollback a skill package from Cowork.');
+  }
+
+  const mod = await loadCoreModule<HermesSkillPackageModule>('agent/hermes-skill-package-summary.js');
+  if (!mod?.rollbackHermesSkillPackage || !mod.buildHermesSkillPackageSummary) {
+    throw new Error('Core skill package rollback module is unavailable.');
+  }
+
+  const updated = mod.rollbackHermesSkillPackage(rootDir, name, {
+    actor: approvedBy,
+    reason: options.reason?.trim() || undefined,
+    snapshotId: options.snapshotId?.trim() || undefined,
   });
   if (!updated) {
     throw new Error(`Skill package not found: ${name}`);

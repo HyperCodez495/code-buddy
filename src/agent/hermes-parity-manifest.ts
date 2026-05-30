@@ -180,8 +180,8 @@ const FEATURES: HermesParityFeature[] = [
       '(cd cowork && npm test -- tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts --run)',
       '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
     ],
-    notes: 'Native skill coverage is good and both skill_manage candidate review plus Cowork now surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
-    nextWork: 'Add Cowork expanded side-by-side SKILL.md diff plus reviewer-gated patch/rollback/update/delete controls.',
+    notes: 'Native skill coverage is good and both skill_manage candidate review plus Cowork now surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded candidate diff previews, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback from the real SkillsHub lockfile, but exact Hermes hub/tap/update/reset/trust behavior is not proven identical.',
+    nextWork: 'Add Cowork expanded side-by-side SKILL.md diff plus reviewer-gated patch/update/delete controls.',
   },
   {
     id: 'closed-learning-loop',

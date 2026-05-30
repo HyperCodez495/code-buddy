@@ -56,6 +56,13 @@ export interface SetHermesSkillPackageLifecycleOptions {
   updatedAt?: number;
 }
 
+export interface RollbackHermesSkillPackageOptions {
+  actor: string;
+  reason?: string;
+  snapshotId?: string;
+  updatedAt?: number;
+}
+
 export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
@@ -123,6 +130,40 @@ export function setHermesSkillPackageLifecycle(
     installed,
     hub.getInstalledSkillHistory(installed.name),
     hub.info(installed.name)?.content,
+    normalizePreviewChars(undefined),
+  );
+}
+
+export function rollbackHermesSkillPackage(
+  workDir: string,
+  skillName: string,
+  options: RollbackHermesSkillPackageOptions,
+): HermesSkillPackageEntry | null {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill rollback.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill rollback.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  const rolledBack = hub.rollbackInstalledSkill(
+    name,
+    options.snapshotId?.trim() || undefined,
+    {
+      actor,
+      reason: options.reason?.trim() || undefined,
+      updatedAt: options.updatedAt,
+    },
+  );
+  if (!rolledBack) return null;
+
+  return summarizeInstalledSkill(
+    rolledBack.installed,
+    hub.getInstalledSkillHistory(rolledBack.installed.name),
+    hub.info(rolledBack.installed.name)?.content,
     normalizePreviewChars(undefined),
   );
 }

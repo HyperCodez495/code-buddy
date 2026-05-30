@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   buildHermesSkillPackageSummary,
+  rollbackHermesSkillPackage,
   setHermesSkillPackageLifecycle,
 } from '../../src/agent/hermes-skill-package-summary.js';
 import { SkillsHub } from '../../src/skills/hub.js';
@@ -209,6 +210,56 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       lastLifecycleReviewer: 'Patrice',
       name: 'lifecycle-helper',
       status: 'active',
+    });
+  });
+
+  it('rolls back an installed skill from a real rollback snapshot', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    await hub.installFromContent(
+      'rollback-helper',
+      skillContent('rollback-helper', '1.0.0', 'Original rollback wording.'),
+    );
+    hub.patchInstalledSkill(
+      'rollback-helper',
+      'Original rollback wording.',
+      'Updated rollback wording.',
+      {
+        actor: 'Patrice',
+        reason: 'Create rollback evidence.',
+        updatedAt: 9_000,
+      },
+    );
+
+    const installedPath = path.join(tempDir, '.codebuddy', 'skills', 'rollback-helper', 'SKILL.md');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Updated rollback wording.');
+
+    const rolledBack = rollbackHermesSkillPackage(
+      tempDir,
+      'rollback-helper',
+      {
+        actor: 'Patrice',
+        reason: 'Restore reviewed snapshot.',
+        updatedAt: 10_000,
+      },
+    );
+
+    expect(rolledBack).toMatchObject({
+      lastLifecycleReason: 'Restore reviewed snapshot.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'rollback-helper',
+      status: 'active',
+    });
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Original rollback wording.');
+
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary.packages[0]).toMatchObject({
+      name: 'rollback-helper',
+      rollbackableCount: 2,
     });
   });
 });

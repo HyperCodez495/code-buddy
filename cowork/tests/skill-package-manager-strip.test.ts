@@ -285,4 +285,95 @@ describe('SkillPackageManagerStrip', () => {
     });
     expect(target.textContent).toContain('disable loaded-helper by Patrice.');
   });
+
+  it('requires reviewer identity before rolling back an installed skill', async () => {
+    const target = container();
+    const rollback = vi.fn().mockResolvedValue({
+      ok: true,
+      package: {
+        enabled: true,
+        exists: true,
+        installedAt: 1,
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'rollback-helper',
+        path: 'D:/workspace/.codebuddy/skills/rollback-helper/SKILL.md',
+        rollbackableCount: 2,
+        source: 'local',
+        status: 'active',
+        version: '1.0.0',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            rollback: typeof rollback;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          rollback,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: true,
+              name: 'rollback-helper',
+              path: 'D:/workspace/.codebuddy/skills/rollback-helper/SKILL.md',
+              rollbackableCount: 1,
+              source: 'local',
+              status: 'active',
+              version: '1.0.0',
+            },
+          ],
+          reviewCommands: ['buddy skills list --all --json'],
+          rollbackableCount: 1,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let rollbackButton = target.querySelector('[data-testid="skill-package-rollback"]') as HTMLButtonElement;
+    expect(rollbackButton.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    rollbackButton = target.querySelector('[data-testid="skill-package-rollback"]') as HTMLButtonElement;
+    expect(rollbackButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(rollbackButton);
+      await Promise.resolve();
+    });
+
+    expect(rollback).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      name: 'rollback-helper',
+    });
+    expect(target.textContent).toContain('rollback rollback-helper by Patrice.');
+  });
 });
