@@ -10,11 +10,8 @@ import { SettingsCodeBuddy } from '../src/renderer/components/settings/SettingsC
 
 (globalThis as unknown as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { 'Content-Type': 'application/json' },
-  });
+function setElectronApi(api: unknown) {
+  (window as unknown as { electronAPI?: unknown }).electronAPI = api;
 }
 
 describe('SettingsCodeBuddy auto-start connection test', () => {
@@ -39,26 +36,25 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
       websocket: true,
       error: null,
     });
-    (window as unknown as {
-      electronAPI?: {
-        config: { get: () => Promise<Record<string, unknown>> };
-        server: { start: typeof serverStart };
-      };
-    }).electronAPI = {
+    const probeConnection = vi.fn()
+      .mockRejectedValueOnce(new Error('Failed to fetch'))
+      .mockResolvedValueOnce({
+        version: '1.0.0-test',
+        models: ['gpt-test'],
+        tools: 110,
+      });
+
+    setElectronApi({
+      codebuddy: {
+        probeConnection,
+      },
       config: {
         get: vi.fn().mockResolvedValue({}),
       },
       server: {
         start: serverStart,
       },
-    };
-
-    const fetchMock = vi.fn()
-      .mockRejectedValueOnce(new Error('Failed to fetch'))
-      .mockResolvedValueOnce(jsonResponse({ version: '1.0.0-test' }))
-      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'gpt-test' }] }))
-      .mockResolvedValueOnce(jsonResponse({ toolCount: 110 }));
-    vi.stubGlobal('fetch', fetchMock);
+    });
 
     const target = document.createElement('div');
     document.body.appendChild(target);
@@ -82,10 +78,11 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
     });
 
     expect(serverStart).toHaveBeenCalledWith({ host: '127.0.0.1', port: 3000 });
-    expect(fetchMock).toHaveBeenCalledWith(
-      'http://localhost:3000/api/health',
-      expect.objectContaining({ signal: expect.any(AbortSignal) }),
-    );
+    expect(probeConnection).toHaveBeenCalledTimes(2);
+    expect(probeConnection).toHaveBeenLastCalledWith({
+      endpoint: 'http://localhost:3000',
+      apiKey: undefined,
+    });
     expect(target.textContent).toContain('Connected to Code Buddy');
     expect(target.textContent).toContain('Started local Code Buddy backend automatically.');
     expect(target.textContent).toContain('Version: 1.0.0-test');
@@ -93,14 +90,15 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
 
   it('loads remote models into the override selector and saves the selected model', async () => {
     const configSave = vi.fn().mockResolvedValue(undefined);
-    (window as unknown as {
-      electronAPI?: {
-        config: {
-          get: () => Promise<Record<string, unknown>>;
-          save: typeof configSave;
-        };
-      };
-    }).electronAPI = {
+    const listModels = vi.fn().mockResolvedValue([
+      { id: 'gpt-remote' },
+      { id: 'qwen-remote:32b' },
+    ]);
+
+    setElectronApi({
+      codebuddy: {
+        listModels,
+      },
       config: {
         get: vi.fn().mockResolvedValue({
           codebuddy: {
@@ -111,13 +109,7 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
         }),
         save: configSave,
       },
-    };
-
-    const fetchMock = vi.fn()
-      .mockResolvedValueOnce(jsonResponse({ version: 'remote-test' }))
-      .mockResolvedValueOnce(jsonResponse({ data: [{ id: 'gpt-remote' }, { id: 'qwen-remote:32b' }] }))
-      .mockResolvedValueOnce(jsonResponse({ toolCount: 118 }));
-    vi.stubGlobal('fetch', fetchMock);
+    });
 
     const target = document.createElement('div');
     document.body.appendChild(target);
@@ -128,14 +120,18 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
       await new Promise(resolve => setTimeout(resolve, 0));
     });
 
-    const testButton = Array.from(target.querySelectorAll('button'))
-      .find(button => button.textContent?.includes('Test Connection'));
-    expect(testButton).toBeTruthy();
+    const refreshModelsButton = target.querySelector('[data-testid="codebuddy-models-refresh"]');
+    expect(refreshModelsButton).toBeTruthy();
 
     await act(async () => {
-      Simulate.click(testButton as HTMLButtonElement);
+      Simulate.click(refreshModelsButton as HTMLButtonElement);
       await new Promise(resolve => setTimeout(resolve, 0));
       await new Promise(resolve => setTimeout(resolve, 0));
+    });
+
+    expect(listModels).toHaveBeenCalledWith({
+      endpoint: 'http://100.73.222.64:3000',
+      apiKey: undefined,
     });
 
     const modelSelect = target.querySelector('select') as HTMLSelectElement | null;
@@ -174,12 +170,12 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
       websocket: true,
       error: null,
     });
-    (window as unknown as {
-      electronAPI?: {
-        config: { get: () => Promise<Record<string, unknown>> };
-        server: { start: typeof serverStart };
-      };
-    }).electronAPI = {
+    const probeConnection = vi.fn().mockRejectedValue(new Error('Failed to fetch'));
+
+    setElectronApi({
+      codebuddy: {
+        probeConnection,
+      },
       config: {
         get: vi.fn().mockResolvedValue({
           codebuddy: {
@@ -191,8 +187,7 @@ describe('SettingsCodeBuddy auto-start connection test', () => {
       server: {
         start: serverStart,
       },
-    };
-    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('Failed to fetch')));
+    });
 
     const target = document.createElement('div');
     document.body.appendChild(target);
