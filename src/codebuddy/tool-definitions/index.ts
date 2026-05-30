@@ -90,6 +90,7 @@ export {
   JS_REPL_TOOL,
   REASON_TOOL,
   PLAN_TOOL,
+  EXECUTE_CODE_TOOL,
   RUN_SCRIPT_TOOL,
   ADVANCED_TOOLS,
 } from './advanced-tools.js';

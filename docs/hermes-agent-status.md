@@ -110,6 +110,7 @@ change-control surface.
 | Peer delegation / routing | `route_peer`, `peer_delegate`, `src/fleet/task-router.ts` | done |
 | Ordered multi-peer chain (Draft→Review→Safe) | `src/tools/peer-chain-tool.ts` (`peer_chain`) | done |
 | Read-only peer tool invoke (gated) | `src/fleet/peer-tool-bridge.ts`, `src/fleet/permissions.ts` | done |
+| Hermes `execute_code` subprocess boundary | `src/tools/execute-code-runner.ts`, `src/tools/registry/execute-code-tools.ts`, `tests/tools/execute-code-real.test.ts` | done — exact prompt tool name, real local subprocess, timeout, and `.codebuddy/execute-code/<run-id>` artifacts; generated-code-to-tool RPC remains intentionally separate |
 | Subagents / swarm | `/agents`, `/swarm`, `/team` | done |
 
 ### Runs everywhere / gateway / mobile

@@ -406,8 +406,8 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           name: 'execute_code',
-          status: 'partial',
-          detectedCodeBuddyTools: expect.arrayContaining(['run_script', 'js_repl']),
+          status: 'exact',
+          detectedCodeBuddyTools: expect.arrayContaining(['execute_code']),
         }),
         expect.objectContaining({
           name: 'kanban_create',

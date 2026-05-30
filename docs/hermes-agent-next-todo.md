@@ -7,8 +7,8 @@ Source of truth:
 - Official audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md)
 
 Current measured state:
-- Feature parity manifest: 19 areas, 2 covered-partial, 14 partial, 3 gaps.
-- Tool parity manifest: 71 official tools, 22 exact, 6 native-equivalent, 10 partial, 33 gaps.
+- Feature parity manifest: 19 areas, 3 covered-partial, 14 partial, 2 gaps.
+- Tool parity manifest: 71 official tools, 33 exact, 6 native-equivalent, 8 partial, 24 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 
 ## P0 — Finish the core learning loop
@@ -68,9 +68,9 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `execute_code`, `vision_analyze`, and `browser_vision`. Kanban exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts and prioritized work such as `skill_manage`, `vision_analyze`, and `browser_vision`. Kanban, `send_message`, and `execute_code` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
-    - Cowork shows summary counts and top core gaps: `skill_manage`, `execute_code`, `vision_analyze`, `browser_vision`.
+    - Cowork shows summary counts and top core gaps: `skill_manage`, `vision_analyze`, `browser_vision`.
     - Platform-only gaps do not hide the prioritized coding-agent work because the bridge orders core priority items first.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
@@ -89,16 +89,15 @@ Current measured state:
 
 ## P2 — Close high-value tool partials
 
-- [ ] **Decide and implement or reject `execute_code` parity**
+- [x] **Decide and implement `execute_code` parity**
   - Why: upstream Hermes uses `execute_code` to collapse multi-step scripted work into one controlled boundary.
-  - Scope: product/security decision first. If implemented, make it sandboxed, logged, timeout-bounded, and reviewable.
-  - Acceptance if implemented:
+  - Done: Code Buddy now exposes exact `execute_code` with real local subprocess execution for JavaScript/TypeScript/Python/shell snippets. Every run writes a real artifact directory under `.codebuddy/execute-code/<run-id>` with `script.*`, `stdout.log`, `stderr.log`, `result.json`, a timeout result, and structured paths. It is deliberately grouped under runtime/dangerous policy; Docker isolation remains available through `run_script`.
+  - Acceptance:
     - Agent can run a short script in a temp workspace and receive structured stdout/stderr/files touched.
     - Dangerous filesystem/network behavior follows existing permission policy.
-  - Acceptance if rejected:
-    - Parity manifest marks it intentionally out of scope with rationale.
   - Verification:
-    - real temp repo script run; no mocks only.
+    - `npm test -- tests/tools/execute-code-real.test.ts --run`
+    - `npm test -- tests/tools/execute-code-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
 
 - [ ] **Add unified `vision_analyze` / `browser_vision` semantics**
   - Why: Code Buddy has screenshots/OCR/browser image inventory, but no one-shot Hermes-like vision analysis surface.
@@ -144,7 +143,6 @@ Current measured state:
 ## Immediate next implementation order
 
 1. Cowork Skill Package Manager panel.
-2. `execute_code` security/product decision.
-3. Unified `vision_analyze` / `browser_vision`.
-4. Runtime backend inventory.
-5. Optional platform connectors only on demand.
+2. Unified `vision_analyze` / `browser_vision`.
+3. Runtime backend inventory.
+4. Optional platform connectors only on demand.

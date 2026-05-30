@@ -677,6 +677,43 @@ export const RUN_SCRIPT_TOOL: CodeBuddyTool = {
   }
 };
 
+// Hermes-compatible execute_code tool with persistent run artifacts
+export const EXECUTE_CODE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "execute_code",
+    description: "Execute a bounded code snippet as a real local subprocess and save script/stdout/stderr/result artifacts under .codebuddy/execute-code.",
+    parameters: {
+      type: "object",
+      properties: {
+        code: {
+          type: "string",
+          description: "The source code to execute"
+        },
+        language: {
+          type: "string",
+          enum: ["javascript", "typescript", "python", "shell"],
+          description: "Snippet language (default: javascript)"
+        },
+        args: {
+          type: "array",
+          items: { type: "string" },
+          description: "Optional command-line arguments passed to the snippet"
+        },
+        env: {
+          type: "object",
+          description: "Optional string environment variables. CODEBUDDY_EXECUTE_CODE_RUN_DIR and CODEBUDDY_WORKSPACE_ROOT are always provided."
+        },
+        timeout_ms: {
+          type: "number",
+          description: "Execution timeout in milliseconds (default: 30000, max: 120000)"
+        }
+      },
+      required: ["code"]
+    }
+  }
+};
+
 /**
  * All advanced tools as an array
  */
@@ -714,5 +751,6 @@ export const ADVANCED_TOOLS: CodeBuddyTool[] = [
   JS_REPL_TOOL,
   REASON_TOOL,
   PLAN_TOOL,
+  EXECUTE_CODE_TOOL,
   RUN_SCRIPT_TOOL,
 ];

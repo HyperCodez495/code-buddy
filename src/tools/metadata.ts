@@ -155,6 +155,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     priority: 5,
     description: 'Execute JavaScript snippets in a controlled runtime'
   },
+  {
+    name: 'execute_code',
+    category: 'system',
+    keywords: ['execute_code', 'hermes', 'code', 'script', 'runtime', 'subprocess', 'artifact', 'run'],
+    priority: 8,
+    description: 'Execute a bounded code snippet as a real subprocess and persist run artifacts',
+  },
 
   // Git operations
   {

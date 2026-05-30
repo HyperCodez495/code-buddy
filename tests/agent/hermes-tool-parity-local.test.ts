@@ -17,8 +17,8 @@ describe('local Hermes tool parity manifest', () => {
     expect(manifest.tools).toEqual(expect.arrayContaining([
       expect.objectContaining({
         name: 'execute_code',
-        status: 'partial',
-        nextWork: expect.stringContaining('product/security decision'),
+        status: 'exact',
+        detectedCodeBuddyTools: expect.arrayContaining(['execute_code']),
       }),
       expect.objectContaining({
         name: 'vision_analyze',

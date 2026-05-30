@@ -45,6 +45,7 @@ export const TOOL_GROUPS: Record<string, ToolGroup[]> = {
   shell: ['group:runtime', 'group:runtime:shell'],
   execute: ['group:runtime', 'group:runtime:shell'],
   run_command: ['group:runtime', 'group:runtime:shell'],
+  execute_code: ['group:runtime', 'group:runtime:shell', 'group:dangerous'],
 
   // Runtime - Process
   spawn_process: ['group:runtime', 'group:runtime:process'],

@@ -280,9 +280,8 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     category: 'runtime',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
     equivalentCodeBuddyTools: ['run_script', 'js_repl'],
-    equivalenceStatus: 'partial',
-    notes: 'Code Buddy can run scripts/snippets, but not Hermes execute_code RPC with hidden tool-call collapse semantics.',
-    nextWork: 'Treat execute_code RPC as a deliberate product/security decision.',
+    notes: 'Code Buddy exposes an exact execute_code prompt tool with real local subprocess execution, timeout, and persisted script/stdout/stderr/result artifacts; run_script remains the Docker-isolated path.',
+    nextWork: 'Add optional tool-RPC collapse only if the product/security model explicitly approves tool invocation from generated code.',
   },
   {
     name: 'delegate_task',

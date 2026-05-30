@@ -147,6 +147,12 @@ export {
   createScriptTools,
 } from './script-tools.js';
 
+// Tool Adapters - Hermes execute_code
+export {
+  ExecuteCodeTool,
+  createExecuteCodeTools,
+} from './execute-code-tools.js';
+
 // Tool Adapters - Plan
 export {
   createPlanTools,
