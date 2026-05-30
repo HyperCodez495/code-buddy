@@ -201,6 +201,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'List or clear browser console messages and page runtime errors captured from the active browser session',
   },
   {
+    name: 'browser_snapshot',
+    category: 'web',
+    keywords: ['browser', 'snapshot', 'accessibility', 'refs', 'observe', 'playwright', 'hermes'],
+    priority: 8,
+    description: 'Take an accessibility-oriented snapshot of the active browser page and return element refs',
+  },
+  {
     name: 'lead_scout_plan',
     category: 'planning',
     keywords: ['lead scout', 'prospecting', 'prospect', 'leads', 'b2b', 'architectes', 'syndics', 'agences immobilieres', 'maitres oeuvre', 'promoteurs', 'bureaux etudes', 'sirene', 'rnc', 'osint', 'public data', 'script recipe', 'scoring', 'human review'],

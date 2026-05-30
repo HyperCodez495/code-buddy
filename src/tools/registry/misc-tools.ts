@@ -213,6 +213,79 @@ export class BrowserExecuteTool implements ITool {
 }
 
 // ============================================================================
+// BrowserSnapshotExecuteTool (Hermes browser_snapshot parity)
+// ============================================================================
+
+export class BrowserSnapshotExecuteTool implements ITool {
+  readonly name = 'browser_snapshot';
+  readonly description = 'Take an accessibility-oriented snapshot of the active Playwright page and return element refs for follow-up browser actions.';
+
+  async execute(input: Record<string, unknown>): Promise<ToolResult> {
+    const browser = await getBrowserAutomation();
+    return await browser.execute({
+      action: 'snapshot',
+      interactiveOnly: input.interactiveOnly as boolean | undefined,
+      maxElements: input.maxElements as number | undefined,
+      includeHidden: input.includeHidden as boolean | undefined,
+    });
+  }
+
+  getSchema(): ToolSchema {
+    return {
+      name: this.name,
+      description: this.description,
+      parameters: {
+        type: 'object',
+        properties: {
+          interactiveOnly: {
+            type: 'boolean',
+            description: 'Only include interactive elements. Defaults to true.',
+          },
+          maxElements: {
+            type: 'number',
+            description: 'Maximum number of elements to include.',
+          },
+          includeHidden: {
+            type: 'boolean',
+            description: 'Include hidden elements when the browser engine supports it.',
+          },
+        },
+      },
+    };
+  }
+
+  validate(input: unknown): IValidationResult {
+    if (typeof input !== 'object' || input === null) {
+      return { valid: false, errors: ['Input must be an object'] };
+    }
+
+    const data = input as Record<string, unknown>;
+    if (data.maxElements !== undefined && (typeof data.maxElements !== 'number' || data.maxElements < 1)) {
+      return { valid: false, errors: ['maxElements must be a positive number'] };
+    }
+
+    return { valid: true };
+  }
+
+  getMetadata(): IToolMetadata {
+    return {
+      name: this.name,
+      description: this.description,
+      category: 'web' as ToolCategoryType,
+      keywords: ['browser', 'snapshot', 'accessibility', 'refs', 'observe', 'playwright', 'hermes'],
+      priority: 8,
+      requiresConfirmation: true,
+      modifiesFiles: false,
+      makesNetworkRequests: false,
+    };
+  }
+
+  isAvailable(): boolean {
+    return true;
+  }
+}
+
+// ============================================================================
 // BrowserConsoleExecuteTool (Hermes browser_console parity)
 // ============================================================================
 
@@ -1350,6 +1423,7 @@ export class DocsSearchExecuteTool implements ITool {
 export function createMiscTools(): ITool[] {
   return [
     new BrowserExecuteTool(),
+    new BrowserSnapshotExecuteTool(),
     new BrowserConsoleExecuteTool(),
     new BrowserGetImagesExecuteTool(),
     new BrowserDialogExecuteTool(),

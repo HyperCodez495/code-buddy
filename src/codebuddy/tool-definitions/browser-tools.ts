@@ -472,6 +472,36 @@ clearing Code Buddy's local console history buffer.`,
   },
 };
 
+export const BROWSER_SNAPSHOT_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_snapshot',
+    description: `Take an accessibility-oriented snapshot of the active browser page.
+
+Returns a compact text representation plus numeric element refs that can be
+used by follow-up browser actions. Use this after navigation or when the page
+state may have changed.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        interactiveOnly: {
+          type: 'boolean',
+          description: 'Only include interactive elements. Defaults to true.',
+        },
+        maxElements: {
+          type: 'number',
+          description: 'Maximum number of elements to include.',
+        },
+        includeHidden: {
+          type: 'boolean',
+          description: 'Include hidden elements when supported by the browser engine.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
 /**
  * Internet Scout Run Tool
  *
@@ -621,6 +651,7 @@ The plan sequences web_search, web_fetch, browser.observe, browser.extract, brow
 export const BROWSER_TOOLS: CodeBuddyTool[] = [
   INTERNET_SCOUT_RUN_TOOL,
   INTERNET_SCOUT_PLAN_TOOL,
+  BROWSER_SNAPSHOT_TOOL,
   BROWSER_CONSOLE_TOOL,
   BROWSER_GET_IMAGES_TOOL,
   BROWSER_DIALOG_TOOL,

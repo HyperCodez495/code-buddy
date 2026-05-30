@@ -165,8 +165,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     toolset: 'hermes-core',
     category: 'browser',
     officialSource: OFFICIAL_SOURCE_TOOLSETS,
-    equivalentCodeBuddyTools: ['browser'],
-    notes: 'Code Buddy browser has snapshot/observe actions.',
+    notes: 'Code Buddy exposes a dedicated browser_snapshot prompt tool backed by the real browser accessibility snapshot engine.',
   },
   {
     name: 'browser_click',
