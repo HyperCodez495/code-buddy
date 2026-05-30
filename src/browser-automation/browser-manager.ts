@@ -925,7 +925,14 @@ export class BrowserManager extends EventEmitter {
     if (options.toElement !== undefined) {
       const element = this.getElement(options.toElement);
       if (element) {
-        await page.mouse.wheel(0, element.boundingBox.y - 100);
+        const selector = `[data-agent-ref="${options.toElement}"]`;
+        try {
+          await page.locator(selector).first().scrollIntoViewIfNeeded({ timeout: 1000 });
+        } catch {
+          await page.evaluate(({ top }: { top: number }) => window.scrollBy(0, top), {
+            top: element.boundingBox.y - 100,
+          });
+        }
       }
     } else {
       let deltaX = 0;
@@ -947,7 +954,16 @@ export class BrowserManager extends EventEmitter {
           break;
       }
 
-      await page.mouse.wheel(deltaX, deltaY);
+      const before = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+      await page.evaluate(({ x, y }: { x: number; y: number }) => window.scrollBy(x, y), {
+        x: deltaX,
+        y: deltaY,
+      });
+      const after = await page.evaluate(() => ({ x: window.scrollX, y: window.scrollY }));
+
+      if (after.x === before.x && after.y === before.y) {
+        await page.mouse.wheel(deltaX, deltaY);
+      }
     }
   }
 

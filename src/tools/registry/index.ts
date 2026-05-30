@@ -106,6 +106,11 @@ export {
 export {
   BrowserLaunchTool,
   BrowserNavigateTool,
+  BrowserClickTool,
+  BrowserTypeTool,
+  BrowserScrollTool,
+  BrowserBackTool,
+  BrowserPressTool,
   BrowserActionTool,
   createBrowserTools,
   resetBrowserInstance,

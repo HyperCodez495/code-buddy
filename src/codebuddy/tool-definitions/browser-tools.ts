@@ -383,6 +383,156 @@ Download:
   },
 };
 
+export const BROWSER_NAVIGATE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_navigate',
+    description: `Navigate the active browser page to a URL.
+
+This is the Hermes-compatible direct browser navigation tool. It uses the same
+Playwright-backed session as browser_snapshot, browser_click, and browser_type.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        url: {
+          type: 'string',
+          description: 'URL to navigate to. Supports data:, file:, http:, and https: with existing safety checks.',
+        },
+        waitUntil: {
+          type: 'string',
+          enum: ['load', 'domcontentloaded', 'networkidle'],
+          description: 'When to consider navigation complete. Defaults to domcontentloaded.',
+        },
+        timeout: {
+          type: 'number',
+          description: 'Navigation timeout in milliseconds.',
+        },
+      },
+      required: ['url'],
+    },
+  },
+};
+
+export const BROWSER_CLICK_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_click',
+    description: `Click an element from browser_snapshot by numeric ref.
+
+Call browser_snapshot first, then pass the displayed ref number.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        ref: {
+          type: 'number',
+          description: 'Element reference number from browser_snapshot.',
+        },
+        button: {
+          type: 'string',
+          enum: ['left', 'right', 'middle'],
+          description: 'Mouse button. Defaults to left.',
+        },
+        clickCount: {
+          type: 'number',
+          description: 'Number of clicks. Defaults to 1.',
+        },
+      },
+      required: ['ref'],
+    },
+  },
+};
+
+export const BROWSER_TYPE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_type',
+    description: `Type text into an element from browser_snapshot by numeric ref.
+
+Call browser_snapshot first, then pass the displayed ref number.`,
+    parameters: {
+      type: 'object',
+      properties: {
+        ref: {
+          type: 'number',
+          description: 'Element reference number from browser_snapshot.',
+        },
+        text: {
+          type: 'string',
+          description: 'Text to type.',
+        },
+        clear: {
+          type: 'boolean',
+          description: 'Clear the field before typing.',
+        },
+      },
+      required: ['ref', 'text'],
+    },
+  },
+};
+
+export const BROWSER_SCROLL_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_scroll',
+    description: 'Scroll the active browser page or scroll to an element ref from browser_snapshot.',
+    parameters: {
+      type: 'object',
+      properties: {
+        direction: {
+          type: 'string',
+          enum: ['up', 'down', 'left', 'right'],
+          description: 'Scroll direction. Defaults to down.',
+        },
+        amount: {
+          type: 'number',
+          description: 'Scroll amount in pixels. Defaults to 300.',
+        },
+        toElement: {
+          type: 'number',
+          description: 'Optional element ref to scroll into view.',
+        },
+      },
+      required: [],
+    },
+  },
+};
+
+export const BROWSER_BACK_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_back',
+    description: 'Navigate the active browser page back in history.',
+    parameters: {
+      type: 'object',
+      properties: {},
+      required: [],
+    },
+  },
+};
+
+export const BROWSER_PRESS_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'browser_press',
+    description: 'Press a keyboard key in the active browser page.',
+    parameters: {
+      type: 'object',
+      properties: {
+        key: {
+          type: 'string',
+          description: 'Keyboard key to press, such as Enter, Tab, Escape, ArrowDown.',
+        },
+        modifiers: {
+          type: 'array',
+          items: { type: 'string' },
+          description: 'Optional modifier keys: Control, Alt, Shift, Meta.',
+        },
+      },
+      required: ['key'],
+    },
+  },
+};
+
 export const BROWSER_DIALOG_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
@@ -651,7 +801,13 @@ The plan sequences web_search, web_fetch, browser.observe, browser.extract, brow
 export const BROWSER_TOOLS: CodeBuddyTool[] = [
   INTERNET_SCOUT_RUN_TOOL,
   INTERNET_SCOUT_PLAN_TOOL,
+  BROWSER_NAVIGATE_TOOL,
   BROWSER_SNAPSHOT_TOOL,
+  BROWSER_CLICK_TOOL,
+  BROWSER_TYPE_TOOL,
+  BROWSER_SCROLL_TOOL,
+  BROWSER_BACK_TOOL,
+  BROWSER_PRESS_TOOL,
   BROWSER_CONSOLE_TOOL,
   BROWSER_GET_IMAGES_TOOL,
   BROWSER_DIALOG_TOOL,

@@ -283,6 +283,36 @@ describe('Hermes CLI commands', () => {
           detectedCodeBuddyTools: ['browser_snapshot'],
         }),
         expect.objectContaining({
+          name: 'browser_navigate',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_navigate'],
+        }),
+        expect.objectContaining({
+          name: 'browser_click',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_click'],
+        }),
+        expect.objectContaining({
+          name: 'browser_type',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_type'],
+        }),
+        expect.objectContaining({
+          name: 'browser_scroll',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_scroll'],
+        }),
+        expect.objectContaining({
+          name: 'browser_back',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_back'],
+        }),
+        expect.objectContaining({
+          name: 'browser_press',
+          status: 'exact',
+          detectedCodeBuddyTools: ['browser_press'],
+        }),
+        expect.objectContaining({
           name: 'browser_dialog',
           status: 'exact',
           detectedCodeBuddyTools: ['browser_dialog'],
@@ -305,7 +335,13 @@ describe('Hermes CLI commands', () => {
     const output = getLogOutput();
     expect(output).toContain('# Hermes Official Tool Parity Manifest');
     expect(output).toContain('## Summary');
+    expect(output).toContain('### browser_navigate');
     expect(output).toContain('### browser_snapshot');
+    expect(output).toContain('### browser_click');
+    expect(output).toContain('### browser_type');
+    expect(output).toContain('### browser_scroll');
+    expect(output).toContain('### browser_back');
+    expect(output).toContain('### browser_press');
     expect(output).toContain('### browser_console');
     expect(output).toContain('### browser_get_images');
     expect(output).toContain('### browser_dialog');
