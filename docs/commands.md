@@ -162,6 +162,8 @@ buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
 buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy hermes portal status|tools|open [--json]
+buddy hermes browser status [--json]
+buddy hermes browser-smoke local-playwright [--json]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
 ```
@@ -187,9 +189,11 @@ goal without parsing CLI prose.
 mapping, effective tool filter, active model, inferred provider, detected
 credential source names, model capabilities, context/output limits, Nous
 Portal readiness, and runtime backend inventory for local, OS sandbox, Docker,
-WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. The JSON
-form is safe for Cowork because it reports credential source names and smoke
-commands only, never secret values.
+WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. It also
+embeds browser backend readiness for local Playwright, CDP, Browserbase,
+Browser Use, Firecrawl, Camofox, and session recording. The JSON form is safe
+for Cowork because it reports credential source names and smoke commands only,
+never secret values.
 
 `buddy hermes toolsets [profile] [--json]` prints the dedicated Fleet/Hermes
 toolset catalog without the wider doctor payload. It shows all five dispatch
@@ -217,6 +221,12 @@ configuration, and whether the official Firecrawl/FAL/TTS/Browser Use/Modal
 catalog is currently routed through Nous or through Code Buddy's direct/local
 providers. It never prints secret values. `portal tools` prints only the catalog
 view, and `portal open` prints the subscription URL without launching a browser.
+
+`buddy hermes browser status [--json]` prints a browser backend inventory for
+local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway,
+Firecrawl, Camofox/Camoufox, and session recording. `buddy hermes browser-smoke
+local-playwright --json` launches a real headless Chromium page and proves the
+local Playwright backend can execute, instead of only checking package presence.
 
 `buddy hermes hooks [--json]` prints the canonical Hermes-style lifecycle
 hook manifest. It maps Code Buddy's existing user/tool hooks onto

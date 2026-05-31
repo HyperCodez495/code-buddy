@@ -237,6 +237,18 @@ describe('Hermes CLI commands', () => {
           nextWork: expect.not.stringContaining('Add exact agent-facing cronjob tool'),
         }),
         expect.objectContaining({
+          id: 'browser-automation',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining(['src/agent/hermes-browser-backends.ts']),
+          verificationCommands: expect.arrayContaining([
+            'npx tsx src/index.ts hermes browser status --json',
+            'npx tsx src/index.ts hermes browser-smoke local-playwright --json',
+            'npm test -- tests/agent/hermes-browser-backends-smoke-real.test.ts --run',
+          ]),
+          notes: expect.stringContaining('machine-readable backend readiness'),
+          nextWork: expect.not.stringContaining('Create backend-specific browser smoke tests and status output'),
+        }),
+        expect.objectContaining({
           id: 'prompt-size',
           status: 'covered-partial',
           verificationCommands: expect.arrayContaining([
@@ -1133,6 +1145,15 @@ describe('Hermes CLI commands', () => {
             }>;
             runnableCount: number;
           };
+          browserBackends: {
+            backends: Array<{
+              id: string;
+              runnable: boolean;
+              smokeCommand: string | null;
+              status: string;
+            }>;
+            localRunnableCount: number;
+          };
         };
       };
 
@@ -1163,6 +1184,17 @@ describe('Hermes CLI commands', () => {
         ]),
       );
       expect(output.diagnostics.runtimeBackends.runnableCount).toBeGreaterThanOrEqual(1);
+      expect(output.diagnostics.browserBackends.backends).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'local-playwright',
+            runnable: true,
+            status: 'available',
+            smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
+          }),
+        ]),
+      );
+      expect(output.diagnostics.browserBackends.localRunnableCount).toBeGreaterThanOrEqual(1);
       expect(raw).not.toContain('secret-openai-key');
       expect(raw).not.toContain('secret-nous-token');
     } finally {
@@ -1203,5 +1235,76 @@ describe('Hermes CLI commands', () => {
     });
     expect(output.result.stdout).toContain('OK-HERMES-LOCAL');
     expect(output.result.output).toContain('OK-HERMES-LOCAL');
+  });
+
+  it('prints Hermes browser backend status from real local probes', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'browser', 'status', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      readiness: {
+        backends: Array<{
+          id: string;
+          runnable: boolean;
+          smokeCommand: string | null;
+          status: string;
+        }>;
+        localRunnableCount: number;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_browser_backends_status');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.readiness.backends).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'local-playwright',
+          runnable: true,
+          smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
+          status: 'available',
+        }),
+        expect.objectContaining({
+          id: 'session-recording',
+          runnable: false,
+          status: 'missing',
+        }),
+      ]),
+    );
+    expect(output.readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
+  });
+
+  it('runs a real local Hermes browser smoke from the CLI', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'browser-smoke', 'local-playwright', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      result: {
+        backendId: string;
+        command: string | null;
+        ok: boolean;
+        output: string;
+        status: string;
+        stdout: string;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_browser_backend_smoke');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.result).toMatchObject({
+      backendId: 'local-playwright',
+      command: process.execPath,
+      ok: true,
+      status: 'passed',
+    });
+    expect(output.result.stdout).toContain('OK-HERMES-BROWSER');
+    expect(output.result.output).toContain('OK-HERMES-BROWSER');
   });
 });

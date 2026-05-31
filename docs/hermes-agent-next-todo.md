@@ -229,6 +229,12 @@ Current measured state:
   - Acceptance: `buddy hermes doctor --json` reports available backends and smoke commands. **Done for CLI JSON.**
   - Remaining scope: turn configured backends into first-class managed runners where product-relevant, and expand live smoke execution to Docker/remote backends after product-specific safety decisions.
 
+- [ ] **Browser backend inventory**
+  - Scope: detect/configure local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox/Camoufox, and session recording.
+  - Done so far: `buddy hermes doctor --json` and `buddy hermes browser status --json` now report browser backend readiness with credential source names only. `buddy hermes browser-smoke local-playwright --json` launches a real headless Chromium page and verifies the local browser binary, not just package presence.
+  - Acceptance: local Playwright backend status and smoke are machine-readable. **Done for CLI JSON and real local smoke.**
+  - Remaining scope: first-class managed backend runners, hybrid routing, and full session recording.
+
 - [x] **Yuanbao platform connector parity**
   - Done: exact `yb_query_group_info`, `yb_query_group_members`, `yb_send_dm`, `yb_search_sticker`, and `yb_send_sticker` prompt tools now exist.
   - Integration shape: optional Yuanbao-compatible HTTP gateway via `CODEBUDDY_YUANBAO_GATEWAY_URL` / `YUANBAO_GATEWAY_URL`, token via `CODEBUDDY_YUANBAO_TOKEN` / `YUANBAO_TOKEN`, and current chat fallback via `CODEBUDDY_YUANBAO_HOME_CHAT_ID` / `HERMES_SESSION_CHAT_ID`.

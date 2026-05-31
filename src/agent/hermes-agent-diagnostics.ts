@@ -33,6 +33,10 @@ import {
   buildHermesRuntimeBackendsReadiness,
   type HermesRuntimeBackendsReadiness,
 } from './hermes-runtime-backends.js';
+import {
+  buildHermesBrowserBackendsReadiness,
+  type HermesBrowserBackendsReadiness,
+} from './hermes-browser-backends.js';
 
 export interface HermesPromptChecks {
   mentionsCodeBuddyRuntime: boolean;
@@ -96,6 +100,7 @@ export interface HermesAgentDiagnostics {
   promptChecks: HermesPromptChecks;
   providerReadiness: HermesProviderReadiness;
   runtimeBackends: HermesRuntimeBackendsReadiness;
+  browserBackends: HermesBrowserBackendsReadiness;
   issues: string[];
   recommendations: string[];
 }
@@ -456,6 +461,10 @@ export function buildHermesAgentDiagnostics(
     homeDir: options.homeDir,
     now: options.now,
   });
+  const browserBackends = buildHermesBrowserBackendsReadiness({
+    env: options.env,
+    now: options.now,
+  });
   const issues: string[] = [];
   const recommendations: string[] = [];
 
@@ -502,6 +511,7 @@ export function buildHermesAgentDiagnostics(
     promptChecks,
     providerReadiness,
     runtimeBackends,
+    browserBackends,
     issues,
     recommendations,
   };

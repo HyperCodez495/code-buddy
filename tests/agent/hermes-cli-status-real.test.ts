@@ -34,6 +34,7 @@ describe('Hermes CLI status real smoke', () => {
         ok: boolean;
         providerReadiness: { activeModel: { model: string }; providers: unknown[] };
         runtimeBackends: { backends: unknown[]; runnableCount: number };
+        browserBackends: { backends: unknown[]; localRunnableCount: number };
       };
       requestedProfile: string;
     };
@@ -44,6 +45,8 @@ describe('Hermes CLI status real smoke', () => {
     expect(doctor.diagnostics.providerReadiness.providers.length).toBeGreaterThan(0);
     expect(doctor.diagnostics.runtimeBackends.backends.length).toBeGreaterThan(0);
     expect(doctor.diagnostics.runtimeBackends.runnableCount).toBeGreaterThanOrEqual(1);
+    expect(doctor.diagnostics.browserBackends.backends.length).toBeGreaterThan(0);
+    expect(doctor.diagnostics.browserBackends.localRunnableCount).toBeGreaterThanOrEqual(1);
 
     const toolsets = runHermesJson(['toolsets', 'safe']) as {
       activeProfile: string;
@@ -75,6 +78,14 @@ describe('Hermes CLI status real smoke', () => {
     expect(portal.kind).toBe('hermes_portal_status');
     expect(portal.portal.defaultPortalUrl).toBe('https://portal.nousresearch.com');
     expect(portal.toolGateway.tools.length).toBeGreaterThan(0);
+
+    const browser = runHermesJson(['browser', 'status']) as {
+      kind: string;
+      readiness: { backends: Array<{ id: string }>; localRunnableCount: number };
+    };
+    expect(browser.kind).toBe('hermes_browser_backends_status');
+    expect(browser.readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
+    expect(browser.readiness.backends.map((backend) => backend.id)).toContain('local-playwright');
 
     const promptSize = runHermesJson(['prompt-size', 'safe']) as {
       kind: string;

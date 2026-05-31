@@ -157,4 +157,51 @@ describe('Hermes Agent diagnostics', () => {
     expect(docker?.smokeCommand).toContain('OK-HERMES-DOCKER');
     expect(JSON.stringify(diagnostics.runtimeBackends)).not.toContain(process.env.OPENAI_API_KEY ?? '__no_openai_key__');
   });
+
+  it('reports browser backend inventory from real local probes', () => {
+    const loader = new CustomAgentLoader(makeTempDir());
+    const diagnostics = buildHermesAgentDiagnostics({
+      env: {
+        CODEBUDDY_BROWSER_CDP_URL: 'ws://secret-cdp-host.example.test/devtools/browser/abc',
+        BROWSERBASE_API_KEY: 'secret-browserbase-key',
+        BROWSERBASE_PROJECT_ID: 'secret-browserbase-project',
+        FIRECRAWL_API_KEY: 'secret-firecrawl-key',
+      },
+      loader,
+      now: () => new Date('2026-05-31T13:40:00.000Z'),
+      settingsModel: null,
+    });
+
+    expect(diagnostics.browserBackends.generatedAt).toBe('2026-05-31T13:40:00.000Z');
+    expect(diagnostics.browserBackends.backends.map((backend) => backend.id)).toEqual(
+      expect.arrayContaining([
+        'local-playwright',
+        'remote-cdp',
+        'browserbase',
+        'browser-use',
+        'firecrawl',
+        'camofox',
+        'session-recording',
+      ]),
+    );
+    expect(diagnostics.browserBackends.localRunnableCount).toBeGreaterThanOrEqual(1);
+
+    const local = diagnostics.browserBackends.backends.find((backend) => backend.id === 'local-playwright');
+    expect(local).toMatchObject({
+      status: 'available',
+      installed: true,
+      configured: true,
+      runnable: true,
+      command: process.execPath,
+      smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
+    });
+
+    const cdp = diagnostics.browserBackends.backends.find((backend) => backend.id === 'remote-cdp');
+    expect(cdp).toMatchObject({
+      status: 'configured',
+      credentialSources: ['CODEBUDDY_BROWSER_CDP_URL'],
+    });
+    expect(JSON.stringify(diagnostics.browserBackends)).not.toContain('secret-');
+    expect(JSON.stringify(diagnostics.browserBackends)).not.toContain('ws://secret-cdp-host');
+  });
 });

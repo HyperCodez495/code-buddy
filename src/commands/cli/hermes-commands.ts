@@ -51,6 +51,12 @@ import {
   type HermesRuntimeSmokeResult,
 } from '../../agent/hermes-runtime-backends.js';
 import {
+  buildHermesBrowserBackendsReadiness,
+  renderHermesBrowserBackendsReadiness,
+  renderHermesBrowserSmoke,
+  runHermesBrowserBackendSmoke,
+} from '../../agent/hermes-browser-backends.js';
+import {
   KanbanStore,
   type CreateKanbanCardInput,
   type KanbanPriority,
@@ -85,6 +91,8 @@ interface HermesKanbanOptions extends HermesCommandOptions {
 interface HermesRuntimeSmokeOptions extends HermesCommandOptions {
   timeoutMs?: string;
 }
+
+type HermesBrowserSmokeOptions = HermesCommandOptions;
 
 interface HermesPromptSizeSection {
   id: string;
@@ -1138,6 +1146,17 @@ export function registerHermesCommands(program: Command): void {
           `${backend.version ? ` (${backend.version})` : ''}`,
         );
       }
+      console.log('  Browser automation backends:');
+      console.log(
+        `    Local runnable: ${diagnostics.browserBackends.localRunnableCount}, ` +
+        `managed configured: ${diagnostics.browserBackends.managedConfiguredCount}`,
+      );
+      for (const backend of diagnostics.browserBackends.backends) {
+        console.log(
+          `    ${backend.id}: ${backend.status}` +
+          `${backend.version ? ` (${backend.version})` : ''}`,
+        );
+      }
       console.log('  Dispatch profile selection:');
       for (const guidance of diagnostics.dispatchProfileGuidance) {
         console.log(`    ${guidance.profile}: ${guidance.useWhen}`);
@@ -1186,18 +1205,79 @@ export function registerHermesCommands(program: Command): void {
         }
       }
 
+      if (diagnostics.browserBackends.issues.length > 0) {
+        console.log('\nBrowser backend issues:');
+        for (const issue of diagnostics.browserBackends.issues) {
+          console.log(`  - ${issue}`);
+        }
+      }
+
+      if (diagnostics.browserBackends.recommendations.length > 0) {
+        console.log('\nBrowser backend recommendations:');
+        for (const recommendation of diagnostics.browserBackends.recommendations) {
+          console.log(`  - ${recommendation}`);
+        }
+      }
+
       if (
         diagnostics.issues.length === 0 &&
         diagnostics.recommendations.length === 0 &&
         diagnostics.providerReadiness.issues.length === 0 &&
         diagnostics.providerReadiness.recommendations.length === 0 &&
         diagnostics.runtimeBackends.issues.length === 0 &&
-        diagnostics.runtimeBackends.recommendations.length === 0
+        diagnostics.runtimeBackends.recommendations.length === 0 &&
+        diagnostics.browserBackends.issues.length === 0 &&
+        diagnostics.browserBackends.recommendations.length === 0
       ) {
         console.log('\nNo issues or recommendations.');
       }
 
       console.log('');
+    });
+
+  const browser = hermes
+    .command('browser')
+    .description('Inspect Hermes browser backend readiness');
+
+  browser
+    .command('status')
+    .description('Print local and managed browser backend readiness')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const readiness = buildHermesBrowserBackendsReadiness();
+      const payload = {
+        kind: 'hermes_browser_backends_status',
+        schemaVersion: 1,
+        readiness,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesBrowserBackendsReadiness(readiness));
+    });
+
+  hermes
+    .command('browser-smoke')
+    .description('Run an opt-in live smoke for one Hermes browser backend')
+    .argument('<backendId>', 'backend id from buddy hermes browser status, for example local-playwright')
+    .option('--json', 'output JSON')
+    .action(async (backendId: string, options: HermesBrowserSmokeOptions) => {
+      const result = await runHermesBrowserBackendSmoke({ backendId });
+      const payload = {
+        kind: 'hermes_browser_backend_smoke',
+        schemaVersion: 1,
+        result,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesBrowserSmoke(result));
     });
 
   hermes
