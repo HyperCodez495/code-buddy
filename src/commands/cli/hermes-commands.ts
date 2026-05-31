@@ -137,6 +137,7 @@ interface HermesTodoOptions extends HermesCommandOptions {
 }
 
 interface HermesBrowserSmokeOptions extends HermesCommandOptions {
+  cdpUrl?: string;
   recordingDir?: string;
 }
 
@@ -1845,12 +1846,14 @@ export function registerHermesCommands(program: Command): void {
     .command('browser-smoke')
     .description('Run an opt-in live smoke for one Hermes browser backend')
     .argument('<backendId>', 'backend id from buddy hermes browser status, for example local-playwright')
+    .option('--cdp-url <url>', 'Chrome DevTools endpoint for remote-cdp smoke')
     .option('--recording-dir <dir>', 'directory for browser recording artifacts')
     .option('--json', 'output JSON')
     .action(async (backendId: string, options: HermesBrowserSmokeOptions) => {
       const result = await runHermesBrowserBackendSmoke({
         artifactsDir: options.recordingDir,
         backendId,
+        cdpUrl: options.cdpUrl,
       });
       const payload = {
         kind: 'hermes_browser_backend_smoke',

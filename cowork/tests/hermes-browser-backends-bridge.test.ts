@@ -49,6 +49,7 @@ describe.skipIf(!hasBuiltCore)('Hermes browser backends bridge real core integra
           expect.objectContaining({
             id: 'remote-cdp',
             credentialSources: ['CODEBUDDY_BROWSER_CDP_URL'],
+            smokeCommand: 'buddy hermes browser-smoke remote-cdp --json',
             status: 'configured',
           }),
           expect.objectContaining({

@@ -74,6 +74,7 @@ export interface HermesBrowserBackendsOptions {
 export interface HermesBrowserBackendSmokeOptions extends HermesBrowserBackendsOptions {
   artifactsDir?: string;
   backendId: string;
+  cdpUrl?: string;
 }
 
 const require = createRequire(import.meta.url);
@@ -156,7 +157,7 @@ function cdpBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     command: null,
     version: playwrightVersion,
     credentialSources,
-    smokeCommand: null,
+    smokeCommand: configured ? 'buddy hermes browser-smoke remote-cdp --json' : null,
     notes: ['Uses an already running browser endpoint; status never prints the endpoint value.'],
     remediation: configured ? [] : ['Set CODEBUDDY_BROWSER_CDP_URL to attach to an existing browser session.'],
   };
@@ -346,6 +347,15 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+function cdpEndpointFromEnv(env: NodeJS.ProcessEnv): string | null {
+  for (const key of ['CODEBUDDY_BROWSER_CDP_URL', 'BROWSER_CDP_URL', 'CHROME_REMOTE_DEBUGGING_URL']) {
+    const value = env[key]?.trim();
+    if (value) return value;
+  }
+
+  return null;
+}
+
 async function createBrowserSmokeArtifactDir(artifactsDir?: string): Promise<string> {
   if (artifactsDir?.trim()) {
     const target = resolve(artifactsDir);
@@ -354,6 +364,79 @@ async function createBrowserSmokeArtifactDir(artifactsDir?: string): Promise<str
   }
 
   return mkdtemp(join(tmpdir(), 'codebuddy-hermes-browser-'));
+}
+
+async function runRemoteCdpSmoke(
+  now: () => Date,
+  env: NodeJS.ProcessEnv,
+): Promise<HermesBrowserBackendSmokeResult> {
+  const started = now();
+  const startedAtMs = Date.now();
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+
+  try {
+    const endpoint = cdpEndpointFromEnv(env);
+    if (!endpoint) {
+      return {
+        backendId: 'remote-cdp',
+        command: null,
+        durationMs: Math.max(0, Date.now() - startedAtMs),
+        finishedAt: now().toISOString(),
+        label: 'Remote Chrome DevTools Protocol',
+        ok: false,
+        output: 'CODEBUDDY_BROWSER_CDP_URL is required for remote-cdp smoke.',
+        startedAt: started.toISOString(),
+        status: 'not-runnable',
+        stdout: '',
+        stderr: 'CODEBUDDY_BROWSER_CDP_URL is required for remote-cdp smoke.',
+      };
+    }
+
+    const playwright = await import('playwright');
+    browser = await playwright.chromium.connectOverCDP(endpoint);
+    context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto('data:text/html,<title>OK-HERMES-CDP</title><h1>OK-HERMES-CDP</h1>', {
+      waitUntil: 'domcontentloaded',
+    });
+    const title = await page.title();
+    const heading = await page.locator('h1').textContent();
+    const ok = title === 'OK-HERMES-CDP' && heading === 'OK-HERMES-CDP';
+    const output = `title=${title}; heading=${heading ?? ''}`;
+
+    return {
+      backendId: 'remote-cdp',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Remote Chrome DevTools Protocol',
+      ok,
+      output,
+      startedAt: started.toISOString(),
+      status: ok ? 'passed' : 'failed',
+      stdout: output,
+      stderr: ok ? '' : 'Unexpected remote CDP page content.',
+    };
+  } catch (error) {
+    const message = errorMessage(error);
+    return {
+      backendId: 'remote-cdp',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Remote Chrome DevTools Protocol',
+      ok: false,
+      output: message,
+      startedAt: started.toISOString(),
+      status: 'failed',
+      stdout: '',
+      stderr: message,
+    };
+  } finally {
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
+  }
 }
 
 async function runLocalPlaywrightSmoke(
@@ -451,7 +534,9 @@ async function runLocalPlaywrightSmoke(
 export async function runHermesBrowserBackendSmoke(
   options: HermesBrowserBackendSmokeOptions,
 ): Promise<HermesBrowserBackendSmokeResult> {
-  const env = options.env ?? process.env;
+  const env = options.cdpUrl?.trim()
+    ? { ...(options.env ?? process.env), CODEBUDDY_BROWSER_CDP_URL: options.cdpUrl.trim() }
+    : options.env ?? process.env;
   const now = options.now ?? (() => new Date());
   const readiness = buildHermesBrowserBackendsReadiness({ env, now });
   const backendId = options.backendId.trim();
@@ -466,6 +551,10 @@ export async function runHermesBrowserBackendSmoke(
 
   if (backend.id === 'local-playwright') {
     return runLocalPlaywrightSmoke(now, { artifactsDir: options.artifactsDir });
+  }
+
+  if (backend.id === 'remote-cdp') {
+    return runRemoteCdpSmoke(now, env);
   }
 
   if (!backend.runnable) {

@@ -242,7 +242,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts tools browser-operator draft "open example.com" --json',
       'npm test -- tests/tools/vision-analyze-real.test.ts --run',
     ],
-    notes: 'Strong local browser work exists, including exact browser_vision and browser_dialog prompt-tool surfaces plus machine-readable backend readiness for local Playwright, CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox, and session recording. A real local Playwright smoke launches Chromium, verifies page content, and writes a trace.zip recording artifact. Complete backend parity for Camofox, Browser Use gateway mode, managed replay, and hybrid routing is still not proven.',
+    notes: 'Strong local browser work exists, including exact browser_vision and browser_dialog prompt-tool surfaces plus machine-readable backend readiness for local Playwright, CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox, and session recording. A real local Playwright smoke launches Chromium, verifies page content, and writes a trace.zip recording artifact; a real remote CDP smoke attaches to a live Chrome DevTools endpoint without leaking the endpoint. Complete backend parity for Camofox, Browser Use gateway mode, managed replay, and hybrid routing is still not proven.',
     nextWork: 'Wire first-class managed backend runners and hybrid browser routing before claiming full Hermes browser backend parity.',
   },
   {

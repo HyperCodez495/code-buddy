@@ -200,6 +200,7 @@ describe('Hermes Agent diagnostics', () => {
     expect(cdp).toMatchObject({
       status: 'configured',
       credentialSources: ['CODEBUDDY_BROWSER_CDP_URL'],
+      smokeCommand: 'buddy hermes browser-smoke remote-cdp --json',
     });
     const recording = diagnostics.browserBackends.backends.find((backend) => backend.id === 'session-recording');
     expect(recording).toMatchObject({
