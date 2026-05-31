@@ -1085,4 +1085,35 @@ describe('Hermes CLI commands', () => {
       }
     }
   });
+
+  it('runs a real local Hermes runtime smoke from the CLI', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'runtime-smoke', 'local', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      result: {
+        backendId: string;
+        command: string | null;
+        ok: boolean;
+        output: string;
+        status: string;
+        stdout: string;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_runtime_backend_smoke');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.result).toMatchObject({
+      backendId: 'local',
+      command: process.execPath,
+      ok: true,
+      status: 'passed',
+    });
+    expect(output.result.stdout).toContain('OK-HERMES-LOCAL');
+    expect(output.result.output).toContain('OK-HERMES-LOCAL');
+  });
 });

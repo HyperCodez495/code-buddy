@@ -93,6 +93,7 @@ Current measured state:
     - `cd cowork && npm test -- --run tests/hermes-provider-readiness-bridge.test.ts tests/hermes-provider-readiness-strip.test.ts`
     - real CLI smoke with empty and configured env.
     - `npx tsx src/index.ts hermes doctor balanced --json`
+    - `npx tsx src/index.ts hermes runtime-smoke local --json`
     - `npx tsx src/index.ts hermes portal status --json`
     - `npx tsx src/index.ts hermes portal tools --json`
 
@@ -207,7 +208,7 @@ Current measured state:
 
 - [ ] **Runtime backend inventory**
   - Scope: detect/configure local, Docker, SSH, WSL, sandbox, Vercel Sandbox/Modal/Daytona if product-relevant.
-  - Done so far: `buddy hermes doctor --json` now reports a non-destructive runtime backend inventory for local Node, native OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. Each row reports installed/configured/runnable state, version when a real CLI probe can provide it, credential source names only, notes/remediation, and copy/paste smoke commands for heavier real validation. Cowork renders the same inventory in Settings -> API and the Fleet Command Center through `tools.hermesRuntimeBackends.get`, and can run opt-in live smoke checks through `tools.hermesRuntimeBackends.smoke`. The first live runner executes the local Node backend through a real subprocess; Docker remains guarded by `CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true`.
+  - Done so far: `buddy hermes doctor --json` now reports a non-destructive runtime backend inventory for local Node, native OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. Each row reports installed/configured/runnable state, version when a real CLI probe can provide it, credential source names only, notes/remediation, and copy/paste smoke commands for heavier real validation. `buddy hermes runtime-smoke local --json` and Cowork's `tools.hermesRuntimeBackends.smoke` can run opt-in live smoke checks. The first live runner executes the local Node backend through a real subprocess; Docker remains guarded by `CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true`.
   - Acceptance: `buddy hermes doctor --json` reports available backends and smoke commands. **Done for CLI JSON.**
   - Remaining scope: turn configured backends into first-class managed runners where product-relevant, and expand live smoke execution to configured remote backends after product-specific safety decisions.
 

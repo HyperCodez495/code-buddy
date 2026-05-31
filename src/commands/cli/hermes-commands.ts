@@ -46,6 +46,10 @@ import {
   type HermesPortalStatus,
 } from '../../agent/hermes-portal-status.js';
 import {
+  runHermesRuntimeBackendSmoke,
+  type HermesRuntimeSmokeResult,
+} from '../../agent/hermes-runtime-backends.js';
+import {
   KanbanStore,
   type CreateKanbanCardInput,
   type KanbanPriority,
@@ -75,6 +79,10 @@ interface HermesKanbanOptions extends HermesCommandOptions {
   reason?: string;
   target?: string;
   label?: string;
+}
+
+interface HermesRuntimeSmokeOptions extends HermesCommandOptions {
+  timeoutMs?: string;
 }
 
 interface HermesPromptSizeSection {
@@ -125,6 +133,15 @@ function formatAllowList(values: readonly string[]): string {
 
 function formatOk(ok: boolean): string {
   return ok ? 'ok' : 'needs attention';
+}
+
+function parseOptionalPositiveInteger(value: string | undefined, label: string): number | undefined {
+  if (value === undefined) return undefined;
+  const parsed = Number.parseInt(value, 10);
+  if (!Number.isFinite(parsed) || parsed < 1) {
+    throw new Error(`${label} must be a positive integer`);
+  }
+  return parsed;
 }
 
 function inferHermesPlanOutputFormat(options: HermesCommandOptions): HermesPlanOutputFormat {
@@ -420,6 +437,22 @@ function renderHermesToolParityManifest(manifest: HermesToolParityManifest): str
     if (tool.nextWork) {
       lines.push(`  Next: ${tool.nextWork}`);
     }
+  }
+
+  return lines.join('\n');
+}
+
+function renderHermesRuntimeSmoke(result: HermesRuntimeSmokeResult): string {
+  const lines = [
+    `Hermes runtime smoke (${result.backendId}): ${result.status}`,
+    `  Backend: ${result.label ?? result.backendId}`,
+    `  Command: ${result.command ?? 'none'}`,
+    `  Exit: ${result.exitCode ?? 'n/a'}`,
+    `  Duration: ${result.durationMs}ms`,
+  ];
+
+  if (result.output) {
+    lines.push(`  Output: ${result.output}`);
   }
 
   return lines.join('\n');
@@ -1053,5 +1086,30 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log('');
+    });
+
+  hermes
+    .command('runtime-smoke')
+    .description('Run an opt-in live smoke for one Hermes runtime backend')
+    .argument('<backendId>', 'backend id from buddy hermes doctor, for example local')
+    .option('--json', 'output JSON')
+    .option('--timeout-ms <ms>', 'smoke timeout in milliseconds')
+    .action((backendId: string, options: HermesRuntimeSmokeOptions) => {
+      const result = runHermesRuntimeBackendSmoke({
+        backendId,
+        timeoutMs: parseOptionalPositiveInteger(options.timeoutMs, '--timeout-ms'),
+      });
+      const payload = {
+        kind: 'hermes_runtime_backend_smoke',
+        schemaVersion: 1,
+        result,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesRuntimeSmoke(result));
     });
 }
