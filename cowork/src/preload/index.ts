@@ -5756,6 +5756,39 @@ declare global {
             lastActivity?: number;
             error?: string;
           }>;
+          report: {
+            config: {
+              channels: Array<{
+                allowedChannelsCount: number;
+                allowedUsersCount: number;
+                enabled: boolean;
+                hasToken: boolean;
+                hasWebhookUrl: boolean;
+                optionKeys: string[];
+                type: string;
+              }>;
+              configuredCount: number;
+              disabledCount: number;
+              enabledCount: number;
+              path?: string;
+            };
+            generatedAt: string;
+            kind: 'codebuddy_channel_status';
+            recommendations: string[];
+            runtime: {
+              authenticatedCount: number;
+              channels: Array<{
+                authenticated: boolean;
+                connected: boolean;
+                error?: string;
+                lastActivity?: string;
+                type: string;
+              }>;
+              connectedCount: number;
+              registeredCount: number;
+            };
+            schemaVersion: 1;
+          } | null;
         }>;
       };
       identityFiles: {

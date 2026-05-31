@@ -73,6 +73,10 @@ const hermesBrowserBackendsStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-browser-backends-strip.tsx'
 );
+const hermesMessagingGatewayStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-messaging-gateway-strip.tsx'
+);
 const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx'
@@ -240,6 +244,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(hermesProviderReadinessStripPath, 'utf8'),
       fs.readFileSync(hermesRuntimeBackendsStripPath, 'utf8'),
       fs.readFileSync(hermesBrowserBackendsStripPath, 'utf8'),
+      fs.readFileSync(hermesMessagingGatewayStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(skillPackageManagerStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
@@ -364,6 +369,19 @@ describe('French renderer i18n support', () => {
       'fleet.hermesBrowserBackends.status.configured',
       'fleet.hermesBrowserBackends.status.missing',
       'fleet.hermesBrowserBackends.status.unsupported',
+      'fleet.hermesMessagingGateway.title',
+      'fleet.hermesMessagingGateway.readyChip',
+      'fleet.hermesMessagingGateway.attentionChip',
+      'fleet.hermesMessagingGateway.loadingChip',
+      'fleet.hermesMessagingGateway.configuredLabel',
+      'fleet.hermesMessagingGateway.runtimeLabel',
+      'fleet.hermesMessagingGateway.runtimeValue',
+      'fleet.hermesMessagingGateway.authLabel',
+      'fleet.hermesMessagingGateway.connectedState',
+      'fleet.hermesMessagingGateway.pendingState',
+      'fleet.hermesMessagingGateway.disabledState',
+      'fleet.hermesMessagingGateway.unavailable',
+      'fleet.hermesMessagingGateway.loadFailed',
       'fleet.skillCandidate.title',
       'fleet.skillCandidate.countChip',
       'fleet.skillCandidate.reviewChip',

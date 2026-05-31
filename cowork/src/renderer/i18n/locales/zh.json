@@ -2319,6 +2319,21 @@
         "unsupported": "不支持"
       }
     },
+    "hermesMessagingGateway": {
+      "title": "Hermes 消息网关",
+      "readyChip": "网关就绪",
+      "attentionChip": "网关需注意",
+      "loadingChip": "频道",
+      "configuredLabel": "已配置",
+      "runtimeLabel": "运行时",
+      "runtimeValue": "{{connected}}/{{registered}}",
+      "authLabel": "认证",
+      "connectedState": "已连接",
+      "pendingState": "待启动",
+      "disabledState": "已禁用",
+      "unavailable": "Hermes 消息网关状态尚未加载。",
+      "loadFailed": "Hermes 消息网关加载失败"
+    },
     "skillCandidate": {
       "title": "SKILL 候选审查",
       "countChip": "{{count}} 个合格",

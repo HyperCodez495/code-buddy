@@ -2332,6 +2332,21 @@
         "unsupported": "unsupported"
       }
     },
+    "hermesMessagingGateway": {
+      "title": "Hermes messaging gateway",
+      "readyChip": "gateway ready",
+      "attentionChip": "gateway attention",
+      "loadingChip": "channels",
+      "configuredLabel": "Configured",
+      "runtimeLabel": "Runtime",
+      "runtimeValue": "{{connected}}/{{registered}}",
+      "authLabel": "Auth",
+      "connectedState": "connected",
+      "pendingState": "pending",
+      "disabledState": "disabled",
+      "unavailable": "Hermes messaging gateway status is not loaded yet.",
+      "loadFailed": "Hermes messaging gateway load failed"
+    },
     "skillCandidate": {
       "title": "Skill candidate review",
       "countChip": "{{count}} eligible",

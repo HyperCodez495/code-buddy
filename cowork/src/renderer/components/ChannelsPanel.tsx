@@ -20,11 +20,27 @@ interface ChannelStatus {
   error?: string;
 }
 
+interface ChannelStatusReport {
+  config: {
+    configuredCount: number;
+    disabledCount: number;
+    enabledCount: number;
+    path?: string;
+  };
+  recommendations: string[];
+  runtime: {
+    authenticatedCount: number;
+    connectedCount: number;
+    registeredCount: number;
+  };
+}
+
 export function ChannelsPanel() {
   const show = useAppStore((s) => s.showChannelsPanel);
   const setShow = useAppStore((s) => s.setShowChannelsPanel);
 
   const [items, setItems] = useState<ChannelStatus[]>([]);
+  const [report, setReport] = useState<ChannelStatusReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,9 +52,11 @@ export function ChannelsPanel() {
     if (!res.ok) {
       setError(res.error ?? 'Failed to load channel status');
       setItems([]);
+      setReport(null);
       return;
     }
     setItems(res.items);
+    setReport(res.report ?? null);
   }, []);
 
   useEffect(() => {
@@ -72,6 +90,31 @@ export function ChannelsPanel() {
           Read-only status. Configure channels and delivery from the CLI / cron layer.
         </div>
 
+        {report && (
+          <div className="border-b border-border px-4 py-3">
+            <div className="grid grid-cols-3 gap-2 text-[11px]">
+              <ChannelMetric label="Configured" value={String(report.config.configuredCount)} />
+              <ChannelMetric
+                label="Enabled"
+                value={`${report.config.enabledCount}/${report.config.configuredCount}`}
+              />
+              <ChannelMetric
+                label="Runtime"
+                value={`${report.runtime.connectedCount}/${report.runtime.registeredCount}`}
+              />
+            </div>
+            {report.config.path && (
+              <div className="mt-2 truncate text-[10px] text-text-muted">{report.config.path}</div>
+            )}
+            {report.recommendations[0] && (
+              <div className="mt-2 flex items-start gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+                <AlertCircle className="mt-0.5 h-3 w-3 shrink-0" />
+                <span>{report.recommendations[0]}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {error && (
           <div className="mx-4 mt-3 flex items-start gap-1.5 rounded border border-error/40 bg-error/10 px-3 py-2 text-xs text-error">
             <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5" />
@@ -83,8 +126,18 @@ export function ChannelsPanel() {
           {items.length === 0 ? (
             <EmptyState
               icon={<Radio className="w-8 h-8 text-text-muted" />}
-              title={loading ? 'Loading…' : 'No channels configured'}
-              hint="Configure delivery channels (Telegram/Discord/email…) from the CLI; cron jobs deliver through them."
+              title={
+                loading
+                  ? 'Loading...'
+                  : report?.config.configuredCount
+                    ? 'No runtime channels registered'
+                    : 'No channels configured'
+              }
+              hint={
+                report?.config.configuredCount
+                  ? 'Run buddy channels start to attach configured delivery channels to this process.'
+                  : 'Configure delivery channels (Telegram/Discord/email...) from the CLI; cron jobs deliver through them.'
+              }
             />
           ) : (
             items.map((c) => (
@@ -112,6 +165,15 @@ export function ChannelsPanel() {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+function ChannelMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded border border-border bg-surface/40 px-2 py-1">
+      <div className="text-[9px] uppercase tracking-wide text-text-muted">{label}</div>
+      <div className="truncate text-xs font-medium text-text-primary">{value}</div>
     </div>
   );
 }
