@@ -139,12 +139,22 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'workflow-bridge-compilation.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'custom-commands-service.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'slash-command-bridge-schedule.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'channel-gateway-readiness-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-browser-backends-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-browser-backends-strip.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-memory-providers-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-memory-providers-strip.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-messaging-gateway-strip.test.tsx'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-mobile-supervision-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-mobile-supervision-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-plan-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-bridge.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-runtime-backends-bridge.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-runtime-backends-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-surfaces-ipc.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-tool-catalog-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-tool-catalog-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-toolsets-bridge.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-toolsets-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'lessons-vault-bridge.test.ts'), '');
@@ -1062,6 +1072,16 @@ describe('TestRunnerBridge catalog', () => {
     });
     expect(catalog.find((item) => item.label === 'Cowork / knowledge Hermes presence bundle')?.args).toEqual(
       expect.arrayContaining([
+        'tests/channel-gateway-readiness-bridge.test.ts',
+        'tests/hermes-browser-backends-bridge.test.ts',
+        'tests/hermes-browser-backends-strip.test.ts',
+        'tests/hermes-memory-providers-bridge.test.ts',
+        'tests/hermes-memory-providers-strip.test.ts',
+        'tests/hermes-messaging-gateway-strip.test.tsx',
+        'tests/hermes-mobile-supervision-bridge.test.ts',
+        'tests/hermes-mobile-supervision-strip.test.ts',
+        'tests/hermes-tool-catalog-bridge.test.ts',
+        'tests/hermes-tool-catalog-strip.test.ts',
         'tests/hermes-toolsets-bridge.test.ts',
         'tests/hermes-toolsets-strip.test.ts',
       ])

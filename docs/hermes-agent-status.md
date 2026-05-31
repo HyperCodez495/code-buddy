@@ -102,6 +102,11 @@ change-control surface.
 | Browser backend inventory | `src/agent/hermes-browser-backends.ts`; embedded in `buddy hermes doctor --json`; `buddy hermes browser status --json`; `buddy hermes browser-smoke local-playwright --json`; `cowork/src/main/tools/hermes-browser-backends-bridge.ts`; `cowork/src/renderer/components/hermes-browser-backends-strip.tsx` | partial — real non-destructive readiness for local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox/Camoufox, and session recording, with credential source names only; local Playwright smoke launches a real Chromium page; Cowork renders the same status in Settings -> API plus Fleet Command Center and can trigger the local smoke; managed backend runners and full session recording remain future work |
 | Messaging gateway readiness | `buddy hermes messaging status --json`; `buddy channels status --json`; `cowork/src/main/tools/channel-gateway-readiness-bridge.ts`; `cowork/src/renderer/components/hermes-messaging-gateway-strip.tsx`; `cowork/src/renderer/components/ChannelsPanel.tsx` | partial — Hermes CLI, generic channels CLI, and Cowork now share the same safe channel status report for configured/enabled/runtime/auth counts and the first operator recommendation, without exposing token or webhook values. Exact Hermes per-platform slash parity and gateway lifecycle controls remain future work. |
 
+Cowork Test Runner exposes a safe `Cowork / knowledge Hermes presence bundle`
+that now relaunches the Fleet cockpit readiness bridges/strips for provider,
+memory, runtime, browser, messaging, mobile supervision, tool catalog, toolsets,
+learning usage, lessons, skills, and presence from one operator-visible entry.
+
 ### Scheduled automations
 
 | Sub-capability | Where | Status |
