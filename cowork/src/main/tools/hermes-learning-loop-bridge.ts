@@ -94,11 +94,65 @@ export interface HermesLearningLoopStatusOptions {
   rootDir?: string;
 }
 
+export interface HermesLearningRetrospectiveRunOptions {
+  force?: boolean;
+  rootDir?: string;
+  runId?: string;
+}
+
+export interface HermesLearningRetrospectiveRunForReview {
+  command: string;
+  lessonCandidateCount: number;
+  ok: boolean;
+  patternLibraryPath?: string;
+  retrospectiveArtifact?: string;
+  runId: string;
+  skillCandidateCount: number;
+  skillUsageCount: number;
+  skipped: boolean;
+  skippedReason?: string;
+  summary?: string;
+  toolSequence: string[];
+}
+
 interface HermesLearningLoopStatusModule {
   buildHermesLearningLoopStatus: (options?: {
     limit?: number;
     workDir?: string;
   }) => HermesLearningLoopStatusForReview;
+}
+
+interface RunStoreLike {
+  dispose?: () => void;
+}
+
+interface RunStoreModule {
+  RunStore: new () => RunStoreLike;
+}
+
+interface LearningAgentRunResult {
+  lessonCandidateCount: number;
+  patternLibraryPath?: string;
+  retrospective?: {
+    summary: string;
+    toolSequence: string[];
+  };
+  retrospectiveArtifact?: string;
+  skillCandidateCount: number;
+  skillUsageCount: number;
+  skipped: boolean;
+  skippedReason?: string;
+}
+
+interface LearningAgentModule {
+  runLearningRetrospective: (
+    store: RunStoreLike,
+    runId: string,
+    options?: {
+      force?: boolean;
+      workDir?: string;
+    },
+  ) => Promise<LearningAgentRunResult>;
 }
 
 export async function getHermesLearningLoopStatusForReview(
@@ -114,10 +168,58 @@ export async function getHermesLearningLoopStatusForReview(
   });
 }
 
+export async function runHermesLearningRetrospectiveForReview(
+  options: HermesLearningRetrospectiveRunOptions,
+): Promise<HermesLearningRetrospectiveRunForReview> {
+  const runId = normalizeRunId(options.runId);
+  const rootDir = normalizeAbsoluteRoot(options.rootDir) ?? process.cwd();
+  const runStoreMod = await loadCoreModule<RunStoreModule>('observability/run-store.js');
+  const learningMod = await loadCoreModule<LearningAgentModule>('agent/learning-agent.js');
+
+  if (!runStoreMod?.RunStore) {
+    throw new Error('Core RunStore module is unavailable.');
+  }
+  if (!learningMod?.runLearningRetrospective) {
+    throw new Error('Core Learning Agent module is unavailable.');
+  }
+
+  const store = new runStoreMod.RunStore();
+  try {
+    const result = await learningMod.runLearningRetrospective(store, runId, {
+      force: options.force !== false,
+      workDir: rootDir,
+    });
+    return {
+      command: `buddy run retrospective ${runId} --force --json`,
+      lessonCandidateCount: result.lessonCandidateCount,
+      ok: !result.skipped,
+      ...(result.patternLibraryPath ? { patternLibraryPath: result.patternLibraryPath } : {}),
+      ...(result.retrospectiveArtifact ? { retrospectiveArtifact: result.retrospectiveArtifact } : {}),
+      runId,
+      skillCandidateCount: result.skillCandidateCount,
+      skillUsageCount: result.skillUsageCount,
+      skipped: result.skipped,
+      ...(result.skippedReason ? { skippedReason: result.skippedReason } : {}),
+      ...(result.retrospective?.summary ? { summary: result.retrospective.summary } : {}),
+      toolSequence: result.retrospective?.toolSequence ?? [],
+    };
+  } finally {
+    store.dispose?.();
+  }
+}
+
 function normalizeAbsoluteRoot(value: string | undefined): string | null {
   if (!value?.trim()) return null;
   const trimmed = value.trim();
   return isAbsolute(trimmed) ? resolve(trimmed) : null;
+}
+
+function normalizeRunId(value: string | undefined): string {
+  const trimmed = value?.trim();
+  if (!trimmed) {
+    throw new Error('runId is required to run a Hermes learning retrospective.');
+  }
+  return trimmed;
 }
 
 function normalizeLimit(value: number | undefined): number {

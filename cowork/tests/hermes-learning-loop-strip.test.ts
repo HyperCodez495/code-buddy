@@ -162,6 +162,7 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('run-needs-retro');
     expect(strip?.textContent).toContain('completed | 1 artifacts');
     expect(strip?.textContent).toContain('buddy run retrospective run-needs-retro --force --json');
+    expect(strip?.querySelector('[data-testid="hermes-learning-retrospective-run-needs-retro"]')).toBeTruthy();
     expect(strip?.textContent).toContain('learned-search-view-file-bash');
     expect(strip?.textContent).toContain('95/100 reinforce');
     expect(strip?.textContent).toContain('Review gates enabled');
@@ -178,12 +179,37 @@ describe('HermesLearningLoopStrip', () => {
 
   it('loads status from the readonly Electron bridge when no status is provided', async () => {
     const target = container();
-    const get = vi.fn().mockResolvedValue(learningStatus);
+    const refreshedStatus: HermesLearningLoopStatus = {
+      ...learningStatus,
+      nextRetrospectiveRun: undefined,
+      summary: {
+        ...learningStatus.summary,
+        retrospectiveArtifactCount: 2,
+      },
+    };
+    const get = vi.fn()
+      .mockResolvedValueOnce(learningStatus)
+      .mockResolvedValueOnce(refreshedStatus);
+    const runRetrospective = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        command: 'buddy run retrospective run-needs-retro --force --json',
+        lessonCandidateCount: 2,
+        ok: true,
+        retrospectiveArtifact: 'learning-retrospective.json',
+        runId: 'run-needs-retro',
+        skillCandidateCount: 1,
+        skillUsageCount: 1,
+        skipped: false,
+        toolSequence: ['search', 'view_file', 'bash'],
+      },
+    });
     (window as unknown as {
       electronAPI?: {
         tools?: {
           hermesLearningLoop?: {
             get: typeof get;
+            runRetrospective: typeof runRetrospective;
           };
         };
       };
@@ -191,6 +217,7 @@ describe('HermesLearningLoopStrip', () => {
       tools: {
         hermesLearningLoop: {
           get,
+          runRetrospective,
         },
       },
     };
@@ -207,5 +234,22 @@ describe('HermesLearningLoopStrip', () => {
     });
     expect(target.textContent).toContain('learned-search-view-file-bash');
     expect(target.textContent).toContain('buddy hermes learning status --json');
+
+    const button = target.querySelector('[data-testid="hermes-learning-retrospective-run-needs-retro"]') as HTMLButtonElement;
+    expect(button).toBeTruthy();
+
+    await act(async () => {
+      button.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(runRetrospective).toHaveBeenCalledWith({
+      cwd: 'D:/CascadeProjects/grok-cli',
+      force: true,
+      runId: 'run-needs-retro',
+    });
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(target.textContent).toContain('Retrospective saved: learning-retrospective.json | 2 lessons | 1 skills');
   });
 });

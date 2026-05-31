@@ -1,7 +1,10 @@
 import path from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
-import { getHermesLearningLoopStatusForReview } from '../src/main/tools/hermes-learning-loop-bridge';
+import {
+  getHermesLearningLoopStatusForReview,
+  runHermesLearningRetrospectiveForReview,
+} from '../src/main/tools/hermes-learning-loop-bridge';
 
 vi.mock('../src/main/utils/core-loader', () => ({
   loadCoreModule: vi.fn(),
@@ -176,5 +179,57 @@ describe('Hermes learning loop bridge', () => {
     await getHermesLearningLoopStatusForReview({ rootDir: 'relative-workspace' });
 
     expect(buildHermesLearningLoopStatus).toHaveBeenCalledWith({ limit: 10 });
+  });
+
+  it('runs the core Learning Agent retrospective without returning private trajectory content', async () => {
+    const dispose = vi.fn();
+    const runLearningRetrospective = vi.fn().mockResolvedValue({
+      lessonCandidateCount: 2,
+      patternLibraryPath: 'D:/workspace/.codebuddy/learning/pattern-library.json',
+      retrospective: {
+        summary: '3 tools, 1 effective pattern',
+        toolSequence: ['search', 'view_file', 'bash'],
+      },
+      retrospectiveArtifact: 'learning-retrospective.json',
+      skillCandidateCount: 1,
+      skillUsageCount: 1,
+      skipped: false,
+    });
+    const RunStore = vi.fn(function MockRunStore(this: { dispose: typeof dispose }) {
+      this.dispose = dispose;
+    });
+    mockedLoadCoreModule
+      .mockResolvedValueOnce({ RunStore })
+      .mockResolvedValueOnce({ runLearningRetrospective });
+
+    const rootDir = path.resolve('workspace');
+    const result = await runHermesLearningRetrospectiveForReview({
+      rootDir,
+      runId: 'run-learning-loop',
+    });
+
+    expect(mockedLoadCoreModule).toHaveBeenNthCalledWith(1, 'observability/run-store.js');
+    expect(mockedLoadCoreModule).toHaveBeenNthCalledWith(2, 'agent/learning-agent.js');
+    expect(runLearningRetrospective).toHaveBeenCalledWith(
+      expect.anything(),
+      'run-learning-loop',
+      {
+        force: true,
+        workDir: rootDir,
+      },
+    );
+    expect(dispose).toHaveBeenCalled();
+    expect(result).toMatchObject({
+      command: 'buddy run retrospective run-learning-loop --force --json',
+      lessonCandidateCount: 2,
+      ok: true,
+      retrospectiveArtifact: 'learning-retrospective.json',
+      runId: 'run-learning-loop',
+      skillCandidateCount: 1,
+      skillUsageCount: 1,
+      skipped: false,
+      toolSequence: ['search', 'view_file', 'bash'],
+    });
+    expect(JSON.stringify(result)).not.toContain('private observation');
   });
 });

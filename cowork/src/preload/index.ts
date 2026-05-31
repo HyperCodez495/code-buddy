@@ -1933,6 +1933,28 @@ contextBridge.exposeInMainWorld('electronAPI', {
         };
         workDir: string;
       } | null> => ipcRenderer.invoke('tools.hermesLearningLoop.get', options ?? {}),
+      runRetrospective: (options: {
+        cwd?: string;
+        force?: boolean;
+        runId: string;
+      }): Promise<{
+        error?: string;
+        ok: boolean;
+        result?: {
+          command: string;
+          lessonCandidateCount: number;
+          ok: boolean;
+          patternLibraryPath?: string;
+          retrospectiveArtifact?: string;
+          runId: string;
+          skillCandidateCount: number;
+          skillUsageCount: number;
+          skipped: boolean;
+          skippedReason?: string;
+          summary?: string;
+          toolSequence: string[];
+        };
+      }> => ipcRenderer.invoke('tools.hermesLearningLoop.retrospective', options),
     },
     skillPackage: {
       list: (options?: {
@@ -4977,6 +4999,28 @@ declare global {
             };
             workDir: string;
           } | null>;
+          runRetrospective: (options: {
+            cwd?: string;
+            force?: boolean;
+            runId: string;
+          }) => Promise<{
+            error?: string;
+            ok: boolean;
+            result?: {
+              command: string;
+              lessonCandidateCount: number;
+              ok: boolean;
+              patternLibraryPath?: string;
+              retrospectiveArtifact?: string;
+              runId: string;
+              skillCandidateCount: number;
+              skillUsageCount: number;
+              skipped: boolean;
+              skippedReason?: string;
+              summary?: string;
+              toolSequence: string[];
+            };
+          }>;
         };
         skillPackage: {
           list: (options?: {

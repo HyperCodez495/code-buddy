@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BrainCircuit,
   GitBranch,
+  PlayCircle,
   ShieldCheck,
   Sparkles,
   Terminal,
@@ -86,11 +87,35 @@ export interface HermesLearningLoopStatus {
   workDir: string;
 }
 
+export interface HermesLearningRetrospectiveRunResult {
+  command: string;
+  lessonCandidateCount: number;
+  ok: boolean;
+  patternLibraryPath?: string;
+  retrospectiveArtifact?: string;
+  runId: string;
+  skillCandidateCount: number;
+  skillUsageCount: number;
+  skipped: boolean;
+  skippedReason?: string;
+  summary?: string;
+  toolSequence: string[];
+}
+
 interface HermesLearningLoopApi {
   get?: (options?: {
     cwd?: string;
     limit?: number;
   }) => Promise<HermesLearningLoopStatus | null>;
+  runRetrospective?: (options: {
+    cwd?: string;
+    force?: boolean;
+    runId: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    result?: HermesLearningRetrospectiveRunResult;
+  }>;
 }
 
 export function buildHermesLearningLoopCommand(): string {
@@ -105,6 +130,9 @@ export const HermesLearningLoopStrip: React.FC<{
   const { t } = useTranslation();
   const [loadedStatus, setLoadedStatus] = useState<HermesLearningLoopStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [retrospectiveError, setRetrospectiveError] = useState<string | null>(null);
+  const [retrospectiveResult, setRetrospectiveResult] = useState<HermesLearningRetrospectiveRunResult | null>(null);
+  const [runningRetrospectiveRunId, setRunningRetrospectiveRunId] = useState<string | null>(null);
   const visibleStatus = status ?? loadedStatus;
   const visibleError = error ?? loadError;
   const command = useMemo(() => buildHermesLearningLoopCommand(), []);
@@ -147,6 +175,47 @@ export const HermesLearningLoopStrip: React.FC<{
       cancelled = true;
     };
   }, [cwd, status]);
+
+  const handleRunRetrospective = async () => {
+    const candidate = visibleStatus?.nextRetrospectiveRun;
+    if (!candidate) return;
+    const api = getHermesLearningLoopApi();
+    if (!api?.runRetrospective) {
+      setRetrospectiveError(t(
+        'fleet.hermesLearningLoop.retrospectiveUnavailable',
+        'Retrospective runner is unavailable.',
+      ));
+      return;
+    }
+
+    setRunningRetrospectiveRunId(candidate.runId);
+    setRetrospectiveError(null);
+    setRetrospectiveResult(null);
+
+    try {
+      const response = await api.runRetrospective({
+        cwd,
+        force: true,
+        runId: candidate.runId,
+      });
+      if (!response.ok || !response.result || !response.result.ok) {
+        throw new Error(response.error ?? response.result?.skippedReason ?? 'Learning retrospective failed.');
+      }
+      setRetrospectiveResult(response.result);
+      if (status === undefined && api.get) {
+        const refreshed = await api.get({ cwd, limit: 6 });
+        setLoadedStatus(refreshed);
+      }
+    } catch (retrospectiveErrorValue) {
+      setRetrospectiveError(
+        retrospectiveErrorValue instanceof Error
+          ? retrospectiveErrorValue.message
+          : String(retrospectiveErrorValue),
+      );
+    } finally {
+      setRunningRetrospectiveRunId(null);
+    }
+  };
 
   return (
     <section
@@ -217,10 +286,23 @@ export const HermesLearningLoopStrip: React.FC<{
           {visibleStatus.nextRetrospectiveRun ? (
             <div className="mt-1.5 flex min-w-0 items-start gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
               <Terminal size={10} className="mt-0.5 shrink-0" />
-              <div className="min-w-0">
-                <div className="truncate">
-                  {t('fleet.hermesLearningLoop.nextRetrospectiveLabel', 'Next retrospective')}: {' '}
-                  {visibleStatus.nextRetrospectiveRun.runId}
+              <div className="min-w-0 flex-1">
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="truncate">
+                    {t('fleet.hermesLearningLoop.nextRetrospectiveLabel', 'Next retrospective')}: {' '}
+                    {visibleStatus.nextRetrospectiveRun.runId}
+                  </div>
+                  <button
+                    aria-label={t('fleet.hermesLearningLoop.runRetrospective', 'Run retrospective')}
+                    className="shrink-0 rounded border border-warning/30 bg-background p-0.5 text-warning transition hover:border-warning hover:text-warning disabled:cursor-not-allowed disabled:opacity-40"
+                    data-testid={`hermes-learning-retrospective-${visibleStatus.nextRetrospectiveRun.runId}`}
+                    disabled={runningRetrospectiveRunId === visibleStatus.nextRetrospectiveRun.runId}
+                    onClick={handleRunRetrospective}
+                    title={t('fleet.hermesLearningLoop.runRetrospective', 'Run retrospective')}
+                    type="button"
+                  >
+                    <PlayCircle size={10} />
+                  </button>
                 </div>
                 <div className="truncate text-[9px] text-text-muted">
                   {t('fleet.hermesLearningLoop.nextRetrospectiveMeta', '{{status}} | {{artifacts}} artifacts', {
@@ -232,6 +314,26 @@ export const HermesLearningLoopStrip: React.FC<{
                   {visibleStatus.nextRetrospectiveRun.command}
                 </code>
               </div>
+            </div>
+          ) : null}
+
+          {retrospectiveResult ? (
+            <div className="mt-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
+              {t(
+                'fleet.hermesLearningLoop.retrospectiveDone',
+                'Retrospective saved: {{artifact}} | {{lessons}} lessons | {{skills}} skills',
+                {
+                  artifact: retrospectiveResult.retrospectiveArtifact ?? 'none',
+                  lessons: retrospectiveResult.lessonCandidateCount,
+                  skills: retrospectiveResult.skillCandidateCount,
+                },
+              )}
+            </div>
+          ) : null}
+
+          {retrospectiveError ? (
+            <div className="mt-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+              {t('fleet.hermesLearningLoop.retrospectiveFailed', 'Retrospective failed')}: {retrospectiveError}
             </div>
           ) : null}
 

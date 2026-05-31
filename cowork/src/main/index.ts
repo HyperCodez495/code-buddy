@@ -201,7 +201,10 @@ import { getHermesMobileSupervisionForReview } from './tools/hermes-mobile-super
 import { getHermesFeatureParityForReview } from './tools/hermes-feature-parity-bridge';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { getHermesToolsetsForReview } from './tools/hermes-toolsets-bridge';
-import { getHermesLearningLoopStatusForReview } from './tools/hermes-learning-loop-bridge';
+import {
+  getHermesLearningLoopStatusForReview,
+  runHermesLearningRetrospectiveForReview,
+} from './tools/hermes-learning-loop-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
 import {
   deleteSkillPackageForReview,
@@ -4241,6 +4244,39 @@ ipcMain.handle(
     } catch (err) {
       logWarn('[tools.hermesLearningLoop.get] failed:', err);
       return null;
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.hermesLearningLoop.retrospective',
+  async (
+    _event,
+    payload?: {
+      cwd?: string;
+      force?: boolean;
+      runId?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await runHermesLearningRetrospectiveForReview({
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        force: payload?.force,
+        runId: payload?.runId,
+      });
+      return {
+        ok: result.ok,
+        ...(result.ok ? {} : { error: result.skippedReason ?? 'Learning retrospective skipped.' }),
+        result,
+      };
+    } catch (err) {
+      logWarn('[tools.hermesLearningLoop.retrospective] failed:', err);
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
     }
   }
 );

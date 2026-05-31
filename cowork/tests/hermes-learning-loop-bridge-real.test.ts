@@ -1,11 +1,25 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { getHermesLearningLoopStatusForReview } from '../src/main/tools/hermes-learning-loop-bridge';
+import {
+  getHermesLearningLoopStatusForReview,
+  runHermesLearningRetrospectiveForReview,
+} from '../src/main/tools/hermes-learning-loop-bridge';
 
 const distRoot = path.resolve(process.cwd(), '..', 'dist');
 const hasBuiltLearningCore = fs.existsSync(path.join(distRoot, 'agent', 'hermes-learning-loop-status.js'));
+
+interface RealRunStoreForTest {
+  dispose?: () => void;
+  emit: (runId: string, event: { type: string; data: Record<string, unknown> }) => void;
+  endRun: (runId: string, status: 'completed' | 'failed' | 'cancelled') => void;
+  getArtifact: (runId: string, name: string) => string | null;
+  saveArtifact: (runId: string, name: string, content: string) => void;
+  startRun: (objective: string, metadata?: Record<string, unknown>) => string;
+}
 
 describe.skipIf(!hasBuiltLearningCore)('Hermes learning loop bridge real core integration', () => {
   let originalEnginePath: string | undefined;
@@ -48,5 +62,69 @@ describe.skipIf(!hasBuiltLearningCore)('Hermes learning loop bridge real core in
     });
     expect(JSON.stringify(status)).not.toContain('content');
     expect(JSON.stringify(status)).not.toContain('observation');
+  });
+
+  it('runs a real compiled Learning Agent retrospective through the Cowork bridge', async () => {
+    const originalRunsDir = process.env.CODEBUDDY_RUNS_DIR;
+    const originalLearningAgent = process.env.CODEBUDDY_LEARNING_AGENT;
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'cowork-learning-retro-'));
+    const runsDir = path.join(tempDir, 'runs');
+    const workspaceDir = path.join(tempDir, 'workspace');
+    fs.mkdirSync(workspaceDir, { recursive: true });
+
+    let store: RealRunStoreForTest | null = null;
+    try {
+      process.env.CODEBUDDY_RUNS_DIR = runsDir;
+      process.env.CODEBUDDY_LEARNING_AGENT = 'false';
+      const runStoreModule = await import(
+        pathToFileURL(path.join(distRoot, 'observability', 'run-store.js')).href
+      ) as {
+        RunStore: new (runsPath?: string) => RealRunStoreForTest;
+      };
+      store = new runStoreModule.RunStore(runsDir);
+      const runId = store.startRun('Cowork bridge real retrospective proof', {
+        channel: 'cowork',
+        tags: ['hermes', 'real-bridge'],
+      });
+      for (const [toolCallId, toolName] of [
+        ['call_search', 'search'],
+        ['call_read', 'view_file'],
+        ['call_test', 'bash'],
+      ] as const) {
+        store.emit(runId, {
+          type: 'tool_call',
+          data: { toolCallId, toolName, args: { query: 'retrospective bridge' } },
+        });
+        store.emit(runId, {
+          type: 'tool_result',
+          data: { durationMs: 10, output: `${toolName} ok`, success: true, toolName },
+        });
+      }
+      store.saveArtifact(runId, 'summary.md', 'Real Cowork bridge retrospective proof.');
+      store.endRun(runId, 'completed');
+
+      const result = await runHermesLearningRetrospectiveForReview({
+        rootDir: workspaceDir,
+        runId,
+      });
+
+      expect(result).toMatchObject({
+        command: `buddy run retrospective ${runId} --force --json`,
+        ok: true,
+        retrospectiveArtifact: 'learning-retrospective.json',
+        runId,
+        skipped: false,
+        toolSequence: ['search', 'view_file', 'bash'],
+      });
+      expect(store.getArtifact(runId, 'learning-retrospective.json')).toContain('"kind": "learning_retrospective"');
+      expect(JSON.stringify(result)).not.toContain('Real Cowork bridge retrospective proof.');
+    } finally {
+      store?.dispose?.();
+      if (originalRunsDir === undefined) delete process.env.CODEBUDDY_RUNS_DIR;
+      else process.env.CODEBUDDY_RUNS_DIR = originalRunsDir;
+      if (originalLearningAgent === undefined) delete process.env.CODEBUDDY_LEARNING_AGENT;
+      else process.env.CODEBUDDY_LEARNING_AGENT = originalLearningAgent;
+      fs.rmSync(tempDir, { force: true, recursive: true });
+    }
   });
 });
