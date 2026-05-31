@@ -38,6 +38,12 @@ function populateEngineAdapter(root: string): void {
   makeFile(path.join(root, '..', 'dist', 'desktop', 'codebuddy-engine-adapter.js'));
 }
 
+function populateSqliteBinding(root: string): void {
+  makeFile(
+    path.join(root, 'node_modules', 'better-sqlite3', 'build', 'Release', 'better_sqlite3.node')
+  );
+}
+
 /**
  * Creates all artifacts that are required for a successful darwin/arm64 check.
  */
@@ -48,6 +54,7 @@ function populateDarwinArtifacts(root: string, arch: string = 'arm64'): void {
   makeDir(path.join(root, 'dist-electron'));
   makeDir(path.join(root, 'dist'));
   makeDir(path.join(root, '.claude/skills'));
+  populateSqliteBinding(root);
   populateEngineAdapter(root);
 
   // macOS FATAL resources
@@ -64,6 +71,7 @@ function populateWin32Artifacts(root: string): void {
   makeDir(path.join(root, 'dist-electron'));
   makeDir(path.join(root, 'dist'));
   makeDir(path.join(root, '.claude/skills'));
+  populateSqliteBinding(root);
   populateEngineAdapter(root);
   makeFile(path.join(root, 'resources/node/win32-x64/node.exe'));
   makeFile(path.join(root, 'dist-wsl-agent/index.js'));
@@ -139,6 +147,24 @@ describe('pre-build-check: runChecks', () => {
     expect(result.hasFatal).toBe(false);
   });
 
+  it('treats missing built-in skills as warning instead of blocking packaging', () => {
+    populateWin32Artifacts(tmpDir);
+    fs.rmSync(path.join(tmpDir, '.claude/skills'), { recursive: true });
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const skillsCheck = result.results.find(
+      (r: { relPath: string; severity: string }) => r.relPath === '.claude/skills'
+    );
+
+    expect(skillsCheck).toMatchObject({
+      passed: false,
+      severity: 'warn',
+    });
+    expect(result.failed).toBe(0);
+    expect(result.warnings).toBe(1);
+    expect(result.hasFatal).toBe(false);
+  });
+
   // -------------------------------------------------------------------------
   // Failure scenarios
   // -------------------------------------------------------------------------
@@ -160,6 +186,24 @@ describe('pre-build-check: runChecks', () => {
 
     const result = runChecks(tmpDir, 'darwin', 'arm64');
 
+    expect(result.failed).toBeGreaterThan(0);
+    expect(result.hasFatal).toBe(true);
+  });
+
+  it('reports hasFatal when better-sqlite3 Electron binding is missing', () => {
+    populateWin32Artifacts(tmpDir);
+    fs.rmSync(path.join(tmpDir, 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'));
+
+    const result = runChecks(tmpDir, 'win32', 'x64');
+    const sqliteCheck = result.results.find(
+      (r: { relPath: string; severity: string }) =>
+        r.relPath === 'node_modules/better-sqlite3/build/Release/better_sqlite3.node'
+    );
+
+    expect(sqliteCheck).toMatchObject({
+      passed: false,
+      severity: 'fatal',
+    });
     expect(result.failed).toBeGreaterThan(0);
     expect(result.hasFatal).toBe(true);
   });

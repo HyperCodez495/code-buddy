@@ -8,7 +8,10 @@
  * embedded resolutions (16, 24, 32, 48) gives crisp scaling on all
  * display densities.
  *
- * Idempotent: if `tray-icon.ico` is newer than the PNG, skip.
+ * Idempotent: if `tray-icon.ico` is newer than the PNG, skip. If the PNG source
+ * is absent but a committed/generated ICO already exists, skip as well; Windows
+ * packaging uses the ICO directly and should not be blocked by the optional PNG
+ * fallback asset.
  *
  * Run via `npm run build:tray-icon` (also wired into the `build` script
  * before electron-builder so packaged binaries always ship a fresh icon).
@@ -40,6 +43,10 @@ const RESET = '\x1b[0m';
 
 async function main() {
   if (!fs.existsSync(SOURCE_PNG)) {
+    if (fs.existsSync(OUTPUT_ICO)) {
+      console.log(`${YELLOW}[skip]${RESET} Source PNG missing; using existing tray-icon.ico`);
+      return;
+    }
     console.error(`${RED}[fail]${RESET} Source PNG missing: ${SOURCE_PNG}`);
     process.exit(1);
   }

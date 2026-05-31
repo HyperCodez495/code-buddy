@@ -63,6 +63,15 @@ function buildCheckList(platform, arch) {
       label: 'Built-in skills directory (.claude/skills/)',
       relPath: '.claude/skills',
       type: 'dir',
+      severity: 'warn',
+    },
+    {
+      // electron-builder has npmRebuild disabled so optional ws accelerators
+      // don't force a Visual Studio toolchain on Windows. Keep the required
+      // SQLite Electron binding explicit instead.
+      label: 'better-sqlite3 Electron binding (run `npm install` or `npm run rebuild` in cowork)',
+      relPath: 'node_modules/better-sqlite3/build/Release/better_sqlite3.node',
+      type: 'file',
       severity: 'fatal',
     },
     {
@@ -197,9 +206,7 @@ function main() {
 
   const { passed, warnings, failed, hasFatal } = runChecks(PROJECT_ROOT, process.platform);
 
-  console.log(
-    `\nPre-build check: ${passed} passed, ${warnings} warnings, ${failed} failed`
-  );
+  console.log(`\nPre-build check: ${passed} passed, ${warnings} warnings, ${failed} failed`);
 
   if (hasFatal) {
     console.log(
