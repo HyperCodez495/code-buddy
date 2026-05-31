@@ -192,6 +192,7 @@ describe('HermesLearningLoopStrip', () => {
       .mockResolvedValueOnce(learningStatus)
       .mockResolvedValueOnce(refreshedStatus);
     const lessonCandidateUpdate = vi.fn();
+    const onOpenLessonReview = vi.fn();
     const runRetrospective = vi.fn().mockResolvedValue({
       ok: true,
       result: {
@@ -227,7 +228,10 @@ describe('HermesLearningLoopStrip', () => {
     root = createRoot(target);
 
     await act(async () => {
-      root?.render(React.createElement(HermesLearningLoopStrip, { cwd: 'D:/CascadeProjects/grok-cli' }));
+      root?.render(React.createElement(HermesLearningLoopStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli',
+        onOpenLessonReview,
+      }));
       await Promise.resolve();
     });
 
@@ -260,6 +264,13 @@ describe('HermesLearningLoopStrip', () => {
     });
     expect(get).toHaveBeenCalledTimes(2);
     expect(target.textContent).toContain('Retrospective saved: learning-retrospective.json | 2 lessons | 1 skills');
+
+    const reviewButton = target.querySelector('[data-testid="hermes-learning-review-lessons"]') as HTMLButtonElement;
+    expect(reviewButton?.textContent).toContain('Review lessons');
+    await act(async () => {
+      reviewButton.click();
+    });
+    expect(onOpenLessonReview).toHaveBeenCalledTimes(1);
     window.removeEventListener(LESSON_CANDIDATES_UPDATED_EVENT, lessonCandidateUpdate);
   });
 });

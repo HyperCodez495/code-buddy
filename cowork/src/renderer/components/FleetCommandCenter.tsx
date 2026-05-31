@@ -1124,7 +1124,10 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <LessonCandidateReviewStrip
                   onOpenReview={() => setShowLessonCandidatePanel(true)}
                 />
-                <HermesLearningLoopStrip cwd={activeWorkspaceCwd} />
+                <HermesLearningLoopStrip
+                  cwd={activeWorkspaceCwd}
+                  onOpenLessonReview={() => setShowLessonCandidatePanel(true)}
+                />
                 <SkillPackageManagerStrip
                   cwd={activeWorkspaceCwd}
                   onUseAsGoal={handleUseSkillCandidateReviewAsGoal}

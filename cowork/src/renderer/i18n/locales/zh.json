@@ -2479,6 +2479,7 @@
       "retrospectiveUnavailable": "复盘运行器不可用。",
       "retrospectiveDone": "复盘已保存：{{artifact}} | {{lessons}} lessons | {{skills}} skills",
       "retrospectiveFailed": "复盘失败",
+      "reviewLessons": "审查 lessons",
       "reviewGate": "审查门控已启用：lessons、用户模型、skill 候选和 skill 生命周期都需要批准。",
       "reviewGateMissing": "信任自动学习输出前，需要先检查审查门控。",
       "unavailable": "Hermes 学习闭环状态尚未加载。",

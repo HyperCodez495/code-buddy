@@ -5,6 +5,7 @@ import {
   AlertTriangle,
   BrainCircuit,
   GitBranch,
+  PanelRightOpen,
   PlayCircle,
   ShieldCheck,
   Sparkles,
@@ -126,8 +127,9 @@ export function buildHermesLearningLoopCommand(): string {
 export const HermesLearningLoopStrip: React.FC<{
   cwd?: string;
   error?: string | null;
+  onOpenLessonReview?: () => void;
   status?: HermesLearningLoopStatus | null;
-}> = ({ cwd, error = null, status }) => {
+}> = ({ cwd, error = null, onOpenLessonReview, status }) => {
   const { t } = useTranslation();
   const [loadedStatus, setLoadedStatus] = useState<HermesLearningLoopStatus | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -329,15 +331,32 @@ export const HermesLearningLoopStrip: React.FC<{
 
           {retrospectiveResult ? (
             <div className="mt-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success">
-              {t(
-                'fleet.hermesLearningLoop.retrospectiveDone',
-                'Retrospective saved: {{artifact}} | {{lessons}} lessons | {{skills}} skills',
-                {
-                  artifact: retrospectiveResult.retrospectiveArtifact ?? 'none',
-                  lessons: retrospectiveResult.lessonCandidateCount,
-                  skills: retrospectiveResult.skillCandidateCount,
-                },
-              )}
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0">
+                  {t(
+                    'fleet.hermesLearningLoop.retrospectiveDone',
+                    'Retrospective saved: {{artifact}} | {{lessons}} lessons | {{skills}} skills',
+                    {
+                      artifact: retrospectiveResult.retrospectiveArtifact ?? 'none',
+                      lessons: retrospectiveResult.lessonCandidateCount,
+                      skills: retrospectiveResult.skillCandidateCount,
+                    },
+                  )}
+                </span>
+                {retrospectiveResult.lessonCandidateCount > 0 && onOpenLessonReview ? (
+                  <button
+                    aria-label={t('fleet.hermesLearningLoop.reviewLessons', 'Review lessons')}
+                    className="flex shrink-0 items-center gap-1 rounded border border-success/40 px-1.5 py-0.5 text-[9px] text-success transition hover:bg-success/10"
+                    data-testid="hermes-learning-review-lessons"
+                    onClick={onOpenLessonReview}
+                    title={t('fleet.hermesLearningLoop.reviewLessons', 'Review lessons')}
+                    type="button"
+                  >
+                    <PanelRightOpen size={10} />
+                    {t('fleet.hermesLearningLoop.reviewLessons', 'Review lessons')}
+                  </button>
+                ) : null}
+              </div>
             </div>
           ) : null}
 

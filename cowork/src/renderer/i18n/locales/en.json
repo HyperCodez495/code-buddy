@@ -2492,6 +2492,7 @@
       "retrospectiveUnavailable": "Retrospective runner is unavailable.",
       "retrospectiveDone": "Retrospective saved: {{artifact}} | {{lessons}} lessons | {{skills}} skills",
       "retrospectiveFailed": "Retrospective failed",
+      "reviewLessons": "Review lessons",
       "reviewGate": "Review gates enabled: lessons, user model, skill candidates and skill lifecycle all require approval.",
       "reviewGateMissing": "Review gates need attention before automatic learning output can be trusted.",
       "unavailable": "Hermes learning loop status is not loaded yet.",

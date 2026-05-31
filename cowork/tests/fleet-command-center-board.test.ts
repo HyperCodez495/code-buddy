@@ -218,6 +218,7 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain('fleet-hermes-learning-loop');
     expect(source).toContain('buddy hermes learning status --json');
     expect(source).toContain('hermesLearningLoop?: HermesLearningLoopApi');
+    expect(source).toContain('onOpenLessonReview={() => setShowLessonCandidatePanel(true)}');
     expect(source).toContain('HermesMobileSupervisionStrip');
     expect(source).toContain('fleet-hermes-mobile-supervision');
     expect(source).toContain('buddy hermes mobile status');

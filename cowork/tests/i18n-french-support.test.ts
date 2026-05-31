@@ -525,6 +525,7 @@ describe('French renderer i18n support', () => {
       'fleet.hermesLearningLoop.retrospectiveUnavailable',
       'fleet.hermesLearningLoop.retrospectiveDone',
       'fleet.hermesLearningLoop.retrospectiveFailed',
+      'fleet.hermesLearningLoop.reviewLessons',
       'fleet.hermesLearningLoop.reviewGate',
       'fleet.hermesLearningLoop.reviewGateMissing',
       'fleet.hermesLearningLoop.unavailable',
