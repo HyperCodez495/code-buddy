@@ -164,6 +164,8 @@ buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-p
 buddy hermes portal status|tools|open [--json]
 buddy hermes browser status [--json]
 buddy hermes browser-smoke local-playwright [--json]
+buddy hermes runtime status [--json]
+buddy hermes runtime-smoke local [--json]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
 ```
@@ -227,6 +229,12 @@ local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway,
 Firecrawl, Camofox/Camoufox, and session recording. `buddy hermes browser-smoke
 local-playwright --json` launches a real headless Chromium page and proves the
 local Playwright backend can execute, instead of only checking package presence.
+
+`buddy hermes runtime status [--json]` prints a dedicated runtime backend
+inventory for local Node, native OS sandbox, Docker, WSL, SSH, Singularity or
+Apptainer, Modal, Daytona, and Vercel Sandbox without requiring the larger
+`hermes doctor` payload. `buddy hermes runtime-smoke local --json` runs a real
+local subprocess smoke for the selected backend.
 
 `buddy hermes hooks [--json]` prints the canonical Hermes-style lifecycle
 hook manifest. It maps Code Buddy's existing user/tool hooks onto

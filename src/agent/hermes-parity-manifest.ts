@@ -351,6 +351,7 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/hermes-runtime-backends-smoke-real.test.ts tests/agent/hermes-agent-diagnostics.test.ts tests/commands/hermes-commands.test.ts --run',
       'cd cowork && npm test -- --run tests/hermes-runtime-backends-bridge.test.ts tests/hermes-runtime-backends-strip.test.ts',
       'npx tsx src/index.ts hermes doctor balanced --json',
+      'npx tsx src/index.ts hermes runtime status --json',
       'npx tsx src/index.ts hermes runtime-smoke local --json',
       'rg -n "Docker|SSH|Daytona|Modal|Singularity|SandboxBackend" src tests docs',
     ],

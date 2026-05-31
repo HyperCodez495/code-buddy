@@ -87,6 +87,14 @@ describe('Hermes CLI status real smoke', () => {
     expect(browser.readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
     expect(browser.readiness.backends.map((backend) => backend.id)).toContain('local-playwright');
 
+    const runtime = runHermesJson(['runtime', 'status']) as {
+      kind: string;
+      readiness: { backends: Array<{ id: string }>; runnableCount: number };
+    };
+    expect(runtime.kind).toBe('hermes_runtime_backends_status');
+    expect(runtime.readiness.runnableCount).toBeGreaterThanOrEqual(1);
+    expect(runtime.readiness.backends.map((backend) => backend.id)).toContain('local');
+
     const promptSize = runHermesJson(['prompt-size', 'safe']) as {
       kind: string;
       sections: Array<{ id: string }>;

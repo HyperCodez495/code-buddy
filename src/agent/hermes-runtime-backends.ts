@@ -557,6 +557,33 @@ export function buildHermesRuntimeBackendsReadiness(
   };
 }
 
+export function renderHermesRuntimeBackendsReadiness(readiness: HermesRuntimeBackendsReadiness): string {
+  const lines = [
+    `Hermes runtime backends: ${readiness.ok ? 'ok' : 'needs attention'}`,
+    `Platform: ${readiness.platform}/${readiness.arch}`,
+    `Available: ${readiness.availableCount}/${readiness.backends.length}`,
+    `Runnable: ${readiness.runnableCount}/${readiness.backends.length}`,
+    `Configured remote: ${readiness.configuredRemoteCount}`,
+    '',
+    'Backends:',
+    ...readiness.backends.map((backend) =>
+      `- ${backend.id}: ${backend.status}` +
+      `${backend.version ? ` (${backend.version})` : ''}` +
+      `${backend.smokeCommand ? ` | smoke: ${backend.smokeCommand}` : ''}`,
+    ),
+  ];
+
+  if (readiness.issues.length > 0) {
+    lines.push('', 'Issues:', ...readiness.issues.map((issue) => `- ${issue}`));
+  }
+
+  if (readiness.recommendations.length > 0) {
+    lines.push('', 'Recommendations:', ...readiness.recommendations.map((recommendation) => `- ${recommendation}`));
+  }
+
+  return lines.join('\n');
+}
+
 export function runHermesRuntimeBackendSmoke(
   options: HermesRuntimeSmokeOptions,
 ): HermesRuntimeSmokeResult {

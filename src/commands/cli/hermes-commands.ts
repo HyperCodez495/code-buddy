@@ -47,6 +47,8 @@ import {
   type HermesPortalStatus,
 } from '../../agent/hermes-portal-status.js';
 import {
+  buildHermesRuntimeBackendsReadiness,
+  renderHermesRuntimeBackendsReadiness,
   runHermesRuntimeBackendSmoke,
   type HermesRuntimeSmokeResult,
 } from '../../agent/hermes-runtime-backends.js';
@@ -1308,10 +1310,34 @@ export function registerHermesCommands(program: Command): void {
       console.log(renderHermesBrowserSmoke(result));
     });
 
+  const runtime = hermes
+    .command('runtime')
+    .description('Inspect Hermes runtime backend readiness');
+
+  runtime
+    .command('status')
+    .description('Print local, sandbox, and remote runtime backend readiness')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const readiness = buildHermesRuntimeBackendsReadiness();
+      const payload = {
+        kind: 'hermes_runtime_backends_status',
+        schemaVersion: 1,
+        readiness,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesRuntimeBackendsReadiness(readiness));
+    });
+
   hermes
     .command('runtime-smoke')
     .description('Run an opt-in live smoke for one Hermes runtime backend')
-    .argument('<backendId>', 'backend id from buddy hermes doctor, for example local')
+    .argument('<backendId>', 'backend id from buddy hermes runtime status, for example local')
     .option('--json', 'output JSON')
     .option('--timeout-ms <ms>', 'smoke timeout in milliseconds')
     .action((backendId: string, options: HermesRuntimeSmokeOptions) => {

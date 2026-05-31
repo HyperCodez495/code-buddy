@@ -229,6 +229,32 @@ describe('Hermes CLI commands', () => {
     }
   });
 
+  it('prints Hermes runtime backend readiness as a dedicated status command', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'runtime', 'status', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      readiness: {
+        availableCount: number;
+        backends: Array<{ id: string; smokeCommand: string | null }>;
+        runnableCount: number;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_runtime_backends_status');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.readiness.backends.map((backend) => backend.id)).toContain('local');
+    expect(output.readiness.runnableCount).toBeGreaterThanOrEqual(1);
+    expect(output.readiness.availableCount).toBeGreaterThanOrEqual(1);
+    expect(output.readiness.backends.find((backend) => backend.id === 'local')?.smokeCommand).toContain(
+      'OK-HERMES-LOCAL',
+    );
+  });
+
   it('prints the machine-checkable Hermes parity manifest', async () => {
     const program = createProgram();
     registerHermesCommands(program);
