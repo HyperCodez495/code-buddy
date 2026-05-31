@@ -172,6 +172,9 @@ Cowork Test Runner now exposes a safe `Hermes / core workspace real smoke`
 entry for the local core alias, `send_message` outbox, and Kanban workspace
 persistence proofs.
 
+Cowork Test Runner now exposes a safe `Server / cron status real HTTP` entry
+for persisted cron job list/trigger plus daemon and heartbeat report endpoints.
+
 ### Research evidence
 
 | Sub-capability | Where | Status |

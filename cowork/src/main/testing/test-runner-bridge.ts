@@ -1393,6 +1393,31 @@ export class TestRunnerBridge extends EventEmitter {
       },
       path.join(workspace, 'tests', 'server', 'chat-route-real-http.test.ts')
     );
+    addIfFilesExist(
+      items,
+      {
+        id: 'code-buddy-server-cron-status-real-http',
+        label: 'Server / cron status real HTTP',
+        group: 'Server',
+        description: 'Serveur HTTP local: cron jobs persistants, trigger manuel, daemon status et heartbeat report',
+        command: 'npm',
+        args: [
+          'test',
+          '--',
+          'tests/server/cron-jobs-real-http.test.ts',
+          'tests/server/native-status-report-real-http.test.ts',
+          '--run',
+        ],
+        cwd: workspace,
+        kind: 'integration',
+        safeToRun: true,
+        timeoutMs: 180_000,
+      },
+      [
+        path.join(workspace, 'tests', 'server', 'cron-jobs-real-http.test.ts'),
+        path.join(workspace, 'tests', 'server', 'native-status-report-real-http.test.ts'),
+      ]
+    );
     addIfFileExists(
       items,
       {

@@ -292,6 +292,8 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'mcp', 'mcp-http-real-fixture.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'mcp', 'mcp-streamable-http-limitation.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'server', 'chat-route-real-http.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'server', 'cron-jobs-real-http.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'server', 'native-status-report-real-http.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'server', 'chat-route-provider-error.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'server', 'peer-tool-bridge.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'security'), { recursive: true });
@@ -901,6 +903,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Server / real GPT-5.5 chat API');
     expect(labels).toContain('CLI / headless provider failure exit');
     expect(labels).toContain('Server / local HTTP chat routes');
+    expect(labels).toContain('Server / cron status real HTTP');
     expect(labels).toContain('Server / provider error status bundle');
     expect(labels).toContain('Fleet / peer tool security suite');
     expect(labels).toContain('Fleet / routing orchestration bundle');
@@ -1162,6 +1165,19 @@ describe('TestRunnerBridge catalog', () => {
     expect(catalog.find((item) => item.label === 'Server / local HTTP chat routes')).toMatchObject({
       kind: 'integration',
       safeToRun: true,
+    });
+    expect(catalog.find((item) => item.label === 'Server / cron status real HTTP')).toMatchObject({
+      command: 'npm',
+      args: [
+        'test',
+        '--',
+        'tests/server/cron-jobs-real-http.test.ts',
+        'tests/server/native-status-report-real-http.test.ts',
+        '--run',
+      ],
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 180_000,
     });
     expect(catalog.find((item) => item.label === 'Server / provider error status bundle')).toMatchObject({
       kind: 'integration',
