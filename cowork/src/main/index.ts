@@ -193,6 +193,7 @@ import {
   getHermesBrowserBackendsForReview,
   runHermesBrowserBackendSmokeForReview,
 } from './tools/hermes-browser-backends-bridge';
+import { getHermesMobileSupervisionForReview } from './tools/hermes-mobile-supervision-bridge';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { getHermesToolsetsForReview } from './tools/hermes-toolsets-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
@@ -4163,6 +4164,23 @@ ipcMain.handle(
         error: err instanceof Error ? err.message : String(err),
         ok: false as const,
       };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.hermesMobileSupervision.get',
+  async (
+    _event,
+    payload?: {
+      query?: string;
+    }
+  ) => {
+    try {
+      return await getHermesMobileSupervisionForReview(payload?.query);
+    } catch (err) {
+      logWarn('[tools.hermesMobileSupervision.get] failed:', err);
+      return null;
     }
   }
 );

@@ -114,10 +114,12 @@ Current measured state:
 
 - [x] **Expose mobile supervision readiness for Hermes**
   - Why: mobile supervision existed across `buddy run mobile-*` commands and server routes, but there was no Hermes cockpit command that told an operator whether the route mount, auth policy, approval queue, and blocked operations were ready.
-  - Done: `buddy hermes mobile status [query...] --json` now builds the real mobile supervision contract, listener shell, pairing preview metadata, and approval queue without starting a listener or printing pairing codes. It reports the implemented `/api/mobile` route mount, read-only/draft-only endpoint counts, local-operator approval gates, remote-execution-disabled safety, and copy/paste `buddy run mobile-*` commands.
+  - Done: `buddy hermes mobile status [query...] --json` now builds the real mobile supervision contract, listener shell, pairing preview metadata, and approval queue without starting a listener or printing pairing codes. It reports the implemented `/api/mobile` route mount, read-only/draft-only endpoint counts, local-operator approval gates, remote-execution-disabled safety, and copy/paste `buddy run mobile-*` commands. Cowork Fleet Command Center renders the same status through `tools.hermesMobileSupervision.get`.
   - Guardrail: the status command never dispatches work, never starts a server, and never exposes pairing secret material; mobile follow-up remains draft-only until a local operator reviews it.
   - Verification:
     - `npm test -- tests/commands/hermes-commands.test.ts tests/agent/hermes-cli-status-real.test.ts --run`
+    - `cd cowork && npm test -- --run tests/hermes-mobile-supervision-bridge.test.ts tests/hermes-mobile-supervision-strip.test.ts tests/fleet-command-center-board.test.ts tests/i18n-french-support.test.ts`
+    - `cd cowork && npm run typecheck && npm run build:e2e`
     - `npx tsx src/index.ts hermes mobile status "mobile supervision" --json`
     - `node dist/index.js hermes mobile status "mobile supervision" --json`
 

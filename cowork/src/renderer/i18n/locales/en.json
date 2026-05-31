@@ -2365,6 +2365,20 @@
       "unavailable": "Hermes messaging gateway status is not loaded yet.",
       "loadFailed": "Hermes messaging gateway load failed"
     },
+    "hermesMobileSupervision": {
+      "title": "Hermes mobile supervision",
+      "readyChip": "mobile ready",
+      "attentionChip": "mobile attention",
+      "loadingChip": "mobile",
+      "readOnlyLabel": "Read-only",
+      "draftLabel": "Drafts",
+      "blockedLabel": "Blocked",
+      "queueChip": "queue {{ready}}/{{total}} ready",
+      "pairingChip": "pairing {{status}}",
+      "remoteChip": "remote execution {{state}}",
+      "unavailable": "Hermes mobile supervision status is not loaded yet.",
+      "loadFailed": "Hermes mobile supervision load failed"
+    },
     "skillCandidate": {
       "title": "Skill candidate review",
       "countChip": "{{count}} eligible",

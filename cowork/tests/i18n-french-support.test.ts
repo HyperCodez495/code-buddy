@@ -81,6 +81,10 @@ const hermesMessagingGatewayStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-messaging-gateway-strip.tsx'
 );
+const hermesMobileSupervisionStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-mobile-supervision-strip.tsx'
+);
 const skillCandidateReviewQueueStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/skill-candidate-review-queue-strip.tsx'
@@ -250,6 +254,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(hermesRuntimeBackendsStripPath, 'utf8'),
       fs.readFileSync(hermesBrowserBackendsStripPath, 'utf8'),
       fs.readFileSync(hermesMessagingGatewayStripPath, 'utf8'),
+      fs.readFileSync(hermesMobileSupervisionStripPath, 'utf8'),
       fs.readFileSync(skillCandidateReviewQueueStripPath, 'utf8'),
       fs.readFileSync(skillPackageManagerStripPath, 'utf8'),
       fs.readFileSync(lessonCandidateReviewStripPath, 'utf8'),
@@ -401,6 +406,18 @@ describe('French renderer i18n support', () => {
       'fleet.hermesMessagingGateway.disabledState',
       'fleet.hermesMessagingGateway.unavailable',
       'fleet.hermesMessagingGateway.loadFailed',
+      'fleet.hermesMobileSupervision.title',
+      'fleet.hermesMobileSupervision.readyChip',
+      'fleet.hermesMobileSupervision.attentionChip',
+      'fleet.hermesMobileSupervision.loadingChip',
+      'fleet.hermesMobileSupervision.readOnlyLabel',
+      'fleet.hermesMobileSupervision.draftLabel',
+      'fleet.hermesMobileSupervision.blockedLabel',
+      'fleet.hermesMobileSupervision.queueChip',
+      'fleet.hermesMobileSupervision.pairingChip',
+      'fleet.hermesMobileSupervision.remoteChip',
+      'fleet.hermesMobileSupervision.unavailable',
+      'fleet.hermesMobileSupervision.loadFailed',
       'fleet.skillCandidate.title',
       'fleet.skillCandidate.countChip',
       'fleet.skillCandidate.reviewChip',

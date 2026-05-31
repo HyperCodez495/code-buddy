@@ -2352,6 +2352,20 @@
       "unavailable": "Hermes 消息网关状态尚未加载。",
       "loadFailed": "Hermes 消息网关加载失败"
     },
+    "hermesMobileSupervision": {
+      "title": "Hermes 移动监督",
+      "readyChip": "移动端就绪",
+      "attentionChip": "移动端需注意",
+      "loadingChip": "移动端",
+      "readOnlyLabel": "只读",
+      "draftLabel": "草稿",
+      "blockedLabel": "已阻止",
+      "queueChip": "队列 {{ready}}/{{total}} 就绪",
+      "pairingChip": "配对 {{status}}",
+      "remoteChip": "远程执行 {{state}}",
+      "unavailable": "Hermes 移动监督状态尚未加载。",
+      "loadFailed": "Hermes 移动监督加载失败"
+    },
     "skillCandidate": {
       "title": "SKILL 候选审查",
       "countChip": "{{count}} 个合格",

@@ -2365,6 +2365,20 @@
       "unavailable": "Le statut de la gateway messaging Hermes n'est pas encore charge.",
       "loadFailed": "Chargement de la gateway messaging Hermes echoue"
     },
+    "hermesMobileSupervision": {
+      "title": "Supervision mobile Hermes",
+      "readyChip": "mobile pret",
+      "attentionChip": "mobile a verifier",
+      "loadingChip": "mobile",
+      "readOnlyLabel": "Lecture",
+      "draftLabel": "Brouillons",
+      "blockedLabel": "Bloques",
+      "queueChip": "queue {{ready}}/{{total}} prets",
+      "pairingChip": "pairing {{status}}",
+      "remoteChip": "execution distante {{state}}",
+      "unavailable": "Le statut de supervision mobile Hermes n'est pas encore charge.",
+      "loadFailed": "Chargement de la supervision mobile Hermes echoue"
+    },
     "skillCandidate": {
       "title": "Revue des candidates SKILL",
       "countChip": "{{count}} éligible(s)",

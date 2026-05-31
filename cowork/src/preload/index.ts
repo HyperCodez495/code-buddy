@@ -1695,6 +1695,73 @@ contextBridge.exposeInMainWorld('electronAPI', {
         };
       }> => ipcRenderer.invoke('tools.hermesBrowserBackends.smoke', options),
     },
+    hermesMobileSupervision: {
+      get: (options?: {
+        query?: string;
+      }): Promise<{
+        approvalQueue: {
+          autoDispatch: boolean;
+          counts: {
+            blocked: number;
+            pending: number;
+            ready: number;
+            total: number;
+          };
+          localOnly: boolean;
+          remoteExecutionDisabled: boolean;
+        };
+        auth: {
+          scheme: 'bearer_or_pairing_code';
+          scopes: string[];
+          ttlSeconds: number;
+        };
+        blockedOperations: Array<{
+          action: string;
+          reason: string;
+        }>;
+        command: string;
+        endpoints: Array<{
+          action: string;
+          id: string;
+          localApprovalRequired: boolean;
+          method: 'GET' | 'POST';
+          path: string;
+          sideEffects: 'none' | 'draft_only';
+        }>;
+        generatedAt: string;
+        ok: boolean;
+        pairing: {
+          deviceLabel: string;
+          scopes: string[];
+          status: 'preview_only';
+          tokenIssued: boolean;
+          ttlSeconds: number;
+        };
+        query: string;
+        recommendations: string[];
+        routeMount: {
+          basePath: string;
+          module: string;
+          mountedBy: string;
+          serverCommand: string;
+          status: 'implemented_not_probed';
+        };
+        summary: {
+          blockedOperations: number;
+          blockedQueueItems: number;
+          draftOnlyEndpoints: number;
+          pendingLocalApproval: number;
+          readOnlyEndpoints: number;
+          readyReadOnly: number;
+          totalQueueItems: number;
+        };
+        transport: {
+          exposure: 'local_first';
+          offDeviceTlsRequired: boolean;
+          remoteExecution: 'disabled';
+        };
+      } | null> => ipcRenderer.invoke('tools.hermesMobileSupervision.get', options ?? {}),
+    },
     skillPackage: {
       list: (options?: {
         cwd?: string;
@@ -4499,6 +4566,73 @@ declare global {
               stdout: string;
             };
           }>;
+        };
+        hermesMobileSupervision: {
+          get: (options?: {
+            query?: string;
+          }) => Promise<{
+            approvalQueue: {
+              autoDispatch: boolean;
+              counts: {
+                blocked: number;
+                pending: number;
+                ready: number;
+                total: number;
+              };
+              localOnly: boolean;
+              remoteExecutionDisabled: boolean;
+            };
+            auth: {
+              scheme: 'bearer_or_pairing_code';
+              scopes: string[];
+              ttlSeconds: number;
+            };
+            blockedOperations: Array<{
+              action: string;
+              reason: string;
+            }>;
+            command: string;
+            endpoints: Array<{
+              action: string;
+              id: string;
+              localApprovalRequired: boolean;
+              method: 'GET' | 'POST';
+              path: string;
+              sideEffects: 'none' | 'draft_only';
+            }>;
+            generatedAt: string;
+            ok: boolean;
+            pairing: {
+              deviceLabel: string;
+              scopes: string[];
+              status: 'preview_only';
+              tokenIssued: boolean;
+              ttlSeconds: number;
+            };
+            query: string;
+            recommendations: string[];
+            routeMount: {
+              basePath: string;
+              module: string;
+              mountedBy: string;
+              serverCommand: string;
+              status: 'implemented_not_probed';
+            };
+            summary: {
+              blockedOperations: number;
+              blockedQueueItems: number;
+              draftOnlyEndpoints: number;
+              pendingLocalApproval: number;
+              readOnlyEndpoints: number;
+              readyReadOnly: number;
+              totalQueueItems: number;
+            };
+            transport: {
+              exposure: 'local_first';
+              offDeviceTlsRequired: boolean;
+              remoteExecution: 'disabled';
+            };
+          } | null>;
         };
         skillPackage: {
           list: (options?: {

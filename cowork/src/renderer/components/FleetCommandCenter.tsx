@@ -56,6 +56,7 @@ import { HermesMemoryProvidersStrip } from './hermes-memory-providers-strip';
 import { HermesRuntimeBackendsStrip } from './hermes-runtime-backends-strip';
 import { HermesBrowserBackendsStrip } from './hermes-browser-backends-strip';
 import { HermesMessagingGatewayStrip } from './hermes-messaging-gateway-strip';
+import { HermesMobileSupervisionStrip } from './hermes-mobile-supervision-strip';
 import { HermesToolCatalogStrip } from './hermes-tool-catalog-strip';
 import { HermesToolsetsStrip } from './hermes-toolsets-strip';
 import { ToolProfileInspectorStrip } from './tool-profile-inspector-strip';
@@ -1103,6 +1104,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <HermesRuntimeBackendsStrip />
                 <HermesBrowserBackendsStrip />
                 <HermesMessagingGatewayStrip />
+                <HermesMobileSupervisionStrip />
                 <HermesPlanStrip
                   profile={dispatchProfile}
                   onUseAsGoal={handleUseHermesPlanAsGoal}
