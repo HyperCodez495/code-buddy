@@ -77,6 +77,7 @@ Current measured state:
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
     - `npx tsx src/index.ts hermes toolsets safe --json`
+    - `npm test -- tests/agent/hermes-cli-status-real.test.ts --run`
     - `npm test -- tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
     - `(cd cowork && npm test -- tests/hermes-tool-catalog-bridge.test.ts tests/hermes-tool-catalog-strip.test.ts --run)`
 
