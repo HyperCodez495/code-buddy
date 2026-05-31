@@ -363,7 +363,9 @@ function unknownProviderStatus(provider: 'unknown'): HermesProviderStatus {
   };
 }
 
-function buildProviderReadiness(options: HermesAgentDiagnosticsOptions): HermesProviderReadiness {
+export function buildHermesProviderReadiness(
+  options: HermesAgentDiagnosticsOptions = {},
+): HermesProviderReadiness {
   const env = options.env ?? process.env;
   const homeDir = options.homeDir ?? os.homedir();
   const resolved = resolveHermesModel(env, options);
@@ -455,7 +457,7 @@ export function buildHermesAgentDiagnostics(
       ? 'built-in'
       : 'user';
   const promptChecks = buildPromptChecks(agent);
-  const providerReadiness = buildProviderReadiness(options);
+  const providerReadiness = buildHermesProviderReadiness(options);
   const runtimeBackends = buildHermesRuntimeBackendsReadiness({
     env: options.env,
     homeDir: options.homeDir,

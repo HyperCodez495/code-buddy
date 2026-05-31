@@ -229,6 +229,65 @@ describe('Hermes CLI commands', () => {
     }
   });
 
+  it('prints Hermes provider readiness as a dedicated status command without leaking secrets', async () => {
+    const keys = ['CODEBUDDY_MODEL', 'OPENAI_API_KEY', 'CODEBUDDY_NOUS_ACCESS_TOKEN'];
+    const originalEnv = new Map(keys.map((key) => [key, process.env[key]]));
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    try {
+      for (const key of keys) {
+        delete process.env[key];
+      }
+      process.env.CODEBUDDY_MODEL = 'gpt-5.5';
+      process.env.OPENAI_API_KEY = 'secret-openai-provider-key';
+      process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-nous-provider-token';
+
+      await program.parseAsync(['node', 'test', 'hermes', 'provider', 'status', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        kind: string;
+        schemaVersion: number;
+        readiness: {
+          activeModel: {
+            model: string;
+            provider: string;
+            supportsToolCalls: boolean;
+          };
+          activeProvider: {
+            configured: boolean;
+            credentialSources: string[];
+            provider: string;
+          };
+          providers: unknown[];
+        };
+      };
+
+      expect(output.kind).toBe('hermes_provider_readiness_status');
+      expect(output.schemaVersion).toBe(1);
+      expect(output.readiness.activeModel).toMatchObject({
+        model: 'gpt-5.5',
+        provider: 'openai',
+        supportsToolCalls: true,
+      });
+      expect(output.readiness.activeProvider).toMatchObject({
+        provider: 'openai',
+        configured: true,
+        credentialSources: expect.arrayContaining(['OPENAI_API_KEY']),
+      });
+      expect(output.readiness.providers.length).toBeGreaterThan(0);
+      expect(raw).not.toContain('secret-openai-provider-key');
+      expect(raw).not.toContain('secret-nous-provider-token');
+    } finally {
+      for (const key of keys) {
+        const value = originalEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    }
+  });
+
   it('prints Hermes runtime backend readiness as a dedicated status command', async () => {
     const program = createProgram();
     registerHermesCommands(program);

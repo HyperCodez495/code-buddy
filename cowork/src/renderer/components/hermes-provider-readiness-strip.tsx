@@ -58,7 +58,7 @@ export const HermesProviderReadinessStrip: React.FC<{
   const visibleReadiness = readiness ?? loadedReadiness;
   const visibleError = error ?? loadError;
   const command = useMemo(
-    () => visibleReadiness?.command ?? 'buddy hermes doctor balanced --json',
+    () => visibleReadiness?.command ?? 'buddy hermes providers status --json',
     [visibleReadiness?.command]
   );
   const statusClass = visibleReadiness?.ok

@@ -57,7 +57,7 @@ describe('Hermes provider readiness bridge', () => {
 
     expect(mockedLoadCoreModule).toHaveBeenCalledWith('agent/hermes-agent-diagnostics.js');
     expect(summary).toMatchObject({
-      command: 'buddy hermes doctor balanced --json',
+      command: 'buddy hermes providers status --json',
       ok: true,
       activeModel: {
         model: 'gpt-5.5',

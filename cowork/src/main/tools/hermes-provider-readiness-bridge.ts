@@ -67,7 +67,7 @@ export async function getHermesProviderReadinessForReview(): Promise<HermesProvi
 
   const readiness = mod.buildHermesAgentDiagnostics().providerReadiness;
   return {
-    command: 'buddy hermes doctor balanced --json',
+    command: 'buddy hermes providers status --json',
     ok: readiness.ok,
     activeModel: {
       model: readiness.activeModel.model,

@@ -94,10 +94,11 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/hermes-agent-diagnostics.test.ts tests/commands/hermes-commands.test.ts --run',
       'cd cowork && npm test -- --run tests/hermes-provider-readiness-bridge.test.ts tests/hermes-provider-readiness-strip.test.ts',
       'npm test -- tests/codebuddy/client-stream-retry.test.ts tests/codebuddy/client-gemini-vision.test.ts --run',
+      'npx tsx src/index.ts hermes providers status --json',
       'npx tsx src/index.ts hermes doctor balanced --json',
       'npx tsx src/index.ts hermes portal status --json',
     ],
-    notes: 'Provider coverage is broad and buddy hermes doctor plus Cowork now report active model source, inferred provider, detected env/OAuth credential sources without secret values, model capabilities, context/output limits, and Nous Portal readiness. Exact upstream setup UX and full provider list still differ.',
+    notes: 'Provider coverage is broad and buddy hermes providers status, buddy hermes doctor, plus Cowork now report active model source, inferred provider, detected env/OAuth credential sources without secret values, model capabilities, context/output limits, and Nous Portal readiness. Exact upstream setup UX and full provider list still differ.',
     nextWork: 'Decide whether exact upstream provider setup wizards and live Nous Portal OAuth/proxying are product goals.',
   },
   {

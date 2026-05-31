@@ -26,7 +26,7 @@ vi.mock('react-i18next', () => ({
 }));
 
 const readyProvider: HermesProviderReadinessReview = {
-  command: 'buddy hermes doctor balanced --json',
+  command: 'buddy hermes providers status --json',
   ok: true,
   activeModel: {
     contextWindow: 200000,
@@ -75,7 +75,7 @@ describe('HermesProviderReadinessStrip', () => {
     document.body.innerHTML = '';
   });
 
-  it('renders model/provider readiness and the safe doctor command', () => {
+  it('renders model/provider readiness and the safe CLI command', () => {
     const target = container();
     const openSettings = vi.fn();
     root = createRoot(target);
@@ -101,7 +101,7 @@ describe('HermesProviderReadinessStrip', () => {
     expect(strip?.textContent).toContain('vision=yes');
     expect(strip?.textContent).toContain('1/8 providers');
     expect(strip?.textContent).toContain('Context/output: 200000 / 64000 tokens');
-    expect(strip?.textContent).toContain('buddy hermes doctor balanced --json');
+    expect(strip?.textContent).toContain('buddy hermes providers status --json');
 
     const button = target.querySelector('button');
     act(() => {

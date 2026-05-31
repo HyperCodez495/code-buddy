@@ -79,6 +79,19 @@ describe('Hermes CLI status real smoke', () => {
     expect(portal.portal.defaultPortalUrl).toBe('https://portal.nousresearch.com');
     expect(portal.toolGateway.tools.length).toBeGreaterThan(0);
 
+    const provider = runHermesJson(['providers', 'status']) as {
+      kind: string;
+      readiness: {
+        activeModel: { model: string };
+        activeProvider: { label: string };
+        providers: unknown[];
+      };
+    };
+    expect(provider.kind).toBe('hermes_provider_readiness_status');
+    expect(provider.readiness.activeModel.model).toBeTruthy();
+    expect(provider.readiness.activeProvider.label).toBeTruthy();
+    expect(provider.readiness.providers.length).toBeGreaterThan(0);
+
     const browser = runHermesJson(['browser', 'status']) as {
       kind: string;
       readiness: { backends: Array<{ id: string }>; localRunnableCount: number };

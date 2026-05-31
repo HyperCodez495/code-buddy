@@ -161,6 +161,7 @@ The REST endpoint mirrors that shape with
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
 buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
+buddy hermes providers status [--json]
 buddy hermes portal status|tools|open [--json]
 buddy hermes messaging status [--json] [--config <path>]
 buddy hermes browser status [--json]
@@ -217,6 +218,12 @@ It compares upstream Hermes tool names from
 tool schemas, marking each row as exact, native equivalent, partial, or gap.
 This is the fastest way to see whether an upstream Hermes capability exists as
 an LLM-callable Code Buddy tool or only as a nearby CLI/runtime feature.
+
+`buddy hermes providers status [--json]` prints a dedicated provider/model
+readiness report without the wider doctor payload. It includes the active
+model, inferred provider, tool-call/reasoning/vision capability flags,
+context/output limits, credential source names, configured-provider counts, and
+Nous Tool Gateway setup without printing secret values.
 
 `buddy hermes portal status [--json]` is the local Nous Portal readiness check.
 It reports credential source names, subscription/docs URLs, Tool Gateway routing

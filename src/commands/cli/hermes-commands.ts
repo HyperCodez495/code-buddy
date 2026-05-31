@@ -25,7 +25,11 @@ import {
   buildHermesAgentSystemPrompt,
   renderHermesIntegrationPlanMarkdown,
 } from '../../agent/hermes-agent-profile.js';
-import { buildHermesAgentDiagnostics } from '../../agent/hermes-agent-diagnostics.js';
+import {
+  buildHermesAgentDiagnostics,
+  buildHermesProviderReadiness,
+  type HermesProviderReadiness,
+} from '../../agent/hermes-agent-diagnostics.js';
 import {
   buildHermesParityManifest,
   renderHermesParityManifestMarkdown,
@@ -727,6 +731,50 @@ function renderHermesMessagingGatewayStatus(report: ChannelStatusReport): string
   return lines.join('\n');
 }
 
+function renderHermesProviderReadiness(readiness: HermesProviderReadiness): string {
+  const lines = [
+    `Hermes provider readiness: ${readiness.ok ? 'ok' : 'needs attention'}`,
+    `  Model: ${readiness.activeModel.model} (${readiness.activeModel.source})`,
+    `  Provider: ${readiness.activeProvider.label}`,
+    `  Credentials/endpoint: ${readiness.activeProvider.configured ? 'configured' : 'missing'}`,
+    `  Capabilities: tool-calls=${readiness.activeModel.supportsToolCalls ? 'yes' : 'no'}, reasoning=${readiness.activeModel.supportsReasoning ? 'yes' : 'no'}, vision=${readiness.activeModel.supportsVision ? 'yes' : 'no'}`,
+    `  Context/output: ${readiness.activeModel.contextWindow ?? 'unknown'} / ${readiness.activeModel.maxOutputTokens ?? 'unknown'} tokens`,
+    `  Configured providers: ${readiness.providers.filter((provider) => provider.configured).length}/${readiness.providers.length}`,
+    `  Nous Tool Gateway: ${readiness.portal.portal.toolGatewayConfigured ? 'configured' : 'not configured'}`,
+  ];
+
+  if (readiness.activeProvider.credentialSources.length > 0) {
+    lines.push(`  Credential sources: ${readiness.activeProvider.credentialSources.join(', ')}`);
+  }
+
+  if (readiness.providers.length > 0) {
+    lines.push('');
+    lines.push('Providers:');
+    for (const provider of readiness.providers) {
+      const state = provider.configured ? 'configured' : provider.local ? 'local fallback' : 'missing';
+      lines.push(`  - ${provider.label}: ${state}`);
+    }
+  }
+
+  if (readiness.issues.length > 0) {
+    lines.push('');
+    lines.push('Issues:');
+    for (const issue of readiness.issues) {
+      lines.push(`  - ${issue}`);
+    }
+  }
+
+  if (readiness.recommendations.length > 0) {
+    lines.push('');
+    lines.push('Recommendations:');
+    for (const recommendation of readiness.recommendations) {
+      lines.push(`  - ${recommendation}`);
+    }
+  }
+
+  return lines.join('\n');
+}
+
 function registerHermesPortalCommands(hermes: Command): void {
   const portal = hermes
     .command('portal')
@@ -1129,6 +1177,31 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log(renderHermesMessagingGatewayStatus(status));
+    });
+
+  const providers = hermes
+    .command('providers')
+    .alias('provider')
+    .description('Inspect Hermes provider and active model readiness');
+
+  providers
+    .command('status')
+    .description('Print active model, provider credentials, and capability readiness')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const readiness = buildHermesProviderReadiness();
+      const payload = {
+        kind: 'hermes_provider_readiness_status',
+        schemaVersion: 1,
+        readiness,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesProviderReadiness(readiness));
     });
 
   hermes
