@@ -31,6 +31,12 @@ import {
   type HermesProviderReadiness,
 } from '../../agent/hermes-agent-diagnostics.js';
 import {
+  buildHermesProtocolGatewayReadiness,
+  renderHermesProtocolGatewayReadiness,
+  renderHermesProtocolGatewaySmoke,
+  runHermesProtocolGatewaySmoke,
+} from '../../agent/hermes-protocol-gateways.js';
+import {
   buildHermesParityManifest,
   renderHermesParityManifestMarkdown,
 } from '../../agent/hermes-parity-manifest.js';
@@ -124,6 +130,8 @@ interface HermesRuntimeSmokeOptions extends HermesCommandOptions {
 }
 
 type HermesBrowserSmokeOptions = HermesCommandOptions;
+
+type HermesProtocolSmokeOptions = HermesCommandOptions;
 
 interface HermesMessagingStatusOptions extends HermesCommandOptions {
   config?: string;
@@ -1462,6 +1470,46 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log(renderHermesTrajectoryCompatibilityReport(report));
+    });
+
+  const protocols = hermes
+    .command('protocols')
+    .alias('protocol')
+    .description('Inspect Hermes MCP, A2A, and ACP gateway readiness');
+
+  protocols
+    .command('status')
+    .description('Print protocol gateway readiness for MCP, A2A, ACP, and channel bridges')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const readiness = buildHermesProtocolGatewayReadiness();
+
+      if (options.json) {
+        console.log(stableJson(readiness));
+        return;
+      }
+
+      console.log(renderHermesProtocolGatewayReadiness(readiness));
+    });
+
+  hermes
+    .command('protocols-smoke')
+    .description('Run an opt-in live smoke for local MCP stdio plus A2A/ACP HTTP routes')
+    .argument('[target]', 'smoke target (only local is supported)', 'local')
+    .option('--json', 'output JSON')
+    .action(async (target: string, options: HermesProtocolSmokeOptions) => {
+      if (target !== 'local') {
+        throw new Error(`Unsupported protocols smoke target: ${target}`);
+      }
+
+      const result = await runHermesProtocolGatewaySmoke();
+
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+
+      console.log(renderHermesProtocolGatewaySmoke(result));
     });
 
   const providers = hermes

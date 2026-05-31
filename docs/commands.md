@@ -166,6 +166,8 @@ buddy hermes portal status|tools|open [--json]
 buddy hermes messaging status [--json] [--config <path>]
 buddy hermes mobile status [query...] [--json]
 buddy hermes trajectories status [query...] [--run-id <id>] [--json]
+buddy hermes protocols status [--json]
+buddy hermes protocols-smoke local [--json]
 buddy hermes browser status [--json]
 buddy hermes browser-smoke local-playwright [--json]
 buddy hermes runtime status [--json]
@@ -255,6 +257,14 @@ Learning Agent retrospectives, golden workflow evals and policy evals, then
 keeps upstream-style batch generation/compression marked partial. Pass a real
 stored `--run-id` to prove export counts and redaction metrics without replaying
 tools; pass a query to probe recall-pack matches.
+
+`buddy hermes protocols status [--json]` prints a Hermes-scoped MCP/A2A/ACP
+gateway readiness report. It inventories the SDK-backed MCP client, Code Buddy
+MCP server, A2A HTTP routes, ACP HTTP routes, and the channel-to-A2A bridge,
+while keeping packaged editor ACP parity marked partial. `buddy hermes
+protocols-smoke local --json` runs a real local smoke: it starts a temporary
+MCP stdio server through the SDK and opens loopback Express routes for A2A/ACP
+without invoking an LLM task.
 
 `buddy hermes browser status [--json]` prints a browser backend inventory for
 local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway,

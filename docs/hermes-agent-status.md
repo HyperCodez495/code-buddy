@@ -192,6 +192,15 @@ for persisted cron job list/trigger plus daemon and heartbeat report endpoints.
 | Golden + policy evals | `buddy run golden-evals / policy-evals` | done |
 | Run lineage / fork family tree | `RunStore.getRunLineage`; `buddy run lineage` | done |
 
+### Protocol gateways
+
+| Sub-capability | Where | Status |
+|---|---|---|
+| MCP client/server | `src/mcp/`; `buddy hermes protocols status --json` | done |
+| A2A HTTP gateway | `/api/a2a/*`; `buddy hermes protocols-smoke local --json` | done |
+| ACP HTTP gateway | `/api/acp/*`; `buddy hermes protocols-smoke local --json` | done |
+| ACP editor packaging parity | `buddy hermes protocols status --json` | partial: protocol routes exist, packaged editor workflow not claimed |
+
 ## How to verify
 
 The agent **definition** (system prompt + tool filter + disabled tools) is

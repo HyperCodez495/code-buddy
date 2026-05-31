@@ -290,6 +290,53 @@ describe('Hermes CLI commands', () => {
     }
   });
 
+  it('prints Hermes protocol gateway readiness as a dedicated status command', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'protocols', 'status', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      ok: boolean;
+      smokeCommand: string;
+      capabilities: Array<{
+        endpoints: string[];
+        id: string;
+        status: string;
+      }>;
+      summary: {
+        availableCount: number;
+        missingCount: number;
+        partialCount: number;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_protocol_gateway_readiness');
+    expect(output.ok).toBe(true);
+    expect(output.summary.availableCount).toBeGreaterThanOrEqual(5);
+    expect(output.summary.partialCount).toBeGreaterThanOrEqual(1);
+    expect(output.summary.missingCount).toBe(0);
+    expect(output.smokeCommand).toBe('buddy hermes protocols-smoke local --json');
+    expect(output.capabilities).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          id: 'mcp-client',
+          status: 'available',
+        }),
+        expect.objectContaining({
+          id: 'a2a-http',
+          endpoints: expect.arrayContaining(['GET /api/a2a/.well-known/agent.json']),
+          status: 'available',
+        }),
+        expect.objectContaining({
+          id: 'acp-editor-integration',
+          status: 'partial',
+        }),
+      ]),
+    );
+  });
+
   it('prints Hermes mobile supervision readiness as a dedicated status command', async () => {
     const program = createProgram();
     registerHermesCommands(program);
@@ -756,6 +803,20 @@ describe('Hermes CLI commands', () => {
           verificationCommands: expect.arrayContaining([
             'npm test -- tests/observability/hermes-trajectory-compatibility.test.ts tests/observability/golden-workflow-evals.test.ts tests/observability/policy-evals.test.ts --run',
             'npx tsx src/index.ts hermes trajectories status --json',
+          ]),
+        }),
+        expect.objectContaining({
+          id: 'mcp-acp',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining([
+            'src/agent/hermes-protocol-gateways.ts',
+            'src/server/routes/a2a-protocol.ts',
+            'src/server/routes/acp.ts',
+            'src/server/channel-a2a-bridge.ts',
+          ]),
+          verificationCommands: expect.arrayContaining([
+            'npm test -- tests/agent/hermes-protocol-gateways.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/server/a2a-protocol.test.ts tests/server/acp-routes.test.ts --run',
+            'npx tsx src/index.ts hermes protocols-smoke local --json',
           ]),
         }),
       ]),
