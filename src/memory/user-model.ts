@@ -19,9 +19,9 @@
  *      and other sensitive personal data are screened out and refused — this
  *      file must never become a dossier. (See SENSITIVE_PATTERNS.)
  *
- * This is NOT Honcho's LLM-driven dialectic inference; it is a local
- * file-backed observation store with a structured summary. LLM inference over
- * it remains future work.
+ * This is not a silent profiler. LLM and deterministic local inference only
+ * propose review-gated observations; the active model changes only after
+ * explicit human acceptance.
  */
 
 import fs from 'fs';
@@ -108,6 +108,10 @@ export interface UserModelStats {
   total: number;
   byStatus: Record<UserObservationStatus, number>;
   byKind: Record<UserObservationKind, number>;
+}
+
+export interface UserLocalInferenceOptions {
+  provenance?: UserObservationProvenance;
 }
 
 interface UserModelFile {
@@ -498,11 +502,17 @@ Example output:
     const proposed: UserObservation[] = [];
 
     for (const cand of candidates) {
-      const kind = cand.kind;
       const content = (cand.content || '').trim();
       const confidence = typeof cand.confidence === 'number' ? cand.confidence : 0.5;
+      let kind: UserObservationKind;
 
-      if (!content || !['preference', 'trait', 'expertise', 'working-style'].includes(kind)) {
+      try {
+        kind = normalizeKind(cand.kind);
+      } catch {
+        continue;
+      }
+
+      if (!content) {
         continue;
       }
 
@@ -514,7 +524,7 @@ Example output:
 
       try {
         const { observation, deduped } = model.observe({
-          kind: kind as any,
+          kind,
           content,
           confidence,
           source: 'self_observed',
@@ -538,6 +548,120 @@ Example output:
     });
     return [];
   }
+}
+
+/**
+ * Deterministic, credential-free inference for obvious working preferences.
+ *
+ * This is intentionally conservative and review-gated: it only proposes
+ * pending observations when repeated/local transcript cues are clear, and it
+ * never writes into the accepted user model.
+ */
+export function runUserLocalInference(
+  chatHistory: ChatEntry[],
+  workDir: string = process.cwd(),
+  options: UserLocalInferenceOptions = {},
+): UserObservation[] {
+  if (!chatHistory || chatHistory.length === 0) {
+    logger.debug('[user-model] No chat history to run local inference on.');
+    return [];
+  }
+
+  const userText = chatHistory
+    .filter((entry) => entry.type === 'user')
+    .map((entry) => entry.content)
+    .join('\n');
+  const proposed: UserObservation[] = [];
+  const model = getUserModel(workDir);
+  const provenance = {
+    note: 'Local deterministic inference',
+    ...options.provenance,
+  };
+
+  for (const candidate of inferLocalUserObservations(userText)) {
+    try {
+      const { observation, deduped } = model.observe({
+        ...candidate,
+        source: 'self_observed',
+        provenance,
+      });
+      if (!deduped) {
+        proposed.push(observation);
+      }
+    } catch (err) {
+      logger.debug('[user-model] Local inference candidate screened out', { error: String(err) });
+    }
+  }
+
+  return proposed;
+}
+
+function inferLocalUserObservations(userText: string): ObserveUserInput[] {
+  const text = userText.trim();
+  if (!text) return [];
+
+  const candidates: ObserveUserInput[] = [];
+  const lower = text.toLowerCase();
+  const hasRealTestSignal =
+    /\btests?\s+r[ée]els?\b/i.test(text)
+    || /\btest[s]?\s+real\b/i.test(lower)
+    || /\bno\s+mocks?\b/i.test(lower)
+    || /\bpas\s+de\s+mocks?\b/i.test(lower)
+    || /\bdu\s+r[ée]el\b/i.test(text);
+  if (hasRealTestSignal) {
+    candidates.push({
+      kind: 'working-style',
+      content: 'Prefers real verification paths over mocks for completion evidence.',
+      confidence: 0.92,
+    });
+  }
+
+  const autonomousSignal =
+    /\bmode autonome\b/i.test(lower)
+    || (/\bautonome\b/i.test(lower) && /\bcontinue\b/i.test(lower))
+    || /\btoutes\s+les\s+10\s+minutes\b/i.test(lower)
+    || /<heartbeat>/i.test(text);
+  if (autonomousSignal) {
+    candidates.push({
+      kind: 'working-style',
+      content: 'Prefers autonomous continuation with concise periodic progress when the task is clear.',
+      confidence: 0.85,
+    });
+  }
+
+  const commitPushSignal =
+    /\bcommit(?:ter)?\b/i.test(lower) && /\bpush\b/i.test(lower);
+  if (commitPushSignal) {
+    candidates.push({
+      kind: 'preference',
+      content: 'Wants useful verified changes committed and pushed after completion.',
+      confidence: 0.8,
+    });
+  }
+
+  if (countFrenchSignals(text) >= 2) {
+    candidates.push({
+      kind: 'preference',
+      content: 'Prefers French for collaboration updates.',
+      confidence: 0.78,
+    });
+  }
+
+  return candidates;
+}
+
+function countFrenchSignals(text: string): number {
+  const signals = [
+    /\bje\b/i,
+    /\btu\b/i,
+    /\bfais\b/i,
+    /\bcorrige\b/i,
+    /\bam[ée]liore\b/i,
+    /\bcontinuer?\b/i,
+    /\bqu['’]?as\b/i,
+    /[àâçéèêëîïôùûü]/i,
+  ];
+  return signals.filter((pattern) => pattern.test(text)).length;
 }
 
 function parseLLMResponse(text: string): Array<{ kind: string; content: string; confidence: number }> {

@@ -12,6 +12,7 @@
 import { Command } from 'commander';
 import {
   getUserModel,
+  runUserLocalInference,
   USER_OBSERVATION_KINDS,
   UserModelPrivacyError,
 } from '../memory/user-model.js';
@@ -173,9 +174,11 @@ export function createUserModelCommand(): Command {
   // ---- analyze -------------------------------------------------------------
   cmd
     .command('analyze')
-    .description('Run LLM dialectic inference on a session to propose preferences')
+    .description('Analyze a session to propose review-gated user preferences')
     .option('--session <id>', 'Specific session ID (defaults to latest)')
-    .action(async (opts: { session?: string }) => {
+    .option('--local', 'Use deterministic local inference instead of an LLM provider')
+    .option('--json', 'Output JSON')
+    .action(async (opts: { session?: string; local?: boolean; json?: boolean }) => {
       try {
         const { getSessionStore } = await import('../persistence/session-store.js');
         const sessionStore = getSessionStore();
@@ -196,7 +199,9 @@ export function createUserModelCommand(): Command {
           process.exit(1);
         }
 
-        console.log(`Loading history for session: ${sessionId}...`);
+        if (!opts.json) {
+          console.log(`Loading history for session: ${sessionId}...`);
+        }
         const session = await sessionStore.loadSession(sessionId);
         if (!session) {
           console.error(`Session ${sessionId} not found.`);
@@ -208,9 +213,35 @@ export function createUserModelCommand(): Command {
           process.exit(1);
         }
 
-        console.log('Running LLM dialectic inference to detect preferences...');
-        const { runUserDialecticInference } = await import('../memory/user-model.js');
-        const proposed = await runUserDialecticInference(chatHistory, process.cwd());
+        let proposed: UserObservation[];
+        if (opts.local) {
+          if (!opts.json) {
+            console.log('Running deterministic local inference to detect obvious working preferences...');
+          }
+          proposed = runUserLocalInference(chatHistory, process.cwd(), {
+            provenance: {
+              sessionId,
+              note: 'Local deterministic inference from user-model analyze',
+            },
+          });
+        } else {
+          if (!opts.json) {
+            console.log('Running LLM dialectic inference to detect preferences...');
+          }
+          const { runUserDialecticInference } = await import('../memory/user-model.js');
+          proposed = await runUserDialecticInference(chatHistory, process.cwd());
+        }
+
+        if (opts.json) {
+          console.log(JSON.stringify({
+            mode: opts.local ? 'local' : 'llm',
+            sessionId,
+            count: proposed.length,
+            observations: proposed,
+            reviewCommand: 'buddy user-model list --status pending',
+          }, null, 2));
+          return;
+        }
 
         if (proposed.length === 0) {
           console.log('No new user preferences detected.');

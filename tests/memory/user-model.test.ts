@@ -15,6 +15,8 @@ import * as path from 'path';
 import * as os from 'os';
 import * as fs from 'fs-extra';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import type { ChatEntry } from '../../src/agent/types.js';
+import type { CodeBuddyClient } from '../../src/codebuddy/client.js';
 import {
   LocalUserModel,
   getUserModel,
@@ -22,6 +24,7 @@ import {
   screenUserModelContent,
   UserModelPrivacyError,
   runUserDialecticInference,
+  runUserLocalInference,
 } from '../../src/memory/user-model.js';
 
 describe('LocalUserModel', () => {
@@ -220,14 +223,14 @@ describe('LocalUserModel', () => {
             }
           ]
         })
-      } as unknown as any;
+      } as unknown as CodeBuddyClient;
 
-      const chatHistory = [
+      const chatHistory: ChatEntry[] = [
         { type: 'user', content: 'I want to write a TypeScript service', timestamp: new Date() },
         { type: 'assistant', content: 'Sure, I can help you write a TypeScript service', timestamp: new Date() }
       ];
 
-      const proposed = await runUserDialecticInference(chatHistory as any, tmpDir, mockClient);
+      const proposed = await runUserDialecticInference(chatHistory, tmpDir, mockClient);
 
       expect(proposed).toHaveLength(4);
       expect(proposed[0]!.content).toBe('Prefers TypeScript over Javascript.');
@@ -238,6 +241,42 @@ describe('LocalUserModel', () => {
       const pending = model.list('pending');
       expect(pending).toHaveLength(4);
       expect(pending.map(p => p.content)).not.toContain('Discloses credit card details');
+    });
+  });
+
+  describe('runUserLocalInference', () => {
+    it('proposes obvious working preferences without accepting them', () => {
+      const chatHistory: ChatEntry[] = [
+        {
+          type: 'user',
+          content: 'fais des tests reels, je ne veux plus de mocks',
+          timestamp: new Date(),
+        },
+        {
+          type: 'user',
+          content: 'continue en mode autonome toutes les 10 minutes puis commit et push',
+          timestamp: new Date(),
+        },
+      ];
+
+      const proposed = runUserLocalInference(chatHistory, tmpDir, {
+        provenance: { sessionId: 'local-session' },
+      });
+
+      expect(proposed.map((obs) => obs.content)).toEqual([
+        'Prefers real verification paths over mocks for completion evidence.',
+        'Prefers autonomous continuation with concise periodic progress when the task is clear.',
+        'Wants useful verified changes committed and pushed after completion.',
+        'Prefers French for collaboration updates.',
+      ]);
+      expect(proposed.every((obs) => obs.status === 'pending')).toBe(true);
+
+      const model = new LocalUserModel(tmpDir);
+      expect(model.getAccepted()).toHaveLength(0);
+      expect(model.list('pending')).toHaveLength(4);
+
+      const secondRun = runUserLocalInference(chatHistory, tmpDir);
+      expect(secondRun).toHaveLength(0);
     });
   });
 });

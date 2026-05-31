@@ -223,6 +223,8 @@ export class RunStore {
   private runsDir: string;
   /** File handles for active run event streams */
   private handles: Map<string, fs.WriteStream> = new Map();
+  /** Immediate in-process view of events, avoiding read-after-write stream races. */
+  private eventBuffers: Map<string, RunEvent[]> = new Map();
   /** In-memory event counts per run */
   private eventCounts: Map<string, number> = new Map();
   /** In-memory summaries for fast listing */
@@ -276,6 +278,7 @@ export class RunStore {
       }
     }
     this.handles.clear();
+    this.eventBuffers.clear();
     if (this.artifactIndexDb) {
       try {
         this.artifactIndexDb.close();
@@ -315,6 +318,7 @@ export class RunStore {
 
     this.summaries.set(runId, summary);
     this.eventCounts.set(runId, 0);
+    this.eventBuffers.set(runId, []);
 
     // Create events file synchronously, then open append stream
     const eventsPath = path.join(runDir, 'events.jsonl');
@@ -399,6 +403,11 @@ export class RunStore {
       runId,
       ...event,
     };
+
+    const buffer = this.eventBuffers.get(runId);
+    if (buffer) {
+      buffer.push(fullEvent);
+    }
 
     try {
       ws.write(JSON.stringify(fullEvent) + '\n');
@@ -575,6 +584,11 @@ export class RunStore {
    * Read all events from a run's JSONL file.
    */
   getEvents(runId: string): RunEvent[] {
+    const buffered = this.eventBuffers.get(runId);
+    if (buffered) {
+      return [...buffered];
+    }
+
     const eventsPath = path.join(this.runDir(runId), 'events.jsonl');
     if (!fs.existsSync(eventsPath)) return [];
 
@@ -1246,6 +1260,7 @@ export class RunStore {
       const runDir = this.runDir(s.runId);
       this.summaries.delete(s.runId);
       this.eventCounts.delete(s.runId);
+      this.eventBuffers.delete(s.runId);
 
       // Destroy handle immediately (force close, no flush needed for pruned runs)
       const ws = this.handles.get(s.runId);

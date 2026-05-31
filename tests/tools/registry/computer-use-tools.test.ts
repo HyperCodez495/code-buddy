@@ -367,18 +367,22 @@ describe('Computer Use Tool Adapters', () => {
   describe('createMiscTools', () => {
     it('should return all tool types', () => {
       const tools = createMiscTools();
-      expect(tools).toHaveLength(9);
-
       const names = tools.map(t => t.name);
-      expect(names).toContain('browser');
-      expect(names).toContain('computer_control');
-      expect(names).toContain('screenshot');
-      expect(names).toContain('reason');
-      expect(names).toContain('skill_discover');
-      expect(names).toContain('device_manage');
-      expect(names).toContain('deploy');
-      expect(names).toContain('knowledge_graph');
-      expect(names).toContain('docs_search');
+      expect(names).toEqual([
+        'browser',
+        'browser_snapshot',
+        'browser_console',
+        'browser_get_images',
+        'browser_dialog',
+        'computer_control',
+        'screenshot',
+        'reason',
+        'skill_discover',
+        'device_manage',
+        'deploy',
+        'knowledge_graph',
+        'docs_search',
+      ]);
     });
 
     it('should return ITool-compliant instances', () => {
