@@ -50,6 +50,14 @@ export interface SkillPackageManagerSummary {
   cacheDir: string;
   disabledCount: number;
   enabledCount: number;
+  health?: {
+    healthyCount: number;
+    integrityMismatchCount: number;
+    issueCount: number;
+    missingFileCount: number;
+    nextCommand: string;
+    ok: boolean;
+  };
   installedCount: number;
   lockfilePath: string;
   packages: SkillPackageManagerEntry[];
@@ -393,7 +401,33 @@ export const SkillPackageManagerStrip: React.FC<{
             count: visibleSummary?.rollbackableCount ?? 0,
           })}
         </span>
+        {visibleSummary?.health ? (
+          <span
+            className={`rounded px-1 py-0.5 text-[9px] ${
+              visibleSummary.health.ok
+                ? 'bg-success/10 text-success'
+                : 'bg-warning/10 text-warning'
+            }`}
+          >
+            {t('fleet.skillPackage.healthChip', '{{issues}} issues', {
+              issues: visibleSummary.health.issueCount,
+            })}
+          </span>
+        ) : null}
       </div>
+
+      {visibleSummary?.health && !visibleSummary.health.ok ? (
+        <div className="mt-1.5 flex min-w-0 items-start gap-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+          <AlertCircle size={10} className="mt-0.5 shrink-0" />
+          <span className="min-w-0">
+            {t('fleet.skillPackage.healthWarning', '{{missing}} missing / {{mismatch}} mismatch. Next: {{command}}', {
+              command: visibleSummary.health.nextCommand,
+              mismatch: visibleSummary.health.integrityMismatchCount,
+              missing: visibleSummary.health.missingFileCount,
+            })}
+          </span>
+        </div>
+      ) : null}
 
       <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-secondary">
         <ShieldCheck size={10} className="shrink-0 text-accent" />

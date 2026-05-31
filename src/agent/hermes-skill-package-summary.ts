@@ -37,6 +37,14 @@ export interface HermesSkillPackageSummary {
   cacheDir: string;
   disabledCount: number;
   enabledCount: number;
+  health: {
+    healthyCount: number;
+    integrityMismatchCount: number;
+    issueCount: number;
+    missingFileCount: number;
+    nextCommand: string;
+    ok: boolean;
+  };
   installedCount: number;
   lockfilePath: string;
   packages: HermesSkillPackageEntry[];
@@ -111,11 +119,13 @@ export function buildHermesSkillPackageSummary(
       || left.name.localeCompare(right.name),
     );
   const packages = allPackages.slice(0, normalizeLimit(options.limit));
+  const health = buildPackageHealth(allPackages);
 
   return {
     cacheDir,
     disabledCount: allPackages.filter((skill) => !skill.enabled).length,
     enabledCount: allPackages.filter((skill) => skill.enabled).length,
+    health,
     installedCount: allPackages.length,
     lockfilePath,
     packages,
@@ -127,6 +137,20 @@ export function buildHermesSkillPackageSummary(
     ],
     rollbackableCount: allPackages.reduce((total, skill) => total + skill.rollbackableCount, 0),
     skillRoot,
+  };
+}
+
+function buildPackageHealth(packages: HermesSkillPackageEntry[]): HermesSkillPackageSummary['health'] {
+  const missingFileCount = packages.filter((skill) => !skill.exists).length;
+  const integrityMismatchCount = packages.filter((skill) => skill.exists && !skill.integrityOk).length;
+  const issueCount = missingFileCount + integrityMismatchCount;
+  return {
+    healthyCount: packages.length - issueCount,
+    integrityMismatchCount,
+    issueCount,
+    missingFileCount,
+    nextCommand: issueCount > 0 ? 'buddy skills doctor --json' : 'buddy skills learning-usage --json',
+    ok: issueCount === 0,
   };
 }
 

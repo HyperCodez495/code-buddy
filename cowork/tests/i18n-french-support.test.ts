@@ -499,6 +499,8 @@ describe('French renderer i18n support', () => {
       'fleet.skillPackage.enabledChip',
       'fleet.skillPackage.disabledChip',
       'fleet.skillPackage.rollbackChip',
+      'fleet.skillPackage.healthChip',
+      'fleet.skillPackage.healthWarning',
       'fleet.skillPackage.guardrail',
       'fleet.skillPackage.loadFailed',
       'fleet.skillPackage.empty',

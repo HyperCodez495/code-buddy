@@ -56,6 +56,14 @@ describe('SkillPackageManagerStrip', () => {
             cacheDir: 'D:/workspace/.codebuddy/skills-cache',
             disabledCount: 1,
             enabledCount: 1,
+            health: {
+              healthyCount: 1,
+              integrityMismatchCount: 1,
+              issueCount: 2,
+              missingFileCount: 1,
+              nextCommand: 'buddy skills doctor --json',
+              ok: false,
+            },
             installedCount: 2,
             lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
             packages: [
@@ -106,6 +114,8 @@ describe('SkillPackageManagerStrip', () => {
     expect(strip?.textContent).toContain('1 enabled');
     expect(strip?.textContent).toContain('1 inactive');
     expect(strip?.textContent).toContain('1 rollback snapshots');
+    expect(strip?.textContent).toContain('2 issues');
+    expect(strip?.textContent).toContain('1 missing / 1 mismatch. Next: buddy skills doctor --json');
     expect(strip?.textContent).toContain('Skill package load failed');
     expect(strip?.textContent).toContain('lockfile unreadable');
     expect(strip?.textContent).toContain('audit-helper');

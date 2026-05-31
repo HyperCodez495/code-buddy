@@ -95,6 +95,14 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
     expect(summary).toMatchObject({
       disabledCount: 2,
       enabledCount: 1,
+      health: {
+        healthyCount: 2,
+        integrityMismatchCount: 0,
+        issueCount: 1,
+        missingFileCount: 1,
+        nextCommand: 'buddy skills doctor --json',
+        ok: false,
+      },
       installedCount: 3,
       rollbackableCount: 1,
     });

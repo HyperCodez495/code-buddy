@@ -32,6 +32,14 @@ export interface SkillPackageManagerSummary {
   cacheDir: string;
   disabledCount: number;
   enabledCount: number;
+  health?: {
+    healthyCount: number;
+    integrityMismatchCount: number;
+    issueCount: number;
+    missingFileCount: number;
+    nextCommand: string;
+    ok: boolean;
+  };
   installedCount: number;
   lockfilePath: string;
   packages: SkillPackageManagerEntry[];
