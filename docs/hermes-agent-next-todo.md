@@ -112,6 +112,7 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/execute-code-real.test.ts --run`
     - `npm test -- tests/tools/execute-code-real.test.ts tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
+    - `(cd cowork && npm test -- tests/test-runner-bridge-catalog.test.ts --run)` confirms the safe Cowork Test Runner smoke entry.
 
 - [x] **Add unified `vision_analyze` / `browser_vision` semantics**
   - Why: Code Buddy has screenshots/OCR/browser image inventory, but no one-shot Hermes-like vision analysis surface.

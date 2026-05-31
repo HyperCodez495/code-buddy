@@ -579,6 +579,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'tools', 'tool-selector.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'bash-tool.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'bash-streaming.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'execute-code-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'text-to-speech-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'vision-analyze-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'media-generation-real.test.ts'), '');
@@ -867,6 +868,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Cowork / knowledge Hermes presence bundle');
     expect(labels).toContain('Hermes / runtime live smoke');
     expect(labels).toContain('Hermes / CLI status real smoke');
+    expect(labels).toContain('Hermes / execute_code real smoke');
     expect(labels).toContain('Hermes / media vision real smoke');
     expect(labels).toContain('Cowork / permission real flow');
     expect(labels).toContain('Server / real GPT-5.5 chat API');
@@ -1017,6 +1019,13 @@ describe('TestRunnerBridge catalog', () => {
       kind: 'integration',
       safeToRun: true,
       timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Hermes / execute_code real smoke')).toMatchObject({
+      command: 'npm',
+      args: ['test', '--', 'tests/tools/execute-code-real.test.ts', '--run'],
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 120_000,
     });
     expect(catalog.find((item) => item.label === 'Hermes / media vision real smoke')).toMatchObject({
       command: 'npm',

@@ -117,6 +117,8 @@ change-control surface.
 | Hermes `execute_code` subprocess boundary | `src/tools/execute-code-runner.ts`, `src/tools/registry/execute-code-tools.ts`, `tests/tools/execute-code-real.test.ts` | done — exact prompt tool name, real local subprocess, timeout, and `.codebuddy/execute-code/<run-id>` artifacts; generated-code-to-tool RPC remains intentionally separate |
 | Subagents / swarm | `/agents`, `/swarm`, `/team` | done |
 
+Cowork Test Runner now exposes a safe `Hermes / execute_code real smoke` entry for the same subprocess/artifact/timeout parity proof.
+
 ### Voice and media generation
 
 | Sub-capability | Where | Status |
