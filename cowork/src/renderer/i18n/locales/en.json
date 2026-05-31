@@ -2495,6 +2495,7 @@
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "Next retrospective",
       "nextRetrospectiveMeta": "{{status}} | {{artifacts}} artifacts",
+      "nextRetrospectiveEvents": "| {{events}} events",
       "runRetrospective": "Run retrospective",
       "retrospectiveUnavailable": "Retrospective runner is unavailable.",
       "retrospectiveDone": "Retrospective saved: {{artifact}} | {{lessons}} lessons | {{skills}} skills",

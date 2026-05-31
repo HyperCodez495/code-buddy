@@ -329,12 +329,13 @@ describe('Hermes CLI commands', () => {
         autoRetrospective: { enabled: boolean; mode: string };
         nextRetrospectiveRun?: {
           command: string;
+          eventCount: number;
           runId: string;
           status: string;
         };
         reviewGates: Record<string, boolean>;
         state: {
-          recentRuns: Array<{ hasLearningRetrospective: boolean; runId: string }>;
+          recentRuns: Array<{ eventCount: number; hasLearningRetrospective: boolean; runId: string }>;
           skillCandidates: { learningCandidateCount: number };
           skillUsage: { top: Array<{ recommendation: string; skillName: string }> };
         };
@@ -356,10 +357,12 @@ describe('Hermes CLI commands', () => {
       expect(output.state.recentRuns).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            eventCount: expect.any(Number),
             hasLearningRetrospective: true,
             runId,
           }),
           expect.objectContaining({
+            eventCount: expect.any(Number),
             hasLearningRetrospective: false,
             runId: pendingRetrospectiveRunId,
           }),
@@ -367,9 +370,11 @@ describe('Hermes CLI commands', () => {
       );
       expect(output.nextRetrospectiveRun).toMatchObject({
         command: `buddy run retrospective ${pendingRetrospectiveRunId} --force --json`,
+        eventCount: expect.any(Number),
         runId: pendingRetrospectiveRunId,
         status: 'completed',
       });
+      expect(output.nextRetrospectiveRun?.eventCount).toBeGreaterThan(0);
       expect(output.recommendations).toEqual(
         expect.arrayContaining([expect.stringContaining(`buddy run retrospective ${pendingRetrospectiveRunId}`)]),
       );

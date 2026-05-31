@@ -12,6 +12,7 @@ import { RunStore, type RunSummary } from '../observability/run-store.js';
 export interface HermesLearningLoopRunRow {
   artifactCount: number;
   channel?: string;
+  eventCount: number;
   hasLearningRetrospective: boolean;
   runId: string;
   status: RunSummary['status'];
@@ -22,6 +23,7 @@ export interface HermesLearningLoopRetrospectiveCandidate {
   artifactCount: number;
   channel?: string;
   command: string;
+  eventCount: number;
   runId: string;
   status: RunSummary['status'];
   tags: string[];
@@ -132,12 +134,16 @@ function selectNextRetrospectiveRun(
   const readyRuns = runRows.filter((row) =>
     !row.hasLearningRetrospective && RETROSPECTIVE_READY_STATUSES.has(row.status)
   );
-  const run = readyRuns.find((row) => row.artifactCount > 0) ?? readyRuns[0];
+  const run = [...readyRuns]
+    .sort((left, right) =>
+      (right.artifactCount * 10 + right.eventCount) - (left.artifactCount * 10 + left.eventCount)
+    )[0];
   if (!run) return undefined;
   return {
     artifactCount: run.artifactCount,
     ...(run.channel ? { channel: run.channel } : {}),
     command: buildRetrospectiveCommand(run.runId),
+    eventCount: run.eventCount,
     runId: run.runId,
     status: run.status,
     tags: run.tags,
@@ -220,6 +226,7 @@ export function buildHermesLearningLoopStatus(
     return {
       artifactCount: record?.artifacts.length ?? run.artifactCount,
       ...(run.metadata?.channel ? { channel: run.metadata.channel } : {}),
+      eventCount: run.eventCount,
       hasLearningRetrospective: record?.artifacts.includes('learning-retrospective.json') ?? false,
       runId: run.runId,
       status: run.status,
@@ -325,6 +332,7 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
   if (status.nextRetrospectiveRun) {
     lines.push(
       `  Next retrospective run: ${status.nextRetrospectiveRun.runId} (${status.nextRetrospectiveRun.status}, ${status.nextRetrospectiveRun.artifactCount} artifacts)`,
+      `  Next retrospective events: ${status.nextRetrospectiveRun.eventCount}`,
     );
   }
 

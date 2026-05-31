@@ -1880,6 +1880,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           artifactCount: number;
           channel?: string;
           command: string;
+          eventCount: number;
           runId: string;
           status: string;
           tags: string[];
@@ -1895,6 +1896,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           recentRuns: Array<{
             artifactCount: number;
             channel?: string;
+            eventCount: number;
             hasLearningRetrospective: boolean;
             runId: string;
             status: string;
@@ -4948,6 +4950,7 @@ declare global {
               artifactCount: number;
               channel?: string;
               command: string;
+              eventCount: number;
               runId: string;
               status: string;
               tags: string[];
@@ -4963,6 +4966,7 @@ declare global {
               recentRuns: Array<{
                 artifactCount: number;
                 channel?: string;
+                eventCount: number;
                 hasLearningRetrospective: boolean;
                 runId: string;
                 status: string;

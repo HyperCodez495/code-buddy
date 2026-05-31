@@ -2495,6 +2495,7 @@
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "Prochaine rétro",
       "nextRetrospectiveMeta": "{{status}} | {{artifacts}} artefact(s)",
+      "nextRetrospectiveEvents": "| {{events}} événements",
       "runRetrospective": "Lancer la rétro",
       "retrospectiveUnavailable": "Le lanceur de rétrospective est indisponible.",
       "retrospectiveDone": "Rétrospective enregistrée : {{artifact}} | {{lessons}} lessons | {{skills}} skills",

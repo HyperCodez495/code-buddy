@@ -33,6 +33,7 @@ export interface HermesLearningLoopStatus {
     artifactCount: number;
     channel?: string;
     command: string;
+    eventCount: number;
     runId: string;
     status: string;
     tags: string[];
@@ -48,6 +49,7 @@ export interface HermesLearningLoopStatus {
     recentRuns: Array<{
       artifactCount: number;
       channel?: string;
+      eventCount: number;
       hasLearningRetrospective: boolean;
       runId: string;
       status: string;
@@ -336,6 +338,10 @@ export const HermesLearningLoopStrip: React.FC<{
                   {t('fleet.hermesLearningLoop.nextRetrospectiveMeta', '{{status}} | {{artifacts}} artifacts', {
                     artifacts: visibleStatus.nextRetrospectiveRun.artifactCount,
                     status: visibleStatus.nextRetrospectiveRun.status,
+                  })}
+                  {' '}
+                  {t('fleet.hermesLearningLoop.nextRetrospectiveEvents', '| {{events}} events', {
+                    events: visibleStatus.nextRetrospectiveRun.eventCount,
                   })}
                 </div>
                 <code className="block truncate text-[9px] text-warning">

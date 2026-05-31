@@ -21,6 +21,7 @@ export interface HermesLearningLoopStatusForReview {
     artifactCount: number;
     channel?: string;
     command: string;
+    eventCount: number;
     runId: string;
     status: string;
     tags: string[];
@@ -38,6 +39,7 @@ export interface HermesLearningLoopStatusForReview {
     recentRuns: Array<{
       artifactCount: number;
       channel?: string;
+      eventCount: number;
       hasLearningRetrospective: boolean;
       runId: string;
       status: string;

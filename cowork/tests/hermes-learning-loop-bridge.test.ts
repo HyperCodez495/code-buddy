@@ -37,6 +37,7 @@ describe('Hermes learning loop bridge', () => {
       nextRetrospectiveRun: {
         artifactCount: 1,
         command: 'buddy run retrospective run-needs-retro --force --json',
+        eventCount: 8,
         runId: 'run-needs-retro',
         status: 'completed',
         tags: ['real'],
@@ -54,6 +55,7 @@ describe('Hermes learning loop bridge', () => {
         recentRuns: [
           {
             artifactCount: 2,
+            eventCount: 12,
             hasLearningRetrospective: true,
             runId: 'run-learning-loop',
             status: 'completed',
@@ -116,6 +118,7 @@ describe('Hermes learning loop bridge', () => {
     });
     expect(status?.nextRetrospectiveRun).toMatchObject({
       command: 'buddy run retrospective run-needs-retro --force --json',
+      eventCount: 8,
       runId: 'run-needs-retro',
     });
     expect(status?.summary.pendingLessonCandidateCount).toBe(1);

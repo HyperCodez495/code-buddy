@@ -2482,6 +2482,7 @@
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "下一次复盘",
       "nextRetrospectiveMeta": "{{status}} | {{artifacts}} 个产物",
+      "nextRetrospectiveEvents": "| {{events}} 个事件",
       "runRetrospective": "运行复盘",
       "retrospectiveUnavailable": "复盘运行器不可用。",
       "retrospectiveDone": "复盘已保存：{{artifact}} | {{lessons}} lessons | {{skills}} skills",

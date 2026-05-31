@@ -47,6 +47,7 @@ const learningStatus: HermesLearningLoopStatus = {
     artifactCount: 1,
     channel: 'cowork',
     command: 'buddy run retrospective run-needs-retro --force --json',
+    eventCount: 8,
     runId: 'run-needs-retro',
     status: 'completed',
     tags: ['real'],
@@ -65,6 +66,7 @@ const learningStatus: HermesLearningLoopStatus = {
     recentRuns: [
       {
         artifactCount: 2,
+        eventCount: 12,
         hasLearningRetrospective: true,
         runId: 'run-learning-loop',
         status: 'completed',
@@ -73,6 +75,7 @@ const learningStatus: HermesLearningLoopStatus = {
       {
         artifactCount: 1,
         channel: 'cowork',
+        eventCount: 8,
         hasLearningRetrospective: false,
         runId: 'run-needs-retro',
         status: 'completed',
@@ -168,6 +171,7 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('Next retrospective');
     expect(strip?.textContent).toContain('run-needs-retro');
     expect(strip?.textContent).toContain('completed | 1 artifacts');
+    expect(strip?.textContent).toContain('| 8 events');
     expect(strip?.textContent).toContain('buddy run retrospective run-needs-retro --force --json');
     expect(strip?.querySelector('[data-testid="hermes-learning-retrospective-run-needs-retro"]')).toBeTruthy();
     expect(strip?.textContent).toContain('learned-search-view-file-bash');
