@@ -6,6 +6,7 @@ import {
   listSkillPackagesForReview,
   patchSkillPackageForReview,
   rollbackSkillPackageForReview,
+  resetSkillPackageForReview,
   setSkillPackageLifecycleForReview,
   updateSkillPackageForReview,
 } from '../src/main/tools/skill-package-manager-bridge';
@@ -283,6 +284,64 @@ describe('skill package manager bridge', () => {
         lastLifecycleReviewer: 'Patrice',
         name: 'cached-helper',
         version: '0.2.0',
+      },
+      summary: {
+        rollbackableCount: 1,
+      },
+    });
+  });
+
+  it('resets a package through the core package summary module', async () => {
+    const resetHermesSkillPackage = vi.fn().mockResolvedValue({
+      contentPreview: 'Canonical cache content.',
+      enabled: true,
+      exists: true,
+      installedAt: 1,
+      integrityOk: true,
+      lastLifecycleReason: 'Restore canonical cache.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'reset-helper',
+      path: 'D:/workspace/.codebuddy/skills/reset-helper/SKILL.md',
+      rollbackableCount: 1,
+      source: 'hub',
+      status: 'active',
+      version: '0.1.0',
+    });
+    const buildHermesSkillPackageSummary = vi.fn(() => ({
+      cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+      disabledCount: 0,
+      enabledCount: 1,
+      installedCount: 1,
+      lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+      packages: [],
+      reviewCommands: ['buddy skills list --all --json'],
+      rollbackableCount: 1,
+      skillRoot: 'D:/workspace/.codebuddy/skills',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      buildHermesSkillPackageSummary,
+      resetHermesSkillPackage,
+    });
+
+    const rootDir = path.resolve('workspace');
+    const result = await resetSkillPackageForReview({
+      approvedBy: 'Patrice',
+      name: 'reset-helper',
+      reason: 'Restore canonical cache.',
+      rootDir,
+      version: '0.1.0',
+    });
+
+    expect(resetHermesSkillPackage).toHaveBeenCalledWith(rootDir, 'reset-helper', {
+      actor: 'Patrice',
+      reason: 'Restore canonical cache.',
+      version: '0.1.0',
+    });
+    expect(result).toMatchObject({
+      package: {
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'reset-helper',
       },
       summary: {
         rollbackableCount: 1,

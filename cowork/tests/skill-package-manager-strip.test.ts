@@ -131,7 +131,7 @@ describe('SkillPackageManagerStrip', () => {
     expect(onUseAsGoal).toHaveBeenCalledTimes(1);
     const goal = onUseAsGoal.mock.calls[0]?.[0] as string;
     expect(goal).toContain('Review installed Code Buddy SKILL.md packages from Cowork.');
-    expect(goal).toContain('skill_manage action=enable|disable|deprecate|delete|patch|rollback|update');
+    expect(goal).toContain('skill_manage action=enable|disable|deprecate|delete|patch|rollback|reset|update');
     expect(goal).toContain('Do not mutate an installed skill without a named reviewer.');
   });
 
@@ -556,6 +556,98 @@ describe('SkillPackageManagerStrip', () => {
       name: 'cached-helper',
     });
     expect(target.textContent).toContain('update cached-helper by Patrice.');
+  });
+
+  it('requires reviewer identity before resetting a tampered installed skill', async () => {
+    const target = container();
+    const reset = vi.fn().mockResolvedValue({
+      ok: true,
+      package: {
+        contentPreview: 'Canonical cached reset wording.',
+        enabled: true,
+        exists: true,
+        installedAt: 1,
+        integrityOk: true,
+        lastLifecycleReviewer: 'Patrice',
+        name: 'reset-helper',
+        path: 'D:/workspace/.codebuddy/skills/reset-helper/SKILL.md',
+        rollbackableCount: 1,
+        source: 'hub',
+        status: 'active',
+        version: '0.1.0',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        tools?: {
+          skillPackage?: {
+            reset: typeof reset;
+          };
+        };
+      };
+    }).electronAPI = {
+      tools: {
+        skillPackage: {
+          reset,
+        },
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(SkillPackageManagerStrip, {
+        cwd: 'D:/CascadeProjects/grok-cli-weekend',
+        summary: {
+          cacheDir: 'D:/workspace/.codebuddy/skills-cache',
+          disabledCount: 0,
+          enabledCount: 1,
+          installedCount: 1,
+          lockfilePath: 'D:/workspace/.codebuddy/skills-lock.json',
+          packages: [
+            {
+              enabled: true,
+              exists: true,
+              installedAt: 1,
+              integrityOk: false,
+              name: 'reset-helper',
+              path: 'D:/workspace/.codebuddy/skills/reset-helper/SKILL.md',
+              rollbackableCount: 0,
+              source: 'hub',
+              status: 'active',
+              version: '0.1.0',
+            },
+          ],
+          reviewCommands: ['buddy skills doctor --json'],
+          rollbackableCount: 0,
+          skillRoot: 'D:/workspace/.codebuddy/skills',
+        },
+      }));
+      await Promise.resolve();
+    });
+
+    let resetButton = target.querySelector('[data-testid="skill-package-reset"]') as HTMLButtonElement;
+    expect(resetButton.disabled).toBe(true);
+
+    const input = target.querySelector('[data-testid="skill-package-reviewer-input"]') as HTMLInputElement;
+    await act(async () => {
+      Simulate.change(input, { target: { value: 'Patrice' } } as unknown as Event);
+      await Promise.resolve();
+    });
+
+    resetButton = target.querySelector('[data-testid="skill-package-reset"]') as HTMLButtonElement;
+    expect(resetButton.disabled).toBe(false);
+
+    await act(async () => {
+      Simulate.click(resetButton);
+      await Promise.resolve();
+    });
+
+    expect(reset).toHaveBeenCalledWith({
+      approvedBy: 'Patrice',
+      cwd: 'D:/CascadeProjects/grok-cli-weekend',
+      name: 'reset-helper',
+    });
+    expect(target.textContent).toContain('reset reset-helper by Patrice.');
   });
 
   it('requires reviewer identity and old text before patching an installed skill', async () => {

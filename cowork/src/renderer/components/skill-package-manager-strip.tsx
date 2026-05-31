@@ -13,6 +13,7 @@ import {
   PlayCircle,
   RefreshCw,
   RotateCcw,
+  RotateCw,
   ShieldCheck,
   Terminal,
   Trash2,
@@ -111,6 +112,18 @@ interface SkillPackageManagerApi {
     package?: SkillPackageManagerEntry;
     summary?: SkillPackageManagerSummary;
   }>;
+  reset?: (options: {
+    approvedBy: string;
+    cwd?: string;
+    name: string;
+    reason?: string;
+    version?: string;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    package?: SkillPackageManagerEntry;
+    summary?: SkillPackageManagerSummary;
+  }>;
   update?: (options: {
     approvedBy: string;
     cwd?: string;
@@ -135,7 +148,7 @@ export function buildSkillPackageManagerGoal(): string {
     '- buddy skills list --all --json',
     '- buddy skills learning-usage --json',
     '- skill_manage action=history name=<skill>',
-    '- skill_manage action=enable|disable|deprecate|delete|patch|rollback|update name=<skill> approved_by=<reviewer>',
+    '- skill_manage action=enable|disable|deprecate|delete|patch|rollback|reset|update name=<skill> approved_by=<reviewer>',
     '',
     'Rules:',
     '- Do not mutate an installed skill without a named reviewer.',
@@ -206,16 +219,19 @@ export const SkillPackageManagerStrip: React.FC<{
     const list = api?.list;
     const patch = api?.patch;
     const rollback = api?.rollback;
+    const reset = api?.reset;
     const update = api?.update;
     if (
       (action === 'delete' && !deletePackage)
       || (action === 'patch' && !patch)
       || (action === 'rollback' && !rollback)
+      || (action === 'reset' && !reset)
       || (action === 'update' && !update)
       || (
         action !== 'delete'
         && action !== 'patch'
         && action !== 'rollback'
+        && action !== 'reset'
         && action !== 'update'
         && !lifecycle
       )
@@ -260,6 +276,12 @@ export const SkillPackageManagerStrip: React.FC<{
         });
       } else if (action === 'rollback') {
         result = await rollback!({
+          approvedBy,
+          cwd,
+          name: skill.name,
+        });
+      } else if (action === 'reset') {
+        result = await reset!({
           approvedBy,
           cwd,
           name: skill.name,
@@ -378,7 +400,7 @@ export const SkillPackageManagerStrip: React.FC<{
         <span className="line-clamp-2">
           {t(
             'fleet.skillPackage.guardrail',
-            'Lifecycle changes stay review-gated: use skill_manage with approved_by before enabling, disabling, patching, rolling back or deleting skills.'
+            'Lifecycle changes stay review-gated: use skill_manage with approved_by before enabling, disabling, patching, rolling back, resetting or deleting skills.'
           )}
         </span>
       </div>
@@ -530,6 +552,15 @@ export const SkillPackageManagerStrip: React.FC<{
                     onClick={() => void handlePackageAction(skill, 'rollback')}
                   />
                 ) : null}
+                {!skill.exists || !skill.integrityOk ? (
+                  <LifecycleButton
+                    action="reset"
+                    disabled={!reviewerName.trim() || updatingSkillKey !== null}
+                    icon={RotateCw}
+                    loading={updatingSkillKey === `${skill.name}:reset`}
+                    onClick={() => void handlePackageAction(skill, 'reset')}
+                  />
+                ) : null}
                 {skill.exists ? (
                   <LifecycleButton
                     action="patch"
@@ -618,6 +649,7 @@ type SkillPackageReviewAction =
   | 'disable'
   | 'deprecate'
   | 'rollback'
+  | 'reset'
   | 'delete'
   | 'update'
   | 'patch';

@@ -76,6 +76,13 @@ export interface UpdateHermesSkillPackageOptions {
   version?: string;
 }
 
+export interface ResetHermesSkillPackageOptions {
+  actor: string;
+  reason?: string;
+  updatedAt?: number;
+  version?: string;
+}
+
 export interface PatchHermesSkillPackageOptions {
   actor: string;
   expectedReplacements?: number;
@@ -116,7 +123,7 @@ export function buildHermesSkillPackageSummary(
       'buddy skills list --all --json',
       'buddy skills doctor --json',
       'buddy skills learning-usage --json',
-      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/update.',
+      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/reset/update.',
     ],
     rollbackableCount: allPackages.reduce((total, skill) => total + skill.rollbackableCount, 0),
     skillRoot,
@@ -236,6 +243,37 @@ export async function updateHermesSkillPackage(
     updated.installed,
     hub.getInstalledSkillHistory(updated.installed.name),
     hub.info(updated.installed.name)?.content,
+    normalizePreviewChars(undefined),
+  );
+}
+
+export async function resetHermesSkillPackage(
+  workDir: string,
+  skillName: string,
+  options: ResetHermesSkillPackageOptions,
+): Promise<HermesSkillPackageEntry | null> {
+  const name = skillName.trim();
+  const actor = options.actor.trim();
+  if (!name) {
+    throw new Error('skillName is required for skill reset.');
+  }
+  if (!actor) {
+    throw new Error('actor is required for skill reset.');
+  }
+
+  const { hub } = buildWorkspaceSkillsHub(workDir);
+  const reset = await hub.resetInstalledSkill(name, {
+    actor,
+    reason: options.reason?.trim() || undefined,
+    updatedAt: options.updatedAt,
+    version: options.version?.trim() || undefined,
+  });
+  if (!reset) return null;
+
+  return summarizeInstalledSkill(
+    reset.installed,
+    hub.getInstalledSkillHistory(reset.installed.name),
+    hub.info(reset.installed.name)?.content,
     normalizePreviewChars(undefined),
   );
 }

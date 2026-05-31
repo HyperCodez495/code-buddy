@@ -1713,6 +1713,39 @@ contextBridge.exposeInMainWorld('electronAPI', {
           version: string;
         };
       }> => ipcRenderer.invoke('tools.skillPackage.update', options),
+      reset: (options: {
+        approvedBy: string;
+        cwd?: string;
+        name: string;
+        reason?: string;
+        version?: string;
+      }): Promise<{
+        error?: string;
+        ok: boolean;
+        package?: {
+          averageDurationMs?: number;
+          contentPreview?: string;
+          contentPreviewTruncated?: boolean;
+          enabled: boolean;
+          exists: boolean;
+          failureCount?: number;
+          installedAt: number;
+          integrityOk: boolean;
+          invocationCount?: number;
+          lastError?: string;
+          lastLifecycleReason?: string;
+          lastLifecycleReviewer?: string;
+          lastUsedAt?: number;
+          name: string;
+          path: string;
+          rollbackableCount: number;
+          sizeBytes?: number;
+          source: 'hub' | 'local' | 'git';
+          status: 'active' | 'disabled' | 'deprecated';
+          successCount?: number;
+          version: string;
+        };
+      }> => ipcRenderer.invoke('tools.skillPackage.reset', options),
       patch: (options: {
         approvedBy: string;
         cwd?: string;
@@ -4326,6 +4359,39 @@ declare global {
             approvedBy: string;
             cwd?: string;
             force?: boolean;
+            name: string;
+            reason?: string;
+            version?: string;
+          }) => Promise<{
+            error?: string;
+            ok: boolean;
+            package?: {
+              averageDurationMs?: number;
+              contentPreview?: string;
+              contentPreviewTruncated?: boolean;
+              enabled: boolean;
+              exists: boolean;
+              failureCount?: number;
+              installedAt: number;
+              integrityOk: boolean;
+              invocationCount?: number;
+              lastError?: string;
+              lastLifecycleReason?: string;
+              lastLifecycleReviewer?: string;
+              lastUsedAt?: number;
+              name: string;
+              path: string;
+              rollbackableCount: number;
+              sizeBytes?: number;
+              source: 'hub' | 'local' | 'git';
+              status: 'active' | 'disabled' | 'deprecated';
+              successCount?: number;
+              version: string;
+            };
+          }>;
+          reset: (options: {
+            approvedBy: string;
+            cwd?: string;
             name: string;
             reason?: string;
             version?: string;

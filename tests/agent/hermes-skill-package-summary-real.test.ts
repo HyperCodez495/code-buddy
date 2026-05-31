@@ -8,6 +8,7 @@ import {
   deleteHermesSkillPackage,
   patchHermesSkillPackage,
   rollbackHermesSkillPackage,
+  resetHermesSkillPackage,
   setHermesSkillPackageLifecycle,
   updateHermesSkillPackage,
 } from '../../src/agent/hermes-skill-package-summary.js';
@@ -101,7 +102,7 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       'buddy skills list --all --json',
       'buddy skills doctor --json',
       'buddy skills learning-usage --json',
-      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/update.',
+      'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/reset/update.',
     ]);
     expect(summary.packages).toEqual(expect.arrayContaining([
       expect.objectContaining({
@@ -366,6 +367,63 @@ describe('Hermes skill package summary on real SkillsHub lockfiles', () => {
       integrityOk: true,
       name: 'update-helper',
       version: '0.2.0',
+    });
+  });
+
+  it('resets a tampered skill from a real local hub cache entry', async () => {
+    const hub = new SkillsHub({
+      cacheDir: path.join(tempDir, '.codebuddy', 'skills-cache'),
+      lockfilePath: path.join(tempDir, '.codebuddy', 'skills-lock.json'),
+      skillsDir: path.join(tempDir, '.codebuddy', 'skills'),
+    });
+
+    const canonicalContent = skillContent(
+      'reset-helper',
+      '0.1.0',
+      'Canonical cached reset wording.',
+    );
+    await hub.installFromContent('reset-helper', canonicalContent);
+    await fs.writeFile(
+      path.join(tempDir, '.codebuddy', 'skills-cache', 'reset-helper@0.1.0.skill.md'),
+      `${canonicalContent.trimEnd()}\n`,
+      'utf8',
+    );
+
+    const installedPath = path.join(tempDir, '.codebuddy', 'skills', 'reset-helper', 'SKILL.md');
+    await fs.writeFile(
+      installedPath,
+      `${skillContent('reset-helper', '0.1.0', 'Locally tampered reset wording.').trimEnd()}\n`,
+      'utf8',
+    );
+
+    const reset = await resetHermesSkillPackage(
+      tempDir,
+      'reset-helper',
+      {
+        actor: 'Patrice',
+        reason: 'Restore reviewed cache content.',
+        updatedAt: 13_000,
+      },
+    );
+
+    expect(reset).toMatchObject({
+      contentPreview: expect.stringContaining('Canonical cached reset wording.'),
+      integrityOk: true,
+      lastLifecycleReason: 'Restore reviewed cache content.',
+      lastLifecycleReviewer: 'Patrice',
+      name: 'reset-helper',
+      rollbackableCount: 1,
+      status: 'active',
+      version: '0.1.0',
+    });
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('Canonical cached reset wording.');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.not.toContain('Locally tampered reset wording.');
+
+    const summary = buildHermesSkillPackageSummary(tempDir);
+    expect(summary.packages[0]).toMatchObject({
+      integrityOk: true,
+      name: 'reset-helper',
+      rollbackableCount: 1,
     });
   });
 

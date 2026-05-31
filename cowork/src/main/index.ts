@@ -192,6 +192,7 @@ import {
   listSkillPackagesForReview,
   patchSkillPackageForReview,
   rollbackSkillPackageForReview,
+  resetSkillPackageForReview,
   setSkillPackageLifecycleForReview,
   updateSkillPackageForReview,
 } from './tools/skill-package-manager-bridge';
@@ -4229,6 +4230,39 @@ ipcMain.handle(
       return { ok: true as const, ...result };
     } catch (err) {
       logWarn('[tools.skillPackage.update] failed:', err);
+      return {
+        ok: false as const,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.skillPackage.reset',
+  async (
+    _event,
+    payload?: {
+      approvedBy?: string;
+      cwd?: string;
+      name?: string;
+      reason?: string;
+      version?: string;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await resetSkillPackageForReview({
+        approvedBy: typeof payload?.approvedBy === 'string' ? payload.approvedBy : '',
+        name: typeof payload?.name === 'string' ? payload.name : '',
+        reason: typeof payload?.reason === 'string' ? payload.reason : undefined,
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        version: typeof payload?.version === 'string' ? payload.version : undefined,
+      });
+      return { ok: true as const, ...result };
+    } catch (err) {
+      logWarn('[tools.skillPackage.reset] failed:', err);
       return {
         ok: false as const,
         error: err instanceof Error ? err.message : String(err),
