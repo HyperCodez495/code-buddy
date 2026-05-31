@@ -245,6 +245,8 @@ Current measured state:
   - Done so far: `buddy hermes doctor --json` and `buddy hermes runtime status --json` now report a non-destructive runtime backend inventory for local Node, native OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. Each row reports installed/configured/runnable state, version when a real CLI probe can provide it, credential source names only, notes/remediation, and copy/paste smoke commands for heavier real validation. `buddy hermes runtime-smoke local --json`, `buddy hermes runtime-smoke wsl --json`, and Cowork's `tools.hermesRuntimeBackends.smoke` can run opt-in live smoke checks. The local Node and WSL runners execute real subprocesses; Docker remains guarded by `CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true`.
   - Acceptance: `buddy hermes runtime status --json` reports available backends and smoke commands. **Done for CLI JSON.**
   - Remaining scope: turn configured backends into first-class managed runners where product-relevant, and expand live smoke execution to Docker/remote backends after product-specific safety decisions.
+  - Verification:
+    - `cd cowork && npm test -- --run tests/hermes-runtime-backends-bridge.test.ts tests/hermes-runtime-backends-bridge-real.test.ts tests/hermes-runtime-backends-strip.test.ts`
 
 - [ ] **Browser backend inventory**
   - Scope: detect/configure local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox/Camoufox, and session recording.

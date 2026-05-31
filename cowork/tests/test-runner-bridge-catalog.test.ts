@@ -154,6 +154,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-bridge-real.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-provider-readiness-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-runtime-backends-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-runtime-backends-bridge-real.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-runtime-backends-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-surfaces-ipc.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-tool-catalog-bridge.test.ts'), '');
@@ -1088,6 +1089,9 @@ describe('TestRunnerBridge catalog', () => {
         'tests/hermes-provider-readiness-bridge.test.ts',
         'tests/hermes-provider-readiness-bridge-real.test.ts',
         'tests/hermes-provider-readiness-strip.test.ts',
+        'tests/hermes-runtime-backends-bridge.test.ts',
+        'tests/hermes-runtime-backends-bridge-real.test.ts',
+        'tests/hermes-runtime-backends-strip.test.ts',
         'tests/hermes-tool-catalog-bridge.test.ts',
         'tests/hermes-tool-catalog-strip.test.ts',
         'tests/hermes-toolsets-bridge.test.ts',
