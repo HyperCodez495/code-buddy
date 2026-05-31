@@ -81,7 +81,11 @@ export interface HermesLearningLoopStatus {
     lessonCandidateCount: number;
     patternCount: number;
     pendingLessonCandidateCount: number;
+    pendingReviewCount: number;
+    pendingUserObservationCount: number;
     recentRunCount: number;
+    retrospectiveCoveragePercent: number;
+    retrospectiveEligibleRunCount: number;
     reinforcedSkillCount: number;
     retrospectiveArtifactCount: number;
     skillUsageCount: number;
@@ -254,8 +258,8 @@ export const HermesLearningLoopStrip: React.FC<{
             <LearningMetric
               icon={<Activity size={10} />}
               label={t('fleet.hermesLearningLoop.runsLabel', 'Runs')}
-              tone={visibleStatus.summary.retrospectiveArtifactCount > 0 ? 'success' : 'default'}
-              value={`${visibleStatus.summary.retrospectiveArtifactCount}/${visibleStatus.summary.recentRunCount}`}
+              tone={visibleStatus.summary.retrospectiveCoveragePercent === 100 ? 'success' : 'warning'}
+              value={`${visibleStatus.summary.retrospectiveArtifactCount}/${visibleStatus.summary.retrospectiveEligibleRunCount}`}
             />
             <LearningMetric
               icon={<GitBranch size={10} />}
@@ -278,10 +282,22 @@ export const HermesLearningLoopStrip: React.FC<{
               })}
             </span>
             <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
+              {t('fleet.hermesLearningLoop.coverageChip', '{{percent}}% reviewed', {
+                percent: visibleStatus.summary.retrospectiveCoveragePercent,
+              })}
+            </span>
+            <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
               {t('fleet.hermesLearningLoop.userModelChip', '{{count}} accepted observations', {
                 count: visibleStatus.summary.acceptedUserObservationCount,
               })}
             </span>
+            {visibleStatus.summary.pendingReviewCount > 0 ? (
+              <span className="rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning">
+                {t('fleet.hermesLearningLoop.pendingReviewChip', '{{count}} pending review', {
+                  count: visibleStatus.summary.pendingReviewCount,
+                })}
+              </span>
+            ) : null}
             <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
               {t('fleet.hermesLearningLoop.skillsChip', '{{reinforced}} reinforced / {{deprecated}} deprecated', {
                 reinforced: visibleStatus.summary.reinforcedSkillCount,

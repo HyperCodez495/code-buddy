@@ -109,7 +109,11 @@ const learningStatus: HermesLearningLoopStatus = {
     lessonCandidateCount: 2,
     patternCount: 2,
     pendingLessonCandidateCount: 1,
+    pendingReviewCount: 2,
+    pendingUserObservationCount: 0,
     recentRunCount: 2,
+    retrospectiveCoveragePercent: 50,
+    retrospectiveEligibleRunCount: 2,
     reinforcedSkillCount: 1,
     retrospectiveArtifactCount: 1,
     skillUsageCount: 1,
@@ -156,7 +160,9 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('1/2');
     expect(strip?.textContent).toContain('Patterns');
     expect(strip?.textContent).toContain('auto disabled');
+    expect(strip?.textContent).toContain('50% reviewed');
     expect(strip?.textContent).toContain('3 accepted observations');
+    expect(strip?.textContent).toContain('2 pending review');
     expect(strip?.textContent).toContain('1 reinforced / 0 deprecated');
     expect(strip?.textContent).toContain('1 skill candidates');
     expect(strip?.textContent).toContain('Next retrospective');

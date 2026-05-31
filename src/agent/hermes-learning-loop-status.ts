@@ -36,10 +36,14 @@ export interface HermesLearningLoopStatus {
   runsDir: string;
   summary: {
     recentRunCount: number;
+    retrospectiveEligibleRunCount: number;
     retrospectiveArtifactCount: number;
+    retrospectiveCoveragePercent: number;
     lessonCandidateCount: number;
     pendingLessonCandidateCount: number;
+    pendingReviewCount: number;
     acceptedUserObservationCount: number;
+    pendingUserObservationCount: number;
     skillUsageCount: number;
     reinforcedSkillCount: number;
     deprecatedSkillCount: number;
@@ -113,6 +117,10 @@ const RETROSPECTIVE_READY_STATUSES = new Set<RunSummary['status']>([
   'failed',
   'cancelled',
 ]);
+
+function isRetrospectiveEligible(status: RunSummary['status']): boolean {
+  return RETROSPECTIVE_READY_STATUSES.has(status);
+}
 
 function buildRetrospectiveCommand(runId: string): string {
   return `buddy run retrospective ${runId} --force --json`;
@@ -225,6 +233,15 @@ export function buildHermesLearningLoopStatus(
   const patterns = readPatternStats(workDir);
   const skillCandidates = countLearningSkillCandidates(workDir);
   const autoEnabled = isLearningAgentEnabled();
+  const retrospectiveArtifactCount = runRows.filter((run) => run.hasLearningRetrospective).length;
+  const retrospectiveEligibleRunCount = runRows.filter((run) => isRetrospectiveEligible(run.status)).length;
+  const retrospectiveCoveragePercent = retrospectiveEligibleRunCount === 0
+    ? 100
+    : Math.round((retrospectiveArtifactCount / retrospectiveEligibleRunCount) * 100);
+  const pendingReviewCount =
+    lessonCandidates.byStatus.pending
+    + userModel.byStatus.pending
+    + skillCandidates.learningCandidateCount;
 
   const status: HermesLearningLoopStatus = {
     kind: 'hermes_learning_loop_status',
@@ -235,10 +252,14 @@ export function buildHermesLearningLoopStatus(
     runsDir: store.getRunsDir(),
     summary: {
       recentRunCount: recentRuns.length,
-      retrospectiveArtifactCount: runRows.filter((run) => run.hasLearningRetrospective).length,
+      retrospectiveEligibleRunCount,
+      retrospectiveArtifactCount,
+      retrospectiveCoveragePercent,
       lessonCandidateCount: lessonCandidates.total,
       pendingLessonCandidateCount: lessonCandidates.byStatus.pending,
+      pendingReviewCount,
       acceptedUserObservationCount: userModel.byStatus.accepted,
+      pendingUserObservationCount: userModel.byStatus.pending,
       skillUsageCount: skillUsageRecords.length,
       reinforcedSkillCount: skillUsageRecords.filter((skill) => skill.reinforced).length,
       deprecatedSkillCount: skillUsageRecords.filter((skill) => skill.deprecated).length,
@@ -292,9 +313,10 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     `Hermes learning loop: ${status.ok ? 'ok' : 'needs attention'}`,
     `  Auto retrospective: ${status.autoRetrospective.mode}`,
     `  Recent runs: ${status.summary.recentRunCount}`,
-    `  Runs with retrospectives: ${status.summary.retrospectiveArtifactCount}`,
+    `  Runs with retrospectives: ${status.summary.retrospectiveArtifactCount}/${status.summary.retrospectiveEligibleRunCount} eligible (${status.summary.retrospectiveCoveragePercent}%)`,
     `  Lesson candidates: ${status.summary.lessonCandidateCount} (${status.summary.pendingLessonCandidateCount} pending)`,
-    `  Accepted user-model observations: ${status.summary.acceptedUserObservationCount}`,
+    `  User-model observations: ${status.summary.acceptedUserObservationCount} accepted, ${status.summary.pendingUserObservationCount} pending`,
+    `  Pending review items: ${status.summary.pendingReviewCount}`,
     `  Skill usage records: ${status.summary.skillUsageCount} (${status.summary.reinforcedSkillCount} reinforced, ${status.summary.deprecatedSkillCount} deprecated)`,
     `  Pattern records: ${status.summary.patternCount}`,
     `  Learning skill candidates: ${status.state.skillCandidates.learningCandidateCount}`,

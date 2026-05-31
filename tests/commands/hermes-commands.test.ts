@@ -319,7 +319,10 @@ describe('Hermes CLI commands', () => {
         summary: {
           acceptedUserObservationCount: number;
           pendingLessonCandidateCount: number;
+          pendingReviewCount: number;
           recentRunCount: number;
+          retrospectiveCoveragePercent: number;
+          retrospectiveEligibleRunCount: number;
           retrospectiveArtifactCount: number;
           skillUsageCount: number;
         };
@@ -341,8 +344,11 @@ describe('Hermes CLI commands', () => {
       expect(output.kind).toBe('hermes_learning_loop_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.summary.recentRunCount).toBe(2);
+      expect(output.summary.retrospectiveEligibleRunCount).toBe(2);
       expect(output.summary.retrospectiveArtifactCount).toBe(1);
+      expect(output.summary.retrospectiveCoveragePercent).toBe(50);
       expect(output.summary.pendingLessonCandidateCount).toBeGreaterThan(0);
+      expect(output.summary.pendingReviewCount).toBeGreaterThan(0);
       expect(output.summary.acceptedUserObservationCount).toBe(1);
       expect(output.summary.skillUsageCount).toBe(1);
       expect(output.autoRetrospective).toMatchObject({ enabled: false, mode: 'disabled' });
