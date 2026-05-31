@@ -2274,6 +2274,24 @@
       "loadFailed": "Hermes 提供商就绪度加载失败",
       "openSettings": "打开 API 设置"
     },
+    "hermesMemoryProviders": {
+      "title": "Hermes 记忆提供商",
+      "readyChip": "记忆就绪",
+      "attentionChip": "记忆需注意",
+      "loadingChip": "记忆",
+      "activeLabel": "当前",
+      "remoteLabel": "远程",
+      "missingLabel": "缺失",
+      "noCredentials": "无凭据",
+      "unavailable": "Hermes 记忆提供商就绪度尚未加载。",
+      "loadFailed": "Hermes 记忆提供商加载失败",
+      "status": {
+        "available": "可用",
+        "configured": "已配置",
+        "fallback": "本地回退",
+        "missing": "缺失"
+      }
+    },
     "hermesRuntimeBackends": {
       "title": "Hermes 运行后端",
       "readyChip": "运行就绪",

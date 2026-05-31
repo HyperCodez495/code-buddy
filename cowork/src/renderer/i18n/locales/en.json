@@ -2287,6 +2287,24 @@
       "loadFailed": "Hermes provider readiness load failed",
       "openSettings": "Open API settings"
     },
+    "hermesMemoryProviders": {
+      "title": "Hermes memory providers",
+      "readyChip": "memory ready",
+      "attentionChip": "memory attention",
+      "loadingChip": "memory",
+      "activeLabel": "Active",
+      "remoteLabel": "Remote",
+      "missingLabel": "Missing",
+      "noCredentials": "no credentials",
+      "unavailable": "Hermes memory provider readiness is not loaded yet.",
+      "loadFailed": "Hermes memory provider load failed",
+      "status": {
+        "available": "available",
+        "configured": "configured",
+        "fallback": "local fallback",
+        "missing": "missing"
+      }
+    },
     "hermesRuntimeBackends": {
       "title": "Hermes runtime backends",
       "readyChip": "runtime ready",

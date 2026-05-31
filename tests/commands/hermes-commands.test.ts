@@ -5,6 +5,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
+import { resetMemoryProviderRegistry } from '../../src/memory/memory-provider.js';
 import { getUserModel, resetUserModels } from '../../src/memory/user-model.js';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
@@ -170,6 +171,64 @@ describe('Hermes CLI commands', () => {
     }
   });
 
+  it('prints Hermes memory provider readiness without leaking credential values', async () => {
+    const keys = ['CODEBUDDY_MEMORY_PROVIDER', 'MEM0_API_KEY', 'MEM0_BASE_URL'];
+    const originalEnv = new Map(keys.map((key) => [key, process.env[key]]));
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    try {
+      process.env.CODEBUDDY_MEMORY_PROVIDER = 'mem0';
+      process.env.MEM0_API_KEY = 'secret-mem0-token';
+      process.env.MEM0_BASE_URL = 'https://memory.example.test';
+      resetMemoryProviderRegistry();
+
+      await program.parseAsync(['node', 'test', 'hermes', 'memory', 'status', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        kind: string;
+        schemaVersion: number;
+        readiness: {
+          activeProviderId: string;
+          configuredRemoteCount: number;
+          providers: Array<{
+            credentialSources: string[];
+            id: string;
+            status: string;
+          }>;
+        };
+      };
+
+      expect(output.kind).toBe('hermes_memory_providers_status');
+      expect(output.schemaVersion).toBe(1);
+      expect(output.readiness.activeProviderId).toBe('mem0');
+      expect(output.readiness.configuredRemoteCount).toBeGreaterThanOrEqual(1);
+      expect(output.readiness.providers).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            id: 'mem0',
+            credentialSources: ['MEM0_API_KEY'],
+            status: 'configured',
+          }),
+          expect.objectContaining({
+            id: 'byterover',
+            status: 'missing',
+          }),
+        ]),
+      );
+      expect(raw).not.toContain('secret-mem0-token');
+      expect(raw).not.toContain('memory.example.test');
+    } finally {
+      for (const key of keys) {
+        const value = originalEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      resetMemoryProviderRegistry();
+    }
+  });
+
   it('prints the machine-checkable Hermes parity manifest', async () => {
     const program = createProgram();
     registerHermesCommands(program);
@@ -270,6 +329,15 @@ describe('Hermes CLI commands', () => {
           verificationCommands: expect.arrayContaining([
             'npx tsx src/index.ts hermes portal status --json',
           ]),
+        }),
+        expect.objectContaining({
+          id: 'memory-providers',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining(['src/agent/hermes-memory-providers.ts']),
+          verificationCommands: expect.arrayContaining([
+            'npx tsx src/index.ts hermes memory status --json',
+          ]),
+          notes: expect.stringContaining('secret-safe provider readiness matrix'),
         }),
       ]),
     );

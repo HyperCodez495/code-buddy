@@ -65,6 +65,10 @@ const hermesProviderReadinessStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-provider-readiness-strip.tsx'
 );
+const hermesMemoryProvidersStripPath = path.resolve(
+  process.cwd(),
+  'src/renderer/components/hermes-memory-providers-strip.tsx'
+);
 const hermesRuntimeBackendsStripPath = path.resolve(
   process.cwd(),
   'src/renderer/components/hermes-runtime-backends-strip.tsx'
@@ -242,6 +246,7 @@ describe('French renderer i18n support', () => {
       fs.readFileSync(hermesToolCatalogStripPath, 'utf8'),
       fs.readFileSync(hermesToolsetsStripPath, 'utf8'),
       fs.readFileSync(hermesProviderReadinessStripPath, 'utf8'),
+      fs.readFileSync(hermesMemoryProvidersStripPath, 'utf8'),
       fs.readFileSync(hermesRuntimeBackendsStripPath, 'utf8'),
       fs.readFileSync(hermesBrowserBackendsStripPath, 'utf8'),
       fs.readFileSync(hermesMessagingGatewayStripPath, 'utf8'),
@@ -332,6 +337,20 @@ describe('French renderer i18n support', () => {
       'fleet.hermesProviderReadiness.unavailable',
       'fleet.hermesProviderReadiness.loadFailed',
       'fleet.hermesProviderReadiness.openSettings',
+      'fleet.hermesMemoryProviders.title',
+      'fleet.hermesMemoryProviders.readyChip',
+      'fleet.hermesMemoryProviders.attentionChip',
+      'fleet.hermesMemoryProviders.loadingChip',
+      'fleet.hermesMemoryProviders.activeLabel',
+      'fleet.hermesMemoryProviders.remoteLabel',
+      'fleet.hermesMemoryProviders.missingLabel',
+      'fleet.hermesMemoryProviders.noCredentials',
+      'fleet.hermesMemoryProviders.unavailable',
+      'fleet.hermesMemoryProviders.loadFailed',
+      'fleet.hermesMemoryProviders.status.available',
+      'fleet.hermesMemoryProviders.status.configured',
+      'fleet.hermesMemoryProviders.status.fallback',
+      'fleet.hermesMemoryProviders.status.missing',
       'fleet.hermesRuntimeBackends.title',
       'fleet.hermesRuntimeBackends.readyChip',
       'fleet.hermesRuntimeBackends.attentionChip',

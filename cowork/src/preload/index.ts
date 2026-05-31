@@ -1570,6 +1570,34 @@ contextBridge.exposeInMainWorld('electronAPI', {
         recommendations: string[];
       } | null> => ipcRenderer.invoke('tools.hermesProviderReadiness.get'),
     },
+    hermesMemoryProviders: {
+      get: (): Promise<{
+        activeProviderId: string;
+        command: string;
+        configuredRemoteCount: number;
+        fallbackCount: number;
+        generatedAt: string;
+        issues: string[];
+        missingOfficialCount: number;
+        ok: boolean;
+        providers: Array<{
+          active: boolean;
+          baseUrlSources: string[];
+          configured: boolean;
+          credentialSources: string[];
+          id: string;
+          label: string;
+          local: boolean;
+          notes: string[];
+          officialSurface: string;
+          registered: boolean;
+          remediation: string[];
+          status: 'available' | 'configured' | 'fallback' | 'missing';
+        }>;
+        recommendations: string[];
+        registeredCount: number;
+      } | null> => ipcRenderer.invoke('tools.hermesMemoryProviders.get'),
+    },
     hermesRuntimeBackends: {
       get: (): Promise<{
         arch: string;
@@ -4345,6 +4373,34 @@ declare global {
             };
             providerCount: number;
             recommendations: string[];
+          } | null>;
+        };
+        hermesMemoryProviders: {
+          get: () => Promise<{
+            activeProviderId: string;
+            command: string;
+            configuredRemoteCount: number;
+            fallbackCount: number;
+            generatedAt: string;
+            issues: string[];
+            missingOfficialCount: number;
+            ok: boolean;
+            providers: Array<{
+              active: boolean;
+              baseUrlSources: string[];
+              configured: boolean;
+              credentialSources: string[];
+              id: string;
+              label: string;
+              local: boolean;
+              notes: string[];
+              officialSurface: string;
+              registered: boolean;
+              remediation: string[];
+              status: 'available' | 'configured' | 'fallback' | 'missing';
+            }>;
+            recommendations: string[];
+            registeredCount: number;
           } | null>;
         };
         hermesRuntimeBackends: {

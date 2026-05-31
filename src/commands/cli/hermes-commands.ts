@@ -57,6 +57,10 @@ import {
   runHermesBrowserBackendSmoke,
 } from '../../agent/hermes-browser-backends.js';
 import {
+  buildHermesMemoryProvidersReadiness,
+  renderHermesMemoryProvidersReadiness,
+} from '../../agent/hermes-memory-providers.js';
+import {
   KanbanStore,
   type CreateKanbanCardInput,
   type KanbanPriority,
@@ -1016,6 +1020,30 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log(renderHermesPromptSizeDiagnostic(diagnostic));
+    });
+
+  const memory = hermes
+    .command('memory')
+    .description('Inspect Hermes memory provider readiness');
+
+  memory
+    .command('status')
+    .description('Print local and external memory provider readiness')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const readiness = buildHermesMemoryProvidersReadiness();
+      const payload = {
+        kind: 'hermes_memory_providers_status',
+        schemaVersion: 1,
+        readiness,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderHermesMemoryProvidersReadiness(readiness));
     });
 
   hermes

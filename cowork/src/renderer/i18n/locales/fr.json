@@ -2287,6 +2287,24 @@
       "loadFailed": "Chargement de la readiness provider Hermes echoue",
       "openSettings": "Ouvrir les reglages API"
     },
+    "hermesMemoryProviders": {
+      "title": "Providers memoire Hermes",
+      "readyChip": "memoire prete",
+      "attentionChip": "memoire a verifier",
+      "loadingChip": "memoire",
+      "activeLabel": "Actif",
+      "remoteLabel": "Distant",
+      "missingLabel": "Manquants",
+      "noCredentials": "pas de credentials",
+      "unavailable": "La readiness des providers memoire Hermes n'est pas encore chargee.",
+      "loadFailed": "Chargement des providers memoire Hermes echoue",
+      "status": {
+        "available": "disponible",
+        "configured": "configure",
+        "fallback": "fallback local",
+        "missing": "absent"
+      }
+    },
     "hermesRuntimeBackends": {
       "title": "Backends d'execution Hermes",
       "readyChip": "runtime pret",

@@ -184,6 +184,7 @@ import {
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesProviderReadinessForReview } from './tools/hermes-provider-readiness-bridge';
+import { getHermesMemoryProvidersForReview } from './tools/hermes-memory-providers-bridge';
 import {
   getHermesRuntimeBackendsForReview,
   runHermesRuntimeBackendSmokeForReview,
@@ -4091,6 +4092,15 @@ ipcMain.handle('tools.hermesProviderReadiness.get', async () => {
     return await getHermesProviderReadinessForReview();
   } catch (err) {
     logWarn('[tools.hermesProviderReadiness.get] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('tools.hermesMemoryProviders.get', async () => {
+  try {
+    return await getHermesMemoryProvidersForReview();
+  } catch (err) {
+    logWarn('[tools.hermesMemoryProviders.get] failed:', err);
     return null;
   }
 });
