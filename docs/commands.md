@@ -165,6 +165,7 @@ buddy hermes providers status [--json]
 buddy hermes portal status|tools|open [--json]
 buddy hermes messaging status [--json] [--config <path>]
 buddy hermes mobile status [query...] [--json]
+buddy hermes trajectories status [query...] [--run-id <id>] [--json]
 buddy hermes browser status [--json]
 buddy hermes browser-smoke local-playwright [--json]
 buddy hermes runtime status [--json]
@@ -246,6 +247,14 @@ read-only versus draft-only route counts, blocked operations, local approval
 queue state, and copy/paste `buddy run mobile-*` commands. It does not start a
 listener or print pairing codes; mobile execution and file mutations remain
 local-operator-gated.
+
+`buddy hermes trajectories status [query...] [--run-id <id>] [--json]`
+wraps the real RunStore trajectory surfaces in a Hermes-scoped compatibility
+report. It inventories redacted trajectory export, recall-pack compression,
+Learning Agent retrospectives, golden workflow evals and policy evals, then
+keeps upstream-style batch generation/compression marked partial. Pass a real
+stored `--run-id` to prove export counts and redaction metrics without replaying
+tools; pass a query to probe recall-pack matches.
 
 `buddy hermes browser status [--json]` prints a browser backend inventory for
 local Playwright, remote CDP, Browserbase/Stagehand, Browser Use gateway,

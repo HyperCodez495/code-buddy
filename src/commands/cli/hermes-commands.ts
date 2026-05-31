@@ -84,6 +84,10 @@ import {
   type MobileSupervisionApprovalQueue,
 } from '../../observability/mobile-supervision-approval-queue.js';
 import {
+  buildHermesTrajectoryCompatibilityReport,
+  renderHermesTrajectoryCompatibilityReport,
+} from '../../observability/hermes-trajectory-compatibility.js';
+import {
   KanbanStore,
   type CreateKanbanCardInput,
   type KanbanPriority,
@@ -128,6 +132,12 @@ interface HermesMessagingStatusOptions extends HermesCommandOptions {
 interface HermesMobileStatusOptions extends HermesCommandOptions {
   limit?: string;
   source?: string[];
+}
+
+interface HermesTrajectoriesStatusOptions extends HermesCommandOptions {
+  includeArtifactContent?: boolean;
+  maxArtifactBytes?: string;
+  runId?: string;
 }
 
 interface HermesPromptSizeSection {
@@ -1423,6 +1433,35 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log(renderHermesMobileSupervisionStatus(status));
+    });
+
+  const trajectories = hermes
+    .command('trajectories')
+    .alias('trajectory')
+    .description('Inspect Hermes trajectory export, recall, and research eval compatibility');
+
+  trajectories
+    .command('status')
+    .description('Print trajectory export/compression compatibility and optional real run probes')
+    .argument('[query...]', 'optional recall query to probe against stored runs')
+    .option('--run-id <runId>', 'optional stored run id to probe with redacted trajectory export')
+    .option('--include-artifact-content', 'include redacted artifact content in the run export probe')
+    .option('--max-artifact-bytes <bytes>', 'max redacted artifact preview bytes for the run export probe', '4000')
+    .option('--json', 'output JSON')
+    .action((queryParts: string[] | undefined, options: HermesTrajectoriesStatusOptions) => {
+      const report = buildHermesTrajectoryCompatibilityReport({
+        includeArtifactContent: options.includeArtifactContent === true,
+        maxArtifactBytes: parseOptionalPositiveInteger(options.maxArtifactBytes, '--max-artifact-bytes'),
+        query: (queryParts ?? []).join(' '),
+        runId: options.runId,
+      });
+
+      if (options.json) {
+        console.log(stableJson(report));
+        return;
+      }
+
+      console.log(renderHermesTrajectoryCompatibilityReport(report));
     });
 
   const providers = hermes

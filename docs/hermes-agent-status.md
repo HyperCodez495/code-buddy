@@ -188,6 +188,7 @@ for persisted cron job list/trigger plus daemon and heartbeat report endpoints.
 | Sub-capability | Where | Status |
 |---|---|---|
 | Trajectory export (redacted) | `buddy run trajectory-export` | done |
+| Trajectory compatibility report | `buddy hermes trajectories status --json` | partial: proves native export/recall/evals, not upstream batch compression |
 | Golden + policy evals | `buddy run golden-evals / policy-evals` | done |
 | Run lineage / fork family tree | `RunStore.getRunLineage`; `buddy run lineage` | done |
 

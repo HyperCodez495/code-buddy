@@ -7,6 +7,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
 import { resetMemoryProviderRegistry } from '../../src/memory/memory-provider.js';
 import { getUserModel, resetUserModels } from '../../src/memory/user-model.js';
+import { RunStore } from '../../src/observability/run-store.js';
+import { resetDataRedactionEngine } from '../../src/security/data-redaction.js';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
 
@@ -396,6 +398,102 @@ describe('Hermes CLI commands', () => {
     expect(raw).not.toContain('previewCode');
   });
 
+  it('prints Hermes trajectory compatibility against a real RunStore probe', async () => {
+    resetDataRedactionEngine();
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-trajectory-command-'));
+    const store = new RunStore(tempDir);
+    const secret = 'sk-abcdefghijklmnopqrstuvwx';
+    const previousInstance = (RunStore as unknown as { _instance: RunStore | null })._instance;
+    (RunStore as unknown as { _instance: RunStore | null })._instance = store;
+
+    try {
+      const runId = store.startRun('Hermes trajectory command proof', {
+        channel: 'cowork',
+        tags: ['hermes', 'research'],
+      });
+      store.emit(runId, {
+        type: 'tool_call',
+        data: {
+          toolCallId: 'call_command_probe',
+          toolName: 'web_search',
+          args: {
+            apiKey: secret,
+            query: 'Hermes trajectory command proof',
+          },
+        },
+      });
+      store.emit(runId, {
+        type: 'tool_result',
+        data: {
+          output: `Command probe succeeded with ${secret}`,
+          success: true,
+          toolName: 'web_search',
+        },
+      });
+      store.saveArtifact(runId, 'summary.md', `Hermes trajectory command proof ${secret}`);
+      store.endRun(runId, 'completed');
+      await new Promise((resolve) => setTimeout(resolve, 60));
+
+      const program = createProgram();
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'trajectories',
+        'status',
+        '--json',
+        '--run-id',
+        runId,
+        'trajectory',
+        'command',
+        'proof',
+      ]);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        kind: string;
+        ok: boolean;
+        capabilities: Array<{ id: string; status: string }>;
+        probe: {
+          recallPack: { runCount: number };
+          trajectoryExport: {
+            found: boolean;
+            redactionCount: number;
+            runId: string;
+            toolCallCount: number;
+            toolResultCount: number;
+          };
+        };
+      };
+
+      expect(output.kind).toBe('hermes_trajectory_compatibility_report');
+      expect(output.ok).toBe(true);
+      expect(output.capabilities).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ id: 'trajectory-export', status: 'available' }),
+          expect.objectContaining({ id: 'batch-trajectory-generation', status: 'partial' }),
+        ]),
+      );
+      expect(output.probe.trajectoryExport).toMatchObject({
+        found: true,
+        runId,
+        toolCallCount: 1,
+        toolResultCount: 1,
+      });
+      expect(output.probe.trajectoryExport.redactionCount).toBeGreaterThan(0);
+      expect(output.probe.recallPack.runCount).toBe(1);
+      expect(raw).not.toContain(secret);
+    } finally {
+      await new Promise((resolve) => setTimeout(resolve, 60));
+      store.dispose();
+      (RunStore as unknown as { _instance: RunStore | null })._instance = previousInstance;
+      resetDataRedactionEngine();
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
   it('prints Hermes runtime backend readiness as a dedicated status command', async () => {
     const program = createProgram();
     registerHermesCommands(program);
@@ -644,6 +742,20 @@ describe('Hermes CLI commands', () => {
           ]),
           verificationCommands: expect.arrayContaining([
             'cd cowork && npm test -- --run tests/hermes-mobile-supervision-bridge.test.ts tests/hermes-mobile-supervision-bridge-real.test.ts tests/hermes-mobile-supervision-strip.test.ts',
+          ]),
+        }),
+        expect.objectContaining({
+          id: 'research-trajectories',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining([
+            'src/observability/hermes-trajectory-compatibility.ts',
+            'src/observability/run-trajectory-export.ts',
+            'src/observability/run-recall-pack.ts',
+            'src/agent/learning-agent.ts',
+          ]),
+          verificationCommands: expect.arrayContaining([
+            'npm test -- tests/observability/hermes-trajectory-compatibility.test.ts tests/observability/golden-workflow-evals.test.ts tests/observability/policy-evals.test.ts --run',
+            'npx tsx src/index.ts hermes trajectories status --json',
           ]),
         }),
       ]),
