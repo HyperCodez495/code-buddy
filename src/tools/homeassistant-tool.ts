@@ -177,7 +177,7 @@ async function callService(
 }
 
 async function homeAssistantRequest<T>(options: HomeAssistantRequestOptions): Promise<T> {
-  const response = await options.fetchImpl(new URL(options.path, normalizeBaseUrl(options.baseUrl)), {
+  const response = await options.fetchImpl(new URL(options.path.replace(/^\/+/, ''), normalizeBaseUrl(options.baseUrl)), {
     method: options.method,
     headers: {
       Authorization: `Bearer ${options.token}`,

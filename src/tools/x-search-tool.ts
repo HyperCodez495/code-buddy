@@ -157,7 +157,7 @@ async function postResponses(
   const timeoutMs = Math.max(30_000, options.timeoutMs ?? Number(process.env.CODEBUDDY_X_SEARCH_TIMEOUT_MS ?? DEFAULT_TIMEOUT_MS));
   const userAgent = options.userAgent ?? `Code-Buddy/${process.env.npm_package_version ?? 'dev'}`;
   const sleepMs = options.sleepMs ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
-  const url = new URL('/responses', normalizeBaseUrl(credential.baseUrl));
+  const url = new URL('responses', normalizeBaseUrl(credential.baseUrl));
 
   let lastError: Error | undefined;
   for (let attempt = 0; attempt <= retries; attempt++) {

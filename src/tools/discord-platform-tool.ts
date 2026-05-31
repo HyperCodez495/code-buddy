@@ -411,7 +411,7 @@ async function removeRole(
 }
 
 async function discordRequest<T>(options: DiscordRequestOptions): Promise<T> {
-  const url = new URL(options.path, normalizeBaseUrl(options.apiBaseUrl));
+  const url = new URL(options.path.replace(/^\/+/, ''), normalizeBaseUrl(options.apiBaseUrl));
   for (const [key, value] of Object.entries(options.query ?? {})) {
     url.searchParams.set(key, value);
   }

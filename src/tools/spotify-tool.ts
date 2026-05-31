@@ -571,7 +571,7 @@ async function library(
 }
 
 async function spotifyRequest<T = unknown>(options: SpotifyRequestOptions): Promise<T> {
-  const url = new URL(options.path, normalizeBaseUrl(options.baseUrl));
+  const url = new URL(options.path.replace(/^\/+/, ''), normalizeBaseUrl(options.baseUrl));
   for (const [key, value] of Object.entries(options.query ?? {})) {
     if (value !== undefined && value !== null && value !== '') {
       url.searchParams.set(key, String(value));
