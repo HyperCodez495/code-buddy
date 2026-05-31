@@ -110,7 +110,7 @@ Current measured state:
     - `npx tsx src/index.ts hermes portal tools --json`
     - `npx tsx src/index.ts hermes memory status --json`
     - `npm test -- tests/agent/hermes-memory-providers.test.ts tests/memory/memory-provider.test.ts --run`
-    - `cd cowork && npm test -- --run tests/hermes-memory-providers-bridge.test.ts tests/hermes-memory-providers-strip.test.ts`
+    - `cd cowork && npm test -- --run tests/hermes-memory-providers-bridge.test.ts tests/hermes-memory-providers-bridge-real.test.ts tests/hermes-memory-providers-strip.test.ts`
 
 - [x] **Expose mobile supervision readiness for Hermes**
   - Why: mobile supervision existed across `buddy run mobile-*` commands and server routes, but there was no Hermes cockpit command that told an operator whether the route mount, auth policy, approval queue, and blocked operations were ready.

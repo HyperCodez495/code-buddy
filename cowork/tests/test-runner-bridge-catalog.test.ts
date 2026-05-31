@@ -143,6 +143,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-browser-backends-bridge.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-browser-backends-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-memory-providers-bridge.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'hermes-memory-providers-bridge-real.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-memory-providers-strip.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-messaging-gateway-strip.test.tsx'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hermes-mobile-supervision-bridge.test.ts'), '');
@@ -1078,6 +1079,7 @@ describe('TestRunnerBridge catalog', () => {
         'tests/hermes-browser-backends-bridge.test.ts',
         'tests/hermes-browser-backends-strip.test.ts',
         'tests/hermes-memory-providers-bridge.test.ts',
+        'tests/hermes-memory-providers-bridge-real.test.ts',
         'tests/hermes-memory-providers-strip.test.ts',
         'tests/hermes-messaging-gateway-strip.test.tsx',
         'tests/hermes-mobile-supervision-bridge.test.ts',
