@@ -45,7 +45,8 @@ interface HermesProviderReadiness {
       toolGatewayConfigured: boolean;
     };
     toolGateway: {
-      directFallbackCount: number;
+      configuredCount?: number;
+      directFallbackCount?: number;
       managedByNousCount: number;
     };
   };
@@ -66,6 +67,14 @@ export async function getHermesProviderReadinessForReview(): Promise<HermesProvi
   if (!mod?.buildHermesAgentDiagnostics) return null;
 
   const readiness = mod.buildHermesAgentDiagnostics().providerReadiness;
+  const managedByNousCount = readiness.portal.toolGateway.managedByNousCount;
+  const configuredToolCount = readiness.portal.toolGateway.configuredCount;
+  const directFallbackCount =
+    readiness.portal.toolGateway.directFallbackCount ??
+    (typeof configuredToolCount === 'number'
+      ? Math.max(0, configuredToolCount - managedByNousCount)
+      : 0);
+
   return {
     command: 'buddy hermes providers status --json',
     ok: readiness.ok,
@@ -90,8 +99,8 @@ export async function getHermesProviderReadinessForReview(): Promise<HermesProvi
       credentialPresent: readiness.portal.portal.credentialPresent,
       credentialSources: readiness.portal.portal.credentialSources,
       toolGatewayConfigured: readiness.portal.portal.toolGatewayConfigured,
-      managedByNousCount: readiness.portal.toolGateway.managedByNousCount,
-      directFallbackCount: readiness.portal.toolGateway.directFallbackCount,
+      managedByNousCount,
+      directFallbackCount,
     },
     providerCount: readiness.providers.length,
     configuredProviderCount: readiness.providers.filter((provider) => provider.configured).length,

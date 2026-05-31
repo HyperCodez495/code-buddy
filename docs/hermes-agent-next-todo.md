@@ -100,7 +100,7 @@ Current measured state:
   - Remaining scope: exact upstream provider setup wizard parity and live Nous Portal OAuth/proxying remain product decisions.
   - Verification:
     - `npm test -- tests/agent/hermes-agent-diagnostics.test.ts tests/commands/hermes-commands.test.ts --run`
-    - `cd cowork && npm test -- --run tests/hermes-provider-readiness-bridge.test.ts tests/hermes-provider-readiness-strip.test.ts`
+    - `cd cowork && npm test -- --run tests/hermes-provider-readiness-bridge.test.ts tests/hermes-provider-readiness-bridge-real.test.ts tests/hermes-provider-readiness-strip.test.ts`
     - real CLI smoke with empty and configured env.
     - `npx tsx src/index.ts hermes providers status --json`
     - `npx tsx src/index.ts hermes doctor balanced --json`
