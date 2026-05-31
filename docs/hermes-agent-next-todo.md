@@ -118,7 +118,7 @@ Current measured state:
   - Guardrail: the status command never dispatches work, never starts a server, and never exposes pairing secret material; mobile follow-up remains draft-only until a local operator reviews it.
   - Verification:
     - `npm test -- tests/commands/hermes-commands.test.ts tests/agent/hermes-cli-status-real.test.ts --run`
-    - `cd cowork && npm test -- --run tests/hermes-mobile-supervision-bridge.test.ts tests/hermes-mobile-supervision-strip.test.ts tests/fleet-command-center-board.test.ts tests/i18n-french-support.test.ts`
+    - `cd cowork && npm test -- --run tests/hermes-mobile-supervision-bridge.test.ts tests/hermes-mobile-supervision-bridge-real.test.ts tests/hermes-mobile-supervision-strip.test.ts tests/fleet-command-center-board.test.ts tests/i18n-french-support.test.ts`
     - `cd cowork && npm run typecheck && npm run build:e2e`
     - `npx tsx src/index.ts hermes mobile status "mobile supervision" --json`
     - `node dist/index.js hermes mobile status "mobile supervision" --json`
