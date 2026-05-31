@@ -18,6 +18,7 @@ import {
   type ResearchScriptSkillCandidate,
   type ResearchScriptSkillCandidateWithInstallState,
 } from '../../agent/research-script-skill-candidate.js';
+import { recordLearningSkillUsage } from '../../agent/learning-agent.js';
 import { getSkillsHub } from '../../skills/hub.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
 
@@ -146,6 +147,38 @@ function readApproval(input: Record<string, unknown>, action: string): string | 
   return approvedBy;
 }
 
+function recordSkillManageMutationOutcome(input: {
+  action: string;
+  approvedBy?: string;
+  currentSnapshotId?: string;
+  error?: string;
+  name: string;
+  reason?: string;
+  restoredSnapshotId?: string;
+  rollbackSnapshotId?: string;
+  success: boolean;
+}): void {
+  try {
+    const history = getSkillsHub().getInstalledSkillHistory(input.name);
+    recordLearningSkillUsage(input.name, {
+      error: input.error,
+      mutation: {
+        action: input.action,
+        approvedBy: input.approvedBy,
+        currentSnapshotId: input.currentSnapshotId,
+        error: input.error,
+        reason: input.reason,
+        restoredSnapshotId: input.restoredSnapshotId,
+        rollbackSnapshotId: input.rollbackSnapshotId,
+        rollbackableCount: history?.rollbackableCount,
+      },
+      success: input.success,
+    }, process.cwd());
+  } catch {
+    // Learning telemetry must never make an approved skill mutation fail.
+  }
+}
+
 type SkillCandidateSummarySource = ResearchScriptSkillCandidate
   & Partial<ResearchScriptSkillCandidateWithInstallState>;
 
@@ -268,13 +301,22 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const edited = getSkillsHub().editInstalledSkill(name, content, {
           actor: approval,
-          reason: readString(input.reason) || undefined,
+          reason,
         });
         if (!edited) {
           return { success: false, error: `skill_manage edit: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: edited.snapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_edit',
@@ -313,15 +355,23 @@ export class SkillManageExecuteTool implements ITool {
         return approval;
       }
 
+      const reason = readString(input.reason) || undefined;
       const enabled = action === 'enable';
       const installed = getSkillsHub().setEnabled(name, enabled, {
         actor: approval,
-        reason: readString(input.reason) || undefined,
+        reason,
         status: action === 'deprecate' ? 'deprecated' : enabled ? 'active' : 'disabled',
       });
       if (!installed) {
         return { success: false, error: `skill_manage ${action}: skill not found: ${name}` };
       }
+      recordSkillManageMutationOutcome({
+        action,
+        approvedBy: approval,
+        name,
+        reason,
+        success: true,
+      });
 
       return serializePayload({
         action: `skill_manage_${action}`,
@@ -345,6 +395,13 @@ export class SkillManageExecuteTool implements ITool {
       if (!removed) {
         return { success: false, error: `skill_manage delete: skill not found: ${name}` };
       }
+      recordSkillManageMutationOutcome({
+        action,
+        approvedBy: approval,
+        name,
+        reason: readString(input.reason) || undefined,
+        success: true,
+      });
 
       return serializePayload({
         action: 'skill_manage_delete',
@@ -375,18 +432,27 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const patched = getSkillsHub().patchInstalledSkill(name, oldText, newText, {
           actor: approval,
           expectedReplacements: typeof input.expected_replacements === 'number'
             ? input.expected_replacements
             : undefined,
           filePath: readString(input.file_path) || undefined,
-          reason: readString(input.reason) || undefined,
+          reason,
           replaceAll: input.replace_all === true,
         });
         if (!patched) {
           return { success: false, error: `skill_manage patch: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: patched.snapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_patch',
@@ -420,13 +486,22 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const written = getSkillsHub().writeSkillSupportingFile(name, filePath, fileContent, {
           actor: approval,
-          reason: readString(input.reason) || undefined,
+          reason,
         });
         if (!written) {
           return { success: false, error: `skill_manage write_file: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: written.snapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_write_file',
@@ -456,13 +531,22 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const removed = getSkillsHub().removeSkillSupportingFile(name, filePath, {
           actor: approval,
-          reason: readString(input.reason) || undefined,
+          reason,
         });
         if (!removed) {
           return { success: false, error: `skill_manage remove_file: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: removed.snapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_remove_file',
@@ -488,17 +572,27 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const rolledBack = getSkillsHub().rollbackInstalledSkill(
           name,
           readString(input.snapshot_id) || undefined,
           {
             actor: approval,
-            reason: readString(input.reason) || undefined,
+            reason,
           },
         );
         if (!rolledBack) {
           return { success: false, error: `skill_manage rollback: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          currentSnapshotId: rolledBack.currentSnapshot.id,
+          name,
+          reason,
+          restoredSnapshotId: rolledBack.restoredSnapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_rollback',
@@ -550,14 +644,23 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const reset = await getSkillsHub().resetInstalledSkill(name, {
           actor: approval,
-          reason: readString(input.reason) || undefined,
+          reason,
           version: readString(input.version) || undefined,
         });
         if (!reset) {
           return { success: false, error: `skill_manage reset: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: reset.snapshot?.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_reset',
@@ -583,15 +686,24 @@ export class SkillManageExecuteTool implements ITool {
       }
 
       try {
+        const reason = readString(input.reason) || undefined;
         const updated = await getSkillsHub().updateInstalledSkill(name, {
           actor: approval,
           force: input.force === true,
-          reason: readString(input.reason) || undefined,
+          reason,
           version: readString(input.version) || undefined,
         });
         if (!updated) {
           return { success: false, error: `skill_manage update: skill not found: ${name}` };
         }
+        recordSkillManageMutationOutcome({
+          action,
+          approvedBy: approval,
+          name,
+          reason,
+          rollbackSnapshotId: updated.snapshot.id,
+          success: true,
+        });
 
         return serializePayload({
           action: 'skill_manage_update',
@@ -658,6 +770,13 @@ export class SkillManageExecuteTool implements ITool {
         overwrite: input.overwrite === true,
         rootDir: process.cwd(),
         workspaceSkillRoot: readString(input.workspace_skill_root) || undefined,
+      });
+      recordSkillManageMutationOutcome({
+        action,
+        approvedBy,
+        name: candidate.skillName,
+        reason: 'candidate install',
+        success: true,
       });
 
       return serializePayload({

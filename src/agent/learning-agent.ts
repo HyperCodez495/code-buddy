@@ -188,10 +188,13 @@ export interface LearningSkillUsageRecord {
   deprecated: boolean;
   failureCount: number;
   invocationCount: number;
+  lastMutation?: LearningSkillMutationEvent;
   lastDurationMs?: number;
   lastError?: string;
   lastRunId?: string;
   lastUsedAt: string;
+  mutationCount: number;
+  mutationHistory: LearningSkillMutationEvent[];
   reinforced: boolean;
   score: number;
   scoreHistory: LearningSkillScoreEvent[];
@@ -211,9 +214,27 @@ export interface LearningSkillUsageFile {
 export interface LearningSkillUsageInput {
   durationMs?: number;
   error?: string;
+  mutation?: LearningSkillMutationInput;
   runId?: string;
   success: boolean;
   usedAt?: number | string;
+}
+
+export interface LearningSkillMutationInput {
+  action: string;
+  approvedBy?: string;
+  currentSnapshotId?: string;
+  error?: string;
+  reason?: string;
+  restoredSnapshotId?: string;
+  rollbackSnapshotId?: string;
+  rollbackableCount?: number;
+}
+
+export interface LearningSkillMutationEvent extends LearningSkillMutationInput {
+  recordedAt: string;
+  runId?: string;
+  success: boolean;
 }
 
 export interface LearningSkillScoreEvent {
@@ -459,16 +480,38 @@ export function recordLearningSkillUsage(
     successCount,
     reason: score.reason,
   };
+  const mutationEvent: LearningSkillMutationEvent | undefined = record.mutation
+    ? {
+      action: normalizeMutationAction(record.mutation.action),
+      ...(record.mutation.approvedBy ? { approvedBy: record.mutation.approvedBy } : {}),
+      ...(record.mutation.currentSnapshotId ? { currentSnapshotId: record.mutation.currentSnapshotId } : {}),
+      ...(record.mutation.error ?? record.error ? { error: record.mutation.error ?? record.error } : {}),
+      ...(record.mutation.reason ? { reason: record.mutation.reason } : {}),
+      recordedAt: now,
+      ...(record.mutation.restoredSnapshotId ? { restoredSnapshotId: record.mutation.restoredSnapshotId } : {}),
+      ...(record.mutation.rollbackSnapshotId ? { rollbackSnapshotId: record.mutation.rollbackSnapshotId } : {}),
+      ...(typeof record.mutation.rollbackableCount === 'number' ? { rollbackableCount: record.mutation.rollbackableCount } : {}),
+      ...(record.runId ? { runId: record.runId } : {}),
+      success: record.success,
+    }
+    : undefined;
+  const mutationHistory = [
+    ...(existing?.mutationHistory ?? []),
+    ...(mutationEvent ? [mutationEvent] : []),
+  ].slice(-20);
 
   const updated: LearningSkillUsageRecord = {
     averageDurationMs,
     deprecated: score.recommendation === 'deprecate',
     failureCount,
     invocationCount,
+    ...(mutationEvent ? { lastMutation: mutationEvent } : existing?.lastMutation ? { lastMutation: existing.lastMutation } : {}),
     lastDurationMs: record.durationMs,
     lastError: record.success ? undefined : record.error,
     lastRunId: record.runId,
     lastUsedAt: now,
+    mutationCount: (existing?.mutationCount ?? existing?.mutationHistory?.length ?? 0) + (mutationEvent ? 1 : 0),
+    mutationHistory,
     nextAction: score.nextAction,
     recommendation: score.recommendation,
     reinforced: score.recommendation === 'reinforce',
@@ -1122,6 +1165,9 @@ function normalizeLearningSkillUsageRecord(record: LearningSkillUsageRecord): Le
   return {
     ...record,
     deprecated: record.deprecated ?? (score.recommendation === 'deprecate'),
+    lastMutation: record.lastMutation ?? record.mutationHistory?.at(-1),
+    mutationCount: record.mutationCount ?? record.mutationHistory?.length ?? 0,
+    mutationHistory: Array.isArray(record.mutationHistory) ? record.mutationHistory : [],
     nextAction: record.nextAction ?? score.nextAction,
     recommendation: record.recommendation ?? score.recommendation,
     reinforced: record.reinforced ?? (score.recommendation === 'reinforce'),
@@ -1146,6 +1192,10 @@ function stableHash(value: string): string {
 
 function normalizeSkillName(value: string): string {
   return slugify(value) || 'unnamed-skill';
+}
+
+function normalizeMutationAction(value: string): string {
+  return slugify(value) || 'mutation';
 }
 
 function slugify(value: string): string {

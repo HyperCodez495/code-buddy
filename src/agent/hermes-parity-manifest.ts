@@ -327,6 +327,7 @@ const FEATURES: HermesParityFeature[] = [
     officialSurface: 'Memory nudges, autonomous skill creation, self-improving skills, session search, Honcho modeling',
     codeBuddyEvidence: [
       'src/agent/lesson-candidate-queue.ts',
+      'src/agent/learning-agent.ts',
       'src/memory/user-model.ts',
       'src/observability/run-store.ts',
       'src/agent/research-script-skill-candidate.ts',
@@ -336,9 +337,10 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/lesson-candidate-queue.test.ts tests/memory/user-model.test.ts --run',
       'npm test -- tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run',
       'npm test -- tests/agent/learning-agent-real.test.ts --run',
+      'npm test -- tests/tools/skills-inspection-real.test.ts tests/agent/learning-agent-real.test.ts --run',
     ],
-    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions. Honcho-style dialectic inference remains review-gated rather than auto-applied.',
-    nextWork: 'Keep skill mutation outcomes tied to rollback history and decide whether Honcho-style inference belongs behind review gates.',
+    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions, and approved skill_manage mutations record rollback snapshot ids in Learning Agent telemetry. Honcho-style dialectic inference remains review-gated rather than auto-applied.',
+    nextWork: 'Decide whether Honcho-style inference belongs behind review gates, then add it only if the operator workflow needs it.',
   },
   {
     id: 'cron-scheduling',

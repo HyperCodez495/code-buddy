@@ -588,6 +588,42 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
       historySnapshots[historySnapshots.length - 1]!.createdAt,
     );
 
+    const { listLearningSkillUsage } = await import('../../src/agent/learning-agent.js');
+    const learningUsage = listLearningSkillUsage(tempWorkspace).find(
+      (skill) => skill.skillName === 'research-skill-manage-candidate',
+    );
+    expect(learningUsage).toMatchObject({
+      lastMutation: {
+        action: 'reset',
+        approvedBy: 'Patrice',
+        rollbackSnapshotId: (reset.snapshot as { id: string }).id,
+        success: true,
+      },
+      mutationCount: 9,
+      skillName: 'research-skill-manage-candidate',
+    });
+    expect(learningUsage?.mutationHistory).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        action: 'patch',
+        approvedBy: 'Patrice',
+        rollbackSnapshotId: (patched.snapshot as { id: string }).id,
+        success: true,
+      }),
+      expect.objectContaining({
+        action: 'rollback',
+        approvedBy: 'Patrice',
+        currentSnapshotId: (rolledBack.currentSnapshot as { id: string }).id,
+        restoredSnapshotId: (rolledBack.restoredSnapshot as { id: string }).id,
+        success: true,
+      }),
+      expect.objectContaining({
+        action: 'update',
+        approvedBy: 'Patrice',
+        rollbackSnapshotId: (updated.snapshot as { id: string }).id,
+        success: true,
+      }),
+    ]));
+
     const deprecateWithoutApproval = await manageTool!.execute({
       action: 'deprecate',
       name: 'research-skill-manage-candidate',
