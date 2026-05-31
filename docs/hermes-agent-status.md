@@ -109,6 +109,10 @@ change-control surface.
 | Multi-target delivery + mobile-safe summaries | `src/scheduler/scheduled-delivery.ts` | done |
 | Scheduled runs create durable run records/artifacts | `RunStore` wired into the cron loop | done |
 
+Cowork Test Runner now exposes a safe `Hermes / persistence skills real smoke`
+entry that relaunches persisted cron, saved-session search, SkillsHub
+inspection, skills CLI, and Hermes package summary proofs.
+
 ### Delegation and parallelism
 
 | Sub-capability | Where | Status |

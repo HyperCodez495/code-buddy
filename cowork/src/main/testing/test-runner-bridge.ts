@@ -1163,6 +1163,38 @@ export class TestRunnerBridge extends EventEmitter {
       addIfFilesExist(
         items,
         {
+          id: 'code-buddy-hermes-persistence-skills-real-smoke',
+          label: 'Hermes / persistence skills real smoke',
+          group: 'Hermes',
+          description:
+            'Runs real cron persistence, saved-session search, SkillsHub inspection, skills CLI, and Hermes package summary smokes',
+          command: 'npm',
+          args: [
+            'test',
+            '--',
+            'tests/tools/cronjob-tool-real.test.ts',
+            'tests/tools/session-search-real.test.ts',
+            'tests/tools/skills-inspection-real.test.ts',
+            'tests/commands/skills-command-real.test.ts',
+            'tests/agent/hermes-skill-package-summary-real.test.ts',
+            '--run',
+          ],
+          cwd: workspace,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 180_000,
+        },
+        [
+          path.join(workspace, 'tests', 'tools', 'cronjob-tool-real.test.ts'),
+          path.join(workspace, 'tests', 'tools', 'session-search-real.test.ts'),
+          path.join(workspace, 'tests', 'tools', 'skills-inspection-real.test.ts'),
+          path.join(workspace, 'tests', 'commands', 'skills-command-real.test.ts'),
+          path.join(workspace, 'tests', 'agent', 'hermes-skill-package-summary-real.test.ts'),
+        ]
+      );
+      addIfFilesExist(
+        items,
+        {
           id: 'code-buddy-hermes-platform-connectors-real-smoke',
           label: 'Hermes / platform connectors real smoke',
           group: 'Hermes',

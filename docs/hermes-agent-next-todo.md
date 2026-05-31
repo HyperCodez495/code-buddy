@@ -27,6 +27,8 @@ Current measured state:
   - Verification:
     - `npm test -- tests/tools/skills-inspection-real.test.ts tests/unit/agent-tool-definitions-activation.test.ts --run`
     - `npm test -- tests/skills/hub.test.ts tests/commands/skills-command-real.test.ts --run`
+    - `npm test -- tests/tools/cronjob-tool-real.test.ts tests/tools/session-search-real.test.ts tests/tools/skills-inspection-real.test.ts tests/commands/skills-command-real.test.ts tests/agent/hermes-skill-package-summary-real.test.ts --run`
+    - `(cd cowork && npm test -- tests/test-runner-bridge-catalog.test.ts --run)` confirms the safe Cowork Test Runner persistence/skills smoke entry.
     - `npx tsx src/index.ts hermes tools --json`
 
 - [x] **Inject accepted user-model summaries automatically per session**
@@ -67,6 +69,7 @@ Current measured state:
     - `npm test -- tests/agent/research-script-skill-candidate.test.ts --run`
     - `npm test -- tests/commands/skills-command-real.test.ts --run`
     - `npm test -- tests/tools/skills-inspection-real.test.ts tests/skills/hub.test.ts --run`
+    - `npm test -- tests/tools/cronjob-tool-real.test.ts tests/tools/session-search-real.test.ts tests/tools/skills-inspection-real.test.ts tests/commands/skills-command-real.test.ts tests/agent/hermes-skill-package-summary-real.test.ts --run`
     - `(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/skill-candidate-review-queue-strip.test.ts tests/i18n-french-support.test.ts tests/fleet-command-center-board.test.ts --run)`
     - Playwright flow over a temp workspace with a materialized skill candidate.
 

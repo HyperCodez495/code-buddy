@@ -311,6 +311,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'commands', 'worktree-handlers.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'commands', 'fleet-commands.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'commands', 'learning-retrospective-command.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'commands', 'skills-command-real.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'commands', 'handlers'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'commands', 'handlers', 'auth-handlers.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'features'), { recursive: true });
@@ -583,6 +584,9 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'tools', 'hermes-core-aliases-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'send-message-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'kanban-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'cronjob-tool-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'session-search-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'skills-inspection-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'discord-tool-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'homeassistant-tool-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'mixture-of-agents-real.test.ts'), '');
@@ -606,6 +610,7 @@ function makeWorkspace(): string {
   mkdirSync(path.join(root, 'tests', 'agent'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'agent', 'hermes-runtime-backends-smoke-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'hermes-cli-status-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'agent', 'hermes-skill-package-summary-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'learning-agent-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'tool-handler-filter.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'tool-executor.test.ts'), '');
@@ -881,6 +886,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Hermes / runtime live smoke');
     expect(labels).toContain('Hermes / CLI status real smoke');
     expect(labels).toContain('Hermes / core workspace real smoke');
+    expect(labels).toContain('Hermes / persistence skills real smoke');
     expect(labels).toContain('Hermes / platform connectors real smoke');
     expect(labels).toContain('Hermes / learning loop real smoke');
     expect(labels).toContain('Hermes / execute_code real smoke');
@@ -1043,6 +1049,22 @@ describe('TestRunnerBridge catalog', () => {
         'tests/tools/hermes-core-aliases-real.test.ts',
         'tests/tools/send-message-real.test.ts',
         'tests/tools/kanban-real.test.ts',
+        '--run',
+      ],
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Hermes / persistence skills real smoke')).toMatchObject({
+      command: 'npm',
+      args: [
+        'test',
+        '--',
+        'tests/tools/cronjob-tool-real.test.ts',
+        'tests/tools/session-search-real.test.ts',
+        'tests/tools/skills-inspection-real.test.ts',
+        'tests/commands/skills-command-real.test.ts',
+        'tests/agent/hermes-skill-package-summary-real.test.ts',
         '--run',
       ],
       kind: 'integration',
