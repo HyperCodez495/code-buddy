@@ -99,6 +99,9 @@ function makeWorkspace(): string {
     )
   );
 
+  mkdirSync(path.join(root, 'scripts'), { recursive: true });
+  writeFileSync(path.join(root, 'scripts', 'hermes-built-cli-smoke.mjs'), '');
+
   const coworkDir = path.join(root, 'cowork');
   mkdirSync(path.join(coworkDir, 'e2e'), { recursive: true });
   writeFileSync(
@@ -918,6 +921,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Cowork / knowledge Hermes presence bundle');
     expect(labels).toContain('Hermes / runtime live smoke');
     expect(labels).toContain('Hermes / CLI status real smoke');
+    expect(labels).toContain('Hermes / built CLI real smoke');
     expect(labels).toContain('Hermes / core workspace real smoke');
     expect(labels).toContain('Hermes / persistence skills real smoke');
     expect(labels).toContain('Hermes / platform connectors real smoke');
@@ -1075,6 +1079,13 @@ describe('TestRunnerBridge catalog', () => {
       kind: 'integration',
       safeToRun: true,
       timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Hermes / built CLI real smoke')).toMatchObject({
+      command: 'node',
+      args: ['scripts/hermes-built-cli-smoke.mjs'],
+      kind: 'integration',
+      safeToRun: false,
+      timeoutMs: 240_000,
     });
     expect(catalog.find((item) => item.label === 'Hermes / core workspace real smoke')).toMatchObject({
       command: 'npm',

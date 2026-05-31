@@ -202,6 +202,7 @@ buddy hermes portal status --json
 buddy hermes portal tools --json
 buddy hermes runtime-smoke local --json
 buddy hermes runtime-smoke wsl --json
+node scripts/hermes-built-cli-smoke.mjs
 npm test -- tests/agent/hermes-cli-status-real.test.ts --run
 
 # Run it (needs a configured provider):

@@ -1132,6 +1132,23 @@ export class TestRunnerBridge extends EventEmitter {
         },
         path.join(workspace, 'tests', 'agent', 'hermes-cli-status-real.test.ts')
       );
+      addIfFileExists(
+        items,
+        {
+          id: 'code-buddy-hermes-built-cli-real-smoke',
+          label: 'Hermes / built CLI real smoke',
+          group: 'Hermes',
+          description:
+            'Rebuilds Code Buddy, then runs the compiled dist CLI for Hermes tool parity and doctor status',
+          command: 'node',
+          args: ['scripts/hermes-built-cli-smoke.mjs'],
+          cwd: workspace,
+          kind: 'integration',
+          safeToRun: false,
+          timeoutMs: 240_000,
+        },
+        path.join(workspace, 'scripts', 'hermes-built-cli-smoke.mjs')
+      );
       addIfFilesExist(
         items,
         {
