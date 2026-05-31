@@ -570,11 +570,15 @@ describe('Hermes CLI commands', () => {
         expect.objectContaining({
           id: 'browser-automation',
           status: 'partial',
-          codeBuddyEvidence: expect.arrayContaining(['src/agent/hermes-browser-backends.ts']),
+          codeBuddyEvidence: expect.arrayContaining([
+            'src/agent/hermes-browser-backends.ts',
+            'cowork/src/main/tools/hermes-browser-backends-bridge.ts',
+          ]),
           verificationCommands: expect.arrayContaining([
             'npx tsx src/index.ts hermes browser status --json',
             'npx tsx src/index.ts hermes browser-smoke local-playwright --json',
             'npm test -- tests/agent/hermes-browser-backends-smoke-real.test.ts --run',
+            'cd cowork && npm test -- --run tests/hermes-browser-backends-bridge.test.ts tests/hermes-browser-backends-strip.test.ts',
           ]),
           notes: expect.stringContaining('machine-readable backend readiness'),
           nextWork: expect.not.stringContaining('Create backend-specific browser smoke tests and status output'),
@@ -630,6 +634,16 @@ describe('Hermes CLI commands', () => {
           ]),
           verificationCommands: expect.arrayContaining([
             'cd cowork && npm test -- --run tests/hermes-runtime-backends-bridge.test.ts tests/hermes-runtime-backends-bridge-real.test.ts tests/hermes-runtime-backends-strip.test.ts',
+          ]),
+        }),
+        expect.objectContaining({
+          id: 'mobile-supervision',
+          status: 'partial',
+          codeBuddyEvidence: expect.arrayContaining([
+            'cowork/src/main/tools/hermes-mobile-supervision-bridge.ts',
+          ]),
+          verificationCommands: expect.arrayContaining([
+            'cd cowork && npm test -- --run tests/hermes-mobile-supervision-bridge.test.ts tests/hermes-mobile-supervision-bridge-real.test.ts tests/hermes-mobile-supervision-strip.test.ts',
           ]),
         }),
       ]),
