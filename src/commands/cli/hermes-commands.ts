@@ -12,6 +12,7 @@ import path from 'path';
 import type { Command } from 'commander';
 
 import {
+  DEFAULT_DISPATCH_POLICY_PREVIEW_TOOLS,
   FLEET_DISPATCH_PROFILES,
   buildDispatchToolFilter,
   buildHermesToolsetDescriptor,
@@ -118,6 +119,28 @@ interface HermesPromptSizeDiagnostic {
     }>;
   };
   sections: HermesPromptSizeSection[];
+  notes: string[];
+}
+
+interface HermesToolsetsCatalog {
+  kind: 'hermes_toolsets_catalog';
+  schemaVersion: 1;
+  generatedAt: string;
+  requestedProfile: string;
+  activeProfile: ReturnType<typeof normalizeDispatchProfile>;
+  officialSource: {
+    repository: string;
+    inspectedCommit: string;
+    sourceFiles: string[];
+  };
+  previewTools: string[];
+  summary: {
+    totalToolsets: number;
+    profiles: string[];
+  };
+  guidance: ReturnType<typeof buildHermesAgentProfile>['dispatchProfileGuidance'];
+  activeToolset: ReturnType<typeof buildHermesToolsetDescriptor>;
+  toolsets: ReturnType<typeof buildHermesToolsetDescriptor>[];
   notes: string[];
 }
 
@@ -413,6 +436,79 @@ function renderHermesPromptSizeDiagnostic(diagnostic: HermesPromptSizeDiagnostic
   lines.push('');
   lines.push('Notes:');
   for (const note of diagnostic.notes) {
+    lines.push(`  - ${note}`);
+  }
+
+  return lines.join('\n');
+}
+
+function buildHermesToolsetsCatalog(profileArg: string): HermesToolsetsCatalog {
+  const activeProfile = normalizeDispatchProfile(profileArg);
+  const previewTools = [...DEFAULT_DISPATCH_POLICY_PREVIEW_TOOLS];
+  const toolsets = FLEET_DISPATCH_PROFILES.map((profile) => buildHermesToolsetDescriptor(profile, previewTools));
+
+  return {
+    kind: 'hermes_toolsets_catalog',
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    requestedProfile: profileArg,
+    activeProfile,
+    officialSource: {
+      repository: 'https://github.com/NousResearch/hermes-agent',
+      inspectedCommit: '5921d667',
+      sourceFiles: ['toolsets.py::TOOLSETS', 'toolsets.py::_HERMES_CORE_TOOLS'],
+    },
+    previewTools,
+    summary: {
+      totalToolsets: toolsets.length,
+      profiles: [...FLEET_DISPATCH_PROFILES],
+    },
+    guidance: buildHermesAgentProfile(activeProfile).dispatchProfileGuidance,
+    activeToolset: buildHermesToolsetDescriptor(activeProfile, previewTools),
+    toolsets,
+    notes: [
+      'This is the Code Buddy native Fleet/Hermes toolset mapping, not the upstream Python runtime.',
+      'Decisions are policy previews for representative tools; model-facing schemas are filtered again at runtime.',
+    ],
+  };
+}
+
+function renderHermesToolsetsCatalog(catalog: HermesToolsetsCatalog): string {
+  const lines = [
+    `Hermes toolsets catalog: ${catalog.summary.totalToolsets} Fleet profiles`,
+    `  Active profile: ${catalog.activeProfile}`,
+    `  Active toolset: ${catalog.activeToolset.toolsetId}`,
+    `  Preview tools: ${formatList(catalog.previewTools)}`,
+  ];
+
+  if (catalog.requestedProfile !== catalog.activeProfile) {
+    lines.push(`  Requested: ${catalog.requestedProfile} (normalized to balanced)`);
+  }
+
+  lines.push('');
+  lines.push('Profiles:');
+  for (const guidance of catalog.guidance) {
+    lines.push(`  ${guidance.profile}: ${guidance.useWhen}`);
+    lines.push(`    ${guidance.policySummary}`);
+  }
+
+  lines.push('');
+  lines.push('Toolsets:');
+  for (const toolset of catalog.toolsets) {
+    lines.push(`  ${toolset.toolsetId}`);
+    lines.push(`    Intent: ${toolset.intent}`);
+    lines.push(`    Default: ${toolset.defaultAction}`);
+    lines.push(`    Allow groups: ${formatList(toolset.allowGroups)}`);
+    lines.push(`    Confirm groups: ${formatList(toolset.confirmGroups)}`);
+    lines.push(`    Deny groups: ${formatList(toolset.denyGroups)}`);
+    lines.push(`    Allowed preview tools: ${formatList(toolset.allowedTools)}`);
+    lines.push(`    Confirm preview tools: ${formatList(toolset.confirmTools)}`);
+    lines.push(`    Denied preview tools: ${formatList(toolset.deniedTools)}`);
+  }
+
+  lines.push('');
+  lines.push('Notes:');
+  for (const note of catalog.notes) {
     lines.push(`  - ${note}`);
   }
 
@@ -836,6 +932,22 @@ export function registerHermesCommands(program: Command): void {
       }
 
       console.log(renderHermesToolParityManifest(manifest));
+    });
+
+  hermes
+    .command('toolsets')
+    .description('Show the native Fleet toolsets used by the Hermes Agent profile')
+    .argument('[dispatchProfile]', `active Fleet profile (${FLEET_DISPATCH_PROFILES.join(', ')})`, 'balanced')
+    .option('--json', 'output JSON')
+    .action((profileArg: string, options: HermesCommandOptions) => {
+      const catalog = buildHermesToolsetsCatalog(profileArg);
+
+      if (options.json) {
+        console.log(stableJson(catalog));
+        return;
+      }
+
+      console.log(renderHermesToolsetsCatalog(catalog));
     });
 
   hermes

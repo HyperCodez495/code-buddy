@@ -58,10 +58,11 @@ const FEATURES: HermesParityFeature[] = [
     status: 'partial',
     verificationCommands: [
       'npx tsx src/index.ts hermes doctor safe --json',
+      'npx tsx src/index.ts hermes toolsets safe --json',
       'npx tsx src/index.ts hermes prompt-size safe --json',
     ],
-    notes: 'Code Buddy has native CLI/slash surfaces and Hermes diagnostics, but not exact upstream command names or setup flows.',
-    nextWork: 'Improve provider/model setup clarity and exact toolset inspection.',
+    notes: 'Code Buddy has native CLI/slash surfaces, Hermes diagnostics, dedicated toolset inspection, and prompt-size reporting, but not exact upstream command names or setup flows.',
+    nextWork: 'Improve provider/model setup clarity where it remains product-relevant.',
   },
   {
     id: 'prompt-size',
@@ -103,14 +104,20 @@ const FEATURES: HermesParityFeature[] = [
     id: 'toolsets',
     area: 'Toolsets',
     officialSurface: 'Core/composite/platform/dynamic toolsets and per-platform hermes-* toolsets',
-    codeBuddyEvidence: ['src/fleet/dispatch-profile.ts', 'src/utils/tool-filter.ts', 'tests/fleet/dispatch-profile.test.ts'],
+    codeBuddyEvidence: [
+      'src/fleet/dispatch-profile.ts',
+      'src/utils/tool-filter.ts',
+      'src/commands/cli/hermes-commands.ts',
+      'tests/fleet/dispatch-profile.test.ts',
+    ],
     status: 'partial',
     verificationCommands: [
       'npm test -- tests/fleet/dispatch-profile.test.ts --run',
+      'npx tsx src/index.ts hermes toolsets review --json',
       'npx tsx src/index.ts hermes doctor review --json',
       'npx tsx src/index.ts hermes tools --json',
     ],
-    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, and the official tool parity catalog is now visible from both CLI and Cowork. The official per-platform toolset catalog is still not complete.',
+    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, the dedicated `buddy hermes toolsets` catalog exposes all native profile/toolset policy decisions, and the official tool parity catalog is visible from both CLI and Cowork. The official per-platform toolset catalog is still not complete.',
     nextWork: 'Keep the official tool catalog current and move remaining partial product surfaces into explicit status/readiness checks.',
   },
   {

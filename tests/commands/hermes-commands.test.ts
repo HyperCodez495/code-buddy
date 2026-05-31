@@ -756,6 +756,73 @@ describe('Hermes CLI commands', () => {
     expect(output.summary.gaps).toBe(0);
   });
 
+  it('prints a dedicated Hermes toolsets catalog', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'toolsets', 'safe', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      activeProfile: string;
+      officialSource: { sourceFiles: string[] };
+      previewTools: string[];
+      summary: { totalToolsets: number; profiles: string[] };
+      activeToolset: {
+        toolsetId: string;
+        defaultAction: string;
+        deniedTools: string[];
+      };
+      toolsets: Array<{
+        profile: string;
+        toolsetId: string;
+        allowedTools: string[];
+        confirmTools: string[];
+        deniedTools: string[];
+      }>;
+    };
+
+    expect(output.kind).toBe('hermes_toolsets_catalog');
+    expect(output.activeProfile).toBe('safe');
+    expect(output.officialSource.sourceFiles).toContain('toolsets.py::TOOLSETS');
+    expect(output.previewTools).toContain('bash');
+    expect(output.summary.totalToolsets).toBe(5);
+    expect(output.summary.profiles).toEqual(['balanced', 'research', 'code', 'review', 'safe']);
+    expect(output.activeToolset).toMatchObject({
+      toolsetId: 'fleet.hermes.safe',
+      defaultAction: 'deny',
+      deniedTools: expect.arrayContaining(['create_file', 'bash', 'git_push', 'delete_file']),
+    });
+    expect(output.toolsets).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          profile: 'code',
+          toolsetId: 'fleet.hermes.code',
+          allowedTools: expect.arrayContaining(['create_file', 'web_fetch']),
+          confirmTools: expect.arrayContaining(['bash', 'git_push']),
+        }),
+        expect.objectContaining({
+          profile: 'review',
+          deniedTools: expect.arrayContaining(['create_file', 'bash']),
+        }),
+      ]),
+    );
+  });
+
+  it('prints readable Hermes toolsets output', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'toolsets', 'review']);
+
+    const output = getLogOutput();
+    expect(output).toContain('Hermes toolsets catalog: 5 Fleet profiles');
+    expect(output).toContain('Active toolset: fleet.hermes.review');
+    expect(output).toContain('Profiles:');
+    expect(output).toContain('review: read-first code review');
+    expect(output).toContain('Denied preview tools: create_file, bash, git_push, delete_file');
+  });
+
   it('prints Markdown for official Hermes tool parity', async () => {
     const program = createProgram();
     registerHermesCommands(program);

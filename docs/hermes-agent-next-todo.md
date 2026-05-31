@@ -70,12 +70,13 @@ Current measured state:
 
 - [x] **Add a Hermes toolset/catalog status surface**
   - Why: `buddy hermes tools` is now discoverable, but Cowork should also show exact/partial/gap status by category.
-  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, Yuanbao group/DM/sticker tools, `skill_manage`, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
+  - Done: Cowork Fleet now has a read-only Hermes tool catalog strip backed by the same local parity manifest as `buddy hermes tools --json`. It shows exact/native/partial/gap counts. `buddy hermes toolsets [profile] --json` now exposes the native Fleet/Hermes toolset catalog directly, with all five `fleet.hermes.*` profiles, policy group boundaries, active toolset, and representative allow/confirm/deny decisions without requiring the wider doctor payload. Kanban, `send_message`, `discord`, `discord_admin`, Home Assistant `ha_*`, Feishu document/comment tools, Yuanbao group/DM/sticker tools, `skill_manage`, `mixture_of_agents`, `execute_code`, `vision_analyze`, `browser_vision`, `text_to_speech`, `image_generate`, `video_analyze`, and `video_generate` exact tool-name gaps have since been closed in the core registry.
   - Acceptance:
     - Cowork shows summary counts and top partial/gap items if any reappear.
     - Platform-only tools remain optional and do not hide the prioritized coding-agent work.
   - Verification:
     - `npx tsx src/index.ts hermes tools --json`
+    - `npx tsx src/index.ts hermes toolsets safe --json`
     - `npm test -- tests/agent/hermes-tool-parity-local.test.ts tests/commands/hermes-commands.test.ts --run`
     - `(cd cowork && npm test -- tests/hermes-tool-catalog-bridge.test.ts tests/hermes-tool-catalog-strip.test.ts --run)`
 

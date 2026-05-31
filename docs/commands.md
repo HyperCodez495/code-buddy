@@ -160,7 +160,7 @@ The REST endpoint mirrors that shape with
 ```bash
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
-buddy hermes profile|agent|doctor|plan|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
+buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy hermes portal status|tools|open [--json]
 buddy tools browser-operator draft "<goal>" [--source-url URL] [--mode isolated|local] [--json]
 buddy tools skill-candidate list|inspect|install [candidatePath] [--approved-by name] [--json]
@@ -190,6 +190,13 @@ Portal readiness, and runtime backend inventory for local, OS sandbox, Docker,
 WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. The JSON
 form is safe for Cowork because it reports credential source names and smoke
 commands only, never secret values.
+
+`buddy hermes toolsets [profile] [--json]` prints the dedicated Fleet/Hermes
+toolset catalog without the wider doctor payload. It shows all five dispatch
+profiles, the active `fleet.hermes.*` toolset, profile guidance, policy group
+boundaries, and representative allow/confirm/deny decisions for the preview
+tool list. The JSON form is intended for Cowork and other cockpits that need to
+render or compare toolset policy without parsing the doctor output.
 
 `buddy hermes parity [--json|--markdown]` prints the machine-checkable official
 Hermes parity manifest created from the 2026-05-30 source/docs audit. Each row
