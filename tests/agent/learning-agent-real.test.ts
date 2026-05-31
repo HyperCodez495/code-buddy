@@ -1,6 +1,8 @@
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
+import { spawnSync } from 'child_process';
+import { fileURLToPath } from 'url';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
@@ -12,6 +14,9 @@ import {
 } from '../../src/agent/learning-agent.js';
 import { resetLessonCandidateQueues } from '../../src/agent/lesson-candidate-queue.js';
 import { RunStore } from '../../src/observability/run-store.js';
+
+const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
 describe('Learning Agent on real RunStore trajectories', () => {
   let tempDir: string;
@@ -92,6 +97,27 @@ describe('Learning Agent on real RunStore trajectories', () => {
     return runId;
   }
 
+  function runCodeBuddyCliJson(args: string[]): unknown {
+    const result = spawnSync(process.execPath, [tsxCli, path.join(repoRoot, 'src/index.ts'), ...args], {
+      cwd: tempDir,
+      encoding: 'utf8',
+      env: {
+        ...process.env,
+        CODEBUDDY_RUNS_DIR: path.join(tempDir, 'runs'),
+        FORCE_COLOR: '0',
+        NO_COLOR: '1',
+      },
+      stdio: ['ignore', 'pipe', 'pipe'],
+      timeout: 90_000,
+      windowsHide: true,
+    });
+
+    expect(result.error, result.stderr).toBeUndefined();
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout.trim()).toMatch(/^\{/);
+    return JSON.parse(result.stdout) as unknown;
+  }
+
   it('builds a retrospective, candidates and continuous skill telemetry from real run files', async () => {
     const runId = startLearningRun();
     store.endRun(runId, 'completed');
@@ -157,6 +183,38 @@ describe('Learning Agent on real RunStore trajectories', () => {
     const retrospective = buildLearningRetrospective(runId, { store, workDir: tempDir });
     expect(retrospective?.complexity.isComplex).toBe(true);
     expect(store.getArtifact(runId, 'learning-retrospective.json')).toContain('"skillUsageCount": 1');
+  });
+
+  it('runs the retrospective and skill usage loop through the real CLI entrypoint', async () => {
+    process.env.CODEBUDDY_LEARNING_AGENT = 'false';
+    const runId = startLearningRun();
+    store.endRun(runId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== runId);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const retrospective = runCodeBuddyCliJson(['run', 'retrospective', runId, '--force', '--json']) as {
+      retrospective: { toolSequence: string[] };
+      skipped: boolean;
+      skillUsageCount: number;
+    };
+    expect(retrospective.skipped).toBe(false);
+    expect(retrospective.retrospective.toolSequence).toEqual(['search', 'view_file', 'bash']);
+    expect(retrospective.skillUsageCount).toBe(1);
+    expect(fs.existsSync(path.join(tempDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-search-view-file-bash', 'SKILL.md'))).toBe(true);
+
+    const learningUsage = runCodeBuddyCliJson(['skills', 'learning-usage', '--json']) as {
+      count: number;
+      skills: Array<{ invocationCount: number; recommendation: string; skillName: string; successCount: number }>;
+    };
+    expect(learningUsage.count).toBe(1);
+    expect(learningUsage.skills).toEqual([
+      expect.objectContaining({
+        invocationCount: 1,
+        recommendation: 'observe',
+        skillName: 'web-audit',
+        successCount: 1,
+      }),
+    ]);
   });
 
   it('scores repeated real skill outcomes with history and recommended next actions', () => {
