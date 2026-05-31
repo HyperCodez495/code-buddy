@@ -843,6 +843,8 @@ function renderHermesMessagingGatewayStatus(report: ChannelStatusReport): string
     `  Configured: ${report.config.configuredCount} (${report.config.enabledCount} enabled, ${report.config.disabledCount} disabled)`,
     `  Runtime: ${report.runtime.connectedCount}/${report.runtime.registeredCount} connected`,
     `  Authenticated: ${report.runtime.authenticatedCount}`,
+    `  Official platforms: ${report.hermes.locallyCoveredCount}/${report.hermes.officialPlatformCount} covered, ` +
+      `${report.hermes.configuredPlatformCount} configured, ${report.hermes.runtimePlatformCount} runtime`,
   ];
 
   if (report.config.path) {
@@ -870,6 +872,18 @@ function renderHermesMessagingGatewayStatus(report: ChannelStatusReport): string
           `auth=${channel.authenticated ? 'yes' : 'no'}` +
           `${channel.error ? `, error=${channel.error}` : ''}`,
       );
+    }
+  }
+
+  if (report.hermes.platforms.length > 0) {
+    lines.push('');
+    lines.push('Hermes platform coverage:');
+    for (const platform of report.hermes.platforms.slice(0, 12)) {
+      const channelSuffix = platform.channelTypes.length > 0 ? ` (${platform.channelTypes.join(', ')})` : '';
+      lines.push(`  - ${platform.platform}: ${platform.status}/${platform.localSurface}${channelSuffix}`);
+    }
+    if (report.hermes.platforms.length > 12) {
+      lines.push(`  ... ${report.hermes.platforms.length - 12} more`);
     }
   }
 

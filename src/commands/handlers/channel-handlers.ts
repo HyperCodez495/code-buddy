@@ -61,6 +61,23 @@ export interface ChannelStatusReport {
       info?: Record<string, unknown>;
     }>;
   };
+  hermes: {
+    officialPlatformCount: number;
+    locallyCoveredCount: number;
+    configuredPlatformCount: number;
+    runtimePlatformCount: number;
+    missingPlatformCount: number;
+    platforms: Array<{
+      platform: string;
+      officialSurface: string;
+      localSurface: 'channel' | 'prompt-tool' | 'generic-channel' | 'missing';
+      channelTypes: string[];
+      configured: boolean;
+      runtimeRegistered: boolean;
+      status: 'available' | 'configured' | 'runtime' | 'missing';
+      notes: string[];
+    }>;
+  };
   recommendations: string[];
 }
 
@@ -161,6 +178,77 @@ function summarizeConfig(config: ChannelsConfig | null): ChannelStatusReport['co
   };
 }
 
+const HERMES_OFFICIAL_MESSAGING_PLATFORMS: Array<{
+  channelTypes?: string[];
+  localSurface: 'channel' | 'prompt-tool' | 'generic-channel' | 'missing';
+  notes?: string[];
+  officialSurface: string;
+  platform: string;
+}> = [
+  { platform: 'Telegram', officialSurface: 'Telegram gateway', localSurface: 'channel', channelTypes: ['telegram'] },
+  { platform: 'Discord', officialSurface: 'Discord gateway', localSurface: 'channel', channelTypes: ['discord'] },
+  { platform: 'Slack', officialSurface: 'Slack gateway', localSurface: 'channel', channelTypes: ['slack'] },
+  { platform: 'WhatsApp', officialSurface: 'WhatsApp gateway', localSurface: 'channel', channelTypes: ['whatsapp'] },
+  { platform: 'Signal', officialSurface: 'Signal gateway', localSurface: 'channel', channelTypes: ['signal'] },
+  { platform: 'SMS', officialSurface: 'SMS gateway', localSurface: 'channel', channelTypes: ['twilio-voice'], notes: ['Mapped through Twilio voice/SMS-style channel primitives.'] },
+  { platform: 'Email', officialSurface: 'Email gateway', localSurface: 'prompt-tool', channelTypes: ['gmail'], notes: ['Available through Gmail/email tool surfaces rather than a long-lived channel process.'] },
+  { platform: 'Home Assistant', officialSurface: 'Home Assistant messaging/control gateway', localSurface: 'prompt-tool', notes: ['Available through exact ha_* prompt tools, not a messaging channel.'] },
+  { platform: 'Mattermost', officialSurface: 'Mattermost gateway', localSurface: 'channel', channelTypes: ['mattermost'] },
+  { platform: 'Matrix', officialSurface: 'Matrix gateway', localSurface: 'channel', channelTypes: ['matrix'] },
+  { platform: 'DingTalk', officialSurface: 'DingTalk gateway', localSurface: 'missing' },
+  { platform: 'Feishu', officialSurface: 'Feishu/Lark gateway', localSurface: 'channel', channelTypes: ['feishu'] },
+  { platform: 'WeCom', officialSurface: 'WeCom gateway', localSurface: 'missing' },
+  { platform: 'Weixin', officialSurface: 'Weixin gateway', localSurface: 'missing' },
+  { platform: 'BlueBubbles', officialSurface: 'BlueBubbles/iMessage gateway', localSurface: 'channel', channelTypes: ['imessage'] },
+  { platform: 'QQ', officialSurface: 'QQ gateway', localSurface: 'missing' },
+  { platform: 'Yuanbao', officialSurface: 'Yuanbao gateway', localSurface: 'prompt-tool', notes: ['Available through exact Yuanbao prompt tools for group info, DM, and stickers.'] },
+  { platform: 'Teams', officialSurface: 'Microsoft Teams gateway', localSurface: 'channel', channelTypes: ['teams'] },
+  { platform: 'LINE', officialSurface: 'LINE gateway', localSurface: 'channel', channelTypes: ['line'] },
+  { platform: 'ntfy', officialSurface: 'ntfy gateway', localSurface: 'missing' },
+  { platform: 'Open WebUI', officialSurface: 'Open WebUI gateway', localSurface: 'generic-channel', channelTypes: ['webchat', 'web'], notes: ['Mapped through webchat/web channel surfaces rather than an exact Open WebUI gateway.'] },
+];
+
+function buildHermesPlatformCoverage(
+  config: ChannelStatusReport['config'],
+  runtimeChannels: ChannelStatusReport['runtime']['channels'],
+): ChannelStatusReport['hermes'] {
+  const configuredTypes = new Set(config.channels.map((channel) => channel.type));
+  const runtimeTypes = new Set(runtimeChannels.map((channel) => channel.type));
+  const platforms = HERMES_OFFICIAL_MESSAGING_PLATFORMS.map((platform) => {
+    const channelTypes = platform.channelTypes ?? [];
+    const configured = channelTypes.some((type) => configuredTypes.has(type));
+    const runtimeRegistered = channelTypes.some((type) => runtimeTypes.has(type));
+    const locallyCovered = platform.localSurface !== 'missing';
+    const status: ChannelStatusReport['hermes']['platforms'][number]['status'] = runtimeRegistered
+      ? 'runtime'
+      : configured
+        ? 'configured'
+        : locallyCovered
+          ? 'available'
+          : 'missing';
+
+    return {
+      platform: platform.platform,
+      officialSurface: platform.officialSurface,
+      localSurface: platform.localSurface,
+      channelTypes,
+      configured,
+      runtimeRegistered,
+      status,
+      notes: platform.notes ?? [],
+    };
+  });
+
+  return {
+    officialPlatformCount: platforms.length,
+    locallyCoveredCount: platforms.filter((platform) => platform.localSurface !== 'missing').length,
+    configuredPlatformCount: platforms.filter((platform) => platform.configured).length,
+    runtimePlatformCount: platforms.filter((platform) => platform.runtimeRegistered).length,
+    missingPlatformCount: platforms.filter((platform) => platform.localSurface === 'missing').length,
+    platforms,
+  };
+}
+
 export function buildChannelStatusReport(
   allStatus: Record<string, import('../../channels/index.js').ChannelStatus>,
   configPath?: string,
@@ -196,21 +284,23 @@ export function buildChannelStatusReport(
   if (runtimeChannels.some((status) => status.error)) {
     recommendations.push('At least one registered channel reports an error; inspect runtime.channels[].error.');
   }
+  const reportConfig = {
+    ...(loadedConfig ? { path: loadedConfig.path } : {}),
+    ...config,
+  };
 
   return {
     kind: 'codebuddy_channel_status',
     schemaVersion: 1,
     generatedAt,
-    config: {
-      ...(loadedConfig ? { path: loadedConfig.path } : {}),
-      ...config,
-    },
+    config: reportConfig,
     runtime: {
       registeredCount: runtimeChannels.length,
       connectedCount: runtimeChannels.filter((status) => status.connected).length,
       authenticatedCount: runtimeChannels.filter((status) => status.authenticated).length,
       channels: runtimeChannels,
     },
+    hermes: buildHermesPlatformCoverage(reportConfig, runtimeChannels),
     recommendations,
   };
 }

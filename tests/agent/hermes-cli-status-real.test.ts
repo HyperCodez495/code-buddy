@@ -92,13 +92,15 @@ describe('Hermes CLI status real smoke', () => {
     ]);
 
     const todoWithDeferred = runHermesJson(['todo', '--include-deferred']) as {
+      deferred: Array<{ id: string }>;
       kind: string;
       summary: { includedDeferred: boolean };
       todos: Array<{ id: string }>;
     };
     expect(todoWithDeferred.kind).toBe('hermes_parity_todo');
     expect(todoWithDeferred.summary.includedDeferred).toBe(true);
-    expect(todoWithDeferred.todos.map((item) => item.id)).toContain('openclaw-migration');
+    expect(todoWithDeferred.todos.map((item) => item.id)).not.toContain('openclaw-migration');
+    expect(todoWithDeferred.deferred.map((item) => item.id)).toContain('openclaw-migration');
 
     const portal = runHermesJson(['portal', 'status']) as {
       kind: string;
@@ -226,6 +228,7 @@ describe('Hermes CLI status real smoke', () => {
       kind: string;
       status: {
         config: { configuredCount: number };
+        hermes: { officialPlatformCount: number; platforms: unknown[] };
         kind: string;
         runtime: { registeredCount: number };
       };
@@ -233,6 +236,8 @@ describe('Hermes CLI status real smoke', () => {
     expect(messaging.kind).toBe('hermes_messaging_gateway_status');
     expect(messaging.status.kind).toBe('codebuddy_channel_status');
     expect(messaging.status.config.configuredCount).toBeGreaterThanOrEqual(0);
+    expect(messaging.status.hermes.officialPlatformCount).toBeGreaterThan(0);
+    expect(messaging.status.hermes.platforms.length).toBe(messaging.status.hermes.officialPlatformCount);
     expect(messaging.status.runtime.registeredCount).toBeGreaterThanOrEqual(0);
 
     const mobile = runHermesJson(['mobile', 'status', 'mobile', 'supervision']) as {

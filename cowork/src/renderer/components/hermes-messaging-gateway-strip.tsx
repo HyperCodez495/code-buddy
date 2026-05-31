@@ -45,6 +45,21 @@ export interface ChannelGatewayStatusReport {
     connectedCount: number;
     registeredCount: number;
   };
+  hermes?: {
+    configuredPlatformCount: number;
+    locallyCoveredCount: number;
+    missingPlatformCount: number;
+    officialPlatformCount: number;
+    runtimePlatformCount: number;
+    platforms: Array<{
+      channelTypes: string[];
+      configured: boolean;
+      localSurface: 'channel' | 'prompt-tool' | 'generic-channel' | 'missing';
+      platform: string;
+      runtimeRegistered: boolean;
+      status: 'available' | 'configured' | 'runtime' | 'missing';
+    }>;
+  };
   schemaVersion: 1;
 }
 
@@ -152,6 +167,30 @@ export const HermesMessagingGatewayStrip: React.FC<{
               tone={visibleStatus.runtime.authenticatedCount > 0 ? 'success' : 'default'}
             />
           </div>
+
+          {visibleStatus.hermes ? (
+            <div className="mt-1.5 flex flex-wrap gap-1 text-[9px]">
+              <span className="rounded bg-accent/10 px-1 py-0.5 text-accent">
+                {t('fleet.hermesMessagingGateway.officialCoverageChip', '{{covered}}/{{total}} official platforms', {
+                  covered: visibleStatus.hermes.locallyCoveredCount,
+                  total: visibleStatus.hermes.officialPlatformCount,
+                })}
+              </span>
+              <span className="rounded bg-accent/10 px-1 py-0.5 text-accent">
+                {t('fleet.hermesMessagingGateway.configuredPlatformsChip', '{{configured}} configured / {{runtime}} runtime', {
+                  configured: visibleStatus.hermes.configuredPlatformCount,
+                  runtime: visibleStatus.hermes.runtimePlatformCount,
+                })}
+              </span>
+              {visibleStatus.hermes.missingPlatformCount > 0 ? (
+                <span className="rounded bg-warning/10 px-1 py-0.5 text-warning">
+                  {t('fleet.hermesMessagingGateway.missingPlatformsChip', '{{count}} missing', {
+                    count: visibleStatus.hermes.missingPlatformCount,
+                  })}
+                </span>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-1.5 grid gap-1">
             {buildChannelRows(visibleStatus).slice(0, 5).map((row) => (

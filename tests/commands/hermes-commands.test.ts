@@ -780,6 +780,10 @@ describe('Hermes CLI commands', () => {
           kind: string;
           recommendations: string[];
           runtime: { registeredCount: number };
+          hermes: {
+            officialPlatformCount: number;
+            platforms: Array<{ platform: string; status: string }>;
+          };
         };
       };
 
@@ -796,6 +800,13 @@ describe('Hermes CLI commands', () => {
         ]),
       );
       expect(output.status.runtime.registeredCount).toBeGreaterThanOrEqual(0);
+      expect(output.status.hermes.officialPlatformCount).toBeGreaterThan(0);
+      expect(output.status.hermes.platforms).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({ platform: 'Telegram', status: 'configured' }),
+          expect.objectContaining({ platform: 'Discord', status: 'configured' }),
+        ]),
+      );
       expect(output.status.recommendations).toEqual(
         expect.arrayContaining([expect.stringContaining('not registered')]),
       );

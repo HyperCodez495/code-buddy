@@ -68,6 +68,35 @@ describe('buildChannelStatusReport', () => {
         authenticated: true,
         lastActivity: '2026-05-30T10:00:00.000Z',
       }));
+      expect(report.hermes.officialPlatformCount).toBeGreaterThan(0);
+      expect(report.hermes.locallyCoveredCount).toBeGreaterThan(0);
+      expect(report.hermes.configuredPlatformCount).toBeGreaterThanOrEqual(2);
+      expect(report.hermes.runtimePlatformCount).toBeGreaterThanOrEqual(1);
+      expect(report.hermes.missingPlatformCount).toBeGreaterThan(0);
+      expect(report.hermes.platforms).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          channelTypes: ['telegram'],
+          localSurface: 'channel',
+          platform: 'Telegram',
+          status: 'runtime',
+        }),
+        expect.objectContaining({
+          channelTypes: ['discord'],
+          localSurface: 'channel',
+          platform: 'Discord',
+          status: 'configured',
+        }),
+        expect.objectContaining({
+          localSurface: 'prompt-tool',
+          platform: 'Yuanbao',
+          status: 'available',
+        }),
+        expect.objectContaining({
+          localSurface: 'missing',
+          platform: 'DingTalk',
+          status: 'missing',
+        }),
+      ]));
       expect(report.recommendations).toEqual([]);
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
@@ -78,6 +107,7 @@ describe('buildChannelStatusReport', () => {
     const report = buildChannelStatusReport({}, path.join(os.tmpdir(), 'missing-channels.json'), '2026-05-30T10:00:01.000Z');
 
     expect(report.config.configuredCount).toBe(0);
+    expect(report.hermes.configuredPlatformCount).toBe(0);
     expect(report.runtime.registeredCount).toBe(0);
     expect(report.recommendations).toEqual(expect.arrayContaining([
       expect.stringContaining('Create .codebuddy/channels.json'),
