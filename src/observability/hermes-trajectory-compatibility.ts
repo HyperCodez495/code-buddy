@@ -402,7 +402,7 @@ function buildRecommendations(summary: {
   const recommendations: string[] = [];
   if (summary.partialCount > 0) {
     recommendations.push(
-      'Keep research-trajectories marked partial until an upstream-style batch generator/compressor exists.',
+      'Investigate any partial trajectory primitive before claiming full Hermes research parity.',
     );
   }
   if (summary.missingCount > 0) {

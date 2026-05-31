@@ -798,17 +798,22 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           id: 'research-trajectories',
-          status: 'partial',
+          status: 'covered-partial',
           codeBuddyEvidence: expect.arrayContaining([
             'src/observability/hermes-trajectory-compatibility.ts',
             'src/observability/run-trajectory-export.ts',
+            'src/observability/run-trajectory-batch.ts',
             'src/observability/run-recall-pack.ts',
             'src/agent/learning-agent.ts',
+            'tests/observability/run-trajectory-batch.test.ts',
           ]),
           verificationCommands: expect.arrayContaining([
-            'npm test -- tests/observability/hermes-trajectory-compatibility.test.ts tests/observability/golden-workflow-evals.test.ts tests/observability/policy-evals.test.ts --run',
+            'npm test -- tests/observability/run-trajectory-batch.test.ts tests/observability/hermes-trajectory-compatibility.test.ts tests/observability/golden-workflow-evals.test.ts tests/observability/policy-evals.test.ts --run',
+            'npx tsx src/index.ts run trajectory-batch <query> --json',
             'npx tsx src/index.ts hermes trajectories status --json',
           ]),
+          notes: expect.stringContaining('batch redacted trajectory collection'),
+          nextWork: expect.not.stringContaining('Implement an upstream-style batch trajectory generator/compressor'),
         }),
         expect.objectContaining({
           id: 'mcp-acp',

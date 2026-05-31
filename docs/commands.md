@@ -257,10 +257,10 @@ local-operator-gated.
 `buddy hermes trajectories status [query...] [--run-id <id>] [--json]`
 wraps the real RunStore trajectory surfaces in a Hermes-scoped compatibility
 report. It inventories redacted trajectory export, recall-pack compression,
-Learning Agent retrospectives, golden workflow evals and policy evals, then
-keeps upstream-style batch generation/compression marked partial. Pass a real
-stored `--run-id` to prove export counts and redaction metrics without replaying
-tools; pass a query to probe recall-pack matches.
+Learning Agent retrospectives, golden workflow evals, policy evals, and native
+trajectory-batch generation/compression. Pass a real stored `--run-id` to prove
+export counts and redaction metrics without replaying tools; pass a query to
+probe recall-pack and batch matches.
 
 `buddy hermes protocols status [--json]` prints a Hermes-scoped MCP/A2A/ACP
 gateway readiness report. It inventories the SDK-backed MCP client, Code Buddy
