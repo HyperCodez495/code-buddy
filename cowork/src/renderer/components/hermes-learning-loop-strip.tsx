@@ -10,6 +10,7 @@ import {
   Sparkles,
   Terminal,
 } from 'lucide-react';
+import { LESSON_CANDIDATES_UPDATED_EVENT } from './lesson-candidate-review-strip';
 
 export interface HermesLearningLoopStatus {
   autoRetrospective: {
@@ -202,6 +203,15 @@ export const HermesLearningLoopStrip: React.FC<{
         throw new Error(response.error ?? response.result?.skippedReason ?? 'Learning retrospective failed.');
       }
       setRetrospectiveResult(response.result);
+      if (response.result.lessonCandidateCount > 0) {
+        window.dispatchEvent(new CustomEvent(LESSON_CANDIDATES_UPDATED_EVENT, {
+          detail: {
+            lessonCandidateCount: response.result.lessonCandidateCount,
+            runId: response.result.runId,
+            source: 'hermes-learning-loop',
+          },
+        }));
+      }
       if (status === undefined && api.get) {
         const refreshed = await api.get({ cwd, limit: 6 });
         setLoadedStatus(refreshed);

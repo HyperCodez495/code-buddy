@@ -11,6 +11,7 @@ import {
   buildHermesLearningLoopCommand,
   type HermesLearningLoopStatus,
 } from '../src/renderer/components/hermes-learning-loop-strip';
+import { LESSON_CANDIDATES_UPDATED_EVENT } from '../src/renderer/components/lesson-candidate-review-strip';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -190,6 +191,7 @@ describe('HermesLearningLoopStrip', () => {
     const get = vi.fn()
       .mockResolvedValueOnce(learningStatus)
       .mockResolvedValueOnce(refreshedStatus);
+    const lessonCandidateUpdate = vi.fn();
     const runRetrospective = vi.fn().mockResolvedValue({
       ok: true,
       result: {
@@ -204,6 +206,7 @@ describe('HermesLearningLoopStrip', () => {
         toolSequence: ['search', 'view_file', 'bash'],
       },
     });
+    window.addEventListener(LESSON_CANDIDATES_UPDATED_EVENT, lessonCandidateUpdate);
     (window as unknown as {
       electronAPI?: {
         tools?: {
@@ -249,7 +252,14 @@ describe('HermesLearningLoopStrip', () => {
       force: true,
       runId: 'run-needs-retro',
     });
+    expect(lessonCandidateUpdate).toHaveBeenCalledTimes(1);
+    expect((lessonCandidateUpdate.mock.calls[0]?.[0] as CustomEvent).detail).toMatchObject({
+      lessonCandidateCount: 2,
+      runId: 'run-needs-retro',
+      source: 'hermes-learning-loop',
+    });
     expect(get).toHaveBeenCalledTimes(2);
     expect(target.textContent).toContain('Retrospective saved: learning-retrospective.json | 2 lessons | 1 skills');
+    window.removeEventListener(LESSON_CANDIDATES_UPDATED_EVENT, lessonCandidateUpdate);
   });
 });

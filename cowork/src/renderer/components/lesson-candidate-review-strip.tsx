@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next';
 import { GraduationCap, ListChecks, PanelRightOpen, Terminal } from 'lucide-react';
 import type { LessonCandidateStats, LessonCandidateStatus } from '../types/hermes';
 
+export const LESSON_CANDIDATES_UPDATED_EVENT = 'cowork:lesson-candidates-updated';
+
 const STATUS_CHIPS: Array<{
   fallback: string;
   key: string;
@@ -74,6 +76,41 @@ export const LessonCandidateReviewStrip: React.FC<{
 
     return () => {
       cancelled = true;
+    };
+  }, [stats]);
+
+  useEffect(() => {
+    if (stats !== undefined) return;
+    const api = getLessonCandidateReviewApi();
+    if (!api?.stats) return;
+    const loadStats = api.stats;
+    let cancelled = false;
+
+    const reloadStats = () => {
+      void loadStats()
+        .then((result) => {
+          if (cancelled) return;
+          if (!result.ok) {
+            setLoadedStats(null);
+            setLoadError(result.error ?? 'Lesson candidate stats unavailable');
+            return;
+          }
+          setLoadedStats(result.stats ?? null);
+          setLoadError(null);
+        })
+        .catch((loadErrorValue: unknown) => {
+          if (cancelled) return;
+          setLoadedStats(null);
+          setLoadError(
+            loadErrorValue instanceof Error ? loadErrorValue.message : String(loadErrorValue)
+          );
+        });
+    };
+
+    window.addEventListener(LESSON_CANDIDATES_UPDATED_EVENT, reloadStats);
+    return () => {
+      cancelled = true;
+      window.removeEventListener(LESSON_CANDIDATES_UPDATED_EVENT, reloadStats);
     };
   }, [stats]);
 

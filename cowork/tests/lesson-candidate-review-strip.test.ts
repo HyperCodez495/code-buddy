@@ -7,6 +7,7 @@ import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
+  LESSON_CANDIDATES_UPDATED_EVENT,
   LessonCandidateReviewStrip,
   buildLessonCandidateReviewCommand,
 } from '../src/renderer/components/lesson-candidate-review-strip';
@@ -124,5 +125,62 @@ describe('LessonCandidateReviewStrip', () => {
     expect(target.textContent).toContain('3 pending');
     expect(target.textContent).toContain('0 approved');
     expect(target.textContent).toContain('0 discarded');
+  });
+
+  it('refreshes readonly stats after a learning retrospective proposes lessons', async () => {
+    const target = container();
+    const stats = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        stats: {
+          byStatus: {
+            approved: 0,
+            discarded: 0,
+            pending: 0,
+          },
+          total: 0,
+        },
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        stats: {
+          byStatus: {
+            approved: 0,
+            discarded: 0,
+            pending: 1,
+          },
+          total: 1,
+        },
+      });
+    (window as unknown as {
+      electronAPI?: {
+        lessonCandidate?: {
+          stats: typeof stats;
+        };
+      };
+    }).electronAPI = {
+      lessonCandidate: {
+        stats,
+      },
+    };
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(LessonCandidateReviewStrip));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stats).toHaveBeenCalledTimes(1);
+    expect(target.textContent).toContain('0 pending');
+
+    await act(async () => {
+      window.dispatchEvent(new CustomEvent(LESSON_CANDIDATES_UPDATED_EVENT));
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+
+    expect(stats).toHaveBeenCalledTimes(2);
+    expect(target.textContent).toContain('1 pending');
   });
 });
