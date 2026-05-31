@@ -307,8 +307,8 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts hermes runtime-smoke local --json',
       'rg -n "Docker|SSH|Daytona|Modal|Singularity|SandboxBackend" src tests docs',
     ],
-    notes: 'Local/desktop/server/fleet/sandbox/device work exists, and Hermes doctor plus Cowork now report real non-destructive probes plus smoke commands for local Node, OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. CLI and Cowork can run the local backend smoke through a real subprocess. The full official managed backend lifecycle is not present.',
-    nextWork: 'Add opt-in live smoke runners for configured WSL/Docker/remote backends before claiming managed backend parity.',
+    notes: 'Local/desktop/server/fleet/sandbox/device work exists, and Hermes doctor plus Cowork now report real non-destructive probes plus smoke commands for local Node, OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. CLI and Cowork can run local Node and WSL backend smokes through real subprocesses when available. The full official managed backend lifecycle is not present.',
+    nextWork: 'Add opt-in live smoke runners for configured Docker/remote backends before claiming managed backend parity.',
   },
   {
     id: 'research-trajectories',

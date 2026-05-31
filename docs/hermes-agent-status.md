@@ -94,7 +94,7 @@ change-control surface.
 | Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 65 exact, 6 native-equivalent, 0 partial, 0 gaps |
 | Provider/model readiness | `src/agent/hermes-agent-diagnostics.ts`; `buddy hermes doctor --json`; `cowork/src/main/tools/hermes-provider-readiness-bridge.ts`; `cowork/src/renderer/components/hermes-provider-readiness-strip.tsx` | covered/partial — active model source, inferred provider, env/OAuth credential source names, tool-call/reasoning/vision flags, context/output limits, Nous Portal status, remediation hints, and Cowork rendering in Settings -> API plus Fleet Command Center |
 | Nous Portal readiness | `src/agent/hermes-portal-status.ts`; `buddy hermes portal status|tools|open`; embedded in `buddy hermes doctor --json` | covered/partial — local auth/source readiness, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output; no live OAuth device-code or Nous proxy runtime yet |
-| Runtime backend inventory | `src/agent/hermes-runtime-backends.ts`; embedded in `buddy hermes doctor --json`; `cowork/src/main/tools/hermes-runtime-backends-bridge.ts`; `cowork/src/renderer/components/hermes-runtime-backends-strip.tsx` | partial — real non-destructive probes for local Node, native OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox, with version/status, credential source names only, smoke commands, Cowork rendering in Settings -> API plus Fleet Command Center, and opt-in live smoke execution from `buddy hermes runtime-smoke local --json` or Cowork starting with the local Node backend through a real subprocess; first-class managed remote runners remain future work |
+| Runtime backend inventory | `src/agent/hermes-runtime-backends.ts`; embedded in `buddy hermes doctor --json`; `cowork/src/main/tools/hermes-runtime-backends-bridge.ts`; `cowork/src/renderer/components/hermes-runtime-backends-strip.tsx` | partial — real non-destructive probes for local Node, native OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox, with version/status, credential source names only, smoke commands, Cowork rendering in Settings -> API plus Fleet Command Center, and opt-in live smoke execution from `buddy hermes runtime-smoke local --json`, `buddy hermes runtime-smoke wsl --json`, or Cowork through real subprocesses; first-class managed remote runners remain future work |
 
 ### Scheduled automations
 
@@ -147,7 +147,7 @@ change-control surface.
 | Hermes Feishu document/comment tools | `src/tools/feishu-tool.ts`, `src/tools/registry/feishu-tools.ts`, `tests/tools/feishu-tool-real.test.ts` | done — exact `feishu_doc_read`, `feishu_drive_list_comments`, `feishu_drive_list_comment_replies`, `feishu_drive_reply_comment`, and `feishu_drive_add_comment`; real Feishu/Lark Open API HTTP paths tested |
 | Hermes Yuanbao group/DM/sticker tools | `src/tools/yuanbao-tool.ts`, `src/tools/registry/yuanbao-tools.ts`, `tests/tools/yuanbao-tool-real.test.ts` | done — exact `yb_query_group_info`, `yb_query_group_members`, `yb_send_dm`, `yb_search_sticker`, and `yb_send_sticker`; real HTTP gateway path tested; external sends approval-gated |
 | Mobile-safe remote supervision | `buddy run mobile-snapshot / mobile-gateway-*` | contract/preview only; no live listener yet (parity TODO #15/#34) |
-| Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface`, `src/agent/hermes-runtime-backends.ts`, Cowork runtime readiness strip | local + Docker/OS/WSL/SSH inventory now visible in Hermes doctor and Cowork; Daytona/Modal/Vercel are detected/configuration-reported but not first-class managed runners |
+| Terminal backends (Docker/SSH/sandbox) | `src/security/` sandbox registry, `SandboxBackendInterface`, `src/agent/hermes-runtime-backends.ts`, Cowork runtime readiness strip | local + Docker/OS/WSL/SSH inventory now visible in Hermes doctor and Cowork; local + WSL live smokes are available when runnable; Daytona/Modal/Vercel are detected/configuration-reported but not first-class managed runners |
 
 ### Research evidence
 
@@ -175,6 +175,7 @@ buddy hermes tools --json
 buddy hermes portal status --json
 buddy hermes portal tools --json
 buddy hermes runtime-smoke local --json
+buddy hermes runtime-smoke wsl --json
 
 # Run it (needs a configured provider):
 buddy --agent hermes
