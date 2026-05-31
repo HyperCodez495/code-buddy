@@ -68,6 +68,8 @@ export interface HermesRuntimeBackendsOptions {
 }
 
 export interface HermesRuntimeSmokeOptions extends HermesRuntimeBackendsOptions {
+  allowDockerSmoke?: boolean;
+  allowRemoteSmoke?: boolean;
   backendId: string;
   timeoutMs?: number;
 }
@@ -82,6 +84,74 @@ interface ProbeResult {
 interface SmokeInvocation {
   args: string[];
   command: string;
+}
+
+interface SpawnInvocation {
+  args: string[];
+  command: string;
+  windowsVerbatimArguments?: boolean;
+}
+
+const REMOTE_SMOKE_BACKEND_IDS = new Set(['ssh', 'modal', 'daytona', 'vercel-sandbox']);
+
+function firstPresentEnvValue(env: NodeJS.ProcessEnv, keys: readonly string[]): string | null {
+  for (const key of keys) {
+    const value = env[key]?.trim();
+    if (value) return value;
+  }
+  return null;
+}
+
+function isDockerSmokeAllowed(
+  env: NodeJS.ProcessEnv,
+  options: { allowDockerSmoke?: boolean },
+): boolean {
+  return options.allowDockerSmoke === true || env.CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE === 'true';
+}
+
+function isRemoteSmokeAllowed(
+  env: NodeJS.ProcessEnv,
+  options: { allowRemoteSmoke?: boolean },
+): boolean {
+  return options.allowRemoteSmoke === true || env.CODEBUDDY_HERMES_ALLOW_REMOTE_SMOKE === 'true';
+}
+
+function quoteWindowsCommandArg(value: string): string {
+  if (/^[A-Za-z0-9_./:=@+-]+$/.test(value)) {
+    return value;
+  }
+  return `"${value.replace(/(["^&|<>%])/g, '^$1')}"`;
+}
+
+function resolveCommandForSpawn(
+  command: string,
+  args: string[],
+  env: NodeJS.ProcessEnv,
+): SpawnInvocation {
+  if (os.platform() !== 'win32' || path.isAbsolute(command) || command.includes('/') || command.includes('\\')) {
+    return { command, args };
+  }
+
+  const probe = spawnSync('where.exe', [command], {
+    env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+    timeout: 5000,
+    windowsHide: true,
+  });
+  const resolved = firstLine(decodeProbeBuffer(probe.stdout));
+  if (!resolved) {
+    return { command, args };
+  }
+
+  if (!/\.(?:bat|cmd)$/i.test(resolved)) {
+    return { command: resolved, args };
+  }
+
+  return {
+    command: env.ComSpec || 'cmd.exe',
+    args: ['/d', '/c', ['call', quoteWindowsCommandArg(resolved), ...args.map(quoteWindowsCommandArg)].join(' ')],
+    windowsVerbatimArguments: true,
+  };
 }
 
 function blockedSmokeResult(
@@ -116,8 +186,13 @@ function blockedSmokeResult(
 
 function smokeInvocationForBackend(
   backend: HermesRuntimeBackend,
-  env: NodeJS.ProcessEnv,
+  options: {
+    allowDockerSmoke?: boolean;
+    allowRemoteSmoke?: boolean;
+    env: NodeJS.ProcessEnv;
+  },
 ): SmokeInvocation | null {
+  const { env } = options;
   if (backend.id === 'local') {
     return {
       command: process.execPath,
@@ -126,7 +201,7 @@ function smokeInvocationForBackend(
   }
 
   if (backend.id === 'docker') {
-    if (env.CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE !== 'true') {
+    if (!isDockerSmokeAllowed(env, options)) {
       return null;
     }
     return {
@@ -151,7 +226,83 @@ function smokeInvocationForBackend(
     };
   }
 
+  if (backend.id === 'os-sandbox' && backend.command === 'bwrap') {
+    return {
+      command: 'bwrap',
+      args: [
+        '--ro-bind',
+        '/',
+        '/',
+        '--proc',
+        '/proc',
+        '--dev',
+        '/dev',
+        '--unshare-net',
+        'sh',
+        '-lc',
+        'echo OK-HERMES-OS-SANDBOX',
+      ],
+    };
+  }
+
+  if (backend.id === 'os-sandbox' && backend.command === 'sandbox-exec') {
+    return {
+      command: 'sandbox-exec',
+      args: ['-p', '(version 1) (allow default)', '/bin/echo', 'OK-HERMES-SEATBELT'],
+    };
+  }
+
+  if (backend.id === 'singularity' && backend.command) {
+    return {
+      command: backend.command,
+      args: ['--version'],
+    };
+  }
+
+  if (REMOTE_SMOKE_BACKEND_IDS.has(backend.id)) {
+    if (!isRemoteSmokeAllowed(env, options)) {
+      return null;
+    }
+
+    if (backend.id === 'ssh') {
+      const host = firstPresentEnvValue(env, ['CODEBUDDY_SSH_HOST', 'SSH_HOST', 'CODEBUDDY_REMOTE_HOST']);
+      return host ? { command: 'ssh', args: ['-T', host, 'true'] } : null;
+    }
+
+    if (backend.id === 'modal') {
+      return { command: 'modal', args: ['profile', 'current'] };
+    }
+
+    if (backend.id === 'daytona') {
+      return { command: 'daytona', args: ['profile', 'list'] };
+    }
+
+    if (backend.id === 'vercel-sandbox') {
+      return { command: 'vercel', args: ['whoami'] };
+    }
+  }
+
   return null;
+}
+
+function blockedSmokeReasonForBackend(
+  backend: HermesRuntimeBackend,
+  env: NodeJS.ProcessEnv,
+  options: { allowDockerSmoke?: boolean; allowRemoteSmoke?: boolean },
+): string {
+  if (backend.id === 'docker' && !isDockerSmokeAllowed(env, options)) {
+    return 'Docker smoke is heavy and requires --allow-docker or CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true.';
+  }
+
+  if (REMOTE_SMOKE_BACKEND_IDS.has(backend.id) && !isRemoteSmokeAllowed(env, options)) {
+    return `${backend.label} smoke may contact a remote service and requires --allow-remote or CODEBUDDY_HERMES_ALLOW_REMOTE_SMOKE=true.`;
+  }
+
+  if (backend.id === 'ssh') {
+    return 'SSH smoke requires an explicit CODEBUDDY_SSH_HOST, SSH_HOST, or CODEBUDDY_REMOTE_HOST value.';
+  }
+
+  return `${backend.label} does not have a safe live smoke runner yet.`;
 }
 
 function runSmokeInvocation(
@@ -165,10 +316,12 @@ function runSmokeInvocation(
 ): HermesRuntimeSmokeResult {
   const started = options.now();
   const startedAtMs = Date.now();
-  const result = spawnSync(invocation.command, invocation.args, {
+  const spawnInvocation = resolveCommandForSpawn(invocation.command, invocation.args, options.env);
+  const result = spawnSync(spawnInvocation.command, spawnInvocation.args, {
     env: options.env,
     stdio: ['ignore', 'pipe', 'pipe'],
     timeout: options.timeoutMs,
+    windowsVerbatimArguments: spawnInvocation.windowsVerbatimArguments,
     windowsHide: true,
   });
   const stdout = decodeProbeBuffer(result.stdout).trim();
@@ -198,10 +351,12 @@ function runSmokeInvocation(
 
 function runProbe(command: string, args: string[], env: NodeJS.ProcessEnv): ProbeResult {
   try {
-    const result = spawnSync(command, args, {
+    const invocation = resolveCommandForSpawn(command, args, env);
+    const result = spawnSync(invocation.command, invocation.args, {
       env,
       stdio: ['ignore', 'pipe', 'pipe'],
       timeout: 5000,
+      windowsVerbatimArguments: invocation.windowsVerbatimArguments,
       windowsHide: true,
     });
     const stdout = decodeProbeBuffer(result.stdout);
@@ -612,11 +767,13 @@ export function runHermesRuntimeBackendSmoke(
     });
   }
 
-  const invocation = smokeInvocationForBackend(backend, env);
+  const invocation = smokeInvocationForBackend(backend, {
+    allowDockerSmoke: options.allowDockerSmoke,
+    allowRemoteSmoke: options.allowRemoteSmoke,
+    env,
+  });
   if (!invocation) {
-    const reason = backend.id === 'docker'
-      ? 'Docker smoke is heavy and requires CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true.'
-      : `${backend.label} does not have a safe live smoke runner yet.`;
+    const reason = blockedSmokeReasonForBackend(backend, env, options);
     return blockedSmokeResult(backend.id, 'blocked', reason, {
       backend,
       command: backend.command,

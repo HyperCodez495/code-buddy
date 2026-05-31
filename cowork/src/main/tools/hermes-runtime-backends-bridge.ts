@@ -72,6 +72,8 @@ interface HermesAgentDiagnosticsModule {
 
 interface HermesRuntimeBackendsModule {
   runHermesRuntimeBackendSmoke: (options: {
+    allowDockerSmoke?: boolean;
+    allowRemoteSmoke?: boolean;
     backendId: string;
   }) => HermesRuntimeBackendSmokeResult;
 }
@@ -112,6 +114,10 @@ export async function getHermesRuntimeBackendsForReview(): Promise<HermesRuntime
 
 export async function runHermesRuntimeBackendSmokeForReview(
   backendId: string,
+  options: {
+    allowDockerSmoke?: boolean;
+    allowRemoteSmoke?: boolean;
+  } = {},
 ): Promise<HermesRuntimeBackendSmokeResult> {
   const id = backendId.trim();
   if (!id) {
@@ -123,5 +129,9 @@ export async function runHermesRuntimeBackendSmokeForReview(
     throw new Error('Core Hermes runtime smoke module is unavailable.');
   }
 
-  return mod.runHermesRuntimeBackendSmoke({ backendId: id });
+  return mod.runHermesRuntimeBackendSmoke({
+    allowDockerSmoke: options.allowDockerSmoke,
+    allowRemoteSmoke: options.allowRemoteSmoke,
+    backendId: id,
+  });
 }

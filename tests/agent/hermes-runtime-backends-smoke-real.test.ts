@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { spawnSync } from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
 import { runHermesRuntimeBackendSmoke } from '../../src/agent/hermes-runtime-backends.js';
 
@@ -27,6 +30,25 @@ function hasRunnableDocker(): boolean {
     windowsHide: true,
   });
   return !info.error && info.status === 0;
+}
+
+function prependPath(env: NodeJS.ProcessEnv, directory: string): NodeJS.ProcessEnv {
+  return {
+    ...env,
+    PATH: `${directory}${path.delimiter}${env.PATH ?? ''}`,
+    Path: `${directory}${path.delimiter}${env.Path ?? env.PATH ?? ''}`,
+  };
+}
+
+function writeFakeCli(directory: string, name: string, script: string): string {
+  const filePath = process.platform === 'win32'
+    ? path.join(directory, `${name}.cmd`)
+    : path.join(directory, name);
+  fs.writeFileSync(filePath, script);
+  if (process.platform !== 'win32') {
+    fs.chmodSync(filePath, 0o755);
+  }
+  return filePath;
 }
 
 describe('Hermes runtime backend live smoke runner', () => {
@@ -85,6 +107,73 @@ describe('Hermes runtime backend live smoke runner', () => {
     });
     expect(result.output).toContain('CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE=true');
     expect(result.args).toEqual([]);
+  });
+
+  it('blocks configured remote backend smoke unless the operator opts in', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-vercel-smoke-blocked-'));
+    try {
+      writeFakeCli(
+        tempDir,
+        'vercel',
+        process.platform === 'win32'
+          ? '@echo off\r\nif "%1"=="--version" echo Vercel CLI 99.0.0\r\nif "%1"=="whoami" echo smoke-user\r\n'
+          : '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Vercel CLI 99.0.0"; fi\nif [ "$1" = "whoami" ]; then echo "smoke-user"; fi\n',
+      );
+      const env = prependPath({ ...process.env, VERCEL_TOKEN: 'redacted-token' }, tempDir);
+      delete env.CODEBUDDY_HERMES_ALLOW_REMOTE_SMOKE;
+
+      const result = runHermesRuntimeBackendSmoke({
+        backendId: 'vercel-sandbox',
+        env,
+        now: () => new Date('2026-05-31T23:20:00.000Z'),
+      });
+
+      expect(result).toMatchObject({
+        backendId: 'vercel-sandbox',
+        command: 'vercel',
+        exitCode: null,
+        ok: false,
+        status: 'blocked',
+      });
+      expect(result.output).toContain('--allow-remote');
+      expect(result.args).toEqual([]);
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('runs configured remote backend smoke through a real CLI process when explicitly enabled', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'hermes-vercel-smoke-run-'));
+    try {
+      writeFakeCli(
+        tempDir,
+        'vercel',
+        process.platform === 'win32'
+          ? '@echo off\r\nif "%1"=="--version" echo Vercel CLI 99.0.0\r\nif "%1"=="whoami" echo smoke-user\r\n'
+          : '#!/bin/sh\nif [ "$1" = "--version" ]; then echo "Vercel CLI 99.0.0"; fi\nif [ "$1" = "whoami" ]; then echo "smoke-user"; fi\n',
+      );
+      const env = prependPath({ ...process.env, VERCEL_TOKEN: 'redacted-token' }, tempDir);
+
+      const result = runHermesRuntimeBackendSmoke({
+        allowRemoteSmoke: true,
+        backendId: 'vercel-sandbox',
+        env,
+      });
+
+      expect(result).toMatchObject({
+        args: ['whoami'],
+        backendId: 'vercel-sandbox',
+        command: 'vercel',
+        exitCode: 0,
+        ok: true,
+        status: 'passed',
+      });
+      expect(result.stdout).toContain('smoke-user');
+      expect(result.output).toContain('smoke-user');
+      expect(result.output).not.toContain('redacted-token');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 
   it.skipIf(process.env.CODEBUDDY_HERMES_ALLOW_DOCKER_SMOKE !== 'true' || !hasRunnableDocker())(

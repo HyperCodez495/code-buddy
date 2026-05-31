@@ -62,6 +62,8 @@ export interface HermesRuntimeBackendSmokeResult {
 interface HermesRuntimeBackendsApi {
   get?: () => Promise<HermesRuntimeBackendsReview | null>;
   smoke?: (options: {
+    allowDockerSmoke?: boolean;
+    allowRemoteSmoke?: boolean;
     backendId: string;
   }) => Promise<{
     error?: string;
@@ -69,6 +71,8 @@ interface HermesRuntimeBackendsApi {
     result?: HermesRuntimeBackendSmokeResult;
   }>;
 }
+
+const REMOTE_SMOKE_BACKEND_IDS = new Set(['ssh', 'modal', 'daytona', 'vercel-sandbox']);
 
 export const HermesRuntimeBackendsStrip: React.FC<{
   error?: string | null;
@@ -137,7 +141,11 @@ export const HermesRuntimeBackendsStrip: React.FC<{
     });
 
     try {
-      const response = await smoke({ backendId: backend.id });
+      const response = await smoke({
+        allowDockerSmoke: backend.id === 'docker',
+        allowRemoteSmoke: REMOTE_SMOKE_BACKEND_IDS.has(backend.id),
+        backendId: backend.id,
+      });
       if (!response.ok || !response.result) {
         throw new Error(response.error ?? 'Runtime smoke failed.');
       }

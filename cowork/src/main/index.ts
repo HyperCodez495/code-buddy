@@ -4138,12 +4138,17 @@ ipcMain.handle(
   async (
     _event,
     payload?: {
+      allowDockerSmoke?: boolean;
+      allowRemoteSmoke?: boolean;
       backendId?: string;
     }
   ) => {
     try {
       const backendId = typeof payload?.backendId === 'string' ? payload.backendId : '';
-      const result = await runHermesRuntimeBackendSmokeForReview(backendId);
+      const result = await runHermesRuntimeBackendSmokeForReview(backendId, {
+        allowDockerSmoke: payload?.allowDockerSmoke === true,
+        allowRemoteSmoke: payload?.allowRemoteSmoke === true,
+      });
       return { ok: true as const, result };
     } catch (err) {
       logWarn('[tools.hermesRuntimeBackends.smoke] failed:', err);

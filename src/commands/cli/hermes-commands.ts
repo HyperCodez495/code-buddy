@@ -132,6 +132,8 @@ interface HermesKanbanOptions extends HermesCommandOptions {
 }
 
 interface HermesRuntimeSmokeOptions extends HermesCommandOptions {
+  allowDocker?: boolean;
+  allowRemote?: boolean;
   timeoutMs?: string;
 }
 
@@ -1941,10 +1943,14 @@ export function registerHermesCommands(program: Command): void {
     .command('runtime-smoke')
     .description('Run an opt-in live smoke for one Hermes runtime backend')
     .argument('<backendId>', 'backend id from buddy hermes runtime status, for example local')
+    .option('--allow-docker', 'allow Docker smoke to start a no-network container and pull the image if missing')
+    .option('--allow-remote', 'allow configured remote backend smoke commands to contact their provider')
     .option('--json', 'output JSON')
     .option('--timeout-ms <ms>', 'smoke timeout in milliseconds')
     .action((backendId: string, options: HermesRuntimeSmokeOptions) => {
       const result = runHermesRuntimeBackendSmoke({
+        allowDockerSmoke: options.allowDocker,
+        allowRemoteSmoke: options.allowRemote,
         backendId,
         timeoutMs: parseOptionalPositiveInteger(options.timeoutMs, '--timeout-ms'),
       });

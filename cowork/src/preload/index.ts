@@ -1661,6 +1661,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         runnableCount: number;
       } | null> => ipcRenderer.invoke('tools.hermesRuntimeBackends.get'),
       smoke: (options: {
+        allowDockerSmoke?: boolean;
+        allowRemoteSmoke?: boolean;
         backendId: string;
       }): Promise<{
         error?: string;
@@ -4727,6 +4729,8 @@ declare global {
             runnableCount: number;
           } | null>;
           smoke: (options: {
+            allowDockerSmoke?: boolean;
+            allowRemoteSmoke?: boolean;
             backendId: string;
           }) => Promise<{
             error?: string;

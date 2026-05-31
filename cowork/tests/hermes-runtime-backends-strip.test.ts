@@ -205,7 +205,11 @@ describe('HermesRuntimeBackendsStrip', () => {
       await Promise.resolve();
     });
 
-    expect(smoke).toHaveBeenCalledWith({ backendId: 'local' });
+    expect(smoke).toHaveBeenCalledWith({
+      allowDockerSmoke: false,
+      allowRemoteSmoke: false,
+      backendId: 'local',
+    });
     const result = target.querySelector('[data-testid="hermes-runtime-smoke-result-local"]');
     expect(result?.textContent).toContain('smoke passed');
     expect(result?.textContent).toContain('OK-HERMES-LOCAL');

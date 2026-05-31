@@ -122,11 +122,53 @@ describe('Hermes runtime backends bridge', () => {
     const result = await runHermesRuntimeBackendSmokeForReview(' local ');
 
     expect(mockedLoadCoreModule).toHaveBeenCalledWith('agent/hermes-runtime-backends.js');
-    expect(runHermesRuntimeBackendSmoke).toHaveBeenCalledWith({ backendId: 'local' });
+    expect(runHermesRuntimeBackendSmoke).toHaveBeenCalledWith({
+      allowDockerSmoke: undefined,
+      allowRemoteSmoke: undefined,
+      backendId: 'local',
+    });
     expect(result).toMatchObject({
       backendId: 'local',
       ok: true,
       output: 'OK-HERMES-LOCAL',
+      status: 'passed',
+    });
+  });
+
+  it('passes explicit smoke opt-ins to the core runtime smoke module', async () => {
+    const runHermesRuntimeBackendSmoke = vi.fn(() => ({
+      args: ['whoami'],
+      backendId: 'vercel-sandbox',
+      command: 'vercel',
+      durationMs: 42,
+      exitCode: 0,
+      finishedAt: '2026-05-31T23:21:00.042Z',
+      label: 'Vercel Sandbox',
+      ok: true,
+      output: 'patrice',
+      signal: null,
+      startedAt: '2026-05-31T23:21:00.000Z',
+      status: 'passed',
+      stderr: '',
+      stdout: 'patrice',
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      runHermesRuntimeBackendSmoke,
+    });
+
+    const result = await runHermesRuntimeBackendSmokeForReview(' vercel-sandbox ', {
+      allowDockerSmoke: true,
+      allowRemoteSmoke: true,
+    });
+
+    expect(runHermesRuntimeBackendSmoke).toHaveBeenCalledWith({
+      allowDockerSmoke: true,
+      allowRemoteSmoke: true,
+      backendId: 'vercel-sandbox',
+    });
+    expect(result).toMatchObject({
+      backendId: 'vercel-sandbox',
+      ok: true,
       status: 'passed',
     });
   });

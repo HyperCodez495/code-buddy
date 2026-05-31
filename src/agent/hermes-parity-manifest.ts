@@ -403,10 +403,11 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts hermes doctor balanced --json',
       'npx tsx src/index.ts hermes runtime status --json',
       'npx tsx src/index.ts hermes runtime-smoke local --json',
+      'npx tsx src/index.ts hermes runtime-smoke docker --allow-docker --json',
       'rg -n "Docker|SSH|Daytona|Modal|Singularity|SandboxBackend" src tests docs',
     ],
-    notes: 'Local/desktop/server/fleet/sandbox/device work exists, and Hermes doctor plus Cowork now report real non-destructive probes plus smoke commands for local Node, OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. CLI and Cowork can run local Node and WSL backend smokes through real subprocesses when available. The full official managed backend lifecycle is not present.',
-    nextWork: 'Add opt-in live smoke runners for configured Docker/remote backends before claiming managed backend parity.',
+    notes: 'Local/desktop/server/fleet/sandbox/device work exists, and Hermes doctor plus Cowork now report real non-destructive probes plus smoke commands for local Node, OS sandbox, Docker, WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. CLI and Cowork can run local Node, WSL, OS sandbox, Docker, Singularity/Apptainer, and configured remote backend smokes through real subprocesses; Docker and remote providers require explicit opt-in. The full official managed backend lifecycle is not present.',
+    nextWork: 'Add managed hibernate/wake lifecycle semantics for remote backends only if that upstream Hermes behavior remains product-relevant.',
   },
   {
     id: 'mobile-supervision',
