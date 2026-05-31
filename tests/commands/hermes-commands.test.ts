@@ -210,10 +210,17 @@ describe('Hermes CLI commands', () => {
         expect.objectContaining({
           id: 'cron-scheduling',
           status: 'partial',
-          codeBuddyEvidence: expect.arrayContaining(['src/commands/cron-cli/index.ts']),
+          codeBuddyEvidence: expect.arrayContaining([
+            'src/commands/cron-cli/index.ts',
+            'src/tools/cronjob-tool.ts',
+            'tests/tools/cronjob-tool-real.test.ts',
+          ]),
           verificationCommands: expect.arrayContaining([
             'npm test -- tests/commands/cron-cli.test.ts tests/scheduler/cron-scheduler-manual-run.test.ts --run',
+            'npm test -- tests/tools/cronjob-tool-real.test.ts --run',
           ]),
+          notes: expect.stringContaining('exact agent-facing cronjob prompt tool'),
+          nextWork: expect.not.stringContaining('Add exact agent-facing cronjob tool'),
         }),
         expect.objectContaining({
           id: 'prompt-size',
