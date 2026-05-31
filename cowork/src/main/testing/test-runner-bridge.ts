@@ -1132,6 +1132,32 @@ export class TestRunnerBridge extends EventEmitter {
         },
         path.join(workspace, 'tests', 'agent', 'hermes-cli-status-real.test.ts')
       );
+      addIfFilesExist(
+        items,
+        {
+          id: 'code-buddy-hermes-learning-loop-real-smoke',
+          label: 'Hermes / learning loop real smoke',
+          group: 'Hermes',
+          description:
+            'Runs real Learning Agent retrospectives, skill candidate creation, usage scoring, and CLI retrospective proof',
+          command: 'npm',
+          args: [
+            'test',
+            '--',
+            'tests/agent/learning-agent-real.test.ts',
+            'tests/commands/learning-retrospective-command.test.ts',
+            '--run',
+          ],
+          cwd: workspace,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 180_000,
+        },
+        [
+          path.join(workspace, 'tests', 'agent', 'learning-agent-real.test.ts'),
+          path.join(workspace, 'tests', 'commands', 'learning-retrospective-command.test.ts'),
+        ]
+      );
       addIfFileExists(
         items,
         {

@@ -310,6 +310,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'commands', 'agent-handlers.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'commands', 'worktree-handlers.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'commands', 'fleet-commands.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'commands', 'learning-retrospective-command.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'commands', 'handlers'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'commands', 'handlers', 'auth-handlers.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'features'), { recursive: true });
@@ -595,6 +596,7 @@ function makeWorkspace(): string {
   mkdirSync(path.join(root, 'tests', 'agent'), { recursive: true });
   writeFileSync(path.join(root, 'tests', 'agent', 'hermes-runtime-backends-smoke-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'hermes-cli-status-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'agent', 'learning-agent-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'tool-handler-filter.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'agent', 'tool-executor.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'agent', 'execution'), { recursive: true });
@@ -868,6 +870,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Cowork / knowledge Hermes presence bundle');
     expect(labels).toContain('Hermes / runtime live smoke');
     expect(labels).toContain('Hermes / CLI status real smoke');
+    expect(labels).toContain('Hermes / learning loop real smoke');
     expect(labels).toContain('Hermes / execute_code real smoke');
     expect(labels).toContain('Hermes / media vision real smoke');
     expect(labels).toContain('Cowork / permission real flow');
@@ -1016,6 +1019,19 @@ describe('TestRunnerBridge catalog', () => {
     expect(catalog.find((item) => item.label === 'Hermes / CLI status real smoke')).toMatchObject({
       command: 'npm',
       args: ['test', '--', 'tests/agent/hermes-cli-status-real.test.ts', '--run'],
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Hermes / learning loop real smoke')).toMatchObject({
+      command: 'npm',
+      args: [
+        'test',
+        '--',
+        'tests/agent/learning-agent-real.test.ts',
+        'tests/commands/learning-retrospective-command.test.ts',
+        '--run',
+      ],
       kind: 'integration',
       safeToRun: true,
       timeoutMs: 180_000,

@@ -75,7 +75,9 @@ repeatable sequences, then writes only artifacts/candidates. Skill installation
 and lesson persistence remain review-gated. Skill outcome telemetry now keeps a
 bounded score history and produces explicit recommendations (`observe`,
 `reinforce`, `improve`, `deprecate`) with the evidence run, reason, and next
-operator action visible in both CLI and Cowork.
+operator action visible in both CLI and Cowork. Cowork Test Runner now exposes a
+safe `Hermes / learning loop real smoke` entry that relaunches the persisted-run
+and CLI retrospective proofs.
 
 Official Hermes' `agent/background_review.py` forks a background review agent
 after turns and may write memory/skills directly through a restricted tool
