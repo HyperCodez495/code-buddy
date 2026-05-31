@@ -150,7 +150,7 @@ const OFFICIAL_HERMES_TOOLS: HermesOfficialToolReference[] = [
     category: 'skills',
     officialSource: OFFICIAL_SOURCE_SKILL_MANAGER,
     equivalentCodeBuddyTools: ['skills_list', 'skill_view', 'create_skill', 'skill_discover'],
-    notes: 'Code Buddy exposes the exact skill_manage prompt tool name with the official create/edit/patch/delete/write_file/remove_file action surface and official content/old_string/new_string/replace_all/file_path aliases, plus native preview_update, review-gated lifecycle, rollback, update, discovery, and candidate review extensions.',
+    notes: 'Code Buddy exposes the exact skill_manage prompt tool name with the official create/edit/patch/delete/write_file/remove_file action surface and official content/old_string/new_string/replace_all/file_path aliases, plus native preview_update, reset, review-gated lifecycle, rollback, update, discovery, and candidate review extensions.',
     nextWork: 'Keep mutations review-gated and continue tracking wider CLI hub/tap/trust parity at the product-surface level.',
   },
   {

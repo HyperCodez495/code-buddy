@@ -201,6 +201,23 @@ export interface SkillUpdateResult {
   snapshot: SkillVersionSnapshot;
 }
 
+export interface SkillResetOptions {
+  actor?: string;
+  reason?: string;
+  updatedAt?: number;
+  version?: string;
+}
+
+export interface SkillResetResult {
+  installed: InstalledSkill;
+  fromChecksum?: string;
+  fromVersion: string;
+  recreated: boolean;
+  snapshot?: SkillVersionSnapshot;
+  toChecksum: string;
+  toVersion: string;
+}
+
 export interface SkillUpdatePreviewOptions {
   maxDiffChars?: number;
   maxDiffLines?: number;
@@ -1620,6 +1637,65 @@ export class SkillsHub extends EventEmitter {
       fromVersion,
       toVersion: resolvedVersion,
       snapshot,
+    };
+  }
+
+  async resetInstalledSkill(
+    skillName: string,
+    options: SkillResetOptions = {},
+  ): Promise<SkillResetResult | null> {
+    const installed = this.lockfile.skills[skillName];
+    if (!installed) {
+      logger.warn('Cannot reset missing skill', { name: skillName });
+      return null;
+    }
+
+    const targetVersion = options.version || installed.version;
+    if (!targetVersion) {
+      throw new Error(`No reset version found for '${skillName}'`);
+    }
+
+    const content = await this.fetchSkillContent(skillName, targetVersion);
+    this.validateSkillContent(content, skillName);
+    const resolvedVersion = this.extractVersionFromContent(content) || targetVersion;
+    const toChecksum = computeChecksum(content);
+    const existedBeforeReset = fs.existsSync(installed.path);
+    const fromChecksum = existedBeforeReset
+      ? computeChecksum(fs.readFileSync(installed.path, 'utf-8'))
+      : undefined;
+    const snapshot = existedBeforeReset
+      ? this.snapshotInstalledSkill(installed, {
+        actor: options.actor,
+        reason: options.reason || `before reset to ${resolvedVersion}`,
+        updatedAt: options.updatedAt,
+      })
+      : undefined;
+    const fromVersion = installed.version;
+
+    fs.mkdirSync(path.dirname(installed.path), { recursive: true });
+    fs.writeFileSync(installed.path, content, 'utf-8');
+    installed.version = resolvedVersion;
+    installed.checksum = toChecksum;
+    installed.lifecycle = {
+      status: installed.enabled === false ? 'disabled' : 'active',
+      updatedAt: options.updatedAt ?? Date.now(),
+      ...(options.actor ? { updatedBy: options.actor } : {}),
+      ...(options.reason ? { reason: options.reason } : {}),
+    };
+    if (snapshot) {
+      this.appendSnapshot(installed, snapshot);
+    }
+    this.writeLockfile();
+    this.emit('skill:reset', installed);
+
+    return {
+      installed,
+      ...(fromChecksum ? { fromChecksum } : {}),
+      fromVersion,
+      recreated: !existedBeforeReset,
+      ...(snapshot ? { snapshot } : {}),
+      toChecksum,
+      toVersion: resolvedVersion,
     };
   }
 

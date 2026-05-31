@@ -308,7 +308,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
     name: 'skill_manage',
-    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, official create/edit/patch/write_file/remove_file aliases, update previews, review-gated enable/disable/deprecate/delete/rollback/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
+    description: 'Hermes-style skill management facade. Supports installed skill list/view/history, direct create/discover, official create/edit/patch/write_file/remove_file aliases, update previews, review-gated enable/disable/deprecate/delete/rollback/reset/update, and review-gated candidate list/view/install through Code Buddy skills primitives.',
     parameters: {
       type: 'object',
       properties: {
@@ -330,6 +330,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
             'remove_file',
             'rollback',
             'preview_update',
+            'reset',
             'update',
             'candidate_list',
             'candidate_view',
@@ -417,7 +418,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         approved_by: {
           type: 'string',
-          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback, update. Not required for preview_update.',
+          description: 'Human reviewer identity. Required for candidate_install and review-gated lifecycle mutations: enable, disable, deprecate, delete, patch, rollback, reset, update. Not required for preview_update.',
         },
         approved_at: {
           type: 'string',
@@ -425,7 +426,7 @@ export const SKILL_MANAGE_TOOL: CodeBuddyTool = {
         },
         reason: {
           type: 'string',
-          description: 'Optional human-readable reason for enable, disable, deprecate, delete, patch, rollback, or update.',
+          description: 'Optional human-readable reason for enable, disable, deprecate, delete, patch, rollback, reset, or update.',
         },
         old_text: {
           type: 'string',

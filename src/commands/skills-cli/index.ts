@@ -12,6 +12,7 @@
  *   buddy skills usage [--json]
  *   buddy skills learning-usage [--json]
  *   buddy skills update-preview <name>
+ *   buddy skills reset <name> --approved-by <reviewer>
  *   buddy skills enable <name>
  *   buddy skills disable <name>
  *   buddy skills tap list|add|remove|trust|refresh
@@ -71,10 +72,12 @@ export function registerSkillsCommands(program: Command): void {
           return {
             commands: issue === 'missing-file'
               ? [
+                `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
                 `skill_manage action=delete name=${skill.name} approved_by=<reviewer>`,
               ]
               : [
                 `skill_manage action=history name=${skill.name}`,
+                `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
                 `skill_manage action=rollback name=${skill.name} approved_by=<reviewer>`,
               ],
             enabled: skill.enabled !== false,
@@ -82,8 +85,8 @@ export function registerSkillsCommands(program: Command): void {
             name: skill.name,
             path: skill.path,
             recommendation: issue === 'missing-file'
-              ? 'Restore the SKILL.md file or remove the stale lockfile entry after reviewer approval.'
-              : 'Inspect local edits, then keep, patch, update, or rollback after reviewer approval.',
+              ? 'Reset from hub/cache, restore the SKILL.md file, or remove the stale lockfile entry after reviewer approval.'
+              : 'Inspect local edits, then keep, patch, reset, update, or rollback after reviewer approval.',
             version: skill.version,
           };
         });
@@ -203,6 +206,44 @@ export function registerSkillsCommands(program: Command): void {
       console.log(preview.diff.preview);
       if (preview.diff.truncated) {
         console.log('\n[diff preview truncated]');
+      }
+    });
+
+  skills
+    .command('reset <name>')
+    .description('Reset an installed skill to its hub/cache-backed version')
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the reset')
+    .option('--reason <reason>', 'review reason')
+    .option('--version <version>', 'target version to reset to; defaults to installed version')
+    .option('--json', 'output JSON')
+    .action(async (
+      name: string,
+      opts: { approvedBy: string; json?: boolean; reason?: string; version?: string },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const result = await getSkillsHub().resetInstalledSkill(name, {
+        actor: opts.approvedBy,
+        reason: opts.reason,
+        version: opts.version,
+      });
+      if (!result) {
+        const message = `Skill not found: ${name}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, result: null }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify(result, null, 2));
+        return;
+      }
+      const recreated = result.recreated ? ' (recreated missing SKILL.md)' : '';
+      console.log(`Skill reset: ${result.installed.name} ${result.fromVersion} -> ${result.toVersion}${recreated}`);
+      if (result.snapshot) {
+        console.log(`snapshot: ${result.snapshot.id}`);
       }
     });
 

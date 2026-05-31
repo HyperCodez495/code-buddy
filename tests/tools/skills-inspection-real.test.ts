@@ -204,6 +204,13 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     }));
     expect(installed.action).toBe('skill_manage_candidate_install');
     expect((installed.installed as { approvedBy: string }).approvedBy).toBe('Patrice');
+    const installedSkillPath = path.join(
+      tempWorkspace,
+      '.codebuddy',
+      'skills',
+      'research-skill-manage-candidate',
+      'SKILL.md',
+    );
     const workspaceLock = JSON.parse(
       await fs.readFile(path.join(tempWorkspace, '.codebuddy', 'skills-lock.json'), 'utf8'),
     ) as { skills: Record<string, unknown> };
@@ -511,6 +518,40 @@ describe('skills_list and skill_view real SkillsHub integration', () => {
     expect((viewedAfterUpdate.installed as { version: string }).version).toBe('0.2.0');
     expect(viewedAfterUpdate.integrityOk).toBe(true);
     expect(viewedAfterUpdate.content).toContain('Updated cached hub workflow.');
+
+    const tamperedUpdateContent = cachedUpdateContent.replace('Updated cached hub workflow.', 'Locally tampered workflow.');
+    await fs.writeFile(installedSkillPath, `${tamperedUpdateContent.trimEnd()}\n`, 'utf8');
+    const resetWithoutApproval = await manageTool!.execute({
+      action: 'reset',
+      name: 'research-skill-manage-candidate',
+    });
+    expect(resetWithoutApproval.success).toBe(false);
+    expect(resetWithoutApproval.error).toContain('approved_by is required');
+
+    const reset = await parseToolOutput(await manageTool!.execute({
+      action: 'reset',
+      approved_by: 'Patrice',
+      name: 'research-skill-manage-candidate',
+      reason: 'Restore cached hub content.',
+    }));
+    expect(reset.action).toBe('skill_manage_reset');
+    expect(reset).toMatchObject({
+      fromVersion: '0.2.0',
+      recreated: false,
+      toVersion: '0.2.0',
+      snapshot: {
+        createdBy: 'Patrice',
+        reason: 'Restore cached hub content.',
+      },
+    });
+
+    const viewedAfterReset = await parseToolOutput(await manageTool!.execute({
+      action: 'view',
+      name: 'research-skill-manage-candidate',
+    }));
+    expect(viewedAfterReset.integrityOk).toBe(true);
+    expect(viewedAfterReset.content).toContain('Updated cached hub workflow.');
+    expect(viewedAfterReset.content).not.toContain('Locally tampered workflow.');
 
     const history = await parseToolOutput(await manageTool!.execute({
       action: 'history',

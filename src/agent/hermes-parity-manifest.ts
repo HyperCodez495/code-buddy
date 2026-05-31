@@ -224,6 +224,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts skills doctor --json',
       'npx tsx src/index.ts skills tap list --json',
       'npx tsx src/index.ts skills update-preview <name> --json',
+      'npx tsx src/index.ts skills reset <name> --approved-by <reviewer> --json',
       'npm test -- tests/agent/research-script-skill-candidate.test.ts --run',
       'npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run',
       'npm test -- tests/tools/skills-inspection-real.test.ts --run',
@@ -231,8 +232,8 @@ const FEATURES: HermesParityFeature[] = [
       '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
       'npm test -- tests/skills/hub.test.ts tests/commands/skills-command-real.test.ts --run',
     ],
-    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded unified and expanded side-by-side candidate diffs, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/delete/update/patch from the real SkillsHub lockfile. Repository tap/trust management persists owner/repo taps with path and trust metadata through buddy skills tap list/add/remove/trust/refresh, direct .well-known skill catalogs are cached through buddy skills well-known <url>, and remote update diff previews are available through buddy skills update-preview plus skill_manage action=preview_update. Reset behavior is not proven identical.',
-    nextWork: 'Add optional reset behavior.',
+    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded unified and expanded side-by-side candidate diffs, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/reset/delete/update/patch from the real SkillsHub lockfile. Repository tap/trust management persists owner/repo taps with path and trust metadata through buddy skills tap list/add/remove/trust/refresh, direct .well-known skill catalogs are cached through buddy skills well-known <url>, remote update diff previews are available through buddy skills update-preview plus skill_manage action=preview_update, and Code Buddy reset restores tampered or missing installed skills from real hub/cache content after reviewer approval. Reset is a Code Buddy repair extension because official Hermes skill_manage does not expose a reset action.',
+    nextWork: 'Add an optional full-page Cowork manager only if the Fleet cockpit strips become too cramped for daily skill operations.',
   },
   {
     id: 'closed-learning-loop',

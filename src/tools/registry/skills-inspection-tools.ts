@@ -95,6 +95,7 @@ type SkillManageAction =
   | 'remove_file'
   | 'rollback'
   | 'preview_update'
+  | 'reset'
   | 'update'
   | 'candidate_list'
   | 'candidate_view'
@@ -537,6 +538,39 @@ export class SkillManageExecuteTool implements ITool {
       }
     }
 
+    if (action === 'reset') {
+      const name = readString(input.name);
+      if (!name) {
+        return { success: false, error: 'skill_manage reset: name is required' };
+      }
+
+      const approval = readApproval(input, action);
+      if (typeof approval !== 'string') {
+        return approval;
+      }
+
+      try {
+        const reset = await getSkillsHub().resetInstalledSkill(name, {
+          actor: approval,
+          reason: readString(input.reason) || undefined,
+          version: readString(input.version) || undefined,
+        });
+        if (!reset) {
+          return { success: false, error: `skill_manage reset: skill not found: ${name}` };
+        }
+
+        return serializePayload({
+          action: 'skill_manage_reset',
+          ...reset,
+        });
+      } catch (error) {
+        return {
+          success: false,
+          error: `skill_manage reset: ${error instanceof Error ? error.message : String(error)}`,
+        };
+      }
+    }
+
     if (action === 'update') {
       const name = readString(input.name);
       if (!name) {
@@ -635,7 +669,7 @@ export class SkillManageExecuteTool implements ITool {
 
     return {
       success: false,
-      error: 'skill_manage: action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, preview_update, update, candidate_list, candidate_view, candidate_install',
+      error: 'skill_manage: action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, preview_update, reset, update, candidate_list, candidate_view, candidate_install',
     };
   }
 
@@ -670,6 +704,7 @@ export class SkillManageExecuteTool implements ITool {
       'remove_file',
       'rollback',
       'preview_update',
+      'reset',
       'update',
       'candidate_list',
       'candidate_view',
@@ -677,7 +712,7 @@ export class SkillManageExecuteTool implements ITool {
     ].includes(action)) {
       return {
         valid: false,
-        errors: ['action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, preview_update, update, candidate_list, candidate_view, candidate_install'],
+        errors: ['action must be one of list, view, history, create, edit, discover, enable, disable, deprecate, delete, patch, write_file, remove_file, rollback, preview_update, reset, update, candidate_list, candidate_view, candidate_install'],
       };
     }
     if ((action === 'view' || action === 'history' || action === 'preview_update') && !readString(data.name)) {
@@ -748,10 +783,10 @@ export class SkillManageExecuteTool implements ITool {
         return { valid: false, errors: [`${missing.join(', ')} required for rollback`] };
       }
     }
-    if (action === 'update') {
+    if (action === 'reset' || action === 'update') {
       const missing = ['name', 'approved_by'].filter((key) => !readString(data[key]));
       if (missing.length > 0) {
-        return { valid: false, errors: [`${missing.join(', ')} required for update`] };
+        return { valid: false, errors: [`${missing.join(', ')} required for ${action}`] };
       }
     }
     if (action === 'candidate_view' && !readString(data.candidate_path)) {
@@ -793,6 +828,7 @@ export class SkillManageExecuteTool implements ITool {
         'remove_file',
         'rollback',
         'preview_update',
+        'reset',
         'update',
         'hermes',
       ],

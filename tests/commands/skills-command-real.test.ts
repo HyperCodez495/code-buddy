@@ -155,13 +155,17 @@ describe('buddy skills command with real SkillsHub state', () => {
     });
     expect(result.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({
-        commands: ['skill_manage action=delete name=missing-helper approved_by=<reviewer>'],
+        commands: [
+          'skill_manage action=reset name=missing-helper approved_by=<reviewer>',
+          'skill_manage action=delete name=missing-helper approved_by=<reviewer>',
+        ],
         issue: 'missing-file',
         name: 'missing-helper',
       }),
       expect.objectContaining({
         commands: [
           'skill_manage action=history name=tampered-helper',
+          'skill_manage action=reset name=tampered-helper approved_by=<reviewer>',
           'skill_manage action=rollback name=tampered-helper approved_by=<reviewer>',
         ],
         issue: 'integrity-mismatch',
@@ -305,6 +309,61 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(preview.diff.removedLines).toBeGreaterThan(0);
     expect(preview.diff.preview).toContain('New reviewed workflow.');
     expect(await fs.readFile(installed.path, 'utf8')).toBe(installedContent);
+  });
+
+  it('resets a tampered installed skill from a real cache only after reviewer approval', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      registryUrl: 'http://127.0.0.1:9/api/v1',
+      skillsDir: path.join(tempHome, 'skills'),
+      tapsPath: path.join(tempHome, 'taps.json'),
+    });
+    const canonicalContent = skillContent('reset-helper', '0.1.0', 'Canonical workflow.');
+    const tamperedContent = skillContent('reset-helper', '0.1.0', 'Tampered workflow.');
+    const installed = await hub.installFromContent('reset-helper', canonicalContent);
+    await fs.mkdir(path.join(tempHome, 'cache'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'reset-helper@0.1.0.skill.md'),
+      canonicalContent,
+      'utf8',
+    );
+    await fs.writeFile(installed.path, tamperedContent, 'utf8');
+
+    const program = createProgram();
+    await expect(program.parseAsync(['node', 'buddy', 'skills', 'reset', 'reset-helper', '--json']))
+      .rejects
+      .toThrow();
+    expect(await fs.readFile(installed.path, 'utf8')).toBe(tamperedContent);
+
+    consoleLogSpy.mockClear();
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'reset',
+      'reset-helper',
+      '--approved-by',
+      'Patrice',
+      '--reason',
+      'Restore canonical cache content.',
+      '--json',
+    ]);
+    const reset = JSON.parse(getLogOutput()) as {
+      recreated: boolean;
+      snapshot?: { createdBy?: string; reason?: string };
+      toChecksum: string;
+      toVersion: string;
+    };
+    expect(reset).toMatchObject({
+      recreated: false,
+      toVersion: '0.1.0',
+      snapshot: {
+        createdBy: 'Patrice',
+        reason: 'Restore canonical cache content.',
+      },
+    });
+    expect(await fs.readFile(installed.path, 'utf8')).toBe(canonicalContent);
   });
 
   it('refreshes GitHub-style tap discovery and well-known indexes through real HTTP paths', async () => {
