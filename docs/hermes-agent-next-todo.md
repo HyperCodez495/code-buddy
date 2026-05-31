@@ -203,6 +203,8 @@ Current measured state:
   - Guardrail: never send externally without configured channel and explicit approval policy.
   - Verification:
     - `npm test -- tests/tools/send-message-real.test.ts --run`
+    - `npm test -- tests/tools/hermes-core-aliases-real.test.ts tests/tools/send-message-real.test.ts tests/tools/kanban-real.test.ts --run`
+    - `(cd cowork && npm test -- tests/test-runner-bridge-catalog.test.ts --run)` confirms the safe Cowork Test Runner smoke entry.
 
 ## P3 — Decide on optional ecosystem parity
 
@@ -211,6 +213,7 @@ Current measured state:
   - Remaining optional UX: add a Cowork board renderer if the Kanban becomes a daily coordination surface.
   - Verification:
     - `npm test -- tests/tools/kanban-real.test.ts --run`
+    - `npm test -- tests/tools/hermes-core-aliases-real.test.ts tests/tools/send-message-real.test.ts tests/tools/kanban-real.test.ts --run`
     - `npx tsx src/index.ts hermes kanban list --json`
 
 - [ ] **Runtime backend inventory**

@@ -1135,6 +1135,34 @@ export class TestRunnerBridge extends EventEmitter {
       addIfFilesExist(
         items,
         {
+          id: 'code-buddy-hermes-core-workspace-real-smoke',
+          label: 'Hermes / core workspace real smoke',
+          group: 'Hermes',
+          description:
+            'Runs real Hermes core aliases, send_message outbox, and Kanban workspace persistence smokes',
+          command: 'npm',
+          args: [
+            'test',
+            '--',
+            'tests/tools/hermes-core-aliases-real.test.ts',
+            'tests/tools/send-message-real.test.ts',
+            'tests/tools/kanban-real.test.ts',
+            '--run',
+          ],
+          cwd: workspace,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 180_000,
+        },
+        [
+          path.join(workspace, 'tests', 'tools', 'hermes-core-aliases-real.test.ts'),
+          path.join(workspace, 'tests', 'tools', 'send-message-real.test.ts'),
+          path.join(workspace, 'tests', 'tools', 'kanban-real.test.ts'),
+        ]
+      );
+      addIfFilesExist(
+        items,
+        {
           id: 'code-buddy-hermes-learning-loop-real-smoke',
           label: 'Hermes / learning loop real smoke',
           group: 'Hermes',

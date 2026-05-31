@@ -580,6 +580,9 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'tools', 'tool-selector.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'bash-tool.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'bash-streaming.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'hermes-core-aliases-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'send-message-real.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'tools', 'kanban-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'execute-code-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'text-to-speech-real.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'tools', 'vision-analyze-real.test.ts'), '');
@@ -870,6 +873,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Cowork / knowledge Hermes presence bundle');
     expect(labels).toContain('Hermes / runtime live smoke');
     expect(labels).toContain('Hermes / CLI status real smoke');
+    expect(labels).toContain('Hermes / core workspace real smoke');
     expect(labels).toContain('Hermes / learning loop real smoke');
     expect(labels).toContain('Hermes / execute_code real smoke');
     expect(labels).toContain('Hermes / media vision real smoke');
@@ -1019,6 +1023,20 @@ describe('TestRunnerBridge catalog', () => {
     expect(catalog.find((item) => item.label === 'Hermes / CLI status real smoke')).toMatchObject({
       command: 'npm',
       args: ['test', '--', 'tests/agent/hermes-cli-status-real.test.ts', '--run'],
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Hermes / core workspace real smoke')).toMatchObject({
+      command: 'npm',
+      args: [
+        'test',
+        '--',
+        'tests/tools/hermes-core-aliases-real.test.ts',
+        'tests/tools/send-message-real.test.ts',
+        'tests/tools/kanban-real.test.ts',
+        '--run',
+      ],
       kind: 'integration',
       safeToRun: true,
       timeoutMs: 180_000,
