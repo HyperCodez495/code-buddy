@@ -86,6 +86,11 @@ operator action visible in both CLI and Cowork. Cowork Test Runner now exposes a
 safe `Hermes / learning loop real smoke` entry that relaunches the persisted-run
 and CLI retrospective proofs.
 
+Research-trajectory batches are now also native: `buddy run trajectory-batch`
+collects matching stored runs or explicit `--run-id` values, exports each run
+through the redacted trajectory boundary, and emits a bounded compressed context
+block for future agents/evals without replaying tools.
+
 Official Hermes' `agent/background_review.py` forks a background review agent
 after turns and may write memory/skills directly through a restricted tool
 whitelist. Code Buddy intentionally keeps the equivalent skill/lesson writes as

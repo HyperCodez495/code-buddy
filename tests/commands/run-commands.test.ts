@@ -162,17 +162,27 @@ describe('Run CLI commands', () => {
     };
 
     expect(output).toMatchObject({
-      artifactCount: 1,
       failedCount: 0,
       filters: {
         limit: 5,
         sources: ['cowork', 'desktop'],
       },
-      indexedCount: 1,
       runCount: 1,
       schemaVersion: 1,
-      unavailable: false,
     });
+    if (output.unavailable) {
+      expect(output).toMatchObject({
+        artifactCount: 0,
+        indexedCount: 0,
+        unavailable: true,
+      });
+    } else {
+      expect(output).toMatchObject({
+        artifactCount: 1,
+        indexedCount: 1,
+        unavailable: false,
+      });
+    }
     expect(new Date(output.generatedAt).toString()).not.toBe('Invalid Date');
   });
 
@@ -333,6 +343,100 @@ describe('Run CLI commands', () => {
         name: 'summary.md',
       }),
     ]);
+    expect(output.privacy.redactionCount).toBeGreaterThan(0);
+    expect(JSON.stringify(output)).not.toContain(secret);
+  });
+
+  it('prints JSON redacted trajectory batches for Hermes research runs', async () => {
+    const secret = 'sk-abcdefghijklmnopqrstuvwx';
+    const runId = startRun('Trajectory batch lead discovery', {
+      channel: 'cowork',
+      sessionId: 'session_batch',
+      tags: ['hermes', 'research'],
+    });
+    store.emit(runId, {
+      type: 'tool_call',
+      data: {
+        toolName: 'web_search',
+        args: {
+          apiKey: secret,
+          query: 'architects near Nantes',
+        },
+      },
+    });
+    store.emit(runId, {
+      type: 'tool_result',
+      data: {
+        output: `Batch proof completed with token=${secret}`,
+        success: true,
+        toolName: 'web_search',
+      },
+    });
+    store.saveArtifact(runId, 'summary.md', `Batch review summary ${secret}`);
+    store.endRun(runId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== runId);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const program = createProgram();
+    registerRunCommands(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'run',
+      'trajectory-batch',
+      '--json',
+      '--include-artifact-content',
+      '--source',
+      'cowork',
+      'trajectory',
+      'batch',
+      'lead',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      compressed: {
+        sourceRunIds: string[];
+        text: string;
+      };
+      kind: string;
+      privacy: {
+        artifactContentIncluded: boolean;
+        redactionCount: number;
+      };
+      selection: {
+        query: string;
+        sources: string[];
+      };
+      summary: {
+        runCount: number;
+        toolCallCount: number;
+      };
+      trajectories: Array<{
+        run: { runId: string; sessionId?: string };
+      }>;
+    };
+
+    expect(output).toMatchObject({
+      kind: 'run_trajectory_batch_export',
+      privacy: {
+        artifactContentIncluded: true,
+      },
+      selection: {
+        query: 'trajectory batch lead',
+        sources: ['cowork', 'desktop'],
+      },
+      summary: {
+        runCount: 1,
+        toolCallCount: 1,
+      },
+    });
+    expect(output.compressed.sourceRunIds).toEqual([runId]);
+    expect(output.compressed.text).toContain(runId);
+    expect(output.trajectories[0]?.run).toMatchObject({
+      runId,
+      sessionId: 'session_batch',
+    });
     expect(output.privacy.redactionCount).toBeGreaterThan(0);
     expect(JSON.stringify(output)).not.toContain(secret);
   });

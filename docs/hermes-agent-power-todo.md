@@ -631,6 +631,10 @@ The gap is mainly product integration and durability:
       capped artifact previews and final answer detection. Cowork's Audit Log
       can copy the same redacted JSON from an expanded run, keeping trajectory
       review inside the cockpit without replaying tools or mutating state.
+      `buddy run trajectory-batch [query]` now adds the Hermes-style batch
+      surface: matching stored runs or explicit `--run-id` values are exported
+      through the same redaction boundary and bundled with a bounded compressed
+      agent context.
 
 28. Add golden workflow evals.
     - Lead discovery, code fix, doc workshop, Fleet review, recall handoff,

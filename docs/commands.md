@@ -464,6 +464,7 @@ buddy run index-doctor [--repair]   # Report/repair stale artifact index rows (p
 buddy run lineage <run-id>          # Show the fork family tree of a run (ancestors + descendants)
 buddy run recall-pack <query>       # Build a cited context handoff from runs
 buddy run trajectory-export <run-id> # Export a redacted run trajectory for audit/evals
+buddy run trajectory-batch [query]  # Export redacted trajectory batch + compressed context
 buddy run retrospective <run-id>    # Run the Learning Agent over a trajectory
 buddy run golden-evals [fixture-id] [run-id] # List/evaluate golden workflow fixtures
 buddy run policy-evals [policy-id] [run-id] # List/evaluate trajectory policy checks
@@ -495,6 +496,11 @@ selected context, tool calls, tool results, artifacts and final answer through
 the same secret-redaction engine used by supervision payloads. Artifact content
 is metadata-only by default; add `--include-artifact-content` for capped,
 redacted previews.
+
+`buddy run trajectory-batch [query] --json` collects matching stored runs (or
+explicit `--run-id` values), exports each through the same redacted trajectory
+boundary, and adds a bounded `compressed.text` context block for Hermes-style
+research batches and future agents. It is read-only and does not replay tools.
 
 `buddy run retrospective <run-id> --force` runs the Learning Agent on the same
 redacted trajectory. It writes a `learning-retrospective.*` run artifact,

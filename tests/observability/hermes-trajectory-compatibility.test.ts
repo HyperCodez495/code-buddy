@@ -99,6 +99,7 @@ describe('buildHermesTrajectoryCompatibilityReport', () => {
         missingCount: 0,
       },
       schemaVersions: {
+        trajectoryBatch: 1,
         trajectoryExport: 1,
         recallPack: 1,
         policyEval: 1,
@@ -119,17 +120,21 @@ describe('buildHermesTrajectoryCompatibilityReport', () => {
       },
     });
     expect(report.summary.availableCount).toBeGreaterThanOrEqual(5);
-    expect(report.summary.partialCount).toBeGreaterThanOrEqual(1);
+    expect(report.summary.partialCount).toBe(0);
     expect(report.summary.goldenFixtureCount).toBeGreaterThan(0);
     expect(report.summary.policyEvalCount).toBeGreaterThan(0);
     expect(report.capabilities).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: 'trajectory-export', status: 'available' }),
         expect.objectContaining({ id: 'recall-pack', status: 'available' }),
-        expect.objectContaining({ id: 'batch-trajectory-generation', status: 'partial' }),
-        expect.objectContaining({ id: 'trajectory-compression', status: 'partial' }),
+        expect.objectContaining({ id: 'batch-trajectory-generation', status: 'available' }),
+        expect.objectContaining({ id: 'trajectory-compression', status: 'available' }),
       ]),
     );
+    expect(report.probe?.trajectoryBatch).toMatchObject({
+      runCount: 1,
+      sourceRunIds: [runId],
+    });
     expect(report.probe?.trajectoryExport?.redactionCount).toBeGreaterThan(0);
     expect(raw).not.toContain(secret);
     expect(renderHermesTrajectoryCompatibilityReport(report)).toContain('Hermes trajectory compatibility:');

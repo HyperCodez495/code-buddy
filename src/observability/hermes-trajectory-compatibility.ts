@@ -11,6 +11,10 @@ import {
   RUN_RECALL_PACK_SCHEMA_VERSION,
 } from './run-recall-pack.js';
 import {
+  buildRunTrajectoryBatchExport,
+  RUN_TRAJECTORY_BATCH_SCHEMA_VERSION,
+} from './run-trajectory-batch.js';
+import {
   buildRunTrajectoryExport,
   RUN_TRAJECTORY_EXPORT_SCHEMA_VERSION,
 } from './run-trajectory-export.js';
@@ -43,6 +47,7 @@ export interface HermesTrajectoryCompatibilityReport {
     policyEvalCount: number;
   };
   schemaVersions: {
+    trajectoryBatch: number;
     goldenWorkflowEval: number;
     policyEval: number;
     recallPack: number;
@@ -61,6 +66,12 @@ export interface HermesTrajectoryCompatibilityProbe {
     query: string;
     runCount: number;
     sessionCount: number;
+  };
+  trajectoryBatch?: {
+    compressedBytes: number;
+    runCount: number;
+    sourceRunIds: string[];
+    truncated: boolean;
   };
   trajectoryExport?: {
     artifactContentIncluded?: boolean;
@@ -178,34 +189,37 @@ const CAPABILITIES: HermesTrajectoryCompatibilityCapability[] = [
     id: 'batch-trajectory-generation',
     label: 'Batch trajectory generation',
     officialSurface: 'Generate or collect batches of trajectories for research runs',
-    status: 'partial',
+    status: 'available',
     evidence: [
       'src/observability/run-store.ts',
+      'src/observability/run-trajectory-batch.ts',
       'src/commands/run-cli/index.ts',
     ],
     commands: [
-      'buddy run search <query> --json',
-      'buddy run trajectory-export <run-id> --json',
+      'buddy run trajectory-batch <query> --json',
+      'buddy run trajectory-batch --run-id <run-id> --json',
     ],
     notes: [
-      'Code Buddy can search and export stored trajectories, but it does not yet have an upstream-style batch generator.',
+      'Collects matching stored runs into a review-safe batch of redacted trajectories.',
     ],
   },
   {
     id: 'trajectory-compression',
     label: 'Trajectory compression',
     officialSurface: 'Compress stored trajectories into training/research-ready bundles',
-    status: 'partial',
+    status: 'available',
     evidence: [
       'src/observability/run-recall-pack.ts',
+      'src/observability/run-trajectory-batch.ts',
       'src/observability/run-trajectory-export.ts',
     ],
     commands: [
       'buddy run recall-pack <query> --json',
+      'buddy run trajectory-batch <query> --json',
       'buddy hermes trajectories status <query> --json',
     ],
     notes: [
-      'Recall packs compress trajectory evidence for agent context, but exact upstream training-batch compression parity is not implemented.',
+      'Recall packs and trajectory batches now emit bounded agent-ready compressed context from redacted run evidence.',
     ],
   },
 ];
@@ -230,6 +244,7 @@ export function buildHermesTrajectoryCompatibilityReport(
       policyEvalCount: POLICY_EVALS.length,
     },
     schemaVersions: {
+      trajectoryBatch: RUN_TRAJECTORY_BATCH_SCHEMA_VERSION,
       goldenWorkflowEval: GOLDEN_WORKFLOW_EVAL_SCHEMA_VERSION,
       policyEval: POLICY_EVAL_SCHEMA_VERSION,
       recallPack: RUN_RECALL_PACK_SCHEMA_VERSION,
@@ -279,6 +294,15 @@ export function renderHermesTrajectoryCompatibilityReport(
       '',
       'Recall probe:',
       `- "${probe.query}": ${probe.count} matches across ${probe.runCount} run(s)`,
+    );
+  }
+
+  if (report.probe?.trajectoryBatch) {
+    const probe = report.probe.trajectoryBatch;
+    lines.push(
+      '',
+      'Batch probe:',
+      `- ${probe.runCount} run(s), ${probe.compressedBytes} compressed bytes, truncated=${probe.truncated}`,
     );
   }
 
@@ -339,7 +363,8 @@ function buildProbe(
   }
 
   if (options.query?.trim()) {
-    const recallPack = buildRunRecallPack(options.query.trim(), {
+    const query = options.query.trim();
+    const recallPack = buildRunRecallPack(query, {
       includeLessons: false,
       includeMemories: false,
       includeSessions: false,
@@ -353,9 +378,21 @@ function buildProbe(
       runCount: recallPack.runCount,
       sessionCount: recallPack.sessionCount,
     };
+    const batch = buildRunTrajectoryBatchExport({
+      includeArtifactContent: options.includeArtifactContent,
+      maxArtifactBytes: options.maxArtifactBytes,
+      query,
+      store,
+    });
+    probe.trajectoryBatch = {
+      compressedBytes: batch.compressed.text.length,
+      runCount: batch.summary.runCount,
+      sourceRunIds: batch.compressed.sourceRunIds,
+      truncated: batch.compressed.truncated,
+    };
   }
 
-  return probe.trajectoryExport || probe.recallPack ? probe : undefined;
+  return probe.trajectoryExport || probe.recallPack || probe.trajectoryBatch ? probe : undefined;
 }
 
 function buildRecommendations(summary: {

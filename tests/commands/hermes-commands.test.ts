@@ -505,6 +505,7 @@ describe('Hermes CLI commands', () => {
         capabilities: Array<{ id: string; status: string }>;
         probe: {
           recallPack: { runCount: number };
+          trajectoryBatch: { runCount: number; sourceRunIds: string[] };
           trajectoryExport: {
             found: boolean;
             redactionCount: number;
@@ -520,7 +521,7 @@ describe('Hermes CLI commands', () => {
       expect(output.capabilities).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ id: 'trajectory-export', status: 'available' }),
-          expect.objectContaining({ id: 'batch-trajectory-generation', status: 'partial' }),
+          expect.objectContaining({ id: 'batch-trajectory-generation', status: 'available' }),
         ]),
       );
       expect(output.probe.trajectoryExport).toMatchObject({
@@ -531,6 +532,10 @@ describe('Hermes CLI commands', () => {
       });
       expect(output.probe.trajectoryExport.redactionCount).toBeGreaterThan(0);
       expect(output.probe.recallPack.runCount).toBe(1);
+      expect(output.probe.trajectoryBatch).toMatchObject({
+        runCount: 1,
+        sourceRunIds: [runId],
+      });
       expect(raw).not.toContain(secret);
     } finally {
       await new Promise((resolve) => setTimeout(resolve, 60));

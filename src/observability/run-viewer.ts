@@ -14,6 +14,10 @@ import {
   renderRunTrajectoryExport,
 } from './run-trajectory-export.js';
 import {
+  buildRunTrajectoryBatchExport,
+  renderRunTrajectoryBatchExport,
+} from './run-trajectory-batch.js';
+import {
   buildGoldenWorkflowEvalManifest,
   evaluateGoldenWorkflowRun,
   getGoldenWorkflowEvalFixture,
@@ -593,6 +597,44 @@ export async function showRunTrajectoryExport(
   }
 
   console.log(renderRunTrajectoryExport(exported));
+}
+
+/**
+ * Export a review-safe batch of trajectories plus a compressed agent context.
+ * This is the Hermes research-trajectory bridge: it gathers real stored runs,
+ * exports each through the same redaction path as single-run trajectory export,
+ * then builds a bounded context block for future agents/evals.
+ */
+export async function showRunTrajectoryBatchExport(
+  query: string,
+  options: {
+    includeArtifactContent?: boolean;
+    json?: boolean;
+    limit?: number;
+    maxArtifactBytes?: number;
+    maxCompressedBytes?: number;
+    maxEventValueBytes?: number;
+    runIds?: string[];
+    sources?: string[];
+  } = {},
+): Promise<void> {
+  const batch = buildRunTrajectoryBatchExport({
+    includeArtifactContent: options.includeArtifactContent === true,
+    limit: options.limit,
+    maxArtifactBytes: options.maxArtifactBytes,
+    maxCompressedBytes: options.maxCompressedBytes,
+    maxEventValueBytes: options.maxEventValueBytes,
+    query,
+    runIds: options.runIds,
+    sources: options.sources,
+  });
+
+  if (options.json === true) {
+    console.log(JSON.stringify(batch, null, 2));
+    return;
+  }
+
+  console.log(renderRunTrajectoryBatchExport(batch));
 }
 
 /**

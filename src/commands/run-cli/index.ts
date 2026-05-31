@@ -10,6 +10,7 @@
  *   buddy run lineage <runId>     → show the fork family tree of a run
  *   buddy run recall-pack <query> → build compact context from matching runs
  *   buddy run trajectory-export <runId> → export redacted run trajectory
+ *   buddy run trajectory-batch [query] → export redacted trajectory batch
  *   buddy run retrospective <runId> → run the Learning Agent over a trajectory
  *   buddy run golden-evals [fixtureId] [runId] → list/evaluate golden workflows
  *   buddy run policy-evals [policyId] [runId] → list/evaluate trajectory policies
@@ -162,6 +163,41 @@ export function registerRunCommands(program: Command): void {
         opts.includeArtifactContent === true,
         parseInt(opts.maxArtifactBytes, 10),
       );
+    });
+
+  // ── buddy run trajectory-batch ───────────────────────────────
+  run
+    .command('trajectory-batch [query...]')
+    .description('Export a redacted batch of run trajectories plus compressed agent context')
+    .option('-n, --limit <n>', 'maximum runs to include', '5')
+    .option('--source <source>', 'filter by source/channel/tag (repeatable: cli, cowork, fleet, scheduled, mobile)', collectOption, [])
+    .option('--run-id <runId>', 'explicit run id to include (repeatable, comma-separated accepted)', collectOption, [])
+    .option('--include-artifact-content', 'include redacted artifact content previews')
+    .option('--max-artifact-bytes <n>', 'maximum bytes per artifact preview', '4000')
+    .option('--max-compressed-bytes <n>', 'maximum bytes in the compressed agent context', '12000')
+    .option('--max-event-value-bytes <n>', 'maximum bytes per redacted event value', '2000')
+    .option('--json', 'output JSON')
+    .action(async (queryParts: string[] | undefined, opts: {
+      includeArtifactContent?: boolean;
+      json?: boolean;
+      limit: string;
+      maxArtifactBytes: string;
+      maxCompressedBytes: string;
+      maxEventValueBytes: string;
+      runId: string[];
+      source: string[];
+    }) => {
+      const { showRunTrajectoryBatchExport } = await import('../../observability/run-viewer.js');
+      await showRunTrajectoryBatchExport((queryParts ?? []).join(' '), {
+        includeArtifactContent: opts.includeArtifactContent === true,
+        json: opts.json === true,
+        limit: parseInt(opts.limit, 10),
+        maxArtifactBytes: parseInt(opts.maxArtifactBytes, 10),
+        maxCompressedBytes: parseInt(opts.maxCompressedBytes, 10),
+        maxEventValueBytes: parseInt(opts.maxEventValueBytes, 10),
+        runIds: opts.runId,
+        sources: opts.source,
+      });
     });
 
   // ── buddy run retrospective ──────────────────────────────────
