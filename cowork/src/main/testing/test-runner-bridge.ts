@@ -1098,6 +1098,22 @@ export class TestRunnerBridge extends EventEmitter {
       addIfFileExists(
         items,
         {
+          id: 'code-buddy-hermes-runtime-live-smoke',
+          label: 'Hermes / runtime live smoke',
+          group: 'Hermes',
+          description: 'Runs real local and WSL Hermes runtime smoke coverage through the Code Buddy runtime probes',
+          command: 'npm',
+          args: ['test', '--', 'tests/agent/hermes-runtime-backends-smoke-real.test.ts', '--run'],
+          cwd: workspace,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 120_000,
+        },
+        path.join(workspace, 'tests', 'agent', 'hermes-runtime-backends-smoke-real.test.ts')
+      );
+      addIfFileExists(
+        items,
+        {
           id: 'code-buddy-cowork-permission-real-flow',
           label: 'Cowork / permission real flow',
           group: 'Permissions',
