@@ -129,6 +129,51 @@ describe('Hermes CLI status real smoke', () => {
     expect(browser.readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
     expect(browser.readiness.backends.map((backend) => backend.id)).toContain('local-playwright');
 
+    const browserSmoke = runHermesJson(['browser-smoke', 'local-playwright']) as {
+      kind: string;
+      result: { backendId: string; ok: boolean; output: string; status: string };
+    };
+    expect(browserSmoke.kind).toBe('hermes_browser_backend_smoke');
+    expect(browserSmoke.result).toMatchObject({
+      backendId: 'local-playwright',
+      ok: true,
+      status: 'passed',
+    });
+    expect(browserSmoke.result.output).toContain('OK-HERMES-BROWSER');
+
+    const protocols = runHermesJson(['protocols', 'status']) as {
+      kind: string;
+      ok: boolean;
+      smokeCommand: string;
+      summary: { availableCount: number; missingCount: number; partialCount: number };
+    };
+    expect(protocols.kind).toBe('hermes_protocol_gateway_readiness');
+    expect(protocols.ok).toBe(true);
+    expect(protocols.smokeCommand).toBe('buddy hermes protocols-smoke local --json');
+    expect(protocols.summary.availableCount).toBeGreaterThanOrEqual(5);
+    expect(protocols.summary.missingCount).toBe(0);
+    expect(protocols.summary.partialCount).toBeGreaterThanOrEqual(1);
+
+    const protocolsSmoke = runHermesJson(['protocols-smoke', 'local']) as {
+      kind: string;
+      ok: boolean;
+      httpRoutes: { a2aAgentName: string; acpSessionCount: number; ok: boolean };
+      mcpStdio: { echoText: string; ok: boolean; serverName: string; transport: string };
+    };
+    expect(protocolsSmoke.kind).toBe('hermes_protocol_gateway_smoke');
+    expect(protocolsSmoke.ok).toBe(true);
+    expect(protocolsSmoke.mcpStdio).toMatchObject({
+      echoText: 'HERMES_PROTOCOL_MCP:OK',
+      ok: true,
+      serverName: 'hermes_protocol_fixture',
+      transport: 'stdio',
+    });
+    expect(protocolsSmoke.httpRoutes).toMatchObject({
+      a2aAgentName: 'Code Buddy',
+      acpSessionCount: 1,
+      ok: true,
+    });
+
     const runtime = runHermesJson(['runtime', 'status']) as {
       kind: string;
       readiness: { backends: Array<{ id: string; runnable: boolean }>; runnableCount: number };
