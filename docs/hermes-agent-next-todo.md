@@ -3,12 +3,16 @@
 Date: 2026-05-30
 Source of truth:
 - `npx tsx src/index.ts hermes parity --json`
+- `npx tsx src/index.ts hermes todo --json`
 - `npx tsx src/index.ts hermes tools --json`
 - `npx tsx src/index.ts hermes portal status --json`
 - Official audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md)
 
 Current measured state:
 - Feature parity manifest: 20 areas, 5 covered-partial, 14 partial, 1 gap.
+- Compact active TODO: `buddy hermes todo --json` derives the next feature
+  work from the same manifest and keeps the deferred OpenClaw migration out of
+  active work unless `--include-deferred` is passed.
 - Tool parity manifest: 71 official tools, 65 exact, 6 native-equivalent, 0 partial, 0 gaps.
 - Important product choice: Code Buddy maps Hermes Agent onto native TypeScript/Fleet/Cowork primitives. It does not vendor the upstream Python runtime.
 

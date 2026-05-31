@@ -823,6 +823,83 @@ describe('Hermes CLI commands', () => {
     );
   });
 
+  it('prints a compact prioritized Hermes TODO derived from the parity manifest', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'todo', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      command: string;
+      summary: {
+        activeTodoCount: number;
+        deferredCount: number;
+        includedDeferred: boolean;
+      };
+      todos: Array<{
+        id: string;
+        nextWork: string;
+        priority: number;
+        status: string;
+        verificationCommand: string;
+      }>;
+      deferred: Array<{ id: string; status: string }>;
+      notes: string[];
+    };
+
+    expect(output.kind).toBe('hermes_parity_todo');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.command).toBe('buddy hermes todo --json');
+    expect(output.summary.activeTodoCount).toBeGreaterThan(0);
+    expect(output.summary.deferredCount).toBe(1);
+    expect(output.summary.includedDeferred).toBe(false);
+    expect(output.todos[0]).toMatchObject({
+      id: 'closed-learning-loop',
+      priority: 1,
+      status: 'partial',
+    });
+    expect(output.todos.map((item) => item.id)).toContain('runtime-backends');
+    expect(output.todos.map((item) => item.id)).not.toContain('openclaw-migration');
+    expect(output.deferred).toEqual([
+      expect.objectContaining({ id: 'openclaw-migration', status: 'gap' }),
+    ]);
+    expect(output.todos.every((item) => item.nextWork.length > 0)).toBe(true);
+    expect(output.todos.every((item) => item.verificationCommand.length > 0)).toBe(true);
+    expect(output.notes.join(' ')).toContain('OpenClaw migration is deferred');
+  });
+
+  it('can include deliberately deferred Hermes work when requested', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'todo', '--json', '--include-deferred', '--limit', '7']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      summary: { includedDeferred: boolean };
+      todos: Array<{ id: string }>;
+    };
+
+    expect(output.summary.includedDeferred).toBe(true);
+    expect(output.todos.map((item) => item.id)).toContain('openclaw-migration');
+  });
+
+  it('prints readable Hermes TODO output', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'todo', '--limit', '3']);
+
+    const output = getLogOutput();
+    expect(output).toContain('Hermes TODO:');
+    expect(output).toContain('Next active work:');
+    expect(output).toContain('1. Closed learning loop [partial]');
+    expect(output).toContain('Verify: npm test -- tests/agent/lesson-candidate-queue.test.ts');
+    expect(output).toContain('Deferred by decision:');
+    expect(output).toContain('OpenClaw migration [gap]');
+  });
+
   it('prints real local Nous Portal readiness without leaking secrets', async () => {
     const program = createProgram();
     registerHermesCommands(program);

@@ -38,6 +38,8 @@ import {
 } from '../../agent/hermes-protocol-gateways.js';
 import {
   buildHermesParityManifest,
+  buildHermesParityTodo,
+  type HermesParityTodoManifest,
   renderHermesParityManifestMarkdown,
 } from '../../agent/hermes-parity-manifest.js';
 import {
@@ -127,6 +129,11 @@ interface HermesKanbanOptions extends HermesCommandOptions {
 
 interface HermesRuntimeSmokeOptions extends HermesCommandOptions {
   timeoutMs?: string;
+}
+
+interface HermesTodoOptions extends HermesCommandOptions {
+  includeDeferred?: boolean;
+  limit?: string;
 }
 
 type HermesBrowserSmokeOptions = HermesCommandOptions;
@@ -657,6 +664,40 @@ function renderHermesToolParityManifest(manifest: HermesToolParityManifest): str
     if (tool.nextWork) {
       lines.push(`  Next: ${tool.nextWork}`);
     }
+  }
+
+  return lines.join('\n');
+}
+
+function renderHermesParityTodo(todo: HermesParityTodoManifest): string {
+  const lines = [
+    `Hermes TODO: ${todo.summary.activeTodoCount} active feature items ` +
+      `(${todo.summary.partial} partial, ${todo.summary.gaps} gaps in full manifest)`,
+    `Official source: ${todo.officialSource.repository} @ ${todo.officialSource.inspectedCommit}`,
+    `Audit: ${todo.officialSource.auditDocument}`,
+    '',
+    'Next active work:',
+  ];
+
+  for (const item of todo.todos) {
+    lines.push(`${item.priority}. ${item.area} [${item.status}]`);
+    lines.push(`   Next: ${item.nextWork}`);
+    lines.push(`   Verify: ${item.verificationCommand}`);
+  }
+
+  if (todo.deferred.length > 0 && !todo.summary.includedDeferred) {
+    lines.push('');
+    lines.push('Deferred by decision:');
+    for (const item of todo.deferred) {
+      lines.push(`- ${item.area} [${item.status}]`);
+      lines.push(`  Next: ${item.nextWork}`);
+    }
+  }
+
+  lines.push('');
+  lines.push('Notes:');
+  for (const note of todo.notes) {
+    lines.push(`  - ${note}`);
   }
 
   return lines.join('\n');
@@ -1272,6 +1313,26 @@ export function registerHermesCommands(program: Command): void {
           console.log(`  Next: ${feature.nextWork}`);
         }
       }
+    });
+
+  hermes
+    .command('todo')
+    .description('Show the prioritized remaining Hermes feature work')
+    .option('--json', 'output JSON')
+    .option('--limit <n>', 'number of active items to show', '7')
+    .option('--include-deferred', 'include deliberately deferred items such as OpenClaw in active todos')
+    .action((options: HermesTodoOptions) => {
+      const todo = buildHermesParityTodo({
+        includeDeferred: options.includeDeferred === true,
+        limit: parseOptionalPositiveInteger(options.limit, '--limit'),
+      });
+
+      if (options.json) {
+        console.log(stableJson(todo));
+        return;
+      }
+
+      console.log(renderHermesParityTodo(todo));
     });
 
   hermes

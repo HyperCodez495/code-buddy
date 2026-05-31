@@ -28,12 +28,8 @@ export interface HermesFeatureParitySummary {
   topWork: HermesFeatureParityItem[];
 }
 
-interface HermesParityFeature extends HermesFeatureParityItem {
-  codeBuddyEvidence: string[];
-  notes: string;
-}
-
 interface HermesParityManifest {
+  features?: HermesParityFeature[];
   generatedAt: string;
   officialSource: {
     auditDocument: string;
@@ -42,14 +38,31 @@ interface HermesParityManifest {
     repository: string;
   };
   summary: HermesFeatureParitySummary['summary'];
-  features: HermesParityFeature[];
+}
+
+interface HermesParityFeature extends HermesFeatureParityItem {
+  codeBuddyEvidence: string[];
+  notes: string;
+}
+
+interface HermesParityTodoItem {
+  area: string;
+  id: string;
+  nextWork: string;
+  officialSurface: string;
+  status: Extract<HermesFeatureParityStatus, 'partial' | 'gap'>;
+  verificationCommand: string;
 }
 
 interface HermesParityManifestModule {
   buildHermesParityManifest: () => HermesParityManifest;
+  buildHermesParityTodo?: (options?: { includeDeferred?: boolean; limit?: number }) => {
+    deferred?: HermesParityTodoItem[];
+    todos?: HermesParityTodoItem[];
+  };
 }
 
-const PRIORITY_FEATURE_IDS = [
+const FALLBACK_PRIORITY_FEATURE_IDS = [
   'closed-learning-loop',
   'skills',
   'runtime-backends',
@@ -57,10 +70,32 @@ const PRIORITY_FEATURE_IDS = [
   'messaging-gateway',
   'mcp-acp',
   'openclaw-migration',
+  'research-trajectories',
 ];
 
 export function buildHermesFeatureParityCommand(): string {
   return 'buddy hermes parity --json';
+}
+
+function fallbackTopWorkFromManifest(manifest: HermesParityManifest): HermesParityTodoItem[] {
+  const needsWork = (manifest.features ?? []).filter(
+    (feature): feature is HermesParityFeature & { status: 'partial' | 'gap' } =>
+      feature.status === 'gap' || feature.status === 'partial',
+  );
+  const priorityIds = new Set(FALLBACK_PRIORITY_FEATURE_IDS);
+  return [
+    ...FALLBACK_PRIORITY_FEATURE_IDS
+      .map((id) => needsWork.find((feature) => feature.id === id))
+      .filter((feature): feature is HermesParityFeature & { status: 'partial' | 'gap' } => Boolean(feature)),
+    ...needsWork.filter((feature) => !priorityIds.has(feature.id)),
+  ].slice(0, 7).map((feature) => ({
+    area: feature.area,
+    id: feature.id,
+    nextWork: feature.nextWork ?? feature.notes,
+    officialSurface: feature.officialSurface,
+    status: feature.status,
+    verificationCommand: feature.verificationCommands[0] ?? 'n/a',
+  }));
 }
 
 export async function getHermesFeatureParityForReview(): Promise<HermesFeatureParitySummary | null> {
@@ -68,15 +103,8 @@ export async function getHermesFeatureParityForReview(): Promise<HermesFeaturePa
   if (!mod?.buildHermesParityManifest) return null;
 
   const manifest = mod.buildHermesParityManifest();
-  const needsWork = manifest.features.filter((feature) =>
-    feature.status === 'gap' || feature.status === 'partial'
-  );
-  const topWork = [
-    ...PRIORITY_FEATURE_IDS
-      .map((id) => needsWork.find((feature) => feature.id === id))
-      .filter((feature): feature is HermesParityFeature => Boolean(feature)),
-    ...needsWork.filter((feature) => !PRIORITY_FEATURE_IDS.includes(feature.id)),
-  ].slice(0, 7);
+  const todo = mod.buildHermesParityTodo?.({ includeDeferred: true, limit: 7 });
+  const topWork = todo?.todos ?? fallbackTopWorkFromManifest(manifest);
 
   return {
     auditDocument: manifest.officialSource.auditDocument,
@@ -92,7 +120,7 @@ export async function getHermesFeatureParityForReview(): Promise<HermesFeaturePa
       nextWork: feature.nextWork,
       officialSurface: feature.officialSurface,
       status: feature.status,
-      verificationCommands: feature.verificationCommands.slice(0, 3),
+      verificationCommands: [feature.verificationCommand].filter(Boolean).slice(0, 3),
     })),
   };
 }

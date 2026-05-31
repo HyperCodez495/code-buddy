@@ -32,6 +32,43 @@ export interface HermesParityManifest {
   features: HermesParityFeature[];
 }
 
+export interface HermesParityTodoItem {
+  area: string;
+  id: string;
+  nextWork: string;
+  officialSurface: string;
+  priority: number;
+  status: Extract<HermesParityStatus, 'partial' | 'gap'>;
+  verificationCommand: string;
+}
+
+export interface HermesParityTodoManifest {
+  kind: 'hermes_parity_todo';
+  schemaVersion: 1;
+  generatedAt: string;
+  command: string;
+  officialSource: HermesParityManifest['officialSource'];
+  summary: HermesParityManifest['summary'] & {
+    activeTodoCount: number;
+    deferredCount: number;
+    includedDeferred: boolean;
+  };
+  todos: HermesParityTodoItem[];
+  deferred: HermesParityTodoItem[];
+  notes: string[];
+}
+
+export const HERMES_PARITY_PRIORITY_FEATURE_IDS = [
+  'closed-learning-loop',
+  'skills',
+  'runtime-backends',
+  'browser-automation',
+  'messaging-gateway',
+  'mcp-acp',
+  'openclaw-migration',
+  'research-trajectories',
+] as const;
+
 const FEATURES: HermesParityFeature[] = [
   {
     id: 'agent-identity',
@@ -493,6 +530,79 @@ export function buildHermesParityManifest(generatedAt: string = new Date().toISO
     },
     summary,
     features: FEATURES.map((feature) => ({ ...feature })),
+  };
+}
+
+function isActiveTodoFeature(
+  feature: HermesParityFeature,
+): feature is HermesParityFeature & { status: Extract<HermesParityStatus, 'partial' | 'gap'> } {
+  return feature.status === 'partial' || feature.status === 'gap';
+}
+
+function isDeferredHermesTodo(feature: HermesParityFeature): boolean {
+  return feature.id === 'openclaw-migration';
+}
+
+function orderHermesTodoFeatures(features: Array<HermesParityFeature & { status: 'partial' | 'gap' }>) {
+  const byId = new Map(features.map((feature) => [feature.id, feature]));
+  const priorityIds = new Set<string>(HERMES_PARITY_PRIORITY_FEATURE_IDS);
+  return [
+    ...HERMES_PARITY_PRIORITY_FEATURE_IDS
+      .map((id) => byId.get(id))
+      .filter((feature): feature is HermesParityFeature & { status: 'partial' | 'gap' } => Boolean(feature)),
+    ...features.filter((feature) => !priorityIds.has(feature.id)),
+  ];
+}
+
+function toHermesTodoItem(
+  feature: HermesParityFeature & { status: 'partial' | 'gap' },
+  priority: number,
+): HermesParityTodoItem {
+  return {
+    area: feature.area,
+    id: feature.id,
+    nextWork: feature.nextWork ?? feature.notes,
+    officialSurface: feature.officialSurface,
+    priority,
+    status: feature.status,
+    verificationCommand: feature.verificationCommands[0] ?? 'n/a',
+  };
+}
+
+export function buildHermesParityTodo(options: {
+  generatedAt?: string;
+  includeDeferred?: boolean;
+  limit?: number;
+} = {}): HermesParityTodoManifest {
+  const manifest = buildHermesParityManifest(options.generatedAt);
+  const limit = Math.max(1, options.limit ?? 7);
+  const allTodos = orderHermesTodoFeatures(manifest.features.filter(isActiveTodoFeature));
+  const deferredFeatures = allTodos.filter(isDeferredHermesTodo);
+  const activeFeatures = allTodos.filter((feature) => options.includeDeferred || !isDeferredHermesTodo(feature));
+  const todos = activeFeatures
+    .slice(0, limit)
+    .map((feature, index) => toHermesTodoItem(feature, index + 1));
+  const deferred = deferredFeatures.map((feature, index) => toHermesTodoItem(feature, index + 1));
+
+  return {
+    kind: 'hermes_parity_todo',
+    schemaVersion: 1,
+    generatedAt: manifest.generatedAt,
+    command: 'buddy hermes todo --json',
+    officialSource: manifest.officialSource,
+    summary: {
+      ...manifest.summary,
+      activeTodoCount: activeFeatures.length,
+      deferredCount: deferredFeatures.length,
+      includedDeferred: options.includeDeferred === true,
+    },
+    todos,
+    deferred,
+    notes: [
+      'Derived from the same official Hermes feature parity manifest as `buddy hermes parity --json`.',
+      'OpenClaw migration is deferred by user decision and excluded from active todos unless --include-deferred is passed.',
+      'Each todo keeps one real verification command so the next agent can prove progress without relying on mocks.',
+    ],
   };
 }
 
