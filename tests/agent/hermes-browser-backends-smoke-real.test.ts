@@ -123,7 +123,10 @@ describe('Hermes browser backend readiness and live smoke', () => {
       localRunnableCount: 1,
       managedConfiguredCount: 0,
       routePlan: {
+        autoEligibleBackendIds: ['local-playwright'],
         fallbackBackendIds: [],
+        gatedBackendIds: [],
+        gatedBackends: [],
         mode: 'hybrid',
         primaryBackendId: 'local-playwright',
         reason: 'local Playwright is safe by default',
@@ -206,6 +209,25 @@ describe('Hermes browser backend readiness and live smoke', () => {
       primaryBackendId: 'remote-cdp',
       smokeCommand: 'buddy hermes browser-smoke auto --json',
     }));
+    expect(readiness.routePlan.autoEligibleBackendIds).toEqual(expect.arrayContaining([
+      'remote-cdp',
+      'local-playwright',
+    ]));
+    expect(readiness.routePlan.gatedBackendIds).toEqual(expect.arrayContaining([
+      'browserbase',
+      'browser-use',
+      'firecrawl',
+    ]));
+    expect(readiness.routePlan.gatedBackends).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        backendId: 'browserbase',
+        reason: expect.stringContaining('first-class managed runner'),
+      }),
+      expect.objectContaining({
+        backendId: 'firecrawl',
+        reason: expect.stringContaining('extraction backend'),
+      }),
+    ]));
     expect(readiness.backends).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -238,6 +260,9 @@ describe('Hermes browser backend readiness and live smoke', () => {
         }),
       ]),
     );
+    const rendered = renderHermesBrowserBackendsReadiness(readiness);
+    expect(rendered).toContain('Gated auto-route backends:');
+    expect(rendered).toContain('- browserbase: Browserbase is configured but excluded from auto browser routing');
     expect(JSON.stringify(readiness)).not.toContain('secret-');
     expect(JSON.stringify(readiness)).not.toContain('ws://secret-cdp-host');
     expect(JSON.stringify(readiness)).not.toContain(process.execPath);

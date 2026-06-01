@@ -45,9 +45,19 @@ export interface HermesBrowserBackendsReadiness {
 }
 
 export interface HermesBrowserBackendRoutePlan {
+  autoEligibleBackendIds?: string[];
   fallbackBackendIds: string[];
+  gatedBackendIds?: string[];
+  gatedBackends?: HermesBrowserBackendRouteGate[];
   mode: 'hybrid';
   primaryBackendId: string | null;
+  reason: string;
+  smokeCommand: string | null;
+}
+
+export interface HermesBrowserBackendRouteGate {
+  backendId: string;
+  label: string;
   reason: string;
   smokeCommand: string | null;
 }
@@ -294,6 +304,7 @@ function buildHybridRoutePlan(backends: HermesBrowserBackend[]): HermesBrowserBa
   const remoteCdp = backends.find((backend) => backend.id === 'remote-cdp' && backend.runnable);
   const localPlaywright = backends.find((backend) => backend.id === 'local-playwright' && backend.runnable);
   const runnableSafeBackends = [remoteCdp, localPlaywright].filter(Boolean) as HermesBrowserBackend[];
+  const gatedBackends = buildBrowserRouteGates(backends);
   const primary = runnableSafeBackends[0] ?? null;
   const fallbacks = runnableSafeBackends
     .filter((backend) => backend.id !== primary?.id)
@@ -301,7 +312,10 @@ function buildHybridRoutePlan(backends: HermesBrowserBackend[]): HermesBrowserBa
 
   if (!primary) {
     return {
+      autoEligibleBackendIds: [],
       fallbackBackendIds: [],
+      gatedBackendIds: gatedBackends.map((backend) => backend.backendId),
+      gatedBackends,
       mode: 'hybrid',
       primaryBackendId: null,
       reason: 'No safe browser backend is currently runnable; configure Playwright or a CDP endpoint first.',
@@ -310,7 +324,10 @@ function buildHybridRoutePlan(backends: HermesBrowserBackend[]): HermesBrowserBa
   }
 
   return {
+    autoEligibleBackendIds: runnableSafeBackends.map((backend) => backend.id),
     fallbackBackendIds: fallbacks,
+    gatedBackendIds: gatedBackends.map((backend) => backend.backendId),
+    gatedBackends,
     mode: 'hybrid',
     primaryBackendId: primary.id,
     reason: fallbacks.length > 0
@@ -318,6 +335,44 @@ function buildHybridRoutePlan(backends: HermesBrowserBackend[]): HermesBrowserBa
       : `Auto browser smoke will use ${primary.label}; no secondary safe backend is currently runnable.`,
     smokeCommand: 'buddy hermes browser-smoke auto --json',
   };
+}
+
+function buildBrowserRouteGates(backends: HermesBrowserBackend[]): HermesBrowserBackendRouteGate[] {
+  return backends.flatMap((backend) => {
+    const reason = browserRouteGateReason(backend);
+    return reason
+      ? [{
+        backendId: backend.id,
+        label: backend.label,
+        reason,
+        smokeCommand: backend.smokeCommand,
+      }]
+      : [];
+  });
+}
+
+function browserRouteGateReason(backend: HermesBrowserBackend): string | null {
+  if (['local-playwright', 'remote-cdp', 'session-recording'].includes(backend.id)) {
+    return null;
+  }
+
+  if (backend.id === 'browserbase' && backend.configured) {
+    return 'Browserbase is configured but excluded from auto browser routing until Code Buddy wires a first-class managed runner.';
+  }
+
+  if (backend.id === 'browser-use' && backend.configured) {
+    return 'Browser Use is configured but excluded from auto browser routing until the Nous Tool Gateway runner is wired.';
+  }
+
+  if (backend.id === 'firecrawl' && backend.configured) {
+    return 'Firecrawl is configured but excluded from auto browser routing because it is an extraction backend, not an interactive browser session.';
+  }
+
+  if (backend.id === 'camofox' && backend.installed) {
+    return 'Camofox/Camoufox is installed but excluded from auto browser routing until a first-class runner exists.';
+  }
+
+  return null;
 }
 
 export function buildHermesBrowserBackendsReadiness(
@@ -659,6 +714,15 @@ export function renderHermesBrowserBackendsReadiness(readiness: HermesBrowserBac
 
   if (readiness.recommendations.length > 0) {
     lines.push('', 'Recommendations:', ...readiness.recommendations.map((recommendation) => `- ${recommendation}`));
+  }
+
+  const gatedBackends = readiness.routePlan.gatedBackends ?? [];
+  if (gatedBackends.length > 0) {
+    lines.push(
+      '',
+      'Gated auto-route backends:',
+      ...gatedBackends.map((backend) => `- ${backend.backendId}: ${backend.reason}`),
+    );
   }
 
   return lines.join('\n');

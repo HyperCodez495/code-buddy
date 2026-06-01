@@ -321,8 +321,11 @@ interface HermesOverviewStatus {
       ok: boolean;
       localRunnableCount: number;
       managedConfiguredCount: number;
+      autoEligibleBackendIds: string[];
       primaryBackendId: string | null;
       fallbackBackendIds: string[];
+      gatedBackendCount: number;
+      gatedBackendIds: string[];
       smokeCommand: string | null;
       issueCount: number;
     };
@@ -815,8 +818,11 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         ok: diagnostics.browserBackends.ok,
         localRunnableCount: diagnostics.browserBackends.localRunnableCount,
         managedConfiguredCount: diagnostics.browserBackends.managedConfiguredCount,
+        autoEligibleBackendIds: diagnostics.browserBackends.routePlan.autoEligibleBackendIds ?? [],
         primaryBackendId: diagnostics.browserBackends.routePlan.primaryBackendId,
         fallbackBackendIds: diagnostics.browserBackends.routePlan.fallbackBackendIds,
+        gatedBackendCount: diagnostics.browserBackends.routePlan.gatedBackendIds?.length ?? 0,
+        gatedBackendIds: diagnostics.browserBackends.routePlan.gatedBackendIds ?? [],
         smokeCommand: diagnostics.browserBackends.routePlan.smokeCommand,
         issueCount: diagnostics.browserBackends.issues.length,
       },
@@ -916,7 +922,8 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `-> ${formatList(readiness.runtime.fallbackBackendIds)} ` +
       `(auto: ${formatList(readiness.runtime.autoEligibleBackendIds)}, gated: ${formatList(readiness.runtime.gatedBackendIds)})`,
     `  Browser: ${readiness.browser.primaryBackendId ?? 'none'} ` +
-      `-> ${formatList(readiness.browser.fallbackBackendIds)}`,
+      `-> ${formatList(readiness.browser.fallbackBackendIds)} ` +
+      `(auto: ${formatList(readiness.browser.autoEligibleBackendIds)}, gated: ${formatList(readiness.browser.gatedBackendIds)})`,
     `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
   );
 

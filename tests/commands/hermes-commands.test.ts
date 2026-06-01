@@ -233,7 +233,13 @@ describe('Hermes CLI commands', () => {
           };
         };
         readiness: {
-          browser: { primaryBackendId: string | null; smokeCommand: string | null };
+          browser: {
+            autoEligibleBackendIds: string[];
+            gatedBackendCount: number;
+            gatedBackendIds: string[];
+            primaryBackendId: string | null;
+            smokeCommand: string | null;
+          };
           provider: {
             configured: boolean;
             credentialSources: string[];
@@ -274,6 +280,8 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.runtime.autoEligibleBackendIds).toContain('local');
       expect(output.readiness.runtime.gatedBackendCount).toBe(output.readiness.runtime.gatedBackendIds.length);
       expect(output.readiness.browser.smokeCommand).toBe('buddy hermes browser-smoke auto --json');
+      expect(output.readiness.browser.autoEligibleBackendIds).toContain('local-playwright');
+      expect(output.readiness.browser.gatedBackendCount).toBe(output.readiness.browser.gatedBackendIds.length);
       expect(output.nextActions[0]?.area).toBe('Closed learning loop');
       expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
       expect(output.commands).toMatchObject({
