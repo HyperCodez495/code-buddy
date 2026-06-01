@@ -50,8 +50,10 @@ export interface HermesLearningLoopStatus {
       command: string;
       description: string;
       kind: 'lesson_candidate' | 'skill_candidate' | 'user_model_observation';
+      nextReviewCommand?: string;
       pendingCount: number;
       reviewGate: keyof HermesLearningLoopStatus['reviewGates'];
+      sampleIds?: string[];
     }>;
     totalPending: number;
   };
@@ -74,6 +76,12 @@ export interface HermesLearningLoopStatus {
     skillCandidates: {
       learningCandidateCount: number;
       root: string;
+      samples?: Array<{
+        candidateId: string;
+        eligible: boolean;
+        inspectCommand: string;
+        skillName: string;
+      }>;
     };
     skillUsage: {
       count: number;
@@ -452,7 +460,9 @@ export const HermesLearningLoopStrip: React.FC<{
                         </button>
                       ) : null}
                     </div>
-                    <code className="block truncate text-[9px] text-warning">{item.command}</code>
+                    <code className="block truncate text-[9px] text-warning">
+                      {item.nextReviewCommand ?? item.command}
+                    </code>
                   </li>
                 ))}
               </ul>

@@ -97,6 +97,7 @@ export interface HermesLearningLoopStatus {
     skillCandidates: {
       learningCandidateCount: number;
       root: string;
+      samples: HermesLearningLoopSkillCandidateSample[];
     };
   };
   commands: {
@@ -113,8 +114,17 @@ export interface HermesLearningLoopReviewQueueItem {
   command: string;
   description: string;
   kind: 'lesson_candidate' | 'skill_candidate' | 'user_model_observation';
+  nextReviewCommand?: string;
   pendingCount: number;
   reviewGate: keyof HermesLearningLoopStatus['reviewGates'];
+  sampleIds?: string[];
+}
+
+export interface HermesLearningLoopSkillCandidateSample {
+  candidateId: string;
+  eligible: boolean;
+  inspectCommand: string;
+  skillName: string;
 }
 
 interface BuildHermesLearningLoopStatusOptions {
@@ -128,6 +138,12 @@ interface PatternLibraryFile {
   schemaVersion?: number;
   updatedAt?: string;
   patterns?: Array<{ status?: string }>;
+}
+
+interface SkillCandidateReviewFile {
+  candidateId?: unknown;
+  eligible?: unknown;
+  skillName?: unknown;
 }
 
 const RETROSPECTIVE_READY_STATUSES = new Set<RunSummary['status']>([
@@ -190,20 +206,54 @@ function countEvidenceArtifacts(artifacts: string[]): number {
     .length;
 }
 
-function countLearningSkillCandidates(workDir: string): { learningCandidateCount: number; root: string } {
+function countLearningSkillCandidates(workDir: string): HermesLearningLoopStatus['state']['skillCandidates'] {
   const root = path.join(workDir, '.codebuddy', 'skill-candidates', 'learning');
   let learningCandidateCount = 0;
+  const samples: HermesLearningLoopSkillCandidateSample[] = [];
   try {
     if (fs.existsSync(root)) {
-      learningCandidateCount = fs.readdirSync(root, { withFileTypes: true })
+      const candidateDirs = fs.readdirSync(root, { withFileTypes: true })
         .filter((entry) => entry.isDirectory())
-        .filter((entry) => fs.existsSync(path.join(root, entry.name, 'SKILL.md')))
-        .length;
+        .filter((entry) => fs.existsSync(path.join(root, entry.name, 'SKILL.md')));
+      learningCandidateCount = candidateDirs.length;
+      for (const entry of candidateDirs.slice(0, 3)) {
+        samples.push(readLearningSkillCandidateSample(workDir, root, entry.name));
+      }
     }
   } catch {
     learningCandidateCount = 0;
+    samples.length = 0;
   }
-  return { learningCandidateCount, root };
+  return { learningCandidateCount, root, samples };
+}
+
+function readLearningSkillCandidateSample(
+  workDir: string,
+  root: string,
+  directoryName: string,
+): HermesLearningLoopSkillCandidateSample {
+  const candidateDir = path.join(root, directoryName);
+  const reviewPath = path.join(candidateDir, 'candidate-review.json');
+  const fallbackId = directoryName;
+  let parsed: SkillCandidateReviewFile = {};
+  try {
+    parsed = JSON.parse(fs.readFileSync(reviewPath, 'utf-8')) as SkillCandidateReviewFile;
+  } catch {
+    parsed = {};
+  }
+  const skillName = typeof parsed.skillName === 'string' && parsed.skillName.trim()
+    ? parsed.skillName.trim()
+    : directoryName;
+  const candidateId = typeof parsed.candidateId === 'string' && parsed.candidateId.trim()
+    ? parsed.candidateId.trim()
+    : fallbackId;
+  const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
+  return {
+    candidateId,
+    eligible: parsed.eligible === true,
+    inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
+    skillName,
+  };
 }
 
 function readPatternStats(workDir: string): HermesLearningLoopStatus['state']['patterns'] {
@@ -258,6 +308,7 @@ function buildReviewQueue(
   lessonCandidates: ReturnType<ReturnType<typeof getLessonCandidateQueue>['getStats']>,
   userModel: ReturnType<ReturnType<typeof getUserModel>['getStats']>,
   skillCandidates: HermesLearningLoopStatus['state']['skillCandidates'],
+  pendingLessonIds: string[],
 ): HermesLearningLoopStatus['reviewQueue'] {
   const items: HermesLearningLoopReviewQueueItem[] = [];
   if (lessonCandidates.byStatus.pending > 0) {
@@ -265,8 +316,10 @@ function buildReviewQueue(
       command: 'buddy lessons candidate list --status pending --json',
       description: 'Pending lesson candidates from retrospectives; approve only durable, reusable lessons.',
       kind: 'lesson_candidate',
+      ...(pendingLessonIds[0] ? { nextReviewCommand: `buddy lessons candidate show ${formatShellArg(pendingLessonIds[0])} --json` } : {}),
       pendingCount: lessonCandidates.byStatus.pending,
       reviewGate: 'lessonWritesRequireApproval',
+      ...(pendingLessonIds.length > 0 ? { sampleIds: pendingLessonIds } : {}),
     });
   }
   if (userModel.byStatus.pending > 0) {
@@ -279,18 +332,30 @@ function buildReviewQueue(
     });
   }
   if (skillCandidates.learningCandidateCount > 0) {
+    const reviewableSkill = skillCandidates.samples.find((candidate) => candidate.eligible) ?? skillCandidates.samples[0];
+    const hasEligibleSkillCandidate = skillCandidates.samples.some((candidate) => candidate.eligible);
     items.push({
-      command: 'buddy tools skill-candidate list --eligible-only --json',
-      description: 'Pending Learning Agent SKILL.md candidates; inspect diffs before install or overwrite.',
+      command: hasEligibleSkillCandidate
+        ? 'buddy tools skill-candidate list --eligible-only --json'
+        : 'buddy tools skill-candidate list --json',
+      description: hasEligibleSkillCandidate
+        ? 'Pending Learning Agent SKILL.md candidates; inspect diffs before install or overwrite.'
+        : 'Learning Agent SKILL.md candidates exist but are not eligible yet; inspect reasons before installing anything.',
       kind: 'skill_candidate',
+      ...(reviewableSkill ? { nextReviewCommand: reviewableSkill.inspectCommand } : {}),
       pendingCount: skillCandidates.learningCandidateCount,
       reviewGate: 'skillCandidatesRequireReview',
+      ...(skillCandidates.samples.length > 0 ? { sampleIds: skillCandidates.samples.map((candidate) => candidate.candidateId) } : {}),
     });
   }
   return {
     items,
     totalPending: items.reduce((total, item) => total + item.pendingCount, 0),
   };
+}
+
+function formatShellArg(value: string): string {
+  return /^[A-Za-z0-9._/:=-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 export function buildHermesLearningLoopStatus(
@@ -318,11 +383,15 @@ export function buildHermesLearningLoopStatus(
   });
   const nextRetrospectiveRun = selectNextRetrospectiveRun(runRows);
   const lessonCandidates = getLessonCandidateQueue(workDir).getStats();
+  const pendingLessonIds = getLessonCandidateQueue(workDir)
+    .list('pending')
+    .slice(0, 3)
+    .map((candidate) => candidate.id);
   const userModel = getUserModel(workDir).getStats();
   const skillUsageRecords = listLearningSkillUsage(workDir);
   const patterns = readPatternStats(workDir);
   const skillCandidates = countLearningSkillCandidates(workDir);
-  const reviewQueue = buildReviewQueue(lessonCandidates, userModel, skillCandidates);
+  const reviewQueue = buildReviewQueue(lessonCandidates, userModel, skillCandidates, pendingLessonIds);
   const autoEnabled = isLearningAgentEnabled();
   const retrospectiveArtifactCount = runRows.filter((run) =>
     isRetrospectiveEligible(run) && run.hasLearningRetrospective
@@ -437,6 +506,9 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     lines.push('', `Review queue: ${status.reviewQueue.totalPending} pending`);
     for (const item of status.reviewQueue.items) {
       lines.push(`  - ${item.kind}: ${item.pendingCount} -> ${item.command}`);
+      if (item.nextReviewCommand) {
+        lines.push(`    next: ${item.nextReviewCommand}`);
+      }
     }
   }
 

@@ -353,7 +353,9 @@ describe('Hermes CLI commands', () => {
           items: Array<{
             command: string;
             kind: string;
+            nextReviewCommand?: string;
             pendingCount: number;
+            sampleIds?: string[];
           }>;
           totalPending: number;
         };
@@ -365,7 +367,15 @@ describe('Hermes CLI commands', () => {
             runId: string;
             toolCallCount: number;
           }>;
-          skillCandidates: { learningCandidateCount: number };
+          skillCandidates: {
+            learningCandidateCount: number;
+            samples: Array<{
+              candidateId: string;
+              eligible: boolean;
+              inspectCommand: string;
+              skillName: string;
+            }>;
+          };
           skillUsage: { top: Array<{ recommendation: string; skillName: string }> };
         };
         commands: { retrospective: string };
@@ -388,12 +398,16 @@ describe('Hermes CLI commands', () => {
         expect.objectContaining({
           command: 'buddy lessons candidate list --status pending --json',
           kind: 'lesson_candidate',
+          nextReviewCommand: expect.stringContaining('buddy lessons candidate show lc-'),
           pendingCount: expect.any(Number),
+          sampleIds: expect.arrayContaining([expect.stringMatching(/^lc-/)]),
         }),
         expect.objectContaining({
-          command: 'buddy tools skill-candidate list --eligible-only --json',
+          command: expect.stringMatching(/^buddy tools skill-candidate list (--eligible-only )?--json$/),
           kind: 'skill_candidate',
+          nextReviewCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
           pendingCount: 1,
+          sampleIds: expect.arrayContaining([expect.stringMatching(/^(learning-skill|skill-candidate)-/)]),
         }),
       ]));
       expect(output.state.recentRuns).toEqual(
@@ -435,6 +449,13 @@ describe('Hermes CLI commands', () => {
         expect.arrayContaining([expect.stringContaining(`buddy run retrospective ${pendingRetrospectiveRunId}`)]),
       );
       expect(output.state.skillCandidates.learningCandidateCount).toBe(1);
+      expect(output.state.skillCandidates.samples).toEqual([
+        expect.objectContaining({
+          candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
+          inspectCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
+          skillName: expect.any(String),
+        }),
+      ]);
       expect(output.state.skillUsage.top).toEqual([
         expect.objectContaining({ recommendation: 'observe', skillName: 'web-audit' }),
       ]);
@@ -447,6 +468,73 @@ describe('Hermes CLI commands', () => {
       else process.env.CODEBUDDY_RUNS_DIR = oldRunsDir;
       if (oldLearningAgent === undefined) delete process.env.CODEBUDDY_LEARNING_AGENT;
       else process.env.CODEBUDDY_LEARNING_AGENT = oldLearningAgent;
+      resetLessonCandidateQueues();
+      resetUserModels();
+      await fs.remove(tmpDir);
+    }
+  });
+
+  it('points Learning Agent review at all candidates when none are install-eligible yet', async () => {
+    const oldCwd = process.cwd();
+    const oldRunsDir = process.env.CODEBUDDY_RUNS_DIR;
+    const tmpDir = await fs.mkdtemp(path.join(os.tmpdir(), 'hermes-learning-ineligible-skill-'));
+    const candidateDir = path.join(tmpDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-not-ready');
+
+    try {
+      process.chdir(tmpDir);
+      process.env.CODEBUDDY_RUNS_DIR = path.join(tmpDir, 'runs');
+      resetLessonCandidateQueues();
+      resetUserModels();
+      fs.ensureDirSync(candidateDir);
+      fs.writeFileSync(path.join(candidateDir, 'SKILL.md'), [
+        '---',
+        'name: learned-not-ready',
+        'description: Candidate waiting for more evidence.',
+        '---',
+        '',
+        '# Learned Not Ready',
+        '',
+      ].join('\n'));
+      fs.writeFileSync(path.join(candidateDir, 'candidate-review.json'), JSON.stringify({
+        approvalRequired: true,
+        candidateId: 'learning-skill-notready',
+        eligible: false,
+        generatedAt: '2026-06-01T01:40:00.000Z',
+        kind: 'learning',
+        schemaVersion: 1,
+        skillName: 'learned-not-ready',
+        sourceJobId: 'learning-agent',
+        sourceRunId: 'run-not-ready',
+        status: 'not_eligible',
+        successfulRunCount: 1,
+      }, null, 2));
+
+      const program = createProgram();
+      registerHermesCommands(program);
+      await program.parseAsync(['node', 'test', 'hermes', 'learning', 'status', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        reviewQueue: {
+          items: Array<{
+            command: string;
+            kind: string;
+            nextReviewCommand?: string;
+            sampleIds?: string[];
+          }>;
+        };
+      };
+      const skillItem = output.reviewQueue.items.find((item) => item.kind === 'skill_candidate');
+      expect(skillItem).toEqual(expect.objectContaining({
+        command: 'buddy tools skill-candidate list --json',
+        nextReviewCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-not-ready --json',
+        sampleIds: ['learning-skill-notready'],
+      }));
+      expect(raw).not.toContain('Candidate waiting for more evidence.');
+    } finally {
+      process.chdir(oldCwd);
+      if (oldRunsDir === undefined) delete process.env.CODEBUDDY_RUNS_DIR;
+      else process.env.CODEBUDDY_RUNS_DIR = oldRunsDir;
       resetLessonCandidateQueues();
       resetUserModels();
       await fs.remove(tmpDir);

@@ -68,15 +68,19 @@ const learningStatus: HermesLearningLoopStatus = {
         command: 'buddy lessons candidate list --status pending --json',
         description: 'Pending lesson candidates from retrospectives.',
         kind: 'lesson_candidate',
+        nextReviewCommand: 'buddy lessons candidate show lc-real --json',
         pendingCount: 1,
         reviewGate: 'lessonWritesRequireApproval',
+        sampleIds: ['lc-real'],
       },
       {
         command: 'buddy tools skill-candidate list --eligible-only --json',
         description: 'Pending Learning Agent SKILL.md candidates.',
         kind: 'skill_candidate',
+        nextReviewCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json',
         pendingCount: 1,
         reviewGate: 'skillCandidatesRequireReview',
+        sampleIds: ['skill-candidate-real'],
       },
     ],
     totalPending: 2,
@@ -110,6 +114,14 @@ const learningStatus: HermesLearningLoopStatus = {
     skillCandidates: {
       learningCandidateCount: 1,
       root: 'D:/workspace/.codebuddy/skill-candidates/learning',
+      samples: [
+        {
+          candidateId: 'skill-candidate-real',
+          eligible: true,
+          inspectCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json',
+          skillName: 'learned-search-view-file-bash',
+        },
+      ],
     },
     skillUsage: {
       count: 1,
@@ -189,9 +201,9 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('1 skill candidates');
     expect(strip?.textContent).toContain('Review queue');
     expect(strip?.textContent).toContain('lesson_candidate: 1');
-    expect(strip?.textContent).toContain('buddy lessons candidate list --status pending --json');
+    expect(strip?.textContent).toContain('buddy lessons candidate show lc-real --json');
     expect(strip?.textContent).toContain('skill_candidate: 1');
-    expect(strip?.textContent).toContain('buddy tools skill-candidate list --eligible-only --json');
+    expect(strip?.textContent).toContain('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json');
     expect(strip?.textContent).toContain('Next retrospective');
     expect(strip?.textContent).toContain('run-needs-retro');
     expect(strip?.textContent).toContain('completed | 1 artifacts');
