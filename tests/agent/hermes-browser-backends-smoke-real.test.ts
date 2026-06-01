@@ -268,6 +268,25 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(JSON.stringify(readiness)).not.toContain(process.execPath);
   });
 
+  it('shows a remote CDP one-shot smoke command without requiring a configured endpoint', () => {
+    const readiness = buildHermesBrowserBackendsReadiness({
+      env: {},
+      now: () => new Date('2026-06-01T12:30:00.000Z'),
+    });
+
+    const remoteCdp = readiness.backends.find((backend) => backend.id === 'remote-cdp');
+
+    expect(remoteCdp).toMatchObject({
+      configured: false,
+      runnable: false,
+      smokeCommand: null,
+    });
+    expect(remoteCdp?.remediation).toContain(
+      'Or run buddy hermes browser-smoke remote-cdp --cdp-url <ws-endpoint> --json for a one-shot proof.',
+    );
+    expect(JSON.stringify(remoteCdp)).not.toContain('ws://');
+  });
+
   it('launches Chromium through a real local Playwright smoke', async () => {
     const result = await runHermesBrowserBackendSmoke({
       backendId: 'local-playwright',

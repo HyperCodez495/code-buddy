@@ -189,7 +189,12 @@ function cdpBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     credentialSources,
     smokeCommand: configured ? 'buddy hermes browser-smoke remote-cdp --json' : null,
     notes: ['Uses an already running browser endpoint; status never prints the endpoint value.'],
-    remediation: configured ? [] : ['Set CODEBUDDY_BROWSER_CDP_URL to attach to an existing browser session.'],
+    remediation: configured
+      ? []
+      : [
+        'Set CODEBUDDY_BROWSER_CDP_URL to attach to an existing browser session.',
+        'Or run buddy hermes browser-smoke remote-cdp --cdp-url <ws-endpoint> --json for a one-shot proof.',
+      ],
   };
 }
 
