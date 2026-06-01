@@ -10,6 +10,8 @@
  * Implemented methods (grounded in the published spec):
  * - `initialize`        → capability negotiation (integer protocolVersion).
  * - `session/new`       → `{ sessionId }`.
+ * - `session/load`      → resumes an in-process session and replays streamed
+ *                         history (`session/update` notifications).
  * - `session/prompt`    → runs the injected prompt runner, streaming
  *                         `session/update` (`agent_message_chunk`) notifications,
  *                         resolving to `{ stopReason }`.
@@ -18,7 +20,7 @@
  * The transport + protocol layer is deliberate-and-tested; the `promptRunner`
  * is injected so the CLI wires the real agent while tests drive a deterministic
  * runner. Out of scope for v1 (documented, not stubbed): client-side `fs/*` +
- * `session/request_permission` calls, `session/load`, and MCP passthrough.
+ * `session/request_permission` calls and MCP passthrough.
  */
 
 import { randomUUID } from 'crypto';
@@ -80,6 +82,7 @@ interface JsonRpcMessage {
 interface AcpSession {
   cwd: string;
   active: AbortController | null;
+  history: AcpSessionUpdate[];
 }
 
 function asString(value: unknown): string | undefined {
@@ -132,7 +135,10 @@ export class AcpStdioServer {
     this.output.write(`${JSON.stringify(message)}\n`);
   }
 
-  private sendUpdate(sessionId: string, update: AcpSessionUpdate): void {
+  private sendUpdate(sessionId: string, update: AcpSessionUpdate, options: { record?: boolean } = {}): void {
+    if (options.record !== false) {
+      this.sessions.get(sessionId)?.history.push(update);
+    }
     this.write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update } });
   }
 
@@ -180,6 +186,8 @@ export class AcpStdioServer {
         return this.handleInitialize();
       case 'session/new':
         return this.handleNewSession(params);
+      case 'session/load':
+        return this.handleLoadSession(params);
       case 'session/prompt':
         return this.handlePrompt(params);
       default: {
@@ -194,7 +202,7 @@ export class AcpStdioServer {
     return {
       protocolVersion: this.protocolVersion,
       agentCapabilities: {
-        loadSession: false,
+        loadSession: true,
         promptCapabilities: { image: false, audio: false, embeddedContext: false },
         mcpCapabilities: { http: false, sse: false },
       },
@@ -205,8 +213,27 @@ export class AcpStdioServer {
 
   private handleNewSession(params: Record<string, unknown>): unknown {
     const sessionId = randomUUID();
-    this.sessions.set(sessionId, { cwd: asString(params.cwd) ?? process.cwd(), active: null });
+    this.sessions.set(sessionId, { cwd: asString(params.cwd) ?? process.cwd(), active: null, history: [] });
     return { sessionId };
+  }
+
+  private handleLoadSession(params: Record<string, unknown>): unknown {
+    const sessionId = asString(params.sessionId);
+    const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    if (!sessionId || !session) {
+      const error = new Error('Unknown or missing sessionId') as Error & { code?: number };
+      error.code = -32602;
+      throw error;
+    }
+
+    const cwd = asString(params.cwd);
+    if (cwd) session.cwd = cwd;
+
+    for (const update of session.history) {
+      this.sendUpdate(sessionId, update, { record: false });
+    }
+
+    return { configOptions: null, modes: null };
   }
 
   private async handlePrompt(params: Record<string, unknown>): Promise<unknown> {

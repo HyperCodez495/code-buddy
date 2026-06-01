@@ -96,6 +96,64 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'end_turn' });
   });
 
+  it('loads an in-process session and replays prior session updates', async () => {
+    const seenCwds: string[] = [];
+    const runner: AcpPromptRunner = async ({ cwd, prompt, sendUpdate }) => {
+      seenCwds.push(cwd);
+      sendUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: `history: ${prompt[0]?.text ?? ''}` },
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/old', mcpServers: [] } });
+    await harness.flush();
+    expect(harness.responseFor(1)?.result.agentCapabilities.loadSession).toBe(true);
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'first' }] },
+    });
+    await harness.flush();
+    expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+
+    const beforeLoadUpdateCount = harness.notifications('session/update').length;
+    harness.send({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'session/load',
+      params: { sessionId, cwd: '/tmp/new', mcpServers: [] },
+    });
+    await harness.flush();
+
+    const updates = harness.notifications('session/update');
+    expect(updates).toHaveLength(beforeLoadUpdateCount + 1);
+    expect(updates.at(-1)?.params).toEqual({
+      sessionId,
+      update: {
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'history: first' },
+      },
+    });
+    expect(harness.responseFor(4)?.result).toEqual({ configOptions: null, modes: null });
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'after-load' }] },
+    });
+    await harness.flush();
+    expect(seenCwds).toEqual(['/tmp/old', '/tmp/new']);
+    expect(harness.responseFor(5)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
   it('returns a JSON-RPC error for an unknown sessionId', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
     harness.send({ jsonrpc: '2.0', id: 7, method: 'session/prompt', params: { sessionId: 'nope', prompt: [] } });

@@ -192,18 +192,24 @@ const CAPABILITIES: HermesProtocolGatewayCapability[] = [
     officialSurface: 'Drop-in Hermes ACP server/editor workflow parity',
     status: 'partial',
     evidence: [
+      'src/protocols/acp/acp-stdio-server.ts',
+      'src/commands/cli/acp-command.ts',
+      'tests/protocols/acp-stdio-server-real.test.ts',
       'src/server/routes/acp.ts',
       'src/protocols/acp/acp-server.ts',
       'docs/commands.md',
     ],
     endpoints: [
+      'stdio: buddy acp',
       '/api/acp/*',
     ],
     commands: [
+      'npm test -- tests/protocols/acp-stdio-server-real.test.ts --run',
       'npx tsx src/index.ts hermes protocols status --json',
     ],
     notes: [
-      'The protocol transport exists, but exact upstream Hermes editor integration and packaging are not yet claimed.',
+      'The stdio ACP transport supports initialize, session/new, in-process session/load replay, session/prompt, and session/cancel.',
+      'Exact upstream Hermes editor packaging and live editor validation are not yet claimed.',
     ],
   },
 ];
