@@ -1237,6 +1237,7 @@ describe('Hermes CLI commands', () => {
       expect(output.summary.reviewCommands).toContain('buddy skills enable <name> --approved-by <reviewer>');
       expect(output.summary.reviewCommands).toContain('buddy skills disable <name> --approved-by <reviewer>');
       expect(output.summary.reviewCommands).toContain('buddy skills deprecate <name> --approved-by <reviewer>');
+      expect(output.summary.reviewCommands).toContain('buddy skills delete <name> --approved-by <reviewer> --json');
       expect(output.summary.reviewCommands).toContain('buddy skills reset <name> --approved-by <reviewer> --json');
       expect(raw).not.toContain('Body for healthy-helper');
       expect(raw).not.toContain('Body for missing-helper');

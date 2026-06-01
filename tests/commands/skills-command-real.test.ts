@@ -285,6 +285,54 @@ describe('buddy skills command with real SkillsHub state', () => {
     });
   });
 
+  it('deletes an installed skill through the reviewer-gated CLI', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      skillsDir: path.join(tempHome, 'skills'),
+    });
+    const installed = await hub.installFromContent(
+      'delete-cli-helper',
+      skillContent('delete-cli-helper', '1.0.0', 'Delete from the real CLI.'),
+    );
+    await expect(fs.readFile(installed.path, 'utf8')).resolves.toContain('Delete from the real CLI.');
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'delete',
+      'delete-cli-helper',
+      '--approved-by',
+      'operator-delete',
+      '--reason',
+      'obsolete reviewed helper',
+      '--json',
+    ]);
+
+    const result = JSON.parse(getLogOutput()) as {
+      approvedBy: string;
+      name: string;
+      previous: { name: string; version: string };
+      reason: string;
+      removed: boolean;
+    };
+
+    expect(result).toMatchObject({
+      approvedBy: 'operator-delete',
+      name: 'delete-cli-helper',
+      previous: {
+        name: 'delete-cli-helper',
+        version: '1.0.0',
+      },
+      reason: 'obsolete reviewed helper',
+      removed: true,
+    });
+    expect(hub.info('delete-cli-helper')).toBeNull();
+    await expect(fs.readFile(installed.path, 'utf8')).rejects.toThrow();
+  });
+
   it('lists installed skills with a machine-readable health summary', async () => {
     const hub = getSkillsHub({
       cacheDir: path.join(tempHome, 'cache'),

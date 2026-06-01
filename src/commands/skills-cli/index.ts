@@ -16,6 +16,7 @@
  *   buddy skills enable <name> --approved-by <reviewer>
  *   buddy skills disable <name> --approved-by <reviewer>
  *   buddy skills deprecate <name> --approved-by <reviewer>
+ *   buddy skills delete <name> --approved-by <reviewer>
  *   buddy skills tap list|add|remove|trust|refresh
  *   buddy skills well-known <url>
  *
@@ -433,6 +434,40 @@ export function registerSkillsCommands(program: Command): void {
         status: 'deprecated',
         verb: 'deprecated',
       });
+    });
+
+  skills
+    .command('delete <name>')
+    .description('Delete an installed skill package')
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the deletion')
+    .option('--reason <reason>', 'review reason')
+    .option('--json', 'output JSON')
+    .action(async (name: string, opts: { approvedBy: string; json?: boolean; reason?: string }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const hub = getSkillsHub();
+      const previous = hub.info(name)?.installed;
+      const removed = await hub.uninstall(name);
+      if (!removed) {
+        const message = `Skill not found: ${name}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ approvedBy: opts.approvedBy, error: message, name, removed: false }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({
+          approvedBy: opts.approvedBy,
+          name,
+          previous,
+          reason: opts.reason,
+          removed: true,
+        }, null, 2));
+        return;
+      }
+      console.log(`Skill deleted: ${name}`);
     });
 
   const tap = skills
