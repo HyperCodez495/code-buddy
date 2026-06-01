@@ -51,7 +51,11 @@ export interface HermesParityTodoManifest {
   summary: HermesParityManifest['summary'] & {
     activeTodoCount: number;
     deferredCount: number;
+    hiddenTodoCount: number;
     includedDeferred: boolean;
+    selectedTodoCount: number;
+    shownTodoCount: number;
+    todoLimit: number;
   };
   todos: HermesParityTodoItem[];
   deferred: HermesParityTodoItem[];
@@ -601,6 +605,8 @@ export function buildHermesParityTodo(options: {
     .slice(0, limit)
     .map((feature, index) => toHermesTodoItem(feature, index + 1));
   const deferred = deferredFeatures.map((feature, index) => toHermesTodoItem(feature, index + 1));
+  const shownTodoCount = todos.length;
+  const selectedTodoCount = todoFeatures.length;
 
   return {
     kind: 'hermes_parity_todo',
@@ -612,7 +618,11 @@ export function buildHermesParityTodo(options: {
       ...manifest.summary,
       activeTodoCount: activeFeatures.length,
       deferredCount: deferredFeatures.length,
+      hiddenTodoCount: Math.max(0, selectedTodoCount - shownTodoCount),
       includedDeferred: options.includeDeferred === true,
+      selectedTodoCount,
+      shownTodoCount,
+      todoLimit: limit,
     },
     todos,
     deferred,

@@ -2120,7 +2120,11 @@ describe('Hermes CLI commands', () => {
       summary: {
         activeTodoCount: number;
         deferredCount: number;
+        hiddenTodoCount: number;
         includedDeferred: boolean;
+        selectedTodoCount: number;
+        shownTodoCount: number;
+        todoLimit: number;
       };
       todos: Array<{
         id: string;
@@ -2138,6 +2142,12 @@ describe('Hermes CLI commands', () => {
     expect(output.command).toBe('buddy hermes todo --json');
     expect(output.summary.activeTodoCount).toBeGreaterThan(0);
     expect(output.summary.deferredCount).toBe(1);
+    expect(output.summary.selectedTodoCount).toBe(output.summary.activeTodoCount);
+    expect(output.summary.shownTodoCount).toBe(output.todos.length);
+    expect(output.summary.hiddenTodoCount).toBe(
+      output.summary.selectedTodoCount - output.summary.shownTodoCount,
+    );
+    expect(output.summary.todoLimit).toBe(7);
     expect(output.summary.includedDeferred).toBe(false);
     expect(output.todos[0]).toMatchObject({
       id: 'closed-learning-loop',
@@ -2182,6 +2192,8 @@ describe('Hermes CLI commands', () => {
 
     const output = getLogOutput();
     expect(output).toContain('Hermes TODO:');
+    expect(output).toMatch(/Showing: 3\/\d+ active item\(s\)/);
+    expect(output).toMatch(/Hidden by --limit 3: \d+/);
     expect(output).toContain('Next active work:');
     expect(output).toContain('1. Closed learning loop [partial]');
     expect(output).toContain('Verify: npm test -- tests/agent/lesson-candidate-queue.test.ts');

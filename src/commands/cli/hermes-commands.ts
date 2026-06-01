@@ -1484,14 +1484,26 @@ function renderHermesToolParityManifest(manifest: HermesToolParityManifest): str
 }
 
 function renderHermesParityTodo(todo: HermesParityTodoManifest): string {
+  const selectedLabel = todo.summary.includedDeferred ? 'active/deferred' : 'active';
   const lines = [
     `Hermes TODO: ${todo.summary.activeTodoCount} active feature items ` +
       `(${todo.summary.partial} partial, ${todo.summary.gaps} gaps in full manifest)`,
     `Official source: ${todo.officialSource.repository} @ ${todo.officialSource.inspectedCommit}`,
     `Audit: ${todo.officialSource.auditDocument}`,
+    `Showing: ${todo.summary.shownTodoCount}/${todo.summary.selectedTodoCount} ${selectedLabel} item(s)`,
+  ];
+
+  if (todo.summary.hiddenTodoCount > 0) {
+    lines.push(
+      `Hidden by --limit ${todo.summary.todoLimit}: ${todo.summary.hiddenTodoCount}; ` +
+        `rerun with --limit ${todo.summary.selectedTodoCount} to show all selected items.`,
+    );
+  }
+
+  lines.push(
     '',
     'Next active work:',
-  ];
+  );
 
   for (const item of todo.todos) {
     lines.push(`${item.priority}. ${item.area} [${item.status}]`);
