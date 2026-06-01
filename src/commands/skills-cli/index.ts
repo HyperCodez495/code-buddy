@@ -15,6 +15,7 @@
  *   buddy skills reset <name> --approved-by <reviewer>
  *   buddy skills enable <name> --approved-by <reviewer>
  *   buddy skills disable <name> --approved-by <reviewer>
+ *   buddy skills deprecate <name> --approved-by <reviewer>
  *   buddy skills tap list|add|remove|trust|refresh
  *   buddy skills well-known <url>
  *
@@ -421,6 +422,19 @@ export function registerSkillsCommands(program: Command): void {
       await toggleSkill(name, false, opts);
     });
 
+  skills
+    .command('deprecate <name>')
+    .description('Deprecate an installed skill (disabled and marked deprecated)')
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the lifecycle change')
+    .option('--reason <reason>', 'review reason')
+    .action(async (name: string, opts: { approvedBy: string; reason?: string }) => {
+      await toggleSkill(name, false, {
+        ...opts,
+        status: 'deprecated',
+        verb: 'deprecated',
+      });
+    });
+
   const tap = skills
     .command('tap')
     .description('Manage repository-backed skill taps');
@@ -568,19 +582,21 @@ export function registerSkillsCommands(program: Command): void {
 async function toggleSkill(
   name: string,
   enabled: boolean,
-  opts: { approvedBy: string; reason?: string },
+  opts: { approvedBy: string; reason?: string; status?: 'active' | 'disabled' | 'deprecated'; verb?: string },
 ): Promise<void> {
   const { getSkillsHub } = await import('../../skills/hub.js');
   const result = getSkillsHub().setEnabled(name, enabled, {
     actor: opts.approvedBy,
     reason: opts.reason,
+    status: opts.status,
   });
   if (!result) {
     console.error(`Skill not found: ${name}`);
     process.exit(1);
     return;
   }
-  console.log(`Skill ${enabled ? 'enabled' : 'disabled'}: ${name}`);
+  const verb = opts.verb ?? (enabled ? 'enabled' : 'disabled');
+  console.log(`Skill ${verb}: ${name}`);
 }
 
 function parseTapTrust(value?: string): import('../../skills/hub.js').SkillTapTrust | undefined {

@@ -205,7 +205,7 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(getSkillsHub().list()).toHaveLength(3);
   });
 
-  it('records reviewer approval when enabling and disabling installed skills', async () => {
+  it('records reviewer approval when enabling, disabling, and deprecating installed skills', async () => {
     const hub = getSkillsHub({
       cacheDir: path.join(tempHome, 'cache'),
       lockfilePath: path.join(tempHome, 'lock.json'),
@@ -257,6 +257,30 @@ describe('buddy skills command with real SkillsHub state', () => {
       lifecycle: {
         status: 'active',
         updatedBy: 'operator-b',
+      },
+    });
+
+    consoleLogSpy.mockClear();
+    const deprecateProgram = createProgram();
+    await deprecateProgram.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'deprecate',
+      'reviewed-helper',
+      '--approved-by',
+      'operator-c',
+      '--reason',
+      'replaced by safer skill',
+    ]);
+
+    expect(getLogOutput()).toContain('Skill deprecated: reviewed-helper');
+    expect(hub.info('reviewed-helper')?.installed).toMatchObject({
+      enabled: false,
+      lifecycle: {
+        reason: 'replaced by safer skill',
+        status: 'deprecated',
+        updatedBy: 'operator-c',
       },
     });
   });
