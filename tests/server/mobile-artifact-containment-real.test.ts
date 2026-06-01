@@ -64,6 +64,21 @@ describe('mobileRouter artifact containment (real HTTP)', () => {
     return data.token;
   }
 
+  it('rejects malformed pairing payloads as JSON instead of throwing', async () => {
+    const res = await fetch(`${baseUrl}/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: 123456, deviceLabel: 'malformed-device' }),
+    });
+
+    expect(res.status).toBe(400);
+    expect(res.headers.get('content-type')).toContain('application/json');
+    const body = await res.text();
+    expect(body).toContain('Missing or invalid code or deviceLabel');
+    expect(body).not.toContain('TypeError');
+    expect(body).not.toContain('code.trim');
+  });
+
   async function rawMobileGet(pathname: string, token: string): Promise<{ body: string; status: number }> {
     const address = server.address();
     if (!address || typeof address === 'string') {

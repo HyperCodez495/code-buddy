@@ -191,12 +191,13 @@ mobileRouter.post('/followup-draft/:id/cancel', loopbackOnlyMiddleware, (req: Re
 
 // 1. POST /api/mobile/pair: Validate pairing request and issue short-lived token
 mobileRouter.post('/pair', (req: Request, res: Response) => {
-  const { code, deviceLabel } = req.body;
+  const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
+  const deviceLabel = typeof req.body?.deviceLabel === 'string' ? req.body.deviceLabel.trim() : '';
   if (!code || !deviceLabel) {
-    res.status(400).json({ ok: false, error: 'Missing code or deviceLabel' });
+    res.status(400).json({ ok: false, error: 'Missing or invalid code or deviceLabel' });
     return;
   }
-  if (code.trim() !== activePairingCode) {
+  if (code !== activePairingCode) {
     res.status(401).json({ ok: false, error: 'Invalid pairing code' });
     return;
   }
