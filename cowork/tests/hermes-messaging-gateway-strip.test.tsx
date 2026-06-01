@@ -61,8 +61,8 @@ const cleanGatewayStatus: ChannelGatewayStatusReport = {
   },
   hermes: {
     configuredPlatformCount: 2,
-    locallyCoveredCount: 16,
-    missingPlatformCount: 5,
+    locallyCoveredCount: 17,
+    missingPlatformCount: 4,
     officialPlatformCount: 21,
     runtimePlatformCount: 1,
     platforms: [],
@@ -100,9 +100,9 @@ describe('HermesMessagingGatewayStrip', () => {
     expect(strip?.textContent).toContain('gateway ready');
     expect(strip?.textContent).toContain('Configured');
     expect(strip?.textContent).toContain('1/1');
-    expect(strip?.textContent).toContain('16/21 official platforms');
+    expect(strip?.textContent).toContain('17/21 official platforms');
     expect(strip?.textContent).toContain('2 configured / 1 runtime');
-    expect(strip?.textContent).toContain('5 missing');
+    expect(strip?.textContent).toContain('4 missing');
     expect(strip?.textContent).toContain('telegram');
     expect(strip?.textContent).toContain('buddy hermes messaging status --json');
   });

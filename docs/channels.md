@@ -20,6 +20,7 @@ Code Buddy supports 20+ messaging channels for remote interaction.
 | **IRC** | Native | SASL auth, TLS, multi-channel |
 | **Feishu/Lark** | API | Interactive cards, reasoning hooks, identity-aware headers |
 | **Synology Chat** | Webhooks | Incoming/outgoing webhooks |
+| **ntfy** | HTTP POST | Push notifications to self-hosted or ntfy.sh topics |
 | **LINE** | Messaging API | Rich messages |
 | **Nostr** | Relay protocol | Decentralized |
 | **Zalo** | OA API | Vietnam market |

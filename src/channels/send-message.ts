@@ -99,6 +99,7 @@ export const SEND_MESSAGE_CHANNELS = [
   'irc',
   'feishu',
   'synology-chat',
+  'ntfy',
   'twitch',
   'tlon',
   'gmail',

@@ -211,6 +211,18 @@ describe('handleChannels additional channel activation', () => {
         },
       },
     },
+    {
+      type: 'ntfy',
+      config: {
+        type: 'ntfy',
+        enabled: true,
+        token: 'ntfy-token',
+        options: {
+          serverUrl: 'http://127.0.0.1:9/tenant',
+          topic: 'alerts',
+        },
+      },
+    },
   ];
 
   for (const channelCase of channelCases) {

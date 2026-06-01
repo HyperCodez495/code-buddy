@@ -204,7 +204,7 @@ const HERMES_OFFICIAL_MESSAGING_PLATFORMS: Array<{
   { platform: 'Yuanbao', officialSurface: 'Yuanbao gateway', localSurface: 'prompt-tool', notes: ['Available through exact Yuanbao prompt tools for group info, DM, and stickers.'] },
   { platform: 'Teams', officialSurface: 'Microsoft Teams gateway', localSurface: 'channel', channelTypes: ['teams'] },
   { platform: 'LINE', officialSurface: 'LINE gateway', localSurface: 'channel', channelTypes: ['line'] },
-  { platform: 'ntfy', officialSurface: 'ntfy gateway', localSurface: 'missing' },
+  { platform: 'ntfy', officialSurface: 'ntfy gateway', localSurface: 'channel', channelTypes: ['ntfy'] },
   { platform: 'Open WebUI', officialSurface: 'Open WebUI gateway', localSurface: 'generic-channel', channelTypes: ['webchat', 'web'], notes: ['Mapped through webchat/web channel surfaces rather than an exact Open WebUI gateway.'] },
 ];
 
@@ -666,6 +666,26 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
         maxRetries: typeof opts.maxRetries === 'number' ? opts.maxRetries : undefined,
         retryDelay: typeof opts.retryDelay === 'number' ? opts.retryDelay : undefined,
       } as import('../../channels/index.js').IMessageChannelConfig);
+    }
+    case 'ntfy': {
+      const { NtfyChannel } = await import('../../channels/ntfy/index.js');
+      return new NtfyChannel({
+        ...channelConfig,
+        serverUrl: typeof opts.serverUrl === 'string'
+          ? opts.serverUrl
+          : typeof opts.url === 'string'
+            ? opts.url
+            : config.webhookUrl,
+        token: typeof opts.token === 'string' ? opts.token : config.token,
+        topic: typeof opts.topic === 'string' ? opts.topic : undefined,
+        title: typeof opts.title === 'string' ? opts.title : undefined,
+        priority: typeof opts.priority === 'string' || typeof opts.priority === 'number' ? opts.priority : undefined,
+        tags: Array.isArray(opts.tags)
+          ? opts.tags.filter((value): value is string => typeof value === 'string')
+          : typeof opts.tags === 'string'
+            ? opts.tags
+            : undefined,
+      } as import('../../channels/index.js').NtfyChannelConfig);
     }
     default: {
       logger.warn(`Unsupported channel type: ${config.type}, using generic config`);

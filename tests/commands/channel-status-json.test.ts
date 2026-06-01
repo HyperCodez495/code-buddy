@@ -96,6 +96,12 @@ describe('buildChannelStatusReport', () => {
           platform: 'DingTalk',
           status: 'missing',
         }),
+        expect.objectContaining({
+          channelTypes: ['ntfy'],
+          localSurface: 'channel',
+          platform: 'ntfy',
+          status: 'available',
+        }),
       ]));
       expect(report.recommendations).toEqual([]);
     } finally {
@@ -113,5 +119,51 @@ describe('buildChannelStatusReport', () => {
       expect.stringContaining('Create .codebuddy/channels.json'),
       expect.stringContaining('No runtime channels'),
     ]));
+  });
+
+  it('marks ntfy as configured and runtime when a real channel is present', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-status-ntfy-'));
+    const configPath = path.join(tempDir, 'channels.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      channels: [
+        {
+          type: 'ntfy',
+          enabled: true,
+          token: 'ntfy-secret-token',
+          webhookUrl: 'http://127.0.0.1:8080/tenant',
+          options: { topic: 'alerts' },
+        },
+      ],
+    }), 'utf-8');
+
+    try {
+      const report = buildChannelStatusReport({
+        ntfy: {
+          type: 'ntfy',
+          connected: true,
+          authenticated: true,
+          lastActivity: new Date('2026-05-30T11:00:00.000Z'),
+          info: { serverUrl: 'http://127.0.0.1:8080/tenant', topic: 'alerts' },
+        },
+      } as Record<string, ChannelStatus>, configPath, '2026-05-30T11:00:01.000Z');
+
+      const ntfy = report.hermes.platforms.find((platform) => platform.platform === 'ntfy');
+      expect(ntfy).toEqual(expect.objectContaining({
+        channelTypes: ['ntfy'],
+        configured: true,
+        localSurface: 'channel',
+        runtimeRegistered: true,
+        status: 'runtime',
+      }));
+      expect(report.config.channels[0]).toEqual(expect.objectContaining({
+        hasToken: true,
+        hasWebhookUrl: true,
+        optionKeys: ['topic'],
+        type: 'ntfy',
+      }));
+      expect(JSON.stringify(report)).not.toContain('ntfy-secret-token');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
   });
 });

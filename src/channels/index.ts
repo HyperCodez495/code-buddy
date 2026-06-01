@@ -121,5 +121,9 @@ export type { FeishuConfig, FeishuChannelConfig, FeishuMessage } from './feishu/
 export { SynologyChatAdapter, SynologyChatChannel } from './synology-chat/index.js';
 export type { SynologyChatConfig, SynologyChatChannelConfig, SynologyChatMessage } from './synology-chat/index.js';
 
+// ntfy
+export { NtfyAdapter, NtfyChannel } from './ntfy/index.js';
+export type { NtfyConfig, NtfyChannelConfig, NtfyPublishOptions, NtfyPublishResult } from './ntfy/index.js';
+
 // Niche Channels (Twitch, Tlon, Gmail)
 export { TwitchAdapter, TlonAdapter, GmailWebhookAdapter, DocsSearchTool } from './niche-channels.js';

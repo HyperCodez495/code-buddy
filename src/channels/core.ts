@@ -40,6 +40,7 @@ export type ChannelType =
   | 'irc'
   | 'feishu'
   | 'synology-chat'
+  | 'ntfy'
   | 'twitch'
   | 'tlon'
   | 'gmail'
