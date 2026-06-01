@@ -230,6 +230,117 @@ interface HermesToolsetsCatalog {
   notes: string[];
 }
 
+interface HermesOverviewStatus {
+  kind: 'hermes_overview_status';
+  schemaVersion: 1;
+  generatedAt: string;
+  ok: boolean;
+  requestedProfile: string;
+  dispatchProfile: ReturnType<typeof normalizeDispatchProfile>;
+  summary: {
+    featureParity: HermesParityTodoManifest['summary'];
+    toolParity: HermesToolParityManifest['summary'];
+    readiness: {
+      agentIdentity: boolean;
+      browser: boolean;
+      learning: boolean;
+      memory: boolean;
+      protocols: boolean;
+      provider: boolean;
+      runtime: boolean;
+      skills: boolean;
+    };
+  };
+  readiness: {
+    provider: {
+      ok: boolean;
+      model: string;
+      modelSource: string;
+      provider: string;
+      label: string;
+      configured: boolean;
+      credentialSources: string[];
+      configuredProviderCount: number;
+      supportsReasoning: boolean;
+      supportsToolCalls: boolean;
+      supportsVision: boolean;
+      portalToolGatewayConfigured: boolean;
+    };
+    runtime: {
+      ok: boolean;
+      availableCount: number;
+      configuredRemoteCount: number;
+      runnableCount: number;
+      primaryBackendId: string | null;
+      fallbackBackendIds: string[];
+      smokeCommand: string | null;
+      issueCount: number;
+    };
+    browser: {
+      ok: boolean;
+      localRunnableCount: number;
+      managedConfiguredCount: number;
+      primaryBackendId: string | null;
+      fallbackBackendIds: string[];
+      smokeCommand: string | null;
+      issueCount: number;
+    };
+    protocols: {
+      ok: boolean;
+      availableCount: number;
+      partialCount: number;
+      missingCount: number;
+      smokeCommand: string;
+    };
+    memory: {
+      ok: boolean;
+      activeProviderId: string;
+      configuredRemoteCount: number;
+      missingOfficialCount: number;
+      registeredCount: number;
+      issueCount: number;
+    };
+    learning: {
+      ok: boolean;
+      pendingReviewCount: number;
+      pendingLessonCandidateCount: number;
+      retrospectiveCoveragePercent: number;
+      retrospectiveEligibleRunCount: number;
+      nextActionCommand: string;
+      nextActionKind: string;
+    };
+    skills: {
+      ok: boolean;
+      installedCount: number;
+      enabledCount: number;
+      healthIssueCount: number;
+      eligibleCandidateCount: number;
+      nextCommand: string;
+    };
+  };
+  nextActions: Array<{
+    area: string;
+    nextWork: string;
+    priority: number;
+    status: string;
+    verificationCommand: string;
+  }>;
+  commands: {
+    browser: string;
+    doctor: string;
+    learning: string;
+    memory: string;
+    parity: string;
+    providers: string;
+    protocols: string;
+    runtime: string;
+    skills: string;
+    todo: string;
+    tools: string;
+  };
+  recommendations: string[];
+}
+
 interface HermesMobileSupervisionStatus {
   kind: 'hermes_mobile_supervision_status';
   schemaVersion: 1;
@@ -305,6 +416,13 @@ function formatAllowList(values: readonly string[]): string {
 
 function formatOk(ok: boolean): string {
   return ok ? 'ok' : 'needs attention';
+}
+
+function sanitizeCredentialSource(source: string): string {
+  if (path.isAbsolute(source) || source.includes('/') || source.includes('\\')) {
+    return source.replace(/\\/g, '/').split('/').pop() ?? 'credential-file';
+  }
+  return source;
 }
 
 function parseOptionalPositiveInteger(value: string | undefined, label: string): number | undefined {
@@ -503,6 +621,220 @@ function renderHermesIdentityStatus(status: ReturnType<typeof buildHermesIdentit
     `  Profile: ${status.commands.profile}`,
     `  Doctor: ${status.commands.doctor}`,
   ].join('\n');
+}
+
+function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
+  const diagnostics = buildHermesAgentDiagnostics({ dispatchProfile: profileArg });
+  const toolParity = buildLocalHermesToolParityManifest();
+  const todo = buildHermesParityTodo({ limit: 5 });
+  const protocols = buildHermesProtocolGatewayReadiness();
+  const memory = buildHermesMemoryProvidersReadiness();
+  const learning = buildHermesLearningLoopStatus({ limit: 5 });
+  const skills = buildHermesSkillPackageSummary(process.cwd(), { limit: 5, previewChars: 0 });
+  const profileSuffix = diagnostics.dispatchProfile === 'balanced' ? '' : ` ${diagnostics.dispatchProfile}`;
+  const recommendations = [
+    ...diagnostics.recommendations,
+    ...diagnostics.providerReadiness.recommendations,
+    ...diagnostics.runtimeBackends.recommendations,
+    ...diagnostics.browserBackends.recommendations,
+    ...protocols.recommendations,
+    ...memory.recommendations,
+    ...learning.recommendations,
+    ...(skills.health.ok ? [] : [`Run ${skills.health.nextCommand} to inspect skill package health.`]),
+    ...(skills.candidateReview.eligibleCount > 0
+      ? [`Review ${skills.candidateReview.eligibleCount} eligible skill candidate(s) with ${skills.candidateReview.listCommand}.`]
+      : []),
+  ].filter((recommendation, index, all) => all.indexOf(recommendation) === index);
+  const ok =
+    diagnostics.ok &&
+    diagnostics.providerReadiness.ok &&
+    diagnostics.runtimeBackends.ok &&
+    diagnostics.browserBackends.ok &&
+    protocols.ok &&
+    memory.ok &&
+    learning.ok &&
+    skills.health.ok &&
+    toolParity.summary.gaps === 0;
+
+  return {
+    kind: 'hermes_overview_status',
+    schemaVersion: 1,
+    generatedAt: new Date().toISOString(),
+    ok,
+    requestedProfile: profileArg,
+    dispatchProfile: diagnostics.dispatchProfile,
+    summary: {
+      featureParity: todo.summary,
+      toolParity: toolParity.summary,
+      readiness: {
+        agentIdentity: diagnostics.ok,
+        browser: diagnostics.browserBackends.ok,
+        learning: learning.ok,
+        memory: memory.ok,
+        protocols: protocols.ok,
+        provider: diagnostics.providerReadiness.ok,
+        runtime: diagnostics.runtimeBackends.ok,
+        skills: skills.health.ok,
+      },
+    },
+    readiness: {
+      provider: {
+        ok: diagnostics.providerReadiness.ok,
+        model: diagnostics.providerReadiness.activeModel.model,
+        modelSource: diagnostics.providerReadiness.activeModel.source,
+        provider: diagnostics.providerReadiness.activeProvider.provider,
+        label: diagnostics.providerReadiness.activeProvider.label,
+        configured: diagnostics.providerReadiness.activeProvider.configured,
+        credentialSources: diagnostics.providerReadiness.activeProvider.credentialSources.map(sanitizeCredentialSource),
+        configuredProviderCount: diagnostics.providerReadiness.providers.filter((provider) => provider.configured).length,
+        supportsReasoning: diagnostics.providerReadiness.activeModel.supportsReasoning,
+        supportsToolCalls: diagnostics.providerReadiness.activeModel.supportsToolCalls,
+        supportsVision: diagnostics.providerReadiness.activeModel.supportsVision,
+        portalToolGatewayConfigured: diagnostics.providerReadiness.portal.portal.toolGatewayConfigured,
+      },
+      runtime: {
+        ok: diagnostics.runtimeBackends.ok,
+        availableCount: diagnostics.runtimeBackends.availableCount,
+        configuredRemoteCount: diagnostics.runtimeBackends.configuredRemoteCount,
+        runnableCount: diagnostics.runtimeBackends.runnableCount,
+        primaryBackendId: diagnostics.runtimeBackends.routePlan.primaryBackendId,
+        fallbackBackendIds: diagnostics.runtimeBackends.routePlan.fallbackBackendIds,
+        smokeCommand: diagnostics.runtimeBackends.routePlan.smokeCommand,
+        issueCount: diagnostics.runtimeBackends.issues.length,
+      },
+      browser: {
+        ok: diagnostics.browserBackends.ok,
+        localRunnableCount: diagnostics.browserBackends.localRunnableCount,
+        managedConfiguredCount: diagnostics.browserBackends.managedConfiguredCount,
+        primaryBackendId: diagnostics.browserBackends.routePlan.primaryBackendId,
+        fallbackBackendIds: diagnostics.browserBackends.routePlan.fallbackBackendIds,
+        smokeCommand: diagnostics.browserBackends.routePlan.smokeCommand,
+        issueCount: diagnostics.browserBackends.issues.length,
+      },
+      protocols: {
+        ok: protocols.ok,
+        availableCount: protocols.summary.availableCount,
+        partialCount: protocols.summary.partialCount,
+        missingCount: protocols.summary.missingCount,
+        smokeCommand: protocols.smokeCommand,
+      },
+      memory: {
+        ok: memory.ok,
+        activeProviderId: memory.activeProviderId,
+        configuredRemoteCount: memory.configuredRemoteCount,
+        missingOfficialCount: memory.missingOfficialCount,
+        registeredCount: memory.registeredCount,
+        issueCount: memory.issues.length,
+      },
+      learning: {
+        ok: learning.ok,
+        pendingReviewCount: learning.summary.pendingReviewCount,
+        pendingLessonCandidateCount: learning.summary.pendingLessonCandidateCount,
+        retrospectiveCoveragePercent: learning.summary.retrospectiveCoveragePercent,
+        retrospectiveEligibleRunCount: learning.summary.retrospectiveEligibleRunCount,
+        nextActionCommand: learning.nextAction.command,
+        nextActionKind: learning.nextAction.kind,
+      },
+      skills: {
+        ok: skills.health.ok,
+        installedCount: skills.installedCount,
+        enabledCount: skills.enabledCount,
+        healthIssueCount: skills.health.issueCount,
+        eligibleCandidateCount: skills.candidateReview.eligibleCount,
+        nextCommand: skills.health.nextCommand,
+      },
+    },
+    nextActions: todo.todos.map((item) => ({
+      area: item.area,
+      nextWork: item.nextWork,
+      priority: item.priority,
+      status: item.status,
+      verificationCommand: item.verificationCommand,
+    })),
+    commands: {
+      browser: 'buddy hermes browser status --json',
+      doctor: `buddy hermes doctor${profileSuffix} --json`,
+      learning: 'buddy hermes learning status --json',
+      memory: 'buddy hermes memory status --json',
+      parity: 'buddy hermes parity --json',
+      providers: 'buddy hermes providers status --json',
+      protocols: 'buddy hermes protocols status --json',
+      runtime: 'buddy hermes runtime status --json',
+      skills: 'buddy hermes skills status --json',
+      todo: 'buddy hermes todo --json',
+      tools: 'buddy hermes tools --json',
+    },
+    recommendations,
+  };
+}
+
+function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
+  const readiness = status.readiness;
+  const rows = [
+    ['Agent identity', status.summary.readiness.agentIdentity],
+    ['Provider/model', status.summary.readiness.provider],
+    ['Runtime route', status.summary.readiness.runtime],
+    ['Browser route', status.summary.readiness.browser],
+    ['Protocols', status.summary.readiness.protocols],
+    ['Memory', status.summary.readiness.memory],
+    ['Learning loop', status.summary.readiness.learning],
+    ['Skills', status.summary.readiness.skills],
+  ] as const;
+  const lines = [
+    `Hermes status: ${formatOk(status.ok)}`,
+    `  Requested profile: ${status.requestedProfile}`,
+    `  Active dispatch profile: ${status.dispatchProfile}`,
+    `  Feature parity: ${status.summary.featureParity.total} tracked, ` +
+      `${status.summary.featureParity.activeTodoCount} active todo(s), ` +
+      `${status.summary.featureParity.deferredCount} deferred`,
+    `  Tool parity: ${status.summary.toolParity.total} tracked, ` +
+      `${status.summary.toolParity.gaps} gap(s), ${status.summary.toolParity.partial} partial`,
+    '',
+    'Readiness:',
+  ];
+
+  for (const [label, ok] of rows) {
+    lines.push(`  - ${label}: ${formatOk(ok)}`);
+  }
+
+  lines.push(
+    '',
+    'Routes:',
+    `  Provider: ${readiness.provider.label} / ${readiness.provider.model} ` +
+      `(${readiness.provider.configured ? 'configured' : 'missing'})`,
+    `  Runtime: ${readiness.runtime.primaryBackendId ?? 'none'} ` +
+      `-> ${formatList(readiness.runtime.fallbackBackendIds)}`,
+    `  Browser: ${readiness.browser.primaryBackendId ?? 'none'} ` +
+      `-> ${formatList(readiness.browser.fallbackBackendIds)}`,
+    `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
+  );
+
+  if (status.nextActions.length > 0) {
+    lines.push('', 'Next actions:');
+    for (const item of status.nextActions) {
+      lines.push(`${item.priority}. ${item.area} [${item.status}]`);
+      lines.push(`   Next: ${item.nextWork}`);
+      lines.push(`   Verify: ${item.verificationCommand}`);
+    }
+  }
+
+  if (status.recommendations.length > 0) {
+    lines.push('', 'Recommendations:');
+    for (const recommendation of status.recommendations.slice(0, 8)) {
+      lines.push(`  - ${recommendation}`);
+    }
+  }
+
+  lines.push(
+    '',
+    'Commands:',
+    `  Doctor: ${status.commands.doctor}`,
+    `  Todo: ${status.commands.todo}`,
+    `  Real runtime smoke: ${readiness.runtime.smokeCommand ?? 'n/a'}`,
+    `  Real browser smoke: ${readiness.browser.smokeCommand ?? 'n/a'}`,
+  );
+
+  return lines.join('\n');
 }
 
 function readFileSizeIfPresent(filePath: string): number {
@@ -1414,6 +1746,22 @@ export function registerHermesCommands(program: Command): void {
 
   registerHermesKanbanCommands(hermes);
   registerHermesPortalCommands(hermes);
+
+  hermes
+    .command('status')
+    .description('Show a compact Hermes readiness overview across parity, providers, runtimes, browser, learning, and skills')
+    .argument('[dispatchProfile]', `active Fleet profile (${FLEET_DISPATCH_PROFILES.join(', ')})`, 'balanced')
+    .option('--json', 'output JSON')
+    .action((profileArg: string, options: HermesCommandOptions) => {
+      const status = buildHermesOverviewStatus(profileArg);
+
+      if (options.json) {
+        console.log(stableJson(status));
+        return;
+      }
+
+      console.log(renderHermesOverviewStatus(status));
+    });
 
   hermes
     .command('parity')

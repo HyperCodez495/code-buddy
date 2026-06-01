@@ -172,6 +172,115 @@ describe('Hermes CLI commands', () => {
     expect(textOutput).not.toContain('Do not pretend to be the external Hermes Python runtime');
   });
 
+  it('prints a compact Hermes overview without leaking configured secret values', async () => {
+    const keys = ['CODEBUDDY_MODEL', 'OPENAI_API_KEY', 'CODEBUDDY_NOUS_ACCESS_TOKEN', 'MEM0_API_KEY', 'MEM0_BASE_URL'];
+    const originalEnv = new Map(keys.map((key) => [key, process.env[key]]));
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    try {
+      for (const key of keys) {
+        delete process.env[key];
+      }
+      process.env.CODEBUDDY_MODEL = 'gpt-5.5';
+      process.env.OPENAI_API_KEY = 'secret-overview-openai-key';
+      process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-overview-nous-token';
+      process.env.MEM0_API_KEY = 'secret-overview-mem0-key';
+      process.env.MEM0_BASE_URL = 'https://private-memory.example.test';
+      resetMemoryProviderRegistry();
+
+      await program.parseAsync(['node', 'test', 'hermes', 'status', 'safe', '--json']);
+
+      const raw = getLogOutput();
+      const output = JSON.parse(raw) as {
+        kind: string;
+        ok: boolean;
+        requestedProfile: string;
+        dispatchProfile: string;
+        schemaVersion: number;
+        summary: {
+          featureParity: {
+            activeTodoCount: number;
+            deferredCount: number;
+          };
+          toolParity: {
+            gaps: number;
+            total: number;
+          };
+        };
+        readiness: {
+          browser: { primaryBackendId: string | null; smokeCommand: string | null };
+          provider: {
+            configured: boolean;
+            credentialSources: string[];
+            model: string;
+          };
+          runtime: { primaryBackendId: string | null; smokeCommand: string | null };
+        };
+        nextActions: Array<{ area: string; verificationCommand: string }>;
+        commands: {
+          browser: string;
+          doctor: string;
+          runtime: string;
+          todo: string;
+        };
+      };
+
+      expect(output.kind).toBe('hermes_overview_status');
+      expect(output.schemaVersion).toBe(1);
+      expect(output.requestedProfile).toBe('safe');
+      expect(output.dispatchProfile).toBe('safe');
+      expect(output.summary.featureParity.activeTodoCount).toBeGreaterThan(0);
+      expect(output.summary.featureParity.deferredCount).toBe(1);
+      expect(output.summary.toolParity.total).toBeGreaterThan(0);
+      expect(output.summary.toolParity.gaps).toBe(0);
+      expect(output.readiness.provider).toMatchObject({
+        configured: true,
+        model: 'gpt-5.5',
+        credentialSources: expect.arrayContaining(['OPENAI_API_KEY']),
+      });
+      expect(output.readiness.runtime.smokeCommand).toBe('buddy hermes runtime-smoke auto --json');
+      expect(output.readiness.browser.smokeCommand).toBe('buddy hermes browser-smoke auto --json');
+      expect(output.nextActions[0]?.area).toBe('Closed learning loop');
+      expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
+      expect(output.commands).toMatchObject({
+        browser: 'buddy hermes browser status --json',
+        doctor: 'buddy hermes doctor safe --json',
+        runtime: 'buddy hermes runtime status --json',
+        todo: 'buddy hermes todo --json',
+      });
+      expect(raw).not.toContain('secret-overview-openai-key');
+      expect(raw).not.toContain('secret-overview-nous-token');
+      expect(raw).not.toContain('secret-overview-mem0-key');
+      expect(raw).not.toContain('private-memory.example.test');
+      expect(raw).not.toContain(os.homedir());
+
+      consoleLogSpy.mockClear();
+      const textProgram = createProgram();
+      registerHermesCommands(textProgram);
+      await textProgram.parseAsync(['node', 'test', 'hermes', 'status', 'safe']);
+      const textOutput = getLogOutput();
+      expect(textOutput).toContain('Hermes status:');
+      expect(textOutput).toContain('Feature parity:');
+      expect(textOutput).toContain('Tool parity:');
+      expect(textOutput).toContain('Readiness:');
+      expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
+      expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
+      expect(textOutput).not.toContain('secret-overview-openai-key');
+      expect(textOutput).not.toContain('secret-overview-nous-token');
+      expect(textOutput).not.toContain('secret-overview-mem0-key');
+      expect(textOutput).not.toContain('private-memory.example.test');
+      expect(textOutput).not.toContain(os.homedir());
+    } finally {
+      for (const key of keys) {
+        const value = originalEnv.get(key);
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      resetMemoryProviderRegistry();
+    }
+  });
+
   it('prints an offline Hermes prompt-size diagnostic', async () => {
     const program = createProgram();
     registerHermesCommands(program);

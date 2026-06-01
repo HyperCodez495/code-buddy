@@ -93,10 +93,21 @@ Current measured state:
     - `(cd cowork && npm test -- tests/test-runner-bridge-catalog.test.ts --run)`
     - `(cd cowork && npm test -- tests/hermes-tool-catalog-bridge.test.ts tests/hermes-tool-catalog-strip.test.ts --run)`
 
+- [x] **Add a one-command Hermes readiness overview**
+  - Why: Hermes evidence was available, but operators had to stitch together `todo`, `tools`, `providers`, `runtime`, `browser`, `protocols`, `memory`, `learning`, and `skills` commands by hand.
+  - Done: `buddy hermes status [profile]` now aggregates feature parity, tool parity, identity, provider/model readiness, runtime route, browser route, protocol gateways, memory providers, Learning Agent review queues, skill-package health, next active Hermes work, and the exact follow-up commands. The JSON output intentionally keeps credential source names only and sanitizes local credential file paths to the basename.
+  - Verification:
+    - `npx tsx src/index.ts hermes status safe --json`
+    - `npx tsx src/index.ts hermes status safe`
+    - `npm test -- tests/commands/hermes-commands.test.ts --run`
+    - `npm run typecheck`
+    - `npx tsx src/index.ts hermes runtime-smoke auto --json`
+    - `npx tsx src/index.ts hermes browser-smoke auto --json`
+
 - [ ] **Expose provider/model readiness for Hermes**
   - Why: the provider stack is broad, but Hermes-oriented setup/status is still scattered.
   - Scope: `buddy hermes doctor` should show provider readiness, active model, context window, tool support, and missing keys without leaking secrets.
-  - Done so far: `buddy hermes providers status --json` and `buddy hermes doctor --json` now include active model source, inferred provider, detected env/OAuth credential source names, model tool-call/reasoning/vision capabilities, context/output limits, remediation hints, and embedded Nous Portal readiness. Cowork renders the same status in Settings -> API and the Fleet Command Center through `tools.hermesProviderReadiness.get`. `buddy hermes portal status|tools|open` covers the official Nous Portal status/catalog surface locally with subscription/docs URLs, Tool Gateway configuration, and managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal without leaking secret values.
+  - Done so far: `buddy hermes providers status --json`, `buddy hermes doctor --json`, and the aggregate `buddy hermes status --json` now include active model source, inferred provider, detected env/OAuth credential source names, model tool-call/reasoning/vision capabilities, context/output limits, remediation hints, and embedded Nous Portal readiness. Cowork renders the same status in Settings -> API and the Fleet Command Center through `tools.hermesProviderReadiness.get`. `buddy hermes portal status|tools|open` covers the official Nous Portal status/catalog surface locally with subscription/docs URLs, Tool Gateway configuration, and managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal without leaking secret values.
   - Memory update: `buddy hermes memory status --json` now exposes the official memory-provider matrix for local, Honcho, OpenViking, Mem0, Hindsight, Holographic, RetainDB, ByteRover, and Supermemory. Cowork Fleet renders the same readiness through `tools.hermesMemoryProviders.get`, including active provider, credential source names only, local fallback adapters, and missing official adapters.
   - Acceptance:
     - `buddy hermes providers status --json` and `buddy hermes doctor --json` include provider readiness and remediation hints. **Done for CLI JSON.**
