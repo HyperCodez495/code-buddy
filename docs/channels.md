@@ -19,6 +19,7 @@ Code Buddy supports 20+ messaging channels for remote interaction.
 | **Matrix** | matrix-js-sdk | E2EE, threads, media |
 | **DingTalk** | Custom robot webhook | Text/markdown messages, HMAC-signed webhooks |
 | **WeCom** | Group robot webhook | Text/markdown messages, group mentions |
+| **Weixin/WeChat Official Account** | Customer service API | Text messages to OpenID recipients |
 | **IRC** | Native | SASL auth, TLS, multi-channel |
 | **Feishu/Lark** | API | Interactive cards, reasoning hooks, identity-aware headers |
 | **Synology Chat** | Webhooks | Incoming/outgoing webhooks |

@@ -91,6 +91,7 @@ export const SEND_MESSAGE_CHANNELS = [
   'webchat',
   'dingtalk',
   'wecom',
+  'weixin',
   'line',
   'nostr',
   'zalo',

@@ -172,6 +172,18 @@ describe('handleChannels additional channel activation', () => {
       },
     },
     {
+      type: 'weixin',
+      config: {
+        type: 'weixin',
+        enabled: true,
+        token: 'weixin-access-token',
+        options: {
+          apiBaseUrl: 'http://127.0.0.1:9/weixin',
+          kfAccount: 'agent@example',
+        },
+      },
+    },
+    {
       type: 'nostr',
       config: {
         type: 'nostr',

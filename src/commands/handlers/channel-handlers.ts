@@ -198,7 +198,7 @@ const HERMES_OFFICIAL_MESSAGING_PLATFORMS: Array<{
   { platform: 'DingTalk', officialSurface: 'DingTalk gateway', localSurface: 'channel', channelTypes: ['dingtalk'] },
   { platform: 'Feishu', officialSurface: 'Feishu/Lark gateway', localSurface: 'channel', channelTypes: ['feishu'] },
   { platform: 'WeCom', officialSurface: 'WeCom gateway', localSurface: 'channel', channelTypes: ['wecom'] },
-  { platform: 'Weixin', officialSurface: 'Weixin gateway', localSurface: 'missing' },
+  { platform: 'Weixin', officialSurface: 'Weixin gateway', localSurface: 'channel', channelTypes: ['weixin'] },
   { platform: 'BlueBubbles', officialSurface: 'BlueBubbles/iMessage gateway', localSurface: 'channel', channelTypes: ['imessage'] },
   { platform: 'QQ', officialSurface: 'QQ gateway', localSurface: 'missing' },
   { platform: 'Yuanbao', officialSurface: 'Yuanbao gateway', localSurface: 'prompt-tool', notes: ['Available through exact Yuanbao prompt tools for group info, DM, and stickers.'] },
@@ -631,6 +631,15 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
           ? opts.mentionedMobileList.filter((value): value is string => typeof value === 'string')
           : undefined,
       } as import('../../channels/index.js').WeComChannelConfig);
+    }
+    case 'weixin': {
+      const { WeixinChannel } = await import('../../channels/weixin/index.js');
+      return new WeixinChannel({
+        ...channelConfig,
+        accessToken: typeof opts.accessToken === 'string' ? opts.accessToken : config.token,
+        apiBaseUrl: typeof opts.apiBaseUrl === 'string' ? opts.apiBaseUrl : undefined,
+        kfAccount: typeof opts.kfAccount === 'string' ? opts.kfAccount : undefined,
+      } as import('../../channels/index.js').WeixinChannelConfig);
     }
     case 'line': {
       const { LINEChannel } = await import('../../channels/line/index.js');

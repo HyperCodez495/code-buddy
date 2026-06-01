@@ -104,6 +104,12 @@ describe('buildChannelStatusReport', () => {
           status: 'available',
         }),
         expect.objectContaining({
+          channelTypes: ['weixin'],
+          localSurface: 'channel',
+          platform: 'Weixin',
+          status: 'available',
+        }),
+        expect.objectContaining({
           channelTypes: ['ntfy'],
           localSurface: 'channel',
           platform: 'ntfy',
@@ -244,6 +250,43 @@ describe('buildChannelStatusReport', () => {
         type: 'wecom',
       }));
       expect(JSON.stringify(report)).not.toContain('wecom-key');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks Weixin as configured without exposing access tokens', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-status-weixin-'));
+    const configPath = path.join(tempDir, 'channels.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      channels: [
+        {
+          type: 'weixin',
+          enabled: true,
+          token: 'weixin-access-token',
+          options: { apiBaseUrl: 'https://api.weixin.qq.com', kfAccount: 'agent@example' },
+        },
+      ],
+    }), 'utf-8');
+
+    try {
+      const report = buildChannelStatusReport({}, configPath, '2026-05-30T13:00:01.000Z');
+      const weixin = report.hermes.platforms.find((platform) => platform.platform === 'Weixin');
+      expect(weixin).toEqual(expect.objectContaining({
+        channelTypes: ['weixin'],
+        configured: true,
+        localSurface: 'channel',
+        runtimeRegistered: false,
+        status: 'configured',
+      }));
+      expect(report.config.channels[0]).toEqual(expect.objectContaining({
+        hasToken: true,
+        hasWebhookUrl: false,
+        optionKeys: ['apiBaseUrl', 'kfAccount'],
+        type: 'weixin',
+      }));
+      expect(JSON.stringify(report)).not.toContain('weixin-access-token');
+      expect(JSON.stringify(report)).not.toContain('agent@example');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
