@@ -270,6 +270,14 @@ export class AcpStdioServer {
         });
         return;
       }
+      if ('error' in msg && msg.error !== undefined && !asRecord(msg.error)) {
+        this.handleClientResponse(String(id), {
+          jsonrpc: '2.0',
+          id,
+          error: { code: -32600, message: 'Invalid ACP client response' },
+        });
+        return;
+      }
       this.handleClientResponse(String(id), msg);
       return;
     }
