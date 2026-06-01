@@ -434,6 +434,33 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
   });
 
+  it('aborts in-flight turns when the stdio transport stops', async () => {
+    const runner: AcpPromptRunner = ({ signal }) =>
+      new Promise((resolve) => {
+        if (signal.aborted) return resolve({ stopReason: 'cancelled' });
+        signal.addEventListener('abort', () => resolve({ stopReason: 'end_turn' }));
+      });
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'long after editor closes' }] },
+    });
+    await harness.flush();
+    expect(harness.responseFor(2)).toBeUndefined();
+
+    harness.server.stop();
+    await harness.flush();
+
+    expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
+  });
+
   it('reports a parse error for malformed input', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
     harness.input.write('not json\n');

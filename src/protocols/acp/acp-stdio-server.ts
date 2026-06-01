@@ -157,6 +157,7 @@ export class AcpStdioServer {
     if (!this.started) return;
     this.started = false;
     this.input.off?.('data', this.onData);
+    this.abortActiveSessions();
     this.rejectPendingClientRequests('ACP server stopped.');
   }
 
@@ -392,6 +393,12 @@ export class AcpStdioServer {
     const sessionId = asString(params.sessionId);
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     session?.active?.abort();
+  }
+
+  private abortActiveSessions(): void {
+    for (const session of this.sessions.values()) {
+      session.active?.abort();
+    }
   }
 
   private handleClientResponse(id: string, msg: JsonRpcMessage): void {
