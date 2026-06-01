@@ -508,6 +508,45 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
   });
 
+  it('rejects concurrent prompts for the same session', async () => {
+    const runner: AcpPromptRunner = ({ signal }) =>
+      new Promise((resolve) => {
+        if (signal.aborted) return resolve({ stopReason: 'cancelled' });
+        signal.addEventListener('abort', () => resolve({ stopReason: 'end_turn' }));
+      });
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'first long prompt' }] },
+    });
+    await harness.flush();
+    expect(harness.responseFor(2)).toBeUndefined();
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'second prompt' }] },
+    });
+    await harness.flush();
+
+    expect(harness.responseFor(3)?.error).toMatchObject({
+      code: -32000,
+      message: 'Session already has an active prompt',
+    });
+
+    harness.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } });
+    await harness.flush();
+    expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
+  });
+
   it('aborts in-flight turns when the stdio transport stops', async () => {
     const runner: AcpPromptRunner = ({ signal }) =>
       new Promise((resolve) => {

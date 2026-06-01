@@ -374,6 +374,11 @@ export class AcpStdioServer {
       error.code = -32602;
       throw error;
     }
+    if (session.active) {
+      const error = new Error('Session already has an active prompt') as Error & { code?: number };
+      error.code = -32000;
+      throw error;
+    }
 
     const prompt = Array.isArray(params.prompt) ? (params.prompt as AcpContentBlock[]) : [];
     const controller = new AbortController();
