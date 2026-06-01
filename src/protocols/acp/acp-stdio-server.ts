@@ -21,7 +21,8 @@
  * - Agent→client calls  → prompt runners can call client methods such as
  *                         `fs/read_text_file` or `session/request_permission`
  *                         and await the JSON-RPC response. Optional client
- *                         methods are gated by `initialize.clientCapabilities`.
+ *                         methods are gated by `initialize.clientCapabilities`;
+ *                         unknown methods fail closed.
  *
  * The transport + protocol layer is deliberate-and-tested; the `promptRunner`
  * is injected so the CLI wires the real agent while tests drive a deterministic
@@ -444,7 +445,7 @@ export class AcpStdioServer {
     if (method === 'fs/read_text_file') return this.clientCapabilities.fs?.readTextFile === true;
     if (method === 'fs/write_text_file') return this.clientCapabilities.fs?.writeTextFile === true;
     if (method.startsWith('terminal/')) return this.clientCapabilities.terminal === true;
-    return true;
+    return false;
   }
 }
 

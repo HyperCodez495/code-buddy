@@ -45,7 +45,8 @@ their responses. This is the protocol primitive needed for future
 `fs/read_text_file`, `fs/write_text_file`, and `session/request_permission`
 integration with editors that expose those client methods. Optional filesystem
 requests are gated by the `clientCapabilities` advertised during `initialize`,
-as required by the ACP spec.
+as required by the ACP spec. Unknown agent→client method names are rejected
+instead of being forwarded to the editor.
 
 ## Out of scope for v1 (not stubbed — deliberately deferred)
 

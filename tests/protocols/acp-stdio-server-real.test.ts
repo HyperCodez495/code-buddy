@@ -372,6 +372,34 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('rejects unknown agent-to-client methods instead of forwarding them', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient }) => {
+      await requestClient('workspace/read_secret', {
+        key: 'token',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'initialize', params: { protocolVersion: 1, clientCapabilities: {} } });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'try unknown client method' }] },
+    });
+    await harness.flush();
+
+    expect(harness.requestFor('workspace/read_secret')).toBeUndefined();
+    expect(harness.responseFor(3)?.error).toMatchObject({
+      code: -32601,
+      message: 'ACP client method is not advertised by initialize.clientCapabilities: workspace/read_secret',
+    });
+  });
+
   it('aborts pending client method calls when a session is cancelled', async () => {
     const runner: AcpPromptRunner = async ({ requestClient, sessionId }) => {
       await requestClient('session/request_permission', {
