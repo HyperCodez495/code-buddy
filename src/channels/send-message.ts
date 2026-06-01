@@ -89,6 +89,7 @@ export const SEND_MESSAGE_CHANNELS = [
   'google-chat',
   'teams',
   'webchat',
+  'dingtalk',
   'line',
   'nostr',
   'zalo',

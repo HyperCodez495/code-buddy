@@ -92,9 +92,10 @@ describe('buildChannelStatusReport', () => {
           status: 'available',
         }),
         expect.objectContaining({
-          localSurface: 'missing',
+          channelTypes: ['dingtalk'],
+          localSurface: 'channel',
           platform: 'DingTalk',
-          status: 'missing',
+          status: 'available',
         }),
         expect.objectContaining({
           channelTypes: ['ntfy'],
@@ -162,6 +163,44 @@ describe('buildChannelStatusReport', () => {
         type: 'ntfy',
       }));
       expect(JSON.stringify(report)).not.toContain('ntfy-secret-token');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks DingTalk as configured without exposing webhook secrets', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-status-dingtalk-'));
+    const configPath = path.join(tempDir, 'channels.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      channels: [
+        {
+          type: 'dingtalk',
+          enabled: true,
+          token: 'dingtalk-token',
+          webhookUrl: 'https://oapi.dingtalk.com/robot/send?access_token=dingtalk-token',
+          options: { secret: 'SEC-test', msgType: 'markdown' },
+        },
+      ],
+    }), 'utf-8');
+
+    try {
+      const report = buildChannelStatusReport({}, configPath, '2026-05-30T12:00:01.000Z');
+      const dingtalk = report.hermes.platforms.find((platform) => platform.platform === 'DingTalk');
+      expect(dingtalk).toEqual(expect.objectContaining({
+        channelTypes: ['dingtalk'],
+        configured: true,
+        localSurface: 'channel',
+        runtimeRegistered: false,
+        status: 'configured',
+      }));
+      expect(report.config.channels[0]).toEqual(expect.objectContaining({
+        hasToken: true,
+        hasWebhookUrl: true,
+        optionKeys: ['msgType', 'secret'],
+        type: 'dingtalk',
+      }));
+      expect(JSON.stringify(report)).not.toContain('dingtalk-token');
+      expect(JSON.stringify(report)).not.toContain('SEC-test');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }

@@ -81,6 +81,10 @@ export type {
 export { WebChatChannel } from './webchat/index.js';
 export type { WebChatConfig } from './webchat/index.js';
 
+// DingTalk
+export { DingTalkAdapter, DingTalkChannel } from './dingtalk/index.js';
+export type { DingTalkChannelConfig, DingTalkConfig, DingTalkMessageType, DingTalkSendOptions, DingTalkSendResult } from './dingtalk/index.js';
+
 // LINE
 export { LINEAdapter, LINEChannel } from './line/index.js';
 export type { LINEConfig, LINEChannelConfig } from './line/index.js';

@@ -195,7 +195,7 @@ const HERMES_OFFICIAL_MESSAGING_PLATFORMS: Array<{
   { platform: 'Home Assistant', officialSurface: 'Home Assistant messaging/control gateway', localSurface: 'prompt-tool', notes: ['Available through exact ha_* prompt tools, not a messaging channel.'] },
   { platform: 'Mattermost', officialSurface: 'Mattermost gateway', localSurface: 'channel', channelTypes: ['mattermost'] },
   { platform: 'Matrix', officialSurface: 'Matrix gateway', localSurface: 'channel', channelTypes: ['matrix'] },
-  { platform: 'DingTalk', officialSurface: 'DingTalk gateway', localSurface: 'missing' },
+  { platform: 'DingTalk', officialSurface: 'DingTalk gateway', localSurface: 'channel', channelTypes: ['dingtalk'] },
   { platform: 'Feishu', officialSurface: 'Feishu/Lark gateway', localSurface: 'channel', channelTypes: ['feishu'] },
   { platform: 'WeCom', officialSurface: 'WeCom gateway', localSurface: 'missing' },
   { platform: 'Weixin', officialSurface: 'Weixin gateway', localSurface: 'missing' },
@@ -600,6 +600,23 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
     case 'webchat': {
       const { WebChatChannel } = await import('../../channels/webchat/index.js');
       return new WebChatChannel({ ...opts } as unknown as import('../../channels/index.js').WebChatConfig);
+    }
+    case 'dingtalk': {
+      const { DingTalkChannel } = await import('../../channels/dingtalk/index.js');
+      return new DingTalkChannel({
+        ...channelConfig,
+        accessToken: typeof opts.accessToken === 'string' ? opts.accessToken : config.token,
+        secret: typeof opts.secret === 'string' ? opts.secret : undefined,
+        msgType: opts.msgType === 'markdown' ? 'markdown' : opts.msgType === 'text' ? 'text' : undefined,
+        title: typeof opts.title === 'string' ? opts.title : undefined,
+        atMobiles: Array.isArray(opts.atMobiles)
+          ? opts.atMobiles.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        atUserIds: Array.isArray(opts.atUserIds)
+          ? opts.atUserIds.filter((value): value is string => typeof value === 'string')
+          : undefined,
+        isAtAll: typeof opts.isAtAll === 'boolean' ? opts.isAtAll : undefined,
+      } as import('../../channels/index.js').DingTalkChannelConfig);
     }
     case 'line': {
       const { LINEChannel } = await import('../../channels/line/index.js');

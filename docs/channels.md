@@ -17,6 +17,7 @@ Code Buddy supports 20+ messaging channels for remote interaction.
 | **Google Chat** | Workspace API | JWT auth, webhook events |
 | **Microsoft Teams** | Bot Framework | OAuth2, adaptive cards |
 | **Matrix** | matrix-js-sdk | E2EE, threads, media |
+| **DingTalk** | Custom robot webhook | Text/markdown messages, HMAC-signed webhooks |
 | **IRC** | Native | SASL auth, TLS, multi-channel |
 | **Feishu/Lark** | API | Interactive cards, reasoning hooks, identity-aware headers |
 | **Synology Chat** | Webhooks | Incoming/outgoing webhooks |

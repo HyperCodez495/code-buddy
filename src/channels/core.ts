@@ -30,6 +30,7 @@ export type ChannelType =
   | 'google-chat'
   | 'teams'
   | 'webchat'
+  | 'dingtalk'
   | 'line'
   | 'nostr'
   | 'zalo'

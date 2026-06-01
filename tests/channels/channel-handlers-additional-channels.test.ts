@@ -152,6 +152,16 @@ describe('handleChannels additional channel activation', () => {
       },
     },
     {
+      type: 'dingtalk',
+      config: {
+        type: 'dingtalk',
+        enabled: true,
+        token: 'dingtalk-access-token',
+        webhookUrl: 'http://127.0.0.1:9/robot/send?access_token=dingtalk-access-token',
+        options: { secret: 'SEC-test', msgType: 'text' },
+      },
+    },
+    {
       type: 'nostr',
       config: {
         type: 'nostr',
