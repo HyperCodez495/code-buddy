@@ -407,8 +407,13 @@ export class AcpStdioServer {
       error.code = -32000;
       throw error;
     }
+    if (!Array.isArray(params.prompt)) {
+      const error = new Error('Invalid or missing prompt') as Error & { code?: number };
+      error.code = -32602;
+      throw error;
+    }
 
-    const prompt = Array.isArray(params.prompt) ? (params.prompt as AcpContentBlock[]) : [];
+    const prompt = params.prompt as AcpContentBlock[];
     const controller = new AbortController();
     session.active = controller;
     if (!session.title) {
