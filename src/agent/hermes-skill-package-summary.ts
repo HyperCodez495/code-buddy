@@ -1,3 +1,4 @@
+import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import {
@@ -35,8 +36,25 @@ export interface HermesSkillPackageEntry {
   version: string;
 }
 
+export interface HermesSkillCandidateReviewStatus {
+  eligibleCount: number;
+  ineligibleCount: number;
+  listCommand: string;
+  nextInspectCommand?: string;
+  root: string;
+  samples: Array<{
+    candidateId: string;
+    eligible: boolean;
+    inspectCommand: string;
+    kind: string;
+    skillName: string;
+  }>;
+  totalCount: number;
+}
+
 export interface HermesSkillPackageSummary {
   cacheDir: string;
+  candidateReview: HermesSkillCandidateReviewStatus;
   disabledCount: number;
   enabledCount: number;
   health: {
@@ -126,6 +144,7 @@ export function buildHermesSkillPackageSummary(
 
   return {
     cacheDir,
+    candidateReview: buildSkillCandidateReviewStatus(workDir),
     disabledCount: allPackages.filter((skill) => !skill.enabled).length,
     enabledCount: allPackages.filter((skill) => skill.enabled).length,
     health,
@@ -152,6 +171,9 @@ export function renderHermesSkillPackageSummary(summary: HermesSkillPackageSumma
     `Rollback snapshots: ${summary.rollbackableCount}`,
     `Health: ${summary.health.healthyCount} healthy, ${summary.health.issueCount} issue(s)`,
     `Next command: ${summary.health.nextCommand}`,
+    `Skill candidates: ${summary.candidateReview.totalCount}` +
+      ` (${summary.candidateReview.eligibleCount} eligible, ${summary.candidateReview.ineligibleCount} not eligible)`,
+    `Candidate review: ${summary.candidateReview.listCommand}`,
     '',
     'Packages:',
   ];
@@ -168,7 +190,96 @@ export function renderHermesSkillPackageSummary(summary: HermesSkillPackageSumma
     lines.push('', 'Review commands:', ...summary.reviewCommands.map((command) => `- ${command}`));
   }
 
+  if (summary.candidateReview.nextInspectCommand) {
+    lines.push(`- Next candidate: ${summary.candidateReview.nextInspectCommand}`);
+  }
+
   return lines.join('\n');
+}
+
+function buildSkillCandidateReviewStatus(workDir: string): HermesSkillCandidateReviewStatus {
+  const root = path.join(path.resolve(workDir), '.codebuddy', 'skill-candidates');
+  const candidates = readSkillCandidateSamples(path.resolve(workDir), root)
+    .sort((left, right) =>
+      Number(right.eligible) - Number(left.eligible)
+      || left.skillName.localeCompare(right.skillName),
+    );
+  const eligibleCount = candidates.filter((candidate) => candidate.eligible).length;
+  const listCommand = eligibleCount > 0
+    ? 'buddy tools skill-candidate list --eligible-only --json'
+    : 'buddy tools skill-candidate list --json';
+
+  return {
+    eligibleCount,
+    ineligibleCount: candidates.length - eligibleCount,
+    listCommand,
+    ...(candidates[0]?.inspectCommand ? { nextInspectCommand: candidates[0].inspectCommand } : {}),
+    root,
+    samples: candidates.slice(0, 3),
+    totalCount: candidates.length,
+  };
+}
+
+function readSkillCandidateSamples(
+  workDir: string,
+  root: string,
+): HermesSkillCandidateReviewStatus['samples'] {
+  if (!fs.existsSync(root)) return [];
+  const samples: HermesSkillCandidateReviewStatus['samples'] = [];
+  for (const reviewPath of findCandidateReviewFiles(root)) {
+    try {
+      const candidateDir = path.dirname(reviewPath);
+      const skillPath = path.join(candidateDir, 'SKILL.md');
+      if (!fs.existsSync(skillPath)) continue;
+      const parsed = JSON.parse(fs.readFileSync(reviewPath, 'utf8')) as Record<string, unknown>;
+      const skillName = typeof parsed.skillName === 'string' && parsed.skillName.trim()
+        ? parsed.skillName.trim()
+        : path.basename(candidateDir);
+      const candidateId = typeof parsed.candidateId === 'string' && parsed.candidateId.trim()
+        ? parsed.candidateId.trim()
+        : path.basename(candidateDir);
+      const kind = typeof parsed.kind === 'string' && parsed.kind.trim()
+        ? parsed.kind.trim()
+        : inferCandidateKind(root, candidateDir);
+      const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
+      samples.push({
+        candidateId,
+        eligible: parsed.eligible === true || parsed.status === 'awaiting_human_approval',
+        inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
+        kind,
+        skillName,
+      });
+    } catch {
+      // Ignore malformed review manifests; `tools skill-candidate inspect` gives the detailed error.
+    }
+  }
+  return samples;
+}
+
+function findCandidateReviewFiles(root: string): string[] {
+  const results: string[] = [];
+  const entries = fs.readdirSync(root, { withFileTypes: true });
+  for (const entry of entries) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      const reviewPath = path.join(entryPath, 'candidate-review.json');
+      if (fs.existsSync(reviewPath)) {
+        results.push(reviewPath);
+      }
+      results.push(...findCandidateReviewFiles(entryPath));
+    }
+  }
+  return results;
+}
+
+function inferCandidateKind(root: string, candidateDir: string): string {
+  const [topLevel] = path.relative(root, candidateDir).replace(/\\/g, '/').split('/');
+  return topLevel === 'learning' ? 'learning' : 'research-script';
+}
+
+function formatShellArg(value: string): string {
+  if (/^[A-Za-z0-9_./:-]+$/.test(value)) return value;
+  return JSON.stringify(value);
 }
 
 function buildPackageHealth(packages: HermesSkillPackageEntry[]): HermesSkillPackageSummary['health'] {

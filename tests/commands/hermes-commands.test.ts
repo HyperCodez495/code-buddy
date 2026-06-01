@@ -720,6 +720,21 @@ describe('Hermes CLI commands', () => {
       await hub.installFromContent('healthy-helper', createSkillContent('healthy-helper'));
       const missing = await hub.installFromContent('missing-helper', createSkillContent('missing-helper'));
       await fs.remove(missing.path);
+      const candidateDir = path.join(tmpDir, '.codebuddy', 'skill-candidates', 'learning', 'review-ready');
+      fs.ensureDirSync(candidateDir);
+      fs.writeFileSync(path.join(candidateDir, 'SKILL.md'), createSkillContent('review-ready', 'Ready candidate body must stay private.'));
+      fs.writeFileSync(path.join(candidateDir, 'candidate-review.json'), JSON.stringify({
+        approvalRequired: true,
+        candidateId: 'learning-skill-review-ready',
+        eligible: true,
+        generatedAt: '2026-06-01T04:30:00.000Z',
+        schemaVersion: 1,
+        skillName: 'review-ready',
+        sourceJobId: 'learning-agent',
+        sourceRunId: 'run-skills-status',
+        status: 'awaiting_human_approval',
+        successfulRunCount: 1,
+      }, null, 2));
 
       const program = createProgram();
       registerHermesCommands(program);
@@ -742,6 +757,19 @@ describe('Hermes CLI commands', () => {
             integrityOk: boolean;
             name: string;
           }>;
+          candidateReview: {
+            eligibleCount: number;
+            ineligibleCount: number;
+            listCommand: string;
+            nextInspectCommand: string;
+            samples: Array<{
+              candidateId: string;
+              eligible: boolean;
+              kind: string;
+              skillName: string;
+            }>;
+            totalCount: number;
+          };
           reviewCommands: string[];
         };
       };
@@ -767,10 +795,36 @@ describe('Hermes CLI commands', () => {
         ]),
       );
       expect(output.summary.packages.every((skill) => skill.contentPreview === undefined)).toBe(true);
+      expect(output.summary.candidateReview).toMatchObject({
+        eligibleCount: 1,
+        ineligibleCount: 0,
+        listCommand: 'buddy tools skill-candidate list --eligible-only --json',
+        nextInspectCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/review-ready --json',
+        totalCount: 1,
+      });
+      expect(output.summary.candidateReview.samples).toEqual([
+        expect.objectContaining({
+          candidateId: 'learning-skill-review-ready',
+          eligible: true,
+          kind: 'learning',
+          skillName: 'review-ready',
+        }),
+      ]);
       expect(output.summary.reviewCommands).toContain('buddy skills list --all --json');
       expect(output.summary.reviewCommands).toContain('buddy skills doctor --json');
       expect(raw).not.toContain('Body for healthy-helper');
       expect(raw).not.toContain('Body for missing-helper');
+      expect(raw).not.toContain('Ready candidate body must stay private.');
+
+      consoleLogSpy.mockClear();
+      const textProgram = createProgram();
+      registerHermesCommands(textProgram);
+      await textProgram.parseAsync(['node', 'test', 'hermes', 'skills', 'status', '--limit', '2']);
+      const textOutput = getLogOutput();
+      expect(textOutput).toContain('Skill candidates: 1 (1 eligible, 0 not eligible)');
+      expect(textOutput).toContain('Candidate review: buddy tools skill-candidate list --eligible-only --json');
+      expect(textOutput).toContain('Next candidate: buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/review-ready --json');
+      expect(textOutput).not.toContain('Ready candidate body must stay private.');
     } finally {
       hub.shutdown();
       process.chdir(oldCwd);
