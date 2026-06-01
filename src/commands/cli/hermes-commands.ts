@@ -340,7 +340,10 @@ interface HermesOverviewStatus {
       ok: boolean;
       activeProviderId: string;
       configuredRemoteCount: number;
+      configuredRemoteProviderIds: string[];
+      fallbackProviderIds: string[];
       missingOfficialCount: number;
+      missingOfficialProviderIds: string[];
       registeredCount: number;
       issueCount: number;
     };
@@ -837,7 +840,10 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         ok: memory.ok,
         activeProviderId: memory.activeProviderId,
         configuredRemoteCount: memory.configuredRemoteCount,
+        configuredRemoteProviderIds: memory.configuredRemoteProviderIds,
+        fallbackProviderIds: memory.fallbackProviderIds,
         missingOfficialCount: memory.missingOfficialCount,
+        missingOfficialProviderIds: memory.missingOfficialProviderIds,
         registeredCount: memory.registeredCount,
         issueCount: memory.issues.length,
       },
@@ -924,6 +930,10 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Browser: ${readiness.browser.primaryBackendId ?? 'none'} ` +
       `-> ${formatList(readiness.browser.fallbackBackendIds)} ` +
       `(auto: ${formatList(readiness.browser.autoEligibleBackendIds)}, gated: ${formatList(readiness.browser.gatedBackendIds)})`,
+    `  Memory: ${readiness.memory.activeProviderId} ` +
+      `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
+      `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
+      `missing: ${formatList(readiness.memory.missingOfficialProviderIds)})`,
     `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
   );
 

@@ -39,8 +39,17 @@ describe('Hermes memory provider readiness', () => {
     expect(readiness.activeProviderId).toBe('local');
     expect(readiness.registeredCount).toBe(4);
     expect(readiness.configuredRemoteCount).toBe(0);
+    expect(readiness.configuredRemoteProviderIds).toEqual([]);
     expect(readiness.fallbackCount).toBe(3);
+    expect(readiness.fallbackProviderIds).toEqual(['honcho', 'mem0', 'supermemory']);
     expect(readiness.missingOfficialCount).toBe(5);
+    expect(readiness.missingOfficialProviderIds).toEqual([
+      'openviking',
+      'hindsight',
+      'holographic',
+      'retaindb',
+      'byterover',
+    ]);
     expect(readiness.providers.find((provider) => provider.id === 'local')).toMatchObject({
       active: true,
       registered: true,
@@ -56,6 +65,9 @@ describe('Hermes memory provider readiness', () => {
     });
     expect(readiness.recommendations.join('\n')).toContain('OpenViking');
     const rendered = renderHermesMemoryProvidersReadiness(readiness);
+    expect(rendered).toContain('Configured remote: 0 (none)');
+    expect(rendered).toContain('Local-fallback adapters: 3 (honcho, mem0, supermemory)');
+    expect(rendered).toContain('Missing official adapters: 5 (openviking, hindsight, holographic, retaindb, byterover)');
     expect(rendered).toContain('Remediation: Set MEM0_API_KEY before relying on the Mem0 remote adapter.');
     expect(rendered).toContain('Remediation: Add a ByteRover adapter before claiming full Hermes memory-provider parity.');
   });
@@ -72,6 +84,8 @@ describe('Hermes memory provider readiness', () => {
     expect(readiness.ok).toBe(true);
     expect(readiness.activeProviderId).toBe('mem0');
     expect(readiness.configuredRemoteCount).toBe(1);
+    expect(readiness.configuredRemoteProviderIds).toEqual(['mem0']);
+    expect(readiness.fallbackProviderIds).toEqual(['honcho', 'supermemory']);
     expect(active).toMatchObject({
       active: true,
       configured: true,

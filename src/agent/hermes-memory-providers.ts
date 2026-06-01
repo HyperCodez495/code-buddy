@@ -23,8 +23,11 @@ export interface HermesMemoryProvidersReadiness {
   activeProviderId: string;
   registeredCount: number;
   configuredRemoteCount: number;
+  configuredRemoteProviderIds: string[];
   fallbackCount: number;
+  fallbackProviderIds: string[];
   missingOfficialCount: number;
+  missingOfficialProviderIds: string[];
   providers: HermesMemoryProviderItem[];
   issues: string[];
   recommendations: string[];
@@ -194,13 +197,17 @@ export function buildHermesMemoryProvidersReadiness(
   }
 
   const missingProviders = providers.filter((provider) => provider.status === 'missing');
+  const fallbackProviders = providers.filter((provider) => provider.status === 'fallback');
+  const configuredRemoteProviders = providers.filter(
+    (provider) => provider.registered && !provider.local && provider.configured,
+  );
+
   if (missingProviders.length > 0) {
     recommendations.push(
       `Missing official Hermes memory adapters: ${missingProviders.map((provider) => provider.label).join(', ')}.`,
     );
   }
 
-  const fallbackProviders = providers.filter((provider) => provider.status === 'fallback');
   if (fallbackProviders.length > 0) {
     recommendations.push(
       `Configured remote memory currently requires credentials for: ${fallbackProviders.map((provider) => provider.label).join(', ')}.`,
@@ -216,11 +223,12 @@ export function buildHermesMemoryProvidersReadiness(
     ok: issues.length === 0,
     activeProviderId,
     registeredCount: providers.filter((provider) => provider.registered).length,
-    configuredRemoteCount: providers.filter(
-      (provider) => provider.registered && !provider.local && provider.configured,
-    ).length,
+    configuredRemoteCount: configuredRemoteProviders.length,
+    configuredRemoteProviderIds: configuredRemoteProviders.map((provider) => provider.id),
     fallbackCount: fallbackProviders.length,
+    fallbackProviderIds: fallbackProviders.map((provider) => provider.id),
     missingOfficialCount: missingProviders.length,
+    missingOfficialProviderIds: missingProviders.map((provider) => provider.id),
     providers,
     issues,
     recommendations,
@@ -234,9 +242,9 @@ export function renderHermesMemoryProvidersReadiness(
     `Hermes memory providers: ${readiness.ok ? 'ok' : 'needs attention'}`,
     `  Active: ${readiness.activeProviderId}`,
     `  Registered: ${readiness.registeredCount}/${readiness.providers.length}`,
-    `  Configured remote: ${readiness.configuredRemoteCount}`,
-    `  Local-fallback adapters: ${readiness.fallbackCount}`,
-    `  Missing official adapters: ${readiness.missingOfficialCount}`,
+    `  Configured remote: ${readiness.configuredRemoteCount} (${readiness.configuredRemoteProviderIds.join(', ') || 'none'})`,
+    `  Local-fallback adapters: ${readiness.fallbackCount} (${readiness.fallbackProviderIds.join(', ') || 'none'})`,
+    `  Missing official adapters: ${readiness.missingOfficialCount} (${readiness.missingOfficialProviderIds.join(', ') || 'none'})`,
     '',
     'Providers:',
   ];

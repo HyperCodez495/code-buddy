@@ -440,6 +440,9 @@ describe('Hermes CLI commands', () => {
         readiness: {
           activeProviderId: string;
           configuredRemoteCount: number;
+          configuredRemoteProviderIds: string[];
+          fallbackProviderIds: string[];
+          missingOfficialProviderIds: string[];
           providers: Array<{
             credentialSources: string[];
             id: string;
@@ -452,6 +455,9 @@ describe('Hermes CLI commands', () => {
       expect(output.schemaVersion).toBe(1);
       expect(output.readiness.activeProviderId).toBe('mem0');
       expect(output.readiness.configuredRemoteCount).toBeGreaterThanOrEqual(1);
+      expect(output.readiness.configuredRemoteProviderIds).toContain('mem0');
+      expect(output.readiness.fallbackProviderIds).toEqual(expect.arrayContaining(['honcho', 'supermemory']));
+      expect(output.readiness.missingOfficialProviderIds).toContain('byterover');
       expect(output.readiness.providers).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -473,6 +479,8 @@ describe('Hermes CLI commands', () => {
       registerHermesCommands(textProgram);
       await textProgram.parseAsync(['node', 'test', 'hermes', 'memory', 'status']);
       const textOutput = getLogOutput();
+      expect(textOutput).toContain('Configured remote: 1 (mem0)');
+      expect(textOutput).toContain('Local-fallback adapters: 2 (honcho, supermemory)');
       expect(textOutput).toContain('Remediation: Set HONCHO_API_KEY before relying on the Honcho remote adapter.');
       expect(textOutput).toContain('Remediation: Add a ByteRover adapter before claiming full Hermes memory-provider parity.');
       expect(textOutput).not.toContain('secret-mem0-token');
