@@ -1701,7 +1701,11 @@ describe('Hermes CLI commands', () => {
           recommendations: string[];
           runtime: { registeredCount: number };
           hermes: {
+            configuredPlatformNames: string[];
+            nextConfigPlatformNames: string[];
             officialPlatformCount: number;
+            promptToolPlatformNames: string[];
+            runtimePlatformNames: string[];
             platforms: Array<{ platform: string; status: string }>;
           };
         };
@@ -1721,6 +1725,10 @@ describe('Hermes CLI commands', () => {
       );
       expect(output.status.runtime.registeredCount).toBeGreaterThanOrEqual(0);
       expect(output.status.hermes.officialPlatformCount).toBeGreaterThan(0);
+      expect(output.status.hermes.configuredPlatformNames).toEqual(expect.arrayContaining(['Telegram', 'Discord']));
+      expect(output.status.hermes.runtimePlatformNames).toEqual([]);
+      expect(output.status.hermes.promptToolPlatformNames).toEqual(expect.arrayContaining(['Email', 'Yuanbao']));
+      expect(output.status.hermes.nextConfigPlatformNames).toEqual(expect.arrayContaining(['Slack', 'DingTalk']));
       expect(output.status.hermes.platforms).toEqual(
         expect.arrayContaining([
           expect.objectContaining({ platform: 'Telegram', status: 'configured' }),
@@ -1771,6 +1779,10 @@ describe('Hermes CLI commands', () => {
       ]);
 
       const output = getLogOutput();
+      expect(output).toContain('Configured platforms: Telegram, Discord');
+      expect(output).toContain('Runtime platforms: none');
+      expect(output).toContain('Prompt-tool platforms: Email, Home Assistant, Yuanbao');
+      expect(output).toContain('Next config targets: Slack, WhatsApp, Signal');
       expect(output).toContain('Telegram: configured/channel (telegram) | configured=yes, runtime=no');
       expect(output).toContain('Discord: configured/channel (discord) | configured=yes, runtime=no');
       expect(output).toContain('Slack: available/channel (slack) | configured=no, runtime=no');

@@ -73,6 +73,11 @@ describe('buildChannelStatusReport', () => {
       expect(report.hermes.configuredPlatformCount).toBeGreaterThanOrEqual(2);
       expect(report.hermes.runtimePlatformCount).toBeGreaterThanOrEqual(1);
       expect(report.hermes.missingPlatformCount).toBe(0);
+      expect(report.hermes.configuredPlatformNames).toEqual(expect.arrayContaining(['Telegram', 'Discord']));
+      expect(report.hermes.runtimePlatformNames).toEqual(expect.arrayContaining(['Telegram']));
+      expect(report.hermes.promptToolPlatformNames).toEqual(expect.arrayContaining(['Email', 'Yuanbao']));
+      expect(report.hermes.missingPlatformNames).toEqual([]);
+      expect(report.hermes.nextConfigPlatformNames).toEqual(expect.arrayContaining(['Slack', 'DingTalk']));
       expect(report.hermes.platforms).toEqual(expect.arrayContaining([
         expect.objectContaining({
           channelTypes: ['telegram'],
@@ -133,6 +138,8 @@ describe('buildChannelStatusReport', () => {
 
     expect(report.config.configuredCount).toBe(0);
     expect(report.hermes.configuredPlatformCount).toBe(0);
+    expect(report.hermes.configuredPlatformNames).toEqual([]);
+    expect(report.hermes.nextConfigPlatformNames).toEqual(expect.arrayContaining(['Telegram', 'Discord', 'Slack']));
     expect(report.runtime.registeredCount).toBe(0);
     expect(report.recommendations).toEqual(expect.arrayContaining([
       expect.stringContaining('Create .codebuddy/channels.json'),
@@ -174,6 +181,9 @@ describe('buildChannelStatusReport', () => {
         runtimeRegistered: true,
         status: 'runtime',
       }));
+      expect(report.hermes.configuredPlatformNames).toContain('ntfy');
+      expect(report.hermes.runtimePlatformNames).toContain('ntfy');
+      expect(report.hermes.nextConfigPlatformNames).not.toContain('ntfy');
       expect(report.config.channels[0]).toEqual(expect.objectContaining({
         hasToken: true,
         hasWebhookUrl: true,

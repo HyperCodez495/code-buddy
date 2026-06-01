@@ -76,6 +76,11 @@ export interface ChannelStatusReport {
     configuredPlatformCount: number;
     runtimePlatformCount: number;
     missingPlatformCount: number;
+    configuredPlatformNames: string[];
+    runtimePlatformNames: string[];
+    promptToolPlatformNames: string[];
+    missingPlatformNames: string[];
+    nextConfigPlatformNames: string[];
     platforms: Array<{
       platform: string;
       officialSurface: string;
@@ -254,6 +259,17 @@ function buildHermesPlatformCoverage(
     configuredPlatformCount: platforms.filter((platform) => platform.configured).length,
     runtimePlatformCount: platforms.filter((platform) => platform.runtimeRegistered).length,
     missingPlatformCount: platforms.filter((platform) => platform.localSurface === 'missing').length,
+    configuredPlatformNames: platforms.filter((platform) => platform.configured).map((platform) => platform.platform),
+    runtimePlatformNames: platforms.filter((platform) => platform.runtimeRegistered).map((platform) => platform.platform),
+    promptToolPlatformNames: platforms.filter((platform) => platform.localSurface === 'prompt-tool').map((platform) => platform.platform),
+    missingPlatformNames: platforms.filter((platform) => platform.localSurface === 'missing').map((platform) => platform.platform),
+    nextConfigPlatformNames: platforms
+      .filter((platform) =>
+        platform.localSurface !== 'missing' &&
+        platform.localSurface !== 'prompt-tool' &&
+        !platform.configured &&
+        !platform.runtimeRegistered)
+      .map((platform) => platform.platform),
     platforms,
   };
 }

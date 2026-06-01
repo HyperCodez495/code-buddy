@@ -1464,6 +1464,9 @@ async function buildHermesMessagingGatewayStatus(configPath?: string): Promise<C
 }
 
 function renderHermesMessagingGatewayStatus(report: ChannelStatusReport): string {
+  const nextTargets = report.hermes.nextConfigPlatformNames;
+  const visibleNextTargets = nextTargets.slice(0, 8);
+  const hiddenNextTargetCount = nextTargets.length - visibleNextTargets.length;
   const lines = [
     'Hermes messaging gateway:',
     `  Configured: ${report.config.configuredCount} (${report.config.enabledCount} enabled, ${report.config.disabledCount} disabled)`,
@@ -1471,6 +1474,10 @@ function renderHermesMessagingGatewayStatus(report: ChannelStatusReport): string
     `  Authenticated: ${report.runtime.authenticatedCount}`,
     `  Official platforms: ${report.hermes.locallyCoveredCount}/${report.hermes.officialPlatformCount} covered, ` +
       `${report.hermes.configuredPlatformCount} configured, ${report.hermes.runtimePlatformCount} runtime`,
+    `  Configured platforms: ${formatList(report.hermes.configuredPlatformNames)}`,
+    `  Runtime platforms: ${formatList(report.hermes.runtimePlatformNames)}`,
+    `  Prompt-tool platforms: ${formatList(report.hermes.promptToolPlatformNames)}`,
+    `  Next config targets: ${formatList(visibleNextTargets)}${hiddenNextTargetCount > 0 ? ` (+${hiddenNextTargetCount} more)` : ''}`,
   ];
 
   if (report.config.path) {
