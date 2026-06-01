@@ -593,6 +593,7 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     `  Skill usage: ${status.commands.skillUsage}`,
     `  Lesson candidates: ${status.commands.lessonCandidates}`,
     `  User model: ${status.commands.userModel}`,
+    `  Candidate review: ${status.commands.candidateReview}`,
   );
 
   if (status.recommendations.length > 0) {
