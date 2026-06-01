@@ -6,7 +6,9 @@ import path from 'path';
 
 import {
   buildHermesRuntimeBackendsReadiness,
+  renderHermesRuntimeBackendsReadiness,
   runHermesRuntimeBackendSmoke,
+  type HermesRuntimeBackendsReadiness,
 } from '../../src/agent/hermes-runtime-backends.js';
 
 function hasRunnableWsl(): boolean {
@@ -55,6 +57,84 @@ function writeFakeCli(directory: string, name: string, script: string): string {
 }
 
 describe('Hermes runtime backend live smoke runner', () => {
+  it('renders non-runnable backend probes without calling them smoke commands', () => {
+    const readiness: HermesRuntimeBackendsReadiness = {
+      ok: true,
+      generatedAt: '2026-06-01T02:55:00.000Z',
+      platform: process.platform,
+      arch: process.arch,
+      availableCount: 2,
+      configuredRemoteCount: 0,
+      runnableCount: 1,
+      routePlan: {
+        mode: 'hybrid',
+        primaryBackendId: 'local',
+        fallbackBackendIds: [],
+        reason: 'local backend is safe by default',
+        smokeCommand: 'buddy hermes runtime-smoke auto --json',
+      },
+      backends: [
+        {
+          id: 'local',
+          label: 'Local process',
+          officialSurface: 'Local',
+          status: 'available',
+          installed: true,
+          configured: true,
+          runnable: true,
+          command: process.execPath,
+          version: 'v-test',
+          credentialSources: [],
+          smokeCommand: 'node -e "console.log(1)"',
+          notes: [],
+          remediation: [],
+        },
+        {
+          id: 'ssh',
+          label: 'SSH remote shell',
+          officialSurface: 'SSH',
+          status: 'available',
+          installed: true,
+          configured: false,
+          runnable: false,
+          command: 'ssh',
+          version: 'OpenSSH_test',
+          credentialSources: [],
+          smokeCommand: 'ssh -V',
+          notes: [],
+          remediation: [],
+        },
+        {
+          id: 'modal',
+          label: 'Modal Sandbox',
+          officialSurface: 'Modal',
+          status: 'missing',
+          installed: false,
+          configured: false,
+          runnable: false,
+          command: 'modal',
+          version: null,
+          credentialSources: [],
+          smokeCommand: 'modal --version',
+          notes: [],
+          remediation: [],
+        },
+      ],
+      issues: [],
+      recommendations: [],
+    };
+
+    const output = renderHermesRuntimeBackendsReadiness(readiness);
+
+    expect(output).toContain(
+      '- local: available (v-test) | configured=yes, runnable=yes | smoke: node -e "console.log(1)"',
+    );
+    expect(output).toContain('- ssh: available (OpenSSH_test) | configured=no, runnable=no | probe: ssh -V');
+    expect(output).not.toContain('- ssh: available (OpenSSH_test) | smoke: ssh -V');
+    expect(output).toContain('- modal: missing | configured=no, runnable=no');
+    expect(output).not.toContain('probe: modal --version');
+  });
+
   it('reports a safe local-first auto route without selecting gated runtimes', () => {
     const readiness = buildHermesRuntimeBackendsReadiness({
       env: process.env,

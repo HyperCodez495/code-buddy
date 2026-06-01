@@ -765,11 +765,7 @@ export function renderHermesRuntimeBackendsReadiness(readiness: HermesRuntimeBac
       `${readiness.routePlan.smokeCommand ? ` | smoke: ${readiness.routePlan.smokeCommand}` : ''}`,
     '',
     'Backends:',
-    ...readiness.backends.map((backend) =>
-      `- ${backend.id}: ${backend.status}` +
-      `${backend.version ? ` (${backend.version})` : ''}` +
-      `${backend.smokeCommand ? ` | smoke: ${backend.smokeCommand}` : ''}`,
-    ),
+    ...readiness.backends.map(renderRuntimeBackendLine),
   ];
 
   if (readiness.issues.length > 0) {
@@ -781,6 +777,20 @@ export function renderHermesRuntimeBackendsReadiness(readiness: HermesRuntimeBac
   }
 
   return lines.join('\n');
+}
+
+function renderRuntimeBackendLine(backend: HermesRuntimeBackend): string {
+  const readinessFlags = `configured=${backend.configured ? 'yes' : 'no'}, runnable=${backend.runnable ? 'yes' : 'no'}`;
+  const commandLabel = backend.runnable
+    ? 'smoke'
+    : backend.installed
+      ? 'probe'
+      : null;
+
+  return `- ${backend.id}: ${backend.status}` +
+    `${backend.version ? ` (${backend.version})` : ''}` +
+    ` | ${readinessFlags}` +
+    `${commandLabel && backend.smokeCommand ? ` | ${commandLabel}: ${backend.smokeCommand}` : ''}`;
 }
 
 export function runHermesRuntimeBackendSmoke(
