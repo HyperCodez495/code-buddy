@@ -33,6 +33,12 @@ describe('Hermes learning loop bridge', () => {
       },
       generatedAt: '2026-05-31T21:40:00.000Z',
       kind: 'hermes_learning_loop_status',
+      nextAction: {
+        command: 'buddy lessons candidate show lc-real --json',
+        description: 'lesson_candidate review is waiting behind lessonWritesRequireApproval.',
+        kind: 'review_queue',
+        requiresHumanReview: true,
+      },
       ok: true,
       nextRetrospectiveRun: {
         artifactCount: 1,
@@ -116,6 +122,11 @@ describe('Hermes learning loop bridge', () => {
       retrospective: 'buddy run retrospective <run-id> --force --json',
       skillUsage: 'buddy skills learning-usage --json',
     });
+    expect(status?.nextAction).toMatchObject({
+      command: 'buddy lessons candidate show lc-real --json',
+      kind: 'review_queue',
+      requiresHumanReview: true,
+    });
     expect(status?.nextRetrospectiveRun).toMatchObject({
       command: 'buddy run retrospective run-needs-retro --force --json',
       eventCount: 8,
@@ -146,6 +157,12 @@ describe('Hermes learning loop bridge', () => {
       },
       generatedAt: '2026-05-31T21:40:00.000Z',
       kind: 'hermes_learning_loop_status',
+      nextAction: {
+        command: 'buddy hermes learning status --json',
+        description: 'No pending Learning Agent action; monitor the loop after the next real run.',
+        kind: 'monitor',
+        requiresHumanReview: false,
+      },
       ok: true,
       recommendations: [],
       reviewGates: {

@@ -17,6 +17,12 @@ export interface HermesLearningLoopStatusForReview {
   generatedAt: string;
   kind: 'hermes_learning_loop_status';
   ok: boolean;
+  nextAction: {
+    command: string;
+    description: string;
+    kind: 'review_queue' | 'run_retrospective' | 'monitor';
+    requiresHumanReview: boolean;
+  };
   nextRetrospectiveRun?: {
     artifactCount: number;
     channel?: string;

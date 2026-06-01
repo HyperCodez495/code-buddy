@@ -70,6 +70,7 @@ export interface HermesLearningLoopStatus {
     items: HermesLearningLoopReviewQueueItem[];
     totalPending: number;
   };
+  nextAction: HermesLearningLoopNextAction;
   nextRetrospectiveRun?: HermesLearningLoopRetrospectiveCandidate;
   state: {
     recentRuns: HermesLearningLoopRunRow[];
@@ -118,6 +119,13 @@ export interface HermesLearningLoopReviewQueueItem {
   pendingCount: number;
   reviewGate: keyof HermesLearningLoopStatus['reviewGates'];
   sampleIds?: string[];
+}
+
+export interface HermesLearningLoopNextAction {
+  command: string;
+  description: string;
+  kind: 'review_queue' | 'run_retrospective' | 'monitor';
+  requiresHumanReview: boolean;
 }
 
 export interface HermesLearningLoopSkillCandidateSample {
@@ -354,6 +362,37 @@ function buildReviewQueue(
   };
 }
 
+function buildNextAction(
+  reviewQueue: HermesLearningLoopStatus['reviewQueue'],
+  nextRetrospectiveRun: HermesLearningLoopRetrospectiveCandidate | undefined,
+): HermesLearningLoopNextAction {
+  const reviewItem = reviewQueue.items.find((item) => item.nextReviewCommand) ?? reviewQueue.items[0];
+  if (reviewItem) {
+    return {
+      command: reviewItem.nextReviewCommand ?? reviewItem.command,
+      description: `${reviewItem.kind} review is waiting behind ${reviewItem.reviewGate}.`,
+      kind: 'review_queue',
+      requiresHumanReview: true,
+    };
+  }
+
+  if (nextRetrospectiveRun) {
+    return {
+      command: nextRetrospectiveRun.command,
+      description: `Run a Learning Agent retrospective for ${nextRetrospectiveRun.runId}.`,
+      kind: 'run_retrospective',
+      requiresHumanReview: false,
+    };
+  }
+
+  return {
+    command: 'buddy hermes learning status --json',
+    description: 'No pending Learning Agent action; monitor the loop after the next real run.',
+    kind: 'monitor',
+    requiresHumanReview: false,
+  };
+}
+
 function formatShellArg(value: string): string {
   return /^[A-Za-z0-9._/:=-]+$/.test(value) ? value : JSON.stringify(value);
 }
@@ -392,6 +431,7 @@ export function buildHermesLearningLoopStatus(
   const patterns = readPatternStats(workDir);
   const skillCandidates = countLearningSkillCandidates(workDir);
   const reviewQueue = buildReviewQueue(lessonCandidates, userModel, skillCandidates, pendingLessonIds);
+  const nextAction = buildNextAction(reviewQueue, nextRetrospectiveRun);
   const autoEnabled = isLearningAgentEnabled();
   const retrospectiveArtifactCount = runRows.filter((run) =>
     isRetrospectiveEligible(run) && run.hasLearningRetrospective
@@ -439,6 +479,7 @@ export function buildHermesLearningLoopStatus(
       skillLifecycleRequiresApproval: true,
     },
     reviewQueue,
+    nextAction,
     ...(nextRetrospectiveRun ? { nextRetrospectiveRun } : {}),
     state: {
       recentRuns: runRows,
@@ -480,6 +521,7 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     `  Lesson candidates: ${status.summary.lessonCandidateCount} (${status.summary.pendingLessonCandidateCount} pending)`,
     `  User-model observations: ${status.summary.acceptedUserObservationCount} accepted, ${status.summary.pendingUserObservationCount} pending`,
     `  Pending review items: ${status.summary.pendingReviewCount}`,
+    `  Next action: ${status.nextAction.kind} -> ${status.nextAction.command}`,
     `  Skill usage records: ${status.summary.skillUsageCount} (${status.summary.reinforcedSkillCount} reinforced, ${status.summary.deprecatedSkillCount} deprecated)`,
     `  Pattern records: ${status.summary.patternCount}`,
     `  Learning skill candidates: ${status.state.skillCandidates.learningCandidateCount}`,

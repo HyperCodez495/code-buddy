@@ -28,6 +28,12 @@ export interface HermesLearningLoopStatus {
   };
   generatedAt: string;
   kind: 'hermes_learning_loop_status';
+  nextAction: {
+    command: string;
+    description: string;
+    kind: 'review_queue' | 'run_retrospective' | 'monitor';
+    requiresHumanReview: boolean;
+  };
   ok: boolean;
   nextRetrospectiveRun?: {
     artifactCount: number;
@@ -329,6 +335,30 @@ export const HermesLearningLoopStrip: React.FC<{
                 count: visibleStatus.state.skillCandidates.learningCandidateCount,
               })}
             </span>
+          </div>
+
+          <div
+            className={`mt-1.5 rounded border px-2 py-1 text-[10px] ${
+              visibleStatus.nextAction.requiresHumanReview
+                ? 'border-warning/30 bg-warning/10 text-warning'
+                : 'border-accent/20 bg-accent/5 text-text-secondary'
+            }`}
+            data-testid="hermes-learning-next-action"
+          >
+            <div className="flex min-w-0 items-center justify-between gap-2">
+              <span className="min-w-0 truncate text-accent">
+                {t('fleet.hermesLearningLoop.nextAction', 'Next action')}
+              </span>
+              <span className="shrink-0 rounded bg-background px-1 py-0.5 text-[9px] text-text-secondary">
+                {visibleStatus.nextAction.kind}
+              </span>
+            </div>
+            <div className="mt-0.5 truncate text-[9px] text-text-muted">
+              {visibleStatus.nextAction.description}
+            </div>
+            <code className="mt-0.5 block truncate text-[9px] text-warning">
+              {visibleStatus.nextAction.command}
+            </code>
           </div>
 
           {visibleStatus.nextRetrospectiveRun ? (

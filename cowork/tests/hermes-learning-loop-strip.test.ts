@@ -42,6 +42,12 @@ const learningStatus: HermesLearningLoopStatus = {
   },
   generatedAt: '2026-05-31T21:45:00.000Z',
   kind: 'hermes_learning_loop_status',
+  nextAction: {
+    command: 'buddy lessons candidate show lc-real --json',
+    description: 'lesson_candidate review is waiting behind lessonWritesRequireApproval.',
+    kind: 'review_queue',
+    requiresHumanReview: true,
+  },
   ok: true,
   nextRetrospectiveRun: {
     artifactCount: 1,
@@ -197,11 +203,15 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('50% reviewed');
     expect(strip?.textContent).toContain('3 accepted observations');
     expect(strip?.textContent).toContain('2 pending review');
+    expect(strip?.textContent).toContain('Next action');
+    expect(strip?.textContent).toContain('review_queue');
+    expect(strip?.textContent).toContain('lesson_candidate review is waiting behind lessonWritesRequireApproval.');
     expect(strip?.textContent).toContain('1 reinforced / 0 deprecated');
     expect(strip?.textContent).toContain('1 skill candidates');
     expect(strip?.textContent).toContain('Review queue');
     expect(strip?.textContent).toContain('lesson_candidate: 1');
     expect(strip?.textContent).toContain('buddy lessons candidate show lc-real --json');
+    expect(strip?.querySelector('[data-testid="hermes-learning-next-action"]')?.textContent).toContain('lc-real');
     expect(strip?.textContent).toContain('skill_candidate: 1');
     expect(strip?.textContent).toContain('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json');
     expect(strip?.textContent).toContain('Next retrospective');

@@ -340,6 +340,12 @@ describe('Hermes CLI commands', () => {
           skillUsageCount: number;
         };
         autoRetrospective: { enabled: boolean; mode: string };
+        nextAction: {
+          command: string;
+          description: string;
+          kind: string;
+          requiresHumanReview: boolean;
+        };
         nextRetrospectiveRun?: {
           command: string;
           evidenceArtifactCount: number;
@@ -394,6 +400,12 @@ describe('Hermes CLI commands', () => {
       expect(output.autoRetrospective).toMatchObject({ enabled: false, mode: 'disabled' });
       expect(Object.values(output.reviewGates).every(Boolean)).toBe(true);
       expect(output.reviewQueue.totalPending).toBe(output.summary.pendingReviewCount);
+      expect(output.nextAction).toMatchObject({
+        command: expect.stringContaining('buddy lessons candidate show lc-'),
+        kind: 'review_queue',
+        requiresHumanReview: true,
+      });
+      expect(output.nextAction.description).toContain('lessonWritesRequireApproval');
       expect(output.reviewQueue.items).toEqual(expect.arrayContaining([
         expect.objectContaining({
           command: 'buddy lessons candidate list --status pending --json',
