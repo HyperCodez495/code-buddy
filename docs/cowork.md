@@ -135,6 +135,31 @@ The Cowork card intentionally renders status and counts, not full stdout or
 Playwright trace paths. Dedicated runtime/browser/protocol cards remain
 available when an operator needs deeper detail.
 
+### Public-Safe Hermes Status Panels
+
+Several Cowork Fleet cockpit strips reuse the same Hermes status payloads as
+the CLI. These payloads are designed for screenshots and GitHub issue comments:
+they expose commands, counts, and relative workspace paths, but not the local
+home directory, absolute checkout path, or raw Playwright trace path.
+
+Useful CLI equivalents:
+
+```powershell
+npx tsx src/index.ts hermes learning status --json
+npx tsx src/index.ts hermes skills status --json
+npx tsx src/index.ts hermes browser status --json
+npx tsx src/index.ts hermes runtime status --json
+```
+
+Latest local privacy proof on this branch:
+
+- sampled Hermes status JSON outputs did not contain the local user profile path
+  or the absolute repository checkout path.
+- `hermes learning status --json` reports `[workspace]` and `[codebuddy-runs]`
+  labels instead of absolute paths.
+- `hermes skills status --json` reports `.codebuddy/...` relative paths for
+  skill caches, lockfiles, roots, and candidate review commands.
+
 ## Screenshot And Privacy Policy
 
 Real Cowork tests can write Playwright screenshots under
