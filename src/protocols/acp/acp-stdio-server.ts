@@ -88,6 +88,8 @@ export interface AcpStdioServerOptions {
   /** Defaults to process.stdout. */
   output?: Writable;
   agentInfo?: AcpAgentInfo;
+  /** Defaults to 120s; set to 0 to disable. */
+  clientRequestTimeoutMs?: number;
   protocolVersion?: number;
 }
 
@@ -112,6 +114,7 @@ interface PendingClientRequest {
   reject: (error: Error) => void;
   resolve: (result: unknown) => void;
   signal?: AbortSignal;
+  timeout?: ReturnType<typeof setTimeout>;
   onAbort?: () => void;
 }
 
@@ -131,6 +134,7 @@ export class AcpStdioServer {
   private readonly promptRunner: AcpPromptRunner;
   private readonly agentInfo: AcpAgentInfo;
   private readonly protocolVersion: number;
+  private readonly clientRequestTimeoutMs: number;
   private readonly sessions = new Map<string, AcpSession>();
   private readonly pendingClientRequests = new Map<string, PendingClientRequest>();
   private clientCapabilities: AcpClientCapabilities = {};
@@ -145,6 +149,7 @@ export class AcpStdioServer {
     this.promptRunner = options.promptRunner;
     this.agentInfo = options.agentInfo ?? { name: 'Code Buddy', title: 'Code Buddy', version: '1.0.0' };
     this.protocolVersion = options.protocolVersion ?? ACP_PROTOCOL_VERSION;
+    this.clientRequestTimeoutMs = options.clientRequestTimeoutMs ?? 120_000;
   }
 
   start(): void {
@@ -210,8 +215,19 @@ export class AcpStdioServer {
       };
       pending.onAbort = () => {
         this.pendingClientRequests.delete(id);
+        if (pending.timeout) clearTimeout(pending.timeout);
         reject(this.createClientRequestError('ACP client request aborted.'));
       };
+      if (this.clientRequestTimeoutMs > 0) {
+        pending.timeout = setTimeout(() => {
+          this.pendingClientRequests.delete(id);
+          if (pending.onAbort) signal?.removeEventListener('abort', pending.onAbort);
+          reject(this.createClientRequestError(
+            `ACP client request timed out after ${this.clientRequestTimeoutMs}ms: ${method}`,
+            -32000,
+          ));
+        }, this.clientRequestTimeoutMs);
+      }
       signal?.addEventListener('abort', pending.onAbort, { once: true });
       this.pendingClientRequests.set(id, pending);
       this.write({ jsonrpc: '2.0', id, method, params });
@@ -407,6 +423,7 @@ export class AcpStdioServer {
     if (!pending) return;
 
     this.pendingClientRequests.delete(id);
+    if (pending.timeout) clearTimeout(pending.timeout);
     if (pending.signal && pending.onAbort) {
       pending.signal.removeEventListener('abort', pending.onAbort);
     }
@@ -426,6 +443,7 @@ export class AcpStdioServer {
   private rejectPendingClientRequests(message: string): void {
     for (const [id, pending] of this.pendingClientRequests) {
       this.pendingClientRequests.delete(id);
+      if (pending.timeout) clearTimeout(pending.timeout);
       if (pending.signal && pending.onAbort) {
         pending.signal.removeEventListener('abort', pending.onAbort);
       }

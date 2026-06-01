@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import {
   AcpStdioServer,
   ACP_PROTOCOL_VERSION,
+  type AcpStdioServerOptions,
   type AcpPromptRunner,
 } from '../../src/protocols/acp/acp-stdio-server.js';
 
@@ -14,7 +15,10 @@ class AcpHarness {
   readonly messages: Array<Record<string, any>> = [];
   readonly server: AcpStdioServer;
 
-  constructor(promptRunner: AcpPromptRunner) {
+  constructor(
+    promptRunner: AcpPromptRunner,
+    options: Omit<Partial<AcpStdioServerOptions>, 'input' | 'output' | 'promptRunner'> = {},
+  ) {
     this.output.setEncoding('utf8');
     this.output.on('data', (chunk: string) => {
       for (const line of chunk.split('\n')) {
@@ -22,7 +26,7 @@ class AcpHarness {
         if (trimmed) this.messages.push(JSON.parse(trimmed));
       }
     });
-    this.server = new AcpStdioServer({ input: this.input, output: this.output, promptRunner });
+    this.server = new AcpStdioServer({ input: this.input, output: this.output, promptRunner, ...options });
     this.server.start();
   }
 
@@ -334,6 +338,48 @@ describe('AcpStdioServer (real ndjson transport)', () => {
       content: { type: 'text', text: 'client file: hello from unsaved editor buffer' },
     });
     expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
+  it('times out unanswered agent-to-client requests instead of hanging forever', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient, sessionId }) => {
+      await requestClient('fs/read_text_file', {
+        sessionId,
+        path: '/tmp/project/README.md',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner, { clientRequestTimeoutMs: 20 });
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false } },
+      },
+    });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'read but never receive response' }] },
+    });
+    await harness.flush();
+    expect(harness.requestFor('fs/read_text_file')).toBeTruthy();
+    expect(harness.responseFor(3)).toBeUndefined();
+
+    await new Promise((resolve) => setTimeout(resolve, 40));
+    await harness.flush();
+
+    expect(harness.responseFor(3)?.error).toMatchObject({
+      code: -32000,
+      message: 'ACP client request timed out after 20ms: fs/read_text_file',
+    });
   });
 
   it('rejects optional client methods that were not advertised at initialize', async () => {
