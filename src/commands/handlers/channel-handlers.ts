@@ -7,6 +7,8 @@
 
 import fs from 'fs';
 import path from 'path';
+import type { ChatEntry } from '../../agent/types.js';
+import type { CodeBuddyMessage } from '../../codebuddy/client.js';
 import { logger } from '../../utils/logger.js';
 
 interface ChannelOptions {
@@ -27,6 +29,13 @@ interface ChannelConfigEntry {
 
 interface ChannelsConfig {
   channels: ChannelConfigEntry[];
+}
+
+interface AgentHistoryRestorer {
+  historyManager: {
+    setChatHistory(history: ChatEntry[]): void;
+    setMessages(messages: CodeBuddyMessage[]): void;
+  };
 }
 
 export interface ChannelStatusReport {
@@ -200,7 +209,7 @@ const HERMES_OFFICIAL_MESSAGING_PLATFORMS: Array<{
   { platform: 'WeCom', officialSurface: 'WeCom gateway', localSurface: 'channel', channelTypes: ['wecom'] },
   { platform: 'Weixin', officialSurface: 'Weixin gateway', localSurface: 'channel', channelTypes: ['weixin'] },
   { platform: 'BlueBubbles', officialSurface: 'BlueBubbles/iMessage gateway', localSurface: 'channel', channelTypes: ['imessage'] },
-  { platform: 'QQ', officialSurface: 'QQ gateway', localSurface: 'missing' },
+  { platform: 'QQ', officialSurface: 'QQ gateway', localSurface: 'channel', channelTypes: ['qq'], notes: ['Mapped through a OneBot v11-compatible QQ HTTP gateway.'] },
   { platform: 'Yuanbao', officialSurface: 'Yuanbao gateway', localSurface: 'prompt-tool', notes: ['Available through exact Yuanbao prompt tools for group info, DM, and stickers.'] },
   { platform: 'Teams', officialSurface: 'Microsoft Teams gateway', localSurface: 'channel', channelTypes: ['teams'] },
   { platform: 'LINE', officialSurface: 'LINE gateway', localSurface: 'channel', channelTypes: ['line'] },
@@ -435,7 +444,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
-      const { checkDMPairing, getDMPairing, resolveRoute, getRouteAgentConfig } = await import('../../channels/core.js');
+      const { checkDMPairing, getDMPairing, getRouteAgentConfig } = await import('../../channels/core.js');
 
       // 1. Check DM pairing first
       const pairingStatus = await checkDMPairing(message);
@@ -452,8 +461,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
-      // 2. Resolve route and config
-      const route = resolveRoute(message);
+      // 2. Resolve route-backed agent config
       const agentConfig = getRouteAgentConfig(message);
 
       // 3. Instantiate Agent with routed config
@@ -488,8 +496,9 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           role: m.type === 'user' ? 'user' as const : 'assistant' as const,
           content: m.content
         }));
-        (agent as any).historyManager.setChatHistory(chatHistory);
-        (agent as any).historyManager.setMessages(messages);
+        const historyRestorer = agent as unknown as AgentHistoryRestorer;
+        historyRestorer.historyManager.setChatHistory(chatHistory);
+        historyRestorer.historyManager.setMessages(messages);
       }
 
       // 5. Run agent turn
@@ -640,6 +649,16 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
         apiBaseUrl: typeof opts.apiBaseUrl === 'string' ? opts.apiBaseUrl : undefined,
         kfAccount: typeof opts.kfAccount === 'string' ? opts.kfAccount : undefined,
       } as import('../../channels/index.js').WeixinChannelConfig);
+    }
+    case 'qq': {
+      const { QQChannel } = await import('../../channels/qq/index.js');
+      return new QQChannel({
+        ...channelConfig,
+        baseUrl: typeof opts.baseUrl === 'string' ? opts.baseUrl : config.webhookUrl,
+        accessToken: typeof opts.accessToken === 'string' ? opts.accessToken : config.token,
+        defaultMessageType: opts.defaultMessageType === 'group' ? 'group' : opts.defaultMessageType === 'private' ? 'private' : undefined,
+        autoEscape: typeof opts.autoEscape === 'boolean' ? opts.autoEscape : undefined,
+      } as import('../../channels/index.js').QQChannelConfig);
     }
     case 'line': {
       const { LINEChannel } = await import('../../channels/line/index.js');

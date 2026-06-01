@@ -184,6 +184,19 @@ describe('handleChannels additional channel activation', () => {
       },
     },
     {
+      type: 'qq',
+      config: {
+        type: 'qq',
+        enabled: true,
+        token: 'onebot-access-token',
+        options: {
+          baseUrl: 'http://127.0.0.1:9/onebot/v11',
+          defaultMessageType: 'private',
+          autoEscape: true,
+        },
+      },
+    },
+    {
       type: 'nostr',
       config: {
         type: 'nostr',

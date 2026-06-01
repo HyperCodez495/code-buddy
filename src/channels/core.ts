@@ -33,6 +33,7 @@ export type ChannelType =
   | 'dingtalk'
   | 'wecom'
   | 'weixin'
+  | 'qq'
   | 'line'
   | 'nostr'
   | 'zalo'

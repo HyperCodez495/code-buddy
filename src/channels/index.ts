@@ -93,6 +93,10 @@ export type { WeComChannelConfig, WeComConfig, WeComMessageType, WeComSendOption
 export { WeixinAdapter, WeixinChannel } from './weixin/index.js';
 export type { WeixinChannelConfig, WeixinConfig, WeixinSendOptions, WeixinSendResult } from './weixin/index.js';
 
+// QQ (OneBot v11-compatible)
+export { QQAdapter, QQChannel } from './qq/index.js';
+export type { QQChannelConfig, QQConfig, QQMessageType, QQSendOptions, QQSendResult } from './qq/index.js';
+
 // LINE
 export { LINEAdapter, LINEChannel } from './line/index.js';
 export type { LINEConfig, LINEChannelConfig } from './line/index.js';

@@ -92,6 +92,7 @@ export const SEND_MESSAGE_CHANNELS = [
   'dingtalk',
   'wecom',
   'weixin',
+  'qq',
   'line',
   'nostr',
   'zalo',

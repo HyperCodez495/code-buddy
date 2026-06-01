@@ -72,7 +72,7 @@ describe('buildChannelStatusReport', () => {
       expect(report.hermes.locallyCoveredCount).toBeGreaterThan(0);
       expect(report.hermes.configuredPlatformCount).toBeGreaterThanOrEqual(2);
       expect(report.hermes.runtimePlatformCount).toBeGreaterThanOrEqual(1);
-      expect(report.hermes.missingPlatformCount).toBeGreaterThan(0);
+      expect(report.hermes.missingPlatformCount).toBe(0);
       expect(report.hermes.platforms).toEqual(expect.arrayContaining([
         expect.objectContaining({
           channelTypes: ['telegram'],
@@ -107,6 +107,12 @@ describe('buildChannelStatusReport', () => {
           channelTypes: ['weixin'],
           localSurface: 'channel',
           platform: 'Weixin',
+          status: 'available',
+        }),
+        expect.objectContaining({
+          channelTypes: ['qq'],
+          localSurface: 'channel',
+          platform: 'QQ',
           status: 'available',
         }),
         expect.objectContaining({
@@ -287,6 +293,43 @@ describe('buildChannelStatusReport', () => {
       }));
       expect(JSON.stringify(report)).not.toContain('weixin-access-token');
       expect(JSON.stringify(report)).not.toContain('agent@example');
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it('marks QQ as configured without exposing OneBot access tokens', () => {
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'channel-status-qq-'));
+    const configPath = path.join(tempDir, 'channels.json');
+    fs.writeFileSync(configPath, JSON.stringify({
+      channels: [
+        {
+          type: 'qq',
+          enabled: true,
+          token: 'onebot-secret-token',
+          webhookUrl: 'http://127.0.0.1:5700/onebot/v11?access_token=onebot-secret-token',
+          options: { defaultMessageType: 'group', autoEscape: true },
+        },
+      ],
+    }), 'utf-8');
+
+    try {
+      const report = buildChannelStatusReport({}, configPath, '2026-05-30T13:30:01.000Z');
+      const qq = report.hermes.platforms.find((platform) => platform.platform === 'QQ');
+      expect(qq).toEqual(expect.objectContaining({
+        channelTypes: ['qq'],
+        configured: true,
+        localSurface: 'channel',
+        runtimeRegistered: false,
+        status: 'configured',
+      }));
+      expect(report.config.channels[0]).toEqual(expect.objectContaining({
+        hasToken: true,
+        hasWebhookUrl: true,
+        optionKeys: ['autoEscape', 'defaultMessageType'],
+        type: 'qq',
+      }));
+      expect(JSON.stringify(report)).not.toContain('onebot-secret-token');
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
     }
