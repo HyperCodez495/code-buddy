@@ -332,8 +332,11 @@ interface HermesOverviewStatus {
     protocols: {
       ok: boolean;
       availableCount: number;
+      availableCapabilityIds: string[];
       partialCount: number;
+      partialCapabilityIds: string[];
       missingCount: number;
+      missingCapabilityIds: string[];
       smokeCommand: string;
     };
     memory: {
@@ -841,8 +844,17 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
       protocols: {
         ok: protocols.ok,
         availableCount: protocols.summary.availableCount,
+        availableCapabilityIds: protocols.capabilities
+          .filter((capability) => capability.status === 'available')
+          .map((capability) => capability.id),
         partialCount: protocols.summary.partialCount,
+        partialCapabilityIds: protocols.capabilities
+          .filter((capability) => capability.status === 'partial')
+          .map((capability) => capability.id),
         missingCount: protocols.summary.missingCount,
+        missingCapabilityIds: protocols.capabilities
+          .filter((capability) => capability.status === 'missing')
+          .map((capability) => capability.id),
         smokeCommand: protocols.smokeCommand,
       },
       memory: {
@@ -947,6 +959,9 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
       `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
       `missing: ${formatList(readiness.memory.missingOfficialProviderIds)})`,
+    `  Protocols: available ${formatList(readiness.protocols.availableCapabilityIds)} ` +
+      `(partial: ${formatList(readiness.protocols.partialCapabilityIds)}, ` +
+      `missing: ${formatList(readiness.protocols.missingCapabilityIds)})`,
     `  Skills: ${readiness.skills.enabledCount}/${readiness.skills.installedCount} enabled, ` +
       `candidates ${readiness.skills.eligibleCandidateCount} eligible / ` +
       `${readiness.skills.ineligibleCandidateCount} not eligible`,

@@ -240,6 +240,12 @@ describe('Hermes CLI commands', () => {
             primaryBackendId: string | null;
             smokeCommand: string | null;
           };
+          protocols: {
+            availableCapabilityIds: string[];
+            missingCapabilityIds: string[];
+            partialCapabilityIds: string[];
+            smokeCommand: string;
+          };
           provider: {
             configured: boolean;
             credentialSources: string[];
@@ -290,6 +296,10 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.browser.smokeCommand).toBe('buddy hermes browser-smoke auto --json');
       expect(output.readiness.browser.autoEligibleBackendIds).toContain('local-playwright');
       expect(output.readiness.browser.gatedBackendCount).toBe(output.readiness.browser.gatedBackendIds.length);
+      expect(output.readiness.protocols.smokeCommand).toBe('buddy hermes protocols-smoke local --json');
+      expect(output.readiness.protocols.availableCapabilityIds).toEqual(expect.arrayContaining(['mcp-client', 'a2a-http']));
+      expect(output.readiness.protocols.partialCapabilityIds).toEqual(['acp-editor-integration']);
+      expect(output.readiness.protocols.missingCapabilityIds).toEqual([]);
       expect(output.readiness.skills.totalCandidateCount).toBe(
         output.readiness.skills.eligibleCandidateCount + output.readiness.skills.ineligibleCandidateCount,
       );
@@ -321,6 +331,9 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('(auto:');
       expect(textOutput).toContain('gated:');
+      expect(textOutput).toContain('Protocols: available');
+      expect(textOutput).toContain('partial: acp-editor-integration');
+      expect(textOutput).toContain('missing: none');
       expect(textOutput).toContain('Skills:');
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
