@@ -96,6 +96,8 @@ export interface HermesLearningLoopStatus {
       updatedAt?: string;
     };
     skillCandidates: {
+      eligibleCandidateCount: number;
+      ineligibleCandidateCount: number;
       learningCandidateCount: number;
       root: string;
       samples: HermesLearningLoopSkillCandidateSample[];
@@ -217,23 +219,36 @@ function countEvidenceArtifacts(artifacts: string[]): number {
 
 function countLearningSkillCandidates(workDir: string): HermesLearningLoopStatus['state']['skillCandidates'] {
   const root = path.join(workDir, '.codebuddy', 'skill-candidates', 'learning');
-  let learningCandidateCount = 0;
-  const samples: HermesLearningLoopSkillCandidateSample[] = [];
+  const emptyState = {
+    eligibleCandidateCount: 0,
+    ineligibleCandidateCount: 0,
+    learningCandidateCount: 0,
+    root,
+    samples: [],
+  };
   try {
-    if (fs.existsSync(root)) {
-      const candidateDirs = fs.readdirSync(root, { withFileTypes: true })
-        .filter((entry) => entry.isDirectory())
-        .filter((entry) => fs.existsSync(path.join(root, entry.name, 'SKILL.md')));
-      learningCandidateCount = candidateDirs.length;
-      for (const entry of candidateDirs.slice(0, 3)) {
-        samples.push(readLearningSkillCandidateSample(workDir, root, entry.name));
-      }
+    if (!fs.existsSync(root)) {
+      return emptyState;
     }
+    const candidates = fs.readdirSync(root, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .filter((entry) => fs.existsSync(path.join(root, entry.name, 'SKILL.md')))
+      .map((entry) => readLearningSkillCandidateSample(workDir, root, entry.name))
+      .sort((left, right) =>
+        Number(right.eligible) - Number(left.eligible)
+        || left.skillName.localeCompare(right.skillName),
+      );
+    const eligibleCandidateCount = candidates.filter((candidate) => candidate.eligible).length;
+    return {
+      eligibleCandidateCount,
+      ineligibleCandidateCount: candidates.length - eligibleCandidateCount,
+      learningCandidateCount: candidates.length,
+      root,
+      samples: candidates.slice(0, 3),
+    };
   } catch {
-    learningCandidateCount = 0;
-    samples.length = 0;
+    return emptyState;
   }
-  return { learningCandidateCount, root, samples };
 }
 
 function readLearningSkillCandidateSample(
@@ -349,7 +364,7 @@ function buildReviewQueue(
   }
   if (skillCandidates.learningCandidateCount > 0) {
     const reviewableSkill = skillCandidates.samples.find((candidate) => candidate.eligible) ?? skillCandidates.samples[0];
-    const hasEligibleSkillCandidate = skillCandidates.samples.some((candidate) => candidate.eligible);
+    const hasEligibleSkillCandidate = skillCandidates.eligibleCandidateCount > 0;
     items.push({
       command: hasEligibleSkillCandidate
         ? 'buddy tools skill-candidate list --eligible-only --json'
