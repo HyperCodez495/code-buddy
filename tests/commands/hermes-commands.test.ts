@@ -1094,7 +1094,7 @@ describe('Hermes CLI commands', () => {
       expect(output).toContain(
         'next: buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/ready --json',
       );
-      expect(output).toContain('Candidate review: skill_manage action=candidate_list');
+      expect(output).toContain('Candidate review: buddy tools skill-candidate list --eligible-only --json');
     } finally {
       process.chdir(oldCwd);
       if (oldRunsDir === undefined) delete process.env.CODEBUDDY_RUNS_DIR;

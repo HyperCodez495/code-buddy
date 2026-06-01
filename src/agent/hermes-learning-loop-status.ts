@@ -379,7 +379,7 @@ function buildRecommendations(status: HermesLearningLoopStatus): string[] {
     recommendations.push('Review pending lesson candidates before relying on them in future prompt context.');
   }
   if (status.state.skillCandidates.learningCandidateCount > 0) {
-    recommendations.push('Review Learning Agent SKILL.md candidates through Cowork or skill_manage before installing.');
+    recommendations.push(`Review Learning Agent SKILL.md candidates through Cowork or ${status.commands.candidateReview} before installing.`);
   }
   if (recommendations.length === 0) {
     recommendations.push('Learning loop state is locally coherent; keep reviewing candidates before promotion.');
@@ -579,7 +579,8 @@ export function buildHermesLearningLoopStatus(
       skillUsage: 'buddy skills learning-usage --json',
       lessonCandidates: 'buddy lessons candidate list --json',
       userModel: 'buddy user-model show --json',
-      candidateReview: 'skill_manage action=candidate_list',
+      candidateReview: reviewQueue.items.find((item) => item.kind === 'skill_candidate')?.command ??
+        'buddy tools skill-candidate list --json',
     },
     recommendations: [],
   };
