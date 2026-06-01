@@ -253,6 +253,11 @@ describe('Hermes CLI commands', () => {
             localProviderIds: string[];
             missingProviderIds: string[];
             model: string;
+            portalLoggedIn: boolean;
+            portalToolGatewayConfigured: boolean;
+            portalToolGatewayConfiguredToolKeys: string[];
+            portalToolGatewayManagedToolKeys: string[];
+            portalToolGatewayMissingToolKeys: string[];
           };
           runtime: {
             autoEligibleBackendIds: string[];
@@ -296,6 +301,13 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.provider.configuredProviderIds).toContain('openai');
       expect(output.readiness.provider.localProviderIds).toEqual(expect.arrayContaining(['ollama', 'lmstudio']));
       expect(output.readiness.provider.missingProviderIds).toEqual(expect.arrayContaining(['anthropic', 'google']));
+      expect(output.readiness.provider.portalLoggedIn).toBe(true);
+      expect(output.readiness.provider.portalToolGatewayConfigured).toBe(false);
+      expect(output.readiness.provider.portalToolGatewayConfiguredToolKeys).toEqual(
+        expect.arrayContaining(['web', 'image_gen', 'tts', 'browser']),
+      );
+      expect(output.readiness.provider.portalToolGatewayManagedToolKeys).toEqual([]);
+      expect(output.readiness.provider.portalToolGatewayMissingToolKeys).toEqual(['modal']);
       expect(output.readiness.runtime.smokeCommand).toBe('buddy hermes runtime-smoke auto --json');
       expect(output.readiness.runtime.autoEligibleBackendIds).toContain('local');
       expect(output.readiness.runtime.gatedBackendCount).toBe(output.readiness.runtime.gatedBackendIds.length);
@@ -336,6 +348,9 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Tool parity:');
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('Providers: configured');
+      expect(textOutput).toContain('Tool Gateway: configured');
+      expect(textOutput).toContain('via Nous: none');
+      expect(textOutput).toContain('missing: modal');
       expect(textOutput).toContain('missing:');
       expect(textOutput).toContain('(auto:');
       expect(textOutput).toContain('gated:');

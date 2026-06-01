@@ -305,7 +305,11 @@ interface HermesOverviewStatus {
       supportsReasoning: boolean;
       supportsToolCalls: boolean;
       supportsVision: boolean;
+      portalLoggedIn: boolean;
       portalToolGatewayConfigured: boolean;
+      portalToolGatewayConfiguredToolKeys: string[];
+      portalToolGatewayManagedToolKeys: string[];
+      portalToolGatewayMissingToolKeys: string[];
     };
     runtime: {
       ok: boolean;
@@ -826,7 +830,17 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         supportsReasoning: diagnostics.providerReadiness.activeModel.supportsReasoning,
         supportsToolCalls: diagnostics.providerReadiness.activeModel.supportsToolCalls,
         supportsVision: diagnostics.providerReadiness.activeModel.supportsVision,
+        portalLoggedIn: diagnostics.providerReadiness.portal.portal.loggedIn,
         portalToolGatewayConfigured: diagnostics.providerReadiness.portal.portal.toolGatewayConfigured,
+        portalToolGatewayConfiguredToolKeys: diagnostics.providerReadiness.portal.toolGateway.tools
+          .filter((tool) => tool.configured)
+          .map((tool) => tool.key),
+        portalToolGatewayManagedToolKeys: diagnostics.providerReadiness.portal.toolGateway.tools
+          .filter((tool) => tool.managedByNous)
+          .map((tool) => tool.key),
+        portalToolGatewayMissingToolKeys: diagnostics.providerReadiness.portal.toolGateway.tools
+          .filter((tool) => !tool.configured)
+          .map((tool) => tool.key),
       },
       runtime: {
         ok: diagnostics.runtimeBackends.ok,
@@ -964,6 +978,9 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Providers: configured ${formatList(readiness.provider.configuredProviderIds)} ` +
       `(local: ${formatList(readiness.provider.localProviderIds)}, ` +
       `missing: ${formatList(readiness.provider.missingProviderIds)})`,
+    `  Tool Gateway: configured ${formatList(readiness.provider.portalToolGatewayConfiguredToolKeys)} ` +
+      `(via Nous: ${formatList(readiness.provider.portalToolGatewayManagedToolKeys)}, ` +
+      `missing: ${formatList(readiness.provider.portalToolGatewayMissingToolKeys)})`,
     `  Runtime: ${readiness.runtime.primaryBackendId ?? 'none'} ` +
       `-> ${formatList(readiness.runtime.fallbackBackendIds)} ` +
       `(auto: ${formatList(readiness.runtime.autoEligibleBackendIds)}, gated: ${formatList(readiness.runtime.gatedBackendIds)})`,
