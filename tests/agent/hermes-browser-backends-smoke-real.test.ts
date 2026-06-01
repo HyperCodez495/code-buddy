@@ -9,7 +9,9 @@ import { fileURLToPath } from 'url';
 
 import {
   buildHermesBrowserBackendsReadiness,
+  renderHermesBrowserBackendsReadiness,
   runHermesBrowserBackendSmoke,
+  type HermesBrowserBackendsReadiness,
 } from '../../src/agent/hermes-browser-backends.js';
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -112,6 +114,65 @@ function runHermesJson(args: string[]): unknown {
 }
 
 describe('Hermes browser backend readiness and live smoke', () => {
+  it('renders browser backend readiness flags without smoke commands for non-runnable backends', () => {
+    const readiness: HermesBrowserBackendsReadiness = {
+      ok: true,
+      generatedAt: '2026-06-01T03:15:00.000Z',
+      platform: process.platform,
+      localRunnableCount: 1,
+      managedConfiguredCount: 0,
+      routePlan: {
+        fallbackBackendIds: [],
+        mode: 'hybrid',
+        primaryBackendId: 'local-playwright',
+        reason: 'local Playwright is safe by default',
+        smokeCommand: 'buddy hermes browser-smoke auto --json',
+      },
+      backends: [
+        {
+          id: 'local-playwright',
+          label: 'Local Playwright',
+          officialSurface: 'local CDP/Playwright browser backend',
+          status: 'available',
+          installed: true,
+          configured: true,
+          runnable: true,
+          command: process.execPath,
+          version: '1.test',
+          credentialSources: [],
+          smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
+          notes: [],
+          remediation: [],
+        },
+        {
+          id: 'browserbase',
+          label: 'Browserbase / Stagehand',
+          officialSurface: 'managed browser backend',
+          status: 'available',
+          installed: true,
+          configured: false,
+          runnable: false,
+          command: null,
+          version: '3.test',
+          credentialSources: [],
+          smokeCommand: 'buddy hermes browser-smoke browserbase --json',
+          notes: [],
+          remediation: [],
+        },
+      ],
+      issues: [],
+      recommendations: [],
+    };
+
+    const output = renderHermesBrowserBackendsReadiness(readiness);
+
+    expect(output).toContain(
+      '- local-playwright: available (1.test) | configured=yes, runnable=yes | smoke: buddy hermes browser-smoke local-playwright --json',
+    );
+    expect(output).toContain('- browserbase: available (3.test) | configured=no, runnable=no');
+    expect(output).not.toContain('smoke: buddy hermes browser-smoke browserbase --json');
+  });
+
   it('reports browser backend readiness without leaking configured secrets', () => {
     const readiness = buildHermesBrowserBackendsReadiness({
       env: {

@@ -639,11 +639,7 @@ export function renderHermesBrowserBackendsReadiness(readiness: HermesBrowserBac
       `${readiness.routePlan.smokeCommand ? ` | smoke: ${readiness.routePlan.smokeCommand}` : ''}`,
     '',
     'Backends:',
-    ...readiness.backends.map((backend) =>
-      `- ${backend.id}: ${backend.status}` +
-      `${backend.version ? ` (${backend.version})` : ''}` +
-      `${backend.smokeCommand ? ` | smoke: ${backend.smokeCommand}` : ''}`,
-    ),
+    ...readiness.backends.map(renderBrowserBackendLine),
   ];
 
   if (readiness.issues.length > 0) {
@@ -655,6 +651,15 @@ export function renderHermesBrowserBackendsReadiness(readiness: HermesBrowserBac
   }
 
   return lines.join('\n');
+}
+
+function renderBrowserBackendLine(backend: HermesBrowserBackend): string {
+  const readinessFlags = `configured=${backend.configured ? 'yes' : 'no'}, runnable=${backend.runnable ? 'yes' : 'no'}`;
+
+  return `- ${backend.id}: ${backend.status}` +
+    `${backend.version ? ` (${backend.version})` : ''}` +
+    ` | ${readinessFlags}` +
+    `${backend.runnable && backend.smokeCommand ? ` | smoke: ${backend.smokeCommand}` : ''}`;
 }
 
 export function renderHermesBrowserSmoke(result: HermesBrowserBackendSmokeResult): string {
