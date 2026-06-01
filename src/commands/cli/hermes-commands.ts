@@ -443,6 +443,47 @@ function sanitizeCredentialSource(source: string): string {
   return source;
 }
 
+function sanitizeSmokeCommand(command: string | null): string | null {
+  if (!command) return null;
+  if (path.isAbsolute(command) || command.includes('/') || command.includes('\\')) {
+    return path.basename(command) || 'runtime-command';
+  }
+  return command;
+}
+
+function redactLocalSmokeText(value: string): string {
+  return value
+    .replace(/trace=([^;\r\n]+)/g, 'trace=[redacted-local-path]')
+    .replace(/[A-Za-z]:\\[^\r\n;]+/g, '[redacted-local-path]')
+    .replace(/\/(?:Users|home|tmp|var\/folders)\/[^\r\n;]+/g, '[redacted-local-path]');
+}
+
+function sanitizeRuntimeSmokeResult(result: HermesRuntimeSmokeResult): HermesRuntimeSmokeResult {
+  return {
+    ...result,
+    command: sanitizeSmokeCommand(result.command),
+    output: redactLocalSmokeText(result.output),
+    stderr: redactLocalSmokeText(result.stderr),
+    stdout: redactLocalSmokeText(result.stdout),
+  };
+}
+
+function sanitizeBrowserSmokeResult(
+  result: Awaited<ReturnType<typeof runHermesBrowserBackendSmoke>>,
+): Awaited<ReturnType<typeof runHermesBrowserBackendSmoke>> {
+  return {
+    ...result,
+    artifacts: result.artifacts?.map((artifact) => ({
+      ...artifact,
+      path: path.basename(artifact.path) || '[redacted-local-path]',
+    })),
+    command: sanitizeSmokeCommand(result.command),
+    output: redactLocalSmokeText(result.output),
+    stderr: redactLocalSmokeText(result.stderr),
+    stdout: redactLocalSmokeText(result.stdout),
+  };
+}
+
 function parseOptionalPositiveInteger(value: string | undefined, label: string): number | undefined {
   if (value === undefined) return undefined;
   const parsed = Number.parseInt(value, 10);
@@ -868,9 +909,9 @@ async function runHermesLocalSmokeSuite(): Promise<HermesLocalSmokeSuite> {
     generatedAt: new Date().toISOString(),
     ok: runtime.ok && browser.ok && protocols.ok,
     results: {
-      browser,
+      browser: sanitizeBrowserSmokeResult(browser),
       protocols,
-      runtime,
+      runtime: sanitizeRuntimeSmokeResult(runtime),
     },
     commands: {
       browser: 'buddy hermes browser-smoke auto --json',

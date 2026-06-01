@@ -2987,7 +2987,9 @@ describe('Hermes CLI commands', () => {
       notes: string[];
       results: {
         browser: {
+          artifacts?: Array<{ path: string }>;
           backendId: string;
+          command: string | null;
           ok: boolean;
           output: string;
           status: string;
@@ -2999,6 +3001,7 @@ describe('Hermes CLI commands', () => {
         };
         runtime: {
           backendId: string;
+          command: string | null;
           ok: boolean;
           output: string;
           status: string;
@@ -3011,6 +3014,7 @@ describe('Hermes CLI commands', () => {
     expect(output.ok).toBe(true);
     expect(output.results.runtime).toMatchObject({
       backendId: 'local',
+      command: expect.stringMatching(/^(node|node\.exe)$/),
       ok: true,
       status: 'passed',
     });
@@ -3021,6 +3025,11 @@ describe('Hermes CLI commands', () => {
       status: 'passed',
     });
     expect(output.results.browser.output).toContain('OK-HERMES-BROWSER');
+    expect(output.results.browser.output).toContain('trace=[redacted-local-path]');
+    expect(output.results.browser.command).toMatch(/^(node|node\.exe)$/);
+    expect(output.results.browser.artifacts?.[0]?.path).toBe('local-playwright-trace.zip');
+    expect(JSON.stringify(output)).not.toMatch(/[A-Za-z]:\\\\/);
+    expect(JSON.stringify(output)).not.toContain(process.execPath);
     expect(output.results.protocols.ok).toBe(true);
     expect(output.results.protocols.mcpStdio.ok).toBe(true);
     expect(output.results.protocols.mcpStdio.toolCount).toBeGreaterThan(0);
