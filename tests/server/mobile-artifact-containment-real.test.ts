@@ -100,6 +100,26 @@ describe('mobileRouter artifact containment (real HTTP)', () => {
     expect(activeTokens.size).toBe(1);
   });
 
+  it('hides and prunes expired tokens from pairing status', async () => {
+    activeTokens.set('expired-token', {
+      deviceLabel: 'expired-phone',
+      expiresAt: Date.now() - 1000,
+    });
+    activeTokens.set('live-token', {
+      deviceLabel: 'live-phone',
+      expiresAt: Date.now() + 60_000,
+    });
+
+    const res = await fetch(`${baseUrl}/pairing-status`);
+
+    expect(res.status).toBe(200);
+    const data = await res.json() as { activeDevices: string[]; ok: boolean };
+    expect(data.ok).toBe(true);
+    expect(data.activeDevices).toEqual(['live-phone']);
+    expect(activeTokens.has('expired-token')).toBe(false);
+    expect(activeTokens.has('live-token')).toBe(true);
+  });
+
   async function rawMobileGet(pathname: string, token: string): Promise<{ body: string; status: number }> {
     const address = server.address();
     if (!address || typeof address === 'string') {

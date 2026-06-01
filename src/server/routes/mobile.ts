@@ -54,15 +54,19 @@ export interface FollowupDraft {
 
 export const followupDrafts: FollowupDraft[] = [];
 
+function pruneExpiredTokens(now = Date.now()): void {
+  for (const [token, tokenData] of activeTokens) {
+    if (now > tokenData.expiresAt) {
+      activeTokens.delete(token);
+    }
+  }
+}
+
 // Helper to check if a token is valid
 function isValidToken(token: string): boolean {
+  pruneExpiredTokens();
   const tokenData = activeTokens.get(token);
-  if (!tokenData) return false;
-  if (Date.now() > tokenData.expiresAt) {
-    activeTokens.delete(token);
-    return false;
-  }
-  return true;
+  return !!tokenData;
 }
 
 /**
@@ -128,6 +132,7 @@ export function mobileAuthMiddleware(req: Request, res: Response, next: NextFunc
 
 // Pairing status (retrieved by local operator dashboard/CLI only — loopback gated)
 mobileRouter.get('/pairing-status', loopbackOnlyMiddleware, (req: Request, res: Response) => {
+  pruneExpiredTokens();
   res.json({
     ok: true,
     pairingCode: activePairingCode,
