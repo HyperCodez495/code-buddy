@@ -16,11 +16,14 @@
  *                         `session/update` (`agent_message_chunk`) notifications,
  *                         resolving to `{ stopReason }`.
  * - `session/cancel`    → notification; aborts the active turn (→ `cancelled`).
+ * - Agent→client calls  → prompt runners can call client methods such as
+ *                         `fs/read_text_file` or `session/request_permission`
+ *                         and await the JSON-RPC response.
  *
  * The transport + protocol layer is deliberate-and-tested; the `promptRunner`
  * is injected so the CLI wires the real agent while tests drive a deterministic
- * runner. Out of scope for v1 (documented, not stubbed): client-side `fs/*` +
- * `session/request_permission` calls and MCP passthrough.
+ * runner. Out of scope for v1 (documented, not stubbed): full tool-using turns
+ * backed by client `fs/*` + `session/request_permission`, and MCP passthrough.
  */
 
 import { randomUUID } from 'crypto';
@@ -51,6 +54,7 @@ export interface AcpPromptContext {
   cwd: string;
   prompt: AcpContentBlock[];
   signal: AbortSignal;
+  requestClient: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
   sendUpdate: (update: AcpSessionUpdate) => void;
 }
 
@@ -77,12 +81,21 @@ interface JsonRpcMessage {
   id?: number | string | null;
   method?: string;
   params?: Record<string, unknown>;
+  result?: unknown;
+  error?: { code?: number; message?: string; data?: unknown };
 }
 
 interface AcpSession {
   cwd: string;
   active: AbortController | null;
   history: AcpSessionUpdate[];
+}
+
+interface PendingClientRequest {
+  reject: (error: Error) => void;
+  resolve: (result: unknown) => void;
+  signal?: AbortSignal;
+  onAbort?: () => void;
 }
 
 function asString(value: unknown): string | undefined {
@@ -96,6 +109,8 @@ export class AcpStdioServer {
   private readonly agentInfo: AcpAgentInfo;
   private readonly protocolVersion: number;
   private readonly sessions = new Map<string, AcpSession>();
+  private readonly pendingClientRequests = new Map<string, PendingClientRequest>();
+  private nextClientRequestId = 0;
   private buffer = '';
   private started = false;
   private readonly onData = (chunk: Buffer | string): void => this.ingest(chunk);
@@ -119,6 +134,7 @@ export class AcpStdioServer {
     if (!this.started) return;
     this.started = false;
     this.input.off?.('data', this.onData);
+    this.rejectPendingClientRequests('ACP server stopped.');
   }
 
   private ingest(chunk: Buffer | string): void {
@@ -142,6 +158,34 @@ export class AcpStdioServer {
     this.write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update } });
   }
 
+  private requestClient(
+    method: string,
+    params: Record<string, unknown> = {},
+    options: { signal?: AbortSignal } = {},
+  ): Promise<unknown> {
+    const id = `codebuddy-${++this.nextClientRequestId}`;
+    const signal = options.signal;
+
+    if (signal?.aborted) {
+      return Promise.reject(this.createClientRequestError('ACP client request aborted.'));
+    }
+
+    return new Promise((resolve, reject) => {
+      const pending: PendingClientRequest = {
+        resolve,
+        reject,
+        signal,
+      };
+      pending.onAbort = () => {
+        this.pendingClientRequests.delete(id);
+        reject(this.createClientRequestError('ACP client request aborted.'));
+      };
+      signal?.addEventListener('abort', pending.onAbort, { once: true });
+      this.pendingClientRequests.set(id, pending);
+      this.write({ jsonrpc: '2.0', id, method, params });
+    });
+  }
+
   private async handleLine(line: string): Promise<void> {
     let msg: JsonRpcMessage;
     try {
@@ -155,6 +199,11 @@ export class AcpStdioServer {
     const isRequest = id !== undefined && id !== null;
     const method = msg.method;
     const params = (msg.params ?? {}) as Record<string, unknown>;
+
+    if (isRequest && typeof method !== 'string' && ('result' in msg || 'error' in msg)) {
+      this.handleClientResponse(String(id), msg);
+      return;
+    }
 
     // `session/cancel` is a notification (no response).
     if (method === 'session/cancel') {
@@ -255,6 +304,9 @@ export class AcpStdioServer {
         cwd: session.cwd,
         prompt,
         signal: controller.signal,
+        requestClient: (method, requestParams = {}) => this.requestClient(method, requestParams, {
+          signal: controller.signal,
+        }),
         sendUpdate: (update) => this.sendUpdate(sessionId, update),
       });
       return { stopReason: controller.signal.aborted ? 'cancelled' : stopReason };
@@ -270,5 +322,43 @@ export class AcpStdioServer {
     const sessionId = asString(params.sessionId);
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
     session?.active?.abort();
+  }
+
+  private handleClientResponse(id: string, msg: JsonRpcMessage): void {
+    const pending = this.pendingClientRequests.get(id);
+    if (!pending) return;
+
+    this.pendingClientRequests.delete(id);
+    if (pending.signal && pending.onAbort) {
+      pending.signal.removeEventListener('abort', pending.onAbort);
+    }
+
+    if (msg.error) {
+      pending.reject(this.createClientRequestError(
+        msg.error.message ?? 'ACP client request failed.',
+        msg.error.code,
+        msg.error.data,
+      ));
+      return;
+    }
+
+    pending.resolve(msg.result ?? null);
+  }
+
+  private rejectPendingClientRequests(message: string): void {
+    for (const [id, pending] of this.pendingClientRequests) {
+      this.pendingClientRequests.delete(id);
+      if (pending.signal && pending.onAbort) {
+        pending.signal.removeEventListener('abort', pending.onAbort);
+      }
+      pending.reject(this.createClientRequestError(message));
+    }
+  }
+
+  private createClientRequestError(message: string, code?: number, data?: unknown): Error {
+    const error = new Error(message) as Error & { code?: number; data?: unknown };
+    if (code !== undefined) error.code = code;
+    if (data !== undefined) error.data = data;
+    return error;
   }
 }

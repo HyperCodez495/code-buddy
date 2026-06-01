@@ -39,6 +39,10 @@ class AcpHarness {
     return this.messages.find((m) => m.id === id);
   }
 
+  requestFor(method: string): Record<string, any> | undefined {
+    return this.messages.find((m) => m.method === method && m.id !== undefined);
+  }
+
   notifications(method: string): Array<Record<string, any>> {
     return this.messages.filter((m) => m.method === method && m.id === undefined);
   }
@@ -152,6 +156,91 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     await harness.flush();
     expect(seenCwds).toEqual(['/tmp/old', '/tmp/new']);
     expect(harness.responseFor(5)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
+  it('lets prompt runners call client methods and wait for JSON-RPC responses', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient, sessionId, sendUpdate }) => {
+      const result = await requestClient('fs/read_text_file', {
+        sessionId,
+        path: '/tmp/project/README.md',
+        line: 1,
+        limit: 5,
+      });
+      const content = (result as { content?: string } | null)?.content ?? '';
+      sendUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: `client file: ${content}` },
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'read file' }] },
+    });
+    await harness.flush();
+
+    const clientRequest = harness.requestFor('fs/read_text_file');
+    expect(clientRequest).toMatchObject({
+      jsonrpc: '2.0',
+      method: 'fs/read_text_file',
+      params: {
+        sessionId,
+        path: '/tmp/project/README.md',
+        line: 1,
+        limit: 5,
+      },
+    });
+    expect(typeof clientRequest?.id).toBe('string');
+    expect(harness.responseFor(2)).toBeUndefined();
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: clientRequest?.id,
+      result: { content: 'hello from unsaved editor buffer' },
+    });
+    await harness.flush();
+
+    expect(harness.notifications('session/update').at(-1)?.params.update).toEqual({
+      sessionUpdate: 'agent_message_chunk',
+      content: { type: 'text', text: 'client file: hello from unsaved editor buffer' },
+    });
+    expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
+  it('aborts pending client method calls when a session is cancelled', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient, sessionId }) => {
+      await requestClient('session/request_permission', {
+        sessionId,
+        toolCall: { kind: 'read', title: 'Read file' },
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'needs approval' }] },
+    });
+    await harness.flush();
+    expect(harness.requestFor('session/request_permission')).toBeTruthy();
+    expect(harness.responseFor(2)).toBeUndefined();
+
+    harness.send({ jsonrpc: '2.0', method: 'session/cancel', params: { sessionId } });
+    await harness.flush();
+
+    expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
   });
 
   it('returns a JSON-RPC error for an unknown sessionId', async () => {

@@ -39,10 +39,15 @@ The agent uses your configured provider (auto-detected via the usual keys —
 | `session/prompt` | Runs the prompt, streams `session/update` `agent_message_chunk` notifications, resolves with `{ stopReason }`. |
 | `session/cancel` | Aborts the active turn → `stopReason: "cancelled"`. |
 
+The stdio transport can also issue agent→client JSON-RPC requests and await
+their responses. This is the protocol primitive needed for future
+`fs/read_text_file`, `fs/write_text_file`, and `session/request_permission`
+integration with editors that expose those client methods.
+
 ## Out of scope for v1 (not stubbed — deliberately deferred)
 
-- Client-side `fs/read_text_file` / `fs/write_text_file` and
-  `session/request_permission` calls.
+- Full tool-running integration over `fs/read_text_file`,
+  `fs/write_text_file`, and `session/request_permission`.
 - Durable cross-process session resumption and MCP passthrough.
 - Full tool-using agentic turns (v1 bridges to a one-shot LLM completion).
 
