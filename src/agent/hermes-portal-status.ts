@@ -2,6 +2,8 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 
+import { isToolGatewayRoutingActive } from './tool-gateway-router.js';
+
 export type HermesPortalToolKey = 'web' | 'image_gen' | 'tts' | 'browser' | 'modal';
 
 export interface HermesPortalToolStatus {
@@ -46,6 +48,8 @@ export interface HermesPortalStatus {
     configuredCount: number;
     managedByNousCount: number;
     notConfiguredCount: number;
+    /** True when outbound web/image/video calls are actually routed through the gateway. */
+    routingActive: boolean;
   };
   notes: string[];
 }
@@ -270,11 +274,12 @@ export function buildHermesPortalStatus(options: HermesPortalStatusOptions = {})
       configuredCount: tools.filter((tool) => tool.configured).length,
       managedByNousCount: tools.filter((tool) => tool.managedByNous).length,
       notConfiguredCount: tools.filter((tool) => !tool.configured).length,
+      routingActive: isToolGatewayRoutingActive(env),
     },
     notes: [
-      'This is a local readiness/status surface, not an OAuth device-code implementation.',
+      'Readiness plus real token/self-hosted gateway routing for web/image/video; the Nous-managed OAuth device-code flow is intentionally not implemented.',
       'Secrets are intentionally reported only by source name, never by value or local path.',
-      'Nous-managed routing requires a Nous credential plus CODEBUDDY_NOUS_TOOL_GATEWAY_URL/NOUS_TOOL_GATEWAY_URL or CODEBUDDY_NOUS_TOOL_GATEWAY=1.',
+      'Tool Gateway routing requires CODEBUDDY_NOUS_TOOL_GATEWAY_URL/NOUS_TOOL_GATEWAY_URL (or TOOL_GATEWAY_DOMAIN) plus CODEBUDDY_NOUS_TOOL_GATEWAY=1; the gateway user token comes from CODEBUDDY_NOUS_TOOL_GATEWAY_USER_TOKEN.',
     ],
   };
 }

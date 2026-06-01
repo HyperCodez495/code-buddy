@@ -3,6 +3,7 @@ import fs from 'fs/promises';
 import path from 'path';
 
 import { getImageGenerationModel } from '../config/agent-defaults.js';
+import { resolveToolGatewayRoute } from '../agent/tool-gateway-router.js';
 
 export type ImageAspectRatio = 'landscape' | 'square' | 'portrait';
 export type MediaProvider = 'openai' | 'xai' | 'fal';
@@ -464,8 +465,13 @@ function resolveImageProvider(envSource: NodeJS.ProcessEnv): ProviderConfig {
     ?? (provider === 'xai' ? envSource.XAI_IMAGE_MODEL : envSource.OPENAI_IMAGE_MODEL)
     ?? getImageGenerationModel()
     ?? (provider === 'xai' ? 'grok-imagine-image' : 'gpt-image-2')).trim();
-  assertProviderReady(provider, apiKey, baseUrl, 'image');
-  return { provider, model, baseUrl, apiKey };
+  // Route through the Nous Tool Gateway when configured (transparent base-URL +
+  // token substitution); otherwise use the direct provider.
+  const route = resolveToolGatewayRoute('image_gen', envSource);
+  const effectiveBaseUrl = route ? route.baseUrl : baseUrl;
+  const effectiveApiKey = route?.token ?? apiKey;
+  assertProviderReady(provider, effectiveApiKey, effectiveBaseUrl, 'image');
+  return { provider, model, baseUrl: effectiveBaseUrl, apiKey: effectiveApiKey };
 }
 
 function resolveVideoProvider(modelOverride: string | undefined, envSource: NodeJS.ProcessEnv): ProviderConfig {
@@ -481,8 +487,11 @@ function resolveVideoProvider(modelOverride: string | undefined, envSource: Node
     ?? envSource.CODEBUDDY_VIDEO_MODEL
     ?? (provider === 'fal' ? envSource.FAL_VIDEO_MODEL : envSource.XAI_VIDEO_MODEL)
     ?? (provider === 'fal' ? 'pixverse-v6' : 'grok-imagine-video')).trim();
-  assertProviderReady(provider, apiKey, baseUrl, 'video');
-  return { provider, model, baseUrl, apiKey };
+  const route = resolveToolGatewayRoute('video_gen', envSource);
+  const effectiveBaseUrl = route ? route.baseUrl : baseUrl;
+  const effectiveApiKey = route?.token ?? apiKey;
+  assertProviderReady(provider, effectiveApiKey, effectiveBaseUrl, 'video');
+  return { provider, model, baseUrl: effectiveBaseUrl, apiKey: effectiveApiKey };
 }
 
 function assertProviderReady(provider: MediaProvider, apiKey: string, baseUrl: string, kind: string): void {

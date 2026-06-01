@@ -8,6 +8,7 @@
  */
 
 import { logger } from '../utils/logger.js';
+import { resolveToolGatewayRoute } from '../agent/tool-gateway-router.js';
 
 // ============================================================================
 // Types
@@ -46,10 +47,11 @@ const FIRECRAWL_BASE_URL = 'https://api.firecrawl.dev/v1';
 const DEFAULT_TIMEOUT = 30_000;
 
 /**
- * Check if Firecrawl is configured (API key present).
+ * Check if Firecrawl is configured — either a direct API key, or a Nous Tool
+ * Gateway route that proxies web search/extraction.
  */
 export function isFirecrawlEnabled(): boolean {
-  return !!process.env.FIRECRAWL_API_KEY;
+  return !!process.env.FIRECRAWL_API_KEY || resolveToolGatewayRoute('web') !== null;
 }
 
 /**
@@ -68,7 +70,12 @@ async function firecrawlRequest<T>(
   endpoint: string,
   body: Record<string, unknown>,
 ): Promise<T> {
-  const url = `${FIRECRAWL_BASE_URL}${endpoint}`;
+  // Route through the Nous Tool Gateway when configured; otherwise call
+  // Firecrawl directly. The gateway token replaces the direct API key.
+  const route = resolveToolGatewayRoute('web');
+  const baseUrl = route?.baseUrl ?? FIRECRAWL_BASE_URL;
+  const authorization = route?.token ? `Bearer ${route.token}` : `Bearer ${getApiKey()}`;
+  const url = `${baseUrl}${endpoint}`;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), DEFAULT_TIMEOUT);
 
@@ -77,7 +84,7 @@ async function firecrawlRequest<T>(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `Bearer ${getApiKey()}`,
+        'Authorization': authorization,
       },
       body: JSON.stringify(body),
       signal: controller.signal,

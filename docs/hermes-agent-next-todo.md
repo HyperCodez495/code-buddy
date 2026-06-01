@@ -9,7 +9,11 @@ Source of truth:
 - Official audit: [`hermes-agent-official-parity-audit-2026-05-30.md`](hermes-agent-official-parity-audit-2026-05-30.md)
 
 Current measured state:
-- Feature parity manifest: 20 areas, 6 covered-partial, 13 partial, 1 gap.
+- Feature parity manifest: 20 areas, **0 remaining gaps** — OpenClaw migration is
+  now implemented via `buddy hermes claw migrate` (status `partial`: identity/memory/
+  default-model/MCP/skills imported, remaining categories archived for review;
+  fixture-tested, no real OpenClaw install validated). See `buddy hermes parity --json`
+  for the live covered/partial split.
 - Compact active TODO: `buddy hermes todo --json` derives the next feature
   work from the same manifest and keeps the deferred OpenClaw migration out of
   active work unless `--include-deferred` is passed.

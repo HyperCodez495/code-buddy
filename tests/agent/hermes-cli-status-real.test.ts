@@ -87,7 +87,7 @@ describe('Hermes CLI status real smoke', () => {
     expect(todo.deferred).toEqual([
       expect.objectContaining({
         id: 'openclaw-migration',
-        nextWork: expect.stringContaining('Do this at the end'),
+        nextWork: expect.stringContaining('full 30+ category set'),
       }),
     ]);
 

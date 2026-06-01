@@ -1,0 +1,217 @@
+import { Command } from 'commander';
+import fs from 'fs-extra';
+import os from 'os';
+import path from 'path';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+import {
+  detectOpenClawHome,
+  runClawMigration,
+  buildClawMigrationPlan,
+} from '../../src/agent/hermes-claw-migrate.js';
+import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
+import { SkillsHub } from '../../src/skills/hub.js';
+
+const SECRET_VALUE = 'tg-secret-value-do-not-leak';
+
+function skillContent(name: string): string {
+  return [
+    '---',
+    `name: ${name}`,
+    'version: 1.0.0',
+    `description: ${name} migrated from OpenClaw`,
+    'author: OpenClaw',
+    'tags:',
+    '  - migrated',
+    '---',
+    '',
+    `# ${name}`,
+    '',
+    'Body content.',
+    '',
+  ].join('\n');
+}
+
+function writeOpenClawFixture(home: string): void {
+  fs.ensureDirSync(home);
+  fs.writeFileSync(path.join(home, 'SOUL.md'), '# Persona\nI am the migrated OpenClaw persona.\n');
+  fs.writeFileSync(path.join(home, 'MEMORY.md'), '- OpenClaw remembered fact A\n- fact B\n');
+  fs.writeFileSync(path.join(home, 'USER.md'), '# User\nName: Patrice\n');
+  fs.writeFileSync(path.join(home, 'AGENTS.md'), '# Agents\nmigrated agent doc\n');
+  fs.writeJsonSync(path.join(home, 'clawdbot.json'), {
+    model: 'claude-sonnet-4-6',
+    thinkingLevel: 'high',
+    mcpServers: { files: { command: 'mcp-files', args: [] } },
+    providers: { customA: { baseURL: 'https://example.invalid' } },
+    channels: { telegram: { enabled: true } },
+    tts: { voice: 'alloy' },
+    cron: [{ schedule: '0 9 * * *', task: 'daily' }],
+    TELEGRAM_BOT_TOKEN: SECRET_VALUE,
+    apiKeys: { OPENAI_API_KEY: 'sk-also-secret' },
+  });
+  const skillDir = path.join(home, 'skills', 'demo-skill');
+  fs.ensureDirSync(skillDir);
+  fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent('demo-skill'));
+}
+
+describe('hermes claw migrate (real)', () => {
+  let tmp: string;
+  let openclaw: string;
+  let target: string;
+  let hub: SkillsHub;
+
+  beforeEach(() => {
+    tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'claw-migrate-'));
+    openclaw = path.join(tmp, '.openclaw');
+    target = path.join(tmp, 'project');
+    fs.ensureDirSync(target);
+    writeOpenClawFixture(openclaw);
+    hub = new SkillsHub({
+      skillsDir: path.join(tmp, 'hub', 'managed'),
+      cacheDir: path.join(tmp, 'hub', 'cache'),
+      lockfilePath: path.join(tmp, 'hub', 'lock.json'),
+      tapsPath: path.join(tmp, 'hub', 'taps.json'),
+    });
+  });
+
+  afterEach(() => {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  });
+
+  it('detects the OpenClaw home from an explicit source', () => {
+    expect(detectOpenClawHome({ source: openclaw })).toBe(path.resolve(openclaw));
+    expect(detectOpenClawHome({ source: path.join(tmp, 'nope') })).toBeNull();
+  });
+
+  it('plans a dry-run without writing anything', async () => {
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: false });
+
+    expect(report.detected).toBe(true);
+    expect(report.dryRun).toBe(true);
+    expect(report.applied).toBe(false);
+    expect(report.summary.import).toBeGreaterThan(0);
+
+    const categories = new Map(report.entries.map((e) => [e.category, e.action]));
+    expect(categories.get('persona')).toBe('import');
+    expect(categories.get('memory')).toBe('import');
+    expect(categories.get('model')).toBe('import');
+    expect(categories.get('mcp_servers')).toBe('import');
+    expect(report.entries.some((e) => e.category === 'skills' && e.action === 'import')).toBe(true);
+
+    // No writes on dry-run.
+    expect(fs.existsSync(path.join(target, 'SOUL.md'))).toBe(false);
+    expect(fs.existsSync(path.join(target, '.codebuddy'))).toBe(false);
+    expect(hub.list()).toHaveLength(0);
+  });
+
+  it('applies imports to real, consumer-backed destinations', async () => {
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
+
+    expect(report.applied).toBe(true);
+    expect(report.summary.failedCount).toBe(0);
+
+    // Identity files copied to the workspace.
+    expect(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf-8')).toContain('migrated OpenClaw persona');
+    expect(fs.readFileSync(path.join(target, 'USER.md'), 'utf-8')).toContain('Patrice');
+    expect(fs.readFileSync(path.join(target, 'AGENTS.md'), 'utf-8')).toContain('migrated agent doc');
+
+    // Memory appended to the project memory file.
+    const memory = fs.readFileSync(path.join(target, '.codebuddy', 'CODEBUDDY_MEMORY.md'), 'utf-8');
+    expect(memory).toContain('Migrated from OpenClaw');
+    expect(memory).toContain('OpenClaw remembered fact A');
+
+    // Settings written with model + mcpServers (the real consumers read these keys).
+    const settings = fs.readJsonSync(path.join(target, '.codebuddy', 'settings.json'));
+    expect(settings.model).toBe('claude-sonnet-4-6');
+    expect(settings.mcpServers.files).toBeTruthy();
+
+    // Skill installed into the injected hub.
+    expect(hub.list().map((s) => s.name)).toContain('demo-skill');
+
+    // Archive-for-review categories written, not applied to live config.
+    const archiveDir = path.join(target, '.codebuddy', 'openclaw-migration', 'archive');
+    expect(fs.existsSync(path.join(archiveDir, 'custom_providers.json'))).toBe(true);
+    expect(fs.existsSync(path.join(archiveDir, 'cron.json'))).toBe(true);
+  });
+
+  it('never leaks secret values and skips secrets without --migrate-secrets', async () => {
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
+
+    const secrets = report.entries.find((e) => e.category === 'secrets');
+    expect(secrets?.action).toBe('skip');
+    // Source names are surfaced, raw values never are.
+    expect(secrets?.detail).toContain('TELEGRAM_BOT_TOKEN');
+    expect(JSON.stringify(report)).not.toContain(SECRET_VALUE);
+
+    // No secrets review file when not requested.
+    const secretsFile = path.join(target, '.codebuddy', 'openclaw-migration', 'archive', 'secrets.json');
+    expect(fs.existsSync(secretsFile)).toBe(false);
+  });
+
+  it('archives secrets to a review file with --migrate-secrets (still not in the report)', async () => {
+    const report = await runClawMigration({
+      source: openclaw,
+      workspaceTarget: target,
+      skillsHub: hub,
+      apply: true,
+      migrateSecrets: true,
+    });
+
+    const secrets = report.entries.find((e) => e.category === 'secrets');
+    expect(secrets?.action).toBe('archive');
+    expect(JSON.stringify(report)).not.toContain(SECRET_VALUE);
+
+    const secretsFile = path.join(target, '.codebuddy', 'openclaw-migration', 'archive', 'secrets.json');
+    expect(fs.existsSync(secretsFile)).toBe(true);
+    // The review file is where the actual values live (for manual handling).
+    expect(fs.readFileSync(secretsFile, 'utf-8')).toContain('TELEGRAM_BOT_TOKEN');
+  });
+
+  it('honors --skill-conflict skip on a second apply', async () => {
+    await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
+    const second = await runClawMigration({
+      source: openclaw,
+      workspaceTarget: target,
+      skillsHub: hub,
+      apply: true,
+      skillConflict: 'skip',
+    });
+
+    const skill = second.entries.find((e) => e.category === 'skills' && e.label === 'skill:demo-skill');
+    expect(skill?.action).toBe('skip');
+    expect(hub.list().filter((s) => s.name === 'demo-skill')).toHaveLength(1);
+  });
+
+  it('reports a missing OpenClaw install gracefully', async () => {
+    const report = await runClawMigration({ source: path.join(tmp, 'absent'), apply: false });
+    expect(report.detected).toBe(false);
+    expect(report.entries).toHaveLength(0);
+    expect(report.notes.join(' ')).toMatch(/No OpenClaw installation/i);
+  });
+
+  it('builds a plan that is purely read-only', () => {
+    const entries = buildClawMigrationPlan({ source: openclaw, workspaceTarget: target });
+    expect(entries.length).toBeGreaterThan(0);
+    expect(fs.existsSync(path.join(target, '.codebuddy'))).toBe(false);
+  });
+
+  it('exposes `buddy hermes claw status --json` through the CLI', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync(['node', 'test', 'hermes', 'claw', 'status', '--source', openclaw, '--json']);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('hermes_claw_migration');
+      expect(payload.detected).toBe(true);
+      expect(payload.dryRun).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+});

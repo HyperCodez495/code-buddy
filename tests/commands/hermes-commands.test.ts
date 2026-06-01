@@ -1958,7 +1958,9 @@ describe('Hermes CLI commands', () => {
     expect(output.officialSource.auditDocument).toBe('docs/hermes-agent-official-parity-audit-2026-05-30.md');
     expect(output.summary.total).toBe(output.features.length);
     expect(output.summary.partial).toBeGreaterThan(0);
-    expect(output.summary.gaps).toBeGreaterThan(0);
+    // OpenClaw migration was the lone gap; `buddy hermes claw migrate` now closes it
+    // (status partial), so feature-level gaps are zero.
+    expect(output.summary.gaps).toBe(0);
     expect(output.features).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -2172,7 +2174,7 @@ describe('Hermes CLI commands', () => {
     expect(output.todos.map((item) => item.id)).toContain('runtime-backends');
     expect(output.todos.map((item) => item.id)).not.toContain('openclaw-migration');
     expect(output.deferred).toEqual([
-      expect.objectContaining({ id: 'openclaw-migration', status: 'gap' }),
+      expect.objectContaining({ id: 'openclaw-migration', status: 'partial' }),
     ]);
     expect(output.todos.every((item) => item.nextWork.length > 0)).toBe(true);
     expect(output.todos.every((item) => item.verificationCommand.length > 0)).toBe(true);
@@ -2212,7 +2214,7 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('1. Closed learning loop [partial]');
     expect(output).toContain('Verify: npm test -- tests/agent/lesson-candidate-queue.test.ts');
     expect(output).toContain('Deferred by decision:');
-    expect(output).toContain('OpenClaw migration [gap]');
+    expect(output).toContain('OpenClaw migration [partial]');
   });
 
   it('labels Hermes TODO output as selected work when deferred items are included', async () => {
@@ -2225,7 +2227,7 @@ describe('Hermes CLI commands', () => {
     expect(output).toMatch(/Showing: \d+\/\d+ active\/deferred item\(s\)/);
     expect(output).toContain('Next selected work:');
     expect(output).not.toContain('Next active work:');
-    expect(output).toContain('OpenClaw migration [gap]');
+    expect(output).toContain('OpenClaw migration [partial]');
   });
 
   it('prints real local Nous Portal readiness without leaking secrets', async () => {

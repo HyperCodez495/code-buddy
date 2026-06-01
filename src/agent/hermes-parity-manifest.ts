@@ -258,18 +258,26 @@ const FEATURES: HermesParityFeature[] = [
     officialSurface: 'OAuth setup, hermes portal status, gateway-routed Firecrawl/FAL/OpenAI TTS/Browser Use',
     codeBuddyEvidence: [
       'src/agent/hermes-portal-status.ts',
+      'src/agent/tool-gateway-router.ts',
+      'src/tools/firecrawl-tool.ts',
+      'src/tools/media-generation-tool.ts',
       'src/commands/cli/hermes-commands.ts',
-      'src/codebuddy/providers/',
-      'src/tools/',
     ],
     status: 'covered-partial',
     verificationCommands: [
+      'npm test -- tests/tools/tool-gateway-routing-real.test.ts --run',
       'npm test -- tests/commands/hermes-commands.test.ts --run',
       'npx tsx src/index.ts hermes portal status --json',
-      'npx tsx src/index.ts hermes portal tools --json',
     ],
-    notes: 'Code Buddy now exposes a Hermes-compatible local readiness surface for Nous Portal auth, subscription links, Tool Gateway configuration, managed-vs-direct routing, and the official Firecrawl/FAL/TTS/Browser Use/Modal catalog without printing secret values. It does not yet implement the upstream OAuth device-code flow or an actual Nous-managed proxy runtime.',
-    nextWork: 'Add live OAuth/device-code login and managed Tool Gateway proxy only after a product decision and credentials are available.',
+    notes:
+      'Beyond the readiness surface, Code Buddy now performs real token/self-hosted Tool Gateway routing: ' +
+      'when CODEBUDDY_NOUS_TOOL_GATEWAY_URL (or TOOL_GATEWAY_DOMAIN) + user token are configured and the tool is ' +
+      'in NOUS_MANAGED_TOOLS, web search/extraction (Firecrawl) and image/video generation calls are routed through ' +
+      'the gateway with the gateway token instead of the direct provider (src/agent/tool-gateway-router.ts). ' +
+      'The Nous-managed OAuth device-code flow and a Nous-hosted proxy runtime are intentionally not implemented (undocumented upstream).',
+    nextWork:
+      'Add live OAuth/device-code login and a managed Browser Use cloud runtime only after a product decision and the ' +
+      'official contract are available; remote TTS routing waits on a remote TTS tool.',
   },
   {
     id: 'memory-providers',
@@ -517,11 +525,26 @@ const FEATURES: HermesParityFeature[] = [
     id: 'openclaw-migration',
     area: 'OpenClaw migration',
     officialSurface: 'hermes claw migrate with 30+ migration categories',
-    codeBuddyEvidence: ['docs/', '.codebuddy/'],
-    status: 'gap',
-    verificationCommands: ['rg -n "claw migrate|OpenClaw|openclaw" src tests docs'],
-    notes: 'No equivalent migration command was found.',
-    nextWork: 'Do this at the end; the user explicitly deferred migration from OpenClaw until after the Hermes core is finished.',
+    codeBuddyEvidence: [
+      'src/agent/hermes-claw-migrate.ts',
+      'src/commands/cli/hermes-commands.ts',
+      'tests/agent/hermes-claw-migrate-real.test.ts',
+    ],
+    status: 'partial',
+    verificationCommands: [
+      'npm test -- tests/agent/hermes-claw-migrate-real.test.ts --run',
+      'npx tsx src/index.ts hermes claw status --json',
+      'rg -n "claw migrate|OpenClaw|openclaw" src tests docs',
+    ],
+    notes:
+      'Initial `buddy hermes claw migrate` is implemented against the documented OpenClaw layout ' +
+      '(`~/.openclaw`/`~/.clawdbot`/`~/.moltbot` + `clawdbot.json`). It imports identity files ' +
+      '(SOUL/USER/AGENTS), MEMORY.md, the default model, MCP servers, and skills to real ' +
+      'consumer-backed destinations; the remaining 30+ categories are archived for manual review. ' +
+      'Dry-run by default, secret-safe; fixture-tested, with no real OpenClaw install validated.',
+    nextWork:
+      'Expand imports toward the full 30+ category set and validate against a real OpenClaw install; ' +
+      'remaining completion stays deferred/optional.',
   },
 ];
 
@@ -628,7 +651,7 @@ export function buildHermesParityTodo(options: {
     deferred,
     notes: [
       'Derived from the same official Hermes feature parity manifest as `buddy hermes parity --json`.',
-      'OpenClaw migration is deferred by user decision and appended only after active work when --include-deferred is passed.',
+      'OpenClaw migration is deferred for full-parity completion (an initial `claw migrate` is implemented); the deferred remainder is appended only after active work when --include-deferred is passed.',
       'Each todo keeps one real verification command so the next agent can prove progress without relying on mocks.',
     ],
   };

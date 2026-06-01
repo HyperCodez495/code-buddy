@@ -31,6 +31,12 @@ import {
   type HermesProviderReadiness,
 } from '../../agent/hermes-agent-diagnostics.js';
 import {
+  runClawMigration,
+  renderClawMigrationReport,
+  type ClawMigrationPreset,
+  type SkillConflictMode,
+} from '../../agent/hermes-claw-migrate.js';
+import {
   buildHermesProtocolGatewayReadiness,
   renderHermesProtocolGatewayReadiness,
   renderHermesProtocolGatewaySmoke,
@@ -2062,6 +2068,76 @@ function registerHermesPortalCommands(hermes: Command): void {
     });
 }
 
+interface HermesClawMigrateOptions extends HermesCommandOptions {
+  source?: string;
+  workspaceTarget?: string;
+  preset?: string;
+  migrateSecrets?: boolean;
+  overwrite?: boolean;
+  skillConflict?: string;
+  backup?: boolean;
+  apply?: boolean;
+  yes?: boolean;
+}
+
+function registerHermesClawCommands(hermes: Command): void {
+  const claw = hermes
+    .command('claw')
+    .description('Migrate a legacy OpenClaw installation into Code Buddy');
+
+  claw
+    .command('migrate')
+    .description('Migrate OpenClaw config/data into Code Buddy (dry-run by default; --apply to write)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw, ~/.clawdbot, ~/.moltbot)')
+    .option('--workspace-target <path>', 'workspace target for identity files and .codebuddy (default: cwd)')
+    .option('--preset <preset>', 'full | user-data', 'full')
+    .option('--migrate-secrets', 'archive API keys/secrets to a 0600 review file (never injected into live config)')
+    .option('--overwrite', 'overwrite existing Code Buddy files on conflicts')
+    .option('--skill-conflict <mode>', 'skip | overwrite | rename', 'skip')
+    .option('--no-backup', 'skip the pre-migration snapshot')
+    .option('--apply', 'actually write changes (otherwise dry-run)')
+    .option('--yes', 'skip confirmation when applying')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawMigrateOptions) => {
+      const preset: ClawMigrationPreset = options.preset === 'user-data' ? 'user-data' : 'full';
+      const skillConflict: SkillConflictMode =
+        options.skillConflict === 'overwrite'
+          ? 'overwrite'
+          : options.skillConflict === 'rename'
+            ? 'rename'
+            : 'skip';
+      const report = await runClawMigration({
+        source: options.source,
+        workspaceTarget: options.workspaceTarget,
+        preset,
+        migrateSecrets: options.migrateSecrets === true,
+        overwrite: options.overwrite === true,
+        skillConflict,
+        backup: options.backup !== false,
+        apply: options.apply === true,
+      });
+      if (options.json) {
+        console.log(stableJson(report));
+        return;
+      }
+      console.log(renderClawMigrationReport(report));
+    });
+
+  claw
+    .command('status')
+    .description('Report whether an OpenClaw installation is detected, with a dry-run plan summary')
+    .option('--source <path>', 'OpenClaw home to probe')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawMigrateOptions) => {
+      const report = await runClawMigration({ source: options.source, apply: false });
+      if (options.json) {
+        console.log(stableJson(report));
+        return;
+      }
+      console.log(renderClawMigrationReport(report));
+    });
+}
+
 function registerHermesKanbanCommands(hermes: Command): void {
   const kanban = hermes
     .command('kanban')
@@ -2243,6 +2319,7 @@ export function registerHermesCommands(program: Command): void {
 
   registerHermesKanbanCommands(hermes);
   registerHermesPortalCommands(hermes);
+  registerHermesClawCommands(hermes);
 
   hermes
     .command('status')
