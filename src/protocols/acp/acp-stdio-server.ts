@@ -259,6 +259,11 @@ export class AcpStdioServer {
       return;
     }
 
+    if (isRequest && !isValidJsonRpcId(id)) {
+      this.write({ jsonrpc: '2.0', id: null, error: { code: -32600, message: 'Invalid Request' } });
+      return;
+    }
+
     if (isRequest && typeof method !== 'string') {
       this.write({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } });
       return;
@@ -550,6 +555,10 @@ function normalizeClientCapabilities(value: unknown): AcpClientCapabilities {
 function parseJsonRpcParams(value: unknown): Record<string, unknown> | undefined {
   if (value === undefined || value === null) return {};
   return asRecord(value);
+}
+
+function isValidJsonRpcId(value: unknown): boolean {
+  return value === null || typeof value === 'string' || typeof value === 'number';
 }
 
 function parsePromptContentBlocks(value: unknown): AcpContentBlock[] {

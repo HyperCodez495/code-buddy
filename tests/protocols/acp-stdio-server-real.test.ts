@@ -976,6 +976,20 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(response?.result.protocolVersion).toBe(ACP_PROTOCOL_VERSION);
   });
 
+  it('rejects JSON-RPC requests with non-scalar ids', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({ jsonrpc: '2.0', id: { bad: true }, method: 'session/list', params: {} });
+    await harness.flush();
+
+    const response = harness.messages.find((message) => message.id === null && message.error?.code === -32600);
+    expect(response?.error).toMatchObject({
+      code: -32600,
+      message: 'Invalid Request',
+    });
+    expect(harness.messages.some((message) => message.result?.sessions)).toBe(false);
+  });
+
   it('rejects non-object params on ACP requests instead of coercing them', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
 
