@@ -948,6 +948,19 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('rejects request envelopes that are not JSON-RPC 2.0', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({ id: 8, method: 'session/list', params: {} });
+    await harness.flush();
+
+    expect(harness.responseFor(8)?.error).toMatchObject({
+      code: -32600,
+      message: 'Invalid Request',
+    });
+    expect(harness.responseFor(8)?.result).toBeUndefined();
+  });
+
   it('responds to JSON-RPC requests that use a null id', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
 

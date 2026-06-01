@@ -249,6 +249,11 @@ export class AcpStdioServer {
     const method = msg.method;
     const rawParams = msg.params;
 
+    if (isRequest && msg.jsonrpc !== '2.0' && !('result' in msg || 'error' in msg)) {
+      this.write({ jsonrpc: '2.0', id, error: { code: -32600, message: 'Invalid Request' } });
+      return;
+    }
+
     if (isRequest && typeof method !== 'string' && ('result' in msg || 'error' in msg)) {
       this.handleClientResponse(String(id), msg);
       return;
