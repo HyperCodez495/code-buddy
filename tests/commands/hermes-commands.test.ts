@@ -246,6 +246,15 @@ describe('Hermes CLI commands', () => {
             partialCapabilityIds: string[];
             smokeCommand: string;
           };
+          trajectories: {
+            availableCapabilityIds: string[];
+            goldenFixtureCount: number;
+            missingCapabilityIds: string[];
+            partialCapabilityIds: string[];
+            policyEvalCount: number;
+            runProbeCommand: string;
+            statusCommand: string;
+          };
           messaging: {
             configuredPlatformNames: string[];
             nextConfigPlatformNames: string[];
@@ -302,6 +311,7 @@ describe('Hermes CLI commands', () => {
           runtime: string;
           smoke: string;
           todo: string;
+          trajectories: string;
         };
       };
 
@@ -338,6 +348,17 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.protocols.availableCapabilityIds).toEqual(expect.arrayContaining(['mcp-client', 'a2a-http']));
       expect(output.readiness.protocols.partialCapabilityIds).toEqual(['acp-editor-integration']);
       expect(output.readiness.protocols.missingCapabilityIds).toEqual([]);
+      expect(output.readiness.trajectories.statusCommand).toBe('buddy hermes trajectories status --json');
+      expect(output.readiness.trajectories.runProbeCommand).toBe(
+        'buddy hermes trajectories status --run-id <run-id> --json',
+      );
+      expect(output.readiness.trajectories.availableCapabilityIds).toEqual(
+        expect.arrayContaining(['trajectory-export', 'recall-pack', 'batch-trajectory-generation']),
+      );
+      expect(output.readiness.trajectories.partialCapabilityIds).toEqual([]);
+      expect(output.readiness.trajectories.missingCapabilityIds).toEqual([]);
+      expect(output.readiness.trajectories.goldenFixtureCount).toBeGreaterThan(0);
+      expect(output.readiness.trajectories.policyEvalCount).toBeGreaterThan(0);
       expect(output.readiness.messaging.statusCommand).toBe('buddy hermes messaging status --json');
       expect(output.readiness.messaging.configuredPlatformNames).toEqual([]);
       expect(output.readiness.messaging.runtimePlatformNames).toEqual([]);
@@ -369,6 +390,7 @@ describe('Hermes CLI commands', () => {
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
+        trajectories: 'buddy hermes trajectories status --json',
       });
       expect(raw).not.toContain('secret-overview-openai-key');
       expect(raw).not.toContain('secret-overview-nous-token');
@@ -402,11 +424,17 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Protocols: available');
       expect(textOutput).toContain('partial: acp-editor-integration');
       expect(textOutput).toContain('missing: none');
+      expect(textOutput).toContain('Trajectory recall: ok');
+      expect(textOutput).toContain('Trajectories: available');
+      expect(textOutput).toContain('trajectory-export');
+      expect(textOutput).toContain('golden=');
+      expect(textOutput).toContain('policy=');
       expect(textOutput).toContain('Skills:');
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');
+      expect(textOutput).toContain('Trajectories: buddy hermes trajectories status --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
       expect(textOutput).not.toContain('secret-overview-openai-key');

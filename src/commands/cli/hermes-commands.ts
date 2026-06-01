@@ -289,6 +289,7 @@ interface HermesOverviewStatus {
       provider: boolean;
       runtime: boolean;
       skills: boolean;
+      trajectories: boolean;
     };
   };
   readiness: {
@@ -375,6 +376,20 @@ interface HermesOverviewStatus {
       missingCapabilityIds: string[];
       smokeCommand: string;
     };
+    trajectories: {
+      ok: boolean;
+      total: number;
+      availableCount: number;
+      availableCapabilityIds: string[];
+      partialCount: number;
+      partialCapabilityIds: string[];
+      missingCount: number;
+      missingCapabilityIds: string[];
+      goldenFixtureCount: number;
+      policyEvalCount: number;
+      statusCommand: string;
+      runProbeCommand: string;
+    };
     memory: {
       ok: boolean;
       activeProviderId: string;
@@ -430,6 +445,7 @@ interface HermesOverviewStatus {
     smoke: string;
     todo: string;
     tools: string;
+    trajectories: string;
   };
   recommendations: string[];
 }
@@ -796,6 +812,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
   const skills = buildHermesSkillPackageSummary(process.cwd(), { limit: 5, previewChars: 0 });
   const messaging = await buildHermesMessagingGatewayStatus();
   const mobile = await buildHermesMobileSupervisionStatus();
+  const trajectories = buildHermesTrajectoryCompatibilityReport();
   const profileSuffix = diagnostics.dispatchProfile === 'balanced' ? '' : ` ${diagnostics.dispatchProfile}`;
   const recommendations = [
     ...diagnostics.recommendations,
@@ -805,6 +822,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
     ...protocols.recommendations,
     ...messaging.recommendations,
     ...mobile.recommendations,
+    ...trajectories.recommendations,
     ...memory.recommendations,
     ...learning.recommendations,
     ...(skills.health.ok ? [] : [`Run ${skills.health.nextCommand} to inspect skill package health.`]),
@@ -823,6 +841,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
     diagnostics.runtimeBackends.ok &&
     diagnostics.browserBackends.ok &&
     protocols.ok &&
+    trajectories.ok &&
     memory.ok &&
     learning.ok &&
     mobile.ok &&
@@ -850,6 +869,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
         provider: diagnostics.providerReadiness.ok,
         runtime: diagnostics.runtimeBackends.ok,
         skills: skills.health.ok,
+        trajectories: trajectories.ok,
       },
     },
     readiness: {
@@ -954,6 +974,26 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
           .map((capability) => capability.id),
         smokeCommand: protocols.smokeCommand,
       },
+      trajectories: {
+        ok: trajectories.ok,
+        total: trajectories.summary.total,
+        availableCount: trajectories.summary.availableCount,
+        availableCapabilityIds: trajectories.capabilities
+          .filter((capability) => capability.status === 'available')
+          .map((capability) => capability.id),
+        partialCount: trajectories.summary.partialCount,
+        partialCapabilityIds: trajectories.capabilities
+          .filter((capability) => capability.status === 'partial')
+          .map((capability) => capability.id),
+        missingCount: trajectories.summary.missingCount,
+        missingCapabilityIds: trajectories.capabilities
+          .filter((capability) => capability.status === 'missing')
+          .map((capability) => capability.id),
+        goldenFixtureCount: trajectories.summary.goldenFixtureCount,
+        policyEvalCount: trajectories.summary.policyEvalCount,
+        statusCommand: 'buddy hermes trajectories status --json',
+        runProbeCommand: 'buddy hermes trajectories status --run-id <run-id> --json',
+      },
       memory: {
         ok: memory.ok,
         activeProviderId: memory.activeProviderId,
@@ -1009,6 +1049,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       smoke: 'buddy hermes smoke --json',
       todo: 'buddy hermes todo --json',
       tools: 'buddy hermes tools --json',
+      trajectories: 'buddy hermes trajectories status --json',
     },
     recommendations,
   };
@@ -1024,6 +1065,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     ['Messaging gateway', status.summary.readiness.messaging],
     ['Mobile supervision', status.summary.readiness.mobile],
     ['Protocols', status.summary.readiness.protocols],
+    ['Trajectory recall', status.summary.readiness.trajectories],
     ['Memory', status.summary.readiness.memory],
     ['Learning loop', status.summary.readiness.learning],
     ['Skills', status.summary.readiness.skills],
@@ -1076,6 +1118,10 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Protocols: available ${formatList(readiness.protocols.availableCapabilityIds)} ` +
       `(partial: ${formatList(readiness.protocols.partialCapabilityIds)}, ` +
       `missing: ${formatList(readiness.protocols.missingCapabilityIds)})`,
+    `  Trajectories: available ${formatLimitedList(readiness.trajectories.availableCapabilityIds, 5)} ` +
+      `(partial: ${formatLimitedList(readiness.trajectories.partialCapabilityIds, 5)}, ` +
+      `missing: ${formatLimitedList(readiness.trajectories.missingCapabilityIds, 5)}, ` +
+      `golden=${readiness.trajectories.goldenFixtureCount}, policy=${readiness.trajectories.policyEvalCount})`,
     `  Skills: ${readiness.skills.enabledCount}/${readiness.skills.installedCount} enabled, ` +
       `candidates ${readiness.skills.eligibleCandidateCount} eligible / ` +
       `${readiness.skills.ineligibleCandidateCount} not eligible`,
@@ -1105,6 +1151,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Todo: ${status.commands.todo}`,
     `  Messaging: ${status.commands.messaging}`,
     `  Mobile: ${status.commands.mobile}`,
+    `  Trajectories: ${status.commands.trajectories}`,
     `  Aggregate local smoke: ${status.commands.smoke}`,
     `  Real runtime smoke: ${readiness.runtime.smokeCommand ?? 'n/a'}`,
     `  Real browser smoke: ${readiness.browser.smokeCommand ?? 'n/a'}`,
