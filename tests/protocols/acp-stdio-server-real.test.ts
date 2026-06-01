@@ -675,6 +675,18 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
   });
 
+  it('rejects request-style session/cancel for unknown sessions', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/cancel', params: { sessionId: 'missing-session' } });
+    await harness.flush();
+
+    expect(harness.responseFor(1)?.error).toMatchObject({
+      code: -32602,
+      message: 'Unknown or missing sessionId',
+    });
+  });
+
   it('rejects concurrent prompts for the same session', async () => {
     const runner: AcpPromptRunner = ({ signal }) =>
       new Promise((resolve) => {

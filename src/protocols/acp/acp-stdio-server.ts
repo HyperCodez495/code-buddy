@@ -257,8 +257,18 @@ export class AcpStdioServer {
     // `session/cancel` is commonly sent as a notification, but some JSON-RPC
     // clients include an id. Keep both forms interoperable.
     if (method === 'session/cancel') {
-      this.handleCancel(params);
-      if (isRequest) this.write({ jsonrpc: '2.0', id, result: null });
+      const cancelled = this.handleCancel(params);
+      if (isRequest) {
+        if (!cancelled) {
+          this.write({
+            jsonrpc: '2.0',
+            id,
+            error: { code: -32602, message: 'Unknown or missing sessionId' },
+          });
+          return;
+        }
+        this.write({ jsonrpc: '2.0', id, result: null });
+      }
       return;
     }
 
@@ -423,10 +433,12 @@ export class AcpStdioServer {
     }
   }
 
-  private handleCancel(params: Record<string, unknown>): void {
+  private handleCancel(params: Record<string, unknown>): boolean {
     const sessionId = asString(params.sessionId);
     const session = sessionId ? this.sessions.get(sessionId) : undefined;
+    if (!session) return false;
     session?.active?.abort();
+    return true;
   }
 
   private abortActiveSessions(): void {
