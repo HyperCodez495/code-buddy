@@ -24,7 +24,7 @@ import {
   type CustomAgentFile,
 } from './custom/custom-agent-loader.js';
 import { buildCustomAgentToolFilter } from './custom/custom-agent-tool-filter.js';
-import { buildHermesAgentProfile } from './hermes-agent-profile.js';
+import { buildHermesAgentProfile, type HermesRuntimeMapping } from './hermes-agent-profile.js';
 import {
   buildHermesPortalStatus,
   type HermesPortalStatus,
@@ -95,6 +95,7 @@ export interface HermesAgentDiagnostics {
   requireExplicitDispatchProfile: boolean;
   effectiveToolFilter: ToolFilterConfig;
   activeToolset: FleetHermesToolsetDescriptor;
+  runtimeMapping: HermesRuntimeMapping;
   dispatchProfileGuidance: FleetDispatchProfileGuidance[];
   nativeSurfaceIds: string[];
   promptChecks: HermesPromptChecks;
@@ -506,6 +507,7 @@ export function buildHermesAgentDiagnostics(
     requireExplicitDispatchProfile: agent?.requireExplicitDispatchProfile === true,
     effectiveToolFilter,
     activeToolset,
+    runtimeMapping: { ...hermesProfile.runtimeMapping },
     dispatchProfileGuidance: hermesProfile.dispatchProfileGuidance.map((guidance) => ({
       ...guidance,
     })),

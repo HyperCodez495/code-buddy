@@ -24,10 +24,20 @@ export interface HermesNativeSurface {
   purpose: string;
 }
 
+export interface HermesRuntimeMapping {
+  implementation: 'code-buddy-native';
+  codeBuddyRuntime: 'typescript-fleet';
+  upstreamRuntime: 'not-vendored';
+  upstreamLanguage: 'python';
+  compatibilityMode: 'semantic-mapping';
+  boundary: string;
+}
+
 export interface HermesAgentProfile {
   id: 'hermes';
   name: 'Hermes Agent';
   description: string;
+  runtimeMapping: HermesRuntimeMapping;
   defaultDispatchProfile: FleetDispatchProfile;
   dispatchProfileGuidance: FleetDispatchProfileGuidance[];
   toolsets: FleetHermesToolsetDescriptor[];
@@ -70,6 +80,15 @@ export interface HermesIntegrationPlan {
   interactionSurfaces: HermesInteractionSurface[];
   items: HermesIntegrationPlanItem[];
 }
+
+export const HERMES_RUNTIME_MAPPING: HermesRuntimeMapping = {
+  implementation: 'code-buddy-native',
+  codeBuddyRuntime: 'typescript-fleet',
+  upstreamRuntime: 'not-vendored',
+  upstreamLanguage: 'python',
+  compatibilityMode: 'semantic-mapping',
+  boundary: 'Hermes Agent concepts are mapped onto Code Buddy TypeScript/Fleet primitives; the upstream Python runtime is not embedded or impersonated.',
+};
 
 export const HERMES_NATIVE_SURFACES: HermesNativeSurface[] = [
   {
@@ -131,6 +150,7 @@ export function buildHermesAgentProfile(
     name: 'Hermes Agent',
     description:
       'Hermes-inspired Code Buddy profile for durable, toolset-aware autonomous work without leaving the TypeScript/Fleet runtime.',
+    runtimeMapping: { ...HERMES_RUNTIME_MAPPING },
     defaultDispatchProfile: profile,
     dispatchProfileGuidance: FLEET_DISPATCH_PROFILES.map((dispatchProfile) => ({
       ...FLEET_DISPATCH_PROFILE_GUIDANCE[dispatchProfile],

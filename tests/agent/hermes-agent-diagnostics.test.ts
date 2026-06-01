@@ -32,6 +32,13 @@ describe('Hermes Agent diagnostics', () => {
     expect(diagnostics.ok).toBe(true);
     expect(diagnostics.source).toBe('built-in');
     expect(diagnostics.activeToolset.toolsetId).toBe('fleet.hermes.safe');
+    expect(diagnostics.runtimeMapping).toMatchObject({
+      implementation: 'code-buddy-native',
+      codeBuddyRuntime: 'typescript-fleet',
+      upstreamRuntime: 'not-vendored',
+      upstreamLanguage: 'python',
+    });
+    expect(diagnostics.runtimeMapping.boundary).toContain('not embedded');
     expect(diagnostics.fleetDispatchProfile).toBe('balanced');
     expect(diagnostics.requireExplicitDispatchProfile).toBe(true);
     expect(diagnostics.effectiveToolFilter.enabledPatterns).toEqual(['view_file', 'web_search', 'web_fetch']);

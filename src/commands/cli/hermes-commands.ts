@@ -611,6 +611,7 @@ function buildHermesIdentityStatus(profileArg: string): {
     nativeSurfaces: string[];
     promptChecks: ReturnType<typeof buildHermesAgentDiagnostics>['promptChecks'];
     requireExplicitDispatchProfile: boolean;
+    runtimeMapping: ReturnType<typeof buildHermesAgentDiagnostics>['runtimeMapping'];
     source: string;
     userOverride: boolean;
   };
@@ -643,6 +644,7 @@ function buildHermesIdentityStatus(profileArg: string): {
       nativeSurfaces: diagnostics.nativeSurfaceIds,
       promptChecks: diagnostics.promptChecks,
       requireExplicitDispatchProfile: diagnostics.requireExplicitDispatchProfile,
+      runtimeMapping: diagnostics.runtimeMapping,
       source: diagnostics.source,
       userOverride: diagnostics.userOverride,
     },
@@ -664,6 +666,9 @@ function renderHermesIdentityStatus(status: ReturnType<typeof buildHermesIdentit
     `  Active dispatch profile: ${status.identity.dispatchProfile}`,
     `  Agent default dispatch profile: ${status.identity.fleetDispatchProfile ?? 'none'}`,
     `  Requires explicit delegation profile: ${status.identity.requireExplicitDispatchProfile ? 'yes' : 'no'}`,
+    `  Runtime mapping: ${status.identity.runtimeMapping.implementation} ` +
+      `(${status.identity.runtimeMapping.codeBuddyRuntime}; upstream ${status.identity.runtimeMapping.upstreamLanguage} ` +
+      `${status.identity.runtimeMapping.upstreamRuntime})`,
     `  Active toolset: ${status.identity.activeToolset}`,
     `  Native surfaces: ${formatList(status.identity.nativeSurfaces)}`,
     '  Prompt checks:',
@@ -2005,6 +2010,11 @@ export function registerHermesCommands(program: Command): void {
       console.log(`  ID: ${profile.id}`);
       console.log(`  Default Fleet profile: ${profile.defaultDispatchProfile}`);
       console.log(`  Description: ${profile.description}`);
+      console.log(
+        `  Runtime mapping: ${profile.runtimeMapping.implementation} ` +
+          `(${profile.runtimeMapping.codeBuddyRuntime}; upstream ${profile.runtimeMapping.upstreamLanguage} ` +
+          `${profile.runtimeMapping.upstreamRuntime})`,
+      );
       console.log('\nDispatch profile selection:');
       for (const guidance of profile.dispatchProfileGuidance) {
         console.log(`  ${guidance.profile}: ${guidance.useWhen}`);

@@ -70,12 +70,24 @@ describe('Hermes CLI commands', () => {
         defaultDispatchProfile: string;
         dispatchProfileGuidance: Array<{ profile: string; useWhen: string }>;
         nativeSurfaces: Array<{ id: string }>;
+        runtimeMapping: {
+          codeBuddyRuntime: string;
+          implementation: string;
+          upstreamLanguage: string;
+          upstreamRuntime: string;
+        };
         toolsets: Array<{ toolsetId: string }>;
       };
     };
 
     expect(output.profile.id).toBe('hermes');
     expect(output.profile.defaultDispatchProfile).toBe('review');
+    expect(output.profile.runtimeMapping).toMatchObject({
+      codeBuddyRuntime: 'typescript-fleet',
+      implementation: 'code-buddy-native',
+      upstreamLanguage: 'python',
+      upstreamRuntime: 'not-vendored',
+    });
     expect(output.profile.dispatchProfileGuidance).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ profile: 'code', useWhen: expect.stringContaining('implementation') }),
@@ -128,6 +140,11 @@ describe('Hermes CLI commands', () => {
           mentionsExternalRuntimeBoundary: boolean;
         };
         requireExplicitDispatchProfile: boolean;
+        runtimeMapping: {
+          codeBuddyRuntime: string;
+          implementation: string;
+          upstreamRuntime: string;
+        };
         source: string;
         userOverride: boolean;
       };
@@ -146,6 +163,11 @@ describe('Hermes CLI commands', () => {
         activeToolset: 'fleet.hermes.safe',
         dispatchProfile: 'safe',
         requireExplicitDispatchProfile: true,
+        runtimeMapping: {
+          codeBuddyRuntime: 'typescript-fleet',
+          implementation: 'code-buddy-native',
+          upstreamRuntime: 'not-vendored',
+        },
         source: 'built-in',
         userOverride: false,
       },
@@ -167,6 +189,7 @@ describe('Hermes CLI commands', () => {
     await textProgram.parseAsync(['node', 'test', 'hermes', 'id', 'status', 'safe']);
     const textOutput = getLogOutput();
     expect(textOutput).toContain('Hermes Agent identity: ok');
+    expect(textOutput).toContain('Runtime mapping: code-buddy-native');
     expect(textOutput).toContain('Active toolset: fleet.hermes.safe');
     expect(textOutput).toContain('Run: buddy --agent hermes');
     expect(textOutput).toContain('Doctor: buddy hermes doctor safe --json');
