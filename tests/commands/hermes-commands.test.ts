@@ -618,6 +618,12 @@ describe('Hermes CLI commands', () => {
               candidateId: string;
               eligible: boolean;
               inspectCommand: string;
+              promotion: {
+                reason: string;
+                status: string;
+                successfulRunCount: number;
+                threshold: number;
+              };
               skillName: string;
             }>;
           };
@@ -708,6 +714,12 @@ describe('Hermes CLI commands', () => {
           candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
           eligible: false,
           inspectCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
+          promotion: expect.objectContaining({
+            reason: expect.stringContaining('1/2 successful observations'),
+            status: 'not_eligible',
+            successfulRunCount: 1,
+            threshold: 2,
+          }),
           skillName: expect.any(String),
         }),
       ]);
@@ -999,6 +1011,12 @@ describe('Hermes CLI commands', () => {
               candidateId: string;
               eligible: boolean;
               kind: string;
+              promotion?: {
+                reason: string;
+                status: string;
+                successfulRunCount: number;
+                threshold: number;
+              };
               skillName: string;
             }>;
             totalCount: number;
@@ -1046,6 +1064,12 @@ describe('Hermes CLI commands', () => {
           candidateId: 'learning-skill-review-ready',
           eligible: true,
           kind: 'learning',
+          promotion: {
+            reason: '2 successful observations meet the promotion threshold.',
+            status: 'awaiting_human_approval',
+            successfulRunCount: 2,
+            threshold: 2,
+          },
           skillName: 'review-ready',
         }),
       ]);

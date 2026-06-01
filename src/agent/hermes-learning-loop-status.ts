@@ -135,6 +135,12 @@ export interface HermesLearningLoopSkillCandidateSample {
   candidateId: string;
   eligible: boolean;
   inspectCommand: string;
+  promotion: {
+    reason: string;
+    status: string;
+    successfulRunCount: number;
+    threshold: number;
+  };
   skillName: string;
 }
 
@@ -154,6 +160,8 @@ interface PatternLibraryFile {
 interface SkillCandidateReviewFile {
   candidateId?: unknown;
   eligible?: unknown;
+  promotionThreshold?: unknown;
+  reason?: unknown;
   skillName?: unknown;
   status?: unknown;
   successfulRunCount?: unknown;
@@ -275,21 +283,60 @@ function readLearningSkillCandidateSample(
     ? parsed.candidateId.trim()
     : fallbackId;
   const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
+  const promotion = readSkillCandidatePromotion(parsed);
   return {
     candidateId,
-    eligible: isLearningSkillCandidateEligible(parsed),
+    eligible: isLearningSkillCandidateEligible(parsed, promotion),
     inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
+    promotion,
     skillName,
   };
 }
 
-function isLearningSkillCandidateEligible(parsed: SkillCandidateReviewFile): boolean {
+function readSkillCandidatePromotion(
+  parsed: SkillCandidateReviewFile,
+): HermesLearningLoopSkillCandidateSample['promotion'] {
   const successfulRunCount = typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
     ? Math.trunc(parsed.successfulRunCount)
     : 1;
+  const threshold = typeof parsed.promotionThreshold === 'number' && Number.isFinite(parsed.promotionThreshold)
+    ? Math.max(1, Math.trunc(parsed.promotionThreshold))
+    : LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS;
+  const rawStatus = typeof parsed.status === 'string' && parsed.status.trim()
+    ? parsed.status.trim()
+    : parsed.eligible === true
+      ? 'awaiting_human_approval'
+      : 'not_eligible';
+  const status = parsed.eligible === true &&
+    rawStatus === 'awaiting_human_approval' &&
+    successfulRunCount >= threshold
+    ? 'awaiting_human_approval'
+    : 'not_eligible';
+  const fallbackReason = successfulRunCount >= threshold
+    ? `${successfulRunCount} successful observations meet the promotion threshold.`
+    : `${successfulRunCount}/${threshold} successful observations; candidate is not install-eligible yet.`;
+
+  return {
+    reason: normalizePromotionReason(parsed.reason, fallbackReason),
+    status,
+    successfulRunCount,
+    threshold,
+  };
+}
+
+function isLearningSkillCandidateEligible(
+  parsed: SkillCandidateReviewFile,
+  promotion: HermesLearningLoopSkillCandidateSample['promotion'] = readSkillCandidatePromotion(parsed),
+): boolean {
   return parsed.eligible === true &&
     parsed.status === 'awaiting_human_approval' &&
-    successfulRunCount >= LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS;
+    promotion.successfulRunCount >= promotion.threshold;
+}
+
+function normalizePromotionReason(value: unknown, fallback: string): string {
+  if (typeof value !== 'string' || value.trim().length === 0) return fallback;
+  const cleaned = value.trim().replace(/\s+/g, ' ');
+  return cleaned.length > 240 ? `${cleaned.slice(0, 237)}...` : cleaned;
 }
 
 function readPatternStats(workDir: string): HermesLearningLoopStatus['state']['patterns'] {
