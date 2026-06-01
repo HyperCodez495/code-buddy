@@ -4,6 +4,8 @@ import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const rootReadme = path.join(repoRoot, 'README.md');
+const coworkReadme = path.join(repoRoot, 'cowork', 'readme.md');
 const publicCoworkDoc = path.join(repoRoot, 'docs', 'cowork.md');
 const publicCoworkQaDir = path.join(repoRoot, 'docs', 'qa', 'code-buddy-studio');
 
@@ -32,5 +34,18 @@ describe('Cowork public QA documentation privacy', () => {
     const text = fs.readFileSync(publicCoworkDoc, 'utf8');
     expect(text).not.toMatch(/[A-Z]:\\(?:Users|CascadeProjects)\\/i);
     expect(text).not.toMatch(/\/(?:Users|home)\/[^\s`]+/);
+  });
+
+  it('keeps the public Cowork overview reachable from GitHub entry points', () => {
+    const rootReadmeText = fs.readFileSync(rootReadme, 'utf8');
+    const coworkReadmeText = fs.readFileSync(coworkReadme, 'utf8');
+    const publicCoworkText = fs.readFileSync(publicCoworkDoc, 'utf8');
+
+    expect(rootReadmeText).toContain('[Cowork Desktop](docs/cowork.md)');
+    expect(coworkReadmeText).toContain('[`docs/cowork.md`](../docs/cowork.md)');
+    expect(publicCoworkText).toContain('## Real Validation');
+    expect(publicCoworkText).toContain('COWORK_REAL_GPT55');
+    expect(publicCoworkText).toContain('CODEBUDDY_REAL_GPT55_SERVER');
+    expect(publicCoworkText).toContain('## Screenshot And Privacy Policy');
   });
 });
