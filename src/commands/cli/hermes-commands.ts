@@ -928,7 +928,11 @@ function renderHermesProviderReadiness(readiness: HermesProviderReadiness): stri
     lines.push('Providers:');
     for (const provider of readiness.providers) {
       const state = provider.configured ? 'configured' : provider.local ? 'local fallback' : 'missing';
-      lines.push(`  - ${provider.label}: ${state}`);
+      const readinessFlags = `configured=${provider.configured ? 'yes' : 'no'}, local=${provider.local ? 'yes' : 'no'}`;
+      lines.push(`  - ${provider.label}: ${state} | ${readinessFlags}`);
+      for (const note of provider.notes) {
+        lines.push(`    note: ${note}`);
+      }
     }
   }
 

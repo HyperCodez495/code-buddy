@@ -779,7 +779,7 @@ describe('Hermes CLI commands', () => {
   });
 
   it('prints Hermes provider readiness as a dedicated status command without leaking secrets', async () => {
-    const keys = ['CODEBUDDY_MODEL', 'OPENAI_API_KEY', 'CODEBUDDY_NOUS_ACCESS_TOKEN'];
+    const keys = ['CODEBUDDY_MODEL', 'OPENAI_API_KEY', 'CODEBUDDY_NOUS_ACCESS_TOKEN', 'OLLAMA_HOST'];
     const originalEnv = new Map(keys.map((key) => [key, process.env[key]]));
     const program = createProgram();
     registerHermesCommands(program);
@@ -791,6 +791,7 @@ describe('Hermes CLI commands', () => {
       process.env.CODEBUDDY_MODEL = 'gpt-5.5';
       process.env.OPENAI_API_KEY = 'secret-openai-provider-key';
       process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-nous-provider-token';
+      process.env.OLLAMA_HOST = 'http://127.0.0.1:11434';
 
       await program.parseAsync(['node', 'test', 'hermes', 'provider', 'status', '--json']);
 
@@ -828,6 +829,19 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.providers.length).toBeGreaterThan(0);
       expect(raw).not.toContain('secret-openai-provider-key');
       expect(raw).not.toContain('secret-nous-provider-token');
+
+      consoleLogSpy.mockClear();
+      const textProgram = createProgram();
+      registerHermesCommands(textProgram);
+      await textProgram.parseAsync(['node', 'test', 'hermes', 'provider', 'status']);
+
+      const textOutput = getLogOutput();
+      expect(textOutput).toContain('OpenAI / Codex-compatible: configured | configured=yes, local=no');
+      expect(textOutput).toContain('Ollama local: configured | configured=yes, local=yes');
+      expect(textOutput).toContain('note: Local provider; readiness means the endpoint is configured, not that a model pull was tested.');
+      expect(textOutput).toContain('Anthropic / Claude: missing | configured=no, local=no');
+      expect(textOutput).not.toContain('secret-openai-provider-key');
+      expect(textOutput).not.toContain('secret-nous-provider-token');
     } finally {
       for (const key of keys) {
         const value = originalEnv.get(key);
