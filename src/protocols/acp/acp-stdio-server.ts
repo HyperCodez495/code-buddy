@@ -534,10 +534,13 @@ function parsePromptContentBlocks(value: unknown): AcpContentBlock[] {
     if (!record || typeof record.type !== 'string' || record.type.trim() === '') {
       throw invalidParamsError(`Invalid prompt content block at index ${index}`);
     }
+    if (record.type !== 'text') {
+      throw invalidParamsError(`Unsupported prompt content block type at index ${index}: ${record.type}`);
+    }
     if ('text' in record && record.text !== undefined && typeof record.text !== 'string') {
       throw invalidParamsError(`Invalid prompt content block at index ${index}`);
     }
-    if (record.type === 'text' && typeof record.text !== 'string') {
+    if (typeof record.text !== 'string') {
       throw invalidParamsError(`Invalid prompt content block at index ${index}`);
     }
 

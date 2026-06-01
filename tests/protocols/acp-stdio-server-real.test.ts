@@ -776,6 +776,32 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
   });
 
+  it('rejects unsupported session/prompt content block types before running the prompt', async () => {
+    let called = false;
+    harness = new AcpHarness(async () => {
+      called = true;
+      return { stopReason: 'end_turn' };
+    });
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'image', url: 'file:///tmp/private.png' }] },
+    });
+    await harness.flush();
+
+    expect(called).toBe(false);
+    expect(harness.responseFor(2)?.error).toMatchObject({
+      code: -32602,
+      message: 'Unsupported prompt content block type at index 0: image',
+    });
+  });
+
   it('cancels an in-flight turn via the session/cancel notification', async () => {
     const runner: AcpPromptRunner = ({ signal }) =>
       new Promise((resolve) => {
