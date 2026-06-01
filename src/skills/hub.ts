@@ -1598,7 +1598,7 @@ export class SkillsHub extends EventEmitter {
         truncated: linePreview.length > preview.length || diff.diff.split('\n').length > maxLines,
       },
       fromVersion: installed.version,
-      installCommand: `skill_manage action=update name=${skillName} approved_by=<reviewer>${resolvedVersion ? ` version=${resolvedVersion}` : ''}`,
+      installCommand: `buddy skills update ${skillName} --approved-by <reviewer>${resolvedVersion ? ` --version ${resolvedVersion}` : ''}`,
       name: skillName,
       remoteChecksum,
       sameContent: currentChecksum === remoteChecksum,

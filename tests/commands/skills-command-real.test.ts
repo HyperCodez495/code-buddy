@@ -754,6 +754,7 @@ describe('buddy skills command with real SkillsHub state', () => {
     const preview = JSON.parse(getLogOutput()) as {
       diff: { addedLines: number; preview: string; removedLines: number };
       fromVersion: string;
+      installCommand: string;
       sameContent: boolean;
       toVersion: string;
       updateAvailable: boolean;
@@ -765,10 +766,89 @@ describe('buddy skills command with real SkillsHub state', () => {
       toVersion: '0.2.0',
       updateAvailable: true,
     });
+    expect(preview.installCommand).toBe('buddy skills update preview-helper --approved-by <reviewer> --version 0.2.0');
     expect(preview.diff.addedLines).toBeGreaterThan(0);
     expect(preview.diff.removedLines).toBeGreaterThan(0);
     expect(preview.diff.preview).toContain('New reviewed workflow.');
     expect(await fs.readFile(installed.path, 'utf8')).toBe(installedContent);
+  });
+
+  it('updates an installed skill from a real cache only after reviewer approval', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      registryUrl: 'http://127.0.0.1:9/api/v1',
+      skillsDir: path.join(tempHome, 'skills'),
+      tapsPath: path.join(tempHome, 'taps.json'),
+    });
+    const installedContent = skillContent('update-cli-helper', '0.1.0', 'Old update workflow.');
+    const remoteContent = skillContent('update-cli-helper', '0.2.0', 'New approved update workflow.');
+    const installed = await hub.installFromContent('update-cli-helper', installedContent);
+    await fs.mkdir(path.join(tempHome, 'cache'), { recursive: true });
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'registry-cache.json'),
+      `${JSON.stringify({
+        skills: [{
+          name: 'update-cli-helper',
+          version: '0.2.0',
+          description: 'Update CLI helper update.',
+          author: 'test',
+          tags: ['update'],
+          downloads: 0,
+          stars: 0,
+          updatedAt: '2026-06-01T12:09:00.000Z',
+          checksum: 'update-cli-helper-cache-entry',
+          size: Buffer.byteLength(remoteContent, 'utf8'),
+        }],
+      }, null, 2)}\n`,
+      'utf8',
+    );
+    await fs.writeFile(
+      path.join(tempHome, 'cache', 'update-cli-helper@0.2.0.skill.md'),
+      remoteContent,
+      'utf8',
+    );
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'update',
+      'update-cli-helper',
+      '--approved-by',
+      'operator-update',
+      '--reason',
+      'apply reviewed cache update',
+      '--json',
+    ]);
+
+    const result = JSON.parse(getLogOutput()) as {
+      approvedBy: string;
+      fromVersion: string;
+      installed: { lifecycle: { reason: string; updatedBy: string }; name: string; version: string };
+      snapshot: { id: string };
+      toVersion: string;
+      updated: boolean;
+    };
+
+    expect(result).toMatchObject({
+      approvedBy: 'operator-update',
+      fromVersion: '0.1.0',
+      installed: {
+        lifecycle: {
+          reason: 'apply reviewed cache update',
+          updatedBy: 'operator-update',
+        },
+        name: 'update-cli-helper',
+        version: '0.2.0',
+      },
+      toVersion: '0.2.0',
+      updated: true,
+    });
+    expect(result.snapshot.id).toBeTruthy();
+    await expect(fs.readFile(installed.path, 'utf8')).resolves.toContain('New approved update workflow.');
+    expect(hub.getInstalledSkillHistory('update-cli-helper')?.rollbackableCount).toBe(1);
   });
 
   it('resets a tampered installed skill from a real cache only after reviewer approval', async () => {

@@ -12,6 +12,7 @@
  *   buddy skills usage [--json]
  *   buddy skills learning-usage [--json]
  *   buddy skills update-preview <name>
+ *   buddy skills update <name> --approved-by <reviewer>
  *   buddy skills reset <name> --approved-by <reviewer>
  *   buddy skills enable <name> --approved-by <reviewer>
  *   buddy skills disable <name> --approved-by <reviewer>
@@ -360,11 +361,59 @@ export function registerSkillsCommands(program: Command): void {
       const state = preview.updateAvailable ? 'update available' : 'no newer version';
       console.log(`${preview.name}: ${preview.fromVersion} -> ${preview.toVersion} (${state})`);
       console.log(`checksums: ${preview.currentChecksum.slice(0, 12)} -> ${preview.remoteChecksum.slice(0, 12)}`);
-      console.log(`next: ${preview.installCommand}`);
+      const nextCommand = `buddy skills update ${preview.name} --approved-by <reviewer>${opts.version ? ` --version ${opts.version}` : ''}`;
+      console.log(`next: ${nextCommand}`);
       console.log('');
       console.log(preview.diff.preview);
       if (preview.diff.truncated) {
         console.log('\n[diff preview truncated]');
+      }
+    });
+
+  skills
+    .command('update <name>')
+    .description('Update an installed skill to a hub/cache-backed version')
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the update')
+    .option('--reason <reason>', 'review reason')
+    .option('--version <version>', 'target version to install; defaults to latest known hub/cache version')
+    .option('--force', 'allow reinstalling the same or an older version')
+    .option('--json', 'output JSON')
+    .action(async (
+      name: string,
+      opts: { approvedBy: string; force?: boolean; json?: boolean; reason?: string; version?: string },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      try {
+        const result = await getSkillsHub().updateInstalledSkill(name, {
+          actor: opts.approvedBy,
+          force: opts.force === true,
+          reason: opts.reason,
+          version: opts.version,
+        });
+        if (!result) {
+          const message = `Skill not found: ${name}`;
+          if (opts.json) {
+            console.log(JSON.stringify({ approvedBy: opts.approvedBy, error: message, name, updated: false }, null, 2));
+          } else {
+            console.error(message);
+          }
+          process.exit(1);
+          return;
+        }
+        if (opts.json) {
+          console.log(JSON.stringify({ ...result, approvedBy: opts.approvedBy, updated: true }, null, 2));
+          return;
+        }
+        console.log(`Skill updated: ${result.installed.name} ${result.fromVersion} -> ${result.toVersion}`);
+        console.log(`snapshot: ${result.snapshot.id}`);
+      } catch (error) {
+        const message = `Skill update failed: ${error instanceof Error ? error.message : String(error)}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ approvedBy: opts.approvedBy, error: message, name, updated: false }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
       }
     });
 
