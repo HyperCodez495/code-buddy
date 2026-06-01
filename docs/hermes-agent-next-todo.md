@@ -95,7 +95,7 @@ Current measured state:
 
 - [x] **Add one-command Hermes readiness and local smoke surfaces**
   - Why: Hermes evidence was available, but operators had to stitch together `todo`, `tools`, `providers`, `runtime`, `browser`, `protocols`, `memory`, `learning`, and `skills` commands by hand.
-  - Done: `buddy hermes status [profile]` now aggregates feature parity, tool parity, identity, provider/model readiness, runtime route, browser route, protocol gateways, memory providers, Learning Agent review queues, skill-package health, next active Hermes work, and the exact follow-up commands. `buddy hermes smoke --json` runs the safe local-first smoke suite in one command: auto runtime, auto browser, and local MCP/A2A/ACP protocol gateways. The JSON output intentionally keeps credential source names only and sanitizes local credential file paths to the basename.
+  - Done: `buddy hermes status [profile]` now aggregates feature parity, tool parity, identity, provider/model readiness, runtime route, browser route, protocol gateways, memory providers, Learning Agent review queues, skill-package health, next active Hermes work, and the exact follow-up commands. `buddy hermes smoke --json` runs the safe local-first smoke suite in one command: auto runtime, auto browser, and local MCP/A2A/ACP protocol gateways. Cowork Fleet exposes the same local proof as the "Hermes local smoke" strip through `tools.hermesLocalSmoke.run`, showing counts/status only. The JSON and UI output intentionally keep credential source names only and avoid raw trace paths, credential values, or account details.
   - Verification:
     - `npx tsx src/index.ts hermes status safe --json`
     - `npx tsx src/index.ts hermes status safe`
@@ -105,6 +105,7 @@ Current measured state:
     - `npm run typecheck`
     - `npx tsx src/index.ts hermes runtime-smoke auto --json`
     - `npx tsx src/index.ts hermes browser-smoke auto --json`
+    - `cd cowork && npm test -- --run tests/hermes-local-smoke-bridge.test.ts tests/hermes-local-smoke-strip.test.ts tests/fleet-command-center-board.test.ts`
 
 - [ ] **Expose provider/model readiness for Hermes**
   - Why: the provider stack is broad, but Hermes-oriented setup/status is still scattered.

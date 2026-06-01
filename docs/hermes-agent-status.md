@@ -15,6 +15,10 @@ OpenClaw gap without leaving the cockpit.
 For CLI triage, `buddy hermes todo --json` now gives the compact active Hermes
 TODO list from the same manifest and keeps OpenClaw out of active work by
 default.
+The local proof path is now one command in CLI and one card in Cowork:
+`buddy hermes status`, `buddy hermes smoke`, and the Cowork Fleet "Hermes local
+smoke" strip all report aggregate readiness without publishing raw traces,
+credential values, or account details.
 
 This is the "what implements what" map for the Hermes agent inside Code Buddy.
 Code Buddy does **not** vendor Hermes' Python; it maps the Hermes product
@@ -107,6 +111,7 @@ change-control surface.
 | Profile inspector | `buddy tools profile <id> --json` | done |
 | Tool parity catalog | `buddy hermes tools --json`; Cowork Fleet Hermes tool catalog strip | done — CLI and Cowork share the same local manifest and show exact/native/partial/gap counts plus prioritized gaps; current measured tool parity is 65 exact, 6 native-equivalent, 0 partial, 0 gaps |
 | Native Fleet/Hermes toolset catalog | `buddy hermes toolsets [profile] --json`; Fleet dispatch profile descriptors | done — shows all five `fleet.hermes.*` toolsets, the active profile, policy group boundaries, and representative allow/confirm/deny decisions without requiring the wider doctor payload |
+| Aggregate readiness and local smoke | `buddy hermes status [profile]`; `buddy hermes smoke --json`; Cowork Fleet Hermes local smoke strip via `tools.hermesLocalSmoke.run` | done — combines feature/tool/provider/runtime/browser/protocol/memory/learning/skills readiness and the safe local-first runtime/browser/protocol smoke; Cowork shows pass/fail counts and route totals without raw stdout, trace paths, credential values, or account details |
 | Provider/model readiness | `src/agent/hermes-agent-diagnostics.ts`; `buddy hermes providers status --json`; `buddy hermes doctor --json`; `cowork/src/main/tools/hermes-provider-readiness-bridge.ts`; `cowork/src/renderer/components/hermes-provider-readiness-strip.tsx` | covered/partial — active model source, inferred provider, env/OAuth credential source names, tool-call/reasoning/vision flags, context/output limits, Nous Portal status, remediation hints, and Cowork rendering in Settings -> API plus Fleet Command Center |
 | Nous Portal readiness | `src/agent/hermes-portal-status.ts`; `buddy hermes portal status|tools|open`; embedded in `buddy hermes doctor --json` | covered/partial — local auth/source readiness, subscription/docs links, Tool Gateway URL/flag detection, managed-vs-direct routing for Firecrawl/FAL/TTS/Browser Use/Modal, and no secret-value output; no live OAuth device-code or Nous proxy runtime yet |
 | Memory provider readiness | `src/agent/hermes-memory-providers.ts`; `buddy hermes memory status --json`; `cowork/src/main/tools/hermes-memory-providers-bridge.ts`; `cowork/src/renderer/components/hermes-memory-providers-strip.tsx` | partial — local memory plus Mem0/Honcho/Supermemory adapters are registered and now surfaced in CLI/Cowork with active provider, credential source names only, local-fallback status, and missing official adapters; OpenViking/Hindsight/Holographic/RetainDB/ByteRover remain future adapters |
