@@ -318,7 +318,10 @@ Agent candidates under `.codebuddy/skill-candidates/learning/`; `install`
 requires `--approved-by` and copies the reviewed file into `.codebuddy/skills/`.
 Learning Agent candidates are generated with Hermes-style SKILL.md frontmatter
 (`author`, `license`, `platforms`, `metadata.hermes`) so they are reviewable
-before becoming active workspace skills.
+before becoming active workspace skills. Learning Agent candidates are visible
+after the first real trajectory, but they are not install-eligible until the
+same workflow has at least two successful observations and the pattern library
+marks it reinforced.
 
 ### Knowledge and Memory
 

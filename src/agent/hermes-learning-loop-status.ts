@@ -156,8 +156,10 @@ interface SkillCandidateReviewFile {
   eligible?: unknown;
   skillName?: unknown;
   status?: unknown;
+  successfulRunCount?: unknown;
 }
 
+const LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS = 2;
 const RETROSPECTIVE_READY_STATUSES = new Set<RunSummary['status']>([
   'completed',
   'failed',
@@ -282,10 +284,12 @@ function readLearningSkillCandidateSample(
 }
 
 function isLearningSkillCandidateEligible(parsed: SkillCandidateReviewFile): boolean {
-  if (typeof parsed.eligible === 'boolean') {
-    return parsed.eligible;
-  }
-  return parsed.status === 'awaiting_human_approval';
+  const successfulRunCount = typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
+    ? Math.trunc(parsed.successfulRunCount)
+    : 1;
+  return parsed.eligible === true &&
+    parsed.status === 'awaiting_human_approval' &&
+    successfulRunCount >= LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS;
 }
 
 function readPatternStats(workDir: string): HermesLearningLoopStatus['state']['patterns'] {

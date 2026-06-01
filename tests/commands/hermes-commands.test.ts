@@ -656,7 +656,7 @@ describe('Hermes CLI commands', () => {
           sampleIds: expect.arrayContaining([expect.stringMatching(/^lc-/)]),
         }),
         expect.objectContaining({
-          command: 'buddy tools skill-candidate list --eligible-only --json',
+          command: 'buddy tools skill-candidate list --json',
           kind: 'skill_candidate',
           nextReviewCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
           pendingCount: 1,
@@ -706,7 +706,7 @@ describe('Hermes CLI commands', () => {
       expect(output.state.skillCandidates.samples).toEqual([
         expect.objectContaining({
           candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
-          eligible: true,
+          eligible: false,
           inspectCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
           skillName: expect.any(String),
         }),
@@ -820,8 +820,9 @@ describe('Hermes CLI commands', () => {
         skillName,
         sourceJobId: 'learning-agent',
         sourceRunId: 'run-mixed-candidates',
+        eligible: status === 'awaiting_human_approval',
         status,
-        successfulRunCount: status === 'awaiting_human_approval' ? 1 : 0,
+        successfulRunCount: status === 'awaiting_human_approval' ? 2 : 0,
       }, null, 2));
     }
 
@@ -898,8 +899,9 @@ describe('Hermes CLI commands', () => {
         skillName,
         sourceJobId: 'learning-agent',
         sourceRunId: 'run-text-candidates',
+        eligible: status === 'awaiting_human_approval',
         status,
-        successfulRunCount: status === 'awaiting_human_approval' ? 1 : 0,
+        successfulRunCount: status === 'awaiting_human_approval' ? 2 : 0,
       }, null, 2));
     }
 
@@ -960,7 +962,7 @@ describe('Hermes CLI commands', () => {
         sourceJobId: 'learning-agent',
         sourceRunId: 'run-skills-status',
         status: 'awaiting_human_approval',
-        successfulRunCount: 1,
+        successfulRunCount: 2,
       }, null, 2));
 
       const program = createProgram();

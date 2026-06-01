@@ -10,6 +10,7 @@ import type { ResearchScriptJobRunResult } from './research-script-job-runner.js
 export const RESEARCH_SCRIPT_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION = 1;
 const SKILL_CANDIDATE_DIFF_PREVIEW_CHARS = 900;
 const SKILL_CANDIDATE_DIFF_PREVIEW_LINES = 32;
+const LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS = 2;
 
 export type MaterializedSkillCandidateKind = 'research-script' | 'learning';
 
@@ -580,17 +581,20 @@ function parseReviewManifest(raw: string): ResearchScriptSkillCandidateReviewMan
   };
 
   if (typeof parsed.sourceRunId === 'string' && parsed.sourceRunId.trim().length > 0) {
-    const status = parsed.status === 'not_eligible' ? 'not_eligible' : 'awaiting_human_approval';
+    const successfulRunCount = typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
+      ? Math.trunc(parsed.successfulRunCount)
+      : 1;
+    const eligible = parsed.eligible === true &&
+      parsed.status === 'awaiting_human_approval' &&
+      successfulRunCount >= LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS;
     return {
       ...base,
-      eligible: status === 'awaiting_human_approval',
+      eligible,
       kind: 'learning',
       sourceJobId: '',
       sourceRunId: parsed.sourceRunId.trim(),
-      status,
-      successfulRunCount: typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
-        ? Math.trunc(parsed.successfulRunCount)
-        : 1,
+      status: eligible ? 'awaiting_human_approval' : 'not_eligible',
+      successfulRunCount,
       toolSequence: normalizeToolSequence(parsed.toolSequence),
     };
   }

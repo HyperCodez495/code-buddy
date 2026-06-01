@@ -9,6 +9,8 @@ import {
 } from '../skills/hub.js';
 import { safeWorkspacePath } from './hermes-public-paths.js';
 
+const LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS = 2;
+
 export type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 export type HermesSkillPackageLifecycleAction = 'enable' | 'disable' | 'deprecate';
 
@@ -248,7 +250,7 @@ function readSkillCandidateSamples(
       const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
       samples.push({
         candidateId,
-        eligible: parsed.eligible === true || parsed.status === 'awaiting_human_approval',
+        eligible: isCandidateReviewEligible(parsed, kind),
         inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
         kind,
         skillName,
@@ -258,6 +260,20 @@ function readSkillCandidateSamples(
     }
   }
   return samples;
+}
+
+function isCandidateReviewEligible(parsed: Record<string, unknown>, kind: string): boolean {
+  if (kind !== 'learning') {
+    if (typeof parsed.eligible === 'boolean') return parsed.eligible;
+    return parsed.status === 'awaiting_human_approval';
+  }
+
+  const successfulRunCount = typeof parsed.successfulRunCount === 'number' && Number.isFinite(parsed.successfulRunCount)
+    ? Math.trunc(parsed.successfulRunCount)
+    : 1;
+  return parsed.eligible === true &&
+    parsed.status === 'awaiting_human_approval' &&
+    successfulRunCount >= LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS;
 }
 
 function findCandidateReviewFiles(root: string): string[] {

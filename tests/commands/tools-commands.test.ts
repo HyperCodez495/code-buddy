@@ -115,11 +115,13 @@ async function materializeLearningSkillCandidate(rootDir: string): Promise<strin
     `${JSON.stringify({
       approvalRequired: true,
       candidateId: 'learning-skill-real-review',
+      eligible: true,
       generatedAt: '2026-05-30T13:50:00.000Z',
       schemaVersion: 1,
       skillName: 'learned-real-review',
       sourceRunId: 'run-real-review',
       status: 'awaiting_human_approval',
+      successfulRunCount: 2,
       toolSequence: ['search', 'view_file', 'bash'],
     }, null, 2)}\n`,
     'utf8',

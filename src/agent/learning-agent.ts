@@ -270,11 +270,15 @@ export interface LearningAgentRunResult {
 interface LearningSkillCandidateReviewManifest {
   approvalRequired: true;
   candidateId: string;
+  eligible: boolean;
   generatedAt: string;
+  promotionThreshold: number;
+  reason: string;
   schemaVersion: typeof LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION;
   skillName: string;
   sourceRunId: string;
   status: 'awaiting_human_approval' | 'not_eligible';
+  successfulRunCount: number;
   toolSequence: string[];
 }
 
@@ -282,6 +286,7 @@ const LEARNING_DIR = path.join('.codebuddy', 'learning');
 const SKILL_CANDIDATE_ROOT = path.join('.codebuddy', 'skill-candidates', 'learning');
 const MIN_COMPLEX_TOOL_CALLS = 3;
 const MIN_PATTERN_SEQUENCE_LENGTH = 3;
+const MIN_SKILL_CANDIDATE_OBSERVATIONS = 2;
 
 export function buildLearningRetrospective(
   runId: string,
@@ -892,11 +897,22 @@ function materializeLearningSkillCandidates(
   workDir: string,
 ): LearningSkillCandidate[] {
   const materialized: LearningSkillCandidate[] = [];
+  const patternLibrary = readPatternLibrary(path.join(workDir, LEARNING_DIR, 'pattern-library.json'));
   for (const candidate of retrospective.skillCandidates) {
-    if (!candidate.eligible) continue;
+    const patternRecord = patternLibrary.patterns.find((record) => record.key === patternKey(candidate.toolSequence));
+    const successfulRunCount = patternRecord?.successCount ?? (retrospective.run.status === 'completed' ? 1 : 0);
+    const observationCount = patternRecord?.observationCount ?? 1;
+    const eligible = candidate.eligible &&
+      successfulRunCount >= MIN_SKILL_CANDIDATE_OBSERVATIONS &&
+      observationCount >= MIN_SKILL_CANDIDATE_OBSERVATIONS &&
+      patternRecord?.status === 'reinforced';
+    const reason = eligible
+      ? `${successfulRunCount} successful observations reinforced this workflow.`
+      : `${successfulRunCount}/${MIN_SKILL_CANDIDATE_OBSERVATIONS} successful observations; keep this Learning Agent candidate in review until the pattern repeats.`;
 
     try {
-      const skillMarkdown = renderLearningSkillCandidateMarkdown(retrospective, candidate);
+      const reviewedCandidate = { ...candidate, eligible, reason };
+      const skillMarkdown = renderLearningSkillCandidateMarkdown(retrospective, reviewedCandidate);
       const absoluteSkillPath = resolveInsideRoot(workDir, candidate.skillPath);
       const absoluteReviewPath = resolveInsideRoot(
         workDir,
@@ -915,11 +931,15 @@ function materializeLearningSkillCandidates(
       const manifest: LearningSkillCandidateReviewManifest = {
         approvalRequired: true,
         candidateId: `learning-skill-${stableHash(`${retrospective.run.runId}|${candidate.skillName}`)}`,
+        eligible,
         generatedAt: retrospective.generatedAt,
+        promotionThreshold: MIN_SKILL_CANDIDATE_OBSERVATIONS,
+        reason,
         schemaVersion: LEARNING_SKILL_CANDIDATE_REVIEW_SCHEMA_VERSION,
         skillName: candidate.skillName,
         sourceRunId: retrospective.run.runId,
-        status: 'awaiting_human_approval',
+        status: eligible ? 'awaiting_human_approval' : 'not_eligible',
+        successfulRunCount,
         toolSequence: candidate.toolSequence,
       };
 
@@ -927,7 +947,7 @@ function materializeLearningSkillCandidates(
       fs.mkdirSync(path.dirname(absoluteReviewPath), { recursive: true });
       fs.writeFileSync(absoluteSkillPath, `${skillMarkdown.trimEnd()}\n`, 'utf-8');
       fs.writeFileSync(absoluteReviewPath, `${JSON.stringify(manifest, null, 2)}\n`, 'utf-8');
-      materialized.push(candidate);
+      materialized.push(reviewedCandidate);
     } catch (error) {
       logger.debug('Learning Agent: failed to materialize skill candidate', {
         skillName: candidate.skillName,
@@ -1017,6 +1037,7 @@ function renderLearningSkillCandidateMarkdown(
     '## When to Use',
     `Use this skill when a future task needs the same proven tool sequence: ${candidate.toolSequence.join(' -> ')}.`,
     `It is based on run ${retrospective.run.runId} and should only be installed after human review confirms the pattern is broadly reusable.`,
+    `Promotion status: ${candidate.reason}`,
     '',
     '## Procedure',
     ...candidate.toolSequence.map((toolName, index) => `${index + 1}. Use \`${toolName}\` for the corresponding verified step from the trajectory; keep the same evidence boundary and real-path behavior.`),

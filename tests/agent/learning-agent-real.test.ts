@@ -174,8 +174,12 @@ describe('Learning Agent on real RunStore trajectories', () => {
     expect(candidateMarkdown).toContain('## Quick Reference');
     expect(JSON.parse(fs.readFileSync(reviewPath, 'utf8'))).toMatchObject({
       approvalRequired: true,
+      eligible: false,
+      promotionThreshold: 2,
       skillName: 'learned-search-view-file-bash',
       sourceRunId: runId,
+      status: 'not_eligible',
+      successfulRunCount: 1,
     });
 
     const lessonQueue = JSON.parse(fs.readFileSync(path.join(tempDir, '.codebuddy', 'lesson-candidates.json'), 'utf8'));
@@ -196,6 +200,39 @@ describe('Learning Agent on real RunStore trajectories', () => {
         invocationCount: 1,
         skillName: 'web-audit',
         successCount: 1,
+      }),
+    ]);
+
+    const secondRunId = startLearningRun();
+    store.endRun(secondRunId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== secondRunId);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const promoted = await runLearningRetrospective(store, secondRunId, {
+      force: true,
+      workDir: tempDir,
+    });
+
+    expect(promoted.skipped).toBe(false);
+    expect(promoted.skillCandidateCount).toBe(1);
+    expect(JSON.parse(fs.readFileSync(reviewPath, 'utf8'))).toMatchObject({
+      approvalRequired: true,
+      eligible: true,
+      promotionThreshold: 2,
+      skillName: 'learned-search-view-file-bash',
+      sourceRunId: secondRunId,
+      status: 'awaiting_human_approval',
+      successfulRunCount: 2,
+    });
+    expect(fs.readFileSync(candidatePath, 'utf8')).toContain('Promotion status: 2 successful observations reinforced this workflow.');
+
+    const promotedLibrary = JSON.parse(fs.readFileSync(path.join(tempDir, '.codebuddy', 'learning', 'pattern-library.json'), 'utf8')) as LearningPatternLibrary;
+    expect(promotedLibrary.patterns).toEqual([
+      expect.objectContaining({
+        candidateSkillName: 'learned-search-view-file-bash',
+        observationCount: 2,
+        status: 'reinforced',
+        successCount: 2,
       }),
     ]);
   });
