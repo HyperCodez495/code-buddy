@@ -1130,6 +1130,13 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
 
   if (status.nextActions.length > 0) {
     lines.push('', 'Next actions:');
+    if (status.summary.featureParity.hiddenTodoCount > 0) {
+      lines.push(
+        `  Showing top ${status.summary.featureParity.shownTodoCount}/` +
+          `${status.summary.featureParity.selectedTodoCount} active todo(s); ` +
+          `run buddy hermes todo --limit ${status.summary.featureParity.selectedTodoCount} for the full active backlog.`,
+      );
+    }
     for (const item of status.nextActions) {
       lines.push(`${item.priority}. ${item.area} [${item.status}]`);
       lines.push(`   Next: ${item.nextWork}`);
@@ -1500,10 +1507,7 @@ function renderHermesParityTodo(todo: HermesParityTodoManifest): string {
     );
   }
 
-  lines.push(
-    '',
-    'Next active work:',
-  );
+  lines.push('', todo.summary.includedDeferred ? 'Next selected work:' : 'Next active work:');
 
   for (const item of todo.todos) {
     lines.push(`${item.priority}. ${item.area} [${item.status}]`);

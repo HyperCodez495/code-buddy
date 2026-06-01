@@ -406,6 +406,8 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Hermes status:');
       expect(textOutput).toContain('Feature parity:');
       expect(textOutput).toContain('Tool parity:');
+      expect(textOutput).toContain('Showing top 5/');
+      expect(textOutput).toContain('run buddy hermes todo --limit');
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('Providers: configured');
       expect(textOutput).toContain('Tool Gateway: configured');
@@ -2198,6 +2200,19 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('1. Closed learning loop [partial]');
     expect(output).toContain('Verify: npm test -- tests/agent/lesson-candidate-queue.test.ts');
     expect(output).toContain('Deferred by decision:');
+    expect(output).toContain('OpenClaw migration [gap]');
+  });
+
+  it('labels Hermes TODO output as selected work when deferred items are included', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'todo', '--include-deferred', '--limit', '20']);
+
+    const output = getLogOutput();
+    expect(output).toMatch(/Showing: \d+\/\d+ active\/deferred item\(s\)/);
+    expect(output).toContain('Next selected work:');
+    expect(output).not.toContain('Next active work:');
     expect(output).toContain('OpenClaw migration [gap]');
   });
 
