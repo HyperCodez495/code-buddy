@@ -66,6 +66,10 @@ export interface HermesLearningLoopStatus {
     skillCandidatesRequireReview: boolean;
     skillLifecycleRequiresApproval: boolean;
   };
+  reviewQueue: {
+    items: HermesLearningLoopReviewQueueItem[];
+    totalPending: number;
+  };
   nextRetrospectiveRun?: HermesLearningLoopRetrospectiveCandidate;
   state: {
     recentRuns: HermesLearningLoopRunRow[];
@@ -103,6 +107,14 @@ export interface HermesLearningLoopStatus {
     candidateReview: string;
   };
   recommendations: string[];
+}
+
+export interface HermesLearningLoopReviewQueueItem {
+  command: string;
+  description: string;
+  kind: 'lesson_candidate' | 'skill_candidate' | 'user_model_observation';
+  pendingCount: number;
+  reviewGate: keyof HermesLearningLoopStatus['reviewGates'];
 }
 
 interface BuildHermesLearningLoopStatusOptions {
@@ -242,6 +254,45 @@ function buildRecommendations(status: HermesLearningLoopStatus): string[] {
   return recommendations;
 }
 
+function buildReviewQueue(
+  lessonCandidates: ReturnType<ReturnType<typeof getLessonCandidateQueue>['getStats']>,
+  userModel: ReturnType<ReturnType<typeof getUserModel>['getStats']>,
+  skillCandidates: HermesLearningLoopStatus['state']['skillCandidates'],
+): HermesLearningLoopStatus['reviewQueue'] {
+  const items: HermesLearningLoopReviewQueueItem[] = [];
+  if (lessonCandidates.byStatus.pending > 0) {
+    items.push({
+      command: 'buddy lessons candidate list --status pending --json',
+      description: 'Pending lesson candidates from retrospectives; approve only durable, reusable lessons.',
+      kind: 'lesson_candidate',
+      pendingCount: lessonCandidates.byStatus.pending,
+      reviewGate: 'lessonWritesRequireApproval',
+    });
+  }
+  if (userModel.byStatus.pending > 0) {
+    items.push({
+      command: 'buddy user-model show --json',
+      description: 'Pending user-model observations; review without exposing private content in Hermes status.',
+      kind: 'user_model_observation',
+      pendingCount: userModel.byStatus.pending,
+      reviewGate: 'userModelWritesRequireApproval',
+    });
+  }
+  if (skillCandidates.learningCandidateCount > 0) {
+    items.push({
+      command: 'buddy tools skill-candidate list --eligible-only --json',
+      description: 'Pending Learning Agent SKILL.md candidates; inspect diffs before install or overwrite.',
+      kind: 'skill_candidate',
+      pendingCount: skillCandidates.learningCandidateCount,
+      reviewGate: 'skillCandidatesRequireReview',
+    });
+  }
+  return {
+    items,
+    totalPending: items.reduce((total, item) => total + item.pendingCount, 0),
+  };
+}
+
 export function buildHermesLearningLoopStatus(
   options: BuildHermesLearningLoopStatusOptions = {},
 ): HermesLearningLoopStatus {
@@ -271,6 +322,7 @@ export function buildHermesLearningLoopStatus(
   const skillUsageRecords = listLearningSkillUsage(workDir);
   const patterns = readPatternStats(workDir);
   const skillCandidates = countLearningSkillCandidates(workDir);
+  const reviewQueue = buildReviewQueue(lessonCandidates, userModel, skillCandidates);
   const autoEnabled = isLearningAgentEnabled();
   const retrospectiveArtifactCount = runRows.filter((run) =>
     isRetrospectiveEligible(run) && run.hasLearningRetrospective
@@ -317,6 +369,7 @@ export function buildHermesLearningLoopStatus(
       skillCandidatesRequireReview: true,
       skillLifecycleRequiresApproval: true,
     },
+    reviewQueue,
     ...(nextRetrospectiveRun ? { nextRetrospectiveRun } : {}),
     state: {
       recentRuns: runRows,
@@ -378,6 +431,16 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     `  User-model writes require approval: ${status.reviewGates.userModelWritesRequireApproval ? 'yes' : 'no'}`,
     `  Skill candidates require review: ${status.reviewGates.skillCandidatesRequireReview ? 'yes' : 'no'}`,
     `  Skill lifecycle requires approval: ${status.reviewGates.skillLifecycleRequiresApproval ? 'yes' : 'no'}`,
+  );
+
+  if (status.reviewQueue.items.length > 0) {
+    lines.push('', `Review queue: ${status.reviewQueue.totalPending} pending`);
+    for (const item of status.reviewQueue.items) {
+      lines.push(`  - ${item.kind}: ${item.pendingCount} -> ${item.command}`);
+    }
+  }
+
+  lines.push(
     '',
     'Commands:',
     `  Retrospective: ${status.commands.retrospective}`,

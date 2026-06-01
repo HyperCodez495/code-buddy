@@ -45,6 +45,16 @@ export interface HermesLearningLoopStatus {
     skillLifecycleRequiresApproval: boolean;
     userModelWritesRequireApproval: boolean;
   };
+  reviewQueue?: {
+    items: Array<{
+      command: string;
+      description: string;
+      kind: 'lesson_candidate' | 'skill_candidate' | 'user_model_observation';
+      pendingCount: number;
+      reviewGate: keyof HermesLearningLoopStatus['reviewGates'];
+    }>;
+    totalPending: number;
+  };
   state: {
     recentRuns: Array<{
       artifactCount: number;
@@ -404,6 +414,50 @@ export const HermesLearningLoopStrip: React.FC<{
               </div>
             ))}
           </div>
+
+          {visibleStatus.reviewQueue && visibleStatus.reviewQueue.items.length > 0 ? (
+            <div
+              className="mt-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1"
+              data-testid="hermes-learning-review-queue"
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] text-warning">
+                <span className="min-w-0 truncate">
+                  {t('fleet.hermesLearningLoop.reviewQueueTitle', 'Review queue')}
+                </span>
+                <span className="shrink-0 rounded bg-warning/10 px-1 py-0.5 text-[9px]">
+                  {t('fleet.hermesLearningLoop.reviewQueueCount', '{{count}} pending', {
+                    count: visibleStatus.reviewQueue.totalPending,
+                  })}
+                </span>
+              </div>
+              <ul className="mt-1 space-y-1">
+                {visibleStatus.reviewQueue.items.slice(0, 3).map((item) => (
+                  <li key={item.kind} className="min-w-0 text-[9px] text-text-muted">
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">
+                        {t('fleet.hermesLearningLoop.reviewQueueItem', '{{kind}}: {{count}}', {
+                          count: item.pendingCount,
+                          kind: item.kind,
+                        })}
+                      </span>
+                      {item.kind === 'lesson_candidate' && onOpenLessonReview ? (
+                        <button
+                          aria-label={t('fleet.hermesLearningLoop.reviewLessons', 'Review lessons')}
+                          className="shrink-0 rounded border border-warning/30 bg-background px-1 py-0.5 text-[9px] text-warning transition hover:border-warning hover:text-warning"
+                          data-testid="hermes-learning-review-queue-lessons"
+                          onClick={onOpenLessonReview}
+                          type="button"
+                        >
+                          {t('fleet.hermesLearningLoop.openReview', 'Open')}
+                        </button>
+                      ) : null}
+                    </div>
+                    <code className="block truncate text-[9px] text-warning">{item.command}</code>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
           <div
             className={`mt-1.5 flex min-w-0 items-start gap-1.5 rounded border px-2 py-1 text-[10px] ${

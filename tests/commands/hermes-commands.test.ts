@@ -349,6 +349,14 @@ describe('Hermes CLI commands', () => {
           toolCallCount: number;
         };
         reviewGates: Record<string, boolean>;
+        reviewQueue: {
+          items: Array<{
+            command: string;
+            kind: string;
+            pendingCount: number;
+          }>;
+          totalPending: number;
+        };
         state: {
           recentRuns: Array<{
             evidenceArtifactCount: number;
@@ -375,6 +383,19 @@ describe('Hermes CLI commands', () => {
       expect(output.summary.skillUsageCount).toBe(1);
       expect(output.autoRetrospective).toMatchObject({ enabled: false, mode: 'disabled' });
       expect(Object.values(output.reviewGates).every(Boolean)).toBe(true);
+      expect(output.reviewQueue.totalPending).toBe(output.summary.pendingReviewCount);
+      expect(output.reviewQueue.items).toEqual(expect.arrayContaining([
+        expect.objectContaining({
+          command: 'buddy lessons candidate list --status pending --json',
+          kind: 'lesson_candidate',
+          pendingCount: expect.any(Number),
+        }),
+        expect.objectContaining({
+          command: 'buddy tools skill-candidate list --eligible-only --json',
+          kind: 'skill_candidate',
+          pendingCount: 1,
+        }),
+      ]));
       expect(output.state.recentRuns).toEqual(
         expect.arrayContaining([
           expect.objectContaining({

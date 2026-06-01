@@ -62,6 +62,25 @@ const learningStatus: HermesLearningLoopStatus = {
     skillLifecycleRequiresApproval: true,
     userModelWritesRequireApproval: true,
   },
+  reviewQueue: {
+    items: [
+      {
+        command: 'buddy lessons candidate list --status pending --json',
+        description: 'Pending lesson candidates from retrospectives.',
+        kind: 'lesson_candidate',
+        pendingCount: 1,
+        reviewGate: 'lessonWritesRequireApproval',
+      },
+      {
+        command: 'buddy tools skill-candidate list --eligible-only --json',
+        description: 'Pending Learning Agent SKILL.md candidates.',
+        kind: 'skill_candidate',
+        pendingCount: 1,
+        reviewGate: 'skillCandidatesRequireReview',
+      },
+    ],
+    totalPending: 2,
+  },
   state: {
     recentRuns: [
       {
@@ -168,6 +187,11 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('2 pending review');
     expect(strip?.textContent).toContain('1 reinforced / 0 deprecated');
     expect(strip?.textContent).toContain('1 skill candidates');
+    expect(strip?.textContent).toContain('Review queue');
+    expect(strip?.textContent).toContain('lesson_candidate: 1');
+    expect(strip?.textContent).toContain('buddy lessons candidate list --status pending --json');
+    expect(strip?.textContent).toContain('skill_candidate: 1');
+    expect(strip?.textContent).toContain('buddy tools skill-candidate list --eligible-only --json');
     expect(strip?.textContent).toContain('Next retrospective');
     expect(strip?.textContent).toContain('run-needs-retro');
     expect(strip?.textContent).toContain('completed | 1 artifacts');
