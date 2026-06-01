@@ -435,7 +435,7 @@ describe('Hermes CLI commands', () => {
           sampleIds: expect.arrayContaining([expect.stringMatching(/^lc-/)]),
         }),
         expect.objectContaining({
-          command: expect.stringMatching(/^buddy tools skill-candidate list (--eligible-only )?--json$/),
+          command: 'buddy tools skill-candidate list --eligible-only --json',
           kind: 'skill_candidate',
           nextReviewCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
           pendingCount: 1,
@@ -484,6 +484,7 @@ describe('Hermes CLI commands', () => {
       expect(output.state.skillCandidates.samples).toEqual([
         expect.objectContaining({
           candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
+          eligible: true,
           inspectCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
           skillName: expect.any(String),
         }),

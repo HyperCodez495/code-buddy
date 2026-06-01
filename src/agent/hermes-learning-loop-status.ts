@@ -152,6 +152,7 @@ interface SkillCandidateReviewFile {
   candidateId?: unknown;
   eligible?: unknown;
   skillName?: unknown;
+  status?: unknown;
 }
 
 const RETROSPECTIVE_READY_STATUSES = new Set<RunSummary['status']>([
@@ -258,10 +259,17 @@ function readLearningSkillCandidateSample(
   const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
   return {
     candidateId,
-    eligible: parsed.eligible === true,
+    eligible: isLearningSkillCandidateEligible(parsed),
     inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
     skillName,
   };
+}
+
+function isLearningSkillCandidateEligible(parsed: SkillCandidateReviewFile): boolean {
+  if (typeof parsed.eligible === 'boolean') {
+    return parsed.eligible;
+  }
+  return parsed.status === 'awaiting_human_approval';
 }
 
 function readPatternStats(workDir: string): HermesLearningLoopStatus['state']['patterns'] {
