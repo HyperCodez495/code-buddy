@@ -17,6 +17,9 @@ ChatGPT subscription route, or explain what the desktop app adds beyond the CLI.
 - A trace and execution view for agent work, tool calls, failures, and reruns.
 - Visual workflow surfaces for Fleet, Hermes parity, skills, lessons, MCP, and
   companion features.
+- A one-click Hermes local smoke card in the Fleet Command Center that verifies
+  local runtime execution, local Playwright browser control, and local protocol
+  gateways without exposing raw trace paths in the UI.
 - A sandbox posture around project workspaces, with WSL2/Lima support where
   available and path restrictions in fallback mode.
 
@@ -109,6 +112,28 @@ Result:
 No functional bug was found in this pass. The only fix made here is a
 documentation visibility fix: GitHub links now point at the actual lower-case
 `cowork/readme.md` path.
+
+### Hermes Local Smoke In Cowork
+
+The Fleet Command Center includes a `Hermes local smoke` card. Use its play
+button when you want a quick local proof before claiming Hermes substrate
+health from the desktop UI.
+
+Equivalent CLI proof:
+
+```powershell
+npx tsx src/index.ts hermes smoke --json
+```
+
+Latest real local proof on this branch:
+
+- runtime: passed (`OK-HERMES-LOCAL`)
+- browser: passed (`OK-HERMES-BROWSER` through local Playwright)
+- protocols: passed (MCP stdio echo plus 4 local HTTP A2A/ACP routes)
+
+The Cowork card intentionally renders status and counts, not full stdout or
+Playwright trace paths. Dedicated runtime/browser/protocol cards remain
+available when an operator needs deeper detail.
 
 ## Screenshot And Privacy Policy
 
