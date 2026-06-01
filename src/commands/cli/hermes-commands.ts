@@ -412,6 +412,99 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value, null, 2);
 }
 
+function buildHermesIdentityStatus(profileArg: string): {
+  commands: {
+    doctor: string;
+    profile: string;
+    prompt: string;
+    run: string;
+  };
+  identity: {
+    activeToolset: string;
+    agentDescription: string | null;
+    agentFound: boolean;
+    agentName: string | null;
+    agentPath: string | null;
+    dispatchProfile: string;
+    disabledTools: string[];
+    effectiveAllow: string[];
+    effectiveDeny: string[];
+    fleetDispatchProfile: string | null;
+    nativeSurfaces: string[];
+    promptChecks: ReturnType<typeof buildHermesAgentDiagnostics>['promptChecks'];
+    requireExplicitDispatchProfile: boolean;
+    source: string;
+    userOverride: boolean;
+  };
+  kind: 'hermes_agent_identity_status';
+  ok: boolean;
+  requestedProfile: string;
+  schemaVersion: 1;
+} {
+  const diagnostics = buildHermesAgentDiagnostics({ dispatchProfile: profileArg });
+  const profileSuffix = diagnostics.dispatchProfile === 'balanced' ? '' : ` ${diagnostics.dispatchProfile}`;
+
+  return {
+    commands: {
+      doctor: `buddy hermes doctor${profileSuffix} --json`,
+      profile: `buddy hermes profile${profileSuffix} --json`,
+      prompt: `buddy hermes agent${profileSuffix}`,
+      run: 'buddy --agent hermes',
+    },
+    identity: {
+      activeToolset: diagnostics.activeToolset.toolsetId,
+      agentDescription: diagnostics.agentDescription,
+      agentFound: diagnostics.agentFound,
+      agentName: diagnostics.agentName,
+      agentPath: diagnostics.agentPath,
+      dispatchProfile: diagnostics.dispatchProfile,
+      disabledTools: diagnostics.disabledTools,
+      effectiveAllow: diagnostics.effectiveToolFilter.enabledPatterns,
+      effectiveDeny: diagnostics.effectiveToolFilter.disabledPatterns,
+      fleetDispatchProfile: diagnostics.fleetDispatchProfile,
+      nativeSurfaces: diagnostics.nativeSurfaceIds,
+      promptChecks: diagnostics.promptChecks,
+      requireExplicitDispatchProfile: diagnostics.requireExplicitDispatchProfile,
+      source: diagnostics.source,
+      userOverride: diagnostics.userOverride,
+    },
+    kind: 'hermes_agent_identity_status',
+    ok: diagnostics.ok,
+    requestedProfile: profileArg,
+    schemaVersion: 1,
+  };
+}
+
+function renderHermesIdentityStatus(status: ReturnType<typeof buildHermesIdentityStatus>): string {
+  return [
+    `Hermes Agent identity: ${formatOk(status.ok)}`,
+    `  Source: ${status.identity.source}`,
+    `  User override: ${status.identity.userOverride ? 'yes' : 'no'}`,
+    `  Agent path: ${status.identity.agentPath ?? 'none'}`,
+    `  Name: ${status.identity.agentName ?? 'none'}`,
+    `  Requested profile: ${status.requestedProfile}`,
+    `  Active dispatch profile: ${status.identity.dispatchProfile}`,
+    `  Agent default dispatch profile: ${status.identity.fleetDispatchProfile ?? 'none'}`,
+    `  Requires explicit delegation profile: ${status.identity.requireExplicitDispatchProfile ? 'yes' : 'no'}`,
+    `  Active toolset: ${status.identity.activeToolset}`,
+    `  Native surfaces: ${formatList(status.identity.nativeSurfaces)}`,
+    '  Prompt checks:',
+    `    Code Buddy runtime: ${status.identity.promptChecks.mentionsCodeBuddyRuntime ? 'yes' : 'no'}`,
+    `    External runtime boundary: ${status.identity.promptChecks.mentionsExternalRuntimeBoundary ? 'yes' : 'no'}`,
+    `    Default toolset: ${status.identity.promptChecks.mentionsDefaultToolset ? 'yes' : 'no'}`,
+    '  Guardrails:',
+    `    Agent disabled tools: ${formatList(status.identity.disabledTools)}`,
+    `    Effective allow: ${formatAllowList(status.identity.effectiveAllow)}`,
+    `    Effective deny: ${formatList(status.identity.effectiveDeny)}`,
+    '',
+    'Commands:',
+    `  Run: ${status.commands.run}`,
+    `  Prompt: ${status.commands.prompt}`,
+    `  Profile: ${status.commands.profile}`,
+    `  Doctor: ${status.commands.doctor}`,
+  ].join('\n');
+}
+
 function readFileSizeIfPresent(filePath: string): number {
   try {
     const stat = fs.statSync(filePath);
@@ -1457,6 +1550,27 @@ export function registerHermesCommands(program: Command): void {
       }
       console.log('\nUse with: buddy --agent hermes');
       console.log('');
+    });
+
+  const identity = hermes
+    .command('identity')
+    .alias('id')
+    .description('Inspect the built-in Hermes Agent identity and guardrails');
+
+  identity
+    .command('status')
+    .description('Print Hermes Agent identity, source, toolset, and guardrail status')
+    .argument('[dispatchProfile]', `default Fleet profile (${FLEET_DISPATCH_PROFILES.join(', ')})`, 'balanced')
+    .option('--json', 'output JSON')
+    .action((profileArg: string, options: HermesCommandOptions) => {
+      const status = buildHermesIdentityStatus(profileArg);
+
+      if (options.json) {
+        console.log(stableJson(status));
+        return;
+      }
+
+      console.log(renderHermesIdentityStatus(status));
     });
 
   hermes

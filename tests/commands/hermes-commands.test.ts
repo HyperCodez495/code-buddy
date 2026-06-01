@@ -102,6 +102,76 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('Do not pretend to be the external Hermes Python runtime');
   });
 
+  it('prints Hermes Agent identity status without dumping the full prompt', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'identity', 'status', 'safe', '--json']);
+
+    const raw = getLogOutput();
+    const output = JSON.parse(raw) as {
+      commands: {
+        doctor: string;
+        prompt: string;
+        run: string;
+      };
+      identity: {
+        activeToolset: string;
+        dispatchProfile: string;
+        effectiveAllow: string[];
+        effectiveDeny: string[];
+        nativeSurfaces: string[];
+        promptChecks: {
+          mentionsCodeBuddyRuntime: boolean;
+          mentionsDefaultToolset: boolean;
+          mentionsExternalRuntimeBoundary: boolean;
+        };
+        requireExplicitDispatchProfile: boolean;
+        source: string;
+        userOverride: boolean;
+      };
+      kind: string;
+      ok: boolean;
+      requestedProfile: string;
+      schemaVersion: number;
+    };
+
+    expect(output).toMatchObject({
+      kind: 'hermes_agent_identity_status',
+      ok: true,
+      requestedProfile: 'safe',
+      schemaVersion: 1,
+      identity: {
+        activeToolset: 'fleet.hermes.safe',
+        dispatchProfile: 'safe',
+        requireExplicitDispatchProfile: true,
+        source: 'built-in',
+        userOverride: false,
+      },
+      commands: {
+        doctor: 'buddy hermes doctor safe --json',
+        prompt: 'buddy hermes agent safe',
+        run: 'buddy --agent hermes',
+      },
+    });
+    expect(output.identity.effectiveAllow).toEqual(['view_file', 'web_search', 'web_fetch']);
+    expect(output.identity.effectiveDeny).toEqual(['create_file', 'bash', 'git_push', 'delete_file']);
+    expect(output.identity.nativeSurfaces).toEqual(expect.arrayContaining(['toolsets', 'skills', 'memory']));
+    expect(Object.values(output.identity.promptChecks).every(Boolean)).toBe(true);
+    expect(raw).not.toContain('Do not pretend to be the external Hermes Python runtime');
+
+    consoleLogSpy.mockClear();
+    const textProgram = createProgram();
+    registerHermesCommands(textProgram);
+    await textProgram.parseAsync(['node', 'test', 'hermes', 'id', 'status', 'safe']);
+    const textOutput = getLogOutput();
+    expect(textOutput).toContain('Hermes Agent identity: ok');
+    expect(textOutput).toContain('Active toolset: fleet.hermes.safe');
+    expect(textOutput).toContain('Run: buddy --agent hermes');
+    expect(textOutput).toContain('Doctor: buddy hermes doctor safe --json');
+    expect(textOutput).not.toContain('Do not pretend to be the external Hermes Python runtime');
+  });
+
   it('prints an offline Hermes prompt-size diagnostic', async () => {
     const program = createProgram();
     registerHermesCommands(program);
