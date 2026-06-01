@@ -326,6 +326,27 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(listResult.nextCursor).toBeUndefined();
   });
 
+  it('lists in-process sessions newest first', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: { cwd: '/tmp/project-old', mcpServers: [] } });
+    await harness.flush();
+    const olderSessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project-new', mcpServers: [] } });
+    await harness.flush();
+    const newerSessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({ jsonrpc: '2.0', id: 3, method: 'session/list', params: {} });
+    await harness.flush();
+
+    expect(harness.responseFor(3)?.result.sessions.map((session: { sessionId: string }) => session.sessionId)).toEqual([
+      newerSessionId,
+      olderSessionId,
+    ]);
+  });
+
   it('rejects unsupported session/list cursors instead of pretending pagination exists', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
 

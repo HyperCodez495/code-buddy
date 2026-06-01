@@ -333,6 +333,7 @@ export class AcpStdioServer {
     const cwd = asString(params.cwd);
     const sessions = [...this.sessions.entries()]
       .filter(([, session]) => !cwd || session.cwd === cwd)
+      .sort(([, a], [, b]) => b.updatedAt.localeCompare(a.updatedAt))
       .map(([sessionId, session]) => ({
         sessionId,
         cwd: session.cwd,
