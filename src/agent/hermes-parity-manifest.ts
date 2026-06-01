@@ -517,6 +517,7 @@ const FEATURES: HermesParityFeature[] = [
     ],
     status: 'partial',
     verificationCommands: [
+      'npm test -- tests/protocols/acp-stdio-server-real.test.ts tests/agent/hermes-protocol-gateways.test.ts --run',
       'npm test -- tests/agent/hermes-protocol-gateways.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/server/a2a-protocol.test.ts tests/server/acp-routes.test.ts --run',
       'npm test -- tests/protocols/acp-stdio-server-real.test.ts --run',
       'npx tsx src/index.ts hermes protocols status --json',

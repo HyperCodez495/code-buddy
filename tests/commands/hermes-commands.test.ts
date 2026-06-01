@@ -2175,6 +2175,10 @@ describe('Hermes CLI commands', () => {
     expect(output.todos.map((item) => item.id)).not.toContain('agent-identity');
     expect(output.todos.map((item) => item.id)).toContain('runtime-backends');
     expect(output.todos.map((item) => item.id)).not.toContain('openclaw-migration');
+    expect(output.todos).toContainEqual(expect.objectContaining({
+      id: 'mcp-acp',
+      verificationCommand: expect.stringContaining('tests/protocols/acp-stdio-server-real.test.ts'),
+    }));
     expect(output.deferred).toEqual([
       expect.objectContaining({ id: 'openclaw-migration', status: 'partial' }),
     ]);
