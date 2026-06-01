@@ -543,6 +543,50 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('keeps prompt-derived metadata when a prompt fails', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient }) => {
+      await requestClient('fs/read_text_file', {
+        path: '/tmp/project/README.md',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      },
+    });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'Read the missing file' }] },
+    });
+    await harness.flush();
+    expect(harness.responseFor(3)?.error?.code).toBe(-32601);
+
+    harness.send({ jsonrpc: '2.0', id: 4, method: 'session/list', params: {} });
+    await harness.flush();
+
+    expect(harness.responseFor(4)?.result.sessions[0]).toMatchObject({
+      sessionId,
+      title: 'Read the missing file',
+      _meta: {
+        active: false,
+        messageCount: 0,
+      },
+    });
+  });
+
   it('keeps client capability checks stable for the active prompt', async () => {
     let continueRunner: (() => void) | undefined;
     const runner: AcpPromptRunner = async ({ requestClient, sendUpdate }) => {

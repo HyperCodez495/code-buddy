@@ -411,6 +411,9 @@ export class AcpStdioServer {
     const prompt = Array.isArray(params.prompt) ? (params.prompt as AcpContentBlock[]) : [];
     const controller = new AbortController();
     session.active = controller;
+    if (!session.title) {
+      session.title = buildSessionTitle(prompt);
+    }
 
     try {
       session.updatedAt = new Date().toISOString();
@@ -428,9 +431,6 @@ export class AcpStdioServer {
         }),
         sendUpdate: (update) => this.sendUpdate(sessionId, update),
       });
-      if (!session.title) {
-        session.title = buildSessionTitle(prompt);
-      }
       session.updatedAt = new Date().toISOString();
       return { stopReason: controller.signal.aborted ? 'cancelled' : stopReason };
     } catch (err) {
