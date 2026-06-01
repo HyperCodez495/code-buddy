@@ -205,6 +205,62 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(getSkillsHub().list()).toHaveLength(3);
   });
 
+  it('records reviewer approval when enabling and disabling installed skills', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      skillsDir: path.join(tempHome, 'skills'),
+    });
+    await hub.installFromContent(
+      'reviewed-helper',
+      skillContent('reviewed-helper', '1.0.0', 'Reviewed lifecycle package.'),
+    );
+
+    const disableProgram = createProgram();
+    await disableProgram.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'disable',
+      'reviewed-helper',
+      '--approved-by',
+      'operator-a',
+      '--reason',
+      'pause until capture review is done',
+    ]);
+
+    expect(getLogOutput()).toContain('Skill disabled: reviewed-helper');
+    expect(hub.info('reviewed-helper')?.installed).toMatchObject({
+      enabled: false,
+      lifecycle: {
+        reason: 'pause until capture review is done',
+        status: 'disabled',
+        updatedBy: 'operator-a',
+      },
+    });
+
+    consoleLogSpy.mockClear();
+    const enableProgram = createProgram();
+    await enableProgram.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'enable',
+      'reviewed-helper',
+      '--approved-by',
+      'operator-b',
+    ]);
+
+    expect(getLogOutput()).toContain('Skill enabled: reviewed-helper');
+    expect(hub.info('reviewed-helper')?.installed).toMatchObject({
+      enabled: true,
+      lifecycle: {
+        status: 'active',
+        updatedBy: 'operator-b',
+      },
+    });
+  });
+
   it('lists installed skills with a machine-readable health summary', async () => {
     const hub = getSkillsHub({
       cacheDir: path.join(tempHome, 'cache'),

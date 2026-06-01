@@ -13,8 +13,8 @@
  *   buddy skills learning-usage [--json]
  *   buddy skills update-preview <name>
  *   buddy skills reset <name> --approved-by <reviewer>
- *   buddy skills enable <name>
- *   buddy skills disable <name>
+ *   buddy skills enable <name> --approved-by <reviewer>
+ *   buddy skills disable <name> --approved-by <reviewer>
  *   buddy skills tap list|add|remove|trust|refresh
  *   buddy skills well-known <url>
  *
@@ -406,15 +406,19 @@ export function registerSkillsCommands(program: Command): void {
   skills
     .command('enable <name>')
     .description('Enable an installed skill')
-    .action(async (name: string) => {
-      await toggleSkill(name, true);
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the lifecycle change')
+    .option('--reason <reason>', 'review reason')
+    .action(async (name: string, opts: { approvedBy: string; reason?: string }) => {
+      await toggleSkill(name, true, opts);
     });
 
   skills
     .command('disable <name>')
     .description('Disable an installed skill (stays installed but inactive)')
-    .action(async (name: string) => {
-      await toggleSkill(name, false);
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the lifecycle change')
+    .option('--reason <reason>', 'review reason')
+    .action(async (name: string, opts: { approvedBy: string; reason?: string }) => {
+      await toggleSkill(name, false, opts);
     });
 
   const tap = skills
@@ -561,9 +565,16 @@ export function registerSkillsCommands(program: Command): void {
     });
 }
 
-async function toggleSkill(name: string, enabled: boolean): Promise<void> {
+async function toggleSkill(
+  name: string,
+  enabled: boolean,
+  opts: { approvedBy: string; reason?: string },
+): Promise<void> {
   const { getSkillsHub } = await import('../../skills/hub.js');
-  const result = getSkillsHub().setEnabled(name, enabled);
+  const result = getSkillsHub().setEnabled(name, enabled, {
+    actor: opts.approvedBy,
+    reason: opts.reason,
+  });
   if (!result) {
     console.error(`Skill not found: ${name}`);
     process.exit(1);
