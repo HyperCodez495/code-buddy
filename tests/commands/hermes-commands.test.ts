@@ -2214,6 +2214,11 @@ describe('Hermes CLI commands', () => {
           status: string;
         }>;
         localRunnableCount: number;
+        routePlan: {
+          mode: string;
+          primaryBackendId: string | null;
+          smokeCommand: string | null;
+        };
       };
     };
 
@@ -2236,6 +2241,11 @@ describe('Hermes CLI commands', () => {
       ]),
     );
     expect(output.readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
+    expect(output.readiness.routePlan).toMatchObject({
+      mode: 'hybrid',
+      primaryBackendId: 'local-playwright',
+      smokeCommand: 'buddy hermes browser-smoke auto --json',
+    });
   });
 
   it('runs a real local Hermes browser smoke from the CLI', async () => {
@@ -2283,5 +2293,32 @@ describe('Hermes CLI commands', () => {
       ]),
     );
     expect(output.result.artifacts?.[0]?.sizeBytes).toBeGreaterThan(0);
+  });
+
+  it('runs the real auto Hermes browser smoke through hybrid routing', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'browser-smoke', 'auto', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      kind: string;
+      schemaVersion: number;
+      result: {
+        backendId: string;
+        ok: boolean;
+        output: string;
+        status: string;
+      };
+    };
+
+    expect(output.kind).toBe('hermes_browser_backend_smoke');
+    expect(output.schemaVersion).toBe(1);
+    expect(output.result).toMatchObject({
+      backendId: 'local-playwright',
+      ok: true,
+      status: 'passed',
+    });
+    expect(output.result.output).toContain('OK-HERMES-BROWSER');
   });
 });

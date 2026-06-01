@@ -28,6 +28,15 @@ export interface HermesBrowserBackendsReview {
   ok: boolean;
   platform: string;
   recommendations: string[];
+  routePlan?: HermesBrowserBackendRoutePlan;
+}
+
+export interface HermesBrowserBackendRoutePlan {
+  fallbackBackendIds: string[];
+  mode: 'hybrid';
+  primaryBackendId: string | null;
+  reason: string;
+  smokeCommand: string | null;
 }
 
 export interface HermesBrowserBackendSmokeResult {
@@ -60,6 +69,7 @@ interface HermesBrowserBackendsReadiness {
   ok: boolean;
   platform: string;
   recommendations: string[];
+  routePlan?: HermesBrowserBackendRoutePlan;
 }
 
 interface HermesAgentDiagnostics {
@@ -105,6 +115,7 @@ export async function getHermesBrowserBackendsForReview(): Promise<HermesBrowser
     ok: readiness.ok,
     platform: readiness.platform,
     recommendations: readiness.recommendations,
+    routePlan: readiness.routePlan,
   };
 }
 

@@ -37,6 +37,10 @@ describe.skipIf(!hasBuiltCore)('Hermes browser backends bridge real core integra
         command: 'buddy hermes browser status --json',
         localRunnableCount: expect.any(Number),
         platform: process.platform,
+        routePlan: expect.objectContaining({
+          primaryBackendId: 'remote-cdp',
+          smokeCommand: 'buddy hermes browser-smoke auto --json',
+        }),
       });
       expect(readiness?.localRunnableCount).toBeGreaterThanOrEqual(1);
       expect(readiness?.backends).toEqual(

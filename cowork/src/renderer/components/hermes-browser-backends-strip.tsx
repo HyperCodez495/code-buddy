@@ -38,6 +38,15 @@ export interface HermesBrowserBackendsReview {
   ok: boolean;
   platform: string;
   recommendations: string[];
+  routePlan?: HermesBrowserBackendRoutePlan;
+}
+
+export interface HermesBrowserBackendRoutePlan {
+  fallbackBackendIds: string[];
+  mode: 'hybrid';
+  primaryBackendId: string | null;
+  reason: string;
+  smokeCommand: string | null;
 }
 
 export interface HermesBrowserBackendSmokeResult {
@@ -199,6 +208,30 @@ export const HermesBrowserBackendsStrip: React.FC<{
               value={visibleReadiness.platform}
             />
           </div>
+
+          {visibleReadiness.routePlan ? (
+            <div
+              className="mt-1.5 rounded border border-accent/20 bg-accent/5 px-2 py-1 text-[10px] text-text-secondary"
+              data-testid="hermes-browser-route-plan"
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="min-w-0 truncate text-accent">
+                  {t('fleet.hermesBrowserBackends.routePlan', 'Hybrid route')}
+                </span>
+                <span className="shrink-0 rounded bg-background px-1 py-0.5 text-[9px] text-text-secondary">
+                  {visibleReadiness.routePlan.primaryBackendId ?? 'none'}
+                </span>
+              </div>
+              <div className="mt-0.5 truncate text-[9px] text-text-muted">
+                {visibleReadiness.routePlan.reason}
+              </div>
+              {visibleReadiness.routePlan.smokeCommand ? (
+                <code className="mt-0.5 block truncate text-[9px] text-accent">
+                  {visibleReadiness.routePlan.smokeCommand}
+                </code>
+              ) : null}
+            </div>
+          ) : null}
 
           <div className="mt-1.5 grid gap-1">
             {visibleReadiness.backends.map((backend) => (

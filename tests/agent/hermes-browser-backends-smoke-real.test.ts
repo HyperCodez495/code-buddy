@@ -138,6 +138,12 @@ describe('Hermes browser backend readiness and live smoke', () => {
     );
     expect(readiness.localRunnableCount).toBeGreaterThanOrEqual(1);
     expect(readiness.managedConfiguredCount).toBe(3);
+    expect(readiness.routePlan).toEqual(expect.objectContaining({
+      fallbackBackendIds: expect.arrayContaining(['local-playwright']),
+      mode: 'hybrid',
+      primaryBackendId: 'remote-cdp',
+      smokeCommand: 'buddy hermes browser-smoke auto --json',
+    }));
     expect(readiness.backends).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
@@ -195,6 +201,22 @@ describe('Hermes browser backend readiness and live smoke', () => {
         }),
       ]),
     );
+    expect(result.artifacts?.[0]?.sizeBytes).toBeGreaterThan(0);
+  });
+
+  it('routes auto browser smoke to a real safe backend', async () => {
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'auto',
+      now: () => new Date('2026-05-31T13:37:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'local-playwright',
+      command: process.execPath,
+      ok: true,
+      status: 'passed',
+    });
+    expect(result.stdout).toContain('OK-HERMES-BROWSER');
     expect(result.artifacts?.[0]?.sizeBytes).toBeGreaterThan(0);
   });
 

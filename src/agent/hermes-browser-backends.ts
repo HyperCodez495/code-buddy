@@ -38,9 +38,18 @@ export interface HermesBrowserBackendsReadiness {
   platform: NodeJS.Platform;
   localRunnableCount: number;
   managedConfiguredCount: number;
+  routePlan: HermesBrowserBackendRoutePlan;
   backends: HermesBrowserBackend[];
   issues: string[];
   recommendations: string[];
+}
+
+export interface HermesBrowserBackendRoutePlan {
+  fallbackBackendIds: string[];
+  mode: 'hybrid';
+  primaryBackendId: string | null;
+  reason: string;
+  smokeCommand: string | null;
 }
 
 export interface HermesBrowserBackendSmokeResult {
@@ -270,6 +279,36 @@ function recordingBackend(): HermesBrowserBackend {
   };
 }
 
+function buildHybridRoutePlan(backends: HermesBrowserBackend[]): HermesBrowserBackendRoutePlan {
+  const remoteCdp = backends.find((backend) => backend.id === 'remote-cdp' && backend.runnable);
+  const localPlaywright = backends.find((backend) => backend.id === 'local-playwright' && backend.runnable);
+  const runnableSafeBackends = [remoteCdp, localPlaywright].filter(Boolean) as HermesBrowserBackend[];
+  const primary = runnableSafeBackends[0] ?? null;
+  const fallbacks = runnableSafeBackends
+    .filter((backend) => backend.id !== primary?.id)
+    .map((backend) => backend.id);
+
+  if (!primary) {
+    return {
+      fallbackBackendIds: [],
+      mode: 'hybrid',
+      primaryBackendId: null,
+      reason: 'No safe browser backend is currently runnable; configure Playwright or a CDP endpoint first.',
+      smokeCommand: null,
+    };
+  }
+
+  return {
+    fallbackBackendIds: fallbacks,
+    mode: 'hybrid',
+    primaryBackendId: primary.id,
+    reason: fallbacks.length > 0
+      ? `Auto browser smoke will use ${primary.label}, with ${fallbacks.join(', ')} as fallback candidates.`
+      : `Auto browser smoke will use ${primary.label}; no secondary safe backend is currently runnable.`,
+    smokeCommand: 'buddy hermes browser-smoke auto --json',
+  };
+}
+
 export function buildHermesBrowserBackendsReadiness(
   options: HermesBrowserBackendsOptions = {},
 ): HermesBrowserBackendsReadiness {
@@ -290,6 +329,7 @@ export function buildHermesBrowserBackendsReadiness(
   const managedConfiguredCount = backends.filter((backend) =>
     ['browserbase', 'browser-use', 'firecrawl'].includes(backend.id) && backend.configured,
   ).length;
+  const routePlan = buildHybridRoutePlan(backends);
   const issues: string[] = [];
   const recommendations: string[] = [];
 
@@ -311,6 +351,7 @@ export function buildHermesBrowserBackendsReadiness(
     platform: process.platform,
     localRunnableCount,
     managedConfiguredCount,
+    routePlan,
     backends,
     issues,
     recommendations,
@@ -540,8 +581,24 @@ export async function runHermesBrowserBackendSmoke(
   const now = options.now ?? (() => new Date());
   const readiness = buildHermesBrowserBackendsReadiness({ env, now });
   const backendId = options.backendId.trim();
-  const backend = readiness.backends.find((candidate) => candidate.id === backendId);
   const timestamp = now();
+  if (backendId === 'auto') {
+    const primaryBackendId = readiness.routePlan.primaryBackendId;
+    if (!primaryBackendId) {
+      return blockedSmokeResult('auto', 'not-runnable', readiness.routePlan.reason, {
+        command: readiness.routePlan.smokeCommand,
+        now: timestamp,
+      });
+    }
+    return runHermesBrowserBackendSmoke({
+      ...options,
+      backendId: primaryBackendId,
+      env,
+      now,
+    });
+  }
+
+  const backend = readiness.backends.find((candidate) => candidate.id === backendId);
 
   if (!backend) {
     return blockedSmokeResult(backendId, 'unsupported', `Unknown browser backend: ${backendId}`, {
@@ -578,6 +635,8 @@ export function renderHermesBrowserBackendsReadiness(readiness: HermesBrowserBac
     `Platform: ${readiness.platform}`,
     `Local runnable: ${readiness.localRunnableCount}`,
     `Managed configured: ${readiness.managedConfiguredCount}`,
+    `Hybrid route: ${readiness.routePlan.primaryBackendId ?? 'none'}` +
+      `${readiness.routePlan.smokeCommand ? ` | smoke: ${readiness.routePlan.smokeCommand}` : ''}`,
     '',
     'Backends:',
     ...readiness.backends.map((backend) =>

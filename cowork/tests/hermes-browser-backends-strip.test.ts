@@ -81,6 +81,13 @@ const readyBrowserBackends: HermesBrowserBackendsReview = {
   ok: true,
   platform: 'win32',
   recommendations: ['Configure managed browser backends only if the operator workflow requires them.'],
+  routePlan: {
+    fallbackBackendIds: [],
+    mode: 'hybrid',
+    primaryBackendId: 'local-playwright',
+    reason: 'Auto browser smoke will use Local Playwright; no secondary safe backend is currently runnable.',
+    smokeCommand: 'buddy hermes browser-smoke auto --json',
+  },
 };
 
 describe('HermesBrowserBackendsStrip', () => {
@@ -114,8 +121,11 @@ describe('HermesBrowserBackendsStrip', () => {
     expect(strip?.textContent).toContain('Local Playwright');
     expect(strip?.textContent).toContain('Browserbase / Stagehand');
     expect(strip?.textContent).toContain('Browser session recording');
+    expect(strip?.textContent).toContain('Hybrid route');
+    expect(strip?.textContent).toContain('buddy hermes browser-smoke auto --json');
     expect(strip?.textContent).toContain('buddy hermes browser-smoke local-playwright --json');
     expect(strip?.textContent).toContain('buddy hermes browser status --json');
+    expect(strip?.querySelector('[data-testid="hermes-browser-route-plan"]')).toBeTruthy();
   });
 
   it('loads browser readiness from the Electron bridge when no prop is provided', async () => {
