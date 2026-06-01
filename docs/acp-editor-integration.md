@@ -45,10 +45,12 @@ their responses. This is the protocol primitive needed for future
 `fs/read_text_file`, `fs/write_text_file`, and `session/request_permission`
 integration with editors that expose those client methods. Optional filesystem
 requests are gated by the `clientCapabilities` advertised during `initialize`,
-as required by the ACP spec. Unknown agent→client method names are rejected
-instead of being forwarded to the editor. Unanswered agent→client requests time
-out after 120 seconds so a closed or stalled editor cannot leave a turn hanging
-forever.
+as required by the ACP spec. Active prompts use the capabilities snapshot from
+the moment the prompt starts, so a later `initialize` cannot grant or revoke
+client filesystem access mid-turn. Unknown agent→client method names are
+rejected instead of being forwarded to the editor. Unanswered agent→client
+requests time out after 120 seconds so a closed or stalled editor cannot leave a
+turn hanging forever.
 
 ## Out of scope for v1 (not stubbed — deliberately deferred)
 

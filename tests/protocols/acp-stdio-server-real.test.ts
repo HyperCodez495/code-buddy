@@ -503,6 +503,65 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('keeps client capability checks stable for the active prompt', async () => {
+    let continueRunner: (() => void) | undefined;
+    const runner: AcpPromptRunner = async ({ requestClient, sendUpdate }) => {
+      sendUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: 'runner ready' },
+      });
+      await new Promise<void>((resolve) => {
+        continueRunner = resolve;
+      });
+      await requestClient('fs/read_text_file', {
+        path: '/tmp/project/README.md',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: false, writeTextFile: false } },
+      },
+    });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'read after renegotiation' }] },
+    });
+    await harness.flush();
+    expect(harness.notifications('session/update').at(-1)?.params.update.content.text).toBe('runner ready');
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false } },
+      },
+    });
+    await harness.flush();
+    continueRunner?.();
+    await harness.flush();
+
+    expect(harness.requestFor('fs/read_text_file')).toBeUndefined();
+    expect(harness.responseFor(3)?.error).toMatchObject({
+      code: -32601,
+      message: 'ACP client method is not advertised by initialize.clientCapabilities: fs/read_text_file',
+    });
+  });
+
   it('rejects unknown agent-to-client methods instead of forwarding them', async () => {
     const runner: AcpPromptRunner = async ({ requestClient }) => {
       await requestClient('workspace/read_secret', {

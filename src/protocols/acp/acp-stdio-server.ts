@@ -191,9 +191,10 @@ export class AcpStdioServer {
   private requestClient(
     method: string,
     params: Record<string, unknown> = {},
-    options: { signal?: AbortSignal } = {},
+    options: { clientCapabilities?: AcpClientCapabilities; signal?: AbortSignal } = {},
   ): Promise<unknown> {
-    if (!this.canRequestClient(method)) {
+    const clientCapabilities = options.clientCapabilities ?? this.clientCapabilities;
+    if (!canRequestClientWithCapabilities(method, clientCapabilities)) {
       return Promise.reject(this.createClientRequestError(
         `ACP client method is not advertised by initialize.clientCapabilities: ${method}`,
         -32601,
@@ -395,14 +396,16 @@ export class AcpStdioServer {
 
     try {
       session.updatedAt = new Date().toISOString();
+      const clientCapabilities = this.clientCapabilities;
       const { stopReason } = await this.promptRunner({
         sessionId,
         cwd: session.cwd,
-        clientCapabilities: this.clientCapabilities,
-        canRequestClient: (method) => this.canRequestClient(method),
+        clientCapabilities,
+        canRequestClient: (method) => canRequestClientWithCapabilities(method, clientCapabilities),
         prompt,
         signal: controller.signal,
         requestClient: (method, requestParams = {}) => this.requestClient(method, requestParams, {
+          clientCapabilities,
           signal: controller.signal,
         }),
         sendUpdate: (update) => this.sendUpdate(sessionId, update),
@@ -473,12 +476,16 @@ export class AcpStdioServer {
   }
 
   private canRequestClient(method: string): boolean {
-    if (method === 'session/request_permission') return true;
-    if (method === 'fs/read_text_file') return this.clientCapabilities.fs?.readTextFile === true;
-    if (method === 'fs/write_text_file') return this.clientCapabilities.fs?.writeTextFile === true;
-    if (method.startsWith('terminal/')) return this.clientCapabilities.terminal === true;
-    return false;
+    return canRequestClientWithCapabilities(method, this.clientCapabilities);
   }
+}
+
+function canRequestClientWithCapabilities(method: string, clientCapabilities: AcpClientCapabilities): boolean {
+  if (method === 'session/request_permission') return true;
+  if (method === 'fs/read_text_file') return clientCapabilities.fs?.readTextFile === true;
+  if (method === 'fs/write_text_file') return clientCapabilities.fs?.writeTextFile === true;
+  if (method.startsWith('terminal/')) return clientCapabilities.terminal === true;
+  return false;
 }
 
 function normalizeClientCapabilities(value: unknown): AcpClientCapabilities {
