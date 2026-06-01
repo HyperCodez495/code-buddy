@@ -123,6 +123,41 @@ describe('mobileRouter artifact containment (real HTTP)', () => {
     expect(activeTokens.has('live-token')).toBe(true);
   });
 
+  it('expires pairing codes before they can mint a token', async () => {
+    const previousTtl = process.env.CODEBUDDY_MOBILE_PAIRING_CODE_TTL_MS;
+    try {
+      process.env.CODEBUDDY_MOBILE_PAIRING_CODE_TTL_MS = '50';
+      const rotate = await fetch(`${baseUrl}/pairing-code`, { method: 'POST' });
+      expect(rotate.status).toBe(200);
+      const rotated = await rotate.json() as {
+        pairingCode: string;
+        pairingCodeExpiresAt: number;
+        pairingCodeTtlSeconds: number;
+      };
+      expect(rotated.pairingCodeTtlSeconds).toBeGreaterThanOrEqual(0);
+      expect(rotated.pairingCodeExpiresAt).toBeGreaterThan(Date.now());
+
+      await new Promise((resolve) => setTimeout(resolve, 80));
+
+      const pair = await fetch(`${baseUrl}/pair`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ code: rotated.pairingCode, deviceLabel: 'expired-code-device' }),
+      });
+
+      expect(pair.status).toBe(401);
+      expect(await pair.text()).toContain('Invalid pairing code');
+      expect(activeTokens.size).toBe(0);
+    } finally {
+      if (previousTtl === undefined) {
+        delete process.env.CODEBUDDY_MOBILE_PAIRING_CODE_TTL_MS;
+      } else {
+        process.env.CODEBUDDY_MOBILE_PAIRING_CODE_TTL_MS = previousTtl;
+      }
+      await fetch(`${baseUrl}/pairing-code`, { method: 'POST' });
+    }
+  });
+
   it('rejects malformed follow-up draft payloads before building gateway context', async () => {
     const token = await pairToken();
 

@@ -11,14 +11,27 @@ import { buildRunRecallPackAsync } from '../../observability/run-recall-pack.js'
 
 export const mobileRouter = Router();
 
+const DEFAULT_PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
+const MAX_PAIRING_CODE_TTL_MS = 15 * 60 * 1000;
+const MIN_PAIRING_CODE_TTL_MS = 50;
+
 /** Mint a fresh 6-digit pairing code with a CSPRNG (never the literal default). */
 function generatePairingCode(): string {
   return crypto.randomInt(100000, 1000000).toString();
 }
 
+function getPairingCodeTtlMs(): number {
+  const configured = Number(process.env.CODEBUDDY_MOBILE_PAIRING_CODE_TTL_MS);
+  if (!Number.isFinite(configured) || configured <= 0) {
+    return DEFAULT_PAIRING_CODE_TTL_MS;
+  }
+  return Math.min(MAX_PAIRING_CODE_TTL_MS, Math.max(MIN_PAIRING_CODE_TTL_MS, Math.floor(configured)));
+}
+
 // In-memory store for active pairing code and tokens. The code is randomized at
 // module load — there is no static default that a LAN host could guess.
 export let activePairingCode = generatePairingCode();
+export let activePairingCodeExpiresAt = Date.now() + getPairingCodeTtlMs();
 export const activeTokens = new Map<string, { deviceLabel: string; expiresAt: number }>();
 
 function rotatePairingCode(): string {
@@ -27,7 +40,14 @@ function rotatePairingCode(): string {
     nextCode = generatePairingCode();
   }
   activePairingCode = nextCode;
+  activePairingCodeExpiresAt = Date.now() + getPairingCodeTtlMs();
   return activePairingCode;
+}
+
+function ensureActivePairingCodeFresh(): void {
+  if (Date.now() > activePairingCodeExpiresAt) {
+    rotatePairingCode();
+  }
 }
 
 /**
@@ -144,9 +164,12 @@ export function mobileAuthMiddleware(req: Request, res: Response, next: NextFunc
 // Pairing status (retrieved by local operator dashboard/CLI only — loopback gated)
 mobileRouter.get('/pairing-status', loopbackOnlyMiddleware, (req: Request, res: Response) => {
   pruneExpiredTokens();
+  ensureActivePairingCodeFresh();
   res.json({
     ok: true,
     pairingCode: activePairingCode,
+    pairingCodeExpiresAt: activePairingCodeExpiresAt,
+    pairingCodeTtlSeconds: Math.ceil(Math.max(0, activePairingCodeExpiresAt - Date.now()) / 1000),
     activeDevices: Array.from(activeTokens.values()).map(d => d.deviceLabel),
   });
 });
@@ -157,6 +180,8 @@ mobileRouter.post('/pairing-code', loopbackOnlyMiddleware, (req: Request, res: R
   res.json({
     ok: true,
     pairingCode: activePairingCode,
+    pairingCodeExpiresAt: activePairingCodeExpiresAt,
+    pairingCodeTtlSeconds: Math.ceil(Math.max(0, activePairingCodeExpiresAt - Date.now()) / 1000),
   });
 });
 
@@ -222,6 +247,7 @@ mobileRouter.post('/pair', (req: Request, res: Response) => {
     res.status(400).json({ ok: false, error: 'Missing or invalid code or deviceLabel' });
     return;
   }
+  ensureActivePairingCodeFresh();
   if (code !== activePairingCode) {
     res.status(401).json({ ok: false, error: 'Invalid pairing code' });
     return;
