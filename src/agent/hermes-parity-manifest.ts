@@ -508,18 +508,30 @@ const FEATURES: HermesParityFeature[] = [
       'src/server/routes/a2a-protocol.ts',
       'src/server/routes/acp.ts',
       'src/server/channel-a2a-bridge.ts',
+      'src/protocols/acp/acp-stdio-server.ts',
+      'src/commands/cli/acp-command.ts',
       'tests/agent/hermes-protocol-gateways.test.ts',
       'tests/mcp/mcp-stdio-real-fixture.test.ts',
+      'tests/protocols/acp-stdio-server-real.test.ts',
       'tests/server/',
     ],
     status: 'partial',
     verificationCommands: [
       'npm test -- tests/agent/hermes-protocol-gateways.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/server/a2a-protocol.test.ts tests/server/acp-routes.test.ts --run',
+      'npm test -- tests/protocols/acp-stdio-server-real.test.ts --run',
       'npx tsx src/index.ts hermes protocols status --json',
       'npx tsx src/index.ts hermes protocols-smoke local --json',
     ],
-    notes: 'MCP client/server, A2A HTTP, ACP HTTP, channel-to-A2A bridge, and a Hermes-scoped readiness/smoke surface are present; exact upstream Hermes ACP editor packaging is still not claimed.',
-    nextWork: 'Package and verify a real editor ACP workflow only after the protocol gateway surface becomes a daily operator target.',
+    notes:
+      'MCP client/server, A2A HTTP, ACP HTTP, channel-to-A2A bridge, and a Hermes-scoped readiness/smoke surface are present. ' +
+      'Editor packaging: `buddy acp` implements the Agent Client Protocol over newline-delimited JSON-RPC on stdio ' +
+      '(initialize / session.new / session.prompt with streamed agent_message_chunk updates / session.cancel), bridged to the LLM ' +
+      '(src/protocols/acp/acp-stdio-server.ts + src/commands/cli/acp-command.ts). Message shapes are grounded in the published spec ' +
+      'and round-trip tested, but not yet validated against a live editor (e.g. Zed). Client-side fs/permission calls, session/load, ' +
+      'and MCP passthrough remain out of scope for v1.',
+    nextWork:
+      'Extend the ACP agent with client-side fs/* + session/request_permission calls, session/load, and full agentic (tool-using) ' +
+      'turns; advertise richer prompt/MCP capabilities once those land.',
   },
   {
     id: 'openclaw-migration',

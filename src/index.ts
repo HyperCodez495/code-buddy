@@ -2426,6 +2426,11 @@ addLazyCommandGroup(program, 'hermes', 'Inspect the native Hermes-inspired Code 
   registerHermesCommands(program);
 });
 
+addLazyCommandGroup(program, 'acp', 'Run Code Buddy as an ACP (Agent Client Protocol) agent over stdio for editor integration', async () => {
+  const { registerAcpCommand } = await import('./commands/cli/acp-command.js');
+  registerAcpCommand(program);
+});
+
 addLazyCommandGroup(program, 'tools', 'Inspect tool profiles and effective tool availability', async () => {
   const { registerToolsCommands } = await import('./commands/cli/tools-commands.js');
   registerToolsCommands(program);
