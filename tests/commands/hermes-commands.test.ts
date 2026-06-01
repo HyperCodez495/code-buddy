@@ -239,7 +239,13 @@ describe('Hermes CLI commands', () => {
             credentialSources: string[];
             model: string;
           };
-          runtime: { primaryBackendId: string | null; smokeCommand: string | null };
+          runtime: {
+            autoEligibleBackendIds: string[];
+            gatedBackendCount: number;
+            gatedBackendIds: string[];
+            primaryBackendId: string | null;
+            smokeCommand: string | null;
+          };
         };
         nextActions: Array<{ area: string; verificationCommand: string }>;
         commands: {
@@ -265,6 +271,8 @@ describe('Hermes CLI commands', () => {
         credentialSources: expect.arrayContaining(['OPENAI_API_KEY']),
       });
       expect(output.readiness.runtime.smokeCommand).toBe('buddy hermes runtime-smoke auto --json');
+      expect(output.readiness.runtime.autoEligibleBackendIds).toContain('local');
+      expect(output.readiness.runtime.gatedBackendCount).toBe(output.readiness.runtime.gatedBackendIds.length);
       expect(output.readiness.browser.smokeCommand).toBe('buddy hermes browser-smoke auto --json');
       expect(output.nextActions[0]?.area).toBe('Closed learning loop');
       expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
@@ -290,6 +298,8 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Feature parity:');
       expect(textOutput).toContain('Tool parity:');
       expect(textOutput).toContain('Readiness:');
+      expect(textOutput).toContain('(auto:');
+      expect(textOutput).toContain('gated:');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');

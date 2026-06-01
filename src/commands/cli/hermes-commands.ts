@@ -309,8 +309,11 @@ interface HermesOverviewStatus {
       availableCount: number;
       configuredRemoteCount: number;
       runnableCount: number;
+      autoEligibleBackendIds: string[];
       primaryBackendId: string | null;
       fallbackBackendIds: string[];
+      gatedBackendCount: number;
+      gatedBackendIds: string[];
       smokeCommand: string | null;
       issueCount: number;
     };
@@ -800,8 +803,11 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         availableCount: diagnostics.runtimeBackends.availableCount,
         configuredRemoteCount: diagnostics.runtimeBackends.configuredRemoteCount,
         runnableCount: diagnostics.runtimeBackends.runnableCount,
+        autoEligibleBackendIds: diagnostics.runtimeBackends.routePlan.autoEligibleBackendIds ?? [],
         primaryBackendId: diagnostics.runtimeBackends.routePlan.primaryBackendId,
         fallbackBackendIds: diagnostics.runtimeBackends.routePlan.fallbackBackendIds,
+        gatedBackendCount: diagnostics.runtimeBackends.routePlan.gatedBackendIds?.length ?? 0,
+        gatedBackendIds: diagnostics.runtimeBackends.routePlan.gatedBackendIds ?? [],
         smokeCommand: diagnostics.runtimeBackends.routePlan.smokeCommand,
         issueCount: diagnostics.runtimeBackends.issues.length,
       },
@@ -907,7 +913,8 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Provider: ${readiness.provider.label} / ${readiness.provider.model} ` +
       `(${readiness.provider.configured ? 'configured' : 'missing'})`,
     `  Runtime: ${readiness.runtime.primaryBackendId ?? 'none'} ` +
-      `-> ${formatList(readiness.runtime.fallbackBackendIds)}`,
+      `-> ${formatList(readiness.runtime.fallbackBackendIds)} ` +
+      `(auto: ${formatList(readiness.runtime.autoEligibleBackendIds)}, gated: ${formatList(readiness.runtime.gatedBackendIds)})`,
     `  Browser: ${readiness.browser.primaryBackendId ?? 'none'} ` +
       `-> ${formatList(readiness.browser.fallbackBackendIds)}`,
     `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
