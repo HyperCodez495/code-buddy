@@ -55,6 +55,9 @@ describe('Hermes memory provider readiness', () => {
       status: 'missing',
     });
     expect(readiness.recommendations.join('\n')).toContain('OpenViking');
+    const rendered = renderHermesMemoryProvidersReadiness(readiness);
+    expect(rendered).toContain('Remediation: Set MEM0_API_KEY before relying on the Mem0 remote adapter.');
+    expect(rendered).toContain('Remediation: Add a ByteRover adapter before claiming full Hermes memory-provider parity.');
   });
 
   it('marks a configured remote provider without leaking credential values', () => {

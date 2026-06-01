@@ -253,6 +253,9 @@ export function renderHermesMemoryProvidersReadiness(
     if (provider.notes.length > 0) {
       lines.push(`    Notes: ${provider.notes.join(' ')}`);
     }
+    if (provider.remediation.length > 0) {
+      lines.push(`    Remediation: ${provider.remediation.join(' ')}`);
+    }
   }
 
   if (readiness.issues.length > 0) {

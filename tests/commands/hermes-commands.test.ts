@@ -243,6 +243,16 @@ describe('Hermes CLI commands', () => {
       );
       expect(raw).not.toContain('secret-mem0-token');
       expect(raw).not.toContain('memory.example.test');
+
+      consoleLogSpy.mockClear();
+      const textProgram = createProgram();
+      registerHermesCommands(textProgram);
+      await textProgram.parseAsync(['node', 'test', 'hermes', 'memory', 'status']);
+      const textOutput = getLogOutput();
+      expect(textOutput).toContain('Remediation: Set HONCHO_API_KEY before relying on the Honcho remote adapter.');
+      expect(textOutput).toContain('Remediation: Add a ByteRover adapter before claiming full Hermes memory-provider parity.');
+      expect(textOutput).not.toContain('secret-mem0-token');
+      expect(textOutput).not.toContain('memory.example.test');
     } finally {
       for (const key of keys) {
         const value = originalEnv.get(key);
