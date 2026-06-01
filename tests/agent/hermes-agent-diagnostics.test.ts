@@ -7,6 +7,7 @@ import { CustomAgentLoader } from '../../src/agent/custom/custom-agent-loader.js
 import { buildHermesAgentDiagnostics } from '../../src/agent/hermes-agent-diagnostics.js';
 
 let tempDir: string | null = null;
+const nodeDisplayCommand = path.basename(process.execPath);
 
 function makeTempDir(): string {
   tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-hermes-doctor-'));
@@ -176,10 +177,11 @@ describe('Hermes Agent diagnostics', () => {
       installed: true,
       configured: true,
       runnable: true,
-      command: process.execPath,
+      command: nodeDisplayCommand,
     });
     expect(local?.version).toMatch(/^v\d+\./);
     expect(local?.smokeCommand).toContain('OK-HERMES-LOCAL');
+    expect(JSON.stringify(diagnostics.runtimeBackends)).not.toContain(process.execPath);
 
     const docker = diagnostics.runtimeBackends.backends.find((backend) => backend.id === 'docker');
     expect(docker?.smokeCommand).toContain('OK-HERMES-DOCKER');
@@ -220,7 +222,7 @@ describe('Hermes Agent diagnostics', () => {
       installed: true,
       configured: true,
       runnable: true,
-      command: process.execPath,
+      command: nodeDisplayCommand,
       smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
     });
 
@@ -234,9 +236,11 @@ describe('Hermes Agent diagnostics', () => {
     expect(recording).toMatchObject({
       status: 'available',
       runnable: true,
+      command: nodeDisplayCommand,
       smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
     });
     expect(JSON.stringify(diagnostics.browserBackends)).not.toContain('secret-');
     expect(JSON.stringify(diagnostics.browserBackends)).not.toContain('ws://secret-cdp-host');
+    expect(JSON.stringify(diagnostics.browserBackends)).not.toContain(process.execPath);
   });
 });

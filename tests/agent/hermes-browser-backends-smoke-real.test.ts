@@ -1,7 +1,7 @@
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'child_process';
 import { mkdtemp, rm } from 'fs/promises';
 import { tmpdir } from 'os';
-import { dirname, join, resolve } from 'path';
+import { basename, dirname, join, resolve } from 'path';
 import { createServer } from 'net';
 import { chromium } from 'playwright';
 import { describe, expect, it } from 'vitest';
@@ -16,6 +16,7 @@ import {
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tsxCli = join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
+const nodeDisplayCommand = basename(process.execPath);
 
 async function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -209,6 +210,7 @@ describe('Hermes browser backend readiness and live smoke', () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: 'local-playwright',
+          command: nodeDisplayCommand,
           runnable: true,
           smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
           status: 'available',
@@ -229,6 +231,7 @@ describe('Hermes browser backend readiness and live smoke', () => {
         }),
         expect.objectContaining({
           id: 'session-recording',
+          command: nodeDisplayCommand,
           runnable: true,
           smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
           status: 'available',
@@ -237,6 +240,7 @@ describe('Hermes browser backend readiness and live smoke', () => {
     );
     expect(JSON.stringify(readiness)).not.toContain('secret-');
     expect(JSON.stringify(readiness)).not.toContain('ws://secret-cdp-host');
+    expect(JSON.stringify(readiness)).not.toContain(process.execPath);
   });
 
   it('launches Chromium through a real local Playwright smoke', async () => {

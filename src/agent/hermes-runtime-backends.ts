@@ -400,6 +400,17 @@ function firstLine(value: string): string | null {
   return line ?? null;
 }
 
+function commandDisplayName(command: string | null): string | null {
+  const trimmed = command?.trim();
+  if (!trimmed) return null;
+  const unquoted = trimmed.replace(/^["']|["']$/g, '');
+  const segments = unquoted.split(/[\\/]/).filter(Boolean);
+  if (path.isAbsolute(unquoted) || segments.length > 1) {
+    return segments[segments.length - 1] ?? unquoted;
+  }
+  return unquoted;
+}
+
 function presentEnvKeys(env: NodeJS.ProcessEnv, keys: readonly string[]): string[] {
   return keys.filter((key) => Boolean(env[key]?.trim()));
 }
@@ -438,6 +449,7 @@ function readSshConfigSource(homeDir: string): string[] {
 
 function localBackend(env: NodeJS.ProcessEnv): HermesRuntimeBackend {
   const probe = runProbe(process.execPath, ['--version'], env);
+  const displayCommand = commandDisplayName(process.execPath) ?? 'node';
   return {
     id: 'local',
     label: 'Local process',
@@ -446,10 +458,10 @@ function localBackend(env: NodeJS.ProcessEnv): HermesRuntimeBackend {
     installed: probe.ok,
     configured: true,
     runnable: probe.ok,
-    command: process.execPath,
+    command: displayCommand,
     version: firstLine(probe.output),
     credentialSources: [],
-    smokeCommand: `"${process.execPath}" -e "console.log('OK-HERMES-LOCAL')"`,
+    smokeCommand: `${displayCommand} -e "console.log('OK-HERMES-LOCAL')"`,
     notes: ['Uses the current Node.js runtime and workspace filesystem.'],
     remediation: probe.ok ? [] : ['Install Node.js or run Code Buddy from a valid Node.js runtime.'],
   };

@@ -11,6 +11,8 @@ import {
   type HermesRuntimeBackendsReadiness,
 } from '../../src/agent/hermes-runtime-backends.js';
 
+const nodeDisplayCommand = path.basename(process.execPath);
+
 function hasRunnableWsl(): boolean {
   if (process.platform !== 'win32') return false;
   const result = spawnSync('wsl', ['--status'], {
@@ -151,6 +153,8 @@ describe('Hermes runtime backend live smoke runner', () => {
     expect(readiness.routePlan.fallbackBackendIds).not.toContain('modal');
     expect(readiness.routePlan.fallbackBackendIds).not.toContain('daytona');
     expect(readiness.routePlan.fallbackBackendIds).not.toContain('vercel-sandbox');
+    expect(readiness.backends.find((backend) => backend.id === 'local')?.command).toBe(nodeDisplayCommand);
+    expect(JSON.stringify(readiness)).not.toContain(process.execPath);
   });
 
   it('runs the local backend smoke through a real Node subprocess', () => {

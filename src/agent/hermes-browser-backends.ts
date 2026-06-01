@@ -10,7 +10,7 @@ import { createRequire } from 'module';
 import { spawnSync } from 'child_process';
 import { mkdir, mkdtemp, stat } from 'fs/promises';
 import { tmpdir } from 'os';
-import { join, resolve } from 'path';
+import { isAbsolute, join, resolve } from 'path';
 import type { Browser, BrowserContext } from 'playwright';
 
 export type HermesBrowserBackendStatus = 'available' | 'configured' | 'missing' | 'unsupported';
@@ -97,6 +97,17 @@ function firstLine(value: string): string | null {
   return line ?? null;
 }
 
+function commandDisplayName(command: string | null): string | null {
+  const trimmed = command?.trim();
+  if (!trimmed) return null;
+  const unquoted = trimmed.replace(/^["']|["']$/g, '');
+  const segments = unquoted.split(/[\\/]/).filter(Boolean);
+  if (isAbsolute(unquoted) || segments.length > 1) {
+    return segments[segments.length - 1] ?? unquoted;
+  }
+  return unquoted;
+}
+
 function packageVersion(packageName: string): string | null {
   try {
     const packageJsonPath = require.resolve(`${packageName}/package.json`);
@@ -136,7 +147,7 @@ function localPlaywrightBackend(): HermesBrowserBackend {
     installed,
     configured: installed,
     runnable: installed,
-    command: process.execPath,
+    command: commandDisplayName(process.execPath),
     version,
     credentialSources: [],
     smokeCommand: installed ? 'buddy hermes browser-smoke local-playwright --json' : null,
@@ -266,7 +277,7 @@ function recordingBackend(): HermesBrowserBackend {
     installed,
     configured: installed,
     runnable: installed,
-    command: installed ? process.execPath : null,
+    command: installed ? commandDisplayName(process.execPath) : null,
     version,
     credentialSources: [],
     smokeCommand: installed ? 'buddy hermes browser-smoke local-playwright --json' : null,

@@ -14,6 +14,7 @@ import { resetDataRedactionEngine } from '../../src/security/data-redaction.js';
 import { SkillsHub } from '../../src/skills/hub.js';
 
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+const nodeDisplayCommand = path.basename(process.execPath);
 
 function createProgram(): Command {
   const program = new Command();
@@ -1409,7 +1410,7 @@ describe('Hermes CLI commands', () => {
       schemaVersion: number;
       readiness: {
         availableCount: number;
-        backends: Array<{ id: string; smokeCommand: string | null }>;
+        backends: Array<{ command: string | null; id: string; smokeCommand: string | null }>;
         routePlan: {
           mode: string;
           primaryBackendId: string | null;
@@ -1424,6 +1425,7 @@ describe('Hermes CLI commands', () => {
     expect(output.readiness.backends.map((backend) => backend.id)).toContain('local');
     expect(output.readiness.runnableCount).toBeGreaterThanOrEqual(1);
     expect(output.readiness.availableCount).toBeGreaterThanOrEqual(1);
+    expect(output.readiness.backends.find((backend) => backend.id === 'local')?.command).toBe(nodeDisplayCommand);
     expect(output.readiness.backends.find((backend) => backend.id === 'local')?.smokeCommand).toContain(
       'OK-HERMES-LOCAL',
     );
@@ -1432,6 +1434,7 @@ describe('Hermes CLI commands', () => {
       primaryBackendId: 'local',
       smokeCommand: 'buddy hermes runtime-smoke auto --json',
     });
+    expect(JSON.stringify(output)).not.toContain(process.execPath);
   });
 
   it('prints Hermes messaging gateway readiness without leaking channel secrets', async () => {
@@ -2723,6 +2726,7 @@ describe('Hermes CLI commands', () => {
           };
           runtimeBackends: {
             backends: Array<{
+              command: string | null;
               id: string;
               runnable: boolean;
               smokeCommand: string | null;
@@ -2732,6 +2736,7 @@ describe('Hermes CLI commands', () => {
           };
           browserBackends: {
             backends: Array<{
+              command: string | null;
               id: string;
               runnable: boolean;
               smokeCommand: string | null;
@@ -2761,6 +2766,7 @@ describe('Hermes CLI commands', () => {
       expect(output.diagnostics.runtimeBackends.backends).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            command: nodeDisplayCommand,
             id: 'local',
             runnable: true,
             status: 'available',
@@ -2772,6 +2778,7 @@ describe('Hermes CLI commands', () => {
       expect(output.diagnostics.browserBackends.backends).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
+            command: nodeDisplayCommand,
             id: 'local-playwright',
             runnable: true,
             status: 'available',
@@ -2782,6 +2789,7 @@ describe('Hermes CLI commands', () => {
       expect(output.diagnostics.browserBackends.localRunnableCount).toBeGreaterThanOrEqual(1);
       expect(raw).not.toContain('secret-openai-key');
       expect(raw).not.toContain('secret-nous-token');
+      expect(raw).not.toContain(process.execPath);
     } finally {
       for (const key of managedKeys) {
         const value = originalEnv.get(key);
@@ -2864,6 +2872,7 @@ describe('Hermes CLI commands', () => {
       schemaVersion: number;
       readiness: {
         backends: Array<{
+          command: string | null;
           id: string;
           runnable: boolean;
           smokeCommand: string | null;
@@ -2884,12 +2893,14 @@ describe('Hermes CLI commands', () => {
       expect.arrayContaining([
         expect.objectContaining({
           id: 'local-playwright',
+          command: nodeDisplayCommand,
           runnable: true,
           smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
           status: 'available',
         }),
         expect.objectContaining({
           id: 'session-recording',
+          command: nodeDisplayCommand,
           runnable: true,
           smokeCommand: 'buddy hermes browser-smoke local-playwright --json',
           status: 'available',
@@ -2902,6 +2913,7 @@ describe('Hermes CLI commands', () => {
       primaryBackendId: 'local-playwright',
       smokeCommand: 'buddy hermes browser-smoke auto --json',
     });
+    expect(JSON.stringify(output)).not.toContain(process.execPath);
   });
 
   it('runs a real local Hermes browser smoke from the CLI', async () => {
