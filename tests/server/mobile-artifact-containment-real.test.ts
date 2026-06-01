@@ -1,0 +1,128 @@
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import express from 'express';
+import http, { type Server } from 'http';
+import os from 'os';
+import path from 'path';
+import {
+  mkdir,
+  mkdtemp,
+  readFile,
+  rm,
+  writeFile,
+} from 'fs/promises';
+
+import {
+  activePairingCode,
+  activeTokens,
+  mobileRouter,
+} from '../../src/server/routes/mobile.js';
+import { RunStore, setActiveRunStore } from '../../src/observability/run-store.js';
+
+describe('mobileRouter artifact containment (real HTTP)', () => {
+  let baseUrl: string;
+  let server: Server;
+  let store: RunStore;
+  let tempDir: string;
+
+  beforeEach(async () => {
+    tempDir = await mkdtemp(path.join(os.tmpdir(), 'mobile-artifacts-real-'));
+    store = new RunStore(tempDir);
+    setActiveRunStore(store);
+    activeTokens.clear();
+
+    const app = express();
+    app.use(express.json());
+    app.use('/api/mobile', mobileRouter);
+
+    server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected TCP listener for mobile artifact containment test');
+    }
+    baseUrl = `http://127.0.0.1:${address.port}/api/mobile`;
+  });
+
+  afterEach(async () => {
+    activeTokens.clear();
+    store.dispose();
+    setActiveRunStore(null);
+    await new Promise<void>((resolve, reject) => {
+      server.close((error) => (error ? reject(error) : resolve()));
+    });
+    await rm(tempDir, { recursive: true, force: true });
+  });
+
+  async function pairToken(): Promise<string> {
+    const res = await fetch(`${baseUrl}/pair`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ code: activePairingCode, deviceLabel: 'real-http-test' }),
+    });
+    expect(res.status).toBe(200);
+    const data = await res.json() as { token: string };
+    return data.token;
+  }
+
+  async function rawMobileGet(pathname: string, token: string): Promise<{ body: string; status: number }> {
+    const address = server.address();
+    if (!address || typeof address === 'string') {
+      throw new Error('Expected TCP listener for raw mobile request');
+    }
+
+    return await new Promise((resolve, reject) => {
+      const req = http.get({
+        hostname: '127.0.0.1',
+        port: address.port,
+        path: pathname,
+        headers: { Authorization: `Bearer ${token}` },
+      }, (res) => {
+        let body = '';
+        res.on('data', (chunk) => {
+          body += chunk;
+        });
+        res.on('end', () => {
+          resolve({ body, status: res.statusCode ?? 0 });
+        });
+      });
+      req.on('error', reject);
+    });
+  }
+
+  it('serves a nested artifact inside the run artifact directory', async () => {
+    const token = await pairToken();
+    const runId = 'run-real-artifact-ok';
+    const artifactPath = path.join(tempDir, runId, 'artifacts', 'logs', 'summary.txt');
+    await mkdir(path.dirname(artifactPath), { recursive: true });
+    await writeFile(artifactPath, 'inside artifact', 'utf8');
+
+    const res = await fetch(`${baseUrl}/runs/${runId}/artifacts/logs/summary.txt`, {
+      headers: { Authorization: `Bearer ${token}` },
+    });
+
+    expect(res.status).toBe(200);
+    const data = await res.json() as { content: string; ok: boolean };
+    expect(data).toMatchObject({ content: 'inside artifact', ok: true });
+  });
+
+  it('blocks encoded traversal into sibling directories with the same prefix', async () => {
+    const token = await pairToken();
+    const runId = 'run-real-artifact-escape';
+    const artifactDir = path.join(tempDir, runId, 'artifacts');
+    const siblingDir = path.join(tempDir, runId, 'artifacts_evil');
+    const siblingSecret = path.join(siblingDir, 'secret.txt');
+    await mkdir(artifactDir, { recursive: true });
+    await mkdir(siblingDir, { recursive: true });
+    await writeFile(siblingSecret, 'sibling secret should not be readable', 'utf8');
+
+    const result = await rawMobileGet(
+      `/api/mobile/runs/${runId}/artifacts/%2e%2e/artifacts_evil/secret.txt`,
+      token,
+    );
+
+    expect(await readFile(siblingSecret, 'utf8')).toContain('sibling secret');
+    expect(result.status).toBe(403);
+    expect(result.body).toContain('Path traversal');
+    expect(result.body).not.toContain('sibling secret');
+  });
+});

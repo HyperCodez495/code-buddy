@@ -97,6 +97,11 @@ export function loopbackOnlyMiddleware(req: Request, res: Response, next: NextFu
   next();
 }
 
+function isPathInsideDirectory(rootDir: string, candidatePath: string): boolean {
+  const relative = path.relative(path.resolve(rootDir), path.resolve(candidatePath));
+  return relative === '' || (!!relative && !relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
 // Authentication middleware for /api/mobile endpoints
 export function mobileAuthMiddleware(req: Request, res: Response, next: NextFunction) {
   const authHeader = req.headers.authorization;
@@ -248,11 +253,11 @@ mobileRouter.get('/runs/:runId/artifacts/*artifactPath', async (req: Request, re
       return;
     }
 
-    const artifactDir = path.join(runDir, 'artifacts');
+    const artifactDir = path.resolve(runDir, 'artifacts');
     const filePath = path.resolve(artifactDir, String(artifactPath));
 
     // Safety check: ensure file is inside the artifact folder (prevent directory traversal)
-    if (!filePath.startsWith(artifactDir)) {
+    if (!isPathInsideDirectory(artifactDir, filePath)) {
       res.status(403).json({ ok: false, error: 'Access denied: Path traversal detected' });
       return;
     }
