@@ -387,6 +387,7 @@ describe('Hermes CLI commands', () => {
         doctor: 'buddy hermes doctor safe --json',
         messaging: 'buddy hermes messaging status --json',
         mobile: 'buddy hermes mobile status --json',
+        portal: 'buddy hermes portal status --json',
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
@@ -434,6 +435,7 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Skills:');
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
+      expect(textOutput).toContain('Portal: buddy hermes portal status --json');
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');
       expect(textOutput).toContain('Trajectories: buddy hermes trajectories status --json');

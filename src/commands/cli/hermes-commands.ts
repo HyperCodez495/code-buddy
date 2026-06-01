@@ -438,6 +438,7 @@ interface HermesOverviewStatus {
     messaging: string;
     mobile: string;
     parity: string;
+    portal: string;
     providers: string;
     protocols: string;
     runtime: string;
@@ -1042,6 +1043,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       messaging: 'buddy hermes messaging status --json',
       mobile: 'buddy hermes mobile status --json',
       parity: 'buddy hermes parity --json',
+      portal: 'buddy hermes portal status --json',
       providers: 'buddy hermes providers status --json',
       protocols: 'buddy hermes protocols status --json',
       runtime: 'buddy hermes runtime status --json',
@@ -1156,6 +1158,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     'Commands:',
     `  Doctor: ${status.commands.doctor}`,
     `  Todo: ${status.commands.todo}`,
+    `  Portal: ${status.commands.portal}`,
     `  Messaging: ${status.commands.messaging}`,
     `  Mobile: ${status.commands.mobile}`,
     `  Trajectories: ${status.commands.trajectories}`,
