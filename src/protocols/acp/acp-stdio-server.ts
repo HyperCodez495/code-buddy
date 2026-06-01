@@ -270,7 +270,7 @@ export class AcpStdioServer {
         });
         return;
       }
-      if ('error' in msg && msg.error !== undefined && !asRecord(msg.error)) {
+      if ('error' in msg && msg.error !== undefined && !isJsonRpcErrorPayload(msg.error)) {
         this.handleClientResponse(String(id), {
           jsonrpc: '2.0',
           id,
@@ -583,6 +583,11 @@ function parseJsonRpcParams(value: unknown): Record<string, unknown> | undefined
 
 function isValidJsonRpcId(value: unknown): boolean {
   return value === null || typeof value === 'string' || typeof value === 'number';
+}
+
+function isJsonRpcErrorPayload(value: unknown): boolean {
+  const error = asRecord(value);
+  return !!error && Number.isInteger(error.code) && typeof error.message === 'string';
 }
 
 function parsePromptContentBlocks(value: unknown): AcpContentBlock[] {

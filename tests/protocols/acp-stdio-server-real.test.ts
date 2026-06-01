@@ -635,6 +635,53 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('rejects client responses with malformed error object fields', async () => {
+    const runner: AcpPromptRunner = async ({ requestClient, sessionId }) => {
+      await requestClient('fs/read_text_file', {
+        sessionId,
+        path: '/tmp/project/README.md',
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false } },
+      },
+    });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'read file with malformed error object' }] },
+    });
+    await harness.flush();
+
+    const clientRequest = harness.requestFor('fs/read_text_file');
+    expect(typeof clientRequest?.id).toBe('string');
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: clientRequest?.id,
+      error: { code: 'E_PERMISSION', message: ['permission denied'] },
+    });
+    await harness.flush();
+
+    expect(harness.responseFor(3)?.error).toMatchObject({
+      code: -32600,
+      message: 'Invalid ACP client response',
+    });
+  });
+
   it('times out unanswered agent-to-client requests instead of hanging forever', async () => {
     const runner: AcpPromptRunner = async ({ requestClient, sessionId }) => {
       await requestClient('fs/read_text_file', {
