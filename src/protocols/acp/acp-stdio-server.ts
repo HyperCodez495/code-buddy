@@ -245,7 +245,7 @@ export class AcpStdioServer {
     }
 
     const id = msg.id;
-    const isRequest = id !== undefined && id !== null;
+    const isRequest = id !== undefined;
     const method = msg.method;
     const rawParams = msg.params;
 

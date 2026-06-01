@@ -948,6 +948,21 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('responds to JSON-RPC requests that use a null id', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: null,
+      method: 'initialize',
+      params: { protocolVersion: 1, clientCapabilities: {} },
+    });
+    await harness.flush();
+
+    const response = harness.messages.find((message) => message.id === null && message.result);
+    expect(response?.result.protocolVersion).toBe(ACP_PROTOCOL_VERSION);
+  });
+
   it('rejects non-object params on ACP requests instead of coercing them', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
 
