@@ -143,10 +143,14 @@ export async function executeHermesLifecycleHook(
 }
 
 export function renderHermesHookLifecycleManifest(manifest: HermesHookLifecycleManifest): string {
+  const activeStages = manifest.stages.filter((stage) => stage.active).length;
+  const blockingStages = manifest.stages.filter((stage) => stage.blocksOperation).length;
   const lines = [
     'Hermes hook lifecycle:',
     `  Schema version: ${manifest.schemaVersion}`,
     `  Workspace: ${manifest.workingDirectory}`,
+    `  Active stages: ${activeStages}/${manifest.stages.length}`,
+    `  Blocking stages: ${blockingStages}/${manifest.stages.length}`,
     '',
   ];
 
@@ -154,6 +158,8 @@ export function renderHermesHookLifecycleManifest(manifest: HermesHookLifecycleM
     const active = stage.active ? 'active' : 'available';
     lines.push(`${stage.label} (${stage.stage})`);
     lines.push(`  Status: ${active}`);
+    lines.push(`  Active: ${stage.active ? 'yes' : 'no'}`);
+    lines.push(`  Default behavior: ${stage.defaultBehavior}`);
     lines.push(`  User event: ${stage.userHookEvent}`);
     if (stage.toolHookStage) {
       lines.push(`  Tool stage: ${stage.toolHookStage}`);

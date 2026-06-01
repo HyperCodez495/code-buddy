@@ -2350,7 +2350,11 @@ describe('Hermes CLI commands', () => {
 
     const output = getLogOutput();
     expect(output).toContain('Hermes hook lifecycle:');
+    expect(output).toContain('Active stages: 0/5');
+    expect(output).toContain('Blocking stages: 3/5');
     expect(output).toContain('Before memory write (before_memory_write)');
+    expect(output).toContain('Active: no');
+    expect(output).toContain('Default behavior: allow');
     expect(output).toContain('Before scheduled delivery (before_scheduled_delivery)');
     expect(output).toContain('User event: AfterRunComplete');
   });
