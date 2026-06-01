@@ -739,6 +739,43 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('rejects malformed session/prompt content blocks without poisoning the session', async () => {
+    const seenTexts: string[] = [];
+    harness = new AcpHarness(async ({ prompt }) => {
+      seenTexts.push(prompt[0]?.text ?? '');
+      return { stopReason: 'end_turn' };
+    });
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 2,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [null] },
+    });
+    await harness.flush();
+
+    expect(seenTexts).toEqual([]);
+    expect(harness.responseFor(2)?.error).toMatchObject({
+      code: -32602,
+      message: 'Invalid prompt content block at index 0',
+    });
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'still usable' }] },
+    });
+    await harness.flush();
+
+    expect(seenTexts).toEqual(['still usable']);
+    expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
   it('cancels an in-flight turn via the session/cancel notification', async () => {
     const runner: AcpPromptRunner = ({ signal }) =>
       new Promise((resolve) => {

@@ -407,13 +407,7 @@ export class AcpStdioServer {
       error.code = -32000;
       throw error;
     }
-    if (!Array.isArray(params.prompt)) {
-      const error = new Error('Invalid or missing prompt') as Error & { code?: number };
-      error.code = -32602;
-      throw error;
-    }
-
-    const prompt = params.prompt as AcpContentBlock[];
+    const prompt = parsePromptContentBlocks(params.prompt);
     const controller = new AbortController();
     session.active = controller;
     if (!session.title) {
@@ -528,6 +522,33 @@ function normalizeClientCapabilities(value: unknown): AcpClientCapabilities {
       : undefined,
     terminal: input.terminal === true,
   };
+}
+
+function parsePromptContentBlocks(value: unknown): AcpContentBlock[] {
+  if (!Array.isArray(value)) {
+    throw invalidParamsError('Invalid or missing prompt');
+  }
+
+  return value.map((block, index) => {
+    const record = asRecord(block);
+    if (!record || typeof record.type !== 'string' || record.type.trim() === '') {
+      throw invalidParamsError(`Invalid prompt content block at index ${index}`);
+    }
+    if ('text' in record && record.text !== undefined && typeof record.text !== 'string') {
+      throw invalidParamsError(`Invalid prompt content block at index ${index}`);
+    }
+    if (record.type === 'text' && typeof record.text !== 'string') {
+      throw invalidParamsError(`Invalid prompt content block at index ${index}`);
+    }
+
+    return record as AcpContentBlock;
+  });
+}
+
+function invalidParamsError(message: string): Error & { code?: number } {
+  const error = new Error(message) as Error & { code?: number };
+  error.code = -32602;
+  return error;
 }
 
 function buildSessionTitle(prompt: AcpContentBlock[]): string | undefined {

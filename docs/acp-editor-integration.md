@@ -37,7 +37,7 @@ The agent uses your configured provider (auto-detected via the usual keys —
 | `session/new` | Returns a `sessionId`; records the editor `cwd`. |
 | `session/list` | Lists in-process sessions newest first, with optional exact `cwd` filtering and prompt-derived metadata retained even when a prompt fails. |
 | `session/load` | Reloads an existing in-process session, replays prior `session/update` history, and refreshes the session `cwd` / `updatedAt`; rejected while a prompt is active. |
-| `session/prompt` | Runs a valid prompt array, streams `session/update` `agent_message_chunk` notifications, resolves with `{ stopReason }`; malformed or concurrent prompts for the same session are rejected. |
+| `session/prompt` | Runs a valid prompt array of content blocks, streams `session/update` `agent_message_chunk` notifications, resolves with `{ stopReason }`; malformed payloads/content blocks or concurrent prompts for the same session are rejected before the runner starts. |
 | `session/cancel` | Aborts the active turn → `stopReason: "cancelled"`; notification form is silent, valid request form returns `null`. |
 
 The stdio transport can also issue agent→client JSON-RPC requests and await
