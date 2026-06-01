@@ -6,6 +6,7 @@ import {
   isLearningAgentEnabled,
   listLearningSkillUsage,
 } from './learning-agent.js';
+import { safeLocalPathLabel, safeWorkspacePath } from './hermes-public-paths.js';
 import { getUserModel } from '../memory/user-model.js';
 import { RunStore, type RunSummary } from '../observability/run-store.js';
 
@@ -223,7 +224,7 @@ function countLearningSkillCandidates(workDir: string): HermesLearningLoopStatus
     eligibleCandidateCount: 0,
     ineligibleCandidateCount: 0,
     learningCandidateCount: 0,
-    root,
+    root: safeWorkspacePath(workDir, root),
     samples: [],
   };
   try {
@@ -243,7 +244,7 @@ function countLearningSkillCandidates(workDir: string): HermesLearningLoopStatus
       eligibleCandidateCount,
       ineligibleCandidateCount: candidates.length - eligibleCandidateCount,
       learningCandidateCount: candidates.length,
-      root,
+      root: safeWorkspacePath(workDir, root),
       samples: candidates.slice(0, 3),
     };
   } catch {
@@ -473,8 +474,8 @@ export function buildHermesLearningLoopStatus(
     schemaVersion: 1,
     generatedAt: options.generatedAt ?? new Date().toISOString(),
     ok: true,
-    workDir,
-    runsDir: store.getRunsDir(),
+    workDir: safeLocalPathLabel('workspace'),
+    runsDir: safeLocalPathLabel('codebuddy-runs'),
     summary: {
       recentRunCount: recentRuns.length,
       retrospectiveEligibleRunCount,

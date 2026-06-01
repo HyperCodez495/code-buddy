@@ -565,6 +565,8 @@ describe('Hermes CLI commands', () => {
         kind: string;
         recommendations: string[];
         schemaVersion: number;
+        runsDir: string;
+        workDir: string;
         summary: {
           acceptedUserObservationCount: number;
           pendingLessonCandidateCount: number;
@@ -611,6 +613,7 @@ describe('Hermes CLI commands', () => {
           }>;
           skillCandidates: {
             learningCandidateCount: number;
+            root: string;
             samples: Array<{
               candidateId: string;
               eligible: boolean;
@@ -625,6 +628,8 @@ describe('Hermes CLI commands', () => {
 
       expect(output.kind).toBe('hermes_learning_loop_status');
       expect(output.schemaVersion).toBe(1);
+      expect(output.workDir).toBe('[workspace]');
+      expect(output.runsDir).toBe('[codebuddy-runs]');
       expect(output.summary.recentRunCount).toBe(3);
       expect(output.summary.retrospectiveEligibleRunCount).toBe(2);
       expect(output.summary.retrospectiveArtifactCount).toBe(1);
@@ -697,6 +702,7 @@ describe('Hermes CLI commands', () => {
         expect.arrayContaining([expect.stringContaining(`buddy run retrospective ${pendingRetrospectiveRunId}`)]),
       );
       expect(output.state.skillCandidates.learningCandidateCount).toBe(1);
+      expect(output.state.skillCandidates.root).toBe('.codebuddy/skill-candidates/learning');
       expect(output.state.skillCandidates.samples).toEqual([
         expect.objectContaining({
           candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
@@ -710,6 +716,11 @@ describe('Hermes CLI commands', () => {
       ]);
       expect(output.commands.retrospective).toBe('buddy run retrospective <run-id> --force --json');
       expect(raw).not.toContain(privatePreference);
+      const serialized = JSON.stringify(output);
+      expect(serialized).not.toContain(tmpDir);
+      expect(serialized).not.toContain(tmpDir.replace(/\\/g, '\\\\'));
+      expect(serialized).not.toContain(runsDir);
+      expect(serialized).not.toContain(runsDir.replace(/\\/g, '\\\\'));
     } finally {
       store?.dispose();
       process.chdir(oldCwd);
@@ -961,7 +972,9 @@ describe('Hermes CLI commands', () => {
         kind: string;
         schemaVersion: number;
         summary: {
+          cacheDir: string;
           installedCount: number;
+          lockfilePath: string;
           health: {
             missingFileCount: number;
             nextCommand: string;
@@ -972,12 +985,14 @@ describe('Hermes CLI commands', () => {
             exists: boolean;
             integrityOk: boolean;
             name: string;
+            path: string;
           }>;
           candidateReview: {
             eligibleCount: number;
             ineligibleCount: number;
             listCommand: string;
             nextInspectCommand: string;
+            root: string;
             samples: Array<{
               candidateId: string;
               eligible: boolean;
@@ -987,11 +1002,15 @@ describe('Hermes CLI commands', () => {
             totalCount: number;
           };
           reviewCommands: string[];
+          skillRoot: string;
         };
       };
 
       expect(output.kind).toBe('hermes_skills_status');
       expect(output.schemaVersion).toBe(1);
+      expect(output.summary.cacheDir).toBe('.codebuddy/skills-cache');
+      expect(output.summary.lockfilePath).toBe('.codebuddy/skills-lock.json');
+      expect(output.summary.skillRoot).toBe('.codebuddy/skills');
       expect(output.summary.installedCount).toBe(2);
       expect(output.summary.health.ok).toBe(false);
       expect(output.summary.health.missingFileCount).toBe(1);
@@ -1011,11 +1030,13 @@ describe('Hermes CLI commands', () => {
         ]),
       );
       expect(output.summary.packages.every((skill) => skill.contentPreview === undefined)).toBe(true);
+      expect(output.summary.packages.every((skill) => !path.isAbsolute(skill.path))).toBe(true);
       expect(output.summary.candidateReview).toMatchObject({
         eligibleCount: 1,
         ineligibleCount: 0,
         listCommand: 'buddy tools skill-candidate list --eligible-only --json',
         nextInspectCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/review-ready --json',
+        root: '.codebuddy/skill-candidates',
         totalCount: 1,
       });
       expect(output.summary.candidateReview.samples).toEqual([
@@ -1031,6 +1052,8 @@ describe('Hermes CLI commands', () => {
       expect(raw).not.toContain('Body for healthy-helper');
       expect(raw).not.toContain('Body for missing-helper');
       expect(raw).not.toContain('Ready candidate body must stay private.');
+      expect(JSON.stringify(output)).not.toContain(tmpDir);
+      expect(JSON.stringify(output)).not.toContain(tmpDir.replace(/\\/g, '\\\\'));
 
       consoleLogSpy.mockClear();
       const textProgram = createProgram();

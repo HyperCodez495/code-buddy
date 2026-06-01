@@ -7,6 +7,7 @@ import {
   type SkillHistoryResult,
   type SkillLifecycleState,
 } from '../skills/hub.js';
+import { safeWorkspacePath } from './hermes-public-paths.js';
 
 export type HermesSkillPackageStatus = 'active' | 'disabled' | 'deprecated';
 export type HermesSkillPackageLifecycleAction = 'enable' | 'disable' | 'deprecate';
@@ -125,10 +126,12 @@ export function buildHermesSkillPackageSummary(
   workDir: string = process.cwd(),
   options: HermesSkillPackageSummaryOptions = {},
 ): HermesSkillPackageSummary {
+  const root = path.resolve(workDir);
   const { cacheDir, hub, lockfilePath, skillRoot } = buildWorkspaceSkillsHub(workDir);
   const allPackages = hub
     .list()
     .map((skill) => summarizeInstalledSkill(
+      root,
       skill,
       hub.getInstalledSkillHistory(skill.name),
       hub.info(skill.name)?.content,
@@ -143,13 +146,13 @@ export function buildHermesSkillPackageSummary(
   const health = buildPackageHealth(allPackages);
 
   return {
-    cacheDir,
+    cacheDir: safeWorkspacePath(root, cacheDir),
     candidateReview: buildSkillCandidateReviewStatus(workDir),
     disabledCount: allPackages.filter((skill) => !skill.enabled).length,
     enabledCount: allPackages.filter((skill) => skill.enabled).length,
     health,
     installedCount: allPackages.length,
-    lockfilePath,
+    lockfilePath: safeWorkspacePath(root, lockfilePath),
     packages,
     reviewCommands: [
       'buddy skills list --all --json',
@@ -158,7 +161,7 @@ export function buildHermesSkillPackageSummary(
       'Use skill_manage with approved_by for enable/disable/deprecate/delete/patch/rollback/reset/update.',
     ],
     rollbackableCount: allPackages.reduce((total, skill) => total + skill.rollbackableCount, 0),
-    skillRoot,
+    skillRoot: safeWorkspacePath(root, skillRoot),
   };
 }
 
@@ -199,6 +202,7 @@ export function renderHermesSkillPackageSummary(summary: HermesSkillPackageSumma
 
 function buildSkillCandidateReviewStatus(workDir: string): HermesSkillCandidateReviewStatus {
   const root = path.join(path.resolve(workDir), '.codebuddy', 'skill-candidates');
+  const workspaceRoot = path.resolve(workDir);
   const candidates = readSkillCandidateSamples(path.resolve(workDir), root)
     .sort((left, right) =>
       Number(right.eligible) - Number(left.eligible)
@@ -214,7 +218,7 @@ function buildSkillCandidateReviewStatus(workDir: string): HermesSkillCandidateR
     ineligibleCount: candidates.length - eligibleCount,
     listCommand,
     ...(candidates[0]?.inspectCommand ? { nextInspectCommand: candidates[0].inspectCommand } : {}),
-    root,
+    root: safeWorkspacePath(workspaceRoot, root),
     samples: candidates.slice(0, 3),
     totalCount: candidates.length,
   };
@@ -324,6 +328,7 @@ export function setHermesSkillPackageLifecycle(
   if (!installed) return null;
 
   return summarizeInstalledSkill(
+    path.resolve(workDir),
     installed,
     hub.getInstalledSkillHistory(installed.name),
     hub.info(installed.name)?.content,
@@ -358,6 +363,7 @@ export function rollbackHermesSkillPackage(
   if (!rolledBack) return null;
 
   return summarizeInstalledSkill(
+    path.resolve(workDir),
     rolledBack.installed,
     hub.getInstalledSkillHistory(rolledBack.installed.name),
     hub.info(rolledBack.installed.name)?.content,
@@ -408,6 +414,7 @@ export async function updateHermesSkillPackage(
   if (!updated) return null;
 
   return summarizeInstalledSkill(
+    path.resolve(workDir),
     updated.installed,
     hub.getInstalledSkillHistory(updated.installed.name),
     hub.info(updated.installed.name)?.content,
@@ -439,6 +446,7 @@ export async function resetHermesSkillPackage(
   if (!reset) return null;
 
   return summarizeInstalledSkill(
+    path.resolve(workDir),
     reset.installed,
     hub.getInstalledSkillHistory(reset.installed.name),
     hub.info(reset.installed.name)?.content,
@@ -478,6 +486,7 @@ export function patchHermesSkillPackage(
   if (!patched) return null;
 
   return summarizeInstalledSkill(
+    path.resolve(workDir),
     patched.installed,
     hub.getInstalledSkillHistory(patched.installed.name),
     hub.info(patched.installed.name)?.content,
@@ -486,6 +495,7 @@ export function patchHermesSkillPackage(
 }
 
 function summarizeInstalledSkill(
+  workDir: string,
   skill: InstalledSkill,
   history: SkillHistoryResult | null,
   content: string | undefined,
@@ -512,7 +522,7 @@ function summarizeInstalledSkill(
     ...(lifecycle?.updatedBy ? { lastLifecycleReviewer: lifecycle.updatedBy } : {}),
     ...(typeof usage?.lastUsedAt === 'number' ? { lastUsedAt: usage.lastUsedAt } : {}),
     name: skill.name,
-    path: skill.path,
+    path: safeWorkspacePath(workDir, skill.path),
     rollbackableCount: history?.rollbackableCount ?? 0,
     ...(typeof history?.current.sizeBytes === 'number' ? { sizeBytes: history.current.sizeBytes } : {}),
     source: skill.source,
