@@ -328,7 +328,7 @@ function buildProviderStatuses(env: NodeJS.ProcessEnv, homeDir: string): HermesP
     if (definition.provider === 'openai') {
       const codexAuthPath = path.join(homeDir, '.codebuddy', 'codex-auth.json');
       if (hasTokenLikeJsonFile(codexAuthPath)) {
-        credentialSources.push(codexAuthPath);
+        credentialSources.push(path.basename(codexAuthPath));
       }
     }
     const baseUrl = envValue(env, ...definition.baseUrlEnv) ?? definition.defaultBaseUrl ?? null;

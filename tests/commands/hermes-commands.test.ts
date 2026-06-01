@@ -1867,8 +1867,8 @@ describe('Hermes CLI commands', () => {
       for (const key of managedKeys) {
         delete process.env[key];
       }
-      process.env.CODEBUDDY_NOUS_ACCESS_TOKEN = 'secret-nous-token';
-      process.env.CODEBUDDY_NOUS_AUTH_FILE = path.join(tmpDir, 'missing-nous-auth.json');
+      process.env.CODEBUDDY_NOUS_AUTH_FILE = path.join(tmpDir, 'nous-auth.json');
+      await fs.outputJson(process.env.CODEBUDDY_NOUS_AUTH_FILE, { access_token: 'secret-nous-file-token' });
       process.env.CODEBUDDY_NOUS_TOOL_GATEWAY_URL = 'https://gateway.example.test';
       process.env.CODEBUDDY_NOUS_MANAGED_TOOLS = 'web,tts';
       process.env.FIRECRAWL_API_KEY = 'secret-firecrawl-key';
@@ -1884,6 +1884,7 @@ describe('Hermes CLI commands', () => {
           credentialPresent: boolean;
           credentialSources: string[];
           authFilePresent: boolean;
+          authFilePath: string;
           toolGatewayConfigured: boolean;
           toolGatewayUrl: string;
         };
@@ -1902,8 +1903,9 @@ describe('Hermes CLI commands', () => {
       expect(output.officialSource.inspectedCommit).toBe('5921d667');
       expect(output.officialSource.sourceFiles).toContain('hermes_cli/portal_cli.py');
       expect(output.portal.credentialPresent).toBe(true);
-      expect(output.portal.credentialSources).toContain('CODEBUDDY_NOUS_ACCESS_TOKEN');
-      expect(output.portal.authFilePresent).toBe(false);
+      expect(output.portal.credentialSources).toContain('nous-auth.json');
+      expect(output.portal.authFilePath).toBe('nous-auth.json');
+      expect(output.portal.authFilePresent).toBe(true);
       expect(output.portal.toolGatewayConfigured).toBe(true);
       expect(output.portal.toolGatewayUrl).toBe('https://gateway.example.test');
       expect(output.toolGateway.managedByNousCount).toBe(2);
@@ -1929,8 +1931,10 @@ describe('Hermes CLI commands', () => {
         ]),
       );
       expect(raw).not.toContain('secret-nous-token');
+      expect(raw).not.toContain('secret-nous-file-token');
       expect(raw).not.toContain('secret-firecrawl-key');
       expect(raw).not.toContain('secret-xai-key');
+      expect(raw).not.toContain(tmpDir);
 
       consoleLogSpy.mockClear();
       const textProgram = createProgram();
@@ -1946,8 +1950,10 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Cloud terminal');
       expect(textOutput).toContain('not configured | configured=no, viaNous=no');
       expect(textOutput).not.toContain('secret-nous-token');
+      expect(textOutput).not.toContain('secret-nous-file-token');
       expect(textOutput).not.toContain('secret-firecrawl-key');
       expect(textOutput).not.toContain('secret-xai-key');
+      expect(textOutput).not.toContain(tmpDir);
     } finally {
       for (const key of managedKeys) {
         const value = originalEnv.get(key);

@@ -81,6 +81,10 @@ function presentEnvKeys(env: NodeJS.ProcessEnv, keys: readonly string[]): string
   return keys.filter((key) => Boolean(env[key]?.trim()));
 }
 
+function credentialSourceName(filePath: string): string {
+  return path.basename(filePath) || 'credential-file';
+}
+
 function readJsonIfPresent(filePath: string): Record<string, unknown> | null {
   try {
     if (!fs.existsSync(filePath)) return null;
@@ -203,7 +207,7 @@ export function buildHermesPortalStatus(options: HermesPortalStatusOptions = {})
   const envCredentialSources = presentEnvKeys(env, NOUS_CREDENTIAL_ENVS);
   const credentialSources = [
     ...envCredentialSources,
-    ...(hasTokenLikeField(authFile) ? [authFilePath] : []),
+    ...(hasTokenLikeField(authFile) ? [credentialSourceName(authFilePath)] : []),
   ];
   const credentialPresent = credentialSources.length > 0;
   const toolGatewayUrl = envValue(env, 'CODEBUDDY_NOUS_TOOL_GATEWAY_URL', 'NOUS_TOOL_GATEWAY_URL');
@@ -250,7 +254,7 @@ export function buildHermesPortalStatus(options: HermesPortalStatusOptions = {})
       docsUrl: DOCS_URL,
       portalBaseUrl,
       inferenceBaseUrl,
-      authFilePath,
+      authFilePath: credentialSourceName(authFilePath),
       authFilePresent,
       credentialPresent,
       credentialSources,
@@ -269,7 +273,7 @@ export function buildHermesPortalStatus(options: HermesPortalStatusOptions = {})
     },
     notes: [
       'This is a local readiness/status surface, not an OAuth device-code implementation.',
-      'Secrets are intentionally reported only by source name/path, never by value.',
+      'Secrets are intentionally reported only by source name, never by value or local path.',
       'Nous-managed routing requires a Nous credential plus CODEBUDDY_NOUS_TOOL_GATEWAY_URL/NOUS_TOOL_GATEWAY_URL or CODEBUDDY_NOUS_TOOL_GATEWAY=1.',
     ],
   };

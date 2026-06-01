@@ -120,6 +120,34 @@ describe('Hermes Agent diagnostics', () => {
     expect(JSON.stringify(diagnostics)).not.toContain('secret-nous-token');
   });
 
+  it('reports ChatGPT OAuth credential file by source name only', () => {
+    const dir = makeTempDir();
+    fs.mkdirSync(path.join(dir, '.codebuddy'), { recursive: true });
+    fs.writeFileSync(
+      path.join(dir, '.codebuddy', 'codex-auth.json'),
+      JSON.stringify({ tokens: { access_token: 'secret-chatgpt-oauth-token' } }),
+    );
+    const loader = new CustomAgentLoader(dir);
+
+    const diagnostics = buildHermesAgentDiagnostics({
+      env: {
+        CODEBUDDY_MODEL: 'gpt-5.5',
+      },
+      homeDir: dir,
+      loader,
+      settingsModel: null,
+    });
+    const raw = JSON.stringify(diagnostics);
+
+    expect(diagnostics.providerReadiness.activeProvider).toMatchObject({
+      provider: 'openai',
+      configured: true,
+      credentialSources: ['codex-auth.json'],
+    });
+    expect(raw).not.toContain(dir);
+    expect(raw).not.toContain('secret-chatgpt-oauth-token');
+  });
+
   it('reports runtime backend inventory from real local probes', () => {
     const loader = new CustomAgentLoader(makeTempDir());
     const diagnostics = buildHermesAgentDiagnostics({
