@@ -33,7 +33,7 @@ The agent uses your configured provider (auto-detected via the usual keys —
 
 | Method | Behavior |
 |---|---|
-| `initialize` | Capability negotiation (`protocolVersion: 1`, text prompts). |
+| `initialize` | Capability negotiation (`protocolVersion: 1` only, text prompts). |
 | `session/new` | Returns a `sessionId`; records the editor `cwd`. |
 | `session/list` | Lists in-process sessions newest first, with optional exact `cwd` filtering and prompt-derived metadata. |
 | `session/load` | Reloads an existing in-process session, replays prior `session/update` history, and refreshes the session `cwd` / `updatedAt`; rejected while a prompt is active. |

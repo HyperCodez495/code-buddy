@@ -311,6 +311,14 @@ export class AcpStdioServer {
   }
 
   private handleInitialize(params: Record<string, unknown>): unknown {
+    if (params.protocolVersion !== this.protocolVersion) {
+      const error = new Error(
+        `Unsupported ACP protocolVersion: ${String(params.protocolVersion)} (expected ${this.protocolVersion})`,
+      ) as Error & { code?: number };
+      error.code = -32602;
+      throw error;
+    }
+
     this.clientCapabilities = normalizeClientCapabilities(params.clientCapabilities);
     return {
       protocolVersion: this.protocolVersion,

@@ -73,6 +73,46 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(res?.result.agentCapabilities.sessionCapabilities).toEqual({ list: {} });
   });
 
+  it('rejects unsupported initialize protocol versions without applying capabilities', async () => {
+    const runner: AcpPromptRunner = async ({ canRequestClient, sendUpdate }) => {
+      sendUpdate({
+        sessionUpdate: 'agent_message_chunk',
+        content: { type: 'text', text: String(canRequestClient('fs/read_text_file')) },
+      });
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: ACP_PROTOCOL_VERSION + 1,
+        clientCapabilities: { fs: { readTextFile: true, writeTextFile: false } },
+      },
+    });
+    await harness.flush();
+
+    expect(harness.responseFor(1)?.error).toMatchObject({
+      code: -32602,
+      message: `Unsupported ACP protocolVersion: ${ACP_PROTOCOL_VERSION + 1} (expected ${ACP_PROTOCOL_VERSION})`,
+    });
+
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'capabilities after bad init' }] },
+    });
+    await harness.flush();
+
+    expect(harness.notifications('session/update').at(-1)?.params.update.content.text).toBe('false');
+    expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
   it('passes initialized client capabilities into prompt runners', async () => {
     const runner: AcpPromptRunner = async ({ canRequestClient, clientCapabilities, sendUpdate }) => {
       sendUpdate({
