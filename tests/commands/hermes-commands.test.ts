@@ -1632,6 +1632,21 @@ describe('Hermes CLI commands', () => {
     expect(output.features).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
+          id: 'agent-identity',
+          status: 'covered-partial',
+          codeBuddyEvidence: expect.arrayContaining([
+            'src/agent/hermes-agent-profile.ts',
+            'src/agent/hermes-agent-diagnostics.ts',
+            'src/commands/cli/hermes-commands.ts',
+          ]),
+          verificationCommands: expect.arrayContaining([
+            'npx tsx src/index.ts hermes profile review --json',
+            'npx tsx src/index.ts hermes identity status safe --json',
+          ]),
+          notes: expect.stringContaining('native TypeScript/Fleet runtime mapping'),
+          nextWork: expect.not.stringContaining('Keep native mapping explicit'),
+        }),
+        expect.objectContaining({
           id: 'built-in-tools',
           status: 'covered-partial',
           codeBuddyEvidence: expect.arrayContaining([
@@ -1813,6 +1828,7 @@ describe('Hermes CLI commands', () => {
       priority: 1,
       status: 'partial',
     });
+    expect(output.todos.map((item) => item.id)).not.toContain('agent-identity');
     expect(output.todos.map((item) => item.id)).toContain('runtime-backends');
     expect(output.todos.map((item) => item.id)).not.toContain('openclaw-migration');
     expect(output.deferred).toEqual([

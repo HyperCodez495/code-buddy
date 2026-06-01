@@ -76,16 +76,18 @@ const FEATURES: HermesParityFeature[] = [
     officialSurface: 'Hermes product agent with its own Python runtime',
     codeBuddyEvidence: [
       'src/agent/hermes-agent-profile.ts',
+      'src/agent/hermes-agent-diagnostics.ts',
       'src/commands/cli/hermes-commands.ts',
       'src/agent/custom/custom-agent-loader.ts',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
-      'npm test -- tests/agent/custom-agent-loader-hermes.test.ts --run',
-      'npx tsx src/index.ts hermes profile balanced --json',
+      'npm test -- tests/agent/custom-agent-loader-hermes.test.ts tests/agent/hermes-agent-diagnostics.test.ts tests/commands/hermes-commands.test.ts --run',
+      'npx tsx src/index.ts hermes profile review --json',
+      'npx tsx src/index.ts hermes identity status safe --json',
     ],
-    notes: 'Code Buddy maps Hermes ideas to native TypeScript/Fleet primitives; it does not vendor or run upstream Hermes Python.',
-    nextWork: 'Keep native mapping explicit in user-facing diagnostics.',
+    notes: 'Code Buddy now exposes a native TypeScript/Fleet runtime mapping in profile, diagnostics, and identity status; it does not vendor or run upstream Hermes Python.',
+    nextWork: 'Re-check upstream runtime claims when the official Hermes release window changes; do not claim drop-in Python runtime equivalence.',
   },
   {
     id: 'cli-tui',
