@@ -97,6 +97,34 @@ describe('Learning Agent on real RunStore trajectories', () => {
     return runId;
   }
 
+  function startRedundantSkillCandidateRun(): string {
+    const runId = store.startRun('Real duplicated research workflow', {
+      channel: 'cli',
+      tags: ['learning-agent', 'redundancy'],
+    });
+    activeRunIds.push(runId);
+
+    const calls = [
+      ['call_view', 'view_file', { path: 'AGENTS.md' }, 'Loaded project instructions'],
+      ['call_git', 'git', { command: 'status --short' }, 'Working tree inspected'],
+      ['call_web_1', 'web_search', { query: 'Hermes Agent official docs' }, 'Official docs result'],
+      ['call_web_2', 'web_search', { query: 'Hermes Agent skills docs' }, 'Official skills result'],
+      ['call_lessons', 'lessons_search', { query: 'Hermes learning loop' }, 'Lessons searched'],
+    ] as const;
+
+    for (const [toolCallId, toolName, args, output] of calls) {
+      store.emit(runId, {
+        type: 'tool_call',
+        data: { toolCallId, toolName, args },
+      });
+      store.emit(runId, {
+        type: 'tool_result',
+        data: { durationMs: 10, output, success: true, toolName },
+      });
+    }
+    return runId;
+  }
+
   function runCodeBuddyCliJson(args: string[]): unknown {
     const result = spawnSync(process.execPath, [tsxCli, path.join(repoRoot, 'src/index.ts'), ...args], {
       cwd: tempDir,
@@ -215,6 +243,91 @@ describe('Learning Agent on real RunStore trajectories', () => {
         successCount: 1,
       }),
     ]);
+  });
+
+  it('keeps the real CLI retrospective dry-run read-only through lazy command parsing', async () => {
+    process.env.CODEBUDDY_LEARNING_AGENT = 'false';
+    const runId = startLearningRun();
+    store.endRun(runId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== runId);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const dryRun = runCodeBuddyCliJson(['run', 'retrospective', runId, '--dry-run', '--json']) as {
+      dryRun: boolean;
+      retrospective: { skillCandidates: Array<{ skillName: string }>; toolSequence: string[] };
+      skipped: boolean;
+    };
+
+    expect(dryRun).toMatchObject({
+      dryRun: true,
+      skipped: false,
+      retrospective: {
+        toolSequence: ['search', 'view_file', 'bash'],
+      },
+    });
+    expect(dryRun.retrospective.skillCandidates).toEqual([
+      expect.objectContaining({ skillName: 'learned-search-view-file-bash' }),
+    ]);
+    expect(store.getArtifact(runId, 'learning-retrospective.json')).toBeNull();
+    expect(fs.existsSync(path.join(tempDir, '.codebuddy', 'learning', 'pattern-library.json'))).toBe(false);
+    expect(fs.existsSync(path.join(
+      tempDir,
+      '.codebuddy',
+      'skill-candidates',
+      'learning',
+      'learned-search-view-file-bash',
+      'SKILL.md',
+    ))).toBe(false);
+    expect(fs.existsSync(path.join(tempDir, '.codebuddy', 'lesson-candidates.json'))).toBe(false);
+  });
+
+  it('normalizes duplicate tools before materializing learned skill candidates', async () => {
+    const runId = startRedundantSkillCandidateRun();
+    store.endRun(runId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== runId);
+    await new Promise((resolve) => setTimeout(resolve, 120));
+
+    const result = await runLearningRetrospective(store, runId, {
+      force: true,
+      workDir: tempDir,
+    });
+
+    expect(result.skipped).toBe(false);
+    expect(result.retrospective?.toolSequence).toEqual([
+      'view_file',
+      'git',
+      'web_search',
+      'web_search',
+      'lessons_search',
+    ]);
+    expect(result.retrospective?.effectivePatterns[0]?.toolSequence).toEqual([
+      'view_file',
+      'git',
+      'web_search',
+      'lessons_search',
+    ]);
+    expect(result.retrospective?.skillCandidates).toEqual([
+      expect.objectContaining({
+        skillName: 'learned-view-file-git-web-search-lessons-search',
+        toolSequence: ['view_file', 'git', 'web_search', 'lessons_search'],
+      }),
+    ]);
+    expect(fs.existsSync(path.join(
+      tempDir,
+      '.codebuddy',
+      'skill-candidates',
+      'learning',
+      'learned-view-file-git-web-search-lessons-search',
+      'SKILL.md',
+    ))).toBe(true);
+    expect(fs.existsSync(path.join(
+      tempDir,
+      '.codebuddy',
+      'skill-candidates',
+      'learning',
+      'learned-view-file-git-web-search-web-search-lessons-search',
+      'SKILL.md',
+    ))).toBe(false);
   });
 
   it('scores repeated real skill outcomes with history and recommended next actions', () => {

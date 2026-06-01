@@ -824,8 +824,9 @@ function buildSkillCandidates(
 ): LearningSkillCandidate[] {
   const candidates: LearningSkillCandidate[] = [];
   for (const pattern of effectivePatterns) {
-    if (pattern.toolSequence.length < MIN_PATTERN_SEQUENCE_LENGTH) continue;
-    const skillName = `learned-${slugify(pattern.toolSequence.join('-'))}`;
+    const toolSequence = normalizeSkillCandidateSequence(pattern.toolSequence);
+    if (toolSequence.length < MIN_PATTERN_SEQUENCE_LENGTH) continue;
+    const skillName = `learned-${slugify(toolSequence.join('-'))}`;
     const skillPath = toPosix(path.join(SKILL_CANDIDATE_ROOT, skillName, 'SKILL.md'));
     const reviewManifestPath = toPosix(path.join(SKILL_CANDIDATE_ROOT, skillName, 'candidate-review.json'));
     candidates.push({
@@ -834,8 +835,8 @@ function buildSkillCandidates(
       reviewManifestPath,
       skillName,
       skillPath,
-      toolSequence: pattern.toolSequence,
-      title: `${pattern.toolSequence.join(' -> ')} workflow candidate`,
+      toolSequence,
+      title: `${toolSequence.join(' -> ')} workflow candidate`,
     });
   }
   return candidates.slice(0, 2);
@@ -1076,8 +1077,21 @@ function summarizeRetrospective(
 }
 
 function firstStableWindow(sequence: string[]): string[] {
-  const window = sequence.filter((name) => name !== 'unknown_tool').slice(0, 5);
+  const window = normalizeSkillCandidateSequence(sequence).slice(0, 5);
   return [...new Set(window)].length >= MIN_PATTERN_SEQUENCE_LENGTH ? window : [];
+}
+
+function normalizeSkillCandidateSequence(sequence: string[]): string[] {
+  const normalized: string[] = [];
+  const seen = new Set<string>();
+  for (const rawName of sequence) {
+    const name = rawName.trim();
+    if (!name || name === 'unknown_tool') continue;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    normalized.push(name);
+  }
+  return normalized;
 }
 
 function dedupePatterns(patterns: LearningPattern[]): LearningPattern[] {

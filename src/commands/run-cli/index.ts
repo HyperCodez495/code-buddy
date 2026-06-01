@@ -214,7 +214,7 @@ export function registerRunCommands(program: Command): void {
     }) => {
       const { showLearningRetrospective } = await import('../../observability/run-viewer.js');
       await showLearningRetrospective(runId, {
-        dryRun: opts.dryRun === true,
+        dryRun: opts.dryRun === true || argvHasFlag('--dry-run'),
         force: opts.force === true,
         json: opts.json === true,
       });
@@ -596,6 +596,10 @@ export function registerRunCommands(program: Command): void {
 
 function collectOption(value: string, previous: string[]): string[] {
   return [...previous, value];
+}
+
+function argvHasFlag(flag: string): boolean {
+  return process.argv.some((arg) => arg === flag || arg.startsWith(`${flag}=`));
 }
 
 function parseMobileGatewayMethod(method: string): 'GET' | 'POST' {
