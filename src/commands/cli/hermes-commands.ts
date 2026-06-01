@@ -284,6 +284,7 @@ interface HermesOverviewStatus {
       learning: boolean;
       memory: boolean;
       messaging: boolean;
+      mobile: boolean;
       protocols: boolean;
       provider: boolean;
       runtime: boolean;
@@ -348,6 +349,22 @@ interface HermesOverviewStatus {
       nextConfigPlatformNames: string[];
       statusCommand: string;
     };
+    mobile: {
+      ok: boolean;
+      routeBasePath: string;
+      routeStatus: string;
+      readOnlyEndpoints: number;
+      draftOnlyEndpoints: number;
+      blockedOperations: number;
+      pendingLocalApproval: number;
+      remoteExecutionDisabled: boolean;
+      listenerStatus: string;
+      networkExposure: string;
+      pairingStatus: string;
+      statusCommand: string;
+      gatewayCheckCommand: string;
+      serverCommand: string;
+    };
     protocols: {
       ok: boolean;
       availableCount: number;
@@ -404,6 +421,7 @@ interface HermesOverviewStatus {
     learning: string;
     memory: string;
     messaging: string;
+    mobile: string;
     parity: string;
     providers: string;
     protocols: string;
@@ -777,6 +795,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
   const learning = buildHermesLearningLoopStatus({ limit: 5 });
   const skills = buildHermesSkillPackageSummary(process.cwd(), { limit: 5, previewChars: 0 });
   const messaging = await buildHermesMessagingGatewayStatus();
+  const mobile = await buildHermesMobileSupervisionStatus();
   const profileSuffix = diagnostics.dispatchProfile === 'balanced' ? '' : ` ${diagnostics.dispatchProfile}`;
   const recommendations = [
     ...diagnostics.recommendations,
@@ -785,6 +804,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
     ...diagnostics.browserBackends.recommendations,
     ...protocols.recommendations,
     ...messaging.recommendations,
+    ...mobile.recommendations,
     ...memory.recommendations,
     ...learning.recommendations,
     ...(skills.health.ok ? [] : [`Run ${skills.health.nextCommand} to inspect skill package health.`]),
@@ -805,6 +825,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
     protocols.ok &&
     memory.ok &&
     learning.ok &&
+    mobile.ok &&
     skills.health.ok &&
     toolParity.summary.gaps === 0;
 
@@ -824,6 +845,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
         learning: learning.ok,
         memory: memory.ok,
         messaging: messaging.hermes.missingPlatformCount === 0,
+        mobile: mobile.ok,
         protocols: protocols.ok,
         provider: diagnostics.providerReadiness.ok,
         runtime: diagnostics.runtimeBackends.ok,
@@ -900,6 +922,22 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
         nextConfigPlatformNames: messaging.hermes.nextConfigPlatformNames,
         statusCommand: 'buddy hermes messaging status --json',
       },
+      mobile: {
+        ok: mobile.ok,
+        routeBasePath: mobile.routeMount.basePath,
+        routeStatus: mobile.routeMount.status,
+        readOnlyEndpoints: mobile.summary.readOnlyEndpoints,
+        draftOnlyEndpoints: mobile.summary.draftOnlyEndpoints,
+        blockedOperations: mobile.summary.blockedOperations,
+        pendingLocalApproval: mobile.summary.pendingLocalApproval,
+        remoteExecutionDisabled: mobile.approvalQueue.remoteExecutionDisabled,
+        listenerStatus: mobile.listener.listener,
+        networkExposure: mobile.listener.bind.networkExposure,
+        pairingStatus: mobile.pairing.status,
+        statusCommand: mobile.commands.status,
+        gatewayCheckCommand: mobile.commands.gatewayCheck,
+        serverCommand: mobile.commands.server,
+      },
       protocols: {
         ok: protocols.ok,
         availableCount: protocols.summary.availableCount,
@@ -962,6 +1000,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       learning: 'buddy hermes learning status --json',
       memory: 'buddy hermes memory status --json',
       messaging: 'buddy hermes messaging status --json',
+      mobile: 'buddy hermes mobile status --json',
       parity: 'buddy hermes parity --json',
       providers: 'buddy hermes providers status --json',
       protocols: 'buddy hermes protocols status --json',
@@ -983,6 +1022,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     ['Runtime route', status.summary.readiness.runtime],
     ['Browser route', status.summary.readiness.browser],
     ['Messaging gateway', status.summary.readiness.messaging],
+    ['Mobile supervision', status.summary.readiness.mobile],
     ['Protocols', status.summary.readiness.protocols],
     ['Memory', status.summary.readiness.memory],
     ['Learning loop', status.summary.readiness.learning],
@@ -1026,6 +1066,9 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `(runtime: ${formatLimitedList(readiness.messaging.runtimePlatformNames, 6)}, ` +
       `prompt-tools: ${formatLimitedList(readiness.messaging.promptToolPlatformNames, 6)}, ` +
       `next: ${formatLimitedList(readiness.messaging.nextConfigPlatformNames, 6)})`,
+    `  Mobile: ${readiness.mobile.routeBasePath} ${readiness.mobile.routeStatus} ` +
+      `(read=${readiness.mobile.readOnlyEndpoints}, draft=${readiness.mobile.draftOnlyEndpoints}, ` +
+      `pending=${readiness.mobile.pendingLocalApproval}, remoteExecDisabled=${readiness.mobile.remoteExecutionDisabled ? 'yes' : 'no'})`,
     `  Memory: ${readiness.memory.activeProviderId} ` +
       `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
       `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
@@ -1061,6 +1104,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Doctor: ${status.commands.doctor}`,
     `  Todo: ${status.commands.todo}`,
     `  Messaging: ${status.commands.messaging}`,
+    `  Mobile: ${status.commands.mobile}`,
     `  Aggregate local smoke: ${status.commands.smoke}`,
     `  Real runtime smoke: ${readiness.runtime.smokeCommand ?? 'n/a'}`,
     `  Real browser smoke: ${readiness.browser.smokeCommand ?? 'n/a'}`,
@@ -2136,7 +2180,7 @@ export function registerHermesCommands(program: Command): void {
 
   hermes
     .command('status')
-    .description('Show a compact Hermes readiness overview across parity, providers, runtimes, browser, learning, and skills')
+    .description('Show a compact Hermes readiness overview across parity, providers, runtimes, browser, messaging, mobile, learning, and skills')
     .argument('[dispatchProfile]', `active Fleet profile (${FLEET_DISPATCH_PROFILES.join(', ')})`, 'balanced')
     .option('--json', 'output JSON')
     .action(async (profileArg: string, options: HermesCommandOptions) => {

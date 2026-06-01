@@ -253,6 +253,17 @@ describe('Hermes CLI commands', () => {
             runtimePlatformNames: string[];
             statusCommand: string;
           };
+          mobile: {
+            blockedOperations: number;
+            draftOnlyEndpoints: number;
+            gatewayCheckCommand: string;
+            pendingLocalApproval: number;
+            readOnlyEndpoints: number;
+            remoteExecutionDisabled: boolean;
+            routeBasePath: string;
+            routeStatus: string;
+            statusCommand: string;
+          };
           provider: {
             configured: boolean;
             configuredProviderIds: string[];
@@ -287,6 +298,7 @@ describe('Hermes CLI commands', () => {
           browser: string;
           doctor: string;
           messaging: string;
+          mobile: string;
           runtime: string;
           smoke: string;
           todo: string;
@@ -331,6 +343,17 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.messaging.runtimePlatformNames).toEqual([]);
       expect(output.readiness.messaging.promptToolPlatformNames).toEqual(expect.arrayContaining(['Email', 'Yuanbao']));
       expect(output.readiness.messaging.nextConfigPlatformNames).toEqual(expect.arrayContaining(['Telegram', 'Discord', 'Slack']));
+      expect(output.readiness.mobile).toMatchObject({
+        blockedOperations: 6,
+        draftOnlyEndpoints: 1,
+        pendingLocalApproval: 1,
+        readOnlyEndpoints: 3,
+        remoteExecutionDisabled: true,
+        routeBasePath: '/api/mobile',
+        routeStatus: 'implemented_not_probed',
+        statusCommand: 'buddy hermes mobile status --json',
+      });
+      expect(output.readiness.mobile.gatewayCheckCommand).toContain('buddy run mobile-gateway-check');
       expect(output.readiness.skills.totalCandidateCount).toBe(
         output.readiness.skills.eligibleCandidateCount + output.readiness.skills.ineligibleCandidateCount,
       );
@@ -342,6 +365,7 @@ describe('Hermes CLI commands', () => {
         browser: 'buddy hermes browser status --json',
         doctor: 'buddy hermes doctor safe --json',
         messaging: 'buddy hermes messaging status --json',
+        mobile: 'buddy hermes mobile status --json',
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
@@ -372,6 +396,9 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Messaging: configured none');
       expect(textOutput).toContain('prompt-tools: Email, Home Assistant, Yuanbao');
       expect(textOutput).toContain('next: Telegram, Discord, Slack');
+      expect(textOutput).toContain('Mobile supervision: ok');
+      expect(textOutput).toContain('Mobile: /api/mobile implemented_not_probed');
+      expect(textOutput).toContain('remoteExecDisabled=yes');
       expect(textOutput).toContain('Protocols: available');
       expect(textOutput).toContain('partial: acp-editor-integration');
       expect(textOutput).toContain('missing: none');
@@ -379,6 +406,7 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
+      expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
       expect(textOutput).not.toContain('secret-overview-openai-key');
