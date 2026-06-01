@@ -247,7 +247,7 @@ export class AcpStdioServer {
     const id = msg.id;
     const isRequest = id !== undefined && id !== null;
     const method = msg.method;
-    const params = (msg.params ?? {}) as Record<string, unknown>;
+    const rawParams = msg.params;
 
     if (isRequest && typeof method !== 'string' && ('result' in msg || 'error' in msg)) {
       this.handleClientResponse(String(id), msg);
@@ -262,6 +262,13 @@ export class AcpStdioServer {
     // `session/cancel` is commonly sent as a notification, but some JSON-RPC
     // clients include an id. Keep both forms interoperable.
     if (method === 'session/cancel') {
+      const params = parseJsonRpcParams(rawParams);
+      if (!params) {
+        if (isRequest) {
+          this.write({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params' } });
+        }
+        return;
+      }
       const cancelled = this.handleCancel(params);
       if (isRequest) {
         if (!cancelled) {
@@ -279,6 +286,12 @@ export class AcpStdioServer {
 
     if (!isRequest || typeof method !== 'string') {
       // Ignore other notifications and any client responses.
+      return;
+    }
+
+    const params = parseJsonRpcParams(rawParams);
+    if (!params) {
+      this.write({ jsonrpc: '2.0', id, error: { code: -32602, message: 'Invalid params' } });
       return;
     }
 
@@ -527,6 +540,11 @@ function normalizeClientCapabilities(value: unknown): AcpClientCapabilities {
       : undefined,
     terminal: input.terminal === true,
   };
+}
+
+function parseJsonRpcParams(value: unknown): Record<string, unknown> | undefined {
+  if (value === undefined || value === null) return {};
+  return asRecord(value);
 }
 
 function parsePromptContentBlocks(value: unknown): AcpContentBlock[] {

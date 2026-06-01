@@ -50,7 +50,9 @@ the moment the prompt starts, so a later `initialize` cannot grant or revoke
 client filesystem access mid-turn. Unknown agent→client method names are
 rejected instead of being forwarded to the editor. Unanswered agent→client
 requests time out after 120 seconds so a closed or stalled editor cannot leave a
-turn hanging forever.
+turn hanging forever. Editor→agent ACP requests expect JSON object `params`;
+array/primitive params are rejected as JSON-RPC `-32602 Invalid params` instead
+of being coerced into defaults.
 
 ## Out of scope for v1 (not stubbed — deliberately deferred)
 

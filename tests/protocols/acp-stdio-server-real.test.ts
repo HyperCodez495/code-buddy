@@ -948,6 +948,22 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     });
   });
 
+  it('rejects non-object params on ACP requests instead of coercing them', async () => {
+    harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
+
+    harness.send({ jsonrpc: '2.0', id: 8, method: 'session/new', params: [] });
+    await harness.flush();
+
+    expect(harness.responseFor(8)?.error).toMatchObject({
+      code: -32602,
+      message: 'Invalid params',
+    });
+
+    harness.send({ jsonrpc: '2.0', id: 9, method: 'session/list', params: {} });
+    await harness.flush();
+    expect(harness.responseFor(9)?.result).toEqual({ sessions: [] });
+  });
+
   it('returns method-not-found for unknown methods', async () => {
     harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }));
     harness.send({ jsonrpc: '2.0', id: 9, method: 'does/not-exist', params: {} });
