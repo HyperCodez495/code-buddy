@@ -362,6 +362,10 @@ interface HermesOverviewStatus {
       enabledCount: number;
       healthIssueCount: number;
       eligibleCandidateCount: number;
+      ineligibleCandidateCount: number;
+      totalCandidateCount: number;
+      candidateListCommand: string;
+      nextInspectCommand: string | null;
       nextCommand: string;
     };
   };
@@ -756,7 +760,12 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
     ...(skills.candidateReview.eligibleCount > 0
       ? [`Review ${skills.candidateReview.eligibleCount} eligible skill candidate(s) with ${skills.candidateReview.listCommand}.`]
       : []),
+    ...(skills.candidateReview.eligibleCount === 0 && skills.candidateReview.ineligibleCount > 0
+      ? [`Inspect ${skills.candidateReview.ineligibleCount} not-yet-eligible skill candidate(s) with ${skills.candidateReview.listCommand}.`]
+      : []),
   ].filter((recommendation, index, all) => all.indexOf(recommendation) === index);
+  const skillsNextCommand = skills.candidateReview.nextInspectCommand ??
+    (skills.candidateReview.totalCount > 0 ? skills.candidateReview.listCommand : skills.health.nextCommand);
   const ok =
     diagnostics.ok &&
     diagnostics.providerReadiness.ok &&
@@ -862,7 +871,11 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         enabledCount: skills.enabledCount,
         healthIssueCount: skills.health.issueCount,
         eligibleCandidateCount: skills.candidateReview.eligibleCount,
-        nextCommand: skills.health.nextCommand,
+        ineligibleCandidateCount: skills.candidateReview.ineligibleCount,
+        totalCandidateCount: skills.candidateReview.totalCount,
+        candidateListCommand: skills.candidateReview.listCommand,
+        nextInspectCommand: skills.candidateReview.nextInspectCommand ?? null,
+        nextCommand: skillsNextCommand,
       },
     },
     nextActions: todo.todos.map((item) => ({
@@ -934,6 +947,9 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
       `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
       `missing: ${formatList(readiness.memory.missingOfficialProviderIds)})`,
+    `  Skills: ${readiness.skills.enabledCount}/${readiness.skills.installedCount} enabled, ` +
+      `candidates ${readiness.skills.eligibleCandidateCount} eligible / ` +
+      `${readiness.skills.ineligibleCandidateCount} not eligible`,
     `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
   );
 

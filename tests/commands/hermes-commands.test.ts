@@ -252,6 +252,14 @@ describe('Hermes CLI commands', () => {
             primaryBackendId: string | null;
             smokeCommand: string | null;
           };
+          skills: {
+            candidateListCommand: string;
+            eligibleCandidateCount: number;
+            ineligibleCandidateCount: number;
+            nextCommand: string;
+            nextInspectCommand: string | null;
+            totalCandidateCount: number;
+          };
         };
         nextActions: Array<{ area: string; verificationCommand: string }>;
         commands: {
@@ -282,6 +290,11 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.browser.smokeCommand).toBe('buddy hermes browser-smoke auto --json');
       expect(output.readiness.browser.autoEligibleBackendIds).toContain('local-playwright');
       expect(output.readiness.browser.gatedBackendCount).toBe(output.readiness.browser.gatedBackendIds.length);
+      expect(output.readiness.skills.totalCandidateCount).toBe(
+        output.readiness.skills.eligibleCandidateCount + output.readiness.skills.ineligibleCandidateCount,
+      );
+      expect(output.readiness.skills.candidateListCommand).toContain('buddy tools skill-candidate list');
+      expect(output.readiness.skills.nextCommand.length).toBeGreaterThan(0);
       expect(output.nextActions[0]?.area).toBe('Closed learning loop');
       expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
       expect(output.commands).toMatchObject({
@@ -308,6 +321,8 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('(auto:');
       expect(textOutput).toContain('gated:');
+      expect(textOutput).toContain('Skills:');
+      expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
