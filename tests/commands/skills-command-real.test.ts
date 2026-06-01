@@ -14,6 +14,7 @@ let tempHome: string;
 let originalHome: string | undefined;
 let originalUserProfile: string | undefined;
 let consoleLogSpy: ReturnType<typeof vi.spyOn>;
+let repoTempDirs: string[];
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tsxCli = path.join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 
@@ -121,6 +122,7 @@ describe('buddy skills command with real SkillsHub state', () => {
     originalUserProfile = process.env.USERPROFILE;
     process.env.HOME = tempHome;
     process.env.USERPROFILE = tempHome;
+    repoTempDirs = [];
     resetSkillsHub();
     consoleLogSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
   });
@@ -138,6 +140,7 @@ describe('buddy skills command with real SkillsHub state', () => {
     } else {
       process.env.USERPROFILE = originalUserProfile;
     }
+    await Promise.all(repoTempDirs.map((dir) => fs.rm(dir, { recursive: true, force: true })));
     await fs.rm(tempHome, { recursive: true, force: true });
   });
 
@@ -182,11 +185,12 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(result.issues).toEqual(expect.arrayContaining([
       expect.objectContaining({
         commands: [
-          'skill_manage action=reset name=missing-helper approved_by=<reviewer>',
           'skill_manage action=delete name=missing-helper approved_by=<reviewer>',
+          'skill_manage action=reset name=missing-helper approved_by=<reviewer>',
         ],
         issue: 'missing-file',
         name: 'missing-helper',
+        staleTempPath: true,
       }),
       expect.objectContaining({
         commands: [
@@ -241,6 +245,7 @@ describe('buddy skills command with real SkillsHub state', () => {
         nextCommand: string;
         ok: boolean;
         shownCount: number;
+        staleTempMissingCount: number;
         total: number;
       };
       skills: Array<{ integrityOk: boolean; name: string }>;
@@ -259,6 +264,7 @@ describe('buddy skills command with real SkillsHub state', () => {
         nextCommand: 'buddy skills doctor --json',
         ok: false,
         shownCount: 3,
+        staleTempMissingCount: 1,
         total: 3,
       },
       total: 3,
@@ -306,8 +312,10 @@ describe('buddy skills command with real SkillsHub state', () => {
       repair: {
         approvedBy: string;
         missingRemovedCount: number;
+        mode: string;
         removed: Array<{ name: string; removed: boolean }>;
         remainingIssueNames: string[];
+        staleTempRemovedCount: number;
       };
       total: number;
     };
@@ -318,12 +326,14 @@ describe('buddy skills command with real SkillsHub state', () => {
       repair: {
         approvedBy: 'Patrice',
         missingRemovedCount: 1,
+        mode: 'missing',
         remainingIssueNames: ['tampered-helper'],
+        staleTempRemovedCount: 1,
       },
       total: 2,
     });
     expect(repaired.repair.removed).toEqual([
-      { name: 'missing-helper', removed: true },
+      { name: 'missing-helper', removed: true, staleTempPath: true },
     ]);
     expect(repaired.issues).toEqual([
       expect.objectContaining({ issue: 'integrity-mismatch', name: 'tampered-helper' }),
@@ -342,6 +352,95 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(listed.skills.map((skill) => skill.name)).toEqual([
       'healthy-helper',
       'tampered-helper',
+    ]);
+  });
+
+  it('repairs only stale temp missing entries through the real CLI', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, '.codebuddy', 'hub', 'cache'),
+      lockfilePath: path.join(tempHome, '.codebuddy', 'hub', 'lock.json'),
+      skillsDir: path.join(tempHome, '.codebuddy', 'skills', 'managed'),
+      tapsPath: path.join(tempHome, '.codebuddy', 'hub', 'taps.json'),
+    });
+    await hub.installFromContent(
+      'healthy-helper',
+      skillContent('healthy-helper', '1.0.0', 'Healthy package.'),
+    );
+    const staleTemp = await hub.installFromContent(
+      'stale-temp-helper',
+      skillContent('stale-temp-helper', '1.0.0', 'Will disappear with a temp directory.'),
+    );
+    await fs.rm(staleTemp.path, { force: true });
+
+    const nonTempRoot = await fs.mkdtemp(path.join(repoRoot, '.tmp-codebuddy-skills-command-'));
+    repoTempDirs.push(nonTempRoot);
+    const nonTempSkillPath = path.join(nonTempRoot, 'non-temp-helper', 'SKILL.md');
+    await fs.mkdir(path.dirname(nonTempSkillPath), { recursive: true });
+    await fs.writeFile(
+      nonTempSkillPath,
+      skillContent('non-temp-helper', '1.0.0', 'Missing, but not an OS temp directory entry.'),
+      'utf-8',
+    );
+    hub.registerLocalSkillFile('non-temp-helper', nonTempSkillPath);
+    await fs.rm(nonTempSkillPath, { force: true });
+
+    const repaired = runBuddyCliJson([
+      'skills',
+      'doctor',
+      '--repair-stale-temp',
+      '--approved-by',
+      'Patrice',
+      '--json',
+    ]) as {
+      issueCount: number;
+      issues: Array<{ issue: string; name: string; staleTempPath?: true }>;
+      ok: boolean;
+      repair: {
+        approvedBy: string;
+        missingRemovedCount: number;
+        mode: string;
+        removed: Array<{ name: string; removed: boolean; staleTempPath: boolean }>;
+        remainingIssueNames: string[];
+        staleTempRemovedCount: number;
+      };
+      staleTempMissingCount: number;
+      total: number;
+    };
+
+    expect(repaired).toMatchObject({
+      issueCount: 1,
+      ok: false,
+      repair: {
+        approvedBy: 'Patrice',
+        missingRemovedCount: 1,
+        mode: 'stale-temp',
+        remainingIssueNames: ['non-temp-helper'],
+        staleTempRemovedCount: 1,
+      },
+      staleTempMissingCount: 0,
+      total: 2,
+    });
+    expect(repaired.repair.removed).toEqual([
+      { name: 'stale-temp-helper', removed: true, staleTempPath: true },
+    ]);
+    expect(repaired.issues).toEqual([
+      expect.objectContaining({ issue: 'missing-file', name: 'non-temp-helper' }),
+    ]);
+    expect(repaired.issues[0]?.staleTempPath).toBeUndefined();
+
+    const listed = runBuddyCliJson(['skills', 'list', '--all', '--json']) as {
+      health: { missingFileCount: number; staleTempMissingCount: number };
+      skills: Array<{ name: string }>;
+      total: number;
+    };
+    expect(listed.total).toBe(2);
+    expect(listed.health).toMatchObject({
+      missingFileCount: 1,
+      staleTempMissingCount: 0,
+    });
+    expect(listed.skills.map((skill) => skill.name)).toEqual([
+      'healthy-helper',
+      'non-temp-helper',
     ]);
   });
 

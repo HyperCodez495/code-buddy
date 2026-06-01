@@ -23,24 +23,48 @@
  */
 
 import type { Command } from 'commander';
+import os from 'os';
+import path from 'path';
 import type { InstalledSkillStatus } from '../../skills/hub.js';
 
-function buildSkillDoctorIssue(skill: InstalledSkillStatus): {
+interface SkillDoctorIssue {
   commands: string[];
   enabled: boolean;
   issue: 'integrity-mismatch' | 'missing-file';
   name: string;
   path: string;
+  preferredCommand?: string;
   recommendation: string;
+  staleTempPath?: true;
   version: string;
-} {
+}
+
+function isPathInside(parentDir: string, childPath: string): boolean {
+  const parent = path.resolve(parentDir);
+  const child = path.resolve(childPath);
+  const relative = path.relative(parent, child);
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function isStaleTempSkillPath(skill: InstalledSkillStatus): boolean {
+  return !skill.exists && isPathInside(os.tmpdir(), skill.path);
+}
+
+function buildSkillDoctorIssue(skill: InstalledSkillStatus): SkillDoctorIssue {
   const issue = skill.exists ? 'integrity-mismatch' : 'missing-file';
+  const staleTempPath = isStaleTempSkillPath(skill);
+  const missingCommands = staleTempPath
+    ? [
+      `skill_manage action=delete name=${skill.name} approved_by=<reviewer>`,
+      `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
+    ]
+    : [
+      `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
+      `skill_manage action=delete name=${skill.name} approved_by=<reviewer>`,
+    ];
   return {
     commands: issue === 'missing-file'
-      ? [
-        `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
-        `skill_manage action=delete name=${skill.name} approved_by=<reviewer>`,
-      ]
+      ? missingCommands
       : [
         `skill_manage action=history name=${skill.name}`,
         `skill_manage action=reset name=${skill.name} approved_by=<reviewer>`,
@@ -50,9 +74,15 @@ function buildSkillDoctorIssue(skill: InstalledSkillStatus): {
     issue,
     name: skill.name,
     path: skill.path,
+    ...(staleTempPath ? {
+      preferredCommand: `buddy skills doctor --repair-stale-temp --approved-by <reviewer> --json`,
+    } : {}),
     recommendation: issue === 'missing-file'
-      ? 'Reset from hub/cache, restore the SKILL.md file, or remove the stale lockfile entry after reviewer approval.'
+      ? staleTempPath
+        ? 'This lockfile entry points inside the OS temp directory and SKILL.md is gone; delete the stale entry after reviewer approval unless you intentionally want to reconstruct it.'
+        : 'Reset from hub/cache, restore the SKILL.md file, or remove the stale lockfile entry after reviewer approval.'
       : 'Inspect local edits, then keep, patch, reset, update, or rollback after reviewer approval.',
+    ...(staleTempPath ? { staleTempPath: true } : {}),
     version: skill.version,
   };
 }
@@ -70,9 +100,11 @@ function buildSkillListHealth(
   nextCommand: string;
   ok: boolean;
   shownCount: number;
+  staleTempMissingCount: number;
   total: number;
 } {
   const missingFileCount = all.filter((skill) => !skill.exists).length;
+  const staleTempMissingCount = all.filter(isStaleTempSkillPath).length;
   const integrityMismatchCount = all.filter((skill) => skill.exists && !skill.integrityOk).length;
   const issueCount = missingFileCount + integrityMismatchCount;
   return {
@@ -85,6 +117,7 @@ function buildSkillListHealth(
     nextCommand: issueCount > 0 ? 'buddy skills doctor --json' : 'buddy skills learning-usage --json',
     ok: issueCount === 0,
     shownCount: shown.length,
+    staleTempMissingCount,
     total: all.length,
   };
 }
@@ -131,19 +164,37 @@ export function registerSkillsCommands(program: Command): void {
     .command('doctor')
     .description('Audit installed skill packages for missing or modified SKILL.md files')
     .option('--repair-missing', 'remove missing-file lockfile entries after explicit reviewer approval')
-    .option('--approved-by <reviewer>', 'reviewer/operator approving --repair-missing')
+    .option('--repair-stale-temp', 'remove only missing skill entries that point inside the OS temp directory')
+    .option('--approved-by <reviewer>', 'reviewer/operator approving repair actions')
     .option('--json', 'output JSON')
-    .action(async (opts: { approvedBy?: string; json?: boolean; repairMissing?: boolean }) => {
+    .action(async (opts: {
+      approvedBy?: string;
+      json?: boolean;
+      repairMissing?: boolean;
+      repairStaleTemp?: boolean;
+    }) => {
       const { getSkillsHub } = await import('../../skills/hub.js');
       const hub = getSkillsHub();
       const skills = hub.listWithIntegrity();
       const issues = skills
         .filter((skill) => !skill.exists || !skill.integrityOk)
         .map(buildSkillDoctorIssue);
-      const repairRequested = opts.repairMissing === true;
+      const repairMissingRequested = opts.repairMissing === true;
+      const repairStaleTempRequested = opts.repairStaleTemp === true;
+      const repairRequested = repairMissingRequested || repairStaleTempRequested;
       const approvedBy = opts.approvedBy?.trim();
+      if (repairMissingRequested && repairStaleTempRequested) {
+        const message = 'Use either --repair-missing or --repair-stale-temp, not both';
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, ok: false }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
       if (repairRequested && !approvedBy) {
-        const message = '--approved-by is required when using --repair-missing';
+        const message = '--approved-by is required when using repair actions';
         if (opts.json) {
           console.log(JSON.stringify({ error: message, ok: false }, null, 2));
         } else {
@@ -156,9 +207,11 @@ export function registerSkillsCommands(program: Command): void {
       const repairedMissing = repairRequested
         ? issues
           .filter((issue) => issue.issue === 'missing-file')
+          .filter((issue) => repairMissingRequested || issue.staleTempPath === true)
           .map((issue) => ({
             name: issue.name,
             removed: false,
+            staleTempPath: issue.staleTempPath === true,
           }))
         : [];
       if (repairRequested) {
@@ -181,10 +234,13 @@ export function registerSkillsCommands(program: Command): void {
           repair: {
             approvedBy,
             missingRemovedCount: repairedMissing.filter((item) => item.removed).length,
+            mode: repairStaleTempRequested ? 'stale-temp' : 'missing',
             removed: repairedMissing,
             remainingIssueNames: finalIssues.map((issue) => issue.name),
+            staleTempRemovedCount: repairedMissing.filter((item) => item.removed && item.staleTempPath).length,
           },
         } : {}),
+        staleTempMissingCount: finalIssues.filter((issue) => issue.staleTempPath === true).length,
         total: inspectedAfterRepair.length,
       };
 
@@ -199,6 +255,10 @@ export function registerSkillsCommands(program: Command): void {
       }
 
       console.log(`Skill package doctor: ${issues.length} issue(s) across ${skills.length} installed package(s).`);
+      const staleTempIssueCount = issues.filter((issue) => issue.staleTempPath === true).length;
+      if (staleTempIssueCount > 0) {
+        console.log(`  ${staleTempIssueCount} missing entr${staleTempIssueCount === 1 ? 'y points' : 'ies point'} inside the OS temp directory.`);
+      }
       for (const issue of issues) {
         console.log(`  ! ${issue.name} v${issue.version}: ${issue.issue}`);
         console.log(`      path: ${issue.path}`);
