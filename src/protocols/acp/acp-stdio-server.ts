@@ -253,9 +253,11 @@ export class AcpStdioServer {
       return;
     }
 
-    // `session/cancel` is a notification (no response).
+    // `session/cancel` is commonly sent as a notification, but some JSON-RPC
+    // clients include an id. Keep both forms interoperable.
     if (method === 'session/cancel') {
       this.handleCancel(params);
+      if (isRequest) this.write({ jsonrpc: '2.0', id, result: null });
       return;
     }
 

@@ -38,7 +38,7 @@ The agent uses your configured provider (auto-detected via the usual keys —
 | `session/list` | Lists in-process sessions newest first, with optional exact `cwd` filtering and prompt-derived metadata. |
 | `session/load` | Reloads an existing in-process session, replays prior `session/update` history, and refreshes the session `cwd` / `updatedAt`; rejected while a prompt is active. |
 | `session/prompt` | Runs the prompt, streams `session/update` `agent_message_chunk` notifications, resolves with `{ stopReason }`; concurrent prompts for the same session are rejected. |
-| `session/cancel` | Aborts the active turn → `stopReason: "cancelled"`. |
+| `session/cancel` | Aborts the active turn → `stopReason: "cancelled"`; notification form is silent, request form returns `null`. |
 
 The stdio transport can also issue agent→client JSON-RPC requests and await
 their responses. This is the protocol primitive needed for future

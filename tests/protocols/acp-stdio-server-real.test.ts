@@ -593,6 +593,29 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
   });
 
+  it('responds when session/cancel is sent as a JSON-RPC request', async () => {
+    const runner: AcpPromptRunner = ({ signal }) =>
+      new Promise((resolve) => {
+        if (signal.aborted) return resolve({ stopReason: 'cancelled' });
+        signal.addEventListener('abort', () => resolve({ stopReason: 'end_turn' }));
+      });
+    harness = new AcpHarness(runner);
+
+    harness.send({ jsonrpc: '2.0', id: 1, method: 'session/new', params: {} });
+    await harness.flush();
+    const sessionId = harness.responseFor(1)?.result.sessionId as string;
+
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/prompt', params: { sessionId, prompt: [{ type: 'text', text: 'long' }] } });
+    await harness.flush();
+    expect(harness.responseFor(2)).toBeUndefined();
+
+    harness.send({ jsonrpc: '2.0', id: 3, method: 'session/cancel', params: { sessionId } });
+    await harness.flush();
+
+    expect(harness.responseFor(3)?.result).toBeNull();
+    expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'cancelled' });
+  });
+
   it('rejects concurrent prompts for the same session', async () => {
     const runner: AcpPromptRunner = ({ signal }) =>
       new Promise((resolve) => {
