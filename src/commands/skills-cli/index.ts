@@ -13,6 +13,7 @@
  *   buddy skills learning-usage [--json]
  *   buddy skills update-preview <name>
  *   buddy skills update <name> --approved-by <reviewer>
+ *   buddy skills patch <name> --approved-by <reviewer> --old-text <text> --new-text <text>
  *   buddy skills reset <name> --approved-by <reviewer>
  *   buddy skills enable <name> --approved-by <reviewer>
  *   buddy skills disable <name> --approved-by <reviewer>
@@ -418,6 +419,70 @@ export function registerSkillsCommands(program: Command): void {
     });
 
   skills
+    .command('patch <name>')
+    .description('Patch text in an installed skill package')
+    .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the patch')
+    .requiredOption('--old-text <text>', 'text to replace')
+    .requiredOption('--new-text <text>', 'replacement text')
+    .option('--file-path <path>', 'file inside the skill package; defaults to SKILL.md')
+    .option('--expected-replacements <count>', 'expected number of matched replacements')
+    .option('--replace-all', 'replace all matches instead of requiring a unique match')
+    .option('--reason <reason>', 'review reason')
+    .option('--json', 'output JSON')
+    .action(async (
+      name: string,
+      opts: {
+        approvedBy: string;
+        expectedReplacements?: string;
+        filePath?: string;
+        json?: boolean;
+        newText: string;
+        oldText: string;
+        reason?: string;
+        replaceAll?: boolean;
+      },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      try {
+        const expectedReplacements = parseOptionalNonNegativeInteger(
+          opts.expectedReplacements,
+          '--expected-replacements',
+        );
+        const result = getSkillsHub().patchInstalledSkill(name, opts.oldText, opts.newText, {
+          actor: opts.approvedBy,
+          expectedReplacements,
+          filePath: opts.filePath,
+          reason: opts.reason,
+          replaceAll: opts.replaceAll === true,
+        });
+        if (!result) {
+          const message = `Skill not found: ${name}`;
+          if (opts.json) {
+            console.log(JSON.stringify({ approvedBy: opts.approvedBy, error: message, name, patched: false }, null, 2));
+          } else {
+            console.error(message);
+          }
+          process.exit(1);
+          return;
+        }
+        if (opts.json) {
+          console.log(JSON.stringify({ ...result, approvedBy: opts.approvedBy, patched: true }, null, 2));
+          return;
+        }
+        console.log(`Skill patched: ${result.installed.name} ${result.filePath} replacements=${result.replacements}`);
+        console.log(`snapshot: ${result.snapshot.id}`);
+      } catch (error) {
+        const message = `Skill patch failed: ${error instanceof Error ? error.message : String(error)}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ approvedBy: opts.approvedBy, error: message, name, patched: false }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+      }
+    });
+
+  skills
     .command('reset <name>')
     .description('Reset an installed skill to its hub/cache-backed version')
     .requiredOption('--approved-by <reviewer>', 'reviewer/operator approving the reset')
@@ -727,6 +792,16 @@ async function toggleSkill(
   }
   const verb = opts.verb ?? (enabled ? 'enabled' : 'disabled');
   console.log(`Skill ${verb}: ${name}`);
+}
+
+function parseOptionalNonNegativeInteger(value: string | undefined, optionName: string): number | undefined {
+  if (value === undefined || value.trim() === '') {
+    return undefined;
+  }
+  if (!/^\d+$/.test(value.trim())) {
+    throw new Error(`${optionName} must be a non-negative integer.`);
+  }
+  return Number.parseInt(value, 10);
 }
 
 function parseTapTrust(value?: string): import('../../skills/hub.js').SkillTapTrust | undefined {

@@ -396,6 +396,64 @@ describe('buddy skills command with real SkillsHub state', () => {
     expect(hub.getInstalledSkillHistory('rollback-cli-helper')?.rollbackableCount).toBe(2);
   });
 
+  it('patches an installed skill through the reviewer-gated CLI', async () => {
+    const hub = getSkillsHub({
+      cacheDir: path.join(tempHome, 'cache'),
+      lockfilePath: path.join(tempHome, 'lock.json'),
+      skillsDir: path.join(tempHome, 'skills'),
+    });
+    const installed = await hub.installFromContent(
+      'patch-cli-helper',
+      skillContent('patch-cli-helper', '1.0.0', 'Patch this wording through CLI.'),
+    );
+
+    const program = createProgram();
+    await program.parseAsync([
+      'node',
+      'buddy',
+      'skills',
+      'patch',
+      'patch-cli-helper',
+      '--approved-by',
+      'operator-patch-cli',
+      '--old-text',
+      'Patch this wording through CLI.',
+      '--new-text',
+      'Patched wording through reviewer CLI.',
+      '--expected-replacements',
+      '1',
+      '--reason',
+      'apply reviewed CLI patch',
+      '--json',
+    ]);
+
+    const result = JSON.parse(getLogOutput()) as {
+      approvedBy: string;
+      filePath: string;
+      installed: { lifecycle: { reason: string; updatedBy: string }; name: string };
+      patched: boolean;
+      replacements: number;
+      snapshot: { id: string };
+    };
+
+    expect(result).toMatchObject({
+      approvedBy: 'operator-patch-cli',
+      filePath: 'SKILL.md',
+      installed: {
+        lifecycle: {
+          reason: 'apply reviewed CLI patch',
+          updatedBy: 'operator-patch-cli',
+        },
+        name: 'patch-cli-helper',
+      },
+      patched: true,
+      replacements: 1,
+    });
+    expect(result.snapshot.id).toBeTruthy();
+    await expect(fs.readFile(installed.path, 'utf8')).resolves.toContain('Patched wording through reviewer CLI.');
+    expect(hub.getInstalledSkillHistory('patch-cli-helper')?.rollbackableCount).toBe(1);
+  });
+
   it('lists installed skills with a machine-readable health summary', async () => {
     const hub = getSkillsHub({
       cacheDir: path.join(tempHome, 'cache'),
