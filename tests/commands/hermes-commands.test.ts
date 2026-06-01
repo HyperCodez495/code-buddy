@@ -246,6 +246,13 @@ describe('Hermes CLI commands', () => {
             partialCapabilityIds: string[];
             smokeCommand: string;
           };
+          messaging: {
+            configuredPlatformNames: string[];
+            nextConfigPlatformNames: string[];
+            promptToolPlatformNames: string[];
+            runtimePlatformNames: string[];
+            statusCommand: string;
+          };
           provider: {
             configured: boolean;
             configuredProviderIds: string[];
@@ -279,6 +286,7 @@ describe('Hermes CLI commands', () => {
         commands: {
           browser: string;
           doctor: string;
+          messaging: string;
           runtime: string;
           smoke: string;
           todo: string;
@@ -318,6 +326,11 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.protocols.availableCapabilityIds).toEqual(expect.arrayContaining(['mcp-client', 'a2a-http']));
       expect(output.readiness.protocols.partialCapabilityIds).toEqual(['acp-editor-integration']);
       expect(output.readiness.protocols.missingCapabilityIds).toEqual([]);
+      expect(output.readiness.messaging.statusCommand).toBe('buddy hermes messaging status --json');
+      expect(output.readiness.messaging.configuredPlatformNames).toEqual([]);
+      expect(output.readiness.messaging.runtimePlatformNames).toEqual([]);
+      expect(output.readiness.messaging.promptToolPlatformNames).toEqual(expect.arrayContaining(['Email', 'Yuanbao']));
+      expect(output.readiness.messaging.nextConfigPlatformNames).toEqual(expect.arrayContaining(['Telegram', 'Discord', 'Slack']));
       expect(output.readiness.skills.totalCandidateCount).toBe(
         output.readiness.skills.eligibleCandidateCount + output.readiness.skills.ineligibleCandidateCount,
       );
@@ -328,6 +341,7 @@ describe('Hermes CLI commands', () => {
       expect(output.commands).toMatchObject({
         browser: 'buddy hermes browser status --json',
         doctor: 'buddy hermes doctor safe --json',
+        messaging: 'buddy hermes messaging status --json',
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
@@ -354,12 +368,17 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('missing:');
       expect(textOutput).toContain('(auto:');
       expect(textOutput).toContain('gated:');
+      expect(textOutput).toContain('Messaging gateway: ok');
+      expect(textOutput).toContain('Messaging: configured none');
+      expect(textOutput).toContain('prompt-tools: Email, Home Assistant, Yuanbao');
+      expect(textOutput).toContain('next: Telegram, Discord, Slack');
       expect(textOutput).toContain('Protocols: available');
       expect(textOutput).toContain('partial: acp-editor-integration');
       expect(textOutput).toContain('missing: none');
       expect(textOutput).toContain('Skills:');
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
+      expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
       expect(textOutput).not.toContain('secret-overview-openai-key');

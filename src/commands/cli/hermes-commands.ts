@@ -283,6 +283,7 @@ interface HermesOverviewStatus {
       browser: boolean;
       learning: boolean;
       memory: boolean;
+      messaging: boolean;
       protocols: boolean;
       provider: boolean;
       runtime: boolean;
@@ -335,6 +336,17 @@ interface HermesOverviewStatus {
       gatedBackendIds: string[];
       smokeCommand: string | null;
       issueCount: number;
+    };
+    messaging: {
+      ok: boolean;
+      configuredPlatformCount: number;
+      configuredPlatformNames: string[];
+      runtimePlatformCount: number;
+      runtimePlatformNames: string[];
+      promptToolPlatformNames: string[];
+      missingPlatformNames: string[];
+      nextConfigPlatformNames: string[];
+      statusCommand: string;
     };
     protocols: {
       ok: boolean;
@@ -391,6 +403,7 @@ interface HermesOverviewStatus {
     doctor: string;
     learning: string;
     memory: string;
+    messaging: string;
     parity: string;
     providers: string;
     protocols: string;
@@ -488,6 +501,12 @@ type HermesPlanOutputFormat = 'text' | 'json' | 'markdown';
 
 function formatList(values: readonly string[]): string {
   return values.length > 0 ? values.join(', ') : 'none';
+}
+
+function formatLimitedList(values: readonly string[], limit = 8): string {
+  const visible = values.slice(0, limit);
+  const hiddenCount = values.length - visible.length;
+  return `${formatList(visible)}${hiddenCount > 0 ? ` (+${hiddenCount} more)` : ''}`;
 }
 
 function formatAllowList(values: readonly string[]): string {
@@ -749,7 +768,7 @@ function renderHermesIdentityStatus(status: ReturnType<typeof buildHermesIdentit
   ].join('\n');
 }
 
-function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
+async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOverviewStatus> {
   const diagnostics = buildHermesAgentDiagnostics({ dispatchProfile: profileArg });
   const toolParity = buildLocalHermesToolParityManifest();
   const todo = buildHermesParityTodo({ limit: 5 });
@@ -757,6 +776,7 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
   const memory = buildHermesMemoryProvidersReadiness();
   const learning = buildHermesLearningLoopStatus({ limit: 5 });
   const skills = buildHermesSkillPackageSummary(process.cwd(), { limit: 5, previewChars: 0 });
+  const messaging = await buildHermesMessagingGatewayStatus();
   const profileSuffix = diagnostics.dispatchProfile === 'balanced' ? '' : ` ${diagnostics.dispatchProfile}`;
   const recommendations = [
     ...diagnostics.recommendations,
@@ -764,6 +784,7 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
     ...diagnostics.runtimeBackends.recommendations,
     ...diagnostics.browserBackends.recommendations,
     ...protocols.recommendations,
+    ...messaging.recommendations,
     ...memory.recommendations,
     ...learning.recommendations,
     ...(skills.health.ok ? [] : [`Run ${skills.health.nextCommand} to inspect skill package health.`]),
@@ -802,6 +823,7 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         browser: diagnostics.browserBackends.ok,
         learning: learning.ok,
         memory: memory.ok,
+        messaging: messaging.hermes.missingPlatformCount === 0,
         protocols: protocols.ok,
         provider: diagnostics.providerReadiness.ok,
         runtime: diagnostics.runtimeBackends.ok,
@@ -867,6 +889,17 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
         smokeCommand: diagnostics.browserBackends.routePlan.smokeCommand,
         issueCount: diagnostics.browserBackends.issues.length,
       },
+      messaging: {
+        ok: messaging.hermes.missingPlatformCount === 0,
+        configuredPlatformCount: messaging.hermes.configuredPlatformCount,
+        configuredPlatformNames: messaging.hermes.configuredPlatformNames,
+        runtimePlatformCount: messaging.hermes.runtimePlatformCount,
+        runtimePlatformNames: messaging.hermes.runtimePlatformNames,
+        promptToolPlatformNames: messaging.hermes.promptToolPlatformNames,
+        missingPlatformNames: messaging.hermes.missingPlatformNames,
+        nextConfigPlatformNames: messaging.hermes.nextConfigPlatformNames,
+        statusCommand: 'buddy hermes messaging status --json',
+      },
       protocols: {
         ok: protocols.ok,
         availableCount: protocols.summary.availableCount,
@@ -928,6 +961,7 @@ function buildHermesOverviewStatus(profileArg: string): HermesOverviewStatus {
       doctor: `buddy hermes doctor${profileSuffix} --json`,
       learning: 'buddy hermes learning status --json',
       memory: 'buddy hermes memory status --json',
+      messaging: 'buddy hermes messaging status --json',
       parity: 'buddy hermes parity --json',
       providers: 'buddy hermes providers status --json',
       protocols: 'buddy hermes protocols status --json',
@@ -948,6 +982,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     ['Provider/model', status.summary.readiness.provider],
     ['Runtime route', status.summary.readiness.runtime],
     ['Browser route', status.summary.readiness.browser],
+    ['Messaging gateway', status.summary.readiness.messaging],
     ['Protocols', status.summary.readiness.protocols],
     ['Memory', status.summary.readiness.memory],
     ['Learning loop', status.summary.readiness.learning],
@@ -987,6 +1022,10 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Browser: ${readiness.browser.primaryBackendId ?? 'none'} ` +
       `-> ${formatList(readiness.browser.fallbackBackendIds)} ` +
       `(auto: ${formatList(readiness.browser.autoEligibleBackendIds)}, gated: ${formatList(readiness.browser.gatedBackendIds)})`,
+    `  Messaging: configured ${formatLimitedList(readiness.messaging.configuredPlatformNames, 6)} ` +
+      `(runtime: ${formatLimitedList(readiness.messaging.runtimePlatformNames, 6)}, ` +
+      `prompt-tools: ${formatLimitedList(readiness.messaging.promptToolPlatformNames, 6)}, ` +
+      `next: ${formatLimitedList(readiness.messaging.nextConfigPlatformNames, 6)})`,
     `  Memory: ${readiness.memory.activeProviderId} ` +
       `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
       `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
@@ -1021,6 +1060,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     'Commands:',
     `  Doctor: ${status.commands.doctor}`,
     `  Todo: ${status.commands.todo}`,
+    `  Messaging: ${status.commands.messaging}`,
     `  Aggregate local smoke: ${status.commands.smoke}`,
     `  Real runtime smoke: ${readiness.runtime.smokeCommand ?? 'n/a'}`,
     `  Real browser smoke: ${readiness.browser.smokeCommand ?? 'n/a'}`,
@@ -2099,8 +2139,8 @@ export function registerHermesCommands(program: Command): void {
     .description('Show a compact Hermes readiness overview across parity, providers, runtimes, browser, learning, and skills')
     .argument('[dispatchProfile]', `active Fleet profile (${FLEET_DISPATCH_PROFILES.join(', ')})`, 'balanced')
     .option('--json', 'output JSON')
-    .action((profileArg: string, options: HermesCommandOptions) => {
-      const status = buildHermesOverviewStatus(profileArg);
+    .action(async (profileArg: string, options: HermesCommandOptions) => {
+      const status = await buildHermesOverviewStatus(profileArg);
 
       if (options.json) {
         console.log(stableJson(status));
