@@ -1861,6 +1861,7 @@ describe('Hermes CLI commands', () => {
     await program.parseAsync(['node', 'test', 'hermes', 'runtime', 'status', '--json']);
 
     const output = JSON.parse(getLogOutput()) as {
+      command: string;
       kind: string;
       schemaVersion: number;
       readiness: {
@@ -1875,6 +1876,7 @@ describe('Hermes CLI commands', () => {
       };
     };
 
+    expect(output.command).toBe('buddy hermes runtime status --json');
     expect(output.kind).toBe('hermes_runtime_backends_status');
     expect(output.schemaVersion).toBe(1);
     expect(output.readiness.backends.map((backend) => backend.id)).toContain('local');
@@ -1890,6 +1892,12 @@ describe('Hermes CLI commands', () => {
       smokeCommand: 'buddy hermes runtime-smoke auto --json',
     });
     expect(JSON.stringify(output)).not.toContain(process.execPath);
+
+    consoleLogSpy.mockClear();
+    const textProgram = createProgram();
+    registerHermesCommands(textProgram);
+    await textProgram.parseAsync(['node', 'test', 'hermes', 'runtime', 'status']);
+    expect(getLogOutput()).toContain('Command: buddy hermes runtime status --json');
   });
 
   it('prints Hermes messaging gateway readiness without leaking channel secrets', async () => {

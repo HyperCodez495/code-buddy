@@ -3104,7 +3104,9 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((options: HermesCommandOptions) => {
       const readiness = buildHermesRuntimeBackendsReadiness();
+      const command = 'buddy hermes runtime status --json';
       const payload = {
+        command,
         kind: 'hermes_runtime_backends_status',
         schemaVersion: 1,
         readiness,
@@ -3115,6 +3117,7 @@ export function registerHermesCommands(program: Command): void {
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesRuntimeBackendsReadiness(readiness));
     });
 
