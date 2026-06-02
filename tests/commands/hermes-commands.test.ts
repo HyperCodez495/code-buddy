@@ -329,6 +329,7 @@ describe('Hermes CLI commands', () => {
           smoke: string;
           todo: string;
           todoFull: string;
+          toolsets: string;
           trajectories: string;
         };
       };
@@ -431,6 +432,7 @@ describe('Hermes CLI commands', () => {
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
         todoFull: `buddy hermes todo --limit ${output.summary.featureParity.selectedTodoCount} --json`,
+        toolsets: 'buddy hermes toolsets safe --json',
         trajectories: 'buddy hermes trajectories status --json',
       });
       expect(raw).not.toContain('secret-overview-openai-key');
@@ -480,6 +482,7 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Skills:');
       expect(textOutput).toContain('candidates');
       expect(textOutput).toContain('Aggregate local smoke: buddy hermes smoke --json');
+      expect(textOutput).toContain('Toolsets: buddy hermes toolsets safe --json');
       expect(textOutput).toContain('Portal: buddy hermes portal status --json');
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');

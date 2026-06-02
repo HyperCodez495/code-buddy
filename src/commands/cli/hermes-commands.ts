@@ -465,6 +465,7 @@ interface HermesOverviewStatus {
     smoke: string;
     todo: string;
     todoFull: string;
+    toolsets: string;
     tools: string;
     trajectories: string;
   };
@@ -1090,6 +1091,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       smoke: 'buddy hermes smoke --json',
       todo: 'buddy hermes todo --json',
       todoFull: todoFullCommand,
+      toolsets: `buddy hermes toolsets ${diagnostics.dispatchProfile} --json`,
       tools: 'buddy hermes tools --json',
       trajectories: 'buddy hermes trajectories status --json',
     },
@@ -1206,6 +1208,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     'Commands:',
     `  Doctor: ${status.commands.doctor}`,
     `  Todo: ${status.commands.todo}`,
+    `  Toolsets: ${status.commands.toolsets}`,
     `  Portal: ${status.commands.portal}`,
     `  Messaging: ${status.commands.messaging}`,
     `  Mobile: ${status.commands.mobile}`,
