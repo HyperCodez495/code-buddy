@@ -1926,6 +1926,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         kind: string;
         schemaVersion: number;
         status: {
@@ -1953,6 +1954,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes messaging status --json');
       expect(output.kind).toBe('hermes_messaging_gateway_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.status.kind).toBe('codebuddy_channel_status');
@@ -2021,6 +2023,7 @@ describe('Hermes CLI commands', () => {
       ]);
 
       const output = getLogOutput();
+      expect(output).toContain('Command: buddy hermes messaging status --json');
       expect(output).toContain('Configured platforms: Telegram, Discord');
       expect(output).toContain('Runtime platforms: none');
       expect(output).toContain('Prompt-tool platforms: Email, Home Assistant, Yuanbao');

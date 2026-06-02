@@ -2667,7 +2667,9 @@ export function registerHermesCommands(program: Command): void {
     .option('--config <path>', 'channel config path')
     .action(async (options: HermesMessagingStatusOptions) => {
       const status = await buildHermesMessagingGatewayStatus(options.config);
+      const command = 'buddy hermes messaging status --json';
       const payload = {
+        command,
         kind: 'hermes_messaging_gateway_status',
         schemaVersion: 1,
         status,
@@ -2678,6 +2680,7 @@ export function registerHermesCommands(program: Command): void {
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesMessagingGatewayStatus(status));
     });
 
