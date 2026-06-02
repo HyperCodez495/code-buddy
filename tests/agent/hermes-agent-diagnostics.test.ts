@@ -41,6 +41,15 @@ describe('Hermes Agent diagnostics', () => {
     expect(diagnostics.runtimeMapping.boundary).toContain('not embedded');
     expect(diagnostics.fleetDispatchProfile).toBe('balanced');
     expect(diagnostics.requireExplicitDispatchProfile).toBe(true);
+    expect(diagnostics.enabledTools).toEqual([]);
+    expect(diagnostics.disabledTools).toEqual(['git_push', 'delete_file']);
+    expect(diagnostics.effectiveEnabledTools).toEqual(['view_file', 'web_search', 'web_fetch']);
+    expect(diagnostics.effectiveDisabledTools).toEqual([
+      'create_file',
+      'bash',
+      'git_push',
+      'delete_file',
+    ]);
     expect(diagnostics.effectiveToolFilter.enabledPatterns).toEqual(['view_file', 'web_search', 'web_fetch']);
     expect(diagnostics.effectiveToolFilter.disabledPatterns).toEqual([
       'create_file',

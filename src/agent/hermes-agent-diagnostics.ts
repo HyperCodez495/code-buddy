@@ -91,6 +91,8 @@ export interface HermesAgentDiagnostics {
   agentDescription: string | null;
   enabledTools: string[];
   disabledTools: string[];
+  effectiveEnabledTools: string[];
+  effectiveDisabledTools: string[];
   fleetDispatchProfile: FleetDispatchProfile | null;
   requireExplicitDispatchProfile: boolean;
   effectiveToolFilter: ToolFilterConfig;
@@ -435,6 +437,11 @@ function buildPromptChecks(
   };
 }
 
+function resolveRunnableEnabledTools(filter: ToolFilterConfig): string[] {
+  const denied = new Set(filter.disabledPatterns);
+  return filter.enabledPatterns.filter((tool) => !denied.has(tool));
+}
+
 export function buildHermesAgentDiagnostics(
   options: HermesAgentDiagnosticsOptions = {},
 ): HermesAgentDiagnostics {
@@ -503,6 +510,8 @@ export function buildHermesAgentDiagnostics(
     agentDescription: agent?.description ?? null,
     enabledTools: agent?.tools ?? [],
     disabledTools: agent?.disabledTools ?? [],
+    effectiveEnabledTools: resolveRunnableEnabledTools(effectiveToolFilter),
+    effectiveDisabledTools: effectiveToolFilter.disabledPatterns,
     fleetDispatchProfile: agent?.fleetDispatchProfile ?? null,
     requireExplicitDispatchProfile: agent?.requireExplicitDispatchProfile === true,
     effectiveToolFilter,

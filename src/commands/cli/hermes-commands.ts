@@ -2869,6 +2869,7 @@ export function registerHermesCommands(program: Command): void {
       console.log(`  Active toolset: ${diagnostics.activeToolset.toolsetId}`);
       console.log(`  Agent tools: ${formatAllowList(diagnostics.enabledTools)}`);
       console.log(`  Agent disabled tools: ${formatList(diagnostics.disabledTools)}`);
+      console.log(`  Effective runnable tools: ${formatAllowList(diagnostics.effectiveEnabledTools)}`);
       console.log(
         `  Effective filter allow: ${formatAllowList(diagnostics.effectiveToolFilter.enabledPatterns)}`,
       );

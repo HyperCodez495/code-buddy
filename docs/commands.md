@@ -202,7 +202,7 @@ The plan also declares its interaction surfaces (`cli`, `cowork`, and
 goal without parsing CLI prose.
 
 `buddy hermes doctor [profile] [--json]` checks the active Hermes custom-agent
-mapping, effective tool filter, active model, inferred provider, detected
+mapping, effective runnable tools, raw tool filter, active model, inferred provider, detected
 credential source names, model capabilities, context/output limits, Nous
 Portal readiness, and runtime backend inventory for local, OS sandbox, Docker,
 WSL, SSH, Singularity/Apptainer, Modal, Daytona, and Vercel Sandbox. It also

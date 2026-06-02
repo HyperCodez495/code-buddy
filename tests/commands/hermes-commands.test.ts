@@ -3114,6 +3114,7 @@ describe('Hermes CLI commands', () => {
     const output = getLogOutput();
     expect(output).toContain('Hermes Agent doctor:');
     expect(output).toContain('Active toolset: fleet.hermes.safe');
+    expect(output).toContain('Effective runnable tools: view_file, web_search, web_fetch');
     expect(output).toContain('Agent default dispatch profile: balanced');
     expect(output).toContain('Provider/model readiness:');
     expect(output).toContain('Capabilities: tool-calls=');
@@ -3150,6 +3151,8 @@ describe('Hermes CLI commands', () => {
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
         diagnostics: {
+          effectiveEnabledTools: string[];
+          effectiveDisabledTools: string[];
           providerReadiness: {
             ok: boolean;
             activeModel: {
@@ -3197,6 +3200,8 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.diagnostics.effectiveEnabledTools).toEqual(['view_file', 'create_file', 'bash', 'web_search', 'web_fetch']);
+      expect(output.diagnostics.effectiveDisabledTools).toEqual(['git_push', 'delete_file']);
       expect(output.diagnostics.providerReadiness.ok).toBe(true);
       expect(output.diagnostics.providerReadiness.activeModel).toMatchObject({
         model: 'gpt-5.5',
