@@ -273,6 +273,12 @@ describe('Hermes CLI commands', () => {
             routeStatus: string;
             statusCommand: string;
           };
+          learning: {
+            pendingReviewCount: number;
+            retrospectiveCoveragePercent: number;
+            runningRunCount: number;
+            staleRunningRunCount: number;
+          };
           provider: {
             configured: boolean;
             configuredProviderIds: string[];
@@ -375,6 +381,13 @@ describe('Hermes CLI commands', () => {
         statusCommand: 'buddy hermes mobile status --json',
       });
       expect(output.readiness.mobile.gatewayCheckCommand).toContain('buddy run mobile-gateway-check');
+      expect(output.readiness.learning.pendingReviewCount).toBeGreaterThanOrEqual(0);
+      expect(output.readiness.learning.retrospectiveCoveragePercent).toBeGreaterThanOrEqual(0);
+      expect(output.readiness.learning.runningRunCount).toBeGreaterThanOrEqual(0);
+      expect(output.readiness.learning.staleRunningRunCount).toBeGreaterThanOrEqual(0);
+      expect(output.readiness.learning.staleRunningRunCount).toBeLessThanOrEqual(
+        output.readiness.learning.runningRunCount,
+      );
       expect(output.readiness.skills.totalCandidateCount).toBe(
         output.readiness.skills.eligibleCandidateCount + output.readiness.skills.ineligibleCandidateCount,
       );
@@ -415,6 +428,9 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('via Nous: none');
       expect(textOutput).toContain('missing: modal');
       expect(textOutput).toContain('missing:');
+      expect(textOutput).toContain('Learning:');
+      expect(textOutput).toContain('running /');
+      expect(textOutput).toContain('stale');
       expect(textOutput).toContain('(auto:');
       expect(textOutput).toContain('gated:');
       expect(textOutput).toContain('Messaging gateway: ok');

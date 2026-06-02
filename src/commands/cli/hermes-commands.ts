@@ -413,6 +413,8 @@ interface HermesOverviewStatus {
       pendingLessonCandidateCount: number;
       retrospectiveCoveragePercent: number;
       retrospectiveEligibleRunCount: number;
+      runningRunCount: number;
+      staleRunningRunCount: number;
       nextActionCommand: string;
       nextActionKind: string;
     };
@@ -1018,6 +1020,8 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
         pendingLessonCandidateCount: learning.summary.pendingLessonCandidateCount,
         retrospectiveCoveragePercent: learning.summary.retrospectiveCoveragePercent,
         retrospectiveEligibleRunCount: learning.summary.retrospectiveEligibleRunCount,
+        runningRunCount: learning.summary.runningRunCount,
+        staleRunningRunCount: learning.summary.staleRunningRunCount,
         nextActionCommand: learning.nextAction.command,
         nextActionKind: learning.nextAction.kind,
       },
@@ -1123,6 +1127,10 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `(remote: ${formatList(readiness.memory.configuredRemoteProviderIds)}, ` +
       `fallback: ${formatList(readiness.memory.fallbackProviderIds)}, ` +
       `missing: ${formatList(readiness.memory.missingOfficialProviderIds)})`,
+    `  Learning: ${readiness.learning.pendingReviewCount} review item(s), ` +
+      `${readiness.learning.retrospectiveCoveragePercent}% retrospective coverage, ` +
+      `${readiness.learning.runningRunCount} running / ` +
+      `${readiness.learning.staleRunningRunCount} stale`,
     `  Protocols: available ${formatList(readiness.protocols.availableCapabilityIds)} ` +
       `(partial: ${formatList(readiness.protocols.partialCapabilityIds)}, ` +
       `missing: ${formatList(readiness.protocols.missingCapabilityIds)})`,
