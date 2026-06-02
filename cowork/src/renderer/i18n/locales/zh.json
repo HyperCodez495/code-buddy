@@ -2500,6 +2500,8 @@
       "runDoctor": "运行 run doctor",
       "runDoctorDone": "Run doctor 已检查 {{inspected}} 个运行：{{stale}} 个 stale / {{running}} 个 running",
       "runDoctorFailed": "Run doctor 失败",
+      "runDoctorMoreStale": "+ {{count}} 个更多 stale running 运行",
+      "runDoctorStaleRun": "{{runId}} | {{source}} | {{minutes}}m | {{events}} 个事件",
       "runDoctorUnavailable": "Run doctor 不可用。",
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "下一次复盘",

@@ -2513,6 +2513,8 @@
       "runDoctor": "Run doctor",
       "runDoctorDone": "Run doctor checked {{inspected}} runs: {{stale}} stale / {{running}} running",
       "runDoctorFailed": "Run doctor failed",
+      "runDoctorMoreStale": "+ {{count}} more stale running runs",
+      "runDoctorStaleRun": "{{runId}} | {{source}} | {{minutes}}m | {{events}} events",
       "runDoctorUnavailable": "Run doctor is unavailable.",
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "Next retrospective",

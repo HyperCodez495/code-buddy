@@ -549,6 +549,8 @@ describe('French renderer i18n support', () => {
       'fleet.hermesLearningLoop.runDoctor',
       'fleet.hermesLearningLoop.runDoctorDone',
       'fleet.hermesLearningLoop.runDoctorFailed',
+      'fleet.hermesLearningLoop.runDoctorMoreStale',
+      'fleet.hermesLearningLoop.runDoctorStaleRun',
       'fleet.hermesLearningLoop.runDoctorUnavailable',
       'fleet.hermesLearningLoop.skillScoreChip',
       'fleet.hermesLearningLoop.nextRetrospectiveLabel',

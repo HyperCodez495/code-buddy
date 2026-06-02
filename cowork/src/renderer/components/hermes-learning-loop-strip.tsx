@@ -230,6 +230,12 @@ export const HermesLearningLoopStrip: React.FC<{
   const statusText = attentionCount === 0
     ? t('fleet.hermesLearningLoop.readyChip', 'learning ready')
     : t('fleet.hermesLearningLoop.attentionChip', 'learning attention');
+  const staleRunDoctorRows = runDoctorResult?.runs
+    .filter((run) => run.staleRunning)
+    .slice(0, 3) ?? [];
+  const hiddenStaleRunDoctorCount = runDoctorResult
+    ? Math.max(0, runDoctorResult.summary.staleRunningRunCount - staleRunDoctorRows.length)
+    : 0;
 
   useEffect(() => {
     if (status !== undefined) return;
@@ -475,6 +481,39 @@ export const HermesLearningLoopStrip: React.FC<{
               <code className="block truncate text-[9px] text-success">
                 {runDoctorResult.command}
               </code>
+              {staleRunDoctorRows.length > 0 ? (
+                <div className="mt-1 space-y-1">
+                  {staleRunDoctorRows.map((run) => (
+                    <div
+                      key={run.runId}
+                      className="min-w-0 rounded bg-background/70 px-1.5 py-1 text-[9px] text-text-secondary"
+                    >
+                      <div className="truncate">
+                        {t(
+                          'fleet.hermesLearningLoop.runDoctorStaleRun',
+                          '{{runId}} | {{source}} | {{minutes}}m | {{events}} events',
+                          {
+                            events: run.eventCount,
+                            minutes: run.runningForMinutes ?? '?',
+                            runId: run.runId,
+                            source: run.source ?? 'unknown',
+                          },
+                        )}
+                      </div>
+                      <code className="block truncate text-[9px] text-success">
+                        {`buddy run show ${run.runId}`}
+                      </code>
+                    </div>
+                  ))}
+                  {hiddenStaleRunDoctorCount > 0 ? (
+                    <div className="truncate text-[9px] text-text-muted">
+                      {t('fleet.hermesLearningLoop.runDoctorMoreStale', '+ {{count}} more stale running runs', {
+                        count: hiddenStaleRunDoctorCount,
+                      })}
+                    </div>
+                  ) : null}
+                </div>
+              ) : null}
             </div>
           ) : null}
 

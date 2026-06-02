@@ -2513,6 +2513,8 @@
       "runDoctor": "Lancer run doctor",
       "runDoctorDone": "Run doctor a inspecté {{inspected}} run(s) : {{stale}} stale / {{running}} running",
       "runDoctorFailed": "Run doctor échoué",
+      "runDoctorMoreStale": "+ {{count}} autre(s) run(s) running stale",
+      "runDoctorStaleRun": "{{runId}} | {{source}} | {{minutes}}m | {{events}} événement(s)",
       "runDoctorUnavailable": "Run doctor est indisponible.",
       "skillScoreChip": "{{score}}/100 {{state}}",
       "nextRetrospectiveLabel": "Prochaine rétro",

@@ -354,6 +354,8 @@ describe('HermesLearningLoopStrip', () => {
     });
     expect(target.querySelector('[data-testid="hermes-learning-run-doctor-result"]')?.textContent)
       .toContain('Run doctor checked 6 runs: 1 stale / 2 running');
+    expect(target.textContent).toContain('run-stale | cowork | 90m | 8 events');
+    expect(target.textContent).toContain('buddy run show run-stale');
     expect(target.textContent).toContain('buddy run doctor --json --limit 6');
 
     const button = target.querySelector('[data-testid="hermes-learning-retrospective-run-needs-retro"]') as HTMLButtonElement;
