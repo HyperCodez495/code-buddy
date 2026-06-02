@@ -329,7 +329,8 @@ The JSON list output includes a `summary` block with total, shown, eligible,
 and not-yet-eligible counts so review UIs can show queue readiness without
 reading candidate bodies. Each candidate item also includes review-safe
 `candidatePath`, `reviewManifestPath`, and `inspectCommand` fields; eligible
-items include an `installCommand` template.
+items include an `installCommand` template. Generated commands quote candidate
+paths when needed while keeping `candidatePath` as the raw structured value.
 
 ### Knowledge and Memory
 

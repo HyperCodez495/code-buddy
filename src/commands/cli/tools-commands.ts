@@ -117,13 +117,15 @@ function normalizeToolsProfile(profileArg: string): NormalizedToolsProfile {
 }
 
 function summarizeSkillCandidate(candidate: ResearchScriptSkillCandidate): ResearchScriptSkillCandidateSummary {
+  const candidatePath = formatCandidateDirectory(candidate);
+  const candidateArg = formatShellArg(candidatePath);
   return {
-    candidatePath: formatCandidateDirectory(candidate),
+    candidatePath,
     eligible: candidate.eligible,
     id: candidate.id,
-    inspectCommand: `buddy tools skill-candidate inspect ${formatCandidateDirectory(candidate)} --json`,
+    inspectCommand: `buddy tools skill-candidate inspect ${candidateArg} --json`,
     installCommand: candidate.eligible
-      ? `buddy tools skill-candidate install ${formatCandidateDirectory(candidate)} --approved-by <name> --json`
+      ? `buddy tools skill-candidate install ${candidateArg} --approved-by <name> --json`
       : undefined,
     kind: candidate.kind,
     reason: candidate.reason,
@@ -159,6 +161,10 @@ function formatCandidateReviewPath(candidate: ResearchScriptSkillCandidate): str
 
 function formatCandidateDirectory(candidate: ResearchScriptSkillCandidate): string {
   return candidate.skillPath.replace(/\\/g, '/').replace(/\/?SKILL\.md$/i, '');
+}
+
+function formatShellArg(value: string): string {
+  return /^[A-Za-z0-9._/:=-]+$/.test(value) ? value : JSON.stringify(value);
 }
 
 function normalizeBrowserOperatorMode(value: string | undefined): BrowserOperatorMode {
@@ -233,7 +239,7 @@ function printSkillCandidateList(
       console.log(`    Tool sequence: ${candidate.toolSequence.join(' -> ')}`);
     }
     console.log(`    Path: ${candidate.skillPath}`);
-    console.log(`    Inspect: buddy tools skill-candidate inspect ${formatCandidateDirectory(candidate)} --json`);
+    console.log(`    Inspect: buddy tools skill-candidate inspect ${formatShellArg(formatCandidateDirectory(candidate))} --json`);
     console.log(`    Reason: ${candidate.reason}`);
   }
   console.log('');

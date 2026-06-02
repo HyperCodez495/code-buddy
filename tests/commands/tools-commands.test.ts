@@ -69,8 +69,8 @@ async function materializeCliSkillCandidate(rootDir: string): Promise<string> {
   return materialized.skillPath.replace(/\/SKILL\.md$/i, '');
 }
 
-async function materializeLearningSkillCandidate(rootDir: string): Promise<string> {
-  const candidateDir = path.join(rootDir, '.codebuddy', 'skill-candidates', 'learning', 'learned-real-review');
+async function materializeLearningSkillCandidate(rootDir: string, candidateDirectoryName = 'learned-real-review'): Promise<string> {
+  const candidateDir = path.join(rootDir, '.codebuddy', 'skill-candidates', 'learning', candidateDirectoryName);
   await fs.mkdir(candidateDir, { recursive: true });
   await fs.writeFile(
     path.join(candidateDir, 'SKILL.md'),
@@ -491,7 +491,9 @@ describe('Tools CLI commands', () => {
       ]);
 
       consoleLogSpy.mockClear();
-      await program.parseAsync([
+      const inspectProgram = createProgram();
+      registerToolsCommands(inspectProgram);
+      await inspectProgram.parseAsync([
         'node',
         'test',
         'tools',
@@ -514,7 +516,9 @@ describe('Tools CLI commands', () => {
       });
 
       consoleLogSpy.mockClear();
-      await program.parseAsync([
+      const installProgram = createProgram();
+      registerToolsCommands(installProgram);
+      await installProgram.parseAsync([
         'node',
         'test',
         'tools',
@@ -540,6 +544,62 @@ describe('Tools CLI commands', () => {
       await expect(
         fs.readFile(path.join(rootDir, '.codebuddy', 'skills', 'learned-real-review', 'SKILL.md'), 'utf8'),
       ).resolves.toContain('- Approved by: Patrice');
+    } finally {
+      process.chdir(previousCwd);
+      await fs.rm(rootDir, { recursive: true, force: true });
+    }
+  });
+
+  it('quotes generated skill candidate review commands when candidate paths contain spaces', async () => {
+    const rootDir = await fs.mkdtemp(path.join(os.tmpdir(), 'tools-learning-skill-candidate-space-'));
+    const previousCwd = process.cwd();
+    try {
+      await materializeLearningSkillCandidate(rootDir, 'learned real review');
+      process.chdir(rootDir);
+      const program = createProgram();
+      registerToolsCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'tools',
+        'skill-candidate',
+        'list',
+        '--json',
+      ]);
+
+      const output = JSON.parse(getLogOutput()) as {
+        candidates: Array<{
+          candidatePath: string;
+          inspectCommand: string;
+          installCommand?: string;
+          reviewManifestPath: string;
+        }>;
+      };
+
+      expect(output.candidates).toEqual([
+        expect.objectContaining({
+          candidatePath: '.codebuddy/skill-candidates/learning/learned real review',
+          inspectCommand: 'buddy tools skill-candidate inspect ".codebuddy/skill-candidates/learning/learned real review" --json',
+          installCommand: 'buddy tools skill-candidate install ".codebuddy/skill-candidates/learning/learned real review" --approved-by <name> --json',
+          reviewManifestPath: '.codebuddy/skill-candidates/learning/learned real review/candidate-review.json',
+        }),
+      ]);
+
+      consoleLogSpy.mockClear();
+      const textProgram = createProgram();
+      registerToolsCommands(textProgram);
+      await textProgram.parseAsync([
+        'node',
+        'test',
+        'tools',
+        'skill-candidate',
+        'list',
+      ]);
+
+      expect(getLogOutput()).toContain(
+        'Inspect: buddy tools skill-candidate inspect ".codebuddy/skill-candidates/learning/learned real review" --json',
+      );
     } finally {
       process.chdir(previousCwd);
       await fs.rm(rootDir, { recursive: true, force: true });
