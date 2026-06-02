@@ -2251,6 +2251,8 @@
       "coveredPartialChip": "{{count}} covered/partial",
       "partialChip": "{{count}} partial",
       "gapChip": "{{count}} gaps",
+      "todoBacklogChip": "{{active}} active todo / {{deferred}} deferred",
+      "todoHidden": "Showing {{shown}}/{{selected}} active todo items; run {{command}} for the full backlog.",
       "loadFailed": "Hermes feature parity load failed",
       "empty": "No prioritized Hermes feature gaps.",
       "unavailable": "Hermes feature parity is not loaded yet.",

@@ -86,6 +86,15 @@ describe('HermesFeatureParityStrip', () => {
               },
             ],
             todoCommand: 'buddy hermes todo --json',
+            todoSummary: {
+              activeTodoCount: 11,
+              deferredCount: 1,
+              hiddenTodoCount: 4,
+              includedDeferred: false,
+              selectedTodoCount: 11,
+              shownTodoCount: 7,
+              todoLimit: 7,
+            },
           },
         }),
       );
@@ -104,7 +113,9 @@ describe('HermesFeatureParityStrip', () => {
     expect(strip?.textContent).toContain('OpenClaw migration');
     expect(strip?.textContent).toContain('Do this at the end.');
     expect(strip?.textContent).toContain('Deferred');
-    expect(strip?.textContent).toContain('buddy hermes todo --json');
+    expect(strip?.textContent).toContain('11 active todo / 1 deferred');
+    expect(strip?.textContent).toContain('Showing 7/11 active todo items');
+    expect(strip?.textContent).toContain('buddy hermes todo --limit 11 --json');
     expect(strip?.textContent).toContain('buddy hermes parity --json');
   });
 
@@ -140,6 +151,15 @@ describe('HermesFeatureParityStrip', () => {
         },
       ],
       todoCommand: 'buddy hermes todo --json',
+      todoSummary: {
+        activeTodoCount: 7,
+        deferredCount: 0,
+        hiddenTodoCount: 0,
+        includedDeferred: false,
+        selectedTodoCount: 7,
+        shownTodoCount: 7,
+        todoLimit: 7,
+      },
     });
     (window as unknown as {
       electronAPI?: {

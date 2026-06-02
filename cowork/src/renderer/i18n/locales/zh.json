@@ -2238,6 +2238,8 @@
       "coveredPartialChip": "{{count}} 个覆盖/部分",
       "partialChip": "{{count}} 个部分",
       "gapChip": "{{count}} 个缺口",
+      "todoBacklogChip": "{{active}} 个活跃 todo / {{deferred}} 个已推迟",
+      "todoHidden": "当前显示 {{shown}}/{{selected}} 个活跃 todo；运行 {{command}} 查看完整 backlog。",
       "loadFailed": "Hermes 功能对齐加载失败",
       "empty": "没有优先 Hermes 功能缺口。",
       "unavailable": "Hermes 功能对齐尚未加载。",

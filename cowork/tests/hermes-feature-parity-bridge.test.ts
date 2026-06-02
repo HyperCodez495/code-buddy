@@ -67,6 +67,15 @@ describe('Hermes feature parity bridge', () => {
         ],
       }),
       buildHermesParityTodo: () => ({
+        summary: {
+          activeTodoCount: 2,
+          deferredCount: 1,
+          hiddenTodoCount: 1,
+          includedDeferred: false,
+          selectedTodoCount: 2,
+          shownTodoCount: 1,
+          todoLimit: 1,
+        },
         todos: [
           {
             area: 'Closed learning loop',
@@ -130,6 +139,15 @@ describe('Hermes feature parity bridge', () => {
         },
       ],
       todoCommand: 'buddy hermes todo --json',
+      todoSummary: {
+        activeTodoCount: 2,
+        deferredCount: 1,
+        hiddenTodoCount: 1,
+        includedDeferred: false,
+        selectedTodoCount: 2,
+        shownTodoCount: 1,
+        todoLimit: 1,
+      },
     });
   });
 

@@ -2251,6 +2251,8 @@
       "coveredPartialChip": "{{count}} couvert(s)/partiel(s)",
       "partialChip": "{{count}} partiel(s)",
       "gapChip": "{{count}} manque(s)",
+      "todoBacklogChip": "{{active}} todo(s) actif(s) / {{deferred}} différé(s)",
+      "todoHidden": "Affichage {{shown}}/{{selected}} todo(s) actif(s) ; lancer {{command}} pour voir tout le backlog.",
       "loadFailed": "Chargement de la parité fonctionnalités Hermes échoué",
       "empty": "Aucun manque fonctionnel Hermes prioritaire.",
       "unavailable": "La parité fonctionnalités Hermes n'est pas encore chargée.",

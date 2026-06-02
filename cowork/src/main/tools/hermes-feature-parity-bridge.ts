@@ -11,6 +11,16 @@ export interface HermesFeatureParityItem {
   verificationCommands: string[];
 }
 
+export interface HermesFeatureParityTodoSummary {
+  activeTodoCount: number;
+  deferredCount: number;
+  hiddenTodoCount: number;
+  includedDeferred: boolean;
+  selectedTodoCount: number;
+  shownTodoCount: number;
+  todoLimit: number;
+}
+
 export interface HermesFeatureParitySummary {
   auditDocument: string;
   command: string;
@@ -28,6 +38,7 @@ export interface HermesFeatureParitySummary {
   };
   topWork: HermesFeatureParityItem[];
   todoCommand: string;
+  todoSummary: HermesFeatureParityTodoSummary;
 }
 
 interface HermesParityManifest {
@@ -60,6 +71,7 @@ interface HermesParityManifestModule {
   buildHermesParityManifest: () => HermesParityManifest;
   buildHermesParityTodo?: (options?: { includeDeferred?: boolean; limit?: number }) => {
     deferred?: HermesParityTodoItem[];
+    summary?: Partial<HermesFeatureParityTodoSummary>;
     todos?: HermesParityTodoItem[];
   };
 }
@@ -131,6 +143,22 @@ function toHermesFeatureParityItem(feature: HermesParityTodoItem): HermesFeature
   };
 }
 
+function normalizeTodoSummary(
+  summary: Partial<HermesFeatureParityTodoSummary> | undefined,
+  shownTodoCount: number,
+  deferredCount: number,
+): HermesFeatureParityTodoSummary {
+  return {
+    activeTodoCount: summary?.activeTodoCount ?? shownTodoCount,
+    deferredCount: summary?.deferredCount ?? deferredCount,
+    hiddenTodoCount: summary?.hiddenTodoCount ?? 0,
+    includedDeferred: summary?.includedDeferred ?? false,
+    selectedTodoCount: summary?.selectedTodoCount ?? shownTodoCount,
+    shownTodoCount: summary?.shownTodoCount ?? shownTodoCount,
+    todoLimit: summary?.todoLimit ?? shownTodoCount,
+  };
+}
+
 export async function getHermesFeatureParityForReview(): Promise<HermesFeatureParitySummary | null> {
   const mod = await loadCoreModule<HermesParityManifestModule>('agent/hermes-parity-manifest.js');
   if (!mod?.buildHermesParityManifest) return null;
@@ -151,5 +179,6 @@ export async function getHermesFeatureParityForReview(): Promise<HermesFeaturePa
     summary: manifest.summary,
     topWork: topWork.map(toHermesFeatureParityItem),
     todoCommand: buildHermesFeatureTodoCommand(),
+    todoSummary: normalizeTodoSummary(todo?.summary, topWork.length, deferredWork.length),
   };
 }

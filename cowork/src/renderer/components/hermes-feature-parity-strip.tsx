@@ -14,6 +14,16 @@ export interface HermesFeatureParityItem {
   verificationCommands: string[];
 }
 
+export interface HermesFeatureParityTodoSummary {
+  activeTodoCount: number;
+  deferredCount: number;
+  hiddenTodoCount: number;
+  includedDeferred: boolean;
+  selectedTodoCount: number;
+  shownTodoCount: number;
+  todoLimit: number;
+}
+
 export interface HermesFeatureParitySummary {
   auditDocument: string;
   command: string;
@@ -31,6 +41,7 @@ export interface HermesFeatureParitySummary {
   };
   topWork: HermesFeatureParityItem[];
   todoCommand?: string;
+  todoSummary?: HermesFeatureParityTodoSummary;
 }
 
 interface HermesFeatureParityApi {
@@ -78,6 +89,11 @@ export const HermesFeatureParityStrip: React.FC<{
   const substantiallyCovered = summary ? summary.covered + summary.coveredPartial : 0;
   const gapCount = summary?.gaps ?? 0;
   const deferredWork = visibleParity?.deferredWork ?? [];
+  const todoSummary = visibleParity?.todoSummary;
+  const visibleTodoCommand =
+    todoSummary && todoSummary.hiddenTodoCount > 0
+      ? `buddy hermes todo --limit ${todoSummary.selectedTodoCount} --json`
+      : visibleParity?.todoCommand || todoCommand;
 
   useEffect(() => {
     if (parity !== undefined) return;
@@ -155,6 +171,28 @@ export const HermesFeatureParityStrip: React.FC<{
               count: summary.gaps,
             })}
           </span>
+          {todoSummary ? (
+            <span className="rounded bg-surface/80 px-1 py-0.5 text-[9px] text-text-muted">
+              {t('fleet.hermesFeatureParity.todoBacklogChip', '{{active}} active todo / {{deferred}} deferred', {
+                active: todoSummary.activeTodoCount,
+                deferred: todoSummary.deferredCount,
+              })}
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+
+      {todoSummary && todoSummary.hiddenTodoCount > 0 ? (
+        <div className="mt-1.5 rounded border border-warning/20 bg-warning/5 px-2 py-1 text-[10px] text-text-muted">
+          {t(
+            'fleet.hermesFeatureParity.todoHidden',
+            'Showing {{shown}}/{{selected}} active todo items; run {{command}} for the full backlog.',
+            {
+              command: visibleTodoCommand,
+              selected: todoSummary.selectedTodoCount,
+              shown: todoSummary.shownTodoCount,
+            },
+          )}
         </div>
       ) : null}
 
@@ -225,7 +263,7 @@ export const HermesFeatureParityStrip: React.FC<{
 
       <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-muted">
         <Terminal size={10} className="shrink-0 text-text-muted" />
-        <code className="truncate">{visibleParity?.todoCommand || todoCommand}</code>
+        <code className="truncate">{visibleTodoCommand}</code>
       </div>
       <div className="mt-1 flex min-w-0 items-center gap-1.5 rounded bg-surface/60 px-2 py-1 text-[9px] text-text-muted">
         <Terminal size={9} className="shrink-0 text-text-muted" />

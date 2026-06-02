@@ -1535,6 +1535,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
           verificationCommands: string[];
         }>;
         todoCommand: string;
+        todoSummary: {
+          activeTodoCount: number;
+          deferredCount: number;
+          hiddenTodoCount: number;
+          includedDeferred: boolean;
+          selectedTodoCount: number;
+          shownTodoCount: number;
+          todoLimit: number;
+        };
       } | null> => ipcRenderer.invoke('tools.hermesFeatureParity.get'),
     },
     hermesToolsets: {
@@ -4672,6 +4681,15 @@ declare global {
               verificationCommands: string[];
             }>;
             todoCommand: string;
+            todoSummary: {
+              activeTodoCount: number;
+              deferredCount: number;
+              hiddenTodoCount: number;
+              includedDeferred: boolean;
+              selectedTodoCount: number;
+              shownTodoCount: number;
+              todoLimit: number;
+            };
           } | null>;
         };
         hermesToolsets: {

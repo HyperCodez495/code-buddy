@@ -331,6 +331,8 @@ describe('French renderer i18n support', () => {
       'fleet.hermesFeatureParity.coveredPartialChip',
       'fleet.hermesFeatureParity.partialChip',
       'fleet.hermesFeatureParity.gapChip',
+      'fleet.hermesFeatureParity.todoBacklogChip',
+      'fleet.hermesFeatureParity.todoHidden',
       'fleet.hermesFeatureParity.loadFailed',
       'fleet.hermesFeatureParity.empty',
       'fleet.hermesFeatureParity.unavailable',
