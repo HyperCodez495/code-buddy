@@ -3400,6 +3400,7 @@ describe('Hermes CLI commands', () => {
     await program.parseAsync(['node', 'test', 'hermes', 'browser', 'status', '--json']);
 
     const output = JSON.parse(getLogOutput()) as {
+      command: string;
       kind: string;
       schemaVersion: number;
       readiness: {
@@ -3419,6 +3420,7 @@ describe('Hermes CLI commands', () => {
       };
     };
 
+    expect(output.command).toBe('buddy hermes browser status --json');
     expect(output.kind).toBe('hermes_browser_backends_status');
     expect(output.schemaVersion).toBe(1);
     expect(output.readiness.backends).toEqual(
@@ -3446,6 +3448,12 @@ describe('Hermes CLI commands', () => {
       smokeCommand: 'buddy hermes browser-smoke auto --json',
     });
     expect(JSON.stringify(output)).not.toContain(process.execPath);
+
+    consoleLogSpy.mockClear();
+    const textProgram = createProgram();
+    registerHermesCommands(textProgram);
+    await textProgram.parseAsync(['node', 'test', 'hermes', 'browser', 'status']);
+    expect(getLogOutput()).toContain('Command: buddy hermes browser status --json');
   });
 
   it('runs a real local Hermes browser smoke from the CLI', async () => {

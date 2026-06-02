@@ -3050,7 +3050,9 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((options: HermesCommandOptions) => {
       const readiness = buildHermesBrowserBackendsReadiness();
+      const command = 'buddy hermes browser status --json';
       const payload = {
+        command,
         kind: 'hermes_browser_backends_status',
         schemaVersion: 1,
         readiness,
@@ -3061,6 +3063,7 @@ export function registerHermesCommands(program: Command): void {
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesBrowserBackendsReadiness(readiness));
     });
 
