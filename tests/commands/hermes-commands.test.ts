@@ -304,6 +304,15 @@ describe('Hermes CLI commands', () => {
             candidateListCommand: string;
             eligibleCandidateCount: number;
             ineligibleCandidateCount: number;
+            nextCandidate: {
+              candidateId: string;
+              candidatePath: string;
+              eligible: boolean;
+              inspectCommand: string;
+              installCommand: string | null;
+              reviewManifestPath: string;
+              skillName: string;
+            } | null;
             nextCommand: string;
             nextInspectCommand: string | null;
             totalCandidateCount: number;
@@ -396,6 +405,18 @@ describe('Hermes CLI commands', () => {
       );
       expect(output.readiness.skills.candidateListCommand).toContain('buddy tools skill-candidate list');
       expect(output.readiness.skills.nextCommand.length).toBeGreaterThan(0);
+      if (output.readiness.skills.nextCandidate) {
+        const { nextCandidate } = output.readiness.skills;
+        expect(nextCandidate.inspectCommand).toBe(output.readiness.skills.nextInspectCommand);
+        expect(nextCandidate.candidatePath).toContain('.codebuddy/skill-candidates/');
+        expect(nextCandidate.reviewManifestPath).toContain('.codebuddy/skill-candidates/');
+        expect(nextCandidate.candidatePath).not.toMatch(/^[A-Za-z]:/);
+        expect(nextCandidate.reviewManifestPath).not.toMatch(/^[A-Za-z]:/);
+        expect(
+          nextCandidate.installCommand === null ||
+            nextCandidate.installCommand.includes('buddy tools skill-candidate install'),
+        ).toBe(true);
+      }
       expect(output.nextActions[0]?.area).toBe('Closed learning loop');
       expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
       expect(output.commands).toMatchObject({

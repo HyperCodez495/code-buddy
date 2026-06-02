@@ -147,6 +147,7 @@ Useful CLI equivalents:
 ```powershell
 npx tsx src/index.ts hermes learning status --json
 npx tsx src/index.ts hermes skills status --json
+npx tsx src/index.ts hermes status safe --json
 npx tsx src/index.ts hermes browser status --json
 npx tsx src/index.ts hermes runtime status --json
 ```
@@ -162,6 +163,9 @@ Latest local privacy proof on this branch:
   action metadata. Candidate samples expose `candidatePath`, `reviewManifestPath`,
   `inspectCommand`, and eligible `installCommand` templates without printing
   SKILL.md bodies.
+- `hermes status safe --json` keeps the overview compact by exposing only the
+  next skill candidate action in `readiness.skills.nextCandidate`, using the
+  same relative path and copy-paste command fields.
 
 ## Screenshot And Privacy Policy
 

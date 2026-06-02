@@ -428,6 +428,15 @@ interface HermesOverviewStatus {
       ineligibleCandidateCount: number;
       totalCandidateCount: number;
       candidateListCommand: string;
+      nextCandidate: {
+        candidateId: string;
+        candidatePath: string;
+        eligible: boolean;
+        inspectCommand: string;
+        installCommand: string | null;
+        reviewManifestPath: string;
+        skillName: string;
+      } | null;
       nextInspectCommand: string | null;
       nextCommand: string;
     };
@@ -846,6 +855,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
   ].filter((recommendation, index, all) => all.indexOf(recommendation) === index);
   const skillsNextCommand = skills.candidateReview.nextInspectCommand ??
     (skills.candidateReview.totalCount > 0 ? skills.candidateReview.listCommand : skills.health.nextCommand);
+  const skillsNextCandidate = skills.candidateReview.samples[0];
   const ok =
     diagnostics.ok &&
     diagnostics.providerReadiness.ok &&
@@ -1037,6 +1047,17 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
         ineligibleCandidateCount: skills.candidateReview.ineligibleCount,
         totalCandidateCount: skills.candidateReview.totalCount,
         candidateListCommand: skills.candidateReview.listCommand,
+        nextCandidate: skillsNextCandidate
+          ? {
+            candidateId: skillsNextCandidate.candidateId,
+            candidatePath: skillsNextCandidate.candidatePath,
+            eligible: skillsNextCandidate.eligible,
+            inspectCommand: skillsNextCandidate.inspectCommand,
+            installCommand: skillsNextCandidate.installCommand ?? null,
+            reviewManifestPath: skillsNextCandidate.reviewManifestPath,
+            skillName: skillsNextCandidate.skillName,
+          }
+          : null,
         nextInspectCommand: skills.candidateReview.nextInspectCommand ?? null,
         nextCommand: skillsNextCommand,
       },
@@ -1148,6 +1169,9 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       `${readiness.skills.ineligibleCandidateCount} not eligible`,
     `  Protocol smoke: ${readiness.protocols.smokeCommand}`,
   );
+  if (readiness.skills.nextCandidate) {
+    lines.push(`  Next skill candidate: ${readiness.skills.nextCandidate.inspectCommand}`);
+  }
 
   if (status.nextActions.length > 0) {
     lines.push('', 'Next actions:');

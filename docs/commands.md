@@ -285,7 +285,9 @@ recent-run window.
 Learning Agent skill-candidate samples include relative `candidatePath`,
 `reviewManifestPath`, `inspectCommand`, and eligible `installCommand` fields;
 generated commands quote candidate paths when needed without printing SKILL.md
-bodies.
+bodies. The compact `buddy hermes status safe --json` overview mirrors only the
+next review item as `readiness.skills.nextCandidate`, so Cowork can offer the
+same action without fetching the full skills queue.
 
 `buddy hermes protocols status [--json]` prints a Hermes-scoped MCP/A2A/ACP
 gateway readiness report. It inventories the SDK-backed MCP client, Code Buddy
