@@ -2598,7 +2598,9 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((options: HermesCommandOptions) => {
       const readiness = buildHermesMemoryProvidersReadiness();
+      const command = 'buddy hermes memory status --json';
       const payload = {
+        command,
         kind: 'hermes_memory_providers_status',
         schemaVersion: 1,
         readiness,
@@ -2609,6 +2611,7 @@ export function registerHermesCommands(program: Command): void {
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesMemoryProvidersReadiness(readiness));
     });
 

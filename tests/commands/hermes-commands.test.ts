@@ -614,6 +614,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         kind: string;
         schemaVersion: number;
         readiness: {
@@ -630,6 +631,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes memory status --json');
       expect(output.kind).toBe('hermes_memory_providers_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.readiness.activeProviderId).toBe('mem0');
@@ -658,6 +660,7 @@ describe('Hermes CLI commands', () => {
       registerHermesCommands(textProgram);
       await textProgram.parseAsync(['node', 'test', 'hermes', 'memory', 'status']);
       const textOutput = getLogOutput();
+      expect(textOutput).toContain('Command: buddy hermes memory status --json');
       expect(textOutput).toContain('Configured remote: 1 (mem0)');
       expect(textOutput).toContain('Local-fallback adapters: 2 (honcho, supermemory)');
       expect(textOutput).toContain('Remediation: Set HONCHO_API_KEY before relying on the Honcho remote adapter.');
