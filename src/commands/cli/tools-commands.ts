@@ -87,6 +87,14 @@ interface ResearchScriptSkillCandidateSummary {
   toolSequence?: string[];
 }
 
+interface ResearchScriptSkillCandidateListSummary {
+  eligibleCount: number;
+  eligibleOnly: boolean;
+  ineligibleCount: number;
+  shownCount: number;
+  totalCount: number;
+}
+
 function formatList(values: readonly string[]): string {
   return values.length > 0 ? values.join(', ') : 'none';
 }
@@ -117,6 +125,21 @@ function summarizeSkillCandidate(candidate: ResearchScriptSkillCandidate): Resea
     successfulRunCount: candidate.successfulRunCount,
     title: candidate.title,
     toolSequence: candidate.toolSequence,
+  };
+}
+
+function summarizeSkillCandidateList(
+  allCandidates: readonly ResearchScriptSkillCandidate[],
+  shownCandidates: readonly ResearchScriptSkillCandidate[],
+  eligibleOnly: boolean,
+): ResearchScriptSkillCandidateListSummary {
+  const eligibleCount = allCandidates.filter((candidate) => candidate.eligible).length;
+  return {
+    eligibleCount,
+    eligibleOnly,
+    ineligibleCount: allCandidates.length - eligibleCount,
+    shownCount: shownCandidates.length,
+    totalCount: allCandidates.length,
   };
 }
 
@@ -180,8 +203,14 @@ function printSkillCandidate(candidate: ResearchScriptSkillCandidate): void {
   console.log('');
 }
 
-function printSkillCandidateList(candidates: ResearchScriptSkillCandidate[]): void {
-  console.log(`\nReview-gated skill candidates: ${candidates.length}`);
+function printSkillCandidateList(
+  candidates: ResearchScriptSkillCandidate[],
+  summary: ResearchScriptSkillCandidateListSummary,
+): void {
+  console.log(
+    `\nReview-gated skill candidates: ${summary.shownCount} shown of ${summary.totalCount} total ` +
+      `(${summary.eligibleCount} eligible, ${summary.ineligibleCount} not eligible)`,
+  );
   for (const candidate of candidates) {
     console.log(`  - ${candidate.skillName}: ${candidate.eligible ? 'eligible' : 'not eligible'} (${candidate.kind})`);
     if (candidate.sourceRunId) {
@@ -335,16 +364,18 @@ export function registerToolsCommands(program: Command): void {
       const candidates = options.eligibleOnly
         ? allCandidates.filter((candidate) => candidate.eligible)
         : allCandidates;
+      const summary = summarizeSkillCandidateList(allCandidates, candidates, Boolean(options.eligibleOnly));
 
       if (options.json) {
         console.log(JSON.stringify({
           candidates: candidates.map(summarizeSkillCandidate),
           count: candidates.length,
+          summary,
         }, null, 2));
         return;
       }
 
-      printSkillCandidateList(candidates);
+      printSkillCandidateList(candidates, summary);
     });
 
   skillCandidate

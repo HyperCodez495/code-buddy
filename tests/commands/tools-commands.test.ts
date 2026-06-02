@@ -353,9 +353,23 @@ describe('Tools CLI commands', () => {
           skillName: string;
         }>;
         count: number;
+        summary: {
+          eligibleCount: number;
+          eligibleOnly: boolean;
+          ineligibleCount: number;
+          shownCount: number;
+          totalCount: number;
+        };
       };
 
       expect(output.count).toBe(1);
+      expect(output.summary).toEqual({
+        eligibleCount: 1,
+        eligibleOnly: true,
+        ineligibleCount: 0,
+        shownCount: 1,
+        totalCount: 1,
+      });
       expect(output.candidates).toEqual([
         expect.objectContaining({
           eligible: true,
@@ -436,9 +450,23 @@ describe('Tools CLI commands', () => {
           toolSequence?: string[];
         }>;
         count: number;
+        summary: {
+          eligibleCount: number;
+          eligibleOnly: boolean;
+          ineligibleCount: number;
+          shownCount: number;
+          totalCount: number;
+        };
       };
 
       expect(listOutput.count).toBe(1);
+      expect(listOutput.summary).toEqual({
+        eligibleCount: 1,
+        eligibleOnly: false,
+        ineligibleCount: 0,
+        shownCount: 1,
+        totalCount: 1,
+      });
       expect(listOutput.candidates).toEqual([
         expect.objectContaining({
           kind: 'learning',

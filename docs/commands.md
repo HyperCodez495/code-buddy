@@ -325,6 +325,9 @@ before becoming active workspace skills. Learning Agent candidates are visible
 after the first real trajectory, but they are not install-eligible until the
 same workflow has at least two successful observations and the pattern library
 marks it reinforced.
+The JSON list output includes a `summary` block with total, shown, eligible,
+and not-yet-eligible counts so review UIs can show queue readiness without
+reading candidate bodies.
 
 ### Knowledge and Memory
 
