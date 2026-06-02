@@ -479,6 +479,7 @@ the active project.
 
 ```bash
 buddy run list                      # List recent runs (most recent first, 30-run prune)
+buddy run doctor [--json]           # Report stale running runs without mutating the run ledger
 buddy run show <run-id>             # Show full event log for a run
 buddy run search <query> [--json]   # Search run summaries, events, artifacts
 buddy run index-doctor [--repair]   # Report/repair stale artifact index rows (pruned/moved runs)

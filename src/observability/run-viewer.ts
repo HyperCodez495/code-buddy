@@ -69,6 +69,8 @@ import {
 } from '../agent/learning-agent.js';
 
 export const RUN_SEARCH_JSON_SCHEMA_VERSION = 1;
+export const RUN_DOCTOR_JSON_SCHEMA_VERSION = 1;
+const DEFAULT_STALE_RUNNING_MINUTES = 60;
 
 // ──────────────────────────────────────────────────────────────────
 // Formatting helpers
@@ -337,6 +339,116 @@ export function listRuns(limit = 20): void {
     const obj = r.objective.slice(0, 50);
     console.log(`  ${statusLabel(r.status)} ${r.runId}  ${formatTs(r.startedAt)}  (${dur})  ${obj}`);
   }
+  console.log('');
+}
+
+interface RunDoctorOptions {
+  json?: boolean;
+  limit?: number;
+  staleAfterMinutes?: number;
+}
+
+function normalizePositiveInteger(value: number | undefined, fallback: number): number {
+  if (typeof value !== 'number' || !Number.isFinite(value)) return fallback;
+  return Math.max(1, Math.trunc(value));
+}
+
+function runSource(summary: RunSummary): string | undefined {
+  if (summary.metadata?.channel) return summary.metadata.channel;
+  return summary.metadata?.tags?.[0];
+}
+
+/**
+ * Report operational drift in the run ledger without mutating stored runs.
+ *
+ * `running` rows can be legitimate active work, but rows older than the stale
+ * threshold often mean a process died before `endRun()` fired. Those rows hide
+ * post-run retrospectives, so Hermes surfaces them as operator-visible debt.
+ */
+export function runDoctor(options: RunDoctorOptions = {}): void {
+  const store = RunStore.getInstance();
+  const limit = normalizePositiveInteger(options.limit, 30);
+  const staleAfterMinutes = normalizePositiveInteger(
+    options.staleAfterMinutes,
+    DEFAULT_STALE_RUNNING_MINUTES,
+  );
+  const staleAfterMs = staleAfterMinutes * 60_000;
+  const now = Date.now();
+  const runs = store.listRuns(limit);
+  const rows = runs.map((run) => {
+    const runningForMs = run.status === 'running'
+      ? Math.max(0, now - run.startedAt)
+      : 0;
+    const runningForMinutes = run.status === 'running'
+      ? Math.floor(runningForMs / 60_000)
+      : undefined;
+    return {
+      artifactCount: run.artifactCount,
+      eventCount: run.eventCount,
+      runId: run.runId,
+      ...(runSource(run) ? { source: runSource(run) } : {}),
+      startedAt: new Date(run.startedAt).toISOString(),
+      status: run.status,
+      ...(runningForMinutes !== undefined ? { runningForMinutes } : {}),
+      ...(run.status === 'running' ? { staleRunning: runningForMs >= staleAfterMs } : {}),
+    };
+  });
+  const runningRows = rows.filter((run) => run.status === 'running');
+  const staleRows = runningRows.filter((run) => run.staleRunning);
+  const payload = {
+    schemaVersion: RUN_DOCTOR_JSON_SCHEMA_VERSION,
+    generatedAt: new Date(now).toISOString(),
+    filters: {
+      limit,
+      staleAfterMinutes,
+    },
+    summary: {
+      inspectedRunCount: rows.length,
+      runningRunCount: runningRows.length,
+      staleRunningRunCount: staleRows.length,
+      completedRunCount: rows.filter((run) => run.status === 'completed').length,
+      failedRunCount: rows.filter((run) => run.status === 'failed').length,
+      cancelledRunCount: rows.filter((run) => run.status === 'cancelled').length,
+    },
+    runs: rows,
+    recommendations: staleRows.length > 0
+      ? [
+          'Inspect stale running runs before trusting Learning Agent retrospective coverage.',
+          'Use buddy run show <run-id> to inspect a stale run; do not mark it complete without operator review.',
+        ]
+      : [
+          'No stale running runs were found in the inspected window.',
+        ],
+  };
+
+  if (options.json === true) {
+    console.log(JSON.stringify(payload, null, 2));
+    return;
+  }
+
+  console.log('');
+  console.log('Run doctor');
+  console.log(`  inspected : ${payload.summary.inspectedRunCount}`);
+  console.log(`  running   : ${payload.summary.runningRunCount}`);
+  console.log(`  stale     : ${payload.summary.staleRunningRunCount} (threshold ${staleAfterMinutes}m)`);
+  console.log(`  completed : ${payload.summary.completedRunCount}`);
+  console.log(`  failed    : ${payload.summary.failedRunCount}`);
+  console.log(`  cancelled : ${payload.summary.cancelledRunCount}`);
+
+  if (staleRows.length > 0) {
+    console.log('');
+    console.log('Stale running runs:');
+    for (const run of staleRows.slice(0, 20)) {
+      const source = run.source ? ` source=${run.source}` : '';
+      console.log(`  - ${run.runId}${source} age=${run.runningForMinutes}m events=${run.eventCount} artifacts=${run.artifactCount}`);
+    }
+    if (staleRows.length > 20) {
+      console.log(`  ... and ${staleRows.length - 20} more`);
+    }
+  }
+
+  console.log('');
+  console.log(`Next: ${payload.recommendations[0]}`);
   console.log('');
 }
 

@@ -56,6 +56,114 @@ describe('Run CLI commands', () => {
     return runId;
   }
 
+  it('reports stale running runs without mutating the run ledger', async () => {
+    const completedRunId = startRun('Completed run doctor proof', {
+      channel: 'cli',
+      tags: ['doctor'],
+    });
+    store.endRun(completedRunId, 'completed');
+    activeRunIds = activeRunIds.filter((id) => id !== completedRunId);
+
+    const freshRunId = startRun('Fresh running run doctor proof', {
+      channel: 'terminal',
+      tags: ['doctor'],
+    });
+    const staleRunId = startRun('Stale running run doctor proof', {
+      channel: 'cowork',
+      tags: ['doctor'],
+    });
+    const staleRecord = store.getRun(staleRunId);
+    expect(staleRecord).not.toBeNull();
+    staleRecord!.summary.startedAt = Date.now() - (2 * 60 * 60 * 1000);
+
+    const program = createProgram();
+    registerRunCommands(program);
+
+    await program.parseAsync([
+      'node',
+      'test',
+      'run',
+      'doctor',
+      '--json',
+      '--limit',
+      '5',
+      '--stale-after-minutes',
+      '60',
+    ]);
+
+    const output = JSON.parse(getLogOutput()) as {
+      filters: {
+        limit: number;
+        staleAfterMinutes: number;
+      };
+      recommendations: string[];
+      runs: Array<{
+        runId: string;
+        source?: string;
+        staleRunning?: boolean;
+        status: string;
+        runningForMinutes?: number;
+      }>;
+      schemaVersion: number;
+      summary: {
+        completedRunCount: number;
+        inspectedRunCount: number;
+        runningRunCount: number;
+        staleRunningRunCount: number;
+      };
+    };
+
+    expect(output.schemaVersion).toBe(1);
+    expect(output.filters).toEqual({ limit: 5, staleAfterMinutes: 60 });
+    expect(output.summary).toMatchObject({
+      completedRunCount: 1,
+      inspectedRunCount: 3,
+      runningRunCount: 2,
+      staleRunningRunCount: 1,
+    });
+    expect(output.runs).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        runId: freshRunId,
+        staleRunning: false,
+        status: 'running',
+      }),
+      expect.objectContaining({
+        runId: staleRunId,
+        source: 'cowork',
+        staleRunning: true,
+        status: 'running',
+      }),
+      expect.objectContaining({
+        runId: completedRunId,
+        status: 'completed',
+      }),
+    ]));
+    const staleRun = output.runs.find((run) => run.runId === staleRunId);
+    expect(staleRun?.runningForMinutes).toBeGreaterThanOrEqual(60);
+    expect(output.recommendations[0]).toContain('Inspect stale running runs');
+
+    consoleLogSpy.mockClear();
+    const textProgram = createProgram();
+    registerRunCommands(textProgram);
+    await textProgram.parseAsync([
+      'node',
+      'test',
+      'run',
+      'doctor',
+      '--limit',
+      '5',
+      '--stale-after-minutes',
+      '60',
+    ]);
+
+    const textOutput = getLogOutput();
+    expect(textOutput).toContain('Run doctor');
+    expect(textOutput).toContain('stale     : 1');
+    expect(textOutput).toContain(staleRunId);
+    expect(textOutput).toContain('source=cowork');
+    expect(textOutput).not.toContain('Stale running run doctor proof');
+  });
+
   it('prints JSON run search results for UI consumers', async () => {
     const runId = startRun('Hermes skill candidate review', {
       channel: 'cowork',

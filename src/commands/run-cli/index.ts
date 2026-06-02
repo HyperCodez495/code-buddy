@@ -3,6 +3,7 @@
  *
  * Subcommands:
  *   buddy run list [--limit N]    → list recent runs
+ *   buddy run doctor              → report stale running run rows
  *   buddy run show <runId>        → full timeline + metrics + artifacts
  *   buddy run search <query>      → search run summaries, events, artifacts
  *   buddy run index-artifacts     → backfill artifact search for old runs
@@ -41,6 +42,22 @@ export function registerRunCommands(program: Command): void {
     .action(async (opts: { limit: string }) => {
       const { listRuns } = await import('../../observability/run-viewer.js');
       listRuns(parseInt(opts.limit, 10));
+    });
+
+  // ── buddy run doctor ───────────────────────────────────────────
+  run
+    .command('doctor')
+    .description('Report stale running runs and other run ledger drift without mutating stored runs')
+    .option('-n, --limit <n>', 'number of recent runs to inspect', '30')
+    .option('--stale-after-minutes <n>', 'mark running runs stale after this many minutes', '60')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean; limit: string; staleAfterMinutes: string }) => {
+      const { runDoctor } = await import('../../observability/run-viewer.js');
+      runDoctor({
+        json: opts.json === true,
+        limit: parseInt(opts.limit, 10),
+        staleAfterMinutes: parseInt(opts.staleAfterMinutes, 10),
+      });
     });
 
   // ── buddy run show ─────────────────────────────────────────────

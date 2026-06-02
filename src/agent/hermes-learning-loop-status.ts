@@ -384,7 +384,7 @@ function buildRecommendations(status: HermesLearningLoopStatus): string[] {
     recommendations.push('Review pending lesson candidates before relying on them in future prompt context.');
   }
   if (status.summary.staleRunningRunCount > 0) {
-    recommendations.push('Inspect stale running RunStore entries; long-lived runs can hide missing post-run retrospectives.');
+    recommendations.push('Run buddy run doctor --json to inspect stale running RunStore entries before trusting retrospective coverage.');
   }
   if (status.state.skillCandidates.learningCandidateCount > 0) {
     recommendations.push(`Review Learning Agent SKILL.md candidates through Cowork or ${status.commands.candidateReview} before installing.`);
