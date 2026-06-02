@@ -704,6 +704,15 @@ describe('Hermes CLI commands', () => {
       }
       store.endRun(lowSignalRunId, 'completed');
 
+      const staleRunningRunId = store.startRun('Hermes stale running proof', {
+        channel: 'terminal',
+        tags: ['hermes', 'stale-running'],
+      });
+      const staleSummaryPath = path.join(runsDir, staleRunningRunId, 'summary.json');
+      const staleSummary = JSON.parse(await fs.readFile(staleSummaryPath, 'utf8')) as { startedAt: number };
+      staleSummary.startedAt = Date.now() - (2 * 60 * 60 * 1000);
+      await fs.writeFile(staleSummaryPath, `${JSON.stringify(staleSummary, null, 2)}\n`);
+
       const privatePreference = 'Prefers real tests before marking work done.';
       const userModel = getUserModel(tmpDir);
       const observation = userModel.observe({
@@ -731,7 +740,9 @@ describe('Hermes CLI commands', () => {
           retrospectiveCoveragePercent: number;
           retrospectiveEligibleRunCount: number;
           retrospectiveArtifactCount: number;
+          runningRunCount: number;
           skillUsageCount: number;
+          staleRunningRunCount: number;
         };
         autoRetrospective: { enabled: boolean; mode: string };
         nextAction: {
@@ -764,7 +775,10 @@ describe('Hermes CLI commands', () => {
             evidenceArtifactCount: number;
             eventCount: number;
             hasLearningRetrospective: boolean;
+            runningForMinutes?: number;
             runId: string;
+            staleRunning?: boolean;
+            status: string;
             toolCallCount: number;
           }>;
           skillCandidates: {
@@ -792,10 +806,12 @@ describe('Hermes CLI commands', () => {
       expect(output.schemaVersion).toBe(1);
       expect(output.workDir).toBe('[workspace]');
       expect(output.runsDir).toBe('[codebuddy-runs]');
-      expect(output.summary.recentRunCount).toBe(3);
+      expect(output.summary.recentRunCount).toBe(4);
       expect(output.summary.retrospectiveEligibleRunCount).toBe(2);
       expect(output.summary.retrospectiveArtifactCount).toBe(1);
       expect(output.summary.retrospectiveCoveragePercent).toBe(50);
+      expect(output.summary.runningRunCount).toBe(1);
+      expect(output.summary.staleRunningRunCount).toBe(1);
       expect(output.summary.pendingLessonCandidateCount).toBeGreaterThan(0);
       expect(output.summary.pendingReviewCount).toBeGreaterThan(0);
       expect(output.summary.acceptedUserObservationCount).toBe(1);
@@ -848,8 +864,17 @@ describe('Hermes CLI commands', () => {
             runId: lowSignalRunId,
             toolCallCount: 0,
           }),
+          expect.objectContaining({
+            hasLearningRetrospective: false,
+            runId: staleRunningRunId,
+            runningForMinutes: expect.any(Number),
+            staleRunning: true,
+            status: 'running',
+          }),
         ]),
       );
+      const staleRun = output.state.recentRuns.find((run) => run.runId === staleRunningRunId);
+      expect(staleRun?.runningForMinutes).toBeGreaterThanOrEqual(60);
       expect(output.nextRetrospectiveRun).toMatchObject({
         command: `buddy run retrospective ${pendingRetrospectiveRunId} --force --json`,
         evidenceArtifactCount: 1,

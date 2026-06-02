@@ -16,7 +16,9 @@ export interface HermesLearningLoopRunRow {
   evidenceArtifactCount: number;
   eventCount: number;
   hasLearningRetrospective: boolean;
+  runningForMinutes?: number;
   runId: string;
+  staleRunning?: boolean;
   status: RunSummary['status'];
   tags: string[];
   toolCallCount: number;
@@ -51,7 +53,9 @@ export interface HermesLearningLoopStatus {
     pendingReviewCount: number;
     acceptedUserObservationCount: number;
     pendingUserObservationCount: number;
+    runningRunCount: number;
     skillUsageCount: number;
+    staleRunningRunCount: number;
     reinforcedSkillCount: number;
     deprecatedSkillCount: number;
     patternCount: number;
@@ -168,6 +172,7 @@ interface SkillCandidateReviewFile {
 }
 
 const LEARNING_SKILL_CANDIDATE_MIN_SUCCESSFUL_RUNS = 2;
+const STALE_RUNNING_RUN_MS = 60 * 60 * 1000;
 const RETROSPECTIVE_READY_STATUSES = new Set<RunSummary['status']>([
   'completed',
   'failed',
@@ -378,6 +383,9 @@ function buildRecommendations(status: HermesLearningLoopStatus): string[] {
   if (status.summary.pendingLessonCandidateCount > 0) {
     recommendations.push('Review pending lesson candidates before relying on them in future prompt context.');
   }
+  if (status.summary.staleRunningRunCount > 0) {
+    recommendations.push('Inspect stale running RunStore entries; long-lived runs can hide missing post-run retrospectives.');
+  }
   if (status.state.skillCandidates.learningCandidateCount > 0) {
     recommendations.push(`Review Learning Agent SKILL.md candidates through Cowork or ${status.commands.candidateReview} before installing.`);
   }
@@ -478,17 +486,29 @@ export function buildHermesLearningLoopStatus(
   const workDir = path.resolve(options.workDir ?? process.cwd());
   const store = options.store ?? new RunStore();
   const limit = Math.max(1, options.limit ?? 10);
+  const generatedAt = options.generatedAt ?? new Date().toISOString();
+  const generatedAtMs = Date.parse(generatedAt);
+  const nowMs = Number.isFinite(generatedAtMs) ? generatedAtMs : Date.now();
   const recentRuns = store.listRuns(limit);
   const runRows: HermesLearningLoopRunRow[] = recentRuns.map((run) => {
     const record = store.getRun(run.runId);
     const artifacts = record?.artifacts ?? [];
     const eventToolCallCount = store.getEvents(run.runId).filter((event) => event.type === 'tool_call').length;
+    const runningForMs = run.status === 'running'
+      ? Math.max(0, nowMs - run.startedAt)
+      : 0;
     return {
       artifactCount: artifacts.length || run.artifactCount,
       ...(run.metadata?.channel ? { channel: run.metadata.channel } : {}),
       evidenceArtifactCount: countEvidenceArtifacts(artifacts),
       eventCount: run.eventCount,
       hasLearningRetrospective: artifacts.includes('learning-retrospective.json'),
+      ...(run.status === 'running'
+        ? {
+            runningForMinutes: Math.floor(runningForMs / 60_000),
+            staleRunning: runningForMs >= STALE_RUNNING_RUN_MS,
+          }
+        : {}),
       runId: run.runId,
       status: run.status,
       tags: run.metadata?.tags ?? [],
@@ -515,6 +535,8 @@ export function buildHermesLearningLoopStatus(
   const retrospectiveCoveragePercent = retrospectiveEligibleRunCount === 0
     ? 100
     : Math.round((retrospectiveArtifactCount / retrospectiveEligibleRunCount) * 100);
+  const runningRunCount = runRows.filter((run) => run.status === 'running').length;
+  const staleRunningRunCount = runRows.filter((run) => run.staleRunning).length;
   const pendingReviewCount =
     lessonCandidates.byStatus.pending
     + userModel.byStatus.pending
@@ -523,7 +545,7 @@ export function buildHermesLearningLoopStatus(
   const status: HermesLearningLoopStatus = {
     kind: 'hermes_learning_loop_status',
     schemaVersion: 1,
-    generatedAt: options.generatedAt ?? new Date().toISOString(),
+    generatedAt,
     ok: true,
     workDir: safeLocalPathLabel('workspace'),
     runsDir: safeLocalPathLabel('codebuddy-runs'),
@@ -537,7 +559,9 @@ export function buildHermesLearningLoopStatus(
       pendingReviewCount,
       acceptedUserObservationCount: userModel.byStatus.accepted,
       pendingUserObservationCount: userModel.byStatus.pending,
+      runningRunCount,
       skillUsageCount: skillUsageRecords.length,
+      staleRunningRunCount,
       reinforcedSkillCount: skillUsageRecords.filter((skill) => skill.reinforced).length,
       deprecatedSkillCount: skillUsageRecords.filter((skill) => skill.deprecated).length,
       patternCount: patterns.total,
@@ -592,7 +616,8 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
   const lines = [
     `Hermes learning loop: ${status.ok ? 'ok' : 'needs attention'}`,
     `  Auto retrospective: ${status.autoRetrospective.mode}`,
-    `  Recent runs: ${status.summary.recentRunCount}`,
+    `  Recent runs: ${status.summary.recentRunCount}` +
+      ` (${status.summary.runningRunCount} running, ${status.summary.staleRunningRunCount} stale)`,
     `  Runs with retrospectives: ${status.summary.retrospectiveArtifactCount}/${status.summary.retrospectiveEligibleRunCount} eligible (${status.summary.retrospectiveCoveragePercent}%)`,
     `  Lesson candidates: ${status.summary.lessonCandidateCount} (${status.summary.pendingLessonCandidateCount} pending)`,
     `  User-model observations: ${status.summary.acceptedUserObservationCount} accepted, ${status.summary.pendingUserObservationCount} pending`,
