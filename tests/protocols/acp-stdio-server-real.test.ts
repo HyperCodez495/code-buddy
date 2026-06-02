@@ -165,6 +165,67 @@ describe('AcpStdioServer (real ndjson transport)', () => {
     expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
   });
 
+  it('rejects malformed initialize client capabilities without changing active capabilities', async () => {
+    const seenCanRead: string[] = [];
+    const runner: AcpPromptRunner = async ({ canRequestClient }) => {
+      seenCanRead.push(String(canRequestClient('fs/read_text_file')));
+      return { stopReason: 'end_turn' };
+    };
+    harness = new AcpHarness(runner);
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: {
+          fs: { readTextFile: true, writeTextFile: false },
+          terminal: false,
+        },
+      },
+    });
+    harness.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/tmp/project', mcpServers: [] } });
+    await harness.flush();
+    const sessionId = harness.responseFor(2)?.result.sessionId as string;
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'before malformed capabilities' }] },
+    });
+    await harness.flush();
+    expect(harness.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 4,
+      method: 'initialize',
+      params: {
+        protocolVersion: 1,
+        clientCapabilities: { fs: [] },
+      },
+    });
+    await harness.flush();
+
+    expect(harness.responseFor(4)?.error).toMatchObject({
+      code: -32602,
+      message: 'Invalid initialize clientCapabilities.fs',
+    });
+
+    harness.send({
+      jsonrpc: '2.0',
+      id: 5,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'after malformed capabilities' }] },
+    });
+    await harness.flush();
+
+    expect(seenCanRead).toEqual(['true', 'true']);
+    expect(harness.responseFor(5)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
   it('creates a session and runs a prompt, streaming an agent_message_chunk then end_turn', async () => {
     const runner: AcpPromptRunner = async ({ prompt, sendUpdate }) => {
       const text = prompt[0]?.text ?? '';

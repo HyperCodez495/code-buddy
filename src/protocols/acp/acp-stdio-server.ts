@@ -373,7 +373,7 @@ export class AcpStdioServer {
       throw error;
     }
 
-    this.clientCapabilities = normalizeClientCapabilities(params.clientCapabilities);
+    this.clientCapabilities = parseClientCapabilities(params.clientCapabilities);
     return {
       protocolVersion: this.protocolVersion,
       agentCapabilities: {
@@ -562,21 +562,53 @@ function canRequestClientWithCapabilities(method: string, clientCapabilities: Ac
   return false;
 }
 
-function normalizeClientCapabilities(value: unknown): AcpClientCapabilities {
+function parseClientCapabilities(value: unknown): AcpClientCapabilities {
+  if (value === undefined) return {};
   const input = asRecord(value);
-  if (!input) return {};
-  const fsCapabilities = asRecord(input.fs);
+  if (!input) throw invalidParamsError('Invalid initialize clientCapabilities');
+
+  const fsCapabilities = optionalRecordCapability(input, 'fs', 'Invalid initialize clientCapabilities.fs');
+  const terminal = optionalBooleanCapability(input, 'terminal', 'Invalid initialize clientCapabilities.terminal');
   return {
     ...input,
     fs: fsCapabilities
       ? {
         ...fsCapabilities,
-        readTextFile: fsCapabilities.readTextFile === true,
-        writeTextFile: fsCapabilities.writeTextFile === true,
+        readTextFile: optionalBooleanCapability(
+          fsCapabilities,
+          'readTextFile',
+          'Invalid initialize clientCapabilities.fs.readTextFile',
+        ) === true,
+        writeTextFile: optionalBooleanCapability(
+          fsCapabilities,
+          'writeTextFile',
+          'Invalid initialize clientCapabilities.fs.writeTextFile',
+        ) === true,
       }
       : undefined,
-    terminal: input.terminal === true,
+    terminal: terminal === true,
   };
+}
+
+function optionalRecordCapability(
+  params: Record<string, unknown>,
+  key: string,
+  errorMessage: string,
+): Record<string, unknown> | undefined {
+  if (params[key] === undefined) return undefined;
+  const value = asRecord(params[key]);
+  if (!value) throw invalidParamsError(errorMessage);
+  return value;
+}
+
+function optionalBooleanCapability(
+  params: Record<string, unknown>,
+  key: string,
+  errorMessage: string,
+): boolean | undefined {
+  if (params[key] === undefined) return undefined;
+  if (typeof params[key] !== 'boolean') throw invalidParamsError(errorMessage);
+  return params[key];
 }
 
 function parseJsonRpcParams(value: unknown): Record<string, unknown> | undefined {
