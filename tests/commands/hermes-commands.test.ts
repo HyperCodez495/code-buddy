@@ -274,6 +274,7 @@ describe('Hermes CLI commands', () => {
             statusCommand: string;
           };
           learning: {
+            inspectedRunLimit: number;
             pendingReviewCount: number;
             retrospectiveCoveragePercent: number;
             runningRunCount: number;
@@ -384,6 +385,7 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.mobile.gatewayCheckCommand).toContain('buddy run mobile-gateway-check');
       expect(output.readiness.learning.pendingReviewCount).toBeGreaterThanOrEqual(0);
       expect(output.readiness.learning.retrospectiveCoveragePercent).toBeGreaterThanOrEqual(0);
+      expect(output.readiness.learning.inspectedRunLimit).toBe(5);
       expect(output.readiness.learning.runningRunCount).toBeGreaterThanOrEqual(0);
       expect(output.readiness.learning.staleRunningRunCount).toBeGreaterThanOrEqual(0);
       expect(output.readiness.learning.staleRunningRunCount).toBeLessThanOrEqual(
@@ -402,7 +404,7 @@ describe('Hermes CLI commands', () => {
         messaging: 'buddy hermes messaging status --json',
         mobile: 'buddy hermes mobile status --json',
         portal: 'buddy hermes portal status --json',
-        runDoctor: 'buddy run doctor --json',
+        runDoctor: 'buddy run doctor --json --limit 5',
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
@@ -457,7 +459,7 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');
       expect(textOutput).toContain('Trajectories: buddy hermes trajectories status --json');
-      expect(textOutput).toContain('Run doctor: buddy run doctor --json');
+      expect(textOutput).toContain('Run doctor: buddy run doctor --json --limit 5');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
       expect(textOutput).not.toContain('secret-overview-openai-key');
@@ -753,6 +755,7 @@ describe('Hermes CLI commands', () => {
         workDir: string;
         summary: {
           acceptedUserObservationCount: number;
+          inspectedRunLimit: number;
           pendingLessonCandidateCount: number;
           pendingReviewCount: number;
           recentRunCount: number;
@@ -828,6 +831,7 @@ describe('Hermes CLI commands', () => {
       expect(output.schemaVersion).toBe(1);
       expect(output.workDir).toBe('[workspace]');
       expect(output.runsDir).toBe('[codebuddy-runs]');
+      expect(output.summary.inspectedRunLimit).toBe(5);
       expect(output.summary.recentRunCount).toBe(4);
       expect(output.summary.retrospectiveEligibleRunCount).toBe(2);
       expect(output.summary.retrospectiveArtifactCount).toBe(1);
@@ -930,7 +934,12 @@ describe('Hermes CLI commands', () => {
         expect.objectContaining({ recommendation: 'observe', skillName: 'web-audit' }),
       ]);
       expect(output.commands.retrospective).toBe('buddy run retrospective <run-id> --force --json');
-      expect(output.commands.runDoctor).toBe('buddy run doctor --json');
+      expect(output.commands.runDoctor).toBe('buddy run doctor --json --limit 5');
+      expect(output.recommendations).toEqual(
+        expect.arrayContaining([
+          'Run buddy run doctor --json --limit 5 to inspect stale running RunStore entries in the same recent-run window.',
+        ]),
+      );
       expect(raw).not.toContain(privatePreference);
       const serialized = JSON.stringify(output);
       expect(serialized).not.toContain(tmpDir);

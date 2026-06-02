@@ -44,6 +44,7 @@ export interface HermesLearningLoopStatus {
   workDir: string;
   runsDir: string;
   summary: {
+    inspectedRunLimit: number;
     recentRunCount: number;
     retrospectiveEligibleRunCount: number;
     retrospectiveArtifactCount: number;
@@ -385,7 +386,7 @@ function buildRecommendations(status: HermesLearningLoopStatus): string[] {
     recommendations.push('Review pending lesson candidates before relying on them in future prompt context.');
   }
   if (status.summary.staleRunningRunCount > 0) {
-    recommendations.push('Run buddy run doctor --json to inspect stale running RunStore entries before trusting retrospective coverage.');
+    recommendations.push(`Run ${status.commands.runDoctor} to inspect stale running RunStore entries in the same recent-run window.`);
   }
   if (status.state.skillCandidates.learningCandidateCount > 0) {
     recommendations.push(`Review Learning Agent SKILL.md candidates through Cowork or ${status.commands.candidateReview} before installing.`);
@@ -551,6 +552,7 @@ export function buildHermesLearningLoopStatus(
     workDir: safeLocalPathLabel('workspace'),
     runsDir: safeLocalPathLabel('codebuddy-runs'),
     summary: {
+      inspectedRunLimit: limit,
       recentRunCount: recentRuns.length,
       retrospectiveEligibleRunCount,
       retrospectiveArtifactCount,
@@ -601,7 +603,7 @@ export function buildHermesLearningLoopStatus(
     },
     commands: {
       retrospective: 'buddy run retrospective <run-id> --force --json',
-      runDoctor: 'buddy run doctor --json',
+      runDoctor: `buddy run doctor --json --limit ${limit}`,
       skillUsage: 'buddy skills learning-usage --json',
       lessonCandidates: 'buddy lessons candidate list --json',
       userModel: 'buddy user-model show --json',
@@ -618,7 +620,7 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
   const lines = [
     `Hermes learning loop: ${status.ok ? 'ok' : 'needs attention'}`,
     `  Auto retrospective: ${status.autoRetrospective.mode}`,
-    `  Recent runs: ${status.summary.recentRunCount}` +
+    `  Recent runs: ${status.summary.recentRunCount} inspected (limit ${status.summary.inspectedRunLimit})` +
       ` (${status.summary.runningRunCount} running, ${status.summary.staleRunningRunCount} stale)`,
     `  Runs with retrospectives: ${status.summary.retrospectiveArtifactCount}/${status.summary.retrospectiveEligibleRunCount} eligible (${status.summary.retrospectiveCoveragePercent}%)`,
     `  Lesson candidates: ${status.summary.lessonCandidateCount} (${status.summary.pendingLessonCandidateCount} pending)`,

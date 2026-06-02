@@ -409,6 +409,7 @@ interface HermesOverviewStatus {
     };
     learning: {
       ok: boolean;
+      inspectedRunLimit: number;
       pendingReviewCount: number;
       pendingLessonCandidateCount: number;
       retrospectiveCoveragePercent: number;
@@ -1017,6 +1018,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       },
       learning: {
         ok: learning.ok,
+        inspectedRunLimit: learning.summary.inspectedRunLimit,
         pendingReviewCount: learning.summary.pendingReviewCount,
         pendingLessonCandidateCount: learning.summary.pendingLessonCandidateCount,
         retrospectiveCoveragePercent: learning.summary.retrospectiveCoveragePercent,
@@ -1057,7 +1059,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       portal: 'buddy hermes portal status --json',
       providers: 'buddy hermes providers status --json',
       protocols: 'buddy hermes protocols status --json',
-      runDoctor: 'buddy run doctor --json',
+      runDoctor: learning.commands.runDoctor,
       runtime: 'buddy hermes runtime status --json',
       skills: 'buddy hermes skills status --json',
       smoke: 'buddy hermes smoke --json',
@@ -1132,7 +1134,8 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Learning: ${readiness.learning.pendingReviewCount} review item(s), ` +
       `${readiness.learning.retrospectiveCoveragePercent}% retrospective coverage, ` +
       `${readiness.learning.runningRunCount} running / ` +
-      `${readiness.learning.staleRunningRunCount} stale`,
+      `${readiness.learning.staleRunningRunCount} stale ` +
+      `(limit ${readiness.learning.inspectedRunLimit})`,
     `  Protocols: available ${formatList(readiness.protocols.availableCapabilityIds)} ` +
       `(partial: ${formatList(readiness.protocols.partialCapabilityIds)}, ` +
       `missing: ${formatList(readiness.protocols.missingCapabilityIds)})`,

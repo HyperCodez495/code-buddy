@@ -279,6 +279,9 @@ learning-loop state from real local files. It reports recent run counts,
 retrospective artifacts, lesson candidate counts, accepted/pending user-model
 counts, Learning Agent skill usage scoring, pattern-library counts, review
 gates, and safe next commands without printing private observation content.
+The JSON includes `summary.inspectedRunLimit`, and its `runDoctor` command uses
+the same `--limit` so stale-running counts are compared against the same
+recent-run window.
 
 `buddy hermes protocols status [--json]` prints a Hermes-scoped MCP/A2A/ACP
 gateway readiness report. It inventories the SDK-backed MCP client, Code Buddy
