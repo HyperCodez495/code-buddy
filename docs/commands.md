@@ -513,6 +513,11 @@ the message thread, tool calls, results, errors, and timing. Combine
 with `OTEL_EXPORTER_OTLP_ENDPOINT` for remote traces or `SENTRY_DSN`
 for error reporting (see `docs/configuration.md`).
 
+`buddy run doctor [--json]` is read-only. It reports stale running run IDs,
+ages, event counts, artifact counts, and only generic run sources; arbitrary
+run channel labels are collapsed to `custom` so operator diagnostics can be
+pasted into handoffs without exposing private channel names.
+
 `buddy run trajectory-export <run-id> --json` exports the run objective,
 selected context, tool calls, tool results, artifacts and final answer through
 the same secret-redaction engine used by supervision payloads. Artifact content

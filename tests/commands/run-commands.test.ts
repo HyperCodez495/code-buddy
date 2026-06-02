@@ -76,7 +76,9 @@ describe('Run CLI commands', () => {
     expect(staleRecord).not.toBeNull();
     staleRecord!.summary.startedAt = Date.now() - (2 * 60 * 60 * 1000);
     const privateTag = 'private-client-run-doctor-tag';
+    const privateChannel = 'client-alpha-secret-room';
     const privateTagRunId = startRun('Private tag stale run doctor proof', {
+      channel: privateChannel,
       tags: [privateTag],
     });
     const privateTagRecord = store.getRun(privateTagRunId);
@@ -153,8 +155,9 @@ describe('Run CLI commands', () => {
     const staleRun = output.runs.find((run) => run.runId === staleRunId);
     expect(staleRun?.runningForMinutes).toBeGreaterThanOrEqual(60);
     const privateTagRun = output.runs.find((run) => run.runId === privateTagRunId);
-    expect(privateTagRun?.source).toBeUndefined();
+    expect(privateTagRun?.source).toBe('custom');
     expect(JSON.stringify(output)).not.toContain(privateTag);
+    expect(JSON.stringify(output)).not.toContain(privateChannel);
     expect(output.recommendations[0]).toContain('Inspect stale running runs');
 
     consoleLogSpy.mockClear();
@@ -176,8 +179,10 @@ describe('Run CLI commands', () => {
     expect(textOutput).toContain('stale     : 2');
     expect(textOutput).toContain(staleRunId);
     expect(textOutput).toContain('source=cowork');
+    expect(textOutput).toContain('source=custom');
     expect(textOutput).not.toContain('Stale running run doctor proof');
     expect(textOutput).not.toContain(privateTag);
+    expect(textOutput).not.toContain(privateChannel);
   });
 
   it('prints JSON run search results for UI consumers', async () => {

@@ -71,6 +71,24 @@ import {
 export const RUN_SEARCH_JSON_SCHEMA_VERSION = 1;
 export const RUN_DOCTOR_JSON_SCHEMA_VERSION = 1;
 const DEFAULT_STALE_RUNNING_MINUTES = 60;
+const RUN_DOCTOR_SAFE_SOURCES = new Set([
+  'api',
+  'browser-operator',
+  'cli',
+  'computer-control',
+  'cowork',
+  'desktop',
+  'discord',
+  'email',
+  'fleet',
+  'mobile',
+  'scheduled',
+  'server',
+  'slack',
+  'telegram',
+  'terminal',
+  'webhook',
+]);
 
 // ──────────────────────────────────────────────────────────────────
 // Formatting helpers
@@ -354,7 +372,9 @@ function normalizePositiveInteger(value: number | undefined, fallback: number): 
 }
 
 function runSource(summary: RunSummary): string | undefined {
-  return summary.metadata?.channel;
+  const source = summary.metadata?.channel?.trim().toLowerCase();
+  if (!source) return undefined;
+  return RUN_DOCTOR_SAFE_SOURCES.has(source) ? source : 'custom';
 }
 
 /**
