@@ -497,6 +497,7 @@ describe('French renderer i18n support', () => {
       'fleet.skillCandidate.empty',
       'fleet.skillCandidate.learningKind',
       'fleet.skillCandidate.researchKind',
+      'fleet.skillCandidate.notEligibleChip',
       'fleet.skillCandidate.toolSequence',
       'fleet.skillCandidate.expandDiff',
       'fleet.skillCandidate.collapseDiff',

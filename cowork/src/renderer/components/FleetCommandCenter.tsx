@@ -505,7 +505,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
       try {
         const list = await getSkillCandidateApi()?.list?.({
           cwd: activeWorkspaceCwd,
-          eligibleOnly: true,
+          eligibleOnly: false,
           limit: 6,
         });
         if (!cancelled && list) {

@@ -2440,7 +2440,7 @@
     },
     "skillCandidate": {
       "title": "Skill candidate review",
-      "countChip": "{{count}} eligible",
+      "countChip": "{{eligible}} eligible / {{total}} total",
       "reviewChip": "human approval required",
       "noAutoInstallChip": "no auto-install",
       "publicDataChip": "public-data guardrails",
@@ -2449,6 +2449,7 @@
       "empty": "Use the CLI queue to list materialized candidates.",
       "learningKind": "Learning Agent",
       "researchKind": "Research script",
+      "notEligibleChip": "not eligible yet",
       "toolSequence": "Tools",
       "expandDiff": "Show side-by-side diff",
       "collapseDiff": "Hide side-by-side diff",

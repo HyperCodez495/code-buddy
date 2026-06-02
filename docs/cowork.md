@@ -166,6 +166,9 @@ Latest local privacy proof on this branch:
 - `hermes status safe --json` keeps the overview compact by exposing only the
   next skill candidate action in `readiness.skills.nextCandidate`, using the
   same relative path and copy-paste command fields.
+- Cowork's Fleet skill-candidate strip loads the full review queue, including
+  not-yet-eligible candidates, but keeps install controls hidden until the
+  candidate is eligible and a reviewer identity is provided.
 
 ## Screenshot And Privacy Policy
 

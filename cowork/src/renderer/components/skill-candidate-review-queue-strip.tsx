@@ -74,8 +74,9 @@ export function buildSkillCandidateReviewQueueGoal(): string {
     'Review the shared SKILL.md candidate queue from Cowork.',
     'The queue may contain research-script candidates and Learning Agent retrospective candidates.',
     'Use the CLI review surface:',
-    '- buddy tools skill-candidate list --eligible-only --json',
+    '- buddy tools skill-candidate list --json',
     '- buddy tools skill-candidate inspect <candidate-dir>',
+    '- buddy tools skill-candidate list --eligible-only --json',
     '',
     'Rules:',
     '- Do not install a candidate automatically.',
@@ -87,8 +88,9 @@ export function buildSkillCandidateReviewQueueGoal(): string {
 
 export function buildSkillCandidateReviewCommands(): string[] {
   return [
-    'buddy tools skill-candidate list --eligible-only --json',
+    'buddy tools skill-candidate list --json',
     'buddy tools skill-candidate inspect <candidate-dir>',
+    'buddy tools skill-candidate list --eligible-only --json',
     'buddy tools skill-candidate install <candidate-dir> --approved-by <name>',
   ];
 }
@@ -124,7 +126,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
     void api
       .list({
         cwd,
-        eligibleOnly: true,
+        eligibleOnly: false,
         limit: 3,
       })
       .then((items) => {
@@ -185,7 +187,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
       if (candidates === undefined && api.list) {
         const refreshed = await api.list({
           cwd,
-          eligibleOnly: true,
+          eligibleOnly: false,
           limit: 3,
         });
         setLoadedCandidates(Array.isArray(refreshed) ? refreshed : []);
@@ -213,8 +215,9 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
           </span>
         </div>
         <span className="shrink-0 rounded bg-accent/10 px-1.5 py-0.5 text-[10px] text-accent">
-          {t('fleet.skillCandidate.countChip', '{{count}} eligible', {
-            count: eligibleCount,
+          {t('fleet.skillCandidate.countChip', '{{eligible}} eligible / {{total}} total', {
+            eligible: eligibleCount,
+            total: reviewCandidates.length,
           })}
         </span>
       </div>
@@ -290,6 +293,11 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
                   <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
                     {candidate.successfulRunCount} runs
                   </span>
+                  {!candidate.eligible ? (
+                    <span className="rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning">
+                      {t('fleet.skillCandidate.notEligibleChip', 'not eligible yet')}
+                    </span>
+                  ) : null}
                   {candidate.installState ? (
                     <span className="rounded bg-accent/10 px-1 py-0.5 text-[9px] text-accent">
                       {formatInstallState(candidate.installState)}

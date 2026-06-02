@@ -2440,7 +2440,7 @@
     },
     "skillCandidate": {
       "title": "Revue des candidates SKILL",
-      "countChip": "{{count}} éligible(s)",
+      "countChip": "{{eligible}} éligible(s) / {{total}} total",
       "reviewChip": "approbation humaine requise",
       "noAutoInstallChip": "pas d'installation automatique",
       "publicDataChip": "garde-fous données publiques",
@@ -2449,6 +2449,7 @@
       "empty": "Utilise la file CLI pour lister les candidates matérialisées.",
       "learningKind": "Learning Agent",
       "researchKind": "Script de recherche",
+      "notEligibleChip": "pas encore éligible",
       "toolSequence": "Outils",
       "expandDiff": "Afficher le diff cote a cote",
       "collapseDiff": "Masquer le diff cote a cote",

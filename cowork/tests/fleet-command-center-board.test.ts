@@ -245,7 +245,7 @@ describe('FleetCommandCenter saga board', () => {
     expect(source).toContain('getSkillCandidateApi');
     expect(source).toContain('skillCandidate?: SkillCandidateApiBridge');
     expect(source).toContain('setSkillCandidates(list)');
-    expect(source).toContain('eligibleOnly: true');
+    expect(source).toContain('eligibleOnly: false');
     expect(source).toContain('candidates={skillCandidates}');
     expect(source).toContain('error={skillCandidateLoadError}');
     expect(source).toContain('handleUseSkillCandidateReviewAsGoal');

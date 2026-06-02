@@ -2427,7 +2427,7 @@
     },
     "skillCandidate": {
       "title": "SKILL 候选审查",
-      "countChip": "{{count}} 个合格",
+      "countChip": "{{eligible}} 个合格 / 共 {{total}} 个",
       "reviewChip": "需要人工批准",
       "noAutoInstallChip": "不自动安装",
       "publicDataChip": "公共数据护栏",
@@ -2436,6 +2436,7 @@
       "empty": "使用 CLI 队列列出已物化候选项。",
       "learningKind": "Learning Agent",
       "researchKind": "研究脚本",
+      "notEligibleChip": "尚未合格",
       "toolSequence": "工具",
       "expandDiff": "显示并排 diff",
       "collapseDiff": "隐藏并排 diff",
