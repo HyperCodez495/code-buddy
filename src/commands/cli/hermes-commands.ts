@@ -2788,7 +2788,9 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((options: HermesCommandOptions) => {
       const readiness = buildHermesProviderReadiness();
+      const command = 'buddy hermes providers status --json';
       const payload = {
+        command,
         kind: 'hermes_provider_readiness_status',
         schemaVersion: 1,
         readiness,
@@ -2799,6 +2801,7 @@ export function registerHermesCommands(program: Command): void {
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesProviderReadiness(readiness));
     });
 

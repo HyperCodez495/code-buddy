@@ -1399,6 +1399,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         kind: string;
         schemaVersion: number;
         readiness: {
@@ -1416,6 +1417,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes providers status --json');
       expect(output.kind).toBe('hermes_provider_readiness_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.readiness.activeModel).toMatchObject({
@@ -1438,6 +1440,7 @@ describe('Hermes CLI commands', () => {
       await textProgram.parseAsync(['node', 'test', 'hermes', 'provider', 'status']);
 
       const textOutput = getLogOutput();
+      expect(textOutput).toContain('Command: buddy hermes providers status --json');
       expect(textOutput).toContain('OpenAI / Codex-compatible: configured | configured=yes, local=no');
       expect(textOutput).toContain('Ollama local: configured | configured=yes, local=yes');
       expect(textOutput).toContain('note: Local provider; readiness means the endpoint is configured, not that a model pull was tested.');
