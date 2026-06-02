@@ -232,9 +232,11 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('Review queue');
     expect(strip?.textContent).toContain('lesson_candidate: 1');
     expect(strip?.textContent).toContain('buddy lessons candidate show lc-real --json');
+    expect(strip?.textContent).toContain('samples: lc-real');
     expect(strip?.querySelector('[data-testid="hermes-learning-next-action"]')?.textContent).toContain('lc-real');
     expect(strip?.textContent).toContain('skill_candidate: 1');
     expect(strip?.textContent).toContain('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json');
+    expect(strip?.textContent).toContain('samples: skill-candidate-real');
     expect(strip?.textContent).toContain('Next retrospective');
     expect(strip?.textContent).toContain('run-needs-retro');
     expect(strip?.textContent).toContain('completed | 1 artifacts');

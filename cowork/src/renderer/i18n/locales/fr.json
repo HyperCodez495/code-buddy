@@ -2532,6 +2532,7 @@
       "reviewQueueTitle": "File de revue",
       "reviewQueueCount": "{{count}} en attente",
       "reviewQueueItem": "{{kind}} : {{count}}",
+      "reviewQueueSamples": "samples : {{samples}}",
       "openReview": "Ouvrir",
       "reviewGate": "Garde-fous actifs : lessons, modèle utilisateur, candidates skill et cycle de vie des skills requièrent une approbation.",
       "reviewGateMissing": "Les garde-fous de revue doivent être vérifiés avant de faire confiance aux sorties Learning automatiques.",

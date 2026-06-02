@@ -2519,6 +2519,7 @@
       "reviewQueueTitle": "审查队列",
       "reviewQueueCount": "{{count}} 待处理",
       "reviewQueueItem": "{{kind}}：{{count}}",
+      "reviewQueueSamples": "样例：{{samples}}",
       "openReview": "打开",
       "reviewGate": "审查门控已启用：lessons、用户模型、skill 候选和 skill 生命周期都需要批准。",
       "reviewGateMissing": "信任自动学习输出前，需要先检查审查门控。",

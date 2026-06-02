@@ -763,6 +763,13 @@ export const HermesLearningLoopStrip: React.FC<{
                     <code className="block truncate text-[9px] text-warning">
                       {item.nextReviewCommand ?? item.command}
                     </code>
+                    {item.sampleIds?.length ? (
+                      <div className="truncate text-[9px] text-text-muted">
+                        {t('fleet.hermesLearningLoop.reviewQueueSamples', 'samples: {{samples}}', {
+                          samples: item.sampleIds.slice(0, 3).join(', '),
+                        })}
+                      </div>
+                    ) : null}
                   </li>
                 ))}
               </ul>

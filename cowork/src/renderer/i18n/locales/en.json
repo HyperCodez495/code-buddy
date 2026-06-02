@@ -2532,6 +2532,7 @@
       "reviewQueueTitle": "Review queue",
       "reviewQueueCount": "{{count}} pending",
       "reviewQueueItem": "{{kind}}: {{count}}",
+      "reviewQueueSamples": "samples: {{samples}}",
       "openReview": "Open",
       "reviewGate": "Review gates enabled: lessons, user model, skill candidates and skill lifecycle all require approval.",
       "reviewGateMissing": "Review gates need attention before automatic learning output can be trusted.",
