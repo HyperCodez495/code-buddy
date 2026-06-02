@@ -114,6 +114,42 @@ export interface HermesLearningLoopStatusOptions {
   rootDir?: string;
 }
 
+export interface HermesLearningRunDoctorOptions {
+  limit?: number;
+  rootDir?: string;
+  staleAfterMinutes?: number;
+}
+
+export interface HermesLearningRunDoctorForReview {
+  command: string;
+  filters: {
+    limit: number;
+    staleAfterMinutes: number;
+  };
+  generatedAt: string;
+  recommendations: string[];
+  runs: Array<{
+    artifactCount: number;
+    eventCount: number;
+    runId: string;
+    runningForMinutes?: number;
+    source?: string;
+    staleRunning?: boolean;
+    startedAt: string;
+    status: string;
+  }>;
+  schemaVersion: 1;
+  summary: {
+    cancelledRunCount: number;
+    completedRunCount: number;
+    failedRunCount: number;
+    inspectedRunCount: number;
+    runningRunCount: number;
+    staleRunningRunCount: number;
+  };
+  workDir: string;
+}
+
 export interface HermesLearningRetrospectiveRunOptions {
   force?: boolean;
   rootDir?: string;
@@ -175,6 +211,13 @@ interface LearningAgentModule {
   ) => Promise<LearningAgentRunResult>;
 }
 
+interface RunDoctorModule {
+  buildRunDoctorReport: (options?: {
+    limit?: number;
+    staleAfterMinutes?: number;
+  }) => Omit<HermesLearningRunDoctorForReview, 'command' | 'workDir'>;
+}
+
 export async function getHermesLearningLoopStatusForReview(
   options: HermesLearningLoopStatusOptions = {},
 ): Promise<HermesLearningLoopStatusForReview | null> {
@@ -230,6 +273,28 @@ export async function runHermesLearningRetrospectiveForReview(
   }
 }
 
+export async function runHermesLearningRunDoctorForReview(
+  options: HermesLearningRunDoctorOptions = {},
+): Promise<HermesLearningRunDoctorForReview> {
+  const rootDir = normalizeAbsoluteRoot(options.rootDir) ?? process.cwd();
+  const limit = normalizeLimit(options.limit);
+  const staleAfterMinutes = normalizeStaleAfterMinutes(options.staleAfterMinutes);
+  const mod = await loadCoreModule<RunDoctorModule>('observability/run-viewer.js');
+  if (!mod?.buildRunDoctorReport) {
+    throw new Error('Core run doctor report module is unavailable.');
+  }
+
+  const report = mod.buildRunDoctorReport({
+    limit,
+    staleAfterMinutes,
+  });
+  return {
+    ...report,
+    command: buildRunDoctorCommand(limit, staleAfterMinutes),
+    workDir: safeWorkDir(rootDir),
+  };
+}
+
 function normalizeAbsoluteRoot(value: string | undefined): string | null {
   if (!value?.trim()) return null;
   const trimmed = value.trim();
@@ -270,4 +335,18 @@ function normalizeHermesLearningLoopStatus(
 function normalizeLimit(value: number | undefined): number {
   if (!Number.isFinite(value)) return 10;
   return Math.min(50, Math.max(1, Math.trunc(value as number)));
+}
+
+function normalizeStaleAfterMinutes(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 60;
+  return Math.min(24 * 60, Math.max(1, Math.trunc(value as number)));
+}
+
+function buildRunDoctorCommand(limit: number, staleAfterMinutes: number): string {
+  const staleFlag = staleAfterMinutes === 60 ? '' : ` --stale-after-minutes ${staleAfterMinutes}`;
+  return `buddy run doctor --json --limit ${limit}${staleFlag}`;
+}
+
+function safeWorkDir(rootDir: string): string {
+  return rootDir ? '[workspace]' : '[cwd]';
 }

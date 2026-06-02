@@ -3,6 +3,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
 import {
   getHermesLearningLoopStatusForReview,
+  runHermesLearningRunDoctorForReview,
   runHermesLearningRetrospectiveForReview,
 } from '../src/main/tools/hermes-learning-loop-bridge';
 
@@ -267,6 +268,60 @@ describe('Hermes learning loop bridge', () => {
       skipped: false,
       toolSequence: ['search', 'view_file', 'bash'],
     });
+    expect(JSON.stringify(result)).not.toContain('private observation');
+  });
+
+  it('runs the core run doctor report as a bounded read-only review payload', async () => {
+    const buildRunDoctorReport = vi.fn(() => ({
+      filters: {
+        limit: 4,
+        staleAfterMinutes: 60,
+      },
+      generatedAt: '2026-06-02T03:05:00.000Z',
+      recommendations: [
+        'Inspect stale running runs before trusting Learning Agent retrospective coverage.',
+      ],
+      runs: [
+        {
+          artifactCount: 1,
+          eventCount: 3,
+          runId: 'run-stale',
+          runningForMinutes: 90,
+          source: 'cowork',
+          staleRunning: true,
+          startedAt: '2026-06-02T01:35:00.000Z',
+          status: 'running',
+        },
+      ],
+      schemaVersion: 1,
+      summary: {
+        cancelledRunCount: 0,
+        completedRunCount: 1,
+        failedRunCount: 0,
+        inspectedRunCount: 4,
+        runningRunCount: 1,
+        staleRunningRunCount: 1,
+      },
+    }));
+    mockedLoadCoreModule.mockResolvedValue({ buildRunDoctorReport });
+
+    const rootDir = path.resolve('workspace');
+    const result = await runHermesLearningRunDoctorForReview({ rootDir, limit: 4 });
+
+    expect(mockedLoadCoreModule).toHaveBeenCalledWith('observability/run-viewer.js');
+    expect(buildRunDoctorReport).toHaveBeenCalledWith({
+      limit: 4,
+      staleAfterMinutes: 60,
+    });
+    expect(result).toMatchObject({
+      command: 'buddy run doctor --json --limit 4',
+      summary: {
+        inspectedRunCount: 4,
+        staleRunningRunCount: 1,
+      },
+      workDir: '[workspace]',
+    });
+    expect(JSON.stringify(result)).not.toContain(rootDir);
     expect(JSON.stringify(result)).not.toContain('private observation');
   });
 });

@@ -256,6 +256,40 @@ describe('HermesLearningLoopStrip', () => {
       .mockResolvedValueOnce(refreshedStatus);
     const lessonCandidateUpdate = vi.fn();
     const onOpenLessonReview = vi.fn();
+    const runDoctor = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        command: 'buddy run doctor --json --limit 6',
+        filters: {
+          limit: 6,
+          staleAfterMinutes: 60,
+        },
+        generatedAt: '2026-06-02T03:10:00.000Z',
+        recommendations: ['Inspect stale running runs before trusting Learning Agent retrospective coverage.'],
+        runs: [
+          {
+            artifactCount: 1,
+            eventCount: 8,
+            runId: 'run-stale',
+            runningForMinutes: 90,
+            source: 'cowork',
+            staleRunning: true,
+            startedAt: '2026-06-02T01:40:00.000Z',
+            status: 'running',
+          },
+        ],
+        schemaVersion: 1,
+        summary: {
+          cancelledRunCount: 0,
+          completedRunCount: 2,
+          failedRunCount: 0,
+          inspectedRunCount: 6,
+          runningRunCount: 2,
+          staleRunningRunCount: 1,
+        },
+        workDir: '[workspace]',
+      },
+    });
     const runRetrospective = vi.fn().mockResolvedValue({
       ok: true,
       result: {
@@ -276,6 +310,7 @@ describe('HermesLearningLoopStrip', () => {
         tools?: {
           hermesLearningLoop?: {
             get: typeof get;
+            runDoctor: typeof runDoctor;
             runRetrospective: typeof runRetrospective;
           };
         };
@@ -284,6 +319,7 @@ describe('HermesLearningLoopStrip', () => {
       tools: {
         hermesLearningLoop: {
           get,
+          runDoctor,
           runRetrospective,
         },
       },
@@ -304,6 +340,21 @@ describe('HermesLearningLoopStrip', () => {
     });
     expect(target.textContent).toContain('learned-search-view-file-bash');
     expect(target.textContent).toContain('buddy hermes learning status --json');
+
+    const runDoctorButton = target.querySelector('[data-testid="hermes-learning-run-doctor-button"]') as HTMLButtonElement;
+    expect(runDoctorButton).toBeTruthy();
+    await act(async () => {
+      runDoctorButton.click();
+      await Promise.resolve();
+      await Promise.resolve();
+    });
+    expect(runDoctor).toHaveBeenCalledWith({
+      cwd: 'D:/CascadeProjects/grok-cli',
+      limit: 6,
+    });
+    expect(target.querySelector('[data-testid="hermes-learning-run-doctor-result"]')?.textContent)
+      .toContain('Run doctor checked 6 runs: 1 stale / 2 running');
+    expect(target.textContent).toContain('buddy run doctor --json --limit 6');
 
     const button = target.querySelector('[data-testid="hermes-learning-retrospective-run-needs-retro"]') as HTMLButtonElement;
     expect(button).toBeTruthy();

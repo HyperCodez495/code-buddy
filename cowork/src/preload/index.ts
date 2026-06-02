@@ -1877,6 +1877,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
           candidateReview: string;
           lessonCandidates: string;
           retrospective: string;
+          runDoctor: string;
           skillUsage: string;
           userModel: string;
         };
@@ -1934,16 +1935,60 @@ contextBridge.exposeInMainWorld('electronAPI', {
         summary: {
           acceptedUserObservationCount: number;
           deprecatedSkillCount: number;
+          inspectedRunLimit: number;
           lessonCandidateCount: number;
           patternCount: number;
           pendingLessonCandidateCount: number;
+          pendingReviewCount: number;
+          pendingUserObservationCount: number;
           recentRunCount: number;
+          retrospectiveCoveragePercent: number;
+          retrospectiveEligibleRunCount: number;
           reinforcedSkillCount: number;
           retrospectiveArtifactCount: number;
+          runningRunCount: number;
           skillUsageCount: number;
+          staleRunningRunCount: number;
         };
         workDir: string;
       } | null> => ipcRenderer.invoke('tools.hermesLearningLoop.get', options ?? {}),
+      runDoctor: (options?: {
+        cwd?: string;
+        limit?: number;
+        staleAfterMinutes?: number;
+      }): Promise<{
+        error?: string;
+        ok: boolean;
+        result?: {
+          command: string;
+          filters: {
+            limit: number;
+            staleAfterMinutes: number;
+          };
+          generatedAt: string;
+          recommendations: string[];
+          runs: Array<{
+            artifactCount: number;
+            eventCount: number;
+            runId: string;
+            runningForMinutes?: number;
+            source?: string;
+            staleRunning?: boolean;
+            startedAt: string;
+            status: string;
+          }>;
+          schemaVersion: 1;
+          summary: {
+            cancelledRunCount: number;
+            completedRunCount: number;
+            failedRunCount: number;
+            inspectedRunCount: number;
+            runningRunCount: number;
+            staleRunningRunCount: number;
+          };
+          workDir: string;
+        };
+      }> => ipcRenderer.invoke('tools.hermesLearningLoop.runDoctor', options ?? {}),
       runRetrospective: (options: {
         cwd?: string;
         force?: boolean;
@@ -4954,6 +4999,7 @@ declare global {
               candidateReview: string;
               lessonCandidates: string;
               retrospective: string;
+              runDoctor: string;
               skillUsage: string;
               userModel: string;
             };
@@ -5011,16 +5057,60 @@ declare global {
             summary: {
               acceptedUserObservationCount: number;
               deprecatedSkillCount: number;
+              inspectedRunLimit: number;
               lessonCandidateCount: number;
               patternCount: number;
               pendingLessonCandidateCount: number;
+              pendingReviewCount: number;
+              pendingUserObservationCount: number;
               recentRunCount: number;
+              retrospectiveCoveragePercent: number;
+              retrospectiveEligibleRunCount: number;
               reinforcedSkillCount: number;
               retrospectiveArtifactCount: number;
+              runningRunCount: number;
               skillUsageCount: number;
+              staleRunningRunCount: number;
             };
             workDir: string;
           } | null>;
+          runDoctor: (options?: {
+            cwd?: string;
+            limit?: number;
+            staleAfterMinutes?: number;
+          }) => Promise<{
+            error?: string;
+            ok: boolean;
+            result?: {
+              command: string;
+              filters: {
+                limit: number;
+                staleAfterMinutes: number;
+              };
+              generatedAt: string;
+              recommendations: string[];
+              runs: Array<{
+                artifactCount: number;
+                eventCount: number;
+                runId: string;
+                runningForMinutes?: number;
+                source?: string;
+                staleRunning?: boolean;
+                startedAt: string;
+                status: string;
+              }>;
+              schemaVersion: 1;
+              summary: {
+                cancelledRunCount: number;
+                completedRunCount: number;
+                failedRunCount: number;
+                inspectedRunCount: number;
+                runningRunCount: number;
+                staleRunningRunCount: number;
+              };
+              workDir: string;
+            };
+          }>;
           runRetrospective: (options: {
             cwd?: string;
             force?: boolean;

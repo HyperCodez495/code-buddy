@@ -138,6 +138,36 @@ export interface HermesLearningRetrospectiveRunResult {
   toolSequence: string[];
 }
 
+export interface HermesLearningRunDoctorResult {
+  command: string;
+  filters: {
+    limit: number;
+    staleAfterMinutes: number;
+  };
+  generatedAt: string;
+  recommendations: string[];
+  runs: Array<{
+    artifactCount: number;
+    eventCount: number;
+    runId: string;
+    runningForMinutes?: number;
+    source?: string;
+    staleRunning?: boolean;
+    startedAt: string;
+    status: string;
+  }>;
+  schemaVersion: 1;
+  summary: {
+    cancelledRunCount: number;
+    completedRunCount: number;
+    failedRunCount: number;
+    inspectedRunCount: number;
+    runningRunCount: number;
+    staleRunningRunCount: number;
+  };
+  workDir: string;
+}
+
 interface HermesLearningLoopApi {
   get?: (options?: {
     cwd?: string;
@@ -151,6 +181,15 @@ interface HermesLearningLoopApi {
     error?: string;
     ok: boolean;
     result?: HermesLearningRetrospectiveRunResult;
+  }>;
+  runDoctor?: (options?: {
+    cwd?: string;
+    limit?: number;
+    staleAfterMinutes?: number;
+  }) => Promise<{
+    error?: string;
+    ok: boolean;
+    result?: HermesLearningRunDoctorResult;
   }>;
 }
 
@@ -169,7 +208,10 @@ export const HermesLearningLoopStrip: React.FC<{
   const [loadError, setLoadError] = useState<string | null>(null);
   const [retrospectiveError, setRetrospectiveError] = useState<string | null>(null);
   const [retrospectiveResult, setRetrospectiveResult] = useState<HermesLearningRetrospectiveRunResult | null>(null);
+  const [runDoctorError, setRunDoctorError] = useState<string | null>(null);
+  const [runDoctorResult, setRunDoctorResult] = useState<HermesLearningRunDoctorResult | null>(null);
   const [runningRetrospectiveRunId, setRunningRetrospectiveRunId] = useState<string | null>(null);
+  const [runningRunDoctor, setRunningRunDoctor] = useState(false);
   const visibleStatus = status ?? loadedStatus;
   const visibleError = error ?? loadError;
   const command = useMemo(() => buildHermesLearningLoopCommand(), []);
@@ -263,6 +305,41 @@ export const HermesLearningLoopStrip: React.FC<{
     }
   };
 
+  const handleRunDoctor = async () => {
+    if (!visibleStatus) return;
+    const api = getHermesLearningLoopApi();
+    if (!api?.runDoctor) {
+      setRunDoctorError(t(
+        'fleet.hermesLearningLoop.runDoctorUnavailable',
+        'Run doctor is unavailable.',
+      ));
+      return;
+    }
+
+    setRunningRunDoctor(true);
+    setRunDoctorError(null);
+    setRunDoctorResult(null);
+
+    try {
+      const response = await api.runDoctor({
+        cwd,
+        limit: visibleStatus.summary.inspectedRunLimit,
+      });
+      if (!response.ok || !response.result) {
+        throw new Error(response.error ?? 'Run doctor failed.');
+      }
+      setRunDoctorResult(response.result);
+    } catch (runDoctorErrorValue) {
+      setRunDoctorError(
+        runDoctorErrorValue instanceof Error
+          ? runDoctorErrorValue.message
+          : String(runDoctorErrorValue),
+      );
+    } finally {
+      setRunningRunDoctor(false);
+    }
+  };
+
   return (
     <section
       className="mt-3 rounded border border-border-muted bg-surface/60 p-2"
@@ -348,21 +425,62 @@ export const HermesLearningLoopStrip: React.FC<{
             >
               <AlertTriangle size={10} className="mt-0.5 shrink-0" />
               <div className="min-w-0 flex-1">
-                <div className="truncate">
-                  {t(
-                    'fleet.hermesLearningLoop.staleRuns',
-                    '{{stale}} stale / {{running}} running runs in last {{limit}} inspected',
-                    {
-                      limit: visibleStatus.summary.inspectedRunLimit,
-                      running: visibleStatus.summary.runningRunCount,
-                      stale: visibleStatus.summary.staleRunningRunCount,
-                    },
-                  )}
+                <div className="flex min-w-0 items-center justify-between gap-2">
+                  <div className="truncate">
+                    {t(
+                      'fleet.hermesLearningLoop.staleRuns',
+                      '{{stale}} stale / {{running}} running runs in last {{limit}} inspected',
+                      {
+                        limit: visibleStatus.summary.inspectedRunLimit,
+                        running: visibleStatus.summary.runningRunCount,
+                        stale: visibleStatus.summary.staleRunningRunCount,
+                      },
+                    )}
+                  </div>
+                  <button
+                    aria-label={t('fleet.hermesLearningLoop.runDoctor', 'Run doctor')}
+                    className="shrink-0 rounded border border-warning/30 bg-background p-0.5 text-warning transition hover:border-warning hover:text-warning disabled:cursor-not-allowed disabled:opacity-40"
+                    data-testid="hermes-learning-run-doctor-button"
+                    disabled={runningRunDoctor}
+                    onClick={handleRunDoctor}
+                    title={t('fleet.hermesLearningLoop.runDoctor', 'Run doctor')}
+                    type="button"
+                  >
+                    <Terminal size={10} />
+                  </button>
                 </div>
                 <code className="block truncate text-[9px] text-warning">
                   {visibleStatus.commands.runDoctor}
                 </code>
               </div>
+            </div>
+          ) : null}
+
+          {runDoctorResult ? (
+            <div
+              className="mt-1.5 rounded border border-success/30 bg-success/10 px-2 py-1 text-[10px] text-success"
+              data-testid="hermes-learning-run-doctor-result"
+            >
+              <div className="truncate">
+                {t(
+                  'fleet.hermesLearningLoop.runDoctorDone',
+                  'Run doctor checked {{inspected}} runs: {{stale}} stale / {{running}} running',
+                  {
+                    inspected: runDoctorResult.summary.inspectedRunCount,
+                    running: runDoctorResult.summary.runningRunCount,
+                    stale: runDoctorResult.summary.staleRunningRunCount,
+                  },
+                )}
+              </div>
+              <code className="block truncate text-[9px] text-success">
+                {runDoctorResult.command}
+              </code>
+            </div>
+          ) : null}
+
+          {runDoctorError ? (
+            <div className="mt-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+              {t('fleet.hermesLearningLoop.runDoctorFailed', 'Run doctor failed')}: {runDoctorError}
             </div>
           ) : null}
 

@@ -6,6 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
   getHermesLearningLoopStatusForReview,
+  runHermesLearningRunDoctorForReview,
   runHermesLearningRetrospectiveForReview,
 } from '../src/main/tools/hermes-learning-loop-bridge';
 
@@ -64,7 +65,25 @@ describe.skipIf(!hasBuiltLearningCore)('Hermes learning loop bridge real core in
       userModelWritesRequireApproval: true,
     });
     expect(JSON.stringify(status)).not.toContain('content');
-    expect(JSON.stringify(status)).not.toContain('observation');
+    expect(JSON.stringify(status)).not.toContain('private observation');
+  });
+
+  it('runs the real compiled run doctor report through the Cowork bridge', async () => {
+    const result = await runHermesLearningRunDoctorForReview({
+      rootDir: path.resolve(process.cwd(), '..'),
+      limit: 3,
+    });
+
+    expect(result).toMatchObject({
+      command: 'buddy run doctor --json --limit 3',
+      schemaVersion: 1,
+      workDir: '[workspace]',
+    });
+    expect(result.summary.inspectedRunCount).toBeGreaterThanOrEqual(0);
+    expect(result.summary.runningRunCount).toBeGreaterThanOrEqual(0);
+    expect(result.summary.staleRunningRunCount).toBeGreaterThanOrEqual(0);
+    expect(JSON.stringify(result)).not.toContain('content');
+    expect(JSON.stringify(result)).not.toContain('private observation');
   });
 
   it('runs a real compiled Learning Agent retrospective through the Cowork bridge', async () => {

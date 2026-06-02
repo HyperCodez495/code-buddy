@@ -360,10 +360,40 @@ export function listRuns(limit = 20): void {
   console.log('');
 }
 
-interface RunDoctorOptions {
+export interface RunDoctorOptions {
   json?: boolean;
   limit?: number;
   staleAfterMinutes?: number;
+}
+
+export interface RunDoctorRunRow {
+  artifactCount: number;
+  eventCount: number;
+  runId: string;
+  runningForMinutes?: number;
+  source?: string;
+  staleRunning?: boolean;
+  startedAt: string;
+  status: RunSummary['status'];
+}
+
+export interface RunDoctorReport {
+  filters: {
+    limit: number;
+    staleAfterMinutes: number;
+  };
+  generatedAt: string;
+  recommendations: string[];
+  runs: RunDoctorRunRow[];
+  schemaVersion: typeof RUN_DOCTOR_JSON_SCHEMA_VERSION;
+  summary: {
+    cancelledRunCount: number;
+    completedRunCount: number;
+    failedRunCount: number;
+    inspectedRunCount: number;
+    runningRunCount: number;
+    staleRunningRunCount: number;
+  };
 }
 
 function normalizePositiveInteger(value: number | undefined, fallback: number): number {
@@ -377,14 +407,7 @@ function runSource(summary: RunSummary): string | undefined {
   return RUN_DOCTOR_SAFE_SOURCES.has(source) ? source : 'custom';
 }
 
-/**
- * Report operational drift in the run ledger without mutating stored runs.
- *
- * `running` rows can be legitimate active work, but rows older than the stale
- * threshold often mean a process died before `endRun()` fired. Those rows hide
- * post-run retrospectives, so Hermes surfaces them as operator-visible debt.
- */
-export function runDoctor(options: RunDoctorOptions = {}): void {
+export function buildRunDoctorReport(options: RunDoctorOptions = {}): RunDoctorReport {
   const store = RunStore.getInstance();
   const limit = normalizePositiveInteger(options.limit, 30);
   const staleAfterMinutes = normalizePositiveInteger(
@@ -414,7 +437,7 @@ export function runDoctor(options: RunDoctorOptions = {}): void {
   });
   const runningRows = rows.filter((run) => run.status === 'running');
   const staleRows = runningRows.filter((run) => run.staleRunning);
-  const payload = {
+  return {
     schemaVersion: RUN_DOCTOR_JSON_SCHEMA_VERSION,
     generatedAt: new Date(now).toISOString(),
     filters: {
@@ -439,6 +462,19 @@ export function runDoctor(options: RunDoctorOptions = {}): void {
           'No stale running runs were found in the inspected window.',
         ],
   };
+}
+
+/**
+ * Report operational drift in the run ledger without mutating stored runs.
+ *
+ * `running` rows can be legitimate active work, but rows older than the stale
+ * threshold often mean a process died before `endRun()` fired. Those rows hide
+ * post-run retrospectives, so Hermes surfaces them as operator-visible debt.
+ */
+export function runDoctor(options: RunDoctorOptions = {}): void {
+  const payload = buildRunDoctorReport(options);
+  const staleAfterMinutes = payload.filters.staleAfterMinutes;
+  const staleRows = payload.runs.filter((run) => run.staleRunning);
 
   if (options.json === true) {
     console.log(JSON.stringify(payload, null, 2));

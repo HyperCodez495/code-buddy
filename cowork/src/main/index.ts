@@ -204,6 +204,7 @@ import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridg
 import { getHermesToolsetsForReview } from './tools/hermes-toolsets-bridge';
 import {
   getHermesLearningLoopStatusForReview,
+  runHermesLearningRunDoctorForReview,
   runHermesLearningRetrospectiveForReview,
 } from './tools/hermes-learning-loop-bridge';
 import { listLearningSkillUsageForReview } from './tools/learning-usage-bridge';
@@ -4292,6 +4293,38 @@ ipcMain.handle(
       };
     } catch (err) {
       logWarn('[tools.hermesLearningLoop.retrospective] failed:', err);
+      return {
+        ok: false,
+        error: err instanceof Error ? err.message : String(err),
+      };
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.hermesLearningLoop.runDoctor',
+  async (
+    _event,
+    payload?: {
+      cwd?: string;
+      limit?: number;
+      staleAfterMinutes?: number;
+    }
+  ) => {
+    try {
+      const payloadCwd =
+        typeof payload?.cwd === 'string' && isAbsolute(payload.cwd) ? payload.cwd : null;
+      const result = await runHermesLearningRunDoctorForReview({
+        rootDir: payloadCwd ?? getWorkingDir() ?? process.cwd(),
+        limit: payload?.limit,
+        staleAfterMinutes: payload?.staleAfterMinutes,
+      });
+      return {
+        ok: true,
+        result,
+      };
+    } catch (err) {
+      logWarn('[tools.hermesLearningLoop.runDoctor] failed:', err);
       return {
         ok: false,
         error: err instanceof Error ? err.message : String(err),
