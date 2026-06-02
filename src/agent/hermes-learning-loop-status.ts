@@ -138,15 +138,18 @@ export interface HermesLearningLoopNextAction {
 }
 
 export interface HermesLearningLoopSkillCandidateSample {
+  candidatePath: string;
   candidateId: string;
   eligible: boolean;
   inspectCommand: string;
+  installCommand?: string;
   promotion: {
     reason: string;
     status: string;
     successfulRunCount: number;
     threshold: number;
   };
+  reviewManifestPath: string;
   skillName: string;
 }
 
@@ -290,12 +293,20 @@ function readLearningSkillCandidateSample(
     ? parsed.candidateId.trim()
     : fallbackId;
   const relativeDir = path.relative(workDir, candidateDir).replace(/\\/g, '/');
+  const relativeReviewPath = path.relative(workDir, reviewPath).replace(/\\/g, '/');
   const promotion = readSkillCandidatePromotion(parsed);
+  const eligible = isLearningSkillCandidateEligible(parsed, promotion);
+  const candidateArg = formatShellArg(relativeDir);
   return {
+    candidatePath: relativeDir,
     candidateId,
-    eligible: isLearningSkillCandidateEligible(parsed, promotion),
-    inspectCommand: `buddy tools skill-candidate inspect ${formatShellArg(relativeDir)} --json`,
+    eligible,
+    inspectCommand: `buddy tools skill-candidate inspect ${candidateArg} --json`,
+    ...(eligible ? {
+      installCommand: `buddy tools skill-candidate install ${candidateArg} --approved-by <name> --json`,
+    } : {}),
     promotion,
+    reviewManifestPath: relativeReviewPath,
     skillName,
   };
 }

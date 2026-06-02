@@ -807,15 +807,18 @@ describe('Hermes CLI commands', () => {
             learningCandidateCount: number;
             root: string;
             samples: Array<{
+              candidatePath: string;
               candidateId: string;
               eligible: boolean;
               inspectCommand: string;
+              installCommand?: string;
               promotion: {
                 reason: string;
                 status: string;
                 successfulRunCount: number;
                 threshold: number;
               };
+              reviewManifestPath: string;
               skillName: string;
             }>;
           };
@@ -918,6 +921,7 @@ describe('Hermes CLI commands', () => {
       expect(output.state.skillCandidates.root).toBe('.codebuddy/skill-candidates/learning');
       expect(output.state.skillCandidates.samples).toEqual([
         expect.objectContaining({
+          candidatePath: expect.stringContaining('.codebuddy/skill-candidates/learning/'),
           candidateId: expect.stringMatching(/^(learning-skill|skill-candidate)-/),
           eligible: false,
           inspectCommand: expect.stringContaining('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/'),
@@ -927,6 +931,7 @@ describe('Hermes CLI commands', () => {
             successfulRunCount: 1,
             threshold: 2,
           }),
+          reviewManifestPath: expect.stringContaining('.codebuddy/skill-candidates/learning/'),
           skillName: expect.any(String),
         }),
       ]);
@@ -1058,7 +1063,7 @@ describe('Hermes CLI commands', () => {
       resetUserModels();
       writeLearningCandidate('aaa-not-ready', 'learned-not-ready', 'not_eligible');
       writeLearningCandidate('bbb-also-not-ready', 'learned-also-not-ready', 'not_eligible');
-      writeLearningCandidate('zzz-ready', 'learned-ready', 'awaiting_human_approval');
+      writeLearningCandidate('zzz ready', 'learned-ready', 'awaiting_human_approval');
 
       const program = createProgram();
       registerHermesCommands(program);
@@ -1077,7 +1082,14 @@ describe('Hermes CLI commands', () => {
             eligibleCandidateCount: number;
             ineligibleCandidateCount: number;
             learningCandidateCount: number;
-            samples: Array<{ eligible: boolean; skillName: string }>;
+            samples: Array<{
+              candidatePath: string;
+              eligible: boolean;
+              inspectCommand: string;
+              installCommand?: string;
+              reviewManifestPath: string;
+              skillName: string;
+            }>;
           };
         };
       };
@@ -1088,12 +1100,16 @@ describe('Hermes CLI commands', () => {
         learningCandidateCount: 3,
       });
       expect(output.state.skillCandidates.samples[0]).toMatchObject({
+        candidatePath: '.codebuddy/skill-candidates/learning/zzz ready',
         eligible: true,
+        inspectCommand: 'buddy tools skill-candidate inspect ".codebuddy/skill-candidates/learning/zzz ready" --json',
+        installCommand: 'buddy tools skill-candidate install ".codebuddy/skill-candidates/learning/zzz ready" --approved-by <name> --json',
+        reviewManifestPath: '.codebuddy/skill-candidates/learning/zzz ready/candidate-review.json',
         skillName: 'learned-ready',
       });
       expect(skillItem).toEqual(expect.objectContaining({
         command: 'buddy tools skill-candidate list --eligible-only --json',
-        nextReviewCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/zzz-ready --json',
+        nextReviewCommand: 'buddy tools skill-candidate inspect ".codebuddy/skill-candidates/learning/zzz ready" --json',
       }));
     } finally {
       process.chdir(oldCwd);

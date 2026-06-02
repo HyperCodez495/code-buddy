@@ -157,7 +157,7 @@ Latest local privacy proof on this branch:
   or the absolute repository checkout path.
 - `hermes learning status --json` reports `[workspace]` and `[codebuddy-runs]`
   labels instead of absolute paths.
-- `hermes skills status --json` reports `.codebuddy/...` relative paths for
+- `hermes learning status --json` and `hermes skills status --json` report `.codebuddy/...` relative paths for
   skill caches, lockfiles, roots, candidate review commands, and candidate
   action metadata. Candidate samples expose `candidatePath`, `reviewManifestPath`,
   `inspectCommand`, and eligible `installCommand` templates without printing

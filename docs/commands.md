@@ -282,6 +282,10 @@ gates, and safe next commands without printing private observation content.
 The JSON includes `summary.inspectedRunLimit`, and its `runDoctor` command uses
 the same `--limit` so stale-running counts are compared against the same
 recent-run window.
+Learning Agent skill-candidate samples include relative `candidatePath`,
+`reviewManifestPath`, `inspectCommand`, and eligible `installCommand` fields;
+generated commands quote candidate paths when needed without printing SKILL.md
+bodies.
 
 `buddy hermes protocols status [--json]` prints a Hermes-scoped MCP/A2A/ACP
 gateway readiness report. It inventories the SDK-backed MCP client, Code Buddy
