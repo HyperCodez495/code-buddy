@@ -1529,6 +1529,7 @@ function renderHermesToolParityManifest(manifest: HermesToolParityManifest): str
       `${manifest.summary.partial} partial, ${manifest.summary.gaps} gaps)`,
     `Official source: ${manifest.officialSource.repository} @ ${manifest.officialSource.inspectedCommit}`,
     `Local tool schemas: ${manifest.codeBuddySource.localToolCount}`,
+    `Command: ${manifest.command}`,
     '',
   ];
 
@@ -2423,6 +2424,7 @@ export function registerHermesCommands(program: Command): void {
       );
       console.log(`Official source: ${manifest.officialSource.repository} @ ${manifest.officialSource.inspectedCommit}`);
       console.log(`Audit: ${manifest.officialSource.auditDocument}`);
+      console.log(`Command: ${manifest.command}`);
       console.log('');
       for (const feature of manifest.features) {
         console.log(`${feature.status.padEnd(15)} ${feature.id} - ${feature.area}`);

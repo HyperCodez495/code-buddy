@@ -21,6 +21,7 @@ export interface HermesToolParityManifest {
   kind: 'hermes_official_tool_parity_manifest';
   schemaVersion: 1;
   generatedAt: string;
+  command: string;
   officialSource: {
     repository: string;
     docs: string;
@@ -653,6 +654,7 @@ export function buildHermesToolParityManifest(
     kind: 'hermes_official_tool_parity_manifest',
     schemaVersion: 1,
     generatedAt,
+    command: 'buddy hermes tools --json',
     officialSource: {
       repository: 'https://github.com/NousResearch/hermes-agent',
       docs: 'https://hermes-agent.nousresearch.com/docs/reference/tools-reference',
@@ -690,6 +692,7 @@ export function renderHermesToolParityManifestMarkdown(manifest: HermesToolParit
     '',
     `- Schema version: \`${manifest.schemaVersion}\``,
     `- Generated: \`${manifest.generatedAt}\``,
+    `- Command: \`${manifest.command}\``,
     `- Official repo: ${manifest.officialSource.repository}`,
     `- Official docs: ${manifest.officialSource.docs}`,
     `- Inspected commit: \`${manifest.officialSource.inspectedCommit}\``,

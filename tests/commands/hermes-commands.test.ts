@@ -2041,6 +2041,7 @@ describe('Hermes CLI commands', () => {
     const output = JSON.parse(getLogOutput()) as {
       kind: string;
       schemaVersion: number;
+      command: string;
       officialSource: {
         repository: string;
         inspectedCommit: string;
@@ -2061,6 +2062,7 @@ describe('Hermes CLI commands', () => {
 
     expect(output.kind).toBe('hermes_official_parity_manifest');
     expect(output.schemaVersion).toBe(1);
+    expect(output.command).toBe('buddy hermes parity --json');
     expect(output.officialSource.repository).toBe('https://github.com/NousResearch/hermes-agent');
     expect(output.officialSource.inspectedCommit).toBe('5921d667');
     expect(output.officialSource.auditDocument).toBe('docs/hermes-agent-official-parity-audit-2026-05-30.md');
@@ -2513,6 +2515,7 @@ describe('Hermes CLI commands', () => {
 
     const output = getLogOutput();
     expect(output).toContain('# Hermes Official Parity Manifest');
+    expect(output).toContain('- Command: `buddy hermes parity --json`');
     expect(output).toContain('## Summary');
     expect(output).toContain('### Cron/scheduling');
     expect(output).toContain('- ID: `cron-scheduling`');
@@ -2529,6 +2532,7 @@ describe('Hermes CLI commands', () => {
     const output = JSON.parse(getLogOutput()) as {
       kind: string;
       schemaVersion: number;
+      command: string;
       officialSource: {
         inspectedCommit: string;
         sourceFiles: string[];
@@ -2554,6 +2558,7 @@ describe('Hermes CLI commands', () => {
 
     expect(output.kind).toBe('hermes_official_tool_parity_manifest');
     expect(output.schemaVersion).toBe(1);
+    expect(output.command).toBe('buddy hermes tools --json');
     expect(output.officialSource.inspectedCommit).toBe('5921d667');
     expect(output.officialSource.sourceFiles).toContain('toolsets.py::_HERMES_CORE_TOOLS');
     expect(output.officialSource.sourceFiles).toContain('tools/skill_manager_tool.py');
@@ -2872,6 +2877,7 @@ describe('Hermes CLI commands', () => {
 
     const output = JSON.parse(getLogOutput()) as {
       kind: string;
+      command: string;
       summary: {
         gaps: number;
         total: number;
@@ -2879,6 +2885,7 @@ describe('Hermes CLI commands', () => {
     };
 
     expect(output.kind).toBe('hermes_official_tool_parity_manifest');
+    expect(output.command).toBe('buddy hermes tools --json');
     expect(output.summary.total).toBeGreaterThan(0);
     expect(output.summary.gaps).toBe(0);
   });
@@ -2958,6 +2965,7 @@ describe('Hermes CLI commands', () => {
 
     const output = getLogOutput();
     expect(output).toContain('# Hermes Official Tool Parity Manifest');
+    expect(output).toContain('- Command: `buddy hermes tools --json`');
     expect(output).toContain('## Summary');
     expect(output).toContain('### terminal');
     expect(output).toContain('### read_file');
