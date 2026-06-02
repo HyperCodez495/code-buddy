@@ -110,6 +110,7 @@ export interface HermesLearningLoopStatus {
   };
   commands: {
     retrospective: string;
+    runDoctor: string;
     skillUsage: string;
     lessonCandidates: string;
     userModel: string;
@@ -600,6 +601,7 @@ export function buildHermesLearningLoopStatus(
     },
     commands: {
       retrospective: 'buddy run retrospective <run-id> --force --json',
+      runDoctor: 'buddy run doctor --json',
       skillUsage: 'buddy skills learning-usage --json',
       lessonCandidates: 'buddy lessons candidate list --json',
       userModel: 'buddy user-model show --json',
@@ -666,6 +668,7 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     '',
     'Commands:',
     `  Retrospective: ${status.commands.retrospective}`,
+    `  Run doctor: ${status.commands.runDoctor}`,
   );
 
   if (status.nextRetrospectiveRun) {

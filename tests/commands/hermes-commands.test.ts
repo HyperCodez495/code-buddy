@@ -314,6 +314,7 @@ describe('Hermes CLI commands', () => {
           doctor: string;
           messaging: string;
           mobile: string;
+          runDoctor: string;
           runtime: string;
           smoke: string;
           todo: string;
@@ -401,6 +402,7 @@ describe('Hermes CLI commands', () => {
         messaging: 'buddy hermes messaging status --json',
         mobile: 'buddy hermes mobile status --json',
         portal: 'buddy hermes portal status --json',
+        runDoctor: 'buddy run doctor --json',
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
@@ -455,6 +457,7 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Messaging: buddy hermes messaging status --json');
       expect(textOutput).toContain('Mobile: buddy hermes mobile status --json');
       expect(textOutput).toContain('Trajectories: buddy hermes trajectories status --json');
+      expect(textOutput).toContain('Run doctor: buddy run doctor --json');
       expect(textOutput).toContain('Real runtime smoke: buddy hermes runtime-smoke auto --json');
       expect(textOutput).toContain('Real browser smoke: buddy hermes browser-smoke auto --json');
       expect(textOutput).not.toContain('secret-overview-openai-key');
@@ -815,7 +818,10 @@ describe('Hermes CLI commands', () => {
           };
           skillUsage: { top: Array<{ recommendation: string; skillName: string }> };
         };
-        commands: { retrospective: string };
+        commands: {
+          retrospective: string;
+          runDoctor: string;
+        };
       };
 
       expect(output.kind).toBe('hermes_learning_loop_status');
@@ -924,6 +930,7 @@ describe('Hermes CLI commands', () => {
         expect.objectContaining({ recommendation: 'observe', skillName: 'web-audit' }),
       ]);
       expect(output.commands.retrospective).toBe('buddy run retrospective <run-id> --force --json');
+      expect(output.commands.runDoctor).toBe('buddy run doctor --json');
       expect(raw).not.toContain(privatePreference);
       const serialized = JSON.stringify(output);
       expect(serialized).not.toContain(tmpDir);

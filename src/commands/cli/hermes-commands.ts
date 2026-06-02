@@ -449,6 +449,7 @@ interface HermesOverviewStatus {
     portal: string;
     providers: string;
     protocols: string;
+    runDoctor: string;
     runtime: string;
     skills: string;
     smoke: string;
@@ -1056,6 +1057,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       portal: 'buddy hermes portal status --json',
       providers: 'buddy hermes providers status --json',
       protocols: 'buddy hermes protocols status --json',
+      runDoctor: 'buddy run doctor --json',
       runtime: 'buddy hermes runtime status --json',
       skills: 'buddy hermes skills status --json',
       smoke: 'buddy hermes smoke --json',
@@ -1176,6 +1178,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
     `  Messaging: ${status.commands.messaging}`,
     `  Mobile: ${status.commands.mobile}`,
     `  Trajectories: ${status.commands.trajectories}`,
+    `  Run doctor: ${status.commands.runDoctor}`,
     `  Aggregate local smoke: ${status.commands.smoke}`,
     `  Real runtime smoke: ${readiness.runtime.smokeCommand ?? 'n/a'}`,
     `  Real browser smoke: ${readiness.browser.smokeCommand ?? 'n/a'}`,
