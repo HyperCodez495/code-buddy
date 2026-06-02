@@ -2746,12 +2746,14 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((options: HermesCommandOptions) => {
       const readiness = buildHermesProtocolGatewayReadiness();
+      const command = 'buddy hermes protocols status --json';
 
       if (options.json) {
-        console.log(stableJson(readiness));
+        console.log(stableJson({ command, ...readiness }));
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesProtocolGatewayReadiness(readiness));
     });
 

@@ -1557,6 +1557,7 @@ describe('Hermes CLI commands', () => {
     await program.parseAsync(['node', 'test', 'hermes', 'protocols', 'status', '--json']);
 
     const output = JSON.parse(getLogOutput()) as {
+      command: string;
       kind: string;
       ok: boolean;
       smokeCommand: string;
@@ -1572,6 +1573,7 @@ describe('Hermes CLI commands', () => {
       };
     };
 
+    expect(output.command).toBe('buddy hermes protocols status --json');
     expect(output.kind).toBe('hermes_protocol_gateway_readiness');
     expect(output.ok).toBe(true);
     expect(output.summary.availableCount).toBeGreaterThanOrEqual(5);
@@ -1601,6 +1603,7 @@ describe('Hermes CLI commands', () => {
     registerHermesCommands(textProgram);
     await textProgram.parseAsync(['node', 'test', 'hermes', 'protocols', 'status']);
     const textOutput = getLogOutput();
+    expect(textOutput).toContain('Command: buddy hermes protocols status --json');
     expect(textOutput).toContain('    - POST /api/a2a/tasks/:id/cancel');
     expect(textOutput).toContain('    - POST /api/acp/tasks/:id/resume');
     expect(textOutput).toContain('Evidence: 5 file/test reference(s)');
