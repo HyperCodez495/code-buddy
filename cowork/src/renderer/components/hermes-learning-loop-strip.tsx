@@ -81,12 +81,21 @@ export interface HermesLearningLoopStatus {
       total: number;
     };
     skillCandidates: {
+      eligibleCandidateCount?: number;
+      ineligibleCandidateCount?: number;
       learningCandidateCount: number;
       root: string;
       samples?: Array<{
         candidateId: string;
         eligible: boolean;
+        installCommand?: string;
         inspectCommand: string;
+        promotion?: {
+          reason: string;
+          status: string;
+          successfulRunCount: number;
+          threshold: number;
+        };
         skillName: string;
       }>;
     };
@@ -235,6 +244,18 @@ export const HermesLearningLoopStrip: React.FC<{
     .slice(0, 3) ?? [];
   const hiddenStaleRunDoctorCount = runDoctorResult
     ? Math.max(0, runDoctorResult.summary.staleRunningRunCount - staleRunDoctorRows.length)
+    : 0;
+  const skillCandidateSamples = visibleStatus?.state.skillCandidates.samples?.slice(0, 3) ?? [];
+  const eligibleSkillCandidateCount = visibleStatus
+    ? visibleStatus.state.skillCandidates.eligibleCandidateCount
+      ?? skillCandidateSamples.filter((candidate) => candidate.eligible).length
+    : 0;
+  const ineligibleSkillCandidateCount = visibleStatus
+    ? visibleStatus.state.skillCandidates.ineligibleCandidateCount
+      ?? Math.max(0, visibleStatus.state.skillCandidates.learningCandidateCount - eligibleSkillCandidateCount)
+    : 0;
+  const hiddenSkillCandidateCount = visibleStatus
+    ? Math.max(0, visibleStatus.state.skillCandidates.learningCandidateCount - skillCandidateSamples.length)
     : 0;
 
   useEffect(() => {
@@ -422,6 +443,14 @@ export const HermesLearningLoopStrip: React.FC<{
                 count: visibleStatus.state.skillCandidates.learningCandidateCount,
               })}
             </span>
+            {visibleStatus.state.skillCandidates.learningCandidateCount > 0 ? (
+              <span className="rounded bg-warning/10 px-1 py-0.5 text-[9px] text-warning">
+                {t('fleet.hermesLearningLoop.skillCandidateReadinessChip', '{{eligible}} eligible / {{waiting}} waiting', {
+                  eligible: eligibleSkillCandidateCount,
+                  waiting: ineligibleSkillCandidateCount,
+                })}
+              </span>
+            ) : null}
           </div>
 
           {visibleStatus.summary.staleRunningRunCount > 0 ? (
@@ -638,6 +667,61 @@ export const HermesLearningLoopStrip: React.FC<{
               </div>
             ))}
           </div>
+
+          {skillCandidateSamples.length > 0 ? (
+            <div
+              className="mt-1.5 rounded border border-warning/30 bg-warning/10 px-2 py-1"
+              data-testid="hermes-learning-skill-candidates"
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2 text-[10px] text-warning">
+                <span className="min-w-0 truncate">
+                  {t('fleet.hermesLearningLoop.skillCandidatesTitle', 'Skill candidates')}
+                </span>
+                <span className="shrink-0 rounded bg-warning/10 px-1 py-0.5 text-[9px]">
+                  {t('fleet.hermesLearningLoop.skillCandidateReadinessChip', '{{eligible}} eligible / {{waiting}} waiting', {
+                    eligible: eligibleSkillCandidateCount,
+                    waiting: ineligibleSkillCandidateCount,
+                  })}
+                </span>
+              </div>
+              <div className="mt-1 space-y-1">
+                {skillCandidateSamples.map((candidate) => (
+                  <div
+                    key={candidate.candidateId}
+                    className="min-w-0 rounded bg-background/70 px-1.5 py-1 text-[9px] text-text-secondary"
+                  >
+                    <div className="flex min-w-0 items-center justify-between gap-2">
+                      <span className="min-w-0 truncate">{candidate.skillName}</span>
+                      <span className={candidate.eligible ? 'shrink-0 text-success' : 'shrink-0 text-warning'}>
+                        {candidate.promotion?.status ?? (candidate.eligible ? 'eligible' : 'not_eligible')}
+                      </span>
+                    </div>
+                    <div className="truncate text-text-muted">
+                      {t(
+                        'fleet.hermesLearningLoop.skillCandidateSampleMeta',
+                        '{{successful}}/{{threshold}} successful | {{reason}}',
+                        {
+                          reason: candidate.promotion?.reason ?? candidate.candidateId,
+                          successful: candidate.promotion?.successfulRunCount ?? '?',
+                          threshold: candidate.promotion?.threshold ?? '?',
+                        },
+                      )}
+                    </div>
+                    <code className="block truncate text-[9px] text-warning">
+                      {candidate.inspectCommand}
+                    </code>
+                  </div>
+                ))}
+                {hiddenSkillCandidateCount > 0 ? (
+                  <div className="truncate text-[9px] text-text-muted">
+                    {t('fleet.hermesLearningLoop.skillCandidateMore', '+ {{count}} more skill candidates', {
+                      count: hiddenSkillCandidateCount,
+                    })}
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
 
           {visibleStatus.reviewQueue && visibleStatus.reviewQueue.items.length > 0 ? (
             <div

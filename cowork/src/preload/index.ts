@@ -1917,8 +1917,23 @@ contextBridge.exposeInMainWorld('electronAPI', {
             total: number;
           };
           skillCandidates: {
+            eligibleCandidateCount?: number;
+            ineligibleCandidateCount?: number;
             learningCandidateCount: number;
             root: string;
+            samples?: Array<{
+              candidateId: string;
+              eligible: boolean;
+              installCommand?: string;
+              inspectCommand: string;
+              promotion?: {
+                reason: string;
+                status: string;
+                successfulRunCount: number;
+                threshold: number;
+              };
+              skillName: string;
+            }>;
           };
           skillUsage: {
             count: number;
@@ -5039,8 +5054,23 @@ declare global {
                 total: number;
               };
               skillCandidates: {
+                eligibleCandidateCount?: number;
+                ineligibleCandidateCount?: number;
                 learningCandidateCount: number;
                 root: string;
+                samples?: Array<{
+                  candidateId: string;
+                  eligible: boolean;
+                  installCommand?: string;
+                  inspectCommand: string;
+                  promotion?: {
+                    reason: string;
+                    status: string;
+                    successfulRunCount: number;
+                    threshold: number;
+                  };
+                  skillName: string;
+                }>;
               };
               skillUsage: {
                 count: number;

@@ -119,6 +119,8 @@ const learningStatus: HermesLearningLoopStatus = {
       total: 2,
     },
     skillCandidates: {
+      eligibleCandidateCount: 1,
+      ineligibleCandidateCount: 0,
       learningCandidateCount: 1,
       root: 'D:/workspace/.codebuddy/skill-candidates/learning',
       samples: [
@@ -126,6 +128,13 @@ const learningStatus: HermesLearningLoopStatus = {
           candidateId: 'skill-candidate-real',
           eligible: true,
           inspectCommand: 'buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json',
+          installCommand: 'buddy tools skill-candidate install .codebuddy/skill-candidates/learning/learned-search-view-file-bash --approved-by <name> --json',
+          promotion: {
+            reason: '2 successful observations meet the promotion threshold.',
+            status: 'eligible',
+            successfulRunCount: 2,
+            threshold: 2,
+          },
           skillName: 'learned-search-view-file-bash',
         },
       ],
@@ -212,6 +221,11 @@ describe('HermesLearningLoopStrip', () => {
     expect(strip?.textContent).toContain('lesson_candidate review is waiting behind lessonWritesRequireApproval.');
     expect(strip?.textContent).toContain('1 reinforced / 0 deprecated');
     expect(strip?.textContent).toContain('1 skill candidates');
+    expect(strip?.textContent).toContain('1 eligible / 0 waiting');
+    expect(strip?.querySelector('[data-testid="hermes-learning-skill-candidates"]')?.textContent)
+      .toContain('2/2 successful | 2 successful observations meet the promotion threshold.');
+    expect(strip?.querySelector('[data-testid="hermes-learning-skill-candidates"]')?.textContent)
+      .toContain('buddy tools skill-candidate inspect .codebuddy/skill-candidates/learning/learned-search-view-file-bash --json');
     expect(strip?.querySelector('[data-testid="hermes-learning-run-doctor"]')?.textContent)
       .toContain('1 stale / 2 running runs in last 6 inspected');
     expect(strip?.textContent).toContain('buddy run doctor --json --limit 6');
