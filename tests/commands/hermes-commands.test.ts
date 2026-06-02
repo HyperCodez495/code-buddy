@@ -328,6 +328,7 @@ describe('Hermes CLI commands', () => {
           runtime: string;
           smoke: string;
           todo: string;
+          todoFull: string;
           trajectories: string;
         };
       };
@@ -429,6 +430,7 @@ describe('Hermes CLI commands', () => {
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
+        todoFull: `buddy hermes todo --limit ${output.summary.featureParity.selectedTodoCount} --json`,
         trajectories: 'buddy hermes trajectories status --json',
       });
       expect(raw).not.toContain('secret-overview-openai-key');
@@ -446,7 +448,9 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Feature parity:');
       expect(textOutput).toContain('Tool parity:');
       expect(textOutput).toContain('Showing top 5/');
-      expect(textOutput).toContain('run buddy hermes todo --limit');
+      expect(textOutput).toContain(
+        `run buddy hermes todo --limit ${output.summary.featureParity.selectedTodoCount} --json`,
+      );
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('Providers: configured');
       expect(textOutput).toContain('Tool Gateway: configured');

@@ -464,6 +464,7 @@ interface HermesOverviewStatus {
     skills: string;
     smoke: string;
     todo: string;
+    todoFull: string;
     tools: string;
     trajectories: string;
   };
@@ -856,6 +857,9 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
   const skillsNextCommand = skills.candidateReview.nextInspectCommand ??
     (skills.candidateReview.totalCount > 0 ? skills.candidateReview.listCommand : skills.health.nextCommand);
   const skillsNextCandidate = skills.candidateReview.samples[0];
+  const todoFullCommand = todo.summary.hiddenTodoCount > 0
+    ? `buddy hermes todo --limit ${todo.summary.selectedTodoCount} --json`
+    : 'buddy hermes todo --json';
   const ok =
     diagnostics.ok &&
     diagnostics.providerReadiness.ok &&
@@ -1085,6 +1089,7 @@ async function buildHermesOverviewStatus(profileArg: string): Promise<HermesOver
       skills: 'buddy hermes skills status --json',
       smoke: 'buddy hermes smoke --json',
       todo: 'buddy hermes todo --json',
+      todoFull: todoFullCommand,
       tools: 'buddy hermes tools --json',
       trajectories: 'buddy hermes trajectories status --json',
     },
@@ -1179,7 +1184,7 @@ function renderHermesOverviewStatus(status: HermesOverviewStatus): string {
       lines.push(
         `  Showing top ${status.summary.featureParity.shownTodoCount}/` +
           `${status.summary.featureParity.selectedTodoCount} active todo(s); ` +
-          `run buddy hermes todo --limit ${status.summary.featureParity.selectedTodoCount} for the full active backlog.`,
+          `run ${status.commands.todoFull} for the full active backlog.`,
       );
     }
     for (const item of status.nextActions) {
