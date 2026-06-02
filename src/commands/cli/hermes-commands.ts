@@ -2384,12 +2384,19 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action(async (profileArg: string, options: HermesCommandOptions) => {
       const status = await buildHermesOverviewStatus(profileArg);
+      const profileSuffix = status.dispatchProfile === 'balanced' ? '' : ` ${status.dispatchProfile}`;
+      const command = `buddy hermes status${profileSuffix} --json`;
+      const payload = {
+        command,
+        ...status,
+      };
 
       if (options.json) {
-        console.log(stableJson(status));
+        console.log(stableJson(payload));
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesOverviewStatus(status));
     });
 

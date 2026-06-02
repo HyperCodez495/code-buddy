@@ -220,6 +220,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         kind: string;
         ok: boolean;
         requestedProfile: string;
@@ -337,6 +338,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes status safe --json');
       expect(output.kind).toBe('hermes_overview_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.requestedProfile).toBe('safe');
@@ -449,6 +451,7 @@ describe('Hermes CLI commands', () => {
       registerHermesCommands(textProgram);
       await textProgram.parseAsync(['node', 'test', 'hermes', 'status', 'safe']);
       const textOutput = getLogOutput();
+      expect(textOutput).toContain('Command: buddy hermes status safe --json');
       expect(textOutput).toContain('Hermes status:');
       expect(textOutput).toContain('Feature parity:');
       expect(textOutput).toContain('Tool parity:');
