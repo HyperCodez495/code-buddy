@@ -90,6 +90,9 @@ describe('Cowork public QA documentation privacy', () => {
     expect(publicCoworkText).toContain('## Real Validation');
     expect(publicCoworkText).toContain('COWORK_REAL_GPT55');
     expect(publicCoworkText).toContain('CODEBUDDY_REAL_GPT55_SERVER');
+    expect(publicCoworkText).toContain('### Publication Hardening');
+    expect(publicCoworkText).toContain('raw GPT-5.5');
+    expect(publicCoworkText).not.toContain('No functional bug was found in this pass');
     expect(publicCoworkText).toContain('## Screenshot And Privacy Policy');
   });
 

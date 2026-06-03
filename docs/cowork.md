@@ -154,9 +154,20 @@ Public-safe real-provider proof screenshots:
 
 ![Cowork test runner launching real GPT-5.5 server API proof](qa/code-buddy-studio/screenshots/public-test-runner-server-real-gpt55.png)
 
-No functional bug was found in this pass. The only fix made here is a
-documentation visibility fix: GitHub links now point at the actual lower-case
-`cowork/readme.md` path.
+### Publication Hardening
+
+This documentation pass found no Cowork runtime regression, but it did harden
+the public evidence trail:
+
+- GitHub entry links now point at the actual lower-case `cowork/readme.md`
+  path.
+- Real-provider proof screenshots use reviewed `public-*` crops; raw GPT-5.5
+  captures were removed from the tracked tree and ignored locally.
+- The GPT-5.5 Playwright producers now write cropped `public-*` targets by
+  default, so future opt-in replays do not regenerate publishable full-page
+  screenshots.
+- Public Cowork QA Markdown links are checked so the GitHub-facing docs do not
+  point at untracked `scratch/` artifacts.
 
 ### Hermes Local Smoke In Cowork
 
