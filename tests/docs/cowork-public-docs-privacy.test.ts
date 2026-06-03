@@ -41,6 +41,17 @@ describe('Cowork public QA documentation privacy', () => {
     expect(text).not.toMatch(/\/(?:Users|home)\/[^\s`]+/);
   });
 
+  it('does not publish local workstation paths in public QA text ledgers', () => {
+    const files = [publicCoworkDoc, ...publicTextFiles(publicCoworkQaDir)];
+
+    for (const file of files) {
+      const text = fs.readFileSync(file, 'utf8');
+      expect(text, file).not.toMatch(/[A-Z]:\\(?:Users|CascadeProjects)\\/i);
+      expect(text, file).not.toMatch(/\/(?:Users|home)\/[^\s`]+/);
+      expect(text, file).not.toContain('grok-cli-weekend');
+    }
+  });
+
   it('keeps the public Cowork overview reachable from GitHub entry points', () => {
     const rootReadmeText = fs.readFileSync(rootReadme, 'utf8');
     const coworkReadmeText = fs.readFileSync(coworkReadme, 'utf8');
