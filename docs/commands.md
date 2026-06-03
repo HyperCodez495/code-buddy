@@ -264,7 +264,8 @@ implemented `/api/mobile` route mount, bearer or pairing-code auth policy,
 read-only versus draft-only route counts, blocked operations, local approval
 queue state, and copy/paste `buddy run mobile-*` commands. It does not start a
 listener or print pairing codes; mobile execution and file mutations remain
-local-operator-gated.
+local-operator-gated. Pairing device labels are capped at 120 Unicode
+characters; oversized labels are rejected before any bearer token is minted.
 
 `buddy hermes trajectories status [query...] [--run-id <id>] [--json]`
 wraps the real RunStore trajectory surfaces in a Hermes-scoped compatibility
