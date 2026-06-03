@@ -3244,6 +3244,7 @@ describe('Hermes CLI commands', () => {
     await program.parseAsync(['node', 'test', 'hermes', 'doctor', 'safe']);
 
     const output = getLogOutput();
+    expect(output).toContain('Command: buddy hermes doctor safe --json');
     expect(output).toContain('Hermes Agent doctor:');
     expect(output).toContain('Active toolset: fleet.hermes.safe');
     expect(output).toContain('Effective runnable tools: view_file, web_search, web_fetch');
@@ -3282,6 +3283,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         diagnostics: {
           effectiveEnabledTools: string[];
           effectiveDisabledTools: string[];
@@ -3332,6 +3334,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes doctor balanced --json');
       expect(output.diagnostics.effectiveEnabledTools).toEqual(['view_file', 'create_file', 'bash', 'web_search', 'web_fetch']);
       expect(output.diagnostics.effectiveDisabledTools).toEqual(['git_push', 'delete_file']);
       expect(output.diagnostics.providerReadiness.ok).toBe(true);

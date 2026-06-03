@@ -2978,15 +2978,18 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .action((profileArg: string, options: HermesCommandOptions) => {
       const diagnostics = buildHermesAgentDiagnostics({ dispatchProfile: profileArg });
+      const command = `buddy hermes doctor ${profileArg} --json`;
 
       if (options.json) {
-        console.log(JSON.stringify({
+        console.log(stableJson({
+          command,
           requestedProfile: profileArg,
           diagnostics,
-        }, null, 2));
+        }));
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(`\nHermes Agent doctor: ${formatOk(diagnostics.ok)}`);
       if (profileArg !== diagnostics.dispatchProfile) {
         console.log(`  Requested: ${profileArg} (normalized to balanced)`);
