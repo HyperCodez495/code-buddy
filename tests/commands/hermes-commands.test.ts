@@ -793,6 +793,7 @@ describe('Hermes CLI commands', () => {
 
       const raw = getLogOutput();
       const output = JSON.parse(raw) as {
+        command: string;
         kind: string;
         recommendations: string[];
         schemaVersion: number;
@@ -875,6 +876,7 @@ describe('Hermes CLI commands', () => {
         };
       };
 
+      expect(output.command).toBe('buddy hermes learning status --limit 5 --json');
       expect(output.kind).toBe('hermes_learning_loop_status');
       expect(output.schemaVersion).toBe(1);
       expect(output.workDir).toBe('[workspace]');
@@ -1204,6 +1206,7 @@ describe('Hermes CLI commands', () => {
       await program.parseAsync(['node', 'test', 'hermes', 'learning', 'status']);
 
       const output = getLogOutput();
+      expect(output).toContain('Command: buddy hermes learning status --json');
       expect(output).toContain('Learning skill candidates: 2 (1 eligible, 1 not eligible)');
       expect(output).toContain('skill_candidate: 2 -> buddy tools skill-candidate list --eligible-only --json');
       expect(output).toContain('gate: skillCandidatesRequireReview');

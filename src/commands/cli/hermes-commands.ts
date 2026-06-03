@@ -2646,15 +2646,20 @@ export function registerHermesCommands(program: Command): void {
     .option('--json', 'output JSON')
     .option('--limit <n>', 'number of recent runs to inspect', '10')
     .action((options: HermesLearningStatusOptions) => {
+      const limit = parseOptionalPositiveInteger(options.limit, '--limit');
+      const command = limit === 10
+        ? 'buddy hermes learning status --json'
+        : `buddy hermes learning status --limit ${limit} --json`;
       const status = buildHermesLearningLoopStatus({
-        limit: parseOptionalPositiveInteger(options.limit, '--limit'),
+        limit,
       });
 
       if (options.json) {
-        console.log(stableJson(status));
+        console.log(stableJson({ command, ...status }));
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesLearningLoopStatus(status));
     });
 
