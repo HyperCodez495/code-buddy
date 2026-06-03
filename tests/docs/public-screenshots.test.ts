@@ -11,6 +11,10 @@ const publicScreenshotDocs = [
   path.join(repoRoot, 'README.md'),
   screenshotGalleryReadme,
 ] as const;
+const publicAnchorDocs = [
+  path.join(repoRoot, 'README.md'),
+  path.join(repoRoot, 'cowork', 'readme.md'),
+] as const;
 const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const jpegPrefix = Buffer.from([0xff, 0xd8, 0xff]);
 
@@ -44,6 +48,21 @@ function localReferenceTargets(text: string): string[] {
   );
 }
 
+function localAnchorTargets(text: string): string[] {
+  const markdownTargets = Array.from(
+    text.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g),
+    (match) => match[1].trim()
+  );
+  const htmlTargets = Array.from(
+    text.matchAll(/<a\s+[^>]*href=["']([^"']+)["'][^>]*>/gi),
+    (match) => match[1].trim()
+  );
+
+  return [...markdownTargets, ...htmlTargets].filter(
+    (target) => target.includes('#') && !/^(?:https?:|mailto:|data:)/i.test(target)
+  );
+}
+
 function expectResolvableLocalReference(sourceFile: string, target: string): void {
   const [pathTarget] = target.split('#');
   if (!pathTarget) return;
@@ -51,6 +70,55 @@ function expectResolvableLocalReference(sourceFile: string, target: string): voi
   const label = `${sourceFile} -> ${target}`;
   expect(path.isAbsolute(pathTarget), label).toBe(false);
   expect(fs.existsSync(path.resolve(path.dirname(sourceFile), pathTarget)), label).toBe(true);
+}
+
+function githubHeadingSlug(title: string, seen: Map<string, number>): string {
+  let slug = title
+    .replace(/\s+#+$/, '')
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/<[^>]*>/g, '')
+    .trim()
+    .toLowerCase()
+    .replace(/&amp;/g, '&')
+    .replace(/[^\p{L}\p{N}\s_-]/gu, '')
+    .replace(/\s/g, '-');
+
+  const count = seen.get(slug) ?? 0;
+  seen.set(slug, count + 1);
+  if (count > 0) slug = `${slug}-${count}`;
+  return slug;
+}
+
+function anchorsInMarkdown(filePath: string): Set<string> {
+  const text = fs.readFileSync(filePath, 'utf8');
+  const anchors = new Set<string>();
+  const seenHeadingSlugs = new Map<string, number>();
+
+  for (const match of text.matchAll(/\sid=["']([^"']+)["']/gi)) {
+    anchors.add(match[1]);
+  }
+
+  for (const line of text.split(/\r?\n/)) {
+    const match = /^(#{1,6})\s+(.+?)\s*$/.exec(line);
+    if (match) anchors.add(githubHeadingSlug(match[2], seenHeadingSlugs));
+  }
+
+  return anchors;
+}
+
+function expectResolvableLocalAnchor(sourceFile: string, target: string): void {
+  const [pathTarget, fragment] = target.split('#');
+  if (!fragment) return;
+
+  const targetFile = pathTarget
+    ? path.resolve(path.dirname(sourceFile), pathTarget)
+    : sourceFile;
+  const label = `${sourceFile} -> ${target}`;
+  const normalizedFragment = decodeURIComponent(fragment);
+
+  expect(path.isAbsolute(pathTarget), label).toBe(false);
+  expect(fs.existsSync(targetFile), label).toBe(true);
+  expect(anchorsInMarkdown(targetFile).has(normalizedFragment), label).toBe(true);
 }
 
 function expectValidPublicImage(sourceFile: string, target: string): void {
@@ -114,6 +182,23 @@ describe('public README screenshots', () => {
 
     expect(targetsByFile.get(path.join(repoRoot, 'README.md'))?.length).toBeGreaterThan(30);
     expect(targetsByFile.get(path.join(repoRoot, 'docs', 'screenshots', 'README.md'))).toHaveLength(14);
+  });
+
+  it('keeps GitHub-visible README anchor links resolvable', () => {
+    const anchorCountsByFile = new Map<string, number>();
+
+    for (const file of publicAnchorDocs) {
+      const text = fs.readFileSync(file, 'utf8');
+      const targets = localAnchorTargets(text);
+      anchorCountsByFile.set(file, targets.length);
+
+      for (const target of targets) {
+        expectResolvableLocalAnchor(file, target);
+      }
+    }
+
+    expect(anchorCountsByFile.get(path.join(repoRoot, 'README.md'))).toBe(5);
+    expect(anchorCountsByFile.get(path.join(repoRoot, 'cowork', 'readme.md'))).toBe(6);
   });
 
   it('keeps screenshot gallery text free of personal workstation details', () => {
