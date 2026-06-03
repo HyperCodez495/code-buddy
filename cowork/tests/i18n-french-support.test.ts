@@ -486,6 +486,7 @@ describe('French renderer i18n support', () => {
       'fleet.hermesMobileSupervision.blockedLabel',
       'fleet.hermesMobileSupervision.queueChip',
       'fleet.hermesMobileSupervision.pairingChip',
+      'fleet.hermesMobileSupervision.labelLimitChip',
       'fleet.hermesMobileSupervision.remoteChip',
       'fleet.hermesMobileSupervision.unavailable',
       'fleet.hermesMobileSupervision.loadFailed',

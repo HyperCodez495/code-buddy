@@ -36,6 +36,7 @@ export interface HermesMobileSupervisionReview {
   ok: boolean;
   pairing: {
     deviceLabel: string;
+    deviceLabelMaxChars: number;
     scopes: string[];
     status: 'preview_only';
     tokenIssued: boolean;
@@ -199,6 +200,7 @@ export async function getHermesMobileSupervisionForReview(
     ok: true,
     pairing: {
       deviceLabel: pairingState.pairing.deviceLabel,
+      deviceLabelMaxChars: pairingState.pairing.deviceLabelMaxChars,
       scopes: pairingState.pairing.scopes,
       status: pairingState.pairing.status,
       tokenIssued: pairingState.pairing.tokenIssued,
@@ -208,6 +210,7 @@ export async function getHermesMobileSupervisionForReview(
     recommendations: [
       'Start the embedded server before pairing a phone.',
       'Keep pairing and approval routes loopback-only for the local operator.',
+      `Keep mobile pairing device labels at or below ${pairingState.pairing.deviceLabelMaxChars} characters.`,
       'Mobile follow-up prompts stay draft-only until reviewed locally.',
     ],
     routeMount: {

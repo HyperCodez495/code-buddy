@@ -166,8 +166,8 @@ the public evidence trail:
 - The GPT-5.5 Playwright producers now write cropped `public-*` targets by
   default, so future opt-in replays do not regenerate publishable full-page
   screenshots.
-- Public Cowork QA Markdown links are checked so the GitHub-facing docs do not
-  point at untracked `scratch/` artifacts.
+- Public Cowork QA Markdown and HTML links are checked so the GitHub-facing
+  docs do not point at untracked `scratch/` artifacts.
 
 ### Hermes Local Smoke In Cowork
 

@@ -99,6 +99,7 @@ import {
 } from '../../observability/mobile-supervision-gateway-listener-shell.js';
 import {
   buildMobileSupervisionPairingState,
+  MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS,
   type MobileSupervisionPairingState,
 } from '../../observability/mobile-supervision-pairing-state.js';
 import {
@@ -536,6 +537,7 @@ interface HermesMobileSupervisionStatus {
   };
   pairing: {
     deviceLabel: string;
+    deviceLabelMaxChars: number;
     scopes: string[];
     status: MobileSupervisionPairingState['pairing']['status'];
     tokenIssued: boolean;
@@ -2010,6 +2012,7 @@ async function buildHermesMobileSupervisionStatus(
     },
     pairing: {
       deviceLabel: pairingState.pairing.deviceLabel,
+      deviceLabelMaxChars: pairingState.pairing.deviceLabelMaxChars,
       scopes: pairingState.pairing.scopes,
       status: pairingState.pairing.status,
       tokenIssued: pairingState.pairing.tokenIssued,
@@ -2027,6 +2030,7 @@ async function buildHermesMobileSupervisionStatus(
     recommendations: [
       'Start the local server before using a phone: buddy server --port 3000.',
       'Pairing-code and approval routes are local-operator-only; do not expose them directly over LAN.',
+      `Keep mobile pairing device labels at or below ${MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS} characters.`,
       'Mobile devices may read snapshots and submit draft prompts, but execution and file mutations remain local.',
       `Use ${gatewayCheckCommand} as a safe GET policy smoke before implementing any new route.`,
     ],
@@ -2042,6 +2046,7 @@ function renderHermesMobileSupervisionStatus(status: HermesMobileSupervisionStat
     `  Auth: ${status.auth.scheme}, scopes=${status.auth.scopes.join(', ')}, ttl=${status.auth.ttlSeconds}s`,
     `  Transport: ${status.transport.exposure}, remote execution ${status.transport.remoteExecution}, TLS required off-device`,
     `  Listener: ${status.listener.listener}, bind ${status.listener.bind.host}:${status.listener.bind.port} (${status.listener.bind.networkExposure})`,
+    `  Pairing label limit: ${status.pairing.deviceLabelMaxChars} characters`,
     `  Routes: ${status.summary.readOnlyEndpoints} read-only, ${status.summary.draftOnlyEndpoints} draft-only, ${status.summary.blockedOperations} blocked`,
     `  Approval queue: ready=${status.summary.readyReadOnly}, pending=${status.summary.pendingLocalApproval}, blocked=${status.summary.blockedQueueItems}`,
     `  Safety: autoDispatch=${status.approvalQueue.autoDispatch}; remoteExecutionDisabled=${status.approvalQueue.remoteExecutionDisabled}`,

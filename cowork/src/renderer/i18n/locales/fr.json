@@ -2436,6 +2436,7 @@
       "blockedLabel": "Bloques",
       "queueChip": "queue {{ready}}/{{total}} prets",
       "pairingChip": "pairing {{status}}",
+      "labelLimitChip": "label max {{count}} caracteres",
       "remoteChip": "execution distante {{state}}",
       "unavailable": "Le statut de supervision mobile Hermes n'est pas encore charge.",
       "loadFailed": "Chargement de la supervision mobile Hermes echoue"

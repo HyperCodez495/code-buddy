@@ -2,6 +2,7 @@ import { createHash, randomInt } from 'crypto';
 import type { MobileSupervisionGatewayListenerShell } from './mobile-supervision-gateway-listener-shell.js';
 
 export const MOBILE_SUPERVISION_PAIRING_STATE_SCHEMA_VERSION = 1;
+export const MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS = 120;
 
 export interface BuildMobileSupervisionPairingStateOptions {
   deviceLabel?: string;
@@ -21,6 +22,7 @@ export interface MobileSupervisionPairingState {
     acceptedByListener: false;
     codeFingerprint: string;
     deviceLabel: string;
+    deviceLabelMaxChars: number;
     expiresAt: string;
     persisted: false;
     previewCode: string;
@@ -66,6 +68,7 @@ export function buildMobileSupervisionPairingState(
       acceptedByListener: false,
       codeFingerprint: fingerprintPreviewCode(previewCode),
       deviceLabel,
+      deviceLabelMaxChars: MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS,
       expiresAt,
       persisted: false,
       previewCode,
@@ -90,6 +93,7 @@ export function buildMobileSupervisionPairingState(
     operatorChecklist: [
       'Show this preview code only on the local operator machine.',
       'Do not accept the code from a phone until a real loopback listener is explicitly started.',
+      `Keep device labels at or below ${MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS} characters; oversized labels are rejected before token minting.`,
       'Pairing must mint a short-lived bearer token only after local operator confirmation.',
       'The paired phone may read snapshots, recall packs and artifact metadata, but may not execute tools.',
       'Draft follow-up prompts remain local-review artifacts until an operator approves them.',
@@ -105,6 +109,7 @@ export function renderMobileSupervisionPairingState(
     `Mode: ${state.mode}`,
     `Status: ${state.pairing.status}`,
     `Device: ${state.pairing.deviceLabel}`,
+    `Device label limit: ${state.pairing.deviceLabelMaxChars} characters`,
     `Code: ${state.pairing.previewCode} (fingerprint ${state.pairing.codeFingerprint})`,
     `Expires: ${state.pairing.expiresAt} (${state.pairing.ttlSeconds}s)`,
     `Listener: ${state.listener.listenerStatus}, bind ${state.listener.bindStatus}, serverStarted=${state.listener.serverStarted}`,
@@ -161,5 +166,5 @@ function normalizeDeviceLabel(label: string | undefined): string {
   if (!trimmed) {
     return 'mobile-supervisor';
   }
-  return trimmed.slice(0, 64);
+  return Array.from(trimmed).slice(0, MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS).join('');
 }

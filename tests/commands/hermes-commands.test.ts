@@ -1694,6 +1694,7 @@ describe('Hermes CLI commands', () => {
         remoteExecutionDisabled: boolean;
       };
       pairing: {
+        deviceLabelMaxChars: number;
         status: string;
         tokenIssued: boolean;
       };
@@ -1743,6 +1744,7 @@ describe('Hermes CLI commands', () => {
       remoteExecutionDisabled: true,
     });
     expect(output.pairing).toMatchObject({
+      deviceLabelMaxChars: 120,
       status: 'preview_only',
       tokenIssued: false,
     });
@@ -1765,6 +1767,7 @@ describe('Hermes CLI commands', () => {
 
     const output = getLogOutput();
     expect(output).toContain('Command: buddy hermes mobile status <query> --json');
+    expect(output).toContain('Pairing label limit: 120 characters');
     expect(output).toContain('Commands:');
     expect(output).toContain('buddy hermes mobile status --json');
     expect(output).toContain(

@@ -8,13 +8,13 @@ import { buildMobileSupervisionSnapshot } from '../../observability/mobile-super
 import { buildMobileSupervisionGatewayReviewDraft } from '../../observability/mobile-supervision-gateway-policy.js';
 import { getActiveRunStore } from '../../observability/run-store.js';
 import { buildRunRecallPackAsync } from '../../observability/run-recall-pack.js';
+import { MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS } from '../../observability/mobile-supervision-pairing-state.js';
 
 export const mobileRouter = Router();
 
 const DEFAULT_PAIRING_CODE_TTL_MS = 5 * 60 * 1000;
 const MAX_PAIRING_CODE_TTL_MS = 15 * 60 * 1000;
 const MIN_PAIRING_CODE_TTL_MS = 50;
-const MAX_DEVICE_LABEL_CHARS = 120;
 
 /** Mint a fresh 6-digit pairing code with a CSPRNG (never the literal default). */
 function generatePairingCode(): string {
@@ -248,7 +248,7 @@ mobileRouter.post('/followup-draft/:id/cancel', loopbackOnlyMiddleware, (req: Re
 mobileRouter.post('/pair', (req: Request, res: Response) => {
   const code = typeof req.body?.code === 'string' ? req.body.code.trim() : '';
   const deviceLabel = typeof req.body?.deviceLabel === 'string' ? req.body.deviceLabel.trim() : '';
-  if (!code || !deviceLabel || !isWithinCharLimit(deviceLabel, MAX_DEVICE_LABEL_CHARS)) {
+  if (!code || !deviceLabel || !isWithinCharLimit(deviceLabel, MOBILE_SUPERVISION_DEVICE_LABEL_MAX_CHARS)) {
     res.status(400).json({ ok: false, error: 'Missing or invalid code or deviceLabel' });
     return;
   }

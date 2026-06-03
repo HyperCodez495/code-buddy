@@ -65,6 +65,7 @@ const readyMobileStatus: HermesMobileSupervisionReview = {
   ok: true,
   pairing: {
     deviceLabel: 'Cowork mobile supervisor',
+    deviceLabelMaxChars: 120,
     scopes: ['mobile:read', 'mobile:draft'],
     status: 'preview_only',
     tokenIssued: false,
@@ -121,6 +122,7 @@ describe('HermesMobileSupervisionStrip', () => {
     expect(strip?.textContent).toContain('/api/mobile/snapshot');
     expect(strip?.textContent).toContain('/api/mobile/followup-draft');
     expect(strip?.textContent).toContain('draft_followup_prompt');
+    expect(strip?.textContent).toContain('label max 120 chars');
     expect(strip?.textContent).toContain('remote execution disabled');
     expect(strip?.textContent).toContain('buddy hermes mobile status "mobile supervision" --json');
     expect(strip?.textContent).not.toContain('123456');

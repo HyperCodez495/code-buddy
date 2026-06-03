@@ -53,6 +53,7 @@ describe.skipIf(!hasBuiltMobileCore)('Hermes mobile supervision bridge real core
     );
     expect(summary?.pairing).toMatchObject({
       deviceLabel: 'Cowork mobile supervisor',
+      deviceLabelMaxChars: 120,
       status: 'preview_only',
       tokenIssued: false,
     });

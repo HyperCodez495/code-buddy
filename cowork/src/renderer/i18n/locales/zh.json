@@ -2423,6 +2423,7 @@
       "blockedLabel": "已阻止",
       "queueChip": "队列 {{ready}}/{{total}} 就绪",
       "pairingChip": "配对 {{status}}",
+      "labelLimitChip": "标签最多 {{count}} 字符",
       "remoteChip": "远程执行 {{state}}",
       "unavailable": "Hermes 移动监督状态尚未加载。",
       "loadFailed": "Hermes 移动监督加载失败"

@@ -70,6 +70,7 @@ describe('Hermes mobile supervision bridge', () => {
           buildMobileSupervisionPairingState: vi.fn(() => ({
             pairing: {
               deviceLabel: 'Cowork mobile supervisor',
+              deviceLabelMaxChars: 120,
               previewCode: '123456',
               scopes: ['mobile:read', 'mobile:draft'],
               status: 'preview_only',
@@ -119,6 +120,7 @@ describe('Hermes mobile supervision bridge', () => {
         remoteExecutionDisabled: true,
       },
       pairing: {
+        deviceLabelMaxChars: 120,
         status: 'preview_only',
         tokenIssued: false,
       },

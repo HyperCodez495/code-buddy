@@ -43,6 +43,7 @@ export interface HermesMobileSupervisionReview {
   ok: boolean;
   pairing: {
     deviceLabel: string;
+    deviceLabelMaxChars: number;
     scopes: string[];
     status: 'preview_only';
     tokenIssued: boolean;
@@ -193,6 +194,11 @@ export const HermesMobileSupervisionStrip: React.FC<{
             <span className="rounded bg-surface/80 px-1.5 py-0.5">
               {t('fleet.hermesMobileSupervision.pairingChip', 'pairing {{status}}', {
                 status: visibleStatus.pairing.status,
+              })}
+            </span>
+            <span className="rounded bg-surface/80 px-1.5 py-0.5">
+              {t('fleet.hermesMobileSupervision.labelLimitChip', 'label max {{count}} chars', {
+                count: visibleStatus.pairing.deviceLabelMaxChars,
               })}
             </span>
             <span className="rounded bg-surface/80 px-1.5 py-0.5">
