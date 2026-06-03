@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
@@ -15,6 +16,7 @@ const publicCoworkPlanningDocs = [
 const publicDocsDir = path.join(repoRoot, 'docs');
 const publicCoworkQaDir = path.join(repoRoot, 'docs', 'qa', 'code-buddy-studio');
 const publicCoworkQaReport = path.join(publicCoworkQaDir, 'feature-qa-report.json');
+const publicCoworkScreenshotDir = path.join(publicCoworkQaDir, 'screenshots');
 const publicMarkdownLinkFiles = [
   rootReadme,
   coworkReadme,
@@ -64,6 +66,55 @@ function markdownLocalTargets(text: string): string[] {
     .filter((target) => !/^(?:https?:|mailto:|#)/i.test(target));
 }
 
+function trackedPublicCoworkScreenshotFiles(): string[] {
+  const output = execFileSync('git', ['ls-files', 'docs/qa/code-buddy-studio/screenshots'], {
+    cwd: repoRoot,
+    encoding: 'utf8',
+  });
+
+  return output
+    .trim()
+    .split(/\r?\n/)
+    .filter(Boolean)
+    .map((file) => path.join(repoRoot, file));
+}
+
+function jpegDimensions(bytes: Buffer): { height: number; width: number } {
+  let offset = 2;
+
+  while (offset < bytes.length) {
+    while (bytes[offset] === 0xff) offset += 1;
+    const marker = bytes[offset];
+    offset += 1;
+
+    if (marker === 0xd9 || marker === 0xda) break;
+    if (marker === 0x01 || (marker >= 0xd0 && marker <= 0xd7)) continue;
+    if (offset + 2 > bytes.length) break;
+
+    const length = bytes.readUInt16BE(offset);
+    offset += 2;
+    if (length < 2 || offset + length - 2 > bytes.length) break;
+
+    const isStartOfFrame =
+      (marker >= 0xc0 && marker <= 0xc3) ||
+      (marker >= 0xc5 && marker <= 0xc7) ||
+      (marker >= 0xc9 && marker <= 0xcb) ||
+      (marker >= 0xcd && marker <= 0xcf);
+
+    if (isStartOfFrame) {
+      expect(length, 'JPEG start-of-frame segment length').toBeGreaterThanOrEqual(7);
+      return {
+        height: bytes.readUInt16BE(offset + 1),
+        width: bytes.readUInt16BE(offset + 3),
+      };
+    }
+
+    offset += length - 2;
+  }
+
+  throw new Error('Unable to read JPEG dimensions');
+}
+
 function expectReviewedImagePath(filePath: string, label: string): void {
   const bytes = fs.readFileSync(filePath);
   const extension = path.extname(filePath).toLowerCase();
@@ -79,6 +130,9 @@ function expectReviewedImagePath(filePath: string, label: string): void {
 
   if (extension === '.jpg' || extension === '.jpeg') {
     expect(bytes.subarray(0, jpegPrefix.length).equals(jpegPrefix), label).toBe(true);
+    const dimensions = jpegDimensions(bytes);
+    expect(dimensions.width, label).toBeGreaterThanOrEqual(400);
+    expect(dimensions.height, label).toBeGreaterThanOrEqual(240);
     return;
   }
 
@@ -184,6 +238,17 @@ describe('Cowork public QA documentation privacy', () => {
     for (const target of targets) {
       expect(path.isAbsolute(target), target).toBe(false);
       expectReviewedImagePath(path.resolve(repoRoot, target), target);
+    }
+  });
+
+  it('keeps every tracked public Cowork screenshot file valid for publication', () => {
+    const files = trackedPublicCoworkScreenshotFiles();
+
+    expect(files).toHaveLength(109);
+
+    for (const file of files) {
+      expect(file.startsWith(publicCoworkScreenshotDir), file).toBe(true);
+      expectReviewedImagePath(file, path.relative(repoRoot, file));
     }
   });
 
