@@ -121,7 +121,7 @@ Les preuves ont ete generees le 25 mai 2026 a partir du navigateur integre Codex
 
 | # | Fonctionnalite | Test effectue | Preuve | Capture |
 |---|---|---|---|---|
-| 1 | Accueil et surface de travail | Chargement de Studio sans action. La page d'accueil, la zone de prompt, le choix projet et les actions rapides sont visibles. | `testid:welcome-view` | ![Accueil et surface de travail](./screenshots/01-home-work-surface.png) |
+| 1 | Accueil et surface de travail | Chargement de Studio sans action. La page d'accueil, la zone de prompt, le choix projet et les actions rapides sont visibles. | `testid:welcome-view` | ![Accueil et surface de travail](./screenshots/01-home-work-surface.jpg) |
 | 2 | Raccourcis clavier | Clic sur le bouton d'aide raccourcis dans la barre de titre. Le dialogue des raccourcis s'ouvre. | `text:Raccourcis clavier` | ![Raccourcis clavier](./screenshots/02-shortcuts-dialog.png) |
 | 3 | Resume du presse-papiers | Ouverture du panneau, resume immediat du contenu clipboard mocke, toggle monitoring et envoi du resume vers le chat. | `testid:clipboard-summary-text` + `text:CLIPBOARD_PANEL_OK` | ![Clipboard, orchestrateur et Fleet utilises](./screenshots/36-clipboard-orchestrator-fleet-used.png) |
 | 4 | Voix, speech et TTS | Clic sur le bouton voix, ouverture de l'overlay micro, puis validation moteur via le bundle voice control, speech recognition, wake-word fallback, TTS OpenAI/Edge, audio tool, voice-to-code et pont Cowork voice bridge. | `testid:voice-overlay-mic` + `Voice / speech TTS bundle` + `164 ok / 0 ko` + `VoiceBridge protocol` | ![Bundle voix speech TTS](./screenshots/87-test-runner-voice-speech-tts-bundle.png) |

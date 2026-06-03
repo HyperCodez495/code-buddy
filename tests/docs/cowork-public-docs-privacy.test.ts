@@ -30,6 +30,8 @@ const inProgressCaptureCandidates = [
 const rawRealProviderScreenshotTargets = inProgressCaptureCandidates.map(
   (screenshotName) => `docs/qa/code-buddy-studio/screenshots/${screenshotName}`
 );
+const pngSignature = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+const jpegPrefix = Buffer.from([0xff, 0xd8, 0xff]);
 
 function publicTextFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -48,6 +50,28 @@ function markdownLocalTargets(text: string): string[] {
   return Array.from(text.matchAll(/!?\[[^\]]*]\(([^)]+)\)/g), (match) => match[1])
     .map((target) => target.trim())
     .filter((target) => !/^(?:https?:|mailto:|#)/i.test(target));
+}
+
+function expectReviewedImageFile(target: string): void {
+  const filePath = path.resolve(path.dirname(publicCoworkDoc), target);
+  const bytes = fs.readFileSync(filePath);
+  const extension = path.extname(filePath).toLowerCase();
+
+  expect(bytes.length, target).toBeGreaterThan(10_000);
+
+  if (extension === '.png') {
+    expect(bytes.subarray(0, pngSignature.length).equals(pngSignature), target).toBe(true);
+    expect(bytes.readUInt32BE(16), target).toBeGreaterThanOrEqual(400);
+    expect(bytes.readUInt32BE(20), target).toBeGreaterThanOrEqual(240);
+    return;
+  }
+
+  if (extension === '.jpg' || extension === '.jpeg') {
+    expect(bytes.subarray(0, jpegPrefix.length).equals(jpegPrefix), target).toBe(true);
+    return;
+  }
+
+  throw new Error(`Unsupported public screenshot extension: ${target}`);
 }
 
 describe('Cowork public QA documentation privacy', () => {
@@ -96,12 +120,12 @@ describe('Cowork public QA documentation privacy', () => {
     expect(publicCoworkText).toContain('## Screenshot And Privacy Policy');
   });
 
-  it('links only reviewed, existing screenshots from the public Cowork overview', () => {
+  it('links only reviewed, valid image screenshots from the public Cowork overview', () => {
     const text = fs.readFileSync(publicCoworkDoc, 'utf8');
     const targets = markdownImageTargets(text);
 
     expect(targets).toEqual([
-      'qa/code-buddy-studio/screenshots/01-home-work-surface.png',
+      'qa/code-buddy-studio/screenshots/01-home-work-surface.jpg',
       'qa/code-buddy-studio/screenshots/30-test-runner-window.png',
       'qa/code-buddy-studio/screenshots/109-test-runner-hermes-built-cli-real.png',
       'qa/code-buddy-studio/screenshots/41-permission-dialog-real-flow.png',
@@ -113,6 +137,7 @@ describe('Cowork public QA documentation privacy', () => {
     for (const target of targets) {
       expect(path.isAbsolute(target), target).toBe(false);
       expect(fs.existsSync(path.resolve(path.dirname(publicCoworkDoc), target)), target).toBe(true);
+      expectReviewedImageFile(target);
     }
   });
 

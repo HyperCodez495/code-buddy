@@ -59,7 +59,7 @@ screenshots remain excluded until the capture-review pass is complete.
 The home work surface is the default place to pick a workspace, start a new
 chat, resume a session, or use a quick prompt.
 
-![Cowork home work surface](qa/code-buddy-studio/screenshots/01-home-work-surface.png)
+![Cowork home work surface](qa/code-buddy-studio/screenshots/01-home-work-surface.jpg)
 
 ### Run Verification From The GUI
 
