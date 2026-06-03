@@ -48,6 +48,43 @@ npx playwright test e2e/cowork-smoke.spec.ts --reporter=list --workers=1
 Cowork itself requires Node.js 22 or newer. The root CLI still supports Node.js
 18 or newer.
 
+## Visual Tour
+
+These screenshots are public-safe captures from the QA workspace. They use
+synthetic prompts, local fixtures, or redacted paths; the real-provider
+screenshots remain excluded until the capture-review pass is complete.
+
+### Start A Session
+
+The home work surface is the default place to pick a workspace, start a new
+chat, resume a session, or use a quick prompt.
+
+![Cowork home work surface](qa/code-buddy-studio/screenshots/01-home-work-surface.png)
+
+### Run Verification From The GUI
+
+Open `Tests & executions` from the left navigation to run typecheck, lint,
+unit tests, E2E checks, real-provider opt-in checks, and Hermes smoke bundles.
+The panel separates safe, manual, and real checks so public docs can cite
+exactly which proof was run.
+
+![Cowork test runner catalog](qa/code-buddy-studio/screenshots/30-test-runner-window.png)
+
+### Check Hermes From Cowork
+
+Hermes rows in the test runner rebuild the CLI, run real local smoke checks,
+and show reproducible command output without printing private checkout paths.
+
+![Hermes built CLI real smoke from Cowork](qa/code-buddy-studio/screenshots/109-test-runner-hermes-built-cli-real.png)
+
+### Review Tool Permissions
+
+Permission dialogs show the requested tool, input, scoped rule suggestion, and
+allow/deny choices before a command is approved. This is the normal supervised
+path for shell, file, and computer-use operations.
+
+![Cowork permission review dialog](qa/code-buddy-studio/screenshots/41-permission-dialog-real-flow.png)
+
 ## ChatGPT Subscription Route
 
 Code Buddy can use a ChatGPT Plus / Pro login as a flat-fee backend for
@@ -188,10 +225,9 @@ Before committing or publishing a screenshot:
 5. Keep full-page screenshots out of the public README unless they have been
    manually reviewed.
 
-This page deliberately documents the reproducible commands and results instead
-of embedding screenshots while the capture-review pass is still in progress.
-Fresh screenshots from a private workstation should stay as QA evidence until
-they pass the same manual privacy review.
+This page deliberately embeds only screenshots that have passed a manual public
+review. Fresh screenshots from a private workstation should stay as QA evidence
+until they pass the same manual privacy review.
 
 ## Useful Entry Points
 

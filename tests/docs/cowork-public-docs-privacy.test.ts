@@ -23,6 +23,10 @@ function publicTextFiles(dir: string): string[] {
   });
 }
 
+function markdownImageTargets(text: string): string[] {
+  return Array.from(text.matchAll(/!\[[^\]]*]\(([^)]+)\)/g), (match) => match[1]);
+}
+
 describe('Cowork public QA documentation privacy', () => {
   it('does not publish private ChatGPT account identifiers in text ledgers', () => {
     const files = [publicCoworkDoc, ...publicTextFiles(publicCoworkQaDir)];
@@ -59,10 +63,28 @@ describe('Cowork public QA documentation privacy', () => {
 
     expect(rootReadmeText).toContain('[Cowork Desktop](docs/cowork.md)');
     expect(coworkReadmeText).toContain('[`docs/cowork.md`](../docs/cowork.md)');
+    expect(publicCoworkText).toContain('## Visual Tour');
     expect(publicCoworkText).toContain('## Real Validation');
     expect(publicCoworkText).toContain('COWORK_REAL_GPT55');
     expect(publicCoworkText).toContain('CODEBUDDY_REAL_GPT55_SERVER');
     expect(publicCoworkText).toContain('## Screenshot And Privacy Policy');
+  });
+
+  it('links only reviewed, existing screenshots from the public Cowork overview', () => {
+    const text = fs.readFileSync(publicCoworkDoc, 'utf8');
+    const targets = markdownImageTargets(text);
+
+    expect(targets).toEqual([
+      'qa/code-buddy-studio/screenshots/01-home-work-surface.png',
+      'qa/code-buddy-studio/screenshots/30-test-runner-window.png',
+      'qa/code-buddy-studio/screenshots/109-test-runner-hermes-built-cli-real.png',
+      'qa/code-buddy-studio/screenshots/41-permission-dialog-real-flow.png',
+    ]);
+
+    for (const target of targets) {
+      expect(path.isAbsolute(target), target).toBe(false);
+      expect(fs.existsSync(path.resolve(path.dirname(publicCoworkDoc), target)), target).toBe(true);
+    }
   });
 
   it('keeps in-progress real-provider capture candidates out of the GitHub-facing overview', () => {
@@ -72,6 +94,6 @@ describe('Cowork public QA documentation privacy', () => {
       expect(text).not.toContain(screenshotName);
     }
 
-    expect(text).toContain('capture-review pass is still in progress');
+    expect(text).toMatch(/real-provider\s+screenshots remain excluded until the capture-review pass is complete/);
   });
 });
