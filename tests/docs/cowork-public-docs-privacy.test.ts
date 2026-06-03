@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { describe, expect, it } from 'vitest';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
+const gitignoreFile = path.join(repoRoot, '.gitignore');
 const rootReadme = path.join(repoRoot, 'README.md');
 const coworkReadme = path.join(repoRoot, 'cowork', 'readme.md');
 const publicCoworkDoc = path.join(repoRoot, 'docs', 'cowork.md');
@@ -26,6 +27,9 @@ const inProgressCaptureCandidates = [
   '48-test-runner-cowork-real-gpt55.png',
   '49-test-runner-server-real-gpt55.png',
 ] as const;
+const rawRealProviderScreenshotTargets = inProgressCaptureCandidates.map(
+  (screenshotName) => `docs/qa/code-buddy-studio/screenshots/${screenshotName}`
+);
 
 function publicTextFiles(dir: string): string[] {
   const entries = fs.readdirSync(dir, { withFileTypes: true });
@@ -150,6 +154,14 @@ describe('Cowork public QA documentation privacy', () => {
 
     const text = fs.readFileSync(publicCoworkDoc, 'utf8');
     expect(text).toMatch(/raw real-provider\s+screenshots remain excluded until the capture-review pass is complete/);
+  });
+
+  it('keeps raw real-provider screenshots ignored by git', () => {
+    const text = fs.readFileSync(gitignoreFile, 'utf8');
+
+    for (const target of rawRealProviderScreenshotTargets) {
+      expect(text, target).toContain(target);
+    }
   });
 
   it('writes real-provider proof screenshots to public-safe targets', () => {

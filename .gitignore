@@ -183,3 +183,8 @@ scratch/*-state.json
 scratch/*.png
 scratch/*.xlsx
 scratch/computer-use-runs/
+
+# Raw real-provider screenshots are QA evidence only. Publish reviewed public-* crops instead.
+docs/qa/code-buddy-studio/screenshots/29-real-gpt55-cowork-gui.png
+docs/qa/code-buddy-studio/screenshots/48-test-runner-cowork-real-gpt55.png
+docs/qa/code-buddy-studio/screenshots/49-test-runner-server-real-gpt55.png
