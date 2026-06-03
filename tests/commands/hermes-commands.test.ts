@@ -1649,11 +1649,16 @@ describe('Hermes CLI commands', () => {
       'mobile',
       'supervision',
       'gateway',
+      '--source',
+      'cowork',
+      '--limit',
+      '5',
       '--json',
     ]);
 
     const raw = getLogOutput();
     const output = JSON.parse(raw) as {
+      command: string;
       kind: string;
       schemaVersion: number;
       ok: boolean;
@@ -1699,6 +1704,7 @@ describe('Hermes CLI commands', () => {
       };
     };
 
+    expect(output.command).toBe('buddy hermes mobile status <query> --source <source> --limit 5 --json');
     expect(output.kind).toBe('hermes_mobile_supervision_status');
     expect(output.schemaVersion).toBe(1);
     expect(output.ok).toBe(true);
@@ -1758,6 +1764,7 @@ describe('Hermes CLI commands', () => {
     await program.parseAsync(['node', 'test', 'hermes', 'mobile', 'status', 'mobile', 'supervision']);
 
     const output = getLogOutput();
+    expect(output).toContain('Command: buddy hermes mobile status <query> --json');
     expect(output).toContain('Commands:');
     expect(output).toContain('buddy hermes mobile status --json');
     expect(output).toContain(

@@ -2734,13 +2734,28 @@ export function registerHermesCommands(program: Command): void {
     .option('--source <source>', 'filter by source/channel/tag (repeatable: cli, cowork, fleet, scheduled, mobile)', collectHermesOption, [])
     .option('--json', 'output JSON')
     .action(async (queryParts: string[] | undefined, options: HermesMobileStatusOptions) => {
+      const limit = parseOptionalPositiveInteger(options.limit, '--limit') ?? 20;
+      const commandParts = ['buddy hermes mobile status'];
+      if ((queryParts ?? []).join(' ').trim()) {
+        commandParts.push('<query>');
+      }
+      const sourceFilters = options.source ?? [];
+      for (let index = 0; index < sourceFilters.length; index++) {
+        commandParts.push('--source <source>');
+      }
+      if (limit !== 20) {
+        commandParts.push(`--limit ${limit}`);
+      }
+      commandParts.push('--json');
+      const command = commandParts.join(' ');
       const status = await buildHermesMobileSupervisionStatus(queryParts ?? [], options);
 
       if (options.json) {
-        console.log(stableJson(status));
+        console.log(stableJson({ command, ...status }));
         return;
       }
 
+      console.log(`Command: ${command}`);
       console.log(renderHermesMobileSupervisionStatus(status));
     });
 
