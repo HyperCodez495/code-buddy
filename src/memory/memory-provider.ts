@@ -39,7 +39,14 @@ export interface MemoryProvider {
 
 export { LocalMemoryProvider } from './local-memory-provider.js';
 
-import { Mem0MemoryProvider, HonchoMemoryProvider, SupermemoryMemoryProvider } from './adapters/network-memory-adapters.js';
+import {
+  Mem0MemoryProvider,
+  HonchoMemoryProvider,
+  SupermemoryMemoryProvider,
+  OpenVikingMemoryProvider,
+  RetainDBMemoryProvider,
+} from './adapters/network-memory-adapters.js';
+import { ByteRoverMemoryProvider } from './adapters/cli-memory-adapters.js';
 
 /**
  * Registry of memory providers. The agent and any caller resolve the active
@@ -54,6 +61,9 @@ export class MemoryProviderRegistry {
     this.register(new Mem0MemoryProvider());
     this.register(new HonchoMemoryProvider());
     this.register(new SupermemoryMemoryProvider());
+    this.register(new OpenVikingMemoryProvider());
+    this.register(new RetainDBMemoryProvider());
+    this.register(new ByteRoverMemoryProvider());
 
     const envProvider = process.env.CODEBUDDY_MEMORY_PROVIDER;
     if (envProvider && this.has(envProvider)) {

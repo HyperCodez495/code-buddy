@@ -80,6 +80,8 @@ import {
 import {
   buildHermesMemoryProvidersReadiness,
   renderHermesMemoryProvidersReadiness,
+  probeMemoryProvider,
+  renderHermesMemoryProbe,
 } from '../../agent/hermes-memory-providers.js';
 import {
   buildHermesLearningLoopStatus,
@@ -2639,6 +2641,22 @@ export function registerHermesCommands(program: Command): void {
 
       console.log(`Command: ${command}`);
       console.log(renderHermesMemoryProvidersReadiness(readiness));
+    });
+
+  memory
+    .command('probe [provider]')
+    .description('Live round-trip test: write+read a marker through a memory provider (defaults to the active one)')
+    .option('--json', 'output JSON')
+    .action(async (provider: string | undefined, options: HermesCommandOptions) => {
+      const result = await probeMemoryProvider(provider);
+      const command = `buddy hermes memory probe${provider ? ` ${provider}` : ''} --json`;
+      if (options.json) {
+        console.log(stableJson({ command, ...result }));
+        return;
+      }
+      console.log(`Command: ${command}`);
+      console.log(renderHermesMemoryProbe(result));
+      if (!result.ok) process.exitCode = 1;
     });
 
   const learning = hermes

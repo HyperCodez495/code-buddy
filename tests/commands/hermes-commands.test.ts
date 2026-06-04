@@ -613,12 +613,18 @@ describe('Hermes CLI commands', () => {
   });
 
   it('prints Hermes memory provider readiness without leaking credential values', async () => {
-    const keys = ['CODEBUDDY_MEMORY_PROVIDER', 'MEM0_API_KEY', 'MEM0_BASE_URL'];
+    const keys = [
+      'CODEBUDDY_MEMORY_PROVIDER', 'MEM0_API_KEY', 'MEM0_BASE_URL',
+      'HONCHO_API_KEY', 'HONCHO_BASE_URL', 'SUPERMEMORY_API_KEY', 'SUPERMEMORY_BASE_URL',
+      'OPENVIKING_ENDPOINT', 'OPENVIKING_API_KEY', 'RETAINDB_API_KEY', 'RETAINDB_BASE_URL',
+    ];
     const originalEnv = new Map(keys.map((key) => [key, process.env[key]]));
     const program = createProgram();
     registerHermesCommands(program);
 
     try {
+      // Clear every external-provider key so the fallback set is deterministic.
+      for (const key of keys) delete process.env[key];
       process.env.CODEBUDDY_MEMORY_PROVIDER = 'mem0';
       process.env.MEM0_API_KEY = 'secret-mem0-token';
       process.env.MEM0_BASE_URL = 'https://memory.example.test';
@@ -651,8 +657,12 @@ describe('Hermes CLI commands', () => {
       expect(output.readiness.activeProviderId).toBe('mem0');
       expect(output.readiness.configuredRemoteCount).toBeGreaterThanOrEqual(1);
       expect(output.readiness.configuredRemoteProviderIds).toContain('mem0');
-      expect(output.readiness.fallbackProviderIds).toEqual(expect.arrayContaining(['honcho', 'supermemory']));
-      expect(output.readiness.missingOfficialProviderIds).toContain('byterover');
+      expect(output.readiness.fallbackProviderIds).toEqual(
+        expect.arrayContaining(['honcho', 'openviking', 'retaindb', 'byterover', 'supermemory']),
+      );
+      // byterover is now a registered adapter, not a missing one.
+      expect(output.readiness.missingOfficialProviderIds).not.toContain('byterover');
+      expect(output.readiness.missingOfficialProviderIds).toHaveLength(0);
       expect(output.readiness.providers).toEqual(
         expect.arrayContaining([
           expect.objectContaining({
@@ -662,7 +672,7 @@ describe('Hermes CLI commands', () => {
           }),
           expect.objectContaining({
             id: 'byterover',
-            status: 'missing',
+            status: 'fallback',
           }),
         ]),
       );
@@ -676,9 +686,10 @@ describe('Hermes CLI commands', () => {
       const textOutput = getLogOutput();
       expect(textOutput).toContain('Command: buddy hermes memory status --json');
       expect(textOutput).toContain('Configured remote: 1 (mem0)');
-      expect(textOutput).toContain('Local-fallback adapters: 2 (honcho, supermemory)');
-      expect(textOutput).toContain('Remediation: Set HONCHO_API_KEY before relying on the Honcho remote adapter.');
-      expect(textOutput).toContain('Remediation: Add a ByteRover adapter before claiming full Hermes memory-provider parity.');
+      expect(textOutput).toContain('Local-fallback adapters: 5 (honcho, openviking, retaindb, byterover, supermemory)');
+      expect(textOutput).toContain('Out of native-TS scope: 2 (hindsight, holographic)');
+      expect(textOutput).toContain('HONCHO_BASE_URL');
+      expect(textOutput).toContain('npm install -g byterover-cli');
       expect(textOutput).not.toContain('secret-mem0-token');
       expect(textOutput).not.toContain('memory.example.test');
     } finally {
