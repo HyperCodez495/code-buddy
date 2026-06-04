@@ -306,7 +306,7 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts user-model show --json',
     ],
     notes: '6 of 8 official providers are adapted with real upstream contracts (paths/bodies from real plugins/SDKs): Mem0 (self-host REST + cloud), Honcho (v3), OpenViking (/api/v1), RetainDB (cloud), Supermemory (v3 cloud), ByteRover (brv CLI). All are registered and fall back to local memory until configured. `buddy hermes memory probe` runs a live write->read round-trip against a configured instance (the discriminating test, beyond shape tests). Hindsight (Python SDK/embedded daemon) and Holographic (in-process Python SQLite+HRR) are deliberately OUT of native-TS scope: no network/CLI boundary, so a TS shim would be parity-by-label. Self-host guide: docs/hermes-memory-providers-selfhost.md. Cloud providers (Supermemory/RetainDB) are implemented but not live-validated (no account).',
-    nextWork: 'Live-validate Mem0/Honcho/OpenViking against a self-hosted instance via `buddy hermes memory probe` (e.g. on a 24/7 Linux/Tailscale host), then validate the cloud providers (Supermemory/RetainDB) against a real account. Hindsight/Holographic stay upstream-only (Python in-process) by design.',
+    nextWork: 'Honcho is LIVE-VALIDATED against a real self-hosted Docker instance (probe PASS; real v3 endpoints confirmed in server logs). Remaining: live-validate Mem0/OpenViking (point their LLM extraction at a local Ollama) and ByteRover (brv CLI) via `buddy hermes memory probe`; cloud providers (Supermemory/RetainDB) need a real account. Hindsight/Holographic stay upstream-only (Python in-process) by design.',
   },
   {
     id: 'skills',

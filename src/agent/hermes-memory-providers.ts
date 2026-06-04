@@ -77,7 +77,10 @@ export async function probeMemoryProvider(
 
   const token = options.token ?? `cb-probe-${now().getTime().toString(36)}`;
   const key = 'codebuddy-memory-probe';
-  const value = `Code Buddy memory probe marker ${token}`;
+  // Phrase the marker as a retainable fact so extraction-based backends
+  // (Mem0/OpenViking run an LLM that keeps "facts", not arbitrary strings)
+  // are more likely to store and surface the token on read-back.
+  const value = `Code Buddy connector self-test: the validation token is ${token}. Please remember this exact token.`;
 
   let wrote = false;
   let retrieved = false;
