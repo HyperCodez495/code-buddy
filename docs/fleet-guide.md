@@ -1178,6 +1178,79 @@ La fleet Code Buddy reste le brain ; OpenClaw apporte les canaux.
 
 ---
 
+## Cross-host round-trip — validated end-to-end (2026-06-04)
+
+The cross-host POC ("Niveau 2": one Code Buddy on machine A drives another
+on machine B over Tailscale) is validated end-to-end with a **100% local
+LLM** on the receiving side — a Windows workstation → `ministar-linux`
+(Tailscale `100.98.18.76`), answered by ministar's local Ollama
+`devstral-small-2:24b`. Connect+auth **58 ms**, `peer.chat` answer
+**15–22 s**, **$0**. A real coding task (a `chunk<T>` implementation) was
+also delegated and returned over the same channel.
+
+### The gotcha that blocks the naïve setup
+
+`peer.chat` — and every `peer.*` method — requires the **`peer:invoke`**
+scope. **`--no-auth` does NOT grant it.** A no-auth client is auto-assigned
+`['chat','tools','sessions','memory']` only (`handler.ts`), so a `--no-auth`
+peer answers `chat` but rejects `peer.chat` with `FORBIDDEN`. The supported
+cross-host path is therefore **auth-enabled + a scoped JWT**, not
+`--no-auth`. (This is almost certainly why earlier cross-host attempts
+stalled — they reached for `--no-auth`, which structurally cannot grant
+`peer:invoke`.)
+
+### Recipe
+
+Receiving peer (machine B) — auth enabled (omit `--no-auth`), local LLM wired:
+
+```bash
+JWT_SECRET=<shared-secret> \
+OLLAMA_HOST=localhost:11434 \
+CODEBUDDY_PEER_PROVIDER=ollama \
+CODEBUDDY_PEER_MODEL=devstral-small-2:24b-instruct-2512-q4_K_M \
+buddy server --port 3010 --host 0.0.0.0
+# boot log proves wiring: "[fleet] peer.chat wired: ollama (...)" + "WebSocket: Enabled (/ws)"
+```
+
+Calling peer (machine A) — mint a short-TTL JWT carrying `peer:invoke` with
+the SAME `JWT_SECRET`, then drive `FleetListener`:
+
+```bash
+JWT_SECRET=<shared-secret> FLEET_PEER_URL=ws://<hostB>:3010/ws \
+  npx tsx scripts/fleet-roundtrip-smoke.ts "your prompt"
+```
+
+`scripts/fleet-roundtrip-smoke.ts` mints the token with the codebase's own
+`generateToken` (so the peer's `verifyToken` accepts it), connects to `/ws`,
+runs `peer.describe` to confirm the handshake, then a `peer.chat` one-shot,
+and saves the request+response artifact.
+
+### Why it connects cleanly across hosts
+
+- **WS path/port**: the scoped RPC handler is mounted at **`/ws` on the HTTP
+  port** (not a separate port). `--port 3010` → `ws://host:3010/ws`.
+- **Origin gate**: a headless Node `ws` client sends no `Origin` header, so
+  the GHSA-5wcw-8jjv-m286 origin check (`handler.ts`) allows it — the gate
+  rejects *known-bad* origins, not absent ones.
+- **JWT scopes**: `authenticate {token}` sets `state.scopes =
+  decoded.scopes` — the JWT is the scope-granting mechanism, fully
+  config-only (no code change; `--no-auth` is left untouched).
+
+### Notes
+
+- Use a **fast** model on the answering peer; `devstral-small-2:24b` /
+  `qwen3.6:27b` return in seconds. Large dense models can exceed the default
+  request timeout — raise `request()`'s `timeoutMs` or pick a faster model.
+- A receiving peer whose `node_modules` were built for a different Node major
+  prints a `better-sqlite3 NODE_MODULE_VERSION` warning and `database: error`
+  health — harmless for `peer.chat` (no DB needed); `npm rebuild
+  better-sqlite3` clears it.
+- For ongoing use, rotate the shared `JWT_SECRET` (the validation above used a
+  throwaway secret) and consider per-spoke keys; **V2.0** federated identity
+  (above) removes the shared-secret requirement.
+
+---
+
 ## See also
 
 - [`CHANGELOG.md`](../CHANGELOG.md) — release notes per phase
@@ -1188,6 +1261,7 @@ La fleet Code Buddy reste le brain ; OpenClaw apporte les canaux.
 - [`docs/configuration.md`](configuration.md) — full env var reference
 - `src/fleet/peer-chat-bridge.ts` — bridge implementation
 - `src/fleet/peer-chat-client-factory.ts` — env-driven detection
+- `scripts/fleet-roundtrip-smoke.ts` — cross-host round-trip smoke test (this section)
 - `src/server/websocket/peer-rpc.ts` — registry + dispatcher
 - `claude-et-patrice/propositions/AUDIT-COMPACTION-CLAUDE-CODE-2026-05-04.md` —
   comparative audit that informed two recent fixes

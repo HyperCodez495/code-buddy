@@ -1,6 +1,7 @@
 # Test/debug artifacts
 *.log
 *.txt
+fleet-*-artifact.json
 !LICENSE
 !README.md
 full-test-log*.txt
