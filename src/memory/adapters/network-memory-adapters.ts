@@ -27,7 +27,13 @@ import { logger } from '../../utils/logger.js';
  * as a TS SQLite store would be parity-by-label, not real parity.
  */
 
-const DEFAULT_TIMEOUT_MS = 15_000;
+// Memory backends can be LLM-backed (Mem0/OpenViking extract facts via an LLM
+// on write), so the round-trip is often 10-20s. Default generously; tune with
+// CODEBUDDY_MEMORY_HTTP_TIMEOUT_MS.
+const DEFAULT_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.CODEBUDDY_MEMORY_HTTP_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 30_000;
+})();
 
 interface HttpRequest {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE';
