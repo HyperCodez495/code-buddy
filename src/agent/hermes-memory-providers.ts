@@ -1,4 +1,4 @@
-import { getMemoryProviderRegistry } from '../memory/memory-provider.js';
+import { getMemoryProviderRegistry, LocalMemoryProvider } from '../memory/memory-provider.js';
 
 export type HermesMemoryProviderStatus = 'available' | 'configured' | 'fallback' | 'missing';
 
@@ -19,6 +19,12 @@ export interface HermesMemoryProbeResult {
   remote: boolean;
   wrote: boolean;
   retrieved: boolean;
+  /**
+   * True when the provider is remote-configured but the marker actually landed
+   * in the LOCAL fallback store — i.e. the remote silently failed. Guards
+   * against a false "remote PASS" when the backend is unreachable.
+   */
+  fellBackToLocal: boolean;
   /** Bounded, non-secret sample of what came back (marker text only). */
   retrievedSample?: string;
   /**
@@ -61,6 +67,7 @@ export async function probeMemoryProvider(
       remote: false,
       wrote: false,
       retrieved: false,
+      fellBackToLocal: false,
       verdict: 'fail',
       ok: false,
       error: `Unknown or out-of-scope memory provider: ${id}. Registered: ${registry.list().join(', ')}.`,
@@ -109,9 +116,31 @@ export async function probeMemoryProvider(
     error = err instanceof Error ? err.message : String(err);
   }
 
+  // Integrity guard: when the provider is remote-configured, detect a SILENT
+  // fallback to local memory. Adapters write to EITHER the remote OR the local
+  // fallback (never both), so if this run's unique token shows up in the local
+  // store, the remote call actually failed and degraded to local — which must
+  // NOT be reported as a remote PASS.
+  let fellBackToLocal = false;
+  if (remote && wrote) {
+    try {
+      const local = new LocalMemoryProvider();
+      await local.initialize();
+      const localHits = await local.getRelevantMemories(token, 5);
+      fellBackToLocal = localHits.some((h) => h.value.includes(token));
+    } catch {
+      /* best-effort; absence of evidence is not evidence of fallback */
+    }
+  }
+
   let verdict: 'pass' | 'pending' | 'fail';
   if (!wrote) {
     verdict = 'fail';
+  } else if (remote && fellBackToLocal) {
+    verdict = 'fail';
+    notes.push(
+      'Remote is configured but the marker landed in LOCAL memory — the remote backend silently fell back (unreachable/erroring). This is NOT a remote pass. Check the service, base URL, and credentials, then re-run.',
+    );
   } else if (retrieved) {
     verdict = 'pass';
   } else if (remote) {
@@ -136,6 +165,7 @@ export async function probeMemoryProvider(
     remote,
     wrote,
     retrieved,
+    fellBackToLocal,
     ...(retrievedSample ? { retrievedSample } : {}),
     verdict,
     ok: verdict !== 'fail',
@@ -148,7 +178,13 @@ export function renderHermesMemoryProbe(result: HermesMemoryProbeResult): string
   const lines = [
     `Hermes memory probe: ${result.verdict.toUpperCase()}`,
     `  Provider: ${result.providerId}${result.providerId === result.activeProviderId ? ' (active)' : ''}`,
-    `  Mode: ${result.remote ? 'remote/configured backend' : 'local fallback'}`,
+    `  Mode: ${
+      result.fellBackToLocal
+        ? 'remote configured BUT silently fell back to local (remote unreachable)'
+        : result.remote
+          ? 'remote/configured backend'
+          : 'local fallback'
+    }`,
     `  Wrote: ${result.wrote ? 'yes' : 'no'}`,
     `  Retrieved marker: ${result.retrieved ? 'yes' : 'no'}`,
   ];

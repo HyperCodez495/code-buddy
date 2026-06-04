@@ -294,6 +294,23 @@ describe('probeMemoryProvider (live round-trip)', () => {
     expect(result.notes.join(' ')).toContain('not configured');
   });
 
+  it('reports FAIL (not a false remote PASS) when a configured remote silently falls back to local', async () => {
+    await withServer(
+      // Remote always errors -> adapter catches and falls back to local memory.
+      () => ({ status: 500, json: { error: 'boom' } }),
+      async (baseUrl) => {
+        process.env.MEM0_BASE_URL = baseUrl;
+        resetMemoryProviderRegistry();
+        const result = await probeMemoryProvider('mem0');
+        expect(result.remote).toBe(true);
+        expect(result.fellBackToLocal).toBe(true);
+        expect(result.verdict).toBe('fail');
+        expect(result.ok).toBe(false);
+        expect(result.notes.join(' ')).toMatch(/fell back|unreachable|LOCAL/i);
+      },
+    );
+  });
+
   it('reports PENDING (not FAIL) when a remote backend wrote but has not indexed yet', async () => {
     await withServer(
       // Accept the write, but return no search hits (extraction not done yet).
