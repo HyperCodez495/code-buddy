@@ -75,6 +75,15 @@ export MEM0_BASE_URL=http://MYHOST:8888    # self-host => no /v1 prefix, /memori
 # MEM0_API_KEY optional for self-host (sent as X-API-Key if set)
 ```
 
+> **Important — Mem0's write path is synchronous LLM extraction.** Unlike
+> Honcho (whose deriver runs *asynchronously* after the message is stored),
+> Mem0's `POST /memories` blocks while it calls the chat model to extract facts
+> before returning. On slow local inference this can exceed the adapter timeout
+> and the connector then falls back to local memory. Give Mem0 a **fast**
+> extraction LLM (a hosted model such as GPT‑5.5 via `buddy server`, or a small
+> quick local model), not a large dense local model. Tune the client wait with
+> `CODEBUDDY_MEMORY_HTTP_TIMEOUT_MS` if your extraction LLM is slow but reliable.
+
 ### Honcho (FastAPI + Postgres/pgvector)
 
 Honcho builds the API image from source and needs pgvector Postgres (+ Redis);
@@ -172,6 +181,21 @@ recipe and the gotchas that bit us:
    internal network anyway).
 
 Then on the same host: `export CODEBUDDY_MEMORY_PROVIDER=honcho HONCHO_BASE_URL=http://localhost:8000` and `buddy hermes memory probe honcho`.
+
+### Mem0 on the same box — connector validated, write needs a fast LLM
+
+Mem0 (OSS REST server, built from `mem0/server`, AUTH_DISABLED, Postgres+pgvector,
+Ollama for LLM+embeddings) was brought up on the same host and the **connector
+contract is confirmed against the live server**: `POST /search` → `200`
+(`{"results":[]}`), `POST /v1/embeddings` → `200`, server reachable. The probe,
+however, returns **FAIL** — and correctly so: `POST /memories` runs the chat
+model **synchronously** to extract facts and did not return within 150 s using a
+large local model (dense `qwen3.6:27b`, then MoE `qwen3.6:35b-a3b`). The probe's
+integrity guard saw the adapter fall back to local memory and refused to report a
+false pass. This is the architectural point above in action: **Honcho's async
+deriver passes on local inference; Mem0's synchronous extraction does not.** Give
+Mem0 a fast extraction LLM (GPT‑5.5 via `buddy server`, or a hosted model) and
+the same probe passes. Net: connector ✅, local-LLM write throughput ⛔.
 
 ## Cloud providers (need an account)
 
