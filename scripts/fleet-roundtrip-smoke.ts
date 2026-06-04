@@ -49,7 +49,7 @@ async function main(): Promise<void> {
       'confirm you received this cross-host request and name the local model answering it.';
 
   const jwt = generateToken(
-    { userId, scopes: ['peer:invoke', 'fleet:listen', 'chat'] },
+    { sub: userId, userId, scopes: ['peer:invoke', 'fleet:listen', 'chat'] },
     secret,
     ttl,
   );
