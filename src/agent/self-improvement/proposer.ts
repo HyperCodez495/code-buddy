@@ -13,7 +13,11 @@
 import type { BenchmarkScenario, Experience, ImprovementProposal } from './types.js';
 
 export interface ImprovementProposer {
-  propose(scenario: BenchmarkScenario, experiences: Experience[]): ImprovementProposal | null;
+  /** Async so an LLM-backed proposer can draft novel improvements. */
+  propose(
+    scenario: BenchmarkScenario,
+    experiences: Experience[],
+  ): Promise<ImprovementProposal | null>;
 }
 
 export interface LessonDraft {
@@ -26,7 +30,10 @@ export interface LessonDraft {
 export class StaticProposer implements ImprovementProposer {
   constructor(private readonly drafts: Map<string, LessonDraft>) {}
 
-  propose(scenario: BenchmarkScenario, experiences: Experience[]): ImprovementProposal | null {
+  async propose(
+    scenario: BenchmarkScenario,
+    experiences: Experience[],
+  ): Promise<ImprovementProposal | null> {
     const draft = this.drafts.get(scenario.id);
     if (!draft) return null;
     return {
@@ -37,6 +44,71 @@ export class StaticProposer implements ImprovementProposer {
       lesson: { category: draft.category, content: draft.content, context: draft.context },
     };
   }
+}
+
+/**
+ * Draft a lesson with an LLM. Injected so the proposer stays testable and
+ * provider-agnostic. Returns null to decline (e.g. the model can't help).
+ */
+export type LessonDrafter = (
+  scenario: BenchmarkScenario,
+  experiences: Experience[],
+) => Promise<LessonDraft | null>;
+
+/**
+ * LLM-backed proposer — the autonomy leap: it DISCOVERS novel improvements from
+ * real run friction rather than replaying a fixed pack. Generation is creative
+ * (non-deterministic); the empirical gate downstream is deterministic and
+ * rigorous, so a bad draft is simply rejected and rolled back. This is the
+ * Voyager "iterative prompting + self-verification" idea grounded by the DGM
+ * empirical gate.
+ */
+export class LlmProposer implements ImprovementProposer {
+  constructor(private readonly draft: LessonDrafter) {}
+
+  async propose(
+    scenario: BenchmarkScenario,
+    experiences: Experience[],
+  ): Promise<ImprovementProposal | null> {
+    const draft = await this.draft(scenario, experiences);
+    if (!draft || !draft.content?.trim()) return null;
+    return {
+      id: `prop-llm-${scenario.id}`,
+      kind: 'lesson',
+      targetScenarioId: scenario.id,
+      experienceId: experiences[0]?.id,
+      lesson: { category: draft.category, content: draft.content.trim(), context: draft.context },
+    };
+  }
+}
+
+/**
+ * Build the strict prompt that asks a model to draft ONE durable lesson which
+ * would make the agent handle `scenario` correctly next time, grounded in the
+ * observed `experiences`. Kept here (not in the proposer) so the wiring layer
+ * can pass it to whatever LLM client is available.
+ */
+export function buildLessonDraftPrompt(
+  scenario: BenchmarkScenario,
+  experiences: Experience[],
+): string {
+  const evidence = experiences
+    .slice(0, 5)
+    .map((e) => `- [${e.kind}] ${e.detail} (${e.context})`)
+    .join('\n');
+  return [
+    'You maintain an AI coding agent\'s lesson library.',
+    'Write ONE durable, reusable lesson (1-2 sentences) that would make the agent',
+    `handle this recurring situation correctly next time. Situation: ${scenario.description}`,
+    scenario.expectIncludes.length
+      ? `The lesson MUST mention: ${scenario.expectIncludes.join(', ')}.`
+      : '',
+    `It should be retrievable when searching for: "${scenario.query}".`,
+    evidence ? `Observed friction:\n${evidence}` : '',
+    'Reply with ONLY the lesson text — no preamble, no markdown, no secrets.',
+  ]
+    .filter(Boolean)
+    .join('\n');
 }
 
 /**

@@ -52,7 +52,7 @@ describe('resolveAutonomy', () => {
 });
 
 describe('SelfImprovementEngine', () => {
-  it('auto-apply loop covers every seed scenario and archives each win', () => {
+  it('auto-apply loop covers every seed scenario and archives each win', async () => {
     const port = fakePort();
     const archive = new EvolutionaryArchive({ workDir: dir, now });
     const engine = new SelfImprovementEngine({
@@ -65,7 +65,7 @@ describe('SelfImprovementEngine', () => {
     });
 
     expect(engine.status().score.ratio).toBe(0);
-    const cycles = engine.runLoop();
+    const cycles = await engine.runLoop();
 
     // One applied cycle per scenario, then a final "all covered" cycle.
     const applied = cycles.filter((c) => c.applied);
@@ -83,7 +83,7 @@ describe('SelfImprovementEngine', () => {
     expect(archive.list().every((e) => Boolean(e.appliedRef))).toBe(true);
   });
 
-  it('propose-only validates but persists nothing (no archive, no lessons)', () => {
+  it('propose-only validates but persists nothing (no archive, no lessons)', async () => {
     const port = fakePort();
     const archive = new EvolutionaryArchive({ workDir: dir, now });
     const engine = new SelfImprovementEngine({
@@ -95,7 +95,7 @@ describe('SelfImprovementEngine', () => {
       now,
     });
 
-    const result = engine.runCycle();
+    const result = await engine.runCycle();
     expect(result.gate?.accepted).toBe(true); // would help
     expect(result.gate?.rolledBack).toBe(true); // but reverted
     expect(result.applied).toBe(false);
@@ -104,7 +104,7 @@ describe('SelfImprovementEngine', () => {
     expect(engine.status().score.ratio).toBe(0);
   });
 
-  it('reports "nothing to improve" when all scenarios are already covered', () => {
+  it('reports "nothing to improve" when all scenarios are already covered', async () => {
     const port = fakePort();
     for (const draft of SEED_LESSON_DRAFTS.values()) port.add(draft.category, draft.content, draft.context);
     const engine = new SelfImprovementEngine({
@@ -115,13 +115,13 @@ describe('SelfImprovementEngine', () => {
       autonomy: 'auto-apply',
       now,
     });
-    const result = engine.runCycle();
+    const result = await engine.runCycle();
     expect(result.selectedScenarioId).toBeNull();
     expect(result.applied).toBe(false);
     expect(result.notes[0]).toMatch(/nothing to improve/i);
   });
 
-  it('stops cleanly when the proposer has no candidate for the target', () => {
+  it('stops cleanly when the proposer has no candidate for the target', async () => {
     const port = fakePort();
     const engine = new SelfImprovementEngine({
       scenarios: SEED_BENCHMARK_SCENARIOS,
@@ -131,7 +131,7 @@ describe('SelfImprovementEngine', () => {
       autonomy: 'auto-apply',
       now,
     });
-    const cycles = engine.runLoop();
+    const cycles = await engine.runLoop();
     expect(cycles).toHaveLength(1);
     expect(cycles[0]!.proposalId).toBeNull();
     expect(cycles[0]!.applied).toBe(false);

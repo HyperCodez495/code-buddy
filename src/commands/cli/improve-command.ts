@@ -18,6 +18,7 @@ interface ImproveOptions {
   json?: boolean;
   apply?: boolean;
   max?: string;
+  llm?: boolean;
 }
 
 function print(payload: unknown, options: ImproveOptions, text: string): void {
@@ -54,9 +55,13 @@ export function registerImproveCommands(program: Command): void {
     .description('Run one improvement cycle (propose → empirically validate → keep/rollback)')
     .option('--json', 'output JSON')
     .option('--apply', 'keep empirically-validated improvements (overrides propose-only for this run)')
-    .action((options: ImproveOptions) => {
-      const engine = createWorkspaceEngine(options.apply ? { autonomy: 'auto-apply' } : {});
-      const result = engine.runCycle();
+    .option('--llm', 'use the model to discover novel lessons from run friction (else a deterministic seed pack)')
+    .action(async (options: ImproveOptions) => {
+      const engine = createWorkspaceEngine({
+        ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
+        useLlm: options.llm === true,
+      });
+      const result = await engine.runCycle();
       const verdict = result.applied
         ? `APPLIED improvement to "${result.selectedScenarioId}" (Δ=${result.gate?.delta})`
         : result.gate?.accepted
@@ -78,10 +83,14 @@ export function registerImproveCommands(program: Command): void {
     .option('--json', 'output JSON')
     .option('--apply', 'keep empirically-validated improvements (overrides propose-only for this run)')
     .option('--max <n>', 'maximum cycles', (v) => v)
-    .action((options: ImproveOptions) => {
-      const engine = createWorkspaceEngine(options.apply ? { autonomy: 'auto-apply' } : {});
+    .option('--llm', 'use the model to discover novel lessons from run friction (else a deterministic seed pack)')
+    .action(async (options: ImproveOptions) => {
+      const engine = createWorkspaceEngine({
+        ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
+        useLlm: options.llm === true,
+      });
       const maxCycles = options.max ? Number.parseInt(options.max, 10) : undefined;
-      const results = engine.runLoop(maxCycles ? { maxCycles } : {});
+      const results = await engine.runLoop(maxCycles ? { maxCycles } : {});
       const appliedCount = results.filter((r) => r.applied).length;
       const final = engine.status();
       const text = [

@@ -61,7 +61,7 @@ export class SelfImprovementEngine {
   }
 
   /** Run exactly one improvement cycle. */
-  runCycle(experiences: Experience[] = []): SelfImprovementCycleResult {
+  async runCycle(experiences: Experience[] = []): Promise<SelfImprovementCycleResult> {
     const startedAt = this.now().toISOString();
     const scoreBefore = scoreBenchmark(this.scenarios, this.port);
     const base = {
@@ -81,7 +81,7 @@ export class SelfImprovementEngine {
       };
     }
 
-    const proposal = this.proposer.propose(target, experiences);
+    const proposal = await this.proposer.propose(target, experiences);
     if (!proposal) {
       return {
         ...base, selectedScenarioId: target.id, proposalId: null, gate: null,
@@ -131,11 +131,11 @@ export class SelfImprovementEngine {
    * rising) or maxCycles is reached. In propose-only mode this performs a single
    * cycle, since nothing is persisted to uncover the next target.
    */
-  runLoop(options: { maxCycles?: number; experiences?: Experience[] } = {}): SelfImprovementCycleResult[] {
+  async runLoop(options: { maxCycles?: number; experiences?: Experience[] } = {}): Promise<SelfImprovementCycleResult[]> {
     const maxCycles = Math.max(1, options.maxCycles ?? this.scenarios.length + 1);
     const results: SelfImprovementCycleResult[] = [];
     for (let i = 0; i < maxCycles; i++) {
-      const result = this.runCycle(options.experiences ?? []);
+      const result = await this.runCycle(options.experiences ?? []);
       results.push(result);
       // Stop unless this cycle made real, persisted progress.
       if (!result.applied) break;

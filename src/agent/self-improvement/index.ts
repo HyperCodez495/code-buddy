@@ -9,7 +9,8 @@ import { SEED_BENCHMARK_SCENARIOS } from './capability-benchmark.js';
 import type { LessonMutatorPort } from './empirical-gate.js';
 import { EvolutionaryArchive } from './evolutionary-archive.js';
 import { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
-import { StaticProposer, SEED_LESSON_DRAFTS } from './proposer.js';
+import { StaticProposer, LlmProposer, SEED_LESSON_DRAFTS, type ImprovementProposer } from './proposer.js';
+import { createLlmDrafter } from './llm-drafter.js';
 
 export * from './types.js';
 export * from './capability-benchmark.js';
@@ -39,13 +40,19 @@ export function createLessonMutatorPort(workDir: string = process.cwd()): Lesson
  * archive. Autonomy resolves from CODEBUDDY_SELF_IMPROVE unless overridden.
  */
 export function createWorkspaceEngine(
-  options: { workDir?: string; autonomy?: Autonomy } = {},
+  options: { workDir?: string; autonomy?: Autonomy; useLlm?: boolean; proposer?: ImprovementProposer } = {},
 ): SelfImprovementEngine {
   const workDir = options.workDir ?? process.cwd();
+  // Default proposer is the deterministic, offline bootstrap pack. `useLlm`
+  // swaps in the model-backed proposer that discovers novel lessons from
+  // friction — still gated by the same deterministic empirical validator.
+  const proposer =
+    options.proposer ??
+    (options.useLlm ? new LlmProposer(createLlmDrafter()) : new StaticProposer(SEED_LESSON_DRAFTS));
   return new SelfImprovementEngine({
     scenarios: SEED_BENCHMARK_SCENARIOS,
     port: createLessonMutatorPort(workDir),
-    proposer: new StaticProposer(SEED_LESSON_DRAFTS),
+    proposer,
     archive: new EvolutionaryArchive({ workDir }),
     autonomy: options.autonomy ?? resolveAutonomy(),
   });

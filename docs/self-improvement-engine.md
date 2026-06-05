@@ -75,9 +75,17 @@ ExperienceSource → Curriculum → Proposer → Empirical Gate → Archive
 buddy improve status            # capability coverage, autonomy mode, archive
 buddy improve cycle             # one cycle (propose-only by default)
 buddy improve cycle --apply     # keep validated improvements (explicit intent)
+buddy improve cycle --llm       # let the model DISCOVER a novel lesson, then validate it
 buddy improve loop --apply      # bootstrap until no further validated progress
 buddy improve archive           # list validated improvements
 ```
+
+**Proposers.** Default is a deterministic, offline `StaticProposer` (a curated
+bootstrap pack). `--llm` swaps in `LlmProposer`, which asks the agent's own model
+to draft a *novel* lesson from real run friction — creative generation gated by
+the *same* deterministic empirical validator, so a hallucinated or off-target
+draft is simply rejected and rolled back. This is the autonomy leap: the system
+discovers its own improvements and only keeps the ones that measurably help.
 
 ## The robot seam (5 senses)
 
