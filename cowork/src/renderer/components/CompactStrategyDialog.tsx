@@ -9,6 +9,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Scissors, AlertCircle } from 'lucide-react';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 type CompactStrategy = 'aggressive' | 'balanced' | 'preserve-tools';
 
@@ -53,6 +54,7 @@ export function CompactStrategyDialog({ sessionId, onClose }: CompactStrategyDia
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -61,6 +63,12 @@ export function CompactStrategyDialog({ sessionId, onClose }: CompactStrategyDia
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  // Trap focus inside the dialog box (not the click-outside backdrop).
+  useEffect(() => {
+    if (!dialogRef.current) return;
+    return trapFocus(dialogRef.current);
+  }, []);
 
   const handleConfirm = async () => {
     setSubmitting(true);
@@ -94,7 +102,11 @@ export function CompactStrategyDialog({ sessionId, onClose }: CompactStrategyDia
       }}
       data-testid="compact-strategy-dialog"
     >
-      <div className="bg-background border border-border rounded-2xl shadow-xl max-w-lg w-full overflow-hidden">
+      <div
+        ref={dialogRef}
+        className="bg-background border border-border rounded-2xl shadow-xl max-w-lg w-full overflow-hidden"
+        {...dialogA11yProps(t('compact.dialogTitle', 'Compact context'))}
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-muted">
           <div className="flex items-center gap-2">
             <Scissors size={16} className="text-accent" />

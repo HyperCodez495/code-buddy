@@ -6,11 +6,12 @@
  * it as PDF. Also creates a share link via the session.share bridge when
  * available.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Download, FileText, Link2, Printer } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useActiveSessionMessages } from '../store/selectors';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 interface ExportShareableDialogProps {
   onClose: () => void;
@@ -67,6 +68,7 @@ export function ExportShareableDialog({ onClose }: ExportShareableDialogProps) {
   const [busy, setBusy] = useState(false);
   const [shareLink, setShareLink] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -75,6 +77,10 @@ export function ExportShareableDialog({ onClose }: ExportShareableDialogProps) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (dialogRef.current) return trapFocus(dialogRef.current);
+  }, []);
 
   const exportHtml = () => {
     if (!activeSession) return;
@@ -114,14 +120,18 @@ export function ExportShareableDialog({ onClose }: ExportShareableDialogProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" data-testid="export-shareable-dialog">
-      <div className="bg-background border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" data-testid="export-shareable-dialog">
+      <div
+        ref={dialogRef}
+        {...dialogA11yProps(t('export.title', 'Export & share'))}
+        className="bg-background border border-border rounded-2xl shadow-2xl max-w-md w-full overflow-hidden"
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-muted">
           <div className="flex items-center gap-2">
             <Download size={16} className="text-accent" />
             <h2 className="text-sm font-semibold">{t('export.title', 'Export & share')}</h2>
           </div>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
+          <button onClick={onClose} aria-label={t('common.close')} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
             <X size={14} />
           </button>
         </div>

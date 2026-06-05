@@ -10,9 +10,11 @@
  * @module cowork/renderer/components/ApprovalDialog
  */
 
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { CheckCircle2, XCircle, Clock, AlertTriangle, Wrench } from 'lucide-react';
 import { useAppStore } from '../store';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 /**
  * Heuristic detector for approval payloads that look destructive
@@ -42,18 +44,26 @@ function looksDestructive(toolName: string | undefined, toolInput: Record<string
 }
 
 export const ApprovalDialog: React.FC = () => {
+  const { t } = useTranslation();
   const pending = useAppStore((s) => s.pendingApprovals);
   const remove = useAppStore((s) => s.removePendingApproval);
 
   const head = pending[0] ?? null;
   const [submitting, setSubmitting] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   // Tick every second so the countdown stays accurate.
   useEffect(() => {
     if (!head) return;
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
+  }, [head]);
+
+  // Trap focus inside the dialog while a pending approval is shown.
+  useEffect(() => {
+    if (!head || !dialogRef.current) return;
+    return trapFocus(dialogRef.current);
   }, [head]);
 
   // Hooks above must be called unconditionally — declare the destructive
@@ -83,18 +93,18 @@ export const ApprovalDialog: React.FC = () => {
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40"
-      role="dialog"
-      aria-modal="true"
-    >
-      <div className="w-[480px] max-w-[92vw] max-h-[85vh] bg-background border border-border rounded-xl shadow-elevated p-5 space-y-4 overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
+      <div
+        ref={dialogRef}
+        className="w-[480px] max-w-[92vw] max-h-[85vh] bg-background border border-border rounded-xl shadow-elevated p-5 space-y-4 overflow-y-auto"
+        {...dialogA11yProps(t('approval.title', 'Workflow approval required'))}
+      >
         <div>
           <h3 className="text-sm font-semibold text-text-primary">
-            Workflow approval required
+            {t('approval.title', 'Workflow approval required')}
           </h3>
           <p className="text-xs text-text-muted mt-1 break-words">
-            {head.message || 'Approve to continue the workflow.'}
+            {head.message || t('approval.defaultMessage', 'Approve to continue the workflow.')}
           </p>
         </div>
 
@@ -103,8 +113,14 @@ export const ApprovalDialog: React.FC = () => {
           <div className="flex items-start gap-2 px-3 py-2 rounded-md bg-error/10 border border-error/40 text-error">
             <AlertTriangle size={14} className="mt-0.5 shrink-0" />
             <div className="text-xs">
-              <div className="font-semibold">Destructive pattern detected: {destructive.warning}</div>
-              <div className="text-error/80 mt-0.5">Re-read the tool input below before approving.</div>
+              <div className="font-semibold">
+                {t('approval.destructiveDetected', 'Destructive pattern detected: {{reason}}', {
+                  reason: destructive.warning,
+                })}
+              </div>
+              <div className="text-error/80 mt-0.5">
+                {t('approval.rereadInput', 'Re-read the tool input below before approving.')}
+              </div>
             </div>
           </div>
         )}
@@ -114,7 +130,7 @@ export const ApprovalDialog: React.FC = () => {
           <div className="space-y-1.5">
             <div className="flex items-center gap-1.5 text-[11px] uppercase tracking-wide text-text-muted">
               <Wrench size={11} />
-              <span>About to invoke</span>
+              <span>{t('approval.aboutToInvoke', 'About to invoke')}</span>
             </div>
             <div className="text-xs font-mono text-text-primary px-2 py-1 rounded bg-surface border border-border-muted">
               {head.payload.toolName}
@@ -130,7 +146,7 @@ export const ApprovalDialog: React.FC = () => {
         {head.expiresAt && (
           <div className="flex items-center gap-1 text-[11px] text-text-muted">
             <Clock size={11} />
-            <span>auto-rejects in {remainingLabel}</span>
+            <span>{t('approval.autoRejectsIn', 'auto-rejects in {{time}}', { time: remainingLabel })}</span>
           </div>
         )}
 
@@ -141,7 +157,7 @@ export const ApprovalDialog: React.FC = () => {
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-surface border border-border text-text-secondary hover:bg-surface-hover disabled:opacity-50 transition-colors"
           >
             <XCircle size={12} />
-            Reject
+            {t('approval.reject', 'Reject')}
           </button>
           <button
             disabled={submitting}
@@ -149,13 +165,15 @@ export const ApprovalDialog: React.FC = () => {
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-accent text-white hover:bg-accent-hover disabled:opacity-50 transition-colors"
           >
             <CheckCircle2 size={12} />
-            Approve
+            {t('approval.approve', 'Approve')}
           </button>
         </div>
 
         {pending.length > 1 && (
           <div className="text-[10px] text-text-muted">
-            {pending.length - 1} more approval(s) queued
+            {t('approval.moreQueued', '{{count}} more approval(s) queued', {
+              count: pending.length - 1,
+            })}
           </div>
         )}
       </div>

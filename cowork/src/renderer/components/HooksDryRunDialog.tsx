@@ -5,9 +5,10 @@
  * without committing the hook to the active session. Calls hooks.test from
  * the preload bridge.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Play, Loader2, CheckCircle2, XCircle } from 'lucide-react';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 interface HooksDryRunDialogProps {
   initialCommand?: string;
@@ -26,6 +27,7 @@ export function HooksDryRunDialog({ initialCommand, onClose }: HooksDryRunDialog
   const [command, setCommand] = useState(initialCommand ?? 'echo "hook test"');
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<TestResult | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -34,6 +36,10 @@ export function HooksDryRunDialog({ initialCommand, onClose }: HooksDryRunDialog
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (dialogRef.current) return trapFocus(dialogRef.current);
+  }, []);
 
   const run = async () => {
     setRunning(true);
@@ -59,16 +65,15 @@ export function HooksDryRunDialog({ initialCommand, onClose }: HooksDryRunDialog
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4"
-      role="dialog"
-      aria-modal="true"
-      aria-label={t('hooksDryRun.title', 'Hook dry-run')}
-    >
-      <div className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4">
+      <div
+        ref={dialogRef}
+        {...dialogA11yProps(t('hooksDryRun.title', 'Hook dry-run'))}
+        className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden"
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-muted">
           <h2 className="text-sm font-semibold">{t('hooksDryRun.title', 'Hook dry-run')}</h2>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
+          <button onClick={onClose} aria-label={t('common.close')} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
             <X size={14} />
           </button>
         </div>

@@ -51,11 +51,13 @@ import { SettingsHooks } from './settings/SettingsHooks';
 import { SettingsA2AAgents } from './settings/SettingsA2AAgents';
 import { SettingsServer } from './settings/SettingsServer';
 import { SettingsCoreEngine } from './settings/SettingsCoreEngine';
+import { SettingsProfiles } from './settings/SettingsProfiles';
 import { SettingsCustomize } from './settings/SettingsCustomize';
 import { SettingsProjects } from './settings/SettingsProjects';
 import { SettingsPlugins } from './settings/SettingsPlugins';
 import { SettingsTelemetry } from './settings/SettingsTelemetry';
 import { SettingsControlCenter } from './settings/SettingsControlCenter';
+import { SettingsRemoteBackend } from './settings/SettingsRemoteBackend';
 import { SkillsBrowser } from './SkillsBrowser';
 
 interface SettingsPanelProps {
@@ -84,6 +86,7 @@ interface SettingsPanelProps {
     | 'a2a'
     | 'plugins'
     | 'telemetry'
+    | 'profiles'
     | 'general';
 }
 
@@ -113,6 +116,8 @@ type TabId =
   | 'telemetry'
   | 'server'
   | 'coreEngine'
+  | 'profiles'
+  | 'remoteBackend'
   | 'general';
 
 const VALID_TABS = new Set<TabId>([
@@ -141,6 +146,8 @@ const VALID_TABS = new Set<TabId>([
   'telemetry',
   'server',
   'coreEngine',
+  'profiles',
+  'remoteBackend',
   'general',
 ]);
 
@@ -355,6 +362,18 @@ export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanel
       label: t('settingsCoreEngine.tabLabel', 'Core engine'),
       icon: Cpu,
       description: t('settingsCoreEngine.tabHint', 'Pick the agentic loop'),
+    },
+    {
+      id: 'profiles' as TabId,
+      label: t('profiles.tabLabel', 'Config profiles'),
+      icon: Layers,
+      description: t('profiles.tabHint', 'Isolated config profiles ([profiles.<name>])'),
+    },
+    {
+      id: 'remoteBackend' as TabId,
+      label: t('remoteBackend.tabLabel', 'Remote backend'),
+      icon: Network,
+      description: t('remoteBackend.tabHint', 'Run chat/sessions on a remote Code Buddy backend'),
     },
     {
       id: 'general' as TabId,
@@ -599,6 +618,12 @@ export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanel
               </div>
               <div className={activeTab === 'coreEngine' ? '' : 'hidden'}>
                 {viewedTabs.has('coreEngine') && <SettingsCoreEngine />}
+              </div>
+              <div className={activeTab === 'profiles' ? '' : 'hidden'}>
+                {viewedTabs.has('profiles') && <SettingsProfiles />}
+              </div>
+              <div className={activeTab === 'remoteBackend' ? '' : 'hidden'}>
+                {viewedTabs.has('remoteBackend') && <SettingsRemoteBackend />}
               </div>
               <div className={activeTab === 'general' ? '' : 'hidden'}>
                 {viewedTabs.has('general') && <SettingsGeneral />}

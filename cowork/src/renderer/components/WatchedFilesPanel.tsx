@@ -5,10 +5,11 @@
  * watchers. Triggers the /watch slash command for start/stop. Source of
  * truth on the backend is `file-watcher-trigger.ts`.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, Eye, Plus, Trash2 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 interface WatchedFilesPanelProps {
   onClose: () => void;
@@ -20,6 +21,7 @@ export function WatchedFilesPanel({ onClose }: WatchedFilesPanelProps) {
   const [watchers, setWatchers] = useState<string[]>([]);
   const [newPattern, setNewPattern] = useState('');
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -28,6 +30,10 @@ export function WatchedFilesPanel({ onClose }: WatchedFilesPanelProps) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (dialogRef.current) return trapFocus(dialogRef.current);
+  }, []);
 
   // V1: we hold watcher patterns in component state. Once a dedicated
   // bridge exists (watcher.list), wire it here.
@@ -63,14 +69,18 @@ export function WatchedFilesPanel({ onClose }: WatchedFilesPanelProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" data-testid="watched-files-panel">
-      <div className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" data-testid="watched-files-panel">
+      <div
+        ref={dialogRef}
+        {...dialogA11yProps(t('watch.title', 'File watchers'))}
+        className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full max-h-[80vh] flex flex-col overflow-hidden"
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-muted">
           <div className="flex items-center gap-2">
             <Eye size={16} className="text-accent" />
             <h2 className="text-sm font-semibold">{t('watch.title', 'File watchers')}</h2>
           </div>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
+          <button onClick={onClose} aria-label={t('common.close')} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
             <X size={14} />
           </button>
         </div>
@@ -109,6 +119,7 @@ export function WatchedFilesPanel({ onClose }: WatchedFilesPanelProps) {
                   <button
                     type="button"
                     onClick={() => removeWatcher(pattern)}
+                    aria-label={t('common.remove')}
                     className="p-1 rounded hover:bg-error/10 text-text-muted hover:text-error"
                     data-testid={`watch-remove-${pattern}`}
                   >

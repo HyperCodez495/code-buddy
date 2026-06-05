@@ -9,6 +9,7 @@ import {
   Loader2,
   ClipboardCopy,
   Headphones,
+  Network,
 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
@@ -71,6 +72,9 @@ export function Titlebar() {
 
       {/* Voice chat overlay (Lisa-derived) */}
       <VoiceOverlayButton />
+
+      {/* Remote backend indicator (Phase B3) — shows when chat/sessions run remotely */}
+      <RemoteBackendIndicator />
 
       {/* Code Buddy HTTP server toggle — boots `src/server/index.ts` in-process */}
       <ServerToggle />
@@ -230,6 +234,63 @@ function VoiceOverlayButton() {
  * toggle (start uses default ports 3000/3001 + WS). Polls every 5s while
  * idle so the UI stays in sync if the server is stopped from elsewhere.
  */
+function RemoteBackendIndicator() {
+  const { t } = useTranslation();
+  const remoteBackend = useAppStore((s) => s.remoteBackend);
+  const setRemoteBackend = useAppStore((s) => s.setRemoteBackend);
+
+  // Keep the store in sync with the main-process connection state, even when
+  // the user is not on the settings page (the badge lives in the titlebar).
+  useEffect(() => {
+    const api = window.electronAPI?.remoteBackend;
+    if (!api) return;
+    let cancelled = false;
+
+    void (async () => {
+      try {
+        const s = await api.status();
+        if (cancelled) return;
+        setRemoteBackend({
+          connected: s.status === 'connected',
+          host: s.status === 'connected' ? (s.host ?? null) : null,
+        });
+      } catch {
+        /* ignore */
+      }
+    })();
+
+    const unsubscribe = api.onStatus((s) => {
+      if (cancelled) return;
+      setRemoteBackend({
+        connected: s.status === 'connected',
+        host: s.status === 'connected' ? (s.host ?? null) : null,
+      });
+    });
+
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [setRemoteBackend]);
+
+  if (!remoteBackend.connected) return null;
+
+  return (
+    <div
+      className="titlebar-no-drag flex items-center gap-1 px-2 h-full text-success"
+      title={t('remoteBackend.indicatorTooltip', 'Chat/sessions run on a remote backend')}
+      data-testid="remote-backend-indicator"
+    >
+      <Network className="w-3.5 h-3.5" />
+      <span className="text-[11px] font-medium max-w-[140px] truncate">
+        {t('remoteBackend.indicator', 'Remote: {{host}}', {
+          host: remoteBackend.host ?? '',
+        })}
+      </span>
+    </div>
+  );
+}
+
 function ServerToggle() {
   const [status, setStatus] = useState<ServerStatusShape>({
     running: false,

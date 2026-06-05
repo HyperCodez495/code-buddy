@@ -3,12 +3,13 @@
  *
  * Polls `presence:list` to know if any identities are enrolled, and
  * subscribes (via the Zustand store, fed by PresenceService) to live
- * presence events. Renders, in priority order:
- *   1. A green dot + name when the camera currently sees a known person.
- *   2. A neutral "👤 inconnu" when a face is detected but doesn't match
+ * presence events. Renders, in priority order (copy is i18n via the
+ * `presence.*` keys):
+ *   1. A success dot + name when the camera currently sees a known person.
+ *   2. A neutral "unknown" badge when a face is detected but doesn't match
  *      any enrolled identity.
- *   3. Nothing / "Enregistrer un visage" when nobody is enrolled yet.
- *   4. A discreet "X visages enregistrés" fallback otherwise.
+ *   3. An "enroll a face" prompt when nobody is enrolled yet.
+ *   4. A discreet "N faces enrolled" fallback otherwise.
  *
  * Clicking the indicator always opens `EnrollmentDialog`.
  *
@@ -16,6 +17,7 @@
  */
 
 import { useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 
 // Window.electronAPI.presence is declared in cowork/src/preload/index.ts.
@@ -35,6 +37,7 @@ export interface PresenceIndicatorProps {
 }
 
 export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
+  const { t } = useTranslation();
   const [enrolled, setEnrolled] = useState<PresenceListEntry[] | null>(null);
   const currentPresence = useAppStore((s) => s.currentPresence);
   const lastEventType = useAppStore((s) => s.lastPresenceEventType);
@@ -64,15 +67,18 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     return (
       <button
         onClick={onEnrollClicked}
-        className="flex items-center gap-1.5 text-xs text-emerald-600 dark:text-emerald-400 hover:opacity-80"
-        title={`${currentPresence.name} reconnu (${pct}%) — cliquer pour gérer les identités`}
+        className="flex items-center gap-1.5 text-xs text-success hover:opacity-80"
+        title={t('presence.recognizedTitle', '{{name}} recognized ({{pct}}%) — click to manage identities', {
+          name: currentPresence.name,
+          pct,
+        })}
       >
         <span className="relative inline-flex h-1.5 w-1.5">
-          <span className="absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
-          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-emerald-500" />
+          <span className="absolute inline-flex h-full w-full rounded-full bg-success opacity-75 animate-ping" />
+          <span className="relative inline-flex h-1.5 w-1.5 rounded-full bg-success" />
         </span>
         <span>👋 {currentPresence.name}</span>
-        <span className="text-emerald-700/60 dark:text-emerald-300/60">({pct}%)</span>
+        <span className="text-success/60">({pct}%)</span>
       </button>
     );
   }
@@ -82,10 +88,10 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     return (
       <button
         onClick={onEnrollClicked}
-        className="flex items-center gap-1 text-xs text-amber-600 dark:text-amber-400 hover:opacity-80"
-        title="Visage inconnu détecté — cliquer pour l'enregistrer"
+        className="flex items-center gap-1 text-xs text-warning hover:opacity-80"
+        title={t('presence.unknownTitle', 'Unknown face detected — click to enroll it')}
       >
-        <span>👤 inconnu</span>
+        <span>👤 {t('presence.unknown', 'unknown')}</span>
       </button>
     );
   }
@@ -96,10 +102,10 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
     return (
       <button
         onClick={onEnrollClicked}
-        className="text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-        title="Aucun visage enregistré — cliquez pour enregistrer le vôtre"
+        className="text-xs text-text-muted hover:text-text-secondary"
+        title={t('presence.noneEnrolledTitle', 'No face enrolled — click to enroll yours')}
       >
-        👤 Enregistrer un visage
+        👤 {t('presence.enrollFace', 'Register a face')}
       </button>
     );
   }
@@ -109,14 +115,11 @@ export function PresenceIndicator({ onEnrollClicked }: PresenceIndicatorProps) {
   return (
     <button
       onClick={onEnrollClicked}
-      className="flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-300"
-      title="Cliquer pour enregistrer un autre visage"
+      className="flex items-center gap-1 text-xs text-text-muted hover:text-text-secondary"
+      title={t('presence.enrollAnotherTitle', 'Click to enroll another face')}
     >
       <span>👤</span>
-      <span>
-        {enrolled.length} visage{enrolled.length > 1 ? 's' : ''} enregistré
-        {enrolled.length > 1 ? 's' : ''}
-      </span>
+      <span>{t('presence.enrolledCount', { count: enrolled.length })}</span>
     </button>
   );
 }

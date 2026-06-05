@@ -5,10 +5,11 @@
  * description and triggers /pr via the command bridge. Optional /lint
  * pre-pass via a checkbox.
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { X, GitPullRequest, Loader2 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 interface PRComposerProps {
   onClose: () => void;
@@ -23,6 +24,7 @@ export function PRComposer({ onClose }: PRComposerProps) {
   const [runLint, setRunLint] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const dialogRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -31,6 +33,10 @@ export function PRComposer({ onClose }: PRComposerProps) {
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [onClose]);
+
+  useEffect(() => {
+    if (dialogRef.current) return trapFocus(dialogRef.current);
+  }, []);
 
   const submit = async () => {
     setSubmitting(true);
@@ -62,14 +68,18 @@ export function PRComposer({ onClose }: PRComposerProps) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" role="dialog" aria-modal="true" data-testid="pr-composer">
-      <div className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden">
+    <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center px-4" data-testid="pr-composer">
+      <div
+        ref={dialogRef}
+        {...dialogA11yProps(t('pr.title', 'Compose pull request'))}
+        className="bg-background border border-border rounded-2xl shadow-2xl max-w-xl w-full overflow-hidden"
+      >
         <div className="flex items-center justify-between px-5 py-3 border-b border-border-muted">
           <div className="flex items-center gap-2">
             <GitPullRequest size={16} className="text-accent" />
             <h2 className="text-sm font-semibold">{t('pr.title', 'Compose pull request')}</h2>
           </div>
-          <button onClick={onClose} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
+          <button onClick={onClose} aria-label={t('common.close')} className="w-7 h-7 flex items-center justify-center rounded-md hover:bg-surface-hover">
             <X size={14} />
           </button>
         </div>

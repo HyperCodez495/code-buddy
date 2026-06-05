@@ -31,6 +31,7 @@ import {
 import type { FaceDetection } from '../../shared/presence/types';
 import { useAppStore } from '../store';
 import { useTranslation } from 'react-i18next';
+import { dialogA11yProps, trapFocus } from '../utils/a11y';
 
 /**
  * Substring used to detect that the main process raised the
@@ -62,6 +63,7 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
   const setShowModelInstallDialog = useAppStore((s) => s.setShowModelInstallDialog);
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const dialogRef = useRef<HTMLDivElement | null>(null);
   const detectorRef = useRef<FaceDetector | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const stagedEmbeddings = useRef<number[][]>([]);
@@ -155,6 +157,12 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
     };
   }, [isOpen]);
 
+  // Trap focus inside the modal while it is open.
+  useEffect(() => {
+    if (!isOpen || !dialogRef.current) return;
+    return trapFocus(dialogRef.current);
+  }, [isOpen]);
+
   const handleCapture = async () => {
     if (!latestDetection || !videoRef.current || !window.electronAPI) {
       setErrorMsg(
@@ -221,7 +229,11 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60">
-      <div className="w-[640px] max-w-[90vw] rounded-lg bg-white p-6 shadow-xl dark:bg-zinc-900 dark:text-zinc-100">
+      <div
+        ref={dialogRef}
+        className="w-[640px] max-w-[90vw] rounded-lg bg-surface p-6 shadow-xl text-text-primary"
+        {...dialogA11yProps(t('enrollment.title', 'Register a face'))}
+      >
         <h2 className="text-lg font-semibold mb-4">
           {t('enrollment.title', 'Register a face')}
         </h2>
@@ -235,7 +247,7 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder={t('enrollment.namePlaceholder', 'Patrice')}
-                className="block w-full rounded border px-2 py-1 dark:bg-zinc-800"
+                className="block w-full rounded border border-border bg-surface px-2 py-1 text-text-primary"
               />
             </label>
             <label className="text-sm">
@@ -245,10 +257,10 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
                 value={aliasesInput}
                 onChange={(e) => setAliasesInput(e.target.value)}
                 placeholder={t('enrollment.aliasesPlaceholder', 'boss, teammate')}
-                className="block w-full rounded border px-2 py-1 dark:bg-zinc-800"
+                className="block w-full rounded border border-border bg-surface px-2 py-1 text-text-primary"
               />
             </label>
-            <p className="text-xs text-zinc-500 dark:text-zinc-400">
+            <p className="text-xs text-text-muted">
               {t(
                 'enrollment.aliasesHelp',
                 'Aliases are optional names the AI can use to greet you depending on context.'
@@ -261,7 +273,7 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
             </div>
 
             {status === 'error' && errorMsg && (
-              <div className="text-sm text-red-600">
+              <div className="text-sm text-error">
                 {t('enrollment.errorLabel', 'Error:')} {errorMsg}
               </div>
             )}
@@ -275,13 +287,13 @@ export function EnrollmentDialog({ isOpen, onClose, onEnrolled }: EnrollmentDial
                   !name.trim() ||
                   samplesCaught >= SAMPLES_REQUIRED
                 }
-                className="rounded bg-blue-600 px-3 py-1 text-white disabled:opacity-50"
+                className="rounded bg-accent px-3 py-1 text-white disabled:opacity-50"
               >
                 {t('enrollment.capture', 'Capture')}
               </button>
               <button
                 onClick={onClose}
-                className="rounded border px-3 py-1 dark:border-zinc-700"
+                className="rounded border border-border px-3 py-1 text-text-primary"
               >
                 {status === 'done' ? t('common.close', 'Close') : t('common.cancel', 'Cancel')}
               </button>

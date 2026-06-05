@@ -5,6 +5,7 @@ import {
   DollarSign,
   FlaskConical,
   GitBranch,
+  Layers,
   Lock,
   Network,
   Plug,
@@ -27,6 +28,8 @@ export type ControlCenterSettingsTab =
   | 'api'
   | 'codebuddy'
   | 'coreEngine'
+  | 'profiles'
+  | 'remoteBackend'
   | 'server'
   | 'sandbox'
   | 'rules'
@@ -136,12 +139,28 @@ export function SettingsControlCenter({
           onClick: () => onNavigate('coreEngine'),
         },
         {
+          id: 'profiles',
+          title: t('profiles.title', 'Config profiles'),
+          description: t('profiles.tabHint', 'Isolated config profiles ([profiles.<name>])'),
+          icon: Layers,
+          actionLabel: configureLabel,
+          onClick: () => onNavigate('profiles'),
+        },
+        {
           id: 'server',
           title: t('settingsServer.title', 'Embedded server'),
           description: t('settingsServer.hintShort', 'Configure port, JWT, websocket'),
           icon: ServerCog,
           actionLabel: configureLabel,
           onClick: () => onNavigate('server'),
+        },
+        {
+          id: 'remote-backend',
+          title: t('remoteBackend.title', 'Remote backend'),
+          description: t('remoteBackend.tabHint', 'Run chat/sessions on a remote Code Buddy backend'),
+          icon: Network,
+          actionLabel: configureLabel,
+          onClick: () => onNavigate('remoteBackend'),
         },
       ],
     },

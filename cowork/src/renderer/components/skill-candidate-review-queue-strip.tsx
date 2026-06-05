@@ -99,9 +99,10 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
   candidates?: SkillCandidateReviewQueueItem[];
   cwd?: string;
   error?: string | null;
+  maxVisible?: number;
   onInstalled?: () => void;
   onUseAsGoal?: (goal: string) => void;
-}> = ({ candidates, cwd, error = null, onInstalled, onUseAsGoal }) => {
+}> = ({ candidates, cwd, error = null, maxVisible = 3, onInstalled, onUseAsGoal }) => {
   const { t } = useTranslation();
   const [installError, setInstallError] = useState<string | null>(null);
   const [installFeedback, setInstallFeedback] = useState<string | null>(null);
@@ -115,7 +116,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
   const reviewCandidates = candidates ?? loadedCandidates;
   const visibleError = error ?? loadError;
   const eligibleCount = reviewCandidates.filter((candidate) => candidate.eligible).length;
-  const visibleCandidates = reviewCandidates.slice(0, 3);
+  const visibleCandidates = reviewCandidates.slice(0, Math.max(0, maxVisible));
 
   useEffect(() => {
     if (candidates !== undefined) return;
@@ -127,7 +128,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
       .list({
         cwd,
         eligibleOnly: false,
-        limit: 3,
+        limit: Math.max(1, maxVisible),
       })
       .then((items) => {
         if (cancelled) return;
@@ -145,7 +146,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
     return () => {
       cancelled = true;
     };
-  }, [candidates, cwd]);
+  }, [candidates, cwd, maxVisible]);
 
   const handleInstallCandidate = async (candidate: SkillCandidateReviewQueueItem) => {
     const approvedBy = reviewerName.trim();
@@ -188,7 +189,7 @@ export const SkillCandidateReviewQueueStrip: React.FC<{
         const refreshed = await api.list({
           cwd,
           eligibleOnly: false,
-          limit: 3,
+          limit: Math.max(1, maxVisible),
         });
         setLoadedCandidates(Array.isArray(refreshed) ? refreshed : []);
       }

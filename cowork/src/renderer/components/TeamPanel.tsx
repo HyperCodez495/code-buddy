@@ -23,6 +23,7 @@ import {
   AlertCircle,
   Mail,
 } from 'lucide-react';
+import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import type { TeamMemberStatus, TeamTaskStatus } from '../types';
 
@@ -52,6 +53,7 @@ const TASK_STATUS_TOKEN: Record<TeamTaskStatus, string> = {
 };
 
 function MemberStatusIcon({ status }: { status: TeamMemberStatus }) {
+  const { t } = useTranslation();
   const cls = MEMBER_STATUS_TOKEN[status] ?? 'text-text-muted';
   switch (status) {
     case 'working':
@@ -61,11 +63,12 @@ function MemberStatusIcon({ status }: { status: TeamMemberStatus }) {
     case 'error':
       return <AlertCircle className={`w-3.5 h-3.5 ${cls}`} />;
     default:
-      return <span className={`text-[10px] ${cls}`}>idle</span>;
+      return <span className={`text-[10px] ${cls}`}>{t('team.statusIdle', 'idle')}</span>;
   }
 }
 
 export function TeamPanel() {
+  const { t } = useTranslation();
   const show = useAppStore((s) => s.showTeamPanel);
   const setShow = useAppStore((s) => s.setShowTeamPanel);
   const team = useAppStore((s) => s.team);
@@ -110,7 +113,12 @@ export function TeamPanel() {
   const handleStart = async () => {
     setErrorMsg(null);
     if (!teamApi) {
-      setErrorMsg('Team bridge unavailable in browser preview. Open the desktop app to manage teams.');
+      setErrorMsg(
+        t(
+          'team.bridgeUnavailableManage',
+          'Team bridge unavailable in browser preview. Open the desktop app to manage teams.'
+        )
+      );
       return;
     }
     const result = await teamApi.start(goalInput.trim() || undefined);
@@ -123,7 +131,7 @@ export function TeamPanel() {
   };
 
   const handleStop = async () => {
-    if (!window.confirm('Dissolve the team?')) return;
+    if (!window.confirm(t('team.dissolveConfirm', 'Dissolve the team?'))) return;
     if (!teamApi) return;
     await teamApi.stop();
   };
@@ -131,7 +139,12 @@ export function TeamPanel() {
   const handleAddMember = async () => {
     setErrorMsg(null);
     if (!teamApi) {
-      setErrorMsg('Team bridge unavailable in browser preview. Open the desktop app to manage teams.');
+      setErrorMsg(
+        t(
+          'team.bridgeUnavailableManage',
+          'Team bridge unavailable in browser preview. Open the desktop app to manage teams.'
+        )
+      );
       return;
     }
     const result = await teamApi.addMember(
@@ -162,7 +175,7 @@ export function TeamPanel() {
           <div className="flex items-center gap-2">
             <Users className="w-4 h-4 text-accent" />
             <h2 className="text-sm font-semibold text-text-primary">
-              Agent Team
+              {t('team.title', 'Agent Team')}
             </h2>
             {team && (
               <span
@@ -182,7 +195,7 @@ export function TeamPanel() {
           <button
             onClick={() => setShow(false)}
             className="rounded p-1 hover:bg-surface transition-colors"
-            aria-label="Close team panel"
+            aria-label={t('team.closePanel', 'Close team panel')}
           >
             <X className="w-4 h-4 text-text-muted" />
           </button>
@@ -197,7 +210,7 @@ export function TeamPanel() {
               className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
             >
               <Play className="w-3.5 h-3.5" />
-              Start team
+              {t('team.startTeam', 'Start team')}
             </button>
           ) : (
             <>
@@ -206,14 +219,14 @@ export function TeamPanel() {
                 className="flex items-center gap-1 rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
               >
                 <UserPlus className="w-3.5 h-3.5" />
-                Add member
+                {t('team.addMember', 'Add member')}
               </button>
               <button
                 onClick={handleStop}
                 className="flex items-center gap-1 rounded bg-error/10 px-2 py-1 text-xs font-medium text-error hover:bg-error/20 transition-colors"
               >
                 <Square className="w-3.5 h-3.5" />
-                Stop
+                {t('team.stop', 'Stop')}
               </button>
             </>
           )}
@@ -223,13 +236,13 @@ export function TeamPanel() {
         {showStartModal && (
           <div className="space-y-2 border-b border-border px-4 py-3">
             <label className="text-[10px] uppercase tracking-wide text-text-muted">
-              Team goal (optional)
+              {t('team.goalOptional', 'Team goal (optional)')}
             </label>
             <textarea
               value={goalInput}
               onChange={(e) => setGoalInput(e.target.value)}
               data-testid="team-goal-input"
-              placeholder="e.g. Refactor the auth middleware for compliance"
+              placeholder={t('team.goalPlaceholder', 'e.g. Refactor the auth middleware for compliance')}
               rows={3}
               className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent resize-none"
             />
@@ -244,14 +257,14 @@ export function TeamPanel() {
                 onClick={() => setShowStartModal(false)}
                 className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface transition-colors"
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleStart}
                 data-testid="team-start-confirm"
                 className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
               >
-                Start
+                {t('team.start', 'Start')}
               </button>
             </div>
           </div>
@@ -261,7 +274,7 @@ export function TeamPanel() {
         {showAddMember && (
           <div className="space-y-2 border-b border-border px-4 py-3">
             <label className="text-[10px] uppercase tracking-wide text-text-muted">
-              Role
+              {t('team.role', 'Role')}
             </label>
             <select
               value={memberRole}
@@ -278,7 +291,7 @@ export function TeamPanel() {
               type="text"
               value={memberLabel}
               onChange={(e) => setMemberLabel(e.target.value)}
-              placeholder="Label (optional, e.g. lead-coder)"
+              placeholder={t('team.memberLabelPlaceholder', 'Label (optional, e.g. lead-coder)')}
               className="w-full rounded border border-border bg-surface px-2 py-1 text-xs text-text-primary placeholder:text-text-muted focus:outline-none focus:border-accent"
             />
             {errorMsg && (
@@ -292,13 +305,13 @@ export function TeamPanel() {
                 onClick={() => setShowAddMember(false)}
                 className="rounded px-2 py-1 text-xs text-text-secondary hover:bg-surface transition-colors"
               >
-                Cancel
+                {t('common.cancel', 'Cancel')}
               </button>
               <button
                 onClick={handleAddMember}
                 className="rounded bg-accent px-2 py-1 text-xs font-medium text-white hover:bg-accent-hover transition-colors"
               >
-                Add
+                {t('common.add', 'Add')}
               </button>
             </div>
           </div>
@@ -308,7 +321,7 @@ export function TeamPanel() {
         {team?.goal && (
           <div className="border-b border-border bg-surface/40 px-4 py-2">
             <div className="text-[10px] uppercase tracking-wide text-text-muted">
-              Goal
+              {t('team.goal', 'Goal')}
             </div>
             <div className="text-xs text-text-primary mt-0.5">{team.goal}</div>
           </div>
@@ -318,17 +331,20 @@ export function TeamPanel() {
         <div className="border-b border-border">
           <div className="px-4 py-2">
             <span className="text-xs uppercase tracking-wide text-text-muted">
-              Members ({memberList.length})
+              {t('team.membersCount', 'Members ({{count}})', { count: memberList.length })}
             </span>
           </div>
           <ul className="max-h-48 overflow-y-auto">
             {memberList.length === 0 && (
               <li className="px-4 py-3 text-xs text-text-muted">
                 {!teamApi
-                  ? 'Team bridge unavailable in browser preview. Open the desktop app to start or observe teams.'
+                  ? t(
+                      'team.bridgeUnavailableObserve',
+                      'Team bridge unavailable in browser preview. Open the desktop app to start or observe teams.'
+                    )
                   : isActive
-                  ? 'No members yet. Click "Add member" to start.'
-                  : 'Start a team to add members.'}
+                  ? t('team.noMembersActive', 'No members yet. Click "Add member" to start.')
+                  : t('team.startToAddMembers', 'Start a team to add members.')}
               </li>
             )}
             {memberList.map((member) => (
@@ -345,10 +361,10 @@ export function TeamPanel() {
                     </span>
                   </div>
                   <div className="text-[10px] text-text-muted">
-                    {member.completedTasks} done
+                    {t('team.tasksDone', '{{count}} done', { count: member.completedTasks })}
                     {member.currentTaskId && (
                       <>
-                        {' · current: '}
+                        {` · ${t('team.current', 'current')}: `}
                         <span className="text-accent">
                           {tasks[member.currentTaskId]?.title ?? member.currentTaskId}
                         </span>
@@ -359,7 +375,7 @@ export function TeamPanel() {
                 <button
                   onClick={() => handleRemoveMember(member.id)}
                   className="rounded p-1 text-text-muted hover:bg-surface hover:text-error transition-colors"
-                  title="Remove member"
+                  title={t('team.removeMember', 'Remove member')}
                 >
                   <Trash2 className="w-3.5 h-3.5" />
                 </button>
@@ -372,24 +388,28 @@ export function TeamPanel() {
         <div className="flex flex-1 flex-col overflow-hidden">
           <div className="flex items-center justify-between border-b border-border px-4 py-2">
             <span className="text-xs uppercase tracking-wide text-text-muted">
-              Tasks ({taskList.length})
+              {t('team.tasksCount', 'Tasks ({{count}})', { count: taskList.length })}
             </span>
             {team?.taskSummary && (
               <span className="text-[10px] text-text-muted">
-                {team.taskSummary.pending} pending · {team.taskSummary.inProgress} in progress · {team.taskSummary.completed} done
+                {t('team.taskSummary', '{{pending}} pending · {{inProgress}} in progress · {{completed}} done', {
+                  pending: team.taskSummary.pending,
+                  inProgress: team.taskSummary.inProgress,
+                  completed: team.taskSummary.completed,
+                })}
               </span>
             )}
           </div>
           <ul className="flex-1 overflow-y-auto">
             {taskList.length === 0 && (
               <li className="px-4 py-3 text-xs text-text-muted">
-                No tasks yet.
+                {t('team.noTasks', 'No tasks yet.')}
               </li>
             )}
             {taskList.map((task) => {
               const assignee = task.assignedTo
-                ? members[task.assignedTo]?.label || 'unknown'
-                : 'unassigned';
+                ? members[task.assignedTo]?.label || t('team.unknown', 'unknown')
+                : t('team.unassigned', 'unassigned');
               return (
                 <li
                   key={task.id}
@@ -424,7 +444,7 @@ export function TeamPanel() {
             <div className="flex items-center gap-1 px-4 py-1.5 border-b border-border">
               <Mail className="w-3 h-3 text-text-muted" />
               <span className="text-[10px] uppercase tracking-wide text-text-muted">
-                Mailbox ({mailbox.length})
+                {t('team.mailboxCount', 'Mailbox ({{count}})', { count: mailbox.length })}
               </span>
             </div>
             <ul className="flex-1 overflow-y-auto">
@@ -435,7 +455,7 @@ export function TeamPanel() {
                 .map((msg) => {
                   const fromLabel = members[msg.from]?.label ?? msg.from;
                   const toLabel =
-                    msg.to === 'all' ? 'all' : members[msg.to]?.label ?? msg.to;
+                    msg.to === 'all' ? t('team.all', 'all') : members[msg.to]?.label ?? msg.to;
                   return (
                     <li
                       key={msg.id}

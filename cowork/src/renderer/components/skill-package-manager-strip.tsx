@@ -170,9 +170,10 @@ export function buildSkillPackageManagerGoal(): string {
 export const SkillPackageManagerStrip: React.FC<{
   cwd?: string;
   error?: string | null;
+  maxVisible?: number;
   onUseAsGoal?: (goal: string) => void;
   summary?: SkillPackageManagerSummary | null;
-}> = ({ cwd, error = null, onUseAsGoal, summary }) => {
+}> = ({ cwd, error = null, maxVisible = 3, onUseAsGoal, summary }) => {
   const { t } = useTranslation();
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleFeedback, setLifecycleFeedback] = useState<string | null>(null);
@@ -184,7 +185,7 @@ export const SkillPackageManagerStrip: React.FC<{
   const goalDraft = useMemo(() => buildSkillPackageManagerGoal(), []);
   const visibleSummary = summary !== undefined ? summary : loadedSummary;
   const visibleError = error ?? loadError;
-  const visiblePackages = visibleSummary?.packages.slice(0, 3) ?? [];
+  const visiblePackages = visibleSummary?.packages.slice(0, Math.max(0, maxVisible)) ?? [];
 
   useEffect(() => {
     if (summary !== undefined) return;
