@@ -18,6 +18,8 @@ import {
 } from '../../agent/self-improvement/index.js';
 import { EvolutionaryArchive } from '../../agent/self-improvement/evolutionary-archive.js';
 import { createDefaultRunExperienceSource } from '../../agent/self-improvement/experience-source.js';
+import { CorpusStore } from '../../agent/self-improvement/rule-store.js';
+import { summarizeTrajectory } from '../../agent/self-improvement/execution-gate.js';
 import type { Experience } from '../../agent/self-improvement/types.js';
 
 /**
@@ -42,6 +44,8 @@ interface ImproveOptions {
   commit?: boolean | string;
   push?: boolean;
   best?: boolean;
+  pass?: boolean;
+  fail?: boolean;
 }
 
 function print(payload: unknown, options: ImproveOptions, text: string): void {
@@ -285,5 +289,59 @@ export function registerImproveCommands(program: Command): void {
         `Corpus classification: ${final.score.correct}/${final.score.total} (${Math.round(final.score.accuracy * 100)}%); rules: ${final.rules}`,
       ].join('\n');
       print({ kind: 'rule_learning_loop', cycles: results, status: final }, options, text);
+    });
+
+  // --- Labeled trajectory corpus (human-curated) for the rule learner ---
+  const corpus = improve
+    .command('corpus')
+    .description('Curate the labeled trajectory corpus the rule learner validates against');
+
+  corpus
+    .command('add')
+    .description('Label a recorded run pass/fail and add it to the corpus')
+    .argument('<runId>', 'a run id from the RunStore (.codebuddy/runs/)')
+    .option('--json', 'output JSON')
+    .option('--pass', 'label the run as compliant (good behavior)')
+    .option('--fail', 'label the run as non-compliant (behavior a rule should flag)')
+    .action(async (runId: string, options: ImproveOptions) => {
+      if (options.pass === options.fail) {
+        console.error('Specify exactly one of --pass or --fail.');
+        process.exitCode = 1;
+        return;
+      }
+      const { buildRunTrajectoryExport } = await import('../../observability/run-trajectory-export.js');
+      const exported = buildRunTrajectoryExport(runId, { includeArtifactContent: false });
+      if (!exported) {
+        console.error(`Run not found: ${runId}`);
+        process.exitCode = 1;
+        return;
+      }
+      const trajectory = summarizeTrajectory(exported);
+      const store = new CorpusStore();
+      store.add({ id: runId, shouldPass: options.pass === true, trajectory });
+      const text = `Added ${runId} to corpus as ${options.pass ? 'PASS' : 'FAIL'} (tools: ${trajectory.toolNames.join(', ') || 'none'}).`;
+      print({ kind: 'corpus_add', runId, shouldPass: options.pass === true, trajectory }, options, text);
+    });
+
+  corpus
+    .command('list')
+    .description('List labeled trajectories in the corpus')
+    .option('--json', 'output JSON')
+    .action((options: ImproveOptions) => {
+      const entries = new CorpusStore().list();
+      const text = entries.length
+        ? entries.map((t) => `${t.shouldPass ? 'PASS' : 'FAIL'}  ${t.id}  [${t.trajectory.toolNames.join(', ')}]`).join('\n')
+        : 'Corpus is empty — `improve corpus add <runId> --pass|--fail`. (Seed corpus used until then.)';
+      print({ kind: 'corpus_list', entries }, options, text);
+    });
+
+  corpus
+    .command('remove')
+    .description('Remove a labeled trajectory from the corpus')
+    .argument('<id>', 'corpus entry id (the run id)')
+    .option('--json', 'output JSON')
+    .action((id: string, options: ImproveOptions) => {
+      const removed = new CorpusStore().remove(id);
+      print({ kind: 'corpus_remove', id, removed }, options, removed ? `Removed ${id}.` : `Not in corpus: ${id}.`);
     });
 }

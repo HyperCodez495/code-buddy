@@ -73,6 +73,7 @@ export function createWorkspaceEngine(
 export function createWorkspaceLearningStore(options: { workDir?: string } = {}): LearningStore {
   const workDir = options.workDir ?? process.cwd();
   const tracker = getLessonsTracker(workDir);
+  const ruleStore = new RuleStore({ workDir });
   const port: LearnableStatePort = {
     listLessons: () =>
       tracker.search('').map((l) => ({
@@ -86,6 +87,8 @@ export function createWorkspaceLearningStore(options: { workDir?: string } = {})
     },
     archive: () => new EvolutionaryArchive({ workDir }).list(),
     score: () => scoreBenchmark(SEED_BENCHMARK_SCENARIOS, createLessonMutatorPort(workDir)),
+    listRules: () => ruleStore.list(),
+    setRules: (rules) => ruleStore.setAll(rules as ReturnType<RuleStore['list']>),
   };
   return new LearningStore({ workDir, port });
 }

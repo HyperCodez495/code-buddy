@@ -7,7 +7,12 @@ import {
   RuleLearningEngine,
   HeuristicRuleProposer,
 } from '../../../src/agent/self-improvement/rule-engine.js';
-import { RuleStore, SEED_TRAJECTORY_CORPUS, loadTrajectoryCorpus } from '../../../src/agent/self-improvement/rule-store.js';
+import {
+  RuleStore,
+  CorpusStore,
+  SEED_TRAJECTORY_CORPUS,
+  loadTrajectoryCorpus,
+} from '../../../src/agent/self-improvement/rule-store.js';
 import { scoreCorpus } from '../../../src/agent/self-improvement/execution-gate.js';
 
 let dir: string;
@@ -87,5 +92,22 @@ describe('RuleLearningEngine (execution-grounded loop)', () => {
     const loaded = loadTrajectoryCorpus(dir);
     expect(loaded).toHaveLength(1);
     expect(loaded[0]!.id).toBe('x');
+  });
+
+  it('CorpusStore adds (upsert by id), lists, and removes labeled trajectories', () => {
+    const store = new CorpusStore({ workDir: dir });
+    expect(store.list()).toHaveLength(0);
+    store.add({ id: 'run-1', shouldPass: false, trajectory: { toolNames: ['bash'], text: 'ran a command' } });
+    store.add({ id: 'run-2', shouldPass: true, trajectory: { toolNames: ['view_file'], text: 'ok' } });
+    expect(store.list()).toHaveLength(2);
+    // upsert: re-adding run-1 replaces, not duplicates.
+    store.add({ id: 'run-1', shouldPass: true, trajectory: { toolNames: ['view_file'], text: 'reclassified' } });
+    expect(store.list()).toHaveLength(2);
+    expect(store.list().find((t) => t.id === 'run-1')?.shouldPass).toBe(true);
+    // the curated corpus is what the loop uses (overrides the seed).
+    expect(loadTrajectoryCorpus(dir)).toHaveLength(2);
+    expect(store.remove('run-1')).toBe(true);
+    expect(store.remove('nope')).toBe(false);
+    expect(store.list()).toHaveLength(1);
   });
 });

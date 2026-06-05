@@ -101,14 +101,53 @@ export const SEED_TRAJECTORY_CORPUS: LabeledTrajectory[] = [
 
 /** Load the labeled corpus from corpus.json, falling back to the seed corpus. */
 export function loadTrajectoryCorpus(workDir: string = process.cwd()): LabeledTrajectory[] {
-  const corpusPath = path.join(workDir, '.codebuddy', 'self-improvement', 'corpus.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(corpusPath, 'utf-8')) as { trajectories?: LabeledTrajectory[] };
-    if (Array.isArray(parsed.trajectories) && parsed.trajectories.length > 0) {
-      return parsed.trajectories;
-    }
-  } catch {
-    /* fall back to seed */
+  const corpus = new CorpusStore({ workDir }).list();
+  return corpus.length > 0 ? corpus : SEED_TRAJECTORY_CORPUS;
+}
+
+/**
+ * Human-curated labeled trajectory corpus (`.codebuddy/self-improvement/corpus.json`).
+ * Eval curation stays human-gated: only the operator labels a run pass/fail; the
+ * engine never labels its own corpus.
+ */
+export class CorpusStore {
+  private readonly filePath: string;
+
+  constructor(options: { workDir?: string } = {}) {
+    const root = options.workDir ?? process.cwd();
+    this.filePath = path.join(root, '.codebuddy', 'self-improvement', 'corpus.json');
   }
-  return SEED_TRAJECTORY_CORPUS;
+
+  get path(): string {
+    return this.filePath;
+  }
+
+  list(): LabeledTrajectory[] {
+    try {
+      const parsed = JSON.parse(fs.readFileSync(this.filePath, 'utf-8')) as { trajectories?: LabeledTrajectory[] };
+      return Array.isArray(parsed.trajectories) ? parsed.trajectories : [];
+    } catch {
+      return [];
+    }
+  }
+
+  private write(trajectories: LabeledTrajectory[]): void {
+    fs.mkdirSync(path.dirname(this.filePath), { recursive: true });
+    fs.writeFileSync(this.filePath, JSON.stringify({ schemaVersion: 1, trajectories }, null, 2), 'utf-8');
+  }
+
+  /** Add or replace a labeled trajectory by id. */
+  add(entry: LabeledTrajectory): void {
+    const list = this.list().filter((t) => t.id !== entry.id);
+    list.push(entry);
+    this.write(list);
+  }
+
+  remove(id: string): boolean {
+    const list = this.list();
+    const next = list.filter((t) => t.id !== id);
+    if (next.length === list.length) return false;
+    this.write(next);
+    return true;
+  }
 }

@@ -117,6 +117,43 @@ describe('LearningStore (git-backed reversibility)', () => {
     expect(result.reason).toMatch(/no .*remote/i);
   });
 
+  it('versions and restores learned rules alongside lessons', async () => {
+    let lessons: LessonSnapshot[] = [];
+    let rules: unknown[] = [];
+    const TARGETS = ['path filter'];
+    const port: LearnableStatePort = {
+      listLessons: () => lessons.map((l) => ({ ...l })),
+      setLessons: (ls) => {
+        lessons = ls.map((l) => ({ ...l }));
+      },
+      archive: () => [],
+      score: (): BenchmarkScore => {
+        const covered = TARGETS.filter((t) => lessons.some((l) => l.content.includes(t))).length;
+        return { total: TARGETS.length, covered, ratio: covered / TARGETS.length, results: [] };
+      },
+      listRules: () => rules,
+      setRules: (r) => {
+        rules = r;
+      },
+    };
+    const store = new LearningStore({ workDir: dir, port, now });
+
+    lessons = [{ category: 'RULE', content: 'Use a path filter.' }];
+    rules = [{ check: { kind: 'forbid_tool', pattern: '^bash$' }, statement: 'no bash', createdAt: 'now' }];
+    const good = await store.commitVersion({ reason: 'with-rule' });
+
+    // Wipe both, then restore — rules must come back too.
+    lessons = [];
+    rules = [];
+    await store.commitVersion({ reason: 'wiped' });
+
+    const restored = await store.restore({ commit: good.sha });
+    expect(restored).not.toBeNull();
+    expect(rules).toHaveLength(1);
+    expect((rules[0] as { statement: string }).statement).toBe('no bash');
+    expect(lessons.some((l) => l.content.includes('path filter'))).toBe(true);
+  });
+
   it('status reports head and best scores', async () => {
     const port = makePort();
     const store = new LearningStore({ workDir: dir, port, now });

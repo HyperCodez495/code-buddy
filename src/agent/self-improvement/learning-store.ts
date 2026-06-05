@@ -44,6 +44,9 @@ export interface LearnableStatePort {
   archive(): unknown[];
   /** Deterministic benchmark score of the CURRENT state. */
   score(): BenchmarkScore;
+  /** Learned behavioral rules (optional — versioned + restored when present). */
+  listRules?(): unknown[];
+  setRules?(rules: unknown[]): void;
 }
 
 interface VersionManifest {
@@ -123,6 +126,7 @@ export class LearningStore {
       fs.writeFileSync(path.join(this.storeDir, name), JSON.stringify(value, null, 2), 'utf-8');
     write('lessons.json', this.port.listLessons());
     write('archive.json', this.port.archive());
+    if (this.port.listRules) write('rules.json', this.port.listRules());
     write('manifest.json', manifest);
   }
 
@@ -217,6 +221,17 @@ export class LearningStore {
       return null;
     }
     this.port.setLessons(lessons);
+    // Re-materialise learned rules too, when they were versioned.
+    if (this.port.setRules) {
+      const rulesShow = await this.runGit(['show', `${sha}:rules.json`]);
+      if (rulesShow.code === 0) {
+        try {
+          this.port.setRules(JSON.parse(rulesShow.stdout) as unknown[]);
+        } catch {
+          /* leave rules unchanged if the snapshot is unreadable */
+        }
+      }
+    }
     const { score } = await this.commitVersion({ reason: `restore to ${sha.slice(0, 8)}` });
     return { restoredFrom: sha, score };
   }

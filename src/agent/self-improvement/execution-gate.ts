@@ -175,13 +175,14 @@ export function validateBehavioralRule(
 }
 
 /** Adapt a full run-trajectory export (shape-tolerant) into a TrajectorySummary. */
-export function summarizeTrajectory(exported: {
-  toolCalls?: Array<{ toolName?: string }>;
-  finalAnswer?: string | null;
-  selectedContext?: { profileSignal?: string };
-}): TrajectorySummary {
-  const toolNames = (exported.toolCalls ?? []).map((c) => c.toolName ?? '').filter(Boolean);
-  const text = (exported.finalAnswer ?? '').toString();
-  const profile = exported.selectedContext?.profileSignal;
+export function summarizeTrajectory(exported: unknown): TrajectorySummary {
+  const e = (exported ?? {}) as {
+    toolCalls?: Array<{ toolName?: string }>;
+    finalAnswer?: string | null;
+    selectedContext?: { profileSignal?: string };
+  };
+  const toolNames = (e.toolCalls ?? []).map((c) => c.toolName ?? '').filter(Boolean);
+  const text = (e.finalAnswer ?? '').toString();
+  const profile = e.selectedContext?.profileSignal;
   return { toolNames, text, ...(profile ? { profile } : {}) };
 }
