@@ -20,6 +20,7 @@ export * from './evolutionary-archive.js';
 export * from './proposer.js';
 export * from './experience-source.js';
 export * from './learning-store.js';
+export * from './execution-gate.js';
 export { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
 
 /** Adapt the real (offline, deterministic) LessonsTracker to the mutator port. */

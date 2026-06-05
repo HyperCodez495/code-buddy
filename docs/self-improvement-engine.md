@@ -106,14 +106,19 @@ partly checking that the model copied the words it was given. Treat the current
 score as a **proxy for capability (does the right guidance surface?)**, not a
 behavioural guarantee (does the agent now act correctly?).
 
-**Making "empirical" real (next session).** The honest signal is
-*counterfactual replay*: take a recorded run that failed for lack of guidance,
-inject the candidate lesson into context, re-run that task, and check the outcome
-actually changes — with repetition/voting to denoise the LLM. That measures
-"this lesson would have prevented the failure," not "a keyword-matching lesson
-exists." Until then, keep human review in the loop for what gets kept, and treat
-auto-apply as a convenience for *obviously-good bootstrap content*, not a license
-to self-modify on a vacuous metric.
+**Making "empirical" real (in progress).** A deterministic down-payment now ships
+for the subclass of improvements that encode a *checkable behavioral rule*:
+`execution-gate.ts` validates a proposed rule by how well it **correctly
+classifies real recorded trajectories** — does it flag the bad runs and pass the
+good ones — with a counterfactual-ablation pre-filter (reject rules that change
+no verdict) and a no-regression guard. This measures *correctness against
+recorded behavior*, not keyword presence: e.g. a plausible-but-wrong rule
+("every run must use bash") is rejected because it misclassifies the compliant
+read-only runs — which the retrieval benchmark could never catch. It is
+deterministic and cheap (no live agent, no LLM-judge), grounding the gate exactly
+as the Darwin Gödel Machine does, on execution outcomes. The remaining step is a
+*paired live* gate for general (non-rule) lessons (run agent±lesson on a graded
+task set, paired-Bayesian acceptance) — see `docs/self-improvement-research-2026.md`.
 
 ## Reversibility (git-backed)
 
