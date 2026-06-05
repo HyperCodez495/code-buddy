@@ -14,11 +14,15 @@ import * as crypto from 'crypto';
 import * as fs from 'fs/promises';
 import * as path from 'path';
 import { homedir } from 'os';
+import { logger } from '../utils/logger.js';
 import type { CronPreCheck } from './pre-check-runner.js';
 import type { CronWatchdog } from './watchdog-handlers.js';
 
 /** Exponential backoff delays in ms: 30s, 1m, 5m, 15m, 60m */
 const BACKOFF_DELAYS_MS = [30_000, 60_000, 300_000, 900_000, 3_600_000];
+
+/** Maximum chain depth to guard against cyclic `then` references (A→B→A). */
+const MAX_CHAIN_DEPTH = 10;
 
 // ============================================================================
 // Types
@@ -50,8 +54,15 @@ export interface CronJob {
   };
   /** Task to execute */
   task: {
-    /** Task type. `watchdog` runs a non-LLM monitor (no agent instantiation). */
-    type: 'message' | 'tool' | 'agent' | 'watchdog';
+    /**
+     * Task type.
+     * - `message`/`tool`/`agent` instantiate a CodeBuddyAgent (LLM-backed).
+     * - `watchdog` runs a non-LLM monitor (disk/http/repo/build).
+     * - `script` runs a bounded allowlisted command WITHOUT an agent.
+     * - `skill` loads a named skill from the SkillsHub/registry and runs it
+     *   WITHOUT instantiating the full agent loop.
+     */
+    type: 'message' | 'tool' | 'agent' | 'watchdog' | 'script' | 'skill';
     /** Message content (for message type) */
     message?: string;
     /** Tool name and arguments (for tool type) */
@@ -65,6 +76,23 @@ export interface CronJob {
     model?: string;
     /** Watchdog config (for watchdog type) — disk/http/repo/build checks. */
     watchdog?: CronWatchdog;
+    /**
+     * Script command (for `script` type) — spawned without a shell, with an
+     * executable allowlist and a bounded timeout. No agent, no provider call.
+     */
+    command?: {
+      executable: string;
+      args?: string[];
+      cwd?: string;
+      /** Extra allowed executables (basename match), merged with defaults. */
+      allowedExecutables?: string[];
+      /** Command timeout in ms (default 600000, clamped). */
+      timeoutMs?: number;
+    };
+    /** Skill name to load and execute (for `skill` type). */
+    skill?: string;
+    /** Optional request string passed to the skill executor as `request`. */
+    skillRequest?: string;
   };
   /**
    * Optional non-LLM pre-check. When present, it is evaluated before the task;
@@ -115,6 +143,12 @@ export interface CronJob {
   sessionTarget?: 'current' | 'new' | string;
   /** Resolved session ID (populated when sessionTarget='current' at creation time) */
   resolvedSessionId?: string;
+  /**
+   * Chained job: when this job completes successfully, the job whose id (or id
+   * prefix) matches `then` is enqueued for immediate execution. Validated at
+   * execution time (the target need not exist when this job is created).
+   */
+  then?: string;
 }
 
 export interface JobRun {
@@ -364,6 +398,7 @@ export class CronScheduler extends EventEmitter {
     enabled?: boolean;
     sessionTarget?: CronJob['sessionTarget'];
     preCheck?: CronJob['preCheck'];
+    then?: string;
   }): Promise<CronJob> {
     const id = crypto.randomUUID();
     const now = new Date();
@@ -385,6 +420,7 @@ export class CronScheduler extends EventEmitter {
       enabled: params.enabled ?? true,
       sessionTarget: params.sessionTarget,
       preCheck: params.preCheck,
+      then: params.then,
     };
 
     // Resolve 'current' session target to concrete session ID at creation time
@@ -411,7 +447,7 @@ export class CronScheduler extends EventEmitter {
    */
   async updateJob(
     jobId: string,
-    updates: Partial<Pick<CronJob, 'name' | 'description' | 'type' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled' | 'preCheck'>>
+    updates: Partial<Pick<CronJob, 'name' | 'description' | 'type' | 'schedule' | 'task' | 'delivery' | 'maxRuns' | 'enabled' | 'preCheck' | 'then'>>
   ): Promise<CronJob | null> {
     const job = this.jobs.get(jobId);
     if (!job) return null;
@@ -604,7 +640,7 @@ export class CronScheduler extends EventEmitter {
   // Execution
   // ==========================================================================
 
-  private async executeJob(job: CronJob): Promise<JobRun> {
+  private async executeJob(job: CronJob, chainDepth = 0): Promise<JobRun> {
     const run: JobRun = {
       id: crypto.randomUUID(),
       jobId: job.id,
@@ -675,7 +711,87 @@ export class CronScheduler extends EventEmitter {
     await this.saveRunHistory(run);
     await this.persistJobs();
 
+    // Chained jobs: on success only, after this run is fully persisted, run the
+    // `then` target. A chained failure must never bubble out of the parent's
+    // successful run, so the chain runs inside a guarded helper that swallows
+    // (and logs) any error from the chained job.
+    if (run.status === 'success' && job.then) {
+      await this.runChainedJob(job, chainDepth);
+    }
+
     return run;
+  }
+
+  /**
+   * Resolve and execute a chained (`then`) job after its parent succeeds.
+   *
+   * Validation happens here (not at creation) because chain targets may be
+   * authored out of order. A missing/disabled target, a self-reference, or a
+   * depth-cap breach is logged and stops the chain — it never throws.
+   */
+  private async runChainedJob(parent: CronJob, chainDepth: number): Promise<void> {
+    const target = parent.then;
+    if (!target) return;
+
+    if (chainDepth >= MAX_CHAIN_DEPTH) {
+      logger.warn('Cron chain depth cap reached — stopping chain', {
+        jobId: parent.id,
+        then: target,
+        chainDepth,
+        maxChainDepth: MAX_CHAIN_DEPTH,
+      });
+      return;
+    }
+
+    const next = this.resolveChainTarget(target);
+    if (!next) {
+      logger.warn('Cron chained job target not found — stopping chain', {
+        jobId: parent.id,
+        then: target,
+      });
+      return;
+    }
+    if (next.id === parent.id) {
+      logger.warn('Cron chained job points at itself — stopping chain', {
+        jobId: parent.id,
+        then: target,
+      });
+      return;
+    }
+    if (!next.enabled || next.status === 'paused') {
+      logger.debug('Cron chained job target is disabled/paused — skipping chain', {
+        jobId: parent.id,
+        then: target,
+        targetId: next.id,
+        targetStatus: next.status,
+      });
+      return;
+    }
+
+    try {
+      await this.executeJob(next, chainDepth + 1);
+    } catch (err) {
+      // A chained failure is captured in the chained job's own run record; it
+      // must not fail the parent's already-successful run.
+      logger.warn('Cron chained job failed', {
+        jobId: parent.id,
+        targetId: next.id,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+  }
+
+  /**
+   * Resolve a `then` reference by exact id, then by unique id prefix.
+   */
+  private resolveChainTarget(idOrPrefix: string): CronJob | undefined {
+    const exact = this.jobs.get(idOrPrefix);
+    if (exact) return exact;
+
+    const prefixMatches = Array.from(this.jobs.values()).filter((job) =>
+      job.id.startsWith(idOrPrefix),
+    );
+    return prefixMatches.length === 1 ? prefixMatches[0] : undefined;
   }
 
   // ==========================================================================

@@ -52,6 +52,7 @@ import {
   mobileRoutes,
 } from './routes/index.js';
 import { setupWebSocket, closeAllConnections, getConnectionStats } from './websocket/index.js';
+import { setupDesktopWebSocket, closeDesktopWebSocket } from './websocket/desktop-handler.js';
 import { startFleetHeartbeat, stopFleetHeartbeat } from '../fleet/heartbeat-broadcaster.js';
 import { startAutonomousTick, stopAutonomousTick } from '../fleet/autonomous-tick-broadcaster.js';
 import { startApiHeartbeatMonitor, stopApiHeartbeatMonitor } from './heartbeat-monitor.js';
@@ -1016,6 +1017,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
   if (config.websocketEnabled) {
     await setupWebSocket(server, config);
     logger.info('WebSocket server enabled at /ws');
+    // Dedicated desktop (Cowork) endpoint for the conversational core only
+    // (chat / sessions / live stream events). Speaks the Cowork ClientEvent
+    // /ServerEvent protocol, auth at handshake (JWT), origin-hardened. Mounted
+    // additively via a prepended `upgrade` listener so /ws stays untouched.
+    await setupDesktopWebSocket(server, config);
+    logger.info(`Desktop WebSocket endpoint enabled at /desktop`);
     // Phase (d).9 — start the fleet presence beacon. Periodic
     // fleet:peer:heartbeat events let remote FleetListener clients flag
     // a peer as stale when they stop arriving. Idempotent + unref'd.
@@ -1197,6 +1204,8 @@ export async function stopServer(server: HttpServer): Promise<void> {
 
     // Close WebSocket connections
     closeAllConnections();
+    // Tear down the desktop endpoint (detaches its upgrade listener + closes sockets).
+    closeDesktopWebSocket();
 
     // Close HTTP server
     server.close((err) => {

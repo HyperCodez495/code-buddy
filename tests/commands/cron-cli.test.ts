@@ -122,6 +122,60 @@ describe('buildCronJobSpec', () => {
     const r = buildCronJobSpec('j', { every: '1000', message: 'hi', format: 'weird' });
     expect('error' in r && r.error).toMatch(/full.*summary/);
   });
+
+  it('builds a script job from inline JSON', () => {
+    const r = buildCronJobSpec('Nightly build', {
+      cron: '0 3 * * *',
+      script: JSON.stringify({ executable: 'npm', args: ['run', 'build'], timeoutMs: 30000 }),
+    });
+    expect('spec' in r).toBe(true);
+    if ('spec' in r) {
+      expect(r.spec.task.type).toBe('script');
+      expect(r.spec.task.command).toEqual({ executable: 'npm', args: ['run', 'build'], timeoutMs: 30000 });
+    }
+  });
+
+  it('rejects a script config without an executable', () => {
+    const r = buildCronJobSpec('j', { every: '1000', script: JSON.stringify({ args: ['x'] }) });
+    expect('error' in r && r.error).toMatch(/non-empty "executable"/);
+  });
+
+  it('builds a skill job with a request', () => {
+    const r = buildCronJobSpec('Cleanup', {
+      every: '3600000',
+      skill: 'cleanup',
+      skillRequest: 'purge stale temp files',
+    });
+    expect('spec' in r).toBe(true);
+    if ('spec' in r) {
+      expect(r.spec.task).toEqual({ type: 'skill', skill: 'cleanup', skillRequest: 'purge stale temp files' });
+    }
+  });
+
+  it('rejects a skill task with a blank skill name', () => {
+    const r = buildCronJobSpec('j', { every: '1000', skill: '   ' });
+    expect('error' in r && r.error).toMatch(/non-empty skill name/);
+  });
+
+  it('rejects two competing task types', () => {
+    const r = buildCronJobSpec('j', {
+      every: '1000',
+      message: 'hi',
+      script: JSON.stringify({ executable: 'npm' }),
+    });
+    expect('error' in r && r.error).toMatch(/mutually exclusive/);
+  });
+
+  it('attaches a then chain target (forward reference allowed)', () => {
+    const r = buildCronJobSpec('First', { every: '1000', message: 'go', then: 'second-job' });
+    expect('spec' in r).toBe(true);
+    if ('spec' in r) expect(r.spec.then).toBe('second-job');
+  });
+
+  it('rejects a blank --then', () => {
+    const r = buildCronJobSpec('j', { every: '1000', message: 'hi', then: '   ' });
+    expect('error' in r && r.error).toMatch(/--then must be a non-empty/);
+  });
 });
 
 describe('buildCronJobUpdates', () => {
@@ -175,5 +229,43 @@ describe('buildCronJobUpdates', () => {
       expect(r.updates).toHaveProperty('preCheck', undefined);
       expect(r.updates).toHaveProperty('delivery', undefined);
     }
+  });
+
+  it('updates the task to a script job', () => {
+    const r = buildCronJobUpdates(sampleJob(), {
+      script: JSON.stringify({ executable: 'git', args: ['fetch'] }),
+    });
+    expect('updates' in r).toBe(true);
+    if ('updates' in r) {
+      expect(r.updates.task).toEqual({ type: 'script', command: { executable: 'git', args: ['fetch'] } });
+    }
+  });
+
+  it('updates the task to a skill job', () => {
+    const r = buildCronJobUpdates(sampleJob(), { skill: 'cleanup' });
+    expect('updates' in r).toBe(true);
+    if ('updates' in r) {
+      expect(r.updates.task).toEqual({ type: 'skill', skill: 'cleanup' });
+    }
+  });
+
+  it('rejects conflicting script and skill task updates', () => {
+    const r = buildCronJobUpdates(sampleJob(), {
+      script: JSON.stringify({ executable: 'npm' }),
+      skill: 'cleanup',
+    });
+    expect('error' in r && r.error).toMatch(/mutually exclusive/);
+  });
+
+  it('sets and clears the then chain target', () => {
+    const set = buildCronJobUpdates(sampleJob(), { then: 'next-job' });
+    expect('updates' in set && set.updates.then).toBe('next-job');
+
+    const cleared = buildCronJobUpdates(sampleJob({ then: 'next-job' }), { clearThen: true });
+    expect('updates' in cleared).toBe(true);
+    if ('updates' in cleared) expect(cleared.updates).toHaveProperty('then', undefined);
+
+    const conflict = buildCronJobUpdates(sampleJob(), { then: 'x', clearThen: true });
+    expect('error' in conflict && conflict.error).toMatch(/mutually exclusive/);
   });
 });

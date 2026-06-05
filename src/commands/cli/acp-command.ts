@@ -16,16 +16,7 @@ import type { Command } from 'commander';
 import {
   AcpStdioServer,
   type AcpPromptRunner,
-  type AcpContentBlock,
 } from '../../protocols/acp/acp-stdio-server.js';
-
-function extractPromptText(prompt: AcpContentBlock[]): string {
-  return prompt
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
-    .map((block) => block.text as string)
-    .join('\n')
-    .trim();
-}
 
 export function registerAcpCommand(program: Command): void {
   program
@@ -37,16 +28,23 @@ export function registerAcpCommand(program: Command): void {
 
       const { detectProviderFromEnv } = await import('../../utils/provider-detector.js');
       const { CodeBuddyClient } = await import('../../codebuddy/client.js');
+      const { createAcpAgenticRunner } = await import('../../protocols/acp/acp-agentic-runner.js');
 
       const detected = detectProviderFromEnv();
       const client = detected
         ? new CodeBuddyClient(detected.apiKey, detected.defaultModel, detected.baseURL)
         : null;
 
-      const promptRunner: AcpPromptRunner = async ({ prompt, sendUpdate, signal }) => {
-        const text = extractPromptText(prompt);
-        if (!client) {
-          sendUpdate({
+      // The agentic runner drives a real tool-using turn (view_file /
+      // list_directory / search) routed through the client's fs/* +
+      // session/request_permission primitives when the editor advertises them.
+      const agenticRunner = client
+        ? createAcpAgenticRunner({ chat: (messages, tools) => client.chat(messages, tools) })
+        : null;
+
+      const promptRunner: AcpPromptRunner = async (ctx) => {
+        if (!agenticRunner) {
+          ctx.sendUpdate({
             sessionUpdate: 'agent_message_chunk',
             content: {
               type: 'text',
@@ -55,36 +53,7 @@ export function registerAcpCommand(program: Command): void {
           });
           return { stopReason: 'refusal' };
         }
-        if (!text) {
-          return { stopReason: 'end_turn' };
-        }
-
-        try {
-          const response = await client.chat([
-            {
-              role: 'system',
-              content:
-                'You are Code Buddy, a coding assistant operating over the Agent Client Protocol inside a code editor. Answer concisely in Markdown.',
-            },
-            { role: 'user', content: text },
-          ]);
-          if (signal.aborted) return { stopReason: 'cancelled' };
-
-          const choices = (response as { choices?: Array<{ message?: { content?: string } }> } | null)?.choices;
-          const answer = choices?.[0]?.message?.content ?? '';
-          sendUpdate({
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: answer || '(no response)' },
-          });
-          return { stopReason: 'end_turn' };
-        } catch (err) {
-          if (signal.aborted) return { stopReason: 'cancelled' };
-          sendUpdate({
-            sessionUpdate: 'agent_message_chunk',
-            content: { type: 'text', text: `Error: ${err instanceof Error ? err.message : String(err)}` },
-          });
-          return { stopReason: 'refusal' };
-        }
+        return agenticRunner(ctx);
       };
 
       const server = new AcpStdioServer({ promptRunner });

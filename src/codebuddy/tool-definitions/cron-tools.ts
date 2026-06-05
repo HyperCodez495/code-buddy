@@ -5,7 +5,7 @@ export const CRONJOB_TOOL: CodeBuddyTool = {
   function: {
     name: 'cronjob',
     description:
-      'Manage Code Buddy scheduled jobs through the real CronScheduler store: list, show, create, pause, resume, run, or remove jobs.',
+      'Manage Code Buddy scheduled jobs through the real CronScheduler store: list, show, create, pause, resume, run, or remove jobs. Create message (agent), watchdog, no-agent script (command), or skill jobs, and chain jobs via then.',
     parameters: {
       type: 'object',
       properties: {
@@ -36,11 +36,40 @@ export const CRONJOB_TOOL: CodeBuddyTool = {
         },
         message: {
           type: 'string',
-          description: 'Agent message task for create. Required unless watchdog is provided.',
+          description: 'Agent message task for create. Provide exactly one of message, watchdog, command, or skill.',
         },
         watchdog: {
           type: 'object',
           description: 'No-LLM watchdog task config for create, for example disk/http/repo/build checks.',
+        },
+        command: {
+          type: 'object',
+          description:
+            'No-agent script task for create: { executable, args?, cwd?, allowedExecutables?, timeoutMs? }. Runs an allowlisted command without an LLM.',
+          properties: {
+            executable: { type: 'string', description: 'Allowlisted executable to run (no shell).' },
+            args: { type: 'array', items: { type: 'string' }, description: 'Command arguments.' },
+            cwd: { type: 'string', description: 'Working directory.' },
+            allowedExecutables: {
+              type: 'array',
+              items: { type: 'string' },
+              description: 'Extra allowed executables (basename match), merged with defaults.',
+            },
+            timeoutMs: { type: 'number', description: 'Command timeout in ms (clamped to [100, 600000]).' },
+          },
+          required: ['executable'],
+        },
+        skill: {
+          type: 'string',
+          description: 'No-agent skill task for create: name of a registered skill to run without an LLM.',
+        },
+        skillRequest: {
+          type: 'string',
+          description: 'Optional request string passed to the skill executor when using skill.',
+        },
+        then: {
+          type: 'string',
+          description: 'Chain target: job id (or unique id prefix) to run on successful completion of this job.',
         },
         preCheck: {
           type: 'object',

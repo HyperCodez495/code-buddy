@@ -13,6 +13,10 @@ export interface CronjobToolInput extends Record<string, unknown> {
   at?: unknown;
   message?: unknown;
   watchdog?: unknown;
+  command?: unknown;
+  skill?: unknown;
+  skillRequest?: unknown;
+  then?: unknown;
   preCheck?: unknown;
   deliver?: unknown;
   format?: unknown;
@@ -65,6 +69,10 @@ function buildCreateOptions(input: CronjobToolInput): CronAddOptions {
     at: normalizeString(input.at),
     message: normalizeString(input.message),
     watchdog: normalizeJsonOption(input.watchdog),
+    script: normalizeJsonOption(input.command),
+    skill: normalizeString(input.skill),
+    skillRequest: normalizeString(input.skillRequest),
+    then: normalizeString(input.then),
     preCheck: normalizeJsonOption(input.preCheck),
     deliver: normalizeDeliver(input.deliver),
     format: normalizeString(input.format),

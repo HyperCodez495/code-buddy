@@ -6,6 +6,7 @@ import {
   type ExecuteCodeLanguage,
   type ExecuteCodeRunnerOptions,
 } from '../execute-code-runner.js';
+import { createExecuteCodeRpcInvoker } from '../execute-code-rpc-invoker.js';
 import type {
   ITool,
   IToolExecutionContext,
@@ -22,9 +23,13 @@ export class ExecuteCodeTool implements ITool {
 
   async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
     try {
+      const rootDir = this.options.rootDir ?? context?.cwd ?? process.cwd();
       const result = await executeCode(parseInput(input), {
         ...this.options,
-        rootDir: this.options.rootDir ?? context?.cwd,
+        rootDir,
+        // Always wire the invoker; the runner keeps the channel OFF unless
+        // the master flag (CODEBUDDY_EXECUTE_CODE_TOOL_RPC) is enabled.
+        rpcInvoke: this.options.rpcInvoke ?? createExecuteCodeRpcInvoker({ workspaceRoot: rootDir }),
       });
       return {
         success: result.ok,

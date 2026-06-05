@@ -14,7 +14,8 @@
  *   buddy cron update <id> [--name <name>] [--every <ms>|--cron <expr>|--at <iso>]
  *   buddy cron remove <id>
  *   buddy cron add <name> --every <ms>|--cron <expr>|--at <iso>
- *        [--message <text>] [--watchdog <json|@file>] [--pre-check <json|@file>]
+ *        [--message <text> | --watchdog <json|@file> | --script <json|@file> | --skill <id>]
+ *        [--skill-request <text>] [--then <jobId>] [--pre-check <json|@file>]
  *        [--deliver <type:id>...] [--format full|summary]
  *
  * The job-spec construction is a pure, tested helper (`buildCronJobSpec`); the
@@ -31,6 +32,14 @@ export interface CronAddOptions {
   at?: string;
   message?: string;
   watchdog?: string;
+  /** Script-task command as inline JSON or @file: { executable, args?, cwd?, ... }. */
+  script?: string;
+  /** Skill-task: name of a registered skill to run without an agent. */
+  skill?: string;
+  /** Optional request string passed to the skill executor. */
+  skillRequest?: string;
+  /** Job-level chain target: id (or id prefix) to run on successful completion. */
+  then?: string;
   preCheck?: string;
   deliver?: string[];
   format?: string;
@@ -40,6 +49,8 @@ export interface CronUpdateOptions extends CronAddOptions {
   name?: string;
   clearPreCheck?: boolean;
   clearDelivery?: boolean;
+  /** Remove the job-level chain target. */
+  clearThen?: boolean;
   json?: boolean;
 }
 
@@ -50,11 +61,12 @@ export interface CronJobSpec {
   task: CronJob['task'];
   delivery?: CronJob['delivery'];
   preCheck?: CronJob['preCheck'];
+  then?: string;
 }
 
 export type CronJobUpdates = Partial<Pick<
   CronJob,
-  'name' | 'type' | 'schedule' | 'task' | 'delivery' | 'preCheck'
+  'name' | 'type' | 'schedule' | 'task' | 'delivery' | 'preCheck' | 'then'
 >>;
 
 export type CronJobSpecResult = { spec: CronJobSpec } | { error: string };
@@ -102,24 +114,21 @@ export function buildCronJobSpec(name: string, opts: CronAddOptions): CronJobSpe
     schedule.at = at.toISOString();
   }
 
-  // Task: watchdog when --watchdog is given, otherwise a message task.
-  let task: CronJob['task'];
-  if (opts.watchdog !== undefined) {
-    const parsed = parseJsonOption(opts.watchdog, '--watchdog');
-    if ('error' in parsed) return parsed;
-    const watchdog = parsed.value as CronJob['task']['watchdog'];
-    if (!watchdog || !Array.isArray(watchdog.checks) || watchdog.checks.length === 0) {
-      return { error: '--watchdog config must include a non-empty "checks" array' };
-    }
-    task = { type: 'watchdog', watchdog };
-  } else {
-    if (!opts.message || !opts.message.trim()) {
-      return { error: 'cron add: --message is required unless --watchdog is given' };
-    }
-    task = { type: 'message', message: opts.message };
-  }
+  // Task: exactly one of --message / --watchdog / --script / --skill.
+  const taskResult = buildCronTask(opts, 'cron add', true);
+  if ('error' in taskResult) return taskResult;
+  const task = taskResult.task;
 
   const spec: CronJobSpec = { name: name.trim(), type, schedule, task };
+
+  // Optional job-level chain target (valid on any task; the engine validates the
+  // target at execution time, so forward references are allowed).
+  if (opts.then !== undefined) {
+    if (!opts.then.trim()) {
+      return { error: 'cron add: --then must be a non-empty job id (or id prefix)' };
+    }
+    spec.then = opts.then.trim();
+  }
 
   // Optional pre-check gate.
   if (opts.preCheck !== undefined) {
@@ -184,22 +193,27 @@ export function buildCronJobUpdates(job: CronJob, opts: CronUpdateOptions): Cron
     updates.schedule = { at: at.toISOString() };
   }
 
-  if (opts.message !== undefined && opts.watchdog !== undefined) {
-    return { error: 'cron update: --message and --watchdog are mutually exclusive' };
+  const taskGiven =
+    opts.message !== undefined ||
+    opts.watchdog !== undefined ||
+    opts.script !== undefined ||
+    opts.skill !== undefined;
+  if (taskGiven) {
+    const taskResult = buildCronTask(opts, 'cron update', false);
+    if ('error' in taskResult) return taskResult;
+    updates.task = taskResult.task;
   }
-  if (opts.watchdog !== undefined) {
-    const parsed = parseJsonOption(opts.watchdog, '--watchdog');
-    if ('error' in parsed) return parsed;
-    const watchdog = parsed.value as CronJob['task']['watchdog'];
-    if (!watchdog || !Array.isArray(watchdog.checks) || watchdog.checks.length === 0) {
-      return { error: '--watchdog config must include a non-empty "checks" array' };
+
+  if (opts.then !== undefined && opts.clearThen) {
+    return { error: 'cron update: --then and --clear-then are mutually exclusive' };
+  }
+  if (opts.clearThen) {
+    updates.then = undefined;
+  } else if (opts.then !== undefined) {
+    if (!opts.then.trim()) {
+      return { error: 'cron update: --then must be a non-empty job id (or id prefix)' };
     }
-    updates.task = { type: 'watchdog', watchdog };
-  } else if (opts.message !== undefined) {
-    if (!opts.message.trim()) {
-      return { error: 'cron update: --message cannot be blank' };
-    }
-    updates.task = { type: 'message', message: opts.message };
+    updates.then = opts.then.trim();
   }
 
   if (opts.preCheck !== undefined && opts.clearPreCheck) {
@@ -239,6 +253,70 @@ export function buildCronJobUpdates(job: CronJob, opts: CronUpdateOptions): Cron
   }
 
   return { updates };
+}
+
+/**
+ * Build (and validate) a task from CLI options. Exactly one of --message,
+ * --watchdog, --script or --skill is allowed. When `messageRequired` is true (on
+ * `add`), at least one task source must be present; on `update` the caller only
+ * invokes this when a task flag was given, so it may be relaxed.
+ */
+function buildCronTask(
+  opts: CronAddOptions,
+  ctx: string,
+  messageRequired: boolean,
+): { task: CronJob['task'] } | { error: string } {
+  const provided = [opts.message, opts.watchdog, opts.script, opts.skill].filter(
+    (v) => v !== undefined,
+  );
+  if (provided.length > 1) {
+    return { error: `${ctx}: --message, --watchdog, --script and --skill are mutually exclusive` };
+  }
+
+  if (opts.watchdog !== undefined) {
+    const parsed = parseJsonOption(opts.watchdog, '--watchdog');
+    if ('error' in parsed) return parsed;
+    const watchdog = parsed.value as CronJob['task']['watchdog'];
+    if (!watchdog || !Array.isArray(watchdog.checks) || watchdog.checks.length === 0) {
+      return { error: '--watchdog config must include a non-empty "checks" array' };
+    }
+    return { task: { type: 'watchdog', watchdog } };
+  }
+
+  if (opts.script !== undefined) {
+    const parsed = parseJsonOption(opts.script, '--script');
+    if ('error' in parsed) return parsed;
+    const command = parsed.value as CronJob['task']['command'];
+    if (!command || typeof command.executable !== 'string' || command.executable.trim().length === 0) {
+      return { error: '--script config must include a non-empty "executable" string' };
+    }
+    return { task: { type: 'script', command } };
+  }
+
+  if (opts.skill !== undefined) {
+    if (!opts.skill.trim()) {
+      return { error: `${ctx}: --skill must be a non-empty skill name` };
+    }
+    const task: CronJob['task'] = { type: 'skill', skill: opts.skill.trim() };
+    if (opts.skillRequest !== undefined && opts.skillRequest.trim().length > 0) {
+      task.skillRequest = opts.skillRequest;
+    }
+    return { task };
+  }
+
+  if (opts.message !== undefined) {
+    if (!opts.message.trim()) {
+      return { error: `${ctx}: --message cannot be blank` };
+    }
+    return { task: { type: 'message', message: opts.message } };
+  }
+
+  if (messageRequired) {
+    return { error: `${ctx}: --message is required unless --watchdog, --script or --skill is given` };
+  }
+  // Unreachable on update (caller gates on a task flag being present), but keep
+  // a defined fallback so the type is exhaustive.
+  return { error: `${ctx}: no task specified` };
 }
 
 function parseJsonOption(
@@ -391,6 +469,11 @@ export function registerCronCommands(program: Command): void {
     .option('--at <iso>', 'replace schedule with a one-shot ISO 8601 timestamp')
     .option('--message <text>', 'replace task with an agent message')
     .option('--watchdog <json>', 'replace task with watchdog config as inline JSON or @file')
+    .option('--script <json>', 'replace task with a no-agent command as inline JSON or @file')
+    .option('--skill <id>', 'replace task with a no-agent skill run')
+    .option('--skill-request <text>', 'request string passed to the skill executor')
+    .option('--then <jobId>', 'chain: run this job id (or prefix) on successful completion')
+    .option('--clear-then', 'remove the chain target')
     .option('--pre-check <json>', 'replace pre-check gate as inline JSON or @file')
     .option('--clear-pre-check', 'remove the pre-check gate')
     .option('--deliver <target>', 'replace delivery targets type:id (repeatable)', collectOption, [])
@@ -427,6 +510,10 @@ export function registerCronCommands(program: Command): void {
     .option('--at <iso>', 'run once at an ISO 8601 timestamp')
     .option('--message <text>', 'agent message to run (default task)')
     .option('--watchdog <json>', 'watchdog config as inline JSON or @file (no-LLM monitor)')
+    .option('--script <json>', 'no-agent command as inline JSON or @file: { executable, args?, cwd?, ... }')
+    .option('--skill <id>', 'no-agent skill run by registered skill name')
+    .option('--skill-request <text>', 'request string passed to the skill executor')
+    .option('--then <jobId>', 'chain: run this job id (or prefix) on successful completion')
     .option('--pre-check <json>', 'pre-check gate as inline JSON or @file')
     .option('--deliver <target>', 'delivery target type:id (repeatable)', collectOption, [])
     .option('--format <fmt>', 'delivery body format: full|summary')

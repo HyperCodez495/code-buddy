@@ -55,7 +55,12 @@ import {
 import {
   buildLocalHermesToolParityManifest,
   collectOfflineBuiltinTools,
+  collectOfflineBuiltinToolNames,
 } from '../../agent/hermes-tool-parity-local.js';
+import {
+  buildHermesToolsetCatalog,
+  type HermesToolsetCatalogManifest,
+} from '../../agent/hermes-toolset-catalog.js';
 import {
   buildHermesHookLifecycleManifest,
   renderHermesHookLifecycleManifest,
@@ -274,6 +279,12 @@ interface HermesToolsetsCatalog {
   guidance: ReturnType<typeof buildHermesAgentProfile>['dispatchProfileGuidance'];
   activeToolset: ReturnType<typeof buildHermesToolsetDescriptor>;
   toolsets: ReturnType<typeof buildHermesToolsetDescriptor>[];
+  /**
+   * Official Hermes named-toolset catalog (core/composite/platform/dynamic)
+   * with per-toolset readiness. Additive to the Fleet dispatch-profile view
+   * above; the dispatch-profile fields remain unchanged for back-compat.
+   */
+  officialToolsets: HermesToolsetCatalogManifest;
   notes: string[];
 }
 
@@ -1477,9 +1488,11 @@ function buildHermesToolsetsCatalog(profileArg: string): HermesToolsetsCatalog {
     guidance: buildHermesAgentProfile(activeProfile).dispatchProfileGuidance,
     activeToolset: buildHermesToolsetDescriptor(activeProfile, previewTools),
     toolsets,
+    officialToolsets: buildHermesToolsetCatalog(collectOfflineBuiltinToolNames()),
     notes: [
       'This is the Code Buddy native Fleet/Hermes toolset mapping, not the upstream Python runtime.',
       'Decisions are policy previews for representative tools; model-facing schemas are filtered again at runtime.',
+      'officialToolsets enumerates the upstream Hermes named-toolset catalog with per-toolset readiness sourced from the official tool parity manifest.',
     ],
   };
 }
@@ -1515,6 +1528,23 @@ function renderHermesToolsetsCatalog(catalog: HermesToolsetsCatalog): string {
     lines.push(`    Allowed preview tools: ${formatList(toolset.allowedTools)}`);
     lines.push(`    Confirm preview tools: ${formatList(toolset.confirmTools)}`);
     lines.push(`    Denied preview tools: ${formatList(toolset.deniedTools)}`);
+  }
+
+  const official = catalog.officialToolsets;
+  lines.push('');
+  lines.push(
+    `Official Hermes toolsets: ${official.summary.totalOfficialToolsets} tracked ` +
+      `(${official.summary.present} present, ${official.summary.partial} partial, ${official.summary.absent} absent)`,
+  );
+  for (const toolset of official.toolsets) {
+    const counts = toolset.composedOf.length > 0 ? ` composed-of=${formatList(toolset.composedOf)}` : '';
+    lines.push(
+      `  [${toolset.group}] ${toolset.id} (${toolset.readiness}) ` +
+        `${toolset.presentToolCount}/${toolset.expectedToolCount}${counts}`,
+    );
+    if (toolset.missingToolNames.length > 0) {
+      lines.push(`    Missing: ${formatList(toolset.missingToolNames)}`);
+    }
   }
 
   lines.push('');

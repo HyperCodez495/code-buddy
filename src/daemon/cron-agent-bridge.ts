@@ -152,6 +152,14 @@ export class CronAgentBridge extends EventEmitter {
           watchdogOk = watchdogResult.ok;
           break;
         }
+        case 'script': {
+          output = await this.executeScriptTask(job);
+          break;
+        }
+        case 'skill': {
+          output = await this.executeSkillTask(job);
+          break;
+        }
         default:
           throw new Error(`Unknown task type: ${job.task.type}`);
       }
@@ -355,6 +363,80 @@ export class CronAgentBridge extends EventEmitter {
       errors: result.errors,
     });
     return { output: result.summary, ok: result.ok };
+  }
+
+  /**
+   * Execute a script-type task — a bounded, allowlisted shell command run
+   * WITHOUT instantiating a CodeBuddyAgent or calling any model provider.
+   * A non-zero exit (or timeout) throws so the run is recorded as failed and
+   * any chained `then` job does not fire.
+   */
+  private async executeScriptTask(job: CronJob): Promise<string> {
+    const command = job.task.command;
+    if (!command || typeof command.executable !== 'string' || command.executable.length === 0) {
+      throw new Error('Script task requires a command with an executable');
+    }
+    const { runScriptCommand } = await import('../scheduler/script-runner.js');
+    const result = await runScriptCommand(command);
+    this.emit('job:script', {
+      jobId: job.id,
+      executable: command.executable,
+      exitCode: result.exitCode,
+      timedOut: result.timedOut,
+    });
+    if (result.timedOut) {
+      throw new Error(`script timed out: ${command.executable}`);
+    }
+    if (result.exitCode !== 0) {
+      throw new Error(
+        `script failed: ${command.executable} (exit ${result.exitCode})\n${result.output}`.trim(),
+      );
+    }
+    return result.output;
+  }
+
+  /**
+   * Execute a skill-type task — resolves a named skill from the SkillRegistry
+   * and runs it via the SkillExecutor. Without a configured tool executor the
+   * skill resolves to its guidance text (a legitimate no-agent result); this
+   * never spins up the full agentic loop.
+   */
+  private async executeSkillTask(job: CronJob): Promise<string> {
+    const skillName = job.task.skill;
+    if (!skillName || typeof skillName !== 'string' || skillName.trim().length === 0) {
+      throw new Error('Skill task requires a skill name');
+    }
+
+    const { getSkillRegistry } = await import('../skills/registry.js');
+    const registry = getSkillRegistry();
+    try {
+      await registry.load();
+    } catch (err) {
+      logger.debug('CronAgentBridge: skill registry load failed', { error: String(err) });
+    }
+
+    const skill = registry.get(skillName);
+    if (!skill) {
+      throw new Error(`Skill not found: ${skillName}`);
+    }
+
+    const { getSkillExecutor } = await import('../skills/executor.js');
+    const executor = getSkillExecutor();
+    const result = await executor.execute(skill, {
+      request: job.task.skillRequest ?? job.task.message ?? job.name,
+      cwd: process.cwd(),
+    });
+
+    this.emit('job:skill', {
+      jobId: job.id,
+      skill: skillName,
+      success: result.success,
+    });
+
+    if (!result.success) {
+      throw new Error(`Skill '${skillName}' failed: ${result.error ?? 'unknown error'}`);
+    }
+    return result.output ?? `Skill '${skillName}' produced no output`;
   }
 
   /**

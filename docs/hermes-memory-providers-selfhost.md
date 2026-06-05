@@ -25,7 +25,7 @@ re-implementation.
 | **Mem0** | ✅ adapter | HTTP | yes (OSS REST) | `MEM0_BASE_URL` (self-host) or `MEM0_API_KEY` (cloud) |
 | **Honcho** | ✅ adapter | HTTP v3 | yes (FastAPI) | `HONCHO_BASE_URL` (self-host) or `HONCHO_API_KEY` (cloud) |
 | **OpenViking** | ✅ adapter | HTTP `/api/v1` | yes (AGPL) | `OPENVIKING_ENDPOINT` |
-| **ByteRover** | ✅ adapter | `brv` CLI | yes (local-first) | `npm i -g byterover-cli` |
+| **ByteRover** | ✅ adapter | `brv` CLI | account-gated | `npm i -g byterover-cli` **+ `brv login`** |
 | **Supermemory** | ✅ adapter | HTTP v3 | no (cloud) | `SUPERMEMORY_API_KEY` |
 | **RetainDB** | ✅ adapter | HTTP v1 | no (cloud) | `RETAINDB_API_KEY` |
 | Hindsight | ⛔ out of scope | Python SDK / daemon | — | use upstream Hermes |
@@ -113,12 +113,23 @@ export OPENVIKING_ENDPOINT=http://MYHOST:1933
 # OPENVIKING_API_KEY only for authenticated servers
 ```
 
-### ByteRover (local-first CLI)
+### ByteRover (`brv` CLI — account-gated)
 
 ```bash
 npm install -g byterover-cli   # provides `brv`; detected automatically
+brv login                      # REQUIRED: brv's built-in provider needs a
+                               # ByteRover account (or: brv login --api-key <key>
+                               # from app.byterover.dev/settings/keys for headless)
+brv providers connect byterover
 export CODEBUDDY_MEMORY_PROVIDER=byterover
 ```
+
+> **Not free/local-first.** Despite the "local-first" framing, `brv providers
+> connect byterover` refuses without a signed-in ByteRover account, so the live
+> round-trip (`buddy hermes memory probe byterover`) cannot pass on this box
+> without credentials. The adapter (brv detection + curate/query subprocess) is
+> proven by shape tests; live validation is account-gated like the cloud
+> providers.
 
 ## Validate it actually works (the real test)
 
@@ -182,20 +193,60 @@ recipe and the gotchas that bit us:
 
 Then on the same host: `export CODEBUDDY_MEMORY_PROVIDER=honcho HONCHO_BASE_URL=http://localhost:8000` and `buddy hermes memory probe honcho`.
 
-### Mem0 on the same box — connector validated, write needs a fast LLM
+### Mem0 on the same box — LIVE-VALIDATED (2026-06-04)
 
 Mem0 (OSS REST server, built from `mem0/server`, AUTH_DISABLED, Postgres+pgvector,
-Ollama for LLM+embeddings) was brought up on the same host and the **connector
-contract is confirmed against the live server**: `POST /search` → `200`
-(`{"results":[]}`), `POST /v1/embeddings` → `200`, server reachable. The probe,
-however, returns **FAIL** — and correctly so: `POST /memories` runs the chat
-model **synchronously** to extract facts and did not return within 150 s using a
-large local model (dense `qwen3.6:27b`, then MoE `qwen3.6:35b-a3b`). The probe's
-integrity guard saw the adapter fall back to local memory and refused to report a
-false pass. This is the architectural point above in action: **Honcho's async
-deriver passes on local inference; Mem0's synchronous extraction does not.** Give
-Mem0 a fast extraction LLM (GPT‑5.5 via `buddy server`, or a hosted model) and
-the same probe passes. Net: connector ✅, local-LLM write throughput ⛔.
+Ollama for LLM+embeddings) is now **live-validated end-to-end**:
+`buddy hermes memory probe mem0` → `PASS`, `remote=true`, `wrote=true`,
+`retrieved=true`, `fellBackToLocal=false`. Getting there required fixing three
+distinct things — and the third was a real Code Buddy bug only the live probe
+could catch:
+
+1. **Fast, non-thinking extraction LLM.** `POST /memories` runs the chat model
+   **synchronously** to extract facts. A *thinking* MoE (`qwen3.6:35b-a3b`)
+   generates thousands of reasoning tokens at ~17 tok/s and blew past the
+   adapter timeout → fell back to local. Switched mem0's `MEM0_DEFAULT_LLM_MODEL`
+   to **`qwen2.5:7b-instruct`** (no thinking, clean JSON, ~2–3 s/extraction).
+   Contrast: Honcho's async deriver tolerates slow local inference; Mem0's
+   synchronous path does not. (Bump `CODEBUDDY_MEMORY_HTTP_TIMEOUT_MS` if your
+   extraction LLM is slow-but-reliable.)
+2. **Embedding dimension mismatch.** pgvector's column was created at **1536**
+   (OpenAI default) but `nomic-embed-text` emits **768** → every insert failed
+   with `expected 1536 dimensions, not 768` and stored nothing. Fix: tell mem0
+   the dims (server now reads `MEM0_DEFAULT_EMBEDDER_DIMS`, wired into both the
+   pgvector `embedding_model_dims` and the embedder `embedding_dims`); set it to
+   `768`, drop the stale `memories` table so it recreates at 768. (Same class of
+   gotcha as Honcho's `EMBEDDING_VECTOR_DIMENSIONS`.) **Reproducibility note:**
+   `MEM0_DEFAULT_EMBEDDER_DIMS` is a local patch to `~/mem0/server/main.py`
+   (wires the env var into both pgvector `embedding_model_dims` and the embedder
+   `embedding_dims`); upstream mem0/server has no such knob. If `~/mem0` is
+   rebuilt from upstream, re-apply that ~6-line patch or the PASS regresses.
+3. **Adapter partition bug (Code Buddy).** With write+store finally working, the
+   probe stayed `pending`: `remember` wrote under user_id `<id>:project` but
+   `search`/`recall` queried bare `<id>`, so recall **silently missed every
+   project-scoped write**. Shape tests passed regardless — only the live
+   round-trip exposed it. Fixed with a shared `scopedUserId(scope)` used by both
+   write and read, plus a regression test
+   (`tests/memory/network-memory-adapters-real.test.ts`).
+
+The 3 still-unprobeable adapters here (Supermemory, RetainDB, OpenViking) were
+code-audited for the same write/read partition asymmetry and are **symmetric**
+(containerTags / project+user_id / tenant headers used identically on both
+sides), so they do not share the Mem0 bug class.
+
+mem0 recipe on this box:
+
+```bash
+# /home/patrice/mem0/server/.env
+MEM0_DEFAULT_LLM_MODEL=qwen2.5:7b-instruct     # fast, non-thinking
+MEM0_DEFAULT_EMBEDDER_MODEL=nomic-embed-text
+MEM0_DEFAULT_EMBEDDER_DIMS=768                 # MUST match nomic
+OPENAI_BASE_URL=http://host.docker.internal:11434/v1
+OPENAI_API_KEY=ollama
+# then: docker compose up -d --force-recreate mem0
+export CODEBUDDY_MEMORY_PROVIDER=mem0 MEM0_BASE_URL=http://localhost:18888
+buddy hermes memory probe mem0           # -> PASS
+```
 
 ## Cloud providers (need an account)
 

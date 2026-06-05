@@ -71,4 +71,70 @@ describe('cronjob tool real scheduler integration', () => {
     const afterRemove = await parseOutput(await tool!.execute({ action: 'list' }));
     expect(afterRemove.count).toBe(0);
   });
+
+  it('creates and persists a no-agent script job', async () => {
+    const { createCronjobTools } = await import('../../src/tools/registry/cronjob-tools.js');
+    const [tool] = createCronjobTools();
+
+    const created = await parseOutput(await tool!.execute({
+      action: 'create',
+      name: 'Nightly build',
+      cron: '0 3 * * *',
+      command: { executable: 'npm', args: ['run', 'build'], timeoutMs: 30000 },
+    }));
+    const job = created.job as { id: string; task: { type: string; command?: { executable: string } } };
+    expect(job.task.type).toBe('script');
+    expect(job.task.command?.executable).toBe('npm');
+
+    const persisted = JSON.parse(await fs.readFile(path.join(tempCronHome, 'jobs.json'), 'utf-8')) as Array<{
+      task: { type: string; command?: { executable: string; args?: string[] } };
+    }>;
+    expect(persisted[0]?.task.type).toBe('script');
+    expect(persisted[0]?.task.command).toEqual({ executable: 'npm', args: ['run', 'build'], timeoutMs: 30000 });
+  });
+
+  it('creates and persists a no-agent skill job', async () => {
+    const { createCronjobTools } = await import('../../src/tools/registry/cronjob-tools.js');
+    const [tool] = createCronjobTools();
+
+    const created = await parseOutput(await tool!.execute({
+      action: 'create',
+      name: 'Hourly cleanup',
+      every: 3600000,
+      skill: 'cleanup',
+      skillRequest: 'purge stale temp files',
+    }));
+    const job = created.job as { task: { type: string; skill?: string; skillRequest?: string } };
+    expect(job.task.type).toBe('skill');
+    expect(job.task.skill).toBe('cleanup');
+    expect(job.task.skillRequest).toBe('purge stale temp files');
+
+    const persisted = JSON.parse(await fs.readFile(path.join(tempCronHome, 'jobs.json'), 'utf-8')) as Array<{
+      task: { type: string; skill?: string; skillRequest?: string };
+    }>;
+    expect(persisted[0]?.task).toEqual({
+      type: 'skill',
+      skill: 'cleanup',
+      skillRequest: 'purge stale temp files',
+    });
+  });
+
+  it('creates and persists a chained (then) job', async () => {
+    const { createCronjobTools } = await import('../../src/tools/registry/cronjob-tools.js');
+    const [tool] = createCronjobTools();
+
+    const created = await parseOutput(await tool!.execute({
+      action: 'create',
+      name: 'Chained first',
+      every: 60000,
+      message: 'first',
+      then: 'second-prefix',
+    }));
+    expect((created.job as { then?: string }).then).toBe('second-prefix');
+
+    const persisted = JSON.parse(await fs.readFile(path.join(tempCronHome, 'jobs.json'), 'utf-8')) as Array<{
+      then?: string;
+    }>;
+    expect(persisted[0]?.then).toBe('second-prefix');
+  });
 });

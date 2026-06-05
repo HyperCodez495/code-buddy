@@ -424,7 +424,7 @@ describe('Hermes CLI commands', () => {
             nextCandidate.installCommand.includes('buddy tools skill-candidate install'),
         ).toBe(true);
       }
-      expect(output.nextActions[0]?.area).toBe('Closed learning loop');
+      expect(output.nextActions[0]?.area).toBe('Runs anywhere');
       expect(output.nextActions.every((item) => item.verificationCommand.length > 0)).toBe(true);
       expect(output.commands).toMatchObject({
         browser: 'buddy hermes browser status --json',
@@ -436,7 +436,9 @@ describe('Hermes CLI commands', () => {
         runtime: 'buddy hermes runtime status --json',
         smoke: 'buddy hermes smoke --json',
         todo: 'buddy hermes todo --json',
-        todoFull: `buddy hermes todo --limit ${output.summary.featureParity.selectedTodoCount} --json`,
+        // `--limit` only appears when some todos are hidden by the default limit;
+        // with fewer partial features it collapses to the plain form.
+        todoFull: expect.stringMatching(/^buddy hermes todo( --limit \d+)? --json$/),
         toolsets: 'buddy hermes toolsets safe --json',
         trajectories: 'buddy hermes trajectories status --json',
       });
@@ -455,10 +457,10 @@ describe('Hermes CLI commands', () => {
       expect(textOutput).toContain('Hermes status:');
       expect(textOutput).toContain('Feature parity:');
       expect(textOutput).toContain('Tool parity:');
-      expect(textOutput).toContain('Showing top 5/');
-      expect(textOutput).toContain(
-        `run buddy hermes todo --limit ${output.summary.featureParity.selectedTodoCount} --json`,
-      );
+      // The "Showing top N/ … run … for the full backlog" hint only prints when
+      // todos are hidden by the default limit; with fewer partial features all
+      // active todos are shown, so assert the always-present count line instead.
+      expect(textOutput).toContain('active todo(s)');
       expect(textOutput).toContain('Readiness:');
       expect(textOutput).toContain('Providers: configured');
       expect(textOutput).toContain('Tool Gateway: configured');
@@ -2171,17 +2173,18 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           id: 'cron-scheduling',
-          status: 'partial',
+          status: 'covered-partial',
           codeBuddyEvidence: expect.arrayContaining([
             'src/commands/cron-cli/index.ts',
             'src/tools/cronjob-tool.ts',
             'tests/tools/cronjob-tool-real.test.ts',
           ]),
           verificationCommands: expect.arrayContaining([
-            'npm test -- tests/commands/cron-cli.test.ts tests/scheduler/cron-scheduler-manual-run.test.ts --run',
             'npm test -- tests/tools/cronjob-tool-real.test.ts --run',
           ]),
-          notes: expect.stringContaining('exact agent-facing cronjob prompt tool'),
+          // script-only no-agent + skill-backed + chained jobs now implemented end-to-end
+          // and user-creatable via the cronjob tool and `buddy cron add/update`.
+          notes: expect.stringContaining('script-only NO-AGENT jobs'),
           nextWork: expect.not.stringContaining('Add exact agent-facing cronjob tool'),
         }),
         expect.objectContaining({
@@ -2235,13 +2238,15 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           id: 'memory-providers',
-          status: 'partial',
+          status: 'covered-partial',
           codeBuddyEvidence: expect.arrayContaining(['src/agent/hermes-memory-providers.ts']),
           verificationCommands: expect.arrayContaining([
             'npx tsx src/index.ts hermes memory status --json',
             '(cd cowork && npm test -- tests/hermes-memory-providers-bridge.test.ts tests/hermes-memory-providers-bridge-real.test.ts tests/hermes-memory-providers-strip.test.ts --run)',
           ]),
-          notes: expect.stringContaining('secret-safe provider readiness matrix'),
+          // Honcho + Mem0 are live-validated end-to-end on a self-hosted Ollama box;
+          // validating Mem0 surfaced + fixed a real write/read partition bug.
+          notes: expect.stringContaining('LIVE-VALIDATED'),
         }),
         expect.objectContaining({
           id: 'runtime-backends',
@@ -2284,7 +2289,7 @@ describe('Hermes CLI commands', () => {
         }),
         expect.objectContaining({
           id: 'mcp-acp',
-          status: 'partial',
+          status: 'covered-partial',
           codeBuddyEvidence: expect.arrayContaining([
             'src/agent/hermes-protocol-gateways.ts',
             'src/server/routes/a2a-protocol.ts',
@@ -2296,7 +2301,9 @@ describe('Hermes CLI commands', () => {
             'npx tsx src/index.ts hermes protocols-smoke local --json',
           ]),
           notes: expect.stringContaining('session.list / session.load'),
-          nextWork: expect.stringContaining('full agentic (tool-using) ACP turns'),
+          // agentic tool-using ACP turns are now implemented + round-trip tested;
+          // remaining work is live-editor-GUI validation + agentic edits.
+          nextWork: expect.stringContaining('live editor GUI'),
         }),
       ]),
     );
@@ -2345,16 +2352,19 @@ describe('Hermes CLI commands', () => {
     expect(output.summary.todoLimit).toBe(7);
     expect(output.summary.includedDeferred).toBe(false);
     expect(output.todos[0]).toMatchObject({
-      id: 'closed-learning-loop',
+      id: 'runtime-backends',
       priority: 1,
       status: 'partial',
     });
     expect(output.todos.map((item) => item.id)).not.toContain('agent-identity');
     expect(output.todos.map((item) => item.id)).toContain('runtime-backends');
     expect(output.todos.map((item) => item.id)).not.toContain('openclaw-migration');
+    // mcp-acp moved to covered-partial (agentic tool-using ACP turns implemented +
+    // round-trip tested), so it is no longer a TODO; a still-partial item carries a command.
+    expect(output.todos.map((item) => item.id)).not.toContain('mcp-acp');
     expect(output.todos).toContainEqual(expect.objectContaining({
-      id: 'mcp-acp',
-      verificationCommand: expect.stringContaining('tests/protocols/acp-stdio-server-real.test.ts'),
+      id: 'runtime-backends',
+      verificationCommand: expect.stringContaining('hermes-runtime-backends-smoke-real'),
     }));
     expect(output.deferred).toEqual([
       expect.objectContaining({ id: 'openclaw-migration', status: 'partial' }),
@@ -2394,8 +2404,8 @@ describe('Hermes CLI commands', () => {
     expect(output).toMatch(/Showing: 3\/\d+ active item\(s\)/);
     expect(output).toMatch(/Hidden by --limit 3: \d+/);
     expect(output).toContain('Next active work:');
-    expect(output).toContain('1. Closed learning loop [partial]');
-    expect(output).toContain('Verify: npm test -- tests/agent/lesson-candidate-queue.test.ts');
+    expect(output).toContain('1. Runs anywhere [partial]');
+    expect(output).toContain('Verify: npm test -- tests/agent/hermes-runtime-backends-smoke-real.test.ts');
     expect(output).toContain('Deferred by decision:');
     expect(output).toContain('OpenClaw migration [partial]');
   });
@@ -3026,6 +3036,52 @@ describe('Hermes CLI commands', () => {
     expect(output).toContain('Profiles:');
     expect(output).toContain('review: read-first code review');
     expect(output).toContain('Denied preview tools: create_file, bash, git_push, delete_file');
+    expect(output).toContain('Official Hermes toolsets:');
+    expect(output).toMatch(/\[core\] file \(present\)/);
+  });
+
+  it('includes the official named-toolset catalog with readiness in JSON', async () => {
+    const program = createProgram();
+    registerHermesCommands(program);
+
+    await program.parseAsync(['node', 'test', 'hermes', 'toolsets', 'safe', '--json']);
+
+    const output = JSON.parse(getLogOutput()) as {
+      officialToolsets: {
+        kind: string;
+        summary: {
+          totalOfficialToolsets: number;
+          byGroup: { core: number; composite: number; platform: number; dynamic: number };
+          present: number;
+          partial: number;
+          absent: number;
+        };
+        toolsets: Array<{
+          id: string;
+          group: string;
+          readiness: string;
+          expectedToolCount: number;
+          presentToolCount: number;
+          missingToolNames: string[];
+        }>;
+      };
+    };
+
+    const official = output.officialToolsets;
+    expect(official.kind).toBe('hermes_official_toolset_catalog');
+    expect(official.summary.totalOfficialToolsets).toBe(official.toolsets.length);
+    expect(official.summary.totalOfficialToolsets).toBeGreaterThanOrEqual(28);
+    expect(
+      official.summary.present + official.summary.partial + official.summary.absent,
+    ).toBe(official.summary.totalOfficialToolsets);
+
+    const ids = official.toolsets.map((toolset) => toolset.id);
+    for (const required of ['web', 'search', 'terminal', 'file', 'browser', 'skills', 'rl', 'hermes-cli']) {
+      expect(ids).toContain(required);
+    }
+
+    const rl = official.toolsets.find((toolset) => toolset.id === 'rl');
+    expect(rl?.readiness).toBe('absent');
   });
 
   it('prints Markdown for official Hermes tool parity', async () => {

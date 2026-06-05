@@ -132,10 +132,19 @@ export class Mem0MemoryProvider implements MemoryProvider {
     );
   }
 
+  /**
+   * Mem0 partitions by `user_id`. `remember` defaults to project scope and
+   * writes under `<userId>:project`; reads MUST use the same partition or they
+   * silently miss what was just written (caught by `hermes memory probe`).
+   */
+  private scopedUserId(scope?: 'project' | 'user'): string {
+    return scope === 'user' ? this.userId : `${this.userId}:project`;
+  }
+
   async remember(key: string, value: string, options?: MemoryRememberOptions): Promise<void> {
     if (!this.isRemote()) return this.fallback.remember(key, value, options);
     try {
-      const userId = options?.scope === 'user' ? this.userId : `${this.userId}:project`;
+      const userId = this.scopedUserId(options?.scope);
       await httpJson({
         method: 'POST',
         url: `${this.baseUrl}/memories${this.selfHosted ? '' : '/'}`,
@@ -150,16 +159,16 @@ export class Mem0MemoryProvider implements MemoryProvider {
 
   async recall(key: string, scope?: 'project' | 'user'): Promise<string | null> {
     if (!this.isRemote()) return this.fallback.recall(key, scope);
-    const hits = await this.search(key, 1).catch(() => [] as Memory[]);
+    const hits = await this.search(key, 1, scope).catch(() => [] as Memory[]);
     return hits[0]?.value ?? this.fallback.recall(key, scope);
   }
 
-  private async search(query: string, limit: number): Promise<Memory[]> {
+  private async search(query: string, limit: number, scope?: 'project' | 'user'): Promise<Memory[]> {
     const data = await httpJson<{ results?: Array<{ memory?: string }> } | Array<{ memory?: string }>>({
       method: 'POST',
       url: `${this.baseUrl}/${this.selfHosted ? 'search' : 'memories/search/'}`,
       headers: this.headers(),
-      body: { query, user_id: this.userId, limit },
+      body: { query, user_id: this.scopedUserId(scope), limit },
     });
     const results = Array.isArray(data) ? data : (data.results ?? []);
     return results.filter((r) => r.memory).map((r) => toMemory(r.memory as string, query));

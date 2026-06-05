@@ -87,7 +87,8 @@ describe('Hermes CLI status real smoke', () => {
     expect(todo.deferred).toEqual([
       expect.objectContaining({
         id: 'openclaw-migration',
-        nextWork: expect.stringContaining('full 30+ category set'),
+        // 34 categories now recognized; remaining work is real-install validation.
+        nextWork: expect.stringContaining('live install'),
       }),
     ]);
 
@@ -99,7 +100,9 @@ describe('Hermes CLI status real smoke', () => {
     };
     expect(todoWithDeferred.kind).toBe('hermes_parity_todo');
     expect(todoWithDeferred.summary.includedDeferred).toBe(true);
-    expect(todoWithDeferred.todos.map((item) => item.id)).not.toContain('openclaw-migration');
+    // With --include-deferred, the deliberately-deferred OpenClaw item is folded
+    // into the active todos (it now fits under the limit as parity work shrank).
+    expect(todoWithDeferred.todos.map((item) => item.id)).toContain('openclaw-migration');
     expect(todoWithDeferred.deferred.map((item) => item.id)).toContain('openclaw-migration');
 
     const portal = runHermesJson(['portal', 'status']) as {

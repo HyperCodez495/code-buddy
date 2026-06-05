@@ -2603,6 +2603,30 @@ addLazyCommandGroup(program, 'approvals', 'Manage tool/action approval requests'
   registerApprovalsCommands(program);
 });
 
+// Insights — token/cost/activity analytics (Hermes parity: `hermes insights`)
+addLazyCommandGroup(program, 'insights', 'Token, cost, and activity analytics (read-only)', async () => {
+  const { registerInsightsCommands } = await import('./commands/cli/insights-command.js');
+  registerInsightsCommands(program);
+});
+
+// Bundles — group skills under one named slash-command (Hermes parity: `hermes bundles`)
+addLazyCommandGroup(program, 'bundles', 'Group skills under a single named slash-command bundle', async () => {
+  const { registerBundlesCommands } = await import('./commands/cli/bundles-command.js');
+  registerBundlesCommands(program);
+});
+
+// LSP — Language Server Protocol diagnostics (Hermes parity: `hermes lsp`)
+addLazyCommandGroup(program, 'lsp', 'Language Server Protocol diagnostics', async () => {
+  const { registerLspCommands } = await import('./commands/cli/lsp-command.js');
+  registerLspCommands(program);
+});
+
+// Proxy — OpenAI-compatible HTTP proxy for third-party clients (Hermes parity: `hermes proxy`)
+addLazyCommandGroup(program, 'proxy', 'Start an OpenAI-compatible HTTP proxy in front of Code Buddy (for third-party clients)', async () => {
+  const { registerProxyCommands } = await import('./commands/cli/proxy-command.js');
+  registerProxyCommands(program);
+});
+
 // Deploy — generate cloud deployment configurations
 addLazyCommandGroup(program, 'deploy', 'Generate cloud deployment configurations (Fly, Railway, Render, Nix)', async () => {
   const { registerDeployCommands } = await import('./commands/cli/deploy-command.js');

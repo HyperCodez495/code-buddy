@@ -2,6 +2,11 @@ import { spawn } from 'child_process';
 import { randomUUID } from 'crypto';
 import fs from 'fs/promises';
 import path from 'path';
+import { logger } from '../utils/logger.js';
+import {
+  isExecuteCodeToolRpcEnabled,
+  type ExecuteCodeRpcInvoker,
+} from './execute-code-rpc-invoker.js';
 
 export type ExecuteCodeLanguage = 'javascript' | 'typescript' | 'python' | 'shell';
 
@@ -17,6 +22,20 @@ export interface ExecuteCodeRunnerOptions {
   rootDir?: string;
   now?: () => Date;
   createId?: () => string;
+  /**
+   * Opt-in code→tool RPC. When provided AND the master flag is enabled,
+   * generated code may call back into the allowlisted read-only tools.
+   * The runner owns the transport (file framing, bound, timeout); this
+   * invoker owns policy (allowlist/fleetSafe) + execution. Injected from
+   * `execute-code-tools.ts` so the runner stays registry-dependency-free.
+   */
+  rpcInvoke?: ExecuteCodeRpcInvoker;
+  /** Override the master flag (tests). Defaults to the env-derived value. */
+  rpcEnabled?: boolean;
+  /** Max RPC calls per execution (anti-loop). Default 16. */
+  rpcMaxCalls?: number;
+  /** Per-call RPC execution timeout (ms). Default 15s. */
+  rpcCallTimeoutMs?: number;
 }
 
 export interface ExecuteCodeResult {
@@ -54,6 +73,11 @@ const MAX_TIMEOUT_MS = 120_000;
 const MAX_CAPTURE_CHARS = 1_000_000;
 const VALID_ENV_KEY = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+const RPC_DIR_NAME = 'rpc';
+const RPC_DEFAULT_MAX_CALLS = 16;
+const RPC_DEFAULT_CALL_TIMEOUT_MS = 15_000;
+const RPC_POLL_INTERVAL_MS = 25;
+
 export async function executeCode(
   input: ExecuteCodeInput,
   options: ExecuteCodeRunnerOptions = {},
@@ -75,8 +99,22 @@ export async function executeCode(
   const scriptArgs = parseArgs(input.args);
   const env = parseEnv(input.env);
 
-  await fs.mkdir(runDir, { recursive: true });
-  await fs.writeFile(scriptPath, code, 'utf8');
+  // ── code→tool RPC channel (opt-in, OFF by default) ──────────────
+  // The helper is injected for js/python so the script can call uniformly;
+  // the responder is ALWAYS active so every request gets a structured
+  // reply (denial when off / tool refused) — never a hang.
+  const rpcEnabled = (options.rpcEnabled ?? isExecuteCodeToolRpcEnabled()) && !!options.rpcInvoke;
+  const rpcSupported = language === 'javascript' || language === 'typescript' || language === 'python';
+  const rpcDir = path.join(runDir, RPC_DIR_NAME);
+  const rpcMaxCalls = Math.max(1, options.rpcMaxCalls ?? RPC_DEFAULT_MAX_CALLS);
+  const rpcCallTimeoutMs = Math.max(1_000, options.rpcCallTimeoutMs ?? RPC_DEFAULT_CALL_TIMEOUT_MS);
+
+  let scriptCode = code;
+  if (rpcSupported) {
+    await fs.mkdir(rpcDir, { recursive: true });
+    scriptCode = `${buildRpcHelper(language)}\n${code}`;
+  }
+  await fs.writeFile(scriptPath, scriptCode, 'utf8');
   if (language === 'shell' && process.platform !== 'win32') {
     await fs.chmod(scriptPath, 0o700);
   }
@@ -94,9 +132,20 @@ export async function executeCode(
         ...env,
         CODEBUDDY_EXECUTE_CODE_RUN_DIR: runDir,
         CODEBUDDY_WORKSPACE_ROOT: rootDir,
+        ...(rpcSupported ? { CODEBUDDY_EXECUTE_CODE_RPC_DIR: rpcDir } : {}),
       },
       windowsHide: true,
     });
+
+    const rpcPoller = rpcSupported
+      ? startRpcResponder({
+          rpcDir,
+          enabled: rpcEnabled,
+          invoke: options.rpcInvoke,
+          maxCalls: rpcMaxCalls,
+          callTimeoutMs: rpcCallTimeoutMs,
+        })
+      : undefined;
 
     let forceKillTimer: ReturnType<typeof setTimeout> | undefined;
     const timer = setTimeout(() => {
@@ -119,6 +168,7 @@ export async function executeCode(
     child.on('close', (exitCode, signal) => {
       clearTimeout(timer);
       if (forceKillTimer) clearTimeout(forceKillTimer);
+      rpcPoller?.stop();
       resolve({ exitCode, signal });
     });
   });
@@ -282,4 +332,211 @@ async function listRunFiles(runDir: string): Promise<string[]> {
 function quoteArg(arg: string): string {
   if (!arg) return '""';
   return /\s/.test(arg) ? JSON.stringify(arg) : arg;
+}
+
+// ──────────────────────────────────────────────────────────────────
+// code→tool RPC transport (runner side)
+// ──────────────────────────────────────────────────────────────────
+
+interface RpcResponderOptions {
+  rpcDir: string;
+  enabled: boolean;
+  invoke: ExecuteCodeRpcInvoker | undefined;
+  maxCalls: number;
+  callTimeoutMs: number;
+}
+
+interface RpcResponder {
+  stop(): void;
+}
+
+/**
+ * File-framed request/response loop. The script writes
+ * `<id>.req.json` atomically (temp + rename) into `rpcDir`; we read it,
+ * run the policy-gated invoker, and write `<id>.res.json` atomically.
+ * The script blocks until the response file appears. Fail-closed: when
+ * disabled or over the call bound, we still answer with `{ok:false}` so
+ * the child never hangs.
+ */
+function startRpcResponder(options: RpcResponderOptions): RpcResponder {
+  const seen = new Set<string>();
+  let callCount = 0;
+  let stopped = false;
+  let scanning = false;
+
+  const writeResponse = async (id: string, payload: ExecuteCodeRpcResponse): Promise<void> => {
+    const finalPath = path.join(options.rpcDir, `${id}.res.json`);
+    const tmpPath = path.join(options.rpcDir, `${id}.res.json.tmp`);
+    await fs.writeFile(tmpPath, JSON.stringify(payload), 'utf8');
+    await fs.rename(tmpPath, finalPath);
+  };
+
+  const handleRequest = async (id: string, reqPath: string): Promise<void> => {
+    let request: { tool?: unknown; args?: unknown };
+    try {
+      request = JSON.parse(await fs.readFile(reqPath, 'utf8')) as typeof request;
+    } catch {
+      await writeResponse(id, { ok: false, error: 'RPC_BAD_REQUEST: could not parse request JSON' });
+      return;
+    }
+
+    if (!options.enabled || !options.invoke) {
+      await writeResponse(id, {
+        ok: false,
+        error:
+          'EXECUTE_CODE_TOOL_RPC_DISABLED: code→tool RPC is off. Set CODEBUDDY_EXECUTE_CODE_TOOL_RPC=true to enable (opt-in).',
+      });
+      return;
+    }
+
+    callCount += 1;
+    if (callCount > options.maxCalls) {
+      await writeResponse(id, {
+        ok: false,
+        error: `RPC_CALL_LIMIT_EXCEEDED: exceeded ${options.maxCalls} tool calls for this execution`,
+      });
+      return;
+    }
+
+    const tool = typeof request.tool === 'string' ? request.tool : '';
+    const args =
+      typeof request.args === 'object' && request.args !== null && !Array.isArray(request.args)
+        ? (request.args as Record<string, unknown>)
+        : {};
+    if (!tool) {
+      await writeResponse(id, { ok: false, error: 'RPC_BAD_REQUEST: missing string "tool"' });
+      return;
+    }
+
+    try {
+      const result = await withTimeout(
+        options.invoke({ tool, args }),
+        options.callTimeoutMs,
+        `RPC_TOOL_TIMEOUT: tool "${tool}" exceeded ${options.callTimeoutMs}ms`,
+      );
+      await writeResponse(id, result);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      await writeResponse(id, { ok: false, error: message });
+    }
+  };
+
+  const scan = async (): Promise<void> => {
+    if (scanning || stopped) return;
+    scanning = true;
+    try {
+      const entries = await fs.readdir(options.rpcDir).catch(() => [] as string[]);
+      for (const entry of entries) {
+        if (!entry.endsWith('.req.json')) continue;
+        const id = entry.slice(0, -'.req.json'.length);
+        if (seen.has(id)) continue;
+        seen.add(id);
+        await handleRequest(id, path.join(options.rpcDir, entry));
+      }
+    } catch (error) {
+      logger.debug('[execute-code-rpc] responder scan error', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+    } finally {
+      scanning = false;
+    }
+  };
+
+  const interval = setInterval(() => {
+    void scan();
+  }, RPC_POLL_INTERVAL_MS);
+  interval.unref?.();
+
+  return {
+    stop(): void {
+      stopped = true;
+      clearInterval(interval);
+    },
+  };
+}
+
+interface ExecuteCodeRpcResponse {
+  ok: boolean;
+  output?: string;
+  error?: string;
+  truncated?: boolean;
+}
+
+function withTimeout<T>(promise: Promise<T>, ms: number, message: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(message)), ms);
+    timer.unref?.();
+    promise.then(
+      (value) => {
+        clearTimeout(timer);
+        resolve(value);
+      },
+      (error: unknown) => {
+        clearTimeout(timer);
+        reject(error instanceof Error ? error : new Error(String(error)));
+      },
+    );
+  });
+}
+
+/**
+ * Minimal blocking RPC helper injected at the top of generated scripts.
+ * - JS/TS: exposes `globalThis.codebuddyToolCall(tool, args)` →
+ *   `{ ok, output?, error? }`. Synchronous (blocks the script) so the
+ *   generated code reads naturally without await plumbing.
+ * - Python: exposes `codebuddy_tool_call(tool, args={})` with the same
+ *   shape.
+ * Both write `<uuid>.req.json` atomically and poll for the response.
+ */
+function buildRpcHelper(language: ExecuteCodeLanguage): string {
+  if (language === 'python') {
+    return [
+      'import os as _cb_os, json as _cb_json, time as _cb_time, uuid as _cb_uuid',
+      'def codebuddy_tool_call(tool, args=None):',
+      '    _d = _cb_os.environ.get("CODEBUDDY_EXECUTE_CODE_RPC_DIR")',
+      '    if not _d:',
+      '        return {"ok": False, "error": "EXECUTE_CODE_TOOL_RPC_UNAVAILABLE"}',
+      '    _id = _cb_uuid.uuid4().hex',
+      '    _req = _cb_os.path.join(_d, _id + ".req.json")',
+      '    _res = _cb_os.path.join(_d, _id + ".res.json")',
+      '    _tmp = _req + ".tmp"',
+      '    with open(_tmp, "w") as _f:',
+      '        _cb_json.dump({"tool": tool, "args": args or {}}, _f)',
+      '    _cb_os.replace(_tmp, _req)',
+      '    _deadline = _cb_time.time() + 60',
+      '    while _cb_time.time() < _deadline:',
+      '        if _cb_os.path.exists(_res):',
+      '            with open(_res) as _f:',
+      '                return _cb_json.load(_f)',
+      '        _cb_time.sleep(0.01)',
+      '    return {"ok": False, "error": "RPC_RESPONSE_TIMEOUT"}',
+      '',
+    ].join('\n');
+  }
+  // javascript / typescript
+  return [
+    "import { writeFileSync, renameSync, existsSync, readFileSync } from 'node:fs';",
+    "import { join } from 'node:path';",
+    "import { randomUUID } from 'node:crypto';",
+    'globalThis.codebuddyToolCall = function codebuddyToolCall(tool, args) {',
+    '  const dir = process.env.CODEBUDDY_EXECUTE_CODE_RPC_DIR;',
+    "  if (!dir) return { ok: false, error: 'EXECUTE_CODE_TOOL_RPC_UNAVAILABLE' };",
+    '  const id = randomUUID();',
+    "  const reqPath = join(dir, id + '.req.json');",
+    "  const resPath = join(dir, id + '.res.json');",
+    "  const tmpPath = reqPath + '.tmp';",
+    '  writeFileSync(tmpPath, JSON.stringify({ tool, args: args || {} }));',
+    '  renameSync(tmpPath, reqPath);',
+    '  const deadline = Date.now() + 60000;',
+    '  while (Date.now() < deadline) {',
+    '    if (existsSync(resPath)) {',
+    "      return JSON.parse(readFileSync(resPath, 'utf8'));",
+    '    }',
+    '    const wait = Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 10);',
+    '    void wait;',
+    '  }',
+    "  return { ok: false, error: 'RPC_RESPONSE_TIMEOUT' };",
+    '};',
+    '',
+  ].join('\n');
 }

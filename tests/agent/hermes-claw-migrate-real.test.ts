@@ -46,6 +46,16 @@ function writeOpenClawFixture(home: string): void {
     channels: { telegram: { enabled: true } },
     tts: { voice: 'alloy' },
     cron: [{ schedule: '0 9 * * *', task: 'daily' }],
+    // Expanded category set (toward upstream `hermes claw migrate` parity).
+    toolsets: { core: ['file', 'terminal'] },
+    profiles: { coder: { model: 'gpt-5.5' } },
+    bundles: { research: ['web-search', 'browser'] },
+    pairing: { devices: [{ id: 'phone-1' }] },
+    runtimes: { docker: { image: 'ubuntu' } },
+    // A webhooks slice can carry a credential — assert it is archived 0600 and
+    // its secret value never leaks into the report.
+    webhooks: { deploy: { url: 'https://hooks.invalid', token: SECRET_VALUE } },
+    hooks: { preToolUse: [{ command: 'echo hi' }] },
     TELEGRAM_BOT_TOKEN: SECRET_VALUE,
     apiKeys: { OPENAI_API_KEY: 'sk-also-secret' },
   });
@@ -132,6 +142,48 @@ describe('hermes claw migrate (real)', () => {
     const archiveDir = path.join(target, '.codebuddy', 'openclaw-migration', 'archive');
     expect(fs.existsSync(path.join(archiveDir, 'custom_providers.json'))).toBe(true);
     expect(fs.existsSync(path.join(archiveDir, 'cron.json'))).toBe(true);
+
+    // Expanded categories are archived (never imported), each to its own file.
+    for (const file of ['toolsets.json', 'profiles.json', 'bundles.json', 'pairing.json', 'runtimes.json', 'webhooks.json', 'hooks.json']) {
+      expect(fs.existsSync(path.join(archiveDir, file))).toBe(true);
+    }
+
+    // None of the expanded categories leaked into live settings.json.
+    const liveSettings = fs.readJsonSync(path.join(target, '.codebuddy', 'settings.json'));
+    expect(liveSettings.toolsets).toBeUndefined();
+    expect(liveSettings.hooks).toBeUndefined();
+    expect(liveSettings.webhooks).toBeUndefined();
+  });
+
+  it('covers the expanded category set (30+) and never leaks secrets in expanded slices', async () => {
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
+
+    // The report enumerates the full category surface (import + archive + secrets).
+    const categories = new Set(report.entries.map((e) => e.category));
+    for (const expected of [
+      'toolsets', 'profiles', 'bundles', 'pairing', 'vision', 'image_video',
+      'runtimes', 'portal', 'learning_loop', 'kanban', 'webhooks', 'hooks',
+    ]) {
+      expect(categories.has(expected)).toBe(true);
+    }
+    // 30+ distinct categories recognized (parity target).
+    expect(categories.size).toBeGreaterThanOrEqual(30);
+
+    // Present expanded categories are archived; absent ones are skipped.
+    const action = new Map(report.entries.map((e) => [e.category, e.action]));
+    expect(action.get('toolsets')).toBe('archive');
+    expect(action.get('webhooks')).toBe('archive');
+    expect(action.get('vision')).toBe('skip'); // not present in fixture
+
+    // A webhook token in the source must never surface in the report object.
+    expect(JSON.stringify(report)).not.toContain(SECRET_VALUE);
+
+    // The webhooks archive file carries the value (for manual handling) and is 0600.
+    const webhooksFile = path.join(target, '.codebuddy', 'openclaw-migration', 'archive', 'webhooks.json');
+    expect(fs.readFileSync(webhooksFile, 'utf-8')).toContain('token');
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(webhooksFile).mode & 0o777).toBe(0o600);
+    }
   });
 
   it('never leaks secret values and skips secrets without --migrate-secrets', async () => {

@@ -29,6 +29,10 @@ import path from 'path';
 import { logger } from '../utils/logger.js';
 import { CodeBuddyClient } from '../codebuddy/client.js';
 import { detectProviderFromEnv } from '../utils/provider-detector.js';
+import {
+  isBackgroundWritesEnabled,
+  promoteObservations,
+} from '../agent/learning-background-writes.js';
 import type { ChatEntry } from '../agent/types.js';
 
 export const USER_MODEL_SCHEMA_VERSION = 1;
@@ -541,6 +545,9 @@ Example output:
       }
     }
 
+    // Opt-in (OFF by default): auto-write eligible candidates in background.
+    maybeBackgroundWrite(model, proposed, workDir);
+
     return proposed;
   } catch (err) {
     logger.warn('[user-model] Dialectic inference LLM call failed', {
@@ -593,7 +600,29 @@ export function runUserLocalInference(
     }
   }
 
+  // Opt-in (OFF by default): auto-write eligible candidates in background.
+  maybeBackgroundWrite(model, proposed, workDir);
+
   return proposed;
+}
+
+/**
+ * Apply the opt-in background-write policy to freshly-proposed observations.
+ * No-op when the flag is OFF, so the default review-gated path is unchanged.
+ * Synchronous so `runUserLocalInference` callers see the write before return.
+ */
+function maybeBackgroundWrite(
+  model: LocalUserModel,
+  proposed: UserObservation[],
+  workDir: string,
+): void {
+  if (proposed.length === 0) return;
+  try {
+    if (!isBackgroundWritesEnabled()) return;
+    promoteObservations(model, proposed, workDir);
+  } catch (err) {
+    logger.debug('[user-model] background-write promotion skipped', { error: String(err) });
+  }
 }
 
 function inferLocalUserObservations(userText: string): ObserveUserInput[] {

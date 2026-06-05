@@ -7,6 +7,10 @@ import {
   listLearningSkillUsage,
 } from './learning-agent.js';
 import { safeLocalPathLabel, safeWorkspacePath } from './hermes-public-paths.js';
+import {
+  getBackgroundWritePolicy,
+  listBackgroundWriteAudit,
+} from './learning-background-writes.js';
 import { getUserModel } from '../memory/user-model.js';
 import { RunStore, type RunSummary } from '../observability/run-store.js';
 
@@ -71,6 +75,15 @@ export interface HermesLearningLoopStatus {
     userModelWritesRequireApproval: boolean;
     skillCandidatesRequireReview: boolean;
     skillLifecycleRequiresApproval: boolean;
+  };
+  backgroundWrites: {
+    enabled: boolean;
+    envVar: 'CODEBUDDY_LEARNING_BACKGROUND_WRITES';
+    minConfidence: number;
+    allowedCategories: string[];
+    skillWritesEnabled: boolean;
+    autoWrittenObservationCount: number;
+    lastAutoWrittenAt?: string;
   };
   reviewQueue: {
     items: HermesLearningLoopReviewQueueItem[];
@@ -541,6 +554,9 @@ export function buildHermesLearningLoopStatus(
   const reviewQueue = buildReviewQueue(lessonCandidates, userModel, skillCandidates, pendingLessonIds);
   const nextAction = buildNextAction(reviewQueue, nextRetrospectiveRun);
   const autoEnabled = isLearningAgentEnabled();
+  const backgroundWritePolicy = getBackgroundWritePolicy();
+  const backgroundWriteAudit = listBackgroundWriteAudit(workDir);
+  const lastBackgroundWrite = backgroundWriteAudit.at(-1);
   const retrospectiveArtifactCount = runRows.filter((run) =>
     isRetrospectiveEligible(run) && run.hasLearningRetrospective
   ).length;
@@ -590,6 +606,15 @@ export function buildHermesLearningLoopStatus(
       userModelWritesRequireApproval: true,
       skillCandidatesRequireReview: true,
       skillLifecycleRequiresApproval: true,
+    },
+    backgroundWrites: {
+      enabled: backgroundWritePolicy.enabled,
+      envVar: 'CODEBUDDY_LEARNING_BACKGROUND_WRITES',
+      minConfidence: backgroundWritePolicy.minConfidence,
+      allowedCategories: backgroundWritePolicy.allowedCategories,
+      skillWritesEnabled: backgroundWritePolicy.allowSkillWrites,
+      autoWrittenObservationCount: backgroundWriteAudit.length,
+      ...(lastBackgroundWrite ? { lastAutoWrittenAt: lastBackgroundWrite.writtenAt } : {}),
     },
     reviewQueue,
     nextAction,
@@ -660,6 +685,12 @@ export function renderHermesLearningLoopStatus(status: HermesLearningLoopStatus)
     `  User-model writes require approval: ${status.reviewGates.userModelWritesRequireApproval ? 'yes' : 'no'}`,
     `  Skill candidates require review: ${status.reviewGates.skillCandidatesRequireReview ? 'yes' : 'no'}`,
     `  Skill lifecycle requires approval: ${status.reviewGates.skillLifecycleRequiresApproval ? 'yes' : 'no'}`,
+    '',
+    'Background writes (opt-in):',
+    `  Enabled: ${status.backgroundWrites.enabled ? 'yes' : 'no'} (${status.backgroundWrites.envVar})`,
+    `  Min confidence: ${status.backgroundWrites.minConfidence}`,
+    `  Allowed categories: ${status.backgroundWrites.allowedCategories.join(', ') || 'none'}`,
+    `  Auto-written observations: ${status.backgroundWrites.autoWrittenObservationCount}`,
   );
 
   if (status.reviewQueue.items.length > 0) {

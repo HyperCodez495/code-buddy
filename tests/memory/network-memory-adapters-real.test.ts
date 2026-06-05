@@ -88,6 +88,31 @@ describe('Mem0MemoryProvider (self-hosted REST)', () => {
       },
     );
   });
+
+  it('searches the SAME user_id partition it wrote to (project scope) so recall finds what remember stored', async () => {
+    // Regression: Mem0 partitions by user_id. `remember` writes under
+    // `<userId>:project` but `search` previously queried bare `<userId>`, so
+    // recall silently missed every project-scoped write (live probe stayed
+    // PENDING). write and read must resolve to the same partition.
+    await withServer(
+      (req) => {
+        if (req.url === '/search') return { json: { results: [{ memory: 'token cb-probe-xyz' }] } };
+        return { json: { results: [] } };
+      },
+      async (baseUrl, captured) => {
+        const provider = new Mem0MemoryProvider({ baseUrl, userId: 'codebuddy' });
+        await provider.initialize();
+        await provider.remember('probe', 'token cb-probe-xyz');
+        const hit = await provider.recall('probe');
+
+        const writeUid = (captured.find((c) => c.url === '/memories')?.body as { user_id?: string }).user_id;
+        const searchUid = (captured.find((c) => c.url === '/search')?.body as { user_id?: string }).user_id;
+        expect(writeUid).toBe('codebuddy:project');
+        expect(searchUid).toBe(writeUid);
+        expect(hit).toBe('token cb-probe-xyz');
+      },
+    );
+  });
 });
 
 describe('HonchoMemoryProvider (v3 REST)', () => {

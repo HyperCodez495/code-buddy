@@ -101,6 +101,43 @@ interface OpenClawConfig {
   path: string;
 }
 
+/** A config-derived category that is archived (never imported) for review. */
+interface ArchiveCategorySpec {
+  category: string;
+  /** Candidate config keys; the first present one becomes the archived slice. */
+  keys: string[];
+  label: string;
+  /** When true, the archive file may carry credentials → written with 0600. */
+  sensitive?: boolean;
+}
+
+/**
+ * Archive categories whose slice can embed credentials. Their review files are
+ * chmod 0600 like `secrets.json` (best-effort; no-op where chmod is unsupported).
+ */
+const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets']);
+
+/**
+ * Dev-only invariant: every config key is claimed by at most one archive spec.
+ * Two specs sharing a key would archive the same slice into two files. Throws
+ * in non-production so the mistake is caught in tests; silent no-op otherwise.
+ */
+function assertUniqueArchiveKeys(specs: ArchiveCategorySpec[]): void {
+  if (process.env.NODE_ENV === 'production') return;
+  const seen = new Map<string, string>();
+  for (const spec of specs) {
+    for (const key of spec.keys) {
+      const prior = seen.get(key);
+      if (prior && prior !== spec.category) {
+        throw new Error(
+          `hermes-claw-migrate: config key "${key}" claimed by both "${prior}" and "${spec.category}".`,
+        );
+      }
+      seen.set(key, spec.category);
+    }
+  }
+}
+
 /** Resolve the OpenClaw home: explicit `source`, else first existing candidate. */
 export function detectOpenClawHome(opts: ClawMigrationOptions = {}): string | null {
   if (opts.source) {
@@ -317,32 +354,59 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
   }
 
   // --- Archived-for-review categories (no confirmed live consumer / safety) ---
-  const archiveCategories: Array<{ category: string; keys: string[]; label: string }> = [
+  //
+  // Each category is archived (never imported) because Code Buddy has no
+  // consumer that reads the exact OpenClaw shape — promoting a wrong-shaped
+  // value into a live key (e.g. tool *names* vs shell-command patterns, or an
+  // out-of-enum permission mode) would be worse than archiving it for manual
+  // review. `keys` are matched against the parsed config; the first present key
+  // becomes the archived slice. **Keys must be unique across all specs** so a
+  // single config key never lands in two archive files (asserted below in dev).
+  const archiveCategories: ArchiveCategorySpec[] = [
     { category: 'custom_providers', keys: ['providers', 'customProviders', 'custom_providers'], label: 'custom providers' },
-    { category: 'messaging', keys: ['channels', 'messaging', 'platforms'], label: 'messaging platform config' },
-    { category: 'tts', keys: ['tts', 'textToSpeech', 'voice'], label: 'TTS config' },
-    { category: 'browser', keys: ['browser', 'browserSettings'], label: 'browser settings' },
+    { category: 'messaging', keys: ['channels', 'messaging', 'platforms'], label: 'messaging / channels platform config' },
+    { category: 'tts', keys: ['tts', 'textToSpeech', 'voice'], label: 'TTS / voice config' },
+    { category: 'browser', keys: ['browser', 'browserSettings', 'browserBackend'], label: 'browser automation settings' },
     { category: 'tool_settings', keys: ['tools', 'toolSettings', 'tool_settings'], label: 'tool settings' },
     { category: 'command_allowlist', keys: ['commandAllowlist', 'allowlist', 'allowedCommands'], label: 'command allowlist' },
     { category: 'gateway', keys: ['gateway', 'gatewayConfig'], label: 'gateway config' },
     { category: 'cron', keys: ['cron', 'cronJobs', 'cronjobs'], label: 'cron jobs' },
     { category: 'plugins', keys: ['plugins'], label: 'plugins' },
-    { category: 'hooks', keys: ['hooks', 'webhooks'], label: 'hooks / webhooks' },
+    // `hooks` and `webhooks` are split so each lands in its own archive slice;
+    // both can carry shell commands / credentials, so both archive (never run).
+    { category: 'hooks', keys: ['hooks', 'lifecycleHooks'], label: 'lifecycle hooks', sensitive: true },
+    { category: 'webhooks', keys: ['webhooks', 'webhookEndpoints'], label: 'webhook endpoints', sensitive: true },
     { category: 'memory_backend', keys: ['memoryBackend', 'memory_backend'], label: 'memory backend' },
-    { category: 'agent_defaults', keys: ['agent', 'agentDefaults', 'multiAgent', 'agents'], label: 'agent defaults / multi-agent' },
+    { category: 'agent_defaults', keys: ['agent', 'agentDefaults', 'multiAgent'], label: 'agent defaults / multi-agent' },
     { category: 'session_policies', keys: ['session', 'sessionReset', 'sessionPolicies'], label: 'session reset policies' },
     { category: 'approval_rules', keys: ['approval', 'approvalRules'], label: 'approval rules' },
     { category: 'exec_timeout', keys: ['execTimeout', 'exec_timeout', 'timeout'], label: 'exec timeout' },
+    // --- Expanded category set (toward upstream `hermes claw migrate` parity) ---
+    { category: 'toolsets', keys: ['toolsets', 'toolSets', 'toolset'], label: 'toolsets' },
+    { category: 'profiles', keys: ['profiles', 'agentProfiles'], label: 'agent profiles' },
+    { category: 'bundles', keys: ['bundles', 'skillBundles'], label: 'bundles' },
+    { category: 'pairing', keys: ['pairing', 'pairedDevices', 'devices'], label: 'device pairing / allowlist' },
+    { category: 'vision', keys: ['vision', 'visionSettings'], label: 'vision config' },
+    { category: 'image_video', keys: ['image', 'video', 'media'], label: 'image / video generation config' },
+    { category: 'runtimes', keys: ['runtimes', 'backends', 'runtime'], label: 'runtime backends (Docker/SSH/Modal/Daytona)' },
+    { category: 'portal', keys: ['portal', 'nousPortal', 'toolGateway'], label: 'Nous Portal Tool Gateway config', sensitive: true },
+    { category: 'learning_loop', keys: ['learning', 'learningLoop', 'trajectory'], label: 'closed learning-loop config' },
+    { category: 'kanban', keys: ['kanban', 'kanbanBoard'], label: 'kanban board config' },
   ];
+
+  // Dev-only invariant: a config key must not be claimed by two specs (would
+  // archive the same slice into two files). Cheap O(n) guard, no-op in prod.
+  assertUniqueArchiveKeys(archiveCategories);
+
   for (const spec of archiveCategories) {
-    const present = spec.keys.some((k) => cfg[k] !== undefined);
+    const presentKey = spec.keys.find((k) => cfg[k] !== undefined);
     entries.push({
       category: spec.category,
       label: spec.label,
-      action: present ? 'archive' : 'skip',
-      source: present ? `config:${spec.keys.find((k) => cfg[k] !== undefined)}` : null,
-      destination: present ? path.join(codebuddyDir, 'openclaw-migration', 'archive', `${spec.category}.json`) : null,
-      detail: present
+      action: presentKey ? 'archive' : 'skip',
+      source: presentKey ? `config:${presentKey}` : null,
+      destination: presentKey ? path.join(codebuddyDir, 'openclaw-migration', 'archive', `${spec.category}.json`) : null,
+      detail: presentKey
         ? 'Archived for manual review (no confirmed live consumer in Code Buddy).'
         : 'Not present in source.',
     });
@@ -477,7 +541,7 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
       ensureDir(path.dirname(entry.destination));
       const slice = sliceForArchive(entry, ctx);
       fs.writeFileSync(entry.destination, JSON.stringify(slice, null, 2), 'utf-8');
-      if (entry.category === 'secrets') {
+      if (SENSITIVE_ARCHIVE_CATEGORIES.has(entry.category)) {
         try {
           fs.chmodSync(entry.destination, 0o600);
         } catch {
