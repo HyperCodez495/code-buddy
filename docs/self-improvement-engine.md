@@ -87,6 +87,34 @@ the *same* deterministic empirical validator, so a hallucinated or off-target
 draft is simply rejected and rolled back. This is the autonomy leap: the system
 discovers its own improvements and only keeps the ones that measurably help.
 
+## What this measures — and what it does NOT (read this)
+
+Be precise about the signal, because this is meant to become the core of a robot
+and overclaiming propagates for years.
+
+**What the benchmark measures:** for a situation `query`, does a *retrievable,
+on-topic* lesson exist (a lesson `search(query)` returns whose text contains the
+expected guidance keywords), and does adding it regress nothing? In other words:
+**retrievability + relevance + non-regression**.
+
+**What it does NOT measure: correctness.** The gate filters *off-topic* and
+*malformed* proposals, not *wrong* ones. A lesson like *"When running npm test,
+NEVER use a path filter"* is on-topic and retrievable, so the keyword gate would
+**accept** it — even though the advice is wrong. And in the `--llm` path the
+draft prompt currently tells the model which keywords to include, so the gate is
+partly checking that the model copied the words it was given. Treat the current
+score as a **proxy for capability (does the right guidance surface?)**, not a
+behavioural guarantee (does the agent now act correctly?).
+
+**Making "empirical" real (next session).** The honest signal is
+*counterfactual replay*: take a recorded run that failed for lack of guidance,
+inject the candidate lesson into context, re-run that task, and check the outcome
+actually changes — with repetition/voting to denoise the LLM. That measures
+"this lesson would have prevented the failure," not "a keyword-matching lesson
+exists." Until then, keep human review in the loop for what gets kept, and treat
+auto-apply as a convenience for *obviously-good bootstrap content*, not a license
+to self-modify on a vacuous metric.
+
 ## The robot seam (5 senses)
 
 `ExperienceSource` is **modality-agnostic**. `SensorExperienceSource` is the
