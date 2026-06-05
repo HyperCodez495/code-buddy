@@ -187,6 +187,90 @@ function firstRecord(obj: Record<string, unknown>, keys: string[]): Record<strin
   return undefined;
 }
 
+/** Resolve a dotted path (e.g. `agents.defaults.timeoutSeconds`) in a config tree. */
+function nestedValue(obj: Record<string, unknown>, dotted: string): unknown {
+  let cur: unknown = obj;
+  for (const part of dotted.split('.')) {
+    if (!cur || typeof cur !== 'object' || Array.isArray(cur)) return undefined;
+    cur = (cur as Record<string, unknown>)[part];
+  }
+  return cur;
+}
+
+function firstDefined(obj: Record<string, unknown>, paths: string[]): unknown {
+  for (const p of paths) {
+    const v = nestedValue(obj, p);
+    if (v !== undefined) return v;
+  }
+  return undefined;
+}
+
+/**
+ * Agent-behavior defaults that map cleanly onto real, consumed
+ * `CodeBuddySettings` keys (src/config/settings-hierarchy.ts). Mirrors the
+ * fields upstream `hermes claw migrate` imports directly (rather than archiving).
+ */
+export interface ClawAgentBehaviorSettings {
+  maxToolRounds?: number;
+  autoCompact?: boolean;
+  permissions?: 'suggest' | 'auto-edit' | 'full-auto';
+  theme?: string;
+}
+
+// OpenClaw exec-approval modes -> Code Buddy permission modes. Unknown values
+// fall through (left unmapped) rather than guessing an unsafe autonomy level.
+const CLAW_APPROVAL_MODE_MAP: Record<string, ClawAgentBehaviorSettings['permissions']> = {
+  never: 'full-auto', auto: 'full-auto', autonomous: 'full-auto', yolo: 'full-auto', off: 'full-auto',
+  edits: 'auto-edit', autoedit: 'auto-edit', 'auto-edit': 'auto-edit', 'auto_edit': 'auto-edit',
+  always: 'suggest', ask: 'suggest', manual: 'suggest', suggest: 'suggest', prompt: 'suggest',
+};
+const CLAW_VALID_THEMES = new Set(['dark', 'light', 'default', 'minimal', 'colorful']);
+
+/**
+ * Translate OpenClaw agent-behavior config into the subset of CodeBuddySettings
+ * that has confirmed live consumers. Only well-understood, safely-typed fields
+ * are mapped; everything else stays archived for manual review.
+ */
+export function mapClawAgentBehavior(cfg: Record<string, unknown>): ClawAgentBehaviorSettings {
+  const out: ClawAgentBehaviorSettings = {};
+
+  // maxToolRounds <- agents.defaults.timeoutSeconds / 10 (upstream agent.max_turns).
+  // A small value (<=400) is already a turn count; a large one is seconds.
+  const turns = firstDefined(cfg, [
+    'agents.defaults.timeoutSeconds', 'agent.timeoutSeconds', 'timeoutSeconds', 'maxTurns', 'maxToolRounds',
+  ]);
+  if (typeof turns === 'number' && turns > 0) {
+    out.maxToolRounds = turns > 400 ? Math.max(1, Math.round(turns / 10)) : Math.round(turns);
+  }
+
+  // autoCompact <- compaction mode (off/disabled -> false).
+  const comp = firstDefined(cfg, [
+    'agents.defaults.compaction.mode', 'agent.compaction.mode', 'compaction.mode', 'compactionMode',
+  ]);
+  if (typeof comp === 'string') {
+    out.autoCompact = !['off', 'disabled', 'none', 'false'].includes(comp.toLowerCase());
+  } else if (typeof comp === 'boolean') {
+    out.autoCompact = comp;
+  }
+
+  // permissions <- approvals.exec.mode (conservative enum map).
+  const appr = firstDefined(cfg, [
+    'approvals.exec.mode', 'approvals.mode', 'approval.exec.mode', 'approval.mode',
+  ]);
+  if (typeof appr === 'string') {
+    const mapped = CLAW_APPROVAL_MODE_MAP[appr.toLowerCase()];
+    if (mapped) out.permissions = mapped;
+  }
+
+  // theme <- theme / ui.theme (only known Code Buddy themes).
+  const theme = firstDefined(cfg, ['theme', 'ui.theme', 'appearance.theme']);
+  if (typeof theme === 'string' && CLAW_VALID_THEMES.has(theme.toLowerCase())) {
+    out.theme = theme.toLowerCase();
+  }
+
+  return out;
+}
+
 /** Discover OpenClaw skill directories: each subdir containing a `SKILL.md`. */
 function discoverSkillDirs(home: string): Array<{ name: string; skillFile: string }> {
   const found: Array<{ name: string; skillFile: string }> = [];
@@ -351,6 +435,29 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
     });
   } else {
     entries.push({ category: 'mcp_servers', label: 'mcp servers', action: 'skip', source: null, destination: null, detail: 'No MCP servers in config.' });
+  }
+
+  // --- Agent behavior defaults -> .codebuddy/settings.json (directly imported) ---
+  // Mirrors upstream `hermes claw migrate`, which imports these into config keys
+  // rather than archiving them. Only fields with a confirmed CodeBuddySettings
+  // consumer are mapped (mapClawAgentBehavior); the rest stay archived below.
+  {
+    const behavior = mapClawAgentBehavior(cfg);
+    const mappedKeys = Object.keys(behavior);
+    if (mappedKeys.length > 0) {
+      entries.push({
+        category: 'agent_settings',
+        label: `agent behavior (${mappedKeys.join(', ')})`,
+        action: importOrPresetArchive('agent_settings', ctx),
+        source: 'config:agents.defaults',
+        destination: settingsKeyDest(ctx, mappedKeys.join('+')),
+        detail: `Imported: ${mappedKeys
+          .map((k) => `${k}=${JSON.stringify((behavior as Record<string, unknown>)[k])}`)
+          .join(', ')}.`,
+      });
+    } else {
+      entries.push({ category: 'agent_settings', label: 'agent behavior defaults', action: 'skip', source: null, destination: null, detail: 'No mappable agent behavior defaults in config.' });
+    }
   }
 
   // --- Archived-for-review categories (no confirmed live consumer / safety) ---
@@ -531,6 +638,22 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
       mergeSettings(ctx, (settings) => {
         const existing = (settings.mcpServers as Record<string, unknown> | undefined) ?? {};
         settings.mcpServers = overwrite ? { ...existing, ...mcp } : { ...mcp, ...existing };
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'agent_settings': {
+      const behavior = mapClawAgentBehavior(ctx.config?.raw ?? {});
+      if (Object.keys(behavior).length === 0) return;
+      mergeSettings(ctx, (settings) => {
+        // Don't clobber an existing user value unless --overwrite.
+        const set = (key: string, value: unknown) => {
+          if (value !== undefined && (overwrite || settings[key] === undefined)) settings[key] = value;
+        };
+        set('maxToolRounds', behavior.maxToolRounds);
+        set('autoCompact', behavior.autoCompact);
+        set('permissions', behavior.permissions);
+        set('theme', behavior.theme);
       });
       entry.applied = true;
       return;

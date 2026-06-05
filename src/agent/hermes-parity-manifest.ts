@@ -581,7 +581,7 @@ const FEATURES: HermesParityFeature[] = [
     ],
     status: 'partial',
     verificationCommands: [
-      'npm test -- tests/agent/hermes-claw-migrate-real.test.ts --run',
+      'npm test -- tests/agent/hermes-claw-migrate-real.test.ts tests/agent/hermes-claw-agent-settings.test.ts --run',
       'npx tsx src/index.ts hermes claw status --json',
       'rg -n "claw migrate|OpenClaw|openclaw" src tests docs',
       '(cd cowork && npm test -- --run tests/hermes-claw-migrate-bridge.test.ts tests/claw-migration-dialog.test.ts)',
@@ -594,10 +594,14 @@ const FEATURES: HermesParityFeature[] = [
       '(incl. cron, hooks, webhooks, toolsets, profiles, bundles, pairing, runtimes, portal, kanban, ' +
       'learning-loop) are archived for manual review (credential-bearing archives written 0600). ' +
       'Dry-run by default, deterministic, secret-safe; fixture-tested, with no real OpenClaw install validated. ' +
-      'Cowork now exposes a confirm-gated migration dialog (dry-run preview on open; apply only after explicit confirm).',
+      'Cowork now exposes a confirm-gated migration dialog (dry-run preview on open; apply only after explicit confirm). ' +
+      'Agent-behavior defaults are now DIRECTLY IMPORTED (not archived), matching upstream: agents.defaults.timeoutSeconds ' +
+      '-> maxToolRounds (/10), compaction.mode -> autoCompact, approvals.exec.mode -> permissions (conservative enum map), ' +
+      'theme -> theme — each mapped only onto a confirmed CodeBuddySettings consumer (mapClawAgentBehavior); unmapped ' +
+      'fields stay archived for review and existing user settings are not clobbered without --overwrite.',
     nextWork:
-      'Promote archived categories with a confirmed Code Buddy consumer (kanban, profiles, cron) to real ' +
-      'import once their OpenClaw shape is verified against a live install; remaining completion stays deferred/optional.',
+      'Upstream itself archives cron/kanban/plugins/hooks (manual recreation), so remaining archived categories without a ' +
+      'safe 1:1 settings consumer stay archived by design; promote more only when an OpenClaw shape is verified against a live install.',
   },
 ];
 
