@@ -14,6 +14,7 @@ import type { Command } from 'commander';
 import {
   createWorkspaceEngine,
   createWorkspaceLearningStore,
+  createWorkspaceRuleEngine,
 } from '../../agent/self-improvement/index.js';
 import { EvolutionaryArchive } from '../../agent/self-improvement/evolutionary-archive.js';
 import { createDefaultRunExperienceSource } from '../../agent/self-improvement/experience-source.js';
@@ -229,5 +230,60 @@ export function registerImproveCommands(program: Command): void {
         `Coverage now: ${result.score.covered}/${result.score.total} (${Math.round(result.score.ratio * 100)}%)`,
       ].join('\n');
       print({ kind: 'self_improvement_restore', restored: true, ...result }, options, text);
+    });
+
+  // --- Execution-grounded RULE learning (validated against recorded behavior) ---
+  const rules = improve
+    .command('rules')
+    .description('Learn behavioral rules validated against a labeled trajectory corpus (correctness, not keywords)');
+
+  rules
+    .command('status')
+    .description('Show rule-classification accuracy over the trajectory corpus')
+    .option('--json', 'output JSON')
+    .action((options: ImproveOptions) => {
+      const status = createWorkspaceRuleEngine().status();
+      const text = [
+        `Autonomy: ${status.autonomy}`,
+        `Corpus classification: ${status.score.correct}/${status.score.total} (${Math.round(status.score.accuracy * 100)}%)`,
+        `Learned rules: ${status.rules}`,
+      ].join('\n');
+      print({ kind: 'rule_learning_status', ...status }, options, text);
+    });
+
+  rules
+    .command('cycle')
+    .description('Propose one behavioral rule and validate it against the corpus')
+    .option('--json', 'output JSON')
+    .option('--apply', 'keep the rule if it correctly reclassifies recorded runs with no regression')
+    .action((options: ImproveOptions) => {
+      const engine = createWorkspaceRuleEngine(options.apply ? { autonomy: 'auto-apply' } : {});
+      const result = engine.runCycle();
+      const verdict = result.applied
+        ? `LEARNED rule for "${result.targetId}" (Δ=${result.gate?.delta})`
+        : result.gate?.accepted
+          ? `WOULD learn a rule for "${result.targetId}" (Δ=${result.gate?.delta}) — re-run with --apply`
+          : result.notes.join('; ');
+      const text = [
+        `Accuracy: ${Math.round(result.accuracyBefore * 100)}% → ${Math.round(result.accuracyAfter * 100)}%`,
+        verdict,
+      ].join('\n');
+      print(result, options, text);
+    });
+
+  rules
+    .command('loop')
+    .description('Learn rules until the corpus is fully and correctly classified')
+    .option('--json', 'output JSON')
+    .option('--apply', 'keep validated rules')
+    .action((options: ImproveOptions) => {
+      const engine = createWorkspaceRuleEngine(options.apply ? { autonomy: 'auto-apply' } : {});
+      const results = engine.runLoop();
+      const final = engine.status();
+      const text = [
+        `Cycles: ${results.length}, learned: ${results.filter((r) => r.applied).length}`,
+        `Corpus classification: ${final.score.correct}/${final.score.total} (${Math.round(final.score.accuracy * 100)}%); rules: ${final.rules}`,
+      ].join('\n');
+      print({ kind: 'rule_learning_loop', cycles: results, status: final }, options, text);
     });
 }

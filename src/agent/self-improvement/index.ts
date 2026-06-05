@@ -9,6 +9,8 @@ import { SEED_BENCHMARK_SCENARIOS, scoreBenchmark } from './capability-benchmark
 import type { LessonMutatorPort } from './empirical-gate.js';
 import { EvolutionaryArchive } from './evolutionary-archive.js';
 import { LearningStore, type LearnableStatePort } from './learning-store.js';
+import { RuleLearningEngine, HeuristicRuleProposer } from './rule-engine.js';
+import { RuleStore, loadTrajectoryCorpus } from './rule-store.js';
 import { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
 import { StaticProposer, LlmProposer, SEED_LESSON_DRAFTS, type ImprovementProposer } from './proposer.js';
 import { createLlmDrafter } from './llm-drafter.js';
@@ -86,4 +88,26 @@ export function createWorkspaceLearningStore(options: { workDir?: string } = {})
     score: () => scoreBenchmark(SEED_BENCHMARK_SCENARIOS, createLessonMutatorPort(workDir)),
   };
   return new LearningStore({ workDir, port });
+}
+
+/**
+ * Build the execution-grounded RuleLearningEngine wired to the workspace: it
+ * learns behavioral rules validated against a labeled trajectory corpus
+ * (corpus.json or seed). Each accepted rule is also written as a retrievable RULE
+ * lesson, so it influences the agent's context AND is captured in the git-versioned
+ * lessons snapshot (reversible like everything else).
+ */
+export function createWorkspaceRuleEngine(
+  options: { workDir?: string; autonomy?: Autonomy } = {},
+): RuleLearningEngine {
+  const workDir = options.workDir ?? process.cwd();
+  const tracker = getLessonsTracker(workDir);
+  return new RuleLearningEngine({
+    corpus: loadTrajectoryCorpus(workDir),
+    proposer: new HeuristicRuleProposer(),
+    ruleStore: new RuleStore({ workDir }),
+    archive: new EvolutionaryArchive({ workDir }),
+    autonomy: options.autonomy ?? resolveAutonomy(),
+    onAccept: (proposal) => tracker.add('RULE', proposal.statement, 'manual'),
+  });
 }
