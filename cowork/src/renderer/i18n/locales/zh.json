@@ -168,6 +168,77 @@
     "noFaceDetected": "未检测到人脸。请正对摄像头后重试。",
     "modelMissing": "缺少 Buffalo_S 模型。需要先安装。"
   },
+  "presence": {
+    "recognizedTitle": "已识别 {{name}}（{{pct}}%）— 点击管理身份",
+    "unknown": "未知",
+    "unknownTitle": "检测到未知人脸 — 点击进行登记",
+    "noneEnrolledTitle": "尚未登记人脸 — 点击登记你的人脸",
+    "enrollFace": "登记人脸",
+    "enrollAnotherTitle": "点击登记另一张人脸",
+    "enrolledCount_one": "已登记 {{count}} 张人脸",
+    "enrolledCount_other": "已登记 {{count}} 张人脸"
+  },
+  "approval": {
+    "title": "需要工作流审批",
+    "defaultMessage": "批准以继续工作流。",
+    "destructiveDetected": "检测到破坏性模式：{{reason}}",
+    "rereadInput": "批准前请再次查看下方的工具输入。",
+    "aboutToInvoke": "即将调用",
+    "autoRejectsIn": "{{time}} 后自动拒绝",
+    "reject": "拒绝",
+    "approve": "批准",
+    "moreQueued_one": "还有 {{count}} 个待审批排队",
+    "moreQueued_other": "还有 {{count}} 个待审批排队"
+  },
+  "compact": {
+    "dialogTitle": "压缩上下文",
+    "dialogIntro": "压缩会总结对话中较早的部分，为新的回合腾出上下文窗口。请选择一种策略：",
+    "notAvailable": "压缩命令不可用。",
+    "running": "压缩中…",
+    "runNow": "立即压缩",
+    "aggressive": {
+      "title": "激进",
+      "desc": "最大化节省 token —— 总结较早的消息并丢弃工具输出。"
+    },
+    "balanced": {
+      "title": "均衡（推荐）",
+      "desc": "总结较早的消息，保留最近的工具输出。"
+    },
+    "preserveTools": {
+      "title": "保留工具",
+      "desc": "仅总结文本，原样保留所有工具调用和结果。"
+    }
+  },
+  "team": {
+    "title": "智能体团队",
+    "closePanel": "关闭团队面板",
+    "startTeam": "启动团队",
+    "addMember": "添加成员",
+    "stop": "停止",
+    "start": "启动",
+    "role": "角色",
+    "goal": "目标",
+    "goalOptional": "团队目标（可选）",
+    "goalPlaceholder": "例如：重构鉴权中间件以满足合规要求",
+    "memberLabelPlaceholder": "标签（可选，例如 lead-coder）",
+    "statusIdle": "空闲",
+    "current": "当前",
+    "unknown": "未知",
+    "unassigned": "未分配",
+    "all": "全部",
+    "noTasks": "暂无任务。",
+    "dissolveConfirm": "确认解散团队？",
+    "removeMember": "移除成员",
+    "bridgeUnavailableObserve": "浏览器预览中团队桥接不可用。请打开桌面应用以启动或观察团队。",
+    "bridgeUnavailableManage": "浏览器预览中团队桥接不可用。请打开桌面应用以管理团队。",
+    "noMembersActive": "暂无成员。点击“添加成员”开始。",
+    "startToAddMembers": "启动团队以添加成员。",
+    "membersCount": "成员（{{count}}）",
+    "tasksCount": "任务（{{count}}）",
+    "mailboxCount": "邮箱（{{count}}）",
+    "tasksDone": "已完成 {{count}} 个",
+    "taskSummary": "{{pending}} 个待处理 · {{inProgress}} 个进行中 · {{completed}} 个已完成"
+  },
   "settings": {
     "title": "设置",
     "apiSettings": "API 设置",
@@ -1477,6 +1548,49 @@
     "tabLabel": "核心引擎",
     "tabHint": "选择智能体循环"
   },
+  "remoteBackend": {
+    "title": "远程后端",
+    "tabLabel": "远程后端",
+    "tabHint": "在远程 Code Buddy 后端上运行聊天/会话",
+    "intro": "将此桌面连接到远程 Code Buddy 后端以进行聊天和会话。连接在主进程中运行，使用后端的 /desktop WebSocket 端点。",
+    "statusLabel": "状态：",
+    "urlLabel": "后端 URL",
+    "urlHint": "接受 http(s)://，并重写为 ws(s)://。会自动添加 /desktop 路径。",
+    "tokenLabel": "JWT 令牌",
+    "tokenPlaceholder": "粘贴后端 JWT",
+    "tokenStored": "已保存 — 留空以重复使用",
+    "connect": "连接",
+    "connecting": "正在连接…",
+    "disconnect": "断开连接",
+    "connectedTo": "已连接到 {{host}}",
+    "errorGeneric": "连接失败",
+    "localNotice": "连接远程后端时，仅聊天和会话在远程运行。管理面（配置、MCP、技能、集群）仍保留在本机。",
+    "indicator": "远程：{{host}}",
+    "indicatorTooltip": "聊天/会话在远程后端上运行",
+    "status": {
+      "disconnected": "已断开",
+      "connecting": "连接中",
+      "connected": "已连接",
+      "error": "错误"
+    }
+  },
+  "profiles": {
+    "title": "配置档案",
+    "tabLabel": "配置档案",
+    "tabHint": "隔离的配置档案（[profiles.<名称>]）",
+    "intro": "档案是命名的、隔离的配置覆盖集合（位于用户 config.toml 的 [profiles.<名称>]），会深度合并到基础配置之上。CLI 通过 `buddy --profile <名称>` 激活某个档案。在此切换会为 Cowork 的内嵌智能体运行时选择该档案。",
+    "restartRequired": "切换档案需重启 Cowork 后生效。活动会话仍保留其当前档案。",
+    "create": "创建档案",
+    "createHint": "新档案以默认配置（其活动模型）为初始值，便于你在 config.toml 中进一步细化。",
+    "namePlaceholder": "例如 deep-review",
+    "listTitle": "档案",
+    "empty": "尚未定义任何档案。请在上方创建。",
+    "active": "活动",
+    "switch": "切换",
+    "useBase": "使用基础配置（无档案）",
+    "created": "已创建档案 “{{name}}”。",
+    "switched": "已选择并保存档案。重启 Cowork 即可应用 — 智能体将以该档案的配置覆盖启动。"
+  },
   "sessionInsights": {
     "title": "会话洞察",
     "count_one": "{{count}} 个会话",
@@ -1946,9 +2060,58 @@
     "ttsLabelOn": "TTS 开",
     "ttsLabelOff": "TTS"
   },
+  "claw": {
+    "title": "OpenClaw 迁移",
+    "loading": "正在探测 OpenClaw 安装…",
+    "detected": "已检测到 OpenClaw 安装。",
+    "notDetected": "在标准位置未找到 OpenClaw 安装。",
+    "notAvailable": "OpenClaw 迁移桥不可用。",
+    "preset": "预设",
+    "presetUserData": "user-data（仅用户内容）",
+    "presetFull": "full（全部）",
+    "skillConflict": "技能冲突",
+    "conflictSkip": "跳过",
+    "conflictRename": "重命名",
+    "conflictOverwrite": "覆盖",
+    "migrateSecrets": "迁移密钥",
+    "overwrite": "覆盖现有文件",
+    "import": "导入",
+    "archive": "归档",
+    "conflict": "冲突",
+    "skip": "跳过",
+    "run": "运行迁移…",
+    "confirmRun": "确认 — 写入更改",
+    "dryRunHint": "在运行迁移前，预览为只读。",
+    "doneHint": "迁移完成。",
+    "appliedNotice": "迁移已应用。已导入 {{count}} 个项目。"
+  },
+  "kanban": {
+    "title": "Hermes 看板",
+    "loading": "正在加载看板…",
+    "notAvailable": "看板桥不可用。",
+    "newCardPlaceholder": "新卡片标题…",
+    "add": "添加",
+    "todo": "待办",
+    "inProgress": "进行中",
+    "blocked": "已阻塞",
+    "done": "已完成",
+    "complete": "完成",
+    "block": "阻塞",
+    "unblock": "解除阻塞",
+    "comment": "评论",
+    "link": "链接",
+    "apply": "应用",
+    "blockReason": "原因…",
+    "linkTarget": "目标（URL 或 id）…",
+    "commentText": "评论…"
+  },
   "commandPalette": {
     "searchPlaceholder": "输入命令…",
     "empty": "没有匹配的命令",
+    "clawMigration": "从 OpenClaw 迁移",
+    "clawMigrationDesc": "预览并导入 OpenClaw 安装（先进行 dry-run）",
+    "kanban": "打开看板",
+    "kanbanDesc": "管理工作区 Hermes 看板",
     "newSession": "新建会话",
     "newSessionDesc": "开始新的对话",
     "resumeSession": "恢复会话",
@@ -2034,6 +2197,15 @@
     "filterScheduled": "计划",
     "clear": "清除活动日志",
     "clearConfirm": "确定要清除所有活动历史吗?"
+  },
+  "fileActivity": {
+    "title": "文件活动",
+    "count": "{{count}} 个文件",
+    "empty": "此会话暂无文件活动。",
+    "read": "已读取",
+    "write": "已写入",
+    "edit": "已编辑",
+    "times": "{{count}} 次"
   },
   "memoryEdit": {
     "title": "项目记忆",
@@ -2304,6 +2476,9 @@
       "remoteLabel": "远程",
       "missingLabel": "缺失",
       "noCredentials": "无凭据",
+      "probe": "运行实时探测",
+      "probeUnavailable": "实时探测不可用。",
+      "probeResult": "探测 {{verdict}}：写入={{wrote}} 读取={{retrieved}}",
       "unavailable": "Hermes 记忆提供商就绪度尚未加载。",
       "loadFailed": "Hermes 记忆提供商加载失败",
       "status": {
@@ -2312,6 +2487,56 @@
         "fallback": "本地回退",
         "missing": "缺失"
       }
+    },
+    "hermesPortal": {
+      "title": "Hermes Nous 门户",
+      "readyChip": "门户就绪",
+      "attentionChip": "门户需关注",
+      "loadingChip": "门户",
+      "loginLabel": "登录",
+      "loggedIn": "已登录",
+      "loggedOut": "未登录",
+      "toolsLabel": "网关工具",
+      "toolsValue": "{{configured}}/{{total}}",
+      "routingLabel": "路由",
+      "routingActive": "已启用",
+      "routingDirect": "直连",
+      "credentialSources": "凭据来源",
+      "unavailable": "Hermes Nous 门户状态尚未加载。",
+      "loadFailed": "Hermes 门户加载失败",
+      "tool": {
+        "configured": "已配置",
+        "managed": "托管",
+        "missing": "未设置",
+        "noProvider": "无提供方"
+      }
+    },
+    "hermesTrajectories": {
+      "title": "Hermes 研究轨迹",
+      "readyChip": "轨迹就绪",
+      "attentionChip": "轨迹需关注",
+      "loadingChip": "轨迹",
+      "capabilitiesLabel": "能力",
+      "capabilitiesValue": "{{available}}/{{total}}",
+      "goldenLabel": "黄金评测",
+      "policyLabel": "策略评测",
+      "unavailable": "Hermes 轨迹状态尚未加载。",
+      "loadFailed": "Hermes 轨迹加载失败",
+      "status": {
+        "available": "可用",
+        "partial": "部分",
+        "missing": "缺失"
+      }
+    },
+    "hermesDoctor": {
+      "title": "Hermes 诊断",
+      "readyChip": "健康",
+      "attentionChip": "需关注",
+      "loadingChip": "诊断",
+      "noAgent": "Hermes 智能体",
+      "toolsSummary": "已启用 {{enabled}} 个工具 / 已禁用 {{disabled}} 个",
+      "unavailable": "Hermes 诊断尚未加载。",
+      "loadFailed": "Hermes 诊断加载失败"
     },
     "hermesRuntimeBackends": {
       "title": "Hermes 运行后端",

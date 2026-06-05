@@ -6,6 +6,7 @@ import {
   Cloud,
   Database,
   HardDrive,
+  PlayCircle,
   Terminal,
 } from 'lucide-react';
 
@@ -40,8 +41,26 @@ export interface HermesMemoryProvidersReview {
   registeredCount: number;
 }
 
+export interface HermesMemoryProbeResult {
+  activeProviderId: string;
+  error?: string;
+  fellBackToLocal: boolean;
+  generatedAt: string;
+  notes: string[];
+  ok: boolean;
+  providerId: string;
+  remote: boolean;
+  retrieved: boolean;
+  retrievedSample?: string;
+  verdict: 'pass' | 'pending' | 'fail';
+  wrote: boolean;
+}
+
 interface HermesMemoryProvidersApi {
   get?: () => Promise<HermesMemoryProvidersReview | null>;
+  probe?: (options: {
+    providerId?: string;
+  }) => Promise<{ error?: string; ok: boolean; result?: HermesMemoryProbeResult }>;
 }
 
 export const HermesMemoryProvidersStrip: React.FC<{
@@ -51,6 +70,9 @@ export const HermesMemoryProvidersStrip: React.FC<{
   const { t } = useTranslation();
   const [loadedReadiness, setLoadedReadiness] = useState<HermesMemoryProvidersReview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [probeErrors, setProbeErrors] = useState<Record<string, string>>({});
+  const [probeResults, setProbeResults] = useState<Record<string, HermesMemoryProbeResult>>({});
+  const [probingProviderId, setProbingProviderId] = useState<string | null>(null);
   const visibleReadiness = readiness ?? loadedReadiness;
   const visibleError = error ?? loadError;
   const command = useMemo(
@@ -87,6 +109,39 @@ export const HermesMemoryProvidersStrip: React.FC<{
       cancelled = true;
     };
   }, [readiness]);
+
+  const handleProbe = async (provider: HermesMemoryProviderReviewItem) => {
+    const probe = getHermesMemoryProvidersApi()?.probe;
+    if (!probe) {
+      setProbeErrors((current) => ({
+        ...current,
+        [provider.id]: t('fleet.hermesMemoryProviders.probeUnavailable', 'Live probe is unavailable.'),
+      }));
+      return;
+    }
+
+    setProbingProviderId(provider.id);
+    setProbeErrors((current) => {
+      const next = { ...current };
+      delete next[provider.id];
+      return next;
+    });
+
+    try {
+      const response = await probe({ providerId: provider.id });
+      if (!response.result) {
+        throw new Error(response.error ?? 'Memory probe failed.');
+      }
+      setProbeResults((current) => ({ ...current, [provider.id]: response.result! }));
+    } catch (probeErrorValue) {
+      setProbeErrors((current) => ({
+        ...current,
+        [provider.id]: probeErrorValue instanceof Error ? probeErrorValue.message : String(probeErrorValue),
+      }));
+    } finally {
+      setProbingProviderId(null);
+    }
+  };
 
   return (
     <section
@@ -132,7 +187,14 @@ export const HermesMemoryProvidersStrip: React.FC<{
 
           <div className="mt-1.5 grid gap-1">
             {visibleReadiness.providers.slice(0, 6).map((provider) => (
-              <MemoryProviderRow key={provider.id} provider={provider} />
+              <MemoryProviderRow
+                key={provider.id}
+                provider={provider}
+                isProbing={probingProviderId === provider.id}
+                onProbe={handleProbe}
+                probeError={probeErrors[provider.id]}
+                probeResult={probeResults[provider.id]}
+              />
             ))}
           </div>
 
@@ -175,7 +237,13 @@ export const HermesMemoryProvidersStrip: React.FC<{
   );
 };
 
-const MemoryProviderRow: React.FC<{ provider: HermesMemoryProviderReviewItem }> = ({ provider }) => {
+const MemoryProviderRow: React.FC<{
+  isProbing?: boolean;
+  onProbe?: (provider: HermesMemoryProviderReviewItem) => void;
+  probeError?: string;
+  probeResult?: HermesMemoryProbeResult;
+  provider: HermesMemoryProviderReviewItem;
+}> = ({ isProbing = false, onProbe, probeError, probeResult, provider }) => {
   const { t } = useTranslation();
   const statusLabels: Record<HermesMemoryProviderStatus, string> = {
     available: t('fleet.hermesMemoryProviders.status.available', 'available'),
@@ -192,6 +260,13 @@ const MemoryProviderRow: React.FC<{ provider: HermesMemoryProviderReviewItem }> 
     provider.credentialSources.length > 0
       ? provider.credentialSources.join(', ')
       : t('fleet.hermesMemoryProviders.noCredentials', 'no credentials');
+  const canProbe = Boolean(onProbe && provider.registered);
+  const verdictTone =
+    probeResult?.verdict === 'pass'
+      ? 'text-success'
+      : probeResult?.verdict === 'pending'
+        ? 'text-warning'
+        : 'text-warning';
 
   return (
     <div className="min-w-0 rounded bg-surface/80 px-2 py-1 text-[10px]">
@@ -200,15 +275,46 @@ const MemoryProviderRow: React.FC<{ provider: HermesMemoryProviderReviewItem }> 
           {provider.active ? <CheckCircle2 size={10} className="shrink-0 text-success" /> : null}
           <span className="min-w-0 truncate text-text-secondary">{provider.label}</span>
         </div>
-        <span className={`shrink-0 rounded bg-background px-1 py-0.5 text-[9px] ${tone}`}>
-          {statusLabels[provider.status]}
-        </span>
+        <div className="flex shrink-0 items-center gap-1">
+          {provider.registered ? (
+            <button
+              aria-label={t('fleet.hermesMemoryProviders.probe', 'Run live probe')}
+              className="rounded border border-border-muted bg-background p-0.5 text-text-muted transition hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-40"
+              data-testid={`hermes-memory-probe-${provider.id}`}
+              disabled={!canProbe || isProbing}
+              onClick={() => onProbe?.(provider)}
+              title={t('fleet.hermesMemoryProviders.probe', 'Run live probe')}
+              type="button"
+            >
+              <PlayCircle size={10} />
+            </button>
+          ) : null}
+          <span className={`rounded bg-background px-1 py-0.5 text-[9px] ${tone}`}>
+            {statusLabels[provider.status]}
+          </span>
+        </div>
       </div>
       <div className="mt-0.5 flex min-w-0 flex-wrap gap-1 text-[9px] text-text-muted">
         <span>{provider.id}</span>
         <span>{provider.registered ? 'registered=yes' : 'registered=no'}</span>
         <span className="min-w-0 truncate">{credentialLabel}</span>
       </div>
+      {probeResult || probeError ? (
+        <div
+          className={`mt-0.5 truncate rounded bg-background px-1 py-0.5 text-[9px] ${
+            probeResult ? verdictTone : 'text-warning'
+          }`}
+          data-testid={`hermes-memory-probe-result-${provider.id}`}
+        >
+          {probeResult
+            ? t('fleet.hermesMemoryProviders.probeResult', 'probe {{verdict}}: wrote={{wrote}} read={{retrieved}}', {
+                retrieved: String(probeResult.retrieved),
+                verdict: probeResult.verdict,
+                wrote: String(probeResult.wrote),
+              })
+            : probeError}
+        </div>
+      ) : null}
     </div>
   );
 };

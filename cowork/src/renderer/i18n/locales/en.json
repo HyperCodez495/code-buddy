@@ -177,6 +177,77 @@
     "noFaceDetected": "No face detected. Face the camera squarely and retry.",
     "modelMissing": "Buffalo_S model missing. Installation required."
   },
+  "presence": {
+    "recognizedTitle": "{{name}} recognized ({{pct}}%) — click to manage identities",
+    "unknown": "unknown",
+    "unknownTitle": "Unknown face detected — click to enroll it",
+    "noneEnrolledTitle": "No face enrolled — click to enroll yours",
+    "enrollFace": "Register a face",
+    "enrollAnotherTitle": "Click to enroll another face",
+    "enrolledCount_one": "{{count}} face enrolled",
+    "enrolledCount_other": "{{count}} faces enrolled"
+  },
+  "approval": {
+    "title": "Workflow approval required",
+    "defaultMessage": "Approve to continue the workflow.",
+    "destructiveDetected": "Destructive pattern detected: {{reason}}",
+    "rereadInput": "Re-read the tool input below before approving.",
+    "aboutToInvoke": "About to invoke",
+    "autoRejectsIn": "auto-rejects in {{time}}",
+    "reject": "Reject",
+    "approve": "Approve",
+    "moreQueued_one": "{{count}} more approval queued",
+    "moreQueued_other": "{{count}} more approvals queued"
+  },
+  "compact": {
+    "dialogTitle": "Compact context",
+    "dialogIntro": "Compaction summarises older parts of the conversation to free up context window for new turns. Choose a strategy:",
+    "notAvailable": "Compact command not available.",
+    "running": "Compacting…",
+    "runNow": "Compact now",
+    "aggressive": {
+      "title": "Aggressive",
+      "desc": "Maximum token savings — summarize older messages and drop tool outputs."
+    },
+    "balanced": {
+      "title": "Balanced (recommended)",
+      "desc": "Summarize older messages, keep recent tool outputs intact."
+    },
+    "preserveTools": {
+      "title": "Preserve tools",
+      "desc": "Summarize text only, keep all tool calls and results verbatim."
+    }
+  },
+  "team": {
+    "title": "Agent Team",
+    "closePanel": "Close team panel",
+    "startTeam": "Start team",
+    "addMember": "Add member",
+    "stop": "Stop",
+    "start": "Start",
+    "role": "Role",
+    "goal": "Goal",
+    "goalOptional": "Team goal (optional)",
+    "goalPlaceholder": "e.g. Refactor the auth middleware for compliance",
+    "memberLabelPlaceholder": "Label (optional, e.g. lead-coder)",
+    "statusIdle": "idle",
+    "current": "current",
+    "unknown": "unknown",
+    "unassigned": "unassigned",
+    "all": "all",
+    "noTasks": "No tasks yet.",
+    "dissolveConfirm": "Dissolve the team?",
+    "removeMember": "Remove member",
+    "bridgeUnavailableObserve": "Team bridge unavailable in browser preview. Open the desktop app to start or observe teams.",
+    "bridgeUnavailableManage": "Team bridge unavailable in browser preview. Open the desktop app to manage teams.",
+    "noMembersActive": "No members yet. Click \"Add member\" to start.",
+    "startToAddMembers": "Start a team to add members.",
+    "membersCount": "Members ({{count}})",
+    "tasksCount": "Tasks ({{count}})",
+    "mailboxCount": "Mailbox ({{count}})",
+    "tasksDone": "{{count}} done",
+    "taskSummary": "{{pending}} pending · {{inProgress}} in progress · {{completed}} done"
+  },
   "settings": {
     "title": "Settings",
     "apiSettings": "API Settings",
@@ -1490,6 +1561,49 @@
     "tabLabel": "Core engine",
     "tabHint": "Pick the agentic loop"
   },
+  "remoteBackend": {
+    "title": "Remote backend",
+    "tabLabel": "Remote backend",
+    "tabHint": "Run chat/sessions on a remote Code Buddy backend",
+    "intro": "Connect this desktop to a remote Code Buddy backend for chat and sessions. The connection runs in the main process and uses the backend’s /desktop WebSocket endpoint.",
+    "statusLabel": "Status:",
+    "urlLabel": "Backend URL",
+    "urlHint": "http(s):// is accepted and rewritten to ws(s)://. The /desktop path is added automatically.",
+    "tokenLabel": "JWT token",
+    "tokenPlaceholder": "Paste the backend JWT",
+    "tokenStored": "Stored — leave blank to reuse",
+    "connect": "Connect",
+    "connecting": "Connecting…",
+    "disconnect": "Disconnect",
+    "connectedTo": "Connected to {{host}}",
+    "errorGeneric": "Connection failed",
+    "localNotice": "While a remote backend is connected, only chat and sessions run remotely. Management surfaces (config, MCP, skills, fleet) stay local to this machine.",
+    "indicator": "Remote: {{host}}",
+    "indicatorTooltip": "Chat/sessions run on a remote backend",
+    "status": {
+      "disconnected": "Disconnected",
+      "connecting": "Connecting",
+      "connected": "Connected",
+      "error": "Error"
+    }
+  },
+  "profiles": {
+    "title": "Config profiles",
+    "tabLabel": "Config profiles",
+    "tabHint": "Isolated config profiles ([profiles.<name>])",
+    "intro": "Profiles are named, isolated sets of config overrides ([profiles.<name>] in your user config.toml) deep-merged over the base config. The CLI activates one with `buddy --profile <name>`. Switching here selects the profile for Cowork's embedded agent runtime.",
+    "restartRequired": "Switching a profile takes effect after a Cowork restart. Active sessions keep their current profile.",
+    "create": "Create profile",
+    "createHint": "A new profile is seeded from the default config (its active model) so you can refine it in your config.toml.",
+    "namePlaceholder": "e.g. deep-review",
+    "listTitle": "Profiles",
+    "empty": "No profiles defined yet. Create one above.",
+    "active": "Active",
+    "switch": "Switch",
+    "useBase": "Use base config (no profile)",
+    "created": "Profile \"{{name}}\" created.",
+    "switched": "Profile selected and saved. Restart Cowork to apply it — the agent boots with this profile's config overrides."
+  },
   "sessionInsights": {
     "title": "Session insights",
     "count_one": "{{count}} session",
@@ -1959,9 +2073,58 @@
     "ttsLabelOn": "TTS on",
     "ttsLabelOff": "TTS"
   },
+  "claw": {
+    "title": "OpenClaw migration",
+    "loading": "Probing for an OpenClaw installation…",
+    "detected": "OpenClaw installation detected.",
+    "notDetected": "No OpenClaw installation found in the standard locations.",
+    "notAvailable": "OpenClaw migration bridge is not available.",
+    "preset": "Preset",
+    "presetUserData": "user-data (user content only)",
+    "presetFull": "full (everything)",
+    "skillConflict": "Skill conflicts",
+    "conflictSkip": "skip",
+    "conflictRename": "rename",
+    "conflictOverwrite": "overwrite",
+    "migrateSecrets": "Migrate secrets",
+    "overwrite": "Overwrite existing files",
+    "import": "Import",
+    "archive": "Archive",
+    "conflict": "Conflict",
+    "skip": "Skip",
+    "run": "Run migration…",
+    "confirmRun": "Confirm — write changes",
+    "dryRunHint": "Preview is read-only until you run the migration.",
+    "doneHint": "Migration complete.",
+    "appliedNotice": "Migration applied. {{count}} item(s) imported."
+  },
+  "kanban": {
+    "title": "Hermes Kanban board",
+    "loading": "Loading board…",
+    "notAvailable": "Kanban bridge is not available.",
+    "newCardPlaceholder": "New card title…",
+    "add": "Add",
+    "todo": "To do",
+    "inProgress": "In progress",
+    "blocked": "Blocked",
+    "done": "Done",
+    "complete": "Complete",
+    "block": "Block",
+    "unblock": "Unblock",
+    "comment": "Comment",
+    "link": "Link",
+    "apply": "Apply",
+    "blockReason": "Reason…",
+    "linkTarget": "Target (URL or id)…",
+    "commentText": "Comment…"
+  },
   "commandPalette": {
     "searchPlaceholder": "Type a command…",
     "empty": "No matching commands",
+    "clawMigration": "Migrate from OpenClaw",
+    "clawMigrationDesc": "Preview and import an OpenClaw installation (dry-run first)",
+    "kanban": "Open Kanban board",
+    "kanbanDesc": "Manage the workspace Hermes Kanban board",
     "newSession": "New session",
     "newSessionDesc": "Start a new conversation",
     "resumeSession": "Resume session",
@@ -2047,6 +2210,17 @@
     "filterScheduled": "Scheduled",
     "clear": "Clear activity log",
     "clearConfirm": "Clear all activity history?"
+  },
+  "fileActivity": {
+    "title": "File Activity",
+    "count": "{{count}} file",
+    "count_other": "{{count}} files",
+    "empty": "No file activity in this session yet.",
+    "read": "Read",
+    "write": "Written",
+    "edit": "Edited",
+    "times": "{{count}} time",
+    "times_other": "{{count}} times"
   },
   "memoryEdit": {
     "title": "Project memory",
@@ -2317,6 +2491,9 @@
       "remoteLabel": "Remote",
       "missingLabel": "Missing",
       "noCredentials": "no credentials",
+      "probe": "Run live probe",
+      "probeUnavailable": "Live probe is unavailable.",
+      "probeResult": "probe {{verdict}}: wrote={{wrote}} read={{retrieved}}",
       "unavailable": "Hermes memory provider readiness is not loaded yet.",
       "loadFailed": "Hermes memory provider load failed",
       "status": {
@@ -2325,6 +2502,56 @@
         "fallback": "local fallback",
         "missing": "missing"
       }
+    },
+    "hermesPortal": {
+      "title": "Hermes Nous Portal",
+      "readyChip": "portal ready",
+      "attentionChip": "portal attention",
+      "loadingChip": "portal",
+      "loginLabel": "Login",
+      "loggedIn": "logged in",
+      "loggedOut": "logged out",
+      "toolsLabel": "Gateway tools",
+      "toolsValue": "{{configured}}/{{total}}",
+      "routingLabel": "Routing",
+      "routingActive": "active",
+      "routingDirect": "direct",
+      "credentialSources": "Credential sources",
+      "unavailable": "Hermes Nous Portal status is not loaded yet.",
+      "loadFailed": "Hermes portal load failed",
+      "tool": {
+        "configured": "configured",
+        "managed": "managed",
+        "missing": "not set",
+        "noProvider": "no provider"
+      }
+    },
+    "hermesTrajectories": {
+      "title": "Hermes research trajectories",
+      "readyChip": "trajectories ready",
+      "attentionChip": "trajectories attention",
+      "loadingChip": "trajectories",
+      "capabilitiesLabel": "Capabilities",
+      "capabilitiesValue": "{{available}}/{{total}}",
+      "goldenLabel": "Golden evals",
+      "policyLabel": "Policy evals",
+      "unavailable": "Hermes trajectory status is not loaded yet.",
+      "loadFailed": "Hermes trajectory load failed",
+      "status": {
+        "available": "available",
+        "partial": "partial",
+        "missing": "missing"
+      }
+    },
+    "hermesDoctor": {
+      "title": "Hermes doctor",
+      "readyChip": "healthy",
+      "attentionChip": "attention",
+      "loadingChip": "doctor",
+      "noAgent": "Hermes agent",
+      "toolsSummary": "{{enabled}} tools enabled / {{disabled}} disabled",
+      "unavailable": "Hermes diagnostics are not loaded yet.",
+      "loadFailed": "Hermes doctor load failed"
     },
     "hermesRuntimeBackends": {
       "title": "Hermes runtime backends",

@@ -17,6 +17,8 @@ import {
   Zap,
   Brain,
   Scissors,
+  PackageOpen,
+  Trello,
 } from 'lucide-react';
 
 interface CommandItem {
@@ -42,6 +44,9 @@ interface CommandPaletteProps {
   onShowBtw?: () => void;
   onToggleYolo?: () => void;
   onShowPlugins?: () => void;
+  onShowSkillsManager?: () => void;
+  onShowClawMigration?: () => void;
+  onShowKanban?: () => void;
 }
 
 export const CommandPalette: React.FC<CommandPaletteProps> = ({
@@ -57,6 +62,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
   onShowBtw,
   onToggleYolo,
   onShowPlugins,
+  onShowSkillsManager,
+  onShowClawMigration,
+  onShowKanban,
 }) => {
   const { t } = useTranslation();
   const [query, setQuery] = useState('');
@@ -171,6 +179,49 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
             },
           ]
         : []),
+      ...(onShowSkillsManager
+        ? [
+            {
+              id: 'skills-manager',
+              label: t('commandPalette.skillsManager', 'Open Skills Manager'),
+              description: t(
+                'commandPalette.skillsManagerDesc',
+                'Review installed skills and the candidate queue',
+              ),
+              icon: <PackageOpen size={14} />,
+              action: onShowSkillsManager,
+              shortcut: 'Ctrl+Shift+L',
+            },
+          ]
+        : []),
+      ...(onShowClawMigration
+        ? [
+            {
+              id: 'claw-migration',
+              label: t('commandPalette.clawMigration', 'Migrate from OpenClaw'),
+              description: t(
+                'commandPalette.clawMigrationDesc',
+                'Preview and import an OpenClaw installation (dry-run first)',
+              ),
+              icon: <PackageOpen size={14} />,
+              action: onShowClawMigration,
+            },
+          ]
+        : []),
+      ...(onShowKanban
+        ? [
+            {
+              id: 'kanban',
+              label: t('commandPalette.kanban', 'Open Kanban board'),
+              description: t(
+                'commandPalette.kanbanDesc',
+                'Manage the workspace Hermes Kanban board',
+              ),
+              icon: <Trello size={14} />,
+              action: onShowKanban,
+            },
+          ]
+        : []),
     ],
     [
       onNewSession,
@@ -185,6 +236,9 @@ export const CommandPalette: React.FC<CommandPaletteProps> = ({
       onShowBtw,
       onToggleYolo,
       onShowPlugins,
+      onShowSkillsManager,
+      onShowClawMigration,
+      onShowKanban,
     ]
   );
 

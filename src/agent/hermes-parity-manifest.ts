@@ -98,15 +98,22 @@ const FEATURES: HermesParityFeature[] = [
     id: 'cli-tui',
     area: 'CLI/TUI',
     officialSurface: 'Terminal TUI plus hermes chat/model/tools/prompt-size style commands',
-    codeBuddyEvidence: ['src/index.ts', 'src/commands/cli/hermes-commands.ts', 'docs/commands.md'],
+    codeBuddyEvidence: [
+      'src/index.ts',
+      'src/commands/cli/hermes-commands.ts',
+      'docs/commands.md',
+      'cowork/src/main/tools/hermes-doctor-bridge.ts',
+      'cowork/src/renderer/components/hermes-doctor-strip.tsx',
+    ],
     status: 'covered-partial',
     verificationCommands: [
       'npx tsx src/index.ts hermes doctor safe --json',
       'npx tsx src/index.ts hermes model status --json',
       'npx tsx src/index.ts hermes toolsets safe --json',
       'npx tsx src/index.ts hermes prompt-size safe --json',
+      '(cd cowork && npm test -- --run tests/hermes-doctor-bridge.test.ts tests/hermes-doctor-strip.test.ts)',
     ],
-    notes: 'Code Buddy has native CLI/slash surfaces, Hermes diagnostics, dedicated toolset inspection, prompt-size reporting, and a compact Hermes model status command for active provider/model setup. It is not a drop-in upstream TUI clone.',
+    notes: 'Code Buddy has native CLI/slash surfaces, Hermes diagnostics (now also surfaced as an aggregate read-only doctor strip in Cowork), dedicated toolset inspection, prompt-size reporting, and a compact Hermes model status command for active provider/model setup. It is not a drop-in upstream TUI clone.',
     nextWork: 'Keep command naming aligned with product-value Hermes surfaces instead of chasing cosmetic upstream parity.',
   },
   {
@@ -154,17 +161,19 @@ const FEATURES: HermesParityFeature[] = [
       'src/fleet/dispatch-profile.ts',
       'src/utils/tool-filter.ts',
       'src/commands/cli/hermes-commands.ts',
+      'src/agent/hermes-toolset-catalog.ts',
       'tests/fleet/dispatch-profile.test.ts',
+      'tests/agent/hermes-toolset-catalog.test.ts',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
-      'npm test -- tests/fleet/dispatch-profile.test.ts --run',
+      'npm test -- tests/fleet/dispatch-profile.test.ts tests/agent/hermes-toolset-catalog.test.ts --run',
       'npx tsx src/index.ts hermes toolsets review --json',
       'npx tsx src/index.ts hermes doctor review --json',
       'npx tsx src/index.ts hermes tools --json',
     ],
-    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, the dedicated `buddy hermes toolsets` catalog exposes all native profile/toolset policy decisions, and the official tool parity catalog is visible from both CLI and Cowork. The official per-platform toolset catalog is still not complete.',
-    nextWork: 'Keep the official tool catalog current and move remaining partial product surfaces into explicit status/readiness checks.',
+    notes: 'Fleet dispatch profiles enforce useful Hermes-style filters, and `buddy hermes toolsets` now exposes an explicit official toolset catalog (`src/agent/hermes-toolset-catalog.ts`): 33 official toolsets grouped core/composite/platform/dynamic, each with a machine-readable readiness check (present/partial/absent + missing tools) sourced from the tool parity manifest — 32 present, 0 partial, 1 honest absent (`rl`, the upstream RL harness, has no Code Buddy prompt-tool surface; tracked at 0/0, not force-fitted). Readiness reuses buildHermesToolParityManifest (no duplication).',
+    nextWork: 'Keep the official toolset catalog and per-tool readiness current as upstream Hermes adds/renames toolsets; revisit `rl` only if an RL training surface becomes product-relevant.',
   },
   {
     id: 'built-in-tools',
@@ -263,12 +272,15 @@ const FEATURES: HermesParityFeature[] = [
       'src/tools/firecrawl-tool.ts',
       'src/tools/media-generation-tool.ts',
       'src/commands/cli/hermes-commands.ts',
+      'cowork/src/main/tools/hermes-portal-bridge.ts',
+      'cowork/src/renderer/components/hermes-portal-strip.tsx',
     ],
     status: 'covered-partial',
     verificationCommands: [
       'npm test -- tests/tools/tool-gateway-routing-real.test.ts --run',
       'npm test -- tests/commands/hermes-commands.test.ts --run',
       'npx tsx src/index.ts hermes portal status --json',
+      '(cd cowork && npm test -- --run tests/hermes-portal-bridge.test.ts tests/hermes-portal-strip.test.ts)',
     ],
     notes:
       'Beyond the readiness surface, Code Buddy now performs real token/self-hosted Tool Gateway routing: ' +
@@ -296,17 +308,18 @@ const FEATURES: HermesParityFeature[] = [
       'cowork/src/main/tools/hermes-memory-providers-bridge.ts',
       'cowork/src/renderer/components/hermes-memory-providers-strip.tsx',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
       'npx tsx src/index.ts hermes memory status --json',
-      'npx tsx src/index.ts hermes memory probe --json',
+      'npx tsx src/index.ts hermes memory probe honcho --json',
+      'npx tsx src/index.ts hermes memory probe mem0 --json',
       'npm test -- tests/agent/hermes-memory-providers.test.ts tests/memory/memory-provider.test.ts tests/memory/network-memory-adapters-real.test.ts --run',
       '(cd cowork && npm test -- tests/hermes-memory-providers-bridge.test.ts tests/hermes-memory-providers-bridge-real.test.ts tests/hermes-memory-providers-strip.test.ts --run)',
       'npm test -- tests/memory tests/agent/lesson-candidate-queue.test.ts --run',
       'npx tsx src/index.ts user-model show --json',
     ],
-    notes: '6 of 8 official providers are adapted with real upstream contracts (paths/bodies from real plugins/SDKs): Mem0 (self-host REST + cloud), Honcho (v3), OpenViking (/api/v1), RetainDB (cloud), Supermemory (v3 cloud), ByteRover (brv CLI). All are registered and fall back to local memory until configured. `buddy hermes memory probe` runs a live write->read round-trip against a configured instance (the discriminating test, beyond shape tests). Hindsight (Python SDK/embedded daemon) and Holographic (in-process Python SQLite+HRR) are deliberately OUT of native-TS scope: no network/CLI boundary, so a TS shim would be parity-by-label. Self-host guide: docs/hermes-memory-providers-selfhost.md. Cloud providers (Supermemory/RetainDB) are implemented but not live-validated (no account).',
-    nextWork: 'Honcho is LIVE-VALIDATED against a real self-hosted Docker instance (probe PASS; real v3 endpoints confirmed in server logs). Remaining: live-validate Mem0/OpenViking (point their LLM extraction at a local Ollama) and ByteRover (brv CLI) via `buddy hermes memory probe`; cloud providers (Supermemory/RetainDB) need a real account. Hindsight/Holographic stay upstream-only (Python in-process) by design.',
+    notes: '6 of 8 official providers are adapted with real upstream contracts (paths/bodies from real plugins/SDKs): Mem0 (self-host REST + cloud), Honcho (v3), OpenViking (/api/v1), RetainDB (cloud), Supermemory (v3 cloud), ByteRover (brv CLI). All register and fall back to local until configured. `buddy hermes memory probe <id>` runs a live write->read round-trip (the discriminating test beyond shape tests); Cowork now exposes this same probe as a per-provider button in the Hermes memory strip. TWO providers are now LIVE-VALIDATED end-to-end on a self-hosted Ollama box (ministar): Honcho (async deriver) and Mem0. Validating Mem0 surfaced and fixed a real adapter bug: `remember` wrote to user_id `<id>:project` but `search`/`recall` read from bare `<id>`, so every project-scoped recall silently missed what was stored — shape tests passed regardless; only the live probe caught it (fix + regression test in network-memory-adapters[-real].ts). The 3 non-probeable adapters (Supermemory, RetainDB, OpenViking) were code-audited for the same partition-key asymmetry and are symmetric (write and read resolve to the same containerTag / project+user_id / tenant headers). Hindsight + Holographic are deliberately OUT of native-TS scope (in-process Python, no network/CLI boundary → parity-by-label). Self-host guide: docs/hermes-memory-providers-selfhost.md.',
+    nextWork: 'LIVE-VALIDATED on ministar (probe PASS, remote=true, no local fallback): Honcho + Mem0 (Mem0 needs a FAST non-thinking extraction LLM, e.g. qwen2.5:7b-instruct, and pgvector dims matched to the embedder, 768 for nomic-embed-text). Remaining are dependency-gated, not code gaps: ByteRover requires a ByteRover account (brv login; NOT free/local-first despite older docs); OpenViking self-hosts but needs a VLM model + writable conf mount (same LLM-backed-extraction class as the already-validated Mem0/Honcho); Supermemory/RetainDB are cloud (need a paid account). Hindsight/Holographic stay upstream-only by design.',
   },
   {
     id: 'skills',
@@ -322,9 +335,10 @@ const FEATURES: HermesParityFeature[] = [
       'cowork/src/main/tools/skill-package-manager-bridge.ts',
       'cowork/src/renderer/components/skill-candidate-review-queue-strip.tsx',
       'cowork/src/renderer/components/skill-package-manager-strip.tsx',
+      'cowork/src/renderer/components/skills-manager-page.tsx',
       'docs/hermes-agent-status.md',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
       'npx tsx src/index.ts hermes skills status --json',
       'npx tsx src/index.ts skills list --json',
@@ -336,11 +350,11 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/agent/hermes-skill-package-summary-real.test.ts --run',
       'npm test -- tests/tools/skills-inspection-real.test.ts --run',
       '(cd cowork && npm test -- tests/skill-candidate-review-bridge.test.ts tests/skill-candidate-review-queue-strip.test.ts --run)',
-      '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts --run)',
+      '(cd cowork && npm test -- tests/skill-package-manager-bridge.test.ts tests/skill-package-manager-strip.test.ts tests/skills-manager-page.test.tsx --run)',
       'npm test -- tests/skills/hub.test.ts tests/commands/skills-command-real.test.ts --run',
     ],
-    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. `buddy hermes skills status --json` now exposes read-only SkillsHub health, missing-file/integrity status, rollback availability, and next review/repair commands from the real workspace lockfile without printing SKILL.md body previews. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded unified and expanded side-by-side candidate diffs, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/reset/delete/update/patch from the real SkillsHub lockfile. Repository tap/trust management persists owner/repo taps with path and trust metadata through buddy skills tap list/add/remove/trust/refresh, direct .well-known skill catalogs are cached through buddy skills well-known <url>, remote update diff previews are available through buddy skills update-preview plus skill_manage action=preview_update, and Code Buddy reset restores tampered or missing installed skills from real hub/cache content after reviewer approval. Reset is a Code Buddy repair extension because official Hermes skill_manage does not expose a reset action.',
-    nextWork: 'Add an optional full-page Cowork manager only if the Fleet cockpit strips become too cramped for daily skill operations.',
+    notes: 'Native skill coverage is good and the exact skill_manage prompt-tool action surface now covers official create(content), edit(content), patch(old_string/new_string/file_path/replace_all), write_file, and remove_file semantics with Code Buddy review gates. `buddy hermes skills status --json` now exposes read-only SkillsHub health, missing-file/integrity status, rollback availability, and next review/repair commands from the real workspace lockfile without printing SKILL.md body previews. Candidate review plus Cowork also surface installed package state, current SKILL.md previews, candidate install-state comparisons, bounded unified and expanded side-by-side candidate diffs, reviewer-gated candidate install/overwrite, and reviewer-gated enable/disable/deprecate/rollback/reset/delete/update/patch from the real SkillsHub lockfile. Repository tap/trust management persists owner/repo taps with path and trust metadata through buddy skills tap list/add/remove/trust/refresh, direct .well-known skill catalogs are cached through buddy skills well-known <url>, remote update diff previews are available through buddy skills update-preview plus skill_manage action=preview_update, and Code Buddy reset restores tampered or missing installed skills from real hub/cache content after reviewer approval. Reset is a Code Buddy repair extension because official Hermes skill_manage does not expose a reset action. Cowork now also ships a full-page Skills Manager (cowork/src/renderer/components/skills-manager-page.tsx) reachable via Cmd/Ctrl+Shift+L and the command palette: it aggregates the installed-skill list (status/integrity + inline SKILL.md preview + all lifecycle actions) and the candidate review queue (side-by-side diffs + reviewer-gated install/overwrite) in one page over the existing IPC bridges, for daily skill operations beyond the compact cockpit strips.',
+    nextWork: 'Optional polish: live-refresh the manager list after a lifecycle action (currently a manual Refresh) via an onLifecycleComplete callback.',
   },
   {
     id: 'closed-learning-loop',
@@ -354,19 +368,20 @@ const FEATURES: HermesParityFeature[] = [
       'src/commands/user-model.ts',
       'src/observability/run-store.ts',
       'src/agent/research-script-skill-candidate.ts',
+      'src/agent/learning-background-writes.ts',
       'tests/commands/user-model-command-real.test.ts',
+      'tests/agent/learning-background-writes.test.ts',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
       'npm test -- tests/agent/lesson-candidate-queue.test.ts tests/memory/user-model.test.ts --run',
-      'npm test -- tests/memory/user-model.test.ts tests/commands/user-model-command-real.test.ts --run',
+      'npm test -- tests/agent/learning-background-writes.test.ts --run',
       'npm test -- tests/agent/execution/context-pipeline-user-model.test.ts tests/commands/hermes-commands.test.ts --run',
       'npm test -- tests/agent/learning-agent-real.test.ts --run',
-      'npm test -- tests/tools/skills-inspection-real.test.ts tests/agent/learning-agent-real.test.ts --run',
       'npx tsx src/index.ts hermes learning status --json',
     ],
-    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions, and approved skill_manage mutations record rollback snapshot ids in Learning Agent telemetry. `buddy hermes learning status --json` now summarizes real local runs, trajectory event counts, retrospectives, lesson candidates, user-model observations, skill scoring, pattern library state, review gates, an aggregated review queue, and one prioritized next action without printing private model content. It chooses the next retrospective from the densest unfinished actionable trajectory and ignores low-signal memory-only runs that cannot produce lessons or skills. Honcho-style LLM inference and credential-free deterministic local inference both propose pending observations only; a real CLI test proves session analysis writes candidates without silently accepting them.',
-    nextWork: 'Add provider-backed Honcho-style remote inference only if credentials and operator workflow justify it; keep all inferred observations behind explicit review.',
+    notes: 'Comparable direction with stricter review gates. Accepted user-model observations are injected per turn and counted by prompt-size diagnostics; reusable skill outcomes now keep scored recommendation history with reasons and next actions, and approved skill_manage mutations record rollback snapshot ids in Learning Agent telemetry. `buddy hermes learning status --json` now summarizes real local runs, trajectory event counts, retrospectives, lesson candidates, user-model observations, skill scoring, pattern library state, review gates, an aggregated review queue, and one prioritized next action without printing private model content. It chooses the next retrospective from the densest unfinished actionable trajectory and ignores low-signal memory-only runs that cannot produce lessons or skills. By default Honcho-style LLM inference and credential-free deterministic local inference both propose pending observations only (everything review-gated). Behavioural parity with Hermes\' direct background loop is now reachable via a guarded opt-in (src/agent/learning-background-writes.ts): when CODEBUDDY_LEARNING_BACKGROUND_WRITES=true, accepted observations above a confidence threshold (default 0.85) are auto-written in the background through the real LocalUserModel.accept() path (privacy screen still runs), stamped reviewedBy:auto and recorded in an auditable side-car + learning-loop telemetry; below-threshold and skill candidates stay review-gated. OFF by default preserves the safe review-gated path byte-for-byte. Proven by a real round-trip test (off / on-above / below-threshold / sensitive-gated).',
+    nextWork: 'Optional: extend opt-in background writes to skill candidates (separate CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS flag, already scaffolded) once a workflow justifies auto-creating skills without review.',
   },
   {
     id: 'cron-scheduling',
@@ -378,30 +393,35 @@ const FEATURES: HermesParityFeature[] = [
       'src/daemon/cron-agent-bridge.ts',
       'src/tools/cronjob-tool.ts',
       'src/tools/registry/cronjob-tools.ts',
+      'src/scheduler/script-runner.ts',
       'tests/commands/cron-cli.test.ts',
+      'tests/commands/cron-cli-persist.test.ts',
+      'tests/scheduler/cron-chained-jobs.test.ts',
+      'tests/daemon/cron-no-agent-jobs.test.ts',
       'tests/tools/cronjob-tool-real.test.ts',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
-      'npm test -- tests/commands/cron-cli.test.ts tests/scheduler/cron-scheduler-manual-run.test.ts --run',
+      'npm test -- tests/commands/cron-cli.test.ts tests/commands/cron-cli-persist.test.ts --run',
+      'npm test -- tests/scheduler/cron-chained-jobs.test.ts tests/daemon/cron-no-agent-jobs.test.ts tests/scheduler/script-runner.test.ts --run',
       'npm test -- tests/tools/cronjob-tool-real.test.ts --run',
       'npx tsx src/index.ts cron list --json',
     ],
-    notes: 'Direct CLI lifecycle parity covers add/list/show/update/pause/resume/run/remove, and the exact agent-facing cronjob prompt tool now covers list/show/create/pause/resume/run/remove over the persisted CronScheduler store with real isolated-store smoke coverage.',
-    nextWork: 'Add chained jobs, skill-backed jobs, and script-only no-agent scheduling only if those upstream Hermes workflow details remain product-relevant.',
+    notes: 'Direct CLI lifecycle parity covers add/list/show/update/pause/resume/run/remove, and the agent-facing cronjob prompt tool covers list/show/create/pause/resume/run/remove over the persisted CronScheduler store. The three upstream cron workflow types are now implemented end-to-end and user-creatable via both the cronjob tool and `buddy cron add/update`: (1) script-only NO-AGENT jobs (bounded shell runner, shell:false + executable allowlist + timeout, no agent/provider call), (2) skill-backed jobs (resolved via SkillRegistry/SkillExecutor), (3) chained jobs (`then` fires the next job on success, depth-capped against cycles). Real isolated-store + persistence + simulated-execution test coverage.',
+    nextWork: 'Engine + author surface for script-only/skill-backed/chained jobs are done and tested. Remaining for full parity: cross-job data passing in chains and richer NL scheduling phrasing, only if upstream workflow details remain product-relevant.',
   },
   {
     id: 'delegation-parallelism',
     area: 'Delegation/parallelism',
     officialSurface: 'delegate_task, isolated subagents, execute_code scripts calling tools by RPC',
-    codeBuddyEvidence: ['src/fleet/', 'src/tools/peer-chain-tool.ts', 'src/agent/autonomous/agentic-coding-runner.ts', 'src/tools/execute-code-runner.ts'],
-    status: 'partial',
+    codeBuddyEvidence: ['src/fleet/', 'src/tools/peer-chain-tool.ts', 'src/agent/autonomous/agentic-coding-runner.ts', 'src/tools/execute-code-runner.ts', 'src/tools/execute-code-rpc-invoker.ts', 'tests/tools/execute-code-tool-rpc.test.ts'],
+    status: 'covered-partial',
     verificationCommands: [
       'npm test -- tests/fleet --run',
-      'npm test -- tests/tools/execute-code-real.test.ts --run',
+      'npm test -- tests/tools/execute-code-real.test.ts tests/tools/execute-code-tool-rpc.test.ts --run',
     ],
-    notes: 'Delegation is strong through Fleet and subagents; execute_code now provides a real local subprocess boundary with artifacts. Generated-code-to-tool RPC collapse remains a separate product/security decision.',
-    nextWork: 'Decide only whether generated code should ever call Code Buddy tools by RPC; keep disabled until explicitly approved.',
+    notes: 'Delegation is strong through Fleet and subagents, and execute_code now closes the upstream "scripts calling tools by RPC" surface: generated code can invoke Code Buddy tools over a file-framed runner<->subprocess RPC channel. Safe by construction — OFF by default (CODEBUDDY_EXECUTE_CODE_TOOL_RPC), allowlist + registry fleetSafe gate (read-only tools only) + per-run call bound + per-call timeout, and fail-closed (a clean structured denial when disabled, never a hang). Proven end-to-end: off-by-default refusal AND real on-flag round-trip (a tool-read result surfaces in the script stdout, js + python).',
+    nextWork: 'Optional: widen the RPC allowlist beyond read-only tools only behind an explicit per-tool opt-in, if a concrete workflow justifies it.',
   },
   {
     id: 'runtime-backends',
@@ -472,6 +492,8 @@ const FEATURES: HermesParityFeature[] = [
       'tests/observability/run-trajectory-batch.test.ts',
       'tests/observability/run-trajectory-export.test.ts',
       'tests/observability/run-recall-pack.test.ts',
+      'cowork/src/main/tools/hermes-trajectories-bridge.ts',
+      'cowork/src/renderer/components/hermes-trajectories-strip.tsx',
     ],
     status: 'covered-partial',
     verificationCommands: [
@@ -479,9 +501,10 @@ const FEATURES: HermesParityFeature[] = [
       'npm test -- tests/commands/hermes-commands.test.ts --run',
       'npx tsx src/index.ts run trajectory-batch <query> --json',
       'npx tsx src/index.ts hermes trajectories status --json',
+      '(cd cowork && npm test -- --run tests/hermes-trajectories-bridge.test.ts tests/hermes-trajectories-strip.test.ts)',
     ],
-    notes: 'Trajectory export, batch redacted trajectory collection, compressed agent context, recall packs, Learning Agent retrospectives, golden evals, policy evals, and a Hermes-scoped compatibility report are real. Exact upstream training-data pipeline semantics may still differ, but the core research-trajectory batch/compression surface is implemented natively.',
-    nextWork: 'Dogfood trajectory-batch from Cowork or audit workflows only if operators need a first-class UI; do not claim exact upstream training-pipeline semantics without comparing them again.',
+    notes: 'Trajectory export, batch redacted trajectory collection, compressed agent context, recall packs, Learning Agent retrospectives, golden evals, policy evals, and a Hermes-scoped compatibility report are real. Cowork now surfaces the compatibility report read-only in the Fleet Command Center. Exact upstream training-data pipeline semantics may still differ, but the core research-trajectory batch/compression surface is implemented natively.',
+    nextWork: 'Audit upstream training-pipeline semantics again before claiming exact parity; the read-only Cowork surface does not yet trigger batch export.',
   },
   {
     id: 'kanban',
@@ -493,15 +516,18 @@ const FEATURES: HermesParityFeature[] = [
       'src/tools/registry/kanban-tools.ts',
       'src/commands/cli/hermes-commands.ts',
       'tests/tools/kanban-real.test.ts',
+      'cowork/src/main/tools/hermes-kanban-bridge.ts',
+      'cowork/src/renderer/components/KanbanPanel.tsx',
     ],
     status: 'covered-partial',
     verificationCommands: [
       'npm test -- tests/tools/kanban-real.test.ts --run',
       'npx tsx src/index.ts hermes kanban list --json',
       'npx tsx src/index.ts hermes tools --json',
+      '(cd cowork && npm test -- --run tests/hermes-kanban-bridge.test.ts tests/kanban-panel.test.ts)',
     ],
-    notes: 'Code Buddy now exposes the official kanban_show/list/create/complete/block/comment/link/unblock/heartbeat tool names plus a persistent workspace board and buddy hermes kanban CLI. Upstream UI/lifecycle semantics may still differ.',
-    nextWork: 'Dogfood the board in multi-agent sessions and add Cowork Kanban rendering if it becomes a daily control surface.',
+    notes: 'Code Buddy now exposes the official kanban_show/list/create/complete/block/comment/link/unblock/heartbeat tool names plus a persistent workspace board and buddy hermes kanban CLI. Cowork now renders the board as a CRUD panel (create/complete/block/unblock/comment/link) against the same workspace board the CLI reads. Upstream UI/lifecycle semantics may still differ.',
+    nextWork: 'Dogfood the Cowork board in multi-agent sessions; add heartbeat/assignee editing if it becomes a daily control surface.',
   },
   {
     id: 'mcp-acp',
@@ -514,31 +540,33 @@ const FEATURES: HermesParityFeature[] = [
       'src/server/routes/acp.ts',
       'src/server/channel-a2a-bridge.ts',
       'src/protocols/acp/acp-stdio-server.ts',
+      'src/protocols/acp/acp-agentic-runner.ts',
       'src/commands/cli/acp-command.ts',
       'tests/agent/hermes-protocol-gateways.test.ts',
       'tests/mcp/mcp-stdio-real-fixture.test.ts',
       'tests/protocols/acp-stdio-server-real.test.ts',
+      'tests/protocols/acp/acp-agentic-turn.test.ts',
       'tests/server/',
     ],
-    status: 'partial',
+    status: 'covered-partial',
     verificationCommands: [
-      'npm test -- tests/protocols/acp-stdio-server-real.test.ts tests/agent/hermes-protocol-gateways.test.ts --run',
+      'npm test -- tests/protocols/acp/acp-agentic-turn.test.ts tests/protocols/acp-stdio-server-real.test.ts --run',
       'npm test -- tests/agent/hermes-protocol-gateways.test.ts tests/mcp/mcp-stdio-real-fixture.test.ts tests/server/a2a-protocol.test.ts tests/server/acp-routes.test.ts --run',
-      'npm test -- tests/protocols/acp-stdio-server-real.test.ts --run',
       'npx tsx src/index.ts hermes protocols status --json',
       'npx tsx src/index.ts hermes protocols-smoke local --json',
     ],
     notes:
       'MCP client/server, A2A HTTP, ACP HTTP, channel-to-A2A bridge, and a Hermes-scoped readiness/smoke surface are present. ' +
-      'Editor packaging: `buddy acp` implements the Agent Client Protocol over newline-delimited JSON-RPC on stdio ' +
-      '(initialize / session.new / session.list / session.load / session.prompt with streamed agent_message_chunk updates / session.cancel), bridged to the LLM ' +
-      '(src/protocols/acp/acp-stdio-server.ts + src/commands/cli/acp-command.ts). Message shapes are grounded in the published spec ' +
-      'and round-trip tested, but not yet validated against a live editor (e.g. Zed). Agent-to-client request/response correlation is ' +
-      'implemented for capability-gated fs/*, terminal/*, and session/request_permission primitives; full tool-running turns over those ' +
-      'editor primitives, durable cross-process sessions, and MCP passthrough remain out of scope for v1.',
+      '`buddy acp` implements the Agent Client Protocol over newline-delimited JSON-RPC on stdio ' +
+      '(initialize / session.new / session.list / session.load / session.prompt / session.cancel), and now runs FULL agentic ' +
+      'tool-using turns (src/protocols/acp/acp-agentic-runner.ts): a bounded tool loop with a read-only toolset streams ACP ' +
+      'tool_call / tool_call_update updates, routes file reads through the client `fs/read_text_file` primitive when advertised, and gates ' +
+      'them via `session/request_permission`. Proven by a real protocol round-trip integration test that simulates the editor ' +
+      '(content served only over fs/read_text_file appears in the next LLM turn — load-bearing proof the client round-trip feeds the loop), ' +
+      'not a shape check. Not yet validated against a live editor GUI (e.g. Zed); agentic turns are read-only (no fs/write_text_file edits yet).',
     nextWork:
-      'Wire full agentic (tool-using) ACP turns through the existing client fs/* + session/request_permission primitives, validate ' +
-      'against a live editor, then add durable session storage and MCP passthrough before advertising richer prompt/MCP capabilities.',
+      'Validate the agentic ACP turn against a live editor GUI (Zed) with a real provider; add agentic edits via fs/write_text_file ' +
+      '(reusing the same permission gating), then durable cross-process session storage and MCP passthrough.',
   },
   {
     id: 'openclaw-migration',
@@ -548,22 +576,28 @@ const FEATURES: HermesParityFeature[] = [
       'src/agent/hermes-claw-migrate.ts',
       'src/commands/cli/hermes-commands.ts',
       'tests/agent/hermes-claw-migrate-real.test.ts',
+      'cowork/src/main/tools/hermes-claw-migrate-bridge.ts',
+      'cowork/src/renderer/components/ClawMigrationDialog.tsx',
     ],
     status: 'partial',
     verificationCommands: [
       'npm test -- tests/agent/hermes-claw-migrate-real.test.ts --run',
       'npx tsx src/index.ts hermes claw status --json',
       'rg -n "claw migrate|OpenClaw|openclaw" src tests docs',
+      '(cd cowork && npm test -- --run tests/hermes-claw-migrate-bridge.test.ts tests/claw-migration-dialog.test.ts)',
     ],
     notes:
-      'Initial `buddy hermes claw migrate` is implemented against the documented OpenClaw layout ' +
-      '(`~/.openclaw`/`~/.clawdbot`/`~/.moltbot` + `clawdbot.json`). It imports identity files ' +
-      '(SOUL/USER/AGENTS), MEMORY.md, the default model, MCP servers, and skills to real ' +
-      'consumer-backed destinations; the remaining 30+ categories are archived for manual review. ' +
-      'Dry-run by default, secret-safe; fixture-tested, with no real OpenClaw install validated.',
+      '`buddy hermes claw migrate` is implemented against the documented OpenClaw layout ' +
+      '(`~/.openclaw`/`~/.clawdbot`/`~/.moltbot` + `clawdbot.json`) and now recognizes 34 distinct ' +
+      'categories (up from 23). It imports identity files (SOUL/USER/AGENTS), MEMORY.md, the default ' +
+      'model, MCP servers, and skills to real consumer-backed destinations; the other 26 categories ' +
+      '(incl. cron, hooks, webhooks, toolsets, profiles, bundles, pairing, runtimes, portal, kanban, ' +
+      'learning-loop) are archived for manual review (credential-bearing archives written 0600). ' +
+      'Dry-run by default, deterministic, secret-safe; fixture-tested, with no real OpenClaw install validated. ' +
+      'Cowork now exposes a confirm-gated migration dialog (dry-run preview on open; apply only after explicit confirm).',
     nextWork:
-      'Expand imports toward the full 30+ category set and validate against a real OpenClaw install; ' +
-      'remaining completion stays deferred/optional.',
+      'Promote archived categories with a confirmed Code Buddy consumer (kanban, profiles, cron) to real ' +
+      'import once their OpenClaw shape is verified against a live install; remaining completion stays deferred/optional.',
   },
 ];
 

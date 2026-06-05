@@ -173,6 +173,10 @@ interface AppState {
   skillsStorageChangedAt: number;
   skillsStorageChangeEvent: SkillsStorageChangeEvent | null;
 
+  // Remote backend (Phase B2) — when connected, core chat/session runs on a
+  // remote Code Buddy backend; management surfaces remain local.
+  remoteBackend: { connected: boolean; host: string | null };
+
   // System theme (from OS native theme)
   systemDarkMode: boolean;
 
@@ -278,6 +282,7 @@ interface AppState {
   showClipboardPanel: boolean;
   showMemoryEditor: boolean;
   showActivityFeed: boolean;
+  showFileActivity: boolean;
   showSessionInsights: boolean;
   showResumeChooser: boolean;
   showFocusView: boolean;
@@ -366,6 +371,16 @@ interface AppState {
    * stream, the command center is the dispatch UI.
    */
   showFleetCommandCenter: boolean;
+  /**
+   * Toggle for the full-page Skills Manager (Hermes skills parity). Aggregates
+   * the installed skill-package lifecycle surface and the candidate review
+   * queue into a single daily-operations page.
+   */
+  showSkillsManager: boolean;
+  /** Toggle for the OpenClaw → Code Buddy migration dialog (Hermes claw parity). */
+  showClawMigration: boolean;
+  /** Toggle for the Hermes Kanban board panel (Hermes kanban parity). */
+  showKanban: boolean;
   fleetGoalDraft: FleetGoalDraft | null;
 
   // A2A active tasks (GAP 1)
@@ -468,6 +483,9 @@ interface AppState {
   // Context window actions
   setSessionContextWindow: (sessionId: string, contextWindow: number) => void;
 
+  // Remote backend actions
+  setRemoteBackend: (state: { connected: boolean; host: string | null }) => void;
+
   // System theme actions
   setSystemDarkMode: (dark: boolean) => void;
 
@@ -563,6 +581,7 @@ interface AppState {
   setShowClipboardPanel: (show: boolean) => void;
   setShowMemoryEditor: (show: boolean) => void;
   setShowActivityFeed: (show: boolean) => void;
+  setShowFileActivity: (show: boolean) => void;
   setShowSessionInsights: (show: boolean) => void;
   setShowResumeChooser: (show: boolean) => void;
   setShowFocusView: (show: boolean) => void;
@@ -631,6 +650,9 @@ interface AppState {
   dismissFleetDiscoveredPeer: (url: string) => void;
   setShowFleetPanel: (show: boolean) => void;
   setShowFleetCommandCenter: (show: boolean) => void;
+  setShowSkillsManager: (show: boolean) => void;
+  setShowClawMigration: (show: boolean) => void;
+  setShowKanban: (show: boolean) => void;
   setFleetGoalDraft: (draft: Omit<FleetGoalDraft, 'nonce'> | null) => void;
 
   // A2A task actions
@@ -716,6 +738,7 @@ export const useAppStore = create<AppState>((set) => ({
   sandboxSetupProgress: null,
   isSandboxSetupComplete: false,
   sandboxSyncStatus: null,
+  remoteBackend: { connected: false, host: null },
   skillsStorageChangedAt: 0,
   skillsStorageChangeEvent: null,
   systemDarkMode: false,
@@ -740,6 +763,7 @@ export const useAppStore = create<AppState>((set) => ({
   showClipboardPanel: false,
   showMemoryEditor: false,
   showActivityFeed: false,
+  showFileActivity: false,
   showSessionInsights: false,
   showResumeChooser: false,
   showFocusView: false,
@@ -819,6 +843,9 @@ export const useAppStore = create<AppState>((set) => ({
   fleetSagaUpdateToken: 0,
   fleetDiscoveredPeers: [],
   showFleetPanel: false,
+  showSkillsManager: false,
+  showClawMigration: false,
+  showKanban: false,
   showFleetCommandCenter: false,
   fleetGoalDraft: null,
   a2aTasks: {},
@@ -1244,6 +1271,8 @@ export const useAppStore = create<AppState>((set) => ({
     })),
 
   // System theme actions
+  setRemoteBackend: (state) => set({ remoteBackend: state }),
+
   setSystemDarkMode: (dark) => set({ systemDarkMode: dark }),
 
   // Diff preview actions
@@ -1530,6 +1559,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowClipboardPanel: (show) => set({ showClipboardPanel: show }),
   setShowMemoryEditor: (show) => set({ showMemoryEditor: show }),
   setShowActivityFeed: (show) => set({ showActivityFeed: show }),
+  setShowFileActivity: (show) => set({ showFileActivity: show }),
   setShowSessionInsights: (show) => set({ showSessionInsights: show }),
   setShowResumeChooser: (show) => set({ showResumeChooser: show }),
   setShowFocusView: (show) => set({ showFocusView: show }),
@@ -1726,6 +1756,9 @@ export const useAppStore = create<AppState>((set) => ({
       fleetDiscoveredPeers: state.fleetDiscoveredPeers.filter((p) => p.url !== url),
     })),
   setShowFleetPanel: (show) => set({ showFleetPanel: show }),
+  setShowSkillsManager: (show) => set({ showSkillsManager: show }),
+  setShowClawMigration: (show) => set({ showClawMigration: show }),
+  setShowKanban: (show) => set({ showKanban: show }),
   setShowFleetCommandCenter: (show) => set({ showFleetCommandCenter: show }),
   setFleetGoalDraft: (draft) =>
     set({

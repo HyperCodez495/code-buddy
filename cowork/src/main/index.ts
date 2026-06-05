@@ -38,7 +38,7 @@ import {
   type FleetDispatchInput,
 } from './ipc/fleet-ipc';
 import { wireFleetAggregator } from './fleet/aggregator-wiring';
-import { setMainWindow, setTray } from './window-management';
+import { setMainWindow, setTray, getMainWindow } from './window-management';
 import { registerTeamIpcHandlers } from './ipc/team-ipc';
 import { registerMentionIpcHandlers } from './ipc/mention-ipc';
 import { registerCommandIpcHandlers } from './ipc/command-ipc';
@@ -54,6 +54,7 @@ import { registerCompanionIpcHandlers } from './ipc/companion-ipc';
 import { registerSpecIpcHandlers } from './ipc/spec-ipc';
 import { registerSpecNextIpcHandlers } from './ipc/spec-next-ipc';
 import { registerSkillsHubIpcHandlers } from './ipc/skills-ipc';
+import { registerProfilesIpcHandlers, readActiveProfile } from './ipc/profiles-ipc';
 import { initDatabase, closeDatabase } from './db/database';
 import { SessionManager, type EngineAdapterLike } from './session/session-manager';
 import {
@@ -184,7 +185,10 @@ import {
 import { listRecentWorkspaceFiles } from './utils/recent-workspace-files';
 import { buildDiagnosticsSummary } from './utils/diagnostics-summary';
 import { getHermesProviderReadinessForReview } from './tools/hermes-provider-readiness-bridge';
-import { getHermesMemoryProvidersForReview } from './tools/hermes-memory-providers-bridge';
+import {
+  getHermesMemoryProvidersForReview,
+  runHermesMemoryProbeForReview,
+} from './tools/hermes-memory-providers-bridge';
 import {
   getHermesRuntimeBackendsForReview,
   runHermesRuntimeBackendSmokeForReview,
@@ -200,6 +204,24 @@ import {
 import { runHermesLocalSmokeSuiteForReview } from './tools/hermes-local-smoke-bridge';
 import { getHermesMobileSupervisionForReview } from './tools/hermes-mobile-supervision-bridge';
 import { getHermesFeatureParityForReview } from './tools/hermes-feature-parity-bridge';
+import { getHermesPortalForReview } from './tools/hermes-portal-bridge';
+import { getHermesTrajectoriesForReview } from './tools/hermes-trajectories-bridge';
+import { getHermesDoctorForReview } from './tools/hermes-doctor-bridge';
+import {
+  getHermesClawStatusForReview,
+  runHermesClawMigrationForReview,
+} from './tools/hermes-claw-migrate-bridge';
+import {
+  blockHermesKanbanCard,
+  commentHermesKanbanCard,
+  completeHermesKanbanCard,
+  createHermesKanbanCard,
+  linkHermesKanbanCard,
+  listHermesKanbanCards,
+  unblockHermesKanbanCard,
+  type KanbanCreateInput,
+  type KanbanListFilter,
+} from './tools/hermes-kanban-bridge';
 import { getHermesToolCatalogForReview } from './tools/hermes-tool-catalog-bridge';
 import { getHermesToolsetsForReview } from './tools/hermes-toolsets-bridge';
 import {
@@ -1207,6 +1229,21 @@ async function startSandboxBootstrap(): Promise<void> {
 }
 
 import { sendToRenderer } from './ipc-main-bridge';
+import { remoteBackendManager } from './remote-backend/remote-backend-manager';
+import { remoteBackendConfigStore } from './remote-backend/remote-backend-config-store';
+
+// Wire the remote backend manager: repipe ServerEvents through the same
+// channel the renderer already listens on, and push status changes on a
+// dedicated channel.
+remoteBackendManager.init({
+  sendServerEvent: (event) => sendToRenderer(event),
+  sendStatus: (status) => {
+    const win = getMainWindow();
+    if (win && !win.isDestroyed()) {
+      win.webContents.send('remote-backend:status', status);
+    }
+  },
+});
 
 // Initialize app
 app
@@ -1326,6 +1363,27 @@ app
         const { CodeBuddyEngineAdapter } = await import(
           /* webpackIgnore: true */ /* @vite-ignore */ adapterUrl
         );
+        // Apply the Cowork-selected Code Buddy profile to the engine's config
+        // singleton BEFORE the adapter is constructed, so the agent boots with
+        // the profile's overrides. Import toml-config from the SAME engine path
+        // as the adapter to share the module singleton (a different import path
+        // would mutate a different ConfigManager instance). applyProfile throws
+        // if the profile is undefined, so guard + log without blocking boot.
+        try {
+          const activeProfile = readActiveProfile();
+          if (activeProfile) {
+            const tomlUrl = pathToFileURL(
+              resolve(engineResolution.path, 'config', 'toml-config.js')
+            ).href;
+            const tomlMod = (await import(
+              /* webpackIgnore: true */ /* @vite-ignore */ tomlUrl
+            )) as { getConfigManager?: () => { applyProfile?: (name: string) => void } };
+            tomlMod.getConfigManager?.().applyProfile?.(activeProfile);
+            log(`[engine] applied Code Buddy profile "${activeProfile}"`);
+          }
+        } catch (err) {
+          logError(`[engine] failed to apply active profile: ${err instanceof Error ? err.message : String(err)}`);
+        }
         const apiConfig = configStore.getAll();
         const runtimeConfig = resolveEngineRuntimeConfig(apiConfig);
         engineAdapter = new CodeBuddyEngineAdapter({
@@ -1756,6 +1814,10 @@ app
 
     // Show window after core managers are ready so first-load actions can be handled.
     createWindow();
+
+    // Remote backend (Phase B2): apply env overrides + auto-connect if the
+    // persisted config opted in. Non-blocking — failures are logged, not fatal.
+    void remoteBackendManager.bootstrap();
 
     // macOS: dock menu
     if (process.platform === 'darwin') {
@@ -2411,6 +2473,7 @@ registerMobileSupervisionIpcHandlers();
 registerCompanionIpcHandlers(() => projectManager);
 registerSpecIpcHandlers(() => projectManager, configStore);
 registerSpecNextIpcHandlers(() => projectManager);
+registerProfilesIpcHandlers();
 
 // ── Task dispatch IPC (mobile/remote → background session) ───────────
 ipcMain.handle('dispatch.task', async (_event, request: DispatchRequest) => {
@@ -4091,6 +4154,176 @@ ipcMain.handle('tools.hermesFeatureParity.get', async () => {
   }
 });
 
+ipcMain.handle('tools.hermesPortal.get', async () => {
+  try {
+    return await getHermesPortalForReview();
+  } catch (err) {
+    logWarn('[tools.hermesPortal.get] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('tools.hermesTrajectories.get', async () => {
+  try {
+    return await getHermesTrajectoriesForReview();
+  } catch (err) {
+    logWarn('[tools.hermesTrajectories.get] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle('tools.hermesDoctor.get', async () => {
+  try {
+    return await getHermesDoctorForReview();
+  } catch (err) {
+    logWarn('[tools.hermesDoctor.get] failed:', err);
+    return null;
+  }
+});
+
+ipcMain.handle(
+  'tools.hermesClaw.status',
+  async (_event, payload?: { source?: string; preset?: 'full' | 'user-data' }) => {
+    try {
+      return await getHermesClawStatusForReview({
+        preset: payload?.preset,
+        source: payload?.source,
+      });
+    } catch (err) {
+      logWarn('[tools.hermesClaw.status] failed:', err);
+      return null;
+    }
+  }
+);
+
+ipcMain.handle(
+  'tools.hermesClaw.run',
+  async (
+    _event,
+    payload?: {
+      migrateSecrets?: boolean;
+      overwrite?: boolean;
+      preset?: 'full' | 'user-data';
+      skillConflict?: 'skip' | 'overwrite' | 'rename';
+      source?: string;
+      workspaceTarget?: string;
+    }
+  ) => {
+    try {
+      return await runHermesClawMigrationForReview({
+        migrateSecrets: payload?.migrateSecrets,
+        overwrite: payload?.overwrite,
+        preset: payload?.preset,
+        skillConflict: payload?.skillConflict,
+        source: payload?.source,
+        workspaceTarget: payload?.workspaceTarget,
+      });
+    } catch (err) {
+      logWarn('[tools.hermesClaw.run] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+// ── Hermes Kanban board (CRUD — CLI parity → Cowork) ────────────────
+ipcMain.handle(
+  'hermes.kanban.list',
+  async (_event, payload?: { cwd?: string; filter?: KanbanListFilter }) => {
+    try {
+      const result = await listHermesKanbanCards({ cwd: payload?.cwd, filter: payload?.filter });
+      if (!result) return { error: 'Kanban store is unavailable.', ok: false };
+      return { boardPath: result.boardPath, cards: result.cards, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.list] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.create',
+  async (_event, payload: { cwd?: string; input: KanbanCreateInput }) => {
+    try {
+      const card = await createHermesKanbanCard({ cwd: payload?.cwd, input: payload.input });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.create] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.complete',
+  async (_event, payload: { comment?: string; cwd?: string; id: string }) => {
+    try {
+      const card = await completeHermesKanbanCard({ comment: payload?.comment, cwd: payload?.cwd, id: payload.id });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.complete] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.block',
+  async (_event, payload: { cwd?: string; id: string; reason: string }) => {
+    try {
+      const card = await blockHermesKanbanCard({ cwd: payload?.cwd, id: payload.id, reason: payload.reason });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.block] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.unblock',
+  async (_event, payload: { comment?: string; cwd?: string; id: string }) => {
+    try {
+      const card = await unblockHermesKanbanCard({ comment: payload?.comment, cwd: payload?.cwd, id: payload.id });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.unblock] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.comment',
+  async (_event, payload: { cwd?: string; id: string; text: string }) => {
+    try {
+      const card = await commentHermesKanbanCard({ cwd: payload?.cwd, id: payload.id, text: payload.text });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.comment] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
+ipcMain.handle(
+  'hermes.kanban.link',
+  async (_event, payload: { cwd?: string; id: string; label?: string; target: string }) => {
+    try {
+      const card = await linkHermesKanbanCard({ cwd: payload?.cwd, id: payload.id, label: payload?.label, target: payload.target });
+      if (!card) return { error: 'Kanban store is unavailable.', ok: false };
+      return { card, ok: true };
+    } catch (err) {
+      logWarn('[hermes.kanban.link] failed:', err);
+      return { error: err instanceof Error ? err.message : String(err), ok: false };
+    }
+  }
+);
+
 ipcMain.handle(
   'tools.hermesToolsets.get',
   async (
@@ -4125,6 +4358,21 @@ ipcMain.handle('tools.hermesMemoryProviders.get', async () => {
     return null;
   }
 });
+
+ipcMain.handle(
+  'tools.hermesMemoryProviders.probe',
+  async (_event, payload?: { providerId?: string }) => {
+    try {
+      return await runHermesMemoryProbeForReview(payload?.providerId);
+    } catch (err) {
+      logWarn('[tools.hermesMemoryProviders.probe] failed:', err);
+      return {
+        error: err instanceof Error ? err.message : String(err),
+        ok: false,
+      };
+    }
+  }
+);
 
 ipcMain.handle('tools.hermesRuntimeBackends.get', async () => {
   try {
@@ -4990,6 +5238,31 @@ ipcMain.handle('server.stop', async () => {
 ipcMain.handle('server.dashboard', async () => {
   const { getServerBridge } = await import('./server/server-bridge');
   return getServerBridge().dashboard();
+});
+
+// Remote backend bridge (Phase B2) — connect/disconnect to a REMOTE Code
+// Buddy backend's `/desktop` WebSocket. The token never crosses an
+// unauthenticated boundary: it stays in the main process and is persisted
+// encrypted. See remote-backend/remote-backend.ts.
+ipcMain.handle(
+  'remote-backend.connect',
+  async (_event, payload: { url: string; token: string }) => {
+    return remoteBackendManager.connect(payload?.url ?? '', payload?.token ?? '');
+  }
+);
+
+ipcMain.handle('remote-backend.disconnect', async () => {
+  return remoteBackendManager.disconnect();
+});
+
+ipcMain.handle('remote-backend.status', async () => {
+  return remoteBackendManager.status();
+});
+
+ipcMain.handle('remote-backend.getConfig', async () => {
+  // Never return the token to the renderer — only url + autoConnect.
+  const cfg = remoteBackendConfigStore.getConfig();
+  return { url: cfg.url, autoConnect: cfg.autoConnect, hasToken: !!cfg.token };
 });
 
 // Test runner — Claude Cowork parity Phase 3 step 12
@@ -6848,6 +7121,29 @@ function sendActiveSetConfigRequiredError(sessionId?: string): void {
 }
 
 async function handleClientEvent(event: ClientEvent): Promise<unknown> {
+  // Remote backend switch (Phase B2): when a remote Code Buddy backend is
+  // connected, the core session.* events are proxied over the `/desktop`
+  // WebSocket instead of the LOCAL session-manager. The remote backend holds
+  // the credentials, so this MUST run BEFORE the local credential gate below
+  // (the local app may legitimately have no provider configured).
+  // Only the four events named by the B1 contract are forwardable
+  // (session.start/continue/stop/list). Everything else stays local.
+  if (remoteBackendManager.isConnected()) {
+    // session.start: the renderer awaits a canonical Session (to add +
+    // activate it and echo the user message). The remote mints the sessionId
+    // and emits it as a `session.update`; resolve the invoke with that.
+    if (event.type === 'session.start') {
+      return remoteBackendManager.forwardStart(event);
+    }
+    // Other forwardable events (continue/stop/list) are fire-and-forget on the
+    // renderer side; the remote answers via repiped ServerEvents. session.list
+    // therefore can't return synchronously — return [] and rely on the
+    // repiped `session.list` ServerEvent.
+    if (remoteBackendManager.forward(event)) {
+      return event.type === 'session.list' ? [] : null;
+    }
+  }
+
   // Check if configured before starting sessions
   if (event.type === 'session.start' && !configStore.hasUsableCredentialsForActiveSet()) {
     sendActiveSetConfigRequiredError();

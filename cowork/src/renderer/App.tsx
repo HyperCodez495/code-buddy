@@ -37,6 +37,7 @@ import { ComputerUseOverlay } from './components/ComputerUseOverlay';
 import { BrowserOperatorOverlay } from './components/BrowserOperatorOverlay';
 import { ApprovalDialog } from './components/ApprovalDialog';
 import { ActivityFeed } from './components/ActivityFeed';
+import { FileActivityPanel } from './components/FileActivityPanel';
 import { SessionInsightsPanel } from './components/SessionInsightsPanel';
 import { SessionResumeDialog } from './components/SessionResumeDialog';
 import { BookmarksPanel } from './components/BookmarksPanel';
@@ -54,6 +55,9 @@ import { ModelInstallDialog } from './components/ModelInstallDialog';
 import { OrchestratorLauncher } from './components/OrchestratorLauncher';
 import { FleetPanel } from './components/FleetPanel';
 import { FleetCommandCenter } from './components/FleetCommandCenter';
+import { SkillsManagerWrapper } from './components/skills-manager-page';
+import { ClawMigrationDialog } from './components/ClawMigrationDialog';
+import { KanbanPanel } from './components/KanbanPanel';
 import { TeamPanel } from './components/TeamPanel';
 import { LessonCandidatePanel } from './components/LessonCandidatePanel';
 import { UserModelPanel } from './components/UserModelPanel';
@@ -118,6 +122,7 @@ function App() {
   const showShortcutsDialog = useShowShortcutsDialog();
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
   const showActivityFeed = useAppStore((s) => s.showActivityFeed);
+  const showFileActivity = useAppStore((s) => s.showFileActivity);
   const showSessionInsights = useAppStore((s) => s.showSessionInsights);
   const showResumeChooser = useAppStore((s) => s.showResumeChooser);
   const showFocusView = useAppStore((s) => s.showFocusView);
@@ -133,6 +138,7 @@ function App() {
   const setShowEnrollmentDialog = useAppStore((s) => s.setShowEnrollmentDialog);
   const presenceEnabled = useAppStore((s) => s.presenceEnabled);
   const setShowOrchestratorLauncher = useAppStore((s) => s.setShowOrchestratorLauncher);
+  const setShowSkillsManager = useAppStore((s) => s.setShowSkillsManager);
   const splitPaneEnabled = useAppStore((s) => s.splitPaneEnabled);
   const toggleSplitPane = useAppStore((s) => s.toggleSplitPane);
   const updateInfo = useUpdateInfo();
@@ -149,6 +155,7 @@ function App() {
   const setShowShortcutsDialog = useAppStore((s) => s.setShowShortcutsDialog);
   const setShowGlobalSearch = useAppStore((s) => s.setShowGlobalSearch);
   const setShowActivityFeed = useAppStore((s) => s.setShowActivityFeed);
+  const setShowFileActivity = useAppStore((s) => s.setShowFileActivity);
   const setShowSessionInsights = useAppStore((s) => s.setShowSessionInsights);
   const setShowResumeChooser = useAppStore((s) => s.setShowResumeChooser);
   const setShowFocusView = useAppStore((s) => s.setShowFocusView);
@@ -340,6 +347,14 @@ function App() {
       } else if (mod && e.shiftKey && (e.key === 'f' || e.key === 'F')) {
         e.preventDefault();
         setShowFocusView(true);
+      } else if (mod && e.shiftKey && (e.key === 'l' || e.key === 'L')) {
+        // Hermes skills parity — full-page Skills Manager
+        e.preventDefault();
+        setShowSkillsManager(true);
+      } else if (mod && e.shiftKey && (e.key === 'e' || e.key === 'E')) {
+        // Phase A2 — file activity panel (agent file I/O timeline)
+        e.preventDefault();
+        setShowFileActivity(true);
       } else if (mod && e.key === '\\') {
         // Phase 3 step 8: toggle split-pane layout
         e.preventDefault();
@@ -386,6 +401,8 @@ function App() {
     setShowResumeChooser,
     setShowFocusView,
     setShowOrchestratorLauncher,
+    setShowSkillsManager,
+    setShowFileActivity,
     toggleSplitPane,
   ]);
 
@@ -561,6 +578,18 @@ function App() {
             useAppStore.getState().setSettingsTab('plugins');
             setShowSettings(true);
           }}
+          onShowSkillsManager={() => {
+            setShowCommandPalette(false);
+            setShowSkillsManager(true);
+          }}
+          onShowClawMigration={() => {
+            setShowCommandPalette(false);
+            useAppStore.getState().setShowClawMigration(true);
+          }}
+          onShowKanban={() => {
+            setShowCommandPalette(false);
+            useAppStore.getState().setShowKanban(true);
+          }}
         />
       )}
 
@@ -589,6 +618,7 @@ function App() {
 
       {/* Activity Feed — Phase 2 step 18 */}
       <ActivityFeed open={showActivityFeed} onClose={() => setShowActivityFeed(false)} />
+      <FileActivityPanel open={showFileActivity} onClose={() => setShowFileActivity(false)} />
       <SessionInsightsPanel
         open={showSessionInsights}
         onClose={() => setShowSessionInsights(false)}
@@ -639,6 +669,9 @@ function App() {
       {/* Fleet Command Center — multi-AI dispatch (Fleet P5) */}
       <FleetCommandCenterWrapper />
 
+      {/* Skills Manager — full-page Hermes skills parity (Cmd/Ctrl+Shift+L) */}
+      <SkillsManagerWrapper />
+
       {/* Team panel — Agent Teams (Phase 4 layer 9) */}
       <TeamPanel />
 
@@ -651,6 +684,12 @@ function App() {
       <DevicePanel />
       <ChannelsPanel />
       <CompanionPanel />
+
+      {/* OpenClaw migration dialog — Hermes claw parity (dry-run by default) */}
+      <ClawMigrationWrapper />
+
+      {/* Kanban board — Hermes kanban parity (workspace board CRUD) */}
+      <KanbanWrapper />
     </div>
   );
 }
@@ -667,4 +706,20 @@ function FleetCommandCenterWrapper() {
   const open = useAppStore((s) => s.showFleetCommandCenter);
   const close = useAppStore((s) => s.setShowFleetCommandCenter);
   return <FleetCommandCenter isOpen={open} onClose={() => close(false)} />;
+}
+
+/** Reactive wrapper for the OpenClaw migration dialog (Hermes claw parity). */
+function ClawMigrationWrapper() {
+  const open = useAppStore((s) => s.showClawMigration);
+  const close = useAppStore((s) => s.setShowClawMigration);
+  if (!open) return null;
+  return <ClawMigrationDialog onClose={() => close(false)} />;
+}
+
+/** Reactive wrapper for the Hermes Kanban board panel. */
+function KanbanWrapper() {
+  const open = useAppStore((s) => s.showKanban);
+  const close = useAppStore((s) => s.setShowKanban);
+  if (!open) return null;
+  return <KanbanPanel onClose={() => close(false)} />;
 }

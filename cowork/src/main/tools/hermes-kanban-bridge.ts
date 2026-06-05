@@ -1,0 +1,156 @@
+import { loadCoreModule } from '../utils/core-loader';
+
+export type KanbanStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
+export type KanbanPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface KanbanLink {
+  id: string;
+  target: string;
+  label?: string;
+  createdAt: string;
+}
+
+export interface KanbanComment {
+  id: string;
+  author?: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface KanbanCard {
+  assignee?: string;
+  blockedReason?: string;
+  comments: KanbanComment[];
+  completedAt?: string;
+  createdAt: string;
+  description?: string;
+  heartbeats: unknown[];
+  id: string;
+  links: KanbanLink[];
+  priority: KanbanPriority;
+  status: KanbanStatus;
+  tags: string[];
+  title: string;
+  updatedAt: string;
+}
+
+export interface KanbanCreateInput {
+  assignee?: string;
+  description?: string;
+  priority?: KanbanPriority;
+  status?: KanbanStatus;
+  tags?: string[];
+  title: string;
+}
+
+export interface KanbanListFilter {
+  assignee?: string;
+  includeDone?: boolean;
+  priority?: KanbanPriority;
+  status?: KanbanStatus;
+  tag?: string;
+}
+
+interface KanbanStoreInstance {
+  readonly path: string;
+  createCard: (input: KanbanCreateInput) => Promise<KanbanCard>;
+  listCards: (filter?: KanbanListFilter) => Promise<KanbanCard[]>;
+  completeCard: (id: string, comment?: string, author?: string) => Promise<KanbanCard>;
+  blockCard: (id: string, reason: string, author?: string) => Promise<KanbanCard>;
+  unblockCard: (id: string, comment?: string, author?: string) => Promise<KanbanCard>;
+  commentCard: (id: string, text: string, author?: string) => Promise<KanbanCard>;
+  linkCard: (id: string, target: string, label?: string) => Promise<KanbanCard>;
+}
+
+interface KanbanStoreModule {
+  KanbanStore: new (options: { rootDir?: string }) => KanbanStoreInstance;
+}
+
+async function buildStore(cwd?: string): Promise<KanbanStoreInstance | null> {
+  const mod = await loadCoreModule<KanbanStoreModule>('kanban/kanban-store.js');
+  if (!mod?.KanbanStore) return null;
+  const rootDir = cwd?.trim() || process.cwd();
+  return new mod.KanbanStore({ rootDir });
+}
+
+export interface KanbanListResult {
+  boardPath: string;
+  cards: KanbanCard[];
+}
+
+/** List cards on the workspace board. Mirrors `buddy hermes kanban list`. */
+export async function listHermesKanbanCards(options: {
+  cwd?: string;
+  filter?: KanbanListFilter;
+}): Promise<KanbanListResult | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  const cards = await store.listCards(options.filter ?? {});
+  return { boardPath: store.path, cards };
+}
+
+/** Create a card. Mirrors `buddy hermes kanban create`. */
+export async function createHermesKanbanCard(options: {
+  cwd?: string;
+  input: KanbanCreateInput;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.createCard(options.input);
+}
+
+/** Mark a card done. Mirrors `buddy hermes kanban complete`. */
+export async function completeHermesKanbanCard(options: {
+  comment?: string;
+  cwd?: string;
+  id: string;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.completeCard(options.id, options.comment);
+}
+
+/** Block a card with a reason. Mirrors `buddy hermes kanban block`. */
+export async function blockHermesKanbanCard(options: {
+  cwd?: string;
+  id: string;
+  reason: string;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.blockCard(options.id, options.reason);
+}
+
+/** Clear a card block. Mirrors `buddy hermes kanban unblock`. */
+export async function unblockHermesKanbanCard(options: {
+  comment?: string;
+  cwd?: string;
+  id: string;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.unblockCard(options.id, options.comment);
+}
+
+/** Add a comment to a card. Mirrors `buddy hermes kanban comment`. */
+export async function commentHermesKanbanCard(options: {
+  cwd?: string;
+  id: string;
+  text: string;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.commentCard(options.id, options.text);
+}
+
+/** Link a card to a target. Mirrors `buddy hermes kanban link`. */
+export async function linkHermesKanbanCard(options: {
+  cwd?: string;
+  id: string;
+  label?: string;
+  target: string;
+}): Promise<KanbanCard | null> {
+  const store = await buildStore(options.cwd);
+  if (!store) return null;
+  return store.linkCard(options.id, options.target, options.label);
+}

@@ -262,3 +262,244 @@ export interface SpecApi {
   listEpics: (specProjectId: string, coworkProjectId?: string) => Promise<{ ok: boolean; error?: string; epics: SpecEpic[] }>;
   addEpic: (specProjectId: string, input: { title: string; summary?: string }, coworkProjectId?: string) => Promise<{ ok: boolean; error?: string; epic?: SpecEpic }>;
 }
+
+// ── Hermes Nous Portal / Tool Gateway (read-only review) ─────────────
+export type HermesPortalToolKey = 'web' | 'image_gen' | 'tts' | 'browser' | 'modal';
+
+export interface HermesPortalToolReviewItem {
+  configured: boolean;
+  credentialEnv: string[];
+  currentProvider: string | null;
+  key: HermesPortalToolKey;
+  label: string;
+  managedByNous: boolean;
+  notes: string[];
+  partner: string;
+}
+
+export interface HermesPortalReviewPayload {
+  command: string;
+  configuredToolCount: number;
+  generatedAt: string;
+  loggedIn: boolean;
+  managedByNousCount: number;
+  notConfiguredToolCount: number;
+  notes: string[];
+  ok: boolean;
+  portal: {
+    authFilePresent: boolean;
+    credentialPresent: boolean;
+    credentialSources: string[];
+    docsUrl: string;
+    portalBaseUrl: string;
+    selectedInferenceProvider: string | null;
+    selectedModel: string | null;
+    selectedViaNous: boolean;
+    subscriptionUrl: string;
+    toolGatewayConfigured: boolean;
+    toolGatewayUrl: string | null;
+  };
+  routingActive: boolean;
+  tools: HermesPortalToolReviewItem[];
+}
+
+// ── Hermes research trajectories (read-only review) ──────────────────
+export type HermesTrajectoryCapabilityStatus = 'available' | 'partial' | 'missing';
+
+export interface HermesTrajectoryCapabilityReviewItem {
+  commands: string[];
+  id: string;
+  label: string;
+  notes: string[];
+  officialSurface: string;
+  status: HermesTrajectoryCapabilityStatus;
+}
+
+export interface HermesTrajectoriesReviewPayload {
+  availableCount: number;
+  capabilities: HermesTrajectoryCapabilityReviewItem[];
+  command: string;
+  generatedAt: string;
+  goldenFixtureCount: number;
+  missingCount: number;
+  ok: boolean;
+  partialCount: number;
+  policyEvalCount: number;
+  recommendations: string[];
+  total: number;
+}
+
+// ── Hermes Kanban board (CRUD) ───────────────────────────────────────
+export type KanbanStatus = 'todo' | 'in_progress' | 'blocked' | 'done';
+export type KanbanPriority = 'low' | 'medium' | 'high' | 'urgent';
+
+export interface KanbanLinkPayload {
+  id: string;
+  target: string;
+  label?: string;
+  createdAt: string;
+}
+
+export interface KanbanCommentPayload {
+  id: string;
+  author?: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface KanbanCardPayload {
+  assignee?: string;
+  blockedReason?: string;
+  comments: KanbanCommentPayload[];
+  completedAt?: string;
+  createdAt: string;
+  description?: string;
+  heartbeats: unknown[];
+  id: string;
+  links: KanbanLinkPayload[];
+  priority: KanbanPriority;
+  status: KanbanStatus;
+  tags: string[];
+  title: string;
+  updatedAt: string;
+}
+
+export interface KanbanCreateInputPayload {
+  assignee?: string;
+  description?: string;
+  priority?: KanbanPriority;
+  status?: KanbanStatus;
+  tags?: string[];
+  title: string;
+}
+
+export interface KanbanListFilterPayload {
+  assignee?: string;
+  includeDone?: boolean;
+  priority?: KanbanPriority;
+  status?: KanbanStatus;
+  tag?: string;
+}
+
+export interface KanbanListResponse {
+  boardPath?: string;
+  cards?: KanbanCardPayload[];
+  error?: string;
+  ok: boolean;
+}
+
+export interface KanbanCardResponse {
+  card?: KanbanCardPayload;
+  error?: string;
+  ok: boolean;
+}
+
+export interface HermesKanbanApi {
+  list: (options?: {
+    cwd?: string;
+    filter?: KanbanListFilterPayload;
+  }) => Promise<KanbanListResponse>;
+  create: (options: { cwd?: string; input: KanbanCreateInputPayload }) => Promise<KanbanCardResponse>;
+  complete: (options: { comment?: string; cwd?: string; id: string }) => Promise<KanbanCardResponse>;
+  block: (options: { cwd?: string; id: string; reason: string }) => Promise<KanbanCardResponse>;
+  unblock: (options: { comment?: string; cwd?: string; id: string }) => Promise<KanbanCardResponse>;
+  comment: (options: { cwd?: string; id: string; text: string }) => Promise<KanbanCardResponse>;
+  link: (options: { cwd?: string; id: string; label?: string; target: string }) => Promise<KanbanCardResponse>;
+}
+
+// ── Hermes OpenClaw migration (dry-run preview + apply) ──────────────
+export type ClawMigrationAction = 'import' | 'archive' | 'skip' | 'conflict';
+export type ClawMigrationPreset = 'full' | 'user-data';
+export type ClawSkillConflictMode = 'skip' | 'overwrite' | 'rename';
+
+export interface ClawMigrationEntryPayload {
+  action: ClawMigrationAction;
+  applied?: boolean;
+  category: string;
+  destination: string | null;
+  detail: string;
+  error?: string;
+  label: string;
+  source: string | null;
+}
+
+export interface ClawMigrationReportPayload {
+  applied: boolean;
+  backupPath: string | null;
+  detected: boolean;
+  dryRun: boolean;
+  entries: ClawMigrationEntryPayload[];
+  kind: 'hermes_claw_migration';
+  migrateSecrets: boolean;
+  notes: string[];
+  openClawHome: string | null;
+  preset: ClawMigrationPreset;
+  schemaVersion: 1;
+  summary: {
+    appliedCount: number;
+    archive: number;
+    conflict: number;
+    failedCount: number;
+    import: number;
+    skip: number;
+    total: number;
+  };
+  workspaceTarget: string;
+}
+
+export interface ClawMigrationRunOptionsPayload {
+  migrateSecrets?: boolean;
+  overwrite?: boolean;
+  preset?: ClawMigrationPreset;
+  skillConflict?: ClawSkillConflictMode;
+  source?: string;
+  workspaceTarget?: string;
+}
+
+export interface ClawMigrationRunResponse {
+  error?: string;
+  ok: boolean;
+  report?: ClawMigrationReportPayload;
+}
+
+// ── Hermes memory live probe (write→read action) ────────────────────
+export interface HermesMemoryProbeResultPayload {
+  activeProviderId: string;
+  error?: string;
+  fellBackToLocal: boolean;
+  generatedAt: string;
+  notes: string[];
+  ok: boolean;
+  providerId: string;
+  remote: boolean;
+  retrieved: boolean;
+  retrievedSample?: string;
+  verdict: 'pass' | 'pending' | 'fail';
+  wrote: boolean;
+}
+
+export interface HermesMemoryProbeResponse {
+  error?: string;
+  ok: boolean;
+  result?: HermesMemoryProbeResultPayload;
+}
+
+// ── Hermes doctor (aggregate diagnostics, read-only) ─────────────────
+export interface HermesDoctorAreaReview {
+  id: string;
+  label: string;
+  ok: boolean;
+}
+
+export interface HermesDoctorReviewPayload {
+  agentName: string | null;
+  areas: HermesDoctorAreaReview[];
+  command: string;
+  disabledToolCount: number;
+  dispatchProfile: string;
+  enabledToolCount: number;
+  issues: string[];
+  ok: boolean;
+  recommendations: string[];
+  source: 'built-in' | 'user' | 'missing';
+}

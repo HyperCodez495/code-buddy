@@ -2,7 +2,7 @@
  * @vitest-environment happy-dom
  */
 import React from 'react';
-import { act } from 'react-dom/test-utils';
+import { act, Simulate } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
@@ -151,5 +151,45 @@ describe('HermesMemoryProvidersStrip', () => {
     expect(get).toHaveBeenCalledWith();
     expect(target.textContent).toContain('Mem0');
     expect(target.textContent).toContain('ByteRover');
+  });
+
+  it('runs a live probe through the Electron bridge and shows the verdict', async () => {
+    const target = container();
+    const probe = vi.fn().mockResolvedValue({
+      ok: true,
+      result: {
+        activeProviderId: 'mem0',
+        fellBackToLocal: false,
+        generatedAt: '2026-06-05T10:00:00.000Z',
+        notes: [],
+        ok: true,
+        providerId: 'mem0',
+        remote: true,
+        retrieved: true,
+        verdict: 'pass',
+        wrote: true,
+      },
+    });
+    (window as unknown as {
+      electronAPI?: { tools?: { hermesMemoryProviders?: { probe: typeof probe } } };
+    }).electronAPI = { tools: { hermesMemoryProviders: { probe } } };
+    root = createRoot(target);
+
+    act(() => {
+      root?.render(React.createElement(HermesMemoryProvidersStrip, { readiness: readyMemory }));
+    });
+
+    const button = target.querySelector('[data-testid="hermes-memory-probe-mem0"]') as HTMLButtonElement;
+    expect(button).not.toBeNull();
+
+    await act(async () => {
+      Simulate.click(button);
+      await Promise.resolve();
+    });
+
+    expect(probe).toHaveBeenCalledWith({ providerId: 'mem0' });
+    expect(
+      target.querySelector('[data-testid="hermes-memory-probe-result-mem0"]')?.textContent,
+    ).toContain('probe pass');
   });
 });

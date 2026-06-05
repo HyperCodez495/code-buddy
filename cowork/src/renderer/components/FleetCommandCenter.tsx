@@ -60,6 +60,9 @@ import { HermesLocalSmokeStrip } from './hermes-local-smoke-strip';
 import { HermesMessagingGatewayStrip } from './hermes-messaging-gateway-strip';
 import { HermesMobileSupervisionStrip } from './hermes-mobile-supervision-strip';
 import { HermesFeatureParityStrip } from './hermes-feature-parity-strip';
+import { HermesPortalStrip } from './hermes-portal-strip';
+import { HermesTrajectoriesStrip } from './hermes-trajectories-strip';
+import { HermesDoctorStrip } from './hermes-doctor-strip';
 import { HermesToolCatalogStrip } from './hermes-tool-catalog-strip';
 import { HermesToolsetsStrip } from './hermes-toolsets-strip';
 import { ToolProfileInspectorStrip } from './tool-profile-inspector-strip';
@@ -1104,7 +1107,9 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 <ToolProfileInspectorStrip profile={dispatchProfile} />
                 <HermesToolsetsStrip profile={dispatchProfile} />
                 <HermesProviderReadinessStrip onOpenSettings={handleOpenApiSettings} />
+                <HermesPortalStrip />
                 <HermesMemoryProvidersStrip />
+                <HermesDoctorStrip />
                 <HermesLocalSmokeStrip />
                 <HermesRuntimeBackendsStrip />
                 <HermesBrowserBackendsStrip />
@@ -1118,6 +1123,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                 />
                 <HermesFeatureParityStrip />
                 <HermesToolCatalogStrip />
+                <HermesTrajectoriesStrip />
                 <LessonsVaultStrip
                   cwd={activeWorkspaceCwd}
                   onBrowse={() => setShowLessonsGraph(true)}

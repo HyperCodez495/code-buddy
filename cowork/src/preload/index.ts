@@ -74,6 +74,16 @@ import type {
   RemoteSessionMapping,
 } from '../shared/ipc-types';
 import type { LessonCandidateApi, UserModelApi, SpecApi } from '../renderer/types/hermes';
+import type {
+  HermesPortalReviewPayload,
+  HermesTrajectoriesReviewPayload,
+  HermesDoctorReviewPayload,
+  HermesMemoryProbeResponse,
+  ClawMigrationReportPayload,
+  ClawMigrationRunOptionsPayload,
+  ClawMigrationRunResponse,
+  HermesKanbanApi,
+} from '../renderer/types/hermes';
 
 // Track registered callbacks to prevent duplicate listeners
 let registeredCallback: ((event: ServerEvent) => void) | null = null;
@@ -1613,6 +1623,36 @@ contextBridge.exposeInMainWorld('electronAPI', {
         recommendations: string[];
       } | null> => ipcRenderer.invoke('tools.hermesProviderReadiness.get'),
     },
+    hermesPortal: {
+      get: (): Promise<HermesPortalReviewPayload | null> =>
+        ipcRenderer.invoke('tools.hermesPortal.get'),
+    },
+    hermesTrajectories: {
+      get: (): Promise<HermesTrajectoriesReviewPayload | null> =>
+        ipcRenderer.invoke('tools.hermesTrajectories.get'),
+    },
+    hermesDoctor: {
+      get: (): Promise<HermesDoctorReviewPayload | null> =>
+        ipcRenderer.invoke('tools.hermesDoctor.get'),
+    },
+    hermesClaw: {
+      status: (options?: {
+        preset?: 'full' | 'user-data';
+        source?: string;
+      }): Promise<ClawMigrationReportPayload | null> =>
+        ipcRenderer.invoke('tools.hermesClaw.status', options),
+      run: (options: ClawMigrationRunOptionsPayload): Promise<ClawMigrationRunResponse> =>
+        ipcRenderer.invoke('tools.hermesClaw.run', options),
+    },
+    hermesKanban: {
+      list: (options) => ipcRenderer.invoke('hermes.kanban.list', options),
+      create: (options) => ipcRenderer.invoke('hermes.kanban.create', options),
+      complete: (options) => ipcRenderer.invoke('hermes.kanban.complete', options),
+      block: (options) => ipcRenderer.invoke('hermes.kanban.block', options),
+      unblock: (options) => ipcRenderer.invoke('hermes.kanban.unblock', options),
+      comment: (options) => ipcRenderer.invoke('hermes.kanban.comment', options),
+      link: (options) => ipcRenderer.invoke('hermes.kanban.link', options),
+    } satisfies HermesKanbanApi,
     hermesMemoryProviders: {
       get: (): Promise<{
         activeProviderId: string;
@@ -1640,6 +1680,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
         recommendations: string[];
         registeredCount: number;
       } | null> => ipcRenderer.invoke('tools.hermesMemoryProviders.get'),
+      probe: (options: { providerId?: string }): Promise<HermesMemoryProbeResponse> =>
+        ipcRenderer.invoke('tools.hermesMemoryProviders.probe', options),
     },
     hermesRuntimeBackends: {
       get: (): Promise<{
@@ -2455,6 +2497,51 @@ contextBridge.exposeInMainWorld('electronAPI', {
         byStatus: Record<string, number>;
       } | null;
     }> => ipcRenderer.invoke('server.dashboard'),
+  },
+
+  /**
+   * Remote backend (Phase B2) — connect this desktop to a REMOTE Code Buddy
+   * backend's `/desktop` WebSocket. The socket lives entirely in the main
+   * process (avoids renderer CSP/CORS); the token never leaves main. Note
+   * this is distinct from the `remote` namespace above, which is the inbound
+   * gateway / channels feature.
+   */
+  remoteBackend: {
+    connect: (
+      url: string,
+      token: string
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('remote-backend.connect', { url, token }),
+    disconnect: (): Promise<{ success: boolean }> =>
+      ipcRenderer.invoke('remote-backend.disconnect'),
+    status: (): Promise<{
+      status: 'disconnected' | 'connecting' | 'connected' | 'error';
+      host?: string;
+      error?: string;
+    }> => ipcRenderer.invoke('remote-backend.status'),
+    getConfig: (): Promise<{ url: string; autoConnect: boolean; hasToken: boolean }> =>
+      ipcRenderer.invoke('remote-backend.getConfig'),
+    /** Subscribe to live status pushes. Returns an unsubscribe function. */
+    onStatus: (
+      callback: (status: {
+        status: 'disconnected' | 'connecting' | 'connected' | 'error';
+        host?: string;
+        error?: string;
+      }) => void
+    ): (() => void) => {
+      const listener = (
+        _event: Electron.IpcRendererEvent,
+        data: {
+          status: 'disconnected' | 'connecting' | 'connected' | 'error';
+          host?: string;
+          error?: string;
+        }
+      ) => callback(data);
+      ipcRenderer.on('remote-backend:status', listener);
+      return () => {
+        ipcRenderer.removeListener('remote-backend:status', listener);
+      };
+    },
   },
 
   // Project templates (Claude Cowork parity Phase 2 step 12)
@@ -3505,6 +3592,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // C3: read-only view of paired device nodes (pairing stays on the CLI)
   deviceNodes: {
     list: () => ipcRenderer.invoke('deviceNodes.list'),
+  },
+
+  // A1: isolated Code Buddy config profiles ([profiles.<name>] in the user toml)
+  profiles: {
+    list: () => ipcRenderer.invoke('profiles.list'),
+    active: () => ipcRenderer.invoke('profiles.active'),
+    create: (name: string) => ipcRenderer.invoke('profiles.create', name),
+    switch: (name: string | null) => ipcRenderer.invoke('profiles.switch', name),
   },
 
   // Read-only per-channel connection status (configuring/sending stays on the CLI)
@@ -4759,6 +4854,23 @@ declare global {
             recommendations: string[];
           } | null>;
         };
+        hermesPortal: {
+          get: () => Promise<HermesPortalReviewPayload | null>;
+        };
+        hermesTrajectories: {
+          get: () => Promise<HermesTrajectoriesReviewPayload | null>;
+        };
+        hermesDoctor: {
+          get: () => Promise<HermesDoctorReviewPayload | null>;
+        };
+        hermesClaw: {
+          status: (options?: {
+            preset?: 'full' | 'user-data';
+            source?: string;
+          }) => Promise<ClawMigrationReportPayload | null>;
+          run: (options: ClawMigrationRunOptionsPayload) => Promise<ClawMigrationRunResponse>;
+        };
+        hermesKanban: HermesKanbanApi;
         hermesMemoryProviders: {
           get: () => Promise<{
             activeProviderId: string;
@@ -4786,6 +4898,7 @@ declare global {
             recommendations: string[];
             registeredCount: number;
           } | null>;
+          probe: (options: { providerId?: string }) => Promise<HermesMemoryProbeResponse>;
         };
         hermesRuntimeBackends: {
           get: () => Promise<{
@@ -5593,6 +5706,26 @@ declare global {
             byStatus: Record<string, number>;
           } | null;
         }>;
+      };
+      remoteBackend: {
+        connect: (
+          url: string,
+          token: string
+        ) => Promise<{ success: boolean; error?: string }>;
+        disconnect: () => Promise<{ success: boolean }>;
+        status: () => Promise<{
+          status: 'disconnected' | 'connecting' | 'connected' | 'error';
+          host?: string;
+          error?: string;
+        }>;
+        getConfig: () => Promise<{ url: string; autoConnect: boolean; hasToken: boolean }>;
+        onStatus: (
+          callback: (status: {
+            status: 'disconnected' | 'connecting' | 'connected' | 'error';
+            host?: string;
+            error?: string;
+          }) => void
+        ) => () => void;
       };
       template: {
         list: () => Promise<
@@ -6481,6 +6614,29 @@ declare global {
             port?: number;
             username?: string;
           }>;
+        }>;
+      };
+      profiles: {
+        list: () => Promise<{
+          ok: boolean;
+          error?: string;
+          profiles: Array<{ name: string; active: boolean }>;
+          active: string | null;
+        }>;
+        active: () => Promise<{ ok: boolean; error?: string; active: string | null }>;
+        create: (name: string) => Promise<{
+          ok: boolean;
+          error?: string;
+          requiresRestart?: boolean;
+          profiles?: Array<{ name: string; active: boolean }>;
+          active?: string | null;
+        }>;
+        switch: (name: string | null) => Promise<{
+          ok: boolean;
+          error?: string;
+          requiresRestart?: boolean;
+          profiles?: Array<{ name: string; active: boolean }>;
+          active?: string | null;
         }>;
       };
       channels: {

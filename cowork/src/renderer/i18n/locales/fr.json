@@ -177,6 +177,77 @@
     "noFaceDetected": "Aucun visage détecté. Regardez bien la caméra puis réessayez.",
     "modelMissing": "Modèle Buffalo_S manquant. Installation requise."
   },
+  "presence": {
+    "recognizedTitle": "{{name}} reconnu ({{pct}} %) — cliquer pour gérer les identités",
+    "unknown": "inconnu",
+    "unknownTitle": "Visage inconnu détecté — cliquer pour l'enregistrer",
+    "noneEnrolledTitle": "Aucun visage enregistré — cliquez pour enregistrer le vôtre",
+    "enrollFace": "Enregistrer un visage",
+    "enrollAnotherTitle": "Cliquer pour enregistrer un autre visage",
+    "enrolledCount_one": "{{count}} visage enregistré",
+    "enrolledCount_other": "{{count}} visages enregistrés"
+  },
+  "approval": {
+    "title": "Approbation du workflow requise",
+    "defaultMessage": "Approuvez pour continuer le workflow.",
+    "destructiveDetected": "Motif destructeur détecté : {{reason}}",
+    "rereadInput": "Relisez l'entrée de l'outil ci-dessous avant d'approuver.",
+    "aboutToInvoke": "Sur le point d'invoquer",
+    "autoRejectsIn": "rejet automatique dans {{time}}",
+    "reject": "Rejeter",
+    "approve": "Approuver",
+    "moreQueued_one": "{{count}} autre approbation en file",
+    "moreQueued_other": "{{count}} autres approbations en file"
+  },
+  "compact": {
+    "dialogTitle": "Compacter le contexte",
+    "dialogIntro": "Le compactage résume les parties anciennes de la conversation pour libérer de la fenêtre de contexte pour les nouveaux tours. Choisissez une stratégie :",
+    "notAvailable": "Commande de compactage non disponible.",
+    "running": "Compactage…",
+    "runNow": "Compacter maintenant",
+    "aggressive": {
+      "title": "Agressif",
+      "desc": "Économie de jetons maximale — résume les anciens messages et supprime les sorties d'outils."
+    },
+    "balanced": {
+      "title": "Équilibré (recommandé)",
+      "desc": "Résume les anciens messages, conserve les sorties d'outils récentes intactes."
+    },
+    "preserveTools": {
+      "title": "Préserver les outils",
+      "desc": "Résume uniquement le texte, conserve tous les appels et résultats d'outils tels quels."
+    }
+  },
+  "team": {
+    "title": "Équipe d'agents",
+    "closePanel": "Fermer le panneau d'équipe",
+    "startTeam": "Démarrer l'équipe",
+    "addMember": "Ajouter un membre",
+    "stop": "Arrêter",
+    "start": "Démarrer",
+    "role": "Rôle",
+    "goal": "Objectif",
+    "goalOptional": "Objectif de l'équipe (facultatif)",
+    "goalPlaceholder": "ex. Refactoriser le middleware d'authentification pour la conformité",
+    "memberLabelPlaceholder": "Libellé (facultatif, ex. lead-coder)",
+    "statusIdle": "inactif",
+    "current": "en cours",
+    "unknown": "inconnu",
+    "unassigned": "non assigné",
+    "all": "tous",
+    "noTasks": "Aucune tâche pour l'instant.",
+    "dissolveConfirm": "Dissoudre l'équipe ?",
+    "removeMember": "Retirer le membre",
+    "bridgeUnavailableObserve": "Pont d'équipe indisponible en aperçu navigateur. Ouvrez l'application de bureau pour démarrer ou observer les équipes.",
+    "bridgeUnavailableManage": "Pont d'équipe indisponible en aperçu navigateur. Ouvrez l'application de bureau pour gérer les équipes.",
+    "noMembersActive": "Aucun membre pour l'instant. Cliquez sur « Ajouter un membre » pour commencer.",
+    "startToAddMembers": "Démarrez une équipe pour ajouter des membres.",
+    "membersCount": "Membres ({{count}})",
+    "tasksCount": "Tâches ({{count}})",
+    "mailboxCount": "Boîte de messages ({{count}})",
+    "tasksDone": "{{count}} terminée(s)",
+    "taskSummary": "{{pending}} en attente · {{inProgress}} en cours · {{completed}} terminée(s)"
+  },
   "settings": {
     "title": "Paramètres",
     "apiSettings": "Paramètres de l'API",
@@ -1490,6 +1561,49 @@
     "tabLabel": "Moteur principal",
     "tabHint": "Choisir la boucle agentique"
   },
+  "remoteBackend": {
+    "title": "Backend distant",
+    "tabLabel": "Backend distant",
+    "tabHint": "Exécuter le chat/les sessions sur un backend Code Buddy distant",
+    "intro": "Connectez ce bureau à un backend Code Buddy distant pour le chat et les sessions. La connexion s’exécute dans le processus principal et utilise le point d’accès WebSocket /desktop du backend.",
+    "statusLabel": "Statut :",
+    "urlLabel": "URL du backend",
+    "urlHint": "http(s):// est accepté et réécrit en ws(s)://. Le chemin /desktop est ajouté automatiquement.",
+    "tokenLabel": "Jeton JWT",
+    "tokenPlaceholder": "Collez le JWT du backend",
+    "tokenStored": "Enregistré — laissez vide pour réutiliser",
+    "connect": "Se connecter",
+    "connecting": "Connexion…",
+    "disconnect": "Se déconnecter",
+    "connectedTo": "Connecté à {{host}}",
+    "errorGeneric": "Échec de la connexion",
+    "localNotice": "Lorsqu’un backend distant est connecté, seuls le chat et les sessions s’exécutent à distance. Les surfaces de gestion (config, MCP, skills, fleet) restent locales à cette machine.",
+    "indicator": "Distant : {{host}}",
+    "indicatorTooltip": "Le chat/les sessions s’exécutent sur un backend distant",
+    "status": {
+      "disconnected": "Déconnecté",
+      "connecting": "Connexion",
+      "connected": "Connecté",
+      "error": "Erreur"
+    }
+  },
+  "profiles": {
+    "title": "Profils de configuration",
+    "tabLabel": "Profils de configuration",
+    "tabHint": "Profils de config isolés ([profiles.<nom>])",
+    "intro": "Les profils sont des ensembles nommés et isolés de surcharges de configuration ([profiles.<nom>] dans votre config.toml utilisateur) fusionnés en profondeur sur la configuration de base. Le CLI en active un avec `buddy --profile <nom>`. Le changement ici sélectionne le profil pour le runtime agent embarqué de Cowork.",
+    "restartRequired": "Le changement de profil prend effet après un redémarrage de Cowork. Les sessions actives conservent leur profil courant.",
+    "create": "Créer un profil",
+    "createHint": "Un nouveau profil est initialisé à partir de la configuration par défaut (son modèle actif) afin que vous puissiez l'affiner dans votre config.toml.",
+    "namePlaceholder": "ex. deep-review",
+    "listTitle": "Profils",
+    "empty": "Aucun profil défini pour l'instant. Créez-en un ci-dessus.",
+    "active": "Actif",
+    "switch": "Basculer",
+    "useBase": "Utiliser la configuration de base (aucun profil)",
+    "created": "Profil « {{name}} » créé.",
+    "switched": "Profil sélectionné et enregistré. Redémarre Cowork pour l'appliquer — l'agent démarre avec les overrides de ce profil."
+  },
   "sessionInsights": {
     "title": "Session insights",
     "count_one": "{{count}} session",
@@ -1959,9 +2073,58 @@
     "ttsLabelOn": "TTS activé",
     "ttsLabelOff": "TTS"
   },
+  "claw": {
+    "title": "Migration OpenClaw",
+    "loading": "Recherche d'une installation OpenClaw…",
+    "detected": "Installation OpenClaw detectee.",
+    "notDetected": "Aucune installation OpenClaw trouvee aux emplacements standard.",
+    "notAvailable": "Le pont de migration OpenClaw est indisponible.",
+    "preset": "Preset",
+    "presetUserData": "user-data (contenu utilisateur uniquement)",
+    "presetFull": "full (tout)",
+    "skillConflict": "Conflits de skills",
+    "conflictSkip": "ignorer",
+    "conflictRename": "renommer",
+    "conflictOverwrite": "ecraser",
+    "migrateSecrets": "Migrer les secrets",
+    "overwrite": "Ecraser les fichiers existants",
+    "import": "Import",
+    "archive": "Archive",
+    "conflict": "Conflit",
+    "skip": "Ignore",
+    "run": "Lancer la migration…",
+    "confirmRun": "Confirmer — ecrire les changements",
+    "dryRunHint": "L'apercu est en lecture seule jusqu'au lancement de la migration.",
+    "doneHint": "Migration terminee.",
+    "appliedNotice": "Migration appliquee. {{count}} element(s) importe(s)."
+  },
+  "kanban": {
+    "title": "Tableau Kanban Hermes",
+    "loading": "Chargement du tableau…",
+    "notAvailable": "Le pont Kanban est indisponible.",
+    "newCardPlaceholder": "Titre de la nouvelle carte…",
+    "add": "Ajouter",
+    "todo": "A faire",
+    "inProgress": "En cours",
+    "blocked": "Bloque",
+    "done": "Termine",
+    "complete": "Terminer",
+    "block": "Bloquer",
+    "unblock": "Debloquer",
+    "comment": "Commenter",
+    "link": "Lien",
+    "apply": "Appliquer",
+    "blockReason": "Raison…",
+    "linkTarget": "Cible (URL ou id)…",
+    "commentText": "Commentaire…"
+  },
   "commandPalette": {
     "searchPlaceholder": "Saisir une commande…",
     "empty": "Aucune commande correspondante",
+    "clawMigration": "Migrer depuis OpenClaw",
+    "clawMigrationDesc": "Previsualiser et importer une installation OpenClaw (dry-run d'abord)",
+    "kanban": "Ouvrir le tableau Kanban",
+    "kanbanDesc": "Gerer le tableau Kanban Hermes du workspace",
     "newSession": "Nouvelle session",
     "newSessionDesc": "Démarrer une nouvelle conversation",
     "resumeSession": "Reprendre une session",
@@ -2047,6 +2210,17 @@
     "filterScheduled": "Planifié",
     "clear": "Effacer le journal d'activité",
     "clearConfirm": "Effacer tout l'historique des activités ?"
+  },
+  "fileActivity": {
+    "title": "Activité fichiers",
+    "count": "{{count}} fichier",
+    "count_other": "{{count}} fichiers",
+    "empty": "Aucune activité fichier dans cette session pour l'instant.",
+    "read": "Lu",
+    "write": "Écrit",
+    "edit": "Modifié",
+    "times": "{{count}} fois",
+    "times_other": "{{count}} fois"
   },
   "memoryEdit": {
     "title": "Mémoire du projet",
@@ -2317,6 +2491,9 @@
       "remoteLabel": "Distant",
       "missingLabel": "Manquants",
       "noCredentials": "pas de credentials",
+      "probe": "Lancer une sonde live",
+      "probeUnavailable": "La sonde live est indisponible.",
+      "probeResult": "sonde {{verdict}} : ecrit={{wrote}} lu={{retrieved}}",
       "unavailable": "La readiness des providers memoire Hermes n'est pas encore chargee.",
       "loadFailed": "Chargement des providers memoire Hermes echoue",
       "status": {
@@ -2325,6 +2502,56 @@
         "fallback": "fallback local",
         "missing": "absent"
       }
+    },
+    "hermesPortal": {
+      "title": "Hermes Nous Portal",
+      "readyChip": "portail pret",
+      "attentionChip": "portail a verifier",
+      "loadingChip": "portail",
+      "loginLabel": "Connexion",
+      "loggedIn": "connecte",
+      "loggedOut": "deconnecte",
+      "toolsLabel": "Outils passerelle",
+      "toolsValue": "{{configured}}/{{total}}",
+      "routingLabel": "Routage",
+      "routingActive": "actif",
+      "routingDirect": "direct",
+      "credentialSources": "Sources d'identifiants",
+      "unavailable": "Le statut Hermes Nous Portal n'est pas encore charge.",
+      "loadFailed": "Echec du chargement du portail Hermes",
+      "tool": {
+        "configured": "configure",
+        "managed": "gere",
+        "missing": "non defini",
+        "noProvider": "aucun fournisseur"
+      }
+    },
+    "hermesTrajectories": {
+      "title": "Trajectoires de recherche Hermes",
+      "readyChip": "trajectoires pretes",
+      "attentionChip": "trajectoires a verifier",
+      "loadingChip": "trajectoires",
+      "capabilitiesLabel": "Capacites",
+      "capabilitiesValue": "{{available}}/{{total}}",
+      "goldenLabel": "Evals de reference",
+      "policyLabel": "Evals de politique",
+      "unavailable": "Le statut des trajectoires Hermes n'est pas encore charge.",
+      "loadFailed": "Echec du chargement des trajectoires Hermes",
+      "status": {
+        "available": "disponible",
+        "partial": "partiel",
+        "missing": "manquant"
+      }
+    },
+    "hermesDoctor": {
+      "title": "Diagnostic Hermes",
+      "readyChip": "sain",
+      "attentionChip": "a verifier",
+      "loadingChip": "diagnostic",
+      "noAgent": "Agent Hermes",
+      "toolsSummary": "{{enabled}} outils actives / {{disabled}} desactives",
+      "unavailable": "Les diagnostics Hermes ne sont pas encore charges.",
+      "loadFailed": "Echec du chargement du diagnostic Hermes"
     },
     "hermesRuntimeBackends": {
       "title": "Backends d'execution Hermes",

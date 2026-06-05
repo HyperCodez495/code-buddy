@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
-import { getHermesMemoryProvidersForReview } from '../src/main/tools/hermes-memory-providers-bridge';
+import {
+  getHermesMemoryProvidersForReview,
+  runHermesMemoryProbeForReview,
+} from '../src/main/tools/hermes-memory-providers-bridge';
 
 vi.mock('../src/main/utils/core-loader', () => ({
   loadCoreModule: vi.fn(),
@@ -70,5 +73,40 @@ describe('Hermes memory providers bridge', () => {
     mockedLoadCoreModule.mockResolvedValue(null);
 
     await expect(getHermesMemoryProvidersForReview()).resolves.toBeNull();
+  });
+});
+
+describe('Hermes memory probe bridge', () => {
+  it('runs a live write→read probe and surfaces the verdict without secrets', async () => {
+    const probeMemoryProvider = vi.fn().mockResolvedValue({
+      kind: 'hermes_memory_probe',
+      schemaVersion: 1,
+      generatedAt: '2026-06-05T10:00:00.000Z',
+      providerId: 'mem0',
+      activeProviderId: 'mem0',
+      remote: true,
+      wrote: true,
+      retrieved: true,
+      fellBackToLocal: false,
+      retrievedSample: 'HERMES-PROBE-MARKER',
+      verdict: 'pass',
+      ok: true,
+      notes: ['Round-trip succeeded.'],
+    });
+    mockedLoadCoreModule.mockResolvedValue({ probeMemoryProvider });
+
+    const response = await runHermesMemoryProbeForReview('mem0');
+    expect(probeMemoryProvider).toHaveBeenCalledWith('mem0');
+    expect(response.ok).toBe(true);
+    expect(response.result?.verdict).toBe('pass');
+    expect(response.result?.wrote).toBe(true);
+    expect(response.result?.retrieved).toBe(true);
+  });
+
+  it('returns an error response when the probe module is unavailable', async () => {
+    mockedLoadCoreModule.mockResolvedValue(null);
+    const response = await runHermesMemoryProbeForReview('mem0');
+    expect(response.ok).toBe(false);
+    expect(response.error).toMatch(/unavailable/i);
   });
 });
