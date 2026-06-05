@@ -115,6 +115,31 @@ exists." Until then, keep human review in the loop for what gets kept, and treat
 auto-apply as a convenience for *obviously-good bootstrap content*, not a license
 to self-modify on a vacuous metric.
 
+## Reversibility (git-backed)
+
+The whole mechanism is reversible: if an applied improvement turns out bad, you
+return to a version that works better. The learnable state (lessons + archive +
+the benchmark score of that version) is versioned in a **dedicated, isolated git
+repo per project** at `.codebuddy/self-improvement/store/` (`.codebuddy/` is
+gitignored by the project, so this never touches the main history).
+
+- Each applied improvement (`--apply`) becomes a **commit carrying its score**
+  in `manifest.json`.
+- `buddy improve versions` lists versions with scores (HEAD / BEST marked).
+- `buddy improve restore --best` (or `--commit <sha>`) re-materialises the
+  best-scoring version through the `LessonsTracker` API (in-memory and
+  `lessons.md` stay consistent) and commits the restore. History is
+  **append-only** — restore moves forward by re-applying old content, never
+  rewrites.
+- `--push` pushes the store to a git remote you configure (local-first; nothing
+  leaves the machine otherwise).
+
+```bash
+buddy improve loop --apply        # version each validated improvement
+buddy improve versions            # list scored versions
+buddy improve restore --best      # revert to the version that works better
+```
+
 ## The robot seam (5 senses)
 
 `ExperienceSource` is **modality-agnostic**. `SensorExperienceSource` is the
