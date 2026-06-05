@@ -11,7 +11,10 @@
 
 import type { Command } from 'commander';
 
-import { createWorkspaceEngine } from '../../agent/self-improvement/index.js';
+import {
+  createWorkspaceEngine,
+  createWorkspaceLearningStore,
+} from '../../agent/self-improvement/index.js';
 import { EvolutionaryArchive } from '../../agent/self-improvement/evolutionary-archive.js';
 import { createDefaultRunExperienceSource } from '../../agent/self-improvement/experience-source.js';
 import type { Experience } from '../../agent/self-improvement/types.js';
@@ -34,6 +37,10 @@ interface ImproveOptions {
   apply?: boolean;
   max?: string;
   llm?: boolean;
+  /** cycle/loop: negatable boolean (default true). restore: a commit sha string. */
+  commit?: boolean | string;
+  push?: boolean;
+  best?: boolean;
 }
 
 function print(payload: unknown, options: ImproveOptions, text: string): void {
@@ -51,18 +58,20 @@ export function registerImproveCommands(program: Command): void {
 
   improve
     .command('status')
-    .description('Show capability-benchmark coverage, autonomy mode, and the improvement archive')
+    .description('Show capability-benchmark coverage, autonomy mode, archive, and git store versions')
     .option('--json', 'output JSON')
-    .action((options: ImproveOptions) => {
+    .action(async (options: ImproveOptions) => {
       const engine = createWorkspaceEngine();
       const status = engine.status();
+      const store = await createWorkspaceLearningStore().status();
       const text = [
         `Autonomy: ${status.autonomy}`,
         `Capability coverage: ${status.score.covered}/${status.score.total} (${Math.round(status.score.ratio * 100)}%)`,
         `Uncovered: ${status.score.results.filter((r) => !r.covered).map((r) => r.scenarioId).join(', ') || '(none)'}`,
         `Archive: ${status.archive.count} validated improvement(s), total Δ=${status.archive.totalDelta}`,
+        `Store: ${store.versions} version(s); head ${store.head ? `${store.head.covered}/${store.head.total}` : '—'}, best ${store.best?.score ? `${store.best.score.covered}/${store.best.score.total} (${store.best.shortSha})` : '—'}`,
       ].join('\n');
-      print({ kind: 'self_improvement_status', ...status }, options, text);
+      print({ kind: 'self_improvement_status', ...status, store }, options, text);
     });
 
   improve
@@ -71,6 +80,8 @@ export function registerImproveCommands(program: Command): void {
     .option('--json', 'output JSON')
     .option('--apply', 'keep empirically-validated improvements (overrides propose-only for this run)')
     .option('--llm', 'use the model to discover novel lessons from run friction (else a deterministic seed pack)')
+    .option('--no-commit', 'do not version an applied improvement in the git learning store')
+    .option('--push', 'push the learning store to its configured git remote after committing')
     .action(async (options: ImproveOptions) => {
       const engine = createWorkspaceEngine({
         ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
@@ -78,6 +89,17 @@ export function registerImproveCommands(program: Command): void {
       });
       const experiences = options.llm ? await collectExperiences() : [];
       const result = await engine.runCycle(experiences);
+      let committed: string | undefined;
+      if (result.applied && options.apply && options.commit !== false) {
+        const store = createWorkspaceLearningStore();
+        const version = await store.commitVersion({
+          ...(result.selectedScenarioId ? { scenarioId: result.selectedScenarioId } : {}),
+          ...(result.gate?.delta !== undefined ? { delta: result.gate.delta } : {}),
+          reason: 'improve cycle',
+        });
+        committed = version.sha.slice(0, 8);
+        if (options.push) await store.push();
+      }
       const verdict = result.applied
         ? `APPLIED improvement to "${result.selectedScenarioId}" (Δ=${result.gate?.delta})`
         : result.gate?.accepted
@@ -89,8 +111,11 @@ export function registerImproveCommands(program: Command): void {
         `Autonomy: ${result.autonomy}`,
         `Coverage: ${result.scoreBefore.covered}/${result.scoreBefore.total} → ${result.scoreAfter.covered}/${result.scoreAfter.total}`,
         verdict,
-      ].join('\n');
-      print(result, options, text);
+        committed ? `Versioned in learning store: ${committed}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+      print({ ...result, committed }, options, text);
     });
 
   improve
@@ -100,22 +125,47 @@ export function registerImproveCommands(program: Command): void {
     .option('--apply', 'keep empirically-validated improvements (overrides propose-only for this run)')
     .option('--max <n>', 'maximum cycles', (v) => v)
     .option('--llm', 'use the model to discover novel lessons from run friction (else a deterministic seed pack)')
+    .option('--no-commit', 'do not version applied improvements in the git learning store')
+    .option('--push', 'push the learning store to its configured git remote after committing')
     .action(async (options: ImproveOptions) => {
       const engine = createWorkspaceEngine({
         ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
         useLlm: options.llm === true,
       });
-      const maxCycles = options.max ? Number.parseInt(options.max, 10) : undefined;
       const experiences = options.llm ? await collectExperiences() : [];
-      const results = await engine.runLoop({ ...(maxCycles ? { maxCycles } : {}), experiences });
+      const doCommit = options.apply === true && options.commit !== false;
+      const store = doCommit ? createWorkspaceLearningStore() : null;
+      const cap = options.max ? Math.max(1, Number.parseInt(options.max, 10)) : 25;
+
+      // Drive the loop here (not engine.runLoop) so each applied improvement gets
+      // its own reversible git version. Stop on the first non-applied cycle.
+      const results = [];
+      for (let i = 0; i < cap; i++) {
+        const r = await engine.runCycle(experiences);
+        results.push(r);
+        if (r.applied && store) {
+          await store.commitVersion({
+            ...(r.selectedScenarioId ? { scenarioId: r.selectedScenarioId } : {}),
+            ...(r.gate?.delta !== undefined ? { delta: r.gate.delta } : {}),
+            reason: 'improve loop',
+          });
+        }
+        if (!r.applied) break;
+      }
+      if (store && options.push) await store.push();
+
       const appliedCount = results.filter((r) => r.applied).length;
       const final = engine.status();
+      const storeStatus = store ? await store.status() : null;
       const text = [
         `Autonomy: ${results[0]?.autonomy ?? 'propose-only'}`,
         `Cycles: ${results.length}, applied: ${appliedCount}`,
         `Final coverage: ${final.score.covered}/${final.score.total} (${Math.round(final.score.ratio * 100)}%)`,
-      ].join('\n');
-      print({ kind: 'self_improvement_loop', cycles: results, status: final }, options, text);
+        storeStatus ? `Store versions: ${storeStatus.versions}` : '',
+      ]
+        .filter(Boolean)
+        .join('\n');
+      print({ kind: 'self_improvement_loop', cycles: results, status: final, store: storeStatus }, options, text);
     });
 
   improve
@@ -133,5 +183,51 @@ export function registerImproveCommands(program: Command): void {
             .join('\n')
         : 'No validated improvements archived yet.';
       print({ kind: 'self_improvement_archive', entries, status: engine.status() }, options, text);
+    });
+
+  improve
+    .command('versions')
+    .description('List git-versioned learning-store states with their benchmark scores')
+    .option('--json', 'output JSON')
+    .action(async (options: ImproveOptions) => {
+      const store = createWorkspaceLearningStore();
+      const versions = await store.listVersions();
+      const best = await store.bestVersion();
+      const text = versions.length
+        ? versions
+            .map((v, i) => {
+              const score = v.score ? `${v.score.covered}/${v.score.total}` : '—';
+              const flags = [i === 0 ? 'HEAD' : '', best && v.sha === best.sha ? 'BEST' : '']
+                .filter(Boolean)
+                .join(',');
+              return `${v.shortSha}  ${score}  ${v.message}${flags ? `  [${flags}]` : ''}`;
+            })
+            .join('\n')
+        : 'No learning-store versions yet (run `improve cycle --apply`).';
+      print({ kind: 'self_improvement_versions', versions, best }, options, text);
+    });
+
+  improve
+    .command('restore')
+    .description('Restore the learnable state to a known-good version (revert to one that works better)')
+    .option('--json', 'output JSON')
+    .option('--best', 'restore to the highest-scoring version (default)')
+    .option('--commit <sha>', 'restore to a specific store commit')
+    .option('--push', 'push the learning store after restoring')
+    .action(async (options: ImproveOptions) => {
+      const store = createWorkspaceLearningStore();
+      const target =
+        typeof options.commit === 'string' ? { commit: options.commit } : { best: true };
+      const result = await store.restore(target);
+      if (!result) {
+        print({ kind: 'self_improvement_restore', restored: false }, options, 'No known-good version to restore.');
+        return;
+      }
+      if (options.push) await store.push();
+      const text = [
+        `Restored to ${result.restoredFrom.slice(0, 8)}`,
+        `Coverage now: ${result.score.covered}/${result.score.total} (${Math.round(result.score.ratio * 100)}%)`,
+      ].join('\n');
+      print({ kind: 'self_improvement_restore', restored: true, ...result }, options, text);
     });
 }

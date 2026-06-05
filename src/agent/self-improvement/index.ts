@@ -5,9 +5,10 @@
  */
 
 import { getLessonsTracker } from '../lessons-tracker.js';
-import { SEED_BENCHMARK_SCENARIOS } from './capability-benchmark.js';
+import { SEED_BENCHMARK_SCENARIOS, scoreBenchmark } from './capability-benchmark.js';
 import type { LessonMutatorPort } from './empirical-gate.js';
 import { EvolutionaryArchive } from './evolutionary-archive.js';
+import { LearningStore, type LearnableStatePort } from './learning-store.js';
 import { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
 import { StaticProposer, LlmProposer, SEED_LESSON_DRAFTS, type ImprovementProposer } from './proposer.js';
 import { createLlmDrafter } from './llm-drafter.js';
@@ -18,6 +19,7 @@ export * from './empirical-gate.js';
 export * from './evolutionary-archive.js';
 export * from './proposer.js';
 export * from './experience-source.js';
+export * from './learning-store.js';
 export { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
 
 /** Adapt the real (offline, deterministic) LessonsTracker to the mutator port. */
@@ -56,4 +58,31 @@ export function createWorkspaceEngine(
     archive: new EvolutionaryArchive({ workDir }),
     autonomy: options.autonomy ?? resolveAutonomy(),
   });
+}
+
+/**
+ * Build a git-backed LearningStore wired to the workspace: it versions the live
+ * lessons + archive + benchmark score so any applied improvement is reversible
+ * (restore to the best-scoring version). Snapshot/restore go through the real
+ * LessonsTracker API so in-memory state and `.codebuddy/lessons.md` stay
+ * consistent.
+ */
+export function createWorkspaceLearningStore(options: { workDir?: string } = {}): LearningStore {
+  const workDir = options.workDir ?? process.cwd();
+  const tracker = getLessonsTracker(workDir);
+  const port: LearnableStatePort = {
+    listLessons: () =>
+      tracker.search('').map((l) => ({
+        category: l.category,
+        content: l.content,
+        ...(l.context ? { context: l.context } : {}),
+      })),
+    setLessons: (lessons) => {
+      tracker.clearByCategory(); // clear all
+      for (const l of lessons) tracker.add(l.category, l.content, 'manual', l.context);
+    },
+    archive: () => new EvolutionaryArchive({ workDir }).list(),
+    score: () => scoreBenchmark(SEED_BENCHMARK_SCENARIOS, createLessonMutatorPort(workDir)),
+  };
+  return new LearningStore({ workDir, port });
 }
