@@ -13,6 +13,21 @@ import type { Command } from 'commander';
 
 import { createWorkspaceEngine } from '../../agent/self-improvement/index.js';
 import { EvolutionaryArchive } from '../../agent/self-improvement/evolutionary-archive.js';
+import { createDefaultRunExperienceSource } from '../../agent/self-improvement/experience-source.js';
+import type { Experience } from '../../agent/self-improvement/types.js';
+
+/**
+ * Collect real run-friction experiences (best-effort) so the LLM proposer can
+ * ground its drafts in what actually went wrong. Never throws — an empty list
+ * just means the proposer relies on the scenario alone.
+ */
+async function collectExperiences(): Promise<Experience[]> {
+  try {
+    return await createDefaultRunExperienceSource({ limit: 10 }).collect();
+  } catch {
+    return [];
+  }
+}
 
 interface ImproveOptions {
   json?: boolean;
@@ -61,7 +76,8 @@ export function registerImproveCommands(program: Command): void {
         ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
         useLlm: options.llm === true,
       });
-      const result = await engine.runCycle();
+      const experiences = options.llm ? await collectExperiences() : [];
+      const result = await engine.runCycle(experiences);
       const verdict = result.applied
         ? `APPLIED improvement to "${result.selectedScenarioId}" (Δ=${result.gate?.delta})`
         : result.gate?.accepted
@@ -90,7 +106,8 @@ export function registerImproveCommands(program: Command): void {
         useLlm: options.llm === true,
       });
       const maxCycles = options.max ? Number.parseInt(options.max, 10) : undefined;
-      const results = await engine.runLoop(maxCycles ? { maxCycles } : {});
+      const experiences = options.llm ? await collectExperiences() : [];
+      const results = await engine.runLoop({ ...(maxCycles ? { maxCycles } : {}), experiences });
       const appliedCount = results.filter((r) => r.applied).length;
       const final = engine.status();
       const text = [
