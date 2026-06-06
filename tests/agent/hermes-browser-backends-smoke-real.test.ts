@@ -329,6 +329,34 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(result.artifacts?.[0]?.sizeBytes).toBeGreaterThan(0);
   });
 
+  it('falls back to a runnable backend when the auto primary fails', async () => {
+    // Configuring an (unreachable) CDP endpoint promotes remote-cdp to the
+    // hybrid-route primary; it fails to connect, so auto routing must fall back
+    // to the real local Playwright backend instead of returning the failure.
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'auto',
+      env: { ...process.env, CODEBUDDY_BROWSER_CDP_URL: 'http://127.0.0.1:1' },
+      now: () => new Date('2026-05-31T14:00:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'local-playwright',
+      ok: true,
+      status: 'passed',
+    });
+    expect(result.route).toMatchObject({
+      requested: 'auto',
+      servedBy: 'local-playwright',
+      usedFallback: true,
+    });
+    expect(result.route?.attempts).toEqual([
+      { backendId: 'remote-cdp', ok: false, status: 'failed' },
+      { backendId: 'local-playwright', ok: true, status: 'passed' },
+    ]);
+    // The unreachable endpoint must not leak into the routed result.
+    expect(JSON.stringify(result)).not.toContain('127.0.0.1:1');
+  });
+
   it('connects to a real remote CDP endpoint without leaking the endpoint', async () => {
     const cdp = await launchLocalCdpBrowser();
     try {

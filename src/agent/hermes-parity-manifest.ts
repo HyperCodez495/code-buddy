@@ -259,8 +259,8 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts tools browser-operator draft "open example.com" --json',
       'npm test -- tests/tools/vision-analyze-real.test.ts --run',
     ],
-    notes: 'Strong local browser work exists, including exact browser_vision and browser_dialog prompt-tool surfaces plus machine-readable backend readiness for local Playwright, CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox, and session recording. A real local Playwright smoke launches Chromium, verifies page content, and writes a trace.zip recording artifact; a real remote CDP smoke attaches to a live Chrome DevTools endpoint without leaking the endpoint. Complete backend parity for Camofox, Browser Use gateway mode, managed replay, and hybrid routing is still not proven.',
-    nextWork: 'Wire first-class managed backend runners and hybrid browser routing before claiming full Hermes browser backend parity.',
+    notes: 'Strong local browser work exists, including exact browser_vision and browser_dialog prompt-tool surfaces plus machine-readable backend readiness for local Playwright, CDP, Browserbase/Stagehand, Browser Use gateway, Firecrawl, Camofox, and session recording. A real local Playwright smoke launches Chromium, verifies page content, and writes a trace.zip recording artifact; a real remote CDP smoke attaches to a live Chrome DevTools endpoint without leaking the endpoint. Hybrid routing is now executed, not just planned: an `auto` browser smoke tries the primary safe backend and falls back through the remaining runnable safe backends in order, returning the first that passes plus a machine-readable route (servedBy/usedFallback/attempts) — proven by a real test where an unreachable CDP primary falls back to local Playwright. Complete backend parity for Camofox, Browser Use gateway mode, and managed replay is still not proven.',
+    nextWork: 'Wire first-class managed backend runners (Browserbase/Browser Use) into the executed hybrid route before claiming full Hermes browser backend parity.',
   },
   {
     id: 'nous-portal',

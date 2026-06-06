@@ -71,10 +71,30 @@ export interface HermesBrowserBackendSmokeResult {
   label: string | null;
   ok: boolean;
   output: string;
+  route?: HermesBrowserSmokeRoute;
   startedAt: string;
   status: HermesBrowserSmokeStatus;
   stdout: string;
   stderr: string;
+}
+
+/** One backend attempt made while resolving an `auto` hybrid-routed smoke. */
+export interface HermesBrowserSmokeRouteAttempt {
+  backendId: string;
+  ok: boolean;
+  status: HermesBrowserSmokeStatus;
+}
+
+/**
+ * Records how an `auto` smoke was hybrid-routed: which backend ultimately served
+ * the request, whether a fallback was needed, and every candidate attempted in
+ * order. Only attached to results that were requested as `auto`.
+ */
+export interface HermesBrowserSmokeRoute {
+  attempts: HermesBrowserSmokeRouteAttempt[];
+  requested: 'auto';
+  servedBy: string;
+  usedFallback: boolean;
 }
 
 export interface HermesBrowserSmokeArtifact {
@@ -661,12 +681,54 @@ export async function runHermesBrowserBackendSmoke(
         now: timestamp,
       });
     }
-    return runHermesBrowserBackendSmoke({
-      ...options,
-      backendId: primaryBackendId,
-      env,
-      now,
-    });
+
+    // Hybrid routing: try the primary backend first, then fall back through the
+    // remaining runnable safe candidates in order. The first backend that passes
+    // serves the request; if none pass, the primary's failure is returned so the
+    // caller still sees the most representative diagnostic.
+    const candidates = [primaryBackendId, ...readiness.routePlan.fallbackBackendIds];
+    const attempts: HermesBrowserSmokeRouteAttempt[] = [];
+    let firstResult: HermesBrowserBackendSmokeResult | null = null;
+
+    for (const candidate of candidates) {
+      const candidateResult = await runHermesBrowserBackendSmoke({
+        ...options,
+        backendId: candidate,
+        env,
+        now,
+      });
+      attempts.push({
+        backendId: candidate,
+        ok: candidateResult.ok,
+        status: candidateResult.status,
+      });
+      if (!firstResult) {
+        firstResult = candidateResult;
+      }
+      if (candidateResult.ok) {
+        return {
+          ...candidateResult,
+          route: {
+            attempts,
+            requested: 'auto',
+            servedBy: candidate,
+            usedFallback: candidate !== primaryBackendId,
+          },
+        };
+      }
+    }
+
+    // Every candidate failed — surface the primary attempt with the full chain.
+    const exhausted = firstResult as HermesBrowserBackendSmokeResult;
+    return {
+      ...exhausted,
+      route: {
+        attempts,
+        requested: 'auto',
+        servedBy: exhausted.backendId,
+        usedFallback: false,
+      },
+    };
   }
 
   const backend = readiness.backends.find((candidate) => candidate.id === backendId);
@@ -749,6 +811,17 @@ export function renderHermesBrowserSmoke(result: HermesBrowserBackendSmokeResult
     `Duration: ${result.durationMs}ms`,
     `Output: ${result.output || 'none'}`,
   ];
+
+  if (result.route) {
+    const chain = result.route.attempts
+      .map((attempt) => `${attempt.backendId}=${attempt.status}`)
+      .join(' → ');
+    lines.push(
+      `Hybrid route: served by ${result.route.servedBy}` +
+        (result.route.usedFallback ? ' (via fallback)' : '') +
+        (chain ? ` [${chain}]` : ''),
+    );
+  }
 
   if (result.artifacts?.length) {
     lines.push(
