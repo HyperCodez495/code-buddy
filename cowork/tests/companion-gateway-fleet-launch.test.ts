@@ -82,4 +82,25 @@ describe('companion gateway Fleet launch surface', () => {
     expect(preload).toContain('plan?: CompanionGatewayAdminPlan');
     expect(preload).toContain('result?: CompanionGatewayAdminExecutionResult');
   });
+
+  it('surfaces the OpenClaw bridge with dry-run previews and explicit live approvals', () => {
+    const panel = readFileSync(companionPanelPath, 'utf8');
+    const preload = readFileSync(preloadPath, 'utf8');
+
+    expect(panel).toContain('OpenClaw bridge');
+    expect(panel).toContain('companion-openclaw-bridge');
+    expect(panel).toContain('previewOpenClawBridgeAttach');
+    expect(panel).toContain('draftOpenClawBridgeHandoff');
+    expect(panel).toContain('sendOpenClawBridgeResponse');
+    expect(panel).toContain('liveAttachConfirmed: true');
+    expect(panel).toContain('liveSendConfirmed: true');
+    expect(panel).toContain('This may contact the local OpenClaw gateway.');
+    expect(panel).toContain('This may contact an external recipient.');
+    expect(preload).toContain('companion.openclaw.status');
+    expect(preload).toContain('companion.openclaw.attachPreview');
+    expect(preload).toContain('companion.openclaw.draft');
+    expect(preload).toContain('companion.openclaw.send');
+    expect(preload).toContain('OpenClawBridgeStatusResult');
+    expect(preload).toContain('OpenClawBridgeActionResult');
+  });
 });

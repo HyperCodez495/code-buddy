@@ -381,8 +381,10 @@ Additional OpenClaw catch-up proof on 2026-06-07:
 npm test -- tests/companion-gateway.test.ts
 npm test -- tests/openclaw/gateway-bridge.test.ts
 npm test -- tests/agent/hermes-claw-migrate-real.test.ts
+cd cowork && npm test -- tests/hermes-openclaw-bridge.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
+cd cowork && npm run typecheck
 npm run typecheck
 ```
 
@@ -403,8 +405,9 @@ The Hermes CLI migration suite also validates the user-facing bridge commands:
 `bridge send --json` are machine-readable and keep tokens/message secrets out of
 stdout.
 
-Observed result: `12` companion gateway tests, `11` OpenClaw bridge tests, and
-`13` Hermes/OpenClaw CLI migration tests
+Observed result: `12` companion gateway tests, `11` OpenClaw bridge tests, `13`
+Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
+surface tests
 passed, including local inbox creation, urgent message priority,
 disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
 execution logging, dry-run OpenClaw compatibility handoffs, and guarded
@@ -422,4 +425,8 @@ draft preparation, Fleet handoff preparation, outbound reply draft creation,
 approved send execution, and lifecycle diagnostics from the active workspace.
 The Cowork Fleet launch surface test passed for native confirmation plus
 `fleet.dispatch(draft.dispatchInput)`, the `Reply draft` surface, and the
-confirmed `Send reply` and `Gateway lifecycle` surfaces.
+confirmed `Send reply` and `Gateway lifecycle` surfaces. The Cowork OpenClaw
+bridge test passed for core-loader integration, secret-safe status, dry-run
+attach/send previews, Fleet handoff drafts, and live attach/send refusal unless
+the UI supplies `approvedBy` plus `liveAttachConfirmed=true` or
+`liveSendConfirmed=true`.

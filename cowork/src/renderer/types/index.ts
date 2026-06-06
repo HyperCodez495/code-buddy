@@ -911,6 +911,19 @@ export interface CompanionGatewayInbox {
   items: CompanionGatewayInboxItem[];
 }
 
+export interface OpenClawBridgeStatusResult {
+  ok: boolean;
+  discovery?: Record<string, unknown>;
+  descriptor?: Record<string, unknown>;
+  error?: string;
+}
+
+export interface OpenClawBridgeActionResult {
+  ok: boolean;
+  result?: Record<string, unknown>;
+  error?: string;
+}
+
 export type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 
 export interface CompanionSkillEvidence {

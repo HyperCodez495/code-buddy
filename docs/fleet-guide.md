@@ -1162,6 +1162,15 @@ buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t
 ajouter `--apply --yes --approved-by <name>`; les sorties et journaux restent
 redacted.
 
+Cowork expose le même contrat dans le Companion panel, section
+`OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et
+`Preview send` restent en dry-run. `Attach live` et `Send live` demandent un
+approbateur, ouvrent une confirmation native, puis passent par les handlers
+`companion.openclaw.attach` / `companion.openclaw.send` avec
+`liveAttachConfirmed=true` ou `liveSendConfirmed=true`. Le panneau affiche le
+statut/artifact retourné, mais ne persiste pas le texte complet saisi dans les
+prompts ni les tokens du gateway.
+
 ### Trois scénarios concrets
 
 **1. Tout local, sans OpenClaw** (état au 2026-05-09)

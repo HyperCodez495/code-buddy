@@ -56,6 +56,8 @@ import type {
   CompanionGatewayOutboundReplyDraft,
   CompanionGatewayOutboundReplySendResult,
   CompanionGatewayProfile,
+  OpenClawBridgeActionResult,
+  OpenClawBridgeStatusResult,
   CompanionSkillCandidate,
   CompanionSkillCandidateStore,
   CompanionSkillCuratorResult,
@@ -1037,6 +1039,57 @@ contextBridge.exposeInMainWorld('electronAPI', {
       tags?: string[];
     }): Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.update', input),
+    openClawBridgeStatus: (input?: {
+      projectId?: string;
+      source?: string;
+    }): Promise<OpenClawBridgeStatusResult> =>
+      ipcRenderer.invoke('companion.openclaw.status', input),
+    previewOpenClawBridgeAttach: (input?: {
+      projectId?: string;
+      source?: string;
+      endpointPath?: string;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.attachPreview', input),
+    attachOpenClawBridge: (input: {
+      projectId?: string;
+      source?: string;
+      endpointPath?: string;
+      approvedBy: string;
+      liveAttachConfirmed: boolean;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.attach', input),
+    draftOpenClawBridgeHandoff: (input: {
+      projectId?: string;
+      messageId: string;
+      channel: string;
+      threadId?: string;
+      senderId: string;
+      senderName?: string;
+      text: string;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.draft', input),
+    previewOpenClawBridgeSend: (input: {
+      projectId?: string;
+      source?: string;
+      endpointPath?: string;
+      messageId: string;
+      channel: string;
+      threadId?: string;
+      text: string;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.sendPreview', input),
+    sendOpenClawBridgeResponse: (input: {
+      projectId?: string;
+      source?: string;
+      endpointPath?: string;
+      messageId: string;
+      channel: string;
+      threadId?: string;
+      text: string;
+      approvedBy: string;
+      liveSendConfirmed: boolean;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.send', input),
     listSkillCandidates: (projectId?: string): Promise<{
       ok: boolean;
       store?: CompanionSkillCandidateStore;
@@ -4385,6 +4438,51 @@ declare global {
           recordPercepts?: boolean;
           tags?: string[];
         }) => Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }>;
+        openClawBridgeStatus: (input?: {
+          projectId?: string;
+          source?: string;
+        }) => Promise<OpenClawBridgeStatusResult>;
+        previewOpenClawBridgeAttach: (input?: {
+          projectId?: string;
+          source?: string;
+          endpointPath?: string;
+        }) => Promise<OpenClawBridgeActionResult>;
+        attachOpenClawBridge: (input: {
+          projectId?: string;
+          source?: string;
+          endpointPath?: string;
+          approvedBy: string;
+          liveAttachConfirmed: boolean;
+        }) => Promise<OpenClawBridgeActionResult>;
+        draftOpenClawBridgeHandoff: (input: {
+          projectId?: string;
+          messageId: string;
+          channel: string;
+          threadId?: string;
+          senderId: string;
+          senderName?: string;
+          text: string;
+        }) => Promise<OpenClawBridgeActionResult>;
+        previewOpenClawBridgeSend: (input: {
+          projectId?: string;
+          source?: string;
+          endpointPath?: string;
+          messageId: string;
+          channel: string;
+          threadId?: string;
+          text: string;
+        }) => Promise<OpenClawBridgeActionResult>;
+        sendOpenClawBridgeResponse: (input: {
+          projectId?: string;
+          source?: string;
+          endpointPath?: string;
+          messageId: string;
+          channel: string;
+          threadId?: string;
+          text: string;
+          approvedBy: string;
+          liveSendConfirmed: boolean;
+        }) => Promise<OpenClawBridgeActionResult>;
         listSkillCandidates: (projectId?: string) => Promise<{
           ok: boolean;
           store?: CompanionSkillCandidateStore;

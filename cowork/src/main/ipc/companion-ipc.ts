@@ -10,6 +10,14 @@
 import { ipcMain } from 'electron';
 import { loadCoreModule } from '../utils/core-loader';
 import { logError } from '../utils/logger';
+import {
+  attachOpenClawBridgeForReview,
+  draftOpenClawBridgeHandoffForReview,
+  getOpenClawBridgeStatusForReview,
+  previewOpenClawBridgeAttachForReview,
+  previewOpenClawBridgeSendForReview,
+  sendOpenClawBridgeResponseForReview,
+} from '../tools/hermes-openclaw-bridge';
 import { resolveWorkDir, errorMessage, type ProjectManagerSource } from './ipc-workdir';
 
 type CompanionPerceptModality =
@@ -1845,6 +1853,183 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.gateway.update] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.status',
+    async (_e, input?: { projectId?: string; source?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        return await getOpenClawBridgeStatusForReview({ cwd, source: input?.source });
+      } catch (err) {
+        logError('[companion.openclaw.status] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.attachPreview',
+    async (_e, input?: { projectId?: string; source?: string; endpointPath?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      try {
+        return await previewOpenClawBridgeAttachForReview({
+          cwd,
+          endpointPath: input?.endpointPath,
+          source: input?.source,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.attachPreview] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.attach',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        source?: string;
+        endpointPath?: string;
+        approvedBy?: string;
+        liveAttachConfirmed?: boolean;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.approvedBy?.trim() || input.liveAttachConfirmed !== true) {
+        return { ok: false as const, error: 'approvedBy and liveAttachConfirmed=true are required' };
+      }
+      try {
+        return await attachOpenClawBridgeForReview({
+          approvedBy: input.approvedBy,
+          cwd,
+          endpointPath: input.endpointPath,
+          source: input.source,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.attach] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.draft',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        messageId?: string;
+        channel?: string;
+        threadId?: string;
+        senderId?: string;
+        senderName?: string;
+        text?: string;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.messageId || !input.channel || !input.senderId || !input.text?.trim()) {
+        return { ok: false as const, error: 'messageId, channel, senderId and text are required' };
+      }
+      try {
+        return await draftOpenClawBridgeHandoffForReview({
+          channel: input.channel,
+          cwd,
+          messageId: input.messageId,
+          senderId: input.senderId,
+          senderName: input.senderName,
+          text: input.text,
+          threadId: input.threadId,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.draft] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.sendPreview',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        source?: string;
+        endpointPath?: string;
+        messageId?: string;
+        channel?: string;
+        threadId?: string;
+        text?: string;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.messageId || !input.channel || !input.text?.trim()) {
+        return { ok: false as const, error: 'messageId, channel and text are required' };
+      }
+      try {
+        return await previewOpenClawBridgeSendForReview({
+          channel: input.channel,
+          cwd,
+          endpointPath: input.endpointPath,
+          messageId: input.messageId,
+          source: input.source,
+          text: input.text,
+          threadId: input.threadId,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.sendPreview] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.send',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        source?: string;
+        endpointPath?: string;
+        messageId?: string;
+        channel?: string;
+        threadId?: string;
+        text?: string;
+        approvedBy?: string;
+        liveSendConfirmed?: boolean;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.messageId || !input.channel || !input.text?.trim()) {
+        return { ok: false as const, error: 'messageId, channel and text are required' };
+      }
+      if (!input.approvedBy?.trim() || input.liveSendConfirmed !== true) {
+        return { ok: false as const, error: 'approvedBy and liveSendConfirmed=true are required' };
+      }
+      try {
+        return await sendOpenClawBridgeResponseForReview({
+          approvedBy: input.approvedBy,
+          channel: input.channel,
+          cwd,
+          endpointPath: input.endpointPath,
+          messageId: input.messageId,
+          source: input.source,
+          text: input.text,
+          threadId: input.threadId,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.send] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

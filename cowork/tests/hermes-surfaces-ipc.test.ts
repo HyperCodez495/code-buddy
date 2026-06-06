@@ -955,6 +955,158 @@ describe('companion IPC', () => {
     expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('reads OpenClaw bridge status from the active workspace without exposing the token', async () => {
+    const discovery = {
+      detected: true,
+      endpoint: 'http://127.0.0.1:8787',
+      tokenPresent: true,
+      tokenPreview: '<redacted>',
+    };
+    const descriptor = {
+      id: 'openclaw-local',
+      kind: 'openclaw_gateway_peer',
+      endpoint: 'http://127.0.0.1:8787',
+    };
+    const discoverOpenClawGateway = vi.fn(async () => discovery);
+    const buildOpenClawNodeDescriptor = vi.fn(() => descriptor);
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      discoverOpenClawGateway,
+      buildOpenClawNodeDescriptor,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.openclaw.status');
+    const res = (await handler?.({}, { source: '/home/u/.openclaw' })) as {
+      ok: boolean;
+      discovery?: { tokenPreview: string };
+      descriptor?: { id: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.discovery?.tokenPreview).toBe('<redacted>');
+    expect(JSON.stringify(res)).not.toContain('openclaw-secret-fixture');
+    expect(res.descriptor?.id).toBe('openclaw-local');
+    expect(coreLoaderMock.loadCoreModule).toHaveBeenCalledWith('openclaw/gateway-bridge.js');
+    expect(discoverOpenClawGateway).toHaveBeenCalledWith({ cwd: '/tmp/proj', home: '/home/u/.openclaw' });
+    expect(buildOpenClawNodeDescriptor).toHaveBeenCalledWith(discovery, { cwd: '/tmp/proj' });
+  });
+
+  it('drafts an OpenClaw Fleet handoff without direct dispatch', async () => {
+    const prepareOpenClawFleetHandoffDraft = vi.fn(async () => ({
+      kind: 'openclaw_fleet_handoff_draft',
+      draftFile: '/tmp/proj/.codebuddy/openclaw/bridge/msg-1.fleet.json',
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      dispatchInput: {
+        privacyTag: 'sensitive',
+        dispatchProfile: 'safe',
+      },
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ prepareOpenClawFleetHandoffDraft });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.openclaw.draft');
+    const res = (await handler?.({}, {
+      channel: 'slack',
+      messageId: 'msg-1',
+      senderId: 'user-1',
+      text: 'Investigate this. token=openclaw-secret-fixture',
+    })) as {
+      ok: boolean;
+      result?: {
+        autoDispatch: boolean;
+        requiresLocalApproval: boolean;
+        dispatchInput: { dispatchProfile: string; privacyTag: string };
+      };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.autoDispatch).toBe(false);
+    expect(res.result?.requiresLocalApproval).toBe(true);
+    expect(res.result?.dispatchInput.dispatchProfile).toBe('safe');
+    expect(res.result?.dispatchInput.privacyTag).toBe('sensitive');
+    expect(prepareOpenClawFleetHandoffDraft).toHaveBeenCalledWith(
+      {
+        channel: 'slack',
+        messageId: 'msg-1',
+        senderId: 'user-1',
+        senderName: undefined,
+        text: 'Investigate this. token=openclaw-secret-fixture',
+        threadId: undefined,
+      },
+      { cwd: '/tmp/proj' },
+    );
+  });
+
+  it('requires explicit approval before live OpenClaw attach and send operations', async () => {
+    const attachOpenClawGateway = vi.fn(async () => ({ dryRun: false, status: 'attached' }));
+    const sendOpenClawResponse = vi.fn(async () => ({ dryRun: false, status: 'sent' }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      attachOpenClawGateway,
+      sendOpenClawResponse,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const attachHandler = electronMock.handlers.get('companion.openclaw.attach');
+    const rejectedAttach = (await attachHandler?.({}, {
+      approvedBy: 'Patrice',
+      liveAttachConfirmed: false,
+    })) as { ok: boolean; error?: string };
+    expect(rejectedAttach.ok).toBe(false);
+    expect(rejectedAttach.error).toMatch(/liveAttachConfirmed=true/);
+    expect(attachOpenClawGateway).not.toHaveBeenCalled();
+
+    const acceptedAttach = (await attachHandler?.({}, {
+      approvedBy: 'Patrice',
+      endpointPath: '/api/attach',
+      liveAttachConfirmed: true,
+    })) as { ok: boolean; result?: { status: string } };
+    expect(acceptedAttach.ok).toBe(true);
+    expect(acceptedAttach.result?.status).toBe('attached');
+    expect(attachOpenClawGateway).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        dryRun: false,
+        endpointPath: '/api/attach',
+        liveAttachConfirmed: true,
+      },
+      { cwd: '/tmp/proj', home: undefined },
+    );
+
+    const sendHandler = electronMock.handlers.get('companion.openclaw.send');
+    const rejectedSend = (await sendHandler?.({}, {
+      approvedBy: 'Patrice',
+      channel: 'slack',
+      liveSendConfirmed: false,
+      messageId: 'msg-1',
+      text: 'Approved reply.',
+    })) as { ok: boolean; error?: string };
+    expect(rejectedSend.ok).toBe(false);
+    expect(rejectedSend.error).toMatch(/liveSendConfirmed=true/);
+    expect(sendOpenClawResponse).toHaveBeenCalledTimes(0);
+
+    const acceptedSend = (await sendHandler?.({}, {
+      approvedBy: 'Patrice',
+      channel: 'slack',
+      liveSendConfirmed: true,
+      messageId: 'msg-1',
+      text: 'Approved reply.',
+    })) as { ok: boolean; result?: { status: string } };
+    expect(acceptedSend.ok).toBe(true);
+    expect(acceptedSend.result?.status).toBe('sent');
+    expect(sendOpenClawResponse).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        channel: 'slack',
+        dryRun: false,
+        endpointPath: undefined,
+        liveSendConfirmed: true,
+        messageId: 'msg-1',
+        text: 'Approved reply.',
+        threadId: undefined,
+      },
+      { cwd: '/tmp/proj', home: undefined },
+    );
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

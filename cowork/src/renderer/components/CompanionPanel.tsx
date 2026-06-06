@@ -54,6 +54,8 @@ import type {
   CompanionGatewayOutboundReplyDraft,
   CompanionGatewayOutboundReplySendResult,
   CompanionGatewayProfile,
+  OpenClawBridgeActionResult,
+  OpenClawBridgeStatusResult,
   CompanionImprovementCycle,
   CompanionImpulseBrief,
   CompanionMission,
@@ -1604,6 +1606,114 @@ function GatewayAdminPlanPreview({
   );
 }
 
+function recordString(record: Record<string, unknown> | undefined, key: string): string | undefined {
+  const value = record?.[key];
+  return typeof value === 'string' ? value : undefined;
+}
+
+function recordBool(record: Record<string, unknown> | undefined, key: string): boolean | undefined {
+  const value = record?.[key];
+  return typeof value === 'boolean' ? value : undefined;
+}
+
+function OpenClawBridgePreview({
+  status,
+  result,
+  busy,
+  onAttachPreview,
+  onAttachLive,
+  onDraft,
+  onSendPreview,
+  onSendLive,
+}: {
+  status: OpenClawBridgeStatusResult | null;
+  result: OpenClawBridgeActionResult | null;
+  busy: boolean;
+  onAttachPreview: () => void;
+  onAttachLive: () => void;
+  onDraft: () => void;
+  onSendPreview: () => void;
+  onSendLive: () => void;
+}) {
+  const detected = recordBool(status?.discovery, 'detected') === true;
+  const endpoint = recordString(status?.discovery, 'endpoint') ?? 'not configured';
+  const tokenState = recordBool(status?.discovery, 'tokenPresent') === true ? 'present' : 'not found';
+  const bridgeKind = recordString(result?.result, 'kind') ?? recordString(result?.result, 'status') ?? 'no action yet';
+  const artifactPath = recordString(result?.result, 'draftFile') ?? recordString(result?.result, 'logPath');
+
+  return (
+    <section className="space-y-3" data-testid="companion-openclaw-bridge">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">OpenClaw bridge</h3>
+        <span className={detected ? 'text-[10px] text-success' : 'text-[10px] text-warning'}>
+          {detected ? 'detected' : 'not detected'}
+        </span>
+      </div>
+      <div className="rounded border border-border bg-surface/35 p-3">
+        <div className="grid grid-cols-2 gap-2">
+          <StatusTile icon={Radio} label="Gateway" value={endpoint} ok={detected} />
+          <StatusTile icon={ShieldCheck} label="Token" value={tokenState} ok={tokenState === 'present'} />
+        </div>
+        <div className="mt-3 flex flex-wrap gap-2">
+          <button
+            disabled={busy}
+            onClick={onAttachPreview}
+            className="rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Preview attach
+          </button>
+          <button
+            disabled={busy}
+            onClick={onAttachLive}
+            className="rounded border border-accent/50 px-2 py-1 text-[11px] text-accent hover:bg-accent/10 disabled:opacity-50"
+          >
+            Attach live
+          </button>
+          <button
+            disabled={busy}
+            onClick={onDraft}
+            className="rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Draft handoff
+          </button>
+          <button
+            disabled={busy}
+            onClick={onSendPreview}
+            className="rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Preview send
+          </button>
+          <button
+            disabled={busy}
+            onClick={onSendLive}
+            className="rounded border border-warning/60 px-2 py-1 text-[11px] text-warning hover:bg-warning/10 disabled:opacity-50"
+          >
+            Send live
+          </button>
+        </div>
+        {result && (
+          <div className="mt-3 rounded bg-background px-2 py-1.5 text-[10px] text-text-muted">
+            <div className="flex items-center justify-between gap-2">
+              <span className={result.ok ? 'text-success' : 'text-error'}>{result.ok ? 'ok' : 'blocked'}</span>
+              <span className="truncate">{bridgeKind}</span>
+            </div>
+            {result.error && <p className="mt-1 text-error">{result.error}</p>}
+            {artifactPath && (
+              <button
+                onClick={() => void window.electronAPI.showItemInFolder(artifactPath)}
+                className="mt-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+              >
+                <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                <span className="truncate">{artifactPath}</span>
+              </button>
+            )}
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
+
 function SkillCandidateRow({
   candidate,
   busy,
@@ -1695,6 +1805,8 @@ export function CompanionPanel() {
   const [gatewayFleetLaunch, setGatewayFleetLaunch] = useState<CompanionGatewayFleetLaunchResult | null>(null);
   const [gatewayOutboundReplyDraft, setGatewayOutboundReplyDraft] = useState<CompanionGatewayOutboundReplyDraft | null>(null);
   const [gatewayOutboundReplySend, setGatewayOutboundReplySend] = useState<CompanionGatewayOutboundReplySendResult | null>(null);
+  const [openClawBridgeStatus, setOpenClawBridgeStatus] = useState<OpenClawBridgeStatusResult | null>(null);
+  const [openClawBridgeResult, setOpenClawBridgeResult] = useState<OpenClawBridgeActionResult | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
@@ -1707,7 +1819,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayAdmin' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'gatewayOutboundReplySend' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayAdmin' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'gatewayOutboundReplySend' | 'openClawBridge' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
@@ -1762,6 +1874,7 @@ export function CompanionPanel() {
         gatewayLifecycleRes,
         gatewayAdminPlanRes,
         gatewayInboxRes,
+        openClawBridgeRes,
         skillsRes,
         voiceConversationRes,
         voiceRuntimeRes,
@@ -1780,6 +1893,7 @@ export function CompanionPanel() {
         window.electronAPI.companion.gatewayLifecycle(),
         window.electronAPI.companion.gatewayAdminPlan(),
         window.electronAPI.companion.gatewayInbox(),
+        window.electronAPI.companion.openClawBridgeStatus(),
         window.electronAPI.companion.listSkillCandidates(),
         window.electronAPI.voice.conversationStatus().catch(() => null),
         window.electronAPI.voice.status().catch(() => null),
@@ -1798,6 +1912,7 @@ export function CompanionPanel() {
         || !gatewayLifecycleRes.ok
         || !gatewayAdminPlanRes.ok
         || !gatewayInboxRes.ok
+        || !openClawBridgeRes.ok
         || !skillsRes.ok
         || !privacyRes.ok;
       setLastSync(statusRes.error === 'NO_ACTIVE_PROJECT'
@@ -1833,6 +1948,8 @@ export function CompanionPanel() {
           setGatewayDraft(null);
           setGatewayFleetDraft(null);
           setGatewayFleetLaunch(null);
+          setOpenClawBridgeStatus(null);
+          setOpenClawBridgeResult(null);
           setSkillCandidates([]);
           setSkillCuratorResult(null);
           setSetupResult(null);
@@ -1865,6 +1982,7 @@ export function CompanionPanel() {
       setGatewayLifecycle(gatewayLifecycleRes.ok ? gatewayLifecycleRes.report ?? null : null);
       setGatewayAdminPlan(gatewayAdminPlanRes.ok ? gatewayAdminPlanRes.plan ?? null : null);
       setGatewayInbox(gatewayInboxRes.ok ? gatewayInboxRes.inbox ?? null : null);
+      setOpenClawBridgeStatus(openClawBridgeRes.ok ? openClawBridgeRes : null);
       setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
       setVoiceConversation(voiceConversationRes);
       setVoiceRuntime(voiceRuntimeRes);
@@ -1882,6 +2000,7 @@ export function CompanionPanel() {
           ?? gatewayLifecycleRes.error
           ?? gatewayAdminPlanRes.error
           ?? gatewayInboxRes.error
+          ?? openClawBridgeRes.error
           ?? skillsRes.error
           ?? privacyRes.error
           ?? 'Failed to load companion state');
@@ -2343,6 +2462,111 @@ export function CompanionPanel() {
     }
     setGatewayOutboundReplySend(res.result ?? null);
     setGatewayInbox(res.inbox ?? null);
+    await refresh();
+  };
+
+  const previewOpenClawBridgeAttach = async () => {
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.previewOpenClawBridgeAttach();
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) setError(res.error ?? 'OpenClaw attach preview failed');
+  };
+
+  const attachOpenClawBridge = async () => {
+    const approvedBy = window.prompt('Approver name for this OpenClaw gateway attach');
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      'Attach Code Buddy to the OpenClaw gateway now? This may contact the local OpenClaw gateway.',
+    );
+    if (!confirmed) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.attachOpenClawBridge({
+      approvedBy,
+      liveAttachConfirmed: true,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) {
+      setError(res.error ?? 'OpenClaw attach failed');
+      return;
+    }
+    await refresh();
+  };
+
+  const draftOpenClawBridgeHandoff = async () => {
+    const messageId = window.prompt('OpenClaw message id for the handoff draft');
+    if (!messageId?.trim()) return;
+    const channel = window.prompt('OpenClaw channel', 'cli');
+    if (!channel?.trim()) return;
+    const senderId = window.prompt('OpenClaw sender id', 'operator');
+    if (!senderId?.trim()) return;
+    const text = window.prompt(
+      'Paste the OpenClaw message to convert into a safe Fleet handoff draft.',
+    );
+    if (!text?.trim()) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.draftOpenClawBridgeHandoff({
+      channel,
+      messageId,
+      senderId,
+      text,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) setError(res.error ?? 'OpenClaw handoff draft failed');
+  };
+
+  const previewOpenClawBridgeSend = async () => {
+    const messageId = window.prompt('OpenClaw message id to reply to');
+    if (!messageId?.trim()) return;
+    const channel = window.prompt('OpenClaw channel', 'cli');
+    if (!channel?.trim()) return;
+    const text = window.prompt('Paste the approved reply for dry-run preview.');
+    if (!text?.trim()) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.previewOpenClawBridgeSend({
+      channel,
+      messageId,
+      text,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) setError(res.error ?? 'OpenClaw send preview failed');
+  };
+
+  const sendOpenClawBridgeResponse = async () => {
+    const messageId = window.prompt('OpenClaw message id to reply to');
+    if (!messageId?.trim()) return;
+    const channel = window.prompt('OpenClaw channel', 'cli');
+    if (!channel?.trim()) return;
+    const text = window.prompt('Paste the final approved OpenClaw reply.');
+    if (!text?.trim()) return;
+    const approvedBy = window.prompt('Approver name for this OpenClaw send');
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      'Send this approved response through the OpenClaw gateway now? This may contact an external recipient.',
+    );
+    if (!confirmed) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.sendOpenClawBridgeResponse({
+      approvedBy,
+      channel,
+      liveSendConfirmed: true,
+      messageId,
+      text,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) {
+      setError(res.error ?? 'OpenClaw send failed');
+      return;
+    }
     await refresh();
   };
 
@@ -3202,6 +3426,19 @@ export function CompanionPanel() {
                 )}
               </div>
             </section>
+          )}
+
+          {openClawBridgeStatus && (
+            <OpenClawBridgePreview
+              status={openClawBridgeStatus}
+              result={openClawBridgeResult}
+              busy={busyAction !== null}
+              onAttachPreview={() => void previewOpenClawBridgeAttach()}
+              onAttachLive={() => void attachOpenClawBridge()}
+              onDraft={() => void draftOpenClawBridgeHandoff()}
+              onSendPreview={() => void previewOpenClawBridgeSend()}
+              onSendLive={() => void sendOpenClawBridgeResponse()}
+            />
           )}
 
           {missionRun && (
