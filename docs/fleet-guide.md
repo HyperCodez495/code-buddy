@@ -1138,9 +1138,9 @@ Telegram → OpenClaw Gateway → openclaw-node bridge → Cowork ServerEvent
 
 Le module `src/openclaw/gateway-bridge.ts` pose désormais le contrat
 `openclaw-node` côté Code Buddy. Il sait lire
-`~/.openclaw/gateway.json` sans exposer les tokens, publier un descriptor
-`openclaw_node_descriptor`, transformer un message OpenClaw inbound en
-brouillon Fleet `dispatchProfile=safe` / `privacyTag=sensitive`, préparer
+`~/.openclaw/gateway.json` et `~/.openclaw/node.json` sans exposer les tokens,
+publier un descriptor `openclaw_node_descriptor`, transformer un message
+OpenClaw inbound en brouillon Fleet `dispatchProfile=safe` / `privacyTag=sensitive`, préparer
 une réponse OpenClaw en preview dry-run, et exécuter une attache live au daemon
 uniquement avec `approvedBy` + `liveAttachConfirmed=true`. Il peut aussi envoyer
 une réponse live via `sendOpenClawResponse`, mais seulement avec `approvedBy` +
@@ -1170,8 +1170,10 @@ payload JSON et journaux redacted. Elle contient maintenant aussi une fixture
 WebSocket locale pour le flux documenté par OpenClaw (`connect`, `hello-ok`,
 `req(status)`, `res`). Cette preuve couvre le handshake Gateway, l'envoi du token
 uniquement en live confirmé, et le log `ws-probe-log.jsonl` sans token ni payload
-brut; il reste à répéter cette validation contre un binaire daemon OpenClaw
-upstream avant de parler de compatibilité complète.
+brut. Elle vérifie aussi la discovery `node.json` du node host (`nodeId`,
+display name, gateway host/port, capabilities) sans fuite du pairing token; il
+reste à répéter cette validation contre un binaire daemon OpenClaw upstream avant
+de parler de compatibilité complète.
 
 Cowork expose le même contrat dans le Companion panel, section
 `OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et

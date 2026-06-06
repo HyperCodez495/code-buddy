@@ -8,6 +8,7 @@ import type { ChannelType } from '../channels/core.js';
 export interface OpenClawGatewayDiscoveryOptions {
   home?: string;
   lockfilePath?: string;
+  nodeLockfilePath?: string;
   cwd?: string;
   now?: Date;
 }
@@ -25,6 +26,25 @@ export interface OpenClawGatewayLockfile {
   token?: string;
   apiKey?: string;
   secret?: string;
+  [key: string]: unknown;
+}
+
+export interface OpenClawNodeLockfile {
+  schemaVersion?: number;
+  nodeId?: string;
+  id?: string;
+  token?: string;
+  pairingToken?: string;
+  displayName?: string;
+  name?: string;
+  host?: string;
+  port?: number;
+  gatewayHost?: string;
+  gatewayPort?: number;
+  tls?: boolean;
+  wsUrl?: string;
+  capabilities?: string[];
+  methods?: string[];
   [key: string]: unknown;
 }
 
@@ -46,9 +66,20 @@ export interface OpenClawGatewayDiscovery {
     workspace?: string;
     methods: string[];
   };
+  nodeHost: {
+    found: boolean;
+    nodeId?: string;
+    displayName?: string;
+    gatewayHost?: string;
+    gatewayPort?: number;
+    tls?: boolean;
+    wsUrl?: string;
+    capabilities: string[];
+  };
   safety: {
     secretsIncluded: false;
     tokenPresent: boolean;
+    nodeTokenPresent: boolean;
     networkContacted: false;
   };
   recommendations: string[];
@@ -386,6 +417,10 @@ export function getOpenClawGatewayLockfilePath(options: OpenClawGatewayDiscovery
   return path.resolve(options.lockfilePath || path.join(resolveOpenClawHome(options), 'gateway.json'));
 }
 
+export function getOpenClawNodeLockfilePath(options: OpenClawGatewayDiscoveryOptions = {}): string {
+  return path.resolve(options.nodeLockfilePath || path.join(resolveOpenClawHome(options), 'node.json'));
+}
+
 function getOpenClawBridgeDraftsDir(cwd: string): string {
   return path.join(cwd, '.codebuddy', 'openclaw', 'bridge');
 }
@@ -427,6 +462,44 @@ async function readOpenClawLockfile(lockfilePath: string): Promise<OpenClawGatew
   } catch {
     return null;
   }
+}
+
+async function readOpenClawNodeLockfile(lockfilePath: string): Promise<OpenClawNodeLockfile | null> {
+  try {
+    return JSON.parse(await readFile(lockfilePath, 'utf8')) as OpenClawNodeLockfile;
+  } catch {
+    return null;
+  }
+}
+
+function nodeIdFromLockfile(lockfile: OpenClawNodeLockfile | null): string | undefined {
+  if (typeof lockfile?.nodeId === 'string' && lockfile.nodeId.trim()) return lockfile.nodeId.trim();
+  if (typeof lockfile?.id === 'string' && lockfile.id.trim()) return lockfile.id.trim();
+  return undefined;
+}
+
+function nodeDisplayNameFromLockfile(lockfile: OpenClawNodeLockfile | null): string | undefined {
+  if (typeof lockfile?.displayName === 'string' && lockfile.displayName.trim()) return lockfile.displayName.trim();
+  if (typeof lockfile?.name === 'string' && lockfile.name.trim()) return lockfile.name.trim();
+  return undefined;
+}
+
+function nodeGatewayHostFromLockfile(lockfile: OpenClawNodeLockfile | null): string | undefined {
+  if (typeof lockfile?.gatewayHost === 'string' && lockfile.gatewayHost.trim()) return lockfile.gatewayHost.trim();
+  if (typeof lockfile?.host === 'string' && lockfile.host.trim()) return lockfile.host.trim();
+  return undefined;
+}
+
+function nodeGatewayPortFromLockfile(lockfile: OpenClawNodeLockfile | null): number | undefined {
+  if (typeof lockfile?.gatewayPort === 'number') return lockfile.gatewayPort;
+  if (typeof lockfile?.port === 'number') return lockfile.port;
+  return undefined;
+}
+
+function nodeTokenFromLockfile(lockfile: OpenClawNodeLockfile | null): string | undefined {
+  if (typeof lockfile?.token === 'string' && lockfile.token.trim()) return lockfile.token.trim();
+  if (typeof lockfile?.pairingToken === 'string' && lockfile.pairingToken.trim()) return lockfile.pairingToken.trim();
+  return undefined;
 }
 
 function resolveAttachEndpoint(lockfile: OpenClawGatewayLockfile | null, endpointPath: string): string | undefined {
@@ -625,14 +698,20 @@ export async function discoverOpenClawGateway(
   const now = options.now || new Date();
   const home = resolveOpenClawHome(options);
   const lockfilePath = getOpenClawGatewayLockfilePath({ ...options, home });
+  const nodeLockfilePath = getOpenClawNodeLockfilePath({ ...options, home });
   const parsed = await readOpenClawLockfile(lockfilePath);
+  const node = await readOpenClawNodeLockfile(nodeLockfilePath);
   const tokenPresent = Boolean(parsed?.token || parsed?.apiKey || parsed?.secret);
+  const nodeTokenPresent = Boolean(nodeTokenFromLockfile(node));
   const recommendations: string[] = [];
   if (!parsed) {
     recommendations.push('Start OpenClaw Gateway or provide --lockfile pointing at gateway.json.');
   }
   if (parsed && !parsed.wsUrl && !parsed.endpoint && !parsed.rpcUrl) {
     recommendations.push('OpenClaw gateway lockfile has no endpoint/wsUrl/rpcUrl for bridge attachment.');
+  }
+  if (!node) {
+    recommendations.push('Run OpenClaw node host or provide --node-lockfile pointing at node.json for node-host pairing metadata.');
   }
 
   return {
@@ -653,9 +732,22 @@ export async function discoverOpenClawGateway(
       ...(typeof parsed?.workspace === 'string' ? { workspace: parsed.workspace } : {}),
       methods: normalizeMethods(parsed?.methods),
     },
+    nodeHost: {
+      found: Boolean(node),
+      ...(nodeIdFromLockfile(node) ? { nodeId: nodeIdFromLockfile(node) } : {}),
+      ...(nodeDisplayNameFromLockfile(node) ? { displayName: nodeDisplayNameFromLockfile(node) } : {}),
+      ...(nodeGatewayHostFromLockfile(node) ? { gatewayHost: nodeGatewayHostFromLockfile(node) } : {}),
+      ...(nodeGatewayPortFromLockfile(node) !== undefined ? { gatewayPort: nodeGatewayPortFromLockfile(node) } : {}),
+      ...(typeof node?.tls === 'boolean' ? { tls: node.tls } : {}),
+      ...(typeof node?.wsUrl === 'string' ? { wsUrl: node.wsUrl } : {}),
+      capabilities: normalizeMethods(node?.capabilities).length > 0
+        ? normalizeMethods(node?.capabilities)
+        : normalizeMethods(node?.methods),
+    },
     safety: {
       secretsIncluded: false,
       tokenPresent,
+      nodeTokenPresent,
       networkContacted: false,
     },
     recommendations,

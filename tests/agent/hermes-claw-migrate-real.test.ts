@@ -273,6 +273,14 @@ describe('hermes claw migrate (real)', () => {
       token: 'oc_cli_status_secret_fixture',
       methods: ['node.describe'],
     });
+    fs.writeJsonSync(path.join(openclaw, 'node.json'), {
+      nodeId: 'openclaw-cli-node-host',
+      displayName: 'CLI Node Host',
+      gatewayHost: '127.0.0.1',
+      gatewayPort: 18789,
+      token: 'oc_cli_node_status_secret_fixture',
+      capabilities: ['system.run', 'system.which'],
+    });
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
       const program = new Command();
@@ -287,8 +295,17 @@ describe('hermes claw migrate (real)', () => {
       expect(payload.kind).toBe('openclaw_bridge_status');
       expect(payload.discovery.found).toBe(true);
       expect(payload.discovery.safety.tokenPresent).toBe(true);
+      expect(payload.discovery.safety.nodeTokenPresent).toBe(true);
+      expect(payload.discovery.nodeHost).toMatchObject({
+        found: true,
+        nodeId: 'openclaw-cli-node-host',
+        displayName: 'CLI Node Host',
+        capabilities: ['system.run', 'system.which'],
+      });
       expect(payload.descriptor.role).toBe('codebuddy-fleet-bridge');
+      expect(payload.descriptor.nodeId).toBe('openclaw-cli-node-host');
       expect(output).not.toContain('oc_cli_status_secret_fixture');
+      expect(output).not.toContain('oc_cli_node_status_secret_fixture');
     } finally {
       logSpy.mockRestore();
     }

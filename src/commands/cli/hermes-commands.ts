@@ -2202,6 +2202,7 @@ interface HermesClawBridgeOptions extends HermesCommandOptions {
   yes?: boolean;
   approvedBy?: string;
   endpointPath?: string;
+  nodeLockfile?: string;
   statusMethod?: string;
   timeoutMs?: string;
   messageId?: string;
@@ -2217,7 +2218,12 @@ function renderOpenClawBridgeResult(value: {
   ok?: boolean;
   found?: boolean;
   record?: { status?: string; endpoint?: string; endpointPath?: string };
-  discovery?: { found: boolean; daemon: { endpoint?: string; httpUrl?: string; rpcUrl?: string; wsUrl?: string }; safety: { tokenPresent: boolean } };
+  discovery?: {
+    found: boolean;
+    daemon: { endpoint?: string; httpUrl?: string; rpcUrl?: string; wsUrl?: string };
+    nodeHost?: { found: boolean; nodeId?: string; displayName?: string };
+    safety: { tokenPresent: boolean; nodeTokenPresent?: boolean };
+  };
   draftFile?: string;
   sendLogPath?: string;
   attachLogPath?: string;
@@ -2229,6 +2235,11 @@ function renderOpenClawBridgeResult(value: {
     const endpoint = value.discovery.daemon.rpcUrl || value.discovery.daemon.httpUrl || value.discovery.daemon.endpoint || value.discovery.daemon.wsUrl || 'not configured';
     lines.push(`Gateway: ${value.discovery.found ? endpoint : 'not found'}`);
     lines.push(`Token present: ${value.discovery.safety.tokenPresent ? 'yes' : 'no'}`);
+    if (value.discovery.nodeHost) {
+      const nodeLabel = value.discovery.nodeHost.displayName || value.discovery.nodeHost.nodeId || 'not found';
+      lines.push(`Node host: ${value.discovery.nodeHost.found ? nodeLabel : 'not found'}`);
+      lines.push(`Node token present: ${value.discovery.safety.nodeTokenPresent ? 'yes' : 'no'}`);
+    }
   }
   if (value.record) {
     lines.push(`Status: ${value.record.status || 'unknown'}`);
@@ -2306,15 +2317,17 @@ function registerHermesClawCommands(hermes: Command): void {
     .command('status')
     .description('Discover OpenClaw Gateway and show the Code Buddy node descriptor')
     .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
     .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
     .option('--json', 'output JSON')
     .action(async (options: HermesClawBridgeOptions) => {
       const discovery = await discoverOpenClawGateway({
         home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
         cwd: options.workspaceTarget,
       });
       const descriptor = buildOpenClawNodeDescriptor({
-        nodeId: discovery.daemon.nodeId,
+        nodeId: discovery.daemon.nodeId || discovery.nodeHost.nodeId,
       });
       const payload = {
         kind: 'openclaw_bridge_status',
@@ -2337,6 +2350,7 @@ function registerHermesClawCommands(hermes: Command): void {
     .command('probe-ws')
     .description('Probe the OpenClaw Gateway WebSocket handshake (--apply --yes required for live probe)')
     .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
     .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
     .option('--status-method <method>', 'OpenClaw status RPC method to call after hello-ok', 'status')
     .option('--timeout-ms <ms>', 'WebSocket probe timeout', '5000')
@@ -2354,6 +2368,7 @@ function registerHermesClawCommands(hermes: Command): void {
         timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
       }, {
         home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
         cwd: options.workspaceTarget,
       });
       if (options.json) {
@@ -2376,6 +2391,7 @@ function registerHermesClawCommands(hermes: Command): void {
     .command('attach')
     .description('Register the Code Buddy bridge with OpenClaw Gateway (--apply --yes required for live attach)')
     .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
     .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
     .option('--endpoint-path <path>', 'OpenClaw attach endpoint path', 'nodes/register')
     .option('--approved-by <name>', 'operator approving live attach')
@@ -2390,6 +2406,7 @@ function registerHermesClawCommands(hermes: Command): void {
         endpointPath: options.endpointPath,
       }, {
         home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
         cwd: options.workspaceTarget,
       });
       if (options.json) {
@@ -2445,6 +2462,7 @@ function registerHermesClawCommands(hermes: Command): void {
     .requiredOption('--thread-id <id>', 'OpenClaw thread id')
     .requiredOption('--text <text>', 'response text')
     .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
     .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
     .option('--endpoint-path <path>', 'OpenClaw response endpoint path', 'messages/reply')
     .option('--approved-by <name>', 'operator approving live response send')
@@ -2463,6 +2481,7 @@ function registerHermesClawCommands(hermes: Command): void {
         endpointPath: options.endpointPath,
       }, {
         home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
         cwd: options.workspaceTarget,
       });
       if (options.json) {

@@ -164,6 +164,49 @@ describe('OpenClaw gateway bridge compatibility', () => {
     expect(JSON.stringify(discovery)).not.toContain('oc_secret_token_fixture');
   });
 
+  it('discovers OpenClaw node host metadata from node.json without exposing pairing tokens', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_gateway_secret_fixture',
+    }, null, 2), 'utf8');
+    await writeFile(path.join(openclawHome, 'node.json'), JSON.stringify({
+      nodeId: 'openclaw-node-host-1',
+      displayName: 'Build Server Node',
+      gatewayHost: '127.0.0.1',
+      gatewayPort: 18789,
+      tls: false,
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_node_pairing_secret_fixture',
+      capabilities: ['system.run', 'system.which', 'browser.proxy'],
+    }, null, 2), 'utf8');
+
+    const discovery = await discoverOpenClawGateway({
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:02:00.000Z'),
+    });
+
+    expect(discovery.nodeHost).toMatchObject({
+      found: true,
+      nodeId: 'openclaw-node-host-1',
+      displayName: 'Build Server Node',
+      gatewayHost: '127.0.0.1',
+      gatewayPort: 18789,
+      tls: false,
+      wsUrl: 'ws://127.0.0.1:18789',
+      capabilities: ['browser.proxy', 'system.run', 'system.which'],
+    });
+    expect(discovery.safety).toMatchObject({
+      secretsIncluded: false,
+      tokenPresent: true,
+      nodeTokenPresent: true,
+      networkContacted: false,
+    });
+    expect(JSON.stringify(discovery)).not.toContain('oc_gateway_secret_fixture');
+    expect(JSON.stringify(discovery)).not.toContain('oc_node_pairing_secret_fixture');
+  });
+
   it('advertises a safe Code Buddy node descriptor for OpenClaw', () => {
     const descriptor = buildOpenClawNodeDescriptor({
       nodeId: 'codebuddy-node-1',

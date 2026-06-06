@@ -403,9 +403,9 @@ cd cowork && npx playwright test e2e/companion-openclaw-bridge.spec.ts --reporte
 npm run typecheck
 ```
 
-The OpenClaw bridge test validates that `gateway.json` discovery is
-secret-safe, the Code Buddy `openclaw-node` descriptor advertises only local
-approval-based capabilities, inbound OpenClaw messages become
+The OpenClaw bridge test validates that `gateway.json` and `node.json`
+discovery is secret-safe, the Code Buddy `openclaw-node` descriptor advertises
+only local approval-based capabilities, inbound OpenClaw messages become
 `dispatchProfile=safe` / `privacyTag=sensitive` Fleet handoff drafts, and
 outbound replies remain dry-run previews until an operator approves a real send.
 It also validates guarded daemon attach behavior: dry-run attach does not call
@@ -425,7 +425,7 @@ The Hermes CLI migration suite also validates the user-facing bridge commands:
 tokens/message secrets out of stdout. The WebSocket probe is dry-run by default;
 live probing requires `--apply --yes --approved-by <name>`.
 
-Observed result: `12` companion gateway tests, `15` OpenClaw bridge tests, `14`
+Observed result: `12` companion gateway tests, `16` OpenClaw bridge tests, `14`
 Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
 surface tests passed, plus the targeted Cowork Playwright OpenClaw bridge proof
 passed and wrote:
@@ -441,6 +441,9 @@ OpenClaw daemon attach/response send plus CLI dry-run access. The OpenClaw
 bridge suite now also includes a local WebSocket gateway fixture for the
 documented `connect` -> `hello-ok` -> `req(status)` -> `res` flow; the probe log
 stores only frame types and response summaries, never tokens or raw payloads.
+The node-host discovery proof reads OpenClaw's documented `~/.openclaw/node.json`
+shape, reports node id/display name/gateway host/port/capabilities, and keeps
+the node pairing token out of CLI JSON and logs.
 The new draft
 proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
