@@ -26,15 +26,16 @@
 
 /** Lanczos log-gamma. */
 function gammaln(x: number): number {
+  /* eslint-disable no-loss-of-precision -- standard Lanczos series constants */
   const cof = [
     76.18009172947146, -86.50532032941677, 24.01409824083091,
     -1.231739572450155, 0.1208650973866179e-2, -0.5395239384953e-5,
   ];
+  let ser = 1.000000000190015;
+  /* eslint-enable no-loss-of-precision */
   let y = x;
   let tmp = x + 5.5;
   tmp -= (x + 0.5) * Math.log(tmp);
-  // eslint-disable-next-line no-loss-of-precision -- standard Lanczos series constant
-  let ser = 1.000000000190015;
   for (let j = 0; j < 6; j++) ser += cof[j]! / ++y;
   return -tmp + Math.log((Math.sqrt(2 * Math.PI) * ser) / x);
 }
