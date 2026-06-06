@@ -41,9 +41,16 @@ export const SKILL_WRITE_AUDIT_SCHEMA_VERSION = 1;
 const AUDIT_DIR = path.join('.codebuddy', 'learning');
 const AUDIT_FILE = 'skill-writes.json';
 
-/** Verdict returned by an optional behavioural gate (wired in S3). */
+/**
+ * Verdict returned by an optional behavioural gate.
+ *  - `accept`  — the gate behaviourally validated the skill → install.
+ *  - `reject`  — the gate tested the skill and it is inert / regresses / is not
+ *    confidently helpful → leave pending (do NOT auto-install).
+ *  - `abstain` — the gate could not derive gradeable behavioural evidence → fall
+ *    back to the structural + secret screen + reversibility nets and install.
+ */
 export interface SkillGateVerdict {
-  accepted: boolean;
+  decision: 'accept' | 'reject' | 'abstain';
   reason: string;
 }
 
@@ -130,13 +137,15 @@ export async function promoteSkillCandidate(
 
   if (options.gate) {
     const verdict = await options.gate(candidate);
-    if (!verdict.accepted) {
+    if (verdict.decision === 'reject') {
       logger.info('[skill-background-writes] behavioural gate rejected candidate; left pending', {
         skillName,
         reason: verdict.reason,
       });
       return { installed: false, reason: verdict.reason, skillName };
     }
+    // 'accept' and 'abstain' both proceed: 'accept' is behaviourally validated;
+    // 'abstain' falls back to the structural/secret/reversibility nets.
   }
 
   let installed: InstalledResearchScriptSkillCandidate;
