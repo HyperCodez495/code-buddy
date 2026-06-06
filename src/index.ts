@@ -2676,6 +2676,28 @@ program
     if (result.entry?.content) cli.stdout(result.entry.content);
   });
 
+// Hidden child entry for per-task subprocess isolation (CODEBUDDY_CLOUD_SUBPROCESS).
+// Runs a single previously-submitted cloud task to completion in its own process.
+program
+  .command('cloud-run-task <taskId>', { hidden: true })
+  .option('--tasks-dir <dir>', 'task store directory')
+  .action(async (taskId: string, options: { tasksDir?: string }) => {
+    try {
+      const { CloudAgentRunner } = await import('./cloud/cloud-agent-runner.js');
+      const runner = new CloudAgentRunner(options.tasksDir);
+      const config = runner.loadTaskConfig(taskId);
+      if (!config) {
+        cli.error(`No persisted config for cloud task '${taskId}'`);
+        process.exit(1);
+      }
+      await runner.runTaskInProcess(taskId, config);
+      process.exit(0);
+    } catch (err) {
+      cli.error(`cloud-run-task failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+  });
+
 // Completions — generate or install shell completion scripts
 addLazyCommand(
   program,

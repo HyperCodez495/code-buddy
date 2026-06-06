@@ -15,6 +15,7 @@ import os from 'os';
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
 import { RunStore } from '../observability/run-store.js';
+import { shouldIsolateCloudTask, runCloudTaskSubprocess } from './cloud-task-subprocess.js';
 
 // ──────────────────────────────────────────────────────────────────
 // Types
@@ -123,12 +124,108 @@ export class CloudAgentRunner extends EventEmitter {
     this.progressEvents.set(taskId, []);
     this.persistTask(task);
 
-    // Start execution asynchronously
-    this.executeTask(taskId, config).catch((err) => {
-      logger.error(`Cloud task ${taskId} execution error`, { error: String(err) });
-    });
+    if (shouldIsolateCloudTask()) {
+      // Process isolation: run the task in a child process so a crash/runaway
+      // cannot take down the daemon. The child writes status to the shared store.
+      this.persistTaskConfig(taskId, config);
+      runCloudTaskSubprocess({ taskId, tasksDir: this.tasksDir })
+        .then((result) => {
+          this.reloadPersistedTask(taskId);
+          if (result.exitCode !== 0) {
+            this.failTaskIfUnfinished(taskId, `Task subprocess exited with code ${result.exitCode ?? 'null'}`);
+          }
+        })
+        .catch((err) => {
+          logger.error(`Cloud task ${taskId} subprocess error`, { error: String(err) });
+          this.failTaskIfUnfinished(taskId, err instanceof Error ? err.message : String(err));
+        });
+    } else {
+      // Start execution asynchronously, in-process.
+      this.executeTask(taskId, config).catch((err) => {
+        logger.error(`Cloud task ${taskId} execution error`, { error: String(err) });
+      });
+    }
 
     return taskId;
+  }
+
+  /**
+   * Run a previously-submitted task to completion IN this process. Used by the
+   * `cloud-run-task` child entry; bypasses the subprocess branch.
+   */
+  async runTaskInProcess(taskId: string, config: CloudTaskConfig): Promise<void> {
+    if (!this.tasks.has(taskId)) {
+      // The child loaded the persisted pending task in its constructor; if not,
+      // synthesize a minimal record so executeTask has something to update.
+      this.tasks.set(taskId, {
+        id: taskId,
+        status: 'pending',
+        goal: config.goal,
+        model: config.model,
+        startedAt: new Date(),
+        tokensUsed: { input: 0, output: 0 },
+        cost: 0,
+        toolCalls: 0,
+      });
+      this.progressEvents.set(taskId, []);
+    }
+    await this.executeTask(taskId, config);
+    // Best-effort cleanup of the one-shot config side-car.
+    try {
+      fs.unlinkSync(path.join(this.tasksDir, `${taskId}.config`));
+    } catch {
+      // Ignore
+    }
+  }
+
+  /** Persist the task config so an isolated child can load and run it. */
+  private persistTaskConfig(taskId: string, config: CloudTaskConfig): void {
+    try {
+      fs.mkdirSync(this.tasksDir, { recursive: true });
+      fs.writeFileSync(
+        path.join(this.tasksDir, `${taskId}.config`),
+        JSON.stringify(config, null, 2),
+      );
+    } catch {
+      // Ignore persistence errors
+    }
+  }
+
+  /** Load a persisted task config (used by the `cloud-run-task` child). */
+  loadTaskConfig(taskId: string): CloudTaskConfig | null {
+    try {
+      const raw = fs.readFileSync(path.join(this.tasksDir, `${taskId}.config`), 'utf-8');
+      return JSON.parse(raw) as CloudTaskConfig;
+    } catch {
+      return null;
+    }
+  }
+
+  /** Reload a single task's status from disk into the in-memory map. */
+  private reloadPersistedTask(taskId: string): void {
+    try {
+      const raw = fs.readFileSync(path.join(this.tasksDir, `${taskId}.json`), 'utf-8');
+      const data = JSON.parse(raw);
+      this.tasks.set(taskId, {
+        ...data,
+        startedAt: new Date(data.startedAt),
+        completedAt: data.completedAt ? new Date(data.completedAt) : undefined,
+      });
+    } catch {
+      // Ignore; the in-memory record stays as-is.
+    }
+  }
+
+  /** Mark a task failed if it is still pending/running (subprocess fault path). */
+  private failTaskIfUnfinished(taskId: string, error: string): void {
+    const task = this.tasks.get(taskId);
+    if (task && (task.status === 'pending' || task.status === 'running')) {
+      task.status = 'failed';
+      task.error = error;
+      task.completedAt = new Date();
+      this.persistTask(task);
+      this.emitProgress(taskId, 'error', { error });
+    }
   }
 
   /**
