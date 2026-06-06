@@ -466,6 +466,52 @@ interface CompanionGatewayAdminPlan {
   recommendations: string[];
 }
 
+type CompanionGatewayExecutableAdminAction = 'enable' | 'disable' | 'start' | 'stop' | 'reconnect';
+
+interface CompanionGatewayAdminExecutionRecord {
+  id: string;
+  kind: 'companion_gateway_admin_execution';
+  schemaVersion: 1;
+  createdAt: string;
+  cwd: string;
+  channel: string;
+  action: CompanionGatewayExecutableAdminAction;
+  approvedBy: string;
+  liveAdminConfirmed: boolean;
+  status: 'completed' | 'failed' | 'blocked';
+  planActionId?: string;
+  result: {
+    registered?: string[];
+    skipped?: string[];
+    stopped?: boolean;
+    enabled?: boolean;
+    runtimeBefore?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    runtimeAfter?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    failed?: Array<{ type: string; error: string }>;
+    error?: string;
+  };
+}
+
+interface CompanionGatewayAdminExecutionResult {
+  kind: 'companion_gateway_admin_execution_result';
+  ok: boolean;
+  adminLogPath: string;
+  record: CompanionGatewayAdminExecutionRecord;
+  profile?: CompanionGatewayProfile;
+  plan?: CompanionGatewayAdminPlan;
+  error?: string;
+}
+
 type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 
 interface CompanionSkillEvidence {
@@ -698,6 +744,15 @@ type CompanionGatewayMod = {
   readCompanionGatewayProfile: (options: { cwd?: string }) => Promise<CompanionGatewayProfile>;
   buildCompanionGatewayLifecycleReport: (options: { cwd?: string }) => Promise<CompanionGatewayLifecycleReport>;
   buildCompanionGatewayAdminPlan: (options: { cwd?: string }) => Promise<CompanionGatewayAdminPlan>;
+  executeCompanionGatewayAdminAction: (
+    input: {
+      action: CompanionGatewayExecutableAdminAction;
+      channel: string;
+      approvedBy: string;
+      liveAdminConfirmed: boolean;
+    },
+    options: { cwd?: string },
+  ) => Promise<CompanionGatewayAdminExecutionResult>;
   updateCompanionGatewayChannel: (
     channel: string,
     options: {
@@ -1576,6 +1631,38 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: true as const, plan: await mod.buildCompanionGatewayAdminPlan({ cwd }) };
     } catch (err) {
       logError('[companion.gateway.adminPlan] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('companion.gateway.executeAdminAction', async (_e, input?: {
+    projectId?: string;
+    action?: CompanionGatewayExecutableAdminAction;
+    channel?: string;
+    approvedBy?: string;
+    liveAdminConfirmed?: boolean;
+  }) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+    if (!cwd) return { ok: false as const, error };
+    if (!input?.action || !input.channel || !input.approvedBy?.trim() || input.liveAdminConfirmed !== true) {
+      return { ok: false as const, error: 'action, channel, approvedBy and liveAdminConfirmed=true are required' };
+    }
+    try {
+      const mod = await loadGateway();
+      if (!mod?.executeCompanionGatewayAdminAction) {
+        return { ok: false as const, error: 'core companion gateway admin execution module unavailable' };
+      }
+      return {
+        ok: true as const,
+        result: await mod.executeCompanionGatewayAdminAction({
+          action: input.action,
+          channel: input.channel,
+          approvedBy: input.approvedBy,
+          liveAdminConfirmed: true,
+        }, { cwd }),
+      };
+    } catch (err) {
+      logError('[companion.gateway.executeAdminAction] failed:', err);
       return { ok: false as const, error: errorMessage(err) };
     }
   });

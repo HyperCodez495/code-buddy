@@ -116,7 +116,7 @@ export interface StartConfiguredChannelsResult {
  * is the DM-pairing gate inside `registerAIMessageHandler`. Never throws on a
  * single channel failure — it collects the outcome per channel.
  */
-export async function startConfiguredChannels(configPath?: string): Promise<StartConfiguredChannelsResult> {
+export async function startConfiguredChannels(configPath?: string, onlyType?: string): Promise<StartConfiguredChannelsResult> {
   const { getChannelManager } = await import('../../channels/index.js');
   const manager = getChannelManager();
   await registerAIMessageHandler(manager);
@@ -129,6 +129,9 @@ export async function startConfiguredChannels(configPath?: string): Promise<Star
   }
 
   for (const chConfig of config.channels) {
+    if (onlyType && chConfig.type !== onlyType) {
+      continue;
+    }
     if (!chConfig.enabled) {
       result.skipped.push(chConfig.type);
       continue;
@@ -143,6 +146,9 @@ export async function startConfiguredChannels(configPath?: string): Promise<Star
     } catch (err) {
       result.failed.push({ type: chConfig.type, error: err instanceof Error ? err.message : String(err) });
     }
+  }
+  if (onlyType && result.registered.length === 0 && result.skipped.length === 0 && result.failed.length === 0) {
+    result.noConfig = true;
   }
   return result;
 }
@@ -389,22 +395,19 @@ export async function handleChannels(action: string, options: ChannelOptions): P
           console.log(`[FAIL] ${f.type}: ${f.error}`);
         }
       } else {
-        // Start a specific channel
-        const config = loadChannelConfig(options.config);
-        const chConfig = config?.channels.find(c => c.type === channelType);
-        if (!chConfig) {
+        const result = await startConfiguredChannels(options.config, channelType);
+        if (result.noConfig) {
           console.log(`No configuration found for channel type: ${channelType}`);
           return;
         }
-        try {
-          const channel = await instantiateChannel(chConfig);
-          if (channel) {
-            manager.registerChannel(channel);
-            await channel.connect();
-            console.log(`[OK] ${channelType} channel started`);
-          }
-        } catch (err) {
-          console.log(`[FAIL] ${channelType}: ${err instanceof Error ? err.message : String(err)}`);
+        for (const t of result.registered) {
+          console.log(`[OK] ${t} channel started`);
+        }
+        for (const t of result.skipped) {
+          console.log(`[SKIP] ${t} channel disabled`);
+        }
+        for (const f of result.failed) {
+          console.log(`[FAIL] ${f.type}: ${f.error}`);
         }
       }
       break;

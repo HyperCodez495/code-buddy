@@ -115,6 +115,13 @@ and replayable delivery diagnostics. The plan deliberately sets
 `executesChannelAdmin=false`, includes no raw message content, and Cowork renders
 it as `Gateway admin` so operators can inspect the required actions before
 running any live adapter or outbound delivery.
+For live adapter control, `executeCompanionGatewayAdminAction` supports only
+`enable`, `disable`, `start`, `stop`, and `reconnect`. It first verifies that the
+requested action is present in the current admin plan, then requires
+`approvedBy` plus `liveAdminConfirmed=true`, and finally appends a redacted
+`.codebuddy/companion/gateway-admin.jsonl` execution record. Cowork exposes this
+through `Execute` buttons on executable `Gateway admin` actions and prompts the
+operator before the IPC call.
 
 Validation:
 

@@ -1,6 +1,6 @@
-import { mkdir, readFile, writeFile } from 'fs/promises';
+import { appendFile, mkdir, readFile, writeFile } from 'fs/promises';
 import * as path from 'path';
-import type { ChannelType, ContentType } from '../channels/core.js';
+import type { ChannelManager, ChannelType, ContentType } from '../channels/core.js';
 import { readSendMessageOutbox } from '../channels/send-message.js';
 import { recordCompanionPercept, type CompanionPercept } from './percepts.js';
 import { recordCompanionSafetyEvent, type CompanionSafetyEvent } from './safety-ledger.js';
@@ -193,6 +193,75 @@ export interface CompanionGatewayAdminPlanOptions extends CompanionGatewayOption
   replayLimit?: number;
 }
 
+export type CompanionGatewayExecutableAdminAction = 'enable' | 'disable' | 'start' | 'stop' | 'reconnect';
+
+export interface CompanionGatewayAdminExecutionInput {
+  action: CompanionGatewayExecutableAdminAction;
+  channel: ChannelType;
+  approvedBy: string;
+  liveAdminConfirmed: boolean;
+  configPath?: string;
+}
+
+export interface CompanionGatewayAdminExecutionRecord {
+  id: string;
+  kind: 'companion_gateway_admin_execution';
+  schemaVersion: 1;
+  createdAt: string;
+  cwd: string;
+  channel: ChannelType;
+  action: CompanionGatewayExecutableAdminAction;
+  approvedBy: string;
+  liveAdminConfirmed: boolean;
+  status: 'completed' | 'failed' | 'blocked';
+  planActionId?: string;
+  result: {
+    registered?: string[];
+    skipped?: string[];
+    stopped?: boolean;
+    enabled?: boolean;
+    runtimeBefore?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    runtimeAfter?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    failed?: Array<{ type: string; error: string }>;
+    error?: string;
+  };
+}
+
+export interface CompanionGatewayAdminExecutionResult {
+  kind: 'companion_gateway_admin_execution_result';
+  ok: boolean;
+  adminLogPath: string;
+  record: CompanionGatewayAdminExecutionRecord;
+  profile?: CompanionGatewayProfile;
+  plan?: CompanionGatewayAdminPlan;
+  error?: string;
+}
+
+export interface CompanionGatewayAdminExecutionOptions extends CompanionGatewayOptions {
+  adminLogPath?: string;
+  createId?: () => string;
+  channelManager?: ChannelManager;
+  startConfiguredChannels?: (
+    configPath?: string,
+    onlyType?: string,
+  ) => Promise<{
+    registered: string[];
+    skipped: string[];
+    failed: Array<{ type: string; error: string }>;
+    noConfig: boolean;
+  }>;
+}
+
 const DEFAULT_CHANNELS: ChannelType[] = [
   'telegram',
   'discord',
@@ -210,6 +279,10 @@ function resolveCwd(cwd?: string): string {
 
 export function getCompanionGatewayProfilePath(cwd = process.cwd()): string {
   return path.join(cwd, '.codebuddy', 'companion', 'gateway-profile.json');
+}
+
+export function getCompanionGatewayAdminLogPath(cwd = process.cwd()): string {
+  return path.join(cwd, '.codebuddy', 'companion', 'gateway-admin.jsonl');
 }
 
 function resolveStorePath(options: CompanionGatewayOptions = {}): string {
@@ -522,6 +595,16 @@ function actionsForLifecycleChannel(channel: CompanionGatewayLifecycleChannel): 
   }));
   actions.push(adminAction({
     channel: channel.channel,
+    action: 'disable',
+    label: `Disable ${channel.channel} gateway`,
+    reason: 'Disable companion gateway intake for this channel while preserving the local audit trail.',
+    command: gatewayProfileCommand(channel.channel, ['--enabled', 'false']),
+    requiresLocalApproval: true,
+    destructive: true,
+    available: true,
+  }));
+  actions.push(adminAction({
+    channel: channel.channel,
     action: 'reconnect',
     label: `Reconnect ${channel.channel} adapter`,
     reason: 'Restart the adapter when lifecycle diagnostics show stale or failed delivery.',
@@ -686,6 +769,195 @@ export async function buildCompanionGatewayAdminPlan(
     },
     recommendations,
   };
+}
+
+function runtimeSnapshot(
+  manager: ChannelManager,
+  channel: ChannelType,
+): CompanionGatewayAdminExecutionRecord['result']['runtimeBefore'] {
+  const registered = Boolean(manager.getChannel(channel));
+  const status = manager.getStatus()[channel];
+  return {
+    registered,
+    ...(status
+      ? {
+          connected: status.connected,
+          authenticated: status.authenticated,
+          ...(status.error ? { error: status.error } : {}),
+        }
+      : {}),
+  };
+}
+
+async function resolveChannelManager(options: CompanionGatewayAdminExecutionOptions): Promise<ChannelManager> {
+  if (options.channelManager) return options.channelManager;
+  const { getChannelManager } = await import('../channels/index.js');
+  return getChannelManager();
+}
+
+async function resolveStartConfiguredChannels(
+  options: CompanionGatewayAdminExecutionOptions,
+): Promise<NonNullable<CompanionGatewayAdminExecutionOptions['startConfiguredChannels']>> {
+  if (options.startConfiguredChannels) return options.startConfiguredChannels;
+  const { startConfiguredChannels } = await import('../commands/handlers/channel-handlers.js');
+  return startConfiguredChannels;
+}
+
+async function appendAdminExecutionRecord(
+  adminLogPath: string,
+  record: CompanionGatewayAdminExecutionRecord,
+): Promise<void> {
+  await mkdir(path.dirname(adminLogPath), { recursive: true });
+  await appendFile(adminLogPath, `${JSON.stringify(record)}\n`, 'utf8');
+}
+
+function adminExecutionResult(
+  ok: boolean,
+  adminLogPath: string,
+  record: CompanionGatewayAdminExecutionRecord,
+  extras: {
+    profile?: CompanionGatewayProfile;
+    plan?: CompanionGatewayAdminPlan;
+    error?: string;
+  } = {},
+): CompanionGatewayAdminExecutionResult {
+  return {
+    kind: 'companion_gateway_admin_execution_result',
+    ok,
+    adminLogPath,
+    record,
+    ...(extras.profile ? { profile: extras.profile } : {}),
+    ...(extras.plan ? { plan: extras.plan } : {}),
+    ...(extras.error ? { error: extras.error } : {}),
+  };
+}
+
+export async function executeCompanionGatewayAdminAction(
+  input: CompanionGatewayAdminExecutionInput,
+  options: CompanionGatewayAdminExecutionOptions = {},
+): Promise<CompanionGatewayAdminExecutionResult> {
+  const cwd = resolveCwd(options.cwd);
+  const now = options.now || new Date();
+  const adminLogPath = path.resolve(cwd, options.adminLogPath || getCompanionGatewayAdminLogPath(cwd));
+  const manager = await resolveChannelManager(options);
+  const plan = await buildCompanionGatewayAdminPlan({ ...options, cwd, now, channel: input.channel });
+  const planAction = plan.actions.find(action => action.channel === input.channel && action.action === input.action);
+  const baseRecord: Omit<CompanionGatewayAdminExecutionRecord, 'status' | 'result'> = {
+    id: options.createId?.() || `gateway_admin_${input.channel}_${input.action}_${now.getTime()}`,
+    kind: 'companion_gateway_admin_execution',
+    schemaVersion: 1,
+    createdAt: now.toISOString(),
+    cwd,
+    channel: input.channel,
+    action: input.action,
+    approvedBy: input.approvedBy.trim(),
+    liveAdminConfirmed: input.liveAdminConfirmed,
+    ...(planAction ? { planActionId: planAction.id } : {}),
+  };
+  const runtimeBefore = runtimeSnapshot(manager, input.channel);
+
+  const blockedReason = !baseRecord.approvedBy
+    ? 'approved_by is required for companion gateway admin execution'
+    : !input.liveAdminConfirmed
+      ? 'live_admin_confirmed is required for companion gateway admin execution'
+      : !planAction
+        ? `Admin action ${input.action} is not available for ${input.channel}`
+        : !planAction.available
+          ? `Admin action ${input.action} is currently unavailable for ${input.channel}`
+          : undefined;
+
+  if (blockedReason) {
+    const record: CompanionGatewayAdminExecutionRecord = {
+      ...baseRecord,
+      status: 'blocked',
+      result: {
+        runtimeBefore,
+        runtimeAfter: runtimeSnapshot(manager, input.channel),
+        error: blockedReason,
+      },
+    };
+    await appendAdminExecutionRecord(adminLogPath, record);
+    return adminExecutionResult(false, adminLogPath, record, { plan, error: blockedReason });
+  }
+
+  try {
+    let profile: CompanionGatewayProfile | undefined;
+    const result: CompanionGatewayAdminExecutionRecord['result'] = {
+      runtimeBefore,
+    };
+
+    if (input.action === 'enable' || input.action === 'disable') {
+      profile = await updateCompanionGatewayChannel(input.channel, {
+        cwd,
+        now,
+        enabled: input.action === 'enable',
+      });
+      result.enabled = input.action === 'enable';
+    } else if (input.action === 'start') {
+      const startConfiguredChannels = await resolveStartConfiguredChannels(options);
+      const startResult = await startConfiguredChannels(input.configPath, input.channel);
+      result.registered = startResult.registered;
+      result.skipped = startResult.skipped;
+      result.failed = startResult.failed;
+      if (startResult.noConfig) {
+        result.error = `No configuration found for channel type: ${input.channel}`;
+      }
+    } else if (input.action === 'stop') {
+      const channel = manager.getChannel(input.channel);
+      if (channel) {
+        await channel.disconnect();
+        manager.unregisterChannel(input.channel);
+        result.stopped = true;
+      } else {
+        result.stopped = false;
+        result.error = `Channel ${input.channel} is not registered`;
+      }
+    } else if (input.action === 'reconnect') {
+      const existing = manager.getChannel(input.channel);
+      if (existing) {
+        await existing.disconnect();
+        manager.unregisterChannel(input.channel);
+        result.stopped = true;
+      } else {
+        result.stopped = false;
+      }
+      const startConfiguredChannels = await resolveStartConfiguredChannels(options);
+      const startResult = await startConfiguredChannels(input.configPath, input.channel);
+      result.registered = startResult.registered;
+      result.skipped = startResult.skipped;
+      result.failed = startResult.failed;
+      if (startResult.noConfig) {
+        result.error = `No configuration found for channel type: ${input.channel}`;
+      }
+    }
+
+    result.runtimeAfter = runtimeSnapshot(manager, input.channel);
+    const failed = Boolean(result.error || result.failed?.length);
+    const record: CompanionGatewayAdminExecutionRecord = {
+      ...baseRecord,
+      status: failed ? 'failed' : 'completed',
+      result,
+    };
+    await appendAdminExecutionRecord(adminLogPath, record);
+    return adminExecutionResult(!failed, adminLogPath, record, {
+      ...(profile ? { profile } : {}),
+      plan,
+      ...(result.error ? { error: result.error } : {}),
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    const record: CompanionGatewayAdminExecutionRecord = {
+      ...baseRecord,
+      status: 'failed',
+      result: {
+        runtimeBefore,
+        runtimeAfter: runtimeSnapshot(manager, input.channel),
+        error: message,
+      },
+    };
+    await appendAdminExecutionRecord(adminLogPath, record);
+    return adminExecutionResult(false, adminLogPath, record, { plan, error: message });
+  }
 }
 
 function sessionKey(input: CompanionGatewayMessageInput): string {

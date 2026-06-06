@@ -46,6 +46,8 @@ import type {
   CompanionCardStatus,
   CompanionCardStore,
   CompanionGatewayMode,
+  CompanionGatewayAdminExecutionResult,
+  CompanionGatewayExecutableAdminAction,
   CompanionGatewayAdminPlan,
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
@@ -988,6 +990,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('companion.gateway.lifecycle', projectId),
     gatewayAdminPlan: (projectId?: string): Promise<{ ok: boolean; plan?: CompanionGatewayAdminPlan; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.adminPlan', projectId),
+    executeGatewayAdminAction: (input: {
+      projectId?: string;
+      action: CompanionGatewayExecutableAdminAction;
+      channel: string;
+      approvedBy: string;
+      liveAdminConfirmed: boolean;
+    }): Promise<{ ok: boolean; result?: CompanionGatewayAdminExecutionResult; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.executeAdminAction', input),
     gatewayInbox: (projectId?: string): Promise<{ ok: boolean; inbox?: CompanionGatewayInbox; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.inbox', projectId),
     draftGatewayInboxItem: (input: {
@@ -4335,6 +4345,13 @@ declare global {
         gatewayProfile: (projectId?: string) => Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }>;
         gatewayLifecycle: (projectId?: string) => Promise<{ ok: boolean; report?: CompanionGatewayLifecycleReport; error?: string }>;
         gatewayAdminPlan: (projectId?: string) => Promise<{ ok: boolean; plan?: CompanionGatewayAdminPlan; error?: string }>;
+        executeGatewayAdminAction: (input: {
+          projectId?: string;
+          action: CompanionGatewayExecutableAdminAction;
+          channel: string;
+          approvedBy: string;
+          liveAdminConfirmed: boolean;
+        }) => Promise<{ ok: boolean; result?: CompanionGatewayAdminExecutionResult; error?: string }>;
         gatewayInbox: (projectId?: string) => Promise<{ ok: boolean; inbox?: CompanionGatewayInbox; error?: string }>;
         draftGatewayInboxItem: (input: {
           projectId?: string;

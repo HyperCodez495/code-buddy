@@ -43,7 +43,10 @@ import type {
   CompanionCompetitiveRadar,
   CompanionCheckInCue,
   CompanionGatewayFleetDraft,
+  CompanionGatewayAdminAction,
+  CompanionGatewayAdminExecutionResult,
   CompanionGatewayAdminPlan,
+  CompanionGatewayExecutableAdminAction,
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
   CompanionGatewayLifecycleReport,
@@ -1508,7 +1511,29 @@ function GatewayLifecyclePreview({ report }: { report: CompanionGatewayLifecycle
   );
 }
 
-function GatewayAdminPlanPreview({ plan }: { plan: CompanionGatewayAdminPlan }) {
+const EXECUTABLE_GATEWAY_ADMIN_ACTIONS = new Set<CompanionGatewayExecutableAdminAction>([
+  'enable',
+  'disable',
+  'start',
+  'stop',
+  'reconnect',
+]);
+
+function isExecutableGatewayAdminAction(action: CompanionGatewayAdminAction): action is CompanionGatewayAdminAction & {
+  action: CompanionGatewayExecutableAdminAction;
+} {
+  return EXECUTABLE_GATEWAY_ADMIN_ACTIONS.has(action.action as CompanionGatewayExecutableAdminAction);
+}
+
+function GatewayAdminPlanPreview({
+  plan,
+  busy,
+  onExecute,
+}: {
+  plan: CompanionGatewayAdminPlan;
+  busy: boolean;
+  onExecute: (action: CompanionGatewayAdminAction & { action: CompanionGatewayExecutableAdminAction }) => void;
+}) {
   const topActions = plan.actions.slice(0, 5);
   const replay = plan.deliveryDiagnostics.replayablePreviews.slice(0, 3);
   return (
@@ -1542,6 +1567,17 @@ function GatewayAdminPlanPreview({ plan }: { plan: CompanionGatewayAdminPlan }) 
                 <div className="mt-1 truncate font-mono text-[9px] text-text-muted">
                   {action.command.join(' ')}
                 </div>
+              )}
+              {isExecutableGatewayAdminAction(action) && (
+                <button
+                  type="button"
+                  disabled={busy || !action.available}
+                  onClick={() => onExecute(action)}
+                  className="mt-2 inline-flex items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-text-muted hover:bg-surface disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  <Play className="h-3 w-3" />
+                  Execute
+                </button>
               )}
             </div>
           ))}
@@ -1652,6 +1688,7 @@ export function CompanionPanel() {
   const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
   const [gatewayLifecycle, setGatewayLifecycle] = useState<CompanionGatewayLifecycleReport | null>(null);
   const [gatewayAdminPlan, setGatewayAdminPlan] = useState<CompanionGatewayAdminPlan | null>(null);
+  const [gatewayAdminExecution, setGatewayAdminExecution] = useState<CompanionGatewayAdminExecutionResult | null>(null);
   const [gatewayInbox, setGatewayInbox] = useState<CompanionGatewayInbox | null>(null);
   const [gatewayDraft, setGatewayDraft] = useState<CompanionGatewayInboxDraft | null>(null);
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
@@ -1670,7 +1707,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'gatewayOutboundReplySend' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayAdmin' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'gatewayOutboundReplySend' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
@@ -1791,6 +1828,7 @@ export function CompanionPanel() {
           setGateway(null);
           setGatewayLifecycle(null);
           setGatewayAdminPlan(null);
+          setGatewayAdminExecution(null);
           setGatewayInbox(null);
           setGatewayDraft(null);
           setGatewayFleetDraft(null);
@@ -2219,6 +2257,36 @@ export function CompanionPanel() {
     setGatewayFleetLaunch(res);
     if (!res.ok) {
       setError(res.error ?? 'Gateway Fleet launch failed');
+      return;
+    }
+    await refresh();
+  };
+
+  const executeGatewayAdminAction = async (
+    action: CompanionGatewayAdminAction & { action: CompanionGatewayExecutableAdminAction },
+  ) => {
+    const approvedBy = window.prompt(`Approver name for ${action.label}`);
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      `Execute ${action.action} for ${action.channel} now? This may start, stop, reconnect or reconfigure a live channel adapter.`,
+    );
+    if (!confirmed) return;
+    setBusyAction('gatewayAdmin');
+    setError(null);
+    const res = await window.electronAPI.companion.executeGatewayAdminAction({
+      action: action.action,
+      channel: action.channel,
+      approvedBy,
+      liveAdminConfirmed: true,
+    });
+    setBusyAction(null);
+    if (!res.ok || !res.result) {
+      setError(res.error ?? 'Gateway admin action failed');
+      return;
+    }
+    setGatewayAdminExecution(res.result);
+    if (!res.result.ok) {
+      setError(res.result.error ?? 'Gateway admin action was blocked or failed');
       return;
     }
     await refresh();
@@ -2959,7 +3027,40 @@ export function CompanionPanel() {
           )}
 
           {gatewayAdminPlan && (
-            <GatewayAdminPlanPreview plan={gatewayAdminPlan} />
+            <GatewayAdminPlanPreview
+              plan={gatewayAdminPlan}
+              busy={busyAction !== null}
+              onExecute={(action) => void executeGatewayAdminAction(action)}
+            />
+          )}
+
+          {gatewayAdminExecution && (
+            <section className="space-y-2" data-testid="companion-gateway-admin-execution">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway admin result</h3>
+                <span className={gatewayAdminExecution.ok ? 'text-[10px] text-success' : 'text-[10px] text-error'}>
+                  {gatewayAdminExecution.record.status}
+                </span>
+              </div>
+              <div className="rounded border border-border bg-surface/35 p-3 text-[10px] text-text-muted">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-text-primary">
+                    {gatewayAdminExecution.record.channel} · {gatewayAdminExecution.record.action}
+                  </span>
+                  <span className="shrink-0">{gatewayAdminExecution.record.approvedBy}</span>
+                </div>
+                {gatewayAdminExecution.error && (
+                  <p className="mt-1 text-error">{gatewayAdminExecution.error}</p>
+                )}
+                <button
+                  onClick={() => void window.electronAPI.showItemInFolder(gatewayAdminExecution.adminLogPath)}
+                  className="mt-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{gatewayAdminExecution.adminLogPath}</span>
+                </button>
+              </div>
+            </section>
           )}
 
           {gatewayInbox && (

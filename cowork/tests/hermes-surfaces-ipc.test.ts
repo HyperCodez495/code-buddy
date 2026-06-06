@@ -564,6 +564,55 @@ describe('companion IPC', () => {
     expect(buildCompanionGatewayAdminPlan).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('executes a confirmed companion gateway admin action from the active workspace', async () => {
+    const executeCompanionGatewayAdminAction = vi.fn(async () => ({
+      kind: 'companion_gateway_admin_execution_result',
+      ok: true,
+      adminLogPath: '/tmp/proj/.codebuddy/companion/gateway-admin.jsonl',
+      record: {
+        id: 'admin-exec-1',
+        kind: 'companion_gateway_admin_execution',
+        schemaVersion: 1,
+        createdAt: '2026-06-07T10:06:00.000Z',
+        cwd: '/tmp/proj',
+        channel: 'telegram',
+        action: 'stop',
+        approvedBy: 'Patrice',
+        liveAdminConfirmed: true,
+        status: 'completed',
+        result: {
+          stopped: true,
+          runtimeBefore: { registered: true, connected: true, authenticated: true },
+          runtimeAfter: { registered: false },
+        },
+      },
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ executeCompanionGatewayAdminAction });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.executeAdminAction');
+    const res = (await handler?.({}, {
+      action: 'stop',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: true,
+    })) as {
+      ok: boolean;
+      result?: { ok: boolean; record: { status: string }; adminLogPath: string };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.ok).toBe(true);
+    expect(res.result?.record.status).toBe('completed');
+    expect(res.result?.adminLogPath).toContain('gateway-admin.jsonl');
+    expect(coreLoaderMock.loadCoreModule).toHaveBeenCalledWith('companion/gateway.js');
+    expect(executeCompanionGatewayAdminAction).toHaveBeenCalledWith({
+      action: 'stop',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: true,
+    }, { cwd: '/tmp/proj' });
+  });
+
   it('drafts a companion gateway inbox item without dispatching it', async () => {
     const draftCompanionGatewayInboxItem = vi.fn(async () => ({
       schemaVersion: 1,

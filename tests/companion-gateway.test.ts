@@ -1,10 +1,12 @@
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { ChannelManager, MockChannel } from '../src/channels/core.js';
 import { readSendMessageOutbox } from '../src/channels/send-message.js';
 import {
   buildCompanionGatewayAdminPlan,
   buildCompanionGatewayLifecycleReport,
+  executeCompanionGatewayAdminAction,
   formatCompanionGatewayMessageResult,
   formatCompanionGatewayProfile,
   getCompanionGatewayProfilePath,
@@ -754,5 +756,98 @@ describe('companion gateway', () => {
     expect(JSON.stringify(plan)).not.toContain('admin-secret-fixture');
     expect(JSON.stringify(plan)).not.toContain('admin-reply-secret');
     expect(JSON.stringify(plan)).not.toContain('Final approved admin reply');
+  });
+
+  it('blocks gateway admin execution without explicit live confirmation', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T18:00:00.000Z'),
+    });
+    const manager = new ChannelManager();
+
+    const result = await executeCompanionGatewayAdminAction({
+      action: 'start',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: false,
+    }, {
+      cwd: tempDir,
+      channelManager: manager,
+      createId: () => 'admin-exec-blocked-1',
+      now: new Date('2026-05-24T18:01:00.000Z'),
+      startConfiguredChannels: async () => {
+        throw new Error('should not start without live confirmation');
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.record).toMatchObject({
+      id: 'admin-exec-blocked-1',
+      status: 'blocked',
+      action: 'start',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: false,
+      result: {
+        error: 'live_admin_confirmed is required for companion gateway admin execution',
+      },
+    });
+    const rawLog = await readFile(result.adminLogPath, 'utf8');
+    expect(rawLog).toContain('admin-exec-blocked-1');
+    expect(rawLog).not.toContain('BOT_TOKEN');
+  });
+
+  it('executes and logs a confirmed gateway admin stop action', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T18:10:00.000Z'),
+    });
+    const manager = new ChannelManager();
+    const channel = new MockChannel({ type: 'telegram', enabled: true });
+    manager.registerChannel(channel);
+    await channel.connect();
+
+    const result = await executeCompanionGatewayAdminAction({
+      action: 'stop',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: true,
+    }, {
+      cwd: tempDir,
+      channelManager: manager,
+      createId: () => 'admin-exec-stop-1',
+      now: new Date('2026-05-24T18:11:00.000Z'),
+    });
+
+    expect(result.ok).toBe(true);
+    expect(manager.getChannel('telegram')).toBeUndefined();
+    expect(result.record).toMatchObject({
+      id: 'admin-exec-stop-1',
+      status: 'completed',
+      action: 'stop',
+      channel: 'telegram',
+      approvedBy: 'Patrice',
+      liveAdminConfirmed: true,
+      result: {
+        stopped: true,
+        runtimeBefore: {
+          registered: true,
+          connected: true,
+          authenticated: true,
+        },
+        runtimeAfter: {
+          registered: false,
+        },
+      },
+    });
+    const rawLog = await readFile(result.adminLogPath, 'utf8');
+    expect(rawLog).toContain('admin-exec-stop-1');
+    expect(rawLog).not.toContain('Final approved admin reply');
   });
 });

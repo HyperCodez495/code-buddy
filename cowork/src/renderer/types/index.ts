@@ -639,6 +639,52 @@ export interface CompanionGatewayAdminPlan {
   recommendations: string[];
 }
 
+export type CompanionGatewayExecutableAdminAction = 'enable' | 'disable' | 'start' | 'stop' | 'reconnect';
+
+export interface CompanionGatewayAdminExecutionRecord {
+  id: string;
+  kind: 'companion_gateway_admin_execution';
+  schemaVersion: 1;
+  createdAt: string;
+  cwd: string;
+  channel: string;
+  action: CompanionGatewayExecutableAdminAction;
+  approvedBy: string;
+  liveAdminConfirmed: boolean;
+  status: 'completed' | 'failed' | 'blocked';
+  planActionId?: string;
+  result: {
+    registered?: string[];
+    skipped?: string[];
+    stopped?: boolean;
+    enabled?: boolean;
+    runtimeBefore?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    runtimeAfter?: {
+      registered: boolean;
+      connected?: boolean;
+      authenticated?: boolean;
+      error?: string;
+    };
+    failed?: Array<{ type: string; error: string }>;
+    error?: string;
+  };
+}
+
+export interface CompanionGatewayAdminExecutionResult {
+  kind: 'companion_gateway_admin_execution_result';
+  ok: boolean;
+  adminLogPath: string;
+  record: CompanionGatewayAdminExecutionRecord;
+  profile?: CompanionGatewayProfile;
+  plan?: CompanionGatewayAdminPlan;
+  error?: string;
+}
+
 export type CompanionGatewayInboxPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type CompanionGatewayInboxActionType =

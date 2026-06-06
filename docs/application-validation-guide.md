@@ -284,6 +284,12 @@ replay diagnostics: it recommends start/stop/reconnect/review/replay actions,
 summarizes `.codebuddy/messages/outbox.jsonl` by status, exposes only redacted
 replay metadata, and marks `executesChannelAdmin=false` so validation can show
 operator controls without triggering adapters or live sends.
+When an operator explicitly executes `enable`, `disable`, `start`, `stop`, or
+`reconnect`, the core requires `approvedBy` and `liveAdminConfirmed=true`,
+checks the current admin plan, and writes
+`.codebuddy/companion/gateway-admin.jsonl` with runtime-before/after status.
+Cowork surfaces the same flow with `Execute` buttons and a `Gateway admin result`
+link to the local audit log.
 
 Camera is explicit opt-in:
 

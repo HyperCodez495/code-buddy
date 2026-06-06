@@ -72,9 +72,14 @@ describe('companion gateway Fleet launch surface', () => {
     expect(panel).toContain('Gateway admin');
     expect(panel).toContain('companion-gateway-admin-plan');
     expect(panel).toContain('gatewayAdminPlan');
+    expect(panel).toContain('executeGatewayAdminAction');
+    expect(panel).toContain('companion-gateway-admin-execution');
     expect(panel).toContain('replayablePreviewCount');
     expect(panel).toContain('executesChannelAdmin');
+    expect(panel).toContain('liveAdminConfirmed: true');
     expect(preload).toContain('companion.gateway.adminPlan');
+    expect(preload).toContain('companion.gateway.executeAdminAction');
     expect(preload).toContain('plan?: CompanionGatewayAdminPlan');
+    expect(preload).toContain('result?: CompanionGatewayAdminExecutionResult');
   });
 });
