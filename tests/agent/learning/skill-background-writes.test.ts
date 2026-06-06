@@ -147,4 +147,69 @@ describe('skill background writes (S1 — sentinel auto-install gated by flag)',
     await expect(fs.access(installedPath)).rejects.toThrow();
     expect(listSkillWriteAudit(rootDir)).toHaveLength(0);
   });
+
+  it('declines to clobber an already-installed skill (reversibility guard)', async () => {
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITES = 'true';
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS = 'true';
+
+    const candidate = await buildEligibleCandidate('clobber-workflow');
+    await materializeResearchScriptSkillCandidate(candidate, { rootDir });
+
+    const first = await promoteSkillCandidate(candidate, { workDir: rootDir });
+    expect(first.installed).toBe(true);
+    const installedPath = path.join(rootDir, '.codebuddy', 'skills', candidate.skillName, 'SKILL.md');
+    const afterFirst = await fs.readFile(installedPath, 'utf8');
+
+    // A second promote (default overwrite=false) must NOT clobber the installed,
+    // un-snapshotted file — existing-skill changes belong to the edit/patch path.
+    const second = await promoteSkillCandidate(candidate, { workDir: rootDir });
+    expect(second.installed).toBe(false);
+    expect(second.reason).toContain('already installed');
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toBe(afterFirst);
+    expect(listSkillWriteAudit(rootDir)).toHaveLength(1);
+  });
+
+  it('makes existing-skill background edits snapshot-reversible (Hermes tiers 1-2)', async () => {
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITES = 'true';
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS = 'true';
+
+    const candidate = await buildEligibleCandidate('reversible-workflow');
+    await materializeResearchScriptSkillCandidate(candidate, { rootDir });
+    expect((await promoteSkillCandidate(candidate, { workDir: rootDir })).installed).toBe(true);
+
+    const hub = getSkillsHub();
+    const installedPath = path.join(rootDir, '.codebuddy', 'skills', candidate.skillName, 'SKILL.md');
+    const original = await fs.readFile(installedPath, 'utf8');
+
+    // A background patch to an existing skill goes through the snapshotting edit path.
+    const edited = `${original.trimEnd()}\n\n## Background Edit\n- A pitfall learned in a later session.\n`;
+    const editResult = hub.editInstalledSkill(candidate.skillName, edited, {
+      actor: 'auto:background-review',
+      reason: 'add pitfall',
+    });
+    expect(editResult?.snapshot.id).toBeTruthy();
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toContain('## Background Edit');
+
+    // Rollback restores the pre-edit content from the snapshot.
+    const rolledBack = hub.rollbackInstalledSkill(candidate.skillName, editResult!.snapshot.id, {
+      actor: 'auto:background-review',
+      reason: 'revert pitfall',
+    });
+    expect(rolledBack).not.toBeNull();
+    await expect(fs.readFile(installedPath, 'utf8')).resolves.toBe(original);
+  });
+
+  it('uninstall is the rollback floor for a brand-new background skill (tier 4)', async () => {
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITES = 'true';
+    process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS = 'true';
+
+    const candidate = await buildEligibleCandidate('uninstall-floor-workflow');
+    await materializeResearchScriptSkillCandidate(candidate, { rootDir });
+    expect((await promoteSkillCandidate(candidate, { workDir: rootDir })).installed).toBe(true);
+
+    const hub = getSkillsHub();
+    expect(hub.info(candidate.skillName)).not.toBeNull();
+    await hub.uninstall(candidate.skillName);
+    expect(hub.info(candidate.skillName)).toBeNull();
+  });
 });

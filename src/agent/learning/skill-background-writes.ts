@@ -107,6 +107,18 @@ export async function promoteSkillCandidate(
     return { installed: false, reason: candidate.reason || 'candidate not eligible', skillName };
   }
 
+  // Reversibility guard: the candidate path (installFromContent) does NOT snapshot.
+  // If a skill of this name is already installed, refuse to clobber it here and
+  // direct the change through the snapshotting edit/patch primitives instead, so
+  // every background mutation of an existing skill stays roll-back-able.
+  if (!options.overwrite && isSkillInstalled(workDir, skillName)) {
+    return {
+      installed: false,
+      reason: 'skill already installed; background patches must go through snapshotting edit/patch',
+      skillName,
+    };
+  }
+
   const screenProblem = screenSkillContent(candidate.markdown);
   if (screenProblem) {
     logger.warn('[skill-background-writes] candidate refused by content screen; left pending', {
@@ -159,6 +171,18 @@ export async function promoteSkillCandidate(
     skillName,
     installedPath: installed.installedPath,
   };
+}
+
+/** True when a workspace skill of this name already has an installed SKILL.md. */
+function isSkillInstalled(workDir: string, skillName: string): boolean {
+  const installedPath = path.join(
+    path.resolve(workDir),
+    '.codebuddy',
+    'skills',
+    skillName,
+    'SKILL.md',
+  );
+  return fs.existsSync(installedPath);
 }
 
 /** Returns a problem string if the skill markdown must not be auto-written, else null. */
