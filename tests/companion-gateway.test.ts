@@ -10,6 +10,7 @@ import {
   updateCompanionGatewayChannel,
 } from '../src/companion/gateway.js';
 import {
+  draftCompanionGatewayOutboundReply,
   draftCompanionGatewayInboxItem,
   readCompanionGatewayInbox,
   routeCompanionGatewayDraftToFleet,
@@ -348,6 +349,92 @@ describe('companion gateway', () => {
       id: fleetDraft.id,
       draftFile: fleetDraft.draftFile,
       autoDispatch: false,
+    });
+  });
+
+  it('drafts an approved outbound reply after Fleet review without storing raw content or sending', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T14:00:00.000Z'),
+    });
+
+    const result = await recordCompanionGatewayMessage({
+      channel: 'telegram',
+      senderId: 'lead',
+      senderName: 'Lead',
+      threadId: 'dm-reply',
+      messageId: 'm-reply',
+      text: 'Please prepare a reviewed outbound reply.',
+      contentType: 'text',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T14:01:00.000Z'),
+    });
+    await draftCompanionGatewayInboxItem(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T14:02:00.000Z'),
+    });
+    await routeCompanionGatewayDraftToFleet(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T14:03:00.000Z'),
+    });
+
+    const replyDraft = await draftCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Approved response for the sender. access_token=reply-secret-fixture',
+      reviewedBy: 'Patrice',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T14:04:00.000Z'),
+    });
+
+    expect(replyDraft).toMatchObject({
+      kind: 'outbound_reply_draft',
+      sourceItemId: result.inboxItem!.id,
+      channel: 'telegram',
+      channelId: 'dm-reply',
+      threadId: 'dm-reply',
+      replyTo: 'm-reply',
+      reviewedBy: 'Patrice',
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      readyToSend: false,
+      sendPreview: {
+        channel: 'telegram',
+        channelId: 'dm-reply',
+        threadId: 'dm-reply',
+        replyTo: 'm-reply',
+        sessionKey: 'companion:telegram:dm-reply',
+        dryRun: true,
+      },
+      safety: {
+        rawTextStored: false,
+        previewOnly: true,
+        autoDispatch: false,
+        outboundChannelReply: false,
+      },
+    });
+    expect(replyDraft.contentPreview).toContain('access_token=[redacted]');
+    expect(JSON.stringify(replyDraft)).not.toContain('reply-secret-fixture');
+
+    const replyFile = JSON.parse(await readFile(replyDraft.draftFile, 'utf8')) as {
+      contentPreview: string;
+      safety: { rawTextStored: boolean; outboundChannelReply: boolean };
+    };
+    expect(replyFile.contentPreview).toContain('access_token=[redacted]');
+    expect(JSON.stringify(replyFile)).not.toContain('reply-secret-fixture');
+    expect(replyFile.safety.rawTextStored).toBe(false);
+    expect(replyFile.safety.outboundChannelReply).toBe(false);
+
+    const inbox = await readCompanionGatewayInbox({ cwd: tempDir });
+    expect(inbox.items[0]?.draft?.fleet?.outboundReply).toMatchObject({
+      id: replyDraft.id,
+      draftFile: replyDraft.draftFile,
+      reviewedBy: 'Patrice',
+      autoDispatch: false,
+      readyToSend: false,
     });
   });
 });

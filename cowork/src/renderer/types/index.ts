@@ -606,6 +606,47 @@ export interface CompanionGatewayFleetDraftSummary {
   dispatchInput: CompanionGatewayFleetDispatchDraftInput;
   autoDispatch: false;
   requiresLocalApproval: true;
+  outboundReply?: CompanionGatewayOutboundReplyDraftSummary;
+}
+
+export interface CompanionGatewayOutboundReplyDraftSummary {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_draft';
+  draftFile: string;
+  channel: string;
+  channelId: string;
+  threadId: string;
+  replyTo?: string;
+  contentPreview: string;
+  reviewedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  readyToSend: false;
+}
+
+export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutboundReplyDraftSummary {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  sourceFleetDraftId: string;
+  sendPreview: {
+    channel: string;
+    channelId: string;
+    threadId: string;
+    replyTo?: string;
+    contentPreview: string;
+    sessionKey: string;
+    dryRun: true;
+  };
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    readyToSend: false;
+    outboundChannelReply: false;
+  };
 }
 
 export interface CompanionGatewayFleetDraft extends CompanionGatewayFleetDraftSummary {

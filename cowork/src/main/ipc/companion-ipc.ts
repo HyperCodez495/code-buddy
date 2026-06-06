@@ -677,6 +677,52 @@ type CompanionGatewayFleetDraftSummary = {
   dispatchInput: CompanionGatewayFleetDispatchDraftInput;
   autoDispatch: false;
   requiresLocalApproval: true;
+  outboundReply?: CompanionGatewayOutboundReplyDraftSummary;
+};
+
+type CompanionGatewayOutboundReplyDraftInput = {
+  text: string;
+  reviewedBy: string;
+};
+
+type CompanionGatewayOutboundReplyDraftSummary = {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_draft';
+  draftFile: string;
+  channel: string;
+  channelId: string;
+  threadId: string;
+  replyTo?: string;
+  contentPreview: string;
+  reviewedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  readyToSend: false;
+};
+
+type CompanionGatewayOutboundReplyDraft = CompanionGatewayOutboundReplyDraftSummary & {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  sourceFleetDraftId: string;
+  sendPreview: {
+    channel: string;
+    channelId: string;
+    threadId: string;
+    replyTo?: string;
+    contentPreview: string;
+    sessionKey: string;
+    dryRun: true;
+  };
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    readyToSend: false;
+    outboundChannelReply: false;
+  };
 };
 
 type CompanionGatewayFleetDraft = CompanionGatewayFleetDraftSummary & {
@@ -743,6 +789,11 @@ type CompanionGatewayInboxMod = {
     itemId: string,
     options: { cwd?: string },
   ) => Promise<CompanionGatewayFleetDraft>;
+  draftCompanionGatewayOutboundReply: (
+    itemId: string,
+    input: CompanionGatewayOutboundReplyDraftInput,
+    options: { cwd?: string },
+  ) => Promise<CompanionGatewayOutboundReplyDraft>;
 };
 
 type CompanionSkillCuratorMod = {
@@ -1381,6 +1432,39 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.gateway.fleetDraft] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.gateway.outboundReplyDraft',
+    async (_e, input?: { projectId?: string; itemId?: string; text?: string; reviewedBy?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.itemId) return { ok: false as const, error: 'itemId is required' };
+      if (!input.text?.trim()) return { ok: false as const, error: 'text is required' };
+      if (!input.reviewedBy?.trim()) return { ok: false as const, error: 'reviewedBy is required' };
+      try {
+        const mod = await loadGatewayInbox();
+        if (!mod?.draftCompanionGatewayOutboundReply || !mod.readCompanionGatewayInbox) {
+          return { ok: false as const, error: 'core companion gateway inbox module unavailable' };
+        }
+        const replyDraft = await mod.draftCompanionGatewayOutboundReply(
+          input.itemId,
+          {
+            text: input.text,
+            reviewedBy: input.reviewedBy,
+          },
+          { cwd },
+        );
+        return {
+          ok: true as const,
+          replyDraft,
+          inbox: await mod.readCompanionGatewayInbox({ cwd }),
+        };
+      } catch (err) {
+        logError('[companion.gateway.outboundReplyDraft] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

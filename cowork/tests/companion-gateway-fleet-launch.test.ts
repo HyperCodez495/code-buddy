@@ -25,4 +25,17 @@ describe('companion gateway Fleet launch surface', () => {
     expect(source).toContain("privacyTag?: 'public' | 'sensitive';");
     expect(source).toContain('lintWarning?: string;');
   });
+
+  it('keeps outbound channel replies as local drafts instead of direct sends', () => {
+    const panel = readFileSync(companionPanelPath, 'utf8');
+    const preload = readFileSync(preloadPath, 'utf8');
+
+    expect(panel).toContain('Reply draft');
+    expect(panel).toContain('window.prompt(');
+    expect(panel).toContain('draftGatewayOutboundReply');
+    expect(panel).toContain('companion-gateway-outbound-reply-draft');
+    expect(panel).toContain('not sent');
+    expect(preload).toContain('companion.gateway.outboundReplyDraft');
+    expect(preload).toContain('replyDraft?: CompanionGatewayOutboundReplyDraft');
+  });
 });

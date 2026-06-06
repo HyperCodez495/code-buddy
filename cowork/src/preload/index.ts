@@ -49,6 +49,7 @@ import type {
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
   CompanionGatewayFleetDraft,
+  CompanionGatewayOutboundReplyDraft,
   CompanionGatewayProfile,
   CompanionSkillCandidate,
   CompanionSkillCandidateStore,
@@ -992,6 +993,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       itemId: string;
     }): Promise<{ ok: boolean; fleetDraft?: CompanionGatewayFleetDraft; inbox?: CompanionGatewayInbox; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.fleetDraft', input),
+    draftGatewayOutboundReply: (input: {
+      projectId?: string;
+      itemId: string;
+      text: string;
+      reviewedBy: string;
+    }): Promise<{ ok: boolean; replyDraft?: CompanionGatewayOutboundReplyDraft; inbox?: CompanionGatewayInbox; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.outboundReplyDraft', input),
     updateGatewayChannel: (input: {
       projectId?: string;
       channel: string;
@@ -4318,6 +4326,12 @@ declare global {
           projectId?: string;
           itemId: string;
         }) => Promise<{ ok: boolean; fleetDraft?: CompanionGatewayFleetDraft; inbox?: CompanionGatewayInbox; error?: string }>;
+        draftGatewayOutboundReply: (input: {
+          projectId?: string;
+          itemId: string;
+          text: string;
+          reviewedBy: string;
+        }) => Promise<{ ok: boolean; replyDraft?: CompanionGatewayOutboundReplyDraft; inbox?: CompanionGatewayInbox; error?: string }>;
         updateGatewayChannel: (input: {
           projectId?: string;
           channel: string;

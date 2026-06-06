@@ -268,7 +268,10 @@ an outbound channel reply. Routing that prepared task to Fleet writes a
 but does not call `fleet.dispatch`. Cowork can launch the handoff only after an
 operator clicks `Launch Fleet` and confirms the native approval dialog; the
 launch uses the central `fleet.dispatch` IPC path and still does not send an
-outbound channel reply.
+outbound channel reply. After Fleet review, the operator can prepare a separate
+`Reply draft`; it requires reviewer metadata, writes a `.reply.json` artifact
+with `readyToSend=false`, stores only a redacted content preview, and does not
+create a channel outbox entry.
 
 Camera is explicit opt-in:
 
@@ -363,11 +366,14 @@ cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 npm run typecheck
 ```
 
-Observed result: `6` companion gateway tests passed, including local inbox
+Observed result: `7` companion gateway tests passed, including local inbox
 creation, urgent message priority, disabled-channel audit, token redaction and
 no auto-dispatch. The new draft proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
-Fleet handoff JSON without dispatch. The Cowork IPC surface test passed for the
-read-only gateway inbox bridge, local draft preparation, and Fleet handoff
-preparation from the active workspace. The Cowork Fleet launch surface test
-passed for native confirmation plus `fleet.dispatch(draft.dispatchInput)`.
+Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer
+metadata, redacted preview storage, `readyToSend=false`, and no outbound channel
+reply. The Cowork IPC surface test passed for the read-only gateway inbox
+bridge, local draft preparation, Fleet handoff preparation, and outbound reply
+draft creation from the active workspace. The Cowork Fleet launch surface test
+passed for native confirmation plus `fleet.dispatch(draft.dispatchInput)` and
+the `Reply draft` surface.

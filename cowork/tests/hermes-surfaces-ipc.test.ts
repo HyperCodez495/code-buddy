@@ -567,6 +567,107 @@ describe('companion IPC', () => {
     expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('drafts a companion gateway outbound reply only after local review metadata is provided', async () => {
+    const draftCompanionGatewayOutboundReply = vi.fn(async () => ({
+      schemaVersion: 1,
+      id: 'reply_fleet_draft_gateway_telegram_1',
+      sourceItemId: 'gateway_telegram_1',
+      sourceDraftId: 'draft_gateway_telegram_1',
+      sourceFleetDraftId: 'fleet_draft_gateway_telegram_1',
+      createdAt: '2026-06-07T10:03:00.000Z',
+      kind: 'outbound_reply_draft',
+      draftFile: '/tmp/proj/.codebuddy/companion/gateway-drafts/reply_fleet_draft_gateway_telegram_1.reply.json',
+      channel: 'telegram',
+      channelId: 'thread-1',
+      threadId: 'thread-1',
+      replyTo: 'message-1',
+      contentPreview: 'Approved reply. access_token=[redacted]',
+      reviewedBy: 'Patrice',
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      readyToSend: false,
+      sendPreview: {
+        channel: 'telegram',
+        channelId: 'thread-1',
+        threadId: 'thread-1',
+        replyTo: 'message-1',
+        contentPreview: 'Approved reply. access_token=[redacted]',
+        sessionKey: 'companion:telegram:thread-1',
+        dryRun: true,
+      },
+      safety: {
+        rawTextStored: false,
+        previewOnly: true,
+        autoDispatch: false,
+        requiresLocalApproval: true,
+        readyToSend: false,
+        outboundChannelReply: false,
+      },
+    }));
+    const readCompanionGatewayInbox = vi.fn(async () => ({
+      schemaVersion: 1,
+      kind: 'companion_gateway_inbox',
+      generatedAt: '2026-06-07T10:03:00.000Z',
+      cwd: '/tmp/proj',
+      storePath: '/tmp/proj/.codebuddy/companion/gateway-inbox.json',
+      counts: { queued: 0, ignored: 0, highPriority: 1, total: 1 },
+      safety: {
+        autoDispatch: false,
+        rawTextStored: false,
+        outboundDisabledByDefault: true,
+        localOnly: true,
+      },
+      items: [],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      draftCompanionGatewayOutboundReply,
+      readCompanionGatewayInbox,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.outboundReplyDraft');
+    const rejected = (await handler?.({}, {
+      itemId: 'gateway_telegram_1',
+      text: 'Approved reply',
+      reviewedBy: ' ',
+    })) as { ok: boolean; error?: string };
+    expect(rejected.ok).toBe(false);
+    expect(rejected.error).toMatch(/reviewedBy is required/);
+    expect(draftCompanionGatewayOutboundReply).not.toHaveBeenCalled();
+
+    const res = (await handler?.({}, {
+      itemId: 'gateway_telegram_1',
+      text: 'Approved reply. access_token=reply-secret-fixture',
+      reviewedBy: 'Patrice',
+    })) as {
+      ok: boolean;
+      replyDraft?: {
+        contentPreview: string;
+        autoDispatch: boolean;
+        readyToSend: boolean;
+        safety: { rawTextStored: boolean; outboundChannelReply: boolean };
+      };
+      inbox?: { counts: { queued: number } };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.replyDraft?.contentPreview).toContain('[redacted]');
+    expect(JSON.stringify(res.replyDraft)).not.toContain('reply-secret-fixture');
+    expect(res.replyDraft?.autoDispatch).toBe(false);
+    expect(res.replyDraft?.readyToSend).toBe(false);
+    expect(res.replyDraft?.safety.rawTextStored).toBe(false);
+    expect(res.replyDraft?.safety.outboundChannelReply).toBe(false);
+    expect(res.inbox?.counts.queued).toBe(0);
+    expect(draftCompanionGatewayOutboundReply).toHaveBeenCalledWith(
+      'gateway_telegram_1',
+      {
+        text: 'Approved reply. access_token=reply-secret-fixture',
+        reviewedBy: 'Patrice',
+      },
+      { cwd: '/tmp/proj' },
+    );
+    expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

@@ -91,17 +91,23 @@ with `dispatchProfile=safe` and `privacyTag=sensitive`, but still does not call
 `fleet.dispatch`. Cowork can launch that handoff only after the operator clicks
 `Launch Fleet` and confirms the native approval dialog; the launch reuses the
 central `fleet.dispatch` path and still does not send an outbound channel reply.
+After Fleet review, Cowork can prepare a separate `Reply draft` for the same
+gateway item through `companion.gateway.outboundReplyDraft`. The reply draft is
+written as `.codebuddy/companion/gateway-drafts/*.reply.json`, requires a
+reviewer name, stores only a redacted content preview, sets
+`readyToSend=false`, and does not create a channel outbox entry.
 
 Validation:
 
 ```bash
 npm test -- tests/companion-gateway.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
+cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 ```
 
 This is intentionally a supervised inbox and handoff flow, not an OpenClaw-style
-unrestricted remote executor. The next step is a separate approved outbound
-reply workflow after Fleet results are reviewed locally.
+unrestricted remote executor. The remaining send step must stay explicit and
+policy-gated; the gateway reply draft is proof of local approval, not delivery.
 
 ## Message Preprocessing
 

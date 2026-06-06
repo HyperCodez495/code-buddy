@@ -108,6 +108,52 @@ export interface CompanionGatewayFleetDraftSummary {
   dispatchInput: CompanionGatewayFleetDispatchDraftInput;
   autoDispatch: false;
   requiresLocalApproval: true;
+  outboundReply?: CompanionGatewayOutboundReplyDraftSummary;
+}
+
+export interface CompanionGatewayOutboundReplyDraftInput {
+  text: string;
+  reviewedBy: string;
+}
+
+export interface CompanionGatewayOutboundReplyDraftSummary {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_draft';
+  draftFile: string;
+  channel: ChannelType;
+  channelId: string;
+  threadId: string;
+  replyTo?: string;
+  contentPreview: string;
+  reviewedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  readyToSend: false;
+}
+
+export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutboundReplyDraftSummary {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  sourceFleetDraftId: string;
+  sendPreview: {
+    channel: ChannelType;
+    channelId: string;
+    threadId: string;
+    replyTo?: string;
+    contentPreview: string;
+    sessionKey: string;
+    dryRun: true;
+  };
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    readyToSend: false;
+    outboundChannelReply: false;
+  };
 }
 
 export interface CompanionGatewayFleetDraft extends CompanionGatewayFleetDraftSummary {
@@ -245,6 +291,55 @@ function buildFleetDispatchInput(item: CompanionGatewayInboxItem): CompanionGate
   };
 }
 
+function buildOutboundReplyDraft(
+  item: CompanionGatewayInboxItem,
+  sourceDraft: CompanionGatewayInboxDraftSummary,
+  input: CompanionGatewayOutboundReplyDraftInput,
+  cwd: string,
+  createdAt: string,
+): CompanionGatewayOutboundReplyDraft {
+  const reviewedBy = input.reviewedBy.trim();
+  const contentPreview = compactText(input.text, 500);
+  const replyDraftId = `reply_${safeFileId(sourceDraft.fleet!.id)}`;
+  const draftFile = path.join(getCompanionGatewayDraftsDir(cwd), `${replyDraftId}.reply.json`);
+  return {
+    id: replyDraftId,
+    createdAt,
+    kind: 'outbound_reply_draft',
+    draftFile,
+    channel: item.channel,
+    channelId: item.threadId,
+    threadId: item.threadId,
+    replyTo: item.messageId,
+    contentPreview,
+    reviewedBy,
+    autoDispatch: false,
+    requiresLocalApproval: true,
+    readyToSend: false,
+    schemaVersion: COMPANION_GATEWAY_INBOX_SCHEMA_VERSION,
+    sourceItemId: item.id,
+    sourceDraftId: sourceDraft.id,
+    sourceFleetDraftId: sourceDraft.fleet!.id,
+    sendPreview: {
+      channel: item.channel,
+      channelId: item.threadId,
+      threadId: item.threadId,
+      replyTo: item.messageId,
+      contentPreview,
+      sessionKey: item.sessionKey,
+      dryRun: true,
+    },
+    safety: {
+      rawTextStored: false,
+      previewOnly: true,
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      readyToSend: false,
+      outboundChannelReply: false,
+    },
+  };
+}
+
 function emptyInbox(options: CompanionGatewayInboxOptions = {}): CompanionGatewayInbox {
   const cwd = resolveCwd(options.cwd);
   return withCounts({
@@ -282,7 +377,7 @@ function compactText(text: string, max = 220): string {
 function redactSensitivePreview(text: string): string {
   return text
     .replace(/\b(?:sk|pk|xox[baprs]|gh[pousr])-[A-Za-z0-9_-]{8,}\b/g, '[redacted-token]')
-    .replace(/\b(?:api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)\s*[:=]\s*\S+/gi, '$1=[redacted]');
+    .replace(/\b(api[_-]?key|access[_-]?token|refresh[_-]?token|secret|password)\s*[:=]\s*\S+/gi, '$1=[redacted]');
 }
 
 function priorityFor(input: CompanionGatewayInboxMessageInput): CompanionGatewayInboxPriority {
@@ -586,6 +681,69 @@ export async function routeCompanionGatewayDraftToFleet(
   return fleetDraft;
 }
 
+export async function draftCompanionGatewayOutboundReply(
+  itemId: string,
+  input: CompanionGatewayOutboundReplyDraftInput,
+  options: CompanionGatewayInboxOptions = {},
+): Promise<CompanionGatewayOutboundReplyDraft> {
+  const now = options.now || new Date();
+  const inbox = await readCompanionGatewayInbox({ ...options, now });
+  const item = inbox.items.find(existing => existing.id === itemId);
+  if (!item) {
+    throw new Error(`Companion gateway inbox item not found: ${itemId}`);
+  }
+  if (item.status !== 'drafted' || !item.draft?.fleet) {
+    throw new Error(`Companion gateway inbox item has no Fleet review draft: ${itemId}`);
+  }
+  if (!input.text.trim()) {
+    throw new Error('reply text is required');
+  }
+  if (!input.reviewedBy.trim()) {
+    throw new Error('reviewedBy is required');
+  }
+
+  const cwd = resolveCwd(options.cwd);
+  const createdAt = now.toISOString();
+  const sourceDraft = item.draft;
+  const replyDraft = buildOutboundReplyDraft(item, sourceDraft, input, cwd, createdAt);
+  const replySummary: CompanionGatewayOutboundReplyDraftSummary = {
+    id: replyDraft.id,
+    createdAt: replyDraft.createdAt,
+    kind: replyDraft.kind,
+    draftFile: replyDraft.draftFile,
+    channel: replyDraft.channel,
+    channelId: replyDraft.channelId,
+    threadId: replyDraft.threadId,
+    replyTo: replyDraft.replyTo,
+    contentPreview: replyDraft.contentPreview,
+    reviewedBy: replyDraft.reviewedBy,
+    autoDispatch: false,
+    requiresLocalApproval: true,
+    readyToSend: false,
+  };
+
+  await mkdir(path.dirname(replyDraft.draftFile), { recursive: true });
+  await writeFile(replyDraft.draftFile, `${JSON.stringify(replyDraft, null, 2)}\n`, 'utf8');
+  await writeInbox({
+    ...inbox,
+    generatedAt: createdAt,
+    items: inbox.items.map(existing => existing.id === item.id
+      ? {
+        ...existing,
+        draft: {
+          ...sourceDraft,
+          fleet: {
+            ...sourceDraft.fleet!,
+            outboundReply: replySummary,
+          },
+        },
+      }
+      : existing),
+  });
+
+  return replyDraft;
+}
+
 export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): string {
   const lines = [
     'Companion gateway inbox',
@@ -603,6 +761,9 @@ export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): strin
       lines.push(`  draft: ${item.draft.command.join(' ')}`);
       if (item.draft.fleet) {
         lines.push(`  fleet draft: ${item.draft.fleet.draftFile}`);
+        if (item.draft.fleet.outboundReply) {
+          lines.push(`  outbound reply draft: ${item.draft.fleet.outboundReply.draftFile}`);
+        }
       }
     }
     lines.push(`  ${item.content.preview || '[empty message]'}`);

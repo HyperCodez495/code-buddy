@@ -46,6 +46,7 @@ import type {
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
   CompanionGatewayMode,
+  CompanionGatewayOutboundReplyDraft,
   CompanionGatewayProfile,
   CompanionImprovementCycle,
   CompanionImpulseBrief,
@@ -1296,11 +1297,13 @@ function GatewayInboxPreview({
   busy,
   onDraft,
   onFleetDraft,
+  onReplyDraft,
 }: {
   inbox: CompanionGatewayInbox;
   busy: boolean;
   onDraft: (itemId: string) => void;
   onFleetDraft: (itemId: string) => void;
+  onReplyDraft: (itemId: string) => void;
 }) {
   const items = inbox.items.slice(0, 5);
   return (
@@ -1392,6 +1395,24 @@ function GatewayInboxPreview({
                     >
                       <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">Fleet: {item.draft.fleet.dispatchInput.dispatchProfile}</span>
+                    </button>
+                  )}
+                  {item.draft.fleet && !item.draft.fleet.outboundReply && (
+                    <button
+                      disabled={busy}
+                      onClick={() => onReplyDraft(item.id)}
+                      className="rounded border border-accent/50 px-2 py-1 text-[10px] text-accent hover:bg-accent/10 disabled:opacity-50"
+                    >
+                      Reply draft
+                    </button>
+                  )}
+                  {item.draft.fleet?.outboundReply && (
+                    <button
+                      onClick={() => void window.electronAPI.showItemInFolder(item.draft!.fleet!.outboundReply!.draftFile)}
+                      className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[10px] text-text-muted hover:bg-surface"
+                    >
+                      <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                      <span className="truncate">Reply: {item.draft.fleet.outboundReply.reviewedBy}</span>
                     </button>
                   )}
                 </div>
@@ -1510,6 +1531,7 @@ export function CompanionPanel() {
   const [gatewayDraft, setGatewayDraft] = useState<CompanionGatewayInboxDraft | null>(null);
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
   const [gatewayFleetLaunch, setGatewayFleetLaunch] = useState<CompanionGatewayFleetLaunchResult | null>(null);
+  const [gatewayOutboundReplyDraft, setGatewayOutboundReplyDraft] = useState<CompanionGatewayOutboundReplyDraft | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
@@ -1522,7 +1544,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
@@ -2061,6 +2083,30 @@ export function CompanionPanel() {
       setError(res.error ?? 'Gateway Fleet launch failed');
       return;
     }
+    await refresh();
+  };
+
+  const draftGatewayOutboundReply = async (itemId: string) => {
+    const text = window.prompt(
+      'Draft the outbound reply for local review. This will not send a channel message.',
+    );
+    if (!text?.trim()) return;
+    const reviewedBy = window.prompt('Reviewer name for this approved local draft');
+    if (!reviewedBy?.trim()) return;
+    setBusyAction('gatewayOutboundReplyDraft');
+    setError(null);
+    const res = await window.electronAPI.companion.draftGatewayOutboundReply({
+      itemId,
+      text,
+      reviewedBy,
+    });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Gateway outbound reply draft failed');
+      return;
+    }
+    setGatewayOutboundReplyDraft(res.replyDraft ?? null);
+    setGatewayInbox(res.inbox ?? null);
     await refresh();
   };
 
@@ -2746,6 +2792,7 @@ export function CompanionPanel() {
               busy={busyAction !== null}
               onDraft={(itemId) => void draftGatewayInboxItem(itemId)}
               onFleetDraft={(itemId) => void routeGatewayDraftToFleet(itemId)}
+              onReplyDraft={(itemId) => void draftGatewayOutboundReply(itemId)}
             />
           )}
 
@@ -2809,6 +2856,38 @@ export function CompanionPanel() {
                     Saga {gatewayFleetLaunch.sagaId ?? 'queued'} · {gatewayFleetLaunch.dispatchProfile ?? 'safe'}
                   </p>
                 )}
+              </div>
+            </section>
+          )}
+
+          {gatewayOutboundReplyDraft && (
+            <section className="space-y-3" data-testid="companion-gateway-outbound-reply-draft">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway reply draft</h3>
+                <span className="text-[10px] text-text-muted">not sent</span>
+              </div>
+              <div className="rounded border border-border bg-surface/35 p-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-accent" />
+                  <span className="text-xs font-semibold text-text-primary">
+                    {gatewayOutboundReplyDraft.channel} · {gatewayOutboundReplyDraft.reviewedBy}
+                  </span>
+                </div>
+                <p className="mt-2 line-clamp-2 text-xs text-text-secondary">
+                  {gatewayOutboundReplyDraft.contentPreview}
+                </p>
+                <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-text-muted">
+                  <span className="rounded bg-background px-1.5 py-0.5">local approval</span>
+                  <span className="rounded bg-background px-1.5 py-0.5">preview only</span>
+                  <span className="rounded bg-background px-1.5 py-0.5">autoDispatch=false</span>
+                </div>
+                <button
+                  onClick={() => void window.electronAPI.showItemInFolder(gatewayOutboundReplyDraft.draftFile)}
+                  className="mt-3 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{gatewayOutboundReplyDraft.draftFile}</span>
+                </button>
               </div>
             </section>
           )}
