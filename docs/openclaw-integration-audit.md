@@ -29,6 +29,10 @@ Buddy. The current integration is selective:
   preview, and `canAutoDispatch=false`, giving Code Buddy the first
   OpenClaw-style "agent OS inbox" loop without enabling unsafe remote
   action.
+- Cowork now renders that native gateway inbox in the Companion panel
+  through a read-only IPC bridge, so operators can see queued/ignored
+  counts, priority, channel, redacted preview and proposed action before
+  approving any follow-up work.
 
 Strategic conclusion: keep Code Buddy Gateway as the AI-to-AI brain.
 Use OpenClaw later as an add-on gateway for external human channels,
@@ -56,7 +60,7 @@ for Code Buddy's next architecture moves.
 | OpenClaw Gateway bridge | `docs/fleet-guide.md` | Planned / not coded | Guide says Phase `(e).7` is postponed and needs OpenClaw daemon installed. Planned `openclaw-node` bridge does not exist yet. | Implement only after Fleet/Cowork is stable and a local OpenClaw daemon is available. |
 | ClawHub-like legacy registry | `src/skills-registry/index.ts` | Retired in this audit pass | It was an unused production surface backed by an in-memory `mockRegistry`; only its own test referenced it. | Use `src/skills/hub.ts` as the remaining marketplace/hub direction. |
 | Skills Hub | `src/skills/hub.ts` | Partial real implementation | Uses HTTP fetch, local cache, lockfile, checksum, install/publish/sync. Inspired by ClawHub but Code Buddy-native. | Keep as the candidate real implementation. Add tests before routing user commands to it. |
-| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts` | Partial native inbox | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Covered by `tests/companion-gateway.test.ts`. | Next: expose the inbox in Cowork and route approved items into Fleet/autonomous-code drafts. |
+| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Partial native inbox with Cowork visibility | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox` and renders the review queue. Covered by `tests/companion-gateway.test.ts` and `cowork/tests/hermes-surfaces-ipc.test.ts`. | Next: route explicitly approved inbox items into Fleet/autonomous-code drafts, still without auto-dispatch. |
 
 ## What Claude likely did
 
@@ -104,9 +108,9 @@ some were only future bridge notes.
 4. Continue hardening Code Buddy Fleet as the main robot brain:
    `peer.describe`, routing, `peer.dispatch`, saga outcomes and Cowork
    visibility.
-5. Surface the native companion gateway inbox in Cowork before adding
-   any live remote execution. It should show queued/ignored counts,
-   priority, source channel, redacted preview and proposed action.
+5. Add an explicit local approval action for native companion gateway
+   inbox items before adding any live remote execution. Approval should
+   create a Fleet or `autonomous-code` draft, not silently dispatch it.
 6. When ready for OpenClaw Gateway, build a narrow `openclaw-node`
    adapter:
    OpenClaw message in -> Cowork/Fleet dispatch -> Fleet result ->

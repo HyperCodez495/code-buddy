@@ -348,6 +348,75 @@ describe('companion IPC', () => {
     });
   });
 
+  it('reads the companion gateway inbox from the active workspace', async () => {
+    const readCompanionGatewayInbox = vi.fn(async () => ({
+      schemaVersion: 1,
+      kind: 'companion_gateway_inbox',
+      generatedAt: '2026-06-07T10:00:00.000Z',
+      cwd: '/tmp/proj',
+      storePath: '/tmp/proj/.codebuddy/companion/gateway-inbox.json',
+      counts: {
+        queued: 1,
+        ignored: 0,
+        highPriority: 1,
+        total: 1,
+      },
+      safety: {
+        autoDispatch: false,
+        rawTextStored: false,
+        outboundDisabledByDefault: true,
+        localOnly: true,
+      },
+      items: [
+        {
+          id: 'gateway_telegram_1',
+          receivedAt: '2026-06-07T10:00:00.000Z',
+          channel: 'telegram',
+          threadId: 'thread-1',
+          sender: { id: 'user-1', name: 'Patrice' },
+          sessionKey: 'telegram:thread-1',
+          content: {
+            preview: 'Peux-tu preparer une reponse ?',
+            contentType: 'text',
+            attachmentCount: 0,
+            redacted: true,
+          },
+          mode: 'assist',
+          priority: 'high',
+          status: 'queued',
+          proposedAction: {
+            type: 'draft_reply',
+            label: 'Draft a reply for local approval.',
+            requiresLocalApproval: true,
+            canAutoDispatch: false,
+          },
+          safety: {
+            outboundDisabled: true,
+            localApprovalRequired: true,
+            secretRedaction: 'preview_only',
+            rawTextStored: false,
+          },
+          tags: ['gateway-inbox', 'telegram'],
+          reason: 'Accepted by companion gateway.',
+        },
+      ],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ readCompanionGatewayInbox });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.inbox');
+    const res = (await handler?.({})) as {
+      ok: boolean;
+      inbox?: { counts: { queued: number }; safety: { autoDispatch: boolean }; items: unknown[] };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.inbox?.counts.queued).toBe(1);
+    expect(res.inbox?.safety.autoDispatch).toBe(false);
+    expect(res.inbox?.items).toHaveLength(1);
+    expect(coreLoaderMock.loadCoreModule).toHaveBeenCalledWith('companion/gateway-inbox.js');
+    expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

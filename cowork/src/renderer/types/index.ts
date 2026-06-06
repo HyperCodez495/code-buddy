@@ -518,6 +518,71 @@ export interface CompanionGatewayProfile {
   channels: CompanionGatewayChannelConfig[];
 }
 
+export type CompanionGatewayInboxPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+export type CompanionGatewayInboxActionType =
+  | 'observe'
+  | 'draft_reply'
+  | 'prepare_task'
+  | 'request_local_approval';
+
+export interface CompanionGatewayInboxItem {
+  id: string;
+  receivedAt: string;
+  channel: string;
+  threadId: string;
+  messageId?: string;
+  sender: {
+    id: string;
+    name?: string;
+  };
+  sessionKey: string;
+  content: {
+    preview: string;
+    contentType: string;
+    attachmentCount: number;
+    redacted: true;
+  };
+  mode: CompanionGatewayMode;
+  priority: CompanionGatewayInboxPriority;
+  status: 'queued' | 'ignored';
+  proposedAction: {
+    type: CompanionGatewayInboxActionType;
+    label: string;
+    requiresLocalApproval: boolean;
+    canAutoDispatch: false;
+  };
+  safety: {
+    outboundDisabled: boolean;
+    localApprovalRequired: boolean;
+    secretRedaction: 'preview_only';
+    rawTextStored: false;
+  };
+  tags: string[];
+  reason: string;
+}
+
+export interface CompanionGatewayInbox {
+  schemaVersion: 1;
+  kind: 'companion_gateway_inbox';
+  generatedAt: string;
+  cwd: string;
+  storePath: string;
+  counts: {
+    queued: number;
+    ignored: number;
+    highPriority: number;
+    total: number;
+  };
+  safety: {
+    autoDispatch: false;
+    rawTextStored: false;
+    outboundDisabledByDefault: true;
+    localOnly: true;
+  };
+  items: CompanionGatewayInboxItem[];
+}
+
 export type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 
 export interface CompanionSkillEvidence {

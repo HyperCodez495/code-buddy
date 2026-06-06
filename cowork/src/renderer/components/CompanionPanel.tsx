@@ -42,6 +42,7 @@ import type {
   CompanionCardStatus,
   CompanionCompetitiveRadar,
   CompanionCheckInCue,
+  CompanionGatewayInbox,
   CompanionGatewayMode,
   CompanionGatewayProfile,
   CompanionImprovementCycle,
@@ -1279,6 +1280,89 @@ function GatewayChannelRow({
   );
 }
 
+function GatewayInboxPreview({ inbox }: { inbox: CompanionGatewayInbox }) {
+  const items = inbox.items.slice(0, 5);
+  return (
+    <section className="space-y-3" data-testid="companion-gateway-inbox">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway inbox</h3>
+        <span className="text-[10px] text-text-muted">
+          {inbox.counts.queued} queued
+        </span>
+      </div>
+      <div
+        className="grid grid-cols-2 gap-2"
+        data-testid="companion-gateway-inbox-counts"
+      >
+        <StatusTile icon={Radio} label="Queued" value={String(inbox.counts.queued)} ok={inbox.counts.queued === 0} />
+        <StatusTile icon={AlertCircle} label="High" value={String(inbox.counts.highPriority)} ok={inbox.counts.highPriority === 0} />
+        <StatusTile icon={Activity} label="Total" value={String(inbox.counts.total)} ok />
+        <StatusTile icon={ShieldCheck} label="Dispatch" value={inbox.safety.autoDispatch ? 'auto' : 'review'} ok={!inbox.safety.autoDispatch} />
+      </div>
+      {items.length === 0 ? (
+        <div className="rounded border border-border bg-surface/35 px-3 py-6 text-center text-xs text-text-muted">
+          No gateway messages waiting for review.
+        </div>
+      ) : (
+        <div className="space-y-2">
+          {items.map((item) => (
+            <div
+              key={item.id}
+              className="rounded border border-border bg-surface/35 p-3"
+              data-testid="companion-gateway-inbox-item"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Radio className="h-4 w-4 text-accent" />
+                    <span className="text-xs font-semibold text-text-primary">{item.channel}</span>
+                    <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {item.priority}
+                    </span>
+                    <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {item.status}
+                    </span>
+                    <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                      {item.mode}
+                    </span>
+                  </div>
+                  <p className="mt-1 truncate text-[11px] text-text-muted">
+                    {item.sender.name || item.sender.id} · {item.proposedAction.label}
+                  </p>
+                </div>
+                <span className="shrink-0 text-[10px] text-text-muted">
+                  {new Date(item.receivedAt).toLocaleTimeString()}
+                </span>
+              </div>
+              <p className="mt-2 line-clamp-2 text-xs text-text-secondary">{item.content.preview}</p>
+              <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-text-muted">
+                <span className="rounded bg-background px-1.5 py-0.5">
+                  {item.proposedAction.requiresLocalApproval ? 'local approval' : 'observe only'}
+                </span>
+                <span className="rounded bg-background px-1.5 py-0.5">
+                  {item.safety.secretRedaction}
+                </span>
+                {item.safety.rawTextStored === false && (
+                  <span className="rounded bg-background px-1.5 py-0.5">preview only</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+      {inbox.storePath && (
+        <button
+          onClick={() => void window.electronAPI.showItemInFolder(inbox.storePath)}
+          className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+        >
+          <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+          <span className="truncate">{inbox.storePath}</span>
+        </button>
+      )}
+    </section>
+  );
+}
+
 function SkillCandidateRow({
   candidate,
   busy,
@@ -1361,6 +1445,7 @@ export function CompanionPanel() {
   const [safetyStats, setSafetyStats] = useState<CompanionSafetyLedgerStats | null>(null);
   const [cards, setCards] = useState<CompanionCard[]>([]);
   const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
+  const [gatewayInbox, setGatewayInbox] = useState<CompanionGatewayInbox | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
@@ -1425,6 +1510,7 @@ export function CompanionPanel() {
         safetyStatsRes,
         cardsRes,
         gatewayRes,
+        gatewayInboxRes,
         skillsRes,
         voiceConversationRes,
         voiceRuntimeRes,
@@ -1440,6 +1526,7 @@ export function CompanionPanel() {
         window.electronAPI.companion.safetyStats(),
         window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
         window.electronAPI.companion.gatewayProfile(),
+        window.electronAPI.companion.gatewayInbox(),
         window.electronAPI.companion.listSkillCandidates(),
         window.electronAPI.voice.conversationStatus().catch(() => null),
         window.electronAPI.voice.status().catch(() => null),
@@ -1455,6 +1542,7 @@ export function CompanionPanel() {
         || !safetyStatsRes.ok
         || !cardsRes.ok
         || !gatewayRes.ok
+        || !gatewayInboxRes.ok
         || !skillsRes.ok
         || !privacyRes.ok;
       setLastSync(statusRes.error === 'NO_ACTIVE_PROJECT'
@@ -1483,6 +1571,7 @@ export function CompanionPanel() {
           setSafetyStats(null);
           setCards([]);
           setGateway(null);
+          setGatewayInbox(null);
           setSkillCandidates([]);
           setSkillCuratorResult(null);
           setSetupResult(null);
@@ -1512,6 +1601,7 @@ export function CompanionPanel() {
       setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
       setCards(cardsRes.ok ? cardsRes.items : []);
       setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
+      setGatewayInbox(gatewayInboxRes.ok ? gatewayInboxRes.inbox ?? null : null);
       setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
       setVoiceConversation(voiceConversationRes);
       setVoiceRuntime(voiceRuntimeRes);
@@ -1526,6 +1616,7 @@ export function CompanionPanel() {
           ?? safetyStatsRes.error
           ?? cardsRes.error
           ?? gatewayRes.error
+          ?? gatewayInboxRes.error
           ?? skillsRes.error
           ?? privacyRes.error
           ?? 'Failed to load companion state');
@@ -2536,6 +2627,8 @@ export function CompanionPanel() {
               )}
             </section>
           )}
+
+          {gatewayInbox && <GatewayInboxPreview inbox={gatewayInbox} />}
 
           {missionRun && (
             <section className="space-y-3">

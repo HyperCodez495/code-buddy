@@ -589,6 +589,75 @@ type CompanionGatewayMod = {
   ) => Promise<CompanionGatewayProfile>;
 };
 
+type CompanionGatewayInboxPriority = 'low' | 'normal' | 'high' | 'urgent';
+
+type CompanionGatewayInboxActionType =
+  | 'observe'
+  | 'draft_reply'
+  | 'prepare_task'
+  | 'request_local_approval';
+
+type CompanionGatewayInboxItem = {
+  id: string;
+  receivedAt: string;
+  channel: string;
+  threadId: string;
+  messageId?: string;
+  sender: {
+    id: string;
+    name?: string;
+  };
+  sessionKey: string;
+  content: {
+    preview: string;
+    contentType: string;
+    attachmentCount: number;
+    redacted: true;
+  };
+  mode: CompanionGatewayMode;
+  priority: CompanionGatewayInboxPriority;
+  status: 'queued' | 'ignored';
+  proposedAction: {
+    type: CompanionGatewayInboxActionType;
+    label: string;
+    requiresLocalApproval: boolean;
+    canAutoDispatch: false;
+  };
+  safety: {
+    outboundDisabled: boolean;
+    localApprovalRequired: boolean;
+    secretRedaction: 'preview_only';
+    rawTextStored: false;
+  };
+  tags: string[];
+  reason: string;
+};
+
+type CompanionGatewayInbox = {
+  schemaVersion: 1;
+  kind: 'companion_gateway_inbox';
+  generatedAt: string;
+  cwd: string;
+  storePath: string;
+  counts: {
+    queued: number;
+    ignored: number;
+    highPriority: number;
+    total: number;
+  };
+  safety: {
+    autoDispatch: false;
+    rawTextStored: false;
+    outboundDisabledByDefault: true;
+    localOnly: true;
+  };
+  items: CompanionGatewayInboxItem[];
+};
+
+type CompanionGatewayInboxMod = {
+  readCompanionGatewayInbox: (options: { cwd?: string }) => Promise<CompanionGatewayInbox>;
+};
+
 type CompanionSkillCuratorMod = {
   readCompanionSkillCandidates: (options: { cwd?: string }) => Promise<CompanionSkillCandidateStore>;
   curateCompanionSkills: (options: {
@@ -679,6 +748,10 @@ async function loadCards(): Promise<CompanionCardsMod | null> {
 
 async function loadGateway(): Promise<CompanionGatewayMod | null> {
   return loadCoreModule<CompanionGatewayMod>('companion/gateway.js');
+}
+
+async function loadGatewayInbox(): Promise<CompanionGatewayInboxMod | null> {
+  return loadCoreModule<CompanionGatewayInboxMod>('companion/gateway-inbox.js');
 }
 
 async function loadSkillCurator(): Promise<CompanionSkillCuratorMod | null> {
@@ -1159,6 +1232,21 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: true as const, profile: await mod.readCompanionGatewayProfile({ cwd }) };
     } catch (err) {
       logError('[companion.gateway.profile] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('companion.gateway.inbox', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadGatewayInbox();
+      if (!mod?.readCompanionGatewayInbox) {
+        return { ok: false as const, error: 'core companion gateway inbox module unavailable' };
+      }
+      return { ok: true as const, inbox: await mod.readCompanionGatewayInbox({ cwd }) };
+    } catch (err) {
+      logError('[companion.gateway.inbox] failed:', err);
       return { ok: false as const, error: errorMessage(err) };
     }
   });

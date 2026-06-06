@@ -80,16 +80,19 @@ queue:
 Each item includes source channel, thread, sender, redacted preview, priority,
 proposed action, and safety flags. Raw message text is not stored in the inbox,
 token-like strings are redacted, and `canAutoDispatch` is always `false`.
+Cowork renders the same queue in `Buddy companion -> Gateway inbox` through the
+read-only `companion.gateway.inbox` IPC handler.
 
 Validation:
 
 ```bash
 npm test -- tests/companion-gateway.test.ts
+cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 ```
 
 This is intentionally a supervised inbox, not an OpenClaw-style unrestricted
-remote executor. The next step is Cowork rendering and explicit local approval
-before a queued item becomes a Fleet or `autonomous-code` draft.
+remote executor. The next step is explicit local approval before a queued item
+becomes a Fleet or `autonomous-code` draft.
 
 ## Message Preprocessing
 

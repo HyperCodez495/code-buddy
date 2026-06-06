@@ -251,13 +251,16 @@ OpenClaw-style human channel inbox proof:
 
 ```bash
 npm test -- tests/companion-gateway.test.ts
+cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 ```
 
 Expected result: accepted companion gateway messages create
 `.codebuddy/companion/gateway-inbox.json` items with priority, proposed action,
 redacted preview, `rawTextStored=false`, and `canAutoDispatch=false`.
 Disabled channels create ignored inbox items and safety events instead of
-silently disappearing.
+silently disappearing. Cowork exposes the same queue in the Companion panel via
+`companion.gateway.inbox` without storing raw message text or enabling
+auto-dispatch.
 
 Camera is explicit opt-in:
 
@@ -347,9 +350,11 @@ Additional OpenClaw catch-up proof on 2026-06-07:
 
 ```bash
 npm test -- tests/companion-gateway.test.ts
+cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 npm run typecheck
 ```
 
 Observed result: `4` companion gateway tests passed, including local inbox
 creation, urgent message priority, disabled-channel audit, token redaction and
-no auto-dispatch.
+no auto-dispatch. The Cowork IPC surface test passed for the read-only gateway
+inbox bridge from the active workspace.

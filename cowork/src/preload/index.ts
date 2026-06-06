@@ -46,6 +46,7 @@ import type {
   CompanionCardStatus,
   CompanionCardStore,
   CompanionGatewayMode,
+  CompanionGatewayInbox,
   CompanionGatewayProfile,
   CompanionSkillCandidate,
   CompanionSkillCandidateStore,
@@ -977,6 +978,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('companion.cards.update', input),
     gatewayProfile: (projectId?: string): Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.profile', projectId),
+    gatewayInbox: (projectId?: string): Promise<{ ok: boolean; inbox?: CompanionGatewayInbox; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.inbox', projectId),
     updateGatewayChannel: (input: {
       projectId?: string;
       channel: string;
@@ -4290,6 +4293,7 @@ declare global {
           status: CompanionCardStatus;
         }) => Promise<{ ok: boolean; card?: CompanionCard; error?: string }>;
         gatewayProfile: (projectId?: string) => Promise<{ ok: boolean; profile?: CompanionGatewayProfile; error?: string }>;
+        gatewayInbox: (projectId?: string) => Promise<{ ok: boolean; inbox?: CompanionGatewayInbox; error?: string }>;
         updateGatewayChannel: (input: {
           projectId?: string;
           channel: string;
