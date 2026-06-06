@@ -1142,10 +1142,12 @@ Le module `src/openclaw/gateway-bridge.ts` pose désormais le contrat
 `openclaw_node_descriptor`, transformer un message OpenClaw inbound en
 brouillon Fleet `dispatchProfile=safe` / `privacyTag=sensitive`, préparer
 une réponse OpenClaw en preview dry-run, et exécuter une attache live au daemon
-uniquement avec `approvedBy` + `liveAttachConfirmed=true`. L'attache écrit un
-`attach-log.jsonl` redacted et ne provoque toujours aucun envoi de réponse
-externe : la fleet Code Buddy reste le brain, OpenClaw reste l'add-on de canaux
-externes, et l'opérateur garde l'approbation locale.
+uniquement avec `approvedBy` + `liveAttachConfirmed=true`. Il peut aussi envoyer
+une réponse live via `sendOpenClawResponse`, mais seulement avec `approvedBy` +
+`liveSendConfirmed=true`; dry-run reste le défaut. L'attache et l'envoi écrivent
+des journaux redacted (`attach-log.jsonl`, `send-log.jsonl`) : la fleet Code
+Buddy reste le brain, OpenClaw reste l'add-on de canaux externes, et l'opérateur
+garde l'approbation locale.
 
 ### Trois scénarios concrets
 

@@ -179,10 +179,10 @@ export {
   discoverOpenClawGateway,
   getOpenClawGatewayAttachLogPath,
   getOpenClawGatewayLockfilePath,
+  getOpenClawResponseSendLogPath,
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
-  type OpenClawAttachTransport,
-  type OpenClawAttachTransportResponse,
+  sendOpenClawResponse,
   type OpenClawBridgeOptions,
   type OpenClawBridgeResponsePreview,
   type OpenClawFleetDispatchDraftInput,
@@ -194,8 +194,14 @@ export {
   type OpenClawGatewayDiscovery,
   type OpenClawGatewayDiscoveryOptions,
   type OpenClawGatewayLockfile,
+  type OpenClawHttpTransport,
+  type OpenClawHttpTransportResponse,
   type OpenClawInboundMessage,
   type OpenClawNodeDescriptor,
+  type OpenClawResponseSendInput,
+  type OpenClawResponseSendOptions,
+  type OpenClawResponseSendRecord,
+  type OpenClawResponseSendResult,
 } from './gateway-bridge.js';
 
 export {

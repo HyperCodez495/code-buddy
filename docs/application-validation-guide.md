@@ -393,13 +393,16 @@ outbound replies remain dry-run previews until an operator approves a real send.
 It also validates guarded daemon attach behavior: dry-run attach does not call
 the transport, live attach is blocked without `liveAttachConfirmed=true`, and a
 confirmed attach can send the bearer token to the transport while keeping the
-result and `attach-log.jsonl` redacted.
+result and `attach-log.jsonl` redacted. The same suite now validates guarded
+OpenClaw response sends: dry-run sends do not contact the daemon, live sends are
+blocked without `liveSendConfirmed=true`, and confirmed sends keep both response
+content secrets and gateway tokens out of `send-log.jsonl`.
 
-Observed result: `12` companion gateway tests and `8` OpenClaw bridge tests
+Observed result: `12` companion gateway tests and `11` OpenClaw bridge tests
 passed, including local inbox creation, urgent message priority,
 disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
 execution logging, dry-run OpenClaw compatibility handoffs, and guarded
-OpenClaw daemon attach. The new draft
+OpenClaw daemon attach/response send. The new draft
 proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
 Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer

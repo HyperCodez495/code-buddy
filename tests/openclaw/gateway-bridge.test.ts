@@ -8,6 +8,7 @@ import {
   discoverOpenClawGateway,
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
+  sendOpenClawResponse,
 } from '../../src/openclaw/gateway-bridge.js';
 
 describe('OpenClaw gateway bridge compatibility', () => {
@@ -304,5 +305,152 @@ describe('OpenClaw gateway bridge compatibility', () => {
     const rawLog = await readFile(result.attachLogPath, 'utf8');
     expect(rawLog).toContain('attach-live-1');
     expect(rawLog).not.toContain('oc_live_attach_secret_fixture');
+  });
+
+  it('previews OpenClaw response sends without contacting the daemon', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      httpUrl: 'http://127.0.0.1:4150/',
+      token: 'oc_send_preview_secret_fixture',
+    }, null, 2), 'utf8');
+    let contacted = false;
+
+    const result = await sendOpenClawResponse({
+      openclawMessageId: 'oc-msg-preview',
+      channel: 'telegram',
+      threadId: 'thread-preview',
+      text: 'Preview reply with password=send-preview-secret',
+      dryRun: true,
+    }, {
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:30:00.000Z'),
+      createId: () => 'send-preview-1',
+      transport: async () => {
+        contacted = true;
+        return { ok: true, status: 200 };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(contacted).toBe(false);
+    expect(result.record).toMatchObject({
+      id: 'send-preview-1',
+      status: 'preview',
+      dryRun: true,
+      textPreview: 'Preview reply with password=[redacted]',
+      endpoint: 'http://127.0.0.1:4150/messages/reply',
+      safety: {
+        tokenPresent: true,
+        tokenSent: false,
+        networkContacted: false,
+      },
+    });
+    const rawLog = await readFile(result.sendLogPath, 'utf8');
+    expect(rawLog).toContain('send-preview-1');
+    expect(rawLog).not.toContain('send-preview-secret');
+    expect(rawLog).not.toContain('oc_send_preview_secret_fixture');
+  });
+
+  it('blocks live OpenClaw response sends without explicit confirmation', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      httpUrl: 'http://127.0.0.1:4150/',
+    }, null, 2), 'utf8');
+
+    const result = await sendOpenClawResponse({
+      openclawMessageId: 'oc-msg-blocked',
+      channel: 'telegram',
+      threadId: 'thread-blocked',
+      text: 'Blocked reply',
+      approvedBy: 'Patrice',
+      dryRun: false,
+      liveSendConfirmed: false,
+    }, {
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:35:00.000Z'),
+      createId: () => 'send-blocked-1',
+      transport: async () => {
+        throw new Error('should not contact OpenClaw without send confirmation');
+      },
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.record.status).toBe('blocked');
+    expect(result.error).toBe('liveSendConfirmed is required for live OpenClaw response send');
+  });
+
+  it('sends approved OpenClaw responses through an injected transport without logging secrets', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      rpcUrl: 'http://127.0.0.1:4150/rpc/',
+      token: 'oc_live_send_secret_fixture',
+    }, null, 2), 'utf8');
+    const seen: Array<{ url: string; authorization?: string; body: string }> = [];
+
+    const result = await sendOpenClawResponse({
+      openclawMessageId: 'oc-msg-live',
+      channel: 'discord',
+      threadId: 'thread-live',
+      text: 'Live approved reply. secret=live-send-secret',
+      approvedBy: 'Patrice',
+      dryRun: false,
+      liveSendConfirmed: true,
+    }, {
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:40:00.000Z'),
+      createId: () => 'send-live-1',
+      transport: async (url, init) => {
+        seen.push({
+          url,
+          authorization: init.headers.authorization,
+          body: init.body,
+        });
+        return {
+          ok: true,
+          status: 200,
+          json: {
+            accepted: true,
+            messageId: 'openclaw-sent-1',
+            tokenEcho: 'oc_live_send_secret_fixture',
+          },
+        };
+      },
+    });
+
+    expect(result.ok).toBe(true);
+    expect(seen).toHaveLength(1);
+    expect(seen[0]).toMatchObject({
+      url: 'http://127.0.0.1:4150/rpc/messages/reply',
+      authorization: 'Bearer oc_live_send_secret_fixture',
+    });
+    expect(seen[0]?.body).toContain('Live approved reply. secret=live-send-secret');
+    expect(result.record).toMatchObject({
+      id: 'send-live-1',
+      status: 'sent',
+      approvedBy: 'Patrice',
+      liveSendConfirmed: true,
+      textPreview: 'Live approved reply. secret=[redacted]',
+      safety: {
+        tokenPresent: true,
+        tokenSent: true,
+        networkContacted: true,
+        secretsIncluded: false,
+      },
+      response: {
+        status: 200,
+        ok: true,
+        accepted: true,
+        messageId: 'openclaw-sent-1',
+      },
+    });
+    expect(JSON.stringify(result)).not.toContain('oc_live_send_secret_fixture');
+    expect(JSON.stringify(result)).not.toContain('live-send-secret');
+    const rawLog = await readFile(result.sendLogPath, 'utf8');
+    expect(rawLog).toContain('send-live-1');
+    expect(rawLog).not.toContain('oc_live_send_secret_fixture');
+    expect(rawLog).not.toContain('live-send-secret');
   });
 });
