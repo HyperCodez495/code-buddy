@@ -23,6 +23,9 @@ export * from './proposer.js';
 export * from './experience-source.js';
 export * from './learning-store.js';
 export * from './execution-gate.js';
+export * from './paired-gate.js';
+export * from './paired-runner.js';
+export * from './rule-store.js';
 export { SelfImprovementEngine, resolveAutonomy, type Autonomy } from './engine.js';
 
 /** Adapt the real (offline, deterministic) LessonsTracker to the mutator port. */

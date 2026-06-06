@@ -116,9 +116,22 @@ recorded behavior*, not keyword presence: e.g. a plausible-but-wrong rule
 ("every run must use bash") is rejected because it misclassifies the compliant
 read-only runs — which the retrieval benchmark could never catch. It is
 deterministic and cheap (no live agent, no LLM-judge), grounding the gate exactly
-as the Darwin Gödel Machine does, on execution outcomes. The remaining step is a
-*paired live* gate for general (non-rule) lessons (run agent±lesson on a graded
-task set, paired-Bayesian acceptance) — see `docs/self-improvement-research-2026.md`.
+as the Darwin Gödel Machine does, on execution outcomes.
+
+**Paired LIVE gate (general lessons).** For lessons that aren't checkable rules,
+`paired-gate.ts` runs the agent WITH the candidate lesson and WITHOUT it on a set
+of graded tasks (the lesson is the only delta), and accepts only on a
+**paired-Bayesian sign test** — the statistically-sound way to decide from few
+noisy paired evals (CLT error bars are unreliable at N<100). Guards: a
+counterfactual-ablation pre-filter (reject a lesson that changes no behavior), a
+safety-regression hard stop, and anytime-valid early stopping. `buddy improve
+verify "<lesson>"` runs it against a seed task set on the real model. Verified
+live (Ollama qwen2.5:7b): a path-filter lesson ACCEPTS (4 win / 0 loss, P=0.969),
+an off-topic lesson REJECTS. This measures *behavioral* improvement, not
+retrievability — the genuine fix. Note it grades the model's RESPONSE to a task
+(one call per arm); grading full tool-using execution is the next horizon, and
+the seed tasks must be in the lesson's domain (operators curate per-capability
+task sets, human-gated).
 
 ## Reversibility (git-backed)
 

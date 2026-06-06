@@ -20,6 +20,8 @@ import { EvolutionaryArchive } from '../../agent/self-improvement/evolutionary-a
 import { createDefaultRunExperienceSource } from '../../agent/self-improvement/experience-source.js';
 import { CorpusStore } from '../../agent/self-improvement/rule-store.js';
 import { summarizeTrajectory } from '../../agent/self-improvement/execution-gate.js';
+import { runPairedGate } from '../../agent/self-improvement/paired-gate.js';
+import { createHeadlessRunner, SEED_GRADED_TASKS } from '../../agent/self-improvement/paired-runner.js';
 import type { Experience } from '../../agent/self-improvement/types.js';
 
 /**
@@ -234,6 +236,29 @@ export function registerImproveCommands(program: Command): void {
         `Coverage now: ${result.score.covered}/${result.score.total} (${Math.round(result.score.ratio * 100)}%)`,
       ].join('\n');
       print({ kind: 'self_improvement_restore', restored: true, ...result }, options, text);
+    });
+
+  improve
+    .command('verify')
+    .description('Paired LIVE gate: does a lesson actually improve behavior? (agent±lesson on graded tasks, Bayesian)')
+    .argument('<lesson>', 'the candidate lesson text to verify')
+    .option('--json', 'output JSON')
+    .option('--threshold <p>', 'acceptance confidence (default 0.95)', (v) => v)
+    .action(async (lesson: string, options: ImproveOptions & { threshold?: string }) => {
+      const threshold = options.threshold ? Number.parseFloat(options.threshold) : 0.95;
+      const result = await runPairedGate(lesson, SEED_GRADED_TASKS, createHeadlessRunner(), { threshold });
+      const verdict = result.accepted
+        ? `ACCEPT — the lesson improves behavior (P=${result.decision.pImprove.toFixed(3)} ≥ ${threshold})`
+        : result.rejectionReason === 'inert'
+          ? 'REJECT — inert: the lesson changed no behavior on any task'
+          : result.rejectionReason === 'safety-regression'
+            ? 'REJECT — safety regression'
+            : `REJECT — not confident (P=${result.decision.pImprove.toFixed(3)} < ${threshold})`;
+      const text = [
+        `Paired live gate over ${result.tasksRun} task(s): ${result.decision.wins} win / ${result.decision.losses} loss`,
+        verdict,
+      ].join('\n');
+      print({ kind: 'self_improvement_verify', ...result }, options, text);
     });
 
   // --- Execution-grounded RULE learning (validated against recorded behavior) ---
