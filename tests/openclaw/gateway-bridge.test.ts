@@ -1,4 +1,5 @@
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
+import { createServer, type Server } from 'http';
 import * as os from 'os';
 import * as path from 'path';
 import {
@@ -10,6 +11,56 @@ import {
   prepareOpenClawFleetHandoffDraft,
   sendOpenClawResponse,
 } from '../../src/openclaw/gateway-bridge.js';
+
+async function startOpenClawContractServer(): Promise<{
+  baseUrl: string;
+  close: () => Promise<void>;
+  requests: Array<{ path: string; authorization?: string; body: unknown }>;
+}> {
+  const requests: Array<{ path: string; authorization?: string; body: unknown }> = [];
+  const server: Server = createServer((req, res) => {
+    const chunks: Buffer[] = [];
+    req.on('data', (chunk: Buffer) => chunks.push(chunk));
+    req.on('end', () => {
+      const raw = Buffer.concat(chunks).toString('utf8');
+      const body = raw ? JSON.parse(raw) as unknown : null;
+      const url = new URL(req.url ?? '/', 'http://127.0.0.1');
+      requests.push({
+        path: url.pathname,
+        authorization: req.headers.authorization,
+        body,
+      });
+      res.setHeader('content-type', 'application/json');
+      if (req.method !== 'POST') {
+        res.statusCode = 405;
+        res.end(JSON.stringify({ accepted: false, error: 'method not allowed' }));
+        return;
+      }
+      if (url.pathname === '/rpc/nodes/register') {
+        res.end(JSON.stringify({ accepted: true, nodeId: 'codebuddy-contract-node' }));
+        return;
+      }
+      if (url.pathname === '/rpc/messages/reply') {
+        res.end(JSON.stringify({ accepted: true, messageId: 'openclaw-contract-reply-1' }));
+        return;
+      }
+      res.statusCode = 404;
+      res.end(JSON.stringify({ accepted: false, error: 'not found' }));
+    });
+  });
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to bind OpenClaw contract server');
+  }
+  return {
+    baseUrl: `http://127.0.0.1:${address.port}`,
+    requests,
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    }),
+  };
+}
 
 describe('OpenClaw gateway bridge compatibility', () => {
   let tempDir: string;
@@ -452,5 +503,99 @@ describe('OpenClaw gateway bridge compatibility', () => {
     expect(rawLog).toContain('send-live-1');
     expect(rawLog).not.toContain('oc_live_send_secret_fixture');
     expect(rawLog).not.toContain('live-send-secret');
+  });
+
+  it('validates the live OpenClaw HTTP attach and reply contract against a local daemon fixture', async () => {
+    const server = await startOpenClawContractServer();
+    try {
+      await mkdir(openclawHome, { recursive: true });
+      await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+        nodeId: 'openclaw-contract-daemon',
+        rpcUrl: `${server.baseUrl}/rpc/`,
+        token: 'oc_contract_http_secret_fixture',
+      }, null, 2), 'utf8');
+
+      const attach = await attachOpenClawGateway({
+        approvedBy: 'Patrice',
+        descriptor: buildOpenClawNodeDescriptor({ nodeId: 'codebuddy-contract-node' }),
+        dryRun: false,
+        liveAttachConfirmed: true,
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:45:00.000Z'),
+        createId: () => 'attach-contract-1',
+      });
+      expect(attach.ok).toBe(true);
+      expect(attach.record).toMatchObject({
+        id: 'attach-contract-1',
+        status: 'attached',
+        response: {
+          status: 200,
+          ok: true,
+          accepted: true,
+          nodeId: 'codebuddy-contract-node',
+        },
+        safety: {
+          tokenSent: true,
+          networkContacted: true,
+          secretsIncluded: false,
+        },
+      });
+
+      const send = await sendOpenClawResponse({
+        approvedBy: 'Patrice',
+        channel: 'telegram',
+        dryRun: false,
+        liveSendConfirmed: true,
+        openclawMessageId: 'oc-contract-msg-1',
+        text: 'Contract reply. password=contract-send-secret',
+        threadId: 'thread-contract',
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:50:00.000Z'),
+        createId: () => 'send-contract-1',
+      });
+
+      expect(send.ok).toBe(true);
+      expect(send.record).toMatchObject({
+        id: 'send-contract-1',
+        status: 'sent',
+        response: {
+          status: 200,
+          ok: true,
+          accepted: true,
+          messageId: 'openclaw-contract-reply-1',
+        },
+        textPreview: 'Contract reply. password=[redacted]',
+        safety: {
+          tokenSent: true,
+          networkContacted: true,
+          secretsIncluded: false,
+        },
+      });
+
+      expect(server.requests).toHaveLength(2);
+      expect(server.requests[0]).toMatchObject({
+        path: '/rpc/nodes/register',
+        authorization: 'Bearer oc_contract_http_secret_fixture',
+      });
+      expect(server.requests[1]).toMatchObject({
+        path: '/rpc/messages/reply',
+        authorization: 'Bearer oc_contract_http_secret_fixture',
+      });
+      expect(JSON.stringify(server.requests[0]?.body)).toContain('codebuddy-contract-node');
+      expect(JSON.stringify(server.requests[1]?.body)).toContain('Contract reply. password=contract-send-secret');
+      expect(JSON.stringify(attach)).not.toContain('oc_contract_http_secret_fixture');
+      expect(JSON.stringify(send)).not.toContain('contract-send-secret');
+      const rawAttachLog = await readFile(attach.attachLogPath, 'utf8');
+      const rawSendLog = await readFile(send.sendLogPath, 'utf8');
+      expect(rawAttachLog).not.toContain('oc_contract_http_secret_fixture');
+      expect(rawSendLog).not.toContain('oc_contract_http_secret_fixture');
+      expect(rawSendLog).not.toContain('contract-send-secret');
+    } finally {
+      await server.close();
+    }
   });
 });

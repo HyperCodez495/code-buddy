@@ -1162,6 +1162,12 @@ buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t
 ajouter `--apply --yes --approved-by <name>`; les sorties et journaux restent
 redacted.
 
+La suite `tests/openclaw/gateway-bridge.test.ts` contient aussi un serveur HTTP
+local de contrat OpenClaw qui reçoit réellement `nodes/register` et
+`messages/reply`. Cette preuve couvre résolution d'URL, header bearer token,
+payload JSON et journaux redacted; il reste à répéter cette validation contre
+un binaire daemon OpenClaw upstream avant de parler de compatibilité complète.
+
 Cowork expose le même contrat dans le Companion panel, section
 `OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et
 `Preview send` restent en dry-run. `Attach live` et `Send live` demandent un

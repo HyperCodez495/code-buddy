@@ -2310,7 +2310,9 @@ function registerHermesClawCommands(hermes: Command): void {
         home: options.source,
         cwd: options.workspaceTarget,
       });
-      const descriptor = buildOpenClawNodeDescriptor();
+      const descriptor = buildOpenClawNodeDescriptor({
+        nodeId: discovery.daemon.nodeId,
+      });
       const payload = {
         kind: 'openclaw_bridge_status',
         discovery,

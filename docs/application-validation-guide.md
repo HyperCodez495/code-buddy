@@ -412,13 +412,17 @@ confirmed attach can send the bearer token to the transport while keeping the
 result and `attach-log.jsonl` redacted. The same suite now validates guarded
 OpenClaw response sends: dry-run sends do not contact the daemon, live sends are
 blocked without `liveSendConfirmed=true`, and confirmed sends keep both response
-content secrets and gateway tokens out of `send-log.jsonl`.
+content secrets and gateway tokens out of `send-log.jsonl`. It now also runs a
+local HTTP OpenClaw daemon contract fixture for the live `nodes/register` and
+`messages/reply` paths, proving URL resolution, bearer-token headers, JSON
+payload shape, response summarization, and redacted logs without requiring a
+private upstream OpenClaw install.
 The Hermes CLI migration suite also validates the user-facing bridge commands:
 `buddy hermes claw bridge status --json`, `bridge draft --json`, and
 `bridge send --json` are machine-readable and keep tokens/message secrets out of
 stdout.
 
-Observed result: `12` companion gateway tests, `11` OpenClaw bridge tests, `13`
+Observed result: `12` companion gateway tests, `12` OpenClaw bridge tests, `13`
 Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
 surface tests
 passed, including local inbox creation, urgent message priority,
