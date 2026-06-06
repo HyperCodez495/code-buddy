@@ -1,13 +1,21 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import fs from 'fs/promises';
+import os from 'os';
+import path from 'path';
 import {
   runBackgroundReview,
   shouldTriggerBackgroundReview,
+  guardReviewWrite,
   BACKGROUND_REVIEW_SENTINEL_ENV,
   type BackgroundReviewClient,
   type ReviewChatMessage,
   type ReviewChatResponse,
 } from '../../../src/agent/learning/background-review-agent.js';
+import { listSkillWriteAudit } from '../../../src/agent/learning/skill-background-writes.js';
 import type { HeadlessToolResult } from '../../../src/cloud/headless-tool-executor.js';
+
+const SECRET = 'api_key=sk-abcdef0123456789abcd';
+const WRITE_SKILLS = 'CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS';
 
 const TOOLS = [
   { function: { name: 'remember' } },
@@ -150,5 +158,103 @@ describe('shouldTriggerBackgroundReview (S5 — interactive-only gating)', () =>
 
   it('does not fire with an empty transcript', () => {
     expect(shouldTriggerBackgroundReview({ ...base, transcriptLength: 0 })).toBe(false);
+  });
+});
+
+describe('reversible-net guard on the live review loop (option A)', () => {
+  let savedSentinel: string | undefined;
+  let savedWriteSkills: string | undefined;
+
+  beforeEach(() => {
+    savedSentinel = process.env[BACKGROUND_REVIEW_SENTINEL_ENV];
+    savedWriteSkills = process.env[WRITE_SKILLS];
+    delete process.env[BACKGROUND_REVIEW_SENTINEL_ENV];
+    delete process.env[WRITE_SKILLS];
+  });
+
+  afterEach(() => {
+    if (savedSentinel === undefined) delete process.env[BACKGROUND_REVIEW_SENTINEL_ENV];
+    else process.env[BACKGROUND_REVIEW_SENTINEL_ENV] = savedSentinel;
+    if (savedWriteSkills === undefined) delete process.env[WRITE_SKILLS];
+    else process.env[WRITE_SKILLS] = savedWriteSkills;
+  });
+
+  it('gates skill mutations on the autonomous-skill-write flag', () => {
+    const call = { action: 'create', name: 'demo', content: 'a reusable skill body' };
+    expect(guardReviewWrite('skill_manage', call)).toMatchObject({ allowed: false });
+    process.env[WRITE_SKILLS] = 'true';
+    expect(guardReviewWrite('skill_manage', call)).toEqual({ allowed: true });
+  });
+
+  it('screens any write (skill or memory) for secrets/omissions', () => {
+    process.env[WRITE_SKILLS] = 'true';
+    expect(guardReviewWrite('remember', { content: SECRET })).toMatchObject({ allowed: false });
+    expect(
+      guardReviewWrite('skill_manage', { action: 'edit', name: 'd', content: SECRET }),
+    ).toMatchObject({ allowed: false });
+    // A clean memory write passes.
+    expect(guardReviewWrite('remember', { content: 'the user prefers French' })).toEqual({ allowed: true });
+  });
+
+  it('refuses an ungated skill create in the live loop (never executed, nothing audited)', async () => {
+    const client = scriptedClient([
+      {
+        role: 'assistant',
+        content: '',
+        tool_calls: [
+          { id: 'c1', function: { name: 'skill_manage', arguments: '{"action":"create","name":"demo","content":"body"}' } },
+        ],
+      },
+      { role: 'assistant', content: 'done' },
+    ]);
+    const executeTool = vi.fn(async (): Promise<HeadlessToolResult> => ({ success: true, output: 'ok' }));
+
+    const result = await runBackgroundReview({
+      client,
+      transcript: [{ role: 'user', content: 'do a thing' }],
+      mode: 'skill',
+      tools: TOOLS,
+      executeTool,
+    });
+
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(result.screenedWrites).toEqual([
+      { name: 'skill_manage', reason: expect.stringContaining('disabled') },
+    ]);
+  });
+
+  it('executes and audits a gated, clean skill create in the live loop', async () => {
+    process.env[WRITE_SKILLS] = 'true';
+    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-audit-'));
+    try {
+      const client = scriptedClient([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            { id: 'c1', function: { name: 'skill_manage', arguments: '{"action":"create","name":"demo-skill","content":"a clean reusable skill body"}' } },
+          ],
+        },
+        { role: 'assistant', content: 'done' },
+      ]);
+      const executeTool = vi.fn(async (): Promise<HeadlessToolResult> => ({ success: true, output: 'installed' }));
+
+      const result = await runBackgroundReview({
+        client,
+        transcript: [{ role: 'user', content: 'do a thing' }],
+        mode: 'skill',
+        tools: TOOLS,
+        executeTool,
+        workDir,
+      });
+
+      expect(executeTool).toHaveBeenCalledTimes(1);
+      expect(result.screenedWrites).toEqual([]);
+      const audit = listSkillWriteAudit(workDir);
+      expect(audit).toHaveLength(1);
+      expect(audit[0]).toMatchObject({ skillName: 'demo-skill', reviewer: 'auto:gate-passed' });
+    } finally {
+      await fs.rm(workDir, { recursive: true, force: true });
+    }
   });
 });

@@ -41,6 +41,18 @@ export const SKILL_WRITE_AUDIT_SCHEMA_VERSION = 1;
 const AUDIT_DIR = path.join('.codebuddy', 'learning');
 const AUDIT_FILE = 'skill-writes.json';
 
+const TRUTHY = new Set(['1', 'true', 'on', 'yes', 'enabled']);
+
+/**
+ * Whether autonomous (no-review) skill writes are enabled. Gates the LIVE
+ * background-review skill mutations, mirroring the S1 promotion-path flag.
+ */
+export function isBackgroundSkillWriteEnabled(): boolean {
+  return TRUTHY.has(
+    (process.env.CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS ?? '').trim().toLowerCase(),
+  );
+}
+
 /**
  * Verdict returned by an optional behavioural gate.
  *  - `accept`  — the gate behaviourally validated the skill → install.
@@ -194,13 +206,24 @@ function isSkillInstalled(workDir: string, skillName: string): boolean {
   return fs.existsSync(installedPath);
 }
 
+/** Secret/omission screen with no length constraint (for memory + arbitrary writes). */
+export function screenContentForSecrets(content: string): string | null {
+  const text = content ?? '';
+  if (OMISSION_RE.test(text)) return 'content contains an omission placeholder';
+  if (SECRET_RE.test(text)) return 'content looks like it contains a secret';
+  return null;
+}
+
 /** Returns a problem string if the skill markdown must not be auto-written, else null. */
 export function screenSkillContent(markdown: string): string | null {
   const content = markdown?.trim() ?? '';
   if (content.length < 12) return 'skill content too short to be useful';
-  if (OMISSION_RE.test(content)) return 'skill content contains an omission placeholder';
-  if (SECRET_RE.test(content)) return 'skill content looks like it contains a secret';
-  return null;
+  return screenContentForSecrets(content);
+}
+
+/** Public recorder so the live review path can append to the same audit trail. */
+export function recordSkillWriteAuditEntry(workDir: string, entry: SkillWriteAuditEntry): void {
+  recordSkillWriteAudit(workDir, entry);
 }
 
 /** Read the background skill-write audit trail (newest entries appended last). */

@@ -19,6 +19,15 @@
 
 import { logger } from '../../utils/logger.js';
 import { executeToolHeadless, type HeadlessToolResult } from '../../cloud/headless-tool-executor.js';
+import {
+  isBackgroundSkillWriteEnabled,
+  recordSkillWriteAuditEntry,
+  screenContentForSecrets,
+  SKILL_BACKGROUND_WRITE_REVIEWER,
+} from './skill-background-writes.js';
+
+/** skill_manage actions that mutate an installed skill / its files. */
+const MUTATING_SKILL_ACTIONS = new Set(['create', 'edit', 'patch', 'write_file']);
 
 /** The only tools a background review may use. */
 export const BACKGROUND_REVIEW_ALLOWED_TOOLS = [
@@ -119,6 +128,8 @@ export interface BackgroundReviewResult {
   toolCallsMade: Array<{ name: string; success: boolean }>;
   /** Tool names the model issued that were NOT permitted (blocked, not run). */
   blockedToolAttempts: string[];
+  /** Writes refused by the reversible net (flag off / secret/omission screen). */
+  screenedWrites: Array<{ name: string; reason: string }>;
   /** Compact, user-facing action summary (Hermes 💾 style). */
   summary: string;
 }
@@ -154,6 +165,7 @@ export async function runBackgroundReview(
     rounds: 0,
     toolCallsMade: [],
     blockedToolAttempts: [],
+    screenedWrites: [],
     summary: '',
   };
 
@@ -168,6 +180,7 @@ export async function runBackgroundReview(
   const executeTool = options.executeTool ?? executeToolHeadless;
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const model = options.model ?? options.client.getCurrentModel?.();
+  const workDir = options.workDir ?? process.cwd();
 
   const allTools = options.tools ?? (await loadAllTools());
   const tools = allTools.filter((tool) => allowed.has(tool.function?.name ?? ''));
@@ -179,6 +192,7 @@ export async function runBackgroundReview(
 
   const toolCallsMade: Array<{ name: string; success: boolean }> = [];
   const blockedToolAttempts: string[] = [];
+  const screenedWrites: Array<{ name: string; reason: string }> = [];
 
   const priorSentinel = process.env[BACKGROUND_REVIEW_SENTINEL_ENV];
   process.env[BACKGROUND_REVIEW_SENTINEL_ENV] = '1';
@@ -207,6 +221,23 @@ export async function runBackgroundReview(
           });
           continue;
         }
+
+        // Reversible-net guard (the user's option A): every autonomous write on the
+        // LIVE loop inherits the same net as the promotion path — skill mutations
+        // require the explicit flag, and all written content is secret/omission
+        // screened. Refused writes are NOT executed.
+        const args = safeParseToolArgs(call.function?.arguments);
+        const guard = guardReviewWrite(name, args);
+        if (!guard.allowed) {
+          screenedWrites.push({ name, reason: guard.reason });
+          messages.push({
+            role: 'tool',
+            content: `Refused by the reversible-net guard: ${guard.reason}`,
+            ...(call.id ? { tool_call_id: call.id } : {}),
+          });
+          continue;
+        }
+
         let result: HeadlessToolResult;
         try {
           result = await executeTool(name, call.function?.arguments, options.abortSignal);
@@ -214,6 +245,19 @@ export async function runBackgroundReview(
           result = { success: false, error: err instanceof Error ? err.message : String(err) };
         }
         toolCallsMade.push({ name, success: result.success });
+
+        // Audit successful autonomous skill mutations into the shared trail.
+        if (result.success && name === 'skill_manage' && MUTATING_SKILL_ACTIONS.has(String(args.action ?? ''))) {
+          recordSkillWriteAuditEntry(workDir, {
+            candidateId: `review-${String(args.action ?? '')}`,
+            installedPath: String(args.name ?? ''),
+            reviewer: SKILL_BACKGROUND_WRITE_REVIEWER,
+            skillName: String(args.name ?? ''),
+            sourceCandidatePath: 'background-review',
+            writtenAt: new Date().toISOString(),
+          });
+        }
+
         messages.push({
           role: 'tool',
           content: result.output || result.error || 'Done',
@@ -237,8 +281,55 @@ export async function runBackgroundReview(
     rounds,
     toolCallsMade,
     blockedToolAttempts,
+    screenedWrites,
     summary: summarizeReviewActions(toolCallsMade),
   };
+}
+
+/** Parse tool-call arguments JSON, tolerating malformed input. */
+function safeParseToolArgs(argsJson: string | undefined): Record<string, unknown> {
+  if (!argsJson) return {};
+  try {
+    const parsed = JSON.parse(argsJson);
+    return parsed && typeof parsed === 'object' ? (parsed as Record<string, unknown>) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Collect every string field a write tool could persist, for screening. */
+function extractWriteContent(name: string, args: Record<string, unknown>): string {
+  const fields =
+    name === 'remember'
+      ? [args.content, args.text]
+      : name === 'skill_manage'
+        ? [args.content, args.body, args.new_string, args.file_content]
+        : [];
+  return fields.filter((value): value is string => typeof value === 'string').join('\n');
+}
+
+/**
+ * The reversible-net guard for the LIVE review loop. Skill mutations require the
+ * explicit autonomous-skill-write flag; all written content (skills AND memory)
+ * is secret/omission screened. Returns { allowed:false, reason } to refuse.
+ */
+export function guardReviewWrite(
+  name: string,
+  args: Record<string, unknown>,
+): { allowed: true } | { allowed: false; reason: string } {
+  const isSkillMutation = name === 'skill_manage' && MUTATING_SKILL_ACTIONS.has(String(args.action ?? ''));
+  if (isSkillMutation && !isBackgroundSkillWriteEnabled()) {
+    return {
+      allowed: false,
+      reason: 'autonomous skill writes are disabled (set CODEBUDDY_LEARNING_BACKGROUND_WRITE_SKILLS)',
+    };
+  }
+  const content = extractWriteContent(name, args);
+  if (content) {
+    const problem = screenContentForSecrets(content);
+    if (problem) return { allowed: false, reason: problem };
+  }
+  return { allowed: true };
 }
 
 /** Build the mode-specific review instruction. */
