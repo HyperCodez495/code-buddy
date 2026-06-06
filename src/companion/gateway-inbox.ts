@@ -88,6 +88,39 @@ export interface CompanionGatewayInboxDraftSummary {
   command: string[];
   autoDispatch: false;
   requiresLocalApproval: true;
+  fleet?: CompanionGatewayFleetDraftSummary;
+}
+
+export interface CompanionGatewayFleetDispatchDraftInput {
+  goal: string;
+  parallelism: 1;
+  privacyTag: 'sensitive';
+  dispatchProfile: 'safe';
+  deliveryChannel: string;
+  sourceSessionId: string;
+}
+
+export interface CompanionGatewayFleetDraftSummary {
+  id: string;
+  createdAt: string;
+  kind: 'fleet_dispatch_draft';
+  draftFile: string;
+  dispatchInput: CompanionGatewayFleetDispatchDraftInput;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+}
+
+export interface CompanionGatewayFleetDraft extends CompanionGatewayFleetDraftSummary {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    outboundChannelReply: false;
+  };
 }
 
 export interface CompanionGatewayInboxDraft extends CompanionGatewayInboxDraftSummary {
@@ -189,6 +222,26 @@ function buildDraftTask(item: CompanionGatewayInboxItem, cwd: string): Companion
     memoryPolicy: 'handoff',
     fleetPolicy: 'none',
     edits: [],
+  };
+}
+
+function buildFleetDispatchInput(item: CompanionGatewayInboxItem): CompanionGatewayFleetDispatchDraftInput {
+  const draftCommand = item.draft?.command.join(' ') ?? 'buddy autonomous-code --require-approval';
+  return {
+    goal: [
+      `Review supervised companion gateway draft ${item.draft?.id || item.id}.`,
+      `Source channel: ${item.channel}.`,
+      `Priority: ${item.priority}.`,
+      `Autonomous-code draft command: ${draftCommand}`,
+      `Preview: ${item.content.preview || '[empty preview]'}`,
+      'Do not contact the external sender and do not send outbound channel replies.',
+      'Route this only as a safe Fleet review/handoff unless a local operator explicitly dispatches it.',
+    ].join('\n'),
+    parallelism: 1,
+    privacyTag: 'sensitive',
+    dispatchProfile: 'safe',
+    deliveryChannel: `companion-gateway:${item.channel}`,
+    sourceSessionId: item.sessionKey,
   };
 }
 
@@ -470,6 +523,69 @@ export async function draftCompanionGatewayInboxItem(
   return draft;
 }
 
+export async function routeCompanionGatewayDraftToFleet(
+  itemId: string,
+  options: CompanionGatewayInboxOptions = {},
+): Promise<CompanionGatewayFleetDraft> {
+  const now = options.now || new Date();
+  const inbox = await readCompanionGatewayInbox({ ...options, now });
+  const item = inbox.items.find(existing => existing.id === itemId);
+  if (!item) {
+    throw new Error(`Companion gateway inbox item not found: ${itemId}`);
+  }
+  if (item.status !== 'drafted' || !item.draft) {
+    throw new Error(`Companion gateway inbox item has no local draft: ${itemId}`);
+  }
+  const sourceDraft = item.draft;
+
+  const cwd = resolveCwd(options.cwd);
+  const createdAt = now.toISOString();
+  const fleetDraftId = `fleet_${safeFileId(sourceDraft.id)}`;
+  const draftsDir = getCompanionGatewayDraftsDir(cwd);
+  const draftFile = path.join(draftsDir, `${fleetDraftId}.fleet.json`);
+  const dispatchInput = buildFleetDispatchInput(item);
+  const summary: CompanionGatewayFleetDraftSummary = {
+    id: fleetDraftId,
+    createdAt,
+    kind: 'fleet_dispatch_draft',
+    draftFile,
+    dispatchInput,
+    autoDispatch: false,
+    requiresLocalApproval: true,
+  };
+  const fleetDraft: CompanionGatewayFleetDraft = {
+    ...summary,
+    schemaVersion: COMPANION_GATEWAY_INBOX_SCHEMA_VERSION,
+    sourceItemId: item.id,
+    sourceDraftId: sourceDraft.id,
+    safety: {
+      rawTextStored: false,
+      previewOnly: true,
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      outboundChannelReply: false,
+    },
+  };
+
+  await mkdir(draftsDir, { recursive: true });
+  await writeFile(draftFile, `${JSON.stringify(fleetDraft, null, 2)}\n`, 'utf8');
+  await writeInbox({
+    ...inbox,
+    generatedAt: createdAt,
+    items: inbox.items.map(existing => existing.id === item.id
+      ? {
+        ...existing,
+        draft: {
+          ...sourceDraft,
+          fleet: summary,
+        },
+      }
+      : existing),
+  });
+
+  return fleetDraft;
+}
+
 export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): string {
   const lines = [
     'Companion gateway inbox',
@@ -485,6 +601,9 @@ export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): strin
     lines.push(`  ${item.proposedAction.type}: ${item.proposedAction.label}`);
     if (item.draft) {
       lines.push(`  draft: ${item.draft.command.join(' ')}`);
+      if (item.draft.fleet) {
+        lines.push(`  fleet draft: ${item.draft.fleet.draftFile}`);
+      }
     }
     lines.push(`  ${item.content.preview || '[empty message]'}`);
   }

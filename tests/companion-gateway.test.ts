@@ -12,6 +12,7 @@ import {
 import {
   draftCompanionGatewayInboxItem,
   readCompanionGatewayInbox,
+  routeCompanionGatewayDraftToFleet,
 } from '../src/companion/gateway-inbox.js';
 import { readRecentCompanionPercepts } from '../src/companion/percepts.js';
 import { readRecentCompanionSafetyEvents } from '../src/companion/safety-ledger.js';
@@ -279,6 +280,74 @@ describe('companion gateway', () => {
         taskFile: draft.taskFile,
         autoDispatch: false,
       },
+    });
+  });
+
+  it('routes a prepared gateway draft into a safe Fleet dispatch draft without running it', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T13:00:00.000Z'),
+    });
+
+    const result = await recordCompanionGatewayMessage({
+      channel: 'telegram',
+      senderId: 'lead',
+      senderName: 'Lead',
+      threadId: 'dm-fleet',
+      messageId: 'm-fleet',
+      text: 'Please prepare a safe fleet review today. access_token=secret-fleet-fixture',
+      contentType: 'text',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T13:01:00.000Z'),
+    });
+    await draftCompanionGatewayInboxItem(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T13:02:00.000Z'),
+    });
+
+    const fleetDraft = await routeCompanionGatewayDraftToFleet(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T13:03:00.000Z'),
+    });
+
+    expect(fleetDraft).toMatchObject({
+      kind: 'fleet_dispatch_draft',
+      autoDispatch: false,
+      requiresLocalApproval: true,
+      dispatchInput: {
+        parallelism: 1,
+        privacyTag: 'sensitive',
+        dispatchProfile: 'safe',
+        deliveryChannel: 'companion-gateway:telegram',
+      },
+      safety: {
+        rawTextStored: false,
+        previewOnly: true,
+        autoDispatch: false,
+        outboundChannelReply: false,
+      },
+    });
+    expect(fleetDraft.dispatchInput.goal).toContain('[redacted]');
+    expect(JSON.stringify(fleetDraft)).not.toContain('secret-fleet-fixture');
+
+    const fleetFile = JSON.parse(await readFile(fleetDraft.draftFile, 'utf8')) as {
+      dispatchInput: { goal: string; dispatchProfile: string; privacyTag: string };
+      safety: { autoDispatch: boolean };
+    };
+    expect(fleetFile.dispatchInput.dispatchProfile).toBe('safe');
+    expect(fleetFile.dispatchInput.privacyTag).toBe('sensitive');
+    expect(fleetFile.dispatchInput.goal).not.toContain('secret-fleet-fixture');
+    expect(fleetFile.safety.autoDispatch).toBe(false);
+
+    const inbox = await readCompanionGatewayInbox({ cwd: tempDir });
+    expect(inbox.items[0]?.draft?.fleet).toMatchObject({
+      id: fleetDraft.id,
+      draftFile: fleetDraft.draftFile,
+      autoDispatch: false,
     });
   });
 });

@@ -48,6 +48,7 @@ import type {
   CompanionGatewayMode,
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
+  CompanionGatewayFleetDraft,
   CompanionGatewayProfile,
   CompanionSkillCandidate,
   CompanionSkillCandidateStore,
@@ -986,6 +987,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
       itemId: string;
     }): Promise<{ ok: boolean; draft?: CompanionGatewayInboxDraft; inbox?: CompanionGatewayInbox; error?: string }> =>
       ipcRenderer.invoke('companion.gateway.draft', input),
+    routeGatewayDraftToFleet: (input: {
+      projectId?: string;
+      itemId: string;
+    }): Promise<{ ok: boolean; fleetDraft?: CompanionGatewayFleetDraft; inbox?: CompanionGatewayInbox; error?: string }> =>
+      ipcRenderer.invoke('companion.gateway.fleetDraft', input),
     updateGatewayChannel: (input: {
       projectId?: string;
       channel: string;
@@ -4304,6 +4310,10 @@ declare global {
           projectId?: string;
           itemId: string;
         }) => Promise<{ ok: boolean; draft?: CompanionGatewayInboxDraft; inbox?: CompanionGatewayInbox; error?: string }>;
+        routeGatewayDraftToFleet: (input: {
+          projectId?: string;
+          itemId: string;
+        }) => Promise<{ ok: boolean; fleetDraft?: CompanionGatewayFleetDraft; inbox?: CompanionGatewayInbox; error?: string }>;
         updateGatewayChannel: (input: {
           projectId?: string;
           channel: string;

@@ -263,7 +263,9 @@ silently disappearing. Cowork exposes the same queue in the Companion panel via
 auto-dispatch. Preparing a queued item creates a local
 `.codebuddy/companion/gateway-drafts/*.task.json` draft for
 `buddy autonomous-code --require-approval`; it does not launch the run or send
-an outbound channel reply.
+an outbound channel reply. Routing that prepared task to Fleet writes a
+`.fleet.json` handoff with `dispatchProfile=safe` and `privacyTag=sensitive`,
+but does not call `fleet.dispatch`.
 
 Camera is explicit opt-in:
 
@@ -357,9 +359,10 @@ cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 npm run typecheck
 ```
 
-Observed result: `5` companion gateway tests passed, including local inbox
+Observed result: `6` companion gateway tests passed, including local inbox
 creation, urgent message priority, disabled-channel audit, token redaction and
 no auto-dispatch. The new draft proof verifies a `buddy autonomous-code
---require-approval` task file and `drafted` inbox transition. The Cowork IPC
-surface test passed for both the read-only gateway inbox bridge and draft
+--require-approval` task file, `drafted` inbox transition, and safe/sensitive
+Fleet handoff JSON without dispatch. The Cowork IPC surface test passed for the
+read-only gateway inbox bridge, local draft preparation, and Fleet handoff
 preparation from the active workspace.

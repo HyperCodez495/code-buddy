@@ -586,6 +586,39 @@ export interface CompanionGatewayInboxDraftSummary {
   command: string[];
   autoDispatch: false;
   requiresLocalApproval: true;
+  fleet?: CompanionGatewayFleetDraftSummary;
+}
+
+export interface CompanionGatewayFleetDispatchDraftInput {
+  goal: string;
+  parallelism: 1;
+  privacyTag: 'sensitive';
+  dispatchProfile: 'safe';
+  deliveryChannel: string;
+  sourceSessionId: string;
+}
+
+export interface CompanionGatewayFleetDraftSummary {
+  id: string;
+  createdAt: string;
+  kind: 'fleet_dispatch_draft';
+  draftFile: string;
+  dispatchInput: CompanionGatewayFleetDispatchDraftInput;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+}
+
+export interface CompanionGatewayFleetDraft extends CompanionGatewayFleetDraftSummary {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    outboundChannelReply: false;
+  };
 }
 
 export interface CompanionGatewayInboxDraft extends CompanionGatewayInboxDraftSummary {

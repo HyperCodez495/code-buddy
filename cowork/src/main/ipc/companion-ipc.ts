@@ -657,6 +657,39 @@ type CompanionGatewayInboxDraftSummary = {
   command: string[];
   autoDispatch: false;
   requiresLocalApproval: true;
+  fleet?: CompanionGatewayFleetDraftSummary;
+};
+
+type CompanionGatewayFleetDispatchDraftInput = {
+  goal: string;
+  parallelism: 1;
+  privacyTag: 'sensitive';
+  dispatchProfile: 'safe';
+  deliveryChannel: string;
+  sourceSessionId: string;
+};
+
+type CompanionGatewayFleetDraftSummary = {
+  id: string;
+  createdAt: string;
+  kind: 'fleet_dispatch_draft';
+  draftFile: string;
+  dispatchInput: CompanionGatewayFleetDispatchDraftInput;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+};
+
+type CompanionGatewayFleetDraft = CompanionGatewayFleetDraftSummary & {
+  schemaVersion: 1;
+  sourceItemId: string;
+  sourceDraftId: string;
+  safety: {
+    rawTextStored: false;
+    previewOnly: true;
+    autoDispatch: false;
+    requiresLocalApproval: true;
+    outboundChannelReply: false;
+  };
 };
 
 type CompanionGatewayInboxDraft = CompanionGatewayInboxDraftSummary & {
@@ -706,6 +739,10 @@ type CompanionGatewayInboxMod = {
     itemId: string,
     options: { cwd?: string },
   ) => Promise<CompanionGatewayInboxDraft>;
+  routeCompanionGatewayDraftToFleet: (
+    itemId: string,
+    options: { cwd?: string },
+  ) => Promise<CompanionGatewayFleetDraft>;
 };
 
 type CompanionSkillCuratorMod = {
@@ -1320,6 +1357,30 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.gateway.draft] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.gateway.fleetDraft',
+    async (_e, input?: { projectId?: string; itemId?: string }) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.itemId) return { ok: false as const, error: 'itemId is required' };
+      try {
+        const mod = await loadGatewayInbox();
+        if (!mod?.routeCompanionGatewayDraftToFleet || !mod.readCompanionGatewayInbox) {
+          return { ok: false as const, error: 'core companion gateway inbox module unavailable' };
+        }
+        const fleetDraft = await mod.routeCompanionGatewayDraftToFleet(input.itemId, { cwd });
+        return {
+          ok: true as const,
+          fleetDraft,
+          inbox: await mod.readCompanionGatewayInbox({ cwd }),
+        };
+      } catch (err) {
+        logError('[companion.gateway.fleetDraft] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

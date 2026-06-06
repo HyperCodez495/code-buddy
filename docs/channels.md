@@ -84,7 +84,11 @@ Cowork renders the same queue in `Buddy companion -> Gateway inbox` through the
 read-only `companion.gateway.inbox` IPC handler. A queued item can be converted
 locally into a draft-only `buddy autonomous-code --task-file ... --require-approval`
 task through `companion.gateway.draft`; the draft is written under
-`.codebuddy/companion/gateway-drafts/` and is not dispatched automatically.
+`.codebuddy/companion/gateway-drafts/` and is not dispatched automatically. A
+prepared task can then create a safe Fleet handoff JSON through
+`companion.gateway.fleetDraft`; that file contains the `fleet.dispatch` input
+with `dispatchProfile=safe` and `privacyTag=sensitive`, but still does not call
+`fleet.dispatch`.
 
 Validation:
 
@@ -93,9 +97,10 @@ npm test -- tests/companion-gateway.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 ```
 
-This is intentionally a supervised inbox, not an OpenClaw-style unrestricted
-remote executor. The next step is routing approved drafts into Fleet while
-keeping explicit local approval and no auto-dispatch.
+This is intentionally a supervised inbox and handoff flow, not an OpenClaw-style
+unrestricted remote executor. The next step is an operator-approved launch from
+the Fleet draft, still with explicit local approval and no outbound channel
+reply by default.
 
 ## Message Preprocessing
 
