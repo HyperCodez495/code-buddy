@@ -123,7 +123,7 @@ describe('skill background writes (S1 — sentinel auto-install gated by flag)',
     expect(audit[0]).toMatchObject({
       reviewer: SKILL_BACKGROUND_WRITE_REVIEWER,
       rollbackPlan: {
-        command: `buddy skills uninstall ${candidate.skillName} --json`,
+        command: `buddy skills delete ${candidate.skillName} --json`,
         kind: 'uninstall',
       },
       skillName: candidate.skillName,
@@ -234,5 +234,37 @@ describe('skill background writes (S1 — sentinel auto-install gated by flag)',
       reason: 'snapshot snapshot-123 captured before the autonomous mutation',
       snapshotId: 'snapshot-123',
     });
+  });
+
+  it('prefers snapshot rollback over delete when candidate_install overwrote an existing skill', () => {
+    // An install that overwrote an existing skill snapshots the prior version
+    // first; rolling back to that snapshot restores the original, whereas a
+    // blind delete would destroy the user's pre-existing skill.
+    const plan = buildSkillWriteRollbackPlan({
+      action: 'candidate_install',
+      output: JSON.stringify({ overwritten: true, rollbackSnapshotId: 'snap-overwrite-9' }),
+      skillName: 'existing-skill',
+    });
+
+    expect(plan).toMatchObject({
+      kind: 'rollback',
+      snapshotId: 'snap-overwrite-9',
+    });
+    expect(plan.command).toContain('buddy skills rollback existing-skill --snapshot snap-overwrite-9');
+  });
+
+  it('uses the real `delete` subcommand to undo a brand-new background install', () => {
+    const plan = buildSkillWriteRollbackPlan({ action: 'create', skillName: 'fresh-skill' });
+    expect(plan).toEqual({
+      command: 'buddy skills delete fresh-skill --json',
+      kind: 'uninstall',
+      reason: 'brand-new background skill; delete removes the installed package',
+    });
+  });
+
+  it('points unknown actions at a real inspection command, not a non-existent one', () => {
+    const plan = buildSkillWriteRollbackPlan({ action: 'mystery', skillName: 'x' });
+    expect(plan.kind).toBe('manual-review');
+    expect(plan.command).toBe('buddy skills list --json');
   });
 });

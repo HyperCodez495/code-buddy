@@ -134,6 +134,42 @@ describe('background review agent (S4)', () => {
     expect(args).toMatchObject({ key: 'team-pref', value: 'prefers French', scope: 'project' });
   });
 
+  it('clamps non-canonical user-ish scopes (case/whitespace/global) to project', async () => {
+    // PersistentMemoryManager routes on scope === 'project' exactly, so any
+    // value that is not the exact lowercase 'project' would land in global user
+    // memory. The clamp must canonicalise these to 'project' (flag is OFF here).
+    for (const sneaky of ['USER', ' user ', 'User', 'global', 'GLOBAL', 'projeKt']) {
+      const client = scriptedClient([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            {
+              id: 'c1',
+              function: {
+                name: 'remember',
+                arguments: JSON.stringify({ key: 'k', value: 'v', scope: sneaky }),
+              },
+            },
+          ],
+        },
+        { role: 'assistant', content: 'done' },
+      ]);
+      const executeTool = vi.fn(async (): Promise<HeadlessToolResult> => ({ success: true }));
+
+      await runBackgroundReview({
+        client,
+        transcript: [{ role: 'user', content: 'keep notes' }],
+        mode: 'memory',
+        tools: TOOLS,
+        executeTool,
+      });
+
+      const args = JSON.parse(String(executeTool.mock.calls[0]?.[1]));
+      expect(args.scope, `scope "${sneaky}" must be clamped to project`).toBe('project');
+    }
+  });
+
   it('allows user-scope autonomous memory only behind the explicit operator flag', async () => {
     process.env[BACKGROUND_REVIEW_ALLOW_USER_MEMORY_ENV] = 'true';
     const client = scriptedClient([
@@ -283,12 +319,14 @@ describe('reversible-net guard on the live review loop (option A)', () => {
 
   it('screens any write (skill or memory) for secrets/omissions', () => {
     process.env[WRITE_SKILLS] = 'true';
-    expect(guardReviewWrite('remember', { content: SECRET })).toMatchObject({ allowed: false });
+    // The remember tool persists `value` — screening must read that real field,
+    // not the phantom `content`/`text` fields the tool never sends.
+    expect(guardReviewWrite('remember', { value: SECRET })).toMatchObject({ allowed: false });
     expect(
       guardReviewWrite('skill_manage', { action: 'edit', name: 'd', content: SECRET }),
     ).toMatchObject({ allowed: false });
     // A clean memory write passes.
-    expect(guardReviewWrite('remember', { content: 'the user prefers French' })).toEqual({ allowed: true });
+    expect(guardReviewWrite('remember', { value: 'the user prefers French' })).toEqual({ allowed: true });
   });
 
   it('refuses an ungated skill create in the live loop (never executed, nothing audited)', async () => {
@@ -377,12 +415,48 @@ describe('reversible-net guard on the live review loop (option A)', () => {
       expect(audit).toHaveLength(1);
       expect(audit[0]).toMatchObject({
         rollbackPlan: {
-          command: 'buddy skills uninstall demo-skill --json',
+          command: 'buddy skills delete demo-skill --json',
           kind: 'uninstall',
         },
         skillName: 'demo-skill',
         reviewer: 'auto:gate-passed',
       });
+    } finally {
+      await fs.rm(workDir, { recursive: true, force: true });
+    }
+  });
+
+  it('audits a whitespace-padded mutation action (guard and audit agree after trim)', async () => {
+    process.env[WRITE_SKILLS] = 'true';
+    const workDir = await fs.mkdtemp(path.join(os.tmpdir(), 'review-audit-trim-'));
+    try {
+      const client = scriptedClient([
+        {
+          role: 'assistant',
+          content: '',
+          tool_calls: [
+            // Untrusted model output with a padded action: the guard trims and
+            // allows it, so the audit check must trim too or the mutation runs
+            // with no audit trail / rollback plan.
+            { id: 'c1', function: { name: 'skill_manage', arguments: '{"action":"  create  ","name":"padded-skill","content":"clean body"}' } },
+          ],
+        },
+        { role: 'assistant', content: 'done' },
+      ]);
+      const executeTool = vi.fn(async (): Promise<HeadlessToolResult> => ({ success: true, output: 'installed' }));
+
+      const result = await runBackgroundReview({
+        client,
+        transcript: [{ role: 'user', content: 'do a thing' }],
+        mode: 'skill',
+        tools: TOOLS,
+        executeTool,
+        workDir,
+      });
+
+      expect(executeTool).toHaveBeenCalledTimes(1);
+      expect(result.screenedWrites).toEqual([]);
+      expect(listSkillWriteAudit(workDir)).toHaveLength(1);
     } finally {
       await fs.rm(workDir, { recursive: true, force: true });
     }

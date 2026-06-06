@@ -282,7 +282,7 @@ export async function runBackgroundReview(
         toolCallsMade.push({ name, success: result.success });
 
         // Audit successful autonomous skill mutations into the shared trail.
-        if (result.success && name === 'skill_manage' && MUTATING_SKILL_ACTIONS.has(String(args.action ?? ''))) {
+        if (result.success && name === 'skill_manage' && MUTATING_SKILL_ACTIONS.has(String(args.action ?? '').trim())) {
           recordSkillWriteAuditEntry(workDir, {
             candidateId: `review-${String(args.action ?? '')}`,
             installedPath: String(args.name ?? ''),
@@ -347,14 +347,23 @@ function normalizeReviewToolArgs(
   args: Record<string, unknown>,
 ): { args: Record<string, unknown>; changed: boolean } {
   if (name !== 'remember') return { args, changed: false };
-  if (args.scope !== 'user') return { args, changed: false };
-  if (TRUTHY_FLAG.has((process.env[BACKGROUND_REVIEW_ALLOW_USER_MEMORY_ENV] ?? '').trim().toLowerCase())) {
-    return { args, changed: false };
-  }
+
+  // PersistentMemoryManager.remember routes on `scope === 'project'` exactly, so
+  // ANYTHING that is not the exact lowercase string 'project' (e.g. 'user',
+  // 'USER', ' user ', 'global', a typo) is treated as global user memory. The
+  // clamp therefore canonicalises to exactly 'project' by default, and only
+  // emits exactly 'user' when an operator opted in AND the request is a
+  // case/whitespace-insensitive 'user'. This closes case-variant bypasses.
+  const rawScope = typeof args.scope === 'string' ? args.scope.trim().toLowerCase() : '';
+  const allowUserMemory = TRUTHY_FLAG.has(
+    (process.env[BACKGROUND_REVIEW_ALLOW_USER_MEMORY_ENV] ?? '').trim().toLowerCase(),
+  );
+  const targetScope = rawScope === 'user' && allowUserMemory ? 'user' : 'project';
+  if (args.scope === targetScope) return { args, changed: false };
   return {
     args: {
       ...args,
-      scope: 'project',
+      scope: targetScope,
     },
     changed: true,
   };
@@ -364,7 +373,9 @@ function normalizeReviewToolArgs(
 function extractWriteContent(name: string, args: Record<string, unknown>): string {
   const fields =
     name === 'remember'
-      ? [args.content, args.text]
+      ? // The remember tool persists `value` (tools/registry/memory-tools.ts);
+        // `content`/`text` are not real fields, so screening them screened nothing.
+        [args.value]
       : name === 'skill_manage'
         ? [args.content, args.body, args.new_string, args.file_content]
         : [];

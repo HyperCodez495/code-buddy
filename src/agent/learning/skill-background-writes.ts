@@ -247,20 +247,25 @@ export function buildSkillWriteRollbackPlan(input: {
   const skillName = input.skillName.trim();
   const snapshotId = extractRollbackSnapshotId(input.output);
 
-  if (action === 'create' || action === 'candidate_install') {
-    return {
-      command: `buddy skills uninstall ${shellArg(skillName)} --json`,
-      kind: 'uninstall',
-      reason: 'brand-new background skill; uninstall removes the installed package',
-    };
-  }
-
+  // A captured snapshot wins over everything else: even an `candidate_install`
+  // that OVERWROTE an existing skill snapshots the prior version first, so
+  // rolling back restores the original instead of deleting the package.
   if (snapshotId) {
     return {
       command: `buddy skills rollback ${shellArg(skillName)} --snapshot ${shellArg(snapshotId)} --approved-by <reviewer> --json`,
       kind: 'rollback',
       reason: `snapshot ${snapshotId} captured before the autonomous mutation`,
       snapshotId,
+    };
+  }
+
+  // No snapshot id + a fresh install ⇒ the skill did not exist before, so
+  // deleting the installed package is the correct, non-destructive inverse.
+  if (action === 'create' || action === 'candidate_install') {
+    return {
+      command: `buddy skills delete ${shellArg(skillName)} --json`,
+      kind: 'uninstall',
+      reason: 'brand-new background skill; delete removes the installed package',
     };
   }
 
@@ -273,9 +278,9 @@ export function buildSkillWriteRollbackPlan(input: {
   }
 
   return {
-    command: `buddy skills history ${shellArg(skillName)} --json`,
+    command: `buddy skills list --json`,
     kind: 'manual-review',
-    reason: `no automatic rollback command is known for skill_manage action "${action || 'unknown'}"`,
+    reason: `no automatic rollback command is known for skill_manage action "${action || 'unknown'}"; inspect installed skills and roll back manually`,
   };
 }
 
