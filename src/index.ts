@@ -1881,6 +1881,12 @@ program
         inkOptions.patchConsole = false;
       }
 
+      // Opt the interactive session into the Hermes-style post-session background
+      // self-learning review (still gated by CODEBUDDY_LEARNING_BACKGROUND_REVIEW).
+      // Only the interactive TUI enables it, so cron/headless/sub-agent runs cannot
+      // trigger a review (recursion + cost safety).
+      agent.enableBackgroundReview();
+
       render(React.createElement(ChatInterface, { agent, initialMessage }), inkOptions);
 
       // Initialize plugin system in background (non-blocking)

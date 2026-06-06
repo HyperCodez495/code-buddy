@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   runBackgroundReview,
+  shouldTriggerBackgroundReview,
   BACKGROUND_REVIEW_SENTINEL_ENV,
   type BackgroundReviewClient,
   type ReviewChatMessage,
@@ -119,5 +120,35 @@ describe('background review agent (S4)', () => {
     });
 
     expect(process.env[BACKGROUND_REVIEW_SENTINEL_ENV]).toBeUndefined();
+  });
+});
+
+describe('shouldTriggerBackgroundReview (S5 — interactive-only gating)', () => {
+  const base = {
+    interactiveOptIn: true,
+    envFlag: 'true',
+    sentinel: undefined as string | undefined,
+    transcriptLength: 3,
+  };
+
+  it('fires for an interactive session with the flag on and content to review', () => {
+    expect(shouldTriggerBackgroundReview(base)).toBe(true);
+  });
+
+  it('never fires for a non-interactive (cron/headless/sub-agent) construction', () => {
+    expect(shouldTriggerBackgroundReview({ ...base, interactiveOptIn: false })).toBe(false);
+  });
+
+  it('does not fire when the env flag is off/unset', () => {
+    expect(shouldTriggerBackgroundReview({ ...base, envFlag: undefined })).toBe(false);
+    expect(shouldTriggerBackgroundReview({ ...base, envFlag: 'false' })).toBe(false);
+  });
+
+  it('does not fire while already inside a review (recursion guard via sentinel)', () => {
+    expect(shouldTriggerBackgroundReview({ ...base, sentinel: '1' })).toBe(false);
+  });
+
+  it('does not fire with an empty transcript', () => {
+    expect(shouldTriggerBackgroundReview({ ...base, transcriptLength: 0 })).toBe(false);
   });
 });

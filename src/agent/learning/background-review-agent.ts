@@ -34,6 +34,36 @@ export const BACKGROUND_REVIEW_SENTINEL_ENV = 'CODEBUDDY_BACKGROUND_REVIEW';
 
 export type BackgroundReviewMode = 'memory' | 'skill' | 'combined';
 
+const TRUTHY_FLAG = new Set(['1', 'true', 'on', 'yes', 'enabled']);
+
+/** Env flag that gates whether the post-session review runs at all. */
+export const BACKGROUND_REVIEW_ENABLE_ENV = 'CODEBUDDY_LEARNING_BACKGROUND_REVIEW';
+
+export interface BackgroundReviewTriggerState {
+  /** True only for the interactive TUI session (set via enableBackgroundReview). */
+  interactiveOptIn: boolean;
+  /** Value of CODEBUDDY_LEARNING_BACKGROUND_REVIEW. */
+  envFlag: string | undefined;
+  /** Value of CODEBUDDY_BACKGROUND_REVIEW (sentinel set while a review runs). */
+  sentinel: string | undefined;
+  /** Number of transcript entries available to review. */
+  transcriptLength: number;
+}
+
+/**
+ * The single decision: should a post-session background review fire? True only
+ * when the interactive session opted in, the env flag is on, we are NOT already
+ * inside a review (anti-recursion), and there is something to review. Cron,
+ * headless, sub-agent, and paired-gate runs are all interactiveOptIn=false → never.
+ */
+export function shouldTriggerBackgroundReview(state: BackgroundReviewTriggerState): boolean {
+  if (!state.interactiveOptIn) return false;
+  if (!TRUTHY_FLAG.has((state.envFlag ?? '').trim().toLowerCase())) return false;
+  if (state.sentinel === '1') return false;
+  if (state.transcriptLength <= 0) return false;
+  return true;
+}
+
 export interface ReviewChatMessage {
   role: string;
   content?: string | null;

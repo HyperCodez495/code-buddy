@@ -58,6 +58,12 @@ export class CodeBuddyAgent extends BaseAgent {
   private promptBuilder: PromptBuilder;
   private customSystemPromptOverride: string | null = null;
   private systemPromptAppend: string | undefined;
+  /**
+   * When true (set only by the interactive entrypoint), a Hermes-style
+   * background self-learning review runs after each completed turn. Off for
+   * cron/headless/sub-agent constructions so they never trigger a review.
+   */
+  private backgroundReviewEnabled = false;
   private visionGroundingModel: string | undefined;
   private streamingHandler: StreamingHandler;
   private executor: AgentExecutor;
@@ -1023,6 +1029,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
       this.messages
     );
 
+    // Fire-and-forget Hermes-style post-session learning review (interactive only).
+    void this.maybeRunBackgroundReview();
+
     return [userEntry, ...newEntries];
   }
 
@@ -1136,6 +1145,9 @@ Look at the screenshot and find the element matching the user's intent. Output o
       // Clean up abort controller
       this.abortController = null;
     }
+
+    // Fire-and-forget Hermes-style post-session learning review (interactive only).
+    void this.maybeRunBackgroundReview();
   }
 
   protected async executeTool(toolCall: CodeBuddyToolCall): Promise<ToolResult> {
@@ -1504,6 +1516,60 @@ Look at the screenshot and find the element matching the user's intent. Output o
       logger.info('Auto-observation middleware enabled');
     } catch (err) {
       logger.error('Failed to enable auto-observation middleware', err as Error);
+    }
+  }
+
+  /**
+   * Opt this agent into the Hermes-style post-session background self-learning
+   * review. Set ONLY by the interactive entrypoint so cron/headless/sub-agent
+   * agents never trigger a review (recursion + cost safety). The review itself
+   * is additionally gated by the `CODEBUDDY_LEARNING_BACKGROUND_REVIEW` env flag.
+   */
+  enableBackgroundReview(): void {
+    this.backgroundReviewEnabled = true;
+  }
+
+  /**
+   * Fire a one-shot restricted-toolset learning review over the recent
+   * transcript. Fire-and-forget: callers do NOT await it on the response path.
+   * No-ops unless opted in (interactive flag) AND the env flag is on AND we are
+   * not already inside a review (sentinel), so a review can never recurse.
+   */
+  private async maybeRunBackgroundReview(): Promise<void> {
+    // Snapshot the recent transcript synchronously before any async work.
+    const transcript = this.chatHistory.slice(-20).map((entry) => ({
+      role: typeof entry.type === 'string' ? entry.type : 'assistant',
+      content: typeof entry.content === 'string' ? entry.content : JSON.stringify(entry.content ?? ''),
+    }));
+
+    const { shouldTriggerBackgroundReview } = await import('./learning/background-review-agent.js');
+    if (
+      !shouldTriggerBackgroundReview({
+        interactiveOptIn: this.backgroundReviewEnabled,
+        envFlag: process.env.CODEBUDDY_LEARNING_BACKGROUND_REVIEW,
+        sentinel: process.env.CODEBUDDY_BACKGROUND_REVIEW,
+        transcriptLength: transcript.length,
+      })
+    ) {
+      return;
+    }
+
+    try {
+      const { runBackgroundReview } = await import('./learning/background-review-agent.js');
+      type ReviewClient = import('./learning/background-review-agent.js').BackgroundReviewClient;
+      const result = await runBackgroundReview({
+        client: this.codebuddyClient as unknown as ReviewClient,
+        transcript,
+        mode: 'combined',
+        workDir: this.getCurrentDirectory(),
+      });
+      if (!result.skipped && result.summary) {
+        logger.info(`[background-review] ${result.summary}`);
+      }
+    } catch (err) {
+      logger.debug('[background-review] post-session review failed', {
+        error: err instanceof Error ? err.message : String(err),
+      });
     }
   }
 
