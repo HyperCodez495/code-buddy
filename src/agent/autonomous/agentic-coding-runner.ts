@@ -31,6 +31,7 @@ export { normalizeGitPath, isPathAllowedByContract, resolveRepoPath };
 import { GitNexusTool, type GitNexusContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 import { evaluateScope } from '../scope-awareness.js';
 import type { FleetDispatchProfile } from '../../fleet/dispatch-profile.js';
+import { getActiveRunStore, RunStore } from '../../observability/run-store.js';
 
 import { ConfirmationService } from '../../utils/confirmation-service.js';
 import { auditLogger } from '../../security/audit-logger.js';
@@ -105,6 +106,7 @@ export interface AgenticCodingRunOptions {
   contract?: AgenticCodingTaskContract;
   maxCostUsd?: number;
   maxIterations?: number;
+  recordObservability?: boolean;
 }
 
 export interface AgenticCodingRulesFile {
@@ -1805,6 +1807,7 @@ export interface AgenticCodingRunReport {
   repo: string;
   rulesFiles: AgenticCodingRulesFile[];
   plan: AgenticCodingPlanStep[];
+  observability?: AgenticCodingObservabilityReport;
   status: AgenticCodingRunStatus;
   taskFile: string;
   validationErrors: string[];
@@ -1814,6 +1817,16 @@ export interface AgenticCodingRunReport {
   workflowBuilderProposal?: AgenticCodingWorkflowBuilderProposalReport;
   gitnexusEvidence?: GitNexusContext;
   worldModelInvariants?: WorldModelInvariants | null;
+}
+
+export interface AgenticCodingObservabilityReport {
+  artifacts: {
+    progress?: string;
+    report?: string;
+  };
+  eventsPath: string;
+  runId: string;
+  runsDir: string;
 }
 
 export interface AgenticCodingEditProposalPromptOptions {
@@ -1839,6 +1852,124 @@ const COWORK_IMPORT_PANEL_VIEWS: readonly AgenticCodingProposalLoopCoworkPanelVi
 async function readJsonFile(filePath: string): Promise<unknown> {
   const raw = await fs.readFile(filePath, 'utf8');
   return JSON.parse(raw) as unknown;
+}
+
+interface AgenticCodingObservabilitySession {
+  end(report: AgenticCodingRunReport): AgenticCodingRunReport;
+  fail(error: unknown): void;
+  runId: string;
+  stepEnd(stepId: string, data?: Record<string, unknown>): void;
+  stepStart(stepId: string, data?: Record<string, unknown>): void;
+}
+
+function buildRunStoreEventsPath(store: RunStore, runId: string): string {
+  return path.join(store.getRunsDir(), runId, 'events.jsonl');
+}
+
+function startAgenticCodingObservability(
+  options: AgenticCodingRunOptions,
+  taskFile: string,
+  contract?: AgenticCodingTaskContract,
+): AgenticCodingObservabilitySession {
+  if (options.recordObservability === false) {
+    return {
+      end: (report) => report,
+      fail: () => {},
+      runId: '',
+      stepEnd: () => {},
+      stepStart: () => {},
+    };
+  }
+
+  const activeStore = getActiveRunStore();
+  const activeRunId = activeStore?.getCurrentRunId() ?? null;
+  const ownsRun = !activeStore || !activeRunId;
+  const runsDir = process.env.CODEBUDDY_RUNS_DIR
+    ?? (process.env.CODEBUDDY_HOME ? path.join(process.env.CODEBUDDY_HOME, 'runs') : undefined);
+  const store = ownsRun ? new RunStore(runsDir) : activeStore!;
+  const runId = ownsRun
+    ? store.startRun(contract?.task ?? `Agentic coding cell${taskFile ? `: ${taskFile}` : ''}`, {
+      channel: 'autonomous-code',
+      sessionId: options.runId,
+      tags: ['autonomous-code', 'agentic-coding'],
+    })
+    : activeRunId;
+  const artifacts: AgenticCodingObservabilityReport['artifacts'] = {};
+
+  store.emit(runId, {
+    type: 'decision',
+    data: {
+      kind: 'agentic_coding_started',
+      applyEdits: options.applyEdits === true,
+      previewEdits: options.previewEdits === true,
+      runVerification: options.runVerification === true,
+      taskFile,
+    },
+  });
+
+  return {
+    end(report: AgenticCodingRunReport): AgenticCodingRunReport {
+      const progress = buildAgenticCodingWorkflowProgressSnapshot(report);
+      artifacts.report = store.saveArtifact(runId, 'agentic-coding-report.json', `${JSON.stringify(report, null, 2)}\n`);
+      artifacts.progress = store.saveArtifact(runId, 'workflow-progress.json', `${JSON.stringify(progress, null, 2)}\n`);
+      store.emit(runId, {
+        type: 'decision',
+        data: {
+          kind: 'agentic_coding_finished',
+          activeNodeId: report.workflow.activeNodeId,
+          autoExecutable: report.autoExecutable,
+          blockedReasons: report.blockedReasons,
+          status: report.status,
+        },
+      });
+      if (ownsRun) {
+        store.endRun(runId, report.status === 'verified' || report.status === 'edited' || report.status === 'previewed' || report.status === 'ready'
+          ? 'completed'
+          : 'failed');
+      }
+
+      return {
+        ...report,
+        observability: {
+          artifacts,
+          eventsPath: buildRunStoreEventsPath(store, runId),
+          runId,
+          runsDir: store.getRunsDir(),
+        },
+      };
+    },
+    fail(error: unknown): void {
+      store.emit(runId, {
+        type: 'error',
+        data: {
+          message: error instanceof Error ? error.message : String(error),
+          source: 'runAgenticCodingCell',
+        },
+      });
+      if (ownsRun) {
+        store.endRun(runId, 'failed');
+      }
+    },
+    runId,
+    stepEnd(stepId: string, data: Record<string, unknown> = {}): void {
+      store.emit(runId, {
+        type: 'step_end',
+        data: {
+          stepId,
+          ...data,
+        },
+      });
+    },
+    stepStart(stepId: string, data: Record<string, unknown> = {}): void {
+      store.emit(runId, {
+        type: 'step_start',
+        data: {
+          stepId,
+          ...data,
+        },
+      });
+    },
+  };
 }
 
 function mergeEditProposal(
@@ -5079,13 +5210,19 @@ export async function runDecomposedSubtasks(
 ): Promise<AgenticCodingRunReport> {
   const reports = [...existingReports];
   const runId = options.runId ?? `run-${Date.now()}`;
-  const updatedOptions = { ...options, runId, skipDecomposition: true };
+  const checkpointOptions = { ...options, resume: undefined };
+  const updatedOptions = {
+    ...checkpointOptions,
+    recordObservability: false,
+    runId,
+    skipDecomposition: true,
+  };
 
   for (let i = startIndex; i < subtasks.length; i++) {
     const subtask = subtasks[i];
     await saveCheckpoint({
       runId,
-      options,
+      options: checkpointOptions,
       contract,
       step: 'decomposed',
       subtasks,
@@ -5105,7 +5242,7 @@ export async function runDecomposedSubtasks(
       const aggregated = aggregateReports(reports, contract, options, subReport.status);
       await saveCheckpoint({
         runId,
-        options,
+        options: checkpointOptions,
         contract: aggregated.contract ?? contract,
         step: 'decomposed',
         subtasks,
@@ -5120,7 +5257,7 @@ export async function runDecomposedSubtasks(
   const finalReport = aggregateReports(reports, contract, options, 'verified');
   await saveCheckpoint({
     runId,
-    options,
+    options: checkpointOptions,
     contract: finalReport.contract ?? contract,
     step: 'verified',
     timestamp: new Date().toISOString(),
@@ -5132,11 +5269,20 @@ export async function runDecomposedSubtasks(
 
 export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Promise<AgenticCodingRunReport> {
   let checkpointToResume: AgenticCodingCheckpoint | null = null;
+  const initialTaskFile = options.taskFile ? path.resolve(options.taskFile) : '';
   if (options.resume) {
     checkpointToResume = await loadCheckpoint(options.resume);
     if (checkpointToResume) {
       if (checkpointToResume.step === 'verified' || checkpointToResume.step === 'blocked') {
-        return buildFinalReport(checkpointToResume);
+        const observability = startAgenticCodingObservability(
+          options,
+          initialTaskFile,
+          checkpointToResume.contract,
+        );
+        observability.stepStart('resume-checkpoint', { checkpointStep: checkpointToResume.step });
+        const report = buildFinalReport(checkpointToResume);
+        observability.stepEnd('resume-checkpoint', { status: report.status });
+        return observability.end(report);
       }
       options = {
         ...checkpointToResume.options,
@@ -5159,16 +5305,25 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   let editProposal: AgenticCodingEditProposalReport | undefined;
   let workflowBuilderProposal: AgenticCodingWorkflowBuilderProposalReport | undefined;
 
-  if (checkpointToResume) {
+  if (options.contract) {
+    contract = options.contract;
+  } else if (checkpointToResume) {
     contract = checkpointToResume.contract;
     if (checkpointToResume.step === 'decomposed' && checkpointToResume.subtasks && checkpointToResume.subtasks.length > 0) {
-      return runDecomposedSubtasks(
+      const observability = startAgenticCodingObservability(options, taskFile, contract);
+      observability.stepStart('resume-decomposed-checkpoint', {
+        currentSubtaskIndex: checkpointToResume.currentSubtaskIndex ?? 0,
+        subtaskCount: checkpointToResume.subtasks.length,
+      });
+      const report = await runDecomposedSubtasks(
         checkpointToResume.contract,
         options,
         checkpointToResume.subtasks,
         checkpointToResume.currentSubtaskIndex ?? 0,
         checkpointToResume.reports ?? []
       );
+      observability.stepEnd('resume-decomposed-checkpoint', { status: report.status });
+      return observability.end(report);
     }
   } else if (taskFile) {
     try {
@@ -5186,7 +5341,15 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     validationErrors.push('taskFile or resume runId is required');
   }
 
+  const observability = startAgenticCodingObservability(options, taskFile, contract);
+  observability.stepStart('contract-validation', { taskFile });
+  observability.stepEnd('contract-validation', {
+    hasContract: Boolean(contract),
+    validationErrorCount: validationErrors.length,
+  });
+
   if (contract && options.editProposalFile) {
+    observability.stepStart('edit-proposal-load', { file: path.resolve(options.editProposalFile) });
     const proposalFile = path.resolve(options.editProposalFile);
     try {
       const input = await readJsonFile(proposalFile);
@@ -5200,9 +5363,14 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     } catch (error) {
       validationErrors.push(`editProposalFile: ${error instanceof Error ? error.message : String(error)}`);
     }
+    observability.stepEnd('edit-proposal-load', {
+      loaded: Boolean(editProposal),
+      validationErrorCount: validationErrors.length,
+    });
   }
 
   if (contract && options.approvalDecisionFile) {
+    observability.stepStart('approval-decision-load', { file: path.resolve(options.approvalDecisionFile) });
     const decisionFile = path.resolve(options.approvalDecisionFile);
     try {
       const input = await readJsonFile(decisionFile);
@@ -5215,9 +5383,16 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     } catch (error) {
       validationErrors.push(`approvalDecisionFile: ${error instanceof Error ? error.message : String(error)}`);
     }
+    observability.stepEnd('approval-decision-load', {
+      decision: approvalDecision?.decision,
+      validationErrorCount: validationErrors.length,
+    });
   }
 
   if (contract && options.workflowBuilderProposalFile) {
+    observability.stepStart('workflow-builder-proposal-load', {
+      file: path.resolve(options.workflowBuilderProposalFile),
+    });
     const proposalFile = path.resolve(options.workflowBuilderProposalFile);
     try {
       const input = await readJsonFile(proposalFile);
@@ -5230,6 +5405,10 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     } catch (error) {
       validationErrors.push(`workflowBuilderProposalFile: ${error instanceof Error ? error.message : String(error)}`);
     }
+    observability.stepEnd('workflow-builder-proposal-load', {
+      loaded: Boolean(workflowBuilderProposal),
+      validationErrorCount: validationErrors.length,
+    });
   }
 
   const isSelfImprovement = contract && path.resolve(contract.repo) === path.resolve(process.cwd());
@@ -5246,14 +5425,18 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   if (checkpointToResume?.gitnexusEvidence) {
     gitnexusEvidence = checkpointToResume.gitnexusEvidence;
   } else if (contract) {
+    observability.stepStart('gitnexus-context', { task: contract.task });
     const gitnexus = new GitNexusTool();
     gitnexusEvidence = await gitnexus.ask(contract.task);
+    observability.stepEnd('gitnexus-context', { hasEvidence: Boolean(gitnexusEvidence) });
   }
   if (checkpointToResume?.worldModelInvariants !== undefined) {
     worldModelInvariants = checkpointToResume.worldModelInvariants;
   } else if (contract) {
+    observability.stepStart('world-model-read', { repo: contract.repo });
     const gitnexus = new GitNexusTool();
     worldModelInvariants = await gitnexus.readWorldModel();
+    observability.stepEnd('world-model-read', { hasInvariants: Boolean(worldModelInvariants) });
   }
   let dirtyFiles: AgenticCodingDirtyFile[] = [];
   const editPreviews: AgenticCodingEditPreview[] = [];
@@ -5279,7 +5462,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       verificationRequested: Boolean(options.runVerification),
     });
 
-    return {
+    return observability.end({
       approval: buildApprovalReport({
         approvalDecision,
         blockedReasons,
@@ -5315,30 +5498,34 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       workflowBuilderProposal,
       gitnexusEvidence,
       worldModelInvariants,
-    };
+    });
   }
 
   let finalContract = contract;
 
   if (shouldDecompose(finalContract) && !options.skipDecomposition) {
     let subtasks: AgenticCodingTaskContract[] = [];
+    observability.stepStart('task-decomposition', { task: finalContract.task });
     try {
       subtasks = await decomposeTask(finalContract);
     } catch {
       subtasks = [finalContract];
     }
+    observability.stepEnd('task-decomposition', { subtaskCount: subtasks.length });
     if (subtasks.length > 1) {
-      return runDecomposedSubtasks(
+      const report = await runDecomposedSubtasks(
         finalContract,
         options,
         subtasks,
         0,
         []
       );
+      return observability.end(report);
     }
   }
 
   if (options.runId && !options.resume && validationErrors.length === 0) {
+    observability.stepStart('checkpoint-save', { checkpointStep: 'initialized', runId: options.runId });
     await saveCheckpoint({
       runId: options.runId,
       options,
@@ -5348,8 +5535,10 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       gitnexusEvidence,
       worldModelInvariants,
     });
+    observability.stepEnd('checkpoint-save', { checkpointStep: 'initialized', runId: options.runId });
   }
 
+  observability.stepStart('preflight', { repo: finalContract.repo });
   const repoExists = await pathExists(finalContract.repo);
   if (!repoExists) {
     blockedReasons.push(`repo does not exist: ${finalContract.repo}`);
@@ -5388,6 +5577,12 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       );
     }
   }
+  observability.stepEnd('preflight', {
+    blockedReasonCount: blockedReasons.length,
+    dirtyFileCount: dirtyFiles.length,
+    repoExists,
+    validationErrorCount: validationErrors.length,
+  });
 
   if (executionGate && !executionGate.autoExecutable) {
     const reasons = isSelfImprovement
@@ -5409,6 +5604,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   }
 
   if (editPreviewRequested && validationErrors.length === 0 && blockedReasons.length === 0) {
+    observability.stepStart('edit-preview', { editCount: finalContract.edits.length });
     const alreadyPreviewed = checkpointToResume && (
       checkpointToResume.step === 'applied' ||
       checkpointToResume.step === 'proposal_generated' ||
@@ -5425,6 +5621,10 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
         );
       }
     }
+    observability.stepEnd('edit-preview', {
+      blockedReasonCount: blockedReasons.length,
+      previewedCount: editPreviews.filter((preview) => preview.status === 'previewed').length,
+    });
   }
 
   if (approvalDecision?.decision === 'rejected') {
@@ -5485,6 +5685,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
 
   try {
     if (options.applyEdits && validationErrors.length === 0 && blockedReasons.length === 0) {
+      observability.stepStart('apply-edits', { editCount: finalContract.edits.length });
       const alreadyApplied = checkpointToResume && (
         checkpointToResume.step === 'applied' ||
         checkpointToResume.step === 'proposal_generated' ||
@@ -5501,9 +5702,17 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
           );
         }
       }
+      observability.stepEnd('apply-edits', {
+        appliedCount: editResults.filter((result) => result.status === 'applied').length,
+        blockedReasonCount: blockedReasons.length,
+      });
     }
 
     if (options.runVerification && validationErrors.length === 0 && blockedReasons.length === 0 && finalContract) {
+      observability.stepStart('verification', {
+        commandCount: finalContract.verification.length,
+        maxIterations: options.maxIterations,
+      });
       const tempReport: AgenticCodingRunReport = {
         approval: buildApprovalReport({
           approvalDecision,
@@ -5564,11 +5773,19 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       if (loopResult.status === 'blocked') {
         blockedReasons.push(loopResult.reason ?? 'Verification loop blocked: safety, cost budget, or max iterations reached');
       }
+      observability.stepEnd('verification', {
+        blockedReasonCount: blockedReasons.length,
+        passedCount: verification.filter((result) => result.status === 'passed').length,
+        resultCount: verification.length,
+      });
     }
 
     executionCompleted = true;
   } catch (error) {
     blockedReasons.push(`Self-improvement execution failed with error: ${error instanceof Error ? error.message : String(error)}`);
+    observability.stepEnd('execution-error', {
+      message: error instanceof Error ? error.message : String(error),
+    });
   } finally {
     if (selfImprovementApproved && originalBranch && sandboxBranch) {
       const verificationFailed = verification.some((result) => result.status !== 'passed');
@@ -5647,7 +5864,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     verificationRequested: Boolean(options.runVerification),
   });
 
-  return {
+  return observability.end({
     approval: buildApprovalReport({
       approvalDecision,
       blockedReasons,
@@ -5688,7 +5905,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     workflowBuilderProposal,
     gitnexusEvidence,
     worldModelInvariants,
-  };
+  });
 }
 
 export function buildAgenticCodingApprovalSnapshot(
@@ -5875,6 +6092,10 @@ export function renderAgenticCodingRunReport(report: AgenticCodingRunReport): st
   const lines: string[] = [];
   lines.push(`Agentic Coding Cell: ${report.status}`);
   lines.push(`Task file: ${report.taskFile}`);
+  if (report.observability) {
+    lines.push(`Run: ${report.observability.runId}`);
+    lines.push(`Progress events: ${report.observability.eventsPath}`);
+  }
   if (report.repo) {
     lines.push(`Repo: ${report.repo}`);
   }

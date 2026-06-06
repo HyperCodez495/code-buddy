@@ -48,6 +48,7 @@ import {
 const execFileAsync = promisify(execFile);
 
 let tempRoot: string;
+let oldRunsDir: string | undefined;
 
 async function createTempGitRepo(): Promise<string> {
   const repo = await fs.mkdtemp(path.join(tempRoot, 'repo-'));
@@ -87,9 +88,12 @@ function taskFor(repo: string, overrides: Partial<Record<string, unknown>> = {})
 describe('runAgenticCodingCell', () => {
   beforeEach(async () => {
     tempRoot = await fs.mkdtemp(path.join(os.tmpdir(), 'codebuddy-agentic-cell-'));
+    oldRunsDir = process.env.CODEBUDDY_RUNS_DIR;
+    process.env.CODEBUDDY_RUNS_DIR = path.join(tempRoot, 'runs');
   });
 
   afterEach(async () => {
+    process.env.CODEBUDDY_RUNS_DIR = oldRunsDir;
     await fs.rm(tempRoot, { force: true, recursive: true });
   });
 
@@ -155,6 +159,62 @@ describe('runAgenticCodingCell', () => {
     }));
     expect(report.editRequested).toBe(false);
     expect(report.editResults).toEqual([]);
+  });
+
+  it('records autonomous run progress in the durable RunStore', async () => {
+    const repo = await createTempGitRepo();
+    const taskFile = await writeTaskFile(taskFor(repo));
+
+    const report = await runAgenticCodingCell({ taskFile });
+
+    expect(report.observability).toEqual(expect.objectContaining({
+      eventsPath: expect.stringContaining('events.jsonl'),
+      runId: expect.stringMatching(/^run_/),
+      runsDir: process.env.CODEBUDDY_RUNS_DIR,
+    }));
+    expect(report.observability?.artifacts.report).toEqual(expect.stringContaining('agentic-coding-report.json'));
+    expect(report.observability?.artifacts.progress).toEqual(expect.stringContaining('workflow-progress.json'));
+
+    const summaryPath = path.join(
+      process.env.CODEBUDDY_RUNS_DIR!,
+      report.observability!.runId,
+      'summary.json',
+    );
+    const summary = JSON.parse(await fs.readFile(summaryPath, 'utf8')) as {
+      artifactCount: number;
+      metadata?: { channel?: string; tags?: string[] };
+      status: string;
+    };
+    expect(summary.status).toBe('completed');
+    expect(summary.artifactCount).toBeGreaterThanOrEqual(2);
+    expect(summary.metadata).toEqual(expect.objectContaining({
+      channel: 'autonomous-code',
+      tags: ['autonomous-code', 'agentic-coding'],
+    }));
+
+    const events = (await fs.readFile(report.observability!.eventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { data: { kind?: string; stepId?: string }; type: string });
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        data: expect.objectContaining({ kind: 'agentic_coding_started' }),
+        type: 'decision',
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({ stepId: 'contract-validation' }),
+        type: 'step_start',
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({ stepId: 'preflight' }),
+        type: 'step_end',
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({ kind: 'agentic_coding_finished', status: 'ready' }),
+        type: 'decision',
+      }),
+      expect.objectContaining({ type: 'run_end' }),
+    ]));
   });
 
   it('blocks when the worktree has dirty files outside allowedPaths', async () => {

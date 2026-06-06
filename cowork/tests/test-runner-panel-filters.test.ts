@@ -40,6 +40,16 @@ describe('TestRunnerPanel catalog filters', () => {
     expect(source).toContain('visible: filteredCatalog.length');
   });
 
+  it('renders autonomous progress snapshots in the executions tab', () => {
+    const source = fs.readFileSync(panelPath, 'utf8');
+    expect(source).toContain('agenticProgress');
+    expect(source).toContain('data-testid={`agentic-progress-${run.runId}`}');
+    expect(source).toContain("t('testRunner.agenticAutonomous', 'Autonomous')");
+    expect(source).toContain("t('testRunner.agenticProgress', 'Progress')");
+    expect(source).toContain("t('testRunner.agenticNextAction', 'Next')");
+    expect(source).toContain('Autonomous progress snapshot pending.');
+  });
+
   it('ships localized filter labels for all supported locales', () => {
     for (const localePath of localePaths) {
       const locale = JSON.parse(fs.readFileSync(localePath, 'utf8')) as {

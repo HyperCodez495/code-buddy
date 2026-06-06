@@ -91,6 +91,21 @@ interface AuditRunSummary {
   totalCost?: number;
   totalTokens?: number;
   toolCallCount?: number;
+  agenticProgress?: {
+    activeNodeId?: string;
+    approvalState?: string;
+    blocked: number;
+    completed: number;
+    nextAction?: {
+      message: string;
+      nodeId?: string;
+      type: string;
+    };
+    pending: number;
+    ready: number;
+    status?: string;
+    total: number;
+  };
 }
 
 interface TestRunnerPanelProps {
@@ -461,6 +476,19 @@ function coverageLevelClass(level: CoverageLevel): string {
 
 function commandPreview(item: TestCatalogItem): string {
   return [item.command, ...item.args].join(' ');
+}
+
+function isAutonomousRun(run: AuditRunSummary): boolean {
+  return run.channel === 'autonomous-code' || (run.tags ?? []).includes('agentic-coding');
+}
+
+function progressLabel(progress: NonNullable<AuditRunSummary['agenticProgress']>): string {
+  const total = Math.max(0, progress.total);
+  const completed = Math.max(0, progress.completed);
+  if (total === 0) {
+    return `${completed}`;
+  }
+  return `${completed}/${total}`;
 }
 
 export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
@@ -1172,6 +1200,42 @@ export function TestRunnerPanel({ isOpen, onClose }: TestRunnerPanelProps) {
                               {tag}
                             </span>
                           ))}
+                        </div>
+                      )}
+                      {run.agenticProgress && (
+                        <div
+                          className="mt-2 rounded border border-accent/25 bg-accent/5 px-2 py-2"
+                          data-testid={`agentic-progress-${run.runId}`}
+                        >
+                          <div className="flex flex-wrap items-center gap-2 text-[10px] text-text-muted">
+                            <span className="rounded border border-accent/30 px-1.5 py-0.5 text-accent">
+                              {t('testRunner.agenticAutonomous', 'Autonomous')}
+                            </span>
+                            <span>
+                              {t('testRunner.agenticStatus', 'Status')}: {run.agenticProgress.status ?? run.status}
+                            </span>
+                            <span>
+                              {t('testRunner.agenticProgress', 'Progress')}: {progressLabel(run.agenticProgress)}
+                            </span>
+                            {run.agenticProgress.activeNodeId && (
+                              <span className="font-mono">{run.agenticProgress.activeNodeId}</span>
+                            )}
+                            {run.agenticProgress.approvalState && (
+                              <span>
+                                {t('testRunner.agenticApproval', 'Approval')}: {run.agenticProgress.approvalState}
+                              </span>
+                            )}
+                          </div>
+                          {run.agenticProgress.nextAction?.message && (
+                            <div className="mt-1 truncate text-[11px] text-text-secondary">
+                              {t('testRunner.agenticNextAction', 'Next')}: {run.agenticProgress.nextAction.message}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                      {!run.agenticProgress && isAutonomousRun(run) && (
+                        <div className="mt-2 text-[11px] text-text-muted">
+                          {t('testRunner.agenticProgressPending', 'Autonomous progress snapshot pending.')}
                         </div>
                       )}
                     </div>

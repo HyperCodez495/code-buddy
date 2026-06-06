@@ -197,10 +197,12 @@ From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still sup
 | Document | Description |
 |:---------|:------------|
 | [Getting Started](docs/getting-started.md) | Prerequisites, install, first run, headless mode, session management |
+| [Application Validation Guide](docs/application-validation-guide.md) | Full-app validation matrix with safe commands, evidence, and screenshot rules |
 | [Providers](docs/providers.md) | All 15 providers, connection profiles, model pairs, circuit breaker |
 | [Tools Reference](docs/tools-reference.md) | Tool categories, RAG selection, edit matching, apply_patch, streaming |
 | [Commands](docs/commands.md) | All slash commands, CLI subcommands, companion commands, global flags |
 | [Cowork Desktop](docs/cowork.md) | GitHub-visible overview, ChatGPT `gpt-5.5` route, real validation commands, screenshot privacy policy |
+| [Autonomous Coding + Cowork Progress](docs/autonomous-coding-cowork-progress.md) | End-to-end autonomous task execution, RunStore artifacts, and Cowork progress tracking |
 | [Cowork README](cowork/readme.md) | Desktop installation, features, source build, sandbox modes |
 | [Cowork Architecture](cowork/ARCHITECTURE.md) | Electron contexts, bridges, embedded engine, persistence, runner model |
 | [Agents](docs/agents.md) | Multi-agent orchestration, roles, SWE agent, planning flow, A2A |

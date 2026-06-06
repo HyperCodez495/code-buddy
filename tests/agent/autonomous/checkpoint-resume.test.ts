@@ -200,4 +200,53 @@ describe('runner checkpoint resume', () => {
     const fileContent = await fs.readFile(path.join(docPath, 'note.md'), 'utf8');
     expect(fileContent).toBe('new text');
   });
+
+  it('records observability when resuming a decomposed checkpoint', async () => {
+    const repo = await createTempGitRepo();
+    const contract = getContract(repo);
+    const subtask: AgenticCodingTaskContract = {
+      ...contract,
+      task: 'Resume decomposed subtask',
+      edits: [],
+    };
+
+    await saveCheckpoint({
+      runId: 'resume-decomposed-run',
+      step: 'decomposed',
+      timestamp: new Date().toISOString(),
+      options: { taskFile: 'task.json' },
+      contract,
+      currentSubtaskIndex: 0,
+      reports: [],
+      subtasks: [subtask],
+    });
+
+    const report = await runAgenticCodingCell({
+      resume: 'resume-decomposed-run',
+    });
+
+    expect(report.status).toBe('verified');
+    expect(report.validationErrors).toEqual([]);
+    expect(report.observability).toEqual(expect.objectContaining({
+      eventsPath: expect.stringContaining('events.jsonl'),
+      runId: expect.stringMatching(/^run_/),
+      runsDir: path.join(tempRoot, 'runs'),
+    }));
+
+    const events = (await fs.readFile(report.observability!.eventsPath, 'utf8'))
+      .trim()
+      .split('\n')
+      .map((line) => JSON.parse(line) as { data: { stepId?: string }; type: string });
+    expect(events).toEqual(expect.arrayContaining([
+      expect.objectContaining({
+        data: expect.objectContaining({ stepId: 'resume-decomposed-checkpoint' }),
+        type: 'step_start',
+      }),
+      expect.objectContaining({
+        data: expect.objectContaining({ stepId: 'resume-decomposed-checkpoint' }),
+        type: 'step_end',
+      }),
+      expect.objectContaining({ type: 'run_end' }),
+    ]));
+  });
 });

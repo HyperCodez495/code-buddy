@@ -40,6 +40,23 @@ export interface AuditRunSummary {
   totalCost?: number;
   totalTokens?: number;
   toolCallCount?: number;
+  agenticProgress?: AuditAgenticProgressSummary;
+}
+
+export interface AuditAgenticProgressSummary {
+  activeNodeId?: string;
+  approvalState?: string;
+  blocked: number;
+  completed: number;
+  nextAction?: {
+    message: string;
+    nodeId?: string;
+    type: string;
+  };
+  pending: number;
+  ready: number;
+  status?: string;
+  total: number;
 }
 
 export interface AuditRunEvent {
@@ -691,6 +708,7 @@ interface CoreRunStoreInstance {
   listRuns(limit?: number): CoreRunSummaryLike[];
   getRun(runId: string): CoreRunRecordLike | null;
   getEvents(runId: string): CoreRunEventLike[];
+  getArtifact?: (runId: string, name: string) => string | null;
   searchRuns?: (
     query: string,
     options?: { limit?: number; sources?: string[] },
@@ -866,7 +884,8 @@ async function loadModule(): Promise<CoreRunStoreModule | null> {
 
 function mergeSummary(
   summary: CoreRunSummaryLike,
-  metrics: CoreRunMetricsLike
+  metrics: CoreRunMetricsLike,
+  agenticProgress?: AuditAgenticProgressSummary,
 ): AuditRunSummary {
   return {
     runId: summary.runId,
@@ -887,7 +906,66 @@ function mergeSummary(
     totalCost: metrics.totalCost,
     totalTokens: metrics.totalTokens,
     toolCallCount: metrics.toolCallCount,
+    agenticProgress,
   };
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function readNumber(value: unknown): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined;
+}
+
+function readString(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim().length > 0 ? value : undefined;
+}
+
+function readAgenticProgress(
+  store: CoreRunStoreInstance,
+  runId: string,
+  artifacts: string[],
+): AuditAgenticProgressSummary | undefined {
+  if (!artifacts.includes('workflow-progress.json') || !store.getArtifact) {
+    return undefined;
+  }
+
+  try {
+    const raw = store.getArtifact(runId, 'workflow-progress.json');
+    if (!raw) return undefined;
+    const parsed = JSON.parse(raw) as unknown;
+    if (!isRecord(parsed) || parsed.kind !== 'agentic-coding-workflow-progress') {
+      return undefined;
+    }
+
+    const counts = isRecord(parsed.counts) ? parsed.counts : {};
+    const nextAction = isRecord(parsed.nextAction) ? parsed.nextAction : undefined;
+    const source = isRecord(parsed.source) ? parsed.source : undefined;
+    const message = readString(nextAction?.message);
+    const type = readString(nextAction?.type);
+
+    return {
+      activeNodeId: readString(parsed.activeNodeId),
+      approvalState: readString(parsed.approvalState),
+      blocked: readNumber(counts.blocked) ?? 0,
+      completed: readNumber(counts.completed) ?? 0,
+      nextAction: message && type
+        ? {
+          message,
+          nodeId: readString(nextAction?.nodeId),
+          type,
+        }
+        : undefined,
+      pending: readNumber(counts.pending) ?? 0,
+      ready: readNumber(counts.ready) ?? 0,
+      status: readString(source?.status),
+      total: readNumber(counts.total) ?? 0,
+    };
+  } catch (err) {
+    logWarn('[AuditBridge] failed to read agentic progress artifact:', err);
+    return undefined;
+  }
 }
 
 function passesFilter(summary: AuditRunSummary, filter?: AuditRunFilter): boolean {
@@ -916,7 +994,11 @@ export async function listRuns(filter?: AuditRunFilter): Promise<AuditRunSummary
     for (const summary of coreRuns) {
       const record = store.getRun(summary.runId);
       const metrics = record?.metrics ?? {};
-      const merged = mergeSummary(summary, metrics);
+      const merged = mergeSummary(
+        summary,
+        metrics,
+        record ? readAgenticProgress(store, summary.runId, record.artifacts ?? []) : undefined,
+      );
       if (passesFilter(merged, filter)) out.push(merged);
     }
     return out;
@@ -933,7 +1015,11 @@ export async function getRunDetail(runId: string): Promise<AuditRunDetail | null
     const store = mod.RunStore.getInstance();
     const record = store.getRun(runId);
     if (!record) return null;
-    const summary = mergeSummary(record.summary, record.metrics);
+    const summary = mergeSummary(
+      record.summary,
+      record.metrics,
+      readAgenticProgress(store, runId, record.artifacts ?? []),
+    );
     const events = store.getEvents(runId).map((ev) => ({
       ts: ev.ts,
       type: ev.type,
@@ -2012,11 +2098,6 @@ function getToolFilterBlocks(trajectory: AuditRunTrajectoryExportResponse): Audi
 function asRecord(value: unknown): Record<string, unknown> | null {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
   return value as Record<string, unknown>;
-}
-
-function readString(value: unknown): string | undefined {
-  if (typeof value !== 'string') return undefined;
-  return value.trim() || undefined;
 }
 
 function normalizeSearchLimit(value: number | undefined): number {

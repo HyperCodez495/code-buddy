@@ -48,10 +48,10 @@ describe('audit bridge run search', () => {
         status: 'completed' as const,
         startedAt: 1_779_129_600_000,
         eventCount: 3,
-        artifactCount: 1,
+        artifactCount: 2,
         metadata: {
-          channel: 'cowork',
-          tags: ['fleet'],
+          channel: 'autonomous-code',
+          tags: ['fleet', 'agentic-coding'],
         },
       },
       {
@@ -69,11 +69,35 @@ describe('audit bridge run search', () => {
     const getRun = vi.fn((runId: string) => ({
       summary: coreListRuns().find((run) => run.runId === runId),
       metrics: { durationMs: 1000, toolCallCount: 2 },
-      artifacts: [],
+      artifacts: runId === 'run_hermes' ? ['workflow-progress.json', 'agentic-coding-report.json'] : [],
     }));
+    const getArtifact = vi.fn((runId: string, name: string) => {
+      if (runId !== 'run_hermes' || name !== 'workflow-progress.json') return null;
+      return JSON.stringify({
+        activeNodeId: 'verification',
+        approvalState: 'not_required',
+        counts: {
+          blocked: 0,
+          completed: 7,
+          pending: 3,
+          ready: 2,
+          total: 12,
+        },
+        kind: 'agentic-coding-workflow-progress',
+        nextAction: {
+          message: 'Continue with: Run verification.',
+          nodeId: 'verification',
+          type: 'continue',
+        },
+        source: {
+          status: 'ready',
+        },
+      });
+    });
     mockedLoadCoreModule.mockResolvedValue({
       RunStore: {
         getInstance: () => ({
+          getArtifact,
           getRun,
           listRuns: coreListRuns,
           searchRuns: coreSearchRuns,
@@ -111,8 +135,24 @@ describe('audit bridge run search', () => {
     });
     expect(new Date(response.generatedAt).toString()).not.toBe('Invalid Date');
 
-    const filtered = await listRuns({ limit: 20, sources: ['desktop'] });
+    const filtered = await listRuns({ limit: 20, sources: ['autonomous-code'] });
     expect(filtered.map((run) => run.runId)).toEqual(['run_hermes']);
+    expect(filtered[0]?.agenticProgress).toEqual({
+      activeNodeId: 'verification',
+      approvalState: 'not_required',
+      blocked: 0,
+      completed: 7,
+      nextAction: {
+        message: 'Continue with: Run verification.',
+        nodeId: 'verification',
+        type: 'continue',
+      },
+      pending: 3,
+      ready: 2,
+      status: 'ready',
+      total: 12,
+    });
+    expect(getArtifact).toHaveBeenCalledWith('run_hermes', 'workflow-progress.json');
   });
 
   it('returns an empty envelope for blank queries without loading the core module', async () => {

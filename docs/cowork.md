@@ -15,6 +15,8 @@ ChatGPT subscription route, or explain what the desktop app adds beyond the CLI.
 - A built-in test runner that can launch safe local checks and explicit real
   provider checks from the GUI.
 - A trace and execution view for agent work, tool calls, failures, and reruns.
+- An autonomous coding progress card in `Tests & executions -> Executions`,
+  backed by the core `RunStore` and `workflow-progress.json` artifacts.
 - Visual workflow surfaces for Fleet, Hermes parity, skills, lessons, MCP, and
   companion features.
 - A one-click Hermes local smoke card in the Fleet Command Center that verifies
@@ -69,6 +71,17 @@ The panel separates safe, manual, and real checks so public docs can cite
 exactly which proof was run.
 
 ![Cowork test runner catalog](qa/code-buddy-studio/screenshots/30-test-runner-window.png)
+
+### Follow Autonomous Work
+
+Autonomous coding runs created by `buddy autonomous-code` are persisted in the
+core observability store. Cowork reads those runs from the same store and shows
+the status, completed workflow nodes, active node, approval state, and next
+action in the Executions tab.
+
+![Cowork autonomous progress card](qa/code-buddy-studio/screenshots/110-test-runner-autonomous-progress.png)
+
+Reproduction and privacy rules: [Autonomous Coding And Cowork Progress](autonomous-coding-cowork-progress.md).
 
 ### Check Hermes From Cowork
 
@@ -252,6 +265,8 @@ until they pass the same manual privacy review.
 
 - [Cowork source README](../cowork/readme.md)
 - [Cowork architecture](../cowork/ARCHITECTURE.md)
+- [Application validation guide](application-validation-guide.md)
+- [Autonomous coding + Cowork progress](autonomous-coding-cowork-progress.md)
 - [Cowork pilotability matrix](cowork-pilotability-matrix.md)
 - [Hermes / Cowork / CLI improvement log](hermes-cowork-cli-improvement-plan.md)
 - [Full QA ledger](qa/code-buddy-studio/feature-qa.md)
