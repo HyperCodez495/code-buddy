@@ -1,6 +1,7 @@
 import { mkdtemp, readFile, rm } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
+import { readSendMessageOutbox } from '../src/channels/send-message.js';
 import {
   formatCompanionGatewayMessageResult,
   formatCompanionGatewayProfile,
@@ -14,6 +15,7 @@ import {
   draftCompanionGatewayInboxItem,
   readCompanionGatewayInbox,
   routeCompanionGatewayDraftToFleet,
+  sendCompanionGatewayOutboundReply,
 } from '../src/companion/gateway-inbox.js';
 import { readRecentCompanionPercepts } from '../src/companion/percepts.js';
 import { readRecentCompanionSafetyEvents } from '../src/companion/safety-ledger.js';
@@ -435,6 +437,110 @@ describe('companion gateway', () => {
       reviewedBy: 'Patrice',
       autoDispatch: false,
       readyToSend: false,
+    });
+  });
+
+  it('sends a reviewed outbound reply through the send outbox only with explicit approval', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T15:00:00.000Z'),
+    });
+
+    const result = await recordCompanionGatewayMessage({
+      channel: 'telegram',
+      senderId: 'lead',
+      senderName: 'Lead',
+      threadId: 'dm-send',
+      messageId: 'm-send',
+      text: 'Please prepare and send a reviewed reply.',
+      contentType: 'text',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:01:00.000Z'),
+    });
+    await draftCompanionGatewayInboxItem(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:02:00.000Z'),
+    });
+    await routeCompanionGatewayDraftToFleet(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:03:00.000Z'),
+    });
+    await draftCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Approved preview for the sender.',
+      reviewedBy: 'Patrice',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:04:00.000Z'),
+    });
+
+    await expect(sendCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Final approved response.',
+      approvedBy: 'Patrice',
+      dryRun: false,
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:05:00.000Z'),
+    })).rejects.toThrow(/liveDeliveryConfirmed is required/);
+
+    const sendResult = await sendCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Final approved response.',
+      approvedBy: 'Patrice',
+      dryRun: true,
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T15:06:00.000Z'),
+      sendMessage: {
+        createId: () => 'outbox-gateway-reply-1',
+      },
+    });
+
+    expect(sendResult).toMatchObject({
+      kind: 'companion_gateway_outbound_reply_send_result',
+      sourceItemId: result.inboxItem!.id,
+      approvedBy: 'Patrice',
+      dryRun: true,
+      send: {
+        ok: true,
+        status: 'preview',
+        dryRun: true,
+        entry: {
+          id: 'outbox-gateway-reply-1',
+          channel: 'telegram',
+          channelId: 'dm-send',
+          threadId: 'dm-send',
+          replyTo: 'm-send',
+          approvedBy: 'Patrice',
+          content: 'Final approved response.',
+        },
+      },
+    });
+
+    const outbox = await readSendMessageOutbox(tempDir);
+    expect(outbox).toEqual([
+      expect.objectContaining({
+        id: 'outbox-gateway-reply-1',
+        channel: 'telegram',
+        channelId: 'dm-send',
+        status: 'preview',
+        dryRun: true,
+        approvedBy: 'Patrice',
+        content: 'Final approved response.',
+      }),
+    ]);
+
+    const inbox = await readCompanionGatewayInbox({ cwd: tempDir });
+    expect(inbox.items[0]?.draft?.fleet?.outboundReply?.lastSend).toMatchObject({
+      id: 'outbox-gateway-reply-1',
+      kind: 'outbound_reply_send',
+      status: 'preview',
+      dryRun: true,
+      approvedBy: 'Patrice',
+      autoDispatch: false,
+      requiresLocalApproval: true,
     });
   });
 });

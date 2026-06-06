@@ -96,6 +96,12 @@ gateway item through `companion.gateway.outboundReplyDraft`. The reply draft is
 written as `.codebuddy/companion/gateway-drafts/*.reply.json`, requires a
 reviewer name, stores only a redacted content preview, sets
 `readyToSend=false`, and does not create a channel outbox entry.
+The final send step is separate: `companion.gateway.sendOutboundReply` requires
+the final reply text again, an `approvedBy` value, and
+`liveDeliveryConfirmed=true` for live delivery. It delegates to
+`executeSendMessage`, so previews and live sends both write the standard
+`.codebuddy/messages/outbox.jsonl` record and live sends pass through
+`SendPolicyEngine` before any channel adapter is contacted.
 
 Validation:
 
@@ -106,8 +112,9 @@ cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 ```
 
 This is intentionally a supervised inbox and handoff flow, not an OpenClaw-style
-unrestricted remote executor. The remaining send step must stay explicit and
-policy-gated; the gateway reply draft is proof of local approval, not delivery.
+unrestricted remote executor. Gateway replies are now explicit and policy-gated:
+drafting proves review intent, while sending requires a separate approval and
+uses the normal channel outbox path.
 
 ## Message Preprocessing
 

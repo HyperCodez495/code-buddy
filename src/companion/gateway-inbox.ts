@@ -1,6 +1,13 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import * as path from 'path';
 import type { ChannelType, ContentType } from '../channels/core.js';
+import {
+  executeSendMessage,
+  type SendMessageExecutionResult,
+  type SendMessageExecutorOptions,
+  type SendMessageParseMode,
+  type SendMessageStatus,
+} from '../channels/send-message.js';
 import type { CompanionGatewayMode } from './gateway.js';
 
 export const COMPANION_GATEWAY_INBOX_SCHEMA_VERSION = 1;
@@ -130,6 +137,7 @@ export interface CompanionGatewayOutboundReplyDraftSummary {
   autoDispatch: false;
   requiresLocalApproval: true;
   readyToSend: false;
+  lastSend?: CompanionGatewayOutboundReplySendSummary;
 }
 
 export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutboundReplyDraftSummary {
@@ -154,6 +162,38 @@ export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutb
     readyToSend: false;
     outboundChannelReply: false;
   };
+}
+
+export interface CompanionGatewayOutboundReplySendInput {
+  text: string;
+  approvedBy: string;
+  dryRun?: boolean;
+  liveDeliveryConfirmed?: boolean;
+  parseMode?: SendMessageParseMode;
+}
+
+export interface CompanionGatewayOutboundReplySendSummary {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_send';
+  outboxPath: string;
+  status: SendMessageStatus;
+  dryRun: boolean;
+  approvedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  policyAllowed?: boolean;
+  deliverySuccess?: boolean;
+  error?: string;
+}
+
+export interface CompanionGatewayOutboundReplySendResult {
+  kind: 'companion_gateway_outbound_reply_send_result';
+  sourceItemId: string;
+  sourceReplyDraftId: string;
+  approvedBy: string;
+  dryRun: boolean;
+  send: SendMessageExecutionResult;
 }
 
 export interface CompanionGatewayFleetDraft extends CompanionGatewayFleetDraftSummary {
@@ -215,6 +255,10 @@ export interface CompanionGatewayInboxOptions {
   now?: Date;
   storePath?: string;
   maxItems?: number;
+}
+
+export interface CompanionGatewayOutboundReplySendOptions extends CompanionGatewayInboxOptions {
+  sendMessage?: Omit<SendMessageExecutorOptions, 'rootDir' | 'now'>;
 }
 
 const DEFAULT_MAX_ITEMS = 200;
@@ -744,6 +788,95 @@ export async function draftCompanionGatewayOutboundReply(
   return replyDraft;
 }
 
+export async function sendCompanionGatewayOutboundReply(
+  itemId: string,
+  input: CompanionGatewayOutboundReplySendInput,
+  options: CompanionGatewayOutboundReplySendOptions = {},
+): Promise<CompanionGatewayOutboundReplySendResult> {
+  const now = options.now || new Date();
+  const inbox = await readCompanionGatewayInbox({ ...options, now });
+  const item = inbox.items.find(existing => existing.id === itemId);
+  if (!item) {
+    throw new Error(`Companion gateway inbox item not found: ${itemId}`);
+  }
+  const outboundReply = item.draft?.fleet?.outboundReply;
+  if (item.status !== 'drafted' || !outboundReply) {
+    throw new Error(`Companion gateway inbox item has no outbound reply draft: ${itemId}`);
+  }
+  if (!input.text.trim()) {
+    throw new Error('reply text is required');
+  }
+  if (!input.approvedBy.trim()) {
+    throw new Error('approvedBy is required');
+  }
+  const dryRun = input.dryRun !== false;
+  if (!dryRun && input.liveDeliveryConfirmed !== true) {
+    throw new Error('liveDeliveryConfirmed is required when dryRun is false');
+  }
+
+  const cwd = resolveCwd(options.cwd);
+  const approvedBy = input.approvedBy.trim();
+  const send = await executeSendMessage({
+    channel: item.channel,
+    channelId: item.threadId,
+    threadId: item.threadId,
+    replyTo: item.messageId,
+    content: input.text,
+    contentType: 'text',
+    dryRun,
+    approvedBy,
+    parseMode: input.parseMode,
+    chatType: item.messageId ? 'thread' : 'dm',
+  }, {
+    ...options.sendMessage,
+    rootDir: cwd,
+    now: () => now,
+  });
+  const summary: CompanionGatewayOutboundReplySendSummary = {
+    id: send.entry.id,
+    createdAt: send.entry.createdAt,
+    kind: 'outbound_reply_send',
+    outboxPath: send.outboxPath,
+    status: send.status,
+    dryRun: send.dryRun,
+    approvedBy,
+    autoDispatch: false,
+    requiresLocalApproval: true,
+    ...(send.entry.policy ? { policyAllowed: send.entry.policy.allowed } : {}),
+    ...(send.entry.delivery ? { deliverySuccess: send.entry.delivery.success } : {}),
+    ...(send.error ? { error: send.error } : {}),
+  };
+
+  await writeInbox({
+    ...inbox,
+    generatedAt: now.toISOString(),
+    items: inbox.items.map(existing => existing.id === item.id
+      ? {
+        ...existing,
+        draft: {
+          ...existing.draft!,
+          fleet: {
+            ...existing.draft!.fleet!,
+            outboundReply: {
+              ...outboundReply,
+              lastSend: summary,
+            },
+          },
+        },
+      }
+      : existing),
+  });
+
+  return {
+    kind: 'companion_gateway_outbound_reply_send_result',
+    sourceItemId: item.id,
+    sourceReplyDraftId: outboundReply.id,
+    approvedBy,
+    dryRun,
+    send,
+  };
+}
+
 export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): string {
   const lines = [
     'Companion gateway inbox',
@@ -763,6 +896,9 @@ export function renderCompanionGatewayInbox(inbox: CompanionGatewayInbox): strin
         lines.push(`  fleet draft: ${item.draft.fleet.draftFile}`);
         if (item.draft.fleet.outboundReply) {
           lines.push(`  outbound reply draft: ${item.draft.fleet.outboundReply.draftFile}`);
+          if (item.draft.fleet.outboundReply.lastSend) {
+            lines.push(`  outbound reply send: ${item.draft.fleet.outboundReply.lastSend.status} ${item.draft.fleet.outboundReply.lastSend.outboxPath}`);
+          }
         }
       }
     }

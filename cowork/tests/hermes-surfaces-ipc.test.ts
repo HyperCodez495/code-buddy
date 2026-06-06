@@ -668,6 +668,97 @@ describe('companion IPC', () => {
     expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('sends a companion gateway outbound reply through the approved core send path', async () => {
+    const sendCompanionGatewayOutboundReply = vi.fn(async () => ({
+      kind: 'companion_gateway_outbound_reply_send_result',
+      sourceItemId: 'gateway_telegram_1',
+      sourceReplyDraftId: 'reply_fleet_draft_gateway_telegram_1',
+      approvedBy: 'Patrice',
+      dryRun: false,
+      send: {
+        ok: true,
+        status: 'sent',
+        dryRun: false,
+        outboxPath: '/tmp/proj/.codebuddy/messages/outbox.jsonl',
+        entry: {
+          id: 'outbox-1',
+          channel: 'telegram',
+          channelId: 'thread-1',
+          status: 'sent',
+          dryRun: false,
+          approvedBy: 'Patrice',
+          content: 'Approved live reply.',
+        },
+      },
+    }));
+    const readCompanionGatewayInbox = vi.fn(async () => ({
+      schemaVersion: 1,
+      kind: 'companion_gateway_inbox',
+      generatedAt: '2026-06-07T10:04:00.000Z',
+      cwd: '/tmp/proj',
+      storePath: '/tmp/proj/.codebuddy/companion/gateway-inbox.json',
+      counts: { queued: 0, ignored: 0, highPriority: 1, total: 1 },
+      safety: {
+        autoDispatch: false,
+        rawTextStored: false,
+        outboundDisabledByDefault: true,
+        localOnly: true,
+      },
+      items: [],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      sendCompanionGatewayOutboundReply,
+      readCompanionGatewayInbox,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.sendOutboundReply');
+    const rejected = (await handler?.({}, {
+      itemId: 'gateway_telegram_1',
+      text: 'Approved live reply.',
+      approvedBy: ' ',
+      dryRun: false,
+      liveDeliveryConfirmed: true,
+    })) as { ok: boolean; error?: string };
+    expect(rejected.ok).toBe(false);
+    expect(rejected.error).toMatch(/approvedBy is required/);
+    expect(sendCompanionGatewayOutboundReply).not.toHaveBeenCalled();
+
+    const res = (await handler?.({}, {
+      itemId: 'gateway_telegram_1',
+      text: 'Approved live reply.',
+      approvedBy: 'Patrice',
+      dryRun: false,
+      liveDeliveryConfirmed: true,
+    })) as {
+      ok: boolean;
+      result?: {
+        approvedBy: string;
+        dryRun: boolean;
+        send: { status: string; outboxPath: string; entry: { approvedBy?: string } };
+      };
+      inbox?: { counts: { queued: number } };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.result?.approvedBy).toBe('Patrice');
+    expect(res.result?.dryRun).toBe(false);
+    expect(res.result?.send.status).toBe('sent');
+    expect(res.result?.send.outboxPath).toContain('outbox.jsonl');
+    expect(res.result?.send.entry.approvedBy).toBe('Patrice');
+    expect(res.inbox?.counts.queued).toBe(0);
+    expect(sendCompanionGatewayOutboundReply).toHaveBeenCalledWith(
+      'gateway_telegram_1',
+      {
+        text: 'Approved live reply.',
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveDeliveryConfirmed: true,
+      },
+      { cwd: '/tmp/proj' },
+    );
+    expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

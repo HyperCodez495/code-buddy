@@ -38,4 +38,17 @@ describe('companion gateway Fleet launch surface', () => {
     expect(preload).toContain('companion.gateway.outboundReplyDraft');
     expect(preload).toContain('replyDraft?: CompanionGatewayOutboundReplyDraft');
   });
+
+  it('requires explicit confirmation before sending approved gateway replies', () => {
+    const panel = readFileSync(companionPanelPath, 'utf8');
+    const preload = readFileSync(preloadPath, 'utf8');
+
+    expect(panel).toContain('Send reply');
+    expect(panel).toContain('sendGatewayOutboundReply');
+    expect(panel).toContain('This may contact the external recipient.');
+    expect(panel).toContain('liveDeliveryConfirmed: true');
+    expect(panel).toContain('companion-gateway-outbound-reply-send');
+    expect(preload).toContain('companion.gateway.sendOutboundReply');
+    expect(preload).toContain('result?: CompanionGatewayOutboundReplySendResult');
+  });
 });

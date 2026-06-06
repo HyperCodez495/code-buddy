@@ -699,6 +699,7 @@ type CompanionGatewayOutboundReplyDraftSummary = {
   autoDispatch: false;
   requiresLocalApproval: true;
   readyToSend: false;
+  lastSend?: CompanionGatewayOutboundReplySendSummary;
 };
 
 type CompanionGatewayOutboundReplyDraft = CompanionGatewayOutboundReplyDraftSummary & {
@@ -722,6 +723,53 @@ type CompanionGatewayOutboundReplyDraft = CompanionGatewayOutboundReplyDraftSumm
     requiresLocalApproval: true;
     readyToSend: false;
     outboundChannelReply: false;
+  };
+};
+
+type CompanionGatewayOutboundReplySendInput = {
+  text: string;
+  approvedBy: string;
+  dryRun?: boolean;
+  liveDeliveryConfirmed?: boolean;
+};
+
+type CompanionGatewayOutboundReplySendSummary = {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_send';
+  outboxPath: string;
+  status: 'preview' | 'sent' | 'failed' | 'blocked';
+  dryRun: boolean;
+  approvedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  policyAllowed?: boolean;
+  deliverySuccess?: boolean;
+  error?: string;
+};
+
+type CompanionGatewayOutboundReplySendResult = {
+  kind: 'companion_gateway_outbound_reply_send_result';
+  sourceItemId: string;
+  sourceReplyDraftId: string;
+  approvedBy: string;
+  dryRun: boolean;
+  send: {
+    ok: boolean;
+    status: 'preview' | 'sent' | 'failed' | 'blocked';
+    dryRun: boolean;
+    outboxPath: string;
+    error?: string;
+    entry: {
+      id: string;
+      channel: string;
+      channelId: string;
+      status: 'preview' | 'sent' | 'failed' | 'blocked';
+      dryRun: boolean;
+      approvedBy?: string;
+      content: string;
+      error?: string;
+    };
   };
 };
 
@@ -794,6 +842,11 @@ type CompanionGatewayInboxMod = {
     input: CompanionGatewayOutboundReplyDraftInput,
     options: { cwd?: string },
   ) => Promise<CompanionGatewayOutboundReplyDraft>;
+  sendCompanionGatewayOutboundReply: (
+    itemId: string,
+    input: CompanionGatewayOutboundReplySendInput,
+    options: { cwd?: string },
+  ) => Promise<CompanionGatewayOutboundReplySendResult>;
 };
 
 type CompanionSkillCuratorMod = {
@@ -1465,6 +1518,51 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         };
       } catch (err) {
         logError('[companion.gateway.outboundReplyDraft] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.gateway.sendOutboundReply',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        itemId?: string;
+        text?: string;
+        approvedBy?: string;
+        dryRun?: boolean;
+        liveDeliveryConfirmed?: boolean;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.itemId) return { ok: false as const, error: 'itemId is required' };
+      if (!input.text?.trim()) return { ok: false as const, error: 'text is required' };
+      if (!input.approvedBy?.trim()) return { ok: false as const, error: 'approvedBy is required' };
+      try {
+        const mod = await loadGatewayInbox();
+        if (!mod?.sendCompanionGatewayOutboundReply || !mod.readCompanionGatewayInbox) {
+          return { ok: false as const, error: 'core companion gateway inbox module unavailable' };
+        }
+        const result = await mod.sendCompanionGatewayOutboundReply(
+          input.itemId,
+          {
+            text: input.text,
+            approvedBy: input.approvedBy,
+            dryRun: input.dryRun,
+            liveDeliveryConfirmed: input.liveDeliveryConfirmed,
+          },
+          { cwd },
+        );
+        return {
+          ok: true as const,
+          result,
+          inbox: await mod.readCompanionGatewayInbox({ cwd }),
+        };
+      } catch (err) {
+        logError('[companion.gateway.sendOutboundReply] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },

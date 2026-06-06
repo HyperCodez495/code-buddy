@@ -623,6 +623,7 @@ export interface CompanionGatewayOutboundReplyDraftSummary {
   autoDispatch: false;
   requiresLocalApproval: true;
   readyToSend: false;
+  lastSend?: CompanionGatewayOutboundReplySendSummary;
 }
 
 export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutboundReplyDraftSummary {
@@ -646,6 +647,46 @@ export interface CompanionGatewayOutboundReplyDraft extends CompanionGatewayOutb
     requiresLocalApproval: true;
     readyToSend: false;
     outboundChannelReply: false;
+  };
+}
+
+export interface CompanionGatewayOutboundReplySendSummary {
+  id: string;
+  createdAt: string;
+  kind: 'outbound_reply_send';
+  outboxPath: string;
+  status: 'preview' | 'sent' | 'failed' | 'blocked';
+  dryRun: boolean;
+  approvedBy: string;
+  autoDispatch: false;
+  requiresLocalApproval: true;
+  policyAllowed?: boolean;
+  deliverySuccess?: boolean;
+  error?: string;
+}
+
+export interface CompanionGatewayOutboundReplySendResult {
+  kind: 'companion_gateway_outbound_reply_send_result';
+  sourceItemId: string;
+  sourceReplyDraftId: string;
+  approvedBy: string;
+  dryRun: boolean;
+  send: {
+    ok: boolean;
+    status: 'preview' | 'sent' | 'failed' | 'blocked';
+    dryRun: boolean;
+    outboxPath: string;
+    error?: string;
+    entry: {
+      id: string;
+      channel: string;
+      channelId: string;
+      status: 'preview' | 'sent' | 'failed' | 'blocked';
+      dryRun: boolean;
+      approvedBy?: string;
+      content: string;
+      error?: string;
+    };
   };
 }
 

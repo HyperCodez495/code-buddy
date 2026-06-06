@@ -47,6 +47,7 @@ import type {
   CompanionGatewayInboxDraft,
   CompanionGatewayMode,
   CompanionGatewayOutboundReplyDraft,
+  CompanionGatewayOutboundReplySendResult,
   CompanionGatewayProfile,
   CompanionImprovementCycle,
   CompanionImpulseBrief,
@@ -1298,12 +1299,14 @@ function GatewayInboxPreview({
   onDraft,
   onFleetDraft,
   onReplyDraft,
+  onReplySend,
 }: {
   inbox: CompanionGatewayInbox;
   busy: boolean;
   onDraft: (itemId: string) => void;
   onFleetDraft: (itemId: string) => void;
   onReplyDraft: (itemId: string) => void;
+  onReplySend: (itemId: string) => void;
 }) {
   const items = inbox.items.slice(0, 5);
   return (
@@ -1413,6 +1416,15 @@ function GatewayInboxPreview({
                     >
                       <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                       <span className="truncate">Reply: {item.draft.fleet.outboundReply.reviewedBy}</span>
+                    </button>
+                  )}
+                  {item.draft.fleet?.outboundReply && (
+                    <button
+                      disabled={busy}
+                      onClick={() => onReplySend(item.id)}
+                      className="rounded border border-red-500/50 px-2 py-1 text-[10px] text-red-300 hover:bg-red-500/10 disabled:opacity-50"
+                    >
+                      Send reply
                     </button>
                   )}
                 </div>
@@ -1532,6 +1544,7 @@ export function CompanionPanel() {
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
   const [gatewayFleetLaunch, setGatewayFleetLaunch] = useState<CompanionGatewayFleetLaunchResult | null>(null);
   const [gatewayOutboundReplyDraft, setGatewayOutboundReplyDraft] = useState<CompanionGatewayOutboundReplyDraft | null>(null);
+  const [gatewayOutboundReplySend, setGatewayOutboundReplySend] = useState<CompanionGatewayOutboundReplySendResult | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
@@ -1544,7 +1557,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'gatewayOutboundReplyDraft' | 'gatewayOutboundReplySend' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
@@ -2106,6 +2119,36 @@ export function CompanionPanel() {
       return;
     }
     setGatewayOutboundReplyDraft(res.replyDraft ?? null);
+    setGatewayInbox(res.inbox ?? null);
+    await refresh();
+  };
+
+  const sendGatewayOutboundReply = async (itemId: string) => {
+    const text = window.prompt(
+      'Paste the final approved reply. This content will be written to the channel outbox.',
+    );
+    if (!text?.trim()) return;
+    const approvedBy = window.prompt('Approver name for this outbound send');
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      'Send this approved reply through the channel now? This may contact the external recipient.',
+    );
+    if (!confirmed) return;
+    setBusyAction('gatewayOutboundReplySend');
+    setError(null);
+    const res = await window.electronAPI.companion.sendGatewayOutboundReply({
+      itemId,
+      text,
+      approvedBy,
+      dryRun: false,
+      liveDeliveryConfirmed: true,
+    });
+    setBusyAction(null);
+    if (!res.ok) {
+      setError(res.error ?? 'Gateway outbound reply send failed');
+      return;
+    }
+    setGatewayOutboundReplySend(res.result ?? null);
     setGatewayInbox(res.inbox ?? null);
     await refresh();
   };
@@ -2793,6 +2836,7 @@ export function CompanionPanel() {
               onDraft={(itemId) => void draftGatewayInboxItem(itemId)}
               onFleetDraft={(itemId) => void routeGatewayDraftToFleet(itemId)}
               onReplyDraft={(itemId) => void draftGatewayOutboundReply(itemId)}
+              onReplySend={(itemId) => void sendGatewayOutboundReply(itemId)}
             />
           )}
 
@@ -2888,6 +2932,40 @@ export function CompanionPanel() {
                   <FolderOpen className="h-3.5 w-3.5 shrink-0" />
                   <span className="truncate">{gatewayOutboundReplyDraft.draftFile}</span>
                 </button>
+              </div>
+            </section>
+          )}
+
+          {gatewayOutboundReplySend && (
+            <section className="space-y-3" data-testid="companion-gateway-outbound-reply-send">
+              <div className="flex items-center justify-between">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway reply send</h3>
+                <span className="text-[10px] text-text-muted">{gatewayOutboundReplySend.send.status}</span>
+              </div>
+              <div className="rounded border border-border bg-surface/35 p-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-4 w-4 text-accent" />
+                  <span className="text-xs font-semibold text-text-primary">
+                    {gatewayOutboundReplySend.approvedBy} · {gatewayOutboundReplySend.send.entry.channel}
+                  </span>
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1 text-[10px] text-text-muted">
+                  <span className="rounded bg-background px-1.5 py-0.5">
+                    {gatewayOutboundReplySend.dryRun ? 'preview' : 'live'}
+                  </span>
+                  <span className="rounded bg-background px-1.5 py-0.5">{gatewayOutboundReplySend.send.status}</span>
+                  <span className="rounded bg-background px-1.5 py-0.5">send-policy</span>
+                </div>
+                <button
+                  onClick={() => void window.electronAPI.showItemInFolder(gatewayOutboundReplySend.send.outboxPath)}
+                  className="mt-3 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+                >
+                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{gatewayOutboundReplySend.send.outboxPath}</span>
+                </button>
+                {gatewayOutboundReplySend.send.error && (
+                  <p className="mt-2 text-xs text-red-300">{gatewayOutboundReplySend.send.error}</p>
+                )}
               </div>
             </section>
           )}
