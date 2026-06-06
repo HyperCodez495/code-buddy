@@ -2,6 +2,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'fs/promises';
 import { createServer, type Server } from 'http';
 import * as os from 'os';
 import * as path from 'path';
+import { WebSocketServer } from 'ws';
 import {
   attachOpenClawGateway,
   buildOpenClawNodeDescriptor,
@@ -9,6 +10,7 @@ import {
   discoverOpenClawGateway,
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
+  probeOpenClawGatewayWebSocket,
   sendOpenClawResponse,
 } from '../../src/openclaw/gateway-bridge.js';
 
@@ -56,6 +58,55 @@ async function startOpenClawContractServer(): Promise<{
   return {
     baseUrl: `http://127.0.0.1:${address.port}`,
     requests,
+    close: () => new Promise<void>((resolve, reject) => {
+      server.close((error) => error ? reject(error) : resolve());
+    }),
+  };
+}
+
+async function startOpenClawWebSocketContractServer(): Promise<{
+  wsUrl: string;
+  close: () => Promise<void>;
+  frames: unknown[];
+}> {
+  const frames: unknown[] = [];
+  const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+  server.on('connection', (socket) => {
+    socket.on('message', (data) => {
+      const frame = JSON.parse(data.toString('utf8')) as Record<string, unknown>;
+      frames.push(frame);
+      if (frame.type === 'connect') {
+        socket.send(JSON.stringify({
+          type: 'hello-ok',
+          gatewayId: 'openclaw-ws-contract-gateway',
+          uptimeMs: 1234,
+          features: {
+            methods: ['status', 'logs.tail', 'nodes.pending'],
+          },
+        }));
+        return;
+      }
+      if (frame.type === 'req' && frame.method === 'status') {
+        socket.send(JSON.stringify({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            status: 'ok',
+            tokenEcho: 'oc_ws_contract_secret_fixture',
+          },
+        }));
+      }
+    });
+  });
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const address = server.address();
+  if (!address || typeof address === 'string') {
+    throw new Error('Failed to bind OpenClaw WebSocket contract server');
+  }
+  return {
+    wsUrl: `ws://127.0.0.1:${address.port}`,
+    frames,
     close: () => new Promise<void>((resolve, reject) => {
       server.close((error) => error ? reject(error) : resolve());
     }),
@@ -264,6 +315,128 @@ describe('OpenClaw gateway bridge compatibility', () => {
     const rawLog = await readFile(result.attachLogPath, 'utf8');
     expect(rawLog).toContain('attach-preview-1');
     expect(rawLog).not.toContain('oc_attach_secret_fixture');
+  });
+
+  it('previews the OpenClaw WebSocket probe without contacting the gateway', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_ws_preview_secret_fixture',
+    }, null, 2), 'utf8');
+
+    const result = await probeOpenClawGatewayWebSocket({
+      dryRun: true,
+    }, {
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:17:00.000Z'),
+      createId: () => 'ws-preview-1',
+    });
+
+    expect(result.ok).toBe(true);
+    expect(result.record).toMatchObject({
+      id: 'ws-preview-1',
+      status: 'preview',
+      wsUrl: 'ws://127.0.0.1:18789/',
+      dryRun: true,
+      safety: {
+        tokenPresent: true,
+        tokenSent: false,
+        networkContacted: false,
+        secretsIncluded: false,
+      },
+    });
+    const rawLog = await readFile(result.probeLogPath, 'utf8');
+    expect(rawLog).toContain('ws-preview-1');
+    expect(rawLog).not.toContain('oc_ws_preview_secret_fixture');
+  });
+
+  it('blocks live OpenClaw WebSocket probes without explicit confirmation', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      wsUrl: 'ws://127.0.0.1:18789',
+    }, null, 2), 'utf8');
+
+    const result = await probeOpenClawGatewayWebSocket({
+      dryRun: false,
+      approvedBy: 'Patrice',
+      liveProbeConfirmed: false,
+    }, {
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-07T12:18:00.000Z'),
+      createId: () => 'ws-blocked-1',
+    });
+
+    expect(result.ok).toBe(false);
+    expect(result.record.status).toBe('blocked');
+    expect(result.error).toBe('liveProbeConfirmed is required for live OpenClaw WebSocket probe');
+    expect(result.record.safety.networkContacted).toBe(false);
+  });
+
+  it('validates the OpenClaw WebSocket connect and status contract against a local gateway fixture', async () => {
+    const server = await startOpenClawWebSocketContractServer();
+    try {
+      await mkdir(openclawHome, { recursive: true });
+      await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+        nodeId: 'openclaw-ws-contract-daemon',
+        wsUrl: server.wsUrl,
+        token: 'oc_ws_contract_secret_fixture',
+      }, null, 2), 'utf8');
+
+      const result = await probeOpenClawGatewayWebSocket({
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveProbeConfirmed: true,
+        timeoutMs: 2000,
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:19:00.000Z'),
+        createId: () => 'ws-contract-1',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record).toMatchObject({
+        id: 'ws-contract-1',
+        status: 'connected',
+        approvedBy: 'Patrice',
+        liveProbeConfirmed: true,
+        response: {
+          helloOk: true,
+          statusResponseOk: true,
+          gatewayId: 'openclaw-ws-contract-gateway',
+          uptimeMs: 1234,
+          methodCount: 3,
+          methodSample: ['logs.tail', 'nodes.pending', 'status'],
+          frameTypes: ['hello-ok', 'res'],
+        },
+        safety: {
+          tokenPresent: true,
+          tokenSent: true,
+          networkContacted: true,
+          secretsIncluded: false,
+        },
+      });
+      expect(server.frames).toHaveLength(2);
+      expect(server.frames[0]).toMatchObject({
+        type: 'connect',
+        auth: {
+          token: 'oc_ws_contract_secret_fixture',
+        },
+      });
+      expect(server.frames[1]).toMatchObject({
+        type: 'req',
+        id: 'ws-contract-1',
+        method: 'status',
+      });
+      expect(JSON.stringify(result)).not.toContain('oc_ws_contract_secret_fixture');
+      const rawLog = await readFile(result.probeLogPath, 'utf8');
+      expect(rawLog).toContain('ws-contract-1');
+      expect(rawLog).not.toContain('oc_ws_contract_secret_fixture');
+    } finally {
+      await server.close();
+    }
   });
 
   it('blocks live OpenClaw gateway attach without explicit confirmation', async () => {

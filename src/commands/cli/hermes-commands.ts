@@ -41,6 +41,7 @@ import {
   buildOpenClawNodeDescriptor,
   discoverOpenClawGateway,
   prepareOpenClawFleetHandoffDraft,
+  probeOpenClawGatewayWebSocket,
   sendOpenClawResponse,
 } from '../../openclaw/gateway-bridge.js';
 import {
@@ -2201,6 +2202,8 @@ interface HermesClawBridgeOptions extends HermesCommandOptions {
   yes?: boolean;
   approvedBy?: string;
   endpointPath?: string;
+  statusMethod?: string;
+  timeoutMs?: string;
   messageId?: string;
   channel?: string;
   threadId?: string;
@@ -2327,6 +2330,45 @@ function registerHermesClawCommands(hermes: Command): void {
         found: discovery.found,
         discovery,
         recommendations: discovery.recommendations,
+      }));
+    });
+
+  bridge
+    .command('probe-ws')
+    .description('Probe the OpenClaw Gateway WebSocket handshake (--apply --yes required for live probe)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--status-method <method>', 'OpenClaw status RPC method to call after hello-ok', 'status')
+    .option('--timeout-ms <ms>', 'WebSocket probe timeout', '5000')
+    .option('--approved-by <name>', 'operator approving live WebSocket probe')
+    .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
+    .option('--yes', 'confirm live probe when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const timeoutMs = Number.parseInt(options.timeoutMs || '5000', 10);
+      const result = await probeOpenClawGatewayWebSocket({
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveProbeConfirmed: options.apply === true && options.yes === true,
+        statusMethod: options.statusMethod,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      }, {
+        home: options.source,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: {
+          status: result.record.status,
+          endpoint: result.record.wsUrl,
+        },
+        recommendations: result.error ? [result.error] : undefined,
       }));
     });
 

@@ -382,4 +382,44 @@ describe('hermes claw migrate (real)', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('exposes `buddy hermes claw bridge probe-ws --json` as dry-run by default', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_cli_ws_secret_fixture',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'probe-ws',
+        '--source',
+        openclaw,
+        '--workspace-target',
+        target,
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_websocket_probe_result');
+      expect(payload.ok).toBe(true);
+      expect(payload.record.status).toBe('preview');
+      expect(payload.record.wsUrl).toBe('ws://127.0.0.1:18789/');
+      expect(payload.record.safety.networkContacted).toBe(false);
+      expect(payload.record.safety.tokenPresent).toBe(true);
+      expect(output).not.toContain('oc_cli_ws_secret_fixture');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });

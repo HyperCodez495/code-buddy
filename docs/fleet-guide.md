@@ -1154,19 +1154,24 @@ CLI utilisateur :
 ```bash
 buddy hermes claw bridge status --json
 buddy hermes claw bridge attach --source ~/.openclaw --json
+buddy hermes claw bridge probe-ws --source ~/.openclaw --json
 buddy hermes claw bridge draft --message-id oc_1 --channel telegram --sender-id u_1 --text "..." --json
 buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t_1 --text "..." --json
 ```
 
-`attach` et `send` sont dry-run par défaut. Pour contacter un daemon, il faut
-ajouter `--apply --yes --approved-by <name>`; les sorties et journaux restent
-redacted.
+`attach`, `probe-ws` et `send` sont dry-run par défaut. Pour contacter un daemon,
+il faut ajouter `--apply --yes --approved-by <name>`; les sorties et journaux
+restent redacted.
 
 La suite `tests/openclaw/gateway-bridge.test.ts` contient aussi un serveur HTTP
 local de contrat OpenClaw qui reçoit réellement `nodes/register` et
 `messages/reply`. Cette preuve couvre résolution d'URL, header bearer token,
-payload JSON et journaux redacted; il reste à répéter cette validation contre
-un binaire daemon OpenClaw upstream avant de parler de compatibilité complète.
+payload JSON et journaux redacted. Elle contient maintenant aussi une fixture
+WebSocket locale pour le flux documenté par OpenClaw (`connect`, `hello-ok`,
+`req(status)`, `res`). Cette preuve couvre le handshake Gateway, l'envoi du token
+uniquement en live confirmé, et le log `ws-probe-log.jsonl` sans token ni payload
+brut; il reste à répéter cette validation contre un binaire daemon OpenClaw
+upstream avant de parler de compatibilité complète.
 
 Cowork expose le même contrat dans le Companion panel, section
 `OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et

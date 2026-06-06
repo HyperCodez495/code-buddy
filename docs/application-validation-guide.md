@@ -420,11 +420,12 @@ local HTTP OpenClaw daemon contract fixture for the live `nodes/register` and
 payload shape, response summarization, and redacted logs without requiring a
 private upstream OpenClaw install.
 The Hermes CLI migration suite also validates the user-facing bridge commands:
-`buddy hermes claw bridge status --json`, `bridge draft --json`, and
-`bridge send --json` are machine-readable and keep tokens/message secrets out of
-stdout.
+`buddy hermes claw bridge status --json`, `bridge probe-ws --json`,
+`bridge draft --json`, and `bridge send --json` are machine-readable and keep
+tokens/message secrets out of stdout. The WebSocket probe is dry-run by default;
+live probing requires `--apply --yes --approved-by <name>`.
 
-Observed result: `12` companion gateway tests, `12` OpenClaw bridge tests, `13`
+Observed result: `12` companion gateway tests, `15` OpenClaw bridge tests, `14`
 Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
 surface tests passed, plus the targeted Cowork Playwright OpenClaw bridge proof
 passed and wrote:
@@ -436,7 +437,11 @@ docs/qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png
 These proofs cover local inbox creation, urgent message priority,
 disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
 execution logging, dry-run OpenClaw compatibility handoffs, and guarded
-OpenClaw daemon attach/response send plus CLI dry-run access. The new draft
+OpenClaw daemon attach/response send plus CLI dry-run access. The OpenClaw
+bridge suite now also includes a local WebSocket gateway fixture for the
+documented `connect` -> `hello-ok` -> `req(status)` -> `res` flow; the probe log
+stores only frame types and response summaries, never tokens or raw payloads.
+The new draft
 proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
 Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer
