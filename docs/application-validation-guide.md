@@ -265,7 +265,10 @@ auto-dispatch. Preparing a queued item creates a local
 `buddy autonomous-code --require-approval`; it does not launch the run or send
 an outbound channel reply. Routing that prepared task to Fleet writes a
 `.fleet.json` handoff with `dispatchProfile=safe` and `privacyTag=sensitive`,
-but does not call `fleet.dispatch`.
+but does not call `fleet.dispatch`. Cowork can launch the handoff only after an
+operator clicks `Launch Fleet` and confirms the native approval dialog; the
+launch uses the central `fleet.dispatch` IPC path and still does not send an
+outbound channel reply.
 
 Camera is explicit opt-in:
 
@@ -356,6 +359,7 @@ Additional OpenClaw catch-up proof on 2026-06-07:
 ```bash
 npm test -- tests/companion-gateway.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
+cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 npm run typecheck
 ```
 
@@ -365,4 +369,5 @@ no auto-dispatch. The new draft proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
 Fleet handoff JSON without dispatch. The Cowork IPC surface test passed for the
 read-only gateway inbox bridge, local draft preparation, and Fleet handoff
-preparation from the active workspace.
+preparation from the active workspace. The Cowork Fleet launch surface test
+passed for native confirmation plus `fleet.dispatch(draft.dispatchInput)`.

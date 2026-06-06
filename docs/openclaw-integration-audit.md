@@ -40,6 +40,10 @@ Buddy. The current integration is selective:
 - A prepared gateway task can now be converted into a safe Fleet handoff
   JSON with `dispatchProfile=safe` and `privacyTag=sensitive`; this
   still does not call `fleet.dispatch` or reply on the external channel.
+- Cowork can launch that Fleet handoff only through an explicit
+  operator click plus native confirmation dialog. The launch reuses the
+  centralized `fleet.dispatch` IPC path, so privacy lint, cost checks,
+  routing and SagaRunner remain the single execution path.
 
 Strategic conclusion: keep Code Buddy Gateway as the AI-to-AI brain.
 Use OpenClaw later as an add-on gateway for external human channels,
@@ -67,7 +71,7 @@ for Code Buddy's next architecture moves.
 | OpenClaw Gateway bridge | `docs/fleet-guide.md` | Planned / not coded | Guide says Phase `(e).7` is postponed and needs OpenClaw daemon installed. Planned `openclaw-node` bridge does not exist yet. | Implement only after Fleet/Cowork is stable and a local OpenClaw daemon is available. |
 | ClawHub-like legacy registry | `src/skills-registry/index.ts` | Retired in this audit pass | It was an unused production surface backed by an in-memory `mockRegistry`; only its own test referenced it. | Use `src/skills/hub.ts` as the remaining marketplace/hub direction. |
 | Skills Hub | `src/skills/hub.ts` | Partial real implementation | Uses HTTP fetch, local cache, lockfile, checksum, install/publish/sync. Inspired by ClawHub but Code Buddy-native. | Keep as the candidate real implementation. Add tests before routing user commands to it. |
-| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Partial native inbox with Cowork draft and Fleet handoff | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, and writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft` without dispatching. Covered by `tests/companion-gateway.test.ts` and `cowork/tests/hermes-surfaces-ipc.test.ts`. | Next: add an operator-approved launch from the Fleet handoff while keeping no auto-dispatch or raw external-message storage. |
+| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Partial native inbox with Cowork draft, Fleet handoff and approved launch | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft`, and can launch the handoff only through a confirmed `fleet.dispatch` call. Covered by `tests/companion-gateway.test.ts`, `cowork/tests/hermes-surfaces-ipc.test.ts`, and `cowork/tests/companion-gateway-fleet-launch.test.ts`. | Next: add a separate approved outbound reply workflow after Fleet results are reviewed locally. |
 
 ## What Claude likely did
 
@@ -115,10 +119,9 @@ some were only future bridge notes.
 4. Continue hardening Code Buddy Fleet as the main robot brain:
    `peer.describe`, routing, `peer.dispatch`, saga outcomes and Cowork
    visibility.
-5. Add an operator-approved launch action for already-prepared companion
-   gateway Fleet handoffs before adding any live remote execution. It
-   must keep approval visible and must not silently dispatch outbound
-   channel replies.
+5. Add a separate approved outbound reply workflow after Fleet results
+   are reviewed locally. It must keep approval visible and must not
+   silently dispatch channel replies.
 6. When ready for OpenClaw Gateway, build a narrow `openclaw-node`
    adapter:
    OpenClaw message in -> Cowork/Fleet dispatch -> Fleet result ->

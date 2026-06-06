@@ -2818,11 +2818,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
       maxCostUsd?: number;
       targetPeerIds?: string[];
+      deliveryChannel?: string;
+      sourceSessionId?: string;
     }): Promise<{
       ok: boolean;
       sagaId?: string;
       error?: string;
+      privacyTag?: 'public' | 'sensitive';
       dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
+      lintWarning?: string;
     }> =>
       ipcRenderer.invoke('fleet.dispatch', input),
     /** List currently-tracked sagas (active + recent). */
@@ -5947,11 +5951,15 @@ declare global {
           dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
           maxCostUsd?: number;
           targetPeerIds?: string[];
+          deliveryChannel?: string;
+          sourceSessionId?: string;
         }) => Promise<{
           ok: boolean;
           sagaId?: string;
           error?: string;
+          privacyTag?: 'public' | 'sensitive';
           dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
+          lintWarning?: string;
         }>;
         listSagas: () => Promise<
           Array<{

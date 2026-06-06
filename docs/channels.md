@@ -88,7 +88,9 @@ task through `companion.gateway.draft`; the draft is written under
 prepared task can then create a safe Fleet handoff JSON through
 `companion.gateway.fleetDraft`; that file contains the `fleet.dispatch` input
 with `dispatchProfile=safe` and `privacyTag=sensitive`, but still does not call
-`fleet.dispatch`.
+`fleet.dispatch`. Cowork can launch that handoff only after the operator clicks
+`Launch Fleet` and confirms the native approval dialog; the launch reuses the
+central `fleet.dispatch` path and still does not send an outbound channel reply.
 
 Validation:
 
@@ -98,9 +100,8 @@ cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 ```
 
 This is intentionally a supervised inbox and handoff flow, not an OpenClaw-style
-unrestricted remote executor. The next step is an operator-approved launch from
-the Fleet draft, still with explicit local approval and no outbound channel
-reply by default.
+unrestricted remote executor. The next step is a separate approved outbound
+reply workflow after Fleet results are reviewed locally.
 
 ## Message Preprocessing
 

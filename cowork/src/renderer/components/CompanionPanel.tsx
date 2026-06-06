@@ -79,6 +79,15 @@ const MODALITIES: Array<{ key: CompanionPerceptModality | 'all'; label: string }
   { key: 'suggestion', label: 'Ideas' },
 ];
 
+interface CompanionGatewayFleetLaunchResult {
+  ok: boolean;
+  sagaId?: string;
+  error?: string;
+  privacyTag?: 'public' | 'sensitive';
+  dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
+  lintWarning?: string;
+}
+
 const MODALITY_ICON: Record<CompanionPerceptModality, typeof Activity> = {
   vision: Eye,
   hearing: Mic,
@@ -1500,6 +1509,7 @@ export function CompanionPanel() {
   const [gatewayInbox, setGatewayInbox] = useState<CompanionGatewayInbox | null>(null);
   const [gatewayDraft, setGatewayDraft] = useState<CompanionGatewayInboxDraft | null>(null);
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
+  const [gatewayFleetLaunch, setGatewayFleetLaunch] = useState<CompanionGatewayFleetLaunchResult | null>(null);
   const [skillCandidates, setSkillCandidates] = useState<CompanionSkillCandidate[]>([]);
   const [skillCuratorResult, setSkillCuratorResult] = useState<CompanionSkillCuratorResult | null>(null);
   const [setupResult, setSetupResult] = useState<CompanionSetupResponse | null>(null);
@@ -1512,7 +1522,7 @@ export function CompanionPanel() {
   const [privacyPurge, setPrivacyPurge] = useState<CompanionPrivacyPurgeResult | null>(null);
   const [modality, setModality] = useState<CompanionPerceptModality | 'all'>('all');
   const [loading, setLoading] = useState(false);
-  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
+  const [busyAction, setBusyAction] = useState<'setup' | 'self' | 'camera' | 'cameraInspect' | 'voiceDiagnostics' | 'evaluate' | 'radar' | 'improve' | 'impulses' | 'checkIn' | 'missions' | 'runNext' | 'mission' | 'card' | 'gateway' | 'gatewayDraft' | 'gatewayFleetDraft' | 'gatewayFleetLaunch' | 'skills' | 'skill' | 'privacyExport' | 'privacyPurge' | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [lastSnapshot, setLastSnapshot] = useState<CompanionCameraSnapshotResult | null>(null);
   const [lastInspection, setLastInspection] = useState<CompanionCameraInspectionResult | null>(null);
@@ -1628,6 +1638,7 @@ export function CompanionPanel() {
           setGatewayInbox(null);
           setGatewayDraft(null);
           setGatewayFleetDraft(null);
+          setGatewayFleetLaunch(null);
           setSkillCandidates([]);
           setSkillCuratorResult(null);
           setSetupResult(null);
@@ -2033,6 +2044,23 @@ export function CompanionPanel() {
     }
     setGatewayFleetDraft(res.fleetDraft ?? null);
     setGatewayInbox(res.inbox ?? null);
+    await refresh();
+  };
+
+  const launchGatewayFleetDraft = async (draft: CompanionGatewayFleetDraft) => {
+    const confirmed = window.confirm(
+      'Launch this safe Fleet handoff now? This will not send an outbound channel reply.',
+    );
+    if (!confirmed) return;
+    setBusyAction('gatewayFleetLaunch');
+    setError(null);
+    const res = await window.electronAPI.fleet.dispatch(draft.dispatchInput);
+    setBusyAction(null);
+    setGatewayFleetLaunch(res);
+    if (!res.ok) {
+      setError(res.error ?? 'Gateway Fleet launch failed');
+      return;
+    }
     await refresh();
   };
 
@@ -2760,13 +2788,27 @@ export function CompanionPanel() {
                 <p className="mt-2 text-xs text-text-secondary">
                   {gatewayFleetDraft.dispatchInput.privacyTag} · {gatewayFleetDraft.dispatchInput.deliveryChannel}
                 </p>
-                <button
-                  onClick={() => void window.electronAPI.showItemInFolder(gatewayFleetDraft.draftFile)}
-                  className="mt-2 inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
-                >
-                  <FolderOpen className="h-3.5 w-3.5 shrink-0" />
-                  <span className="truncate">{gatewayFleetDraft.draftFile}</span>
-                </button>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  <button
+                    onClick={() => void window.electronAPI.showItemInFolder(gatewayFleetDraft.draftFile)}
+                    className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+                  >
+                    <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+                    <span className="truncate">{gatewayFleetDraft.draftFile}</span>
+                  </button>
+                  <button
+                    disabled={busyAction !== null}
+                    onClick={() => void launchGatewayFleetDraft(gatewayFleetDraft)}
+                    className="rounded border border-accent/50 px-2 py-1 text-[11px] text-accent hover:bg-accent/10 disabled:opacity-50"
+                  >
+                    {busyAction === 'gatewayFleetLaunch' ? 'Launching...' : 'Launch Fleet'}
+                  </button>
+                </div>
+                {gatewayFleetLaunch?.ok && (
+                  <p className="mt-2 text-xs text-text-secondary">
+                    Saga {gatewayFleetLaunch.sagaId ?? 'queued'} · {gatewayFleetLaunch.dispatchProfile ?? 'safe'}
+                  </p>
+                )}
               </div>
             </section>
           )}
