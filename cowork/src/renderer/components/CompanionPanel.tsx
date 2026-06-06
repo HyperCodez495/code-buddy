@@ -45,6 +45,7 @@ import type {
   CompanionGatewayFleetDraft,
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
+  CompanionGatewayLifecycleReport,
   CompanionGatewayMode,
   CompanionGatewayOutboundReplyDraft,
   CompanionGatewayOutboundReplySendResult,
@@ -1457,6 +1458,55 @@ function GatewayInboxPreview({
   );
 }
 
+function GatewayLifecyclePreview({ report }: { report: CompanionGatewayLifecycleReport }) {
+  const topChannels = report.channels
+    .filter((channel) => channel.enabled || channel.queueCount > 0 || channel.draftCount > 0)
+    .slice(0, 5);
+  return (
+    <section className="space-y-3" data-testid="companion-gateway-lifecycle">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway lifecycle</h3>
+        <span className="text-[10px] text-text-muted">
+          {report.summary.readyChannelCount} ready · {report.summary.attentionChannelCount} attention
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatusTile icon={Radio} label="Enabled" value={`${report.summary.enabledCount}/${report.summary.channelCount}`} ok={report.summary.enabledCount > 0} />
+        <StatusTile icon={ListChecks} label="Queued" value={String(report.summary.queuedCount)} ok={report.summary.queuedCount === 0} />
+        <StatusTile icon={ShieldCheck} label="Replies" value={String(report.summary.replyDraftCount)} ok />
+        <StatusTile icon={Activity} label="Outbox" value={String(report.summary.outboundSendCount)} ok={report.summary.failedSendCount === 0 && report.summary.blockedSendCount === 0} />
+      </div>
+      {topChannels.length > 0 && (
+        <div className="space-y-1">
+          {topChannels.map((channel) => (
+            <div
+              key={channel.channel}
+              className="flex min-w-0 items-center justify-between gap-2 rounded border border-border bg-surface/35 px-2 py-1.5 text-[10px]"
+            >
+              <span className="truncate text-text-primary">{channel.channel}</span>
+              <span className="shrink-0 text-text-muted">
+                {channel.state} · q{channel.queueCount}/d{channel.draftCount}/r{channel.replyDraftCount}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
+      {report.recommendations[0] && (
+        <p className="rounded border border-warning/30 bg-warning/10 px-2 py-1 text-[10px] text-warning">
+          {report.recommendations[0]}
+        </p>
+      )}
+      <button
+        onClick={() => void window.electronAPI.showItemInFolder(report.inboxPath)}
+        className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+      >
+        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{report.inboxPath}</span>
+      </button>
+    </section>
+  );
+}
+
 function SkillCandidateRow({
   candidate,
   busy,
@@ -1539,6 +1589,7 @@ export function CompanionPanel() {
   const [safetyStats, setSafetyStats] = useState<CompanionSafetyLedgerStats | null>(null);
   const [cards, setCards] = useState<CompanionCard[]>([]);
   const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
+  const [gatewayLifecycle, setGatewayLifecycle] = useState<CompanionGatewayLifecycleReport | null>(null);
   const [gatewayInbox, setGatewayInbox] = useState<CompanionGatewayInbox | null>(null);
   const [gatewayDraft, setGatewayDraft] = useState<CompanionGatewayInboxDraft | null>(null);
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
@@ -1609,6 +1660,7 @@ export function CompanionPanel() {
         safetyStatsRes,
         cardsRes,
         gatewayRes,
+        gatewayLifecycleRes,
         gatewayInboxRes,
         skillsRes,
         voiceConversationRes,
@@ -1625,6 +1677,7 @@ export function CompanionPanel() {
         window.electronAPI.companion.safetyStats(),
         window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
         window.electronAPI.companion.gatewayProfile(),
+        window.electronAPI.companion.gatewayLifecycle(),
         window.electronAPI.companion.gatewayInbox(),
         window.electronAPI.companion.listSkillCandidates(),
         window.electronAPI.voice.conversationStatus().catch(() => null),
@@ -1641,6 +1694,7 @@ export function CompanionPanel() {
         || !safetyStatsRes.ok
         || !cardsRes.ok
         || !gatewayRes.ok
+        || !gatewayLifecycleRes.ok
         || !gatewayInboxRes.ok
         || !skillsRes.ok
         || !privacyRes.ok;
@@ -1670,6 +1724,7 @@ export function CompanionPanel() {
           setSafetyStats(null);
           setCards([]);
           setGateway(null);
+          setGatewayLifecycle(null);
           setGatewayInbox(null);
           setGatewayDraft(null);
           setGatewayFleetDraft(null);
@@ -1703,6 +1758,7 @@ export function CompanionPanel() {
       setSafetyStats(safetyStatsRes.ok ? safetyStatsRes.stats ?? null : null);
       setCards(cardsRes.ok ? cardsRes.items : []);
       setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
+      setGatewayLifecycle(gatewayLifecycleRes.ok ? gatewayLifecycleRes.report ?? null : null);
       setGatewayInbox(gatewayInboxRes.ok ? gatewayInboxRes.inbox ?? null : null);
       setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
       setVoiceConversation(voiceConversationRes);
@@ -1718,6 +1774,7 @@ export function CompanionPanel() {
           ?? safetyStatsRes.error
           ?? cardsRes.error
           ?? gatewayRes.error
+          ?? gatewayLifecycleRes.error
           ?? gatewayInboxRes.error
           ?? skillsRes.error
           ?? privacyRes.error
@@ -2827,6 +2884,10 @@ export function CompanionPanel() {
                 </button>
               )}
             </section>
+          )}
+
+          {gatewayLifecycle && (
+            <GatewayLifecyclePreview report={gatewayLifecycle} />
           )}
 
           {gatewayInbox && (

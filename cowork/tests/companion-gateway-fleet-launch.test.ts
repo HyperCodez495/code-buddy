@@ -51,4 +51,17 @@ describe('companion gateway Fleet launch surface', () => {
     expect(preload).toContain('companion.gateway.sendOutboundReply');
     expect(preload).toContain('result?: CompanionGatewayOutboundReplySendResult');
   });
+
+  it('surfaces gateway lifecycle diagnostics in the Companion panel', () => {
+    const panel = readFileSync(companionPanelPath, 'utf8');
+    const preload = readFileSync(preloadPath, 'utf8');
+
+    expect(panel).toContain('Gateway lifecycle');
+    expect(panel).toContain('companion-gateway-lifecycle');
+    expect(panel).toContain('gatewayLifecycle');
+    expect(panel).toContain('readyChannelCount');
+    expect(panel).toContain('attentionChannelCount');
+    expect(preload).toContain('companion.gateway.lifecycle');
+    expect(preload).toContain('report?: CompanionGatewayLifecycleReport');
+  });
 });

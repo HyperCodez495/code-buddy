@@ -345,6 +345,58 @@ interface CompanionGatewayProfile {
   channels: CompanionGatewayChannelConfig[];
 }
 
+type CompanionGatewayLifecycleState = 'disabled' | 'observe' | 'ready' | 'needs_attention';
+
+interface CompanionGatewayLifecycleChannel {
+  channel: string;
+  state: CompanionGatewayLifecycleState;
+  enabled: boolean;
+  mode: CompanionGatewayMode;
+  allowOutbound: boolean;
+  requireApprovalForTools: boolean;
+  recordPercepts: boolean;
+  queueCount: number;
+  ignoredCount: number;
+  draftCount: number;
+  fleetDraftCount: number;
+  replyDraftCount: number;
+  lastSendStatus?: 'preview' | 'sent' | 'failed' | 'blocked';
+  issues: string[];
+}
+
+interface CompanionGatewayLifecycleReport {
+  kind: 'companion_gateway_lifecycle';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  summary: {
+    channelCount: number;
+    enabledCount: number;
+    actModeCount: number;
+    queuedCount: number;
+    ignoredCount: number;
+    draftCount: number;
+    fleetDraftCount: number;
+    replyDraftCount: number;
+    outboundSendCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+    readyChannelCount: number;
+    attentionChannelCount: number;
+  };
+  safety: {
+    autoDispatch: false;
+    rawTextStored: false;
+    localApprovalRequired: true;
+    sendPolicyRequired: true;
+  };
+  channels: CompanionGatewayLifecycleChannel[];
+  recommendations: string[];
+}
+
 type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 
 interface CompanionSkillEvidence {
@@ -575,6 +627,7 @@ type CompanionCardsMod = {
 
 type CompanionGatewayMod = {
   readCompanionGatewayProfile: (options: { cwd?: string }) => Promise<CompanionGatewayProfile>;
+  buildCompanionGatewayLifecycleReport: (options: { cwd?: string }) => Promise<CompanionGatewayLifecycleReport>;
   updateCompanionGatewayChannel: (
     channel: string,
     options: {
@@ -1423,6 +1476,21 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: true as const, profile: await mod.readCompanionGatewayProfile({ cwd }) };
     } catch (err) {
       logError('[companion.gateway.profile] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('companion.gateway.lifecycle', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadGateway();
+      if (!mod?.buildCompanionGatewayLifecycleReport) {
+        return { ok: false as const, error: 'core companion gateway lifecycle module unavailable' };
+      }
+      return { ok: true as const, report: await mod.buildCompanionGatewayLifecycleReport({ cwd }) };
+    } catch (err) {
+      logError('[companion.gateway.lifecycle] failed:', err);
       return { ok: false as const, error: errorMessage(err) };
     }
   });

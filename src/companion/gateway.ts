@@ -1,9 +1,11 @@
 import { mkdir, readFile, writeFile } from 'fs/promises';
 import * as path from 'path';
 import type { ChannelType, ContentType } from '../channels/core.js';
+import { readSendMessageOutbox } from '../channels/send-message.js';
 import { recordCompanionPercept, type CompanionPercept } from './percepts.js';
 import { recordCompanionSafetyEvent, type CompanionSafetyEvent } from './safety-ledger.js';
 import {
+  readCompanionGatewayInbox,
   recordCompanionGatewayInboxItem,
   type CompanionGatewayInboxItem,
 } from './gateway-inbox.js';
@@ -63,6 +65,58 @@ export interface CompanionGatewayMessageResult {
   inboxItem?: CompanionGatewayInboxItem;
   percept?: CompanionPercept;
   safetyEvent?: CompanionSafetyEvent;
+}
+
+export type CompanionGatewayLifecycleState = 'disabled' | 'observe' | 'ready' | 'needs_attention';
+
+export interface CompanionGatewayLifecycleChannel {
+  channel: ChannelType;
+  state: CompanionGatewayLifecycleState;
+  enabled: boolean;
+  mode: CompanionGatewayMode;
+  allowOutbound: boolean;
+  requireApprovalForTools: boolean;
+  recordPercepts: boolean;
+  queueCount: number;
+  ignoredCount: number;
+  draftCount: number;
+  fleetDraftCount: number;
+  replyDraftCount: number;
+  lastSendStatus?: 'preview' | 'sent' | 'failed' | 'blocked';
+  issues: string[];
+}
+
+export interface CompanionGatewayLifecycleReport {
+  kind: 'companion_gateway_lifecycle';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  summary: {
+    channelCount: number;
+    enabledCount: number;
+    actModeCount: number;
+    queuedCount: number;
+    ignoredCount: number;
+    draftCount: number;
+    fleetDraftCount: number;
+    replyDraftCount: number;
+    outboundSendCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+    readyChannelCount: number;
+    attentionChannelCount: number;
+  };
+  safety: {
+    autoDispatch: false;
+    rawTextStored: false;
+    localApprovalRequired: true;
+    sendPolicyRequired: true;
+  };
+  channels: CompanionGatewayLifecycleChannel[];
+  recommendations: string[];
 }
 
 const DEFAULT_CHANNELS: ChannelType[] = [
@@ -208,6 +262,120 @@ export async function updateCompanionGatewayChannel(
 
 function channelConfig(profile: CompanionGatewayProfile, channel: ChannelType): CompanionGatewayChannelConfig {
   return profile.channels.find(item => item.channel === channel) || defaultChannel(channel, profile.defaultMode);
+}
+
+function lifecycleStateFor(
+  channel: CompanionGatewayChannelConfig,
+  issues: string[],
+): CompanionGatewayLifecycleState {
+  if (!channel.enabled) return 'disabled';
+  if (channel.mode === 'observe') return 'observe';
+  return issues.length > 0 ? 'needs_attention' : 'ready';
+}
+
+function lastSendStatusFor(item: CompanionGatewayInboxItem): 'preview' | 'sent' | 'failed' | 'blocked' | undefined {
+  return item.draft?.fleet?.outboundReply?.lastSend?.status;
+}
+
+export async function buildCompanionGatewayLifecycleReport(
+  options: CompanionGatewayOptions = {},
+): Promise<CompanionGatewayLifecycleReport> {
+  const cwd = resolveCwd(options.cwd);
+  const now = options.now || new Date();
+  const [profile, inbox, outbox] = await Promise.all([
+    readCompanionGatewayProfile({ ...options, cwd, now }),
+    readCompanionGatewayInbox({ cwd, now }),
+    readSendMessageOutbox(cwd),
+  ]);
+  const itemsByChannel = new Map<ChannelType, CompanionGatewayInboxItem[]>();
+  for (const item of inbox.items) {
+    const existing = itemsByChannel.get(item.channel) || [];
+    existing.push(item);
+    itemsByChannel.set(item.channel, existing);
+  }
+
+  const channels = profile.channels.map((channel) => {
+    const items = itemsByChannel.get(channel.channel) || [];
+    const queueCount = items.filter(item => item.status === 'queued').length;
+    const ignoredCount = items.filter(item => item.status === 'ignored').length;
+    const draftCount = items.filter(item => Boolean(item.draft)).length;
+    const fleetDraftCount = items.filter(item => Boolean(item.draft?.fleet)).length;
+    const replyDraftCount = items.filter(item => Boolean(item.draft?.fleet?.outboundReply)).length;
+    const lastSendStatus = items.map(lastSendStatusFor).find(Boolean);
+    const issues: string[] = [];
+    if (channel.enabled && channel.mode !== 'observe' && queueCount > 0) {
+      issues.push('queued gateway items require local review');
+    }
+    if (channel.enabled && channel.mode === 'act' && !channel.allowOutbound) {
+      issues.push('act mode is enabled while outbound remains disabled');
+    }
+    if (lastSendStatus === 'failed' || lastSendStatus === 'blocked') {
+      issues.push(`last outbound reply send is ${lastSendStatus}`);
+    }
+    return {
+      channel: channel.channel,
+      state: lifecycleStateFor(channel, issues),
+      enabled: channel.enabled,
+      mode: channel.mode,
+      allowOutbound: channel.allowOutbound,
+      requireApprovalForTools: channel.requireApprovalForTools,
+      recordPercepts: channel.recordPercepts,
+      queueCount,
+      ignoredCount,
+      draftCount,
+      fleetDraftCount,
+      replyDraftCount,
+      ...(lastSendStatus ? { lastSendStatus } : {}),
+      issues,
+    };
+  });
+
+  const recommendations: string[] = [];
+  if (profile.channels.every(channel => !channel.enabled)) {
+    recommendations.push('Enable at least one companion gateway channel for supervised human-channel intake.');
+  }
+  if (inbox.counts.queued > 0) {
+    recommendations.push('Review queued gateway inbox items before launching Fleet or sending replies.');
+  }
+  if (channels.some(channel => channel.state === 'needs_attention')) {
+    recommendations.push('Inspect channels marked needs_attention before treating the gateway as OpenClaw-ready.');
+  }
+  if (outbox.some(entry => entry.status === 'failed' || entry.status === 'blocked')) {
+    recommendations.push('Inspect .codebuddy/messages/outbox.jsonl for blocked or failed outbound replies.');
+  }
+
+  return {
+    kind: 'companion_gateway_lifecycle',
+    schemaVersion: 1,
+    generatedAt: now.toISOString(),
+    cwd,
+    profilePath: profile.storePath,
+    inboxPath: inbox.storePath,
+    outboxPath: path.join(cwd, '.codebuddy', 'messages', 'outbox.jsonl'),
+    summary: {
+      channelCount: profile.channels.length,
+      enabledCount: profile.channels.filter(channel => channel.enabled).length,
+      actModeCount: profile.channels.filter(channel => channel.mode === 'act').length,
+      queuedCount: inbox.counts.queued,
+      ignoredCount: inbox.counts.ignored,
+      draftCount: inbox.items.filter(item => Boolean(item.draft)).length,
+      fleetDraftCount: inbox.items.filter(item => Boolean(item.draft?.fleet)).length,
+      replyDraftCount: inbox.items.filter(item => Boolean(item.draft?.fleet?.outboundReply)).length,
+      outboundSendCount: outbox.length,
+      failedSendCount: outbox.filter(entry => entry.status === 'failed').length,
+      blockedSendCount: outbox.filter(entry => entry.status === 'blocked').length,
+      readyChannelCount: channels.filter(channel => channel.state === 'ready').length,
+      attentionChannelCount: channels.filter(channel => channel.state === 'needs_attention').length,
+    },
+    safety: {
+      autoDispatch: false,
+      rawTextStored: false,
+      localApprovalRequired: true,
+      sendPolicyRequired: true,
+    },
+    channels,
+    recommendations,
+  };
 }
 
 function sessionKey(input: CompanionGatewayMessageInput): string {

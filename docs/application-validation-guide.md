@@ -276,6 +276,9 @@ operation: the operator provides the final text again, supplies `approvedBy`,
 confirms live delivery, and the core routes through `executeSendMessage` so the
 standard `.codebuddy/messages/outbox.jsonl` proof is written and live sends are
 checked by `SendPolicyEngine`.
+The companion lifecycle report then proves the gateway state across profile,
+inbox, drafts, Fleet handoff, reply draft and outbox in one secret-safe payload;
+Cowork renders that payload as `Gateway lifecycle` with ready/attention counts.
 
 Camera is explicit opt-in:
 
@@ -370,7 +373,7 @@ cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 npm run typecheck
 ```
 
-Observed result: `8` companion gateway tests passed, including local inbox
+Observed result: `9` companion gateway tests passed, including local inbox
 creation, urgent message priority, disabled-channel audit, token redaction and
 no auto-dispatch. The new draft proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
@@ -378,9 +381,11 @@ Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer
 metadata, redacted preview storage, `readyToSend=false`, and no outbound channel
 reply. The send proof verifies live sends cannot run without explicit
 confirmation and that approved replies use the standard channel outbox. The
+gateway lifecycle proof verifies profile/inbox/draft/Fleet/reply/outbox counts
+without leaking raw inbound text, reply text, tokens or passwords. The
 Cowork IPC surface test passed for the read-only gateway inbox bridge, local
 draft preparation, Fleet handoff preparation, outbound reply draft creation,
-and approved send execution from the active workspace. The Cowork Fleet launch
-surface test passed for native confirmation plus
+approved send execution, and lifecycle diagnostics from the active workspace.
+The Cowork Fleet launch surface test passed for native confirmation plus
 `fleet.dispatch(draft.dispatchInput)`, the `Reply draft` surface, and the
-confirmed `Send reply` surface.
+confirmed `Send reply` and `Gateway lifecycle` surfaces.

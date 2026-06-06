@@ -54,6 +54,11 @@ Buddy. The current integration is selective:
   `sendCompanionGatewayOutboundReply` path. The core delegates to
   `executeSendMessage`, writes `.codebuddy/messages/outbox.jsonl`, and
   uses `SendPolicyEngine` for live sends.
+- A companion gateway lifecycle report now aggregates profile state,
+  per-channel readiness, inbox queues, local task drafts, Fleet handoffs,
+  reviewed reply drafts and outbox results without exposing raw message
+  content. Cowork renders it as `Gateway lifecycle`, giving operators the
+  OpenClaw-style health/lifecycle cockpit that was previously missing.
 
 Strategic conclusion: keep Code Buddy Gateway as the AI-to-AI brain.
 Use OpenClaw later as an add-on gateway for external human channels,
@@ -81,7 +86,7 @@ for Code Buddy's next architecture moves.
 | OpenClaw Gateway bridge | `docs/fleet-guide.md` | Planned / not coded | Guide says Phase `(e).7` is postponed and needs OpenClaw daemon installed. Planned `openclaw-node` bridge does not exist yet. | Implement only after Fleet/Cowork is stable and a local OpenClaw daemon is available. |
 | ClawHub-like legacy registry | `src/skills-registry/index.ts` | Retired in this audit pass | It was an unused production surface backed by an in-memory `mockRegistry`; only its own test referenced it. | Use `src/skills/hub.ts` as the remaining marketplace/hub direction. |
 | Skills Hub | `src/skills/hub.ts` | Partial real implementation | Uses HTTP fetch, local cache, lockfile, checksum, install/publish/sync. Inspired by ClawHub but Code Buddy-native. | Keep as the candidate real implementation. Add tests before routing user commands to it. |
-| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Native supervised inbox with Cowork draft, Fleet handoff, approved launch, reply draft and explicit send | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft`, can launch the handoff only through a confirmed `fleet.dispatch` call, can prepare a reviewed `.reply.json` draft with `readyToSend=false`, and can send only through a separate confirmed `executeSendMessage`/outbox path. Covered by `tests/companion-gateway.test.ts`, `cowork/tests/hermes-surfaces-ipc.test.ts`, and `cowork/tests/companion-gateway-fleet-launch.test.ts`. | Next: harden gateway lifecycle/admin parity and optional OpenClaw adapter compatibility. |
+| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Native supervised inbox with Cowork draft, Fleet handoff, approved launch, reply draft, explicit send and lifecycle diagnostics | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft`, can launch the handoff only through a confirmed `fleet.dispatch` call, can prepare a reviewed `.reply.json` draft with `readyToSend=false`, can send only through a separate confirmed `executeSendMessage`/outbox path, and now renders a `companion_gateway_lifecycle` report with per-channel ready/attention counts. Covered by `tests/companion-gateway.test.ts`, `cowork/tests/hermes-surfaces-ipc.test.ts`, and `cowork/tests/companion-gateway-fleet-launch.test.ts`. | Next: harden per-channel admin actions and optional OpenClaw adapter compatibility. |
 
 ## What Claude likely did
 
@@ -129,7 +134,7 @@ some were only future bridge notes.
 4. Continue hardening Code Buddy Fleet as the main robot brain:
    `peer.describe`, routing, `peer.dispatch`, saga outcomes and Cowork
    visibility.
-5. Harden gateway lifecycle/admin parity: readiness, per-channel health,
+5. Harden per-channel admin actions: start/stop/reconnect controls,
    replayable delivery diagnostics and optional OpenClaw adapter compatibility.
 6. When ready for OpenClaw Gateway, build a narrow `openclaw-node`
    adapter:

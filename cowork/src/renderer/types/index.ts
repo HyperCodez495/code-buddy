@@ -518,6 +518,58 @@ export interface CompanionGatewayProfile {
   channels: CompanionGatewayChannelConfig[];
 }
 
+export type CompanionGatewayLifecycleState = 'disabled' | 'observe' | 'ready' | 'needs_attention';
+
+export interface CompanionGatewayLifecycleChannel {
+  channel: string;
+  state: CompanionGatewayLifecycleState;
+  enabled: boolean;
+  mode: CompanionGatewayMode;
+  allowOutbound: boolean;
+  requireApprovalForTools: boolean;
+  recordPercepts: boolean;
+  queueCount: number;
+  ignoredCount: number;
+  draftCount: number;
+  fleetDraftCount: number;
+  replyDraftCount: number;
+  lastSendStatus?: 'preview' | 'sent' | 'failed' | 'blocked';
+  issues: string[];
+}
+
+export interface CompanionGatewayLifecycleReport {
+  kind: 'companion_gateway_lifecycle';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  summary: {
+    channelCount: number;
+    enabledCount: number;
+    actModeCount: number;
+    queuedCount: number;
+    ignoredCount: number;
+    draftCount: number;
+    fleetDraftCount: number;
+    replyDraftCount: number;
+    outboundSendCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+    readyChannelCount: number;
+    attentionChannelCount: number;
+  };
+  safety: {
+    autoDispatch: false;
+    rawTextStored: false;
+    localApprovalRequired: true;
+    sendPolicyRequired: true;
+  };
+  channels: CompanionGatewayLifecycleChannel[];
+  recommendations: string[];
+}
+
 export type CompanionGatewayInboxPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type CompanionGatewayInboxActionType =

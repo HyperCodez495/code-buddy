@@ -417,6 +417,72 @@ describe('companion IPC', () => {
     expect(readCompanionGatewayInbox).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('reads the companion gateway lifecycle report from the active workspace', async () => {
+    const buildCompanionGatewayLifecycleReport = vi.fn(async () => ({
+      kind: 'companion_gateway_lifecycle',
+      schemaVersion: 1,
+      generatedAt: '2026-06-07T10:00:00.000Z',
+      cwd: '/tmp/proj',
+      profilePath: '/tmp/proj/.codebuddy/companion/gateway-profile.json',
+      inboxPath: '/tmp/proj/.codebuddy/companion/gateway-inbox.json',
+      outboxPath: '/tmp/proj/.codebuddy/messages/outbox.jsonl',
+      summary: {
+        channelCount: 8,
+        enabledCount: 1,
+        actModeCount: 1,
+        queuedCount: 0,
+        ignoredCount: 0,
+        draftCount: 1,
+        fleetDraftCount: 1,
+        replyDraftCount: 1,
+        outboundSendCount: 1,
+        failedSendCount: 0,
+        blockedSendCount: 0,
+        readyChannelCount: 1,
+        attentionChannelCount: 0,
+      },
+      safety: {
+        autoDispatch: false,
+        rawTextStored: false,
+        localApprovalRequired: true,
+        sendPolicyRequired: true,
+      },
+      channels: [
+        {
+          channel: 'telegram',
+          state: 'ready',
+          enabled: true,
+          mode: 'act',
+          allowOutbound: true,
+          requireApprovalForTools: true,
+          recordPercepts: true,
+          queueCount: 0,
+          ignoredCount: 0,
+          draftCount: 1,
+          fleetDraftCount: 1,
+          replyDraftCount: 1,
+          lastSendStatus: 'preview',
+          issues: [],
+        },
+      ],
+      recommendations: [],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ buildCompanionGatewayLifecycleReport });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.lifecycle');
+    const res = (await handler?.({})) as {
+      ok: boolean;
+      report?: { summary: { readyChannelCount: number }; safety: { rawTextStored: boolean }; channels: unknown[] };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.report?.summary.readyChannelCount).toBe(1);
+    expect(res.report?.safety.rawTextStored).toBe(false);
+    expect(res.report?.channels).toHaveLength(1);
+    expect(coreLoaderMock.loadCoreModule).toHaveBeenCalledWith('companion/gateway.js');
+    expect(buildCompanionGatewayLifecycleReport).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('drafts a companion gateway inbox item without dispatching it', async () => {
     const draftCompanionGatewayInboxItem = vi.fn(async () => ({
       schemaVersion: 1,

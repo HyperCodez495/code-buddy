@@ -102,6 +102,12 @@ the final reply text again, an `approvedBy` value, and
 `executeSendMessage`, so previews and live sends both write the standard
 `.codebuddy/messages/outbox.jsonl` record and live sends pass through
 `SendPolicyEngine` before any channel adapter is contacted.
+For OpenClaw-style lifecycle supervision, `buildCompanionGatewayLifecycleReport`
+combines the companion gateway profile, inbox, draft/Fleet/reply state and
+standard message outbox into one secret-safe report. Cowork renders the same
+report as `Gateway lifecycle`, showing enabled/ready/attention counts, queued
+work, reply drafts and outbox health without raw inbound text or credential
+values.
 
 Validation:
 

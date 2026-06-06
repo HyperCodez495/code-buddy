@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readSendMessageOutbox } from '../src/channels/send-message.js';
 import {
+  buildCompanionGatewayLifecycleReport,
   formatCompanionGatewayMessageResult,
   formatCompanionGatewayProfile,
   getCompanionGatewayProfilePath,
@@ -542,5 +543,99 @@ describe('companion gateway', () => {
       autoDispatch: false,
       requiresLocalApproval: true,
     });
+  });
+
+  it('builds a secret-safe lifecycle report across profile inbox drafts and outbox', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T16:00:00.000Z'),
+    });
+
+    const result = await recordCompanionGatewayMessage({
+      channel: 'telegram',
+      senderId: 'lead',
+      senderName: 'Lead',
+      threadId: 'dm-lifecycle',
+      messageId: 'm-lifecycle',
+      text: 'Please prepare lifecycle diagnostics. password=profile-secret-fixture',
+      contentType: 'text',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:01:00.000Z'),
+    });
+    await draftCompanionGatewayInboxItem(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:02:00.000Z'),
+    });
+    await routeCompanionGatewayDraftToFleet(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:03:00.000Z'),
+    });
+    await draftCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Reviewed reply. secret=reply-secret-fixture',
+      reviewedBy: 'Patrice',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:04:00.000Z'),
+    });
+    await sendCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Final approved lifecycle reply.',
+      approvedBy: 'Patrice',
+      dryRun: true,
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:05:00.000Z'),
+      sendMessage: {
+        createId: () => 'outbox-lifecycle-1',
+      },
+    });
+
+    const report = await buildCompanionGatewayLifecycleReport({
+      cwd: tempDir,
+      now: new Date('2026-05-24T16:06:00.000Z'),
+    });
+
+    expect(report).toMatchObject({
+      kind: 'companion_gateway_lifecycle',
+      schemaVersion: 1,
+      cwd: tempDir,
+      summary: {
+        enabledCount: 1,
+        queuedCount: 0,
+        ignoredCount: 0,
+        draftCount: 1,
+        fleetDraftCount: 1,
+        replyDraftCount: 1,
+        outboundSendCount: 1,
+        failedSendCount: 0,
+        blockedSendCount: 0,
+        readyChannelCount: 1,
+        attentionChannelCount: 0,
+      },
+      safety: {
+        autoDispatch: false,
+        rawTextStored: false,
+        localApprovalRequired: true,
+        sendPolicyRequired: true,
+      },
+    });
+    expect(report.channels.find(channel => channel.channel === 'telegram')).toMatchObject({
+      state: 'ready',
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      queueCount: 0,
+      draftCount: 1,
+      fleetDraftCount: 1,
+      replyDraftCount: 1,
+      lastSendStatus: 'preview',
+      issues: [],
+    });
+    expect(JSON.stringify(report)).not.toContain('profile-secret-fixture');
+    expect(JSON.stringify(report)).not.toContain('reply-secret-fixture');
+    expect(JSON.stringify(report)).not.toContain('Final approved lifecycle reply');
   });
 });
