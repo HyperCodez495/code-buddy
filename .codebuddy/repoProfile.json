@@ -1,5 +1,5 @@
 {
-  "detectedAt": "2026-05-07T21:29:35.164Z",
+  "detectedAt": "2026-06-06T16:51:48.989Z",
   "languages": [
     "TypeScript",
     "JavaScript"
@@ -26,7 +26,7 @@
     ]
   },
   "contextPack": "Language: TypeScript, JavaScript | Framework: Ink (terminal UI) | Package manager: npm | Commands: test=\"npm run test\", lint=\"npm run lint\", format=\"npm run format\", build=\"npm run build\", typecheck=\"npm run typecheck\", validate=\"npm run validate\" | Dirs: src=src, tests=tests, docs=docs | Naming: camelCase (JS/TS)",
-  "_configMtime": 1777894532030.432,
+  "_configMtime": 1780573107122.138,
   "name": "@phuetz/code-buddy",
   "description": "Open-source multi-provider AI coding agent for the terminal. Supports Grok, Claude, ChatGPT, Gemini, Ollama and LM Studio with 52+ tools, multi-channel messaging, skills system, and Enterprise-grade architecture.",
   "moduleType": "esm",
@@ -50,63 +50,65 @@
     "openai",
     "react",
     "zod",
-    "@phuetz/ai-providers",
-    "better-sqlite3"
+    "better-sqlite3",
+    "cli-highlight"
   ],
   "license": "MIT",
   "cartography": {
     "fileStats": {
       "byExtension": {
-        ".ts": 2318,
+        ".ts": 2838,
         ".js": 27,
-        ".tsx": 48
+        ".cs": 1,
+        ".tsx": 49
       },
       "locEstimate": {
-        "TypeScript": 790624,
-        "JavaScript": 319
+        "TypeScript": 979408,
+        "JavaScript": 319,
+        "C#": 685
       },
-      "totalSourceFiles": 1567,
-      "totalTestFiles": 826,
+      "totalSourceFiles": 1824,
+      "totalTestFiles": 1091,
       "largestFiles": [
         {
-          "path": "src/index.ts",
-          "lines": 2310
+          "path": "src/agent/autonomous/agentic-coding-runner.ts",
+          "lines": 8217
         },
         {
-          "path": "tests/agent/execution/agent-executor.test.ts",
-          "lines": 1983
+          "path": "tests/commands/autonomous-code-command.test.ts",
+          "lines": 6589
         },
         {
           "path": "src/tools/computer-control-tool.ts",
-          "lines": 2262
+          "lines": 6175
         },
         {
-          "path": "tests/unit/codebuddy-client.test.ts",
-          "lines": 2250
+          "path": "tests/commands/hermes-commands.test.ts",
+          "lines": 3745
         },
         {
-          "path": "tests/unit/memory.test.ts",
-          "lines": 2297
+          "path": "tests/agent/autonomous/agentic-coding-runner.test.ts",
+          "lines": 4103
         },
         {
-          "path": "tests/unit/thinking.test.ts",
-          "lines": 2011
+          "path": "src/commands/cli/hermes-commands.ts",
+          "lines": 3439
         },
         {
-          "path": "tests/channels/signal.test.ts",
-          "lines": 2121
+          "path": "src/commands/cli/autonomous-code-command.ts",
+          "lines": 2900
+        },
+        {
+          "path": "src/index.ts",
+          "lines": 2713
+        },
+        {
+          "path": "src/skills/hub.ts",
+          "lines": 2562
         },
         {
           "path": "src/agent/codebuddy-agent.ts",
-          "lines": 1503
-        },
-        {
-          "path": "tests/unit/auth.test.ts",
-          "lines": 1922
-        },
-        {
-          "path": "tests/channels/matrix.test.ts",
-          "lines": 1890
+          "lines": 1872
         }
       ]
     },
@@ -115,56 +117,56 @@
         {
           "name": "Agent core",
           "directory": "src/agent",
-          "fileCount": 187
+          "fileCount": 247
         },
         {
           "name": "Tool implementations",
           "directory": "src/tools",
-          "fileCount": 166
+          "fileCount": 208
         },
         {
           "name": "Command handlers",
           "directory": "src/commands",
-          "fileCount": 104
+          "fileCount": 124
         },
         {
           "name": "Utilities",
           "directory": "src/utils",
-          "fileCount": 101
+          "fileCount": 114
         },
         {
           "name": "UI layer",
           "directory": "src/ui",
-          "fileCount": 71
-        },
-        {
-          "name": "Context management",
-          "directory": "src/context",
-          "fileCount": 65
+          "fileCount": 72
         },
         {
           "name": "Messaging channels",
           "directory": "src/channels",
-          "fileCount": 61
+          "fileCount": 67
+        },
+        {
+          "name": "Context management",
+          "directory": "src/context",
+          "fileCount": 67
         },
         {
           "name": "Security",
           "directory": "src/security",
-          "fileCount": 49
+          "fileCount": 50
         },
         {
           "name": "codebuddy",
           "directory": "src/codebuddy",
-          "fileCount": 35
-        },
-        {
-          "name": "Configuration",
-          "directory": "src/config",
-          "fileCount": 30
+          "fileCount": 49
         },
         {
           "name": "HTTP server",
           "directory": "src/server",
+          "fileCount": 37
+        },
+        {
+          "name": "Configuration",
+          "directory": "src/config",
           "fileCount": 30
         },
         {
@@ -185,11 +187,26 @@
         {
           "name": "Hooks",
           "directory": "src/hooks",
-          "fileCount": 25
+          "fileCount": 26
         },
         {
           "name": "Memory system",
           "directory": "src/memory",
+          "fileCount": 25
+        },
+        {
+          "name": "Provider adapters",
+          "directory": "src/providers",
+          "fileCount": 22
+        },
+        {
+          "name": "fleet",
+          "directory": "src/fleet",
+          "fileCount": 19
+        },
+        {
+          "name": "Observability",
+          "directory": "src/observability",
           "fileCount": 19
         },
         {
@@ -208,9 +225,14 @@
           "fileCount": 16
         },
         {
-          "name": "Provider adapters",
-          "directory": "src/providers",
-          "fileCount": 16
+          "name": "browser-automation",
+          "directory": "src/browser-automation",
+          "fileCount": 15
+        },
+        {
+          "name": "companion",
+          "directory": "src/companion",
+          "fileCount": 15
         },
         {
           "name": "Skills system",
@@ -223,18 +245,23 @@
           "fileCount": 13
         },
         {
+          "name": "desktop-automation",
+          "directory": "src/desktop-automation",
+          "fileCount": 13
+        },
+        {
           "name": "Streaming",
           "directory": "src/streaming",
           "fileCount": 13
         },
         {
-          "name": "desktop-automation",
-          "directory": "src/desktop-automation",
-          "fileCount": 12
-        },
-        {
           "name": "database",
           "directory": "src/database",
+          "fileCount": 11
+        },
+        {
+          "name": "Sandbox",
+          "directory": "src/sandbox",
           "fileCount": 11
         },
         {
@@ -243,8 +270,13 @@
           "fileCount": 11
         },
         {
-          "name": "Sandbox",
-          "directory": "src/sandbox",
+          "name": "daemon",
+          "directory": "src/daemon",
+          "fileCount": 10
+        },
+        {
+          "name": "desktop",
+          "directory": "src/desktop",
           "fileCount": 10
         },
         {
@@ -253,18 +285,8 @@
           "fileCount": 9
         },
         {
-          "name": "browser-automation",
-          "directory": "src/browser-automation",
-          "fileCount": 9
-        },
-        {
           "name": "canvas",
           "directory": "src/canvas",
-          "fileCount": 9
-        },
-        {
-          "name": "desktop",
-          "directory": "src/desktop",
           "fileCount": 9
         },
         {
@@ -283,11 +305,6 @@
           "fileCount": 8
         },
         {
-          "name": "daemon",
-          "directory": "src/daemon",
-          "fileCount": 8
-        },
-        {
           "name": "errors",
           "directory": "src/errors",
           "fileCount": 8
@@ -295,6 +312,11 @@
         {
           "name": "input",
           "directory": "src/input",
+          "fileCount": 8
+        },
+        {
+          "name": "scheduler",
+          "directory": "src/scheduler",
           "fileCount": 8
         },
         {
@@ -311,6 +333,11 @@
           "name": "Workflows",
           "directory": "src/workflows",
           "fileCount": 8
+        },
+        {
+          "name": "cli",
+          "directory": "src/cli",
+          "fileCount": 7
         },
         {
           "name": "lsp",
@@ -338,8 +365,8 @@
           "fileCount": 6
         },
         {
-          "name": "Observability",
-          "directory": "src/observability",
+          "name": "leads",
+          "directory": "src/leads",
           "fileCount": 6
         },
         {
@@ -383,16 +410,6 @@
           "fileCount": 5
         },
         {
-          "name": "cli",
-          "directory": "src/cli",
-          "fileCount": 5
-        },
-        {
-          "name": "fleet",
-          "directory": "src/fleet",
-          "fileCount": 5
-        },
-        {
           "name": "inference",
           "directory": "src/inference",
           "fileCount": 5
@@ -410,6 +427,11 @@
         {
           "name": "Prompt engineering",
           "directory": "src/prompts",
+          "fileCount": 5
+        },
+        {
+          "name": "Protocols",
+          "directory": "src/protocols",
           "fileCount": 5
         },
         {
@@ -443,6 +465,11 @@
           "fileCount": 4
         },
         {
+          "name": "cloud",
+          "directory": "src/cloud",
+          "fileCount": 4
+        },
+        {
           "name": "collaboration",
           "directory": "src/collaboration",
           "fileCount": 4
@@ -468,11 +495,6 @@
           "fileCount": 4
         },
         {
-          "name": "scheduler",
-          "directory": "src/scheduler",
-          "fileCount": 4
-        },
-        {
           "name": "tracks",
           "directory": "src/tracks",
           "fileCount": 4
@@ -493,11 +515,6 @@
           "fileCount": 3
         },
         {
-          "name": "cloud",
-          "directory": "src/cloud",
-          "fileCount": 3
-        },
-        {
           "name": "concurrency",
           "directory": "src/concurrency",
           "fileCount": 3
@@ -508,8 +525,13 @@
           "fileCount": 3
         },
         {
-          "name": "Protocols",
-          "directory": "src/protocols",
+          "name": "harness",
+          "directory": "src/harness",
+          "fileCount": 3
+        },
+        {
+          "name": "Identity",
+          "directory": "src/identity",
           "fileCount": 3
         },
         {
@@ -520,6 +542,11 @@
         {
           "name": "session-pruning",
           "directory": "src/session-pruning",
+          "fileCount": 3
+        },
+        {
+          "name": "spec",
+          "directory": "src/spec",
           "fileCount": 3
         },
         {
@@ -540,6 +567,11 @@
         {
           "name": "ide",
           "directory": "src/ide",
+          "fileCount": 2
+        },
+        {
+          "name": "kanban",
+          "directory": "src/kanban",
           "fileCount": 2
         },
         {
@@ -610,15 +642,19 @@
       "hotModules": [
         {
           "module": "src/utils/logger",
-          "importedBy": 523
+          "importedBy": 588
         },
         {
           "module": "src/types",
-          "importedBy": 163
+          "importedBy": 196
         },
         {
           "module": "src/codebuddy/client",
-          "importedBy": 77
+          "importedBy": 92
+        },
+        {
+          "module": "src/tools/registry/types",
+          "importedBy": 50
         },
         {
           "module": "src/services/vfs/unified-vfs-router",
@@ -626,11 +662,15 @@
         },
         {
           "module": "src/agent/codebuddy-agent",
-          "importedBy": 44
+          "importedBy": 45
         },
         {
-          "module": "src/tools/registry/types",
-          "importedBy": 42
+          "module": "src/codebuddy/tool-definitions/types",
+          "importedBy": 39
+        },
+        {
+          "module": "src/channels/core",
+          "importedBy": 32
         },
         {
           "module": "src/knowledge/knowledge-graph",
@@ -638,22 +678,18 @@
         },
         {
           "module": "src/commands/handlers/branch-handlers",
-          "importedBy": 28
-        },
-        {
-          "module": "src/channels/core",
-          "importedBy": 24
-        },
-        {
-          "module": "src/codebuddy/tool-definitions/types",
-          "importedBy": 23
+          "importedBy": 30
         },
         {
           "module": "src/utils/confirmation-service",
-          "importedBy": 21
+          "importedBy": 24
         },
         {
           "module": "src/ui/context/theme-context",
+          "importedBy": 21
+        },
+        {
+          "module": "src/observability/run-store",
           "importedBy": 18
         },
         {
@@ -661,22 +697,26 @@
           "importedBy": 17
         },
         {
-          "module": "src/agent/repo-profiling/types",
+          "module": "src/utils/settings-manager",
           "importedBy": 15
-        },
-        {
-          "module": "src/server/types",
-          "importedBy": 14
         }
       ],
       "circularRisks": [
         {
-          "a": "src/codebuddy/client",
-          "b": "src/codebuddy/providers/provider-openai-compat"
+          "a": "src/agent/autonomous/checkpoint-manager",
+          "b": "src/agent/autonomous/agentic-coding-runner"
         },
         {
           "a": "src/context/smart-compaction",
           "b": "src/context/tool-pair-preserver"
+        },
+        {
+          "a": "src/memory/memory-provider",
+          "b": "src/memory/adapters/cli-memory-adapters"
+        },
+        {
+          "a": "src/memory/memory-provider",
+          "b": "src/memory/local-memory-provider"
         },
         {
           "a": "src/knowledge/knowledge-graph",
@@ -704,9 +744,9 @@
         "src/agent/agent-loader",
         "src/agent/agent-state",
         "src/agent/architect-mode",
-        "src/agent/background-tasks",
-        "src/agent/cache-trace",
-        "src/agent/context/memory-context-builder"
+        "src/agent/autonomous/agentic-coding-edits",
+        "src/agent/autonomous/fleet-tick-handler",
+        "src/agent/background-tasks"
       ]
     },
     "apiSurface": {
@@ -724,6 +764,11 @@
         {
           "method": "USE",
           "path": "/metrics",
+          "file": "src/server/index.ts"
+        },
+        {
+          "method": "USE",
+          "path": "/api/mobile",
           "file": "src/server/index.ts"
         },
         {
@@ -779,6 +824,11 @@
         {
           "method": "USE",
           "path": "/v1/chat",
+          "file": "src/server/index.ts"
+        },
+        {
+          "method": "GET",
+          "path": "/v1/models",
           "file": "src/server/index.ts"
         },
         {
@@ -1283,6 +1333,61 @@
         },
         {
           "method": "GET",
+          "path": "/pairing-status",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/pairing-code",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "GET",
+          "path": "/followup-drafts",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/followup-draft/:id/approve",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/followup-draft/:id/cancel",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/pair",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "GET",
+          "path": "/snapshot",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "GET",
+          "path": "/runs/:runId/artifacts/*artifactPath",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "GET",
+          "path": "/recall-pack",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/followup-draft",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "POST",
+          "path": "/submit-prompt",
+          "file": "src/server/routes/mobile.ts"
+        },
+        {
+          "method": "GET",
           "path": "/",
           "file": "src/server/routes/sessions.ts"
         },
@@ -1428,29 +1533,42 @@
         }
       ],
       "wsEvents": [
+        "aborted",
+        "agent",
         "agent:offline",
         "agent:registered",
         "agent:status-changed",
         "agent:unregistered",
         "agents",
+        "ask_user",
         "chat",
         "client:auth",
         "client:connect",
         "client:disconnect",
         "client:disconnect:details",
         "config",
+        "content",
+        "diff_preview",
+        "done",
+        "help",
         "overview",
+        "plan_progress",
         "presence",
         "progress",
+        "reasoning",
+        "run_event",
         "session:create",
         "session:join",
         "session:leave",
-        "sessions"
+        "sessions",
+        "skill",
+        "steer"
       ],
-      "endpointCount": 161
+      "endpointCount": 186
     },
     "patterns": {
       "singletons": [
+        "LessonProvenanceIndex",
         "LoopDetectionService",
         "CodeActMode",
         "RepoProfiler",
@@ -1494,6 +1612,7 @@
         "ToolMetricsTracker",
         "GitPinnedMarketplace",
         "CredentialManager",
+        "PolicyEngine",
         "SafeBinariesChecker",
         "SenderPolicyManager",
         "WritePolicy",
@@ -1531,11 +1650,12 @@
         "ModelRegistry",
         "AgentRegistry",
         "HookRegistry",
+        "KanbanBoardRegistry",
         "ConnectorRegistry",
+        "MemoryProviderRegistry",
         "ScriptRegistry",
         "SkillRegistry",
         "SkillRegistry",
-        "SkillsRegistry",
         "FormalToolRegistry",
         "ToolRegistry"
       ],
@@ -1817,7 +1937,6 @@
         "SkillsHub",
         "SkillRegistry",
         "SkillManager",
-        "SkillsRegistry",
         "ChunkHandler",
         "MarkdownChunker",
         "ProgressTracker",
@@ -1846,6 +1965,7 @@
         "ExportManager",
         "MemoryMonitor",
         "ModelRouter",
+        "ProgressManager",
         "RateLimiter",
         "SchemaValidator",
         "WorkspaceDetector",
@@ -2008,6 +2128,10 @@
           "file": "src/tools/gateway-tool.ts"
         },
         {
+          "name": "GitNexusTool",
+          "file": "src/tools/gitnexus-tool.ts"
+        },
+        {
           "name": "GitTool",
           "file": "src/tools/git-tool.ts"
         },
@@ -2142,6 +2266,10 @@
       ],
       "channels": [
         {
+          "name": "DingTalkAdapter",
+          "file": "src/channels/dingtalk/index.ts"
+        },
+        {
           "name": "DiscordChannel",
           "file": "src/channels/discord/client.ts"
         },
@@ -2182,6 +2310,14 @@
           "file": "src/channels/nostr/index.ts"
         },
         {
+          "name": "NtfyAdapter",
+          "file": "src/channels/ntfy/index.ts"
+        },
+        {
+          "name": "QQAdapter",
+          "file": "src/channels/qq/index.ts"
+        },
+        {
           "name": "SignalChannel",
           "file": "src/channels/signal/index.ts"
         },
@@ -2212,6 +2348,14 @@
         {
           "name": "WebChatChannel",
           "file": "src/channels/webchat/index.ts"
+        },
+        {
+          "name": "WeComAdapter",
+          "file": "src/channels/wecom/index.ts"
+        },
+        {
+          "name": "WeixinAdapter",
+          "file": "src/channels/weixin/index.ts"
         },
         {
           "name": "WhatsAppChannel",
@@ -2405,11 +2549,11 @@
         {
           "module": "browser-automation",
           "exports": [
+            "SecurityCheckpointDetected",
+            "BrowserOperatorExecutor",
             "BrowserProfileManager",
             "RouteInterceptor",
-            "BrowserManager",
-            "BrowserTool",
-            "discoverChromeEndpoint"
+            "BrowserManager"
           ]
         },
         {
@@ -2455,11 +2599,11 @@
         {
           "module": "cli",
           "exports": [
+            "resolveHeadlessResultExitCode",
+            "shouldUseStaticChatGptModels",
             "ensureUserSettingsDirectory",
-            "handleCommitAndPushHeadless",
-            "saveCommandLineSettings",
-            "processPromptHeadless",
-            "resumeLastSession"
+            "resolveHeadlessOutputFormat",
+            "handleCommitAndPushHeadless"
           ]
         },
         {
@@ -2468,18 +2612,18 @@
             "CloudSessionManager",
             "CloudAgentRunner",
             "TeleportManager",
-            "resetCloudAgentRunner",
-            "getCloudAgentRunner"
+            "CLOUD_SUBPROCESS_CHILD_ENV",
+            "shouldIsolateCloudTask"
           ]
         },
         {
           "module": "codebuddy",
           "exports": [
+            "ChatGptResponsesProvider",
             "GeminiNativeProvider",
             "OpenAICompatProvider",
-            "CodeBuddyClient",
-            "A2UI_TOOL",
-            "injectJsonSystemPromptForAnthropic"
+            "GeminiCliProvider",
+            "CodeBuddyClient"
           ]
         },
         {
@@ -2500,6 +2644,16 @@
             "SessionCommandHandler",
             "CustomCommandLoader",
             "SlashCommandManager"
+          ]
+        },
+        {
+          "module": "companion",
+          "exports": [
+            "formatCompanionGatewayMessageResult",
+            "formatCompanionSkillCuratorResult",
+            "formatCompanionSafetyLedgerStats",
+            "formatCompanionCompetitiveRadar",
+            "formatCompanionImprovementCycle"
           ]
         },
         {
@@ -2655,11 +2809,11 @@
         {
           "module": "fleet",
           "exports": [
+            "NoPeerAvailableError",
+            "PeerSessionStore",
             "FleetListener",
-            "getFleetHeartbeatIntervalMs",
-            "createPeerChatClientFromEnv",
-            "isCompactionBridgeWired",
-            "getPeerChatProviderInfo"
+            "CostTracker",
+            "TaskRouter"
           ]
         },
         {
@@ -2670,6 +2824,16 @@
             "GatewayServer",
             "AgentRegistry",
             "resetWebSocketGateway"
+          ]
+        },
+        {
+          "module": "harness",
+          "exports": [
+            "runStoreEventToHarnessEvent",
+            "workflowCanvasKindSchema",
+            "HARNESS_CONTRACT_VERSION",
+            "capabilityPolicySchema",
+            "workflowNodeRoleSchema"
           ]
         },
         {
@@ -2690,6 +2854,16 @@
             "setLocale",
             "getLocale",
             "resetI18n"
+          ]
+        },
+        {
+          "module": "identity",
+          "exports": [
+            "IdentityManager",
+            "BUDDY_COMPANION_SYSTEM_PROMPT",
+            "buildRelationshipContext",
+            "BUDDY_COMPANION_SOUL_MD",
+            "BUDDY_COMPANION_BOOT_MD"
           ]
         },
         {
@@ -2753,6 +2927,16 @@
           ]
         },
         {
+          "module": "leads",
+          "exports": [
+            "LEAD_DISCOVERY_WORKFLOW_TEMPLATE_SCHEMA_VERSION",
+            "renderLeadDiscoveryWorkflowTemplate",
+            "buildLeadDiscoveryWorkflowTemplate",
+            "renderLeadScoutLessonCandidates",
+            "buildLeadScoutLessonCandidates"
+          ]
+        },
+        {
           "module": "location",
           "exports": [
             "LocationService",
@@ -2785,11 +2969,11 @@
         {
           "module": "memory",
           "exports": [
-            "PersistentMemoryManager",
-            "MemoryBackendManager",
-            "MemoryLifecycleHooks",
-            "SemanticMemorySearch",
-            "CodingStyleAnalyzer"
+            "ReconciliationActionSchema",
+            "SupermemoryMemoryProvider",
+            "OpenVikingMemoryProvider",
+            "ByteRoverMemoryProvider",
+            "PersistentMemoryManager"
           ]
         },
         {
@@ -2917,9 +3101,9 @@
           "exports": [
             "A2AAgentServer",
             "A2AAgentClient",
+            "AcpStdioServer",
             "createCodeBuddyTaskExecutor",
-            "createACPServerRoutes",
-            "createAgentCard"
+            "createAcpAgenticRunner"
           ]
         },
         {
@@ -2928,8 +3112,8 @@
             "ProviderFallbackChain",
             "NodeLlamaCppProvider",
             "LocalProviderManager",
-            "TurboQuantProvider",
-            "CircuitOpenError"
+            "CircuitBreakerError",
+            "TurboQuantProvider"
           ]
         },
         {
@@ -2967,9 +3151,9 @@
           "exports": [
             "CronScheduler",
             "Scheduler",
-            "resetCronScheduler",
-            "getCronScheduler",
-            "createScheduler"
+            "collectDeliveryTargets",
+            "formatScheduledSummary",
+            "evaluateCronPreCheck"
           ]
         },
         {
@@ -3030,6 +3214,16 @@
             "SkillExecutor",
             "SkillRegistry",
             "SkillManager"
+          ]
+        },
+        {
+          "module": "spec",
+          "exports": [
+            "SpecTransitionError",
+            "SpecStore",
+            "runSpecPlanToCompletion",
+            "generateArchitecture",
+            "SPEC_SCHEMA_VERSION"
           ]
         },
         {
@@ -3096,10 +3290,10 @@
           "module": "tools",
           "exports": [
             "AskUserQuestionReadlineProvider",
+            "LeadScoutLessonCandidatesTool",
             "ExitPlanModeReadlineProvider",
             "GenerateDocumentExecuteTool",
-            "ResolveConflictsExecuteTool",
-            "AskUserQuestionExecuteTool"
+            "LeadScoutEnrichmentPlanTool"
           ]
         },
         {
@@ -3129,7 +3323,7 @@
             "SessionPersistenceConfig",
             "SoundNotificationManager",
             "BashHistoryAutocomplete",
-            "CompositeErrorBoundary"
+            "StreamingErrorBoundary"
           ]
         },
         {
@@ -3228,19 +3422,19 @@
           ]
         },
         {
-          "module": "identity",
-          "exports": [
-            "IdentityManager",
-            "resetIdentityManager",
-            "getIdentityManager"
-          ]
-        },
-        {
           "module": "infrastructure",
           "exports": [
             "ServiceContainer",
             "getServiceContainer",
             "createTestContainer"
+          ]
+        },
+        {
+          "module": "kanban",
+          "exports": [
+            "KanbanBoardRegistry",
+            "KanbanStore",
+            "isValidBoardSlug"
           ]
         },
         {
@@ -3321,14 +3515,6 @@
             "SidecarBridge",
             "resetSidecarBridge",
             "getSidecarBridge"
-          ]
-        },
-        {
-          "module": "skills-registry",
-          "exports": [
-            "SkillsRegistry",
-            "resetSkillsRegistry",
-            "getSkillsRegistry"
           ]
         },
         {
