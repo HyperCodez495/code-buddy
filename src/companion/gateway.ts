@@ -3,6 +3,10 @@ import * as path from 'path';
 import type { ChannelType, ContentType } from '../channels/core.js';
 import { recordCompanionPercept, type CompanionPercept } from './percepts.js';
 import { recordCompanionSafetyEvent, type CompanionSafetyEvent } from './safety-ledger.js';
+import {
+  recordCompanionGatewayInboxItem,
+  type CompanionGatewayInboxItem,
+} from './gateway-inbox.js';
 
 export type CompanionGatewayMode = 'observe' | 'assist' | 'act';
 
@@ -56,6 +60,7 @@ export interface CompanionGatewayMessageResult {
   reason: string;
   sessionKey: string;
   channel: CompanionGatewayChannelConfig;
+  inboxItem?: CompanionGatewayInboxItem;
   percept?: CompanionPercept;
   safetyEvent?: CompanionSafetyEvent;
 }
@@ -260,11 +265,21 @@ export async function recordCompanionGatewayMessage(
       payload: basePayload,
       tags: ['gateway', input.channel, 'disabled'],
     }, { cwd, now });
+    const reason = `${input.channel} companion gateway is disabled.`;
+    const inboxItem = await recordCompanionGatewayInboxItem({
+      ...input,
+      accepted: false,
+      mode: channel.mode,
+      reason,
+      sessionKey: key,
+      tags: ['disabled'],
+    }, { cwd, now });
     return {
       accepted: false,
-      reason: `${input.channel} companion gateway is disabled.`,
+      reason,
       sessionKey: key,
       channel,
+      inboxItem,
       safetyEvent,
     };
   }
@@ -298,12 +313,22 @@ export async function recordCompanionGatewayMessage(
     },
     tags: normalizeTags([...channel.tags, channel.mode, 'ingest']),
   }, { cwd, now });
+  const reason = `Accepted ${input.channel} message into companion ${channel.mode} mode.`;
+  const inboxItem = await recordCompanionGatewayInboxItem({
+    ...input,
+    accepted: true,
+    mode: channel.mode,
+    reason,
+    sessionKey: key,
+    tags: channel.tags,
+  }, { cwd, now });
 
   return {
     accepted: true,
-    reason: `Accepted ${input.channel} message into companion ${channel.mode} mode.`,
+    reason,
     sessionKey: key,
     channel,
+    inboxItem,
     percept,
     safetyEvent,
   };
@@ -339,5 +364,10 @@ export function formatCompanionGatewayMessageResult(result: CompanionGatewayMess
   ];
   if (result.percept) lines.push(`Percept recorded: ${result.percept.id}`);
   if (result.safetyEvent) lines.push(`Safety event recorded: ${result.safetyEvent.id}`);
+  if (result.inboxItem) {
+    lines.push(
+      `Inbox item: ${result.inboxItem.id} ${result.inboxItem.priority}/${result.inboxItem.status} ${result.inboxItem.proposedAction.type}`,
+    );
+  }
   return lines.join('\n');
 }

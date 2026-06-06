@@ -66,6 +66,31 @@ buddy pairing revoke <id>        # Revoke access
 
 Rule-based deny/allow per channel, chatType, keyPrefix, and peerId. Runtime overrides via `/send on|off|inherit`. Configured in `src/channels/send-policy.ts`.
 
+## Companion Gateway Inbox
+
+For OpenClaw-style human-channel operation, Code Buddy keeps the channel layer
+separate from automatic action. `recordCompanionGatewayMessage()` can accept
+messages from enabled companion channels and records them into a local review
+queue:
+
+```text
+.codebuddy/companion/gateway-inbox.json
+```
+
+Each item includes source channel, thread, sender, redacted preview, priority,
+proposed action, and safety flags. Raw message text is not stored in the inbox,
+token-like strings are redacted, and `canAutoDispatch` is always `false`.
+
+Validation:
+
+```bash
+npm test -- tests/companion-gateway.test.ts
+```
+
+This is intentionally a supervised inbox, not an OpenClaw-style unrestricted
+remote executor. The next step is Cowork rendering and explicit local approval
+before a queued item becomes a Fleet or `autonomous-code` draft.
+
 ## Message Preprocessing
 
 4-stage inbound pipeline:

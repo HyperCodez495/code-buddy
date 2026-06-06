@@ -247,6 +247,18 @@ buddy companion impulses
 buddy companion safety recent
 ```
 
+OpenClaw-style human channel inbox proof:
+
+```bash
+npm test -- tests/companion-gateway.test.ts
+```
+
+Expected result: accepted companion gateway messages create
+`.codebuddy/companion/gateway-inbox.json` items with priority, proposed action,
+redacted preview, `rawTextStored=false`, and `canAutoDispatch=false`.
+Disabled channels create ignored inbox items and safety events instead of
+silently disappearing.
+
 Camera is explicit opt-in:
 
 ```bash
@@ -330,3 +342,14 @@ Observed result:
 - Cowork lint passed with existing non-blocking warnings;
 - Cowork E2E build passed;
 - Playwright generated the autonomous progress screenshot.
+
+Additional OpenClaw catch-up proof on 2026-06-07:
+
+```bash
+npm test -- tests/companion-gateway.test.ts
+npm run typecheck
+```
+
+Observed result: `4` companion gateway tests passed, including local inbox
+creation, urgent message priority, disabled-channel audit, token redaction and
+no auto-dispatch.

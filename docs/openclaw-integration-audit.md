@@ -1,6 +1,6 @@
 # OpenClaw integration audit
 
-Date: 2026-05-16
+Date: 2026-05-16, updated 2026-06-07
 
 Scope: current Code Buddy worktree after the weekend Fleet/Cowork work.
 This file updates the older Claude audit in
@@ -22,6 +22,13 @@ Buddy. The current integration is selective:
 - The external OpenClaw Gateway is still out of the critical path. It is
   planned as an optional bridge for human channels such as Telegram,
   WhatsApp, Discord, iMessage and Slack.
+- Update 2026-06-07: Code Buddy now has a native companion gateway
+  inbox for accepted or rejected human-channel messages. Inbound
+  Telegram/Discord/Slack/etc. companion messages can be recorded as a
+  local review queue item with priority, proposed action, redacted
+  preview, and `canAutoDispatch=false`, giving Code Buddy the first
+  OpenClaw-style "agent OS inbox" loop without enabling unsafe remote
+  action.
 
 Strategic conclusion: keep Code Buddy Gateway as the AI-to-AI brain.
 Use OpenClaw later as an add-on gateway for external human channels,
@@ -49,7 +56,7 @@ for Code Buddy's next architecture moves.
 | OpenClaw Gateway bridge | `docs/fleet-guide.md` | Planned / not coded | Guide says Phase `(e).7` is postponed and needs OpenClaw daemon installed. Planned `openclaw-node` bridge does not exist yet. | Implement only after Fleet/Cowork is stable and a local OpenClaw daemon is available. |
 | ClawHub-like legacy registry | `src/skills-registry/index.ts` | Retired in this audit pass | It was an unused production surface backed by an in-memory `mockRegistry`; only its own test referenced it. | Use `src/skills/hub.ts` as the remaining marketplace/hub direction. |
 | Skills Hub | `src/skills/hub.ts` | Partial real implementation | Uses HTTP fetch, local cache, lockfile, checksum, install/publish/sync. Inspired by ClawHub but Code Buddy-native. | Keep as the candidate real implementation. Add tests before routing user commands to it. |
-| External channels | `src/channels/*` if present, OpenClaw Gateway plan | Mostly out of critical path | Current Fleet guide positions external channels as OpenClaw Gateway responsibility. | Do not build channels directly into Fleet unless the bridge plan changes. |
+| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts` | Partial native inbox | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Covered by `tests/companion-gateway.test.ts`. | Next: expose the inbox in Cowork and route approved items into Fleet/autonomous-code drafts. |
 
 ## What Claude likely did
 
@@ -97,7 +104,10 @@ some were only future bridge notes.
 4. Continue hardening Code Buddy Fleet as the main robot brain:
    `peer.describe`, routing, `peer.dispatch`, saga outcomes and Cowork
    visibility.
-5. When ready for OpenClaw Gateway, build a narrow `openclaw-node`
+5. Surface the native companion gateway inbox in Cowork before adding
+   any live remote execution. It should show queued/ignored counts,
+   priority, source channel, redacted preview and proposed action.
+6. When ready for OpenClaw Gateway, build a narrow `openclaw-node`
    adapter:
    OpenClaw message in -> Cowork/Fleet dispatch -> Fleet result ->
    OpenClaw message out.
