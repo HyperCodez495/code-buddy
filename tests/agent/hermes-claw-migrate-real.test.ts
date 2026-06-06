@@ -266,4 +266,120 @@ describe('hermes claw migrate (real)', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('exposes `buddy hermes claw bridge status --json` through the CLI without leaking gateway tokens', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      httpUrl: 'http://127.0.0.1:4150/',
+      token: 'oc_cli_status_secret_fixture',
+      methods: ['node.describe'],
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync(['node', 'test', 'hermes', 'claw', 'bridge', 'status', '--source', openclaw, '--json']);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_bridge_status');
+      expect(payload.discovery.found).toBe(true);
+      expect(payload.discovery.safety.tokenPresent).toBe(true);
+      expect(payload.descriptor.role).toBe('codebuddy-fleet-bridge');
+      expect(output).not.toContain('oc_cli_status_secret_fixture');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('exposes `buddy hermes claw bridge draft --json` through the CLI with redacted Fleet handoff output', async () => {
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'draft',
+        '--workspace-target',
+        target,
+        '--message-id',
+        'oc-cli-msg-1',
+        '--channel',
+        'telegram',
+        '--sender-id',
+        'user-1',
+        '--text',
+        'Please route this. password=cli-draft-secret',
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_fleet_handoff_draft');
+      expect(payload.dispatchInput.dispatchProfile).toBe('safe');
+      expect(payload.dispatchInput.privacyTag).toBe('sensitive');
+      expect(payload.dispatchInput.goal).toContain('password=[redacted]');
+      expect(output).not.toContain('cli-draft-secret');
+      expect(fs.existsSync(payload.draftFile)).toBe(true);
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('exposes `buddy hermes claw bridge send --json` as dry-run by default', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      httpUrl: 'http://127.0.0.1:4150/',
+      token: 'oc_cli_send_secret_fixture',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'send',
+        '--source',
+        openclaw,
+        '--workspace-target',
+        target,
+        '--message-id',
+        'oc-cli-msg-2',
+        '--channel',
+        'discord',
+        '--thread-id',
+        'thread-2',
+        '--text',
+        'Dry-run reply. secret=cli-send-secret',
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_response_send_result');
+      expect(payload.ok).toBe(true);
+      expect(payload.record.status).toBe('preview');
+      expect(payload.record.safety.networkContacted).toBe(false);
+      expect(payload.record.textPreview).toContain('secret=[redacted]');
+      expect(output).not.toContain('cli-send-secret');
+      expect(output).not.toContain('oc_cli_send_secret_fixture');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });

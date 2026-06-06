@@ -380,6 +380,7 @@ Additional OpenClaw catch-up proof on 2026-06-07:
 ```bash
 npm test -- tests/companion-gateway.test.ts
 npm test -- tests/openclaw/gateway-bridge.test.ts
+npm test -- tests/agent/hermes-claw-migrate-real.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 npm run typecheck
@@ -397,12 +398,17 @@ result and `attach-log.jsonl` redacted. The same suite now validates guarded
 OpenClaw response sends: dry-run sends do not contact the daemon, live sends are
 blocked without `liveSendConfirmed=true`, and confirmed sends keep both response
 content secrets and gateway tokens out of `send-log.jsonl`.
+The Hermes CLI migration suite also validates the user-facing bridge commands:
+`buddy hermes claw bridge status --json`, `bridge draft --json`, and
+`bridge send --json` are machine-readable and keep tokens/message secrets out of
+stdout.
 
-Observed result: `12` companion gateway tests and `11` OpenClaw bridge tests
+Observed result: `12` companion gateway tests, `11` OpenClaw bridge tests, and
+`13` Hermes/OpenClaw CLI migration tests
 passed, including local inbox creation, urgent message priority,
 disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
 execution logging, dry-run OpenClaw compatibility handoffs, and guarded
-OpenClaw daemon attach/response send. The new draft
+OpenClaw daemon attach/response send plus CLI dry-run access. The new draft
 proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
 Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer

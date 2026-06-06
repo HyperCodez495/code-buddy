@@ -37,6 +37,13 @@ import {
   type SkillConflictMode,
 } from '../../agent/hermes-claw-migrate.js';
 import {
+  attachOpenClawGateway,
+  buildOpenClawNodeDescriptor,
+  discoverOpenClawGateway,
+  prepareOpenClawFleetHandoffDraft,
+  sendOpenClawResponse,
+} from '../../openclaw/gateway-bridge.js';
+import {
   buildHermesProtocolGatewayReadiness,
   renderHermesProtocolGatewayReadiness,
   renderHermesProtocolGatewaySmoke,
@@ -2187,6 +2194,50 @@ interface HermesClawMigrateOptions extends HermesCommandOptions {
   yes?: boolean;
 }
 
+interface HermesClawBridgeOptions extends HermesCommandOptions {
+  source?: string;
+  workspaceTarget?: string;
+  apply?: boolean;
+  yes?: boolean;
+  approvedBy?: string;
+  endpointPath?: string;
+  messageId?: string;
+  channel?: string;
+  threadId?: string;
+  senderId?: string;
+  senderName?: string;
+  text?: string;
+}
+
+function renderOpenClawBridgeResult(value: {
+  kind: string;
+  ok?: boolean;
+  found?: boolean;
+  record?: { status?: string; endpoint?: string; endpointPath?: string };
+  discovery?: { found: boolean; daemon: { endpoint?: string; httpUrl?: string; rpcUrl?: string; wsUrl?: string }; safety: { tokenPresent: boolean } };
+  draftFile?: string;
+  sendLogPath?: string;
+  attachLogPath?: string;
+  recommendations?: string[];
+}): string {
+  const lines = [`OpenClaw bridge: ${value.kind}`];
+  if (typeof value.found === 'boolean') lines.push(`Detected: ${value.found ? 'yes' : 'no'}`);
+  if (value.discovery) {
+    const endpoint = value.discovery.daemon.rpcUrl || value.discovery.daemon.httpUrl || value.discovery.daemon.endpoint || value.discovery.daemon.wsUrl || 'not configured';
+    lines.push(`Gateway: ${value.discovery.found ? endpoint : 'not found'}`);
+    lines.push(`Token present: ${value.discovery.safety.tokenPresent ? 'yes' : 'no'}`);
+  }
+  if (value.record) {
+    lines.push(`Status: ${value.record.status || 'unknown'}`);
+    lines.push(`Endpoint: ${value.record.endpoint || value.record.endpointPath || 'n/a'}`);
+  }
+  if (value.draftFile) lines.push(`Draft: ${value.draftFile}`);
+  if (value.attachLogPath) lines.push(`Attach log: ${value.attachLogPath}`);
+  if (value.sendLogPath) lines.push(`Send log: ${value.sendLogPath}`);
+  if (value.recommendations?.length) lines.push(`Next: ${value.recommendations[0]}`);
+  return lines.join('\n');
+}
+
 function registerHermesClawCommands(hermes: Command): void {
   const claw = hermes
     .command('claw')
@@ -2242,6 +2293,145 @@ function registerHermesClawCommands(hermes: Command): void {
         return;
       }
       console.log(renderClawMigrationReport(report));
+    });
+
+  const bridge = claw
+    .command('bridge')
+    .description('Operate the Code Buddy OpenClaw gateway bridge (dry-run by default)');
+
+  bridge
+    .command('status')
+    .description('Discover OpenClaw Gateway and show the Code Buddy node descriptor')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const discovery = await discoverOpenClawGateway({
+        home: options.source,
+        cwd: options.workspaceTarget,
+      });
+      const descriptor = buildOpenClawNodeDescriptor();
+      const payload = {
+        kind: 'openclaw_bridge_status',
+        discovery,
+        descriptor,
+      };
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: payload.kind,
+        found: discovery.found,
+        discovery,
+        recommendations: discovery.recommendations,
+      }));
+    });
+
+  bridge
+    .command('attach')
+    .description('Register the Code Buddy bridge with OpenClaw Gateway (--apply --yes required for live attach)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--endpoint-path <path>', 'OpenClaw attach endpoint path', 'nodes/register')
+    .option('--approved-by <name>', 'operator approving live attach')
+    .option('--apply', 'contact the OpenClaw daemon (otherwise dry-run)')
+    .option('--yes', 'confirm live attach when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const result = await attachOpenClawGateway({
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveAttachConfirmed: options.apply === true && options.yes === true,
+        endpointPath: options.endpointPath,
+      }, {
+        home: options.source,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: result.record,
+        attachLogPath: result.attachLogPath,
+      }));
+    });
+
+  bridge
+    .command('draft')
+    .description('Create a safe Fleet handoff draft from an OpenClaw inbound message')
+    .requiredOption('--message-id <id>', 'OpenClaw message id')
+    .requiredOption('--channel <channel>', 'OpenClaw channel name')
+    .requiredOption('--sender-id <id>', 'OpenClaw sender id')
+    .requiredOption('--text <text>', 'message text; stored only as a redacted preview')
+    .option('--thread-id <id>', 'thread id')
+    .option('--sender-name <name>', 'sender display name')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const draft = await prepareOpenClawFleetHandoffDraft({
+        id: options.messageId!,
+        channel: options.channel!,
+        senderId: options.senderId!,
+        senderName: options.senderName,
+        threadId: options.threadId,
+        text: options.text!,
+      }, {
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(draft));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: draft.kind,
+        draftFile: draft.draftFile,
+      }));
+    });
+
+  bridge
+    .command('send')
+    .description('Send or preview an approved OpenClaw response (--apply --yes required for live send)')
+    .requiredOption('--message-id <id>', 'OpenClaw source message id')
+    .requiredOption('--channel <channel>', 'OpenClaw channel name')
+    .requiredOption('--thread-id <id>', 'OpenClaw thread id')
+    .requiredOption('--text <text>', 'response text')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--endpoint-path <path>', 'OpenClaw response endpoint path', 'messages/reply')
+    .option('--approved-by <name>', 'operator approving live response send')
+    .option('--apply', 'contact the OpenClaw daemon (otherwise dry-run)')
+    .option('--yes', 'confirm live send when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const result = await sendOpenClawResponse({
+        openclawMessageId: options.messageId!,
+        channel: options.channel!,
+        threadId: options.threadId!,
+        text: options.text!,
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveSendConfirmed: options.apply === true && options.yes === true,
+        endpointPath: options.endpointPath,
+      }, {
+        home: options.source,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: result.record,
+        sendLogPath: result.sendLogPath,
+      }));
     });
 }
 

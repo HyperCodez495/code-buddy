@@ -1149,6 +1149,19 @@ des journaux redacted (`attach-log.jsonl`, `send-log.jsonl`) : la fleet Code
 Buddy reste le brain, OpenClaw reste l'add-on de canaux externes, et l'opérateur
 garde l'approbation locale.
 
+CLI utilisateur :
+
+```bash
+buddy hermes claw bridge status --json
+buddy hermes claw bridge attach --source ~/.openclaw --json
+buddy hermes claw bridge draft --message-id oc_1 --channel telegram --sender-id u_1 --text "..." --json
+buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t_1 --text "..." --json
+```
+
+`attach` et `send` sont dry-run par défaut. Pour contacter un daemon, il faut
+ajouter `--apply --yes --approved-by <name>`; les sorties et journaux restent
+redacted.
+
 ### Trois scénarios concrets
 
 **1. Tout local, sans OpenClaw** (état au 2026-05-09)
