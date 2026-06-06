@@ -19,9 +19,10 @@ Buddy. The current integration is selective:
   channel gateway separation.
 - The `src/openclaw/index.ts` module is an export facade over native
   Code Buddy modules, not a full OpenClaw runtime.
-- The external OpenClaw Gateway is still out of the critical path. It is
-  planned as an optional bridge for human channels such as Telegram,
-  WhatsApp, Discord, iMessage and Slack.
+- The external OpenClaw Gateway is still out of the critical path. Code
+  Buddy now has a local compatibility adapter for the `openclaw-node`
+  contract, but it deliberately prepares local drafts instead of attaching
+  to a live OpenClaw daemon or sending channel replies implicitly.
 - Update 2026-06-07: Code Buddy now has a native companion gateway
   inbox for accepted or rejected human-channel messages. Inbound
   Telegram/Discord/Slack/etc. companion messages can be recorded as a
@@ -72,6 +73,12 @@ Buddy. The current integration is selective:
   `.codebuddy/companion/gateway-admin.jsonl` with redacted runtime-before/after
   status. Cowork exposes this through `Execute` buttons and a visible
   `Gateway admin result` audit link.
+- OpenClaw adapter compatibility now exists in
+  `src/openclaw/gateway-bridge.ts`. It discovers
+  `~/.openclaw/gateway.json` without exposing tokens, builds a
+  `codebuddy-fleet-bridge` node descriptor, converts inbound OpenClaw messages
+  into redacted safe/sensitive Fleet handoff drafts, and formats outbound
+  response previews as dry-run approval artifacts.
 
 Strategic conclusion: keep Code Buddy Gateway as the AI-to-AI brain.
 Use OpenClaw later as an add-on gateway for external human channels,
@@ -86,7 +93,7 @@ for Code Buddy's next architecture moves.
 
 | Area | Files | Current status | Evidence | Next action |
 |---|---|---:|---|---|
-| OpenClaw facade | `src/openclaw/index.ts` | Dormant facade | Exports six native modules and `initializeNativeEngineModules()`, but no production caller currently invokes the initializer. | Keep dormant until each module has an explicit architecture decision. Avoid one-shot activation. |
+| OpenClaw facade | `src/openclaw/index.ts`, `src/openclaw/gateway-bridge.ts` | Native facade plus local OpenClaw gateway compatibility adapter | Exports native modules plus `discoverOpenClawGateway`, `buildOpenClawNodeDescriptor`, `prepareOpenClawFleetHandoffDraft`, and `buildOpenClawResponsePreview`. Covered by `tests/openclaw/gateway-bridge.test.ts`. | Keep the bridge draft-only until live daemon attach/send semantics are explicitly confirmed. |
 | Enterprise module bootstrap | `src/config/toml-config.ts`, `src/openclaw/index.ts` | Intentionally deferred | Config comments list 5/6 modules as deferred due conflicts: policy, hooks, compaction, retry, semantic memory. | Do not enable globally. Migrate one module at a time only after conflict analysis. |
 | Plugin conflict detector | `src/plugins/conflict-detection.ts`, `src/plugins/plugin-manager.ts` | Active | `PluginManager.loadPlugin()` imports `getPluginConflictDetector()` and blocks conflicting plugins before registration. Covered by `tests/plugins/plugin-conflict-detector.test.ts`. | Keep. Useful safety win with low architectural risk. |
 | Daily reset | `src/daemon/daily-reset.ts`, `src/agent/codebuddy-agent.ts`, `src/commands/handlers/daily-reset-handler.ts` | Active opt-in | Boot auto-starts when `[daily_reset].enabled=true`; slash handler can start/stop manually. | Keep as operational support for long-running autonomous sessions. |
@@ -96,10 +103,10 @@ for Code Buddy's next architecture moves.
 | Peer RPC envelope | `src/server/websocket/peer-rpc.ts`, `src/fleet/fleet-listener.ts` | Active | `peer:request`/`peer:response` map mirrors OpenClaw `GatewayChannel.pending`; `peer.describe` mirrors OpenClaw `node.describe` with Code Buddy capabilities. | This is a core Code Buddy Fleet primitive. Continue testing it as first-class, not as OpenClaw compatibility glue. |
 | Presence beacons | `src/fleet/heartbeat-broadcaster.ts` | Active | Heartbeat broadcaster explicitly follows OpenClaw `node.presence.alive` shape adapted to Code Buddy `fleet:*` events. | Keep. Cowork should surface stale/healthy peer state clearly. |
 | Code Buddy Gateway | `src/gateway/server.ts`, `src/server/websocket/*`, `docs/fleet-guide.md` | Active | `docs/fleet-guide.md` documents Code Buddy Gateway as shipped AI-to-AI bus. | Remains the path for multi-LLM/multi-machine collaboration. |
-| OpenClaw Gateway bridge | `docs/fleet-guide.md` | Planned / not coded | Guide says Phase `(e).7` is postponed and needs OpenClaw daemon installed. Planned `openclaw-node` bridge does not exist yet. | Implement only after Fleet/Cowork is stable and a local OpenClaw daemon is available. |
+| OpenClaw Gateway bridge | `src/openclaw/gateway-bridge.ts`, `docs/fleet-guide.md` | Local compatibility adapter, no live daemon attach yet | Reads `gateway.json`, returns secret-safe discovery, publishes an `openclaw_node_descriptor`, maps OpenClaw inbound messages to Fleet handoff drafts and response previews without contacting OpenClaw. | Next: optional live attach to a real OpenClaw daemon once endpoint semantics are verified. |
 | ClawHub-like legacy registry | `src/skills-registry/index.ts` | Retired in this audit pass | It was an unused production surface backed by an in-memory `mockRegistry`; only its own test referenced it. | Use `src/skills/hub.ts` as the remaining marketplace/hub direction. |
 | Skills Hub | `src/skills/hub.ts` | Partial real implementation | Uses HTTP fetch, local cache, lockfile, checksum, install/publish/sync. Inspired by ClawHub but Code Buddy-native. | Keep as the candidate real implementation. Add tests before routing user commands to it. |
-| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Native supervised inbox with Cowork draft, Fleet handoff, approved launch, reply draft, explicit send, lifecycle diagnostics, dry-run admin plan and confirmed admin execution | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft`, can launch the handoff only through a confirmed `fleet.dispatch` call, can prepare a reviewed `.reply.json` draft with `readyToSend=false`, can send only through a separate confirmed `executeSendMessage`/outbox path, renders a `companion_gateway_lifecycle` report with per-channel ready/attention counts, renders a `companion_gateway_admin_plan` with start/stop/reconnect/review/replay guidance plus redacted outbox diagnostics, and can execute the live-control subset only after explicit approval while writing `.codebuddy/companion/gateway-admin.jsonl`. Covered by `tests/companion-gateway.test.ts`, `cowork/tests/hermes-surfaces-ipc.test.ts`, and `cowork/tests/companion-gateway-fleet-launch.test.ts`. | Next: optional OpenClaw adapter compatibility and broader e2e screenshots. |
+| External channels | `src/channels/*`, `src/companion/gateway.ts`, `src/companion/gateway-inbox.ts`, `cowork/src/main/ipc/companion-ipc.ts`, `cowork/src/renderer/components/CompanionPanel.tsx` | Native supervised inbox with Cowork draft, Fleet handoff, approved launch, reply draft, explicit send, lifecycle diagnostics, dry-run admin plan and confirmed admin execution | Channel adapters are broad; companion gateway messages now create local review-queue items with redacted previews, priority, proposed action and `canAutoDispatch=false`. Cowork reads the inbox through `companion.gateway.inbox`, prepares draft-only `buddy autonomous-code --require-approval` tasks via `companion.gateway.draft`, writes safe/sensitive Fleet handoff JSON via `companion.gateway.fleetDraft`, can launch the handoff only through a confirmed `fleet.dispatch` call, can prepare a reviewed `.reply.json` draft with `readyToSend=false`, can send only through a separate confirmed `executeSendMessage`/outbox path, renders a `companion_gateway_lifecycle` report with per-channel ready/attention counts, renders a `companion_gateway_admin_plan` with start/stop/reconnect/review/replay guidance plus redacted outbox diagnostics, and can execute the live-control subset only after explicit approval while writing `.codebuddy/companion/gateway-admin.jsonl`. Covered by `tests/companion-gateway.test.ts`, `cowork/tests/hermes-surfaces-ipc.test.ts`, and `cowork/tests/companion-gateway-fleet-launch.test.ts`. | Next: broader e2e screenshots and optional live OpenClaw daemon attach. |
 
 ## What Claude likely did
 

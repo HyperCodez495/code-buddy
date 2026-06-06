@@ -172,6 +172,23 @@ import {
   type ConflictInfo,
   type AllowlistConfig,
 } from '../plugins/conflict-detection.js';
+export {
+  buildOpenClawNodeDescriptor,
+  buildOpenClawResponsePreview,
+  discoverOpenClawGateway,
+  getOpenClawGatewayLockfilePath,
+  mapOpenClawChannelToCodeBuddy,
+  prepareOpenClawFleetHandoffDraft,
+  type OpenClawBridgeOptions,
+  type OpenClawBridgeResponsePreview,
+  type OpenClawFleetDispatchDraftInput,
+  type OpenClawFleetHandoffDraft,
+  type OpenClawGatewayDiscovery,
+  type OpenClawGatewayDiscoveryOptions,
+  type OpenClawGatewayLockfile,
+  type OpenClawInboundMessage,
+  type OpenClawNodeDescriptor,
+} from './gateway-bridge.js';
 
 export {
   PluginConflictDetector,

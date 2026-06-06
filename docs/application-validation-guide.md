@@ -379,14 +379,23 @@ Additional OpenClaw catch-up proof on 2026-06-07:
 
 ```bash
 npm test -- tests/companion-gateway.test.ts
+npm test -- tests/openclaw/gateway-bridge.test.ts
 cd cowork && npm test -- tests/hermes-surfaces-ipc.test.ts
 cd cowork && npm test -- tests/companion-gateway-fleet-launch.test.ts
 npm run typecheck
 ```
 
-Observed result: `9` companion gateway tests passed, including local inbox
-creation, urgent message priority, disabled-channel audit, token redaction and
-no auto-dispatch. The new draft proof verifies a `buddy autonomous-code
+The OpenClaw bridge test validates that `gateway.json` discovery is
+secret-safe, the Code Buddy `openclaw-node` descriptor advertises only local
+approval-based capabilities, inbound OpenClaw messages become
+`dispatchProfile=safe` / `privacyTag=sensitive` Fleet handoff drafts, and
+outbound replies remain dry-run previews until an operator approves a real send.
+
+Observed result: `12` companion gateway tests and `5` OpenClaw bridge tests
+passed, including local inbox creation, urgent message priority,
+disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
+execution logging, and dry-run OpenClaw compatibility handoffs. The new draft
+proof verifies a `buddy autonomous-code
 --require-approval` task file, `drafted` inbox transition, and safe/sensitive
 Fleet handoff JSON without dispatch. The outbound reply proof verifies reviewer
 metadata, redacted preview storage, `readyToSend=false`, and no outbound channel

@@ -1086,7 +1086,7 @@ complémentaires**. Ne pas confondre :
 | Workspace | `~/.codebuddy/` | `~/.openclaw/workspace/` |
 | Implémentation | propriétaire `src/gateway/server.ts` + `src/server/websocket/` | upstream openclaw, daemon séparé |
 | Rôle | **Bus AI peer-to-peer** : agents ↔ agents, dispatch, sagas | **Bus multi-channel humain** : Telegram, WhatsApp, Discord, iMessage, Slack |
-| Statut | shippé Phases (d).1-(d).16a + (e).1-(e).8 | intégration Phase (e).7 *(reportée — besoin daemon installé)* |
+| Statut | shippé Phases (d).1-(d).16a + (e).1-(e).8 | compatibilité locale `src/openclaw/gateway-bridge.ts`; daemon attach live encore optionnel |
 
 ### Coexistence sans conflit
 
@@ -1136,10 +1136,14 @@ Telegram → OpenClaw Gateway → openclaw-node bridge → Cowork ServerEvent
                                                   → openclaw-node → OpenClaw Gateway → Telegram
 ```
 
-Le `openclaw-node` Cowork (Phase (e).7, à coder) lit
-`~/.openclaw/gateway.json` pour découvrir le daemon, s'enregistre
-comme nœud, et **forward les messages dans la fleet Code Buddy**.
-La fleet Code Buddy reste le brain ; OpenClaw apporte les canaux.
+Le module `src/openclaw/gateway-bridge.ts` pose désormais le contrat
+`openclaw-node` côté Code Buddy. Il sait lire
+`~/.openclaw/gateway.json` sans exposer les tokens, publier un descriptor
+`openclaw_node_descriptor`, transformer un message OpenClaw inbound en
+brouillon Fleet `dispatchProfile=safe` / `privacyTag=sensitive`, et préparer
+une réponse OpenClaw en preview dry-run. Il ne contacte pas encore le daemon et
+n'envoie pas de réponse live : la fleet Code Buddy reste le brain, OpenClaw
+reste l'add-on de canaux externes, et l'opérateur garde l'approbation locale.
 
 ### Trois scénarios concrets
 
