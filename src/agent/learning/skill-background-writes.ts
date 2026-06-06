@@ -259,13 +259,19 @@ export function buildSkillWriteRollbackPlan(input: {
     };
   }
 
-  // No snapshot id + a fresh install ⇒ the skill did not exist before, so
-  // deleting the installed package is the correct, non-destructive inverse.
+  // No snapshot id + an install action. `installFromContent` /
+  // `installResearchScriptSkillCandidate` currently overwrite without
+  // snapshotting, so we cannot tell a brand-new install from an overwrite at
+  // plan time. `delete` is the correct inverse ONLY for a genuinely new skill;
+  // on an overwrite it would destroy the pre-existing version, so the reason
+  // tells the operator to verify first instead of implying clean reversibility.
   if (action === 'create' || action === 'candidate_install') {
     return {
       command: `buddy skills delete ${shellArg(skillName)} --json`,
       kind: 'uninstall',
-      reason: 'brand-new background skill; delete removes the installed package',
+      reason:
+        'install with no captured snapshot; `delete` removes the package and is the correct inverse ONLY if this was a brand-new skill. ' +
+        'If it overwrote an existing skill, delete destroys the original — verify with `buddy skills history` / `list` before running.',
     };
   }
 

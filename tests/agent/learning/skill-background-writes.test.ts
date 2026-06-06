@@ -253,13 +253,12 @@ describe('skill background writes (S1 — sentinel auto-install gated by flag)',
     expect(plan.command).toContain('buddy skills rollback existing-skill --snapshot snap-overwrite-9');
   });
 
-  it('uses the real `delete` subcommand to undo a brand-new background install', () => {
+  it('uses the real `delete` subcommand and warns about overwrites for snapshot-less installs', () => {
     const plan = buildSkillWriteRollbackPlan({ action: 'create', skillName: 'fresh-skill' });
-    expect(plan).toEqual({
-      command: 'buddy skills delete fresh-skill --json',
-      kind: 'uninstall',
-      reason: 'brand-new background skill; delete removes the installed package',
-    });
+    expect(plan.command).toBe('buddy skills delete fresh-skill --json');
+    expect(plan.kind).toBe('uninstall');
+    // Honest about the residual: delete destroys the original on an overwrite.
+    expect(plan.reason).toContain('overwrote an existing skill');
   });
 
   it('points unknown actions at a real inspection command, not a non-existent one', () => {
