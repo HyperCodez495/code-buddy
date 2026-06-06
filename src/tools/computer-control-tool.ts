@@ -62,6 +62,27 @@ export function setVisionGroundingProvider(p: VisionGroundingProvider | null): v
   visionGroundingProvider = p;
 }
 
+/**
+ * Convert a vision-grounding result expressed in the normalised 0–1000 space to
+ * absolute screen pixels. Returns null for non-finite or out-of-contract values
+ * so a misbehaving grounding provider (e.g. a model emitting `1200` or `NaN`)
+ * can never be turned into an off-screen or invalid click target.
+ */
+export function resolveGroundingCoordinatesToAbsolute(
+  rel: { x: number; y: number },
+  screenSize?: { width?: number; height?: number },
+): { x: number; y: number } | null {
+  const { x, y } = rel;
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (x < 0 || x > 1000 || y < 0 || y > 1000) return null;
+  const width = screenSize?.width && screenSize.width > 0 ? screenSize.width : 1920;
+  const height = screenSize?.height && screenSize.height > 0 ? screenSize.height : 1080;
+  return {
+    x: Math.round((x / 1000) * width),
+    y: Math.round((y / 1000) * height),
+  };
+}
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -4654,52 +4675,55 @@ $value.SetValue($targetText)
 
             if (matchedRef !== null && matchedRef !== undefined) {
               if (typeof matchedRef === 'object' && 'x' in matchedRef && 'y' in matchedRef) {
-                // The provider returned raw coordinates (e.g. from coordinates-based grounding)
-                // Convert relative 0-1000 coordinates to absolute screen pixels
-                const snapWidth = currentSnap?.screenSize?.width || 1920;
-                const snapHeight = currentSnap?.screenSize?.height || 1080;
-                const absoluteX = Math.round((matchedRef.x / 1000) * snapWidth);
-                const absoluteY = Math.round((matchedRef.y / 1000) * snapHeight);
+                // The provider returned raw coordinates (e.g. from coordinates-based grounding).
+                // Convert the normalised 0-1000 space to absolute pixels, rejecting
+                // non-finite or out-of-range values so we never click off-screen.
+                const absolute = resolveGroundingCoordinatesToAbsolute(matchedRef, currentSnap?.screenSize);
+                if (absolute) {
+                  const virtualEl: UIElement = {
+                    ref: -999, // special virtual ref ID
+                    role: options.roles?.[0] || 'unknown',
+                    name: query,
+                    bounds: { x: absolute.x, y: absolute.y, width: 0, height: 0 },
+                    center: { x: absolute.x, y: absolute.y },
+                    interactive: true,
+                    focused: false,
+                    enabled: true,
+                    visible: true,
+                    attributes: { source: 'visual-coordinates-grounding' }
+                  };
 
-                const virtualEl: UIElement = {
-                  ref: -999, // special virtual ref ID
-                  role: options.roles?.[0] || 'unknown',
-                  name: query,
-                  bounds: { x: absoluteX, y: absoluteY, width: 0, height: 0 },
-                  center: { x: absoluteX, y: absoluteY },
-                  interactive: true,
-                  focused: false,
-                  enabled: true,
-                  visible: true,
-                  attributes: { source: 'visual-coordinates-grounding' }
-                };
+                  if (currentSnap) {
+                    currentSnap.elementMap.set(-999, virtualEl);
+                  }
 
-                if (currentSnap) {
-                  currentSnap.elementMap.set(-999, virtualEl);
-                }
-
-                logger.info('Visual grounding fallback successfully matched direct coordinates', { x: absoluteX, y: absoluteY });
-                return {
-                  element: virtualEl,
-                  refreshed,
-                };
-              }
-
-              const matchedEl = this.snapshotManager.getElement(matchedRef);
-              if (matchedEl) {
-                // Validate matched element role if options.roles is specified
-                if (options.roles && !options.roles.includes(matchedEl.role)) {
-                  logger.warn('Visual grounding matched element with invalid role', {
-                    matchedRef,
-                    matchedRole: matchedEl.role,
-                    expectedRoles: options.roles,
-                  });
-                } else {
-                  logger.info('Visual grounding fallback successfully matched element', { matchedRef, name: matchedEl.name });
+                  logger.info('Visual grounding fallback successfully matched direct coordinates', { x: absolute.x, y: absolute.y });
                   return {
-                    element: matchedEl,
+                    element: virtualEl,
                     refreshed,
                   };
+                }
+
+                logger.warn('Visual grounding returned out-of-range coordinates; ignoring to avoid an off-screen click', {
+                  matchedRef,
+                });
+              } else {
+                const matchedEl = this.snapshotManager.getElement(matchedRef);
+                if (matchedEl) {
+                  // Validate matched element role if options.roles is specified
+                  if (options.roles && !options.roles.includes(matchedEl.role)) {
+                    logger.warn('Visual grounding matched element with invalid role', {
+                      matchedRef,
+                      matchedRole: matchedEl.role,
+                      expectedRoles: options.roles,
+                    });
+                  } else {
+                    logger.info('Visual grounding fallback successfully matched element', { matchedRef, name: matchedEl.name });
+                    return {
+                      element: matchedEl,
+                      refreshed,
+                    };
+                  }
                 }
               }
             }
