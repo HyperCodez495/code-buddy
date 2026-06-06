@@ -64,4 +64,17 @@ describe('companion gateway Fleet launch surface', () => {
     expect(preload).toContain('companion.gateway.lifecycle');
     expect(preload).toContain('report?: CompanionGatewayLifecycleReport');
   });
+
+  it('surfaces gateway admin plans and replay diagnostics in the Companion panel', () => {
+    const panel = readFileSync(companionPanelPath, 'utf8');
+    const preload = readFileSync(preloadPath, 'utf8');
+
+    expect(panel).toContain('Gateway admin');
+    expect(panel).toContain('companion-gateway-admin-plan');
+    expect(panel).toContain('gatewayAdminPlan');
+    expect(panel).toContain('replayablePreviewCount');
+    expect(panel).toContain('executesChannelAdmin');
+    expect(preload).toContain('companion.gateway.adminPlan');
+    expect(preload).toContain('plan?: CompanionGatewayAdminPlan');
+  });
 });

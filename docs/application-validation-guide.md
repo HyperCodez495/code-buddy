@@ -279,6 +279,11 @@ checked by `SendPolicyEngine`.
 The companion lifecycle report then proves the gateway state across profile,
 inbox, drafts, Fleet handoff, reply draft and outbox in one secret-safe payload;
 Cowork renders that payload as `Gateway lifecycle` with ready/attention counts.
+The companion admin plan extends that proof with dry-run channel operations and
+replay diagnostics: it recommends start/stop/reconnect/review/replay actions,
+summarizes `.codebuddy/messages/outbox.jsonl` by status, exposes only redacted
+replay metadata, and marks `executesChannelAdmin=false` so validation can show
+operator controls without triggering adapters or live sends.
 
 Camera is explicit opt-in:
 

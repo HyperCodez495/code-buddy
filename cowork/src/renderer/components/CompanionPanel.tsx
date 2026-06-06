@@ -43,6 +43,7 @@ import type {
   CompanionCompetitiveRadar,
   CompanionCheckInCue,
   CompanionGatewayFleetDraft,
+  CompanionGatewayAdminPlan,
   CompanionGatewayInbox,
   CompanionGatewayInboxDraft,
   CompanionGatewayLifecycleReport,
@@ -1507,6 +1508,66 @@ function GatewayLifecyclePreview({ report }: { report: CompanionGatewayLifecycle
   );
 }
 
+function GatewayAdminPlanPreview({ plan }: { plan: CompanionGatewayAdminPlan }) {
+  const topActions = plan.actions.slice(0, 5);
+  const replay = plan.deliveryDiagnostics.replayablePreviews.slice(0, 3);
+  return (
+    <section className="space-y-3" data-testid="companion-gateway-admin-plan">
+      <div className="flex items-center justify-between">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">Gateway admin</h3>
+        <span className="text-[10px] text-text-muted">
+          {plan.summary.actionCount} actions · dry-run
+        </span>
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        <StatusTile icon={ClipboardCheck} label="Approval" value={plan.safety.requiresLocalApproval ? 'required' : 'open'} ok={plan.safety.requiresLocalApproval} />
+        <StatusTile icon={ShieldCheck} label="Secrets" value={plan.safety.secretsIncluded ? 'included' : 'redacted'} ok={!plan.safety.secretsIncluded} />
+        <StatusTile icon={RefreshCw} label="Replay" value={String(plan.summary.replayablePreviewCount)} ok={plan.summary.failedSendCount === 0 && plan.summary.blockedSendCount === 0} />
+        <StatusTile icon={Activity} label="Admin exec" value={plan.safety.executesChannelAdmin ? 'live' : 'plan'} ok={!plan.safety.executesChannelAdmin} />
+      </div>
+      {topActions.length > 0 && (
+        <div className="space-y-1">
+          {topActions.map((action) => (
+            <div
+              key={action.id}
+              className="rounded border border-border bg-surface/35 px-2 py-1.5 text-[10px]"
+            >
+              <div className="flex min-w-0 items-center justify-between gap-2">
+                <span className="truncate text-text-primary">{action.label}</span>
+                <span className={action.destructive ? 'shrink-0 text-warning' : 'shrink-0 text-text-muted'}>
+                  {action.action}
+                </span>
+              </div>
+              {action.command && (
+                <div className="mt-1 truncate font-mono text-[9px] text-text-muted">
+                  {action.command.join(' ')}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+      {replay.length > 0 && (
+        <div className="space-y-1">
+          {replay.map((entry) => (
+            <div key={entry.id} className="flex min-w-0 items-center justify-between gap-2 rounded border border-border bg-surface/35 px-2 py-1 text-[10px]">
+              <span className="truncate text-text-primary">{entry.channel} · {entry.status}</span>
+              <span className="shrink-0 text-text-muted">{entry.dryRun ? 'preview' : 'live'} · {entry.approved ? 'approved' : 'unapproved'}</span>
+            </div>
+          ))}
+        </div>
+      )}
+      <button
+        onClick={() => void window.electronAPI.showItemInFolder(plan.outboxPath)}
+        className="inline-flex max-w-full items-center gap-1 rounded border border-border px-2 py-1 text-[11px] text-text-muted hover:bg-surface"
+      >
+        <FolderOpen className="h-3.5 w-3.5 shrink-0" />
+        <span className="truncate">{plan.outboxPath}</span>
+      </button>
+    </section>
+  );
+}
+
 function SkillCandidateRow({
   candidate,
   busy,
@@ -1590,6 +1651,7 @@ export function CompanionPanel() {
   const [cards, setCards] = useState<CompanionCard[]>([]);
   const [gateway, setGateway] = useState<CompanionGatewayProfile | null>(null);
   const [gatewayLifecycle, setGatewayLifecycle] = useState<CompanionGatewayLifecycleReport | null>(null);
+  const [gatewayAdminPlan, setGatewayAdminPlan] = useState<CompanionGatewayAdminPlan | null>(null);
   const [gatewayInbox, setGatewayInbox] = useState<CompanionGatewayInbox | null>(null);
   const [gatewayDraft, setGatewayDraft] = useState<CompanionGatewayInboxDraft | null>(null);
   const [gatewayFleetDraft, setGatewayFleetDraft] = useState<CompanionGatewayFleetDraft | null>(null);
@@ -1661,6 +1723,7 @@ export function CompanionPanel() {
         cardsRes,
         gatewayRes,
         gatewayLifecycleRes,
+        gatewayAdminPlanRes,
         gatewayInboxRes,
         skillsRes,
         voiceConversationRes,
@@ -1678,6 +1741,7 @@ export function CompanionPanel() {
         window.electronAPI.companion.listCards({ status: 'open', limit: 8 }),
         window.electronAPI.companion.gatewayProfile(),
         window.electronAPI.companion.gatewayLifecycle(),
+        window.electronAPI.companion.gatewayAdminPlan(),
         window.electronAPI.companion.gatewayInbox(),
         window.electronAPI.companion.listSkillCandidates(),
         window.electronAPI.voice.conversationStatus().catch(() => null),
@@ -1695,6 +1759,7 @@ export function CompanionPanel() {
         || !cardsRes.ok
         || !gatewayRes.ok
         || !gatewayLifecycleRes.ok
+        || !gatewayAdminPlanRes.ok
         || !gatewayInboxRes.ok
         || !skillsRes.ok
         || !privacyRes.ok;
@@ -1725,6 +1790,7 @@ export function CompanionPanel() {
           setCards([]);
           setGateway(null);
           setGatewayLifecycle(null);
+          setGatewayAdminPlan(null);
           setGatewayInbox(null);
           setGatewayDraft(null);
           setGatewayFleetDraft(null);
@@ -1759,6 +1825,7 @@ export function CompanionPanel() {
       setCards(cardsRes.ok ? cardsRes.items : []);
       setGateway(gatewayRes.ok ? gatewayRes.profile ?? null : null);
       setGatewayLifecycle(gatewayLifecycleRes.ok ? gatewayLifecycleRes.report ?? null : null);
+      setGatewayAdminPlan(gatewayAdminPlanRes.ok ? gatewayAdminPlanRes.plan ?? null : null);
       setGatewayInbox(gatewayInboxRes.ok ? gatewayInboxRes.inbox ?? null : null);
       setSkillCandidates(skillsRes.ok ? skillsRes.items : []);
       setVoiceConversation(voiceConversationRes);
@@ -1775,6 +1842,7 @@ export function CompanionPanel() {
           ?? cardsRes.error
           ?? gatewayRes.error
           ?? gatewayLifecycleRes.error
+          ?? gatewayAdminPlanRes.error
           ?? gatewayInboxRes.error
           ?? skillsRes.error
           ?? privacyRes.error
@@ -2888,6 +2956,10 @@ export function CompanionPanel() {
 
           {gatewayLifecycle && (
             <GatewayLifecyclePreview report={gatewayLifecycle} />
+          )}
+
+          {gatewayAdminPlan && (
+            <GatewayAdminPlanPreview plan={gatewayAdminPlan} />
           )}
 
           {gatewayInbox && (

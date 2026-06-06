@@ -483,6 +483,87 @@ describe('companion IPC', () => {
     expect(buildCompanionGatewayLifecycleReport).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
   });
 
+  it('reads the companion gateway admin plan from the active workspace', async () => {
+    const buildCompanionGatewayAdminPlan = vi.fn(async () => ({
+      kind: 'companion_gateway_admin_plan',
+      schemaVersion: 1,
+      generatedAt: '2026-06-07T10:05:00.000Z',
+      cwd: '/tmp/proj',
+      profilePath: '/tmp/proj/.codebuddy/companion/gateway-profile.json',
+      inboxPath: '/tmp/proj/.codebuddy/companion/gateway-inbox.json',
+      outboxPath: '/tmp/proj/.codebuddy/messages/outbox.jsonl',
+      safety: {
+        dryRun: true,
+        requiresLocalApproval: true,
+        secretsIncluded: false,
+        rawMessageContentIncluded: false,
+        executesChannelAdmin: false,
+      },
+      summary: {
+        actionCount: 3,
+        channelCount: 1,
+        enabledCount: 1,
+        attentionChannelCount: 0,
+        replayablePreviewCount: 1,
+        failedSendCount: 0,
+        blockedSendCount: 0,
+      },
+      actions: [
+        {
+          id: 'gateway-admin-telegram-reconnect',
+          channel: 'telegram',
+          action: 'reconnect',
+          label: 'Reconnect telegram adapter',
+          reason: 'Restart the adapter when lifecycle diagnostics show stale or failed delivery.',
+          command: ['buddy', 'channels', 'stop', '--type', 'telegram', '&&', 'buddy', 'channels', 'start', '--type', 'telegram'],
+          requiresLocalApproval: true,
+          destructive: true,
+          available: true,
+        },
+      ],
+      deliveryDiagnostics: {
+        outboxPath: '/tmp/proj/.codebuddy/messages/outbox.jsonl',
+        counts: {
+          preview: 1,
+          sent: 0,
+          failed: 0,
+          blocked: 0,
+        },
+        replayablePreviews: [
+          {
+            id: 'outbox-1',
+            channel: 'telegram',
+            status: 'preview',
+            dryRun: true,
+            createdAt: '2026-06-07T10:04:00.000Z',
+            approved: true,
+            hasError: false,
+          },
+        ],
+      },
+      recommendations: ['Replay delivery diagnostics as dry-run previews before approving live outbound sends.'],
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({ buildCompanionGatewayAdminPlan });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const handler = electronMock.handlers.get('companion.gateway.adminPlan');
+    const res = (await handler?.({})) as {
+      ok: boolean;
+      plan?: {
+        safety: { secretsIncluded: boolean; executesChannelAdmin: boolean };
+        summary: { replayablePreviewCount: number };
+        actions: unknown[];
+      };
+    };
+    expect(res.ok).toBe(true);
+    expect(res.plan?.safety.secretsIncluded).toBe(false);
+    expect(res.plan?.safety.executesChannelAdmin).toBe(false);
+    expect(res.plan?.summary.replayablePreviewCount).toBe(1);
+    expect(res.plan?.actions).toHaveLength(1);
+    expect(coreLoaderMock.loadCoreModule).toHaveBeenCalledWith('companion/gateway.js');
+    expect(buildCompanionGatewayAdminPlan).toHaveBeenCalledWith({ cwd: '/tmp/proj' });
+  });
+
   it('drafts a companion gateway inbox item without dispatching it', async () => {
     const draftCompanionGatewayInboxItem = vi.fn(async () => ({
       schemaVersion: 1,

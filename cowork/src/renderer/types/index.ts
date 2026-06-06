@@ -570,6 +570,75 @@ export interface CompanionGatewayLifecycleReport {
   recommendations: string[];
 }
 
+export type CompanionGatewayAdminActionType =
+  | 'enable'
+  | 'disable'
+  | 'start'
+  | 'stop'
+  | 'reconnect'
+  | 'review_queue'
+  | 'prepare_draft'
+  | 'launch_fleet'
+  | 'draft_reply'
+  | 'send_reply'
+  | 'inspect_outbox'
+  | 'replay_preview';
+
+export interface CompanionGatewayAdminAction {
+  id: string;
+  channel: string;
+  action: CompanionGatewayAdminActionType;
+  label: string;
+  reason: string;
+  command?: string[];
+  requiresLocalApproval: boolean;
+  destructive: boolean;
+  available: boolean;
+}
+
+export interface CompanionGatewayReplayPreview {
+  id: string;
+  channel: string;
+  status: 'preview' | 'sent' | 'failed' | 'blocked';
+  dryRun: boolean;
+  createdAt: string;
+  approved: boolean;
+  hasError: boolean;
+}
+
+export interface CompanionGatewayAdminPlan {
+  kind: 'companion_gateway_admin_plan';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  safety: {
+    dryRun: true;
+    requiresLocalApproval: true;
+    secretsIncluded: false;
+    rawMessageContentIncluded: false;
+    executesChannelAdmin: false;
+  };
+  summary: {
+    actionCount: number;
+    channelCount: number;
+    enabledCount: number;
+    attentionChannelCount: number;
+    replayablePreviewCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+  };
+  actions: CompanionGatewayAdminAction[];
+  deliveryDiagnostics: {
+    outboxPath: string;
+    counts: Record<'preview' | 'sent' | 'failed' | 'blocked', number>;
+    replayablePreviews: CompanionGatewayReplayPreview[];
+  };
+  recommendations: string[];
+}
+
 export type CompanionGatewayInboxPriority = 'low' | 'normal' | 'high' | 'urgent';
 
 export type CompanionGatewayInboxActionType =

@@ -3,6 +3,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { readSendMessageOutbox } from '../src/channels/send-message.js';
 import {
+  buildCompanionGatewayAdminPlan,
   buildCompanionGatewayLifecycleReport,
   formatCompanionGatewayMessageResult,
   formatCompanionGatewayProfile,
@@ -637,5 +638,121 @@ describe('companion gateway', () => {
     expect(JSON.stringify(report)).not.toContain('profile-secret-fixture');
     expect(JSON.stringify(report)).not.toContain('reply-secret-fixture');
     expect(JSON.stringify(report)).not.toContain('Final approved lifecycle reply');
+  });
+
+  it('builds a secret-safe admin plan with replayable delivery diagnostics', async () => {
+    await updateCompanionGatewayChannel('telegram', {
+      cwd: tempDir,
+      enabled: true,
+      mode: 'act',
+      allowOutbound: true,
+      now: new Date('2026-05-24T17:00:00.000Z'),
+    });
+    const result = await recordCompanionGatewayMessage({
+      channel: 'telegram',
+      senderId: 'user-admin',
+      senderName: 'Admin',
+      threadId: 'dm-admin',
+      messageId: 'm-admin',
+      text: 'Please prepare admin diagnostics. token=admin-secret-fixture',
+      contentType: 'text',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T17:01:00.000Z'),
+    });
+    await draftCompanionGatewayInboxItem(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T17:02:00.000Z'),
+    });
+    await routeCompanionGatewayDraftToFleet(result.inboxItem!.id, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T17:02:30.000Z'),
+    });
+    await draftCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Reviewed admin reply. secret=admin-reply-secret',
+      reviewedBy: 'Patrice',
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T17:03:00.000Z'),
+    });
+    await sendCompanionGatewayOutboundReply(result.inboxItem!.id, {
+      text: 'Final approved admin reply.',
+      approvedBy: 'Patrice',
+      dryRun: true,
+    }, {
+      cwd: tempDir,
+      now: new Date('2026-05-24T17:04:00.000Z'),
+      sendMessage: {
+        createId: () => 'outbox-admin-1',
+      },
+    });
+
+    const plan = await buildCompanionGatewayAdminPlan({
+      cwd: tempDir,
+      channel: 'telegram',
+      now: new Date('2026-05-24T17:05:00.000Z'),
+    });
+
+    expect(plan).toMatchObject({
+      kind: 'companion_gateway_admin_plan',
+      schemaVersion: 1,
+      cwd: tempDir,
+      safety: {
+        dryRun: true,
+        requiresLocalApproval: true,
+        secretsIncluded: false,
+        rawMessageContentIncluded: false,
+        executesChannelAdmin: false,
+      },
+      summary: {
+        channelCount: 1,
+        enabledCount: 1,
+        replayablePreviewCount: 1,
+        failedSendCount: 0,
+        blockedSendCount: 0,
+      },
+      deliveryDiagnostics: {
+        counts: {
+          preview: 1,
+          sent: 0,
+          failed: 0,
+          blocked: 0,
+        },
+        replayablePreviews: [
+          {
+            id: 'outbox-admin-1',
+            channel: 'telegram',
+            status: 'preview',
+            dryRun: true,
+            approved: true,
+            hasError: false,
+          },
+        ],
+      },
+    });
+    expect(plan.actions.map(action => action.action)).toEqual(expect.arrayContaining([
+      'start',
+      'reconnect',
+      'stop',
+      'send_reply',
+      'inspect_outbox',
+      'replay_preview',
+    ]));
+    expect(plan.actions.find(action => action.action === 'reconnect')?.command).toEqual([
+      'buddy',
+      'channels',
+      'stop',
+      '--type',
+      'telegram',
+      '&&',
+      'buddy',
+      'channels',
+      'start',
+      '--type',
+      'telegram',
+    ]);
+    expect(JSON.stringify(plan)).not.toContain('admin-secret-fixture');
+    expect(JSON.stringify(plan)).not.toContain('admin-reply-secret');
+    expect(JSON.stringify(plan)).not.toContain('Final approved admin reply');
   });
 });

@@ -108,6 +108,13 @@ standard message outbox into one secret-safe report. Cowork renders the same
 report as `Gateway lifecycle`, showing enabled/ready/attention counts, queued
 work, reply drafts and outbox health without raw inbound text or credential
 values.
+`buildCompanionGatewayAdminPlan` adds the next supervised-ops layer: it turns
+the lifecycle report and `.codebuddy/messages/outbox.jsonl` into a dry-run admin
+plan with suggested channel start/stop/reconnect commands, queue/reply actions
+and replayable delivery diagnostics. The plan deliberately sets
+`executesChannelAdmin=false`, includes no raw message content, and Cowork renders
+it as `Gateway admin` so operators can inspect the required actions before
+running any live adapter or outbound delivery.
 
 Validation:
 

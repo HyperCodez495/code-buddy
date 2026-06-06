@@ -397,6 +397,75 @@ interface CompanionGatewayLifecycleReport {
   recommendations: string[];
 }
 
+type CompanionGatewayAdminActionType =
+  | 'enable'
+  | 'disable'
+  | 'start'
+  | 'stop'
+  | 'reconnect'
+  | 'review_queue'
+  | 'prepare_draft'
+  | 'launch_fleet'
+  | 'draft_reply'
+  | 'send_reply'
+  | 'inspect_outbox'
+  | 'replay_preview';
+
+interface CompanionGatewayAdminAction {
+  id: string;
+  channel: string;
+  action: CompanionGatewayAdminActionType;
+  label: string;
+  reason: string;
+  command?: string[];
+  requiresLocalApproval: boolean;
+  destructive: boolean;
+  available: boolean;
+}
+
+interface CompanionGatewayReplayPreview {
+  id: string;
+  channel: string;
+  status: 'preview' | 'sent' | 'failed' | 'blocked';
+  dryRun: boolean;
+  createdAt: string;
+  approved: boolean;
+  hasError: boolean;
+}
+
+interface CompanionGatewayAdminPlan {
+  kind: 'companion_gateway_admin_plan';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  safety: {
+    dryRun: true;
+    requiresLocalApproval: true;
+    secretsIncluded: false;
+    rawMessageContentIncluded: false;
+    executesChannelAdmin: false;
+  };
+  summary: {
+    actionCount: number;
+    channelCount: number;
+    enabledCount: number;
+    attentionChannelCount: number;
+    replayablePreviewCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+  };
+  actions: CompanionGatewayAdminAction[];
+  deliveryDiagnostics: {
+    outboxPath: string;
+    counts: Record<'preview' | 'sent' | 'failed' | 'blocked', number>;
+    replayablePreviews: CompanionGatewayReplayPreview[];
+  };
+  recommendations: string[];
+}
+
 type CompanionSkillCandidateStatus = 'draft' | 'reviewed' | 'promoted' | 'dismissed';
 
 interface CompanionSkillEvidence {
@@ -628,6 +697,7 @@ type CompanionCardsMod = {
 type CompanionGatewayMod = {
   readCompanionGatewayProfile: (options: { cwd?: string }) => Promise<CompanionGatewayProfile>;
   buildCompanionGatewayLifecycleReport: (options: { cwd?: string }) => Promise<CompanionGatewayLifecycleReport>;
+  buildCompanionGatewayAdminPlan: (options: { cwd?: string }) => Promise<CompanionGatewayAdminPlan>;
   updateCompanionGatewayChannel: (
     channel: string,
     options: {
@@ -1491,6 +1561,21 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
       return { ok: true as const, report: await mod.buildCompanionGatewayLifecycleReport({ cwd }) };
     } catch (err) {
       logError('[companion.gateway.lifecycle] failed:', err);
+      return { ok: false as const, error: errorMessage(err) };
+    }
+  });
+
+  ipcMain.handle('companion.gateway.adminPlan', async (_e, projectId?: string) => {
+    const { cwd, error } = await companionWorkDir(projectManagerSource, projectId);
+    if (!cwd) return { ok: false as const, error };
+    try {
+      const mod = await loadGateway();
+      if (!mod?.buildCompanionGatewayAdminPlan) {
+        return { ok: false as const, error: 'core companion gateway admin plan module unavailable' };
+      }
+      return { ok: true as const, plan: await mod.buildCompanionGatewayAdminPlan({ cwd }) };
+    } catch (err) {
+      logError('[companion.gateway.adminPlan] failed:', err);
       return { ok: false as const, error: errorMessage(err) };
     }
   });

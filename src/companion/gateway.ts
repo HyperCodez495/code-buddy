@@ -119,6 +119,80 @@ export interface CompanionGatewayLifecycleReport {
   recommendations: string[];
 }
 
+export type CompanionGatewayAdminActionType =
+  | 'enable'
+  | 'disable'
+  | 'start'
+  | 'stop'
+  | 'reconnect'
+  | 'review_queue'
+  | 'prepare_draft'
+  | 'launch_fleet'
+  | 'draft_reply'
+  | 'send_reply'
+  | 'inspect_outbox'
+  | 'replay_preview';
+
+export interface CompanionGatewayAdminAction {
+  id: string;
+  channel: ChannelType;
+  action: CompanionGatewayAdminActionType;
+  label: string;
+  reason: string;
+  command?: string[];
+  requiresLocalApproval: boolean;
+  destructive: boolean;
+  available: boolean;
+}
+
+export interface CompanionGatewayReplayPreview {
+  id: string;
+  channel: ChannelType;
+  status: 'preview' | 'sent' | 'failed' | 'blocked';
+  dryRun: boolean;
+  createdAt: string;
+  approved: boolean;
+  hasError: boolean;
+}
+
+export interface CompanionGatewayAdminPlan {
+  kind: 'companion_gateway_admin_plan';
+  schemaVersion: 1;
+  generatedAt: string;
+  cwd: string;
+  profilePath: string;
+  inboxPath: string;
+  outboxPath: string;
+  safety: {
+    dryRun: true;
+    requiresLocalApproval: true;
+    secretsIncluded: false;
+    rawMessageContentIncluded: false;
+    executesChannelAdmin: false;
+  };
+  summary: {
+    actionCount: number;
+    channelCount: number;
+    enabledCount: number;
+    attentionChannelCount: number;
+    replayablePreviewCount: number;
+    failedSendCount: number;
+    blockedSendCount: number;
+  };
+  actions: CompanionGatewayAdminAction[];
+  deliveryDiagnostics: {
+    outboxPath: string;
+    counts: Record<'preview' | 'sent' | 'failed' | 'blocked', number>;
+    replayablePreviews: CompanionGatewayReplayPreview[];
+  };
+  recommendations: string[];
+}
+
+export interface CompanionGatewayAdminPlanOptions extends CompanionGatewayOptions {
+  channel?: ChannelType;
+  replayLimit?: number;
+}
+
 const DEFAULT_CHANNELS: ChannelType[] = [
   'telegram',
   'discord',
@@ -374,6 +448,242 @@ export async function buildCompanionGatewayLifecycleReport(
       sendPolicyRequired: true,
     },
     channels,
+    recommendations,
+  };
+}
+
+function channelCommand(action: 'start' | 'stop', channel: ChannelType): string[] {
+  return ['buddy', 'channels', action, '--type', channel];
+}
+
+function gatewayProfileCommand(channel: ChannelType, updates: string[]): string[] {
+  return ['buddy', 'companion', 'gateway', 'set', channel, ...updates];
+}
+
+function adminAction(input: Omit<CompanionGatewayAdminAction, 'id'>): CompanionGatewayAdminAction {
+  return {
+    id: `gateway-admin-${input.channel}-${input.action}`,
+    ...input,
+  };
+}
+
+function outboxStatusCounts(
+  entries: Awaited<ReturnType<typeof readSendMessageOutbox>>,
+): Record<'preview' | 'sent' | 'failed' | 'blocked', number> {
+  return entries.reduce<Record<'preview' | 'sent' | 'failed' | 'blocked', number>>((counts, entry) => {
+    counts[entry.status] += 1;
+    return counts;
+  }, {
+    preview: 0,
+    sent: 0,
+    failed: 0,
+    blocked: 0,
+  });
+}
+
+function replayPreviewFor(entry: Awaited<ReturnType<typeof readSendMessageOutbox>>[number]): CompanionGatewayReplayPreview {
+  return {
+    id: entry.id,
+    channel: entry.channel,
+    status: entry.status,
+    dryRun: entry.dryRun,
+    createdAt: entry.createdAt,
+    approved: Boolean(entry.approvedBy),
+    hasError: Boolean(entry.error || entry.delivery?.error || entry.policy?.allowed === false),
+  };
+}
+
+function actionsForLifecycleChannel(channel: CompanionGatewayLifecycleChannel): CompanionGatewayAdminAction[] {
+  const actions: CompanionGatewayAdminAction[] = [];
+
+  if (!channel.enabled) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'enable',
+      label: `Enable ${channel.channel} gateway`,
+      reason: 'Channel is configured but disabled for companion gateway intake.',
+      command: gatewayProfileCommand(channel.channel, ['--enabled', 'true']),
+      requiresLocalApproval: true,
+      destructive: false,
+      available: true,
+    }));
+    return actions;
+  }
+
+  actions.push(adminAction({
+    channel: channel.channel,
+    action: 'start',
+    label: `Start ${channel.channel} adapter`,
+    reason: 'Start the configured channel adapter before accepting live external traffic.',
+    command: channelCommand('start', channel.channel),
+    requiresLocalApproval: true,
+    destructive: false,
+    available: true,
+  }));
+  actions.push(adminAction({
+    channel: channel.channel,
+    action: 'reconnect',
+    label: `Reconnect ${channel.channel} adapter`,
+    reason: 'Restart the adapter when lifecycle diagnostics show stale or failed delivery.',
+    command: [...channelCommand('stop', channel.channel), '&&', ...channelCommand('start', channel.channel)],
+    requiresLocalApproval: true,
+    destructive: true,
+    available: true,
+  }));
+  actions.push(adminAction({
+    channel: channel.channel,
+    action: 'stop',
+    label: `Stop ${channel.channel} adapter`,
+    reason: 'Suspend live intake while investigating safety, delivery or configuration issues.',
+    command: channelCommand('stop', channel.channel),
+    requiresLocalApproval: true,
+    destructive: true,
+    available: true,
+  }));
+
+  if (channel.queueCount > 0) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'review_queue',
+      label: `Review ${channel.queueCount} queued ${channel.channel} item(s)`,
+      reason: 'Queued gateway inbox items require human review before Fleet launch or outbound reply.',
+      requiresLocalApproval: true,
+      destructive: false,
+      available: true,
+    }));
+  }
+  if (channel.queueCount > channel.draftCount) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'prepare_draft',
+      label: `Prepare ${channel.channel} task draft`,
+      reason: 'At least one queued item has no local autonomous-code draft yet.',
+      requiresLocalApproval: true,
+      destructive: false,
+      available: true,
+    }));
+  }
+  if (channel.fleetDraftCount > 0) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'launch_fleet',
+      label: `Launch reviewed ${channel.channel} Fleet handoff`,
+      reason: 'Fleet handoff drafts exist and still require an explicit launch decision.',
+      requiresLocalApproval: true,
+      destructive: true,
+      available: true,
+    }));
+  }
+  if (channel.draftCount > channel.replyDraftCount) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'draft_reply',
+      label: `Draft ${channel.channel} outbound reply`,
+      reason: 'Reviewed inbox drafts can prepare a reply draft without contacting recipients.',
+      requiresLocalApproval: true,
+      destructive: false,
+      available: true,
+    }));
+  }
+  if (channel.replyDraftCount > 0) {
+    actions.push(adminAction({
+      channel: channel.channel,
+      action: 'send_reply',
+      label: `Send approved ${channel.channel} reply`,
+      reason: 'Outbound reply drafts require a separate approval and delivery confirmation.',
+      requiresLocalApproval: true,
+      destructive: true,
+      available: channel.allowOutbound,
+    }));
+  }
+
+  return actions;
+}
+
+export async function buildCompanionGatewayAdminPlan(
+  options: CompanionGatewayAdminPlanOptions = {},
+): Promise<CompanionGatewayAdminPlan> {
+  const cwd = resolveCwd(options.cwd);
+  const now = options.now || new Date();
+  const [lifecycle, outbox] = await Promise.all([
+    buildCompanionGatewayLifecycleReport({ ...options, cwd, now }),
+    readSendMessageOutbox(cwd),
+  ]);
+  const selectedChannels = options.channel
+    ? lifecycle.channels.filter(channel => channel.channel === options.channel)
+    : lifecycle.channels;
+  const actions = selectedChannels.flatMap(actionsForLifecycleChannel);
+  const selectedChannelNames = new Set(selectedChannels.map(channel => channel.channel));
+  const outboxForSelectedChannels = options.channel
+    ? outbox.filter(entry => selectedChannelNames.has(entry.channel))
+    : outbox;
+  if (outboxForSelectedChannels.length > 0) {
+    for (const channel of selectedChannels.filter(item => outboxForSelectedChannels.some(entry => entry.channel === item.channel))) {
+      actions.push(adminAction({
+        channel: channel.channel,
+        action: 'inspect_outbox',
+        label: `Inspect ${channel.channel} outbox history`,
+        reason: 'Outbound delivery attempts exist for this channel and can be audited locally.',
+        requiresLocalApproval: true,
+        destructive: false,
+        available: true,
+      }));
+      actions.push(adminAction({
+        channel: channel.channel,
+        action: 'replay_preview',
+        label: `Replay ${channel.channel} delivery preview`,
+        reason: 'Outbox entries can be replayed as previews before any live delivery is approved.',
+        requiresLocalApproval: true,
+        destructive: false,
+        available: true,
+      }));
+    }
+  }
+
+  const counts = outboxStatusCounts(outboxForSelectedChannels);
+  const replayLimit = Math.max(1, options.replayLimit ?? 20);
+  const replayablePreviews = outboxForSelectedChannels
+    .filter(entry => entry.status === 'preview' || entry.status === 'failed' || entry.status === 'blocked')
+    .slice(-replayLimit)
+    .map(replayPreviewFor);
+  const recommendations = [...lifecycle.recommendations];
+  if (actions.some(action => action.action === 'reconnect')) {
+    recommendations.push('Use reconnect actions only after reviewing adapter configuration and local logs.');
+  }
+  if (replayablePreviews.length > 0) {
+    recommendations.push('Replay delivery diagnostics as dry-run previews before approving live outbound sends.');
+  }
+
+  return {
+    kind: 'companion_gateway_admin_plan',
+    schemaVersion: 1,
+    generatedAt: now.toISOString(),
+    cwd,
+    profilePath: lifecycle.profilePath,
+    inboxPath: lifecycle.inboxPath,
+    outboxPath: lifecycle.outboxPath,
+    safety: {
+      dryRun: true,
+      requiresLocalApproval: true,
+      secretsIncluded: false,
+      rawMessageContentIncluded: false,
+      executesChannelAdmin: false,
+    },
+    summary: {
+      actionCount: actions.length,
+      channelCount: selectedChannels.length,
+      enabledCount: selectedChannels.filter(channel => channel.enabled).length,
+      attentionChannelCount: selectedChannels.filter(channel => channel.state === 'needs_attention').length,
+      replayablePreviewCount: replayablePreviews.length,
+      failedSendCount: counts.failed,
+      blockedSendCount: counts.blocked,
+    },
+    actions,
+    deliveryDiagnostics: {
+      outboxPath: lifecycle.outboxPath,
+      counts,
+      replayablePreviews,
+    },
     recommendations,
   };
 }
