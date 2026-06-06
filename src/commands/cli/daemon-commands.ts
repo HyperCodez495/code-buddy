@@ -6,6 +6,7 @@
 
 import type { Command } from 'commander';
 import { buildDaemonStatusReport } from '../../daemon/status-reports.js';
+import { logger } from '../../utils/logger.js';
 
 export { buildDaemonStatusReport };
 
@@ -162,6 +163,41 @@ export function registerDaemonCommands(program: Command): void {
           scheduler.setTaskExecutor(bridge.createTaskExecutor());
         }
       } catch { /* cron-agent bridge optional */ }
+
+      // Optionally run the Hermes-style self-improvement loop 24/7 on this machine.
+      // The cycle runs as a bounded subprocess (no provider call at the cron layer),
+      // so it needs no API key and a crash cannot take down the daemon.
+      try {
+        const { isLearningDaemonEnabled, registerLearningCronJob } = await import(
+          '../../daemon/learning-cron-job.js'
+        );
+        if (isLearningDaemonEnabled()) {
+          const { getCronScheduler } = await import('../../scheduler/cron-scheduler.js');
+          const scheduler = getCronScheduler();
+          try {
+            const { getCronAgentBridge } = await import('../../daemon/cron-agent-bridge.js');
+            const { RunStore } = await import('../../observability/run-store.js');
+            const bridge = getCronAgentBridge({
+              apiKey: process.env.GROK_API_KEY || process.env.XAI_API_KEY || '',
+              baseURL: process.env.GROK_BASE_URL,
+              model: process.env.GROK_MODEL || 'grok-3-latest',
+              maxToolRounds: 20,
+              jobTimeoutMs: 600000,
+              runStore: RunStore.getInstance(),
+            });
+            scheduler.setTaskExecutor(bridge.createTaskExecutor());
+          } catch {
+            /* executor optional; a previously-wired executor still applies */
+          }
+          await registerLearningCronJob({ scheduler });
+          await scheduler.start();
+          logger.info('[learning-daemon] self-improvement loop active');
+        }
+      } catch (err) {
+        logger.debug('[learning-daemon] failed to start learning loop', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
 
       process.on('SIGTERM', async () => {
         await manager.stop().catch(() => {});
