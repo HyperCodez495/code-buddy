@@ -1622,6 +1622,8 @@ function OpenClawBridgePreview({
   busy,
   onAttachPreview,
   onAttachLive,
+  onNodesPending,
+  onNodeApprove,
   onDraft,
   onSendPreview,
   onSendLive,
@@ -1631,6 +1633,8 @@ function OpenClawBridgePreview({
   busy: boolean;
   onAttachPreview: () => void;
   onAttachLive: () => void;
+  onNodesPending: () => void;
+  onNodeApprove: () => void;
   onDraft: () => void;
   onSendPreview: () => void;
   onSendLive: () => void;
@@ -1668,6 +1672,20 @@ function OpenClawBridgePreview({
             className="rounded border border-accent/50 px-2 py-1 text-[11px] text-accent hover:bg-accent/10 disabled:opacity-50"
           >
             Attach live
+          </button>
+          <button
+            disabled={busy}
+            onClick={onNodesPending}
+            className="rounded border border-border px-2 py-1 text-[11px] text-text-secondary hover:bg-surface disabled:opacity-50"
+          >
+            Pending nodes
+          </button>
+          <button
+            disabled={busy}
+            onClick={onNodeApprove}
+            className="rounded border border-accent/50 px-2 py-1 text-[11px] text-accent hover:bg-accent/10 disabled:opacity-50"
+          >
+            Approve node
           </button>
           <button
             disabled={busy}
@@ -2494,6 +2512,49 @@ export function CompanionPanel() {
       return;
     }
     await refresh();
+  };
+
+  const listOpenClawBridgePendingNodes = async () => {
+    const approvedBy = window.prompt('Approver name to query pending OpenClaw nodes');
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      'Query pending OpenClaw node pairing requests now? This may contact the local OpenClaw gateway.',
+    );
+    if (!confirmed) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.listOpenClawBridgePendingNodes({
+      approvedBy,
+      liveCallConfirmed: true,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) setError(res.error ?? 'OpenClaw pending nodes query failed');
+  };
+
+  const approveOpenClawBridgePendingNode = async () => {
+    const nodeId = window.prompt('OpenClaw node id to approve, or leave blank to use a pairing code');
+    const code = nodeId?.trim()
+      ? undefined
+      : window.prompt('OpenClaw pairing code. It will not be echoed in the result.');
+    if (!nodeId?.trim() && !code?.trim()) return;
+    const approvedBy = window.prompt('Approver name for this OpenClaw node approval');
+    if (!approvedBy?.trim()) return;
+    const confirmed = window.confirm(
+      'Approve this OpenClaw node pairing request now? This may grant gateway access to that node.',
+    );
+    if (!confirmed) return;
+    setBusyAction('openClawBridge');
+    setError(null);
+    const res = await window.electronAPI.companion.approveOpenClawBridgePendingNode({
+      approvedBy,
+      code: code?.trim() || undefined,
+      liveCallConfirmed: true,
+      nodeId: nodeId?.trim() || undefined,
+    });
+    setBusyAction(null);
+    setOpenClawBridgeResult(res);
+    if (!res.ok) setError(res.error ?? 'OpenClaw node approval failed');
   };
 
   const draftOpenClawBridgeHandoff = async () => {
@@ -3435,6 +3496,8 @@ export function CompanionPanel() {
               busy={busyAction !== null}
               onAttachPreview={() => void previewOpenClawBridgeAttach()}
               onAttachLive={() => void attachOpenClawBridge()}
+              onNodesPending={() => void listOpenClawBridgePendingNodes()}
+              onNodeApprove={() => void approveOpenClawBridgePendingNode()}
               onDraft={() => void draftOpenClawBridgeHandoff()}
               onSendPreview={() => void previewOpenClawBridgeSend()}
               onSendLive={() => void sendOpenClawBridgeResponse()}

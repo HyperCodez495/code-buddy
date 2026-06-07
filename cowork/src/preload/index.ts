@@ -1058,6 +1058,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       liveAttachConfirmed: boolean;
     }): Promise<OpenClawBridgeActionResult> =>
       ipcRenderer.invoke('companion.openclaw.attach', input),
+    listOpenClawBridgePendingNodes: (input?: {
+      projectId?: string;
+      source?: string;
+      approvedBy?: string;
+      liveCallConfirmed?: boolean;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.nodesPending', input),
+    approveOpenClawBridgePendingNode: (input: {
+      projectId?: string;
+      source?: string;
+      nodeId?: string;
+      code?: string;
+      approvedBy: string;
+      liveCallConfirmed: boolean;
+    }): Promise<OpenClawBridgeActionResult> =>
+      ipcRenderer.invoke('companion.openclaw.nodeApprove', input),
     draftOpenClawBridgeHandoff: (input: {
       projectId?: string;
       messageId: string;
@@ -4453,6 +4469,20 @@ declare global {
           endpointPath?: string;
           approvedBy: string;
           liveAttachConfirmed: boolean;
+        }) => Promise<OpenClawBridgeActionResult>;
+        listOpenClawBridgePendingNodes: (input?: {
+          projectId?: string;
+          source?: string;
+          approvedBy?: string;
+          liveCallConfirmed?: boolean;
+        }) => Promise<OpenClawBridgeActionResult>;
+        approveOpenClawBridgePendingNode: (input: {
+          projectId?: string;
+          source?: string;
+          nodeId?: string;
+          code?: string;
+          approvedBy: string;
+          liveCallConfirmed: boolean;
         }) => Promise<OpenClawBridgeActionResult>;
         draftOpenClawBridgeHandoff: (input: {
           projectId?: string;

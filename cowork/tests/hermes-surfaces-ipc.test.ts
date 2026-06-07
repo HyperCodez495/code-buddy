@@ -1107,6 +1107,73 @@ describe('companion IPC', () => {
     );
   });
 
+  it('requires explicit approval before live OpenClaw node pairing operations', async () => {
+    const listOpenClawPendingNodes = vi.fn(async () => ({ record: { status: 'called' } }));
+    const approveOpenClawPendingNode = vi.fn(async () => ({
+      record: {
+        request: { method: 'nodes.approve', paramKeys: ['code'] },
+        status: 'called',
+      },
+    }));
+    coreLoaderMock.loadCoreModule.mockResolvedValue({
+      approveOpenClawPendingNode,
+      listOpenClawPendingNodes,
+    });
+    registerCompanionIpcHandlers(projectSource('/tmp/proj'));
+
+    const pendingHandler = electronMock.handlers.get('companion.openclaw.nodesPending');
+    const rejectedPending = (await pendingHandler?.({}, {
+      approvedBy: 'Patrice',
+      liveCallConfirmed: false,
+    })) as { ok: boolean; error?: string };
+    expect(rejectedPending.ok).toBe(false);
+    expect(rejectedPending.error).toMatch(/liveCallConfirmed=true/);
+    expect(listOpenClawPendingNodes).not.toHaveBeenCalled();
+
+    const acceptedPending = (await pendingHandler?.({}, {
+      approvedBy: 'Patrice',
+      liveCallConfirmed: true,
+    })) as { ok: boolean; result?: { record: { status: string } } };
+    expect(acceptedPending.ok).toBe(true);
+    expect(acceptedPending.result?.record.status).toBe('called');
+    expect(listOpenClawPendingNodes).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+      },
+      { cwd: '/tmp/proj', home: undefined },
+    );
+
+    const approveHandler = electronMock.handlers.get('companion.openclaw.nodeApprove');
+    const rejectedApprove = (await approveHandler?.({}, {
+      approvedBy: 'Patrice',
+      code: 'PAIR-CODE-SECRET',
+      liveCallConfirmed: false,
+    })) as { ok: boolean; error?: string };
+    expect(rejectedApprove.ok).toBe(false);
+    expect(rejectedApprove.error).toMatch(/liveCallConfirmed=true/);
+    expect(approveOpenClawPendingNode).not.toHaveBeenCalled();
+
+    const acceptedApprove = (await approveHandler?.({}, {
+      approvedBy: 'Patrice',
+      code: 'PAIR-CODE-SECRET',
+      liveCallConfirmed: true,
+    })) as { ok: boolean; result?: Record<string, unknown> };
+    expect(acceptedApprove.ok).toBe(true);
+    expect(JSON.stringify(acceptedApprove)).not.toContain('PAIR-CODE-SECRET');
+    expect(approveOpenClawPendingNode).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        code: 'PAIR-CODE-SECRET',
+        dryRun: false,
+        liveCallConfirmed: true,
+        nodeId: undefined,
+      },
+      { cwd: '/tmp/proj', home: undefined },
+    );
+  });
+
   it('syncs companion missions in the active workspace', async () => {
     const syncCompanionMissionBoard = vi.fn(async () => ({ radarId: 'radar-1', board: { missions: [] } }));
     coreLoaderMock.loadCoreModule.mockResolvedValue({ syncCompanionMissionBoard });

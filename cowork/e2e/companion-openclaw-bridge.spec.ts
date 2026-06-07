@@ -187,6 +187,8 @@ async function mockOpenClawCompanionBackend(
       'companion.gateway.inbox',
       'companion.openclaw.status',
       'companion.openclaw.attachPreview',
+      'companion.openclaw.nodesPending',
+      'companion.openclaw.nodeApprove',
       'companion.openclaw.draft',
       'companion.openclaw.sendPreview',
       'companion.skills.list',
@@ -279,6 +281,28 @@ async function mockOpenClawCompanionBackend(
     ipcMain.handle('companion.openclaw.attachPreview', async () => ({
       ok: true,
       result: { kind: 'attach-preview', logPath: `${cwd}/.codebuddy/openclaw-preview.json` },
+    }));
+    ipcMain.handle('companion.openclaw.nodesPending', async () => ({
+      ok: true,
+      result: {
+        kind: 'openclaw_websocket_call_result',
+        record: {
+          request: { method: 'nodes.pending' },
+          response: { summary: { pendingCount: 1 } },
+          status: 'called',
+        },
+      },
+    }));
+    ipcMain.handle('companion.openclaw.nodeApprove', async () => ({
+      ok: true,
+      result: {
+        kind: 'openclaw_websocket_call_result',
+        record: {
+          request: { method: 'nodes.approve', paramKeys: ['code'] },
+          response: { summary: { approved: true } },
+          status: 'called',
+        },
+      },
     }));
     ipcMain.handle('companion.openclaw.draft', async () => ({
       ok: true,

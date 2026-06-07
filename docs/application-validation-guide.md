@@ -433,7 +433,7 @@ dry-run by default; live network use requires
 `--apply --yes --approved-by <name>`.
 
 Observed result: `12` companion gateway tests, `20` OpenClaw bridge tests, `17`
-Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
+Hermes/OpenClaw CLI migration tests, and `67` focused Cowork OpenClaw/gateway
 surface tests passed, plus the targeted Cowork Playwright OpenClaw bridge proof
 passed and wrote:
 
@@ -444,7 +444,8 @@ docs/qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png
 These proofs cover local inbox creation, urgent message priority,
 disabled-channel audit, token redaction, no auto-dispatch, confirmed admin
 execution logging, dry-run OpenClaw compatibility handoffs, and guarded
-OpenClaw daemon attach/response send plus CLI dry-run access. The OpenClaw
+OpenClaw daemon attach/response send, guarded Cowork node pairing, plus CLI
+dry-run access. The OpenClaw
 bridge suite now also includes a local WebSocket gateway fixture for the
 documented `connect` -> `hello-ok` -> `req(status)` -> `res` flow; the probe log
 stores only frame types and response summaries, never tokens or raw payloads.

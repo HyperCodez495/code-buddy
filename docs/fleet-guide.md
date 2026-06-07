@@ -1186,12 +1186,14 @@ parler de compatibilité complète.
 
 Cowork expose le même contrat dans le Companion panel, section
 `OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et
-`Preview send` restent en dry-run. `Attach live` et `Send live` demandent un
-approbateur, ouvrent une confirmation native, puis passent par les handlers
-`companion.openclaw.attach` / `companion.openclaw.send` avec
-`liveAttachConfirmed=true` ou `liveSendConfirmed=true`. Le panneau affiche le
+`Preview send` restent en dry-run. `Attach live`, `Pending nodes`,
+`Approve node` et `Send live` demandent un approbateur, ouvrent une confirmation
+native, puis passent par les handlers `companion.openclaw.attach`,
+`companion.openclaw.nodesPending`, `companion.openclaw.nodeApprove` ou
+`companion.openclaw.send` avec `liveAttachConfirmed=true`,
+`liveCallConfirmed=true` ou `liveSendConfirmed=true`. Le panneau affiche le
 statut/artifact retourné, mais ne persiste pas le texte complet saisi dans les
-prompts ni les tokens du gateway.
+prompts, les codes de pairage ni les tokens du gateway.
 
 Preuve GUI publique-safe :
 
@@ -1202,7 +1204,7 @@ npx playwright test e2e/companion-openclaw-bridge.spec.ts --reporter=list
 ```
 
 Ce test ouvre le vrai Companion panel avec des données IPC synthétiques, vérifie
-le statut `detected`, l'endpoint loopback, le statut token `present` et les cinq
+le statut `detected`, l'endpoint loopback, le statut token `present` et les sept
 boutons du bridge, puis écrit la capture cropée
 `docs/qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png`.
 

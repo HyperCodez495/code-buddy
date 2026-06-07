@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { loadCoreModule } from '../src/main/utils/core-loader';
 import {
+  approveOpenClawBridgePendingNodeForReview,
   attachOpenClawBridgeForReview,
   draftOpenClawBridgeHandoffForReview,
   getOpenClawBridgeStatusForReview,
+  listOpenClawBridgePendingNodesForReview,
   previewOpenClawBridgeAttachForReview,
   previewOpenClawBridgeSendForReview,
   sendOpenClawBridgeResponseForReview,
@@ -81,6 +83,73 @@ describe('Hermes OpenClaw gateway bridge', () => {
       { cwd: '/repo', home: '/home/u/.openclaw' },
     );
     expect(result.result?.status).toBe('attached');
+  });
+
+  it('queries pending OpenClaw nodes through a guarded live call', async () => {
+    const listOpenClawPendingNodes = vi.fn().mockResolvedValue({
+      kind: 'openclaw_websocket_call_result',
+      record: {
+        request: { method: 'nodes.pending' },
+        response: { summary: { pendingCount: 1 } },
+        status: 'called',
+      },
+    });
+    mockedLoadCoreModule.mockResolvedValue({ listOpenClawPendingNodes });
+
+    const result = await listOpenClawBridgePendingNodesForReview({
+      approvedBy: 'Patrice',
+      cwd: '/repo',
+      source: '/home/u/.openclaw',
+    });
+
+    expect(listOpenClawPendingNodes).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+      },
+      { cwd: '/repo', home: '/home/u/.openclaw' },
+    );
+    expect(result.result?.record).toMatchObject({ status: 'called' });
+  });
+
+  it('approves pending OpenClaw nodes only with an approver and node id or code', async () => {
+    const approveOpenClawPendingNode = vi.fn().mockResolvedValue({
+      kind: 'openclaw_websocket_call_result',
+      record: {
+        request: { method: 'nodes.approve', paramKeys: ['code'] },
+        response: { summary: { approved: true } },
+        status: 'called',
+      },
+    });
+    mockedLoadCoreModule.mockResolvedValue({ approveOpenClawPendingNode });
+
+    const missingApprover = await approveOpenClawBridgePendingNodeForReview({
+      code: 'PAIR-CODE-SECRET',
+      approvedBy: ' ',
+    });
+    expect(missingApprover.ok).toBe(false);
+    expect(approveOpenClawPendingNode).not.toHaveBeenCalled();
+
+    const result = await approveOpenClawBridgePendingNodeForReview({
+      approvedBy: 'Patrice',
+      code: 'PAIR-CODE-SECRET',
+      cwd: '/repo',
+      source: '/home/u/.openclaw',
+    });
+
+    expect(approveOpenClawPendingNode).toHaveBeenCalledWith(
+      {
+        approvedBy: 'Patrice',
+        code: 'PAIR-CODE-SECRET',
+        dryRun: false,
+        liveCallConfirmed: true,
+        nodeId: undefined,
+      },
+      { cwd: '/repo', home: '/home/u/.openclaw' },
+    );
+    expect(JSON.stringify(result)).not.toContain('PAIR-CODE-SECRET');
+    expect(result.result?.record).toMatchObject({ status: 'called' });
   });
 
   it('drafts a Fleet handoff without direct dispatch', async () => {

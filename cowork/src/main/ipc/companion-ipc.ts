@@ -11,9 +11,11 @@ import { ipcMain } from 'electron';
 import { loadCoreModule } from '../utils/core-loader';
 import { logError } from '../utils/logger';
 import {
+  approveOpenClawBridgePendingNodeForReview,
   attachOpenClawBridgeForReview,
   draftOpenClawBridgeHandoffForReview,
   getOpenClawBridgeStatusForReview,
+  listOpenClawBridgePendingNodesForReview,
   previewOpenClawBridgeAttachForReview,
   previewOpenClawBridgeSendForReview,
   sendOpenClawBridgeResponseForReview,
@@ -1916,6 +1918,71 @@ export function registerCompanionIpcHandlers(projectManagerSource: ProjectManage
         });
       } catch (err) {
         logError('[companion.openclaw.attach] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.nodesPending',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        source?: string;
+        approvedBy?: string;
+        liveCallConfirmed?: boolean;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if ((input?.approvedBy || input?.liveCallConfirmed) && (!input.approvedBy?.trim() || input.liveCallConfirmed !== true)) {
+        return { ok: false as const, error: 'approvedBy and liveCallConfirmed=true are required' };
+      }
+      try {
+        return await listOpenClawBridgePendingNodesForReview({
+          approvedBy: input?.approvedBy,
+          cwd,
+          source: input?.source,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.nodesPending] failed:', err);
+        return { ok: false as const, error: errorMessage(err) };
+      }
+    },
+  );
+
+  ipcMain.handle(
+    'companion.openclaw.nodeApprove',
+    async (
+      _e,
+      input?: {
+        projectId?: string;
+        source?: string;
+        nodeId?: string;
+        code?: string;
+        approvedBy?: string;
+        liveCallConfirmed?: boolean;
+      },
+    ) => {
+      const { cwd, error } = await companionWorkDir(projectManagerSource, input?.projectId);
+      if (!cwd) return { ok: false as const, error };
+      if (!input?.approvedBy?.trim() || input.liveCallConfirmed !== true) {
+        return { ok: false as const, error: 'approvedBy and liveCallConfirmed=true are required' };
+      }
+      if (!input.nodeId?.trim() && !input.code?.trim()) {
+        return { ok: false as const, error: 'nodeId or code is required' };
+      }
+      try {
+        return await approveOpenClawBridgePendingNodeForReview({
+          approvedBy: input.approvedBy,
+          code: input.code,
+          cwd,
+          nodeId: input.nodeId,
+          source: input.source,
+        });
+      } catch (err) {
+        logError('[companion.openclaw.nodeApprove] failed:', err);
         return { ok: false as const, error: errorMessage(err) };
       }
     },
