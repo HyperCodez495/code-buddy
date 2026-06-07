@@ -248,27 +248,37 @@ Latest local privacy proof on this branch:
   not-yet-eligible candidates, but keeps install controls hidden until the
   candidate is eligible and a reviewer identity is provided.
 
-## Screenshot And Privacy Policy
+## Screenshot And Video Privacy Policy
 
 Real Cowork tests can write Playwright screenshots under
-`docs/qa/code-buddy-studio/screenshots/`. Treat those files as QA evidence first,
-not public marketing assets.
+`docs/qa/code-buddy-studio/screenshots/`, and the GitHub README can embed public
+demo videos through `user-attachments` URLs. Treat screenshots and videos as QA
+evidence first, not public marketing assets.
 
-Before committing or publishing a screenshot:
+Before committing or publishing a screenshot or video:
 
 1. Use a synthetic workspace with no customer code, no private repositories, and
    no personal files.
 2. Check for account email, account id, local home directory, access tokens,
-   session names, browser tabs, terminal history, and notifications.
+   OAuth callback URLs, session names, browser tabs, terminal history, and
+   notifications.
 3. Crop or redact paths and identity details.
 4. Prefer marker prompts such as `REAL-GPT55-COWORK-GUI` over natural private
    prompts.
-5. Keep full-page screenshots out of the public README unless they have been
-   manually reviewed.
+5. Keep full-page screenshots and raw private recordings out of the public
+   README unless they have been manually reviewed.
 
 This page deliberately embeds only screenshots that have passed a manual public
-review. Fresh screenshots from a private workstation should stay as QA evidence
-until they pass the same manual privacy review.
+review. Fresh screenshots or videos from a private workstation should stay as QA
+evidence until they pass the same manual privacy review.
+
+Current reviewed GitHub user-attachments demo videos:
+
+- Folder organization and cleanup.
+- PPT generation from source files.
+- XLSX spreadsheet generation.
+- GUI operation / computer-use demonstration.
+- Feishu/Lark remote-control demonstration.
 
 Current reviewed OpenClaw bridge screenshot:
 `docs/qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png`.

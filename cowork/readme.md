@@ -71,6 +71,13 @@ validation commands, and public screenshot privacy policy, see
 
 See Code Buddy Cowork in action:
 
+> [!IMPORTANT]
+> **Public media review**: These GitHub-hosted demo videos are treated as public
+> QA evidence. Before replacing or adding media, review the frames for account
+> IDs, access tokens, OAuth callback URLs, local paths, browser tabs, terminal
+> history, and notifications. Keep raw private captures out of the README; use
+> reviewed crops or synthetic workspaces.
+
 ### 1. Folder Organization & Cleanup 📂
 https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7
 

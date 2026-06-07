@@ -126,6 +126,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'e2e', 'permission-real-flow.spec.ts'), '');
   mkdirSync(path.join(coworkDir, 'tests'), { recursive: true });
   writeFileSync(path.join(coworkDir, 'tests', 'workflow-bridge-integration.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'skills-manager-builtin-skills.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'bundle-mcp-script.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'engine-mcp-sync.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'hooks-bridge-agent-dryrun.test.ts'), '');
@@ -193,6 +194,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'remote-control-panel-imports.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'remote-control-panel-claude-layout.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'slash-command-bridge-remote.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'open-cowork-demo-parity.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'tool-executor-sandbox.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'sandbox-executor-containment.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'sandbox-command-injection.test.ts'), '');
@@ -247,6 +249,8 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'message-card-link-handling.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'message-card-citation-link-normalization.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'message-card-ask-user-question-state.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'permission-dialog-computer-use.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'settings-permission-rules-computer-use.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'schedule-helpers.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'schedule-task-title.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'scheduled-task-edge-cases.test.ts'), '');
@@ -927,6 +931,7 @@ describe('TestRunnerBridge catalog', () => {
     expect(labels).toContain('Cowork / feature completion depth');
     expect(labels).toContain('Cowork / functional coverage bundle');
     expect(labels).toContain('Cowork / remote control bundle');
+    expect(labels).toContain('Cowork / Open Cowork demo parity bundle');
     expect(labels).toContain('Cowork / sandbox executor bundle');
     expect(labels).toContain('Cowork / project session git bundle');
     expect(labels).toContain('Cowork / UI localization layout bundle');
@@ -1025,6 +1030,20 @@ describe('TestRunnerBridge catalog', () => {
       kind: 'integration',
       safeToRun: true,
     });
+    expect(catalog.find((item) => item.label === 'Cowork / Open Cowork demo parity bundle')).toMatchObject({
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 180_000,
+    });
+    expect(catalog.find((item) => item.label === 'Cowork / Open Cowork demo parity bundle')?.args).toEqual(
+      expect.arrayContaining([
+        'tests/open-cowork-demo-parity.test.ts',
+        'tests/skills-manager-builtin-skills.test.ts',
+        'tests/document-workshop-flow.test.ts',
+        'tests/permission-dialog-computer-use.test.ts',
+        'tests/remote-control-panel-claude-layout.test.ts',
+      ])
+    );
     expect(catalog.find((item) => item.label === 'Cowork / sandbox executor bundle')).toMatchObject({
       kind: 'integration',
       safeToRun: true,
