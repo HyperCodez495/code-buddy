@@ -31,8 +31,15 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 // tests/ -> cowork/ -> .claude/skills (the bundled built-in skills directory).
 const BUILTIN_SKILLS_DIR = path.join(__dirname, '..', '.claude', 'skills');
 
-// The five document/automation skills advertised in the README + demo videos.
-const EXPECTED_BUILTIN_SKILLS = ['pptx', 'docx', 'xlsx', 'pdf', 'skill-creator'];
+// The document/automation skills advertised in the README + demo videos.
+const EXPECTED_BUILTIN_SKILLS = [
+  'pptx',
+  'docx',
+  'xlsx',
+  'pdf',
+  'skill-creator',
+  'workspace-organizer',
+];
 
 function createDbMock(): DatabaseInstance {
   const statement = { run: vi.fn() };
@@ -81,7 +88,7 @@ describe('Built-in Agent Skills are shipped and loadable', () => {
     }
   });
 
-  it('loads the five built-in skills into the manager at construction', () => {
+  it('loads the advertised built-in skills into the manager at construction', () => {
     const manager = new SkillsManager(createDbMock());
     const builtinSkills = manager.getAllSkills().filter((skill) => skill.type === 'builtin');
     const builtinNames = builtinSkills.map((skill) => skill.name).sort();
@@ -103,5 +110,17 @@ describe('Built-in Agent Skills are shipped and loadable', () => {
     expect(
       fs.existsSync(path.join(BUILTIN_SKILLS_DIR, 'pdf', 'scripts', 'fill_fillable_fields.py'))
     ).toBe(true);
+  });
+
+  it('ships the workspace organization guardrails shown in the cleanup demo', () => {
+    const skillMd = fs.readFileSync(
+      path.join(BUILTIN_SKILLS_DIR, 'workspace-organizer', 'SKILL.md'),
+      'utf8'
+    );
+
+    expect(skillMd).toContain('Do not delete files by default');
+    expect(skillMd).toContain('organization-manifest.md');
+    expect(skillMd).toContain('.git');
+    expect(skillMd).toContain('content hash');
   });
 });

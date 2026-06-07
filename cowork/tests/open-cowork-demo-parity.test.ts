@@ -44,6 +44,7 @@ describe('Open Cowork demo parity', () => {
     expect(readme).toContain('Public media review');
     expect(readme).toContain('access tokens');
     expect(readme).toContain('OAuth callback URLs');
+    expect(readme).toContain('workspace-organizer');
   });
 
   it('documents screenshots and videos under the same public-review policy', () => {
@@ -65,5 +66,13 @@ describe('Open Cowork demo parity', () => {
     expect(source).toContain('tests/document-workshop-flow.test.ts');
     expect(source).toContain('tests/permission-dialog-computer-use.test.ts');
     expect(source).toContain('tests/remote-control-panel-claude-layout.test.ts');
+  });
+
+  it('ships a built-in workspace organization skill for the cleanup demo', () => {
+    const skill = readRepoFile('cowork', '.claude', 'skills', 'workspace-organizer', 'SKILL.md');
+
+    expect(skill).toContain('name: workspace-organizer');
+    expect(skill).toContain('Do not delete files by default');
+    expect(skill).toContain('organization-manifest.md');
   });
 });

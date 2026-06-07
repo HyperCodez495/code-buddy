@@ -274,7 +274,8 @@ evidence until they pass the same manual privacy review.
 
 Current reviewed GitHub user-attachments demo videos:
 
-- Folder organization and cleanup.
+- Folder organization and cleanup, backed by the built-in
+  `workspace-organizer` skill.
 - PPT generation from source files.
 - XLSX spreadsheet generation.
 - GUI operation / computer-use demonstration.

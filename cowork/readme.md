@@ -223,6 +223,7 @@ Code Buddy Cowork ships with built-in skills under `.claude/skills/`, and suppor
 - `docx` for Word document processing
 - `pdf` for PDF handling and forms
 - `xlsx` for Excel spreadsheet support
+- `workspace-organizer` for safe folder organization and cleanup planning
 - `skill-creator` for creating custom skills
 
 ---
@@ -281,6 +282,7 @@ codebuddy-cowork/
 │       ├── docx/                # Word document processing
 │       ├── pdf/                 # PDF handling & forms
 │       ├── xlsx/                # Excel spreadsheet support
+│       ├── workspace-organizer/ # Folder organization & cleanup
 │       └── skill-creator/       # Skill development toolkit
 ├── resources/                   # Static Assets (icons, images)
 ├── electron-builder.yml         # Build configuration
@@ -294,7 +296,7 @@ codebuddy-cowork/
 
 - [x] **Core**: Stable Windows & macOS Installers
 - [x] **Security**: Full Filesystem Sandboxing
-- [x] **Skills**: PPTX, DOCX, PDF, XLSX Support + Custom Skill Management
+- [x] **Skills**: PPTX, DOCX, PDF, XLSX, Workspace Organization + Custom Skill Management
 - [x] **VM Sandbox**: WSL2 (Windows) and Lima (macOS) isolation support
 - [x] **MCP Connectors**: Custom connector support for external service integration
 - [x] **Rich Input**: File upload and image input in chat
