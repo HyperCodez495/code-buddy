@@ -148,7 +148,7 @@ import type {
 } from '../renderer/types';
 import { remoteManager, type AgentExecutor } from './remote/remote-manager';
 import { remoteConfigStore } from './remote/remote-config-store';
-import type { GatewayConfig, FeishuChannelConfig, ChannelType } from './remote/types';
+import type { GatewayConfig, FeishuChannelConfig, SlackChannelConfig, ChannelType } from './remote/types';
 import { startNavServer, stopNavServer } from './nav-server';
 import {
   ScheduledTaskManager,
@@ -1804,6 +1804,19 @@ app
       },
       watchStorage: true,
     });
+    // Point the embedded Code Buddy engine's bundled-skills tier at the same
+    // built-in skills directory the GUI loads, so the agentic loop's findSkill()
+    // can surface pptx/docx/xlsx/pdf to the model. Must be set before the first
+    // session constructs CodeBuddyAgent (which initializes the skill registry).
+    try {
+      const builtinSkillsPath = skillsManager.getBuiltinSkillsPath();
+      if (builtinSkillsPath && !process.env.CODEBUDDY_BUNDLED_SKILLS_DIR) {
+        process.env.CODEBUDDY_BUNDLED_SKILLS_DIR = builtinSkillsPath;
+        log(`[Main] Embedded engine bundled skills dir → ${builtinSkillsPath}`);
+      }
+    } catch (err) {
+      logWarn('[Main] Failed to wire bundled skills dir for embedded engine:', err);
+    }
     skillsManager.onStorageChanged((event) => {
       sendToRenderer({
         type: 'skills.storageChanged',
@@ -3212,6 +3225,22 @@ ipcMain.handle('mcp.deleteServer', async (_event, serverId: string) => {
     }
   }
   return { success: true };
+});
+
+ipcMain.handle('mcp.clearOAuthTokens', async (_event, serverId: string) => {
+  try {
+    if (sessionManager) {
+      const mcpManager = sessionManager.getMCPManager();
+      await mcpManager.clearOAuthTokens(serverId);
+      // Drop the live connection so the next connect re-triggers authorization.
+      await mcpManager.removeServer(serverId).catch(() => {});
+      sessionManager.invalidateMcpServersCache();
+    }
+    return { success: true };
+  } catch (error) {
+    logError('[MCP] Failed to clear OAuth tokens:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
 });
 
 ipcMain.handle('mcp.getTools', () => {
@@ -6961,6 +6990,16 @@ ipcMain.handle('remote.updateFeishuConfig', async (_event, config: FeishuChannel
     return { success: true };
   } catch (error) {
     logError('[Remote] Error updating Feishu config:', error);
+    return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
+  }
+});
+
+ipcMain.handle('remote.updateSlackConfig', async (_event, config: SlackChannelConfig) => {
+  try {
+    await remoteManager.updateSlackConfig(config);
+    return { success: true };
+  } catch (error) {
+    logError('[Remote] Error updating Slack config:', error);
     return { success: false, error: error instanceof Error ? error.message : 'Unknown error' };
   }
 });

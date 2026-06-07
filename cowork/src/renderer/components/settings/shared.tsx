@@ -14,6 +14,7 @@ export interface MCPServerConfig {
   env?: Record<string, string>;
   url?: string;
   headers?: Record<string, string>;
+  oauth?: boolean;
   enabled: boolean;
 }
 

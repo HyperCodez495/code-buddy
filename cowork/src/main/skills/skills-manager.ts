@@ -176,12 +176,22 @@ export class SkillsManager {
   /**
    * Get the built-in skills directory path
    */
-  private getBuiltinSkillsPath(): string {
+  /**
+   * Resolve the built-in skills directory (pptx/docx/xlsx/pdf/skill-creator).
+   * Public so the host can hand the same path to the embedded Code Buddy engine
+   * (via CODEBUDDY_BUNDLED_SKILLS_DIR) — otherwise the core skill registry only
+   * scans .codebuddy/skills/bundled and never surfaces these skills to the model.
+   */
+  getBuiltinSkillsPath(): string {
     const appPath = app.getAppPath();
     const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
 
     const possiblePaths = [
-      // Development
+      // Development (bundled layout): the main process is bundled to
+      // dist-electron/main/, so __dirname is <cowork>/dist-electron/main and
+      // ../../ lands on the cowork package root that holds .claude/skills.
+      path.join(__dirname, '..', '..', '.claude', 'skills'),
+      // Development (legacy unbundled layout: dist-electron/main/skills/).
       path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
       // Production: extraResources extracts .claude/skills → resources/skills
       path.join(process.resourcesPath || '', 'skills'),

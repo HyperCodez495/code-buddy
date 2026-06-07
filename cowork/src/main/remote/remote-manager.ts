@@ -9,6 +9,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
+import { SlackChannel } from './channels/slack';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -16,6 +17,7 @@ import type {
   GatewayStatus,
   GatewayConfig,
   FeishuChannelConfig,
+  SlackChannelConfig,
   ChannelType,
   RemoteSessionMapping,
   PairedUser,
@@ -337,6 +339,18 @@ export class RemoteManager extends EventEmitter {
    */
   async updateFeishuConfig(config: FeishuChannelConfig): Promise<void> {
     remoteConfigStore.setFeishuConfig(config);
+
+    // Restart to apply changes
+    if (this.gateway?.running) {
+      await this.restart();
+    }
+  }
+
+  /**
+   * Update slack channel config
+   */
+  async updateSlackConfig(config: SlackChannelConfig): Promise<void> {
+    remoteConfigStore.setSlackConfig(config);
 
     // Restart to apply changes
     if (this.gateway?.running) {
@@ -1082,6 +1096,28 @@ export class RemoteManager extends EventEmitter {
       );
 
       log('[RemoteManager] Feishu channel registered');
+    }
+
+    // Register Slack channel if configured
+    const slackConfig = config.channels.slack;
+    if (slackConfig && slackConfig.botToken) {
+      const slackChannel = new SlackChannel(slackConfig);
+      this.gateway.registerChannel(slackChannel);
+
+      // Set up webhook handler (Events API mode; no-op when Socket Mode is used)
+      this.gateway.on(
+        'webhook:slack',
+        async (data: {
+          headers: Record<string, string>;
+          body: string;
+          respond: (status: number, responseData: unknown) => void;
+        }) => {
+          const result = await slackChannel.handleWebhook(data.headers, data.body);
+          data.respond(result.status, result.data);
+        }
+      );
+
+      log('[RemoteManager] Slack channel registered');
     }
 
     // TODO: Register other channels (WeChat, Telegram, DingTalk)

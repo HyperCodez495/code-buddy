@@ -23,6 +23,7 @@ export interface McpServerConfig {
   cwd?: string;
   url?: string;
   headers?: Record<string, string>;
+  oauth?: boolean;
   enabled: boolean;
 }
 
@@ -65,7 +66,7 @@ export type McpPresetsMap = Record<
 // ---------------------------------------------------------------------------
 
 /** Slim channel-type union (mirrors ChannelType in remote/types.ts). */
-export type RemoteChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket';
+export type RemoteChannelType = 'feishu' | 'wechat' | 'telegram' | 'slack' | 'dingtalk' | 'websocket';
 
 /** Feishu channel configuration (mirrors FeishuChannelConfig in remote/types.ts). */
 export interface FeishuChannelConfig {
@@ -75,6 +76,21 @@ export interface FeishuChannelConfig {
   verificationToken?: string;
   encryptKey?: string;
   useWebSocket?: boolean;
+  dm: {
+    policy: 'open' | 'pairing' | 'allowlist';
+    allowFrom?: string[];
+  };
+  groups?: Record<string, { requireMention: boolean; allowFrom?: string[] }>;
+  defaultGroupSettings?: { requireMention: boolean };
+}
+
+/** Slack channel configuration (mirrors SlackChannelConfig in remote/types.ts). */
+export interface SlackChannelConfig {
+  type: 'slack';
+  botToken: string;
+  appToken?: string;
+  signingSecret?: string;
+  useSocketMode?: boolean;
   dm: {
     policy: 'open' | 'pairing' | 'allowlist';
     allowFrom?: string[];
@@ -123,6 +139,7 @@ export interface RemoteConfig {
     feishu?: FeishuChannelConfig;
     wechat?: Record<string, unknown>;
     telegram?: Record<string, unknown>;
+    slack?: SlackChannelConfig;
     dingtalk?: Record<string, unknown>;
     websocket?: Record<string, unknown>;
   };

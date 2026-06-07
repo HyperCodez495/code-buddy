@@ -77,6 +77,11 @@ win:
       to: mcp
     - from: resources/node/win32-x64
       to: node
+    # Built-in Agent Skills (pptx/docx/xlsx/pdf/skill-creator). Loaded at
+    # runtime by skills-manager.getBuiltinSkillsPath() from
+    # process.resourcesPath/skills in packaged builds; dev reads ../.claude/skills.
+    - from: .claude/skills
+      to: skills
     - from: dist-wsl-agent
       to: wsl-agent
     # Code Buddy core engine adapter (~150 KB). Required at runtime by
@@ -111,6 +116,9 @@ mac:
       to: mcp
     - from: resources/node/darwin-${arch}
       to: node
+    # Built-in Agent Skills — see comment on win.extraResources.
+    - from: .claude/skills
+      to: skills
     # Bundled Python runtime + site-packages for GUI automation helpers (Pillow, pyobjc/Quartz)
     - from: resources/python/darwin-${arch}
       to: python
@@ -139,6 +147,9 @@ linux:
       to: mcp
     - from: resources/node/linux-x64
       to: node
+    # Built-in Agent Skills — see comment on win.extraResources.
+    - from: .claude/skills
+      to: skills
     - from: resources/python/linux-${arch}
       to: python
     # Code Buddy core engine adapter — see comment on win.extraResources.

@@ -70,6 +70,15 @@ import * as fs from 'fs';
  * in ESM) and import.meta.url (breaks ts-jest).
  */
 export function getBundledSkillsPath(): string {
+  // Explicit override — a host (e.g. the Cowork desktop app) can point the
+  // bundled-skills tier at its own resolved skills directory so the embedded
+  // engine surfaces the same skills the host ships. Unset for the CLI, which
+  // falls back to the .codebuddy/skills/bundled walk below.
+  const envDir = process.env.CODEBUDDY_BUNDLED_SKILLS_DIR;
+  if (envDir && fs.existsSync(envDir)) {
+    return envDir;
+  }
+
   const startDir = process.argv[1]
     ? path.dirname(path.resolve(process.argv[1]))
     : process.cwd();

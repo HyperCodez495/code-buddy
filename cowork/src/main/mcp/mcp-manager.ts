@@ -15,11 +15,16 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { SSEClientTransport } from '@modelcontextprotocol/sdk/client/sse.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 
 import path from 'path';
 import { log, logError, logWarn, logCtx, logCtxError, logTiming } from '../utils/logger';
 import { getDefaultShell } from '../utils/shell-resolver';
+import { CoworkMcpOAuthProvider, connectWithOAuthRetry } from './mcp-oauth';
+// NOTE: mcp-config-store pulls in electron-store at module load; import it lazily
+// (only when OAuth is actually used) so mcp-manager stays loadable under unit
+// tests that don't fully mock electron.
+type McpConfigStore = typeof import('./mcp-config-store').mcpConfigStore;
 
 /**
  * MCP Server Configuration
@@ -34,6 +39,7 @@ export interface MCPServerConfig {
   cwd?: string; // Working directory for stdio command
   url?: string; // For SSE / Streamable HTTP: server URL
   headers?: Record<string, string>; // For SSE / Streamable HTTP: HTTP headers
+  oauth?: boolean; // For SSE / Streamable HTTP: authenticate via OAuth (PKCE) instead of static headers
   enabled: boolean;
 }
 
@@ -527,6 +533,27 @@ export class MCPManager {
   }
 
   /**
+   * Build an OAuth provider for an MCP server, backed by persisted tokens so the
+   * user only authorizes once. Opens the system browser for the auth redirect.
+   */
+  private createOAuthProvider(serverId: string, store: McpConfigStore): CoworkMcpOAuthProvider {
+    return new CoworkMcpOAuthProvider({
+      openExternal: (url) => shell.openExternal(url),
+      loadState: () => store.getOAuthState(serverId),
+      saveState: (state) => store.setOAuthState(serverId, state),
+    });
+  }
+
+  /**
+   * Clear persisted OAuth tokens for a server (sign out). The next connect will
+   * re-trigger the browser authorization flow.
+   */
+  async clearOAuthTokens(serverId: string): Promise<void> {
+    const { mcpConfigStore } = await import('./mcp-config-store');
+    mcpConfigStore.clearOAuthState(serverId);
+  }
+
+  /**
    * Connect to a single MCP server
    */
   private async connectServer(config: MCPServerConfig): Promise<void> {
@@ -552,6 +579,12 @@ export class MCPManager {
     let transport: StdioClientTransport | SSEClientTransport | StreamableHTTPClientTransport;
     let commandForLogging = '';
     let argsForLogging: string[] = [];
+    // For OAuth-protected HTTP servers: a factory that builds a fresh transport
+    // bound to the auth provider, used by connectWithOAuthRetry across attempts.
+    let makeHttpTransport:
+      | ((provider?: CoworkMcpOAuthProvider) => SSEClientTransport | StreamableHTTPClientTransport)
+      | undefined;
+    let oauthProvider: CoworkMcpOAuthProvider | undefined;
 
     if (config.type === 'stdio') {
       if (!config.command) {
@@ -749,8 +782,17 @@ export class MCPManager {
         throw new Error(`SSE server ${config.name} has a malformed URL: "${config.url}"`);
       }
 
-      // Create SSE transport — headers must be passed via requestInit, not as a raw dict
-      transport = new SSEClientTransport(sseUrl, { requestInit: { headers: config.headers } });
+      // Create SSE transport — headers must be passed via requestInit, not as a raw dict.
+      // authProvider is attached only when OAuth is enabled for this server.
+      makeHttpTransport = (provider) =>
+        new SSEClientTransport(sseUrl, {
+          authProvider: provider,
+          requestInit: { headers: config.headers },
+        });
+      oauthProvider = config.oauth
+        ? this.createOAuthProvider(config.id, (await import('./mcp-config-store')).mcpConfigStore)
+        : undefined;
+      transport = makeHttpTransport(oauthProvider);
     } else if (config.type === 'streamable-http') {
       if (!config.url) {
         throw new Error(`Streamable HTTP server ${config.name} requires a URL`);
@@ -772,7 +814,12 @@ export class MCPManager {
       if (config.headers && Object.keys(config.headers).length > 0) {
         requestInit.headers = config.headers;
       }
-      transport = new StreamableHTTPClientTransport(httpUrl, { requestInit });
+      makeHttpTransport = (provider) =>
+        new StreamableHTTPClientTransport(httpUrl, { authProvider: provider, requestInit });
+      oauthProvider = config.oauth
+        ? this.createOAuthProvider(config.id, (await import('./mcp-config-store')).mcpConfigStore)
+        : undefined;
+      transport = makeHttpTransport(oauthProvider);
     } else {
       throw new Error(`Unsupported transport type: ${config.type}`);
     }
@@ -793,25 +840,44 @@ export class MCPManager {
     try {
       // Connect with timeout to prevent hanging indefinitely (e.g. npx download stalls)
       const connectTimeoutMs = 30000; // 30 second timeout
-      const connectPromise = client.connect(transport);
-      let connectTimeoutId: ReturnType<typeof setTimeout>;
-      const connectTimeoutPromise = new Promise<never>((_, reject) => {
-        connectTimeoutId = setTimeout(
-          () =>
-            reject(new Error(`MCP server connection timed out after ${connectTimeoutMs / 1000}s`)),
-          connectTimeoutMs
-        );
-      });
+      const doConnect = async (t: typeof transport): Promise<void> => {
+        const connectPromise = client.connect(t);
+        let connectTimeoutId: ReturnType<typeof setTimeout>;
+        const connectTimeoutPromise = new Promise<never>((_, reject) => {
+          connectTimeoutId = setTimeout(
+            () =>
+              reject(new Error(`MCP server connection timed out after ${connectTimeoutMs / 1000}s`)),
+            connectTimeoutMs
+          );
+        });
+        try {
+          await Promise.race([connectPromise, connectTimeoutPromise]);
+          clearTimeout(connectTimeoutId!);
+        } catch (error) {
+          clearTimeout(connectTimeoutId!);
+          // Prevent UnhandledPromiseRejection from the orphaned connectPromise
+          // when timeout wins the race and transport is closed beneath it.
+          connectPromise.catch(() => {});
+          throw error;
+        }
+      };
 
-      try {
-        await Promise.race([connectPromise, connectTimeoutPromise]);
-        clearTimeout(connectTimeoutId!);
-      } catch (error) {
-        clearTimeout(connectTimeoutId!);
-        // Prevent UnhandledPromiseRejection from the orphaned connectPromise
-        // when timeout wins the race and transport is closed beneath it.
-        connectPromise.catch(() => {});
-        throw error;
+      if (oauthProvider && makeHttpTransport) {
+        // OAuth path: connect; on 401 open the system browser, await the
+        // authorization code on a loopback listener, then retry. The returned
+        // transport (authenticated) replaces the placeholder above so the rest
+        // of the method stores/closes the correct one.
+        log(`[MCPManager] Connecting ${config.name} via OAuth (PKCE)`);
+        const httpFactory = makeHttpTransport;
+        transport = await connectWithOAuthRetry<
+          SSEClientTransport | StreamableHTTPClientTransport
+        >({
+          provider: oauthProvider,
+          createTransport: (p) => httpFactory(p),
+          connect: (t) => doConnect(t),
+        });
+      } else {
+        await doConnect(transport);
       }
       log(`[MCPManager] Client.connect() completed successfully`);
 

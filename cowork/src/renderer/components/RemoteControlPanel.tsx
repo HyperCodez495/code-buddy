@@ -10,6 +10,7 @@ import { GatewayControlCard } from './remote/GatewayControlCard';
 import { PairingRequestsSection } from './remote/PairingRequestsSection';
 import { ConfigStepNav } from './remote/ConfigStepNav';
 import { FeishuConfigStep } from './remote/FeishuConfigStep';
+import { SlackConfigStep } from './remote/SlackConfigStep';
 import { ConnectionConfigStep } from './remote/ConnectionConfigStep';
 import { AdvancedConfigStep } from './remote/AdvancedConfigStep';
 import { AuthorizedUsersSection } from './remote/AuthorizedUsersSection';
@@ -45,6 +46,10 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   const [feishuAppId, setFeishuAppId] = useState('');
   const [feishuAppSecret, setFeishuAppSecret] = useState('');
   const [feishuDmPolicy, setFeishuDmPolicy] = useState('pairing');
+  const [slackBotToken, setSlackBotToken] = useState('');
+  const [slackAppToken, setSlackAppToken] = useState('');
+  const [slackSigningSecret, setSlackSigningSecret] = useState('');
+  const [slackDmPolicy, setSlackDmPolicy] = useState('pairing');
   const [gatewayPort, setGatewayPort] = useState(18789);
   const [defaultWorkingDirectory, setDefaultWorkingDirectory] = useState('');
   const [autoApproveSafeTools, setAutoApproveSafeTools] = useState(true);
@@ -100,6 +105,12 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
           setFeishuAppSecret(configResult.channels.feishu.appSecret || '');
           setFeishuDmPolicy(configResult.channels.feishu.dm?.policy || 'pairing');
           setUseLongConnection(configResult.channels.feishu.useWebSocket !== false);
+        }
+        if (configResult.channels?.slack) {
+          setSlackBotToken(configResult.channels.slack.botToken || '');
+          setSlackAppToken(configResult.channels.slack.appToken || '');
+          setSlackSigningSecret(configResult.channels.slack.signingSecret || '');
+          setSlackDmPolicy(configResult.channels.slack.dm?.policy || 'pairing');
         }
       }
     } catch (err) {
@@ -174,6 +185,17 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
         });
       }
 
+      if (slackBotToken) {
+        await window.electronAPI.remote.updateSlackConfig({
+          type: 'slack',
+          botToken: slackBotToken,
+          appToken: slackAppToken || undefined,
+          signingSecret: slackSigningSecret || undefined,
+          useSocketMode: !!slackAppToken,
+          dm: { policy: slackDmPolicy as 'open' | 'pairing' | 'allowlist' },
+        });
+      }
+
       setSuccess({ key: 'remote.configSaved' });
       setTimeout(() => setSuccess(null), 3000);
       await loadData();
@@ -215,6 +237,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
   }
 
   const isFeishuConfigured = !!(feishuAppId && feishuAppSecret);
+  const isSlackConfigured = !!slackBotToken;
   const isConnectionConfigured =
     useLongConnection || (tunnelEnabled && !!ngrokAuthToken) || !!tunnelStatus?.connected;
   const permissionSeparator = getAppListSeparator(i18n.language);
@@ -268,6 +291,7 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
       <ConfigStepNav
         activeStep={activeStep}
         isFeishuConfigured={isFeishuConfigured}
+        isSlackConfigured={isSlackConfigured}
         isConnectionConfigured={isConnectionConfigured}
         onStepChange={setActiveStep}
       />
@@ -282,6 +306,18 @@ export function RemoteControlPanel({ isActive }: { isActive: boolean }) {
             onAppIdChange={setFeishuAppId}
             onAppSecretChange={setFeishuAppSecret}
             onDmPolicyChange={setFeishuDmPolicy}
+          />
+        )}
+        {activeStep === 'slack' && (
+          <SlackConfigStep
+            slackBotToken={slackBotToken}
+            slackAppToken={slackAppToken}
+            slackSigningSecret={slackSigningSecret}
+            slackDmPolicy={slackDmPolicy}
+            onBotTokenChange={setSlackBotToken}
+            onAppTokenChange={setSlackAppToken}
+            onSigningSecretChange={setSlackSigningSecret}
+            onDmPolicyChange={setSlackDmPolicy}
           />
         )}
         {activeStep === 'connection' && (

@@ -58,6 +58,15 @@ export interface RemoteConfig {
         policy: string;
       };
     };
+    slack?: {
+      botToken: string;
+      appToken?: string;
+      signingSecret?: string;
+      useSocketMode?: boolean;
+      dm: {
+        policy: string;
+      };
+    };
   };
 }
 
@@ -68,6 +77,6 @@ export interface TunnelStatus {
   error?: string;
 }
 
-export type ConfigStep = 'feishu' | 'connection' | 'advanced';
+export type ConfigStep = 'feishu' | 'slack' | 'connection' | 'advanced';
 
 export type LocalizedBanner = { key?: string; text?: string | null };

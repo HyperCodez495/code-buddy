@@ -127,6 +127,15 @@ temp/
 
 # Coding agents
 .claude/
+# Cowork ships built-in Agent Skills under cowork/.claude/skills (pptx/docx/
+# xlsx/pdf/skill-creator). Re-include them despite the blanket .claude/ ignore
+# above — each parent level must be un-ignored before the leaf files can be.
+!cowork/.claude/
+cowork/.claude/*
+!cowork/.claude/skills/
+# Each skill's LICENSE.txt is referenced by its SKILL.md; the global *.txt
+# ignore would otherwise drop them.
+!cowork/.claude/skills/**/LICENSE.txt
 .grok/
 # Grok CLI
 .grok/sessions/

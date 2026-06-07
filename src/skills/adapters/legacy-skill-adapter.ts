@@ -207,7 +207,11 @@ export function skillMdToUnified(skill: Skill): UnifiedSkill {
     examples: skill.content.examples
       ? skill.content.examples.map(e => ({ ...e }))
       : undefined,
-    systemPrompt: skill.content.description || skill.content.rawMarkdown,
+    // Inject the full SKILL.md body so the model receives the skill's actual
+    // workflow (script commands, referenced docs), not just the short overview
+    // section — progressive disclosure: metadata is always present, the body is
+    // loaded when the skill activates. Fall back to the overview if no body.
+    systemPrompt: skill.content.rawMarkdown || skill.content.description,
     steps: skill.content.steps
       ? skill.content.steps.map(s => ({ ...s }))
       : undefined,

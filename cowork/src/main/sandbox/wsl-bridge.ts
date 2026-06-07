@@ -555,14 +555,18 @@ export class WSLBridge implements SandboxExecutor {
     WSLBridge.validateDistroName(distro);
     log('[WSL] Installing skill dependencies (markitdown, pypdf, etc.)...');
 
-    // These packages are required by the built-in PDF and PPTX skills
+    // These packages are required by the built-in PDF, PPTX, DOCX and XLSX skills
     const packages = [
       'markitdown[pptx]', // PDF/PPTX text extraction
       'pypdf', // PDF manipulation
       'pdfplumber', // PDF table extraction
+      'pdf2image', // PDF page rasterization (pdf convert_pdf_to_images.py)
       'reportlab', // PDF creation
       'defusedxml', // Secure XML parsing for OOXML
       'python-pptx', // PPTX manipulation
+      'python-docx', // DOCX manipulation (docx scripts)
+      'openpyxl', // XLSX manipulation (xlsx recalc.py)
+      'six', // pptx rearrange.py
     ];
 
     try {

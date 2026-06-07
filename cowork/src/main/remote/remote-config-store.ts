@@ -15,6 +15,7 @@ import type {
   FeishuChannelConfig,
   WechatChannelConfig,
   TelegramChannelConfig,
+  SlackChannelConfig,
   DingtalkChannelConfig,
   WebSocketChannelConfig,
   PairedUser,
@@ -144,13 +145,28 @@ class RemoteConfigStore {
   getTelegramConfig(): TelegramChannelConfig | undefined {
     return this.store.get('channels.telegram');
   }
-  
+
   /**
    * Set telegram channel config
    */
   setTelegramConfig(config: TelegramChannelConfig): void {
     this.store.set('channels.telegram', config);
     log('[RemoteConfig] Telegram config updated');
+  }
+
+  /**
+   * Get slack channel config
+   */
+  getSlackConfig(): SlackChannelConfig | undefined {
+    return this.store.get('channels.slack');
+  }
+
+  /**
+   * Set slack channel config
+   */
+  setSlackConfig(config: SlackChannelConfig): void {
+    this.store.set('channels.slack', config);
+    log('[RemoteConfig] Slack config updated');
   }
   
   /**

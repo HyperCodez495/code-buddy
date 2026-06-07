@@ -4,7 +4,14 @@ import * as fs from 'fs';
 import * as crypto from 'crypto';
 import path from 'path';
 import type { MCPServerConfig } from './mcp-manager';
+import type { McpOAuthPersistedState } from './mcp-oauth';
 import { log, logError } from '../utils/logger';
+
+type MCPConfigStoreShape = {
+  servers: MCPServerConfig[];
+  /** OAuth tokens + dynamic client registration, keyed by server id. */
+  oauthState?: Record<string, McpOAuthPersistedState>;
+};
 
 /**
  * Preset MCP Server Configurations
@@ -62,18 +69,44 @@ export const MCP_SERVER_PRESETS: Record<string, Omit<MCPServerConfig, 'id' | 'en
  * MCP Server Configuration Store
  */
 class MCPConfigStore {
-  private store: Store<{ servers: MCPServerConfig[] }>;
+  private store: Store<MCPConfigStoreShape>;
 
   constructor() {
-    const storeOptions: StoreOptions<{ servers: MCPServerConfig[] }> & { projectName?: string } = {
+    const storeOptions: StoreOptions<MCPConfigStoreShape> & { projectName?: string } = {
       name: 'mcp-config',
       projectName: 'open-cowork',
       defaults: {
         servers: [],
+        oauthState: {},
       },
     };
 
-    this.store = new Store<{ servers: MCPServerConfig[] }>(storeOptions);
+    this.store = new Store<MCPConfigStoreShape>(storeOptions);
+  }
+
+  /**
+   * Get persisted OAuth state (tokens + client registration) for a server.
+   */
+  getOAuthState(serverId: string): McpOAuthPersistedState | undefined {
+    return this.store.get('oauthState', {})[serverId];
+  }
+
+  /**
+   * Persist OAuth state for a server.
+   */
+  setOAuthState(serverId: string, state: McpOAuthPersistedState): void {
+    const all = { ...this.store.get('oauthState', {}) };
+    all[serverId] = state;
+    this.store.set('oauthState', all);
+  }
+
+  /**
+   * Clear persisted OAuth state for a server (sign out).
+   */
+  clearOAuthState(serverId: string): void {
+    const all = { ...this.store.get('oauthState', {}) };
+    delete all[serverId];
+    this.store.set('oauthState', all);
   }
 
   /**

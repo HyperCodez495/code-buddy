@@ -13,6 +13,7 @@ import {
   ChevronRight,
   ChevronDown,
   X,
+  LogOut,
 } from 'lucide-react';
 import type { MCPServerConfig, MCPServerStatus, MCPToolInfo, MCPPreset } from './shared';
 
@@ -178,6 +179,18 @@ export function SettingsConnectors({ isActive }: { isActive: boolean }) {
     }
   }
 
+  async function handleSignOut(serverId: string) {
+    setIsLoading(true);
+    try {
+      await window.electronAPI.mcp.clearOAuthTokens(serverId);
+      await loadAll();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setIsLoading(false);
+    }
+  }
+
   async function handleToggleEnabled(server: MCPServerConfig) {
     await handleSaveServer({ ...server, enabled: !server.enabled });
   }
@@ -236,6 +249,7 @@ export function SettingsConnectors({ isActive }: { isActive: boolean }) {
                   onEdit={() => setEditingServer(server)}
                   onDelete={() => handleDeleteServer(server.id)}
                   onToggleEnabled={() => handleToggleEnabled(server)}
+                  onSignOut={() => handleSignOut(server.id)}
                   isLoading={isLoading}
                 />
               );
@@ -410,6 +424,7 @@ function ServerCard({
   onEdit,
   onDelete,
   onToggleEnabled,
+  onSignOut,
   isLoading,
 }: {
   server: MCPServerConfig;
@@ -419,6 +434,7 @@ function ServerCard({
   onEdit: () => void;
   onDelete: () => void;
   onToggleEnabled: () => void;
+  onSignOut: () => void;
   isLoading: boolean;
 }) {
   const { t } = useTranslation();
@@ -556,6 +572,16 @@ function ServerCard({
             >
               {server.enabled ? <Power className="w-4 h-4" /> : <PowerOff className="w-4 h-4" />}
             </button>
+            {server.oauth && (
+              <button
+                onClick={onSignOut}
+                disabled={isLoading}
+                className="p-2 rounded-lg bg-surface-muted text-text-secondary hover:bg-surface-active transition-colors"
+                title={t('mcp.signOut')}
+              >
+                <LogOut className="w-4 h-4" />
+              </button>
+            )}
             <button
               onClick={onEdit}
               disabled={isLoading}
@@ -596,6 +622,7 @@ function ServerForm({
   const [command, setCommand] = useState(server?.command || '');
   const [args, setArgs] = useState(server?.args?.join(' ') || '');
   const [url, setUrl] = useState(server?.url || '');
+  const [oauth, setOauth] = useState(server?.oauth ?? false);
   const [enabled, setEnabled] = useState(server?.enabled ?? true);
   // Environment variables (for tokens, etc.)
   const [envVars, setEnvVars] = useState<Record<string, string>>(server?.env || {});
@@ -664,6 +691,9 @@ function ServerForm({
         return;
       }
       config.url = url.trim();
+      if (oauth) {
+        config.oauth = true;
+      }
     }
 
     onSave(config);
@@ -866,6 +896,19 @@ function ServerForm({
             className="w-full px-4 py-2 rounded-lg bg-background border border-border text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/30 font-mono text-sm"
             required
           />
+          <div className="flex items-center gap-2 mt-3">
+            <input
+              type="checkbox"
+              id="mcp-oauth"
+              checked={oauth}
+              onChange={(e) => setOauth(e.target.checked)}
+              className="w-4 h-4 rounded border-border text-accent focus:ring-accent"
+            />
+            <label htmlFor="mcp-oauth" className="text-sm text-text-primary">
+              {t('mcp.useOAuth')}
+            </label>
+          </div>
+          <p className="text-xs text-text-muted mt-1">{t('mcp.useOAuthHint')}</p>
         </div>
       )}
 

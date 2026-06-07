@@ -77,7 +77,7 @@ export interface TunnelConfig {
 // Channel Configuration
 // ============================================================================
 
-export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'dingtalk' | 'websocket';
+export type ChannelType = 'feishu' | 'wechat' | 'telegram' | 'slack' | 'dingtalk' | 'websocket';
 
 export interface ChannelConfig {
   /** Channel type */
@@ -87,7 +87,7 @@ export interface ChannelConfig {
   enabled: boolean;
   
   /** Channel-specific configuration */
-  config: FeishuChannelConfig | WechatChannelConfig | TelegramChannelConfig | DingtalkChannelConfig | WebSocketChannelConfig;
+  config: FeishuChannelConfig | WechatChannelConfig | TelegramChannelConfig | SlackChannelConfig | DingtalkChannelConfig | WebSocketChannelConfig;
 }
 
 // Feishu (飞书) Channel
@@ -182,6 +182,44 @@ export interface TelegramChannelConfig {
       requireMention: boolean;
       allowFrom?: string[];
     };
+  };
+}
+
+// Slack Channel
+export interface SlackChannelConfig {
+  type: 'slack';
+
+  /** Bot User OAuth token (xoxb-...) from the Slack app's OAuth & Permissions page */
+  botToken: string;
+
+  /** App-level token (xapp-...) with connections:write — required for Socket Mode */
+  appToken?: string;
+
+  /** Signing secret — required to verify Events API webhooks (webhook mode) */
+  signingSecret?: string;
+
+  /** Use Socket Mode (recommended, no public URL needed). Defaults to true when appToken is set. */
+  useSocketMode?: boolean;
+
+  /** Direct message policy */
+  dm: {
+    policy: 'open' | 'pairing' | 'allowlist';
+    /** Allowed Slack user IDs (when policy is 'allowlist') */
+    allowFrom?: string[];
+  };
+
+  /** Group/channel configuration */
+  groups?: {
+    [channelId: string]: {
+      /** Whether to require @mention to activate */
+      requireMention: boolean;
+      allowFrom?: string[];
+    };
+  };
+
+  /** Default group settings (when not specified per-channel) */
+  defaultGroupSettings?: {
+    requireMention: boolean;
   };
 }
 
@@ -517,6 +555,7 @@ export interface RemoteConfig {
     feishu?: FeishuChannelConfig;
     wechat?: WechatChannelConfig;
     telegram?: TelegramChannelConfig;
+    slack?: SlackChannelConfig;
     dingtalk?: DingtalkChannelConfig;
     websocket?: WebSocketChannelConfig;
   };

@@ -361,8 +361,17 @@ describe('skillMdToUnified', () => {
     expect(unified.codeBlocks![0].label).toBe('assertion');
   });
 
-  it('should set systemPrompt from content description', () => {
+  it('should set systemPrompt from the full SKILL.md body (progressive disclosure)', () => {
     const skillMd = createSkillMd();
+    const unified = skillMdToUnified(skillMd);
+
+    // The full body is injected on activation, not just the overview section.
+    expect(unified.systemPrompt).toBe('# Testing\n\nExecute tests and provide guidance.');
+  });
+
+  it('should fall back to the overview when the SKILL.md has no body', () => {
+    const skillMd = createSkillMd();
+    skillMd.content.rawMarkdown = '';
     const unified = skillMdToUnified(skillMd);
 
     expect(unified.systemPrompt).toBe('Execute tests and provide guidance on testing.');

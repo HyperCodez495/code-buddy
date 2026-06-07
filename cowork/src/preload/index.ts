@@ -80,6 +80,7 @@ import type {
   RemoteConfig,
   GatewayConfig,
   FeishuChannelConfig,
+  SlackChannelConfig,
   PairedUser,
   PairingRequest,
   RemoteSessionMapping,
@@ -372,6 +373,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('mcp.saveServer', config),
     deleteServer: (serverId: string): Promise<{ success: boolean }> =>
       ipcRenderer.invoke('mcp.deleteServer', serverId),
+    clearOAuthTokens: (serverId: string): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('mcp.clearOAuthTokens', serverId),
     getTools: (): Promise<McpTool[]> => ipcRenderer.invoke('mcp.getTools'),
     getServerStatus: (): Promise<McpServerStatus[]> => ipcRenderer.invoke('mcp.getServerStatus'),
     getPresets: (): Promise<McpPresetsMap> => ipcRenderer.invoke('mcp.getPresets'),
@@ -576,6 +579,10 @@ contextBridge.exposeInMainWorld('electronAPI', {
       config: FeishuChannelConfig
     ): Promise<{ success: boolean; error?: string }> =>
       ipcRenderer.invoke('remote.updateFeishuConfig', config),
+    updateSlackConfig: (
+      config: SlackChannelConfig
+    ): Promise<{ success: boolean; error?: string }> =>
+      ipcRenderer.invoke('remote.updateSlackConfig', config),
     getPairedUsers: (): Promise<PairedUser[]> => ipcRenderer.invoke('remote.getPairedUsers'),
     getPendingPairings: (): Promise<PairingRequest[]> =>
       ipcRenderer.invoke('remote.getPendingPairings'),
@@ -3934,6 +3941,7 @@ declare global {
         getServer: (serverId: string) => Promise<McpServerConfig | undefined>;
         saveServer: (config: McpServerConfig) => Promise<{ success: boolean; error?: string }>;
         deleteServer: (serverId: string) => Promise<{ success: boolean }>;
+        clearOAuthTokens: (serverId: string) => Promise<{ success: boolean; error?: string }>;
         getTools: () => Promise<McpTool[]>;
         getServerStatus: () => Promise<McpServerStatus[]>;
         getPresets: () => Promise<McpPresetsMap>;
@@ -4097,6 +4105,9 @@ declare global {
         ) => Promise<{ success: boolean; error?: string }>;
         updateFeishuConfig: (
           config: FeishuChannelConfig
+        ) => Promise<{ success: boolean; error?: string }>;
+        updateSlackConfig: (
+          config: SlackChannelConfig
         ) => Promise<{ success: boolean; error?: string }>;
         getPairedUsers: () => Promise<PairedUser[]>;
         getPendingPairings: () => Promise<PairingRequest[]>;

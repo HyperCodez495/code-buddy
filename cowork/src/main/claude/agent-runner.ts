@@ -537,7 +537,10 @@ ${hints.join('\n')}
     const unpackedPath = appPath.replace(/\.asar$/, '.asar.unpacked');
 
     const possiblePaths = [
-      // Development: relative to this file
+      // Development (bundled layout): __dirname is <cowork>/dist-electron/main,
+      // so ../../ lands on the cowork package root that holds .claude/skills.
+      path.join(__dirname, '..', '..', '.claude', 'skills'),
+      // Development (legacy unbundled layout: dist-electron/main/claude/).
       path.join(__dirname, '..', '..', '..', '.claude', 'skills'),
       // Production: extraResources extracts .claude/skills → resources/skills
       // This is the preferred production path (real directory, no asar issues)
