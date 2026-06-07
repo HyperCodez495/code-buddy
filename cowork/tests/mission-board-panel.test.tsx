@@ -87,6 +87,7 @@ function runtimeMission(overrides: Partial<MissionRuntime> = {}): MissionRuntime
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
+  await Promise.resolve();
 }
 
 describe('MissionBoardPanel', () => {
@@ -260,5 +261,53 @@ describe('MissionBoardPanel', () => {
     expect(runtimeCard?.textContent).toContain('1/2 tasks');
     expect(runtimeCard?.textContent).toContain('heartbeat heartbeat-at');
     expect(listMissions).toHaveBeenCalledTimes(1);
+  });
+
+  it('hydrates MissionBridge runtime missions through the refresh bridge', async () => {
+    const liveMission = runtimeMission({
+      id: 'runtime-refresh',
+      title: 'Loaded from mission IPC',
+    });
+    const listMissions = vi.fn().mockResolvedValue({ ok: true, board: board([]), items: [] });
+    const listRuntimeMissions = vi.fn().mockResolvedValue({ ok: true, missions: [liveMission] });
+    const updateMission = vi.fn();
+    const syncMissions = vi.fn();
+    const runNextMission = vi.fn();
+
+    (
+      window as unknown as {
+        electronAPI?: {
+          companion: {
+            listMissions: typeof listMissions;
+            runNextMission: typeof runNextMission;
+            syncMissions: typeof syncMissions;
+            updateMission: typeof updateMission;
+          };
+          missions: {
+            list: typeof listRuntimeMissions;
+          };
+        };
+      }
+    ).electronAPI = {
+      companion: { listMissions, runNextMission, syncMissions, updateMission },
+      missions: { list: listRuntimeMissions },
+    };
+
+    const target = container();
+    root = createRoot(target);
+    await act(async () => {
+      root?.render(React.createElement(MissionBoardPanel, { onClose: () => {} }));
+      await flush();
+    });
+
+    expect(listMissions).toHaveBeenCalledTimes(1);
+    expect(listRuntimeMissions).toHaveBeenCalledTimes(1);
+    expect(useAppStore.getState().missionRuntime['runtime-refresh']).toMatchObject({
+      id: 'runtime-refresh',
+      title: 'Loaded from mission IPC',
+    });
+    expect(target.querySelector('[data-testid="mission-runtime-card-runtime-refresh"]')?.textContent).toContain(
+      'Loaded from mission IPC'
+    );
   });
 });

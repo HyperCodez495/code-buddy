@@ -23,6 +23,7 @@ interface MissionBoardPanelProps {
 }
 
 type CompanionMissionApi = NonNullable<Window['electronAPI']>['companion'];
+type MissionRuntimeApi = NonNullable<Window['electronAPI']>['missions'];
 
 const COLUMNS: Array<{ status: CompanionMissionStatus; labelKey: string; fallback: string }> = [
   { status: 'open', labelKey: 'missionBoard.status.open', fallback: 'Open' },
@@ -39,6 +40,10 @@ const PRIORITY_WEIGHT: Record<CompanionMission['priority'], number> = {
 
 function getCompanionMissionApi(): CompanionMissionApi | undefined {
   return window.electronAPI?.companion;
+}
+
+function getMissionRuntimeApi(): MissionRuntimeApi | undefined {
+  return window.electronAPI?.missions;
 }
 
 function formatDate(value: string | undefined): string {
@@ -81,6 +86,7 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
   const sessions = useAppStore((s) => s.sessions);
   const missionRuntime = useAppStore((s) => s.missionRuntime);
   const missionRuntimeHeartbeats = useAppStore((s) => s.missionRuntimeHeartbeats);
+  const upsertMissionRuntime = useAppStore((s) => s.upsertMissionRuntime);
   const cwd = useMemo(
     () => sessions.find((session) => session.id === activeSessionId)?.cwd ?? workingDir ?? undefined,
     [activeSessionId, sessions, workingDir]
@@ -108,26 +114,50 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
   }, []);
 
   const refresh = useCallback(async () => {
-    const api = getCompanionMissionApi();
-    if (!api) {
-      setError('Companion mission bridge is not available.');
+    const companionApi = getCompanionMissionApi();
+    const runtimeApi = getMissionRuntimeApi();
+    if (!companionApi && !runtimeApi) {
+      setError('Mission bridges are not available.');
       setLoading(false);
       return;
     }
 
     setLoading(true);
     try {
-      const result = await api.listMissions();
-      if (!result.ok) throw new Error(result.error ?? 'Failed to load missions.');
-      setBoard(result.board ?? null);
-      setMissions(sortMissions(result.items ?? []));
-      setError(null);
+      const errors: string[] = [];
+      if (companionApi) {
+        try {
+          const result = await companionApi.listMissions();
+          if (!result.ok) throw new Error(result.error ?? 'Failed to load missions.');
+          setBoard(result.board ?? null);
+          setMissions(sortMissions(result.items ?? []));
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err));
+        }
+      } else {
+        setBoard(null);
+        setMissions([]);
+      }
+
+      if (runtimeApi) {
+        try {
+          const result = await runtimeApi.list();
+          if (!result.ok) throw new Error(result.error ?? 'Failed to load runtime missions.');
+          for (const mission of result.missions ?? []) {
+            upsertMissionRuntime(mission);
+          }
+        } catch (err) {
+          errors.push(err instanceof Error ? err.message : String(err));
+        }
+      }
+
+      setError(errors.length > 0 ? errors.join(' ') : null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [upsertMissionRuntime]);
 
   useEffect(() => {
     void refresh();
