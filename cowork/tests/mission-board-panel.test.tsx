@@ -219,6 +219,18 @@ describe('MissionBoardPanel', () => {
 
   it('shows live MissionBridge runtime missions from the renderer store', async () => {
     const liveMission = runtimeMission();
+    const runtimeEvents = [
+      {
+        ts: '2026-06-07T16:11:00.000Z',
+        type: 'created',
+        message: 'Runtime mission created.',
+      },
+      {
+        ts: '2026-06-07T16:12:00.000Z',
+        type: 'progress',
+        message: 'UI wire complete.',
+      },
+    ];
     const listMissions = vi.fn().mockResolvedValue({ ok: true, board: board([]), items: [] });
     const updateMission = vi.fn();
     const syncMissions = vi.fn();
@@ -241,6 +253,7 @@ describe('MissionBoardPanel', () => {
 
     useAppStore.setState({
       missionRuntime: { [liveMission.id]: liveMission },
+      missionRuntimeEvents: { [liveMission.id]: runtimeEvents },
       missionRuntimeHeartbeats: { [liveMission.id]: 'heartbeat-at' },
     });
 
@@ -260,6 +273,9 @@ describe('MissionBoardPanel', () => {
     expect(runtimeCard?.textContent).toContain('50%');
     expect(runtimeCard?.textContent).toContain('1/2 tasks');
     expect(runtimeCard?.textContent).toContain('heartbeat heartbeat-at');
+    expect(target.querySelector('[data-testid="mission-runtime-events-runtime-1"]')?.textContent).toContain(
+      'progress UI wire complete.'
+    );
     expect(listMissions).toHaveBeenCalledTimes(1);
   });
 

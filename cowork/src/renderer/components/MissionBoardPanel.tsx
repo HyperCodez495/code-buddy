@@ -16,6 +16,7 @@ import type {
   CompanionMissionRunResult,
   CompanionMissionStatus,
   MissionRuntime,
+  MissionRuntimeEvent,
 } from '../types';
 
 interface MissionBoardPanelProps {
@@ -78,6 +79,10 @@ function runtimeTaskProgress(mission: MissionRuntime): { completed: number; tota
   };
 }
 
+function latestRuntimeEvents(events: MissionRuntimeEvent[] | undefined): MissionRuntimeEvent[] {
+  return [...(events ?? [])].slice(-2).reverse();
+}
+
 export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -85,6 +90,7 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
   const missionRuntime = useAppStore((s) => s.missionRuntime);
+  const missionRuntimeEvents = useAppStore((s) => s.missionRuntimeEvents);
   const missionRuntimeHeartbeats = useAppStore((s) => s.missionRuntimeHeartbeats);
   const upsertMissionRuntime = useAppStore((s) => s.upsertMissionRuntime);
   const cwd = useMemo(
@@ -329,6 +335,7 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
                 {runtimeMissions.map((mission) => (
                   <RuntimeMissionCard
                     key={mission.id}
+                    events={missionRuntimeEvents[mission.id] ?? mission.events}
                     heartbeat={missionRuntimeHeartbeats[mission.id]}
                     mission={mission}
                     t={t}
@@ -390,15 +397,18 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
 }
 
 function RuntimeMissionCard({
+  events,
   heartbeat,
   mission,
   t,
 }: {
+  events?: MissionRuntimeEvent[];
   heartbeat?: string;
   mission: MissionRuntime;
   t: (key: string, fallback: string, options?: Record<string, unknown>) => string;
 }) {
   const tasks = runtimeTaskProgress(mission);
+  const recentEvents = latestRuntimeEvents(events);
   return (
     <article
       className="rounded border border-border bg-background/70 p-3"
@@ -417,6 +427,15 @@ function RuntimeMissionCard({
       </div>
       <h3 className="mt-2 line-clamp-2 text-xs font-semibold text-text-primary">{mission.title}</h3>
       <p className="mt-1 line-clamp-2 text-xs text-text-secondary">{mission.description}</p>
+      {recentEvents.length > 0 ? (
+        <ul className="mt-2 space-y-1" data-testid={`mission-runtime-events-${mission.id}`}>
+          {recentEvents.map((event) => (
+            <li key={`${event.ts}:${event.type}:${event.message}`} className="truncate text-[10px] text-text-muted">
+              <span className="font-medium text-text-secondary">{event.type}</span> {event.message}
+            </li>
+          ))}
+        </ul>
+      ) : null}
       <div className="mt-2 flex items-center gap-1 text-[10px] text-text-muted">
         <Clock3 className="h-3 w-3" />
         <span className="truncate">
