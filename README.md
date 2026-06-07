@@ -211,6 +211,7 @@ From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still sup
 | [Channels](docs/channels.md) | 20+ messaging channels, DM pairing, send policy |
 | [Context Engine](docs/context-engine.md) | Compression, tool output masking, JIT context, pre-compaction flush |
 | [Infrastructure](docs/infrastructure.md) | HTTP server, WebSocket gateway, daemon, cron, deploy, plugins |
+| [PdfCommander MCP Integration](docs/mcp-pdfcommander-integration.md) | Register the PdfCommander headless MCP server in `mcp.json`, verify with `buddy mcp test`, drive PDF ops from the agent |
 | [Fleet Guide](docs/fleet-guide.md) | **Multi-AI hub** — `/fleet listen` + `/fleet send peer.chat`, env-driven multi-provider auto-detect, Tailscale lab examples |
 | [Configuration](docs/configuration.md) | Environment variables, TOML config, project settings, model limits |
 | [Development](docs/development.md) | Build, test, architecture, coding conventions, adding tools |
