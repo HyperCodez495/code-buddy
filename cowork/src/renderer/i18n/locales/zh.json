@@ -2312,6 +2312,32 @@
     "minimized": "{{count}} 个 GUI 操作",
     "clickAt": "点击位置 ({{x}}, {{y}})"
   },
+  "desktopSnapshot": {
+    "title": "桌面快照",
+    "platform": "平台 {{value}}",
+    "waiting": "等待桌面桥接",
+    "notAvailable": "桌面快照桥接不可用。",
+    "method": {
+      "label": "模式",
+      "hybrid": "混合",
+      "accessibility": "无障碍",
+      "ocr": "OCR"
+    },
+    "interactiveOnly": "交互引用",
+    "crop": "裁剪预览",
+    "capture": "捕获",
+    "capturing": "捕获中...",
+    "copyContext": "复制上下文",
+    "copied": "已复制",
+    "imageAlt": "带标注的桌面快照",
+    "empty": "尚未捕获快照",
+    "refs": "引用",
+    "counts": "{{interactive}} / {{total}} 可交互",
+    "noRefs": "未检测到引用",
+    "unnamed": "未命名",
+    "interactive": "可交互",
+    "disabled": "已禁用"
+  },
   "templates": {
     "title": "项目模板",
     "count": "{{count}} 个模板",

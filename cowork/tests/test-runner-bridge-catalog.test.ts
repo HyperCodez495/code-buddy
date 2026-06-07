@@ -197,6 +197,8 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'open-cowork-demo-parity.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'mission-board-panel.test.tsx'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'mission-board-surface.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'desktop-snapshot-panel.test.tsx'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'desktop-snapshot-surface.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'tool-executor-sandbox.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'sandbox-executor-containment.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'sandbox-command-injection.test.ts'), '');
@@ -1053,6 +1055,17 @@ describe('TestRunnerBridge catalog', () => {
     });
     expect(catalog.find((item) => item.label === 'Cowork / autonomous mission board')?.args).toEqual(
       expect.arrayContaining(['tests/mission-board-panel.test.tsx', 'tests/mission-board-surface.test.ts'])
+    );
+    expect(catalog.find((item) => item.label === 'Cowork / desktop snapshot')).toMatchObject({
+      kind: 'integration',
+      safeToRun: true,
+      timeoutMs: 120_000,
+    });
+    expect(catalog.find((item) => item.label === 'Cowork / desktop snapshot')?.args).toEqual(
+      expect.arrayContaining([
+        'tests/desktop-snapshot-panel.test.tsx',
+        'tests/desktop-snapshot-surface.test.ts',
+      ])
     );
     expect(catalog.find((item) => item.label === 'Cowork / sandbox executor bundle')).toMatchObject({
       kind: 'integration',

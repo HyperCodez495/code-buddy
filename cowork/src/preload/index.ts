@@ -68,6 +68,9 @@ import type {
   CompanionPrivacyReport,
   CameraSnapshotInspectionResult,
   CameraSnapshotResult,
+  DesktopSnapshotCaptureOptions,
+  DesktopSnapshotCaptureResult,
+  DesktopSnapshotMethod,
   VoiceConversationEvent,
   VoiceConversationSnapshot,
 } from '../renderer/types';
@@ -1187,6 +1190,19 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ocrLanguage?: string;
     }): Promise<{ ok: boolean; result?: CameraSnapshotInspectionResult; error?: string }> =>
       ipcRenderer.invoke('companion.camera.inspect', input),
+  },
+
+  desktopSnapshot: {
+    status: (): Promise<{
+      ok: boolean;
+      platform: string;
+      methods?: DesktopSnapshotMethod[];
+      error?: string;
+    }> => ipcRenderer.invoke('desktopSnapshot.status'),
+    capture: (
+      input?: DesktopSnapshotCaptureOptions,
+    ): Promise<DesktopSnapshotCaptureResult> =>
+      ipcRenderer.invoke('desktopSnapshot.capture', input),
   },
 
   // Auto-update
@@ -4597,6 +4613,17 @@ declare global {
           includeOcr?: boolean;
           ocrLanguage?: string;
         }) => Promise<{ ok: boolean; result?: CameraSnapshotInspectionResult; error?: string }>;
+      };
+      desktopSnapshot: {
+        status: () => Promise<{
+          ok: boolean;
+          platform: string;
+          methods?: DesktopSnapshotMethod[];
+          error?: string;
+        }>;
+        capture: (
+          input?: DesktopSnapshotCaptureOptions,
+        ) => Promise<DesktopSnapshotCaptureResult>;
       };
       update: {
         check: () => Promise<unknown>;

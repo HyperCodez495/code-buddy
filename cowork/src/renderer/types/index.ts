@@ -388,6 +388,63 @@ export interface CameraSnapshotInspectionResult {
   safetyEventId?: string;
 }
 
+export type DesktopSnapshotMethod = 'accessibility' | 'ocr' | 'hybrid';
+
+export interface DesktopSnapshotElement {
+  ref: number;
+  role: string;
+  name: string;
+  description?: string;
+  bounds: { x: number; y: number; width: number; height: number };
+  center: { x: number; y: number };
+  interactive: boolean;
+  focused: boolean;
+  enabled: boolean;
+  visible: boolean;
+  value?: string;
+  placeholder?: string;
+  automationId?: string;
+  runtimeId?: string;
+  controlType?: string;
+  className?: string;
+  attributes?: Record<string, unknown>;
+}
+
+export interface DesktopSnapshot {
+  id: string;
+  timestamp: string;
+  source: string;
+  screenSize: { width: number; height: number };
+  valid: boolean;
+  ttl: number;
+  elements: DesktopSnapshotElement[];
+}
+
+export interface DesktopSnapshotAnnotatedImage {
+  dataUrl: string;
+  format: 'png' | 'jpeg';
+  width: number;
+  height: number;
+}
+
+export interface DesktopSnapshotCaptureOptions {
+  method?: DesktopSnapshotMethod;
+  interactiveOnly?: boolean;
+  includeAnnotatedImage?: boolean;
+  cropAnnotatedImage?: boolean;
+  ttlMs?: number;
+  window?: string;
+}
+
+export interface DesktopSnapshotCaptureResult {
+  ok: boolean;
+  method?: DesktopSnapshotMethod;
+  snapshot?: DesktopSnapshot;
+  text?: string;
+  annotatedImage?: DesktopSnapshotAnnotatedImage | null;
+  error?: string;
+}
+
 export interface CompanionSetupResult {
   cwd: string;
   wroteSoul: boolean;

@@ -577,6 +577,32 @@ export class TestRunnerBridge extends EventEmitter {
       addIfFilesExist(
         items,
         {
+          id: 'code-buddy-cowork-desktop-snapshot-bundle',
+          label: 'Cowork / desktop snapshot',
+          group: 'Automation',
+          description:
+            'Passive desktop smart snapshot panel, preload bridge wiring and OCR/accessibility ref rendering',
+          command: 'npx',
+          args: [
+            'vitest',
+            'run',
+            'tests/desktop-snapshot-panel.test.tsx',
+            'tests/desktop-snapshot-surface.test.ts',
+            '--reporter=verbose',
+          ],
+          cwd: coworkDir,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 120_000,
+        },
+        [
+          path.join(coworkDir, 'tests', 'desktop-snapshot-panel.test.tsx'),
+          path.join(coworkDir, 'tests', 'desktop-snapshot-surface.test.ts'),
+        ]
+      );
+      addIfFilesExist(
+        items,
+        {
           id: 'code-buddy-cowork-sandbox-executor-bundle',
           label: 'Cowork / sandbox executor bundle',
           group: 'Sandbox',

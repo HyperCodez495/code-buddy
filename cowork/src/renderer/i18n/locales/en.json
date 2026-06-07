@@ -2327,6 +2327,32 @@
     "minimized": "{{count}} GUI actions",
     "clickAt": "Click at ({{x}}, {{y}})"
   },
+  "desktopSnapshot": {
+    "title": "Desktop Snapshot",
+    "platform": "Platform {{value}}",
+    "waiting": "Waiting for desktop bridge",
+    "notAvailable": "Desktop snapshot bridge is not available.",
+    "method": {
+      "label": "Mode",
+      "hybrid": "Hybrid",
+      "accessibility": "Accessibility",
+      "ocr": "OCR"
+    },
+    "interactiveOnly": "Interactive refs",
+    "crop": "Crop preview",
+    "capture": "Capture",
+    "capturing": "Capturing...",
+    "copyContext": "Copy context",
+    "copied": "Copied",
+    "imageAlt": "Annotated desktop snapshot",
+    "empty": "No snapshot captured",
+    "refs": "Refs",
+    "counts": "{{interactive}} / {{total}} interactive",
+    "noRefs": "No refs detected",
+    "unnamed": "Unnamed",
+    "interactive": "interactive",
+    "disabled": "disabled"
+  },
   "templates": {
     "title": "Project templates",
     "count": "{{count}} template",

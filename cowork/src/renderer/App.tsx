@@ -68,6 +68,7 @@ import { DevicePanel } from './components/DevicePanel';
 import { ChannelsPanel } from './components/ChannelsPanel';
 import { CompanionPanel } from './components/CompanionPanel';
 import { MissionBoardPanel } from './components/MissionBoardPanel';
+import { DesktopSnapshotPanel } from './components/DesktopSnapshotPanel';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { SubAgentDashboard } from './components/SubAgentDashboard';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
@@ -694,6 +695,9 @@ function App() {
 
       {/* Mission board - autonomous mission backlog tracking */}
       <MissionBoardWrapper />
+
+      {/* Desktop snapshot - passive GUI inspection */}
+      <DesktopSnapshotWrapper />
     </div>
   );
 }
@@ -734,4 +738,12 @@ function MissionBoardWrapper() {
   const close = useAppStore((s) => s.setShowMissionBoard);
   if (!open) return null;
   return <MissionBoardPanel onClose={() => close(false)} />;
+}
+
+/** Reactive wrapper for the passive desktop snapshot panel. */
+function DesktopSnapshotWrapper() {
+  const open = useAppStore((s) => s.showDesktopSnapshot);
+  const close = useAppStore((s) => s.setShowDesktopSnapshot);
+  if (!open) return null;
+  return <DesktopSnapshotPanel onClose={() => close(false)} />;
 }

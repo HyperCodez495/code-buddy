@@ -2327,6 +2327,32 @@
     "minimized": "{{count}} Actions GUI",
     "clickAt": "Cliquez sur ({{x}}, {{y}})"
   },
+  "desktopSnapshot": {
+    "title": "Capture desktop",
+    "platform": "Plateforme {{value}}",
+    "waiting": "En attente du bridge desktop",
+    "notAvailable": "Le bridge de capture desktop n'est pas disponible.",
+    "method": {
+      "label": "Mode",
+      "hybrid": "Hybride",
+      "accessibility": "Accessibilité",
+      "ocr": "OCR"
+    },
+    "interactiveOnly": "Références interactives",
+    "crop": "Rogner l'aperçu",
+    "capture": "Capturer",
+    "capturing": "Capture...",
+    "copyContext": "Copier le contexte",
+    "copied": "Copié",
+    "imageAlt": "Capture desktop annotée",
+    "empty": "Aucune capture",
+    "refs": "Références",
+    "counts": "{{interactive}} / {{total}} interactives",
+    "noRefs": "Aucune référence détectée",
+    "unnamed": "Sans nom",
+    "interactive": "interactive",
+    "disabled": "désactivé"
+  },
   "templates": {
     "title": "Modèles de projet",
     "count": "{{count}} modèle",

@@ -383,6 +383,8 @@ interface AppState {
   showKanban: boolean;
   /** Toggle for the autonomous companion mission board surface. */
   showMissionBoard: boolean;
+  /** Toggle for the passive desktop snapshot inspection surface. */
+  showDesktopSnapshot: boolean;
   fleetGoalDraft: FleetGoalDraft | null;
 
   // A2A active tasks (GAP 1)
@@ -656,6 +658,7 @@ interface AppState {
   setShowClawMigration: (show: boolean) => void;
   setShowKanban: (show: boolean) => void;
   setShowMissionBoard: (show: boolean) => void;
+  setShowDesktopSnapshot: (show: boolean) => void;
   setFleetGoalDraft: (draft: Omit<FleetGoalDraft, 'nonce'> | null) => void;
 
   // A2A task actions
@@ -850,6 +853,7 @@ export const useAppStore = create<AppState>((set) => ({
   showClawMigration: false,
   showKanban: false,
   showMissionBoard: false,
+  showDesktopSnapshot: false,
   showFleetCommandCenter: false,
   fleetGoalDraft: null,
   a2aTasks: {},
@@ -1764,6 +1768,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowClawMigration: (show) => set({ showClawMigration: show }),
   setShowKanban: (show) => set({ showKanban: show }),
   setShowMissionBoard: (show) => set({ showMissionBoard: show }),
+  setShowDesktopSnapshot: (show) => set({ showDesktopSnapshot: show }),
   setShowFleetCommandCenter: (show) => set({ showFleetCommandCenter: show }),
   setFleetGoalDraft: (draft) =>
     set({

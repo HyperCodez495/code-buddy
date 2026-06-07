@@ -67,6 +67,7 @@ export function ShellNavigation() {
   const showOrchestratorLauncher = useAppStore((s) => s.showOrchestratorLauncher);
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
   const showMissionBoard = useAppStore((s) => s.showMissionBoard);
+  const showDesktopSnapshot = useAppStore((s) => s.showDesktopSnapshot);
 
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
@@ -94,6 +95,7 @@ export function ShellNavigation() {
   const setShowTestRunner = useAppStore((s) => s.setShowTestRunner);
   const setShowGlobalSearch = useAppStore((s) => s.setShowGlobalSearch);
   const setShowMissionBoard = useAppStore((s) => s.setShowMissionBoard);
+  const setShowDesktopSnapshot = useAppStore((s) => s.setShowDesktopSnapshot);
 
   const openSettingsTab = (tab: string | null) => {
     setSettingsTab(tab);
@@ -189,6 +191,14 @@ export function ShellNavigation() {
           active: showMissionBoard,
           onClick: () => setShowMissionBoard(true),
           testId: 'mission-board-button',
+        },
+        {
+          id: 'desktop-snapshot',
+          label: t('desktopSnapshot.title', 'Desktop Snapshot'),
+          icon: MonitorSmartphone,
+          active: showDesktopSnapshot,
+          onClick: () => setShowDesktopSnapshot(true),
+          testId: 'desktop-snapshot-button',
         },
         {
           id: 'schedule',
