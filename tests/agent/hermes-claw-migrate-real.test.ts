@@ -62,6 +62,19 @@ function writeOpenClawFixture(home: string): void {
   const skillDir = path.join(home, 'skills', 'demo-skill');
   fs.ensureDirSync(skillDir);
   fs.writeFileSync(path.join(skillDir, 'SKILL.md'), skillContent('demo-skill'));
+  const commandDir = path.join(home, 'commands');
+  fs.ensureDirSync(commandDir);
+  fs.writeFileSync(
+    path.join(commandDir, 'review.md'),
+    [
+      '---',
+      'description: Review migrated code',
+      '---',
+      '',
+      'Review the current branch for regressions.',
+      '',
+    ].join('\n'),
+  );
 }
 
 describe('hermes claw migrate (real)', () => {
@@ -107,6 +120,7 @@ describe('hermes claw migrate (real)', () => {
     expect(categories.get('model')).toBe('import');
     expect(categories.get('mcp_servers')).toBe('import');
     expect(report.entries.some((e) => e.category === 'skills' && e.action === 'import')).toBe(true);
+    expect(report.entries.some((e) => e.category === 'commands' && e.action === 'import')).toBe(true);
 
     // No writes on dry-run.
     expect(fs.existsSync(path.join(target, 'SOUL.md'))).toBe(false);
@@ -138,6 +152,10 @@ describe('hermes claw migrate (real)', () => {
     // Skill installed into the injected hub.
     expect(hub.list().map((s) => s.name)).toContain('demo-skill');
 
+    // Custom slash commands copied to the real project command loader path.
+    const commandFile = path.join(target, '.codebuddy', 'commands', 'review.md');
+    expect(fs.readFileSync(commandFile, 'utf-8')).toContain('Review migrated code');
+
     // Archive-for-review categories written, not applied to live config.
     const archiveDir = path.join(target, '.codebuddy', 'openclaw-migration', 'archive');
     expect(fs.existsSync(path.join(archiveDir, 'custom_providers.json'))).toBe(true);
@@ -162,7 +180,7 @@ describe('hermes claw migrate (real)', () => {
     const categories = new Set(report.entries.map((e) => e.category));
     for (const expected of [
       'toolsets', 'profiles', 'bundles', 'pairing', 'vision', 'image_video',
-      'runtimes', 'portal', 'learning_loop', 'kanban', 'webhooks', 'hooks',
+      'runtimes', 'portal', 'learning_loop', 'kanban', 'webhooks', 'hooks', 'commands',
     ]) {
       expect(categories.has(expected)).toBe(true);
     }
@@ -232,6 +250,28 @@ describe('hermes claw migrate (real)', () => {
     const skill = second.entries.find((e) => e.category === 'skills' && e.label === 'skill:demo-skill');
     expect(skill?.action).toBe('skip');
     expect(hub.list().filter((s) => s.name === 'demo-skill')).toHaveLength(1);
+  });
+
+  it('does not overwrite existing custom slash commands without --overwrite', async () => {
+    const commandsDir = path.join(target, '.codebuddy', 'commands');
+    fs.ensureDirSync(commandsDir);
+    const existing = path.join(commandsDir, 'review.md');
+    fs.writeFileSync(existing, 'existing command body\n');
+
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true, backup: false });
+    const command = report.entries.find((e) => e.category === 'commands' && e.label === 'command:/review');
+    expect(command?.action).toBe('conflict');
+    expect(fs.readFileSync(existing, 'utf-8')).toBe('existing command body\n');
+
+    await runClawMigration({
+      source: openclaw,
+      workspaceTarget: target,
+      skillsHub: hub,
+      apply: true,
+      backup: false,
+      overwrite: true,
+    });
+    expect(fs.readFileSync(existing, 'utf-8')).toContain('Review migrated code');
   });
 
   it('reports a missing OpenClaw install gracefully', async () => {

@@ -434,9 +434,13 @@ rejection reasons, and message secrets out of stdout. The WebSocket
 probe/call/pairing/validation surfaces are dry-run by default; live network use
 requires
 `--apply --yes --approved-by <name>`.
+The OpenClaw migration proof now also imports custom slash command Markdown
+files from the source `commands` family into the real project command loader
+path `.codebuddy/commands/*.md`; dry-run performs no writes, apply copies the
+files, and existing commands are preserved unless `--overwrite` is supplied.
 
-Observed result: `12` companion gateway tests, `22` OpenClaw bridge tests, `19`
-Hermes/OpenClaw CLI migration tests, and `67` focused Cowork OpenClaw/gateway
+Observed result: `12` companion gateway tests, `22` OpenClaw bridge tests, `20`
+Hermes/OpenClaw CLI migration tests, and `68` focused Cowork OpenClaw/gateway
 surface tests passed, plus the targeted Cowork Playwright OpenClaw bridge proof
 passed and wrote:
 

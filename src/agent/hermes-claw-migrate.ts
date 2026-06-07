@@ -12,8 +12,9 @@
  *   consumer-backed destination (identity files read by the bootstrap loader /
  *   prompt builder, `.codebuddy/CODEBUDDY_MEMORY.md`, `.codebuddy/settings.json`
  *   `model`/`mcpServers` keys read by the model resolver / `loadMCPConfig`, the
- *   SkillsHub lockfile). Anything without a confirmed consumer is **archived**
- *   for manual review instead of written to a key nothing reads.
+ *   SkillsHub lockfile, project slash commands from `.codebuddy/commands/*.md`).
+ *   Anything without a confirmed consumer is **archived** for manual review
+ *   instead of written to a key nothing reads.
  * - **Secret-safe.** Plans/reports record credential *source names* only, never
  *   values. Secrets are migrated only with `migrateSecrets` and even then are
  *   written to a 0600 review file, never injected into live config in v1.
@@ -92,9 +93,10 @@ export interface ClawMigrationReport {
 const HOME_CANDIDATES = ['.openclaw', '.clawdbot', '.moltbot'];
 const CONFIG_NAMES = ['clawdbot.json', 'moltbot.json', 'openclaw.json', 'config.json'];
 const SKILL_DIR_CANDIDATES = ['skills', 'agent/skills', '.skills', 'skill'];
+const COMMAND_DIR_CANDIDATES = ['commands', 'slash-commands', 'agent/commands', '.commands'];
 
 // Categories that `--preset user-data` keeps as imports (user content only).
-const USER_DATA_IMPORTS = new Set(['persona', 'memory', 'user', 'agents', 'skills']);
+const USER_DATA_IMPORTS = new Set(['persona', 'memory', 'user', 'agents', 'skills', 'commands']);
 
 interface OpenClawConfig {
   raw: Record<string, unknown>;
@@ -291,6 +293,24 @@ function discoverSkillDirs(home: string): Array<{ name: string; skillFile: strin
   return found;
 }
 
+/** Discover OpenClaw custom slash command files consumable by Code Buddy. */
+function discoverCommandFiles(home: string): Array<{ name: string; source: string }> {
+  const found: Array<{ name: string; source: string }> = [];
+  const seen = new Set<string>();
+  for (const rel of COMMAND_DIR_CANDIDATES) {
+    const root = path.join(home, rel);
+    if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) continue;
+    for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.endsWith('.md')) continue;
+      const safeName = path.basename(entry.name, '.md').replace(/[^a-zA-Z0-9_-]/g, '-');
+      if (!safeName || seen.has(safeName)) continue;
+      seen.add(safeName);
+      found.push({ name: safeName, source: path.join(root, entry.name) });
+    }
+  }
+  return found;
+}
+
 /** Credential-bearing keys whose presence we report by name only (never value). */
 function detectSecretSourceNames(config: Record<string, unknown>): string[] {
   const names: string[] = [];
@@ -399,6 +419,32 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
           source: skill.skillFile,
           destination: `SkillsHub:${skill.name}`,
           detail: 'Installed via SkillsHub.installFromContent (honors --skill-conflict).',
+        });
+      }
+    }
+  }
+
+  // --- Custom slash commands -> .codebuddy/commands/*.md ---
+  {
+    const commands = discoverCommandFiles(home);
+    if (commands.length === 0) {
+      entries.push({
+        category: 'commands',
+        label: 'custom slash commands',
+        action: 'skip',
+        source: null,
+        destination: null,
+        detail: 'No custom command Markdown files found in source.',
+      });
+    } else {
+      for (const command of commands) {
+        entries.push({
+          category: 'commands',
+          label: `command:/${command.name}`,
+          action: importOrPresetArchive('commands', ctx),
+          source: command.source,
+          destination: path.join(codebuddyDir, 'commands', `${command.name}.md`),
+          detail: 'Copied to .codebuddy/commands/*.md for the built-in custom slash command loader.',
         });
       }
     }
@@ -618,6 +664,18 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
             entry.error = err instanceof Error ? err.message : String(err);
           }),
       );
+      return;
+    }
+    case 'commands': {
+      if (!entry.source || !entry.destination) return;
+      if (fs.existsSync(entry.destination) && !overwrite) {
+        entry.action = 'conflict';
+        entry.detail = `Exists; pass --overwrite to replace. ${entry.detail}`;
+        return;
+      }
+      ensureDir(path.dirname(entry.destination));
+      fs.copyFileSync(entry.source, entry.destination);
+      entry.applied = true;
       return;
     }
     case 'model': {

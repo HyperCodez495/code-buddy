@@ -85,7 +85,7 @@ partial 5 · gap 0** (au démarrage de cette session : covered-partial 8 / parti
 > closed-learning-loop (écritures background opt-in, OFF par défaut, seuil de
 > confiance + telemetry + rollback).
 > **+2 renforcées** : cli-tui (4 commandes : insights/bundles/lsp/proxy),
-> openclaw-migration (23→34 catégories, reste partial). Tout validé : typecheck
+> openclaw-migration (23→35 catégories, reste partial). Tout validé : typecheck
 > repo-wide 0 erreur, 16 fichiers de tests / 202 tests ciblés verts (+ cowork 61).
 > **5 partials restants = TOUS hard-gated externe** : messaging-gateway (tokens),
 > browser-automation (comptes Browserbase/Browser Use), runtime-backends (comptes
@@ -153,8 +153,9 @@ ratio valeur/risque), **`bundles`** (nouvelle feature), **`lsp` CLI**, **`proxy`
 - **delegation-parallelism** : autoriser le code généré à rappeler des outils par
   RPC (décision sécurité — garder désactivé jusqu'à approbation explicite).
 - **mobile-supervision** : client mobile first-class + packaging TLS off-device.
-- **openclaw-migration** : étendre vers les 30+ catégories + valider contre un vrai
-  install OpenClaw.
+- **openclaw-migration** : 35 catégories reconnues; imports directs vers identité,
+  mémoire, modèle, MCP, skills, commandes slash `.codebuddy/commands/*.md` et
+  réglages agent mappables. Reste à valider contre un vrai install OpenClaw.
 - Mémoire cloud (**Supermemory/RetainDB**) : comptes payants.
 
 ---

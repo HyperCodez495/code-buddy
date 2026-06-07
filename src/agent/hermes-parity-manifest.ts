@@ -598,11 +598,11 @@ const FEATURES: HermesParityFeature[] = [
     ],
     notes:
       '`buddy hermes claw migrate` is implemented against the documented OpenClaw layout ' +
-      '(`~/.openclaw`/`~/.clawdbot`/`~/.moltbot` + `clawdbot.json`) and now recognizes 34 distinct ' +
+      '(`~/.openclaw`/`~/.clawdbot`/`~/.moltbot` + `clawdbot.json`) and now recognizes 35 distinct ' +
       'categories (up from 23). It imports identity files (SOUL/USER/AGENTS), MEMORY.md, the default ' +
-      'model, MCP servers, and skills to real consumer-backed destinations; the other 26 categories ' +
-      '(incl. cron, hooks, webhooks, toolsets, profiles, bundles, pairing, runtimes, portal, kanban, ' +
-      'learning-loop) are archived for manual review (credential-bearing archives written 0600). ' +
+      'model, MCP servers, skills, custom slash commands, and agent-behavior settings to real consumer-backed ' +
+      'destinations; the other categories (incl. cron, hooks, webhooks, toolsets, profiles, bundles, pairing, ' +
+      'runtimes, portal, kanban, learning-loop) are archived for manual review (credential-bearing archives written 0600). ' +
       'Dry-run by default, deterministic, secret-safe; fixture-tested, with no real OpenClaw install validated. ' +
       'Cowork now exposes a confirm-gated migration dialog (dry-run preview on open; apply only after explicit confirm). ' +
       'Agent-behavior defaults are now DIRECTLY IMPORTED (not archived), matching upstream: agents.defaults.timeoutSeconds ' +
