@@ -67,6 +67,7 @@ import { IdentityPanel } from './components/IdentityPanel';
 import { DevicePanel } from './components/DevicePanel';
 import { ChannelsPanel } from './components/ChannelsPanel';
 import { CompanionPanel } from './components/CompanionPanel';
+import { MissionBoardPanel } from './components/MissionBoardPanel';
 import { OnboardingWizard } from './components/OnboardingWizard';
 import { SubAgentDashboard } from './components/SubAgentDashboard';
 import { DiagnosticsPanel } from './components/DiagnosticsPanel';
@@ -690,6 +691,9 @@ function App() {
 
       {/* Kanban board — Hermes kanban parity (workspace board CRUD) */}
       <KanbanWrapper />
+
+      {/* Mission board - autonomous mission backlog tracking */}
+      <MissionBoardWrapper />
     </div>
   );
 }
@@ -722,4 +726,12 @@ function KanbanWrapper() {
   const close = useAppStore((s) => s.setShowKanban);
   if (!open) return null;
   return <KanbanPanel onClose={() => close(false)} />;
+}
+
+/** Reactive wrapper for the autonomous mission board panel. */
+function MissionBoardWrapper() {
+  const open = useAppStore((s) => s.showMissionBoard);
+  const close = useAppStore((s) => s.setShowMissionBoard);
+  if (!open) return null;
+  return <MissionBoardPanel onClose={() => close(false)} />;
 }

@@ -381,6 +381,8 @@ interface AppState {
   showClawMigration: boolean;
   /** Toggle for the Hermes Kanban board panel (Hermes kanban parity). */
   showKanban: boolean;
+  /** Toggle for the autonomous companion mission board surface. */
+  showMissionBoard: boolean;
   fleetGoalDraft: FleetGoalDraft | null;
 
   // A2A active tasks (GAP 1)
@@ -653,6 +655,7 @@ interface AppState {
   setShowSkillsManager: (show: boolean) => void;
   setShowClawMigration: (show: boolean) => void;
   setShowKanban: (show: boolean) => void;
+  setShowMissionBoard: (show: boolean) => void;
   setFleetGoalDraft: (draft: Omit<FleetGoalDraft, 'nonce'> | null) => void;
 
   // A2A task actions
@@ -846,6 +849,7 @@ export const useAppStore = create<AppState>((set) => ({
   showSkillsManager: false,
   showClawMigration: false,
   showKanban: false,
+  showMissionBoard: false,
   showFleetCommandCenter: false,
   fleetGoalDraft: null,
   a2aTasks: {},
@@ -1759,6 +1763,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowSkillsManager: (show) => set({ showSkillsManager: show }),
   setShowClawMigration: (show) => set({ showClawMigration: show }),
   setShowKanban: (show) => set({ showKanban: show }),
+  setShowMissionBoard: (show) => set({ showMissionBoard: show }),
   setShowFleetCommandCenter: (show) => set({ showFleetCommandCenter: show }),
   setFleetGoalDraft: (draft) =>
     set({

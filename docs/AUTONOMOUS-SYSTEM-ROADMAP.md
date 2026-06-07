@@ -61,6 +61,11 @@ Intégration parfaite avec l’existant :
 - Notifications push dans Cowork (via notification namespace existant)
 - Intégration avec Presence (caméra pour « l’agent est en train de travailler » visuel)
 
+Statut d'implémentation (2026-06-07) :
+- Première surface renderer dédiée livrée via `MissionBoardPanel.tsx`, ouverte depuis le rail Cowork.
+- Le panneau consomme les bridges existants `companion.missions.*`, affiche les colonnes `open`, `in_progress`, `done`, `dismissed`, et prépare la prochaine mission en `dryRun`.
+- Reste à ajouter l'orchestrateur long-running, les événements live de progression, les coûts/tokens par mission et les contrôles Pause/Resume/Cancel.
+
 **2.3 Heartbeat & Proactivity par Mission**
 - Extension du heartbeat existant du core pour les missions
 - Chaque mission a son propre `HEARTBEAT.md` ou section dans la mémoire

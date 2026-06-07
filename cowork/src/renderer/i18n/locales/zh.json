@@ -1,4 +1,32 @@
 {
+  "missionBoard": {
+    "title": "任务看板",
+    "bridgeUnavailable": "Companion 任务桥不可用。",
+    "noWorkspace": "没有活动工作区",
+    "refresh": "刷新",
+    "sync": "同步任务",
+    "syncing": "同步中...",
+    "prepareNext": "准备下一项",
+    "prepareNextTitle": "以 dry-run 方式准备下一项任务。",
+    "preparing": "准备中...",
+    "openCount": "{{count}} 个待处理",
+    "activeCount": "{{count}} 个进行中",
+    "progress": "已完成 {{count}}%",
+    "dryRun": "dry run",
+    "live": "live",
+    "loading": "正在加载任务...",
+    "empty": "还没有任务。运行竞争雷达后同步任务以创建 backlog。",
+    "start": "开始",
+    "done": "完成",
+    "dismiss": "忽略",
+    "reopen": "重新打开",
+    "status": {
+      "open": "待处理",
+      "inProgress": "进行中",
+      "done": "已完成",
+      "dismissed": "已忽略"
+    }
+  },
   "common": {
     "save": "保存",
     "cancel": "取消",

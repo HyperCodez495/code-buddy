@@ -4,6 +4,7 @@ import {
   Bot,
   Brain,
   Clock3,
+  ClipboardList,
   Cpu,
   FileText,
   FlaskConical,
@@ -65,6 +66,7 @@ export function ShellNavigation() {
   const showTestRunner = useAppStore((s) => s.showTestRunner);
   const showOrchestratorLauncher = useAppStore((s) => s.showOrchestratorLauncher);
   const showGlobalSearch = useAppStore((s) => s.showGlobalSearch);
+  const showMissionBoard = useAppStore((s) => s.showMissionBoard);
 
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
@@ -91,6 +93,7 @@ export function ShellNavigation() {
   const setShowFocusView = useAppStore((s) => s.setShowFocusView);
   const setShowTestRunner = useAppStore((s) => s.setShowTestRunner);
   const setShowGlobalSearch = useAppStore((s) => s.setShowGlobalSearch);
+  const setShowMissionBoard = useAppStore((s) => s.setShowMissionBoard);
 
   const openSettingsTab = (tab: string | null) => {
     setSettingsTab(tab);
@@ -178,6 +181,14 @@ export function ShellNavigation() {
           icon: Workflow,
           onClick: () => openSettingsTab('workflows'),
           testId: 'workflows-button',
+        },
+        {
+          id: 'mission-board',
+          label: t('missionBoard.title', 'Mission Board'),
+          icon: ClipboardList,
+          active: showMissionBoard,
+          onClick: () => setShowMissionBoard(true),
+          testId: 'mission-board-button',
         },
         {
           id: 'schedule',

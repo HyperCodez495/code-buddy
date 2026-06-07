@@ -8,6 +8,34 @@
   "spec": {
     "title": "Backlog spec — stories à valider"
   },
+  "missionBoard": {
+    "title": "Tableau de missions",
+    "bridgeUnavailable": "Le bridge des missions du compagnon n'est pas disponible.",
+    "noWorkspace": "Aucun espace de travail actif",
+    "refresh": "Actualiser",
+    "sync": "Synchroniser les missions",
+    "syncing": "Synchronisation...",
+    "prepareNext": "Préparer la suivante",
+    "prepareNextTitle": "Préparer la prochaine mission en dry-run.",
+    "preparing": "Préparation...",
+    "openCount": "{{count}} ouverte(s)",
+    "activeCount": "{{count}} active(s)",
+    "progress": "{{count}} % terminées",
+    "dryRun": "dry-run",
+    "live": "live",
+    "loading": "Chargement des missions...",
+    "empty": "Aucune mission pour le moment. Synchronisez les missions après un radar concurrentiel pour créer le backlog.",
+    "start": "Démarrer",
+    "done": "Terminer",
+    "dismiss": "Écarter",
+    "reopen": "Rouvrir",
+    "status": {
+      "open": "Ouvertes",
+      "inProgress": "En cours",
+      "done": "Terminées",
+      "dismissed": "Écartées"
+    }
+  },
   "common": {
     "save": "Enregistrer",
     "cancel": "Annuler",

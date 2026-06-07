@@ -552,6 +552,31 @@ export class TestRunnerBridge extends EventEmitter {
       addIfFilesExist(
         items,
         {
+          id: 'code-buddy-cowork-autonomous-mission-board-bundle',
+          label: 'Cowork / autonomous mission board',
+          group: 'Autonomy',
+          description: 'Mission Board renderer surface, shell navigation wiring and dry-run mission preparation guards',
+          command: 'npx',
+          args: [
+            'vitest',
+            'run',
+            'tests/mission-board-panel.test.tsx',
+            'tests/mission-board-surface.test.ts',
+            '--reporter=verbose',
+          ],
+          cwd: coworkDir,
+          kind: 'integration',
+          safeToRun: true,
+          timeoutMs: 120_000,
+        },
+        [
+          path.join(coworkDir, 'tests', 'mission-board-panel.test.tsx'),
+          path.join(coworkDir, 'tests', 'mission-board-surface.test.ts'),
+        ]
+      );
+      addIfFilesExist(
+        items,
+        {
           id: 'code-buddy-cowork-sandbox-executor-bundle',
           label: 'Cowork / sandbox executor bundle',
           group: 'Sandbox',

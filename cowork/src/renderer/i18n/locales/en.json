@@ -8,6 +8,34 @@
   "spec": {
     "title": "Spec backlog — review-gated stories"
   },
+  "missionBoard": {
+    "title": "Mission Board",
+    "bridgeUnavailable": "Companion mission bridge is not available.",
+    "noWorkspace": "No active workspace",
+    "refresh": "Refresh",
+    "sync": "Sync missions",
+    "syncing": "Syncing...",
+    "prepareNext": "Prepare next",
+    "prepareNextTitle": "Prepare the next mission as a dry run.",
+    "preparing": "Preparing...",
+    "openCount": "{{count}} open",
+    "activeCount": "{{count}} active",
+    "progress": "{{count}}% done",
+    "dryRun": "dry run",
+    "live": "live",
+    "loading": "Loading missions...",
+    "empty": "No missions yet. Sync missions after a competitive radar run to create the backlog.",
+    "start": "Start",
+    "done": "Done",
+    "dismiss": "Dismiss",
+    "reopen": "Reopen",
+    "status": {
+      "open": "Open",
+      "inProgress": "In progress",
+      "done": "Done",
+      "dismissed": "Dismissed"
+    }
+  },
   "common": {
     "save": "Save",
     "cancel": "Cancel",
