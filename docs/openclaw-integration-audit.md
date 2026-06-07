@@ -119,12 +119,13 @@ Buddy. The current integration is selective:
   stdout/logs never echo pairing codes, gateway tokens or raw daemon payloads.
 - The CLI now includes `buddy hermes claw bridge validate-upstream`, a read-only
   certification checklist for real OpenClaw daemons. It previews by default and,
-  with explicit approval, verifies local `openclaw` binary evidence, discovery,
-  WebSocket status, and `nodes.pending` while storing only redacted summaries.
-  It is aligned with the official OpenClaw CLI reference for `gateway
-  status|probe|call` and `nodes pending|approve`, and fixture-tested locally; it
-  still needs to be executed against an upstream daemon binary before this audit
-  can claim upstream certification.
+  with explicit approval, verifies local `openclaw` binary evidence, executes
+  `openclaw gateway status --json` with an allowlisted summary, then checks
+  discovery, WebSocket status, and `nodes.pending` while storing only redacted
+  summaries. It is aligned with the official OpenClaw CLI reference for
+  `gateway status|probe|call` and `nodes pending|approve`, and fixture-tested
+  locally; it still needs to be executed against an upstream daemon binary before
+  this audit can claim upstream certification.
 - Discovery now also reads the OpenClaw-documented node host lockfile
   `~/.openclaw/node.json`, surfaces only node id, display name, gateway
   host/port and capabilities, and keeps the node pairing token out of CLI JSON

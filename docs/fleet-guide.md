@@ -1182,8 +1182,10 @@ couvert via `nodes.pending` et `nodes.approve` : les demandes en attente sont
 résumées avec `nodeId`/display name uniquement, et `node-approve --code ...`
 peut envoyer le code en live confirmé sans le recopier dans stdout ni dans les
 logs. La commande `validate-upstream` regroupe la certification read-only :
-présence du binaire `openclaw`, discovery, endpoint WebSocket, `node.json`,
-redaction, handshake `status` et `nodes.pending`. Elle est alignée sur la
+présence du binaire `openclaw`, exécution live confirmée de
+`openclaw gateway status --json` avec résumé allowlisté, discovery, endpoint
+WebSocket, `node.json`, redaction, handshake `status` et `nodes.pending`.
+Elle est alignée sur la
 référence CLI OpenClaw officielle (`gateway status|probe|call`, `nodes
 pending|approve`) et fixture-testée localement; pour certifier un binaire
 OpenClaw upstream réel, exécuter :

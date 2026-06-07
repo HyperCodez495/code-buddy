@@ -778,7 +778,11 @@ describe('OpenClaw gateway bridge compatibility', () => {
         token: 'oc_upstream_validation_node_secret',
       }, null, 2), 'utf8');
       const openclawBin = path.join(tempDir, 'openclaw');
-      await writeFile(openclawBin, '#!/usr/bin/env sh\nexit 0\n', 'utf8');
+      await writeFile(
+        openclawBin,
+        '#!/usr/bin/env sh\nprintf \'{"status":"running","running":true,"healthy":true,"version":"fixture-1","token":"cli-status-secret"}\\n\'\n',
+        'utf8',
+      );
       await chmod(openclawBin, 0o755);
       let id = 0;
 
@@ -809,14 +813,25 @@ describe('OpenClaw gateway bridge compatibility', () => {
         ['websocket-endpoint', 'passed'],
         ['node-lockfile', 'passed'],
         ['secret-redaction', 'passed'],
+        ['openclaw-cli-status', 'passed'],
         ['websocket-probe', 'passed'],
         ['pending-node-list', 'passed'],
       ]);
+      expect(result.cliStatus).toMatchObject({
+        command: 'openclaw gateway status --json',
+        exitCode: 0,
+        healthy: true,
+        jsonParsed: true,
+        running: true,
+        status: 'running',
+        version: 'fixture-1',
+      });
       expect(result.probe?.record.status).toBe('connected');
       expect(result.pendingNodes?.record.request.method).toBe('nodes.pending');
       expect(JSON.stringify(result)).not.toContain('oc_upstream_validation_gateway_secret');
       expect(JSON.stringify(result)).not.toContain('oc_upstream_validation_node_secret');
       expect(JSON.stringify(result)).not.toContain('PAIR-SECRET-123');
+      expect(JSON.stringify(result)).not.toContain('cli-status-secret');
     } finally {
       await server.close();
     }

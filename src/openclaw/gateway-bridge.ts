@@ -3,8 +3,12 @@ import { access, appendFile, mkdir, readFile, writeFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
 import { randomUUID } from 'crypto';
+import { execFile as execFileCallback } from 'node:child_process';
+import { promisify } from 'node:util';
 import WebSocket from 'ws';
 import type { ChannelType } from '../channels/core.js';
+
+const execFile = promisify(execFileCallback);
 
 export interface OpenClawGatewayDiscoveryOptions {
   home?: string;
@@ -470,8 +474,20 @@ export interface OpenClawUpstreamValidationInput {
   includePendingNodes?: boolean;
   liveValidationConfirmed?: boolean;
   openclawBinaryPath?: string;
+  runCliStatus?: boolean;
   statusMethod?: string;
   timeoutMs?: number;
+}
+
+export interface OpenClawCliStatusSummary {
+  command: 'openclaw gateway status --json';
+  exitCode: number;
+  jsonParsed: boolean;
+  status?: string;
+  running?: boolean;
+  healthy?: boolean;
+  version?: string;
+  error?: string;
 }
 
 export interface OpenClawUpstreamValidationCheck {
@@ -489,6 +505,7 @@ export interface OpenClawUpstreamValidationResult {
   approvedBy?: string;
   discovery: OpenClawGatewayDiscovery;
   checks: OpenClawUpstreamValidationCheck[];
+  cliStatus?: OpenClawCliStatusSummary;
   probe?: OpenClawWebSocketProbeResult;
   pendingNodes?: OpenClawWebSocketCallResult;
   safety: {
@@ -808,6 +825,70 @@ async function findOpenClawBinary(explicitPath?: string): Promise<string | undef
     }
   }
   return undefined;
+}
+
+function summarizeOpenClawCliStatus(stdout: string, exitCode: number): OpenClawCliStatusSummary {
+  let parsed: Record<string, unknown> = {};
+  let jsonParsed = false;
+  try {
+    const value = JSON.parse(stdout) as unknown;
+    if (value && typeof value === 'object' && !Array.isArray(value)) {
+      parsed = value as Record<string, unknown>;
+      jsonParsed = true;
+    }
+  } catch {
+    jsonParsed = false;
+  }
+  const status = typeof parsed.status === 'string'
+    ? parsed.status
+    : typeof parsed.state === 'string'
+      ? parsed.state
+      : undefined;
+  const running = typeof parsed.running === 'boolean'
+    ? parsed.running
+    : typeof parsed.active === 'boolean'
+      ? parsed.active
+      : undefined;
+  const healthy = typeof parsed.healthy === 'boolean'
+    ? parsed.healthy
+    : typeof parsed.ok === 'boolean'
+      ? parsed.ok
+      : undefined;
+  const version = typeof parsed.version === 'string'
+    ? parsed.version
+    : typeof parsed.openclawVersion === 'string'
+      ? parsed.openclawVersion
+      : undefined;
+  return {
+    command: 'openclaw gateway status --json',
+    exitCode,
+    jsonParsed,
+    ...(status ? { status } : {}),
+    ...(running !== undefined ? { running } : {}),
+    ...(healthy !== undefined ? { healthy } : {}),
+    ...(version ? { version } : {}),
+  };
+}
+
+async function runOpenClawCliGatewayStatus(
+  binaryPath: string,
+  timeoutMs: number,
+): Promise<OpenClawCliStatusSummary> {
+  try {
+    const result = await execFile(binaryPath, ['gateway', 'status', '--json'], {
+      timeout: timeoutMs,
+      maxBuffer: 128 * 1024,
+    });
+    return summarizeOpenClawCliStatus(result.stdout, 0);
+  } catch (error) {
+    const maybe = error as { code?: unknown; stdout?: unknown };
+    const exitCode = typeof maybe.code === 'number' ? maybe.code : 1;
+    const stdout = typeof maybe.stdout === 'string' ? maybe.stdout : '';
+    return {
+      ...summarizeOpenClawCliStatus(stdout, exitCode),
+      ...(stdout.trim() ? {} : { error: 'OpenClaw CLI gateway status failed without JSON output' }),
+    };
+  }
 }
 
 function safeNodePairingSummary(payload: unknown): Record<string, unknown> | undefined {
@@ -1912,6 +1993,7 @@ export async function validateOpenClawUpstreamCompatibility(
   const nodeLockfilePath = getOpenClawNodeLockfilePath(options);
   const openclawBinaryPath = await findOpenClawBinary(input.openclawBinaryPath);
   const dryRun = input.dryRun !== false;
+  const shouldRunCliStatus = input.runCliStatus !== false;
   const approvedBy = input.approvedBy?.trim();
   const checks: OpenClawUpstreamValidationCheck[] = [
     {
@@ -1997,6 +2079,14 @@ export async function validateOpenClawUpstreamCompatibility(
       checks: [
         ...checks,
         {
+          name: 'openclaw-cli-status',
+          ok: true,
+          status: openclawBinaryPath && shouldRunCliStatus ? 'preview' : 'skipped',
+          detail: openclawBinaryPath && shouldRunCliStatus
+            ? 'Would run openclaw gateway status --json and store only an allowlisted summary'
+            : 'Skipped because no OpenClaw CLI binary was found or runCliStatus=false',
+        },
+        {
           name: 'websocket-probe',
           ok: true,
           status: 'preview',
@@ -2021,6 +2111,9 @@ export async function validateOpenClawUpstreamCompatibility(
     };
   }
 
+  const cliStatus = openclawBinaryPath && shouldRunCliStatus
+    ? await runOpenClawCliGatewayStatus(openclawBinaryPath, input.timeoutMs ?? 5_000)
+    : undefined;
   const probe = await probeOpenClawGatewayWebSocket({
     approvedBy,
     dryRun: false,
@@ -2038,6 +2131,14 @@ export async function validateOpenClawUpstreamCompatibility(
     }, options);
   const liveChecks: OpenClawUpstreamValidationCheck[] = [
     {
+      name: 'openclaw-cli-status',
+      ok: cliStatus ? cliStatus.exitCode === 0 : true,
+      status: cliStatus ? (cliStatus.exitCode === 0 ? 'passed' : 'failed') : 'skipped',
+      detail: cliStatus
+        ? cliStatus.status || (cliStatus.jsonParsed ? 'OpenClaw CLI status returned JSON' : cliStatus.error)
+        : 'Skipped because no OpenClaw CLI binary was found or runCliStatus=false',
+    },
+    {
       name: 'websocket-probe',
       ok: probe.ok,
       status: probe.ok ? 'passed' : 'failed',
@@ -2052,7 +2153,7 @@ export async function validateOpenClawUpstreamCompatibility(
         : 'Skipped by includePendingNodes=false',
     },
   ];
-  const ok = probe.ok && (pendingNodes ? pendingNodes.ok : true);
+  const ok = (cliStatus ? cliStatus.exitCode === 0 : true) && probe.ok && (pendingNodes ? pendingNodes.ok : true);
   return {
     kind: 'openclaw_upstream_validation_result',
     ok,
@@ -2061,6 +2162,7 @@ export async function validateOpenClawUpstreamCompatibility(
     ...(approvedBy ? { approvedBy } : {}),
     discovery,
     checks: [...checks, ...liveChecks],
+    ...(cliStatus ? { cliStatus } : {}),
     probe,
     ...(pendingNodes ? { pendingNodes } : {}),
     safety: {

@@ -2534,12 +2534,13 @@ function registerHermesClawCommands(hermes: Command): void {
     .option('--status-method <method>', 'OpenClaw status RPC method to call after hello-ok', 'status')
     .option('--timeout-ms <ms>', 'WebSocket validation timeout', '5000')
     .option('--openclaw-bin <path>', 'OpenClaw CLI binary path used for local install evidence')
+    .option('--skip-cli-status', 'skip openclaw gateway status --json validation')
     .option('--skip-pending-nodes', 'skip the nodes.pending read-only validation call')
     .option('--approved-by <name>', 'operator approving live upstream validation')
     .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
     .option('--yes', 'confirm live validation when used with --apply')
     .option('--json', 'output JSON')
-    .action(async (options: HermesClawBridgeOptions & { skipPendingNodes?: boolean }) => {
+    .action(async (options: HermesClawBridgeOptions & { skipCliStatus?: boolean; skipPendingNodes?: boolean }) => {
       const timeoutMs = Number.parseInt(options.timeoutMs || '5000', 10);
       const result = await validateOpenClawUpstreamCompatibility({
         approvedBy: options.approvedBy,
@@ -2547,6 +2548,7 @@ function registerHermesClawCommands(hermes: Command): void {
         includePendingNodes: options.skipPendingNodes !== true,
         liveValidationConfirmed: options.apply === true && options.yes === true,
         openclawBinaryPath: options.openclawBin,
+        runCliStatus: options.skipCliStatus !== true,
         statusMethod: options.statusMethod,
         timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
       }, {

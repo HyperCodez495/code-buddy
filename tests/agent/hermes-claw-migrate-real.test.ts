@@ -577,7 +577,10 @@ describe('hermes claw migrate (real)', () => {
       token: 'oc_cli_validate_node_secret_fixture',
     });
     const openclawBin = path.join(tmp, 'openclaw');
-    fs.writeFileSync(openclawBin, '#!/usr/bin/env sh\nexit 0\n');
+    fs.writeFileSync(
+      openclawBin,
+      '#!/usr/bin/env sh\nprintf \'{"status":"running","running":true,"healthy":true,"version":"cli-fixture","token":"cli-status-secret"}\\n\'\n',
+    );
     fs.chmodSync(openclawBin, 0o755);
     const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
     try {
@@ -612,9 +615,14 @@ describe('hermes claw migrate (real)', () => {
         name: 'openclaw-cli',
         status: 'passed',
       }));
+      expect(payload.checks).toContainEqual(expect.objectContaining({
+        name: 'openclaw-cli-status',
+        status: 'preview',
+      }));
       expect(payload.checks.map((check: { name: string }) => check.name)).toContain('websocket-probe');
       expect(output).not.toContain('oc_cli_validate_upstream_secret_fixture');
       expect(output).not.toContain('oc_cli_validate_node_secret_fixture');
+      expect(output).not.toContain('cli-status-secret');
     } finally {
       logSpy.mockRestore();
     }
