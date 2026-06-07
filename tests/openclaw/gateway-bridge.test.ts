@@ -14,6 +14,7 @@ import {
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
   probeOpenClawGatewayWebSocket,
+  rejectOpenClawPendingNode,
   sendOpenClawResponse,
   validateOpenClawUpstreamCompatibility,
 } from '../../src/openclaw/gateway-bridge.js';
@@ -85,7 +86,7 @@ async function startOpenClawWebSocketContractServer(): Promise<{
           gatewayId: 'openclaw-ws-contract-gateway',
           uptimeMs: 1234,
           features: {
-            methods: ['status', 'logs.tail', 'nodes.pending', 'nodes.approve'],
+            methods: ['status', 'logs.tail', 'nodes.pending', 'nodes.approve', 'nodes.reject'],
           },
         }));
         return;
@@ -144,6 +145,24 @@ async function startOpenClawWebSocketContractServer(): Promise<{
             nodeId: typeof params.nodeId === 'string' ? params.nodeId : 'approved-by-code-node',
             code: 'APPROVE-CODE-ECHO-SECRET',
             token: 'approve-token-secret',
+          },
+        }));
+        return;
+      }
+      if (frame.type === 'req' && frame.method === 'nodes.reject') {
+        const params = frame.params && typeof frame.params === 'object'
+          ? frame.params as Record<string, unknown>
+          : {};
+        socket.send(JSON.stringify({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            rejected: true,
+            nodeId: typeof params.nodeId === 'string' ? params.nodeId : 'rejected-by-code-node',
+            code: 'REJECT-CODE-ECHO-SECRET',
+            reason: 'reject-reason-secret',
+            token: 'reject-token-secret',
           },
         }));
       }
@@ -500,8 +519,8 @@ describe('OpenClaw gateway bridge compatibility', () => {
           statusResponseOk: true,
           gatewayId: 'openclaw-ws-contract-gateway',
           uptimeMs: 1234,
-          methodCount: 4,
-          methodSample: ['logs.tail', 'nodes.approve', 'nodes.pending', 'status'],
+          methodCount: 5,
+          methodSample: ['logs.tail', 'nodes.approve', 'nodes.pending', 'nodes.reject', 'status'],
           frameTypes: ['hello-ok', 'res'],
         },
         safety: {
@@ -760,6 +779,71 @@ describe('OpenClaw gateway bridge compatibility', () => {
       expect(rawLog).not.toContain('APPROVE-CODE-ECHO-SECRET');
       expect(rawLog).not.toContain('approve-token-secret');
       expect(rawLog).not.toContain('oc_pairing_approve_gateway_secret');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('rejects OpenClaw node pairing requests without logging supplied codes or reasons', async () => {
+    const server = await startOpenClawWebSocketContractServer();
+    try {
+      await mkdir(openclawHome, { recursive: true });
+      await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+        wsUrl: server.wsUrl,
+        token: 'oc_pairing_reject_gateway_secret',
+      }, null, 2), 'utf8');
+
+      const result = await rejectOpenClawPendingNode({
+        code: 'CLI-REJECT-CODE-SECRET',
+        reason: 'reject because untrusted fixture secret',
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+        timeoutMs: 2000,
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:25:00.000Z'),
+        createId: () => 'ws-node-reject-1',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record).toMatchObject({
+        id: 'ws-node-reject-1',
+        status: 'called',
+        request: {
+          method: 'nodes.reject',
+          paramKeys: ['code', 'reason'],
+        },
+        response: {
+          helloOk: true,
+          rpcOk: true,
+          summary: {
+            rejected: true,
+            nodeId: 'rejected-by-code-node',
+          },
+        },
+      });
+      expect(server.frames[1]).toMatchObject({
+        type: 'req',
+        id: 'ws-node-reject-1',
+        method: 'nodes.reject',
+        params: {
+          code: 'CLI-REJECT-CODE-SECRET',
+          reason: 'reject because untrusted fixture secret',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('CLI-REJECT-CODE-SECRET');
+      expect(JSON.stringify(result)).not.toContain('reject because untrusted fixture secret');
+      expect(JSON.stringify(result)).not.toContain('REJECT-CODE-ECHO-SECRET');
+      expect(JSON.stringify(result)).not.toContain('reject-token-secret');
+      const rawLog = await readFile(result.callLogPath, 'utf8');
+      expect(rawLog).toContain('ws-node-reject-1');
+      expect(rawLog).not.toContain('CLI-REJECT-CODE-SECRET');
+      expect(rawLog).not.toContain('reject because untrusted fixture secret');
+      expect(rawLog).not.toContain('REJECT-CODE-ECHO-SECRET');
+      expect(rawLog).not.toContain('reject-token-secret');
+      expect(rawLog).not.toContain('oc_pairing_reject_gateway_secret');
     } finally {
       await server.close();
     }

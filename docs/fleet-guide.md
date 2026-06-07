@@ -1158,12 +1158,13 @@ buddy hermes claw bridge probe-ws --source ~/.openclaw --json
 buddy hermes claw bridge call-ws logs.tail --source ~/.openclaw --params '{"sinceMs":60000}' --json
 buddy hermes claw bridge nodes-pending --source ~/.openclaw --json
 buddy hermes claw bridge node-approve --source ~/.openclaw --code "$OPENCLAW_PAIRING_CODE" --json
+buddy hermes claw bridge node-reject --source ~/.openclaw --code "$OPENCLAW_PAIRING_CODE" --reason "not trusted" --json
 buddy hermes claw bridge validate-upstream --source ~/.openclaw --openclaw-bin "$(command -v openclaw)" --json
 buddy hermes claw bridge draft --message-id oc_1 --channel telegram --sender-id u_1 --text "..." --json
 buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t_1 --text "..." --json
 ```
 
-`attach`, `probe-ws`, `call-ws`, `nodes-pending`, `node-approve`,
+`attach`, `probe-ws`, `call-ws`, `nodes-pending`, `node-approve`, `node-reject`,
 `validate-upstream` et `send` sont dry-run par défaut. Pour contacter un daemon,
 il faut ajouter `--apply --yes --approved-by <name>`; les sorties et journaux
 restent redacted.
@@ -1178,16 +1179,17 @@ uniquement en live confirmé, et le log `ws-probe-log.jsonl` sans token ni paylo
 brut. Elle vérifie aussi l'équivalent gardé de `openclaw gateway call <method>` :
 `call-ws` n'enregistre que le nom de méthode, les clés de params, les types de
 frames et le statut RPC dans `ws-call-log.jsonl`. Le pairage de nodes est aussi
-couvert via `nodes.pending` et `nodes.approve` : les demandes en attente sont
-résumées avec `nodeId`/display name uniquement, et `node-approve --code ...`
-peut envoyer le code en live confirmé sans le recopier dans stdout ni dans les
+couvert via `nodes.pending`, `nodes.approve` et `nodes.reject` : les demandes en
+attente sont résumées avec `nodeId`/display name uniquement, et
+`node-approve --code ...` / `node-reject --code ... --reason ...` peuvent envoyer
+le code en live confirmé sans recopier le code ni la raison dans stdout ou les
 logs. La commande `validate-upstream` regroupe la certification read-only :
 présence du binaire `openclaw`, exécution live confirmée de
 `openclaw gateway status --json` avec résumé allowlisté, discovery, endpoint
 WebSocket, `node.json`, redaction, handshake `status` et `nodes.pending`.
 Elle est alignée sur la
 référence CLI OpenClaw officielle (`gateway status|probe|call`, `nodes
-pending|approve`) et fixture-testée localement; pour certifier un binaire
+pending|approve|reject`) et fixture-testée localement; pour certifier un binaire
 OpenClaw upstream réel, exécuter :
 
 ```bash

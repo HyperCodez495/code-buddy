@@ -567,6 +567,52 @@ describe('hermes claw migrate (real)', () => {
     }
   });
 
+  it('exposes `buddy hermes claw bridge node-reject --json` as dry-run by default', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_cli_node_reject_secret_fixture',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'node-reject',
+        '--source',
+        openclaw,
+        '--workspace-target',
+        target,
+        '--code',
+        'CLI-REJECT-CODE-SECRET',
+        '--reason',
+        'Reject reason secret',
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_websocket_call_result');
+      expect(payload.ok).toBe(true);
+      expect(payload.record.status).toBe('preview');
+      expect(payload.record.request.method).toBe('nodes.reject');
+      expect(payload.record.request.paramKeys).toEqual(['code', 'reason']);
+      expect(payload.record.safety.networkContacted).toBe(false);
+      expect(output).not.toContain('oc_cli_node_reject_secret_fixture');
+      expect(output).not.toContain('CLI-REJECT-CODE-SECRET');
+      expect(output).not.toContain('Reject reason secret');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
   it('exposes `buddy hermes claw bridge validate-upstream --json` as dry-run by default', async () => {
     fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
       wsUrl: 'ws://127.0.0.1:18789',

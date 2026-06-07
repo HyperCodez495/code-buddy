@@ -45,6 +45,7 @@ import {
   listOpenClawPendingNodes,
   prepareOpenClawFleetHandoffDraft,
   probeOpenClawGatewayWebSocket,
+  rejectOpenClawPendingNode,
   sendOpenClawResponse,
   validateOpenClawUpstreamCompatibility,
 } from '../../openclaw/gateway-bridge.js';
@@ -2459,6 +2460,51 @@ function registerHermesClawCommands(hermes: Command): void {
       const result = await approveOpenClawPendingNode({
         nodeId: options.nodeId,
         code: options.code,
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveCallConfirmed: options.apply === true && options.yes === true,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      }, {
+        home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: {
+          status: result.record.status,
+          endpoint: result.record.wsUrl,
+        },
+        recommendations: result.error ? [result.error] : undefined,
+      }));
+    });
+
+  bridge
+    .command('node-reject')
+    .description('Reject an OpenClaw node pairing request (--apply --yes required for live rejection)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--node-id <id>', 'pending OpenClaw node id to reject')
+    .option('--code <code>', 'pending OpenClaw pairing code to reject; never echoed in output')
+    .option('--reason <text>', 'optional rejection reason; never echoed in logs')
+    .option('--timeout-ms <ms>', 'WebSocket call timeout', '5000')
+    .option('--approved-by <name>', 'operator approving live WebSocket rejection')
+    .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
+    .option('--yes', 'confirm live rejection when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions & { nodeId?: string; code?: string; reason?: string }) => {
+      const timeoutMs = Number.parseInt(options.timeoutMs || '5000', 10);
+      const result = await rejectOpenClawPendingNode({
+        nodeId: options.nodeId,
+        code: options.code,
+        reason: options.reason,
         dryRun: options.apply !== true,
         approvedBy: options.approvedBy,
         liveCallConfirmed: options.apply === true && options.yes === true,

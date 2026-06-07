@@ -468,6 +468,12 @@ export interface OpenClawApproveNodeInput extends OpenClawNodePairingInput {
   code?: string;
 }
 
+export interface OpenClawRejectNodeInput extends OpenClawNodePairingInput {
+  nodeId?: string;
+  code?: string;
+  reason?: string;
+}
+
 export interface OpenClawUpstreamValidationInput {
   approvedBy?: string;
   dryRun?: boolean;
@@ -939,6 +945,24 @@ function safeNodeApprovalSummary(payload: unknown): Record<string, unknown> | un
       : undefined;
   return {
     ...(approved !== undefined ? { approved } : {}),
+    ...(nodeId ? { nodeId } : {}),
+  };
+}
+
+function safeNodeRejectionSummary(payload: unknown): Record<string, unknown> | undefined {
+  const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const rejected = typeof body.rejected === 'boolean'
+    ? body.rejected
+    : typeof body.ok === 'boolean'
+      ? body.ok
+      : undefined;
+  const nodeId = typeof body.nodeId === 'string'
+    ? body.nodeId
+    : typeof body.id === 'string'
+      ? body.id
+      : undefined;
+  return {
+    ...(rejected !== undefined ? { rejected } : {}),
     ...(nodeId ? { nodeId } : {}),
   };
 }
@@ -1980,6 +2004,31 @@ export async function approveOpenClawPendingNode(
   }, {
     ...options,
     summarizePayload: safeNodeApprovalSummary,
+  });
+}
+
+export async function rejectOpenClawPendingNode(
+  input: OpenClawRejectNodeInput,
+  options: OpenClawGatewayDiscoveryOptions & Pick<OpenClawWebSocketCallOptions, 'createId' | 'callLogPath'> = {},
+): Promise<OpenClawWebSocketCallResult> {
+  const nodeId = input.nodeId?.trim();
+  const code = input.code?.trim();
+  const reason = input.reason?.trim();
+  if (!nodeId && !code) throw new Error('nodeId or code is required to reject an OpenClaw node');
+  return await callOpenClawGatewayWebSocket({
+    method: 'nodes.reject',
+    params: {
+      ...(nodeId ? { nodeId } : {}),
+      ...(code ? { code } : {}),
+      ...(reason ? { reason } : {}),
+    },
+    approvedBy: input.approvedBy,
+    liveCallConfirmed: input.liveCallConfirmed,
+    dryRun: input.dryRun,
+    timeoutMs: input.timeoutMs,
+  }, {
+    ...options,
+    summarizePayload: safeNodeRejectionSummary,
   });
 }
 
