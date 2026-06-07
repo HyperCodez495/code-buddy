@@ -1156,13 +1156,15 @@ buddy hermes claw bridge status --json
 buddy hermes claw bridge attach --source ~/.openclaw --json
 buddy hermes claw bridge probe-ws --source ~/.openclaw --json
 buddy hermes claw bridge call-ws logs.tail --source ~/.openclaw --params '{"sinceMs":60000}' --json
+buddy hermes claw bridge nodes-pending --source ~/.openclaw --json
+buddy hermes claw bridge node-approve --source ~/.openclaw --code "$OPENCLAW_PAIRING_CODE" --json
 buddy hermes claw bridge draft --message-id oc_1 --channel telegram --sender-id u_1 --text "..." --json
 buddy hermes claw bridge send --message-id oc_1 --channel telegram --thread-id t_1 --text "..." --json
 ```
 
-`attach`, `probe-ws`, `call-ws` et `send` sont dry-run par défaut. Pour contacter
-un daemon, il faut ajouter `--apply --yes --approved-by <name>`; les sorties et
-journaux restent redacted.
+`attach`, `probe-ws`, `call-ws`, `nodes-pending`, `node-approve` et `send` sont
+dry-run par défaut. Pour contacter un daemon, il faut ajouter
+`--apply --yes --approved-by <name>`; les sorties et journaux restent redacted.
 
 La suite `tests/openclaw/gateway-bridge.test.ts` contient aussi un serveur HTTP
 local de contrat OpenClaw qui reçoit réellement `nodes/register` et
@@ -1173,11 +1175,14 @@ WebSocket locale pour le flux documenté par OpenClaw (`connect`, `hello-ok`,
 uniquement en live confirmé, et le log `ws-probe-log.jsonl` sans token ni payload
 brut. Elle vérifie aussi l'équivalent gardé de `openclaw gateway call <method>` :
 `call-ws` n'enregistre que le nom de méthode, les clés de params, les types de
-frames et le statut RPC dans `ws-call-log.jsonl`. Elle vérifie enfin la discovery
-`node.json` du node host (`nodeId`, display name, gateway host/port,
-capabilities) sans fuite du pairing token; il reste à répéter cette validation
-contre un binaire daemon OpenClaw upstream avant de parler de compatibilité
-complète.
+frames et le statut RPC dans `ws-call-log.jsonl`. Le pairage de nodes est aussi
+couvert via `nodes.pending` et `nodes.approve` : les demandes en attente sont
+résumées avec `nodeId`/display name uniquement, et `node-approve --code ...`
+peut envoyer le code en live confirmé sans le recopier dans stdout ni dans les
+logs. Elle vérifie enfin la discovery `node.json` du node host (`nodeId`, display
+name, gateway host/port, capabilities) sans fuite du pairing token; il reste à
+répéter cette validation contre un binaire daemon OpenClaw upstream avant de
+parler de compatibilité complète.
 
 Cowork expose le même contrat dans le Companion panel, section
 `OpenClaw bridge`. Les boutons `Preview attach`, `Draft handoff` et

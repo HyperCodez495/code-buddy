@@ -174,6 +174,7 @@ import {
 } from '../plugins/conflict-detection.js';
 export {
   attachOpenClawGateway,
+  approveOpenClawPendingNode,
   buildOpenClawNodeDescriptor,
   buildOpenClawResponsePreview,
   callOpenClawGatewayWebSocket,
@@ -184,6 +185,7 @@ export {
   getOpenClawResponseSendLogPath,
   getOpenClawWebSocketCallLogPath,
   getOpenClawWebSocketProbeLogPath,
+  listOpenClawPendingNodes,
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
   probeOpenClawGatewayWebSocket,
@@ -204,6 +206,8 @@ export {
   type OpenClawInboundMessage,
   type OpenClawNodeLockfile,
   type OpenClawNodeDescriptor,
+  type OpenClawNodePairingInput,
+  type OpenClawApproveNodeInput,
   type OpenClawResponseSendInput,
   type OpenClawResponseSendOptions,
   type OpenClawResponseSendRecord,

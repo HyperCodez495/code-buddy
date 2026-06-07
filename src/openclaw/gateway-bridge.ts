@@ -405,6 +405,7 @@ export interface OpenClawWebSocketCallInput {
 export interface OpenClawWebSocketCallOptions extends OpenClawGatewayDiscoveryOptions {
   createId?: () => string;
   callLogPath?: string;
+  summarizePayload?: (payload: unknown) => Record<string, unknown> | undefined;
 }
 
 export interface OpenClawWebSocketCallRecord {
@@ -428,6 +429,7 @@ export interface OpenClawWebSocketCallRecord {
     helloOk: boolean;
     rpcOk?: boolean;
     frameTypes: string[];
+    summary?: Record<string, unknown>;
     error?: string;
   };
   safety: {
@@ -447,6 +449,18 @@ export interface OpenClawWebSocketCallResult {
   record: OpenClawWebSocketCallRecord;
   discovery: OpenClawGatewayDiscovery;
   error?: string;
+}
+
+export interface OpenClawNodePairingInput {
+  approvedBy?: string;
+  liveCallConfirmed?: boolean;
+  dryRun?: boolean;
+  timeoutMs?: number;
+}
+
+export interface OpenClawApproveNodeInput extends OpenClawNodePairingInput {
+  nodeId?: string;
+  code?: string;
 }
 
 const OPENCLAW_BRIDGE_SCHEMA_VERSION = 1;
@@ -722,6 +736,65 @@ function frameType(frame: Record<string, unknown>): string {
       : typeof frame.kind === 'string'
         ? frame.kind
         : 'unknown';
+}
+
+function responsePayloadFromFrame(frame: Record<string, unknown>): unknown {
+  if ('payload' in frame) return frame.payload;
+  if ('result' in frame) return frame.result;
+  if ('data' in frame) return frame.data;
+  return undefined;
+}
+
+function safeNodePairingSummary(payload: unknown): Record<string, unknown> | undefined {
+  const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const rawNodes = Array.isArray(body.nodes)
+    ? body.nodes
+    : Array.isArray(body.pending)
+      ? body.pending
+      : Array.isArray(payload)
+        ? payload
+        : [];
+  const nodes = rawNodes
+    .filter((node): node is Record<string, unknown> => Boolean(node) && typeof node === 'object')
+    .map((node) => {
+      const nodeId = typeof node.nodeId === 'string'
+        ? node.nodeId
+        : typeof node.id === 'string'
+          ? node.id
+          : undefined;
+      const displayName = typeof node.displayName === 'string'
+        ? node.displayName
+        : typeof node.name === 'string'
+          ? node.name
+          : undefined;
+      return {
+        ...(nodeId ? { nodeId } : {}),
+        ...(displayName ? { displayName } : {}),
+        pairingCodePresent: typeof node.code === 'string' || typeof node.pairingCode === 'string',
+      };
+    });
+  return {
+    pendingCount: nodes.length,
+    nodes,
+  };
+}
+
+function safeNodeApprovalSummary(payload: unknown): Record<string, unknown> | undefined {
+  const body = payload && typeof payload === 'object' ? payload as Record<string, unknown> : {};
+  const approved = typeof body.approved === 'boolean'
+    ? body.approved
+    : typeof body.ok === 'boolean'
+      ? body.ok
+      : undefined;
+  const nodeId = typeof body.nodeId === 'string'
+    ? body.nodeId
+    : typeof body.id === 'string'
+      ? body.id
+      : undefined;
+  return {
+    ...(approved !== undefined ? { approved } : {}),
+    ...(nodeId ? { nodeId } : {}),
+  };
 }
 
 function methodSampleFromHello(frame: Record<string, unknown>): string[] {
@@ -1598,6 +1671,7 @@ export async function callOpenClawGatewayWebSocket(
     let helloOk = false;
     let resolved = false;
     let rpcOk: boolean | undefined;
+    let safePayloadSummary: Record<string, unknown> | undefined;
     const timeout = setTimeout(() => {
       finish(false, 'OpenClaw WebSocket call timed out');
     }, input.timeoutMs ?? 5_000);
@@ -1621,6 +1695,7 @@ export async function callOpenClawGatewayWebSocket(
           helloOk,
           ...(rpcOk !== undefined ? { rpcOk } : {}),
           frameTypes,
+          ...(safePayloadSummary ? { summary: safePayloadSummary } : {}),
           ...(error ? { error } : {}),
         },
         safety: {
@@ -1695,6 +1770,7 @@ export async function callOpenClawGatewayWebSocket(
           ? frame.ok
           : !(frame.error || frame.err);
         rpcOk = ok;
+        safePayloadSummary = options.summarizePayload?.(responsePayloadFromFrame(frame));
         finish(ok, ok ? undefined : `OpenClaw WebSocket call failed for ${method}`);
         return;
       }
@@ -1718,6 +1794,46 @@ export async function callOpenClawGatewayWebSocket(
         finish(false, `OpenClaw WebSocket closed before call completed (${code})${detail}`);
       }
     });
+  });
+}
+
+export async function listOpenClawPendingNodes(
+  input: OpenClawNodePairingInput = {},
+  options: OpenClawGatewayDiscoveryOptions & Pick<OpenClawWebSocketCallOptions, 'createId' | 'callLogPath'> = {},
+): Promise<OpenClawWebSocketCallResult> {
+  return await callOpenClawGatewayWebSocket({
+    method: 'nodes.pending',
+    params: {},
+    approvedBy: input.approvedBy,
+    liveCallConfirmed: input.liveCallConfirmed,
+    dryRun: input.dryRun,
+    timeoutMs: input.timeoutMs,
+  }, {
+    ...options,
+    summarizePayload: safeNodePairingSummary,
+  });
+}
+
+export async function approveOpenClawPendingNode(
+  input: OpenClawApproveNodeInput,
+  options: OpenClawGatewayDiscoveryOptions & Pick<OpenClawWebSocketCallOptions, 'createId' | 'callLogPath'> = {},
+): Promise<OpenClawWebSocketCallResult> {
+  const nodeId = input.nodeId?.trim();
+  const code = input.code?.trim();
+  if (!nodeId && !code) throw new Error('nodeId or code is required to approve an OpenClaw node');
+  return await callOpenClawGatewayWebSocket({
+    method: 'nodes.approve',
+    params: {
+      ...(nodeId ? { nodeId } : {}),
+      ...(code ? { code } : {}),
+    },
+    approvedBy: input.approvedBy,
+    liveCallConfirmed: input.liveCallConfirmed,
+    dryRun: input.dryRun,
+    timeoutMs: input.timeoutMs,
+  }, {
+    ...options,
+    summarizePayload: safeNodeApprovalSummary,
   });
 }
 

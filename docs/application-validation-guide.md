@@ -418,15 +418,21 @@ content secrets and gateway tokens out of `send-log.jsonl`. It now also runs a
 local HTTP OpenClaw daemon contract fixture for the live `nodes/register` and
 `messages/reply` paths, proving URL resolution, bearer-token headers, JSON
 payload shape, response summarization, and redacted logs without requiring a
-private upstream OpenClaw install.
+private upstream OpenClaw install. The WebSocket contract proof also covers
+`nodes.pending` and `nodes.approve`: pending pairing requests are summarized
+with node id/display name only, and approval can send a supplied pairing code in
+a confirmed live call while keeping that code, gateway tokens, and daemon
+payload secrets out of stdout and `ws-call-log.jsonl`.
 The Hermes CLI migration suite also validates the user-facing bridge commands:
 `buddy hermes claw bridge status --json`, `bridge probe-ws --json`,
-`bridge call-ws logs.tail --json`, `bridge draft --json`, and
-`bridge send --json` are machine-readable and keep tokens/message secrets out of
-stdout. The WebSocket probe/call surfaces are dry-run by default; live network
-use requires `--apply --yes --approved-by <name>`.
+`bridge call-ws logs.tail --json`, `bridge nodes-pending --json`,
+`bridge node-approve --code ... --json`, `bridge draft --json`, and
+`bridge send --json` are machine-readable and keep tokens, pairing codes, and
+message secrets out of stdout. The WebSocket probe/call/pairing surfaces are
+dry-run by default; live network use requires
+`--apply --yes --approved-by <name>`.
 
-Observed result: `12` companion gateway tests, `18` OpenClaw bridge tests, `15`
+Observed result: `12` companion gateway tests, `20` OpenClaw bridge tests, `17`
 Hermes/OpenClaw CLI migration tests, and `64` focused Cowork OpenClaw/gateway
 surface tests passed, plus the targeted Cowork Playwright OpenClaw bridge proof
 passed and wrote:
@@ -445,6 +451,9 @@ stores only frame types and response summaries, never tokens or raw payloads.
 The `call-ws` proof mirrors OpenClaw's low-level `gateway call <method>` pattern:
 it sends params only in a confirmed live call and records only method, param keys,
 frame types and RPC success in `ws-call-log.jsonl`.
+The node pairing proof mirrors OpenClaw's pending/approve workflow through
+`nodes-pending` and `node-approve`; it stores only redacted request metadata and
+safe response summaries, never pairing codes, tokens, or raw daemon payloads.
 The node-host discovery proof reads OpenClaw's documented `~/.openclaw/node.json`
 shape, reports node id/display name/gateway host/port/capabilities, and keeps
 the node pairing token out of CLI JSON and logs.

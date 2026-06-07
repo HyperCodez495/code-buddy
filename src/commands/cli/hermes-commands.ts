@@ -38,9 +38,11 @@ import {
 } from '../../agent/hermes-claw-migrate.js';
 import {
   attachOpenClawGateway,
+  approveOpenClawPendingNode,
   buildOpenClawNodeDescriptor,
   discoverOpenClawGateway,
   callOpenClawGatewayWebSocket,
+  listOpenClawPendingNodes,
   prepareOpenClawFleetHandoffDraft,
   probeOpenClawGatewayWebSocket,
   sendOpenClawResponse,
@@ -2373,6 +2375,88 @@ function registerHermesClawCommands(hermes: Command): void {
       const result = await callOpenClawGatewayWebSocket({
         method,
         params,
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveCallConfirmed: options.apply === true && options.yes === true,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      }, {
+        home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: {
+          status: result.record.status,
+          endpoint: result.record.wsUrl,
+        },
+        recommendations: result.error ? [result.error] : undefined,
+      }));
+    });
+
+  bridge
+    .command('nodes-pending')
+    .description('List pending OpenClaw node pairing requests (--apply --yes required for live call)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--timeout-ms <ms>', 'WebSocket call timeout', '5000')
+    .option('--approved-by <name>', 'operator approving live WebSocket call')
+    .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
+    .option('--yes', 'confirm live call when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions) => {
+      const timeoutMs = Number.parseInt(options.timeoutMs || '5000', 10);
+      const result = await listOpenClawPendingNodes({
+        dryRun: options.apply !== true,
+        approvedBy: options.approvedBy,
+        liveCallConfirmed: options.apply === true && options.yes === true,
+        timeoutMs: Number.isFinite(timeoutMs) && timeoutMs > 0 ? timeoutMs : 5000,
+      }, {
+        home: options.source,
+        nodeLockfilePath: options.nodeLockfile,
+        cwd: options.workspaceTarget,
+      });
+      if (options.json) {
+        console.log(stableJson(result));
+        return;
+      }
+      console.log(renderOpenClawBridgeResult({
+        kind: result.kind,
+        ok: result.ok,
+        discovery: result.discovery,
+        record: {
+          status: result.record.status,
+          endpoint: result.record.wsUrl,
+        },
+        recommendations: result.error ? [result.error] : undefined,
+      }));
+    });
+
+  bridge
+    .command('node-approve')
+    .description('Approve an OpenClaw node pairing request (--apply --yes required for live approval)')
+    .option('--source <path>', 'OpenClaw home (default: ~/.openclaw)')
+    .option('--node-lockfile <path>', 'OpenClaw node host lockfile (default: <source>/node.json)')
+    .option('--workspace-target <path>', 'workspace for bridge artifacts (default: cwd)')
+    .option('--node-id <id>', 'pending OpenClaw node id to approve')
+    .option('--code <code>', 'pending OpenClaw pairing code to approve; never echoed in output')
+    .option('--timeout-ms <ms>', 'WebSocket call timeout', '5000')
+    .option('--approved-by <name>', 'operator approving live WebSocket approval')
+    .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
+    .option('--yes', 'confirm live approval when used with --apply')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesClawBridgeOptions & { nodeId?: string; code?: string }) => {
+      const timeoutMs = Number.parseInt(options.timeoutMs || '5000', 10);
+      const result = await approveOpenClawPendingNode({
+        nodeId: options.nodeId,
+        code: options.code,
         dryRun: options.apply !== true,
         approvedBy: options.approvedBy,
         liveCallConfirmed: options.apply === true && options.yes === true,

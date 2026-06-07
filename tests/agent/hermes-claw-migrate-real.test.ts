@@ -483,4 +483,87 @@ describe('hermes claw migrate (real)', () => {
       logSpy.mockRestore();
     }
   });
+
+  it('exposes `buddy hermes claw bridge nodes-pending --json` as dry-run by default', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_cli_nodes_pending_secret_fixture',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'nodes-pending',
+        '--source',
+        openclaw,
+        '--workspace-target',
+        target,
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_websocket_call_result');
+      expect(payload.ok).toBe(true);
+      expect(payload.record.status).toBe('preview');
+      expect(payload.record.request.method).toBe('nodes.pending');
+      expect(payload.record.request.paramKeys).toEqual([]);
+      expect(payload.record.safety.networkContacted).toBe(false);
+      expect(output).not.toContain('oc_cli_nodes_pending_secret_fixture');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
+
+  it('exposes `buddy hermes claw bridge node-approve --json` as dry-run by default', async () => {
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: 'ws://127.0.0.1:18789',
+      token: 'oc_cli_node_approve_secret_fixture',
+    });
+    const logSpy = vi.spyOn(console, 'log').mockImplementation(() => {});
+    try {
+      const program = new Command();
+      program.exitOverride();
+      program.configureOutput({ writeOut: () => {}, writeErr: () => {} });
+      registerHermesCommands(program);
+
+      await program.parseAsync([
+        'node',
+        'test',
+        'hermes',
+        'claw',
+        'bridge',
+        'node-approve',
+        '--source',
+        openclaw,
+        '--workspace-target',
+        target,
+        '--code',
+        'CLI-PAIRING-CODE-SECRET',
+        '--json',
+      ]);
+
+      const output = logSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      const payload = JSON.parse(output);
+      expect(payload.kind).toBe('openclaw_websocket_call_result');
+      expect(payload.ok).toBe(true);
+      expect(payload.record.status).toBe('preview');
+      expect(payload.record.request.method).toBe('nodes.approve');
+      expect(payload.record.request.paramKeys).toEqual(['code']);
+      expect(payload.record.safety.networkContacted).toBe(false);
+      expect(output).not.toContain('oc_cli_node_approve_secret_fixture');
+      expect(output).not.toContain('CLI-PAIRING-CODE-SECRET');
+    } finally {
+      logSpy.mockRestore();
+    }
+  });
 });

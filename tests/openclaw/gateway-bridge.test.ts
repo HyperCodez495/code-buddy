@@ -5,10 +5,12 @@ import * as path from 'path';
 import { WebSocketServer } from 'ws';
 import {
   attachOpenClawGateway,
+  approveOpenClawPendingNode,
   buildOpenClawNodeDescriptor,
   buildOpenClawResponsePreview,
   callOpenClawGatewayWebSocket,
   discoverOpenClawGateway,
+  listOpenClawPendingNodes,
   mapOpenClawChannelToCodeBuddy,
   prepareOpenClawFleetHandoffDraft,
   probeOpenClawGatewayWebSocket,
@@ -82,7 +84,7 @@ async function startOpenClawWebSocketContractServer(): Promise<{
           gatewayId: 'openclaw-ws-contract-gateway',
           uptimeMs: 1234,
           features: {
-            methods: ['status', 'logs.tail', 'nodes.pending'],
+            methods: ['status', 'logs.tail', 'nodes.pending', 'nodes.approve'],
           },
         }));
         return;
@@ -106,6 +108,41 @@ async function startOpenClawWebSocketContractServer(): Promise<{
           ok: true,
           payload: {
             lines: ['secret=oc_ws_call_payload_secret'],
+          },
+        }));
+        return;
+      }
+      if (frame.type === 'req' && frame.method === 'nodes.pending') {
+        socket.send(JSON.stringify({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            nodes: [
+              {
+                nodeId: 'pending-node-1',
+                displayName: 'Dev Laptop',
+                code: 'PAIR-SECRET-123',
+                token: 'pending-node-token-secret',
+              },
+            ],
+          },
+        }));
+        return;
+      }
+      if (frame.type === 'req' && frame.method === 'nodes.approve') {
+        const params = frame.params && typeof frame.params === 'object'
+          ? frame.params as Record<string, unknown>
+          : {};
+        socket.send(JSON.stringify({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            approved: true,
+            nodeId: typeof params.nodeId === 'string' ? params.nodeId : 'approved-by-code-node',
+            code: 'APPROVE-CODE-ECHO-SECRET',
+            token: 'approve-token-secret',
           },
         }));
       }
@@ -462,8 +499,8 @@ describe('OpenClaw gateway bridge compatibility', () => {
           statusResponseOk: true,
           gatewayId: 'openclaw-ws-contract-gateway',
           uptimeMs: 1234,
-          methodCount: 3,
-          methodSample: ['logs.tail', 'nodes.pending', 'status'],
+          methodCount: 4,
+          methodSample: ['logs.tail', 'nodes.approve', 'nodes.pending', 'status'],
           frameTypes: ['hello-ok', 'res'],
         },
         safety: {
@@ -605,6 +642,123 @@ describe('OpenClaw gateway bridge compatibility', () => {
       expect(rawLog).not.toContain('oc_ws_call_secret_fixture');
       expect(rawLog).not.toContain('params-live-secret');
       expect(rawLog).not.toContain('oc_ws_call_payload_secret');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('summarizes pending OpenClaw node pairing requests without exposing codes or tokens', async () => {
+    const server = await startOpenClawWebSocketContractServer();
+    try {
+      await mkdir(openclawHome, { recursive: true });
+      await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+        wsUrl: server.wsUrl,
+        token: 'oc_pairing_pending_gateway_secret',
+      }, null, 2), 'utf8');
+
+      const result = await listOpenClawPendingNodes({
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+        timeoutMs: 2000,
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:23:00.000Z'),
+        createId: () => 'ws-nodes-pending-1',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record).toMatchObject({
+        id: 'ws-nodes-pending-1',
+        status: 'called',
+        request: {
+          method: 'nodes.pending',
+          paramKeys: [],
+        },
+        response: {
+          helloOk: true,
+          rpcOk: true,
+          summary: {
+            pendingCount: 1,
+            nodes: [
+              {
+                nodeId: 'pending-node-1',
+                displayName: 'Dev Laptop',
+                pairingCodePresent: true,
+              },
+            ],
+          },
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('PAIR-SECRET-123');
+      expect(JSON.stringify(result)).not.toContain('pending-node-token-secret');
+      const rawLog = await readFile(result.callLogPath, 'utf8');
+      expect(rawLog).toContain('ws-nodes-pending-1');
+      expect(rawLog).not.toContain('PAIR-SECRET-123');
+      expect(rawLog).not.toContain('pending-node-token-secret');
+      expect(rawLog).not.toContain('oc_pairing_pending_gateway_secret');
+    } finally {
+      await server.close();
+    }
+  });
+
+  it('approves OpenClaw node pairing requests without logging supplied codes', async () => {
+    const server = await startOpenClawWebSocketContractServer();
+    try {
+      await mkdir(openclawHome, { recursive: true });
+      await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+        wsUrl: server.wsUrl,
+        token: 'oc_pairing_approve_gateway_secret',
+      }, null, 2), 'utf8');
+
+      const result = await approveOpenClawPendingNode({
+        code: 'CLI-PAIRING-CODE-SECRET',
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+        timeoutMs: 2000,
+      }, {
+        home: openclawHome,
+        cwd: workspace,
+        now: new Date('2026-06-07T12:24:00.000Z'),
+        createId: () => 'ws-node-approve-1',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record).toMatchObject({
+        id: 'ws-node-approve-1',
+        status: 'called',
+        request: {
+          method: 'nodes.approve',
+          paramKeys: ['code'],
+        },
+        response: {
+          helloOk: true,
+          rpcOk: true,
+          summary: {
+            approved: true,
+            nodeId: 'approved-by-code-node',
+          },
+        },
+      });
+      expect(server.frames[1]).toMatchObject({
+        type: 'req',
+        id: 'ws-node-approve-1',
+        method: 'nodes.approve',
+        params: {
+          code: 'CLI-PAIRING-CODE-SECRET',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('CLI-PAIRING-CODE-SECRET');
+      expect(JSON.stringify(result)).not.toContain('APPROVE-CODE-ECHO-SECRET');
+      expect(JSON.stringify(result)).not.toContain('approve-token-secret');
+      const rawLog = await readFile(result.callLogPath, 'utf8');
+      expect(rawLog).toContain('ws-node-approve-1');
+      expect(rawLog).not.toContain('CLI-PAIRING-CODE-SECRET');
+      expect(rawLog).not.toContain('APPROVE-CODE-ECHO-SECRET');
+      expect(rawLog).not.toContain('approve-token-secret');
+      expect(rawLog).not.toContain('oc_pairing_approve_gateway_secret');
     } finally {
       await server.close();
     }
