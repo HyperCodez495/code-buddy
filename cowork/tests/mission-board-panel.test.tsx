@@ -8,7 +8,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { MissionBoardPanel } from '../src/renderer/components/MissionBoardPanel';
 import { useAppStore } from '../src/renderer/store';
-import type { CompanionMission } from '../src/renderer/types';
+import type { CompanionMission, MissionRuntime } from '../src/renderer/types';
+import { MissionStatus, SubTaskStatus } from '../src/main/missions/mission-types';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -52,6 +53,37 @@ function board(items: CompanionMission[]) {
   };
 }
 
+function runtimeMission(overrides: Partial<MissionRuntime> = {}): MissionRuntime {
+  return {
+    id: 'runtime-1',
+    title: 'Execute real mission runtime',
+    description: 'MissionBridge execution is streamed into the renderer store.',
+    status: MissionStatus.Running,
+    subTasks: [
+      {
+        id: 'research',
+        title: 'Research',
+        status: SubTaskStatus.Completed,
+        progress: 100,
+      },
+      {
+        id: 'wire-ui',
+        title: 'Wire UI',
+        status: SubTaskStatus.Running,
+        progress: 40,
+        dependsOn: ['research'],
+      },
+    ],
+    progress: 50,
+    createdAt: '2026-06-07T16:00:00.000Z',
+    updatedAt: '2026-06-07T16:10:00.000Z',
+    events: [],
+    costUsd: 0,
+    tokens: 0,
+    ...overrides,
+  };
+}
+
 async function flush() {
   await Promise.resolve();
   await Promise.resolve();
@@ -66,7 +98,14 @@ describe('MissionBoardPanel', () => {
   };
 
   beforeEach(() => {
-    useAppStore.setState({ workingDir: '/ws', activeSessionId: null, sessions: [] });
+    useAppStore.setState({
+      workingDir: '/ws',
+      activeSessionId: null,
+      sessions: [],
+      missionRuntime: {},
+      missionRuntimeEvents: {},
+      missionRuntimeHeartbeats: {},
+    });
   });
 
   afterEach(() => {
@@ -175,5 +214,51 @@ describe('MissionBoardPanel', () => {
       missionId: 'mission-1',
       status: 'in_progress',
     });
+  });
+
+  it('shows live MissionBridge runtime missions from the renderer store', async () => {
+    const liveMission = runtimeMission();
+    const listMissions = vi.fn().mockResolvedValue({ ok: true, board: board([]), items: [] });
+    const updateMission = vi.fn();
+    const syncMissions = vi.fn();
+    const runNextMission = vi.fn();
+
+    (
+      window as unknown as {
+        electronAPI?: {
+          companion: {
+            listMissions: typeof listMissions;
+            runNextMission: typeof runNextMission;
+            syncMissions: typeof syncMissions;
+            updateMission: typeof updateMission;
+          };
+        };
+      }
+    ).electronAPI = {
+      companion: { listMissions, runNextMission, syncMissions, updateMission },
+    };
+
+    useAppStore.setState({
+      missionRuntime: { [liveMission.id]: liveMission },
+      missionRuntimeHeartbeats: { [liveMission.id]: 'heartbeat-at' },
+    });
+
+    const target = container();
+    root = createRoot(target);
+    await act(async () => {
+      root?.render(React.createElement(MissionBoardPanel, { onClose: () => {} }));
+      await flush();
+    });
+
+    const runtimeSection = target.querySelector('[data-testid="mission-runtime-section"]');
+    const runtimeCard = target.querySelector('[data-testid="mission-runtime-card-runtime-1"]');
+
+    expect(runtimeSection?.textContent).toContain('Live runtime');
+    expect(runtimeCard?.textContent).toContain('Execute real mission runtime');
+    expect(runtimeCard?.textContent).toContain(MissionStatus.Running);
+    expect(runtimeCard?.textContent).toContain('50%');
+    expect(runtimeCard?.textContent).toContain('1/2 tasks');
+    expect(runtimeCard?.textContent).toContain('heartbeat heartbeat-at');
+    expect(listMissions).toHaveBeenCalledTimes(1);
   });
 });

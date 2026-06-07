@@ -15,6 +15,7 @@ import type {
   CompanionMissionBoard,
   CompanionMissionRunResult,
   CompanionMissionStatus,
+  MissionRuntime,
 } from '../types';
 
 interface MissionBoardPanelProps {
@@ -61,16 +62,30 @@ function missionProgress(missions: CompanionMission[]): number {
   return Math.round((completed / missions.length) * 100);
 }
 
+function sortRuntimeMissions(missions: MissionRuntime[]): MissionRuntime[] {
+  return [...missions].sort((a, b) => Date.parse(b.updatedAt) - Date.parse(a.updatedAt));
+}
+
+function runtimeTaskProgress(mission: MissionRuntime): { completed: number; total: number } {
+  return {
+    completed: mission.subTasks.filter((subTask) => subTask.status === 'completed').length,
+    total: mission.subTasks.length,
+  };
+}
+
 export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
   const workingDir = useAppStore((s) => s.workingDir);
   const activeSessionId = useAppStore((s) => s.activeSessionId);
   const sessions = useAppStore((s) => s.sessions);
+  const missionRuntime = useAppStore((s) => s.missionRuntime);
+  const missionRuntimeHeartbeats = useAppStore((s) => s.missionRuntimeHeartbeats);
   const cwd = useMemo(
     () => sessions.find((session) => session.id === activeSessionId)?.cwd ?? workingDir ?? undefined,
     [activeSessionId, sessions, workingDir]
   );
+  const runtimeMissions = useMemo(() => sortRuntimeMissions(Object.values(missionRuntime)), [missionRuntime]);
 
   const [board, setBoard] = useState<CompanionMissionBoard | null>(null);
   const [missions, setMissions] = useState<CompanionMission[]>([]);
@@ -267,6 +282,32 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
         ) : null}
 
         <div className="flex-1 overflow-auto px-4 py-3">
+          {runtimeMissions.length > 0 ? (
+            <section
+              className="mb-3 rounded border border-border-muted bg-surface/30 p-3"
+              data-testid="mission-runtime-section"
+            >
+              <div className="mb-2 flex items-center justify-between gap-2">
+                <h3 className="text-xs font-semibold uppercase tracking-wide text-text-muted">
+                  {t('missionBoard.runtime.title', 'Live runtime')}
+                </h3>
+                <span className="rounded bg-background px-1.5 py-0.5 text-[10px] text-text-muted">
+                  {t('missionBoard.runtime.count', '{{count}} tracked', { count: runtimeMissions.length })}
+                </span>
+              </div>
+              <div className="grid grid-cols-1 gap-2 md:grid-cols-2 xl:grid-cols-3">
+                {runtimeMissions.map((mission) => (
+                  <RuntimeMissionCard
+                    key={mission.id}
+                    heartbeat={missionRuntimeHeartbeats[mission.id]}
+                    mission={mission}
+                    t={t}
+                  />
+                ))}
+              </div>
+            </section>
+          ) : null}
+
           {loading ? (
             <div className="flex items-center gap-2 text-xs text-text-muted">
               <Loader2 size={14} className="animate-spin" />
@@ -315,6 +356,46 @@ export function MissionBoardPanel({ onClose }: MissionBoardPanelProps) {
         </div>
       </div>
     </div>
+  );
+}
+
+function RuntimeMissionCard({
+  heartbeat,
+  mission,
+  t,
+}: {
+  heartbeat?: string;
+  mission: MissionRuntime;
+  t: (key: string, fallback: string, options?: Record<string, unknown>) => string;
+}) {
+  const tasks = runtimeTaskProgress(mission);
+  return (
+    <article
+      className="rounded border border-border bg-background/70 p-3"
+      data-testid={`mission-runtime-card-${mission.id}`}
+    >
+      <div className="flex flex-wrap items-center gap-1.5">
+        <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] font-semibold text-text-muted">
+          {mission.status}
+        </span>
+        <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-text-muted">
+          {t('missionBoard.runtime.progress', '{{count}}%', { count: mission.progress })}
+        </span>
+        <span className="rounded bg-surface px-1.5 py-0.5 text-[10px] text-text-muted">
+          {t('missionBoard.runtime.tasks', '{{completed}}/{{total}} tasks', tasks)}
+        </span>
+      </div>
+      <h3 className="mt-2 line-clamp-2 text-xs font-semibold text-text-primary">{mission.title}</h3>
+      <p className="mt-1 line-clamp-2 text-xs text-text-secondary">{mission.description}</p>
+      <div className="mt-2 flex items-center gap-1 text-[10px] text-text-muted">
+        <Clock3 className="h-3 w-3" />
+        <span className="truncate">
+          {heartbeat
+            ? t('missionBoard.runtime.heartbeat', 'heartbeat {{value}}', { value: formatDate(heartbeat) })
+            : formatDate(mission.updatedAt)}
+        </span>
+      </div>
+    </article>
   );
 }
 
