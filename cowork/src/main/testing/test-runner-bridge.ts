@@ -73,14 +73,8 @@ interface CoreAutoTestManagerLike extends EventEmitter {
 }
 
 interface CoreAutoTestModule {
-  getAutoTestManager: (
-    workingDirectory?: string,
-    config?: Record<string, unknown>
-  ) => CoreAutoTestManagerLike;
-  initializeAutoTest: (
-    workingDirectory: string,
-    config?: Record<string, unknown>
-  ) => CoreAutoTestManagerLike;
+  getAutoTestManager: (workingDirectory?: string, config?: Record<string, unknown>) => CoreAutoTestManagerLike;
+  initializeAutoTest: (workingDirectory: string, config?: Record<string, unknown>) => CoreAutoTestManagerLike;
 }
 
 let cachedCoreModule: CoreAutoTestModule | null = null;
@@ -242,7 +236,10 @@ function addIfFilesExist(items: TestCatalogItem[], item: TestCatalogItem, filePa
   }
 }
 
-function parseFallbackCounts(output: string, code: number | null): Pick<TestResult, 'passed' | 'failed' | 'skipped' | 'total'> {
+function parseFallbackCounts(
+  output: string,
+  code: number | null
+): Pick<TestResult, 'passed' | 'failed' | 'skipped' | 'total'> {
   const ansiEscapePattern = new RegExp(`${String.fromCharCode(27)}\\[[0-?]*[ -/]*[@-~]`, 'g');
   const cleanOutput = output.replace(ansiEscapePattern, '');
   const testsSummaries = Array.from(
@@ -555,11 +552,14 @@ export class TestRunnerBridge extends EventEmitter {
           id: 'code-buddy-cowork-autonomous-mission-board-bundle',
           label: 'Cowork / autonomous mission board',
           group: 'Autonomy',
-          description: 'Mission Board renderer surface, shell navigation wiring and dry-run mission preparation guards',
+          description: 'Mission core DAG scheduling, heartbeat/recovery and Mission Board renderer surface guards',
           command: 'npx',
           args: [
             'vitest',
             'run',
+            'tests/mission-core.test.ts',
+            'tests/mission-heartbeat-recovery.test.ts',
+            'tests/mission-scheduler.test.ts',
             'tests/mission-board-panel.test.tsx',
             'tests/mission-board-surface.test.ts',
             '--reporter=verbose',
@@ -570,6 +570,9 @@ export class TestRunnerBridge extends EventEmitter {
           timeoutMs: 120_000,
         },
         [
+          path.join(coworkDir, 'tests', 'mission-core.test.ts'),
+          path.join(coworkDir, 'tests', 'mission-heartbeat-recovery.test.ts'),
+          path.join(coworkDir, 'tests', 'mission-scheduler.test.ts'),
           path.join(coworkDir, 'tests', 'mission-board-panel.test.tsx'),
           path.join(coworkDir, 'tests', 'mission-board-surface.test.ts'),
         ]
@@ -1303,8 +1306,7 @@ export class TestRunnerBridge extends EventEmitter {
           id: 'code-buddy-hermes-built-cli-real-smoke',
           label: 'Hermes / built CLI real smoke',
           group: 'Hermes',
-          description:
-            'Rebuilds Code Buddy, then runs the compiled dist CLI for Hermes tool parity and doctor status',
+          description: 'Rebuilds Code Buddy, then runs the compiled dist CLI for Hermes tool parity and doctor status',
           command: 'node',
           args: ['scripts/hermes-built-cli-smoke.mjs'],
           cwd: workspace,
@@ -1320,8 +1322,7 @@ export class TestRunnerBridge extends EventEmitter {
           id: 'code-buddy-hermes-core-workspace-real-smoke',
           label: 'Hermes / core workspace real smoke',
           group: 'Hermes',
-          description:
-            'Runs real Hermes core aliases, send_message outbox, and Kanban workspace persistence smokes',
+          description: 'Runs real Hermes core aliases, send_message outbox, and Kanban workspace persistence smokes',
           command: 'npm',
           args: [
             'test',
@@ -1606,8 +1607,7 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-server-provider-error-status-bundle',
         label: 'Server / provider error status bundle',
         group: 'Server',
-        description:
-          'Routes HTTP chat: provider 429/503, OpenAI-compatible errors et rate-limit serveur distinct',
+        description: 'Routes HTTP chat: provider 429/503, OpenAI-compatible errors et rate-limit serveur distinct',
         command: 'npm',
         args: ['test', '--', 'tests/server/chat-route-provider-error.test.ts', '--run'],
         cwd: workspace,
@@ -1625,13 +1625,7 @@ export class TestRunnerBridge extends EventEmitter {
         group: 'Fleet',
         description: 'peer.tool.invoke: allowlist, fleetSafe, workspace root, scopes, PolicyEngine et audit',
         command: 'npm',
-        args: [
-          'test',
-          '--',
-          'tests/server/peer-tool-bridge.test.ts',
-          'tests/fleet/peer-tool-bridge.test.ts',
-          '--run',
-        ],
+        args: ['test', '--', 'tests/server/peer-tool-bridge.test.ts', 'tests/fleet/peer-tool-bridge.test.ts', '--run'],
         cwd: workspace,
         kind: 'integration',
         safeToRun: true,
@@ -1803,7 +1797,8 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-backend-deterministic-bundle',
         label: 'Backend / deterministic integration bundle',
         group: 'Integration',
-        description: 'CLI headless, serveur HTTP local, Fleet loopback/mesh, peer tools et MCP reel sans provider externe',
+        description:
+          'CLI headless, serveur HTTP local, Fleet loopback/mesh, peer tools et MCP reel sans provider externe',
         command: 'npm',
         args: [
           'test',
@@ -1953,19 +1948,9 @@ export class TestRunnerBridge extends EventEmitter {
       [
         path.join(workspace, 'tests', 'observability', 'mobile-supervision-snapshot.test.ts'),
         path.join(workspace, 'tests', 'observability', 'mobile-supervision-pairing-state.test.ts'),
-        path.join(
-          workspace,
-          'tests',
-          'observability',
-          'mobile-supervision-pairing-acceptance-plan.test.ts'
-        ),
+        path.join(workspace, 'tests', 'observability', 'mobile-supervision-pairing-acceptance-plan.test.ts'),
         path.join(workspace, 'tests', 'observability', 'mobile-supervision-gateway-policy.test.ts'),
-        path.join(
-          workspace,
-          'tests',
-          'observability',
-          'mobile-supervision-gateway-listener-shell.test.ts'
-        ),
+        path.join(workspace, 'tests', 'observability', 'mobile-supervision-gateway-listener-shell.test.ts'),
         path.join(workspace, 'tests', 'observability', 'mobile-supervision-gateway-contract.test.ts'),
         path.join(workspace, 'tests', 'observability', 'mobile-supervision-approval-queue.test.ts'),
         path.join(workspace, 'tests', 'server', 'mobile.test.ts'),
@@ -1977,8 +1962,7 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-device-transport-adapters-bundle',
         label: 'Device / transport adapters bundle',
         group: 'Remote',
-        description:
-          'Device transports SSH/ADB/local, transport helpers and Tailscale dashboard node modeling',
+        description: 'Device transports SSH/ADB/local, transport helpers and Tailscale dashboard node modeling',
         command: 'npm',
         args: [
           'test',
@@ -2379,8 +2363,7 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-provider-resilience-error-bundle',
         label: 'Providers / resilience error bundle',
         group: 'Providers',
-        description:
-          'Stream retry, rate limit, provider errors, client recovery, backoff et affichage des limites',
+        description: 'Stream retry, rate limit, provider errors, client recovery, backoff et affichage des limites',
         command: 'npm',
         args: [
           'test',
@@ -2647,8 +2630,7 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-companion-core-behaviour-bundle',
         label: 'Companion / core behaviour bundle',
         group: 'Companion',
-        description:
-          'Companion camera, percepts, missions, safety ledger, self-evaluation, privacy et skill curator',
+        description: 'Companion camera, percepts, missions, safety ledger, self-evaluation, privacy et skill curator',
         command: 'npm',
         args: [
           'test',
@@ -2751,8 +2733,7 @@ export class TestRunnerBridge extends EventEmitter {
         id: 'code-buddy-scheduler-hooks-notifications-bundle',
         label: 'Automation / scheduler hooks notifications bundle',
         group: 'Automation',
-        description:
-          'Scheduler, cron prechecks, hooks lifecycle/input/tool lanes, webhooks, triggers et notifications',
+        description: 'Scheduler, cron prechecks, hooks lifecycle/input/tool lanes, webhooks, triggers et notifications',
         command: 'npm',
         args: [
           'test',
@@ -3450,9 +3431,8 @@ export class TestRunnerBridge extends EventEmitter {
     if (!this.coreManager) return null;
     try {
       this.emit('test.start', { files });
-      const result = files.length === 0
-        ? await this.coreManager.runAllTests()
-        : await this.coreManager.runTestFiles(files);
+      const result =
+        files.length === 0 ? await this.coreManager.runAllTests() : await this.coreManager.runTestFiles(files);
       this.lastResult = result;
       this.emit('test.complete', result);
       return result;
@@ -3758,16 +3738,18 @@ export class TestRunnerBridge extends EventEmitter {
 
   async run(files: string[] = []): Promise<TestResult> {
     if (this.activeProcess) {
-      return this.lastResult ?? {
-        success: false,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        total: 0,
-        duration: 0,
-        framework: 'none',
-        tests: [],
-      };
+      return (
+        this.lastResult ?? {
+          success: false,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          total: 0,
+          duration: 0,
+          framework: 'none',
+          tests: [],
+        }
+      );
     }
     if (!this.coreManager) {
       await this.detectFramework();
@@ -3783,25 +3765,25 @@ export class TestRunnerBridge extends EventEmitter {
       return this.run();
     }
     const failingFiles = Array.from(
-      new Set(
-        last.tests.filter((t) => t.status === 'failed' && t.file).map((t) => t.file as string)
-      )
+      new Set(last.tests.filter((t) => t.status === 'failed' && t.file).map((t) => t.file as string))
     );
     return this.run(failingFiles);
   }
 
   async runCatalogItem(id: string): Promise<TestResult> {
     if (this.activeProcess) {
-      return this.lastResult ?? {
-        success: false,
-        passed: 0,
-        failed: 0,
-        skipped: 0,
-        total: 0,
-        duration: 0,
-        framework: 'none',
-        tests: [],
-      };
+      return (
+        this.lastResult ?? {
+          success: false,
+          passed: 0,
+          failed: 0,
+          skipped: 0,
+          total: 0,
+          duration: 0,
+          framework: 'none',
+          tests: [],
+        }
+      );
     }
     const item = this.getCatalog().find((entry) => entry.id === id);
     if (!item) {

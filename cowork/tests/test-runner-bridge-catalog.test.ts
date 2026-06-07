@@ -68,7 +68,8 @@ function listRealTestFiles(root: string, relativeDir = 'tests'): string[] {
 
 function catalogTestFileArgs(catalog: Array<{ args: string[] }>): Set<string> {
   return new Set(
-    catalog.flatMap((item) => item.args)
+    catalog
+      .flatMap((item) => item.args)
       .filter((arg) => arg.startsWith('tests/') && arg.endsWith('.test.ts'))
       .map((arg) => arg.replace(/\\/g, '/'))
   );
@@ -195,6 +196,9 @@ function makeWorkspace(): string {
   writeFileSync(path.join(coworkDir, 'tests', 'remote-control-panel-claude-layout.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'slash-command-bridge-remote.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'open-cowork-demo-parity.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'mission-core.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'mission-heartbeat-recovery.test.ts'), '');
+  writeFileSync(path.join(coworkDir, 'tests', 'mission-scheduler.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'mission-board-panel.test.tsx'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'mission-board-surface.test.ts'), '');
   writeFileSync(path.join(coworkDir, 'tests', 'desktop-snapshot-panel.test.tsx'), '');
@@ -424,15 +428,9 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'observability', 'golden-workflow-evals.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-snapshot.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-pairing-state.test.ts'), '');
-  writeFileSync(
-    path.join(root, 'tests', 'observability', 'mobile-supervision-pairing-acceptance-plan.test.ts'),
-    ''
-  );
+  writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-pairing-acceptance-plan.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-gateway-policy.test.ts'), '');
-  writeFileSync(
-    path.join(root, 'tests', 'observability', 'mobile-supervision-gateway-listener-shell.test.ts'),
-    ''
-  );
+  writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-gateway-listener-shell.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-gateway-contract.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'observability', 'mobile-supervision-approval-queue.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'commands', 'run-commands.test.ts'), '');
@@ -1054,7 +1052,13 @@ describe('TestRunnerBridge catalog', () => {
       timeoutMs: 120_000,
     });
     expect(catalog.find((item) => item.label === 'Cowork / autonomous mission board')?.args).toEqual(
-      expect.arrayContaining(['tests/mission-board-panel.test.tsx', 'tests/mission-board-surface.test.ts'])
+      expect.arrayContaining([
+        'tests/mission-core.test.ts',
+        'tests/mission-heartbeat-recovery.test.ts',
+        'tests/mission-scheduler.test.ts',
+        'tests/mission-board-panel.test.tsx',
+        'tests/mission-board-surface.test.ts',
+      ])
     );
     expect(catalog.find((item) => item.label === 'Cowork / desktop snapshot')).toMatchObject({
       kind: 'integration',
@@ -1062,10 +1066,7 @@ describe('TestRunnerBridge catalog', () => {
       timeoutMs: 120_000,
     });
     expect(catalog.find((item) => item.label === 'Cowork / desktop snapshot')?.args).toEqual(
-      expect.arrayContaining([
-        'tests/desktop-snapshot-panel.test.tsx',
-        'tests/desktop-snapshot-surface.test.ts',
-      ])
+      expect.arrayContaining(['tests/desktop-snapshot-panel.test.tsx', 'tests/desktop-snapshot-surface.test.ts'])
     );
     expect(catalog.find((item) => item.label === 'Cowork / sandbox executor bundle')).toMatchObject({
       kind: 'integration',
@@ -1461,8 +1462,9 @@ describe('TestRunnerBridge catalog', () => {
       env: { CODEBUDDY_REAL_COMPUTER_USE: '1' },
     });
 
-    const uncatalogedRealTests = listRealTestFiles(workspace)
-      .filter((testPath) => !catalogTestFileArgs(catalog).has(testPath));
+    const uncatalogedRealTests = listRealTestFiles(workspace).filter(
+      (testPath) => !catalogTestFileArgs(catalog).has(testPath)
+    );
     expect(uncatalogedRealTests).toEqual([]);
   });
 
@@ -1609,7 +1611,7 @@ describe('TestRunnerBridge catalog', () => {
         channel: 'cowork',
         source: 'test-runner',
         origin: 'cowork-test-runner-panel',
-      }),
+      })
     );
     expect(store.emit).toHaveBeenCalledWith(
       'run_catalog_fail',
@@ -1619,17 +1621,14 @@ describe('TestRunnerBridge catalog', () => {
           exitCode: 7,
           success: false,
         }),
-      }),
+      })
     );
     expect(store.saveArtifact).toHaveBeenCalledWith(
       'run_catalog_fail',
       'test-output.txt',
-      expect.stringContaining('QA_FAIL_MARKER'),
+      expect.stringContaining('QA_FAIL_MARKER')
     );
-    expect(store.updateMetrics).toHaveBeenCalledWith(
-      'run_catalog_fail',
-      expect.objectContaining({ toolCallCount: 1 }),
-    );
+    expect(store.updateMetrics).toHaveBeenCalledWith('run_catalog_fail', expect.objectContaining({ toolCallCount: 1 }));
     expect(store.endRun).toHaveBeenCalledWith('run_catalog_fail', 'failed');
   });
 });
