@@ -397,6 +397,64 @@ describe('MCP Integration', () => {
       const selector = getToolSelector();
       expect(selector.registerMCPTool).toHaveBeenCalled();
     });
+
+    // Regression: in headless (`buddy --print`) mode there is no "next turn"
+    // to recover in and RAG tool selection is cached after the first round, so
+    // the lazy MCP init must be awaited before tools are returned. Otherwise
+    // MCP tools (mcp__*) lose the race against the first tool-selection pass and
+    // are absent for the entire run.
+    describe('headless MCP init race', () => {
+      const prevHeadless = process.env.CODEBUDDY_HEADLESS;
+      afterEach(() => {
+        if (prevHeadless === undefined) delete process.env.CODEBUDDY_HEADLESS;
+        else process.env.CODEBUDDY_HEADLESS = prevHeadless;
+      });
+
+      it('awaits MCP server initialization when CODEBUDDY_HEADLESS=true', async () => {
+        process.env.CODEBUDDY_HEADLESS = 'true';
+        const manager = getMCPManager();
+
+        let initialized = false;
+        (manager.ensureServersInitialized as jest.Mock).mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              // Resolve on a later microtask/macrotask tick so a non-awaited
+              // caller would observe `initialized === false`.
+              setTimeout(() => {
+                initialized = true;
+                resolve();
+              }, 0);
+            }),
+        );
+
+        await getAllCodeBuddyTools();
+
+        // If the call awaited init, the flag must be set by the time it returns.
+        expect(initialized).toBe(true);
+      });
+
+      it('does not block on MCP init when not headless (fire-and-forget)', async () => {
+        delete process.env.CODEBUDDY_HEADLESS;
+        const manager = getMCPManager();
+
+        let initialized = false;
+        (manager.ensureServersInitialized as jest.Mock).mockImplementation(
+          () =>
+            new Promise<void>((resolve) => {
+              setTimeout(() => {
+                initialized = true;
+                resolve();
+              }, 0);
+            }),
+        );
+
+        await getAllCodeBuddyTools();
+
+        // Interactive mode must not block on a slow MCP server: the deferred
+        // init has not resolved yet when tools are returned.
+        expect(initialized).toBe(false);
+      });
+    });
   });
 });
 

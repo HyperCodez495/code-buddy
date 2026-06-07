@@ -435,13 +435,30 @@ export async function getAllCodeBuddyTools(): Promise<CodeBuddyTool[]> {
   initializeToolRegistry();
 
   const manager = getMCPManager();
-  // Try to initialize servers if not already done, but don't block
-  manager.ensureServersInitialized().catch((err) => {
-    // Log but don't block - MCP servers are optional
+  // Initialize MCP servers if not already done.
+  //
+  // In interactive mode this stays fire-and-forget: a hung/slow MCP server must
+  // never block a turn, and the agent self-heals across turns (a missed server
+  // simply shows up on the next round).
+  //
+  // In headless / one-shot mode (`buddy --print`) there is no "next round" to
+  // recover in, and RAG tool selection is cached after the first round — so if
+  // the lazy connection loses the race against the first selection, the MCP
+  // tools are cached out for the entire run and the model never sees them. We
+  // therefore await initialization here so MCP tools are present before the
+  // first tool-selection pass. Note: this is the *lazy* init path and is
+  // intentionally NOT gated by CODEBUDDY_DISABLE_MCP — that flag only skips the
+  // *eager* constructor init for startup speed; the await below is what makes
+  // the lazy init win the race when the tools are actually needed.
+  const initPromise = manager.ensureServersInitialized().catch((err) => {
+    // Log but don't fail - MCP servers are optional
     if (process.env.DEBUG) {
       logger.warn(`MCP initialization warning: ${err.message || String(err)}`);
     }
   });
+  if (process.env.CODEBUDDY_HEADLESS === 'true') {
+    await initPromise;
+  }
 
   const registry = getToolRegistry();
   const builtInTools = registry.getEnabledTools();
