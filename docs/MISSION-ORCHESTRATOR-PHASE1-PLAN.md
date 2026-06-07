@@ -225,4 +225,28 @@ The core deliberately makes **no** LLM calls and **no** bridge calls. The
       cases + store slice.
 - [ ] `MissionBoard.tsx` + nav registration.
 - [ ] Decomposition prompt + bridge dispatch + progress mapping.
-- [ ] Heartbeat scheduler + resume-on-boot.
+- [x] Heartbeat selection + boot-recovery **core logic** (pure, tested) — see below.
+
+## Heartbeat & Recovery (implemented — pure core)
+
+Two additive, pure modules (no Electron/IPC/timers; unit-tested in
+`cowork/tests/mission-heartbeat-recovery.test.ts`, 8 tests):
+
+- `cowork/src/main/missions/mission-recovery.ts` — §2.4 boot recovery.
+  `planBootRecovery(missions)` (pure) flags missions persisted as
+  `planning`/`running` (live in-memory execution lost on restart) and
+  `applyBootRecovery(manager)` parks them in `paused` with a `boot-recovery`
+  audit event. Idempotent across restarts; leaves terminal / already-parked
+  (`paused`/`waiting_approval`) missions untouched.
+- `cowork/src/main/missions/mission-heartbeat.ts` — §2.3 proactive heartbeat.
+  `selectDueMissions(missions, now, intervalMs)` (pure) picks heartbeat-active
+  missions whose last `heartbeat` event (derived from the event log — no schema
+  change) is older than the interval. `MissionHeartbeat.tick(now)` records a
+  `heartbeat` event + emits `mission:heartbeat` for each due mission. **No real
+  timer** — an external scheduler (the IPC/Electron layer, still TODO) calls
+  `tick()` on a cadence, keeping the logic deterministic/testable.
+
+**Remaining wiring** (needs the running app): call `applyBootRecovery(manager)`
+after `manager.init()` at Cowork boot; drive `MissionHeartbeat.tick()` from a
+`setInterval`/scheduler in the main process; surface `mission:heartbeat` to the
+Mission Board via the existing `server-event` channel.
