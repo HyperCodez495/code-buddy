@@ -16,7 +16,9 @@ vitest):
 | `cowork/src/main/missions/mission-types.ts` | `Mission`, `SubTask`, `MissionEvent`, `MissionStatus`/`SubTaskStatus` enums, injectable `Clock`/`IdFactory`, `isTerminalStatus()`. ISO-8601 string timestamps via an injected clock — never `Date.now()` at module scope. |
 | `cowork/src/main/missions/mission-store.ts` | JSON persistence, one file per mission under a configurable base dir (default `~/.codebuddy/missions/`). Atomic write = unique-temp + rename (survives concurrent saves). `save/load/list/loadAll/remove`. Injectable `baseDir` + `fs` + `tempSuffix`. No `electron` import. |
 | `cowork/src/main/missions/mission-manager.ts` | `EventEmitter` over the store: `init/createMission/getMission/listMissions/addSubTask/updateSubTaskStatus/recomputeProgress/updateStatus/recordEvent/cancel/addUsage/removeMission`. Emits `mission:created` \| `mission:updated` \| `mission:event`. Injectable clock + id factory. |
+| `cowork/src/main/missions/mission-scheduler.ts` | Pure DAG scheduler. `readySubTasks(mission)` returns pending sub-tasks whose dependencies are satisfied, with blocker diagnostics for the future Mission Board. No execution, timers, IPC or Electron. |
 | `cowork/tests/mission-core.test.ts` | 18 vitest tests: create→persist→reload from a fresh store, progress recompute (incl. zero-subtask), status transitions + reload, cancel, event-log append + emitter signals, atomic-write under 50 concurrent saves, corrupt-file tolerance. |
+| `cowork/tests/mission-scheduler.test.ts` | Scheduler tests for ready roots, completed dependencies, blocked missing/running/failed/skipped dependencies, non-schedulable mission statuses, blocker diagnostics and the optional skipped-as-satisfied mode. |
 
 `recomputeProgress` = `round(completed / total * 100)`, zero sub-tasks → `0`.
 
@@ -225,6 +227,7 @@ The core deliberately makes **no** LLM calls and **no** bridge calls. The
       cases + store slice.
 - [ ] `MissionBoard.tsx` + nav registration.
 - [ ] Decomposition prompt + bridge dispatch + progress mapping.
+- [x] Pure DAG scheduler for ready sub-tasks (`readySubTasks`) — no execution side effects.
 - [x] Heartbeat selection + boot-recovery **core logic** (pure, tested) — see below.
 
 ## Heartbeat & Recovery (implemented — pure core)

@@ -4,8 +4,10 @@
  * One file per mission under a configurable base directory (default
  * `~/.codebuddy/missions/`). Writes are ATOMIC (write to a unique temp file
  * then rename over the target) so a crash or a concurrent save can never
- * leave a half-written, corrupt JSON file on disk. Missions survive a Cowork
- * restart because `loadAll()` rehydrates from disk.
+ * leave a half-written, corrupt JSON file on disk. On Windows, concurrent
+ * replacement can reject the overwrite with EPERM, so the store retries with
+ * a remove+rename fallback for that platform-specific race. Missions survive
+ * a Cowork restart because `loadAll()` rehydrates from disk.
  *
  * Design notes (important for testability):
  *   - PURE TypeScript: no Electron, no better-sqlite3, no IPC. The base dir
@@ -89,7 +91,7 @@ export class MissionStore {
     const json = JSON.stringify(mission, null, 2);
     await this.fs.writeFile(tmp, json, 'utf-8');
     try {
-      await this.fs.rename(tmp, target);
+      await renameReplacing(this.fs, tmp, target);
     } catch (err) {
       // Best-effort cleanup of the orphaned temp file on rename failure.
       await this.fs.rm(tmp, { force: true }).catch(() => undefined);
@@ -159,4 +161,28 @@ function sanitizeId(id: string): string {
 
 function isNotFound(err: unknown): boolean {
   return (err as { code?: string } | null)?.code === 'ENOENT';
+}
+
+async function renameReplacing(fs: MissionFs, from: string, to: string): Promise<void> {
+  const maxAttempts = process.platform === 'win32' ? 5 : 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (err) {
+      if (!isWindowsReplaceRace(err) || attempt === maxAttempts - 1) throw err;
+      await fs.rm(to, { force: true }).catch(() => undefined);
+      await delay(5 * (attempt + 1));
+    }
+  }
+}
+
+function isWindowsReplaceRace(err: unknown): boolean {
+  if (process.platform !== 'win32') return false;
+  const code = (err as { code?: string } | null)?.code;
+  return code === 'EPERM' || code === 'EACCES' || code === 'EEXIST';
+}
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }
