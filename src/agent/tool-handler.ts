@@ -430,7 +430,7 @@ export class ToolHandler {
             logger.info(`Tool blocked by trust folder: ${toolName}`, { path: targetPath });
             return {
               success: false,
-              error: `Path "${targetPath}" is not in a trusted directory. Use /trust to add it.`,
+              error: `Path "${targetPath}" is not in a trusted directory. Run Code Buddy from within that directory, or add it to ~/.codebuddy/trusted-folders.json (the "folders" array).`,
             };
           }
         }

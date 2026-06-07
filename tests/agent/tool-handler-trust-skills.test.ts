@@ -137,4 +137,25 @@ describe('ToolHandler trust gate — read-only skills exception', () => {
     expect(result.success).toBe(false);
     expect(result.error ?? '').toContain(TRUST_ERROR);
   });
+
+  it('points the user at a REAL recovery path (no dead-end /trust command)', async () => {
+    const handler = makeHandler();
+    const result = await handler.executeTool({
+      id: 'c5',
+      type: 'function',
+      function: {
+        name: 'view_file',
+        arguments: JSON.stringify({ path: '/etc/passwd' }),
+      },
+    });
+    expect(result.success).toBe(false);
+    const error = result.error ?? '';
+    // The old message sent users to a `/trust` slash command that does not
+    // exist anywhere in the codebase. The new message must name working paths
+    // and must NOT direct the user to that dead-end command.
+    expect(error).not.toContain('Use /trust');
+    expect(error).not.toContain('/trust to');
+    expect(error).toContain('trusted-folders.json');
+    expect(error).toContain('Run Code Buddy from within that directory');
+  });
 });
