@@ -72,7 +72,9 @@ export const BLOCKED_PATTERNS: RegExp[] = [
 
   // Unicode/special character bypass attempts
   // eslint-disable-next-line no-control-regex
-  /[\u0000-\u001f]/,                     // Control characters (except common whitespace handled separately)
+  // Tab/LF/CR intentionally EXCLUDED so legitimate multi-line commands
+  // (heredocs, scripts) pass; mirrors BLOCKED_CONTROL_CHARS below.
+  /[\u0000-\u0008\u000b\u000c\u000e-\u001f]/,
   /[\u007f-\u009f]/,                     // Delete and C1 control codes
   /[\u200b-\u200f]/,                     // Zero-width and directional chars
   /[\u2028\u2029]/,                      // Line/paragraph separators
