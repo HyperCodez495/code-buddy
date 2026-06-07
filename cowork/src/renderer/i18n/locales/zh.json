@@ -2329,6 +2329,8 @@
     "capturing": "捕获中...",
     "copyContext": "复制上下文",
     "copied": "已复制",
+    "prepareAction": "准备操作",
+    "preparedAction": "提示已就绪",
     "imageAlt": "带标注的桌面快照",
     "empty": "尚未捕获快照",
     "refs": "引用",

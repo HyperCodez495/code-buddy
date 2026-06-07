@@ -6,6 +6,8 @@ const appPath = path.resolve(process.cwd(), 'src/renderer/App.tsx');
 const shellNavigationPath = path.resolve(process.cwd(), 'src/renderer/components/ShellNavigation.tsx');
 const storePath = path.resolve(process.cwd(), 'src/renderer/store/index.ts');
 const panelPath = path.resolve(process.cwd(), 'src/renderer/components/DesktopSnapshotPanel.tsx');
+const chatViewPath = path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx');
+const chatComposerEventsPath = path.resolve(process.cwd(), 'src/renderer/utils/chat-composer-events.ts');
 const preloadPath = path.resolve(process.cwd(), 'src/preload/index.ts');
 const mainPath = path.resolve(process.cwd(), 'src/main/index.ts');
 const ipcPath = path.resolve(process.cwd(), 'src/main/ipc/desktop-snapshot-ipc.ts');
@@ -47,5 +49,20 @@ describe('desktop snapshot surface', () => {
     expect(panelSource).toContain('data-testid="desktop-snapshot-panel"');
     expect(panelSource).not.toContain('guiControl(');
     expect(panelSource).not.toContain('desktopSnapshot.click');
+  });
+
+  it('routes snapshot context into the chat composer through a passive event', () => {
+    const panelSource = fs.readFileSync(panelPath, 'utf8');
+    const chatSource = fs.readFileSync(chatViewPath, 'utf8');
+    const eventsSource = fs.readFileSync(chatComposerEventsPath, 'utf8');
+
+    expect(eventsSource).toContain("CHAT_COMPOSER_INSERT_EVENT = 'chat:composer-insert'");
+    expect(panelSource).toContain('buildDesktopSnapshotActionPrompt');
+    expect(panelSource).toContain('dispatchChatComposerInsert(prompt)');
+    expect(panelSource).toContain('data-testid="desktop-snapshot-prepare-action"');
+    expect(chatSource).toContain('CHAT_COMPOSER_INSERT_EVENT');
+    expect(chatSource).toContain('ChatComposerInsertDetail');
+    expect(chatSource).toContain('window.addEventListener(CHAT_COMPOSER_INSERT_EVENT');
+    expect(chatSource).not.toContain('desktopSnapshot.click');
   });
 });

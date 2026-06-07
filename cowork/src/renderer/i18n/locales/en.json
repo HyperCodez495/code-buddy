@@ -2344,6 +2344,8 @@
     "capturing": "Capturing...",
     "copyContext": "Copy context",
     "copied": "Copied",
+    "prepareAction": "Prepare action",
+    "preparedAction": "Prompt ready",
     "imageAlt": "Annotated desktop snapshot",
     "empty": "No snapshot captured",
     "refs": "Refs",

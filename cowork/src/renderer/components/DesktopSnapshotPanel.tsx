@@ -6,9 +6,21 @@
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, CheckCircle2, Copy, Image, Loader2, Monitor, MousePointer2, RefreshCw, X } from 'lucide-react';
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Copy,
+  Image,
+  Loader2,
+  Monitor,
+  MousePointer2,
+  RefreshCw,
+  Route,
+  X,
+} from 'lucide-react';
 import { dialogA11yProps, trapFocus } from '../utils/a11y';
 import type { DesktopSnapshotCaptureResult, DesktopSnapshotElement, DesktopSnapshotMethod } from '../types';
+import { dispatchChatComposerInsert } from '../utils/chat-composer-events';
 
 interface DesktopSnapshotPanelProps {
   onClose: () => void;
@@ -40,6 +52,20 @@ function formatTimestamp(value: string | undefined): string {
   return new Date(timestamp).toLocaleString();
 }
 
+export function buildDesktopSnapshotActionPrompt(snapshotText: string): string {
+  const context = snapshotText.trim();
+  if (!context) return '';
+
+  return [
+    'Use this desktop snapshot as read-only GUI context.',
+    '',
+    context,
+    '',
+    'Task: identify the safest next GUI action and reference visible refs like [1] when possible.',
+    'Guardrails: do not click, type, press keys, or mutate the desktop until I explicitly approve the exact action.',
+  ].join('\n');
+}
+
 export function DesktopSnapshotPanel({ onClose }: DesktopSnapshotPanelProps) {
   const { t } = useTranslation();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -53,6 +79,7 @@ export function DesktopSnapshotPanel({ onClose }: DesktopSnapshotPanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
+  const [prepared, setPrepared] = useState(false);
 
   useEffect(() => {
     const onKey = (event: KeyboardEvent) => {
@@ -98,6 +125,7 @@ export function DesktopSnapshotPanel({ onClose }: DesktopSnapshotPanelProps) {
     }
     setLoading(true);
     setCopied(false);
+    setPrepared(false);
     try {
       const next = await api.capture({
         method,
@@ -126,6 +154,13 @@ export function DesktopSnapshotPanel({ onClose }: DesktopSnapshotPanelProps) {
       setCopied(false);
       copyResetTimerRef.current = null;
     }, 1500);
+  };
+
+  const prepareActionPrompt = () => {
+    const prompt = buildDesktopSnapshotActionPrompt(result?.text ?? '');
+    if (!dispatchChatComposerInsert(prompt)) return;
+    setPrepared(true);
+    onClose();
   };
 
   return (
@@ -218,6 +253,18 @@ export function DesktopSnapshotPanel({ onClose }: DesktopSnapshotPanelProps) {
           >
             {copied ? <CheckCircle2 size={13} className="text-green-500" /> : <Copy size={13} />}
             {copied ? t('desktopSnapshot.copied', 'Copied') : t('desktopSnapshot.copyContext', 'Copy context')}
+          </button>
+          <button
+            className="inline-flex items-center gap-1.5 rounded border border-accent/50 px-2.5 py-1.5 text-xs text-accent hover:bg-accent/10 disabled:opacity-50"
+            data-testid="desktop-snapshot-prepare-action"
+            disabled={!result?.text}
+            onClick={prepareActionPrompt}
+            type="button"
+          >
+            {prepared ? <CheckCircle2 size={13} /> : <Route size={13} />}
+            {prepared
+              ? t('desktopSnapshot.preparedAction', 'Prompt ready')
+              : t('desktopSnapshot.prepareAction', 'Prepare action')}
           </button>
         </div>
 

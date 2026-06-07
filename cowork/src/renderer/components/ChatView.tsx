@@ -49,6 +49,10 @@ import {
   isDroppedFolderCandidate,
   type AttachedFile,
 } from '../utils/file-attachment-helpers';
+import {
+  CHAT_COMPOSER_INSERT_EVENT,
+  type ChatComposerInsertDetail,
+} from '../utils/chat-composer-events';
 import { Send, Square, Plus, Loader2, Plug, X, Clock, Eye, FileSearch } from 'lucide-react';
 
 function toScheduleCreateInput(
@@ -421,11 +425,9 @@ export function ChatView() {
     };
   }, [activeSession?.model, appConfig?.model]);
 
-  // Phase 3 step 5: listen for snippet insertion from SnippetsLibrary
+  // Phase 3 step 5: listen for prompt insertion from renderer overlays.
   useEffect(() => {
-    const handler = (ev: Event) => {
-      const custom = ev as CustomEvent<{ body: string }>;
-      const body = custom.detail?.body;
+    const insertBody = (body: string | undefined) => {
       if (!body || !textareaRef.current) return;
       const textarea = textareaRef.current;
       const start = textarea.selectionStart ?? textarea.value.length;
@@ -441,8 +443,22 @@ export function ChatView() {
         textarea.setSelectionRange(pos, pos);
       });
     };
-    window.addEventListener('snippets:insert', handler as EventListener);
-    return () => window.removeEventListener('snippets:insert', handler as EventListener);
+
+    const snippetHandler = (ev: Event) => {
+      const custom = ev as CustomEvent<{ body: string }>;
+      insertBody(custom.detail?.body);
+    };
+    const composerHandler = (ev: Event) => {
+      const custom = ev as CustomEvent<ChatComposerInsertDetail>;
+      insertBody(custom.detail?.body);
+    };
+
+    window.addEventListener('snippets:insert', snippetHandler as EventListener);
+    window.addEventListener(CHAT_COMPOSER_INSERT_EVENT, composerHandler as EventListener);
+    return () => {
+      window.removeEventListener('snippets:insert', snippetHandler as EventListener);
+      window.removeEventListener(CHAT_COMPOSER_INSERT_EVENT, composerHandler as EventListener);
+    };
   }, []);
 
   // Handle paste event for images
@@ -548,10 +564,7 @@ export function ChatView() {
                 }
 
                 // If still too large, try again with lower quality or scale
-                if (
-                  compressedBlob.size > MAX_BLOB_SIZE &&
-                  (currentQuality > 0.5 || currentScale > 0.3)
-                ) {
+                if (compressedBlob.size > MAX_BLOB_SIZE && (currentQuality > 0.5 || currentScale > 0.3)) {
                   const newQuality = Math.max(0.5, currentQuality - 0.1);
                   const newScale = currentQuality <= 0.5 ? currentScale * 0.9 : currentScale;
                   attemptCompress(newScale, newQuality).then(resolveBlob);

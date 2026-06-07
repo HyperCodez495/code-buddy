@@ -6,7 +6,11 @@ import { Simulate } from 'react-dom/test-utils';
 import { createRoot, type Root } from 'react-dom/client';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DesktopSnapshotPanel } from '../src/renderer/components/DesktopSnapshotPanel';
+import {
+  buildDesktopSnapshotActionPrompt,
+  DesktopSnapshotPanel,
+} from '../src/renderer/components/DesktopSnapshotPanel';
+import { CHAT_COMPOSER_INSERT_EVENT } from '../src/renderer/utils/chat-composer-events';
 
 vi.mock('react-i18next', () => ({
   useTranslation: () => ({
@@ -126,6 +130,66 @@ describe('DesktopSnapshotPanel', () => {
     });
 
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('# UI Snapshot\n\n[1] Save');
+  });
+
+  it('prepares a supervised GUI action prompt from the current snapshot', async () => {
+    const status = vi.fn().mockResolvedValue({ ok: true, platform: 'win32', methods: ['hybrid'] });
+    const capture = vi.fn().mockResolvedValue({
+      ok: true,
+      method: 'hybrid',
+      snapshot: {
+        id: 'snap-2',
+        timestamp: '2026-06-07T18:10:00.000Z',
+        source: 'focused',
+        screenSize: { width: 1280, height: 720 },
+        valid: true,
+        ttl: 30000,
+        elements: [],
+      },
+      text: '# UI Snapshot\n\n[4] Search field\n[7] Run',
+    });
+    const onClose = vi.fn();
+    const prompts: string[] = [];
+    const onComposerInsert = (event: Event) => {
+      prompts.push((event as CustomEvent<{ body: string }>).detail.body);
+    };
+
+    (
+      window as unknown as {
+        electronAPI?: { desktopSnapshot: { status: typeof status; capture: typeof capture } };
+      }
+    ).electronAPI = {
+      desktopSnapshot: { status, capture },
+    };
+    window.addEventListener(CHAT_COMPOSER_INSERT_EVENT, onComposerInsert);
+
+    const target = container();
+    root = createRoot(target);
+    await act(async () => {
+      root?.render(React.createElement(DesktopSnapshotPanel, { onClose }));
+      await flush();
+    });
+
+    await act(async () => {
+      Simulate.click(target.querySelector('[data-testid="desktop-snapshot-capture"]') as HTMLButtonElement);
+      await flush();
+    });
+    await act(async () => {
+      Simulate.click(target.querySelector('[data-testid="desktop-snapshot-prepare-action"]') as HTMLButtonElement);
+      await flush();
+    });
+
+    window.removeEventListener(CHAT_COMPOSER_INSERT_EVENT, onComposerInsert);
+
+    expect(prompts).toHaveLength(1);
+    expect(prompts[0]).toContain('Use this desktop snapshot as read-only GUI context.');
+    expect(prompts[0]).toContain('[4] Search field');
+    expect(prompts[0]).toContain('do not click, type, press keys, or mutate the desktop');
+    expect(onClose).toHaveBeenCalledTimes(1);
+  });
+
+  it('builds no action prompt without snapshot context', () => {
+    expect(buildDesktopSnapshotActionPrompt('   ')).toBe('');
   });
 
   it('shows a bridge error when desktop snapshot is unavailable', async () => {
