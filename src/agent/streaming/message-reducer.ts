@@ -41,8 +41,22 @@ export function reduceStreamChunk(
       } else if (Array.isArray(acc[key]) && Array.isArray(value)) {
         const accArray = acc[key] as Array<Record<string, unknown>>;
         for (let i = 0; i < value.length; i++) {
-          const current = accArray[i] ?? {};
-          accArray[i] = reduce(current, value[i]);
+          const elem = value[i];
+          // For tool_calls, each delta element carries an `index` field
+          // (0, 1, ...) identifying which tool call it belongs to. Merge
+          // strictly by that index so parallel tool calls accumulate into
+          // separate slots instead of being concatenated by array position.
+          // (The accumulator's own `index` is stripped on first assignment
+          // above, so the target slot must come from the delta element.)
+          const elemIndex =
+            key === 'tool_calls' &&
+            elem &&
+            typeof elem === 'object' &&
+            typeof (elem as Record<string, unknown>).index === 'number'
+              ? ((elem as Record<string, unknown>).index as number)
+              : i;
+          const current = accArray[elemIndex] ?? {};
+          accArray[elemIndex] = reduce(current, elem);
         }
       } else if (typeof acc[key] === "object" && typeof value === "object" && acc[key] !== null && value !== null) {
         acc[key] = reduce(acc[key] as Record<string, unknown>, value);
