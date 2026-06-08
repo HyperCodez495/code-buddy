@@ -69,6 +69,13 @@ export class FleetAutonomousLoop {
   private readonly executor: TaskExecutor;
   private readonly policy: ModelTierPolicy;
   private readonly enabled: () => boolean;
+  /**
+   * Per-task consecutive-failure counts (in-memory, this run). Fed to
+   * {@link chooseAutonomousModel} so a task that keeps failing on the cheap tier
+   * escalates to a stronger model (policy `escalateAfterFailures`). Cleared on
+   * success. Resets across process restarts — escalation is a within-run feature.
+   */
+  private readonly failures = new Map<string, number>();
 
   constructor(config: AutonomousLoopConfig) {
     this.store = config.store;
@@ -103,7 +110,12 @@ export class FleetAutonomousLoop {
     }
 
     this.store.updatePresence({ status: 'active', currentTask: task.title });
-    const model = chooseAutonomousModel(this.tierConfig, { priority: task.priority }, this.policy);
+    const failures = this.failures.get(task.id) ?? 0;
+    const model = chooseAutonomousModel(
+      this.tierConfig,
+      { priority: task.priority, ...(failures > 0 ? { failures } : {}) },
+      this.policy,
+    );
 
     let result: TaskExecutionResult;
     try {
@@ -113,6 +125,7 @@ export class FleetAutonomousLoop {
     }
 
     if (result.ok) {
+      this.failures.delete(task.id);
       this.store.completeTask(task.id, {
         summary: result.summary,
         filesModified: result.filesModified ?? [],
@@ -121,6 +134,9 @@ export class FleetAutonomousLoop {
       this.store.updatePresence({ status: 'idle', currentTask: null });
       return { outcome: 'completed', taskId: task.id, taskTitle: task.title, model };
     }
+
+    // Track the failure so the next attempt can escalate up the model ladder.
+    this.failures.set(task.id, failures + 1);
 
     // Failure: log it and release the task so it can be retried (or escalated).
     this.store.appendWorklog({

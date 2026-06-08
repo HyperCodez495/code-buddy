@@ -92,4 +92,30 @@ describe('FleetAutonomousLoop', () => {
     expect(result.outcome).toBe('failed');
     expect(store.getTask('t1')?.status).toBe('open');
   });
+
+  it('escalates the model up the ladder after a task keeps failing', async () => {
+    seedTasks([{ id: 't1', title: 'hard task', status: 'open', priority: 'medium', claimedBy: null }]);
+    const tiersSeen: string[] = [];
+    let attempt = 0;
+    const executor: TaskExecutor = async (_task, model) => {
+      tiersSeen.push(model.tier);
+      attempt += 1;
+      return attempt === 1 ? { ok: false, summary: 'flaky', error: 'flaked' } : { ok: true, summary: 'ok' };
+    };
+    const tierConfig: ModelTierConfig = {
+      localModel: 'local-m',
+      localBaseUrl: 'http://localhost:11434/v1',
+      networkModels: [{ model: 'net-m', baseUrl: 'http://net:11434/v1' }],
+    };
+    const loop = new FleetAutonomousLoop({ store, tierConfig, executor, policy: { escalateAfterFailures: 1 } });
+
+    const r1 = await loop.tick(); // attempt 1: local tier, fails → released, failure count 1
+    expect(r1.outcome).toBe('failed');
+    expect(store.getTask('t1')?.status).toBe('open');
+
+    const r2 = await loop.tick(); // attempt 2: 1 prior failure ≥ threshold → escalates to network
+    expect(r2.outcome).toBe('completed');
+    expect(r2.model?.tier).toBe('network');
+    expect(tiersSeen).toEqual(['local', 'network']);
+  });
 });
