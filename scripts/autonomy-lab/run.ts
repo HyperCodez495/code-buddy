@@ -41,6 +41,7 @@ process.env['CODEBUDDY_NETWORK_MODELS'] = `${NETWORK_MODEL}@${OLLAMA_V1}`;
 const { FleetColabStore } = await import('../../src/fleet/colab-store.js');
 const { FleetAutonomousLoop } = await import('../../src/daemon/autonomous-loop.js');
 const { resolveModelTierConfig } = await import('../../src/agent/model-tier.js');
+const { createAgentTaskExecutor } = await import('../../src/daemon/agent-task-executor.js');
 
 interface LabTask {
   id: string;
@@ -49,6 +50,7 @@ interface LabTask {
   priority: 'low' | 'medium' | 'high' | 'critical';
   filesToModify: string[];
   check: string;
+  verifyCommand?: string;
   dependsOn?: string[];
   acceptanceCriteria?: string[];
 }
@@ -56,10 +58,6 @@ interface LabTask {
 function log(msg: string): void {
   console.log(`[lab] ${msg}`);
 }
-
-// tsx binary inside the repo (faster + deterministic than `npx tsx`).
-const tsxBin = path.join(repoRoot, 'node_modules', '.bin', 'tsx');
-const indexTs = path.join(repoRoot, 'src', 'index.ts');
 
 function runCheck(sandboxDir: string, checkFile: string): { ok: boolean; out: string } {
   const c = spawnSync('node', [checkFile], { cwd: sandboxDir, encoding: 'utf-8', timeout: 30_000 });
@@ -69,7 +67,6 @@ function runCheck(sandboxDir: string, checkFile: string): { ok: boolean; out: st
 async function main(): Promise<void> {
   const tasksFile = JSON.parse(fs.readFileSync(path.join(__dirname, 'tasks.json'), 'utf-8')) as { tasks: LabTask[] };
   const tasks = tasksFile.tasks;
-  const tasksById = new Map(tasks.map((t) => [t.id, t]));
 
   // 1. Fresh ephemeral sandbox = copy of the committed template.
   const sandboxDir = path.join(os.tmpdir(), 'cb-autonomy-lab', `run-${process.pid}`);
@@ -90,44 +87,22 @@ async function main(): Promise<void> {
       priority: t.priority,
       filesToModify: t.filesToModify,
       ...(t.acceptanceCriteria ? { acceptanceCriteria: t.acceptanceCriteria } : {}),
+      ...(t.verifyCommand ? { verifyCommand: t.verifyCommand } : {}),
       ...(t.dependsOn ? { dependsOn: t.dependsOn } : {}),
       createdBy: 'autonomy-lab',
     });
   }
   log(`seeded ${tasks.length} tasks (${tasks.filter((t) => t.dependsOn).length} with deps).`);
 
-  // 3. Real-agent executor: spawn `buddy` headless in the sandbox on the chosen
-  //    tier model, then run the acceptance check.
-  const executor = async (task: { id: string; title: string; priority: string }, model: { model: string; tier: string; baseUrl?: string; paid?: boolean }) => {
-    const meta = tasksById.get(task.id);
-    if (!meta) return { ok: false, summary: `unknown task ${task.id}` };
-    const host = (model.baseUrl ?? OLLAMA_V1).replace(/\/v1\/?$/, '');
-    const env = { ...process.env, CODEBUDDY_PROVIDER: 'ollama', OLLAMA_HOST: host, GROK_MODEL: model.model };
-    const prompt = `${task.title}\n\n${meta.description}`;
-    const started = Date.now();
-    log(`  → ${task.id} [${model.tier}/${model.model}] running real agent…`);
-    const agent = spawnSync(tsxBin, [indexTs, '-p', prompt, '--permission-mode', 'acceptEdits', '--output-format', 'text'], {
-      cwd: sandboxDir,
-      env,
-      encoding: 'utf-8',
-      timeout: 300_000,
-      maxBuffer: 64 * 1024 * 1024,
-    });
-    const { ok, out } = runCheck(sandboxDir, meta.check);
-    const elapsed = Math.round((Date.now() - started) / 1000);
-    return {
-      ok,
-      summary: `${task.id} [${model.tier}/${model.model}] check ${ok ? 'PASS' : 'FAIL'} (${elapsed}s)`,
-      filesModified: meta.filesToModify,
-      elapsedSeconds: elapsed,
-      ...(ok ? {} : { error: (out.split('\n').filter(Boolean).slice(-3).join(' | ')) || (agent.stderr ?? 'check failed').slice(0, 200) }),
-    };
-  };
+  // 3. Use the PRODUCTION executor (dogfood). It runs the real agent in the
+  //    sandbox pinned to the tier's model, then the task's `verifyCommand` gate —
+  //    so "completed" means the agent's edit actually passed the check.
+  const executor = createAgentTaskExecutor({ workspaceRoot: sandboxDir, repoRoot });
 
   // 4. Drive the real loop until drained (bounded so a permanently-failing task
   //    can't spin forever; t-slug-id is gated behind t-slugify by the DAG).
   const tierConfig = resolveModelTierConfig();
-  const loop = new FleetAutonomousLoop({ store, tierConfig, executor: executor as never, policy: { escalateAtPriority: 'high' } });
+  const loop = new FleetAutonomousLoop({ store, tierConfig, executor, policy: { escalateAtPriority: 'high' } });
 
   const maxTicks = tasks.length + 3;
   const ticks: Array<{ outcome: string; taskId?: string; tier?: string; model?: string }> = [];
