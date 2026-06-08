@@ -67,6 +67,9 @@ interface ConnectionState {
 // Active connections
 const connections = new Map<WebSocket, ConnectionState>();
 
+// Epoch ms when the WS server last started (for gateway uptime in `status`).
+let serverStartedAt = 0;
+
 // Message handlers - payload typed as unknown for flexibility
 type MessageHandler = (
   ws: WebSocket,
@@ -123,6 +126,57 @@ export function buildConnectedGreeting(opts: ConnectedGreetingOptions): WebSocke
       protocolVersion: opts.protocolVersion,
       server: { version: opts.serverVersion },
       capabilities: { methods: [...new Set(opts.methods)].sort() },
+    },
+    timestamp: new Date().toISOString(),
+  };
+}
+
+export interface GatewayStatusInput {
+  connection: {
+    connectionId: string;
+    authenticated: boolean;
+    userId?: string;
+    keyId?: string;
+    deviceId?: string;
+    scopes: string[];
+    streaming: boolean;
+    lastActivity: number;
+  };
+  server: {
+    version: string;
+    protocolVersion: number;
+    uptimeMs: number;
+    pairingRequired: boolean;
+  };
+  connections: { total: number; authenticated: number; streaming: number };
+}
+
+/**
+ * Build the `status` reply. Keeps the existing per-connection fields and adds a
+ * gateway-wide `server` snapshot (version, protocol, uptime, live connection
+ * counts) — the observability OpenClaw exposes via `gateway call status`. Pure
+ * so the shape can be unit-tested.
+ */
+export function buildGatewayStatus(input: GatewayStatusInput): WebSocketResponse {
+  const c = input.connection;
+  return {
+    type: 'status',
+    payload: {
+      connectionId: c.connectionId,
+      authenticated: c.authenticated,
+      ...(c.userId ? { userId: c.userId } : {}),
+      ...(c.keyId ? { keyId: c.keyId } : {}),
+      ...(c.deviceId ? { deviceId: c.deviceId } : {}),
+      scopes: c.scopes,
+      streaming: c.streaming,
+      connectedAt: new Date(c.lastActivity).toISOString(),
+      server: {
+        version: input.server.version,
+        protocolVersion: input.server.protocolVersion,
+        uptimeMs: input.server.uptimeMs,
+        pairingRequired: input.server.pairingRequired,
+        connections: input.connections,
+      },
     },
     timestamp: new Date().toISOString(),
   };
@@ -480,19 +534,25 @@ messageHandlers.set('ping', async (ws, _state, _payload) => {
  * Handle get status
  */
 messageHandlers.set('status', async (ws, state, _payload) => {
-  send(ws, {
-    type: 'status',
-    payload: {
+  send(ws, buildGatewayStatus({
+    connection: {
       connectionId: state.id,
       authenticated: state.authenticated,
-      userId: state.userId,
-      keyId: state.keyId,
+      ...(state.userId ? { userId: state.userId } : {}),
+      ...(state.keyId ? { keyId: state.keyId } : {}),
+      ...(state.deviceId ? { deviceId: state.deviceId } : {}),
       scopes: state.scopes,
       streaming: state.streaming,
-      connectedAt: new Date(state.lastActivity).toISOString(),
+      lastActivity: state.lastActivity,
     },
-    timestamp: new Date().toISOString(),
-  });
+    server: {
+      version: gatewayServerVersion(),
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
+      uptimeMs: serverStartedAt ? Date.now() - serverStartedAt : 0,
+      pairingRequired: isDevicePairingRequired(),
+    },
+    connections: getConnectionStats(),
+  }));
 });
 
 /**
@@ -607,6 +667,8 @@ export async function setupWebSocket(
 ): Promise<WebSocketServer> {
   // Dynamic import ws
   const { WebSocketServer } = await import('ws');
+
+  serverStartedAt = Date.now();
 
   const wss = new WebSocketServer({
     server,
