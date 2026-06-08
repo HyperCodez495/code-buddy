@@ -233,6 +233,101 @@ describe('OpenClaw gateway bridge compatibility', () => {
     expect(JSON.stringify(discovery)).not.toContain('oc_secret_token_fixture');
   });
 
+  it('discovers a gateway from the unified openclaw.json when gateway.json is absent (OpenClaw 2026.6.x)', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'openclaw.json'), JSON.stringify({
+      gateway: {
+        mode: 'local',
+        bind: 'loopback',
+        port: 18789,
+        auth: { mode: 'token', token: 'oc_unified_secret_fixture' },
+      },
+    }, null, 2), 'utf8');
+
+    const discovery = await discoverOpenClawGateway({
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-08T12:00:00.000Z'),
+    });
+
+    expect(discovery).toMatchObject({
+      found: true,
+      lockfileSource: 'openclaw.json',
+      daemon: {
+        wsUrl: 'ws://127.0.0.1:18789',
+        httpUrl: 'http://127.0.0.1:18789',
+        endpoint: 'http://127.0.0.1:18789',
+      },
+      safety: {
+        secretsIncluded: false,
+        tokenPresent: true,
+        networkContacted: false,
+      },
+    });
+    expect(JSON.stringify(discovery)).not.toContain('oc_unified_secret_fixture');
+  });
+
+  it('discovers node-host metadata from devices/paired.json when node.json is absent', async () => {
+    await mkdir(path.join(openclawHome, 'devices'), { recursive: true });
+    await writeFile(path.join(openclawHome, 'openclaw.json'), JSON.stringify({
+      gateway: { bind: 'loopback', port: 18789, auth: { token: 'oc_gateway_secret_fixture' } },
+    }, null, 2), 'utf8');
+    await writeFile(path.join(openclawHome, 'devices', 'paired.json'), JSON.stringify({
+      'device-fixture-abc': {
+        deviceId: 'device-fixture-abc',
+        clientId: 'cli',
+        role: 'operator',
+        scopes: ['operator.write'],
+        tokens: { operator: { token: 'oc_paired_secret_fixture', role: 'operator' } },
+      },
+    }, null, 2), 'utf8');
+
+    const discovery = await discoverOpenClawGateway({
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-08T12:01:00.000Z'),
+    });
+
+    expect(discovery.nodeSource).toBe('devices/paired.json');
+    expect(discovery.nodeHost).toMatchObject({
+      found: true,
+      nodeId: 'device-fixture-abc',
+      displayName: 'cli',
+      gatewayHost: '127.0.0.1',
+      gatewayPort: 18789,
+      tls: false,
+      capabilities: ['operator.write'],
+    });
+    expect(discovery.safety).toMatchObject({
+      secretsIncluded: false,
+      nodeTokenPresent: true,
+    });
+    expect(JSON.stringify(discovery)).not.toContain('oc_paired_secret_fixture');
+  });
+
+  it('prefers the legacy gateway.json over openclaw.json when both exist (backward compatible)', async () => {
+    await mkdir(openclawHome, { recursive: true });
+    await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({
+      wsUrl: 'ws://127.0.0.1:4999/ws',
+      token: 'oc_legacy_secret_fixture',
+    }, null, 2), 'utf8');
+    await writeFile(path.join(openclawHome, 'openclaw.json'), JSON.stringify({
+      gateway: { bind: 'loopback', port: 18789, auth: { token: 'oc_unified_secret_fixture' } },
+    }, null, 2), 'utf8');
+
+    const discovery = await discoverOpenClawGateway({
+      home: openclawHome,
+      cwd: workspace,
+      now: new Date('2026-06-08T12:02:00.000Z'),
+    });
+
+    expect(discovery.found).toBe(true);
+    expect(discovery.lockfileSource).toBe('gateway.json');
+    expect(discovery.daemon.wsUrl).toBe('ws://127.0.0.1:4999/ws');
+    expect(JSON.stringify(discovery)).not.toContain('oc_legacy_secret_fixture');
+    expect(JSON.stringify(discovery)).not.toContain('oc_unified_secret_fixture');
+  });
+
   it('discovers OpenClaw node host metadata from node.json without exposing pairing tokens', async () => {
     await mkdir(openclawHome, { recursive: true });
     await writeFile(path.join(openclawHome, 'gateway.json'), JSON.stringify({

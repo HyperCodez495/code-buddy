@@ -61,6 +61,10 @@ export interface OpenClawGatewayDiscovery {
   home: string;
   lockfilePath: string;
   found: boolean;
+  /** Which on-disk file the gateway metadata was actually read from. */
+  lockfileSource?: 'gateway.json' | 'openclaw.json';
+  /** Which on-disk file the node-host metadata was actually read from. */
+  nodeSource?: 'node.json' | 'devices/paired.json';
   daemon: {
     nodeId?: string;
     pid?: number;
@@ -591,10 +595,126 @@ function normalizeMethods(value: unknown): string[] {
   return [...new Set(value.filter((item): item is string => typeof item === 'string' && item.trim().length > 0))].sort();
 }
 
+async function openClawFileExists(filePath: string): Promise<boolean> {
+  try {
+    await access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Unified OpenClaw config (`~/.openclaw/openclaw.json`). OpenClaw 2026.6.x keeps
+ * gateway host/port/token here rather than in a standalone `gateway.json`, so
+ * the bridge reads it as a fallback when the legacy lockfiles are absent.
+ */
+interface OpenClawUnifiedConfig {
+  gateway?: {
+    mode?: string;
+    bind?: string;
+    host?: string;
+    port?: number;
+    auth?: { mode?: string; token?: string };
+  };
+}
+
+async function readOpenClawUnifiedConfig(home: string): Promise<OpenClawUnifiedConfig | null> {
+  try {
+    return JSON.parse(await readFile(path.join(home, 'openclaw.json'), 'utf8')) as OpenClawUnifiedConfig;
+  } catch {
+    return null;
+  }
+}
+
+function openClawHostFromGatewayConfig(gateway: OpenClawUnifiedConfig['gateway']): string {
+  if (typeof gateway?.host === 'string' && gateway.host.trim()) return gateway.host.trim();
+  // bind ∈ loopback|tailnet|lan|auto|custom — the Code Buddy bridge always runs
+  // on the same host as the gateway, so localhost is the safe attach target.
+  return '127.0.0.1';
+}
+
+/**
+ * Build a gateway lockfile from the unified `openclaw.json`. Returns null when
+ * the config has no usable gateway port. The token is carried for auth but, as
+ * with the legacy path, discovery only surfaces its presence — never its value.
+ */
+function synthesizeGatewayLockfileFromUnifiedConfig(
+  config: OpenClawUnifiedConfig | null,
+): OpenClawGatewayLockfile | null {
+  const gateway = config?.gateway;
+  if (!gateway || typeof gateway.port !== 'number') return null;
+  const host = openClawHostFromGatewayConfig(gateway);
+  const port = gateway.port;
+  const token = typeof gateway.auth?.token === 'string' ? gateway.auth.token : undefined;
+  const httpUrl = `http://${host}:${port}`;
+  return {
+    endpoint: httpUrl,
+    wsUrl: `ws://${host}:${port}`,
+    httpUrl,
+    rpcUrl: httpUrl,
+    methods: [],
+    ...(token ? { token } : {}),
+  };
+}
+
+/**
+ * Build a node-host lockfile from the real OpenClaw `devices/paired.json` map
+ * (keyed by deviceId) plus gateway host/port from the unified config. Prefers a
+ * paired operator device. Pairing tokens are carried for auth but never output.
+ */
+async function synthesizeNodeLockfileFromDevices(home: string): Promise<OpenClawNodeLockfile | null> {
+  let paired: unknown;
+  try {
+    paired = JSON.parse(await readFile(path.join(home, 'devices', 'paired.json'), 'utf8'));
+  } catch {
+    return null;
+  }
+  if (!paired || typeof paired !== 'object') return null;
+  const entries = Object.values(paired as Record<string, unknown>)
+    .filter((entry): entry is Record<string, unknown> => Boolean(entry) && typeof entry === 'object');
+  if (entries.length === 0) return null;
+  const entry = entries.find((candidate) => candidate.role === 'operator') ?? entries[0];
+  if (!entry) return null;
+
+  const config = await readOpenClawUnifiedConfig(home);
+  const gateway = config?.gateway;
+  const host = gateway && typeof gateway.port === 'number' ? openClawHostFromGatewayConfig(gateway) : undefined;
+  const port = typeof gateway?.port === 'number' ? gateway.port : undefined;
+
+  const deviceId = typeof entry.deviceId === 'string' ? entry.deviceId : undefined;
+  const tokens = entry.tokens && typeof entry.tokens === 'object'
+    ? entry.tokens as Record<string, { token?: unknown }>
+    : undefined;
+  const operatorToken = typeof tokens?.operator?.token === 'string' ? tokens.operator.token : undefined;
+  const token = operatorToken ?? (typeof entry.token === 'string' ? entry.token : undefined);
+  const capabilities = Array.isArray(entry.scopes)
+    ? entry.scopes.filter((scope): scope is string => typeof scope === 'string')
+    : [];
+
+  return {
+    ...(deviceId ? { nodeId: deviceId } : {}),
+    ...(typeof entry.clientId === 'string' ? { displayName: entry.clientId } : {}),
+    ...(host ? { gatewayHost: host } : {}),
+    ...(port !== undefined ? { gatewayPort: port } : {}),
+    ...(host && port !== undefined ? { wsUrl: `ws://${host}:${port}` } : {}),
+    tls: false,
+    ...(token ? { token } : {}),
+    capabilities,
+  };
+}
+
 async function readOpenClawLockfile(lockfilePath: string): Promise<OpenClawGatewayLockfile | null> {
   try {
     return JSON.parse(await readFile(lockfilePath, 'utf8')) as OpenClawGatewayLockfile;
   } catch {
+    // Fallback for OpenClaw 2026.6.x, which has no standalone gateway.json:
+    // synthesize the lockfile from the unified openclaw.json in the same home.
+    if (path.basename(lockfilePath) === 'gateway.json') {
+      return synthesizeGatewayLockfileFromUnifiedConfig(
+        await readOpenClawUnifiedConfig(path.dirname(lockfilePath)),
+      );
+    }
     return null;
   }
 }
@@ -603,6 +723,11 @@ async function readOpenClawNodeLockfile(lockfilePath: string): Promise<OpenClawN
   try {
     return JSON.parse(await readFile(lockfilePath, 'utf8')) as OpenClawNodeLockfile;
   } catch {
+    // Fallback for OpenClaw 2026.6.x: derive node-host metadata from the real
+    // devices/paired.json + openclaw.json instead of the legacy node.json.
+    if (path.basename(lockfilePath) === 'node.json') {
+      return synthesizeNodeLockfileFromDevices(path.dirname(lockfilePath));
+    }
     return null;
   }
 }
@@ -1012,6 +1137,14 @@ export async function discoverOpenClawGateway(
   const nodeLockfilePath = getOpenClawNodeLockfilePath({ ...options, home });
   const parsed = await readOpenClawLockfile(lockfilePath);
   const node = await readOpenClawNodeLockfile(nodeLockfilePath);
+  // Re-derive which file each came from so the audit trail names the real source
+  // (legacy gateway.json/node.json vs. the OpenClaw 2026.6.x unified layout).
+  const lockfileSource = parsed
+    ? (await openClawFileExists(lockfilePath) ? 'gateway.json' : 'openclaw.json')
+    : undefined;
+  const nodeSource = node
+    ? (await openClawFileExists(nodeLockfilePath) ? 'node.json' : 'devices/paired.json')
+    : undefined;
   const tokenPresent = Boolean(parsed?.token || parsed?.apiKey || parsed?.secret);
   const nodeTokenPresent = Boolean(nodeTokenFromLockfile(node));
   const recommendations: string[] = [];
@@ -1033,6 +1166,8 @@ export async function discoverOpenClawGateway(
     home,
     lockfilePath,
     found: Boolean(parsed),
+    ...(lockfileSource ? { lockfileSource } : {}),
+    ...(nodeSource ? { nodeSource } : {}),
     daemon: {
       ...(typeof parsed?.nodeId === 'string' ? { nodeId: parsed.nodeId } : {}),
       ...(typeof parsed?.pid === 'number' ? { pid: parsed.pid } : {}),
