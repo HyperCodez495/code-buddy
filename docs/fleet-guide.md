@@ -745,6 +745,19 @@ LLM (continuing with peer's answer in context): "darkstar suggests …"
 
 ### Autonomous Fleet Protocol v0.1 (Phase d.18)
 
+> **Current native autonomy** (supersedes the Python wrapper below). `buddy autonomy run [--watch]`
+> drives `FleetAutonomousLoop` over the `colab-store` queue (claim lease/TTL, `dependsOn` DAG,
+> `critical` never auto-claimed) on the **free-first model ladder** (`CODEBUDDY_LOCAL_MODEL` →
+> `CODEBUDDY_NETWORK_MODELS=model@url,…` → `CODEBUDDY_ESCALATION_MODEL`), and `buddy autonomy install`
+> runs it as an always-on service.
+> - **Two executors.** Default v0 writes scoped artifacts (no repo edits). Opt-in `CODEBUDDY_AUTONOMY_EXECUTOR=agent`
+>   (or `buddy autonomy install --executor agent --workspace <dir>`) runs the **real agent** to edit files —
+>   *fail-closed*: it refuses without `CODEBUDDY_AUTONOMY_WORKSPACE_ROOT` (a cwd bound, not a hard sandbox;
+>   tighten with `CODEBUDDY_AUTONOMY_AGENT_ARGS="--disallowedTools bash,run_command"`).
+> - **Verified completion.** A task's optional `verifyCommand` (e.g. `node x.check.mjs`, `npm test`) must exit 0,
+>   else the task is released for retry. **Auto-escalation**: repeated failures climb the model ladder.
+> - **Local agentic models:** use qwen3+/devstral/mistral (qwen2.5:7b is chat-only). Runnable demo: `npm run autonomy:lab`.
+
 Fleet bus = the `claude-et-patrice/.codebuddy/` repo on a shared
 Tailscale mesh. Each peer periodically:
 
