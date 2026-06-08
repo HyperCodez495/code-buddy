@@ -58,6 +58,25 @@ describe('FleetAutonomousDaemon', () => {
     expect(summary.stoppedReason).toBe('maxTicks');
   });
 
+  it('ticks on an external event (eventSourceFactory) and stops the source on exit', async () => {
+    const { loop } = fakeLoop(['idle', 'idle']);
+    let capturedWake: (() => void) | undefined;
+    const stop = vi.fn();
+    const eventSourceFactory = vi.fn((wake: () => void) => { capturedWake = wake; return { stop }; });
+    // Long interval so polling cannot explain the second tick (no injected sleep
+    // → real interruptible wait, which wake() cuts short).
+    const daemon = new FleetAutonomousDaemon({ loop, intervalMs: 100_000, eventSourceFactory });
+    const run = daemon.run({ maxTicks: 2 });
+    // First tick fires immediately; daemon now waiting ~100s. Fire an external event.
+    await new Promise((r) => setTimeout(r, 15));
+    capturedWake?.();
+    const summary = await run;
+
+    expect(summary.ticks).toBe(2);
+    expect(eventSourceFactory).toHaveBeenCalledTimes(1);
+    expect(stop).toHaveBeenCalledTimes(1); // cleaned up on exit
+  });
+
   it('does not tick when the kill-switch is off', async () => {
     const { loop, ticks } = fakeLoop(['idle']);
     const daemon = new FleetAutonomousDaemon({ loop, enabled: () => false, sleep: async () => {} });

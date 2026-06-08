@@ -791,11 +791,14 @@ export function registerFleetAutonomyCommands(program: Command): void {
       watch?: boolean; interval: string; maxTicks?: string;
       dir?: string; outputDir?: string; json?: boolean;
     }) => {
-      const { createDefaultAutonomousLoop, FleetAutonomousDaemon } = await import('../../daemon/autonomous-daemon.js');
+      const { createDefaultAutonomousLoop, FleetAutonomousDaemon, watchFleetTasks } = await import('../../daemon/autonomous-daemon.js');
+      const path = await import('path');
       const loop = createDefaultAutonomousLoop({
         ...(opts.dir ? { dir: opts.dir } : {}),
         ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
       });
+      // Same dir resolution the store uses, so the watcher observes the live queue.
+      const colabDir = opts.dir || process.env['CODEBUDDY_FLEET_COLAB_DIR'] || path.join(process.cwd(), '.codebuddy');
       const daemon = new FleetAutonomousDaemon({
         loop,
         intervalMs: parseInt(opts.interval, 10) || 30000,
@@ -805,6 +808,9 @@ export function registerFleetAutonomyCommands(program: Command): void {
             console.log(`tick ${n}: ${result.outcome}${result.taskTitle ? ` — ${result.taskTitle}` : ''}${tier}`);
           }
         },
+        // Event-driven only for continuous runs: a write to the queue wakes the
+        // daemon at once; the interval stays as a fallback heartbeat.
+        ...(opts.watch ? { eventSourceFactory: (wake: () => void) => watchFleetTasks(colabDir, wake) } : {}),
       });
 
       if (opts.watch) {

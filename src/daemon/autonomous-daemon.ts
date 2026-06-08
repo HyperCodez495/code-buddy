@@ -13,6 +13,7 @@
 
 import { FleetColabStore } from '../fleet/colab-store.js';
 import { resolveModelTierConfig, type ModelTierPolicy } from '../agent/model-tier.js';
+import { FileWatcherTrigger } from '../agent/file-watcher-trigger.js';
 import { FleetAutonomousLoop, type TickResult } from './autonomous-loop.js';
 import { createLocalModelTaskExecutor } from './ollama-task-executor.js';
 
@@ -26,6 +27,13 @@ export interface AutonomousDaemonConfig {
   enabled?: () => boolean;
   /** Injectable sleep (tests). */
   sleep?: (ms: number) => Promise<void>;
+  /**
+   * Event-driven producer: given the daemon's `wake`, returns a started source
+   * (with `stop`) that calls `wake()` when work arrives — e.g. a file-watch on
+   * the colab queue. Started for the duration of `run()`. Default: none
+   * (interval-only). The interval remains as a fallback heartbeat.
+   */
+  eventSourceFactory?: (wake: () => void) => { stop: () => void };
 }
 
 export interface DaemonRunSummary {
@@ -42,6 +50,7 @@ export class FleetAutonomousDaemon {
   private readonly onTick?: (result: TickResult, tickNumber: number) => void;
   private readonly enabled: () => boolean;
   private readonly sleepFn?: (ms: number) => Promise<void>;
+  private readonly eventSourceFactory?: (wake: () => void) => { stop: () => void };
   private running = false;
   private resolveWait?: () => void;
 
@@ -51,6 +60,7 @@ export class FleetAutonomousDaemon {
     if (config.onTick) this.onTick = config.onTick;
     this.enabled = config.enabled ?? (() => true);
     if (config.sleep) this.sleepFn = config.sleep;
+    if (config.eventSourceFactory) this.eventSourceFactory = config.eventSourceFactory;
   }
 
   isRunning(): boolean {
@@ -99,23 +109,30 @@ export class FleetAutonomousDaemon {
     let stoppedReason: DaemonRunSummary['stoppedReason'] = 'maxTicks';
     this.running = true;
 
-    while (this.running && ticks < max) {
-      if (!this.enabled()) {
-        stoppedReason = 'disabled';
-        break;
-      }
-      const result = await this.loop.tick();
-      ticks += 1;
-      outcomes[result.outcome] = (outcomes[result.outcome] ?? 0) + 1;
-      this.onTick?.(result, ticks);
+    // Start the optional event producer for the lifetime of the run — it wakes
+    // the daemon the moment work arrives, so the interval is only a fallback.
+    const eventSource = this.eventSourceFactory?.(() => this.wake());
+    try {
+      while (this.running && ticks < max) {
+        if (!this.enabled()) {
+          stoppedReason = 'disabled';
+          break;
+        }
+        const result = await this.loop.tick();
+        ticks += 1;
+        outcomes[result.outcome] = (outcomes[result.outcome] ?? 0) + 1;
+        this.onTick?.(result, ticks);
 
-      if (!this.running) {
-        stoppedReason = 'stopped';
-        break;
+        if (!this.running) {
+          stoppedReason = 'stopped';
+          break;
+        }
+        if (ticks < max) {
+          await this.waitBetweenTicks();
+        }
       }
-      if (ticks < max) {
-        await this.waitBetweenTicks();
-      }
+    } finally {
+      eventSource?.stop();
     }
 
     this.running = false;
@@ -154,4 +171,27 @@ export function createDefaultAutonomousLoop(opts: DefaultAutonomousLoopOptions =
     ...(opts.policy ? { policy: opts.policy } : {}),
     ...(opts.enabled ? { enabled: opts.enabled } : {}),
   });
+}
+
+/**
+ * Event source for {@link AutonomousDaemonConfig.eventSourceFactory}: watches the
+ * fleet queue file (`colab-tasks.json`) and calls `onChange` when it changes —
+ * a task added by a CLI, a peer, or a `git pull`. Reuses {@link FileWatcherTrigger}.
+ *
+ * The queue lives under `.codebuddy/`, which the watcher's default ignore list
+ * excludes, so `ignorePatterns` is cleared. The daemon only watches the tasks
+ * file (not `presence.json`), so its own idle presence writes never self-trigger.
+ */
+export function watchFleetTasks(dir: string, onChange: () => void): { stop: () => void } {
+  const watcher = new FileWatcherTrigger({
+    patterns: ['colab-tasks.json', '**/colab-tasks.json'],
+    ignorePatterns: [],
+    debounceMs: 300,
+    actions: ['custom'],
+  });
+  watcher.on('change', () => onChange());
+  // Swallow watcher errors so a transient fs.watch hiccup never crashes the loop.
+  watcher.on('error', () => { /* interval heartbeat still drives progress */ });
+  watcher.start(dir);
+  return { stop: () => watcher.stop() };
 }
