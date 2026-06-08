@@ -956,9 +956,12 @@ export function registerFleetAutonomyCommands(program: Command): void {
     .option('--model <model>', 'local model', 'qwen2.5:7b-instruct')
     .option('--ollama-url <url>', 'Ollama OpenAI-compatible base URL', 'http://localhost:11434/v1')
     .option('--interval <ms>', 'fallback heartbeat interval (events drive the rest)', '60000')
+    .option('--executor <mode>', 'executor: "artifact" (v0, no repo edits) or "agent" (real edits; needs --workspace)', 'artifact')
+    .option('--workspace <dir>', 'bounded dir the agent edits (REQUIRED for --executor agent)')
     .option('--json', 'output JSON')
     .action(async (opts: {
-      dir?: string; outputDir?: string; model: string; ollamaUrl: string; interval: string; json?: boolean;
+      dir?: string; outputDir?: string; model: string; ollamaUrl: string; interval: string;
+      executor?: string; workspace?: string; json?: boolean;
     }) => {
       const os = await import('os');
       const path = await import('path');
@@ -968,6 +971,30 @@ export function registerFleetAutonomyCommands(program: Command): void {
       const dir = opts.dir || path.join(os.homedir(), '.codebuddy', 'fleet');
       const outputDir = opts.outputDir || path.join(dir, 'out');
       fs.mkdirSync(dir, { recursive: true });
+
+      // Executor selection. 'agent' runs the real agent (edits files) and is
+      // fail-closed: it requires an explicit bounded workspace.
+      const executorMode = (opts.executor ?? 'artifact').toLowerCase();
+      if (executorMode !== 'artifact' && executorMode !== 'agent') {
+        console.error(`Invalid --executor "${opts.executor}" (use artifact|agent).`);
+        process.exit(1);
+        return;
+      }
+      const agentEnv: Record<string, string> = {};
+      if (executorMode === 'agent') {
+        if (!opts.workspace) {
+          console.error('--executor agent requires --workspace <dir> (fail-closed: the bounded dir the agent edits).');
+          process.exit(1);
+          return;
+        }
+        const ws = path.resolve(opts.workspace);
+        fs.mkdirSync(ws, { recursive: true });
+        agentEnv['CODEBUDDY_AUTONOMY_EXECUTOR'] = 'agent';
+        agentEnv['CODEBUDDY_AUTONOMY_WORKSPACE_ROOT'] = ws;
+        if (opts.model === 'qwen2.5:7b-instruct') {
+          console.warn('⚠️  --executor agent needs a tool-capable model; qwen2.5:7b is chat-only and cannot edit. Pass --model qwen3.6:35b-a3b-q4_K_M (or another qwen3/devstral/mistral).');
+        }
+      }
 
       // Run the built CLI from the service (rebuild dist first if it lacks the
       // autonomy command); fall back to the currently-running entry in dev.
@@ -986,17 +1013,18 @@ export function registerFleetAutonomyCommands(program: Command): void {
           CODEBUDDY_LOCAL_MODEL: opts.model,
           OLLAMA_BASE_URL: opts.ollamaUrl,
           CODEBUDDY_FLEET_COLAB_DIR: dir,
+          ...agentEnv,
         },
       });
       const result = await installer.install();
-      if (opts.json) { console.log(JSON.stringify({ result, dir, outputDir, model: opts.model }, null, 2)); return; }
+      if (opts.json) { console.log(JSON.stringify({ result, dir, outputDir, model: opts.model, executor: executorMode, ...(agentEnv['CODEBUDDY_AUTONOMY_WORKSPACE_ROOT'] ? { workspace: agentEnv['CODEBUDDY_AUTONOMY_WORKSPACE_ROOT'] } : {}) }, null, 2)); return; }
       if (!result.success) {
         console.error(`Failed to install autonomy service: ${result.error}`);
         process.exit(1);
         return;
       }
       console.log(`Autonomy service installed (${result.platform}): ${result.servicePath}`);
-      console.log(`  Queue: ${dir}  |  model: ${opts.model} (local, $0)`);
+      console.log(`  Queue: ${dir}  |  model: ${opts.model} (local, $0)  |  executor: ${executorMode}${executorMode === 'agent' ? ` (edits ${agentEnv['CODEBUDDY_AUTONOMY_WORKSPACE_ROOT']})` : ''}`);
       console.log(`  Add work:  buddy autonomy tasks add "<title>" --dir ${dir}`);
       console.log(`  Manage:    systemctl --user status|stop|start|restart codebuddy-autonomy`);
       console.log(`  Remove:    buddy autonomy uninstall`);
