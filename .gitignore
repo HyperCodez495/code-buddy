@@ -136,6 +136,11 @@ cowork/.claude/*
 # Each skill's LICENSE.txt is referenced by its SKILL.md; the global *.txt
 # ignore would otherwise drop them.
 !cowork/.claude/skills/**/LICENSE.txt
+# The repo also ships project Agent Skills under .claude/skills (e.g. code-buddy);
+# re-include only that subtree, keeping the rest of .claude/ (local state) ignored.
+!/.claude/
+/.claude/*
+!/.claude/skills/
 .grok/
 # Grok CLI
 .grok/sessions/
