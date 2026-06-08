@@ -69,29 +69,46 @@ validation commands, and public screenshot privacy policy, see
 
 ## 🎬 Demo
 
-See Code Buddy Cowork in action:
+Real captures of **this** app (Code Buddy Cowork) — its actual panels, not borrowed/stock media:
 
-> [!IMPORTANT]
-> **Public media review**: These GitHub-hosted demo videos are treated as public
-> QA evidence. Before replacing or adding media, review the frames for account
-> IDs, access tokens, OAuth callback URLs, local paths, browser tabs, terminal
-> history, and notifications. Keep raw private captures out of the README; use
-> reviewed crops or synthetic workspaces.
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/01-home-work-surface.jpg" alt="Work surface" /><br/>
+      <sub><b>Work surface</b> — chat + tools on the embedded Code Buddy core engine</sub>
+    </td>
+    <td width="50%" align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/07-fleet-command-center.jpg" alt="Fleet Command Center" /><br/>
+      <sub><b>Fleet Command Center</b> — multi-AI peers (<code>peer.chat</code> / <code>peer.tool.invoke</code>)</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/09-agent-team.jpg" alt="Agent Team" /><br/>
+      <sub><b>Agent Team</b> — orchestrated multi-agent coordination</sub>
+    </td>
+    <td align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/110-test-runner-autonomous-progress.png" alt="Autonomous progress" /><br/>
+      <sub><b>Autonomy</b> — autonomous task execution &amp; progress</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/21-buddy-companion.jpg" alt="Buddy Companion" /><br/>
+      <sub><b>Buddy Companion</b> — voice, vision, presence</sub>
+    </td>
+    <td align="center">
+      <img src="../docs/qa/code-buddy-studio/screenshots/22-settings.jpg" alt="Settings" /><br/>
+      <sub><b>Settings</b> — providers, sandbox, MCP, skills, permissions</sub>
+    </td>
+  </tr>
+</table>
 
-### 1. Folder Organization & Cleanup 📂
-https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7
-
-### 2. Generate PPT from Files 📊
-https://github.com/user-attachments/assets/30299ded-0260-468f-b11d-d282bb9c97f2
-
-### 3. Generate XLSX Spreadsheets 📉
-https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc
-
-### 4. GUI Operation🖥
-https://github.com/user-attachments/assets/75542c76-210f-414d-8182-1da988c148f2
-
-### 5. Remote control with Feishu(Lark) 🤖
-https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74
+> [!NOTE]
+> These are real screenshots of this Cowork build. To add moving demos, record your
+> own screencasts and drop them here — first review every frame for account IDs,
+> tokens, OAuth callback URLs, private paths, and notifications (see the
+> [media privacy rules](../docs/cowork.md)); use reviewed crops or synthetic workspaces.
 
 ---
 
