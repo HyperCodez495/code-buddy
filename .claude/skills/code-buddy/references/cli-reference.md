@@ -98,7 +98,7 @@ buddy colab status                    # shared task queue (colab-tasks.json: cla
 ```
 
 - The autonomous loop claims open, non-`critical` tasks in priority order, respecting DAG `dependsOn`, on the free-first model ladder (local → Tailscale network → paid). Configure via env: `CODEBUDDY_LOCAL_MODEL`, `OLLAMA_BASE_URL`, `CODEBUDDY_NETWORK_MODELS=model@url,…`, `CODEBUDDY_ESCALATION_MODEL`.
-- The default daemon executor (v0) writes the model's output as a scoped artifact — it does **not** edit the repo. Real autonomous file editing via the agent is demonstrated in the autonomy lab.
+- The default daemon executor (v0) writes the model's output as a scoped artifact — it does **not** edit the repo. To make the daemon run the **real agent** (editing files), set `CODEBUDDY_AUTONOMY_EXECUTOR=agent` **and** `CODEBUDDY_AUTONOMY_WORKSPACE_ROOT=<bounded dir>` — fail-closed: it refuses to run without the workspace root, so edits stay inside that dir. The same pattern is demonstrated standalone in the autonomy lab.
 
 ## The autonomy lab
 
