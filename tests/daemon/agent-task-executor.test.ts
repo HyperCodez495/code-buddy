@@ -102,10 +102,10 @@ describe('agent-task-executor', () => {
     expect(r.error).toMatch(/ETIMEDOUT/);
   });
 
-  it('passes when the task has a verify gate and it exits 0', async () => {
+  it('passes when the gate is allowed and it exits 0', async () => {
     // agent (tsx/node) succeeds; gate (`sh -c`) succeeds.
     const { fn, calls } = spawnDispatch(() => ({ status: 0 }));
-    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), allowVerifyCommand: true, spawnImpl: fn });
     const r = await exec(taskWithGate, localModel);
     expect(r.ok).toBe(true);
     expect(r.summary).toMatch(/gate .*passed/);
@@ -113,19 +113,28 @@ describe('agent-task-executor', () => {
     expect(gateCall?.args).toEqual(['-c', 'node check.mjs']);
   });
 
-  it('fails (releases) when the verify gate fails even though the agent finished', async () => {
+  it('fails (releases) when the allowed gate fails even though the agent finished', async () => {
     // agent succeeds (exit 0), gate fails (exit 1).
     const { fn } = spawnDispatch((cmd) => (cmd === 'sh' ? { status: 1, stderr: 'assertion failed' } : { status: 0 }));
-    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), allowVerifyCommand: true, spawnImpl: fn });
     const r = await exec(taskWithGate, localModel);
     expect(r.ok).toBe(false);
     expect(r.summary).toMatch(/acceptance gate failed/);
     expect(r.error).toMatch(/exited 1|assertion failed/);
   });
 
-  it('skips the gate when the task has no verifyCommand', async () => {
+  it('does NOT run a verifyCommand unless explicitly allowed (security default)', async () => {
+    // Task carries a gate, but allowVerifyCommand is off → the sh -c is never run.
     const { fn, calls } = spawnDispatch(() => ({ status: 0 }));
     const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const r = await exec(taskWithGate, localModel);
+    expect(r.ok).toBe(true); // completes on agent success...
+    expect(calls.some((c) => c.cmd === 'sh')).toBe(false); // ...but the task command was never executed
+  });
+
+  it('skips the gate when the task has no verifyCommand', async () => {
+    const { fn, calls } = spawnDispatch(() => ({ status: 0 }));
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), allowVerifyCommand: true, spawnImpl: fn });
     const r = await exec(task, localModel);
     expect(r.ok).toBe(true);
     expect(calls.some((c) => c.cmd === 'sh')).toBe(false); // no gate spawned

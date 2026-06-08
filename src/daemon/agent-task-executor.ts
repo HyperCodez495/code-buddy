@@ -6,9 +6,12 @@
  * headless so it edits files to do the task. It is the production form of the
  * proven `scripts/autonomy-lab/` executor.
  *
- * Acceptance gate: if the task carries a `verifyCommand`, it is run in the
- * workspace after the agent and MUST exit 0 — so "completed" means *verified*,
- * not merely "the agent finished". A failing gate releases the task for retry.
+ * Acceptance gate (opt-in): when `CODEBUDDY_AUTONOMY_VERIFY_COMMANDS=1` (or
+ * `opts.allowVerifyCommand`) and the task carries a `verifyCommand`, it runs in
+ * the workspace after the agent and MUST exit 0 — so "completed" means
+ * *verified*, not merely "the agent finished". It is `sh -c <cmd>` from the task
+ * (bypasses agent tool restrictions), so it stays opt-in: only enable it for an
+ * operator-trusted queue, never a peer/fleet-authored one.
  *
  * Safety — this has real blast radius, so it is gated:
  *   - **Fail-closed workspace root.** It refuses to run without an explicit
@@ -57,6 +60,14 @@ export interface AgentTaskExecutorOptions {
    * Defaults to splitting `CODEBUDDY_AUTONOMY_AGENT_ARGS` on whitespace.
    */
   extraArgs?: string[];
+  /**
+   * Run a task's `verifyCommand` acceptance gate. It is `sh -c <cmd>` from the
+   * task, so it bypasses `extraArgs` tool restrictions — only enable it when the
+   * task queue is operator-trusted (NOT peer/fleet-authored). Default: off,
+   * unless `CODEBUDDY_AUTONOMY_VERIFY_COMMANDS=1`. When off, a task with a
+   * verifyCommand still completes on agent success — it just isn't gate-verified.
+   */
+  allowVerifyCommand?: boolean;
   /** Injectable spawn (tests). */
   spawnImpl?: SpawnFn;
 }
@@ -81,6 +92,10 @@ export function buildAgentEnv(model: AutonomousModelChoice, base: NodeJS.Process
     env['CODEBUDDY_PROVIDER'] = 'ollama';
     env['OLLAMA_HOST'] = model.baseUrl.replace(/\/v1\/?$/, '');
   }
+  // Escalated/paid tier (no baseUrl): only the model is pinned. The provider is
+  // left to auto-detect, so the operator must ensure the matching provider is the
+  // active one — set `CODEBUDDY_PROVIDER`/the right API key, or remove a
+  // conflicting ChatGPT login — else detection may route the paid model wrong.
   return env;
 }
 
@@ -91,6 +106,7 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
   const permissionMode = opts.permissionMode ?? 'acceptEdits';
   const envArgs = process.env['CODEBUDDY_AUTONOMY_AGENT_ARGS']?.trim();
   const extraArgs = opts.extraArgs ?? (envArgs ? envArgs.split(/\s+/) : []);
+  const allowVerify = opts.allowVerifyCommand ?? process.env['CODEBUDDY_AUTONOMY_VERIFY_COMMANDS'] === '1';
   const doSpawn: SpawnFn = opts.spawnImpl ?? (spawnSync as unknown as SpawnFn);
 
   return async (task: ColabTask, model: AutonomousModelChoice): Promise<TaskExecutionResult> => {
@@ -128,9 +144,11 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
       };
     }
 
-    // Acceptance gate: if the task carries a verify command, the agent "finishing"
-    // isn't enough — the gate must pass for the task to count as completed.
-    const gate = task.verifyCommand?.trim();
+    // Acceptance gate: if the task carries a verify command AND running task-
+    // supplied shell is allowed (opt-in), the agent "finishing" isn't enough —
+    // the gate must pass for the task to count as completed. When not allowed,
+    // the gate is skipped (the command is never executed).
+    const gate = allowVerify ? task.verifyCommand?.trim() : undefined;
     if (gate) {
       const v = doSpawn('sh', ['-c', gate], {
         cwd: workspaceRoot,

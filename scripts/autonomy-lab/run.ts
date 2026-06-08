@@ -97,7 +97,8 @@ async function main(): Promise<void> {
   // 3. Use the PRODUCTION executor (dogfood). It runs the real agent in the
   //    sandbox pinned to the tier's model, then the task's `verifyCommand` gate —
   //    so "completed" means the agent's edit actually passed the check.
-  const executor = createAgentTaskExecutor({ workspaceRoot: sandboxDir, repoRoot });
+  // allowVerifyCommand: the lab authors its own (trusted) tasks, so the gate runs.
+  const executor = createAgentTaskExecutor({ workspaceRoot: sandboxDir, repoRoot, allowVerifyCommand: true });
 
   // 4. Drive the real loop until drained (bounded so a permanently-failing task
   //    can't spin forever; t-slug-id is gated behind t-slugify by the DAG).
