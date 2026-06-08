@@ -1,0 +1,25 @@
+[package]
+name = "codebuddy-captured"
+version = "0.1.0"
+edition = "2021"
+description = "Native Rust heavy-processing daemon for Code Buddy — screen-frame perceptual hashing / dedup (and capture)."
+
+# A focused sibling of codebuddy-sidecar: same newline-delimited JSON-RPC over
+# stdin/stdout, but only the heavy *image* deps (no whisper-rs → no cmake/clang
+# build requirement). Offloads the frequent, CPU-bound per-frame work (perceptual
+# hashing for robust dedup) from the Node screen-watcher.
+
+[[bin]]
+name = "codebuddy-captured"
+path = "src/main.rs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+image_hasher = "2"
+
+[profile.release]
+opt-level = 3
+lto = true
+strip = true

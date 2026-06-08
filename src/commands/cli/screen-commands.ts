@@ -122,12 +122,19 @@ export function registerScreenCommands(program: Command): void {
       const intervalMs = (parseInt(opts.interval, 10) || 5) * 1000;
       const maxFrames = opts.max ? parseInt(opts.max, 10) : Infinity;
 
+      // Offload frame dedup to the codebuddy-captured Rust daemon (perceptual
+      // hash — robust to lossy re-encode) when it's built; else JS sha1.
+      const { getCapturedBridge } = await import('../../capture/captured-bridge.js');
+      const bridge = getCapturedBridge();
+      const fingerprint = bridge.isAvailable() ? (p: string) => bridge.phash(p) : undefined;
+      if (fingerprint) console.log('using codebuddy-captured (Rust) for perceptual-hash dedup.');
+
       // --repair: screen → OCR → error detect → FaultLocalizer (AutoRepair engine).
       if (opts.repair) {
         const { ScreenErrorWatcher } = await import('../../capture/screen-error-watcher.js');
         let n = 0;
         const ew = new ScreenErrorWatcher({
-          watcher: { intervalMs },
+          watcher: { intervalMs, ...(fingerprint ? { fingerprint } : {}) },
           onObservation: (obs) => {
             if (obs.changed && obs.text) console.log(`[CHANGED] ${obs.text.replace(/\s+/g, ' ').slice(0, 120)}`);
           },
@@ -165,8 +172,9 @@ export function registerScreenCommands(program: Command): void {
       const { ScreenWatcher } = await import('../../capture/screen-watcher.js');
       let n = 0;
       const watcher = new ScreenWatcher({
-        intervalMs: (parseInt(opts.interval, 10) || 5) * 1000,
+        intervalMs,
         ocr: Boolean(opts.ocr),
+        ...(fingerprint ? { fingerprint } : {}),
         onObservation: (obs) => {
           const tag = obs.changed ? 'CHANGED' : 'idle';
           const line = obs.text

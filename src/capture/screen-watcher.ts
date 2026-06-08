@@ -39,8 +39,12 @@ export interface ScreenWatcherOptions {
   ocr?: boolean;
   /** Capture a frame to `output`, resolve to the path. Injectable for tests. */
   capture?: (output: string) => Promise<string>;
-  /** Fingerprint a frame for dedup. Default: sha1 of file bytes. */
-  fingerprint?: (framePath: string) => string;
+  /**
+   * Fingerprint a frame for dedup. Default: sha1 of file bytes. May be async —
+   * e.g. the codebuddy-captured Rust daemon's perceptual hash, which dedups
+   * near-identical frames (robust to lossy re-encode), unlike a byte sha1.
+   */
+  fingerprint?: (framePath: string) => string | Promise<string>;
   /** OCR a frame to text. Default: `tesseract <frame> stdout`. */
   ocrImpl?: (framePath: string) => Promise<string>;
   /** Redact secrets/PII from text. Default: privacy-lint. */
@@ -99,7 +103,7 @@ export class ScreenWatcher {
     const capture = this.opts.capture ?? ((out: string) => this.defaultCapture(out));
     await capture(framePath);
 
-    const fp = this.opts.fingerprint(framePath);
+    const fp = await this.opts.fingerprint(framePath);
     const changed = fp !== this.lastFingerprint;
     this.lastFingerprint = fp;
 
