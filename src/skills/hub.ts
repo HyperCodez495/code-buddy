@@ -17,6 +17,41 @@ import * as yaml from 'yaml';
 import { logger } from '../utils/logger.js';
 import { generateDiff } from '../utils/diff-generator.js';
 import { parseSkillFile, validateSkill } from './parser.js';
+import {
+  generateSkillSigningKeyPair,
+  signSkillContent,
+  resolveSignatureVerification,
+  validateEd25519PublicKey,
+  meetsTrust,
+  isSkillKeyTrust,
+} from './hub-signing.js';
+import type {
+  SkillSignature,
+  SkillKeyTrust,
+  SkillSignatureStatus,
+  SkillSignatureVerification,
+  TrustedSkillKey,
+  SkillSigningKeyPair,
+} from './hub-signing.js';
+
+// Re-export the signing surface so consumers can import everything from the hub.
+export {
+  generateSkillSigningKeyPair,
+  signSkillContent,
+  resolveSignatureVerification,
+  verifySkillSignatureMath,
+  computeKeyId,
+  meetsTrust,
+} from './hub-signing.js';
+export type {
+  SkillSignature,
+  SkillSignatureAlgorithm,
+  SkillKeyTrust,
+  SkillSignatureStatus,
+  SkillSignatureVerification,
+  TrustedSkillKey,
+  SkillSigningKeyPair,
+} from './hub-signing.js';
 
 // ============================================================================
 // Types
@@ -45,6 +80,8 @@ export interface HubSkill {
   size: number;
   /** Source repository URL */
   repository?: string;
+  /** Detached Ed25519 signature over the SKILL.md content, when published signed. */
+  signature?: SkillSignature;
 }
 
 export interface HubSearchResult {
@@ -83,6 +120,10 @@ export interface InstalledSkill {
   lifecycle?: SkillLifecycleState;
   /** Previous on-disk SKILL.md snapshots available for rollback. */
   history?: SkillVersionSnapshot[];
+  /** Detached signature recorded at install time, when the source was signed. */
+  signature?: SkillSignature;
+  /** Signature verification verdict computed at install time. */
+  signatureStatus?: SkillSignatureStatus;
 }
 
 export interface InstalledSkillStatus extends InstalledSkill {
@@ -344,6 +385,12 @@ export interface HubConfig {
   lockfilePath: string;
   /** Path to the tap registry file for GitHub/repository-based skill sources */
   tapsPath: string;
+  /** Path to the trusted publisher keyring used to verify skill signatures */
+  trustedKeysPath: string;
+  /** When true, installs are rejected unless content carries a verified signature */
+  requireSignedInstalls: boolean;
+  /** Minimum publisher trust required when requireSignedInstalls is on (default: any verified key) */
+  minSignatureTrust?: SkillKeyTrust;
   /** GitHub Contents API base URL. Override in tests or self-hosted gateways. */
   githubApiBaseUrl: string;
   /** GitHub raw content base URL. Override in tests or self-hosted gateways. */
@@ -381,6 +428,12 @@ interface TapsFile {
   taps: SkillTap[];
 }
 
+interface TrustedKeysFile {
+  version: number;
+  updatedAt: string;
+  keys: TrustedSkillKey[];
+}
+
 interface GitHubContentEntry {
   name: string;
   path?: string;
@@ -398,6 +451,8 @@ const DEFAULT_HUB_CONFIG: HubConfig = {
   skillsDir: path.join(os.homedir(), '.codebuddy', 'skills', 'managed'),
   lockfilePath: path.join(os.homedir(), '.codebuddy', 'hub', 'lock.json'),
   tapsPath: path.join(os.homedir(), '.codebuddy', 'hub', 'taps.json'),
+  trustedKeysPath: path.join(os.homedir(), '.codebuddy', 'hub', 'trusted-keys.json'),
+  requireSignedInstalls: false,
   githubApiBaseUrl: 'https://api.github.com',
   githubRawBaseUrl: 'https://raw.githubusercontent.com',
   autoUpdate: false,
@@ -406,6 +461,7 @@ const DEFAULT_HUB_CONFIG: HubConfig = {
 
 const LOCKFILE_VERSION = 1;
 const TAPS_FILE_VERSION = 1;
+const TRUSTED_KEYS_FILE_VERSION = 1;
 const SUPPORTING_FILE_DIRS = new Set(['references', 'templates', 'scripts', 'assets']);
 const MAX_SUPPORTING_FILE_BYTES = 1_048_576;
 const DEFAULT_TAP_PATH = 'skills/';
@@ -494,6 +550,11 @@ export class SkillsHub extends EventEmitter {
     const tapsDir = path.dirname(this.config.tapsPath);
     if (!fs.existsSync(tapsDir)) {
       fs.mkdirSync(tapsDir, { recursive: true });
+    }
+
+    const trustedKeysDir = path.dirname(this.config.trustedKeysPath);
+    if (!fs.existsSync(trustedKeysDir)) {
+      fs.mkdirSync(trustedKeysDir, { recursive: true });
     }
   }
 
@@ -1104,6 +1165,236 @@ export class SkillsHub extends EventEmitter {
   }
 
   // ==========================================================================
+  // Signing & Trusted Keys
+  // ==========================================================================
+
+  /**
+   * List trusted publisher keys. Returns copies so callers cannot mutate the
+   * keyring in place. Public keys are safe to display; no private material is
+   * ever stored here.
+   */
+  listTrustedKeys(): TrustedSkillKey[] {
+    return this.readTrustedKeysFile().keys.map((key) => ({ ...key }));
+  }
+
+  /**
+   * Look up a single trusted key by id.
+   */
+  getTrustedKey(keyId: string): TrustedSkillKey | null {
+    const key = this.readTrustedKeysFile().keys.find((item) => item.keyId === keyId);
+    return key ? { ...key } : null;
+  }
+
+  /**
+   * Add (or update) a trusted publisher key. The public key must be a base64
+   * SPKI DER Ed25519 key; if no keyId is supplied it is derived from the key
+   * fingerprint so a publisher and consumer agree on the same id.
+   */
+  addTrustedKey(
+    publicKey: string,
+    options: {
+      keyId?: string;
+      trust?: SkillKeyTrust;
+      addedBy?: string;
+      label?: string;
+      updatedAt?: number;
+    } = {},
+  ): TrustedSkillKey {
+    const normalizedPublicKey = publicKey.trim();
+    if (!normalizedPublicKey) {
+      throw new Error('A base64 SPKI DER Ed25519 public key is required to trust a publisher.');
+    }
+    // Validate the key parses as an Ed25519 public key before we trust it.
+    const keyId = this.validateTrustedPublicKey(normalizedPublicKey, options.keyId);
+
+    const trust = options.trust ?? 'community';
+    if (!isSkillKeyTrust(trust)) {
+      throw new Error(`Invalid key trust '${trust}'. Use builtin, official, trusted, or community.`);
+    }
+
+    const keysFile = this.readTrustedKeysFile();
+    const now = options.updatedAt ?? Date.now();
+    const existing = keysFile.keys.find((item) => item.keyId === keyId);
+
+    if (existing) {
+      existing.publicKey = normalizedPublicKey;
+      existing.trust = trust;
+      existing.updatedAt = now;
+      if (options.addedBy) existing.addedBy = options.addedBy;
+      if (options.label) existing.label = options.label;
+      this.writeTrustedKeysFile(keysFile);
+      this.emit('key:updated', { ...existing });
+      return { ...existing };
+    }
+
+    const key: TrustedSkillKey = {
+      keyId,
+      publicKey: normalizedPublicKey,
+      algorithm: 'ed25519',
+      trust,
+      addedAt: now,
+      updatedAt: now,
+      ...(options.addedBy ? { addedBy: options.addedBy } : {}),
+      ...(options.label ? { label: options.label } : {}),
+    };
+    keysFile.keys.push(key);
+    keysFile.keys.sort((left, right) => left.keyId.localeCompare(right.keyId));
+    this.writeTrustedKeysFile(keysFile);
+    this.emit('key:added', { ...key });
+    return { ...key };
+  }
+
+  /**
+   * Remove a trusted publisher key by id. Returns false if it was not present.
+   */
+  removeTrustedKey(keyId: string): boolean {
+    const keysFile = this.readTrustedKeysFile();
+    const next = keysFile.keys.filter((key) => key.keyId !== keyId);
+    if (next.length === keysFile.keys.length) {
+      return false;
+    }
+    keysFile.keys = next;
+    this.writeTrustedKeysFile(keysFile);
+    this.emit('key:removed', keyId);
+    return true;
+  }
+
+  /**
+   * Change the trust level of an existing trusted key.
+   */
+  setKeyTrust(
+    keyId: string,
+    trust: SkillKeyTrust,
+    options: { addedBy?: string; updatedAt?: number } = {},
+  ): TrustedSkillKey | null {
+    if (!isSkillKeyTrust(trust)) {
+      throw new Error(`Invalid key trust '${trust}'. Use builtin, official, trusted, or community.`);
+    }
+    const keysFile = this.readTrustedKeysFile();
+    const key = keysFile.keys.find((item) => item.keyId === keyId);
+    if (!key) {
+      return null;
+    }
+    key.trust = trust;
+    key.updatedAt = options.updatedAt ?? Date.now();
+    if (options.addedBy) key.addedBy = options.addedBy;
+    this.writeTrustedKeysFile(keysFile);
+    this.emit('key:trust_updated', { ...key });
+    return { ...key };
+  }
+
+  /**
+   * Generate a fresh Ed25519 publisher keypair. The private key is returned to
+   * the caller and never persisted by the hub; only public keys are trusted.
+   */
+  generateSigningKeyPair(keyId?: string): SkillSigningKeyPair {
+    return generateSkillSigningKeyPair(keyId);
+  }
+
+  /**
+   * Verify a detached signature for SKILL.md content against the trusted keyring.
+   * Returns `unsigned` when no signature is supplied.
+   */
+  verifySkillContentSignature(
+    content: string,
+    signature?: SkillSignature,
+  ): SkillSignatureVerification {
+    return resolveSignatureVerification(content, signature, this.readTrustedKeysFile().keys);
+  }
+
+  private validateTrustedPublicKey(publicKeyB64: string, requestedKeyId?: string): string {
+    // resolveSignatureVerification matches a signature's keyId against the ring,
+    // so the operator-supplied keyId (if any) wins; otherwise derive it from the
+    // key fingerprint. validateEd25519PublicKey rejects non-Ed25519/malformed keys.
+    const derived = validateEd25519PublicKey(publicKeyB64);
+    const requested = requestedKeyId?.trim();
+    return requested && requested.length > 0 ? requested : derived;
+  }
+
+  private enforceSignaturePolicy(skillName: string, verification: SkillSignatureVerification): void {
+    if (!this.config.requireSignedInstalls) {
+      return;
+    }
+    if (verification.status !== 'verified') {
+      throw new Error(
+        `Refusing to install '${skillName}': signed installs are required but the signature is '${verification.status}'`
+          + (verification.reason ? ` (${verification.reason})` : ''),
+      );
+    }
+    const min = this.config.minSignatureTrust;
+    if (min && (!verification.trust || !meetsTrust(verification.trust, min))) {
+      throw new Error(
+        `Refusing to install '${skillName}': signer trust '${verification.trust ?? 'unknown'}' `
+          + `is below the required minimum '${min}'`,
+      );
+    }
+  }
+
+  private readTrustedKeysFile(): TrustedKeysFile {
+    try {
+      if (fs.existsSync(this.config.trustedKeysPath)) {
+        const raw = fs.readFileSync(this.config.trustedKeysPath, 'utf-8');
+        const parsed = JSON.parse(raw) as Partial<TrustedKeysFile>;
+        if (parsed.version === TRUSTED_KEYS_FILE_VERSION && Array.isArray(parsed.keys)) {
+          const keys = parsed.keys
+            .map((key) => this.normalizeTrustedKeyRecord(key))
+            .filter((key): key is TrustedSkillKey => Boolean(key));
+          return {
+            version: TRUSTED_KEYS_FILE_VERSION,
+            updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
+            keys,
+          };
+        }
+      }
+    } catch (err) {
+      logger.warn('Failed to read hub trusted keys file, starting fresh', {
+        path: this.config.trustedKeysPath,
+        error: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    return {
+      version: TRUSTED_KEYS_FILE_VERSION,
+      updatedAt: new Date().toISOString(),
+      keys: [],
+    };
+  }
+
+  private writeTrustedKeysFile(keysFile: TrustedKeysFile): void {
+    keysFile.updatedAt = new Date().toISOString();
+    keysFile.keys.sort((left, right) => left.keyId.localeCompare(right.keyId));
+    fs.writeFileSync(this.config.trustedKeysPath, JSON.stringify(keysFile, null, 2), 'utf-8');
+    logger.debug('Hub trusted keys file written', { path: this.config.trustedKeysPath });
+  }
+
+  private normalizeTrustedKeyRecord(key: unknown): TrustedSkillKey | null {
+    if (!key || typeof key !== 'object') {
+      return null;
+    }
+    const candidate = key as Partial<TrustedSkillKey>;
+    if (typeof candidate.keyId !== 'string' || typeof candidate.publicKey !== 'string') {
+      return null;
+    }
+    const addedAt = typeof candidate.addedAt === 'number' ? candidate.addedAt : Date.now();
+    const updatedAt = typeof candidate.updatedAt === 'number' ? candidate.updatedAt : addedAt;
+    const trust = isSkillKeyTrust(candidate.trust) ? candidate.trust : 'community';
+    return {
+      keyId: candidate.keyId,
+      publicKey: candidate.publicKey,
+      algorithm: 'ed25519',
+      trust,
+      addedAt,
+      updatedAt,
+      ...(typeof candidate.addedBy === 'string' && candidate.addedBy.trim()
+        ? { addedBy: candidate.addedBy.trim() }
+        : {}),
+      ...(typeof candidate.label === 'string' && candidate.label.trim()
+        ? { label: candidate.label.trim() }
+        : {}),
+    };
+  }
+
+  // ==========================================================================
   // Search
   // ==========================================================================
 
@@ -1296,6 +1587,11 @@ export class SkillsHub extends EventEmitter {
     const resolvedVersion = this.extractVersionFromContent(content) || version || '0.0.0';
     this.validateSkillContent(content, skillName);
 
+    // By-name hub downloads carry no detached signature, so this resolves to
+    // `unsigned`; enforcement is a no-op unless requireSignedInstalls is on.
+    const verification = this.verifySkillContentSignature(content);
+    this.enforceSignaturePolicy(skillName, verification);
+
     // Write to managed skills directory
     const skillDir = path.join(this.config.skillsDir, skillName);
     if (!fs.existsSync(skillDir)) {
@@ -1313,6 +1609,7 @@ export class SkillsHub extends EventEmitter {
       source: 'hub',
       checksum,
       path: skillPath,
+      signatureStatus: verification.status,
     };
 
     this.lockfile.skills[skillName] = installed;
@@ -1367,7 +1664,8 @@ export class SkillsHub extends EventEmitter {
   async installFromContent(
     skillName: string,
     content: string,
-    source: InstalledSkill['source'] = 'local'
+    source: InstalledSkill['source'] = 'local',
+    options: { signature?: SkillSignature } = {},
   ): Promise<InstalledSkill> {
     if (!/^[a-zA-Z0-9_-]+$/.test(skillName)) {
       throw new Error(`Invalid skill name: ${skillName}. Only alphanumeric, dash, and underscore allowed.`);
@@ -1377,6 +1675,11 @@ export class SkillsHub extends EventEmitter {
     const version = this.extractVersionFromContent(content) || '0.0.0';
 
     this.validateSkillContent(content, skillName);
+
+    // Verify the optional detached signature against the trusted keyring and
+    // enforce the signed-install policy before writing anything to disk.
+    const verification = this.verifySkillContentSignature(content, options.signature);
+    this.enforceSignaturePolicy(skillName, verification);
 
     // Write to managed skills directory
     const skillDir = path.join(this.config.skillsDir, skillName);
@@ -1394,12 +1697,19 @@ export class SkillsHub extends EventEmitter {
       source,
       checksum,
       path: skillPath,
+      signatureStatus: verification.status,
+      ...(options.signature ? { signature: options.signature } : {}),
     };
 
     this.lockfile.skills[skillName] = installed;
     this.writeLockfile();
 
-    logger.info('Skill installed from content', { name: skillName, version, source });
+    logger.info('Skill installed from content', {
+      name: skillName,
+      version,
+      source,
+      signatureStatus: verification.status,
+    });
     this.emit('skill:installed', installed);
 
     return installed;
@@ -1779,7 +2089,10 @@ export class SkillsHub extends EventEmitter {
    * Reads the SKILL.md, validates YAML frontmatter, computes checksum,
    * and returns the prepared HubSkill metadata.
    */
-  async publish(skillPath: string): Promise<HubSkill> {
+  async publish(
+    skillPath: string,
+    options: { signingKey?: string; keyId?: string; signedAt?: string } = {},
+  ): Promise<HubSkill> {
     const resolvedPath = path.resolve(skillPath);
 
     if (!fs.existsSync(resolvedPath)) {
@@ -1833,11 +2146,21 @@ export class SkillsHub extends EventEmitter {
       size,
     };
 
+    // Optionally attach a detached Ed25519 signature so consumers can verify
+    // authenticity (not just integrity) before installing.
+    if (options.signingKey) {
+      hubSkill.signature = signSkillContent(content, options.signingKey, {
+        ...(options.keyId ? { keyId: options.keyId } : {}),
+        ...(options.signedAt ? { signedAt: options.signedAt } : {}),
+      });
+    }
+
     logger.info('Skill prepared for publishing', {
       name: hubSkill.name,
       version: hubSkill.version,
       checksum,
       size,
+      signed: Boolean(hubSkill.signature),
     });
 
     this.emit('skill:published', hubSkill);

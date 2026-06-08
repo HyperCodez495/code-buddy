@@ -53,6 +53,13 @@ const mockSkillsHub = {
   removeTap: jest.fn(),
   refreshTapIndex: jest.fn(),
   discoverWellKnownSkills: jest.fn(),
+  verifySkillContentSignature: jest.fn(),
+  listTrustedKeys: jest.fn(),
+  getTrustedKey: jest.fn(),
+  addTrustedKey: jest.fn(),
+  removeTrustedKey: jest.fn(),
+  setKeyTrust: jest.fn(),
+  generateSigningKeyPair: jest.fn(),
 };
 
 jest.mock('../../src/skills/hub.js', () => ({
@@ -832,8 +839,27 @@ describe('Native Engine CLI Commands', () => {
 
         await program.parseAsync(['node', 'test', 'hub', 'publish', './skills/new-skill']);
 
-        expect(mockSkillsHub.publish).toHaveBeenCalledWith('./skills/new-skill');
+        expect(mockSkillsHub.publish).toHaveBeenCalledWith('./skills/new-skill', {});
         expect(getLogOutput()).toContain('Published new-skill v1.0.0');
+      });
+
+      it('should pass the key id through when signing inline', async () => {
+        mockSkillsHub.publish.mockResolvedValue({
+          name: 'signed-skill',
+          version: '2.0.0',
+          signature: { keyId: 'acme', algorithm: 'ed25519' },
+        });
+
+        await program.parseAsync([
+          'node', 'test', 'hub', 'publish', './skills/signed-skill',
+          '--sign', 'BASE64PRIVATEKEY', '--key-id', 'acme',
+        ]);
+
+        expect(mockSkillsHub.publish).toHaveBeenCalledWith('./skills/signed-skill', {
+          signingKey: 'BASE64PRIVATEKEY',
+          keyId: 'acme',
+        });
+        expect(getLogOutput()).toContain('Signed by key acme');
       });
 
       it('should handle publish failure', async () => {
@@ -900,6 +926,124 @@ describe('Native Engine CLI Commands', () => {
         expect(output).not.toContain('Removed:');
         expect(output).not.toContain('Updated:');
         expect(output).not.toContain('Everything in sync.');
+      });
+    });
+
+    describe('hub verify', () => {
+      it('reports a verified signature', async () => {
+        mockSkillsHub.info.mockReturnValue({
+          installed: { name: 'signed-skill', version: '1.0.0', signature: { keyId: 'acme' } },
+          content: 'CONTENT',
+          integrityOk: true,
+        });
+        mockSkillsHub.verifySkillContentSignature.mockReturnValue({ status: 'verified', keyId: 'acme', trust: 'official' });
+
+        await program.parseAsync(['node', 'test', 'hub', 'verify', 'signed-skill']);
+
+        expect(mockSkillsHub.verifySkillContentSignature).toHaveBeenCalledWith('CONTENT', { keyId: 'acme' });
+        expect(getLogOutput()).toContain('signature verified');
+        expect(processExitSpy).not.toHaveBeenCalledWith(1);
+      });
+
+      it('exits non-zero for an untrusted signature', async () => {
+        mockSkillsHub.info.mockReturnValue({
+          installed: { name: 's', version: '1.0.0', signature: { keyId: 'rogue' } },
+          content: 'CONTENT',
+          integrityOk: true,
+        });
+        mockSkillsHub.verifySkillContentSignature.mockReturnValue({ status: 'untrusted', keyId: 'rogue' });
+
+        await program.parseAsync(['node', 'test', 'hub', 'verify', 's']);
+
+        expect(getLogOutput()).toContain('signature untrusted');
+        expect(processExitSpy).toHaveBeenCalledWith(1);
+      });
+
+      it('errors when the skill is missing', async () => {
+        mockSkillsHub.info.mockReturnValue(null);
+
+        await program.parseAsync(['node', 'test', 'hub', 'verify', 'ghost']);
+
+        expect(getErrorOutput()).toContain('Skill not found or missing on disk: ghost');
+        expect(processExitSpy).toHaveBeenCalledWith(1);
+      });
+    });
+
+    describe('hub keys', () => {
+      it('lists trusted keys', async () => {
+        mockSkillsHub.listTrustedKeys.mockReturnValue([
+          { keyId: 'acme', trust: 'official', label: 'ACME', algorithm: 'ed25519', publicKey: 'PUB', addedAt: 1, updatedAt: 1 },
+        ]);
+        mockSkillsHub.getConfig.mockReturnValue({ trustedKeysPath: '/tmp/keys.json' });
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'list']);
+
+        const output = getLogOutput();
+        expect(output).toContain('Trusted publisher keys (1)');
+        expect(output).toContain('acme  trust=official');
+      });
+
+      it('reports an empty keyring', async () => {
+        mockSkillsHub.listTrustedKeys.mockReturnValue([]);
+        mockSkillsHub.getConfig.mockReturnValue({ trustedKeysPath: '/tmp/keys.json' });
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'list']);
+
+        expect(getLogOutput()).toContain('No trusted keys configured');
+      });
+
+      it('generates a keypair and warns about the private key', async () => {
+        mockSkillsHub.generateSigningKeyPair.mockReturnValue({
+          keyId: 'fp123', publicKey: 'PUBKEY', privateKey: 'PRIVKEY',
+        });
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'generate']);
+
+        const output = getLogOutput();
+        expect(output).toContain('Generated Ed25519 keypair: fp123');
+        expect(output).toContain('Public key:  PUBKEY');
+        expect(output).toContain('Keep the private key secret');
+      });
+
+      it('adds a trusted key with explicit metadata', async () => {
+        mockSkillsHub.addTrustedKey.mockReturnValue({ keyId: 'acme', trust: 'trusted' });
+
+        await program.parseAsync([
+          'node', 'test', 'hub', 'keys', 'add', 'PUBKEYB64',
+          '--key-id', 'acme', '--trust', 'trusted', '--label', 'ACME', '--approved-by', 'patrice',
+        ]);
+
+        expect(mockSkillsHub.addTrustedKey).toHaveBeenCalledWith('PUBKEYB64', {
+          keyId: 'acme', trust: 'trusted', label: 'ACME', addedBy: 'patrice',
+        });
+        expect(getLogOutput()).toContain('Trusted publisher key: acme (trust=trusted)');
+      });
+
+      it('reports a key add failure', async () => {
+        mockSkillsHub.addTrustedKey.mockImplementation(() => { throw new Error('Invalid Ed25519 public key'); });
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'add', 'garbage']);
+
+        expect(getErrorOutput()).toContain('Failed to add key: Invalid Ed25519 public key');
+        expect(processExitSpy).toHaveBeenCalledWith(1);
+      });
+
+      it('removes a trusted key', async () => {
+        mockSkillsHub.removeTrustedKey.mockReturnValue(true);
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'remove', 'acme']);
+
+        expect(mockSkillsHub.removeTrustedKey).toHaveBeenCalledWith('acme');
+        expect(getLogOutput()).toContain('Trusted key removed: acme');
+      });
+
+      it('updates the trust level of a key', async () => {
+        mockSkillsHub.setKeyTrust.mockReturnValue({ keyId: 'acme', trust: 'official' });
+
+        await program.parseAsync(['node', 'test', 'hub', 'keys', 'trust', 'acme', 'official']);
+
+        expect(mockSkillsHub.setKeyTrust).toHaveBeenCalledWith('acme', 'official', {});
+        expect(getLogOutput()).toContain('Trust updated: acme -> official');
       });
     });
   });

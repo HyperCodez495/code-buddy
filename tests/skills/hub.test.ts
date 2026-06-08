@@ -17,6 +17,8 @@ import {
   computeChecksum,
   compareSemver,
   parseSemver,
+  generateSkillSigningKeyPair,
+  signSkillContent,
 } from '../../src/skills/hub';
 
 // ============================================================================
@@ -130,6 +132,7 @@ function createTestConfig(tempDir: string): Partial<HubConfig> {
     skillsDir: join(tempDir, 'skills'),
     lockfilePath: join(tempDir, 'lock.json'),
     tapsPath: join(tempDir, 'taps.json'),
+    trustedKeysPath: join(tempDir, 'trusted-keys.json'),
     autoUpdate: false,
     checkIntervalMs: 60000,
   };
@@ -1043,6 +1046,189 @@ describe('SkillsHub', () => {
       const config2 = hub.getConfig();
       expect(config1).not.toBe(config2);
       expect(config1).toEqual(config2);
+    });
+  });
+});
+
+// ============================================================================
+// Signing & trusted keys (signed registry metadata)
+// ============================================================================
+
+describe('SkillsHub signing & trusted keys', () => {
+  let tempDir: string;
+  let hub: SkillsHub;
+  let config: Partial<HubConfig>;
+
+  beforeEach(() => {
+    tempDir = createTempDir();
+    config = createTestConfig(tempDir);
+    hub = new SkillsHub(config);
+    mockFetch.mockReset();
+  });
+
+  afterEach(() => {
+    hub.shutdown();
+    rmSync(tempDir, { recursive: true, force: true });
+    resetSkillsHub();
+  });
+
+  describe('trusted keyring', () => {
+    it('adds, lists, looks up, and persists trusted keys across instances', () => {
+      const kp = generateSkillSigningKeyPair('acme');
+      const added = hub.addTrustedKey(kp.publicKey, {
+        keyId: 'acme',
+        trust: 'official',
+        addedBy: 'patrice',
+        label: 'ACME publisher',
+      });
+      expect(added.keyId).toBe('acme');
+      expect(added.trust).toBe('official');
+      expect(added.algorithm).toBe('ed25519');
+
+      expect(hub.listTrustedKeys()).toHaveLength(1);
+      expect(hub.getTrustedKey('acme')?.publicKey).toBe(kp.publicKey);
+      expect(hub.getTrustedKey('missing')).toBeNull();
+
+      // A fresh instance reads the same on-disk keyring.
+      const reopened = new SkillsHub(config);
+      expect(reopened.getTrustedKey('acme')?.trust).toBe('official');
+      reopened.shutdown();
+    });
+
+    it('derives the key id from the public key when none is supplied', () => {
+      const kp = generateSkillSigningKeyPair();
+      const added = hub.addTrustedKey(kp.publicKey);
+      expect(added.keyId).toBe(kp.keyId);
+      expect(added.trust).toBe('community');
+    });
+
+    it('updates trust level and removes keys', () => {
+      const kp = generateSkillSigningKeyPair('k1');
+      hub.addTrustedKey(kp.publicKey, { keyId: 'k1' });
+      expect(hub.setKeyTrust('k1', 'trusted')?.trust).toBe('trusted');
+      expect(hub.setKeyTrust('absent', 'trusted')).toBeNull();
+      expect(hub.removeTrustedKey('k1')).toBe(true);
+      expect(hub.removeTrustedKey('k1')).toBe(false);
+      expect(hub.listTrustedKeys()).toHaveLength(0);
+    });
+
+    it('rejects a malformed public key', () => {
+      expect(() => hub.addTrustedKey('not-a-valid-key')).toThrow(/Invalid Ed25519 public key/);
+    });
+  });
+
+  describe('publish signing', () => {
+    function writeSkillFile(): { dir: string; content: string } {
+      const dir = join(tempDir, 'to-publish');
+      mkdirSync(dir, { recursive: true });
+      writeFileSync(join(dir, 'SKILL.md'), PUBLISH_SKILL_CONTENT, 'utf-8');
+      return { dir, content: PUBLISH_SKILL_CONTENT };
+    }
+
+    it('publishes without a signature by default', async () => {
+      const { dir } = writeSkillFile();
+      const published = await hub.publish(dir);
+      expect(published.signature).toBeUndefined();
+    });
+
+    it('attaches a detached signature when a signing key is provided', async () => {
+      const { dir, content } = writeSkillFile();
+      const kp = generateSkillSigningKeyPair('acme');
+      const published = await hub.publish(dir, { signingKey: kp.privateKey, keyId: 'acme' });
+
+      expect(published.signature).toBeDefined();
+      expect(published.signature?.keyId).toBe('acme');
+      expect(published.signature?.contentChecksum).toBe(computeChecksum(content));
+
+      // Unknown signer -> untrusted; after trusting the key -> verified.
+      expect(hub.verifySkillContentSignature(content, published.signature).status).toBe('untrusted');
+      hub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'official' });
+      const verdict = hub.verifySkillContentSignature(content, published.signature);
+      expect(verdict.status).toBe('verified');
+      expect(verdict.trust).toBe('official');
+    });
+  });
+
+  describe('install verification', () => {
+    it('records signatureStatus=unsigned for unsigned content', async () => {
+      const installed = await hub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub');
+      expect(installed.signatureStatus).toBe('unsigned');
+      expect(installed.signature).toBeUndefined();
+    });
+
+    it('records a verified signature from a trusted key in the lockfile', async () => {
+      const kp = generateSkillSigningKeyPair('acme');
+      hub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'trusted' });
+      const signature = signSkillContent(VALID_SKILL_CONTENT, kp.privateKey, { keyId: 'acme' });
+
+      const installed = await hub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub', { signature });
+      expect(installed.signatureStatus).toBe('verified');
+      expect(installed.signature?.keyId).toBe('acme');
+
+      const locked = hub.getLockfile().skills['test-skill'];
+      expect(locked?.signatureStatus).toBe('verified');
+      expect(locked?.signature?.keyId).toBe('acme');
+    });
+
+    it('records untrusted when the signer key is unknown', async () => {
+      const kp = generateSkillSigningKeyPair('rogue');
+      const signature = signSkillContent(VALID_SKILL_CONTENT, kp.privateKey, { keyId: 'rogue' });
+      const installed = await hub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub', { signature });
+      expect(installed.signatureStatus).toBe('untrusted');
+    });
+  });
+
+  describe('requireSignedInstalls policy', () => {
+    let strictHub: SkillsHub;
+
+    beforeEach(() => {
+      strictHub = new SkillsHub({ ...config, requireSignedInstalls: true });
+    });
+
+    afterEach(() => {
+      strictHub.shutdown();
+    });
+
+    it('rejects unsigned installs', async () => {
+      await expect(
+        strictHub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub'),
+      ).rejects.toThrow(/signed installs are required/);
+    });
+
+    it('rejects installs from an untrusted signer', async () => {
+      const kp = generateSkillSigningKeyPair('rogue');
+      const signature = signSkillContent(VALID_SKILL_CONTENT, kp.privateKey, { keyId: 'rogue' });
+      await expect(
+        strictHub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub', { signature }),
+      ).rejects.toThrow(/untrusted/);
+    });
+
+    it('accepts installs verified against a trusted key', async () => {
+      const kp = generateSkillSigningKeyPair('acme');
+      strictHub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'trusted' });
+      const signature = signSkillContent(VALID_SKILL_CONTENT, kp.privateKey, { keyId: 'acme' });
+      const installed = await strictHub.installFromContent(
+        'test-skill',
+        VALID_SKILL_CONTENT,
+        'hub',
+        { signature },
+      );
+      expect(installed.signatureStatus).toBe('verified');
+    });
+
+    it('enforces a minimum signer trust level', async () => {
+      const lowHub = new SkillsHub({
+        ...config,
+        requireSignedInstalls: true,
+        minSignatureTrust: 'official',
+      });
+      const kp = generateSkillSigningKeyPair('acme');
+      lowHub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'community' });
+      const signature = signSkillContent(VALID_SKILL_CONTENT, kp.privateKey, { keyId: 'acme' });
+      await expect(
+        lowHub.installFromContent('test-skill', VALID_SKILL_CONTENT, 'hub', { signature }),
+      ).rejects.toThrow(/below the required minimum/);
+      lowHub.shutdown();
     });
   });
 });

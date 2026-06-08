@@ -266,14 +266,33 @@ export function registerHubCommands(program: Command): void {
   hub
     .command('publish <path>')
     .description('Publish a skill to the hub')
-    .action(async (skillPath: string) => {
+    .option('--sign <key>', 'sign with a base64 Ed25519 private key, or @file to read it from disk')
+    .option('--key-id <id>', 'key id to record in the signature (defaults to the key fingerprint)')
+    .option('--json', 'output JSON')
+    .action(async (skillPath: string, opts: { sign?: string; keyId?: string; json?: boolean }) => {
       const { getSkillsHub } = await import('../../skills/hub.js');
       const skillsHub = getSkillsHub();
       try {
-        const published = await skillsHub.publish(skillPath);
+        const signingKey = opts.sign ? await readKeyMaterial(opts.sign) : undefined;
+        const published = await skillsHub.publish(skillPath, {
+          ...(signingKey ? { signingKey } : {}),
+          ...(opts.keyId ? { keyId: opts.keyId } : {}),
+        });
+        if (opts.json) {
+          console.log(JSON.stringify({ published }, null, 2));
+          return;
+        }
         console.log(`Published ${published.name} v${published.version}`);
+        if (published.signature) {
+          console.log(`  Signed by key ${published.signature.keyId} (${published.signature.algorithm})`);
+        }
       } catch (error) {
-        console.error(`Failed to publish: ${error instanceof Error ? error.message : error}`);
+        const message = `Failed to publish: ${error instanceof Error ? error.message : error}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, published: null }, null, 2));
+        } else {
+          console.error(message);
+        }
         process.exit(1);
       }
     });
@@ -408,6 +427,213 @@ export function registerHubCommands(program: Command): void {
         console.log(`  ! ${error}`);
       }
     });
+
+  hub
+    .command('verify <name>')
+    .description('Verify an installed skill\'s recorded signature against the trusted keyring')
+    .option('--json', 'output JSON')
+    .action(async (name: string, opts: { json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const skillsHub = getSkillsHub();
+      const detail = skillsHub.info(name);
+      if (!detail || typeof detail.content !== 'string') {
+        const message = `Skill not found or missing on disk: ${name}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, name }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+        return;
+      }
+      const verification = skillsHub.verifySkillContentSignature(detail.content, detail.installed.signature);
+      if (opts.json) {
+        console.log(JSON.stringify({ name, integrityOk: detail.integrityOk, verification }, null, 2));
+        return;
+      }
+      console.log(`\n${name}: signature ${verification.status}`);
+      if (verification.keyId) console.log(`  Key: ${verification.keyId}${verification.trust ? ` (trust=${verification.trust})` : ''}`);
+      if (verification.reason) console.log(`  Reason: ${verification.reason}`);
+      console.log('');
+      // Non-zero exit unless the signature is verified or the skill is intentionally unsigned.
+      if (verification.status === 'invalid' || verification.status === 'untrusted') {
+        process.exit(1);
+      }
+    });
+
+  const keys = hub
+    .command('keys')
+    .description('Manage trusted publisher signing keys');
+
+  keys
+    .command('list')
+    .description('List trusted publisher keys')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const skillsHub = getSkillsHub();
+      const trustedKeys = skillsHub.listTrustedKeys();
+      if (opts.json) {
+        console.log(JSON.stringify({
+          count: trustedKeys.length,
+          keys: trustedKeys,
+          trustedKeysPath: skillsHub.getConfig().trustedKeysPath,
+        }, null, 2));
+        return;
+      }
+      if (trustedKeys.length === 0) {
+        console.log(`No trusted keys configured. Keyring: ${skillsHub.getConfig().trustedKeysPath}`);
+        return;
+      }
+      console.log(`\nTrusted publisher keys (${trustedKeys.length}):`);
+      for (const key of trustedKeys) {
+        console.log(`  ${key.keyId}  trust=${key.trust}${key.label ? `  (${key.label})` : ''}`);
+      }
+      console.log('');
+    });
+
+  keys
+    .command('generate [keyId]')
+    .description('Generate a new Ed25519 publisher keypair (private key is NOT trusted or stored)')
+    .option('--out <dir>', 'write <keyId>.public.key and <keyId>.private.key into this directory (0600)')
+    .option('--json', 'output JSON')
+    .action(async (keyId: string | undefined, opts: { out?: string; json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const keypair = getSkillsHub().generateSigningKeyPair(keyId);
+      let publicKeyPath: string | undefined;
+      let privateKeyPath: string | undefined;
+      if (opts.out) {
+        const fs = await import('fs');
+        const path = await import('path');
+        fs.mkdirSync(opts.out, { recursive: true });
+        publicKeyPath = path.join(opts.out, `${keypair.keyId}.public.key`);
+        privateKeyPath = path.join(opts.out, `${keypair.keyId}.private.key`);
+        fs.writeFileSync(publicKeyPath, keypair.publicKey, { encoding: 'utf-8', mode: 0o644 });
+        fs.writeFileSync(privateKeyPath, keypair.privateKey, { encoding: 'utf-8', mode: 0o600 });
+      }
+      if (opts.json) {
+        // Never print the private key in JSON unless it was written to a 0600 file.
+        console.log(JSON.stringify({
+          keyId: keypair.keyId,
+          publicKey: keypair.publicKey,
+          publicKeyPath,
+          privateKeyPath,
+          ...(opts.out ? {} : { privateKey: keypair.privateKey }),
+        }, null, 2));
+        return;
+      }
+      console.log(`Generated Ed25519 keypair: ${keypair.keyId}`);
+      console.log(`  Public key:  ${keypair.publicKey}`);
+      if (opts.out) {
+        console.log(`  Public key file:  ${publicKeyPath}`);
+        console.log(`  Private key file: ${privateKeyPath} (mode 0600 — keep secret)`);
+      } else {
+        console.log(`  Private key: ${keypair.privateKey}`);
+        console.log('  ! Keep the private key secret. Trust the PUBLIC key on consumers with `buddy hub keys add`.');
+      }
+    });
+
+  keys
+    .command('add <publicKey>')
+    .description('Trust a publisher public key (base64 SPKI DER, or @file to read it from disk)')
+    .option('--key-id <id>', 'key id to record (defaults to the key fingerprint)')
+    .option('--trust <trust>', 'trust level: builtin, official, trusted, or community', 'community')
+    .option('--label <label>', 'human-readable publisher label')
+    .option('--approved-by <reviewer>', 'reviewer/operator approving the key')
+    .option('--json', 'output JSON')
+    .action(async (
+      publicKey: string,
+      opts: { keyId?: string; trust?: string; label?: string; approvedBy?: string; json?: boolean },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const skillsHub = getSkillsHub();
+      try {
+        const material = await readKeyMaterial(publicKey);
+        const key = skillsHub.addTrustedKey(material, {
+          ...(opts.keyId ? { keyId: opts.keyId } : {}),
+          ...(parseSkillTapTrust(opts.trust) ? { trust: parseSkillTapTrust(opts.trust) } : {}),
+          ...(opts.label ? { label: opts.label } : {}),
+          ...(opts.approvedBy ? { addedBy: opts.approvedBy } : {}),
+        });
+        if (opts.json) {
+          console.log(JSON.stringify({ key }, null, 2));
+          return;
+        }
+        console.log(`Trusted publisher key: ${key.keyId} (trust=${key.trust})`);
+      } catch (error) {
+        const message = `Failed to add key: ${error instanceof Error ? error.message : error}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, key: null }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+      }
+    });
+
+  keys
+    .command('remove <keyId>')
+    .description('Remove a trusted publisher key')
+    .option('--json', 'output JSON')
+    .action(async (keyId: string, opts: { json?: boolean }) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const removed = getSkillsHub().removeTrustedKey(keyId);
+      if (opts.json) {
+        console.log(JSON.stringify({ removed, keyId }, null, 2));
+        return;
+      }
+      console.log(removed ? `Trusted key removed: ${keyId}` : `Trusted key not found: ${keyId}`);
+    });
+
+  keys
+    .command('trust <keyId> <trust>')
+    .description('Set the trust level of an existing trusted key')
+    .option('--approved-by <reviewer>', 'reviewer/operator approving the change')
+    .option('--json', 'output JSON')
+    .action(async (
+      keyId: string,
+      trust: string,
+      opts: { approvedBy?: string; json?: boolean },
+    ) => {
+      const { getSkillsHub } = await import('../../skills/hub.js');
+      const skillsHub = getSkillsHub();
+      try {
+        const parsed = parseSkillTapTrust(trust);
+        if (!parsed) {
+          throw new Error('A trust level is required: builtin, official, trusted, or community.');
+        }
+        const key = skillsHub.setKeyTrust(keyId, parsed, {
+          ...(opts.approvedBy ? { addedBy: opts.approvedBy } : {}),
+        });
+        if (opts.json) {
+          console.log(JSON.stringify({ key }, null, 2));
+          return;
+        }
+        console.log(key ? `Trust updated: ${key.keyId} -> ${key.trust}` : `Trusted key not found: ${keyId}`);
+        if (!key) process.exit(1);
+      } catch (error) {
+        const message = `Failed to set trust: ${error instanceof Error ? error.message : error}`;
+        if (opts.json) {
+          console.log(JSON.stringify({ error: message, key: null }, null, 2));
+        } else {
+          console.error(message);
+        }
+        process.exit(1);
+      }
+    });
+}
+
+/**
+ * Read key material from a CLI argument: `@path` reads (and trims) the file,
+ * anything else is treated as the literal base64 key.
+ */
+async function readKeyMaterial(value: string): Promise<string> {
+  const trimmed = value.trim();
+  if (trimmed.startsWith('@')) {
+    const fs = await import('fs');
+    return fs.readFileSync(trimmed.slice(1), 'utf-8').trim();
+  }
+  return trimmed;
 }
 
 function parseSkillTapTrust(value?: string): import('../../skills/hub.js').SkillTapTrust | undefined {
