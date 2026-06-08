@@ -40,6 +40,8 @@ const PRIORITY_RANK: Record<ColabTaskPriority, number> = {
   low: 0,
 };
 
+const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
+
 export interface ColabTask {
   id: string;
   title: string;
@@ -86,6 +88,12 @@ export interface FleetColabStoreConfig {
   dir?: string;
   /** This agent's id, `<host>/<repo>` (default: hostname/cwd-basename). */
   agentId?: string;
+  /**
+   * Claim lease in ms (Hermes-kanban-style). An in_progress task whose claim is
+   * older than this is treated as reclaimable — so a crashed agent's task does
+   * not stay stuck. Lazy-on-read (no timer); 0 disables. Default 15 min.
+   */
+  claimTtlMs?: number;
   /** Injectable clock (epoch ms) for deterministic tests. */
   now?: () => number;
   /** Injectable id generator for deterministic tests. */
@@ -141,6 +149,7 @@ export class FleetColabStore {
   readonly agentId: string;
   private readonly now: () => number;
   private readonly generateId: (prefix: string) => string;
+  private readonly claimTtlMs: number;
   private readonly tasksPath: string;
   private readonly worklogPath: string;
   private readonly presencePath: string;
@@ -153,6 +162,7 @@ export class FleetColabStore {
     this.now = config.now ?? (() => Date.now());
     let counter = 0;
     this.generateId = config.generateId ?? ((prefix: string) => `${prefix}-${this.now()}-${++counter}`);
+    this.claimTtlMs = config.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
     this.tasksPath = path.join(this.dir, 'colab-tasks.json');
     this.worklogPath = path.join(this.dir, 'colab-worklog.json');
     this.presencePath = path.join(this.dir, 'presence.json');
@@ -181,14 +191,46 @@ export class FleetColabStore {
   }
 
   /**
+   * Whether an in_progress task's claim lease has expired (Hermes-kanban-style
+   * reclaim of a crashed agent's work). Lazy: evaluated on read, no timer.
+   */
+  isClaimExpired(task: Pick<ColabTask, 'status' | 'claimedAt'>, nowMs: number = this.now()): boolean {
+    if (this.claimTtlMs <= 0) return false;
+    if (task.status !== 'in_progress' || !task.claimedAt) return false;
+    const claimedMs = Date.parse(task.claimedAt);
+    return Number.isFinite(claimedMs) && nowMs - claimedMs > this.claimTtlMs;
+  }
+
+  /**
+   * Sweep expired claims back to `open` (for a daemon to call proactively).
+   * Returns the reclaimed task ids. Lazy callers can rely on {@link nextClaimable},
+   * which already treats expired claims as available.
+   */
+  reclaimExpired(): string[] {
+    const file = this.readTasks();
+    const nowMs = this.now();
+    const reclaimed: string[] = [];
+    for (const task of file.tasks) {
+      if (this.isClaimExpired(task, nowMs)) {
+        task.status = 'open';
+        task.claimedBy = null;
+        task.claimedAt = null;
+        reclaimed.push(task.id);
+      }
+    }
+    if (reclaimed.length > 0) this.writeTasks(file);
+    return reclaimed;
+  }
+
+  /**
    * Highest-priority auto-claimable task (open + unclaimed + non-critical),
    * matching the protocol's "première open + claimedBy=null par priority desc".
    * Pass `allowCritical` only for a human-supervised claim.
    */
   nextClaimable(options: { allowCritical?: boolean } = {}): ColabTask | null {
+    const nowMs = this.now();
     const candidates = this.readTasks().tasks.filter((t) =>
-      t.status === 'open'
-      && !t.claimedBy
+      ((t.status === 'open' && !t.claimedBy) || this.isClaimExpired(t, nowMs))
       && (options.allowCritical || t.priority !== 'critical'),
     );
     if (candidates.length === 0) return null;
@@ -204,12 +246,15 @@ export class FleetColabStore {
     const file = this.readTasks();
     const task = file.tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
-    // Check ownership before status so a task held by another agent gives the
-    // clearer "already claimed by X" rather than a generic "not open".
-    if (task.claimedBy && task.claimedBy !== agentId) {
+    // An expired claim is reclaimable by anyone (the previous owner is presumed
+    // dead) — so the ownership/status guards below are skipped when expired.
+    const expired = this.isClaimExpired(task);
+    // Check ownership before status so a task held by another (live) agent gives
+    // the clearer "already claimed by X" rather than a generic "not open".
+    if (task.claimedBy && task.claimedBy !== agentId && !expired) {
       throw new Error(`Task '${taskId}' already claimed by '${task.claimedBy}'`);
     }
-    if (task.status !== 'open') {
+    if (task.status !== 'open' && !expired) {
       throw new Error(`Task '${taskId}' is '${task.status}', not open`);
     }
     task.status = 'in_progress';

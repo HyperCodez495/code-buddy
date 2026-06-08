@@ -167,6 +167,47 @@ describe('FleetColabStore', () => {
     });
   });
 
+  describe('claim TTL / lease (reclaim a crashed agent)', () => {
+    const claimedAt = new Date(5_000).toISOString();
+    function seedInProgress(): void {
+      writeFileSync(join(dir, 'colab-tasks.json'), JSON.stringify({
+        version: '0.1',
+        tasks: [{ id: 't1', title: 'task', status: 'in_progress', priority: 'high', claimedBy: 'dead/agent', claimedAt }],
+      }, null, 2));
+    }
+
+    it('treats an in_progress task with an expired claim as reclaimable', () => {
+      seedInProgress();
+      const ttlStore = new FleetColabStore({ dir, agentId: 'me/cb', claimTtlMs: 1000, now: () => 10_000 });
+      expect(ttlStore.isClaimExpired({ status: 'in_progress', claimedAt })).toBe(true);
+      expect(ttlStore.nextClaimable()?.id).toBe('t1');
+      const claimed = ttlStore.claim('t1'); // reclaim the dead agent's task
+      expect(claimed.claimedBy).toBe('me/cb');
+      expect(claimed.status).toBe('in_progress');
+    });
+
+    it('does NOT reclaim a fresh claim still held by another agent', () => {
+      seedInProgress();
+      const ttlStore = new FleetColabStore({ dir, agentId: 'me/cb', claimTtlMs: 1000, now: () => 5_500 });
+      expect(ttlStore.isClaimExpired({ status: 'in_progress', claimedAt })).toBe(false);
+      expect(ttlStore.nextClaimable()).toBeNull();
+      expect(() => ttlStore.claim('t1')).toThrow(/already claimed/);
+    });
+
+    it('reclaimExpired() sweeps expired claims back to open', () => {
+      seedInProgress();
+      const ttlStore = new FleetColabStore({ dir, claimTtlMs: 1000, now: () => 10_000 });
+      expect(ttlStore.reclaimExpired()).toEqual(['t1']);
+      expect(ttlStore.getTask('t1')?.status).toBe('open');
+      expect(ttlStore.getTask('t1')?.claimedBy).toBeNull();
+    });
+
+    it('a TTL of 0 disables expiry', () => {
+      const ttlStore = new FleetColabStore({ dir, claimTtlMs: 0, now: () => 1e12 });
+      expect(ttlStore.isClaimExpired({ status: 'in_progress', claimedAt })).toBe(false);
+    });
+  });
+
   describe('defaultFleetAgentId', () => {
     it('is shaped host/repo', () => {
       expect(defaultFleetAgentId('/home/x/code-buddy')).toMatch(/^[^/]+\/code-buddy$/);
