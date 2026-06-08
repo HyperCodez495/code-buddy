@@ -11,7 +11,8 @@ import { validateApiKey } from '../auth/api-keys.js';
 import { logger } from "../../utils/logger.js";
 import { isOriginAllowed } from '../origin-check.js';
 import { verifyToken } from '../auth/jwt.js';
-import { authenticateDevice, getGatewayPairingStore } from '../../gateway/device-pairing.js';
+import { authenticateDevice, getGatewayPairingStore, isDevicePairingRequired } from '../../gateway/device-pairing.js';
+import { gatewayServerVersion, GATEWAY_PROTOCOL_VERSION } from '../../gateway/protocol.js';
 import { TIMEOUT_CONFIG, SERVER_CONFIG } from '../../config/constants.js';
 import {
   createServerAgent,
@@ -94,6 +95,37 @@ interface ToolPayload { name?: string; parameters?: Record<string, unknown> }
  */
 function generateConnectionId(): string {
   return `ws_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`;
+}
+
+export interface ConnectedGreetingOptions {
+  connectionId: string;
+  authRequired: boolean;
+  pairingRequired: boolean;
+  serverVersion: string;
+  protocolVersion: number;
+  /** Supported message types, advertised for client capability discovery. */
+  methods: string[];
+}
+
+/**
+ * Build the `connected` greeting. Enriches the bare handshake with server
+ * identity + advertised capabilities (OpenClaw `hello-ok` `server.version` /
+ * `features.methods`; Hermes capability discovery), additively over the existing
+ * `connectionId` / `authRequired` fields. Pure so the shape can be unit-tested.
+ */
+export function buildConnectedGreeting(opts: ConnectedGreetingOptions): WebSocketResponse {
+  return {
+    type: 'connected',
+    payload: {
+      connectionId: opts.connectionId,
+      authRequired: opts.authRequired,
+      pairingRequired: opts.pairingRequired,
+      protocolVersion: opts.protocolVersion,
+      server: { version: opts.serverVersion },
+      capabilities: { methods: [...new Set(opts.methods)].sort() },
+    },
+    timestamp: new Date().toISOString(),
+  };
 }
 
 /**
@@ -622,15 +654,15 @@ export async function setupWebSocket(
 
     connections.set(ws, state);
 
-    // Send welcome message
-    send(ws, {
-      type: 'connected',
-      payload: {
-        connectionId: state.id,
-        authRequired: config.authEnabled,
-      },
-      timestamp: new Date().toISOString(),
-    });
+    // Send welcome message (enriched with server identity + advertised capabilities)
+    send(ws, buildConnectedGreeting({
+      connectionId: state.id,
+      authRequired: config.authEnabled,
+      pairingRequired: isDevicePairingRequired(),
+      serverVersion: gatewayServerVersion(),
+      protocolVersion: GATEWAY_PROTOCOL_VERSION,
+      methods: Array.from(messageHandlers.keys()),
+    }));
 
     ws.on('message', async (data: RawData) => {
       await processMessage(ws, state, data);
