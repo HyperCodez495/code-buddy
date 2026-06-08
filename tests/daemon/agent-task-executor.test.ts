@@ -36,6 +36,18 @@ function spawnReturning(over: Partial<SpawnSyncReturns<string>>): { fn: SpawnFn;
   return { fn, calls };
 }
 
+/** Mock that returns a per-command result (agent run vs `sh -c` verify gate). */
+function spawnDispatch(handler: (cmd: string) => Partial<SpawnSyncReturns<string>>): { fn: SpawnFn; calls: Array<{ cmd: string; args: string[] }> } {
+  const calls: Array<{ cmd: string; args: string[] }> = [];
+  const fn: SpawnFn = (cmd, args) => {
+    calls.push({ cmd, args });
+    return { status: 0, stdout: '', stderr: '', signal: null, pid: 1, output: [], ...handler(cmd) } as unknown as SpawnSyncReturns<string>;
+  };
+  return { fn, calls };
+}
+
+const taskWithGate = { ...(task as object), verifyCommand: 'node check.mjs' } as unknown as ColabTask;
+
 describe('agent-task-executor', () => {
   it('is fail-closed without a workspace root', async () => {
     const { fn, calls } = spawnReturning({});
@@ -88,6 +100,35 @@ describe('agent-task-executor', () => {
     const r = await exec(task, localModel);
     expect(r.ok).toBe(false);
     expect(r.error).toMatch(/ETIMEDOUT/);
+  });
+
+  it('passes when the task has a verify gate and it exits 0', async () => {
+    // agent (tsx/node) succeeds; gate (`sh -c`) succeeds.
+    const { fn, calls } = spawnDispatch(() => ({ status: 0 }));
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const r = await exec(taskWithGate, localModel);
+    expect(r.ok).toBe(true);
+    expect(r.summary).toMatch(/gate .*passed/);
+    const gateCall = calls.find((c) => c.cmd === 'sh');
+    expect(gateCall?.args).toEqual(['-c', 'node check.mjs']);
+  });
+
+  it('fails (releases) when the verify gate fails even though the agent finished', async () => {
+    // agent succeeds (exit 0), gate fails (exit 1).
+    const { fn } = spawnDispatch((cmd) => (cmd === 'sh' ? { status: 1, stderr: 'assertion failed' } : { status: 0 }));
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const r = await exec(taskWithGate, localModel);
+    expect(r.ok).toBe(false);
+    expect(r.summary).toMatch(/acceptance gate failed/);
+    expect(r.error).toMatch(/exited 1|assertion failed/);
+  });
+
+  it('skips the gate when the task has no verifyCommand', async () => {
+    const { fn, calls } = spawnDispatch(() => ({ status: 0 }));
+    const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });
+    const r = await exec(task, localModel);
+    expect(r.ok).toBe(true);
+    expect(calls.some((c) => c.cmd === 'sh')).toBe(false); // no gate spawned
   });
 
   it('buildAgentEnv pins ollama for local tiers and leaves paid tiers on their provider', () => {

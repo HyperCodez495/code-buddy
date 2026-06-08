@@ -55,6 +55,12 @@ export interface ColabTask {
   blockedReason?: string;
   filesToModify?: string[];
   acceptanceCriteria?: string[];
+  /**
+   * Optional machine-runnable acceptance gate (e.g. `node add.check.mjs`, `npm test`).
+   * The agent executor runs it in the workspace after the agent; the task only
+   * counts as `completed` if it exits 0. Trusted input (operator/fleet-authored).
+   */
+  verifyCommand?: string;
   /** Ids of tasks that must be `completed` before this one is claimable (DAG). */
   dependsOn?: string[];
   createdBy?: string;
@@ -117,6 +123,7 @@ export interface AddTaskInput {
   priority?: ColabTaskPriority;
   filesToModify?: string[];
   acceptanceCriteria?: string[];
+  verifyCommand?: string;
   dependsOn?: string[];
   createdBy?: string;
   id?: string;
@@ -344,6 +351,7 @@ export class FleetColabStore {
       claimedAt: null,
       ...(input.filesToModify ? { filesToModify: input.filesToModify } : {}),
       ...(input.acceptanceCriteria ? { acceptanceCriteria: input.acceptanceCriteria } : {}),
+      ...(input.verifyCommand ? { verifyCommand: input.verifyCommand } : {}),
       ...(input.dependsOn && input.dependsOn.length > 0 ? { dependsOn: [...new Set(input.dependsOn)] } : {}),
       createdBy: input.createdBy ?? this.agentId,
       createdAt: this.isoNow(),

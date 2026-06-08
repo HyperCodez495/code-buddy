@@ -6,6 +6,10 @@
  * headless so it edits files to do the task. It is the production form of the
  * proven `scripts/autonomy-lab/` executor.
  *
+ * Acceptance gate: if the task carries a `verifyCommand`, it is run in the
+ * workspace after the agent and MUST exit 0 — so "completed" means *verified*,
+ * not merely "the agent finished". A failing gate releases the task for retry.
+ *
  * Safety — this has real blast radius, so it is gated:
  *   - **Fail-closed workspace root.** It refuses to run without an explicit
  *     workspace dir (`CODEBUDDY_AUTONOMY_WORKSPACE_ROOT` or `opts.workspaceRoot`);
@@ -110,23 +114,53 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
       [...entry.baseArgs, '-p', prompt, '--permission-mode', permissionMode, '--output-format', 'text', ...extraArgs],
       { cwd: workspaceRoot, env, encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
     );
-    const elapsedSeconds = Math.round((Date.now() - started) / 1000);
-    const ok = !res.error && res.status === 0;
-    if (ok) {
+    const agentOk = !res.error && res.status === 0;
+    if (!agentOk) {
+      const elapsedSeconds = Math.round((Date.now() - started) / 1000);
+      const reason = res.error
+        ? String((res.error as Error).message ?? res.error)
+        : `agent exited ${res.status}: ${(res.stderr ?? '').slice(-300)}`;
+      return {
+        ok: false,
+        summary: `agent failed ${task.id} [${model.tier}/${model.model}] (${elapsedSeconds}s)`,
+        elapsedSeconds,
+        error: reason,
+      };
+    }
+
+    // Acceptance gate: if the task carries a verify command, the agent "finishing"
+    // isn't enough — the gate must pass for the task to count as completed.
+    const gate = task.verifyCommand?.trim();
+    if (gate) {
+      const v = doSpawn('sh', ['-c', gate], {
+        cwd: workspaceRoot,
+        env: process.env,
+        encoding: 'utf-8',
+        timeout: 120_000,
+        maxBuffer: 16 * 1024 * 1024,
+      });
+      const elapsedSeconds = Math.round((Date.now() - started) / 1000);
+      if (v.error || v.status !== 0) {
+        const why = v.error ? String((v.error as Error).message ?? v.error) : `gate exited ${v.status}: ${(v.stderr ?? '').slice(-200)}`;
+        return {
+          ok: false,
+          summary: `agent ran ${task.id} but acceptance gate failed (\`${gate}\`) (${elapsedSeconds}s)`,
+          elapsedSeconds,
+          error: why,
+        };
+      }
       return {
         ok: true,
-        summary: `agent ran ${task.id} [${model.tier}/${model.model}] in ${workspaceRoot} (${elapsedSeconds}s)`,
+        summary: `agent ran ${task.id} [${model.tier}/${model.model}] + gate \`${gate}\` passed (${elapsedSeconds}s)`,
         elapsedSeconds,
       };
     }
-    const reason = res.error
-      ? String((res.error as Error).message ?? res.error)
-      : `agent exited ${res.status}: ${(res.stderr ?? '').slice(-300)}`;
+
+    const elapsedSeconds = Math.round((Date.now() - started) / 1000);
     return {
-      ok: false,
-      summary: `agent failed ${task.id} [${model.tier}/${model.model}] (${elapsedSeconds}s)`,
+      ok: true,
+      summary: `agent ran ${task.id} [${model.tier}/${model.model}] in ${workspaceRoot} (${elapsedSeconds}s)`,
       elapsedSeconds,
-      error: reason,
     };
   };
 }
