@@ -3683,6 +3683,38 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('memory.delete', entryIndex, projectId),
   },
 
+  // Autonomy: read-only snapshot of the fleet colab queue for the Autonomy panel.
+  autonomy: {
+    snapshot: (
+      dir?: string
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      dir: string | null;
+      tasks: Array<{
+        id: string;
+        title: string;
+        description?: string;
+        status: string;
+        priority: string;
+        claimedBy?: string | null;
+        claimedAt?: string | null;
+        dependsOn?: string[];
+      }>;
+      worklog: Array<{
+        id?: string;
+        date?: string;
+        agent?: string;
+        taskId?: string | null;
+        summary?: string;
+      }>;
+      presence: Record<
+        string,
+        { host?: string; status?: string; currentTask?: string | null; lastSeen?: string }
+      >;
+    }> => ipcRenderer.invoke('autonomy.snapshot', dir),
+  },
+
   lessons: {
     add: (
       category: 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT',
@@ -6912,6 +6944,34 @@ declare global {
           entryIndex: number,
           projectId?: string
         ) => Promise<{ success: boolean; error?: string }>;
+      };
+      autonomy: {
+        snapshot: (dir?: string) => Promise<{
+          ok: boolean;
+          error?: string;
+          dir: string | null;
+          tasks: Array<{
+            id: string;
+            title: string;
+            description?: string;
+            status: string;
+            priority: string;
+            claimedBy?: string | null;
+            claimedAt?: string | null;
+            dependsOn?: string[];
+          }>;
+          worklog: Array<{
+            id?: string;
+            date?: string;
+            agent?: string;
+            taskId?: string | null;
+            summary?: string;
+          }>;
+          presence: Record<
+            string,
+            { host?: string; status?: string; currentTask?: string | null; lastSeen?: string }
+          >;
+        }>;
       };
       lessons: {
         add: (

@@ -331,6 +331,7 @@ interface AppState {
 
   // Phase 3 step 17: reasoning trace viewer
   showReasoningViewer: boolean;
+  showAutonomyPanel: boolean;
 
   // Phase 3 step 8: split-pane layout (chat + preview side-by-side)
   splitPaneEnabled: boolean;
@@ -631,6 +632,7 @@ interface AppState {
   setShowPersonaSwitcher: (show: boolean) => void;
   setShowTestRunner: (show: boolean) => void;
   setShowReasoningViewer: (show: boolean) => void;
+  setShowAutonomyPanel: (show: boolean) => void;
   setSplitPaneEnabled: (enabled: boolean) => void;
   toggleSplitPane: () => void;
   setSplitPaneRatio: (ratio: number) => void;
@@ -817,6 +819,7 @@ export const useAppStore = create<AppState>((set) => ({
   showPersonaSwitcher: false,
   showTestRunner: false,
   showReasoningViewer: false,
+  showAutonomyPanel: false,
   splitPaneEnabled: ((): boolean => {
     try {
       return typeof window !== 'undefined'
@@ -1666,6 +1669,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowPersonaSwitcher: (show) => set({ showPersonaSwitcher: show }),
   setShowTestRunner: (show) => set({ showTestRunner: show }),
   setShowReasoningViewer: (show) => set({ showReasoningViewer: show }),
+  setShowAutonomyPanel: (show) => set({ showAutonomyPanel: show }),
   setSplitPaneEnabled: (enabled) => {
     set({ splitPaneEnabled: enabled });
     try {

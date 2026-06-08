@@ -46,6 +46,7 @@ import { PersonaSwitcherDialog } from './components/PersonaSwitcherDialog';
 import { TestRunnerPanel } from './components/TestRunnerPanel';
 import { ReasoningTraceViewer } from './components/ReasoningTraceViewer';
 import { MemoryPanel } from './components/MemoryPanel';
+import { AutonomyPanel } from './components/AutonomyPanel';
 import { FocusView } from './components/FocusView';
 import { SplitPaneLayout } from './components/SplitPaneLayout';
 import { UpdateNotification } from './components/UpdateNotification';
@@ -139,6 +140,8 @@ function App() {
   const setShowReasoningViewer = useAppStore((s) => s.setShowReasoningViewer);
   const showMemoryEditor = useAppStore((s) => s.showMemoryEditor);
   const setShowMemoryEditor = useAppStore((s) => s.setShowMemoryEditor);
+  const showAutonomyPanel = useAppStore((s) => s.showAutonomyPanel);
+  const setShowAutonomyPanel = useAppStore((s) => s.setShowAutonomyPanel);
   const showEnrollmentDialog = useAppStore((s) => s.showEnrollmentDialog);
   const setShowEnrollmentDialog = useAppStore((s) => s.setShowEnrollmentDialog);
   const presenceEnabled = useAppStore((s) => s.presenceEnabled);
@@ -652,6 +655,7 @@ function App() {
         onClose={() => setShowReasoningViewer(false)}
       />
       <MemoryPanel isOpen={showMemoryEditor} onClose={() => setShowMemoryEditor(false)} />
+      <AutonomyPanel isOpen={showAutonomyPanel} onClose={() => setShowAutonomyPanel(false)} />
 
       {/* Notification toasts + center (Claude Cowork parity) */}
       <NotificationToastContainer />

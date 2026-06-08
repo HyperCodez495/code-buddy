@@ -32,6 +32,7 @@ import {
   Users,
   Webhook,
   Workflow,
+  Zap,
   type LucideIcon,
 } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
@@ -77,6 +78,8 @@ export function ShellNavigation() {
   const setShowReasoningViewer = useAppStore((s) => s.setShowReasoningViewer);
   const showMemoryEditor = useAppStore((s) => s.showMemoryEditor);
   const setShowMemoryEditor = useAppStore((s) => s.setShowMemoryEditor);
+  const showAutonomyPanel = useAppStore((s) => s.showAutonomyPanel);
+  const setShowAutonomyPanel = useAppStore((s) => s.setShowAutonomyPanel);
 
   const setActiveSession = useAppStore((s) => s.setActiveSession);
   const setShowSettings = useAppStore((s) => s.setShowSettings);
@@ -195,6 +198,14 @@ export function ShellNavigation() {
           active: showFleetPanel,
           onClick: () => setShowFleetPanel(true),
           testId: 'fleet-panel-button',
+        },
+        {
+          id: 'autonomy',
+          label: t('autonomy.title', 'Autonomy'),
+          icon: Zap,
+          active: showAutonomyPanel,
+          onClick: () => setShowAutonomyPanel(true),
+          testId: 'autonomy-panel-button',
         },
         {
           id: 'devices',

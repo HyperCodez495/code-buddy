@@ -2614,6 +2614,47 @@ ipcMain.handle('memory.delete', async (_event, entryIndex: number, projectId?: s
   return projectMemoryServiceRef.deleteMemoryEntry(id, entryIndex);
 });
 
+// ── Autonomy: read-only snapshot of the fleet colab queue ───────────────
+// Powers the Autonomy panel. Reads tasks/worklog/presence from the colab dir
+// (the autonomy daemon's queue; default ~/.codebuddy/fleet, override via arg or
+// CODEBUDDY_FLEET_COLAB_DIR). FleetColabStore reads are side-effect-free.
+ipcMain.handle('autonomy.snapshot', async (_event, dir?: string) => {
+  try {
+    const os = await import('os');
+    const nodePath = await import('path');
+    const resolvedDir =
+      dir || process.env.CODEBUDDY_FLEET_COLAB_DIR || nodePath.join(os.homedir(), '.codebuddy', 'fleet');
+    const mod = await loadCoreModule<{
+      FleetColabStore: new (cfg: { dir: string }) => {
+        getDir: () => string;
+        listTasks: () => unknown[];
+        listWorklog: () => unknown[];
+        listPresence: () => Record<string, unknown>;
+      };
+    }>('fleet/colab-store.js');
+    if (!mod) throw new Error('Failed to load colab-store module');
+    const store = new mod.FleetColabStore({ dir: resolvedDir });
+    const worklog = store.listWorklog();
+    return {
+      ok: true,
+      dir: store.getDir(),
+      tasks: store.listTasks(),
+      worklog: worklog.slice(-25).reverse(),
+      presence: store.listPresence(),
+    };
+  } catch (err) {
+    logWarn('[autonomy.snapshot] failed:', err);
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : String(err),
+      dir: dir ?? null,
+      tasks: [],
+      worklog: [],
+      presence: {},
+    };
+  }
+});
+
 // ── Pluggable memory provider selector (GAP-10) ─────────────────────────
 ipcMain.handle('memoryProvider.list', async () => {
   try {
