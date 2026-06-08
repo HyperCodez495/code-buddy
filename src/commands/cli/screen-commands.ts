@@ -100,11 +100,54 @@ export function registerScreenCommands(program: Command): void {
     .description('Watch the screen: periodic frames, idle-dedup, optional OCR + secret redaction')
     .option('--interval <s>', 'seconds between frames', '5')
     .option('--ocr', 'OCR changed frames (needs tesseract) and redact secrets/PII')
+    .option('--repair', 'detect errors/stack traces on screen and localize the fault (implies --ocr)')
     .option('--max <n>', 'stop after N frames (default: until Ctrl-C)')
-    .option('--out <file>', 'append observations as JSONL to this file')
-    .action(async (opts: { interval: string; ocr?: boolean; max?: string; out?: string }) => {
-      const { ScreenWatcher } = await import('../../capture/screen-watcher.js');
+    .option('--out <file>', 'append observations/suggestions as JSONL to this file')
+    .action(async (opts: { interval: string; ocr?: boolean; repair?: boolean; max?: string; out?: string }) => {
+      const intervalMs = (parseInt(opts.interval, 10) || 5) * 1000;
       const maxFrames = opts.max ? parseInt(opts.max, 10) : Infinity;
+
+      // --repair: screen → OCR → error detect → FaultLocalizer (AutoRepair engine).
+      if (opts.repair) {
+        const { ScreenErrorWatcher } = await import('../../capture/screen-error-watcher.js');
+        let n = 0;
+        const ew = new ScreenErrorWatcher({
+          watcher: { intervalMs },
+          onObservation: (obs) => {
+            if (obs.changed && obs.text) console.log(`[CHANGED] ${obs.text.replace(/\s+/g, ' ').slice(0, 120)}`);
+          },
+          onSuggestion: (s) => {
+            console.log(`\n⚠️  Error on screen (${s.error.pattern}) → likely fault:`);
+            const faults = s.localization.faults.slice(0, 3);
+            if (faults.length === 0) {
+              console.log('   (no source location parsed from the text)');
+            }
+            for (const f of faults) {
+              const pct = Math.round((f.suspiciousness ?? 0) * 100);
+              console.log(`   ${f.location.file}:${f.location.startLine}  ${pct}%  ${f.message.replace(/\s+/g, ' ').slice(0, 90)}`);
+            }
+            const firstLine = (s.error.text.split('\n')[0] ?? s.error.text).slice(0, 80);
+            console.log(`   → try:  buddy --prompt "fix ${faults[0]?.location.file ?? 'the error'} — ${firstLine}"\n`);
+            if (opts.out) fs.appendFileSync(opts.out, JSON.stringify(s) + '\n');
+          },
+        });
+        console.log(`Watching for errors every ${opts.interval}s → fault localization. Ctrl-C to stop.`);
+        process.once('SIGINT', () => process.exit(0));
+        const tick = async () => {
+          try {
+            await ew.tick();
+          } catch (err) {
+            console.error(`capture failed: ${err instanceof Error ? err.message : String(err)}`);
+            process.exit(1);
+          }
+          if (++n >= maxFrames) process.exit(0);
+          setTimeout(() => void tick(), intervalMs);
+        };
+        void tick();
+        return;
+      }
+
+      const { ScreenWatcher } = await import('../../capture/screen-watcher.js');
       let n = 0;
       const watcher = new ScreenWatcher({
         intervalMs: (parseInt(opts.interval, 10) || 5) * 1000,
