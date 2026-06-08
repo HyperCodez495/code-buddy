@@ -151,6 +151,49 @@ const VALID_TABS = new Set<TabId>([
   'general',
 ]);
 
+// Group the 28 settings tabs into ordered sections (mirroring Code Buddy's
+// functional areas) so the sidebar reads as a structured list, not a flat dump.
+const SETTINGS_TAB_GROUPS: { id: string; label: string }[] = [
+  { id: 'essentials', label: 'Essentials' },
+  { id: 'models', label: 'Models & Cost' },
+  { id: 'tools', label: 'Tools & MCP' },
+  { id: 'extend', label: 'Skills & Plugins' },
+  { id: 'automation', label: 'Automation' },
+  { id: 'security', label: 'Security & Workspace' },
+  { id: 'ops', label: 'Server & Diagnostics' },
+];
+
+const TAB_GROUP: Record<TabId, string> = {
+  control: 'essentials',
+  general: 'essentials',
+  codebuddy: 'essentials',
+  coreEngine: 'essentials',
+  api: 'models',
+  cost: 'models',
+  remoteBackend: 'models',
+  connectors: 'tools',
+  mcpMarketplace: 'tools',
+  customize: 'tools',
+  customCommands: 'tools',
+  snippets: 'tools',
+  skills: 'extend',
+  skillsBrowser: 'extend',
+  plugins: 'extend',
+  workflows: 'automation',
+  schedule: 'automation',
+  hooks: 'automation',
+  workspacePresets: 'automation',
+  a2a: 'automation',
+  sandbox: 'security',
+  rules: 'security',
+  projects: 'security',
+  profiles: 'security',
+  server: 'ops',
+  remote: 'ops',
+  logs: 'ops',
+  telemetry: 'ops',
+};
+
 export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanelProps) {
   const { t } = useTranslation();
   const { width } = useWindowSize();
@@ -435,43 +478,56 @@ export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanel
               {t('settings.searchNoResults', 'No settings match your search.')}
             </p>
           )}
-          {filteredTabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              title={compactSidebar ? tab.label : undefined}
-              data-testid={`settings-tab-${tab.id}`}
-              className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
-                activeTab === tab.id
-                  ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
-                  : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
-              {!compactSidebar && (
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5">
-                    <p className="text-sm font-medium truncate">{tab.label}</p>
-                    {BEGINNER_TABS.has(tab.id) && (
-                      <span
-                        title={t('settings.recommendedForBeginners', 'Recommended for beginners')}
-                        className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium bg-accent/15 text-accent"
-                      >
-                        <Sparkles className="w-2.5 h-2.5" />
-                        {t('settings.startHere', 'Start here')}
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
-                    {tab.description}
+          {SETTINGS_TAB_GROUPS.map((grp) => {
+            const groupTabs = filteredTabs.filter((tab) => TAB_GROUP[tab.id] === grp.id);
+            if (groupTabs.length === 0) return null;
+            return (
+              <div key={grp.id} className={compactSidebar ? 'space-y-1' : 'space-y-1.5'}>
+                {!compactSidebar && (
+                  <p className="px-2 pt-2 pb-0.5 text-[10px] font-medium uppercase tracking-[0.14em] text-text-muted">
+                    {t(`settings.tabGroup.${grp.id}`, grp.label)}
                   </p>
-                </div>
-              )}
-              {!compactSidebar && activeTab === tab.id && (
-                <ChevronRight className="w-4 h-4 flex-shrink-0" />
-              )}
-            </button>
-          ))}
+                )}
+                {groupTabs.map((tab) => (
+                  <button
+                    key={tab.id}
+                    onClick={() => setActiveTab(tab.id)}
+                    title={compactSidebar ? tab.label : undefined}
+                    data-testid={`settings-tab-${tab.id}`}
+                    className={`w-full flex items-center ${compactSidebar ? 'justify-center p-2.5' : 'gap-3 px-3.5 py-3'} rounded-lg text-left transition-colors active:scale-[0.98] ${
+                      activeTab === tab.id
+                        ? 'bg-accent/10 text-text-primary font-medium border-l-2 border-accent'
+                        : 'hover:bg-surface-hover text-text-secondary hover:text-text-primary'
+                    }`}
+                  >
+                    <tab.icon className="w-4.5 h-4.5 flex-shrink-0" />
+                    {!compactSidebar && (
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className="text-sm font-medium truncate">{tab.label}</p>
+                          {BEGINNER_TABS.has(tab.id) && (
+                            <span
+                              title={t('settings.recommendedForBeginners', 'Recommended for beginners')}
+                              className="inline-flex items-center gap-0.5 px-1 py-0.5 rounded text-[9px] font-medium bg-accent/15 text-accent"
+                            >
+                              <Sparkles className="w-2.5 h-2.5" />
+                              {t('settings.startHere', 'Start here')}
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] leading-4 text-text-muted line-clamp-2 mt-0.5">
+                          {tab.description}
+                        </p>
+                      </div>
+                    )}
+                    {!compactSidebar && activeTab === tab.id && (
+                      <ChevronRight className="w-4 h-4 flex-shrink-0" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            );
+          })}
         </div>
         <div className={`${compactSidebar ? 'p-1.5' : 'p-4'} border-t border-border-muted`}>
           <button
