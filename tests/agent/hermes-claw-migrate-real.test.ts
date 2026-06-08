@@ -173,6 +173,49 @@ describe('hermes claw migrate (real)', () => {
     expect(liveSettings.webhooks).toBeUndefined();
   });
 
+  it('reads the OpenClaw 2026.6.x nested layout (agents.defaults.model.primary + models.providers)', async () => {
+    // OpenClaw 2026.6.x redesigned the on-disk layout: the default model moved to
+    // `agents.defaults.model.primary` and custom providers to `models.providers`,
+    // while the legacy flat `clawdbot.json` (covered above) used root
+    // `model`/`providers`. The migrator must read both shapes.
+    const home = path.join(tmp, '.openclaw-2026');
+    fs.ensureDirSync(home);
+    fs.writeJsonSync(path.join(home, 'openclaw.json'), {
+      agents: { defaults: { workspace: '/w', model: { primary: 'ollama/qwen2.5:7b-instruct' } } },
+      models: {
+        mode: 'merge',
+        providers: { ollama: { baseUrl: 'http://127.0.0.1:11434', api: 'openai', apiKey: SECRET_VALUE, models: ['qwen2.5'] } },
+      },
+      tools: { profile: 'default' },
+    });
+
+    const report = await runClawMigration({ source: home, workspaceTarget: target, skillsHub: hub, apply: true });
+    expect(report.detected).toBe(true);
+    const action = new Map(report.entries.map((e) => [e.category, e.action]));
+
+    // model imported from the nested `agents.defaults.model.primary` (was skipped
+    // before the 2026.6.x reader), copied verbatim — Code Buddy resolves the
+    // `ollama/` provider prefix.
+    expect(action.get('model')).toBe('import');
+    const settings = fs.readJsonSync(path.join(target, '.codebuddy', 'settings.json'));
+    expect(settings.model).toBe('ollama/qwen2.5:7b-instruct');
+
+    // custom_providers detected from `models.providers` (was reported "Not
+    // present in source") and archived — never imported into live settings.
+    expect(action.get('custom_providers')).toBe('archive');
+    const provFile = path.join(target, '.codebuddy', 'openclaw-migration', 'archive', 'custom_providers.json');
+    expect(fs.existsSync(provFile)).toBe(true);
+    expect(fs.readFileSync(provFile, 'utf-8')).toContain('ollama'); // the nested slice
+    expect(settings.models).toBeUndefined(); // provider catalog never leaks into live settings
+
+    // The provider block carries an apiKey -> archive is 0600 and the raw value
+    // never surfaces in the report object.
+    expect(JSON.stringify(report)).not.toContain(SECRET_VALUE);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(provFile).mode & 0o777).toBe(0o600);
+    }
+  });
+
   it('covers the expanded category set (30+) and never leaks secrets in expanded slices', async () => {
     const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
 

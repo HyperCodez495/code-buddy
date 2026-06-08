@@ -108,6 +108,12 @@ interface ArchiveCategorySpec {
   category: string;
   /** Candidate config keys; the first present one becomes the archived slice. */
   keys: string[];
+  /**
+   * Candidate dotted paths for OpenClaw 2026.6.x's nested layout (e.g.
+   * `models.providers`). Checked after {@link keys}; the first present one
+   * becomes the archived slice.
+   */
+  paths?: string[];
   label: string;
   /** When true, the archive file may carry credentials → written with 0600. */
   sensitive?: boolean;
@@ -117,7 +123,7 @@ interface ArchiveCategorySpec {
  * Archive categories whose slice can embed credentials. Their review files are
  * chmod 0600 like `secrets.json` (best-effort; no-op where chmod is unsupported).
  */
-const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets']);
+const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets', 'custom_providers']);
 
 /**
  * Dev-only invariant: every config key is claimed by at most one archive spec.
@@ -206,6 +212,33 @@ function firstDefined(obj: Record<string, unknown>, paths: string[]): unknown {
   }
   return undefined;
 }
+
+/**
+ * Like {@link firstString} but resolves dotted paths, so OpenClaw 2026.6.x's
+ * nested layout (e.g. `agents.defaults.model.primary`) is read alongside the
+ * legacy flat `clawdbot` keys. Returns the first path that resolves to a
+ * non-empty string (skipping object/undefined intermediates), trimmed.
+ */
+function firstStringPath(obj: Record<string, unknown>, paths: string[]): string | undefined {
+  for (const p of paths) {
+    const v = nestedValue(obj, p);
+    if (typeof v === 'string' && v.trim()) return v.trim();
+  }
+  return undefined;
+}
+
+// Default-model lookup paths. OpenClaw 2026.6.x nests the resolved default under
+// `agents.defaults.model.primary`; older clawdbot/moltbot configs used a flat
+// root `model`. Both shapes are tried (2026.6.x first) so a real install of
+// either imports its default model. `firstStringPath` skips the object-valued
+// `agents.defaults.model` intermediate and keeps scanning.
+const CLAW_MODEL_PATHS = [
+  'agents.defaults.model.primary',
+  'agents.defaults.model',
+  'model',
+  'defaultModel',
+  'default_model',
+];
 
 /**
  * Agent-behavior defaults that map cleanly onto real, consumed
@@ -454,7 +487,7 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
   const cfg = config?.raw ?? {};
 
   // default model + thinking level -> .codebuddy/settings.json (consumed by model resolver)
-  const model = firstString(cfg, ['model', 'defaultModel', 'default_model']);
+  const model = firstStringPath(cfg, CLAW_MODEL_PATHS);
   if (model) {
     entries.push({
       category: 'model',
@@ -516,7 +549,11 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
   // becomes the archived slice. **Keys must be unique across all specs** so a
   // single config key never lands in two archive files (asserted below in dev).
   const archiveCategories: ArchiveCategorySpec[] = [
-    { category: 'custom_providers', keys: ['providers', 'customProviders', 'custom_providers'], label: 'custom providers' },
+    // OpenClaw 2026.6.x stores custom OpenAI-compatible providers under
+    // `models.providers.<name>` (baseUrl/api/apiKey/models). Archived (never
+    // imported): the shape differs from Code Buddy's provider config and the
+    // block carries an apiKey, so it is sensitive (0600) and left for review.
+    { category: 'custom_providers', keys: ['providers', 'customProviders', 'custom_providers'], paths: ['models.providers'], label: 'custom providers', sensitive: true },
     { category: 'messaging', keys: ['channels', 'messaging', 'platforms'], label: 'messaging / channels platform config' },
     { category: 'tts', keys: ['tts', 'textToSpeech', 'voice'], label: 'TTS / voice config' },
     { category: 'browser', keys: ['browser', 'browserSettings', 'browserBackend'], label: 'browser automation settings' },
@@ -552,14 +589,16 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
   assertUniqueArchiveKeys(archiveCategories);
 
   for (const spec of archiveCategories) {
-    const presentKey = spec.keys.find((k) => cfg[k] !== undefined);
+    // Root keys first (legacy flat clawdbot), then dotted paths (2026.6.x).
+    const present = spec.keys.find((k) => cfg[k] !== undefined)
+      ?? spec.paths?.find((p) => nestedValue(cfg, p) !== undefined);
     entries.push({
       category: spec.category,
       label: spec.label,
-      action: presentKey ? 'archive' : 'skip',
-      source: presentKey ? `config:${presentKey}` : null,
-      destination: presentKey ? path.join(codebuddyDir, 'openclaw-migration', 'archive', `${spec.category}.json`) : null,
-      detail: presentKey
+      action: present ? 'archive' : 'skip',
+      source: present ? `config:${present}` : null,
+      destination: present ? path.join(codebuddyDir, 'openclaw-migration', 'archive', `${spec.category}.json`) : null,
+      detail: present
         ? 'Archived for manual review (no confirmed live consumer in Code Buddy).'
         : 'Not present in source.',
     });
@@ -681,7 +720,7 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
     case 'model': {
       if (!entry.destination) return;
       mergeSettings(ctx, (settings) => {
-        const model = firstString(ctx.config?.raw ?? {}, ['model', 'defaultModel', 'default_model']);
+        const model = firstStringPath(ctx.config?.raw ?? {}, CLAW_MODEL_PATHS);
         if (model) settings.model = model;
         const thinking = firstString(ctx.config?.raw ?? {}, ['thinkingLevel', 'thinking_level', 'reasoning']);
         if (thinking) settings.thinkingLevel = thinking;
@@ -737,7 +776,11 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
 function sliceForArchive(entry: ClawMigrationEntry, ctx: BuildContext): unknown {
   const cfg = ctx.config?.raw ?? {};
   const key = entry.source?.replace(/^config:/, '');
-  if (key && cfg[key] !== undefined) return { [key]: cfg[key] };
+  if (!key) return { note: entry.detail };
+  if (cfg[key] !== undefined) return { [key]: cfg[key] };
+  // OpenClaw 2026.6.x nested layout (e.g. `models.providers`).
+  const nested = nestedValue(cfg, key);
+  if (nested !== undefined) return { [key]: nested };
   return { note: entry.detail };
 }
 

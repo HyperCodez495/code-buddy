@@ -18,11 +18,12 @@ Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
 - **Vs OpenClaw** — the gateway bridge + CLI `validate-upstream` are **validated against a live OpenClaw 2026.6.1 daemon**
   (`openclaw gateway status --json`, exitCode 0). One known limitation: the raw WS `protocol:4` handshake (deferred; the
   CLI path is canonical). Code Buddy's AI-to-AI substrate (`peer.*` + A2A/ACP/MCP) is **richer** than OpenClaw's.
-- **The one open in-repo code gap** is the OpenClaw **migrator** (`src/agent/hermes-claw-migrate.ts`): against the real
-  2026.6.1 install it imports **0 of 36 categories**. Two of those are **proven reader bugs** from 2026.6.x schema drift
-  — the configured default model and the custom-provider catalog moved under `models`/`agents.defaults`, while the readers
-  still look at the config root. The other ~30 skips are **correct on this fresh/empty install** (no MCP servers, persona,
-  agent-behavior overrides or memory store are configured), **not** reader bugs. See [§4](#4-the-one-open-code-gap--openclaw-migrator-readers).
+- **The OpenClaw migrator's two schema-drift reader bugs are now fixed** (`src/agent/hermes-claw-migrate.ts`, 2026-06-08):
+  the default model (`agents.defaults.model.primary`) now **imports** and the custom-provider catalog (`models.providers`)
+  is now **detected and archived 0600** — validated against the live 2026.6.1 install (import 1 / archive 5 / skip 30, was
+  0 / 4 / 32). The remaining ~30 skips are **correct on this fresh/empty install** (no MCP/persona/agent-overrides/memory
+  configured), not bugs; the identity/memory readers stay unverified until an install actually has that data. See
+  [§4](#4-the-one-open-code-gap--openclaw-migrator-readers).
 
 ## 1. Already shipped — do not re-open
 
@@ -50,7 +51,7 @@ The multi-AI comparison doc that called TTL/DAG/swarm "the honest gap" predates 
 | `browser-automation` | **External** (accounts) | local Playwright+CDP+hybrid routing done; only **managed** Browserbase/Browser Use backends need paid keys | `src/agent/hermes-browser-backends.ts` |
 | `runtime-backends` | **External** (accounts) | local/Docker/WSL/SSH validated; Modal/Daytona serverless need accounts | `src/agent/hermes-runtime-backends.ts` |
 | `mobile-supervision` | **Product** (by design) | silent remote execution is refused on purpose; local-operator-gated | `src/server/routes/mobile.ts` |
-| `openclaw-migration` | **Actionable** (see §4) | external gate (no real install) lifted; now blocked by stale readers, not by accounts | `src/agent/hermes-claw-migrate.ts` |
+| `openclaw-migration` | **Readers fixed** (see §4) | model+provider schema-drift readers fixed & live-validated 2026-06-08; identity/memory readers pending a populated install; stays `partial` until then | `src/agent/hermes-claw-migrate.ts` |
 
 Local/free is already covered wherever possible (Playwright+CDP, Docker/WSL/SSH, Honcho/ByteRover via CLI). What pins the
 first three at `partial` is **paid accounts**, not code. Flipping them without a real round-trip would be metric-gaming (refused).
@@ -84,7 +85,12 @@ it has **no shared peer task board**. OpenClaw "enterprise" modules (policy/hook
 
 ## 4. The one open code gap — OpenClaw migrator readers
 
-**Empirical finding (dry-run of `buddy hermes claw status --json` against the live `~/.openclaw`, 2026-06-08):**
+> **Status: FIXED 2026-06-08.** The model + custom-provider readers below now handle the 2026.6.x layout (commit pending);
+> the live dry-run went from **0 / 4 / 32** (import/archive/skip) to **1 / 5 / 30**. The tables below are kept as the
+> record of what was wrong and why. Regression-locked by `tests/agent/hermes-claw-migrate-real.test.ts` (legacy
+> `clawdbot.json` + new 2026.6.x `openclaw.json` fixtures).
+
+**Original empirical finding (dry-run against the live `~/.openclaw`, 2026-06-08, before the fix):**
 `detected: true`, but of **36 categories: 32 → `skip`, 4 → `archive`, 0 → `import`**. The migrator loads `openclaw.json`
 (it is in `CONFIG_NAMES`, `hermes-claw-migrate.ts:94`). The "0 imported" splits into **two distinct causes** — verified
 per-row by checking whether the source data actually exists:
@@ -116,18 +122,23 @@ the **migrator** is a separate module and was not.)
 > readers are *unverifiable as bugs here* — they would only surface if/when an install actually accumulates persona or a
 > migratable memory store; their 2026.6.x shapes should be confirmed before claiming a bug.
 
-### Fix outline (not done here — documented gap)
-1. **Proven, do first**: extend the model reader to also read `agents.defaults.model.primary`, and the provider reader to
-   read `models.providers.*` (the code already tries multiple field names — add the nested paths). This alone moves
-   `model` + `custom_providers` to `import` against a real install.
-2. Keep legacy readers as fallback for older `clawdbot`/`moltbot` installs.
-3. **Pending source data**: only when an install has them, verify and add 2026.6.x readers for MCP, agent-behavior
-   overrides, identity and a migratable memory store — don't add them blind.
-4. **Only after** high-value categories resolve to `import`/`archive`: flip the manifest entry `openclaw-migration`
-   (`hermes-parity-manifest.ts:592`) `partial → covered-partial`, correct the "no real OpenClaw install validated" note,
-   and consider removing `openclaw-migration` from `isDeferredHermesTodo` (`hermes-parity-manifest.ts:654`).
-- Files: `src/agent/hermes-claw-migrate.ts` (readers), `src/agent/hermes-parity-manifest.ts` (status),
-  `tests/agent/hermes-claw-migrate-real.test.ts` (add a fixture derived from the real 2026.6.1 install, secrets redacted).
+### Fix outline
+1. ✅ **DONE (2026-06-08)**: the model reader now reads `agents.defaults.model.primary` (via a new `firstStringPath`
+   dotted-path helper + `CLAW_MODEL_PATHS`), and the `custom_providers` archive spec now detects the nested
+   `models.providers` (new optional `paths` on `ArchiveCategorySpec`, dotted-path-aware matcher + `sliceForArchive`,
+   marked sensitive → 0600). `model` → **import**, `custom_providers` → **archive** (not import — the shape differs from
+   Code Buddy's provider config and the block carries an apiKey). Legacy `clawdbot`/`moltbot` root keys kept as fallback.
+2. ✅ Regression-locked: `tests/agent/hermes-claw-migrate-real.test.ts` (legacy `clawdbot.json` asserts `settings.model ===
+   'claude-sonnet-4-6'`; new 2026.6.x `openclaw.json` asserts model→import of `ollama/qwen2.5:7b-instruct` + custom_providers
+   archived 0600 from `models.providers`).
+3. **Still pending source data**: only when an install actually has them, verify and add 2026.6.x readers for MCP,
+   agent-behavior overrides, identity and a migratable memory store — don't add them blind.
+4. **Manifest status kept `partial` (deliberately).** Two readers fixed against one near-empty install is *not* "the
+   migrator works against real installs." The note (`hermes-parity-manifest.ts`) now says model+provider readers are
+   fixed and live-validated, with identity/memory/mcp/agent-settings still unverified for lack of source data. Flip to
+   `covered-partial` only after a populated install exercises the rest.
+- Files: `src/agent/hermes-claw-migrate.ts` (readers), `src/agent/hermes-parity-manifest.ts` (note),
+  `tests/agent/hermes-claw-migrate-real.test.ts` (2026.6.x fixture).
 
 ## 5. Verification
 

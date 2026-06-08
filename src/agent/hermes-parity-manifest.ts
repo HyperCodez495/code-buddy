@@ -603,7 +603,10 @@ const FEATURES: HermesParityFeature[] = [
       'model, MCP servers, skills, custom slash commands, and agent-behavior settings to real consumer-backed ' +
       'destinations; the other categories (incl. cron, hooks, webhooks, toolsets, profiles, bundles, pairing, ' +
       'runtimes, portal, kanban, learning-loop) are archived for manual review (credential-bearing archives written 0600). ' +
-      'Dry-run by default, deterministic, secret-safe; fixture-tested, with no real OpenClaw install validated. ' +
+      'Dry-run by default, deterministic, secret-safe. The default-model and custom-provider readers now also read the ' +
+      'OpenClaw 2026.6.x nested layout (`agents.defaults.model.primary`, `models.providers`) alongside the legacy flat ' +
+      'keys, validated against a live OpenClaw 2026.6.1 install (model imported, providers archived 0600). The remaining ' +
+      'identity/memory/mcp/agent-settings readers are still unverified against real data because that install had none. ' +
       'Cowork now exposes a confirm-gated migration dialog (dry-run preview on open; apply only after explicit confirm). ' +
       'Agent-behavior defaults are now DIRECTLY IMPORTED (not archived), matching upstream: agents.defaults.timeoutSeconds ' +
       '-> maxToolRounds (/10), compaction.mode -> autoCompact, approvals.exec.mode -> permissions (conservative enum map), ' +
