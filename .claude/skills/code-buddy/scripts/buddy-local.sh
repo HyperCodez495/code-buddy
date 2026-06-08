@@ -22,19 +22,30 @@ if [ "$#" -lt 1 ]; then
 fi
 prompt="$1"; shift || true
 
-# Repo root = four levels up from this script (.claude/skills/code-buddy/scripts).
+# Locate a code-buddy repo (works in-repo AND when this skill is copied to
+# ~/.claude/skills): try $CODE_BUDDY_HOME, then 4 levels up (skill lives inside
+# the repo), then common checkout paths.
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO_ROOT="$(cd "$SCRIPT_DIR/../../../.." && pwd)"
+find_repo() {
+  local c
+  for c in "${CODE_BUDDY_HOME:-}" "$SCRIPT_DIR/../../../.." "$HOME/code-buddy" "$HOME/DEV/code-buddy"; do
+    [ -n "$c" ] || continue
+    if [ -f "$c/src/index.ts" ] || [ -f "$c/dist/index.js" ]; then (cd "$c" && pwd); return 0; fi
+  done
+  return 1
+}
 
-# Resolve the buddy entrypoint (prefer a global install, then the repo).
+# Resolve the buddy entrypoint (prefer a global install, then a located repo).
 if command -v buddy >/dev/null 2>&1; then
   RUN=(buddy)
-elif [ -x "$REPO_ROOT/node_modules/.bin/tsx" ] && [ -f "$REPO_ROOT/src/index.ts" ]; then
-  RUN=("$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/src/index.ts")
-elif [ -f "$REPO_ROOT/dist/index.js" ]; then
-  RUN=(node "$REPO_ROOT/dist/index.js")
+elif REPO_ROOT="$(find_repo)"; then
+  if [ -x "$REPO_ROOT/node_modules/.bin/tsx" ] && [ -f "$REPO_ROOT/src/index.ts" ]; then
+    RUN=("$REPO_ROOT/node_modules/.bin/tsx" "$REPO_ROOT/src/index.ts")
+  else
+    RUN=(node "$REPO_ROOT/dist/index.js")
+  fi
 else
-  echo "No buddy entrypoint found (no global 'buddy', and $REPO_ROOT is not a built code-buddy repo)." >&2
+  echo "No buddy entrypoint: install globally (npm i -g @phuetz/code-buddy) or set CODE_BUDDY_HOME=/path/to/code-buddy." >&2
   exit 1
 fi
 
