@@ -62,6 +62,18 @@ describe('agent-task-executor', () => {
     expect(env.GROK_MODEL).toBe('qwen3.6:35b-a3b');
   });
 
+  it('appends extra args (e.g. --disallowedTools) to tighten the tool surface', async () => {
+    const { fn, calls } = spawnReturning({ status: 0 });
+    const exec = createAgentTaskExecutor({
+      workspaceRoot: '/tmp/ws',
+      repoRoot: process.cwd(),
+      extraArgs: ['--disallowedTools', 'bash,run_command'],
+      spawnImpl: fn,
+    });
+    await exec(task, localModel);
+    expect(calls[0]!.args).toEqual(expect.arrayContaining(['--disallowedTools', 'bash,run_command']));
+  });
+
   it('reports failure on a non-zero agent exit', async () => {
     const { fn } = spawnReturning({ status: 1, stderr: 'kaboom' });
     const exec = createAgentTaskExecutor({ workspaceRoot: '/tmp/ws', repoRoot: process.cwd(), spawnImpl: fn });

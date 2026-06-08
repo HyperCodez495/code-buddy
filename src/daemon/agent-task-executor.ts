@@ -9,11 +9,17 @@
  * Safety — this has real blast radius, so it is gated:
  *   - **Fail-closed workspace root.** It refuses to run without an explicit
  *     workspace dir (`CODEBUDDY_AUTONOMY_WORKSPACE_ROOT` or `opts.workspaceRoot`);
- *     the agent's cwd is that dir, bounding where edits land. A misconfigured
- *     daemon does nothing rather than editing an unintended tree.
+ *     the agent's cwd is that dir. A misconfigured daemon does nothing rather
+ *     than running against an unintended tree.
  *   - It is **not** wired by default: the daemon uses the v0 artifact executor
  *     unless `CODEBUDDY_AUTONOMY_EXECUTOR=agent` is set (see createDefaultAutonomousLoop).
  *   - `critical` tasks are still never auto-claimed (enforced upstream in the store).
+ *
+ * NOTE — the workspace root is a **cwd bound, not a hard sandbox.** Headless mode
+ * auto-approves tools, so the agent can run approved shell commands that may
+ * touch paths outside the workspace. Run this against a disposable/contained
+ * workspace (ideally a container), and pass `opts.permissionMode`/extra agent
+ * flags (e.g. `--disallowedTools`) to tighten the tool surface for your setup.
  *
  * The model is pinned to the fleet's tier choice: local/network tiers run on
  * Ollama (free); the escalated tier uses the configured paid model.
@@ -41,6 +47,12 @@ export interface AgentTaskExecutorOptions {
   timeoutMs?: number;
   /** Permission mode passed to the agent. Default 'acceptEdits'. */
   permissionMode?: string;
+  /**
+   * Extra CLI flags appended to the agent invocation, e.g.
+   * `['--disallowedTools', 'bash,run_command']` to tighten the tool surface.
+   * Defaults to splitting `CODEBUDDY_AUTONOMY_AGENT_ARGS` on whitespace.
+   */
+  extraArgs?: string[];
   /** Injectable spawn (tests). */
   spawnImpl?: SpawnFn;
 }
@@ -73,6 +85,8 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
   const repoRoot = opts.repoRoot ?? process.cwd();
   const timeoutMs = opts.timeoutMs ?? 600_000;
   const permissionMode = opts.permissionMode ?? 'acceptEdits';
+  const envArgs = process.env['CODEBUDDY_AUTONOMY_AGENT_ARGS']?.trim();
+  const extraArgs = opts.extraArgs ?? (envArgs ? envArgs.split(/\s+/) : []);
   const doSpawn: SpawnFn = opts.spawnImpl ?? (spawnSync as unknown as SpawnFn);
 
   return async (task: ColabTask, model: AutonomousModelChoice): Promise<TaskExecutionResult> => {
@@ -93,7 +107,7 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
     const started = Date.now();
     const res = doSpawn(
       entry.cmd,
-      [...entry.baseArgs, '-p', prompt, '--permission-mode', permissionMode, '--output-format', 'text'],
+      [...entry.baseArgs, '-p', prompt, '--permission-mode', permissionMode, '--output-format', 'text', ...extraArgs],
       { cwd: workspaceRoot, env, encoding: 'utf-8', timeout: timeoutMs, maxBuffer: 64 * 1024 * 1024 },
     );
     const elapsedSeconds = Math.round((Date.now() - started) / 1000);
