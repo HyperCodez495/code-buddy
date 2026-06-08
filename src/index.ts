@@ -2397,6 +2397,11 @@ addLazyCommandGroup(program, 'gateway-pairing', 'Operator approval for gateway d
   registerGatewayPairingCommands(program);
 });
 
+addLazyCommandGroup(program, 'screen', 'Capture, record, or watch the screen / a window (real-time machine context)', async () => {
+  const { registerScreenCommands } = await import('./commands/cli/screen-commands.js');
+  registerScreenCommands(program);
+});
+
 addLazyCommandGroup(program, 'autonomy', 'Autonomous fleet loop (claim + run colab tasks on local-first models)', async () => {
   const { registerFleetAutonomyCommands } = await import('./commands/cli/native-engine-commands.js');
   registerFleetAutonomyCommands(program);
