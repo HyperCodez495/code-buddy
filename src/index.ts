@@ -2392,6 +2392,11 @@ addLazyCommandGroup(program, 'hub', 'Skills marketplace (search, install, publis
   registerHubCommands(program);
 });
 
+addLazyCommandGroup(program, 'gateway-pairing', 'Operator approval for gateway device pairing', async () => {
+  const { registerGatewayPairingCommands } = await import('./commands/cli/native-engine-commands.js');
+  registerGatewayPairingCommands(program);
+});
+
 addLazyCommandGroup(program, 'device', 'Manage paired device nodes (SSH, ADB, local)', async () => {
   const { registerDeviceCommands } = await import('./commands/cli/device-commands.js');
   registerDeviceCommands(program);

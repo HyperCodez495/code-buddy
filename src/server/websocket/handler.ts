@@ -11,6 +11,7 @@ import { validateApiKey } from '../auth/api-keys.js';
 import { logger } from "../../utils/logger.js";
 import { isOriginAllowed } from '../origin-check.js';
 import { verifyToken } from '../auth/jwt.js';
+import { authenticateDevice, getGatewayPairingStore } from '../../gateway/device-pairing.js';
 import { TIMEOUT_CONFIG, SERVER_CONFIG } from '../../config/constants.js';
 import {
   createServerAgent,
@@ -42,6 +43,8 @@ interface ConnectionState {
   authenticated: boolean;
   userId?: string;
   keyId?: string;
+  /** Paired device id when authenticated via the device-pairing flow. */
+  deviceId?: string;
   scopes: string[];
   lastActivity: number;
   agent?: ServerAgent;
@@ -73,7 +76,16 @@ type MessageHandler = (
 const messageHandlers = new Map<string, MessageHandler>();
 
 // Payload interfaces for type-safe access
-interface AuthPayload { token?: string; apiKey?: string }
+interface AuthPayload {
+  token?: string;
+  apiKey?: string;
+  /** Device identity for the opt-in pairing flow (CODEBUDDY_GATEWAY_REQUIRE_PAIRING). */
+  deviceId?: string;
+  deviceToken?: string;
+  displayName?: string;
+  clientId?: string;
+  requestedScopes?: string[];
+}
 interface ChatPayload { message?: string; model?: string; stream?: boolean; sessionId?: string }
 interface ToolPayload { name?: string; parameters?: Record<string, unknown> }
 
@@ -169,6 +181,37 @@ messageHandlers.set('authenticate', async (ws, state, payload) => {
       });
       return;
     }
+  }
+
+  // Opt-in device-pairing flow (default off; leaves the api-key/JWT paths above
+  // untouched). A paired device may authenticate with its scoped token; an
+  // unknown device is queued for operator approval (`buddy gateway devices`).
+  const auth = payload as AuthPayload;
+  const deviceOutcome = authenticateDevice(getGatewayPairingStore(), {
+    ...(auth.deviceId ? { deviceId: auth.deviceId } : {}),
+    ...(auth.deviceToken ? { deviceToken: auth.deviceToken } : {}),
+    ...(auth.displayName ? { displayName: auth.displayName } : {}),
+    ...(auth.clientId ? { clientId: auth.clientId } : {}),
+    ...(auth.requestedScopes ? { requestedScopes: auth.requestedScopes } : {}),
+  });
+  if (deviceOutcome.outcome === 'authenticated') {
+    state.authenticated = true;
+    state.deviceId = deviceOutcome.deviceId;
+    state.scopes = deviceOutcome.scopes ?? [];
+    send(ws, {
+      type: 'authenticated',
+      payload: { deviceId: deviceOutcome.deviceId, scopes: state.scopes, paired: true },
+      timestamp: new Date().toISOString(),
+    });
+    return;
+  }
+  if (deviceOutcome.outcome === 'pending') {
+    sendError(ws, 'PAIRING_PENDING', deviceOutcome.message ?? 'Device pairing required');
+    return;
+  }
+  if (deviceOutcome.outcome === 'rejected') {
+    sendError(ws, 'DEVICE_TOKEN_INVALID', deviceOutcome.message ?? 'Invalid device token');
+    return;
   }
 
   sendError(ws, 'AUTH_FAILED', 'Invalid credentials');

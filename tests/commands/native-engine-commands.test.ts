@@ -17,6 +17,7 @@ import {
   registerCompanionCommands,
   registerGroupCommands,
   registerAuthProfileCommands,
+  registerGatewayPairingCommands,
 } from '../../src/commands/cli/native-engine-commands';
 import { getHeartbeatEngine } from '../../src/daemon/heartbeat.js';
 import { resetAuthProfileManager } from '../../src/auth/profile-manager.js';
@@ -64,6 +65,20 @@ const mockSkillsHub = {
 
 jest.mock('../../src/skills/hub.js', () => ({
   getSkillsHub: jest.fn(function() { return mockSkillsHub; }),
+}));
+
+const mockPairingStore = {
+  listPending: jest.fn(),
+  listPaired: jest.fn(),
+  approve: jest.fn(),
+  reject: jest.fn(),
+  revoke: jest.fn(),
+  getDir: jest.fn(() => '/tmp/devices'),
+};
+
+jest.mock('../../src/gateway/device-pairing.js', () => ({
+  getGatewayPairingStore: jest.fn(function() { return mockPairingStore; }),
+  isDeviceRole: jest.fn((v: string) => ['operator', 'node', 'control', 'webchat'].includes(v)),
 }));
 
 const mockIdentityManager = {
@@ -1045,6 +1060,85 @@ describe('Native Engine CLI Commands', () => {
         expect(mockSkillsHub.setKeyTrust).toHaveBeenCalledWith('acme', 'official', {});
         expect(getLogOutput()).toContain('Trust updated: acme -> official');
       });
+    });
+  });
+
+  // ==========================================================================
+  // Gateway Pairing Commands
+  // ==========================================================================
+
+  describe('registerGatewayPairingCommands', () => {
+    let program: Command;
+
+    beforeEach(() => {
+      program = createProgram();
+      registerGatewayPairingCommands(program);
+    });
+
+    it('lists pending devices', async () => {
+      mockPairingStore.listPending.mockReturnValue([
+        { deviceId: 'dev-1', role: 'control', clientId: 'cli', requestedScopes: ['chat'] },
+      ]);
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'pending']);
+      const output = getLogOutput();
+      expect(output).toContain('Pending devices (1)');
+      expect(output).toContain('dev-1');
+      expect(output).toContain('scopes=[chat]');
+    });
+
+    it('reports an empty pending queue', async () => {
+      mockPairingStore.listPending.mockReturnValue([]);
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'pending']);
+      expect(getLogOutput()).toContain('No devices pending approval');
+    });
+
+    it('lists paired devices', async () => {
+      mockPairingStore.listPaired.mockReturnValue([
+        { deviceId: 'dev-1', role: 'operator', scopes: ['chat', 'tools'], approvedBy: 'patrice' },
+      ]);
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'list']);
+      const output = getLogOutput();
+      expect(output).toContain('Paired devices (1)');
+      expect(output).toContain('dev-1');
+      expect(output).toContain('by=patrice');
+    });
+
+    it('approves a device and prints the one-time token', async () => {
+      mockPairingStore.approve.mockReturnValue({
+        device: { deviceId: 'dev-1', role: 'control', scopes: ['chat'] },
+        token: 'secret-token-xyz',
+      });
+      await program.parseAsync([
+        'node', 'test', 'gateway-pairing', 'approve', 'dev-1',
+        '--scopes', 'chat', '--role', 'control', '--approved-by', 'patrice',
+      ]);
+      expect(mockPairingStore.approve).toHaveBeenCalledWith('dev-1', {
+        scopes: ['chat'], role: 'control', approvedBy: 'patrice',
+      });
+      const output = getLogOutput();
+      expect(output).toContain('Approved dev-1');
+      expect(output).toContain('secret-token-xyz');
+    });
+
+    it('reports an approve failure for an unknown device', async () => {
+      mockPairingStore.approve.mockImplementation(() => { throw new Error('unknown device'); });
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'approve', 'ghost']);
+      expect(getErrorOutput()).toContain('Failed to approve: unknown device');
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+    });
+
+    it('rejects a pending device', async () => {
+      mockPairingStore.reject.mockReturnValue(true);
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'reject', 'dev-1']);
+      expect(mockPairingStore.reject).toHaveBeenCalledWith('dev-1');
+      expect(getLogOutput()).toContain('Rejected pending device: dev-1');
+    });
+
+    it('revokes a paired device', async () => {
+      mockPairingStore.revoke.mockReturnValue(true);
+      await program.parseAsync(['node', 'test', 'gateway-pairing', 'revoke', 'dev-1']);
+      expect(mockPairingStore.revoke).toHaveBeenCalledWith('dev-1');
+      expect(getLogOutput()).toContain('Revoked paired device: dev-1');
     });
   });
 

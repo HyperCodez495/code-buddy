@@ -15,6 +15,24 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
 [`docs/fleet-guide.md`](docs/fleet-guide.md). Backlog notes also under
 `## [0.5.1-fleet]`.
 
+### Added — Gateway device pairing (OpenClaw/Hermes-style approval flow)
+
+- **`DevicePairingStore`** (`src/gateway/device-pairing.ts`) — transport-agnostic
+  pending → approve/reject → scoped-token registry modelled on OpenClaw's
+  `~/.openclaw/devices/{paired,pending}.json` and Hermes' pairing. Tokens are
+  minted once on approval and only their SHA-256 hash is persisted (plaintext
+  never hits disk); list/get views are token-free; device files are written 0600.
+- **Wired into the production gateway** (`src/server/websocket/handler.ts`) as an
+  **opt-in gate** (`CODEBUDDY_GATEWAY_REQUIRE_PAIRING=true`, default off — the
+  existing JWT/api-key auth paths are untouched). When enabled, a paired device
+  authenticates with its scoped token; an unknown device is queued for approval
+  (`PAIRING_PENDING`); an already-paired device with a bad token is rejected
+  (`DEVICE_TOKEN_INVALID`) and never re-queued.
+- **Operator CLI** `buddy gateway-pairing pending|list|approve|reject|revoke`
+  (mirrors `openclaw devices …`). Approval prints the device token once.
+- Verified end-to-end against the real `setupWebSocket` server (connect → pending
+  → approve → authenticate → reject-bad-token). Unit + CLI tests included.
+
 ### Added — Gateway handshake: protocol negotiation + capability discovery
 
 - The Code Buddy Gateway `connect` → `hello_ok` handshake now mirrors the strong

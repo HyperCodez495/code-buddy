@@ -301,3 +301,90 @@ export class DevicePairingStore {
     return this.dir;
   }
 }
+
+// ── Production gateway integration (shared singleton + auth helper) ───────────
+
+let sharedStore: DevicePairingStore | null = null;
+
+/**
+ * Shared pairing store for the running gateway + the operator CLI, so both read
+ * and write the same `~/.codebuddy/gateway/devices` files.
+ */
+export function getGatewayPairingStore(config?: DevicePairingStoreConfig): DevicePairingStore {
+  if (!sharedStore) {
+    sharedStore = new DevicePairingStore(config);
+  }
+  return sharedStore;
+}
+
+/** Reset the shared store (tests). */
+export function resetGatewayPairingStore(): void {
+  sharedStore = null;
+}
+
+/** Opt-in gate: device pairing is only enforced when explicitly enabled. */
+export function isDevicePairingRequired(): boolean {
+  return process.env['CODEBUDDY_GATEWAY_REQUIRE_PAIRING'] === 'true';
+}
+
+export interface DeviceAuthInput {
+  deviceId?: string;
+  deviceToken?: string;
+  displayName?: string;
+  clientId?: string;
+  requestedScopes?: string[];
+}
+
+export interface DeviceAuthOutcome {
+  /**
+   * - `skip`: pairing not required, or no device identity offered → fall through
+   *   to the gateway's existing JWT/api-key auth (existing paths stay intact).
+   * - `authenticated`: a paired device presented a valid token.
+   * - `pending`: an unknown device was queued for operator approval.
+   * - `rejected`: an already-paired device presented a missing/invalid token —
+   *   an auth failure, not re-queued (it is already approved).
+   */
+  outcome: 'skip' | 'authenticated' | 'pending' | 'rejected';
+  deviceId?: string;
+  scopes?: string[];
+  message?: string;
+}
+
+/**
+ * Layer device pairing over the existing gateway auth without replacing it.
+ * Returns `skip` (the default, when pairing is off) so callers leave their
+ * JWT/api-key flow untouched.
+ */
+export function authenticateDevice(
+  store: DevicePairingStore,
+  input: DeviceAuthInput,
+  required: boolean = isDevicePairingRequired(),
+): DeviceAuthOutcome {
+  if (!required) return { outcome: 'skip' };
+  const deviceId = input.deviceId?.trim();
+  if (!deviceId) return { outcome: 'skip' };
+
+  if (input.deviceToken && store.verifyToken(deviceId, input.deviceToken)) {
+    const device = store.getPaired(deviceId);
+    store.touch(deviceId, 'authenticate');
+    return { outcome: 'authenticated', deviceId, scopes: device?.scopes ?? [] };
+  }
+
+  // Already-paired device with a missing/invalid token is an auth failure, not a
+  // new pairing request — never re-queue an approved device.
+  if (store.isPaired(deviceId)) {
+    return { outcome: 'rejected', deviceId, message: 'Invalid device token for a paired device.' };
+  }
+
+  store.requestPairing({
+    deviceId,
+    ...(input.displayName ? { displayName: input.displayName } : {}),
+    ...(input.clientId ? { clientId: input.clientId } : {}),
+    ...(input.requestedScopes ? { requestedScopes: input.requestedScopes } : {}),
+  });
+  return {
+    outcome: 'pending',
+    deviceId,
+    message: 'Device pairing required — request recorded, awaiting operator approval.',
+  };
+}

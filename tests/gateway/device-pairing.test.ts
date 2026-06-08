@@ -2,7 +2,7 @@ import { mkdtempSync, rmSync, existsSync, readFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { DevicePairingStore } from '../../src/gateway/device-pairing';
+import { DevicePairingStore, authenticateDevice } from '../../src/gateway/device-pairing';
 
 describe('DevicePairingStore', () => {
   let dir: string;
@@ -139,6 +139,39 @@ describe('DevicePairingStore', () => {
       const mode = require('fs').statSync(join(dir, 'paired.json')).mode & 0o777;
       expect(mode).toBe(0o600);
       expect(existsSync(join(dir, 'pending.json'))).toBe(true);
+    });
+  });
+
+  describe('authenticateDevice (opt-in gate)', () => {
+    it('skips when pairing is not required (existing auth untouched)', () => {
+      expect(authenticateDevice(store, { deviceId: 'd', deviceToken: 't' }, false).outcome).toBe('skip');
+    });
+
+    it('skips when no device identity is offered', () => {
+      expect(authenticateDevice(store, {}, true).outcome).toBe('skip');
+    });
+
+    it('authenticates a paired device with a valid token and returns its scopes', () => {
+      store.requestPairing({ deviceId: 'd', requestedScopes: ['chat', 'tools'] });
+      const { token } = store.approve('d');
+      const result = authenticateDevice(store, { deviceId: 'd', deviceToken: token }, true);
+      expect(result.outcome).toBe('authenticated');
+      expect(result.scopes).toEqual(['chat', 'tools']);
+      expect(result.deviceId).toBe('d');
+    });
+
+    it('queues an unknown device as pending for operator approval', () => {
+      const result = authenticateDevice(store, { deviceId: 'new-dev', deviceToken: 'x', clientId: 'cli' }, true);
+      expect(result.outcome).toBe('pending');
+      expect(store.listPending().map((d) => d.deviceId)).toContain('new-dev');
+    });
+
+    it('rejects (does not re-queue) a paired device that presents a wrong token', () => {
+      store.requestPairing({ deviceId: 'd' });
+      store.approve('d');
+      const result = authenticateDevice(store, { deviceId: 'd', deviceToken: 'wrong' }, true);
+      expect(result.outcome).toBe('rejected');
+      expect(store.listPending()).toHaveLength(0);
     });
   });
 });

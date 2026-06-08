@@ -653,6 +653,123 @@ function parseSkillTapTrust(value?: string): import('../../skills/hub.js').Skill
 }
 
 // ============================================================================
+// Gateway device pairing commands
+// ============================================================================
+
+export function registerGatewayPairingCommands(program: Command): void {
+  const pairing = program
+    .command('gateway-pairing')
+    .description('Operator approval for gateway device pairing (pending -> approve/reject -> token)');
+
+  pairing
+    .command('pending')
+    .description('List devices awaiting pairing approval')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { getGatewayPairingStore } = await import('../../gateway/device-pairing.js');
+      const store = getGatewayPairingStore();
+      const pendingDevices = store.listPending();
+      if (opts.json) {
+        console.log(JSON.stringify({ count: pendingDevices.length, pending: pendingDevices, dir: store.getDir() }, null, 2));
+        return;
+      }
+      if (pendingDevices.length === 0) {
+        console.log(`No devices pending approval. Store: ${store.getDir()}`);
+        return;
+      }
+      console.log(`\nPending devices (${pendingDevices.length}):`);
+      for (const d of pendingDevices) {
+        console.log(`  ${d.deviceId}  role=${d.role}${d.clientId ? `  client=${d.clientId}` : ''}  scopes=[${d.requestedScopes.join(', ')}]`);
+      }
+      console.log('');
+    });
+
+  pairing
+    .command('list')
+    .description('List paired (approved) devices')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { getGatewayPairingStore } = await import('../../gateway/device-pairing.js');
+      const store = getGatewayPairingStore();
+      const paired = store.listPaired();
+      if (opts.json) {
+        console.log(JSON.stringify({ count: paired.length, paired, dir: store.getDir() }, null, 2));
+        return;
+      }
+      if (paired.length === 0) {
+        console.log(`No paired devices. Store: ${store.getDir()}`);
+        return;
+      }
+      console.log(`\nPaired devices (${paired.length}):`);
+      for (const d of paired) {
+        console.log(`  ${d.deviceId}  role=${d.role}  scopes=[${d.scopes.join(', ')}]${d.approvedBy ? `  by=${d.approvedBy}` : ''}`);
+      }
+      console.log('');
+    });
+
+  pairing
+    .command('approve <deviceId>')
+    .description('Approve a device and mint its scoped token (shown once)')
+    .option('--scopes <csv>', 'comma-separated scopes to grant (default: requested)')
+    .option('--role <role>', 'device role: operator, node, control, or webchat')
+    .option('--approved-by <name>', 'operator approving the device')
+    .option('--json', 'output JSON')
+    .action(async (
+      deviceId: string,
+      opts: { scopes?: string; role?: string; approvedBy?: string; json?: boolean },
+    ) => {
+      const { getGatewayPairingStore, isDeviceRole } = await import('../../gateway/device-pairing.js');
+      const store = getGatewayPairingStore();
+      try {
+        const result = store.approve(deviceId, {
+          ...(opts.scopes ? { scopes: opts.scopes.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+          ...(opts.role && isDeviceRole(opts.role) ? { role: opts.role } : {}),
+          ...(opts.approvedBy ? { approvedBy: opts.approvedBy } : {}),
+        });
+        if (opts.json) {
+          console.log(JSON.stringify(result, null, 2));
+          return;
+        }
+        console.log(`Approved ${result.device.deviceId} (scopes=[${result.device.scopes.join(', ')}])`);
+        console.log(`  Device token (shown once — give it to the device): ${result.token}`);
+      } catch (error) {
+        const message = `Failed to approve: ${error instanceof Error ? error.message : error}`;
+        if (opts.json) console.log(JSON.stringify({ error: message, device: deviceId }, null, 2));
+        else console.error(message);
+        process.exit(1);
+      }
+    });
+
+  pairing
+    .command('reject <deviceId>')
+    .description('Reject a pending pairing request')
+    .option('--json', 'output JSON')
+    .action(async (deviceId: string, opts: { json?: boolean }) => {
+      const { getGatewayPairingStore } = await import('../../gateway/device-pairing.js');
+      const removed = getGatewayPairingStore().reject(deviceId);
+      if (opts.json) {
+        console.log(JSON.stringify({ rejected: removed, device: deviceId }, null, 2));
+        return;
+      }
+      console.log(removed ? `Rejected pending device: ${deviceId}` : `No pending request for: ${deviceId}`);
+    });
+
+  pairing
+    .command('revoke <deviceId>')
+    .description('Revoke an already-paired device (invalidates its token)')
+    .option('--json', 'output JSON')
+    .action(async (deviceId: string, opts: { json?: boolean }) => {
+      const { getGatewayPairingStore } = await import('../../gateway/device-pairing.js');
+      const revoked = getGatewayPairingStore().revoke(deviceId);
+      if (opts.json) {
+        console.log(JSON.stringify({ revoked, device: deviceId }, null, 2));
+        return;
+      }
+      console.log(revoked ? `Revoked paired device: ${deviceId}` : `No paired device: ${deviceId}`);
+    });
+}
+
+// ============================================================================
 // Identity commands
 // ============================================================================
 
