@@ -770,6 +770,90 @@ export function registerGatewayPairingCommands(program: Command): void {
 }
 
 // ============================================================================
+// Fleet autonomy commands
+// ============================================================================
+
+export function registerFleetAutonomyCommands(program: Command): void {
+  const fleet = program
+    .command('autonomy')
+    .description('Autonomous fleet loop — claim and run colab tasks on local-first models');
+
+  fleet
+    .command('run')
+    .description('Run the autonomous loop (default: one tick; --watch for continuous)')
+    .option('--watch', 'run continuously until Ctrl-C')
+    .option('--interval <ms>', 'tick interval for --watch', '30000')
+    .option('--max-ticks <n>', 'stop after N ticks')
+    .option('--dir <path>', 'colab dir (default: CODEBUDDY_FLEET_COLAB_DIR or <cwd>/.codebuddy)')
+    .option('--output-dir <path>', 'artifact output dir')
+    .option('--json', 'output JSON summary')
+    .action(async (opts: {
+      watch?: boolean; interval: string; maxTicks?: string;
+      dir?: string; outputDir?: string; json?: boolean;
+    }) => {
+      const { createDefaultAutonomousLoop, FleetAutonomousDaemon } = await import('../../daemon/autonomous-daemon.js');
+      const loop = createDefaultAutonomousLoop({
+        ...(opts.dir ? { dir: opts.dir } : {}),
+        ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
+      });
+      const daemon = new FleetAutonomousDaemon({
+        loop,
+        intervalMs: parseInt(opts.interval, 10) || 30000,
+        onTick: (result, n) => {
+          if (!opts.json) {
+            const tier = result.model ? ` [${result.model.tier}${result.model.paid ? ' $' : ''}]` : '';
+            console.log(`tick ${n}: ${result.outcome}${result.taskTitle ? ` — ${result.taskTitle}` : ''}${tier}`);
+          }
+        },
+      });
+
+      if (opts.watch) {
+        const onSig = () => { console.log('\nstopping after current tick…'); daemon.stop(); };
+        process.once('SIGINT', onSig);
+        process.once('SIGTERM', onSig);
+      }
+
+      const maxTicks = opts.watch
+        ? (opts.maxTicks ? parseInt(opts.maxTicks, 10) : undefined)
+        : 1;
+      const summary = await daemon.run(maxTicks !== undefined ? { maxTicks } : {});
+
+      if (opts.json) {
+        console.log(JSON.stringify(summary, null, 2));
+      } else {
+        console.log(`\nDone: ${summary.ticks} tick(s), ${JSON.stringify(summary.outcomes)} (${summary.stoppedReason}).`);
+      }
+    });
+
+  fleet
+    .command('status')
+    .description('Show the fleet task queue + presence')
+    .option('--dir <path>', 'colab dir')
+    .option('--json', 'output JSON')
+    .action(async (opts: { dir?: string; json?: boolean }) => {
+      const { FleetColabStore } = await import('../../fleet/colab-store.js');
+      const store = new FleetColabStore({ ...(opts.dir ? { dir: opts.dir } : {}) });
+      const tasks = store.listTasks();
+      const byStatus = tasks.reduce<Record<string, number>>((acc, t) => {
+        acc[t.status] = (acc[t.status] ?? 0) + 1;
+        return acc;
+      }, {});
+      const presence = store.listPresence();
+      if (opts.json) {
+        console.log(JSON.stringify({ dir: store.getDir(), byStatus, tasks, presence }, null, 2));
+        return;
+      }
+      console.log(`\nFleet store: ${store.getDir()}`);
+      console.log(`Tasks: ${tasks.length} (${Object.entries(byStatus).map(([s, n]) => `${s}=${n}`).join(', ') || 'none'})`);
+      const next = store.nextClaimable();
+      console.log(`Next auto-claimable: ${next ? `${next.title} [${next.priority}]` : 'none (or all critical)'}`);
+      const agents = Object.entries(presence);
+      console.log(`Agents: ${agents.length ? agents.map(([id, p]) => `${id}(${p.status})`).join(', ') : 'none'}`);
+      console.log('');
+    });
+}
+
+// ============================================================================
 // Identity commands
 // ============================================================================
 

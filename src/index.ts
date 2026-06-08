@@ -2397,6 +2397,11 @@ addLazyCommandGroup(program, 'gateway-pairing', 'Operator approval for gateway d
   registerGatewayPairingCommands(program);
 });
 
+addLazyCommandGroup(program, 'autonomy', 'Autonomous fleet loop (claim + run colab tasks on local-first models)', async () => {
+  const { registerFleetAutonomyCommands } = await import('./commands/cli/native-engine-commands.js');
+  registerFleetAutonomyCommands(program);
+});
+
 addLazyCommandGroup(program, 'device', 'Manage paired device nodes (SSH, ADB, local)', async () => {
   const { registerDeviceCommands } = await import('./commands/cli/device-commands.js');
   registerDeviceCommands(program);
