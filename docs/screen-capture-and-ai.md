@@ -60,4 +60,35 @@ This is intentionally the **portable, cheap** path (capture + dedup + OCR + reda
 
 The **Wayland-vs-X11 capture split** is the key constraint: `x11grab`/`scrot` die on a pure Wayland session (GNOME 40+/KDE) — design for the `mss`/portal path for portability. Per-frame VLM is heavy even on local Ollama; gate it behind the dedup/event layer. The high-feasibility foundation is **periodic capture + dedup + OCR + redact** (what Code Buddy ships); continuous video + per-frame VLM is the low-feasibility end. **Biggest single reuse win: point `privacy-lint` at any screen-OCR pipeline before indexing** — done.
 
-> Sources: screenpipe (MIT), OpenRecall (AGPL-3.0), Khoj, self-operating-computer (MIT), Open Interpreter, glass/pluely, Rewind/Limitless, MS Recall. See the table for URLs.
+## 4. High-speed encode — VideoLAN libraries & what we integrated
+
+Researched "high-speed libraries from the VLC creators" for the capture path. Honest verdict first:
+
+- **libVLC from Node is dead** — the only binding (**WebChimera.js**) is officially **abandoned** (~4 yrs stale). Skip it; libVLC's value is playback/streaming, not recording.
+- **x264 (VideoLAN) and x265 are only reachable from Node via FFmpeg/libav** — there is no standalone Node binding. **dav1d (VideoLAN) is an AV1 *decoder*** — irrelevant to an encode-heavy recorder.
+- So the real win is **not a new library** — it's using the **iGPU's hardware encoder** through the ffmpeg path we already have.
+
+**Integrated (commit on this branch): VAAPI GPU encode.** `ScreenRecorder` / `buddy screen record` now take `--codec`:
+
+| Codec | Use | ffmpeg path | Verified |
+|---|---|---|---|
+| `libx264` (default) | portable, any box | software, `-preset ultrafast` | ✅ |
+| `h264_vaapi` | **fast, low CPU** (~8.7× vs libx264) | GPU: `-vaapi_device /dev/dri/renderD128 -vf format=nv12,hwupload -c:v h264_vaapi -qp 24` | ✅ live on Radeon 890M (VCN4) |
+| `av1_vaapi` | **smallest files** (~30–50% vs H.264) for "record everything" | `… -c:v av1_vaapi -qp 30` (needs Mesa 24.1+/LLVM 20+) | flags built; gated on Mesa |
+
+Plus `--scale 1280` (downscale before encode) and `--qp`. The real "record-everything" compression is **low fps + downscale + dedup**, not the codec alone (the "Rewind 3750×" number is delta/dedup, not magic) — the codec buys ~30–50%.
+
+**Library reference (Node integration paths):**
+
+| Package | Role | Node path | Maturity (2026) | Verdict |
+|---|---|---|---|---|
+| ffmpeg subprocess (current) | encode via libx264/VAAPI | spawn | n/a | **keep** — zero native modules |
+| [`node-av`](https://github.com/seydx/node-av) | in-process libav (encode/decode/VAAPI), TS | N-API (prebuilt) | **v6, FFmpeg 8.1, Jun 2026, MIT** | adopt **later** for in-process frame pipelines (no PNG round-trip) |
+| [`beamcoder`](https://github.com/Streampunk/beamcoder) | in-process libav | N-API | stale (FFmpeg 5.0) | prefer node-av |
+| [`node-screenshots`](https://github.com/nashaofu/node-screenshots) | native screen grab (the Node "mss") | N-API (Rust) | active (Feb 2026) | adopt for the **watcher's** high-freq frame path |
+| [`sharp`](https://github.com/lovell/sharp) / [`@julusian/jpeg-turbo`](https://github.com/julusian/node-jpeg-turbo) | WebP/JPEG encode + downscale | mature | — | replace the watcher's PNG+sha1 with WebP + perceptual hash |
+| WebChimera.js (libVLC) | — | — | **ABANDONED** | **skip** |
+
+**Next perf steps (not done): ** switch the watcher's frame path from `ffmpeg single-frame PNG + sha1` to `node-screenshots → sharp WebP + perceptual hash` (cheaper grab, smaller frames, robust dedup); adopt `node-av` only if the subprocess disk round-trips become the bottleneck.
+
+> Sources: x264 (VideoLAN, GPL), dav1d (VideoLAN, decoder), SVT-AV1, node-av (MIT), node-screenshots (MIT), sharp (Apache-2.0), WebChimera.js (abandoned). AMD AV1 VAAPI: phoronix / Mesa 24.1 VCN4. AV1-vs-H264 compression: getstream/gumlet. Plus §1 projects (screenpipe MIT, OpenRecall AGPL, Khoj, self-operating-computer MIT, …).

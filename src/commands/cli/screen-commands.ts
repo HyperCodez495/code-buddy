@@ -72,13 +72,28 @@ export function registerScreenCommands(program: Command): void {
     .option('--duration <s>', 'stop after N seconds')
     .option('--region <WxH+x,y>', 'sub-region, e.g. 1280x720+0,0')
     .option('--display <d>', 'X11 display (default $DISPLAY)')
-    .action(async (opts: { out?: string; fps: string; duration?: string; region?: string; display?: string }) => {
-      const { ScreenRecorder } = await import('../../capture/screen-recorder.js');
+    .option('--codec <c>', 'libx264 (default) | h264_vaapi | av1_vaapi (GPU encode, lower CPU)')
+    .option('--qp <n>', 'VAAPI quantizer (lower=better/bigger)')
+    .option('--scale <w[xh]>', 'downscale before encode, e.g. 1280 or 1280x720')
+    .action(async (opts: { out?: string; fps: string; duration?: string; region?: string; display?: string; codec?: string; qp?: string; scale?: string }) => {
+      const { ScreenRecorder, hasVaapiDevice } = await import('../../capture/screen-recorder.js');
       const out = opts.out || defaultOut('mp4');
       const region = parseRegion(opts.region);
+      const codec = (opts.codec as 'libx264' | 'h264_vaapi' | 'av1_vaapi' | undefined) ?? 'libx264';
+      let scale: { width: number; height?: number } | undefined;
+      if (opts.scale) {
+        const [w, h] = opts.scale.split('x');
+        scale = { width: Number(w), ...(h ? { height: Number(h) } : {}) };
+      }
+      if (codec === 'libx264' && hasVaapiDevice()) {
+        console.log('tip: a VAAPI GPU encoder is available — add `--codec h264_vaapi` (faster, lower CPU) or `--codec av1_vaapi` (smaller files).');
+      }
       const rec = new ScreenRecorder();
       rec.start(out, {
         fps: parseInt(opts.fps, 10) || 15,
+        codec,
+        ...(opts.qp ? { qp: parseInt(opts.qp, 10) } : {}),
+        ...(scale ? { scale } : {}),
         ...(opts.duration ? { durationSec: parseInt(opts.duration, 10) } : {}),
         ...(region ? { region } : { screenSize: await screenSize() }),
         ...(opts.display ? { display: opts.display } : {}),

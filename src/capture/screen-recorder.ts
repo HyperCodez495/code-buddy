@@ -36,10 +36,34 @@ export interface CaptureTarget {
   screenSize?: { width: number; height: number };
 }
 
+/**
+ * Encoder. `libx264` = portable software (default). `h264_vaapi` / `av1_vaapi`
+ * = GPU encode on the iGPU's VCN block (Linux/VAAPI) — far lower CPU and, for
+ * av1, 30–50% smaller files. Research: docs/screen-capture-and-ai.md.
+ */
+export type VideoCodec = 'libx264' | 'h264_vaapi' | 'av1_vaapi';
+
 export interface RecordOptions extends CaptureTarget {
   fps?: number;
   /** Stop automatically after N seconds (omit for manual stop()). */
   durationSec?: number;
+  /** Encoder (default 'libx264'). VAAPI codecs need a working /dev/dri render node. */
+  codec?: VideoCodec;
+  /** VAAPI quantizer (lower = better quality/bigger). Default 24 (h264) / 30 (av1). */
+  qp?: number;
+  /** VAAPI render device. Default '/dev/dri/renderD128'. */
+  vaapiDevice?: string;
+  /** Downscale before encode (big storage win): width, height auto (-2) by default. */
+  scale?: { width: number; height?: number };
+}
+
+/** Whether a VAAPI render node is present (cheap gate; not a full vainfo probe). */
+export function hasVaapiDevice(device = '/dev/dri/renderD128'): boolean {
+  try {
+    return fs.existsSync(device);
+  } catch {
+    return false;
+  }
 }
 
 export type SpawnLike = (command: string, args: string[], options: SpawnOptions) => ChildProcess;
@@ -92,12 +116,21 @@ export function buildRecordArgs(
   if (platform === 'linux') {
     const display = opts.display || process.env['DISPLAY'] || DEFAULT_DISPLAY;
     const off = opts.region ? `+${opts.region.x ?? 0},${opts.region.y ?? 0}` : '';
+    const input = ['-f', 'x11grab', '-framerate', String(fps), '-video_size', `${width}x${height}`, '-i', `${display}${off}`];
+    const scaleFilter = opts.scale ? `scale=${opts.scale.width}:${opts.scale.height ?? -2}` : null;
+    const codec = opts.codec ?? 'libx264';
+    if (codec === 'h264_vaapi' || codec === 'av1_vaapi') {
+      // GPU encode: upload to VAAPI surfaces, then the hw encoder.
+      const dev = opts.vaapiDevice ?? '/dev/dri/renderD128';
+      const qp = String(opts.qp ?? (codec === 'av1_vaapi' ? 30 : 24));
+      const vf = [scaleFilter, 'format=nv12', 'hwupload'].filter(Boolean).join(',');
+      return { cmd: 'ffmpeg', args: ['-y', ...input, '-vaapi_device', dev, '-vf', vf, '-c:v', codec, '-qp', qp, ...dur, output] };
+    }
+    // Software libx264 (portable default).
+    const vf = scaleFilter ? ['-vf', scaleFilter] : [];
     return {
       cmd: 'ffmpeg',
-      args: [
-        '-y', '-f', 'x11grab', '-framerate', String(fps), '-video_size', `${width}x${height}`,
-        '-i', `${display}${off}`, ...dur, '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', output,
-      ],
+      args: ['-y', ...input, ...vf, ...dur, '-c:v', 'libx264', '-pix_fmt', 'yuv420p', '-preset', 'ultrafast', output],
     };
   }
   if (platform === 'darwin') {

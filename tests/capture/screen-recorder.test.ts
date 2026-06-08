@@ -40,6 +40,25 @@ describe('screen-recorder arg builders', () => {
     expect(buildRecordArgs('o.mp4', {}, 'win32').args).toContain('gdigrab');
   });
 
+  it('builds h264_vaapi GPU-encode args', () => {
+    const { args } = buildRecordArgs('o.mp4', { display: ':0', codec: 'h264_vaapi', screenSize: { width: 1920, height: 1080 } }, 'linux');
+    expect(args).toEqual(expect.arrayContaining(['-vaapi_device', '/dev/dri/renderD128', '-vf', 'format=nv12,hwupload', '-c:v', 'h264_vaapi', '-qp', '24']));
+    expect(args).not.toContain('libx264');
+  });
+
+  it('builds av1_vaapi args with default qp 30 and a scale filter', () => {
+    const { args } = buildRecordArgs('o.mkv', { display: ':0', codec: 'av1_vaapi', scale: { width: 1280 }, screenSize: { width: 1920, height: 1080 } }, 'linux');
+    const vf = args[args.indexOf('-vf') + 1];
+    expect(vf).toBe('scale=1280:-2,format=nv12,hwupload');
+    expect(args).toEqual(expect.arrayContaining(['-c:v', 'av1_vaapi', '-qp', '30']));
+  });
+
+  it('libx264 path stays software with a scale filter', () => {
+    const { args } = buildRecordArgs('o.mp4', { display: ':0', scale: { width: 1280, height: 720 }, screenSize: { width: 1920, height: 1080 } }, 'linux');
+    expect(args).toEqual(expect.arrayContaining(['-vf', 'scale=1280:720', '-c:v', 'libx264', '-preset', 'ultrafast']));
+    expect(args).not.toContain('-vaapi_device');
+  });
+
   it('detects a Wayland session', () => {
     expect(isWaylandSession({ XDG_SESSION_TYPE: 'wayland' } as NodeJS.ProcessEnv)).toBe(true);
     expect(isWaylandSession({ XDG_SESSION_TYPE: 'x11' } as NodeJS.ProcessEnv)).toBe(false);
