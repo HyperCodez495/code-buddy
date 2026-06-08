@@ -15,6 +15,25 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
 [`docs/fleet-guide.md`](docs/fleet-guide.md). Backlog notes also under
 `## [0.5.1-fleet]`.
 
+### Added — Gateway handshake: protocol negotiation + capability discovery
+
+- The Code Buddy Gateway `connect` → `hello_ok` handshake now mirrors the strong
+  patterns from the OpenClaw and Hermes gateways:
+  - **Protocol-version negotiation** (`src/gateway/protocol.ts`): clients may send
+    `minProtocolVersion`/`maxProtocolVersion` (the legacy single `protocolVersion` still
+    works); the gateway negotiates against its supported range
+    (`GATEWAY_MIN_PROTOCOL_VERSION..GATEWAY_MAX_PROTOCOL_VERSION`), returns the agreed
+    `protocolVersion` + a `protocolCompatible` flag, and echoes its preferred version
+    when there is no overlap (OpenClaw `minProtocol`/`maxProtocol` → `protocol`).
+  - **Capability discovery**: `hello_ok.capabilities.methods` advertises the registered
+    handler names so clients can discover what the gateway supports (OpenClaw
+    `features.methods` / Hermes capability discovery).
+  - **Server identity**: `hello_ok.server.{version,connId}` (OpenClaw `server.{version,connId}`).
+  - **Honest pairing**: replaced the dead `paired: skipPairing ? true : true` no-op with a
+    real `isPairedDevice()` seam + a `requirePairing` config flag (default off, fully
+    backward compatible) so OpenClaw/Hermes-style pairing approval can be layered in later.
+  - Pure, fully unit-tested negotiation/builder helpers (`tests/gateway/protocol.test.ts`).
+
 ### Added — Spec pipeline Commit 3 — `buddy spec next` (autonomous-runner bridge)
 
 - **`buddy spec next`** — the execution end of the BMAD-inspired pipeline. Takes the

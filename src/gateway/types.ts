@@ -56,8 +56,12 @@ export interface ConnectPayload {
   deviceName?: string;
   /** Client role */
   role: 'control' | 'node' | 'webchat';
-  /** Protocol version */
+  /** Protocol version (preferred; legacy single-value field) */
   protocolVersion: number;
+  /** Minimum protocol version the client accepts (enables range negotiation) */
+  minProtocolVersion?: number;
+  /** Maximum protocol version the client accepts (enables range negotiation) */
+  maxProtocolVersion?: number;
   /** Challenge nonce response (for device verification) */
   challengeResponse?: string;
 }
@@ -80,6 +84,14 @@ export interface HelloOkPayload {
   health: { status: 'ok' | 'degraded' | 'error'; checkedAt: number };
   /** Whether auth is required after handshake */
   authRequired: boolean;
+  /** Negotiated protocol version the gateway will speak on this connection */
+  protocolVersion: number;
+  /** Whether the client's requested protocol range overlapped the gateway's */
+  protocolCompatible: boolean;
+  /** Server identity (mirrors OpenClaw's server.{version,connId}) */
+  server: { version: string; connId: string };
+  /** Advertised capabilities for client-side discovery (method/handler names) */
+  capabilities: { methods: string[] };
 }
 
 /**
@@ -267,6 +279,12 @@ export interface GatewayConfig {
   tlsCa?: string;
   /** Skip device pairing for localhost TLS connections (Native Engine v2026.3.11) */
   skipLocalPairing?: boolean;
+  /**
+   * Require devices to be paired before `hello_ok` reports `paired: true`.
+   * Default false keeps the permissive dev behaviour; enable with an
+   * `isPairedDevice` override for OpenClaw/Hermes-style pairing approval.
+   */
+  requirePairing?: boolean;
   /** Trusted proxy IPs allowed to set x-forwarded-* headers (Native Engine v2026.3.14, GHSA-5wcw-8jjv-m286) */
   trustedProxies?: string[];
 }

@@ -12,6 +12,30 @@ import {
   type GatewayMessage,
 } from '../../src/gateway/index.js';
 
+/** Exposes the protected connect/message lifecycle so the real handshake can be driven. */
+class HandshakeTestGateway extends GatewayServer {
+  connectClient(id: string): void {
+    this.onConnect(id);
+  }
+  dispatch(id: string, msg: GatewayMessage, send: (m: GatewayMessage) => void): Promise<void> {
+    return this.onMessage(id, msg, send);
+  }
+}
+
+async function driveConnect(
+  gateway: HandshakeTestGateway,
+  clientId: string,
+  payload: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
+  gateway.connectClient(clientId);
+  let hello: Record<string, unknown> | undefined;
+  await gateway.dispatch(clientId, createMessage('connect', payload), (m) => {
+    if (m.type === 'hello_ok') hello = m.payload as Record<string, unknown>;
+  });
+  if (!hello) throw new Error('no hello_ok received');
+  return hello;
+}
+
 describe('Gateway', () => {
   beforeEach(async () => {
     await resetGatewayServer();
@@ -150,6 +174,48 @@ describe('Gateway', () => {
       expect(stats.clients).toBe(0);
       expect(stats.sessions).toBe(0);
       expect(stats.authenticatedClients).toBe(0);
+    });
+  });
+
+  describe('connect -> hello_ok handshake', () => {
+    it('enriches hello_ok with negotiated protocol, server identity, and capabilities', async () => {
+      const gateway = new HandshakeTestGateway({ authEnabled: false });
+      await gateway.start();
+      const hello = await driveConnect(gateway, 'client-1', {
+        deviceId: 'dev-1', deviceName: 'Test', role: 'control',
+        protocolVersion: 1, minProtocolVersion: 1, maxProtocolVersion: 2,
+      });
+      await gateway.stop();
+
+      expect(hello.protocolVersion).toBe(2);
+      expect(hello.protocolCompatible).toBe(true);
+      expect((hello.server as { connId: string }).connId).toBe('client-1');
+      expect(typeof (hello.server as { version: string }).version).toBe('string');
+      expect((hello.capabilities as { methods: string[] }).methods).toContain('connect');
+      expect(hello.paired).toBe(true);
+    });
+
+    it('reports protocolCompatible:false and echoes the gateway version for a too-new client', async () => {
+      const gateway = new HandshakeTestGateway({ authEnabled: false });
+      await gateway.start();
+      const hello = await driveConnect(gateway, 'client-old', {
+        deviceId: 'dev-x', role: 'control', protocolVersion: 99,
+      });
+      await gateway.stop();
+
+      expect(hello.protocolCompatible).toBe(false);
+      expect(typeof hello.protocolVersion).toBe('number');
+    });
+
+    it('honours requirePairing in the paired flag (no longer a no-op)', async () => {
+      const gateway = new HandshakeTestGateway({ authEnabled: false, requirePairing: true });
+      await gateway.start();
+      const hello = await driveConnect(gateway, 'client-2', {
+        deviceId: 'dev-2', role: 'control', protocolVersion: 1,
+      });
+      await gateway.stop();
+
+      expect(hello.paired).toBe(false);
     });
   });
 

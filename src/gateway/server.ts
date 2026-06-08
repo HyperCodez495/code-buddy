@@ -21,6 +21,11 @@ import type {
   ErrorPayload,
 } from './types.js';
 import { DEFAULT_GATEWAY_CONFIG } from './types.js';
+import {
+  negotiateGatewayProtocol,
+  buildHelloOkPayload,
+  gatewayServerVersion,
+} from './protocol.js';
 
 // ============================================================================
 // Message Helpers
@@ -211,7 +216,7 @@ export class GatewayServer extends EventEmitter {
       // TLS local pairing skip (Native Engine v2026.3.11)
       const clientIp = client?.metadata?.remoteAddress as string || '';
       const isLocal = clientIp === '127.0.0.1' || clientIp === '::1' || clientIp === '';
-      const skipPairing = this.config.tlsEnabled && this.config.skipLocalPairing && isLocal;
+      const skipPairing = Boolean(this.config.tlsEnabled && this.config.skipLocalPairing && isLocal);
 
       // Build hello-ok response with presence snapshot
       const presence = Array.from(this.clients.values())
@@ -222,14 +227,33 @@ export class GatewayServer extends EventEmitter {
           connectedAt: c.connectedAt,
         }));
 
-      const helloOk: HelloOkPayload = {
-        paired: skipPairing ? true : true, // Skip pairing check for local TLS connections
+      // Negotiate the protocol version against this gateway's supported range and
+      // advertise the registered handlers so clients can discover capabilities
+      // (OpenClaw `features.methods` / Hermes capability discovery).
+      const negotiation = negotiateGatewayProtocol({
+        protocolVersion: payload.protocolVersion,
+        ...(typeof payload.minProtocolVersion === 'number'
+          ? { minProtocolVersion: payload.minProtocolVersion }
+          : {}),
+        ...(typeof payload.maxProtocolVersion === 'number'
+          ? { maxProtocolVersion: payload.maxProtocolVersion }
+          : {}),
+      });
+
+      const helloOk: HelloOkPayload = buildHelloOkPayload({
+        // Honest pairing: permissive unless requirePairing is on (then deferred to
+        // isPairedDevice), with the local-TLS skip preserved.
+        paired: skipPairing || this.isPairedDevice(payload.deviceId, client),
         uptime: this.running ? Date.now() - (this.startedAt || Date.now()) : 0,
         stateVersion: this.stateVersion,
         presence,
         health: { status: 'ok', checkedAt: Date.now() },
         authRequired: this.config.authEnabled && this.config.authMode !== 'none',
-      };
+        negotiation,
+        serverVersion: gatewayServerVersion(),
+        connId: clientId,
+        methods: Array.from(this.handlers.keys()),
+      });
 
       if (client) {
         client.metadata = {
@@ -237,7 +261,7 @@ export class GatewayServer extends EventEmitter {
           deviceId: payload.deviceId,
           deviceName: payload.deviceName,
           role: payload.role,
-          protocolVersion: payload.protocolVersion,
+          protocolVersion: negotiation.protocolVersion,
         };
       }
 
@@ -377,6 +401,17 @@ export class GatewayServer extends EventEmitter {
     }
     // Implement your own validation logic
     return true;
+  }
+
+  /**
+   * Whether a device is considered paired for the `hello_ok` response.
+   *
+   * Default: permissive — every device is paired unless `requirePairing` is on.
+   * Override (or pair a `requirePairing` gateway with a device registry) to
+   * enforce OpenClaw/Hermes-style pairing approval (pending -> approve -> token).
+   */
+  protected isPairedDevice(_deviceId: string, _client?: ClientState): boolean {
+    return !this.config.requirePairing;
   }
 
   /**
