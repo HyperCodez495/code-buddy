@@ -1,0 +1,89 @@
+# Launch kit — copy-paste posts to grow stars
+
+**Reality check (honest):** a great README *multiplies* traffic ~3–5×; it doesn't *create* it. From a low base, the order-of-magnitude jump comes from **distribution** — a front-page Hacker News post, an r/LocalLLaMA thread, a tweet that lands, an awesome-list inclusion. The agent made the repo maximally convertible; **the takeoff is a button *you* press.** Below is everything ready to paste.
+
+**The wedge that works:** *free · local · you own it.* Lead with that everywhere. Let the demo GIFs carry the "wow" — don't name-compare to Cursor/Copilot (it invites "actually it's worse at X" pushback that derails threads).
+
+**One link to rule them all:** `https://github.com/phuetz/code-buddy`
+
+---
+
+## 1. r/LocalLLaMA — your bullseye (post this first)
+
+> **Title:** I built an open-source AI coding agent + desktop app that runs **free on local Ollama** — multi-AI fleet, 24/7 autonomy, and on-screen reasoning
+>
+> **Body:**
+> I wanted a coding agent I actually *own* — no per-token bill, no cloud lock-in, runs on my own models. So I built **Code Buddy**: a terminal agent **and** an Electron desktop app (Cowork) on one engine.
+>
+> - **100% local & free** on Ollama (`$0`), or bring any of 15 providers with auto-failover.
+> - **Reasoning you can watch** — the local model thinks step-by-step on screen, then uses tools (e.g. *"create robot-haiku.md"* → it reasons, writes the file, confirms — ~$0.0001 local). Short clips in the README.
+> - **Multi-AI fleet** — peers on your network observe each other and call each other's models/tools.
+> - **24/7 autonomous service** that claims & runs tasks free-first on local models.
+> - ~110 tools, skills, MCP, voice + opt-in vision companion.
+>
+> MIT, TypeScript, ~30k tests. Repo + demos: https://github.com/phuetz/code-buddy
+>
+> Genuinely after feedback — what would make this your daily driver locally?
+
+*Tips: post Tue–Thu ~9–11am ET. Reply to every comment for the first 2h. Don't drop and run.*
+
+---
+
+## 2. Hacker News — Show HN
+
+> **Title:** Show HN: Code Buddy – an open-source AI coding agent that runs free on local Ollama
+>
+> **First comment (post it yourself, right after submitting):**
+> Author here. It's a terminal agent + an Electron desktop app on the same engine. The bit I'm proud of: it runs **fully local on Ollama for `$0`** (or any of 15 providers), shows the model's reasoning on screen, and can run **autonomously 24/7** claiming tasks free-first on local models. There's also a multi-AI "fleet" where peers call each other's models/tools over your network.
+> MIT, TS, ~30k tests, builds clean from source. Demos in the README. Happy to answer anything — especially keen on what breaks for you on a fresh clone.
+
+*Tips: submit Tue–Thu ~8–10am ET. The title must be plain — no hype words. The first comment is where you sell it.*
+
+---
+
+## 3. X / Twitter thread
+
+> **1/** I built an open-source AI coding agent that runs **free on your own machine** 🧵
+> Terminal + a desktop app, one engine. Local Ollama = $0. Watch it reason, then act 👇
+> [attach `docs/qa/code-buddy-studio/cowork-demo-task.gif`]
+>
+> **2/** It's not just chat — it uses tools. *"create robot-haiku.md"* → the local model **thinks**, writes the file, confirms. ~$0.0001, no cloud.
+>
+> **3/** And it scales: a **multi-AI fleet** where peers observe each other and call each other's models/tools across your network. Plus a 24/7 autonomous service that runs tasks free-first on local models.
+>
+> **4/** 15 providers, ~110 tools, skills + MCP, voice + opt-in vision. MIT, TypeScript, ~30k tests.
+> ⭐ https://github.com/phuetz/code-buddy
+
+---
+
+## 4. Awesome-list submissions (slow burn, compounding)
+
+Open a PR adding Code Buddy to each (1-line entry + link):
+- `e2b-dev/awesome-ai-agents`
+- `kyrolabs/awesome-agents` / `slavakurilyak/awesome-ai-agents`
+- `Hannibal046/Awesome-LLM`
+- `ollama/ollama` community/integrations list, and `awesome-ollama` repos
+- `punkpeye/awesome-mcp-servers` (Code Buddy is an MCP client *and* server)
+- Electron "awesome" + "awesome devtools" lists
+
+Entry template:
+> **[Code Buddy](https://github.com/phuetz/code-buddy)** — Open-source AI coding agent (terminal + desktop) that runs free on local Ollama, with a multi-AI fleet and 24/7 autonomy.
+
+---
+
+## 5. Other channels
+
+- **dev.to / Hashnode** — a short build post: *"I built a local-first AI coding agent — here's the architecture."* Embed the demos.
+- **Ollama Discord / r/ollama** — the local-AI crowd; lead with `$0` + the demo.
+- **Product Hunt** — once polished; needs a launch-day push.
+- **Your network** — the first 20 stars from people who'll actually try it beat 200 drive-by stars; they file issues and tell others.
+
+---
+
+## Pre-flight (do these before any post — a broken first clone kills a launch)
+
+- [x] `git clone … && npm install && npm run build && buddy --help` works (build verified ✅).
+- [x] README hero demo renders + autoplays on github.com.
+- [x] No falsifiable badges (Coverage badge removed; Build/Tests verified).
+- [ ] Skim open issues; pin a friendly "good first issue" or two.
+- [ ] Have the repo description + topics set (done) so search/awesome-bots find it.
