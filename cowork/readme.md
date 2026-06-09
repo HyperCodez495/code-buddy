@@ -56,6 +56,14 @@ The left nav is grouped to mirror Code Buddy's areas: **Work · Agents & Fleet �
 <a id="demo"></a>
 ## 🎬 Demo
 
+A quick tour of Cowork — Work surface, the multi-AI **Fleet**, **Agent Team**, **Autonomy**, **Memory**, **Reasoning**, **Companion**, and **Settings**:
+
+<p align="center">
+  <img src="../docs/qa/code-buddy-studio/cowork-demo.gif" alt="Code Buddy Cowork — demo tour" width="900" />
+  <br/>
+  <sub>▶ <a href="../docs/qa/code-buddy-studio/cowork-demo.mp4">Watch the MP4 (sharper)</a> · recorded from this build (Playwright <code>e2e/demo-tour.spec.ts</code>)</sub>
+</p>
+
 Real captures of **this** app (Code Buddy Cowork) — its actual panels, not borrowed/stock media:
 
 <table>
