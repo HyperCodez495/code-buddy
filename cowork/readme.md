@@ -56,15 +56,42 @@ The left nav is grouped to mirror Code Buddy's areas: **Work · Agents & Fleet �
 <a id="demo"></a>
 ## 🎬 Demo
 
-A quick tour of Cowork — Work surface, the multi-AI **Fleet**, **Agent Team**, **Autonomy**, **Memory**, **Reasoning**, **Companion**, and **Settings**:
+Short tours of Cowork **by use case** — recorded from **this** build (click any for the sharper MP4):
 
-<p align="center">
-  <img src="../docs/qa/code-buddy-studio/cowork-demo.gif" alt="Code Buddy Cowork — demo tour" width="900" />
-  <br/>
-  <sub>▶ <a href="../docs/qa/code-buddy-studio/cowork-demo.mp4">Watch the MP4 (sharper)</a> · recorded from this build (Playwright <code>e2e/demo-tour.spec.ts</code>)</sub>
-</p>
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-fleet.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-fleet.gif" alt="Multi-AI Fleet" width="440" /></a><br/>
+      <sub><b>Multi-AI Fleet</b> — spawn a multi-agent team, Fleet Command Center, peer events, Agent Team, devices</sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-intelligence.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-intelligence.gif" alt="Intelligence" width="440" /></a><br/>
+      <sub><b>Intelligence</b> — the live <b>Autonomy</b> queue, persistent <b>Memory</b>, <b>Reasoning</b> traces</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-companion.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-companion.gif" alt="Companion" width="440" /></a><br/>
+      <sub><b>Companion</b> — voice / vision / presence, delivery channels, mobile supervision</sub>
+    </td>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-insights.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-insights.gif" alt="Insights & Learning" width="440" /></a><br/>
+      <sub><b>Insights &amp; Learning</b> — activity, session insights, test runner, lessons, user model, spec</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-settings.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-settings.gif" alt="Settings" width="440" /></a><br/>
+      <sub><b>Settings</b> — the regrouped 7-section sidebar (Essentials · Models · Tools · Skills · Automation · Security · Server)</sub>
+    </td>
+    <td></td>
+  </tr>
+</table>
 
-Real captures of **this** app (Code Buddy Cowork) — its actual panels, not borrowed/stock media:
+<sub>GIFs are compressed previews; the linked MP4s are sharper. Regenerate from <code>cowork/</code> with <code>RECORD_DEMO=1 npx playwright test e2e/demo-tour.spec.ts</code>.</sub>
+
+<details>
+<summary>📸 Static panel screenshots</summary>
 
 <table>
   <tr>
@@ -79,16 +106,6 @@ Real captures of **this** app (Code Buddy Cowork) — its actual panels, not bor
   </tr>
   <tr>
     <td align="center">
-      <img src="../docs/qa/code-buddy-studio/screenshots/09-agent-team.jpg" alt="Agent Team" /><br/>
-      <sub><b>Agent Team</b> — orchestrated multi-agent coordination</sub>
-    </td>
-    <td align="center">
-      <img src="../docs/qa/code-buddy-studio/screenshots/110-test-runner-autonomous-progress.png" alt="Autonomous progress" /><br/>
-      <sub><b>Autonomy</b> — autonomous task execution &amp; progress</sub>
-    </td>
-  </tr>
-  <tr>
-    <td align="center">
       <img src="../docs/qa/code-buddy-studio/screenshots/21-buddy-companion.jpg" alt="Buddy Companion" /><br/>
       <sub><b>Buddy Companion</b> — voice, vision, presence</sub>
     </td>
@@ -98,9 +115,10 @@ Real captures of **this** app (Code Buddy Cowork) — its actual panels, not bor
     </td>
   </tr>
 </table>
+</details>
 
 > [!NOTE]
-> These are real screenshots of this Cowork build. To add moving demos, record your own screencasts and drop them here — first review every frame for account IDs, tokens, OAuth callback URLs, private paths, and notifications (see the [media privacy rules](../docs/cowork.md)); use reviewed crops or synthetic workspaces.
+> Demos are recorded from a synthetic e2e workspace (no real account data). When adding your own captures, review every frame for account IDs, tokens, OAuth callback URLs, and private paths (see the [media privacy rules](../docs/cowork.md)).
 
 ---
 

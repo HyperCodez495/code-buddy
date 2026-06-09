@@ -1,26 +1,24 @@
 /**
- * demo-tour — records a short video of Cowork touring its main surfaces, for the
- * docs. Self-contained: it launches Electron with `recordVideo` (the only way to
- * capture an Electron window — `use.video` does NOT apply to _electron.launch),
- * walks the nav, then writes the webm path. Convert it for the README.
+ * demo-tour — records short Cowork videos for the docs, one per use-case scene.
  *
- *   npx playwright test e2e/demo-tour.spec.ts
- *   → video under cowork/demo-video/*.webm
+ * On-demand only (RECORD_DEMO=1): each scene launches Cowork with `recordVideo`
+ * (the only way to capture an Electron window — `use.video` does NOT apply to
+ * _electron.launch), dismisses the first-run onboarding, then walks that scene's
+ * panels. Each webm lands under cowork/demo-video/<scene>/.
+ *
+ *   RECORD_DEMO=1 npx playwright test e2e/demo-tour.spec.ts
  */
-import { _electron as electron, test, expect } from '@playwright/test';
+import { _electron as electron, test, expect, type Page, type ElectronApplication } from '@playwright/test';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import electronBinary from 'electron';
 
-test('cowork demo tour', async () => {
-  // On-demand only — this records a video and is not a normal assertion test.
-  test.skip(!process.env.RECORD_DEMO, 'set RECORD_DEMO=1 to record the demo video');
+async function launchCowork(videoDir: string): Promise<{ app: ElectronApplication; page: Page }> {
   const userDataDir = mkdtempSync(path.join(os.tmpdir(), 'cowork-demo-'));
   const modelPath = path.join(userDataDir, 'models', 'buffalo_s.onnx');
   mkdirSync(path.dirname(modelPath), { recursive: true });
   writeFileSync(modelPath, '');
-  const videoDir = path.resolve('demo-video');
 
   const app = await electron.launch({
     executablePath: electronBinary as unknown as string,
@@ -40,40 +38,69 @@ test('cowork demo tour', async () => {
   await page.waitForLoadState('domcontentloaded');
   await expect(page.getByTestId('app-root')).toBeVisible({ timeout: 30_000 });
 
-  const pause = (ms = 1700) => page.waitForTimeout(ms);
-  await pause(2200); // settle on the work surface
+  // Dismiss the first-run onboarding wizard (fresh userDataDir → it's shown).
+  const onboarding = page.getByTestId('onboarding-wizard');
+  if (await onboarding.isVisible({ timeout: 2500 }).catch(() => false)) {
+    await page.getByTestId('onboarding-skip').click().catch(() => {});
+    await expect(onboarding).toHaveCount(0).catch(() => {});
+  }
+  await page.waitForTimeout(1200);
+  return { app, page };
+}
 
-  const stops: Array<{ id: string; overlay: boolean }> = [
-    { id: 'fleet-command-center-button', overlay: true },
-    { id: 'team-panel-button', overlay: true },
-    { id: 'autonomy-panel-button', overlay: true },
-    { id: 'memory-panel-button', overlay: true },
-    { id: 'reasoning-viewer-button', overlay: true },
-    { id: 'companion-panel-button', overlay: true },
-    { id: 'activity-button', overlay: true },
-    { id: 'shell-settings-button', overlay: false },
-  ];
-
-  for (const stop of stops) {
+async function visit(page: Page, ids: string[], pauseMs = 1600): Promise<void> {
+  for (const id of ids) {
     try {
-      await page.getByTestId(stop.id).click({ timeout: 4000 });
-      await pause();
-      if (stop.overlay) {
-        await page.keyboard.press('Escape').catch(() => {});
-        await pause(500);
-      }
+      await page.getByTestId(id).click({ timeout: 4000 });
+      await page.waitForTimeout(pauseMs);
+      await page.keyboard.press('Escape').catch(() => {});
+      await page.waitForTimeout(450);
     } catch {
       // skip missing/disabled stop, keep recording
     }
   }
+}
 
-  await page.getByTestId('app-root').click({ position: { x: 5, y: 5 } }).catch(() => {});
-  await pause(1500);
+// One video per scene → covers a maximum of use cases.
+const SCENES: Record<string, string[]> = {
+  // Multi-AI fleet: spawn a team, command center, peer events, agent team, devices.
+  fleet: ['orchestrator-button', 'fleet-command-center-button', 'fleet-panel-button', 'team-panel-button', 'devices-button'],
+  // The agent's "brain": autonomous queue, persistent memory, reasoning traces.
+  intelligence: ['autonomy-panel-button', 'memory-panel-button', 'reasoning-viewer-button'],
+  // Companion: voice/vision/presence + delivery channels + mobile supervision.
+  companion: ['companion-panel-button', 'channels-button', 'mobile-supervision-button'],
+  // Insights & learning: activity, session insights, test runner, lessons, user model, spec, bookmarks, focus.
+  insights: ['activity-button', 'session-insights-button', 'test-runner-button', 'lesson-candidate-button', 'user-model-button', 'spec-panel-button', 'bookmarks-button', 'focus-view-button'],
+};
 
-  const video = page.video();
-  await app.close(); // finalizes the recording
-  if (video) {
+for (const [scene, ids] of Object.entries(SCENES)) {
+  test(`demo ${scene}`, async () => {
+    test.skip(!process.env.RECORD_DEMO, 'set RECORD_DEMO=1 to record demo videos');
+    const dir = path.resolve('demo-video', scene);
+    const { app, page } = await launchCowork(dir);
+    await page.waitForTimeout(1000);
+    await visit(page, ids);
+    await page.waitForTimeout(1200);
+    const video = page.video();
+    await app.close();
     // eslint-disable-next-line no-console
-    console.log(`DEMO_VIDEO_PATH=${await video.path()}`);
+    if (video) console.log(`SCENE ${scene}=${await video.path()}`);
+  });
+}
+
+// Settings: the regrouped 7-section sidebar + a few tabs (not overlay → no Escape).
+test('demo settings', async () => {
+  test.skip(!process.env.RECORD_DEMO, 'set RECORD_DEMO=1 to record demo videos');
+  const dir = path.resolve('demo-video', 'settings');
+  const { app, page } = await launchCowork(dir);
+  await page.getByTestId('shell-settings-button').click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1500);
+  for (const tab of ['settings-tab-codebuddy', 'settings-tab-connectors', 'settings-tab-skills', 'settings-tab-rules', 'settings-tab-workflows']) {
+    await page.getByTestId(tab).click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(1300);
   }
+  const video = page.video();
+  await app.close();
+  // eslint-disable-next-line no-console
+  if (video) console.log(`SCENE settings=${await video.path()}`);
 });
