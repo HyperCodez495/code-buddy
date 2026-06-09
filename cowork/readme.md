@@ -56,6 +56,12 @@ The left nav is grouped to mirror Code Buddy's areas: **Work · Agents & Fleet �
 <a id="demo"></a>
 ## 🎬 Demo
 
+<p align="center">
+  <a href="../docs/qa/code-buddy-studio/cowork-demo-hero.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-hero.gif" alt="Code Buddy Cowork — 20-second overview" width="760" /></a>
+  <br/>
+  <sub>▶ a 20-second overview · <a href="../docs/qa/code-buddy-studio/cowork-demo-hero.mp4">MP4</a> · recorded from this build</sub>
+</p>
+
 Short tours of Cowork **by use case** — recorded from **this** build (click any for the sharper MP4):
 
 <table>
