@@ -155,7 +155,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 
 ## Coding Conventions
 
-- TypeScript strict, avoid `any`. `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` are **not yet on** — see `tsconfig.json` TODOs.
+- TypeScript strict, avoid `any`. `noUncheckedIndexedAccess` is **on**; `exactOptionalPropertyTypes` is **not yet on** (TODO in `tsconfig.json`). `noUnusedLocals`/`noUnusedParameters` are intentionally off — delegated to ESLint.
 - Single quotes, semicolons, 2-space indent
 - Files kebab-case (`text-editor.ts`); React components PascalCase (`ChatInterface.tsx`)
 - Conventional Commits (`feat(scope): description`) — enforced by `commitlint.config.js`

@@ -9,6 +9,9 @@ single-instance terminal agent into a **hub of communication between
 multiple AIs running on different hosts**, each potentially backed by
 a different LLM provider.
 
+> **What's shipped vs. deferred?** See the consolidated
+> [Fleet V1.x Roadmap](./fleet-roadmap-v1.x.md).
+
 ---
 
 ## Two objectives the fleet was built to serve
