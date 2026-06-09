@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import os from 'os';
 import path from 'path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { WebSocketServer } from 'ws';
 
 import {
   detectOpenClawHome,
@@ -10,6 +11,10 @@ import {
   buildClawMigrationPlan,
 } from '../../src/agent/hermes-claw-migrate.js';
 import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
+import {
+  listOpenClawPendingNodes,
+  probeOpenClawGatewayWebSocket,
+} from '../../src/openclaw/gateway-bridge.js';
 import { SkillsHub } from '../../src/skills/hub.js';
 
 const SECRET_VALUE = 'tg-secret-value-do-not-leak';
@@ -598,12 +603,179 @@ describe('hermes claw migrate (real)', () => {
       expect(payload.kind).toBe('openclaw_websocket_call_result');
       expect(payload.ok).toBe(true);
       expect(payload.record.status).toBe('preview');
-      expect(payload.record.request.method).toBe('nodes.pending');
+      expect(payload.record.request.method).toBe('node.pair.list');
       expect(payload.record.request.paramKeys).toEqual([]);
       expect(payload.record.safety.networkContacted).toBe(false);
       expect(output).not.toContain('oc_cli_nodes_pending_secret_fixture');
     } finally {
       logSpy.mockRestore();
+    }
+  });
+
+  it('probes the real OpenClaw protocol:4 WebSocket connect RPC shape against a local fixture', async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('fixture server did not expose a port');
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: `ws://127.0.0.1:${address.port}`,
+      token: 'oc_ws_live_probe_secret',
+      methods: ['status'],
+    });
+    server.on('connection', (socket) => {
+      socket.send(JSON.stringify({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-probe-fixture', ts: Date.now() },
+      }));
+      socket.on('message', (data) => {
+        const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+        received.push(frame);
+        if (received.length === 1) {
+          expect(frame).toMatchObject({
+            type: 'req',
+            method: 'connect',
+          });
+          expect(frame).not.toHaveProperty('client');
+          expect(frame.params).toMatchObject({
+            minProtocol: 4,
+            maxProtocol: 4,
+            auth: { token: 'oc_ws_live_probe_secret' },
+            client: {
+              id: 'cli',
+              displayName: 'Code Buddy OpenClaw Bridge',
+              mode: 'cli',
+            },
+            role: 'operator',
+            scopes: ['operator.read', 'operator.write'],
+          });
+          socket.send(JSON.stringify({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              gateway: { id: 'openclaw-fixture' },
+              features: { methods: ['status', 'node.pair.list'] },
+              uptimeMs: 1234,
+            },
+          }));
+        } else {
+          expect(frame).toMatchObject({
+            type: 'req',
+            method: 'status',
+          });
+          socket.send(JSON.stringify({ type: 'res', id: frame.id, ok: true, payload: { status: 'ok' } }));
+        }
+      });
+    });
+
+    try {
+      const result = await probeOpenClawGatewayWebSocket({
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveProbeConfirmed: true,
+        timeoutMs: 2_000,
+      }, {
+        home: openclaw,
+        cwd: target,
+        createId: () => 'probe-fixture',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record.request.connectFrameType).toBe('req/connect');
+      expect(result.record.status).toBe('connected');
+      expect(result.record.response).toMatchObject({
+        gatewayId: 'openclaw-fixture',
+        methodCount: 2,
+        statusResponseOk: true,
+      });
+      expect(JSON.stringify(result)).not.toContain('oc_ws_live_probe_secret');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    }
+  });
+
+  it('calls node.pair.list after a protocol:4 connect RPC and stores only a safe summary', async () => {
+    const received: Array<Record<string, unknown>> = [];
+    const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('fixture server did not expose a port');
+    fs.writeJsonSync(path.join(openclaw, 'gateway.json'), {
+      wsUrl: `ws://127.0.0.1:${address.port}`,
+      token: 'oc_ws_nodes_pending_secret',
+      methods: ['node.pair.list'],
+    });
+    server.on('connection', (socket) => {
+      socket.send(JSON.stringify({
+        type: 'event',
+        event: 'connect.challenge',
+        payload: { nonce: 'nonce-nodes-fixture', ts: Date.now() },
+      }));
+      socket.on('message', (data) => {
+        const frame = JSON.parse(data.toString()) as Record<string, unknown>;
+        received.push(frame);
+        if (received.length === 1) {
+          expect(frame).toMatchObject({
+            type: 'req',
+            method: 'connect',
+          });
+          socket.send(JSON.stringify({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              gateway: { id: 'openclaw-fixture' },
+              features: { methods: ['node.pair.list'] },
+            },
+          }));
+        } else {
+          expect(frame).toMatchObject({
+            type: 'req',
+            method: 'node.pair.list',
+            params: {},
+          });
+          socket.send(JSON.stringify({
+            type: 'res',
+            id: frame.id,
+            ok: true,
+            payload: {
+              nodes: [
+                { nodeId: 'pending-1', displayName: 'Phone', code: 'PAIR-CODE-SECRET' },
+              ],
+            },
+          }));
+        }
+      });
+    });
+
+    try {
+      const result = await listOpenClawPendingNodes({
+        approvedBy: 'Patrice',
+        dryRun: false,
+        liveCallConfirmed: true,
+        timeoutMs: 2_000,
+      }, {
+        home: openclaw,
+        cwd: target,
+        createId: () => 'nodes-pending-fixture',
+      });
+
+      expect(result.ok).toBe(true);
+      expect(result.record.status).toBe('called');
+      expect(result.record.response).toMatchObject({
+        helloOk: true,
+        rpcOk: true,
+        summary: {
+          pendingCount: 1,
+          nodes: [{ nodeId: 'pending-1', displayName: 'Phone', pairingCodePresent: true }],
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain('oc_ws_nodes_pending_secret');
+      expect(JSON.stringify(result)).not.toContain('PAIR-CODE-SECRET');
+    } finally {
+      await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
@@ -640,7 +812,7 @@ describe('hermes claw migrate (real)', () => {
       expect(payload.kind).toBe('openclaw_websocket_call_result');
       expect(payload.ok).toBe(true);
       expect(payload.record.status).toBe('preview');
-      expect(payload.record.request.method).toBe('nodes.approve');
+      expect(payload.record.request.method).toBe('node.pair.approve');
       expect(payload.record.request.paramKeys).toEqual(['code']);
       expect(payload.record.safety.networkContacted).toBe(false);
       expect(output).not.toContain('oc_cli_node_approve_secret_fixture');
@@ -685,7 +857,7 @@ describe('hermes claw migrate (real)', () => {
       expect(payload.kind).toBe('openclaw_websocket_call_result');
       expect(payload.ok).toBe(true);
       expect(payload.record.status).toBe('preview');
-      expect(payload.record.request.method).toBe('nodes.reject');
+      expect(payload.record.request.method).toBe('node.pair.reject');
       expect(payload.record.request.paramKeys).toEqual(['code', 'reason']);
       expect(payload.record.safety.networkContacted).toBe(false);
       expect(output).not.toContain('oc_cli_node_reject_secret_fixture');

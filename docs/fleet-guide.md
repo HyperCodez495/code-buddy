@@ -1195,17 +1195,18 @@ uniquement en live confirmé, et le log `ws-probe-log.jsonl` sans token ni paylo
 brut. Elle vérifie aussi l'équivalent gardé de `openclaw gateway call <method>` :
 `call-ws` n'enregistre que le nom de méthode, les clés de params, les types de
 frames et le statut RPC dans `ws-call-log.jsonl`. Le pairage de nodes est aussi
-couvert via `nodes.pending`, `nodes.approve` et `nodes.reject` : les demandes en
+couvert via `node.pair.list`, `node.pair.approve` et `node.pair.reject` : les demandes en
 attente sont résumées avec `nodeId`/display name uniquement, et
 `node-approve --code ...` / `node-reject --code ... --reason ...` peuvent envoyer
 le code en live confirmé sans recopier le code ni la raison dans stdout ou les
 logs. La commande `validate-upstream` regroupe la certification read-only :
 présence du binaire `openclaw`, exécution live confirmée de
 `openclaw gateway status --json` avec résumé allowlisté, discovery, endpoint
-WebSocket, `node.json`, redaction, handshake `status` et `nodes.pending`.
+WebSocket, `node.json`, redaction, handshake `status` et `node.pair.list`
+(bloqué proprement si l'appareil OpenClaw n'a pas le scope `operator.pairing`).
 Elle est alignée sur la
-référence CLI OpenClaw officielle (`gateway status|probe|call`, `nodes
-pending|approve|reject`) et fixture-testée localement; pour certifier un binaire
+référence CLI OpenClaw officielle (`gateway status|probe|call`, `node.pair
+list|approve|reject`) et fixture-testée localement; pour certifier un binaire
 OpenClaw upstream réel, exécuter :
 
 ```bash

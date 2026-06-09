@@ -4,8 +4,38 @@ import { tmpdir } from 'os';
 import { basename, dirname, join, resolve } from 'path';
 import { createServer } from 'net';
 import { chromium } from 'playwright';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'url';
+
+const mockStagehandInit = vi.fn().mockResolvedValue(undefined);
+const mockStagehandClose = vi.fn().mockResolvedValue(undefined);
+const mockStagehandGoto = vi.fn().mockResolvedValue(undefined);
+const mockStagehandTitle = vi.fn().mockResolvedValue('OK-HERMES-BROWSERBASE');
+const mockStagehandTextContent = vi.fn().mockResolvedValue('OK-HERMES-BROWSERBASE');
+const mockStagehandActivePage = {
+  goto: mockStagehandGoto,
+  locator: vi.fn().mockReturnValue({
+    textContent: mockStagehandTextContent,
+  }),
+  title: mockStagehandTitle,
+};
+
+vi.mock('@browserbasehq/stagehand', () => {
+  return {
+    Stagehand: class {
+      browserbaseDebugURL = 'https://browserbase.test/debug/abc';
+      browserbaseSessionID = 'session-abc';
+      browserbaseSessionURL = 'https://browserbase.test/session/abc';
+      context = {
+        activePage: () => mockStagehandActivePage,
+        pages: () => [mockStagehandActivePage],
+      };
+
+      init = mockStagehandInit;
+      close = mockStagehandClose;
+    },
+  };
+});
 
 import {
   buildHermesBrowserBackendsReadiness,
@@ -18,56 +48,31 @@ const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const tsxCli = join(repoRoot, 'node_modules', 'tsx', 'dist', 'cli.mjs');
 const nodeDisplayCommand = basename(process.execPath);
 
-async function freePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once('error', reject);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => {
-        if (address && typeof address === 'object') {
-          resolve(address.port);
-          return;
-        }
-        reject(new Error('Unable to reserve a free port.'));
-      });
-    });
-  });
-}
-
-async function waitForCdpEndpoint(port: number): Promise<string> {
-  const deadline = Date.now() + 15_000;
-  let lastError = '';
-
-  while (Date.now() < deadline) {
-    try {
-      const response = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (response.ok) {
-        const payload = await response.json() as { webSocketDebuggerUrl?: string };
-        if (payload.webSocketDebuggerUrl) {
-          return payload.webSocketDebuggerUrl;
-        }
-      }
-    } catch (error) {
-      lastError = error instanceof Error ? error.message : String(error);
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, 100));
-  }
-
-  throw new Error(`Timed out waiting for local CDP endpoint: ${lastError || 'no response'}`);
-}
-
 async function launchLocalCdpBrowser(): Promise<{
   endpoint: string;
   kill: () => Promise<void>;
 }> {
-  const port = await freePort();
+  const port = await new Promise<number>((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once('error', rejectPort);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() => {
+        if (address && typeof address === 'object') {
+          resolvePort(address.port);
+          return;
+        }
+        rejectPort(new Error('Unable to reserve a free port.'));
+      });
+    });
+  });
   const userDataDir = await mkdtemp(join(tmpdir(), 'codebuddy-hermes-cdp-'));
   const processRef = spawn(chromium.executablePath(), [
     `--remote-debugging-port=${port}`,
+    '--remote-debugging-address=127.0.0.1',
     `--user-data-dir=${userDataDir}`,
     '--headless=new',
+    '--no-sandbox',
     '--disable-background-networking',
     '--disable-extensions',
     '--disable-gpu',
@@ -79,15 +84,49 @@ async function launchLocalCdpBrowser(): Promise<{
     windowsHide: true,
   }) as ChildProcessWithoutNullStreams;
 
-  const endpoint = await waitForCdpEndpoint(port);
+  let stderr = '';
+  const endpoint = await new Promise<string>((resolveEndpoint, rejectEndpoint) => {
+    const timeout = setTimeout(() => {
+      rejectEndpoint(new Error(`Timed out waiting for local CDP endpoint: ${stderr || 'no response'}`));
+    }, 15_000);
+
+    const finalize = (error: Error | null, value?: string) => {
+      clearTimeout(timeout);
+      if (error) {
+        rejectEndpoint(error);
+        return;
+      }
+      resolveEndpoint(value ?? '');
+    };
+
+    processRef.stderr.setEncoding('utf8');
+    processRef.stderr.on('data', (chunk: string) => {
+      stderr += chunk;
+      for (const line of chunk.split(/\r?\n/)) {
+        const match = line.match(/DevTools listening on (ws:\/\/\S+)/);
+        if (match?.[1]) {
+          finalize(null, match[1]);
+          return;
+        }
+      }
+    });
+
+    processRef.once('error', (error) => {
+      finalize(error instanceof Error ? error : new Error(String(error)));
+    });
+
+    processRef.once('exit', (code, signal) => {
+      finalize(new Error(`CDP browser exited before endpoint was ready (code=${code ?? 'null'}, signal=${signal ?? 'none'}).`));
+    });
+  });
 
   return {
     endpoint,
     kill: async () => {
       processRef.kill();
-      await new Promise((resolve) => {
-        processRef.once('exit', resolve);
-        setTimeout(resolve, 2000);
+      await new Promise((resolveExit) => {
+        processRef.once('exit', resolveExit);
+        setTimeout(resolveExit, 2000);
       });
       await rm(userDataDir, { force: true, recursive: true });
     },
@@ -221,7 +260,7 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(readiness.routePlan.gatedBackends).toEqual(expect.arrayContaining([
       expect.objectContaining({
         backendId: 'browserbase',
-        reason: expect.stringContaining('first-class managed runner'),
+        reason: expect.stringContaining('explicit smoke runner'),
       }),
       expect.objectContaining({
         backendId: 'firecrawl',
@@ -248,7 +287,8 @@ describe('Hermes browser backend readiness and live smoke', () => {
           id: 'browserbase',
           configured: true,
           credentialSources: ['BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID'],
-          runnable: false,
+          runnable: true,
+          smokeCommand: 'buddy hermes browser-smoke browserbase --json',
           status: 'configured',
         }),
         expect.objectContaining({
@@ -313,6 +353,34 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(result.artifacts?.[0]?.sizeBytes).toBeGreaterThan(0);
   });
 
+  it('runs the Browserbase smoke through Stagehand when configured', async () => {
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'browserbase',
+      env: {
+        ...process.env,
+        BROWSERBASE_API_KEY: 'secret-browserbase-key',
+        BROWSERBASE_PROJECT_ID: 'secret-browserbase-project',
+      },
+      now: () => new Date('2026-05-31T13:36:30.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'browserbase',
+      command: null,
+      ok: true,
+      status: 'passed',
+    });
+    expect(result.session).toMatchObject({
+      id: 'session-abc',
+      url: 'https://browserbase.test/session/abc',
+      debugUrl: 'https://browserbase.test/debug/abc',
+    });
+    expect(result.stdout).toContain('OK-HERMES-BROWSERBASE');
+    expect(result.output).toContain('OK-HERMES-BROWSERBASE');
+    expect(JSON.stringify(result)).not.toContain('secret-browserbase-key');
+    expect(JSON.stringify(result)).not.toContain('secret-browserbase-project');
+  });
+
   it('routes auto browser smoke to a real safe backend', async () => {
     const result = await runHermesBrowserBackendSmoke({
       backendId: 'auto',
@@ -366,11 +434,11 @@ describe('Hermes browser backend readiness and live smoke', () => {
         now: () => new Date('2026-05-31T19:50:00.000Z'),
       });
 
-      expect(result).toMatchObject({
-        backendId: 'remote-cdp',
-        ok: true,
-        status: 'passed',
-      });
+    expect(result).toMatchObject({
+      backendId: 'remote-cdp',
+      ok: true,
+      status: 'passed',
+    });
       expect(result.stdout).toContain('OK-HERMES-CDP');
       expect(result.output).toContain('OK-HERMES-CDP');
       expect(JSON.stringify(result)).not.toContain(cdp.endpoint);

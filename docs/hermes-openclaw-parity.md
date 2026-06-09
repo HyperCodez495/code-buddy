@@ -1,6 +1,6 @@
 # Hermes Agent & OpenClaw — parity and gaps (canonical)
 
-**Date: 2026-06-08** · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified against live installs:
+**Date: 2026-06-09** · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified against live installs:
 Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
 
 > **This is the single source of truth** for where Code Buddy stands versus Hermes Agent and OpenClaw. It supersedes the
@@ -16,8 +16,10 @@ Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
   project's own self-assessment.* The 15 `covered-partial` each carry a documented partial residual that has **not been
   independently re-audited** — that bucket is where an undocumented gap would hide. The 5 `partial` are all gated (table below).
 - **Vs OpenClaw** — the gateway bridge + CLI `validate-upstream` are **validated against a live OpenClaw 2026.6.1 daemon**
-  (`openclaw gateway status --json`, exitCode 0). One known limitation: the raw WS `protocol:4` handshake (deferred; the
-  CLI path is canonical). Code Buddy's AI-to-AI substrate (`peer.*` + A2A/ACP/MCP) is **richer** than OpenClaw's.
+  (`openclaw gateway status --json`, exitCode 0, and raw WS `protocol:4` `connect.challenge` -> signed `req(connect)` ->
+  `res` -> `req(status)` -> `res`). The optional live `node.pair.list` check is scope-gated by OpenClaw
+  (`operator.pairing`) on this paired device. Code Buddy's AI-to-AI substrate (`peer.*` + A2A/ACP/MCP) is **richer** than
+  OpenClaw's.
 - **The OpenClaw migrator's two schema-drift reader bugs are now fixed** (`src/agent/hermes-claw-migrate.ts`, 2026-06-08):
   the default model (`agents.defaults.model.primary`) now **imports** and the custom-provider catalog (`models.providers`)
   is now **detected and archived 0600** — validated against the live 2026.6.1 install (import 1 / archive 5 / skip 30, was
@@ -48,7 +50,7 @@ The multi-AI comparison doc that called TTL/DAG/swarm "the honest gap" predates 
 | Feature (manifest id) | Gate type | Why | Module |
 |---|---|---|---|
 | `messaging-gateway` | **External** (accounts) | needs 20 platform tokens (Telegram/Discord/Slack/WhatsApp…) | `src/channels/*` |
-| `browser-automation` | **External** (accounts) | local Playwright+CDP+hybrid routing done; only **managed** Browserbase/Browser Use backends need paid keys | `src/agent/hermes-browser-backends.ts` |
+| `browser-automation` | **External** (accounts) | local Playwright+CDP+hybrid routing done; Browserbase now has an opt-in Stagehand smoke runner with session/debug URL metadata, while Browser Use still needs a managed gateway | `src/agent/hermes-browser-backends.ts` |
 | `runtime-backends` | **External** (accounts) | local/Docker/WSL/SSH validated; Modal/Daytona serverless need accounts | `src/agent/hermes-runtime-backends.ts` |
 | `mobile-supervision` | **Product** (by design) | silent remote execution is refused on purpose; local-operator-gated | `src/server/routes/mobile.ts` |
 | `openclaw-migration` | **Readers fixed** (see §4) | model+provider schema-drift readers fixed & live-validated 2026-06-08; identity/memory readers pending a populated install; stays `partial` until then | `src/agent/hermes-claw-migrate.ts` |
@@ -68,10 +70,11 @@ Code Buddy absorbed OpenClaw patterns rather than forking it. AI-to-AI, it **exc
 |---|---|---|
 | Gateway discovery (real 2026.6.x `openclaw.json` + `devices/paired.json` layout) | **Covered / validated 2026-06-08** | `src/openclaw/gateway-bridge.ts::discoverOpenClawGateway` |
 | CLI `validate-upstream` interop (`openclaw gateway status --json`, exitCode 0) | **Covered / validated** | `gateway-bridge.ts::validateOpenClawUpstreamCompatibility` |
-| Raw WS `protocol:4` handshake (`nodes.pending`/attach) | **Known limitation** (2/8 checks) — deferred; CLI path canonical | `gateway-bridge.ts` |
+| Raw WS `protocol:4` handshake + signed paired-device auth | **Covered / live-validated 2026-06-09** — `connect.challenge`, signed device-token connect, and `status` pass against OpenClaw 2026.6.1 | `gateway-bridge.ts` |
+| Node pairing RPCs (`node.pair.list|approve|reject`) | **Covered / guarded** — current method names, safe summaries; live `node.pair.list` is blocked on this machine until OpenClaw grants `operator.pairing` | `gateway-bridge.ts` |
 | Companion gateway inbox + Fleet handoff + approved reply (Telegram/Slack…) | **Covered, supervised** (local draft, never auto-dispatch) | `src/companion/gateway.ts`, `gateway-inbox.ts` |
 | Per-skill `SKILL.md` Ed25519 signatures | **Covered** (2026-06-07) | `src/skills/hub-signing.ts` |
-| Signed registry **index** + seeded official publisher key | **Missing** — actionable, minor | `src/skills/hub.ts` |
+| Signed registry **index** + seeded official publisher key | **Covered** (2026-06-09) — well-known indexes verify `signature`/`indexSignature` over canonical JSON; official key is seed-read-only | `src/skills/hub-signing.ts`, `src/skills/hub.ts` |
 
 AI-to-AI substrate Code Buddy has that OpenClaw lacks: `peer.chat` / `peer.chat-session.*` / `peer.tool.invoke` /
 `peer_delegate` / `route_peer`, plus A2A + ACP + MCP. OpenClaw routes via a gateway hub (ACP, human↔agent / agent↔node);

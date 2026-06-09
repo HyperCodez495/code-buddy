@@ -19,6 +19,7 @@ import {
   parseSemver,
   generateSkillSigningKeyPair,
   signSkillContent,
+  signRegistryIndexPayload,
 } from '../../src/skills/hub';
 
 // ============================================================================
@@ -1085,7 +1086,9 @@ describe('SkillsHub signing & trusted keys', () => {
       expect(added.trust).toBe('official');
       expect(added.algorithm).toBe('ed25519');
 
-      expect(hub.listTrustedKeys()).toHaveLength(1);
+      expect(hub.listTrustedKeys().map((key) => key.keyId)).toEqual(
+        expect.arrayContaining(['9edd4855cd81c978', 'acme']),
+      );
       expect(hub.getTrustedKey('acme')?.publicKey).toBe(kp.publicKey);
       expect(hub.getTrustedKey('missing')).toBeNull();
 
@@ -1109,11 +1112,115 @@ describe('SkillsHub signing & trusted keys', () => {
       expect(hub.setKeyTrust('absent', 'trusted')).toBeNull();
       expect(hub.removeTrustedKey('k1')).toBe(true);
       expect(hub.removeTrustedKey('k1')).toBe(false);
-      expect(hub.listTrustedKeys()).toHaveLength(0);
+      expect(hub.listTrustedKeys().map((key) => key.keyId)).toEqual(['9edd4855cd81c978']);
     });
 
     it('rejects a malformed public key', () => {
       expect(() => hub.addTrustedKey('not-a-valid-key')).toThrow(/Invalid Ed25519 public key/);
+    });
+
+    it('seeds the official publisher key and does not allow local removal or replacement', () => {
+      const official = hub.getTrustedKey('9edd4855cd81c978');
+      expect(official).toMatchObject({
+        keyId: '9edd4855cd81c978',
+        trust: 'official',
+        label: 'Code Buddy official skill publisher',
+      });
+      expect(hub.removeTrustedKey('9edd4855cd81c978')).toBe(false);
+      expect(hub.setKeyTrust('9edd4855cd81c978', 'community')).toBeNull();
+
+      const rogue = generateSkillSigningKeyPair('9edd4855cd81c978');
+      expect(() => hub.addTrustedKey(rogue.publicKey, { keyId: '9edd4855cd81c978' })).toThrow(/official publisher key/);
+    });
+  });
+
+  describe('signed well-known registry indexes', () => {
+    function indexBody(signature?: unknown): Record<string, unknown> {
+      return {
+        skills: [
+          {
+            name: 'test-skill',
+            version: '1.0.0',
+            description: 'A signed index skill',
+            author: 'publisher',
+            skillMdUrl: 'https://example.com/skills/test-skill/SKILL.md',
+          },
+        ],
+        ...(signature ? { signature } : {}),
+      };
+    }
+
+    it('verifies a signed well-known index against a trusted publisher key', async () => {
+      const kp = generateSkillSigningKeyPair('acme');
+      hub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'official' });
+      const unsigned = indexBody();
+      const signed = indexBody(signRegistryIndexPayload(unsigned, kp.privateKey, {
+        keyId: 'acme',
+        signedAt: '2026-06-07T00:00:00.000Z',
+      }));
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(signed),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => VALID_SKILL_CONTENT,
+        });
+
+      const result = await hub.discoverWellKnownSkills('https://example.com');
+
+      expect(result.indexSignature).toMatchObject({
+        status: 'verified',
+        keyId: 'acme',
+        trust: 'official',
+      });
+      expect(result.errors).toEqual([]);
+      expect(result.skills).toHaveLength(1);
+      expect(result.skills[0]?.name).toBe('test-skill');
+    });
+
+    it('reports unsigned indexes without blocking discovery', async () => {
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(indexBody()),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => VALID_SKILL_CONTENT,
+        });
+
+      const result = await hub.discoverWellKnownSkills('https://example.com');
+
+      expect(result.indexSignature.status).toBe('unsigned');
+      expect(result.errors).toEqual([]);
+      expect(result.skills).toHaveLength(1);
+    });
+
+    it('surfaces invalid index signatures as discovery errors', async () => {
+      const kp = generateSkillSigningKeyPair('acme');
+      hub.addTrustedKey(kp.publicKey, { keyId: 'acme', trust: 'official' });
+      const unsigned = indexBody();
+      const signed = indexBody(signRegistryIndexPayload(unsigned, kp.privateKey, { keyId: 'acme' }));
+      (signed.skills as Array<Record<string, unknown>>)[0]!.description = 'tampered';
+
+      mockFetch
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => JSON.stringify(signed),
+        })
+        .mockResolvedValueOnce({
+          ok: true,
+          text: async () => VALID_SKILL_CONTENT,
+        });
+
+      const result = await hub.discoverWellKnownSkills('https://example.com');
+
+      expect(result.indexSignature.status).toBe('invalid');
+      expect(result.errors[0]).toMatch(/index signature invalid/i);
+      expect(result.skills).toHaveLength(1);
     });
   });
 

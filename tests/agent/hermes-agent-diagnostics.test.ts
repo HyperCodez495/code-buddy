@@ -248,6 +248,14 @@ describe('Hermes Agent diagnostics', () => {
       credentialSources: ['CODEBUDDY_BROWSER_CDP_URL'],
       smokeCommand: 'buddy hermes browser-smoke remote-cdp --json',
     });
+    const browserbase = diagnostics.browserBackends.backends.find((backend) => backend.id === 'browserbase');
+    expect(browserbase).toMatchObject({
+      status: 'configured',
+      configured: true,
+      runnable: true,
+      smokeCommand: 'buddy hermes browser-smoke browserbase --json',
+      credentialSources: ['BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID'],
+    });
     const recording = diagnostics.browserBackends.backends.find((backend) => backend.id === 'session-recording');
     expect(recording).toMatchObject({
       status: 'available',

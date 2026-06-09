@@ -158,7 +158,7 @@ cowork/.claude/*
 .test-backups/
 test-app/
 tmp_*/
-openclaw/
+/openclaw/
 full-test-log*.txt
 lint-output.txt
 lint-after-fix*.txt

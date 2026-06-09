@@ -2581,7 +2581,7 @@ function registerHermesClawCommands(hermes: Command): void {
     .option('--timeout-ms <ms>', 'WebSocket validation timeout', '5000')
     .option('--openclaw-bin <path>', 'OpenClaw CLI binary path used for local install evidence')
     .option('--skip-cli-status', 'skip openclaw gateway status --json validation')
-    .option('--skip-pending-nodes', 'skip the nodes.pending read-only validation call')
+    .option('--skip-pending-nodes', 'skip the node.pair.list read-only validation call')
     .option('--approved-by <name>', 'operator approving live upstream validation')
     .option('--apply', 'contact the OpenClaw Gateway WebSocket (otherwise dry-run)')
     .option('--yes', 'confirm live validation when used with --apply')

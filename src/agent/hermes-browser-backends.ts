@@ -76,6 +76,11 @@ export interface HermesBrowserBackendSmokeResult {
   status: HermesBrowserSmokeStatus;
   stdout: string;
   stderr: string;
+  session?: {
+    debugUrl?: string;
+    id?: string;
+    url?: string;
+  };
 }
 
 /** One backend attempt made while resolving an `auto` hybrid-routed smoke. */
@@ -223,6 +228,7 @@ function browserbaseBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
   const credentialSources = presentEnvKeys(env, ['BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID']);
   const configured = credentialSources.includes('BROWSERBASE_API_KEY') &&
     credentialSources.includes('BROWSERBASE_PROJECT_ID');
+  const runnable = Boolean(stagehandVersion && configured);
   return {
     id: 'browserbase',
     label: 'Browserbase / Stagehand',
@@ -230,13 +236,19 @@ function browserbaseBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     status: configured ? 'configured' : stagehandVersion ? 'available' : 'missing',
     installed: Boolean(stagehandVersion),
     configured,
-    runnable: false,
+    runnable,
     command: null,
     version: stagehandVersion,
     credentialSources,
-    smokeCommand: null,
-    notes: ['Stagehand is installed locally; managed Browserbase execution still requires project credentials.'],
-    remediation: configured ? [] : ['Set BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID for managed browser sessions.'],
+    smokeCommand: runnable ? 'buddy hermes browser-smoke browserbase --json' : null,
+    notes: [
+      'Stagehand is installed locally; managed Browserbase execution uses a real opt-in smoke runner when project credentials are present.',
+    ],
+    remediation: runnable
+      ? []
+      : configured
+        ? ['Install @browserbasehq/stagehand before selecting Browserbase smoke runs.']
+        : ['Set BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID for managed browser sessions.'],
   };
 }
 
@@ -382,7 +394,7 @@ function browserRouteGateReason(backend: HermesBrowserBackend): string | null {
   }
 
   if (backend.id === 'browserbase' && backend.configured) {
-    return 'Browserbase is configured but excluded from auto browser routing until Code Buddy wires a first-class managed runner.';
+    return 'Browserbase is configured but excluded from auto browser routing; use the explicit smoke runner for managed sessions.';
   }
 
   if (backend.id === 'browser-use' && backend.configured) {
@@ -571,6 +583,166 @@ async function runRemoteCdpSmoke(
   }
 }
 
+function resolveStagehandActivePage(stagehand: {
+  page?: unknown;
+  context?: {
+    activePage?: () => unknown;
+    pages?: (() => unknown[]) | unknown[];
+  };
+}): unknown | null {
+  if (stagehand.page) {
+    return stagehand.page;
+  }
+
+  const context = stagehand.context;
+  if (!context) return null;
+
+  if (typeof context.activePage === 'function') {
+    const activePage = context.activePage();
+    if (activePage) return activePage;
+  }
+
+  if (typeof context.pages === 'function') {
+    return context.pages()[0] ?? null;
+  }
+
+  if (Array.isArray(context.pages)) {
+    return context.pages[0] ?? null;
+  }
+
+  return null;
+}
+
+async function runBrowserbaseSmoke(now: () => Date, env: NodeJS.ProcessEnv): Promise<HermesBrowserBackendSmokeResult> {
+  const started = now();
+  const startedAtMs = Date.now();
+
+  const apiKey = env.BROWSERBASE_API_KEY?.trim();
+  const projectId = env.BROWSERBASE_PROJECT_ID?.trim();
+  if (!apiKey || !projectId) {
+    return {
+      backendId: 'browserbase',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Browserbase / Stagehand',
+      ok: false,
+      output: 'BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID are required for browserbase smoke.',
+      startedAt: started.toISOString(),
+      status: 'not-runnable',
+      stdout: '',
+      stderr: 'BROWSERBASE_API_KEY and BROWSERBASE_PROJECT_ID are required for browserbase smoke.',
+    };
+  }
+
+  let stagehand: {
+    browserbaseDebugURL?: string;
+    browserbaseSessionID?: string;
+    browserbaseSessionURL?: string;
+    close: () => Promise<void>;
+    context?: unknown;
+    init: () => Promise<void>;
+    page?: unknown;
+  } | null = null;
+
+  try {
+    const { Stagehand } = await import('@browserbasehq/stagehand');
+    stagehand = new Stagehand({
+      env: 'BROWSERBASE',
+      apiKey,
+      projectId,
+      verbose: 0,
+      localBrowserLaunchOptions: {
+        headless: true,
+      },
+    }) as unknown as {
+      browserbaseDebugURL?: string;
+      browserbaseSessionID?: string;
+      browserbaseSessionURL?: string;
+      close: () => Promise<void>;
+      context?: unknown;
+      init: () => Promise<void>;
+      page?: unknown;
+    };
+
+    await stagehand.init();
+    const page = resolveStagehandActivePage(stagehand as {
+      page?: unknown;
+      context?: {
+        activePage?: () => unknown;
+        pages?: (() => unknown[]) | unknown[];
+      };
+    });
+
+    if (!page) {
+      throw new Error('Stagehand did not expose a browser page instance.');
+    }
+
+  const browserPage = page as {
+      goto?: (url: string, options?: { waitUntil?: string }) => Promise<void>;
+      locator?: (selector: string) => { textContent?: () => Promise<string | null> };
+      title?: () => Promise<string>;
+    };
+
+    if (!browserPage.goto || !browserPage.locator || !browserPage.title) {
+      throw new Error('Stagehand browser page is missing the browser APIs required for smoke validation.');
+    }
+
+    await browserPage.goto('data:text/html,<title>OK-HERMES-BROWSERBASE</title><h1>OK-HERMES-BROWSERBASE</h1>', {
+      waitUntil: 'domcontentloaded',
+    });
+    const title = await browserPage.title();
+    const heading = await browserPage.locator('h1').textContent?.();
+    const ok = title === 'OK-HERMES-BROWSERBASE' && heading === 'OK-HERMES-BROWSERBASE';
+    const output = `title=${title}; heading=${heading ?? ''}`;
+
+    return {
+      backendId: 'browserbase',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Browserbase / Stagehand',
+      ok,
+      output,
+      startedAt: started.toISOString(),
+      status: ok ? 'passed' : 'failed',
+      stdout: output,
+      stderr: ok ? '' : 'Unexpected Browserbase page content.',
+      session: {
+        debugUrl: stagehand.browserbaseDebugURL,
+        id: stagehand.browserbaseSessionID,
+        url: stagehand.browserbaseSessionURL,
+      },
+    };
+  } catch (error) {
+    const message = errorMessage(error);
+    return {
+      backendId: 'browserbase',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Browserbase / Stagehand',
+      ok: false,
+      output: message,
+      startedAt: started.toISOString(),
+      status: 'failed',
+      stdout: '',
+      stderr: message,
+      session: stagehand
+        ? {
+          debugUrl: stagehand.browserbaseDebugURL,
+          id: stagehand.browserbaseSessionID,
+          url: stagehand.browserbaseSessionURL,
+        }
+        : undefined,
+    };
+  } finally {
+    if (stagehand?.close) {
+      await stagehand.close().catch(() => undefined);
+    }
+  }
+}
+
 async function runLocalPlaywrightSmoke(
   now: () => Date,
   options: { artifactsDir?: string } = {},
@@ -747,6 +919,10 @@ export async function runHermesBrowserBackendSmoke(
     return runRemoteCdpSmoke(now, env);
   }
 
+  if (backend.id === 'browserbase') {
+    return runBrowserbaseSmoke(now, env);
+  }
+
   if (!backend.runnable) {
     return blockedSmokeResult(backend.id, 'not-runnable', `${backend.label} is not runnable on this host.`, {
       backend,
@@ -829,6 +1005,15 @@ export function renderHermesBrowserSmoke(result: HermesBrowserBackendSmokeResult
       ...result.artifacts.map((artifact) =>
         `- ${artifact.kind}: ${artifact.path} (${artifact.sizeBytes} bytes)`,
       ),
+    );
+  }
+
+  if (result.session) {
+    lines.push(
+      'Session:',
+      `- id: ${result.session.id ?? 'unknown'}`,
+      `- url: ${result.session.url ?? 'unknown'}`,
+      `${result.session.debugUrl ? `- debug: ${result.session.debugUrl}` : '- debug: unknown'}`,
     );
   }
 

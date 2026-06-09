@@ -21,6 +21,7 @@ import {
   generateSkillSigningKeyPair,
   signSkillContent,
   resolveSignatureVerification,
+  resolveRegistryIndexSignatureVerification,
   validateEd25519PublicKey,
   meetsTrust,
   isSkillKeyTrust,
@@ -30,6 +31,7 @@ import type {
   SkillKeyTrust,
   SkillSignatureStatus,
   SkillSignatureVerification,
+  RegistryIndexSignatureVerification,
   TrustedSkillKey,
   SkillSigningKeyPair,
 } from './hub-signing.js';
@@ -38,6 +40,8 @@ import type {
 export {
   generateSkillSigningKeyPair,
   signSkillContent,
+  signRegistryIndexPayload,
+  canonicalizeRegistryIndexPayload,
   resolveSignatureVerification,
   verifySkillSignatureMath,
   computeKeyId,
@@ -49,6 +53,7 @@ export type {
   SkillKeyTrust,
   SkillSignatureStatus,
   SkillSignatureVerification,
+  RegistryIndexSignatureVerification,
   TrustedSkillKey,
   SkillSigningKeyPair,
 } from './hub-signing.js';
@@ -369,6 +374,7 @@ export interface SkillTapDiscoveryResult {
 export interface WellKnownSkillDiscoveryResult {
   errors: string[];
   indexUrl: string;
+  indexSignature: RegistryIndexSignatureVerification;
   refreshedAt: string;
   skillCount: number;
   skills: DiscoveredHubSkill[];
@@ -470,6 +476,18 @@ const TRUSTED_TAP_REPOS = new Set([
   'huggingface/skills',
   'openai/skills',
 ]);
+const OFFICIAL_SKILL_PUBLISHER_KEYS: readonly TrustedSkillKey[] = [
+  {
+    keyId: '9edd4855cd81c978',
+    publicKey: 'MCowBQYDK2VwAyEAA838rJ+4Nyx1RSlyp2ygFKR+J5JZozvPJbCjNCN+9j0=',
+    algorithm: 'ed25519',
+    trust: 'official',
+    addedAt: 1780780800000,
+    updatedAt: 1780780800000,
+    addedBy: 'codebuddy',
+    label: 'Code Buddy official skill publisher',
+  },
+];
 
 // ============================================================================
 // Utility Functions
@@ -761,9 +779,23 @@ export class SkillsHub extends EventEmitter {
       throw new Error(`Well-known skills index returned ${response.status}: ${response.statusText}`);
     }
 
-    const body = await response.json() as unknown;
+    const rawBody = await response.text();
+    let body: unknown;
+    try {
+      body = JSON.parse(rawBody) as unknown;
+    } catch (err) {
+      throw new Error(
+        `Well-known skills index did not contain valid JSON: ${err instanceof Error ? err.message : String(err)}`,
+      );
+    }
+    const indexSignature = this.verifyRegistryIndexSignature(body);
     const entries = this.extractWellKnownEntries(body);
     const errors: string[] = [];
+    if (indexSignature.status === 'invalid') {
+      errors.push(`index signature invalid: ${indexSignature.reason ?? 'verification failed'}`);
+    } else if (indexSignature.status === 'untrusted') {
+      errors.push(`index signature untrusted: ${indexSignature.reason ?? 'signer is not trusted'}`);
+    }
     const skills: DiscoveredHubSkill[] = [];
     for (const entry of entries) {
       try {
@@ -796,6 +828,7 @@ export class SkillsHub extends EventEmitter {
     return {
       errors,
       indexUrl,
+      indexSignature,
       refreshedAt,
       skillCount: skills.length,
       skills,
@@ -1096,6 +1129,44 @@ export class SkillsHub extends EventEmitter {
     return [];
   }
 
+  private verifyRegistryIndexSignature(body: unknown): RegistryIndexSignatureVerification {
+    return resolveRegistryIndexSignatureVerification(
+      body,
+      this.extractRegistryIndexSignature(body),
+      this.readTrustedKeysFile().keys,
+    );
+  }
+
+  private extractRegistryIndexSignature(body: unknown): SkillSignature | undefined {
+    if (!body || typeof body !== 'object') {
+      return undefined;
+    }
+    const record = body as Record<string, unknown>;
+    const candidate = record['indexSignature'] ?? record['signature'];
+    if (!candidate || typeof candidate !== 'object') {
+      return undefined;
+    }
+    const signature = candidate as Partial<SkillSignature>;
+    if (
+      signature.algorithm === 'ed25519'
+      && typeof signature.keyId === 'string'
+      && typeof signature.publicKey === 'string'
+      && typeof signature.signature === 'string'
+      && typeof signature.contentChecksum === 'string'
+      && typeof signature.signedAt === 'string'
+    ) {
+      return {
+        algorithm: signature.algorithm,
+        keyId: signature.keyId,
+        publicKey: signature.publicKey,
+        signature: signature.signature,
+        contentChecksum: signature.contentChecksum,
+        signedAt: signature.signedAt,
+      };
+    }
+    return undefined;
+  }
+
   private discoveredSkillFromWellKnownEntry(entry: unknown, indexUrl: string): DiscoveredHubSkill {
     if (!entry || typeof entry !== 'object') {
       throw new Error('Well-known skill entry must be an object');
@@ -1206,6 +1277,13 @@ export class SkillsHub extends EventEmitter {
     }
     // Validate the key parses as an Ed25519 public key before we trust it.
     const keyId = this.validateTrustedPublicKey(normalizedPublicKey, options.keyId);
+    if (this.isOfficialSkillPublisherKey(keyId)) {
+      const official = OFFICIAL_SKILL_PUBLISHER_KEYS.find((key) => key.keyId === keyId)!;
+      if (official.publicKey !== normalizedPublicKey) {
+        throw new Error(`Cannot replace built-in official publisher key '${keyId}'.`);
+      }
+      return { ...official };
+    }
 
     const trust = options.trust ?? 'community';
     if (!isSkillKeyTrust(trust)) {
@@ -1248,6 +1326,9 @@ export class SkillsHub extends EventEmitter {
    * Remove a trusted publisher key by id. Returns false if it was not present.
    */
   removeTrustedKey(keyId: string): boolean {
+    if (this.isOfficialSkillPublisherKey(keyId)) {
+      return false;
+    }
     const keysFile = this.readTrustedKeysFile();
     const next = keysFile.keys.filter((key) => key.keyId !== keyId);
     if (next.length === keysFile.keys.length) {
@@ -1267,6 +1348,9 @@ export class SkillsHub extends EventEmitter {
     trust: SkillKeyTrust,
     options: { addedBy?: string; updatedAt?: number } = {},
   ): TrustedSkillKey | null {
+    if (this.isOfficialSkillPublisherKey(keyId)) {
+      return null;
+    }
     if (!isSkillKeyTrust(trust)) {
       throw new Error(`Invalid key trust '${trust}'. Use builtin, official, trusted, or community.`);
     }
@@ -1342,7 +1426,7 @@ export class SkillsHub extends EventEmitter {
           return {
             version: TRUSTED_KEYS_FILE_VERSION,
             updatedAt: typeof parsed.updatedAt === 'string' ? parsed.updatedAt : new Date().toISOString(),
-            keys,
+            keys: this.withOfficialTrustedKeys(keys),
           };
         }
       }
@@ -1356,15 +1440,33 @@ export class SkillsHub extends EventEmitter {
     return {
       version: TRUSTED_KEYS_FILE_VERSION,
       updatedAt: new Date().toISOString(),
-      keys: [],
+      keys: this.withOfficialTrustedKeys([]),
     };
   }
 
   private writeTrustedKeysFile(keysFile: TrustedKeysFile): void {
+    keysFile.keys = keysFile.keys.filter((key) => !this.isOfficialSkillPublisherKey(key.keyId));
     keysFile.updatedAt = new Date().toISOString();
     keysFile.keys.sort((left, right) => left.keyId.localeCompare(right.keyId));
     fs.writeFileSync(this.config.trustedKeysPath, JSON.stringify(keysFile, null, 2), 'utf-8');
     logger.debug('Hub trusted keys file written', { path: this.config.trustedKeysPath });
+  }
+
+  private withOfficialTrustedKeys(keys: TrustedSkillKey[]): TrustedSkillKey[] {
+    const merged = new Map<string, TrustedSkillKey>();
+    for (const key of OFFICIAL_SKILL_PUBLISHER_KEYS) {
+      merged.set(key.keyId, { ...key });
+    }
+    for (const key of keys) {
+      if (!merged.has(key.keyId)) {
+        merged.set(key.keyId, { ...key });
+      }
+    }
+    return [...merged.values()].sort((left, right) => left.keyId.localeCompare(right.keyId));
+  }
+
+  private isOfficialSkillPublisherKey(keyId: string): boolean {
+    return OFFICIAL_SKILL_PUBLISHER_KEYS.some((key) => key.keyId === keyId);
   }
 
   private normalizeTrustedKeyRecord(key: unknown): TrustedSkillKey | null {

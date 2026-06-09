@@ -92,6 +92,10 @@ export interface SignatureMathResult {
   mathValid: boolean;
 }
 
+export interface RegistryIndexSignatureVerification extends SkillSignatureVerification {
+  payloadChecksum: string;
+}
+
 const TRUST_RANK: Record<SkillKeyTrust, number> = {
   community: 0,
   trusted: 1,
@@ -100,6 +104,7 @@ const TRUST_RANK: Record<SkillKeyTrust, number> = {
 };
 
 const SIGNATURE_TRUST_VALUES: readonly SkillKeyTrust[] = ['builtin', 'official', 'trusted', 'community'];
+const REGISTRY_INDEX_SIGNATURE_KEYS = new Set(['signature', 'indexSignature']);
 
 export function isSkillKeyTrust(value: unknown): value is SkillKeyTrust {
   return typeof value === 'string' && (SIGNATURE_TRUST_VALUES as readonly string[]).includes(value);
@@ -209,6 +214,24 @@ export function signSkillContent(
 }
 
 /**
+ * Canonical JSON used for registry-index signing. The index signs the complete
+ * JSON document after removing its own detached-signature field, with object
+ * keys sorted recursively. This lets publishers format index.json freely while
+ * consumers verify the same semantic payload.
+ */
+export function canonicalizeRegistryIndexPayload(index: unknown): string {
+  return JSON.stringify(stripRegistryIndexSignature(index));
+}
+
+export function signRegistryIndexPayload(
+  index: unknown,
+  privateKeyB64: string,
+  options: SignSkillOptions = {},
+): SkillSignature {
+  return signSkillContent(canonicalizeRegistryIndexPayload(index), privateKeyB64, options);
+}
+
+/**
  * Low-level check: does the content still hash to the signed checksum, and does
  * the Ed25519 signature verify against the signature's own public key? This does
  * not consult any trust ring — see {@link resolveSignatureVerification}.
@@ -297,4 +320,34 @@ export function resolveSignatureVerification(
   }
 
   return { status: 'verified', keyId: signature.keyId, trust: trusted.trust };
+}
+
+export function resolveRegistryIndexSignatureVerification(
+  index: unknown,
+  signature: SkillSignature | undefined,
+  trustedKeys: TrustedSkillKey[] = [],
+): RegistryIndexSignatureVerification {
+  const payload = canonicalizeRegistryIndexPayload(index);
+  return {
+    ...resolveSignatureVerification(payload, signature, trustedKeys),
+    payloadChecksum: sha256Hex(payload),
+  };
+}
+
+function stripRegistryIndexSignature(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => stripRegistryIndexSignature(item));
+  }
+  if (!value || typeof value !== 'object') {
+    return value;
+  }
+  const record = value as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const key of Object.keys(record).sort()) {
+    if (REGISTRY_INDEX_SIGNATURE_KEYS.has(key)) {
+      continue;
+    }
+    out[key] = stripRegistryIndexSignature(record[key]);
+  }
+  return out;
 }

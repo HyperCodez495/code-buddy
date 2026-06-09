@@ -2,7 +2,7 @@ import { constants as fsConstants } from 'fs';
 import { access, appendFile, mkdir, readFile, writeFile } from 'fs/promises';
 import * as os from 'os';
 import * as path from 'path';
-import { randomUUID } from 'crypto';
+import { createPublicKey, randomUUID, sign as signPayload } from 'crypto';
 import { execFile as execFileCallback } from 'node:child_process';
 import { promisify } from 'node:util';
 import WebSocket from 'ws';
@@ -369,7 +369,7 @@ export interface OpenClawWebSocketProbeRecord {
   liveProbeConfirmed: boolean;
   status: 'preview' | 'connected' | 'blocked' | 'failed';
   request: {
-    connectFrameType: 'connect';
+    connectFrameType: 'req/connect';
     statusMethod: string;
     requestId: string;
   };
@@ -619,9 +619,56 @@ interface OpenClawUnifiedConfig {
   };
 }
 
+interface OpenClawDeviceIdentity {
+  version?: number;
+  deviceId?: string;
+  publicKeyPem?: string;
+  privateKeyPem?: string;
+}
+
+interface OpenClawDeviceAuthToken {
+  token?: string;
+  role?: string;
+  scopes?: string[];
+}
+
+interface OpenClawDeviceAuthStore {
+  version?: number;
+  deviceId?: string;
+  tokens?: {
+    operator?: OpenClawDeviceAuthToken;
+  };
+}
+
+interface OpenClawResolvedConnectAuth {
+  gatewayToken?: string;
+  deviceToken?: string;
+  deviceId?: string;
+  publicKeyPem?: string;
+  privateKeyPem?: string;
+  scopes: string[];
+  tokenPresent: boolean;
+}
+
 async function readOpenClawUnifiedConfig(home: string): Promise<OpenClawUnifiedConfig | null> {
   try {
     return JSON.parse(await readFile(path.join(home, 'openclaw.json'), 'utf8')) as OpenClawUnifiedConfig;
+  } catch {
+    return null;
+  }
+}
+
+async function readOpenClawDeviceIdentity(home: string): Promise<OpenClawDeviceIdentity | null> {
+  try {
+    return JSON.parse(await readFile(path.join(home, 'identity', 'device.json'), 'utf8')) as OpenClawDeviceIdentity;
+  } catch {
+    return null;
+  }
+}
+
+async function readOpenClawDeviceAuthStore(home: string): Promise<OpenClawDeviceAuthStore | null> {
+  try {
+    return JSON.parse(await readFile(path.join(home, 'identity', 'device-auth.json'), 'utf8')) as OpenClawDeviceAuthStore;
   } catch {
     return null;
   }
@@ -655,6 +702,43 @@ function synthesizeGatewayLockfileFromUnifiedConfig(
     rpcUrl: httpUrl,
     methods: [],
     ...(token ? { token } : {}),
+  };
+}
+
+function normalizeOpenClawDeviceAuthScopes(scopes: unknown): string[] {
+  const normalized = Array.isArray(scopes)
+    ? scopes.filter((scope): scope is string => typeof scope === 'string' && scope.trim().length > 0)
+    : [];
+  return normalized.length > 0 ? [...new Set(normalized)] : ['operator.read', 'operator.write'];
+}
+
+async function resolveOpenClawConnectAuth(
+  home: string,
+  gatewayToken: string | undefined,
+): Promise<OpenClawResolvedConnectAuth> {
+  const [identity, authStore] = await Promise.all([
+    readOpenClawDeviceIdentity(home),
+    readOpenClawDeviceAuthStore(home),
+  ]);
+  const operator = authStore?.tokens?.operator;
+  const deviceToken = typeof operator?.token === 'string' && operator.token.trim()
+    ? operator.token.trim()
+    : undefined;
+  const deviceId = typeof identity?.deviceId === 'string' && identity.deviceId.trim()
+    ? identity.deviceId.trim()
+    : undefined;
+  const publicKeyPem = typeof identity?.publicKeyPem === 'string' && identity.publicKeyPem.trim()
+    ? identity.publicKeyPem
+    : undefined;
+  const privateKeyPem = typeof identity?.privateKeyPem === 'string' && identity.privateKeyPem.trim()
+    ? identity.privateKeyPem
+    : undefined;
+  const hasSignedDeviceAuth = Boolean(deviceToken && deviceId && publicKeyPem && privateKeyPem);
+  return {
+    ...(hasSignedDeviceAuth ? { deviceToken, deviceId, publicKeyPem, privateKeyPem } : {}),
+    ...(!hasSignedDeviceAuth && gatewayToken ? { gatewayToken } : {}),
+    scopes: normalizeOpenClawDeviceAuthScopes(operator?.scopes),
+    tokenPresent: Boolean(gatewayToken || deviceToken),
   };
 }
 
@@ -931,6 +1015,157 @@ function responsePayloadFromFrame(frame: Record<string, unknown>): unknown {
   return undefined;
 }
 
+function errorMessageFromFrame(frame: Record<string, unknown>): string | undefined {
+  if (typeof frame.message === 'string') return compactRedactedText(frame.message);
+  if (typeof frame.error === 'string') return compactRedactedText(frame.error);
+  const error = frame.error && typeof frame.error === 'object'
+    ? frame.error as Record<string, unknown>
+    : undefined;
+  return typeof error?.message === 'string' ? compactRedactedText(error.message) : undefined;
+}
+
+function isOpenClawScopeBlocked(error: string | undefined): boolean {
+  return Boolean(error && /\bmissing scope\b|\bscope upgrade pending\b|\bpairing required\b/i.test(error));
+}
+
+function normalizeOpenClawDeviceMetadataForAuth(value: string | undefined): string {
+  if (typeof value !== 'string') return '';
+  return value.trim().replace(/[A-Z]/g, (char) => String.fromCharCode(char.charCodeAt(0) + 32));
+}
+
+function buildOpenClawDeviceAuthPayloadV3(params: {
+  deviceId: string;
+  clientId: string;
+  clientMode: string;
+  role: string;
+  scopes: string[];
+  signedAtMs: number;
+  token: string;
+  nonce: string;
+  platform: string;
+  deviceFamily?: string;
+}): string {
+  return [
+    'v3',
+    params.deviceId,
+    params.clientId,
+    params.clientMode,
+    params.role,
+    params.scopes.join(','),
+    String(params.signedAtMs),
+    params.token,
+    params.nonce,
+    normalizeOpenClawDeviceMetadataForAuth(params.platform),
+    normalizeOpenClawDeviceMetadataForAuth(params.deviceFamily),
+  ].join('|');
+}
+
+function publicKeyRawBase64UrlFromPem(publicKeyPem: string): string {
+  const der = createPublicKey(publicKeyPem).export({ format: 'der', type: 'spki' });
+  return Buffer.from(der).subarray(-32).toString('base64url');
+}
+
+function buildOpenClawDeviceConnectParams(
+  auth: OpenClawResolvedConnectAuth,
+  nonce: string | undefined,
+  platform: string,
+): Record<string, unknown> | undefined {
+  if (!auth.deviceToken || !auth.deviceId || !auth.publicKeyPem || !auth.privateKeyPem || !nonce) return undefined;
+  const signedAtMs = Date.now();
+  const payload = buildOpenClawDeviceAuthPayloadV3({
+    deviceId: auth.deviceId,
+    clientId: 'cli',
+    clientMode: 'cli',
+    role: 'operator',
+    scopes: auth.scopes,
+    signedAtMs,
+    token: auth.deviceToken,
+    nonce,
+    platform,
+  });
+  return {
+    id: auth.deviceId,
+    publicKey: publicKeyRawBase64UrlFromPem(auth.publicKeyPem),
+    signature: signPayload(null, Buffer.from(payload), auth.privateKeyPem).toString('base64url'),
+    signedAt: signedAtMs,
+    nonce,
+  };
+}
+
+function buildOpenClawConnectFrame(
+  requestId: string,
+  auth: OpenClawResolvedConnectAuth,
+  nonce: string | undefined,
+): Record<string, unknown> {
+  const platform = process.platform;
+  const device = buildOpenClawDeviceConnectParams(auth, nonce, platform);
+  const token = auth.deviceToken || auth.gatewayToken;
+  return {
+    type: 'req',
+    id: `${requestId}:connect`,
+    method: 'connect',
+    params: {
+      minProtocol: 4,
+      maxProtocol: 4,
+      client: {
+        id: 'cli',
+        displayName: 'Code Buddy OpenClaw Bridge',
+        version: '1.0.0',
+        platform,
+        mode: 'cli',
+        instanceId: requestId,
+      },
+      caps: [],
+      role: 'operator',
+      scopes: auth.scopes,
+      ...(token ? { auth: { token, ...(auth.deviceToken ? { deviceToken: auth.deviceToken } : {}) } } : {}),
+      ...(device ? { device } : {}),
+    },
+  };
+}
+
+function isOpenClawHelloFrame(frame: Record<string, unknown>): boolean {
+  const type = frameType(frame);
+  if (type === 'hello-ok' || type === 'hello_ok') {
+    return true;
+  }
+  if (
+    (type === 'res' || type === 'response')
+    && typeof frame.id === 'string'
+    && frame.id.endsWith(':connect')
+    && frame.ok === true
+  ) {
+    return true;
+  }
+  const payload = responsePayloadFromFrame(frame);
+  if (!payload || typeof payload !== 'object') {
+    return false;
+  }
+  const body = payload as Record<string, unknown>;
+  const nestedType = frameType(body);
+  return nestedType === 'hello-ok'
+    || nestedType === 'hello_ok'
+    || body.ok === true
+    || body.connected === true;
+}
+
+function connectChallengeNonce(frame: Record<string, unknown>): string | undefined {
+  if (frame.type !== 'event' || frame.event !== 'connect.challenge') return undefined;
+  const payload = frame.payload && typeof frame.payload === 'object'
+    ? frame.payload as Record<string, unknown>
+    : undefined;
+  return typeof payload?.nonce === 'string' && payload.nonce.trim()
+    ? payload.nonce.trim()
+    : undefined;
+}
+
+function helloPayloadFrame(frame: Record<string, unknown>): Record<string, unknown> {
+  const payload = responsePayloadFromFrame(frame);
+  return payload && typeof payload === 'object'
+    ? payload as Record<string, unknown>
+    : frame;
+}
+
 async function executableExists(filePath: string): Promise<boolean> {
   try {
     await access(filePath, fsConstants.X_OK);
@@ -1028,9 +1263,15 @@ function safeNodePairingSummary(payload: unknown): Record<string, unknown> | und
     ? body.nodes
     : Array.isArray(body.pending)
       ? body.pending
-      : Array.isArray(payload)
-        ? payload
-        : [];
+      : Array.isArray(body.pairs)
+        ? body.pairs
+        : Array.isArray(body.devices)
+          ? body.devices
+          : Array.isArray(body.requests)
+            ? body.requests
+            : Array.isArray(payload)
+              ? payload
+              : [];
   const nodes = rawNodes
     .filter((node): node is Record<string, unknown> => Boolean(node) && typeof node === 'object')
     .map((node) => {
@@ -1663,6 +1904,7 @@ export async function probeOpenClawGatewayWebSocket(
   const discovery = await discoverOpenClawGateway({ ...options, cwd, now });
   const lockfile = await readOpenClawLockfile(discovery.lockfilePath);
   const token = tokenFromLockfile(lockfile);
+  const connectAuth = await resolveOpenClawConnectAuth(resolveOpenClawHome(options), token);
   const wsUrl = resolveWebSocketEndpoint(lockfile);
   const dryRun = input.dryRun !== false;
   const liveProbeConfirmed = input.liveProbeConfirmed === true;
@@ -1681,14 +1923,14 @@ export async function probeOpenClawGatewayWebSocket(
     ...(input.approvedBy?.trim() ? { approvedBy: input.approvedBy.trim() } : {}),
     liveProbeConfirmed,
     request: {
-      connectFrameType: 'connect',
+      connectFrameType: 'req/connect',
       statusMethod,
       requestId,
     },
   };
   const safetyBase = {
     secretsIncluded: false as const,
-    tokenPresent: Boolean(token),
+    tokenPresent: connectAuth.tokenPresent,
     tokenSent: false,
     rawPayloadsStored: false as const,
     networkContacted: false,
@@ -1748,6 +1990,7 @@ export async function probeOpenClawGatewayWebSocket(
     let helloFrame: Record<string, unknown> | null = null;
     let resolved = false;
     let statusResponseOk: boolean | undefined;
+    let connectSent = false;
     const timeout = setTimeout(() => {
       finish(false, 'OpenClaw WebSocket probe timed out');
     }, input.timeoutMs ?? 5_000);
@@ -1780,7 +2023,7 @@ export async function probeOpenClawGatewayWebSocket(
         },
         safety: {
           ...safetyBase,
-          tokenSent: Boolean(token),
+          tokenSent: connectAuth.tokenPresent,
           networkContacted: true,
         },
       };
@@ -1813,18 +2056,11 @@ export async function probeOpenClawGatewayWebSocket(
       });
     };
 
-    socket.on('open', () => {
-      const connectFrame = {
-        type: 'connect',
-        client: {
-          name: 'Code Buddy OpenClaw Bridge',
-          role: 'codebuddy-fleet-bridge',
-          schemaVersion: OPENCLAW_BRIDGE_SCHEMA_VERSION,
-        },
-        ...(token ? { auth: { token } } : {}),
-      };
-      socket.send(JSON.stringify(connectFrame));
-    });
+    const sendConnect = (nonce?: string) => {
+      if (connectSent) return;
+      connectSent = true;
+      socket.send(JSON.stringify(buildOpenClawConnectFrame(requestId, connectAuth, nonce)));
+    };
 
     socket.on('message', (data) => {
       let frame: Record<string, unknown>;
@@ -1836,15 +2072,18 @@ export async function probeOpenClawGatewayWebSocket(
       }
       const type = frameType(frame);
       frameTypes.push(type);
-      if ((type === 'hello-ok' || type === 'hello_ok') && !helloFrame) {
-        helloFrame = frame;
+      const nonce = connectChallengeNonce(frame);
+      if (nonce) {
+        sendConnect(nonce);
+        return;
+      }
+      if (isOpenClawHelloFrame(frame) && !helloFrame) {
+        helloFrame = helloPayloadFrame(frame);
         socket.send(JSON.stringify({
           type: 'req',
           id: requestId,
           method: statusMethod,
-          params: {
-            source: 'codebuddy-openclaw-bridge',
-          },
+          params: {},
         }));
         return;
       }
@@ -1853,7 +2092,7 @@ export async function probeOpenClawGatewayWebSocket(
           ? frame.ok
           : !(frame.error || frame.err);
         statusResponseOk = ok;
-        finish(ok, ok ? undefined : 'OpenClaw WebSocket status request failed');
+        finish(ok, ok ? undefined : errorMessageFromFrame(frame) || 'OpenClaw WebSocket status request failed');
         return;
       }
       if (type === 'error') {
@@ -1889,6 +2128,7 @@ export async function callOpenClawGatewayWebSocket(
   const discovery = await discoverOpenClawGateway({ ...options, cwd, now });
   const lockfile = await readOpenClawLockfile(discovery.lockfilePath);
   const token = tokenFromLockfile(lockfile);
+  const connectAuth = await resolveOpenClawConnectAuth(resolveOpenClawHome(options), token);
   const wsUrl = resolveWebSocketEndpoint(lockfile);
   const dryRun = input.dryRun !== false;
   const liveCallConfirmed = input.liveCallConfirmed === true;
@@ -1916,7 +2156,7 @@ export async function callOpenClawGatewayWebSocket(
   };
   const safetyBase = {
     secretsIncluded: false as const,
-    tokenPresent: Boolean(token),
+    tokenPresent: connectAuth.tokenPresent,
     tokenSent: false,
     rawPayloadsStored: false as const,
     networkContacted: false,
@@ -1977,6 +2217,7 @@ export async function callOpenClawGatewayWebSocket(
     let resolved = false;
     let rpcOk: boolean | undefined;
     let safePayloadSummary: Record<string, unknown> | undefined;
+    let connectSent = false;
     const timeout = setTimeout(() => {
       finish(false, 'OpenClaw WebSocket call timed out');
     }, input.timeoutMs ?? 5_000);
@@ -2005,7 +2246,7 @@ export async function callOpenClawGatewayWebSocket(
         },
         safety: {
           ...safetyBase,
-          tokenSent: Boolean(token),
+          tokenSent: connectAuth.tokenPresent,
           networkContacted: true,
         },
       };
@@ -2038,17 +2279,11 @@ export async function callOpenClawGatewayWebSocket(
       });
     };
 
-    socket.on('open', () => {
-      socket.send(JSON.stringify({
-        type: 'connect',
-        client: {
-          name: 'Code Buddy OpenClaw Bridge',
-          role: 'codebuddy-fleet-bridge',
-          schemaVersion: OPENCLAW_BRIDGE_SCHEMA_VERSION,
-        },
-        ...(token ? { auth: { token } } : {}),
-      }));
-    });
+    const sendConnect = (nonce?: string) => {
+      if (connectSent) return;
+      connectSent = true;
+      socket.send(JSON.stringify(buildOpenClawConnectFrame(requestId, connectAuth, nonce)));
+    };
 
     socket.on('message', (data) => {
       let frame: Record<string, unknown>;
@@ -2060,7 +2295,12 @@ export async function callOpenClawGatewayWebSocket(
       }
       const type = frameType(frame);
       frameTypes.push(type);
-      if ((type === 'hello-ok' || type === 'hello_ok') && !helloOk) {
+      const nonce = connectChallengeNonce(frame);
+      if (nonce) {
+        sendConnect(nonce);
+        return;
+      }
+      if (isOpenClawHelloFrame(frame) && !helloOk) {
         helloOk = true;
         socket.send(JSON.stringify({
           type: 'req',
@@ -2076,7 +2316,7 @@ export async function callOpenClawGatewayWebSocket(
           : !(frame.error || frame.err);
         rpcOk = ok;
         safePayloadSummary = options.summarizePayload?.(responsePayloadFromFrame(frame));
-        finish(ok, ok ? undefined : `OpenClaw WebSocket call failed for ${method}`);
+        finish(ok, ok ? undefined : errorMessageFromFrame(frame) || `OpenClaw WebSocket call failed for ${method}`);
         return;
       }
       if (type === 'error') {
@@ -2107,7 +2347,7 @@ export async function listOpenClawPendingNodes(
   options: OpenClawGatewayDiscoveryOptions & Pick<OpenClawWebSocketCallOptions, 'createId' | 'callLogPath'> = {},
 ): Promise<OpenClawWebSocketCallResult> {
   return await callOpenClawGatewayWebSocket({
-    method: 'nodes.pending',
+    method: 'node.pair.list',
     params: {},
     approvedBy: input.approvedBy,
     liveCallConfirmed: input.liveCallConfirmed,
@@ -2127,7 +2367,7 @@ export async function approveOpenClawPendingNode(
   const code = input.code?.trim();
   if (!nodeId && !code) throw new Error('nodeId or code is required to approve an OpenClaw node');
   return await callOpenClawGatewayWebSocket({
-    method: 'nodes.approve',
+    method: 'node.pair.approve',
     params: {
       ...(nodeId ? { nodeId } : {}),
       ...(code ? { code } : {}),
@@ -2151,7 +2391,7 @@ export async function rejectOpenClawPendingNode(
   const reason = input.reason?.trim();
   if (!nodeId && !code) throw new Error('nodeId or code is required to reject an OpenClaw node');
   return await callOpenClawGatewayWebSocket({
-    method: 'nodes.reject',
+    method: 'node.pair.reject',
     params: {
       ...(nodeId ? { nodeId } : {}),
       ...(code ? { code } : {}),
@@ -2274,7 +2514,7 @@ export async function validateOpenClawUpstreamCompatibility(
           name: 'websocket-probe',
           ok: true,
           status: 'preview',
-          detail: 'Would run connect -> hello-ok -> req(status) -> res',
+          detail: 'Would run connect.challenge -> signed req(connect) -> res -> req(status) -> res',
         },
         {
           name: 'pending-node-list',
@@ -2282,7 +2522,7 @@ export async function validateOpenClawUpstreamCompatibility(
           status: input.includePendingNodes === false ? 'skipped' : 'preview',
           detail: input.includePendingNodes === false
             ? 'Skipped by includePendingNodes=false'
-            : 'Would run nodes.pending and store only a safe summary',
+            : 'Would run node.pair.list and store only a safe summary',
         },
       ],
       safety: {
@@ -2313,6 +2553,9 @@ export async function validateOpenClawUpstreamCompatibility(
       liveCallConfirmed: true,
       timeoutMs: input.timeoutMs,
     }, options);
+  const pendingNodeScopeBlocked = pendingNodes
+    ? isOpenClawScopeBlocked(pendingNodes.record.response?.error || pendingNodes.error)
+    : false;
   const liveChecks: OpenClawUpstreamValidationCheck[] = [
     {
       name: 'openclaw-cli-status',
@@ -2330,14 +2573,18 @@ export async function validateOpenClawUpstreamCompatibility(
     },
     {
       name: 'pending-node-list',
-      ok: pendingNodes ? pendingNodes.ok : true,
-      status: pendingNodes ? (pendingNodes.ok ? 'passed' : 'failed') : 'skipped',
+      ok: pendingNodes ? (pendingNodes.ok || pendingNodeScopeBlocked) : true,
+      status: pendingNodes
+        ? (pendingNodes.ok ? 'passed' : pendingNodeScopeBlocked ? 'blocked' : 'failed')
+        : 'skipped',
       detail: pendingNodes
-        ? pendingNodes.record.response?.error || 'nodes.pending returned a redacted summary'
+        ? pendingNodes.record.response?.error || 'node.pair.list returned a redacted summary'
         : 'Skipped by includePendingNodes=false',
     },
   ];
-  const ok = (cliStatus ? cliStatus.exitCode === 0 : true) && probe.ok && (pendingNodes ? pendingNodes.ok : true);
+  const ok = (cliStatus ? cliStatus.exitCode === 0 : true)
+    && probe.ok
+    && (pendingNodes ? pendingNodes.ok || pendingNodeScopeBlocked : true);
   return {
     kind: 'openclaw_upstream_validation_result',
     ok,

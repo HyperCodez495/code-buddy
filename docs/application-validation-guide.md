@@ -419,7 +419,7 @@ local HTTP OpenClaw daemon contract fixture for the live `nodes/register` and
 `messages/reply` paths, proving URL resolution, bearer-token headers, JSON
 payload shape, response summarization, and redacted logs without requiring a
 private upstream OpenClaw install. The WebSocket contract proof also covers
-`nodes.pending`, `nodes.approve`, and `nodes.reject`: pending pairing requests
+`node.pair.list`, `node.pair.approve`, and `node.pair.reject`: pending pairing requests
 are summarized with node id/display name only, and approval/rejection can send a
 supplied pairing code in a confirmed live call while keeping that code, rejection
 reason, gateway tokens, and daemon payload secrets out of stdout and
@@ -454,22 +454,23 @@ execution logging, dry-run OpenClaw compatibility handoffs, and guarded
 OpenClaw daemon attach/response send, guarded Cowork node pairing, plus CLI
 dry-run access. The OpenClaw
 bridge suite now also includes a local WebSocket gateway fixture for the
-documented `connect` -> `hello-ok` -> `req(status)` -> `res` flow; the probe log
+documented `connect.challenge` -> signed `req(connect)` -> `res` -> `req(status)` -> `res` flow; the probe log
 stores only frame types and response summaries, never tokens or raw payloads.
 The `call-ws` proof mirrors OpenClaw's low-level `gateway call <method>` pattern:
 it sends params only in a confirmed live call and records only method, param keys,
 frame types and RPC success in `ws-call-log.jsonl`.
 The node pairing proof mirrors OpenClaw's pending/approve/reject workflow
-through `nodes-pending`, `node-approve`, and `node-reject`; it stores only
+through `node.pair.list`, `node.pair.approve`, and `node.pair.reject`; it stores only
 redacted request metadata and safe response summaries, never pairing codes,
 rejection reasons, tokens, or raw daemon payloads.
 The upstream validation proof adds `bridge validate-upstream`, a read-only
 checklist that previews by default and, with explicit approval, verifies the
 local `openclaw` CLI binary evidence, runs `openclaw gateway status --json` with
 an allowlisted summary, and verifies discovery, WebSocket status probe, and
-`nodes.pending` against a configured daemon while recording only redacted
-summaries. In this environment it is fixture-validated; run it against a real
-OpenClaw daemon before claiming upstream certification.
+`node.pair.list` against a configured daemon while recording only redacted
+summaries. `node.pair.list` is reported as scope-blocked when the paired OpenClaw
+device lacks `operator.pairing`; the status handshake remains independently
+validated.
 The node-host discovery proof reads OpenClaw's documented `~/.openclaw/node.json`
 shape, reports node id/display name/gateway host/port/capabilities, and keeps
 the node pairing token out of CLI JSON and logs.
