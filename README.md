@@ -59,7 +59,26 @@ Code Buddy is an open-source multi-provider AI coding agent with a terminal UI, 
 
 ## In action
 
-**ChatGPT Pro / Plus subscription login (Phase d.23+)** — `buddy login`, sign in once with your ChatGPT account, then chat with `gpt-5.5` directly from the terminal. No API key, cost reported as `$0.0000` (flat-fee plan).
+**Free local AI, with the reasoning on screen.** A local Ollama model (`qwen3.6:35b-a3b`) thinks through a task, then *uses tools* to do it — no cloud, ~`$0.0001`. Unedited captures from the Cowork desktop app:
+
+<table>
+  <tr>
+    <td width="50%" align="center">
+      <a href="docs/qa/code-buddy-studio/cowork-demo-chat.mp4"><img src="docs/qa/code-buddy-studio/cowork-demo-chat.gif" alt="Local reasoning chat" width="430"/></a><br/>
+      <sub><b>Reasoning chat</b> — thinks step-by-step, then answers · local · <code>~$0.0001</code></sub>
+    </td>
+    <td width="50%" align="center">
+      <a href="docs/qa/code-buddy-studio/cowork-demo-task.mp4"><img src="docs/qa/code-buddy-studio/cowork-demo-task.gif" alt="Agent creates a file" width="430"/></a><br/>
+      <sub><b>Real task</b> — reasons, <b>uses the file tool</b>, confirms the artifact · local · <code>~$0.0001</code></sub>
+    </td>
+  </tr>
+</table>
+
+More desktop demos (Fleet, Autonomy, Companion, …): [`cowork/readme.md`](cowork/readme.md#demo).
+
+---
+
+**ChatGPT Pro / Plus subscription login** — `buddy login`, sign in once with your ChatGPT account, then chat with `gpt-5.5` directly from the terminal. No API key, cost reported as `$0.0000` (flat-fee plan).
 
 <p align="center">
   <img src="docs/screenshots/chatgpt-oauth-login.png" alt="ChatGPT OAuth login flow" width="900"/>

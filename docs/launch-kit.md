@@ -80,6 +80,26 @@ Entry template:
 
 ---
 
+## 6. Ready-to-publish blog post (dev.to / Hashnode)
+
+> **Title:** I built a local-first AI coding agent that runs for $0 — here's why and how
+>
+> AI coding assistants are great until the bill arrives, or until you realize your codebase is round-tripping to someone else's cloud. I wanted one I **own**: runs on my own models, $0 marginal cost, no lock-in. So I built **Code Buddy** — and made it work the same from a terminal, a desktop app, a server, and a 24/7 background service, all on one engine.
+>
+> **The local-first bet.** Point it at Ollama and it's free. A small caveat I learned the hard way: not every local model can drive tools — some emit tool calls as plain text. So Code Buddy gates tool-calling per model (`getModelToolConfig`), uses tool-capable local models (qwen3.6, devstral) for agentic work, and keeps a free-first → escalate ladder so it only reaches for a paid API when local genuinely can't do the job.
+>
+> **Reasoning you can watch.** With a reasoning model, the thinking streams on screen before it acts — then it actually uses tools (e.g. *"create robot-haiku.md"* → it reasons, writes the file, confirms). ~$0.0001, fully local. [embed `cowork-demo-task.gif`]
+>
+> **Multi-AI fleet.** The part I find most fun: peers on your network observe each other's events live and can call each other's models and read-only tools (`peer.chat` / `peer.tool.invoke`), behind three security gates (allowlist → `fleetSafe` flag → fail-closed workspace root). One machine's spare GPU becomes everyone's.
+>
+> **Autonomous.** `buddy autonomy install` registers a background service that claims tasks off a shared queue (with TTL leases so a crashed agent's task auto-reclaims, DAG deps, and a workers→verifier→synthesizer swarm) and runs them free-first on local models.
+>
+> It's MIT, TypeScript, ~30k tests, and builds clean from source. Repo + demos: https://github.com/phuetz/code-buddy — feedback very welcome.
+
+*Tips: cross-post to dev.to, Hashnode, and your blog. Add tags: `ai`, `opensource`, `ollama`, `typescript`, `localllm`. Link it from the HN/Reddit threads as "more detail here."*
+
+---
+
 ## Pre-flight (do these before any post — a broken first clone kills a launch)
 
 - [x] `git clone … && npm install && npm run build && buddy --help` works (build verified ✅).
