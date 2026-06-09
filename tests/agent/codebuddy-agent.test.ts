@@ -30,6 +30,10 @@ jest.mock('../../src/codebuddy/client.js', () => ({
     setModel: mockSetModel,
     probeToolSupport: mockProbeToolSupport,
   }; }),
+  // Re-exported from message-guards.js; consumed by auto-observation middleware
+  // in the runTurnLoop path. Mirror the real type guard so the loop doesn't throw.
+  hasToolCalls: (msg: any) =>
+    msg?.role === 'assistant' && 'tool_calls' in msg && Array.isArray(msg.tool_calls),
 }));
 
 jest.mock('../../src/codebuddy/tools.js', () => ({
@@ -625,11 +629,7 @@ describe('CodeBuddyAgent', () => {
   // =========================================================================
 
   describe('processUserMessage', () => {
-    // Skipped during the runTurnLoop fusion (2026-04-26): processUserMessage
-    // is now a thin sequential collector that consumes events from the
-    // streaming generator. The mock setup here predates that and would
-    // need re-plumbing through the new event flow. Tracked for V1.1.
-    it.skip('should return user entry and assistant entry for simple message', async () => {
+    it('should return user entry and assistant entry for simple message', async () => {
       agent = new CodeBuddyAgent('test-api-key');
       await agent.systemPromptReady;
 
@@ -637,10 +637,13 @@ describe('CodeBuddyAgent', () => {
       expect(entries.length).toBeGreaterThanOrEqual(2);
       expect(entries[0].type).toBe('user');
       expect(entries[0].content).toBe('Hello');
-      // There should be an assistant entry somewhere in the result
+      // There should be an assistant entry somewhere in the result.
+      // Content is assembled from the streaming generator (mockChatStream yields
+      // 'Hello' + '!'), not the legacy direct chat() value — processUserMessage
+      // is now a sequential collector over runTurnLoop.
       const assistantEntry = entries.find(e => e.type === 'assistant');
       expect(assistantEntry).toBeDefined();
-      expect(assistantEntry!.content).toBe('Hello! How can I help?');
+      expect(assistantEntry!.content).toBe('Hello!');
     });
 
     it('should add user message to chat history', async () => {
@@ -697,7 +700,14 @@ describe('CodeBuddyAgent', () => {
     });
 
     it('should handle API errors gracefully', async () => {
+      // processUserMessage consumes the streaming generator, so the error must
+      // originate there (a mockChat rejection alone never reaches this path).
       mockChat.mockRejectedValueOnce(new Error('API rate limited'));
+      mockChatStream.mockImplementationOnce(async function* () {
+        throw new Error('API rate limited');
+        // eslint-disable-next-line no-unreachable
+        yield undefined as never;
+      });
 
       agent = new CodeBuddyAgent('test-api-key');
       await agent.systemPromptReady;

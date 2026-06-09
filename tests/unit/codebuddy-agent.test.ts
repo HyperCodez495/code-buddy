@@ -34,6 +34,10 @@ jest.mock("../../src/codebuddy/client.js", () => ({
     setModel: jest.fn(),
     probeToolSupport: jest.fn().mockResolvedValue(true),
   }; }),
+  // Re-exported from message-guards.js; consumed by auto-observation middleware
+  // in the runTurnLoop path. Mirror the real type guard so the loop doesn't throw.
+  hasToolCalls: (msg: any) =>
+    msg?.role === "assistant" && "tool_calls" in msg && Array.isArray(msg.tool_calls),
 }));
 
 // Mock codebuddy tools
@@ -1437,11 +1441,7 @@ describe("CodeBuddyAgent Message Processing", () => {
       expect(entries[0].content).toBe("Hello");
     });
 
-    // Skipped during the runTurnLoop fusion (2026-04-26): the assistant
-    // entry now arrives via the streaming generator's collector path,
-    // and the mock chat response setup in this file targets the legacy
-    // direct chat() call. Tracked for V1.1 mock refactor.
-    it.skip("should return assistant response", async () => {
+    it("should return assistant response", async () => {
       const entries = await agent.processUserMessage("Hello");
 
       const assistantEntry = entries.find((e) => e.type === "assistant");
