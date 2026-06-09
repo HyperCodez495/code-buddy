@@ -26,9 +26,9 @@
 Code, commands, web, voice, and vision — from your terminal, a desktop app, your phone, or a 24/7 autonomous service. Use **local Ollama models at `$0`**, or bring any of **15 providers**. No lock-in.
 
 <p align="center">
-  <a href="cowork/readme.md#demo"><img src="docs/qa/code-buddy-studio/cowork-demo-hero.gif" alt="Code Buddy Cowork — demo" width="760"/></a>
+  <a href="docs/qa/code-buddy-studio/cowork-demo-moneyshot.mp4"><img src="docs/qa/code-buddy-studio/cowork-demo-moneyshot.gif" alt="A local model reasons, then creates a file — for ~$0.0001" width="760"/></a>
   <br/>
-  <sub>The <b>Cowork</b> desktop app — <a href="cowork/readme.md#demo">more demos (incl. live local reasoning)</a></sub>
+  <sub>A <b>local</b> model reasons, then uses a tool to create a real file — <code>~$0.0001</code>, no cloud. <a href="cowork/readme.md#demo">More demos →</a></sub>
 </p>
 
 - 🆓 **Free & local-first** — runs entirely on **local Ollama (`$0`)**, or any of **15 providers** (Claude, GPT, Grok, Gemini, …) with auto-failover. Or log in with **ChatGPT Plus/Pro** for a flat-fee brain — no API metering.

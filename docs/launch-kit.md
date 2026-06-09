@@ -45,7 +45,7 @@
 
 > **1/** I built an open-source AI coding agent that runs **free on your own machine** 🧵
 > Terminal + a desktop app, one engine. Local Ollama = $0. Watch it reason, then act 👇
-> [attach `docs/qa/code-buddy-studio/cowork-demo-task.gif`]
+> [attach `docs/qa/code-buddy-studio/cowork-demo-moneyshot.gif`]
 >
 > **2/** It's not just chat — it uses tools. *"create robot-haiku.md"* → the local model **thinks**, writes the file, confirms. ~$0.0001, no cloud.
 >
@@ -88,7 +88,7 @@ Entry template:
 >
 > **The local-first bet.** Point it at Ollama and it's free. A small caveat I learned the hard way: not every local model can drive tools — some emit tool calls as plain text. So Code Buddy gates tool-calling per model (`getModelToolConfig`), uses tool-capable local models (qwen3.6, devstral) for agentic work, and keeps a free-first → escalate ladder so it only reaches for a paid API when local genuinely can't do the job.
 >
-> **Reasoning you can watch.** With a reasoning model, the thinking streams on screen before it acts — then it actually uses tools (e.g. *"create robot-haiku.md"* → it reasons, writes the file, confirms). ~$0.0001, fully local. [embed `cowork-demo-task.gif`]
+> **Reasoning you can watch.** With a reasoning model, the thinking streams on screen before it acts — then it actually uses tools (e.g. *"create robot-haiku.md"* → it reasons, writes the file, confirms). ~$0.0001, fully local. [embed `cowork-demo-moneyshot.gif`]
 >
 > **Multi-AI fleet.** The part I find most fun: peers on your network observe each other's events live and can call each other's models and read-only tools (`peer.chat` / `peer.tool.invoke`), behind three security gates (allowlist → `fleetSafe` flag → fail-closed workspace root). One machine's spare GPU becomes everyone's.
 >
