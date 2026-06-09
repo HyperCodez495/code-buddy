@@ -1,5 +1,5 @@
 {
-  "detectedAt": "2026-06-06T16:51:48.989Z",
+  "detectedAt": "2026-06-09T14:32:34.561Z",
   "languages": [
     "TypeScript",
     "JavaScript"
@@ -26,7 +26,7 @@
     ]
   },
   "contextPack": "Language: TypeScript, JavaScript | Framework: Ink (terminal UI) | Package manager: npm | Commands: test=\"npm run test\", lint=\"npm run lint\", format=\"npm run format\", build=\"npm run build\", typecheck=\"npm run typecheck\", validate=\"npm run validate\" | Dirs: src=src, tests=tests, docs=docs | Naming: camelCase (JS/TS)",
-  "_configMtime": 1780573107122.138,
+  "_configMtime": 1781015343165.5117,
   "name": "@phuetz/code-buddy",
   "description": "Open-source multi-provider AI coding agent for the terminal. Supports Grok, Claude, ChatGPT, Gemini, Ollama and LM Studio with 52+ tools, multi-channel messaging, skills system, and Enterprise-grade architecture.",
   "moduleType": "esm",
@@ -57,22 +57,22 @@
   "cartography": {
     "fileStats": {
       "byExtension": {
-        ".ts": 2838,
+        ".ts": 2882,
         ".js": 27,
         ".cs": 1,
         ".tsx": 49
       },
       "locEstimate": {
-        "TypeScript": 979408,
+        "TypeScript": 996685,
         "JavaScript": 319,
         "C#": 685
       },
-      "totalSourceFiles": 1824,
-      "totalTestFiles": 1091,
+      "totalSourceFiles": 1843,
+      "totalTestFiles": 1116,
       "largestFiles": [
         {
           "path": "src/agent/autonomous/agentic-coding-runner.ts",
-          "lines": 8217
+          "lines": 8438
         },
         {
           "path": "tests/commands/autonomous-code-command.test.ts",
@@ -80,19 +80,19 @@
         },
         {
           "path": "src/tools/computer-control-tool.ts",
-          "lines": 6175
+          "lines": 6199
+        },
+        {
+          "path": "src/commands/cli/hermes-commands.ts",
+          "lines": 3923
+        },
+        {
+          "path": "tests/agent/autonomous/agentic-coding-runner.test.ts",
+          "lines": 4163
         },
         {
           "path": "tests/commands/hermes-commands.test.ts",
           "lines": 3745
-        },
-        {
-          "path": "tests/agent/autonomous/agentic-coding-runner.test.ts",
-          "lines": 4103
-        },
-        {
-          "path": "src/commands/cli/hermes-commands.ts",
-          "lines": 3439
         },
         {
           "path": "src/commands/cli/autonomous-code-command.ts",
@@ -100,11 +100,11 @@
         },
         {
           "path": "src/index.ts",
-          "lines": 2713
+          "lines": 2728
         },
         {
           "path": "src/skills/hub.ts",
-          "lines": 2562
+          "lines": 2932
         },
         {
           "path": "src/agent/codebuddy-agent.ts",
@@ -117,17 +117,17 @@
         {
           "name": "Agent core",
           "directory": "src/agent",
-          "fileCount": 247
+          "fileCount": 248
         },
         {
           "name": "Tool implementations",
           "directory": "src/tools",
-          "fileCount": 208
+          "fileCount": 209
         },
         {
           "name": "Command handlers",
           "directory": "src/commands",
-          "fileCount": 124
+          "fileCount": 125
         },
         {
           "name": "Utilities",
@@ -172,7 +172,7 @@
         {
           "name": "Integrations",
           "directory": "src/integrations",
-          "fileCount": 29
+          "fileCount": 30
         },
         {
           "name": "Knowledge base",
@@ -202,7 +202,7 @@
         {
           "name": "fleet",
           "directory": "src/fleet",
-          "fileCount": 19
+          "fileCount": 21
         },
         {
           "name": "Observability",
@@ -215,6 +215,11 @@
           "fileCount": 18
         },
         {
+          "name": "companion",
+          "directory": "src/companion",
+          "fileCount": 16
+        },
+        {
           "name": "docs",
           "directory": "src/docs",
           "fileCount": 16
@@ -225,19 +230,19 @@
           "fileCount": 16
         },
         {
+          "name": "Skills system",
+          "directory": "src/skills",
+          "fileCount": 16
+        },
+        {
           "name": "browser-automation",
           "directory": "src/browser-automation",
           "fileCount": 15
         },
         {
-          "name": "companion",
-          "directory": "src/companion",
-          "fileCount": 15
-        },
-        {
-          "name": "Skills system",
-          "directory": "src/skills",
-          "fileCount": 15
+          "name": "daemon",
+          "directory": "src/daemon",
+          "fileCount": 14
         },
         {
           "name": "analytics",
@@ -268,11 +273,6 @@
           "name": "Services",
           "directory": "src/services",
           "fileCount": 11
-        },
-        {
-          "name": "daemon",
-          "directory": "src/daemon",
-          "fileCount": 10
         },
         {
           "name": "desktop",
@@ -357,6 +357,11 @@
         {
           "name": "events",
           "directory": "src/events",
+          "fileCount": 6
+        },
+        {
+          "name": "Gateway",
+          "directory": "src/gateway",
           "fileCount": 6
         },
         {
@@ -465,6 +470,11 @@
           "fileCount": 4
         },
         {
+          "name": "capture",
+          "directory": "src/capture",
+          "fileCount": 4
+        },
+        {
           "name": "cloud",
           "directory": "src/cloud",
           "fileCount": 4
@@ -482,11 +492,6 @@
         {
           "name": "encoding",
           "directory": "src/encoding",
-          "fileCount": 4
-        },
-        {
-          "name": "Gateway",
-          "directory": "src/gateway",
           "fileCount": 4
         },
         {
@@ -610,6 +615,11 @@
           "fileCount": 2
         },
         {
+          "name": "openclaw",
+          "directory": "src/openclaw",
+          "fileCount": 2
+        },
+        {
           "name": "Personas",
           "directory": "src/personas",
           "fileCount": 2
@@ -646,7 +656,7 @@
         },
         {
           "module": "src/types",
-          "importedBy": 196
+          "importedBy": 197
         },
         {
           "module": "src/codebuddy/client",
@@ -654,7 +664,7 @@
         },
         {
           "module": "src/tools/registry/types",
-          "importedBy": 50
+          "importedBy": 51
         },
         {
           "module": "src/services/vfs/unified-vfs-router",
@@ -670,7 +680,7 @@
         },
         {
           "module": "src/channels/core",
-          "importedBy": 32
+          "importedBy": 34
         },
         {
           "module": "src/knowledge/knowledge-graph",
@@ -690,7 +700,7 @@
         },
         {
           "module": "src/observability/run-store",
-          "importedBy": 18
+          "importedBy": 19
         },
         {
           "module": "src/plugins/types",
@@ -2577,6 +2587,16 @@
           ]
         },
         {
+          "module": "capture",
+          "exports": [
+            "ScreenErrorWatcher",
+            "CapturedBridge",
+            "ScreenRecorder",
+            "ScreenWatcher",
+            "getCapturedBridge"
+          ]
+        },
+        {
           "module": "channels",
           "exports": [
             "GroupSecurityManager",
@@ -2649,11 +2669,11 @@
         {
           "module": "companion",
           "exports": [
+            "COMPANION_GATEWAY_INBOX_SCHEMA_VERSION",
+            "buildCompanionGatewayLifecycleReport",
             "formatCompanionGatewayMessageResult",
-            "formatCompanionSkillCuratorResult",
-            "formatCompanionSafetyLedgerStats",
-            "formatCompanionCompetitiveRadar",
-            "formatCompanionImprovementCycle"
+            "draftCompanionGatewayOutboundReply",
+            "executeCompanionGatewayAdminAction"
           ]
         },
         {
@@ -2689,11 +2709,11 @@
         {
           "module": "daemon",
           "exports": [
+            "FleetAutonomousDaemon",
+            "FleetAutonomousLoop",
             "DailyResetManager",
             "ServiceInstaller",
-            "CronAgentBridge",
-            "DaemonLifecycle",
-            "HeartbeatEngine"
+            "CronAgentBridge"
           ]
         },
         {
@@ -2811,19 +2831,19 @@
           "exports": [
             "NoPeerAvailableError",
             "PeerSessionStore",
+            "FleetColabStore",
             "FleetListener",
-            "CostTracker",
-            "TaskRouter"
+            "CostTracker"
           ]
         },
         {
           "module": "gateway",
           "exports": [
+            "DevicePairingStore",
             "WebSocketGateway",
             "SessionManager",
             "GatewayServer",
-            "AgentRegistry",
-            "resetWebSocketGateway"
+            "AgentRegistry"
           ]
         },
         {
@@ -3024,6 +3044,16 @@
             "TerminalDashboard",
             "MetricsCollector",
             "RunStore"
+          ]
+        },
+        {
+          "module": "openclaw",
+          "exports": [
+            "getOpenClawWebSocketProbeLogPath",
+            "prepareOpenClawFleetHandoffDraft",
+            "getOpenClawGatewayAttachLogPath",
+            "getOpenClawWebSocketCallLogPath",
+            "getOpenClawGatewayLockfilePath"
           ]
         },
         {
