@@ -71,6 +71,8 @@ const SCENES: Record<string, string[]> = {
   companion: ['companion-panel-button', 'channels-button', 'mobile-supervision-button'],
   // Insights & learning: activity, session insights, test runner, lessons, user model, spec, bookmarks, focus.
   insights: ['activity-button', 'session-insights-button', 'test-runner-button', 'lesson-candidate-button', 'user-model-button', 'spec-panel-button', 'bookmarks-button', 'focus-view-button'],
+  // Automation: the mission board and desktop snapshot surfaces.
+  automation: ['mission-board-button', 'desktop-snapshot-button'],
 };
 
 for (const [scene, ids] of Object.entries(SCENES)) {
@@ -103,4 +105,38 @@ test('demo settings', async () => {
   await app.close();
   // eslint-disable-next-line no-console
   if (video) console.log(`SCENE settings=${await video.path()}`);
+});
+
+// Orchestrator: the multi-agent team spawner (the wow shot) + the Agent Team.
+test('demo orchestrator', async () => {
+  test.skip(!process.env.RECORD_DEMO, 'set RECORD_DEMO=1 to record demo videos');
+  const dir = path.resolve('demo-video', 'orchestrator');
+  const { app, page } = await launchCowork(dir);
+  await page.getByTestId('orchestrator-button').click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(3200); // linger on the "Spawn a multi-agent team" form
+  await page.keyboard.press('Escape').catch(() => {});
+  await page.waitForTimeout(500);
+  await page.getByTestId('team-panel-button').click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(2600);
+  const video = page.video();
+  await app.close();
+  // eslint-disable-next-line no-console
+  if (video) console.log(`SCENE orchestrator=${await video.path()}`);
+});
+
+// Extensibility: the Workflows DAG editor, MCP connectors/marketplace, Skills, Plugins.
+test('demo extensibility', async () => {
+  test.skip(!process.env.RECORD_DEMO, 'set RECORD_DEMO=1 to record demo videos');
+  const dir = path.resolve('demo-video', 'extensibility');
+  const { app, page } = await launchCowork(dir);
+  await page.getByTestId('shell-settings-button').click({ timeout: 4000 }).catch(() => {});
+  await page.waitForTimeout(1200);
+  for (const tab of ['settings-tab-workflows', 'settings-tab-connectors', 'settings-tab-mcpMarketplace', 'settings-tab-skills', 'settings-tab-skillsBrowser', 'settings-tab-plugins', 'settings-tab-hooks']) {
+    await page.getByTestId(tab).click({ timeout: 3000 }).catch(() => {});
+    await page.waitForTimeout(1500);
+  }
+  const video = page.video();
+  await app.close();
+  // eslint-disable-next-line no-console
+  if (video) console.log(`SCENE extensibility=${await video.path()}`);
 });

@@ -62,29 +62,42 @@ Short tours of Cowork **by use case** — recorded from **this** build (click an
   <tr>
     <td width="50%" align="center">
       <a href="../docs/qa/code-buddy-studio/cowork-demo-fleet.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-fleet.gif" alt="Multi-AI Fleet" width="440" /></a><br/>
-      <sub><b>Multi-AI Fleet</b> — spawn a multi-agent team, Fleet Command Center, peer events, Agent Team, devices</sub>
+      <sub><b>Multi-AI Fleet</b> — Fleet Command Center, peer events, Agent Team, devices</sub>
     </td>
     <td width="50%" align="center">
-      <a href="../docs/qa/code-buddy-studio/cowork-demo-intelligence.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-intelligence.gif" alt="Intelligence" width="440" /></a><br/>
-      <sub><b>Intelligence</b> — the live <b>Autonomy</b> queue, persistent <b>Memory</b>, <b>Reasoning</b> traces</sub>
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-orchestrator.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-orchestrator.gif" alt="Orchestrator" width="440" /></a><br/>
+      <sub><b>Orchestrator</b> — decompose a goal into a team of specialized sub-agents</sub>
     </td>
   </tr>
   <tr>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-intelligence.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-intelligence.gif" alt="Intelligence" width="440" /></a><br/>
+      <sub><b>Intelligence</b> — the live <b>Autonomy</b> queue, persistent <b>Memory</b>, <b>Reasoning</b> traces</sub>
+    </td>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-extensibility.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-extensibility.gif" alt="Extensibility" width="440" /></a><br/>
+      <sub><b>Extensibility</b> — visual <b>Workflows</b> DAG editor, MCP connectors &amp; marketplace, Skills, Plugins</sub>
+    </td>
+  </tr>
+  <tr>
+    <td align="center">
+      <a href="../docs/qa/code-buddy-studio/cowork-demo-automation.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-automation.gif" alt="Automation" width="440" /></a><br/>
+      <sub><b>Automation</b> — Mission Board and Desktop Snapshot</sub>
+    </td>
     <td align="center">
       <a href="../docs/qa/code-buddy-studio/cowork-demo-companion.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-companion.gif" alt="Companion" width="440" /></a><br/>
       <sub><b>Companion</b> — voice / vision / presence, delivery channels, mobile supervision</sub>
     </td>
+  </tr>
+  <tr>
     <td align="center">
       <a href="../docs/qa/code-buddy-studio/cowork-demo-insights.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-insights.gif" alt="Insights & Learning" width="440" /></a><br/>
       <sub><b>Insights &amp; Learning</b> — activity, session insights, test runner, lessons, user model, spec</sub>
     </td>
-  </tr>
-  <tr>
     <td align="center">
       <a href="../docs/qa/code-buddy-studio/cowork-demo-settings.mp4"><img src="../docs/qa/code-buddy-studio/cowork-demo-settings.gif" alt="Settings" width="440" /></a><br/>
       <sub><b>Settings</b> — the regrouped 7-section sidebar (Essentials · Models · Tools · Skills · Automation · Security · Server)</sub>
     </td>
-    <td></td>
   </tr>
 </table>
 
