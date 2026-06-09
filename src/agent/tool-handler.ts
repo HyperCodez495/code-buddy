@@ -66,6 +66,7 @@ import {
   createGuiTools,
   createSessionTools,
   createGitNexusTools,
+  createScreenpipeTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
 import { CodeBuddyToolCall } from "../codebuddy/client.js";
@@ -268,6 +269,7 @@ export class ToolHandler {
       ...createGuiTools(),
       ...createSessionTools(),
       ...createGitNexusTools(),
+      ...createScreenpipeTools(),
     ];
 
     // Register canonical-prefix alias tools (shell_exec→bash, file_read→view_file, etc.)

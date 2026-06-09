@@ -1244,6 +1244,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Consult GitNexus for a query or code understanding request (read-only)',
     fleetSafe: true,
   },
+  {
+    name: 'screen_memory',
+    category: 'utility' as ToolCategory,
+    keywords: ['screen', 'memory', 'screenpipe', 'recall', 'what did i see', 'history', 'ocr', 'audio', 'transcript', 'said', 'heard'],
+    priority: 5,
+    description: 'Recall what was on screen / said / heard via a local screenpipe instance (read-only, redacted)',
+  },
 ];
 
 /**

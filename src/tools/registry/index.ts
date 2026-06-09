@@ -382,6 +382,13 @@ export {
   resetGitNexusInstances,
 } from './gitnexus-tools.js';
 
+// Tool Adapters - Screenpipe (screen_memory)
+export {
+  ScreenMemoryTool,
+  createScreenpipeTools,
+  resetScreenpipeInstances,
+} from './screenpipe-tools.js';
+
 // Tool Adapters - AskUserQuestion (ask_user_question)
 export {
   AskUserQuestionExecuteTool,
