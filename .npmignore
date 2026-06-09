@@ -53,6 +53,9 @@ tests/
 coverage/
 .nyc_output/
 
+# Source maps — useless for CLI end-users (~18MB / 36% of tarball); kept in local dev builds
+**/*.js.map
+
 # Documentation source (keep only README.md)
 docs/
 *.md
