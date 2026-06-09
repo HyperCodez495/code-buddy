@@ -15,22 +15,29 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Tests-29K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
-  <img src="https://img.shields.io/badge/Coverage-%E2%89%A570%25-48dbfb?style=flat-square" alt="Coverage"/>
+  <img src="https://img.shields.io/badge/Tests-30K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
   <img src="https://img.shields.io/badge/Build-passing-00d26a?style=flat-square" alt="Build"/>
 </p>
 
 <br/>
 
-**A multi-AI coding agent, desktop cockpit, and personal companion that writes code, runs commands, searches the web, talks to you, sees opt-in camera context, and manages your projects -- from the terminal, Cowork, your phone, or a 24/7 background server.**
+### The open-source AI coding agent that runs **free, on your own machine.**
 
-**Now with a [Multi-AI Fleet Hub](docs/fleet-guide.md)** — multiple Code Buddy peers can observe each other's events live and invoke each other's LLMs via `/fleet send peer.chat`. Pilot local Ollama LLMs from any peer in your Tailscale network for free coding/reasoning. *(Phase (d).1 → (d).16a, May 2026.)*
+Code, commands, web, voice, and vision — from your terminal, a desktop app, your phone, or a 24/7 autonomous service. Use **local Ollama models at `$0`**, or bring any of **15 providers**. No lock-in.
 
-**Always-on autonomous fleet** — `buddy autonomy install` registers a self-driving background service (systemd / launchd / Task Scheduler) that continuously claims and executes tasks from a shared fleet queue. It runs **free-first** (local Ollama models, `$0`, before any paid API), with an **event-driven daemon** that wakes the instant the queue changes. The queue has **claim leases with TTL** (a crashed agent's task auto-reclaims), **DAG task dependencies**, and a **workers → verifier → synthesizer swarm** topology — see the [Fleet Guide](docs/fleet-guide.md). Try it end-to-end with `npm run autonomy:lab` ([`scripts/autonomy-lab/`](scripts/autonomy-lab/)): the real agent autonomously edits a sandbox to pass a real task set, free on local Ollama. *(rc.8, June 2026.)*
+<p align="center">
+  <a href="cowork/readme.md#demo"><img src="docs/qa/code-buddy-studio/cowork-demo-hero.gif" alt="Code Buddy Cowork — demo" width="760"/></a>
+  <br/>
+  <sub>The <b>Cowork</b> desktop app — <a href="cowork/readme.md#demo">more demos (incl. live local reasoning)</a></sub>
+</p>
 
-**Cowork + Buddy companion cockpit** — `buddy gui` / `buddy desktop` opens the Electron workspace powered by the same Code Buddy core engine. Buddy has a companion panel for ChatGPT-backed identity, voice, camera snapshots, MediaPipe face/hand/pose perception, self-evaluation, competitive radar, missions, routines, safety, and proactive check-ins.
-
-**Auto-memory writeback** — the agent persists what it learns (preferences, decisions, gotchas) to `.codebuddy/CODEBUDDY_MEMORY.md` across sessions. View with `/memory recent`. `buddy --init` also generates an `AGENTS.md` at the project root for cross-CLI compatibility (read by Claude Code, Gemini CLI, Cursor, Codex). *(rc.2, May 2026.)*
+- 🆓 **Free & local-first** — runs entirely on **local Ollama (`$0`)**, or any of **15 providers** (Claude, GPT, Grok, Gemini, …) with auto-failover. Or log in with **ChatGPT Plus/Pro** for a flat-fee brain — no API metering.
+- 🧠 **Reasoning you can watch** — local models think step-by-step on screen, then act — see the [live captures](cowork/readme.md#demo).
+- 🖥️ **Runs everywhere** — terminal TUI, the **Cowork desktop app**, an HTTP/WebSocket server, your phone, or a 24/7 background service — all on the same core engine.
+- 🤝 **Multi-AI Fleet** — multiple peers observe each other live and call each other's models & read-only tools (`peer.chat` / `peer.tool.invoke`) across your network.
+- 🤖 **Autonomous** — `buddy autonomy install` runs a self-driving service that claims & executes tasks **free-first** on local models, 24/7.
+- 🛠️ **~110 tools, skills & MCP** — edit, shell, web search, browser, PDFs/Office, a skills marketplace, and MCP connectors to extend it.
+- 👁️ **Personal companion** — bidirectional voice, opt-in camera/presence (MediaPipe), persistent memory, and 20+ messaging channels.
 
 <br/>
 
