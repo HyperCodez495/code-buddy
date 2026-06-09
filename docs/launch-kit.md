@@ -105,5 +105,6 @@ Entry template:
 - [x] `git clone … && npm install && npm run build && buddy --help` works (build verified ✅).
 - [x] README hero demo renders + autoplays on github.com.
 - [x] No falsifiable badges (Coverage badge removed; Build/Tests verified).
+- [ ] **Upload the social preview** — `docs/qa/code-buddy-studio/social-preview.png` (1280×640) in **repo Settings → Social preview**. This is the card shown whenever your link is shared on Reddit/X/Discord/Slack — it materially raises click-through. (GitHub only lets the owner set this; the agent built the image, you upload it.)
 - [ ] Skim open issues; pin a friendly "good first issue" or two.
 - [ ] Have the repo description + topics set (done) so search/awesome-bots find it.
