@@ -58,6 +58,18 @@ export class MCPManager extends EventEmitter {
       const sdkTransport = await transport.connect();
       await client.connect(sdkTransport);
 
+      // Drain the captured MCP stderr to the logger. The stream only exists
+      // for stdio transports created with stderr:'pipe' (see StdioTransport);
+      // without a consumer the PassThrough back-pressures the child once its
+      // buffer fills, so this drain is load-bearing — not just cosmetic.
+      const stderrStream = (sdkTransport as { stderr?: NodeJS.ReadableStream | null }).stderr;
+      if (stderrStream) {
+        stderrStream.on('data', (chunk: Buffer) => {
+          const text = chunk.toString().trim();
+          if (text) logger.debug(`[MCP:${config.name}] ${text}`);
+        });
+      }
+
       // List available tools
       const toolsResult = await client.listTools();
       

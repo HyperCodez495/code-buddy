@@ -48,6 +48,11 @@ export class StdioTransport implements MCPTransport {
       command: this.config.command!,
       args: this.config.args || [],
       env,
+      // The SDK default is stderr:'inherit', which lets a noisy MCP server
+      // (startup banners, progress logs) write raw bytes into the CLI's own
+      // stderr — breaking the --quiet/pipeable-JSON headless contract.
+      // Capture it instead; client.ts drains the stream to logger.debug.
+      stderr: 'pipe' as const,
     };
 
     try {
