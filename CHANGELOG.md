@@ -15,6 +15,33 @@ Heading toward `1.0.0` final. Open audit blockers tracked in
 [`docs/fleet-guide.md`](docs/fleet-guide.md). Backlog notes also under
 `## [0.5.1-fleet]`.
 
+### V1 GA blockers closed (2026-06-10)
+
+The three remaining GA audit blockers are done; what's left open
+(OpenAPI spec, GitNexus integration, Lessons/Context Engine v2, Policy
+Engine) is reclassified to the V1.1 roadmap and no longer blocks the tag.
+
+- **WS8-T3 — DB migration e2e test** (`ae98e424`) —
+  `tests/database/migration-e2e.test.ts` proves "upgrade an old install
+  through all migrations cleanly" against the real better-sqlite3 layer:
+  v1/v2 database files walked to the current `SCHEMA_VERSION` with data
+  preserved, FTS rebuilt + triggers functional, fresh-install full
+  chain, idempotent re-init; plus the legacy JSON→SQLite import
+  end-to-end (dry-run, expired-cache skip, `deleteAfterMigration`
+  renames, corrupted-file resilience).
+- **WS8-T4 — Feishu webhook security fix** (`a2c2857e`) — the webhook
+  signature was computed as HMAC-SHA256 keyed by the verification
+  token; per the Lark Open Platform spec it is the plain SHA-256 of
+  `timestamp + nonce + encrypt_key + body`, so every genuine Feishu
+  request was rejected. Now spec-conform, decrypt-first (token check
+  also covers encrypted events), timing-safe comparisons, fail-closed
+  when no secret is configured, full-body debug dump removed from logs.
+  10 tests cover the verification chain.
+- **WS8-T1 — `docs/deployment.md`** (`3478fd9e`) — production guide:
+  checklist (JWT fail-closed, CORS, trusted proxies), env-var
+  reference, systemd units, Docker, Kubernetes manifests walkthrough,
+  nginx WS upgrade, monitoring endpoints, upgrade/rollback procedure.
+
 ### Added — Gateway device pairing (OpenClaw/Hermes-style approval flow)
 
 - **`DevicePairingStore`** (`src/gateway/device-pairing.ts`) — transport-agnostic
