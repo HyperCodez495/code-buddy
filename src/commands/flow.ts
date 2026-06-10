@@ -9,8 +9,7 @@
  */
 
 import { Command } from 'commander';
-import { getSettingsManager } from '../utils/settings-manager.js';
-import { PROVIDERS } from './provider.js';
+import { resolveCommandProvider } from './llm-provider-resolution.js';
 
 function extractContent(response: { choices: Array<{ message: { content: string | null } }> }): string {
   return response.choices?.[0]?.message?.content || '';
@@ -23,17 +22,16 @@ export function createFlowCommand(): Command {
     .option('--max-retries <n>', 'Max retries per failed step', '1')
     .option('--default-agent <key>', 'Default agent key', 'default')
     .option('--verbose', 'Show step-by-step progress', false)
-    .action(async (goal: string, options) => {
-      const settingsManager = getSettingsManager();
-      const userSettings = settingsManager.loadUserSettings();
-      const currentProviderKey = userSettings.provider || 'grok';
-      const providerInfo = PROVIDERS[currentProviderKey];
-
-      let apiKey = process.env[providerInfo?.envVar || ''] || '';
-      if (!apiKey) apiKey = process.env.GROK_API_KEY || process.env.ANTHROPIC_API_KEY || process.env.OPENAI_API_KEY || '';
-
-      if (!apiKey) {
-        console.error('Error: No API key configured. Run: buddy onboard');
+    .option('-m, --model <model>', 'Override the model for this flow run')
+    .action(async (goal: string, options, command) => {
+      // The root program also declares a global `-m, --model`; depending on
+      // argv order Commander can bind it there — merge so either wins.
+      const modelOverride: string | undefined = options.model ?? command?.optsWithGlobals?.()?.model;
+      const resolved = resolveCommandProvider({ explicitModel: modelOverride });
+      if (!resolved) {
+        console.error(
+          'Error: No provider available — set an API key, run `buddy onboard`, or point CODEBUDDY_PROVIDER=ollama at a local Ollama.',
+        );
         process.exit(1);
       }
 
@@ -43,8 +41,7 @@ export function createFlowCommand(): Command {
         const { PlanningFlow } = await import('../agent/flow/planning-flow.js');
         const { CodeBuddyClient } = await import('../codebuddy/client.js');
 
-        const model = settingsManager.getCurrentModel() || providerInfo?.defaultModel;
-        const client = new CodeBuddyClient(apiKey, model, providerInfo?.baseURL);
+        const client = new CodeBuddyClient(resolved.apiKey, resolved.model, resolved.baseURL);
 
         // Plan with LLM function
         const planWithLLM = async (prompt: string): Promise<string> => {
