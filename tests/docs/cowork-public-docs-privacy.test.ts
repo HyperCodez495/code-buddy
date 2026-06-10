@@ -126,16 +126,29 @@ function jpegDimensions(bytes: Buffer): { height: number; width: number } {
   throw new Error('Unable to read JPEG dimensions');
 }
 
+// Deliberately cropped proof strips: full-width but short captures whose
+// whole point is the single row they show. Reviewed individually — exempt
+// from the minimum-height legibility rule, every other rule still applies.
+const reviewedShortProofStrips = new Set([
+  'qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png',
+]);
+
 function expectReviewedImagePath(filePath: string, label: string): void {
   const bytes = fs.readFileSync(filePath);
   const extension = path.extname(filePath).toLowerCase();
 
   expect(bytes.length, label).toBeGreaterThan(10_000);
 
+  const minHeight = reviewedShortProofStrips.has(
+    path.relative(repoRoot, filePath).replace(/\\/g, '/').replace(/^docs\//, '')
+  )
+    ? 120
+    : 240;
+
   if (extension === '.png') {
     expect(bytes.subarray(0, pngSignature.length).equals(pngSignature), label).toBe(true);
     expect(bytes.readUInt32BE(16), label).toBeGreaterThanOrEqual(400);
-    expect(bytes.readUInt32BE(20), label).toBeGreaterThanOrEqual(240);
+    expect(bytes.readUInt32BE(20), label).toBeGreaterThanOrEqual(minHeight);
     return;
   }
 
@@ -200,7 +213,7 @@ describe('Cowork public QA documentation privacy', () => {
     expect(publicCoworkText).toContain('### Publication Hardening');
     expect(publicCoworkText).toContain('raw GPT-5.5');
     expect(publicCoworkText).not.toContain('No functional bug was found in this pass');
-    expect(publicCoworkText).toContain('## Screenshot And Privacy Policy');
+    expect(publicCoworkText).toContain('## Screenshot And Video Privacy Policy');
   });
 
   it('links only reviewed, valid image screenshots from the public Cowork overview', () => {
@@ -210,6 +223,8 @@ describe('Cowork public QA documentation privacy', () => {
     expect(targets).toEqual([
       'qa/code-buddy-studio/screenshots/01-home-work-surface.jpg',
       'qa/code-buddy-studio/screenshots/30-test-runner-window.png',
+      'qa/code-buddy-studio/screenshots/110-test-runner-autonomous-progress.png',
+      'qa/code-buddy-studio/screenshots/111-companion-openclaw-bridge.png',
       'qa/code-buddy-studio/screenshots/109-test-runner-hermes-built-cli-real.png',
       'qa/code-buddy-studio/screenshots/41-permission-dialog-real-flow.png',
       'qa/code-buddy-studio/screenshots/public-real-gpt55-cowork-chat.png',
@@ -255,7 +270,7 @@ describe('Cowork public QA documentation privacy', () => {
   it('keeps every tracked public Cowork screenshot file valid for publication', () => {
     const files = trackedPublicCoworkScreenshotFiles();
 
-    expect(files).toHaveLength(109);
+    expect(files).toHaveLength(111);
 
     for (const file of files) {
       expect(file.startsWith(publicCoworkScreenshotDir), file).toBe(true);
@@ -290,13 +305,15 @@ describe('Cowork public QA documentation privacy', () => {
       }
     }
 
+    // The rebranded cowork/readme.md dropped the upstream Open Cowork
+    // assets (resources/logo.png, README_zh.md, WeChat.jpg) — pin the
+    // durable Code Buddy Cowork anchors instead.
     expect(localFileTargets(fs.readFileSync(coworkReadme, 'utf8'))).toEqual(
       expect.arrayContaining([
-        'resources/logo.png',
-        './README_zh.md',
         '../docs/cowork.md',
         './RUNNER_AUDIT.md',
-        'resources/WeChat.jpg',
+        './ARCHITECTURE.md',
+        './DEV-LINUX.md',
       ])
     );
   });

@@ -77,9 +77,36 @@ async function startOpenClawWebSocketContractServer(): Promise<{
   const frames: unknown[] = [];
   const server = new WebSocketServer({ host: '127.0.0.1', port: 0 });
   server.on('connection', (socket) => {
+    // The 2026.6.x gateway opens with a connect.challenge event and the
+    // bridge client (a7354b11 paired-device auth) only sends its connect
+    // req after receiving it — without this frame the handshake deadlocks.
+    socket.send(JSON.stringify({
+      type: 'event',
+      event: 'connect.challenge',
+      payload: { nonce: 'fixture-nonce-1' },
+    }));
     socket.on('message', (data) => {
       const frame = JSON.parse(data.toString('utf8')) as Record<string, unknown>;
       frames.push(frame);
+      // Paired-device WS auth (a7354b11) sends connect as a req frame and
+      // reads the hello payload from the matching res; the bare `connect`
+      // branch below keeps the legacy pre-auth wire shape covered too.
+      if (frame.type === 'req' && frame.method === 'connect') {
+        socket.send(JSON.stringify({
+          type: 'res',
+          id: frame.id,
+          ok: true,
+          payload: {
+            type: 'hello-ok',
+            gatewayId: 'openclaw-ws-contract-gateway',
+            uptimeMs: 1234,
+            features: {
+              methods: ['status', 'logs.tail', 'nodes.pending', 'nodes.approve', 'nodes.reject'],
+            },
+          },
+        }));
+        return;
+      }
       if (frame.type === 'connect') {
         socket.send(JSON.stringify({
           type: 'hello-ok',
@@ -114,7 +141,7 @@ async function startOpenClawWebSocketContractServer(): Promise<{
         }));
         return;
       }
-      if (frame.type === 'req' && frame.method === 'nodes.pending') {
+      if (frame.type === 'req' && (frame.method === 'nodes.pending' || frame.method === 'node.pair.list')) {
         socket.send(JSON.stringify({
           type: 'res',
           id: frame.id,
@@ -132,7 +159,7 @@ async function startOpenClawWebSocketContractServer(): Promise<{
         }));
         return;
       }
-      if (frame.type === 'req' && frame.method === 'nodes.approve') {
+      if (frame.type === 'req' && (frame.method === 'nodes.approve' || frame.method === 'node.pair.approve')) {
         const params = frame.params && typeof frame.params === 'object'
           ? frame.params as Record<string, unknown>
           : {};
@@ -149,7 +176,7 @@ async function startOpenClawWebSocketContractServer(): Promise<{
         }));
         return;
       }
-      if (frame.type === 'req' && frame.method === 'nodes.reject') {
+      if (frame.type === 'req' && (frame.method === 'nodes.reject' || frame.method === 'node.pair.reject')) {
         const params = frame.params && typeof frame.params === 'object'
           ? frame.params as Record<string, unknown>
           : {};
@@ -616,7 +643,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
           uptimeMs: 1234,
           methodCount: 5,
           methodSample: ['logs.tail', 'nodes.approve', 'nodes.pending', 'nodes.reject', 'status'],
-          frameTypes: ['hello-ok', 'res'],
+          frameTypes: ['event', 'res', 'res'],
         },
         safety: {
           tokenPresent: true,
@@ -627,9 +654,12 @@ describe('OpenClaw gateway bridge compatibility', () => {
       });
       expect(server.frames).toHaveLength(2);
       expect(server.frames[0]).toMatchObject({
-        type: 'connect',
-        auth: {
-          token: 'oc_ws_contract_secret_fixture',
+        type: 'req',
+        method: 'connect',
+        params: {
+          auth: {
+            token: 'oc_ws_contract_secret_fixture',
+          },
         },
       });
       expect(server.frames[1]).toMatchObject({
@@ -726,7 +756,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
         response: {
           helloOk: true,
           rpcOk: true,
-          frameTypes: ['hello-ok', 'res'],
+          frameTypes: ['event', 'res', 'res'],
         },
         safety: {
           tokenPresent: true,
@@ -737,8 +767,11 @@ describe('OpenClaw gateway bridge compatibility', () => {
       });
       expect(server.frames).toHaveLength(2);
       expect(server.frames[0]).toMatchObject({
-        type: 'connect',
-        auth: { token: 'oc_ws_call_secret_fixture' },
+        type: 'req',
+        method: 'connect',
+        params: {
+          auth: { token: 'oc_ws_call_secret_fixture' },
+        },
       });
       expect(server.frames[1]).toMatchObject({
         type: 'req',
@@ -788,7 +821,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
         id: 'ws-nodes-pending-1',
         status: 'called',
         request: {
-          method: 'nodes.pending',
+          method: 'node.pair.list',
           paramKeys: [],
         },
         response: {
@@ -845,7 +878,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
         id: 'ws-node-approve-1',
         status: 'called',
         request: {
-          method: 'nodes.approve',
+          method: 'node.pair.approve',
           paramKeys: ['code'],
         },
         response: {
@@ -860,7 +893,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
       expect(server.frames[1]).toMatchObject({
         type: 'req',
         id: 'ws-node-approve-1',
-        method: 'nodes.approve',
+        method: 'node.pair.approve',
         params: {
           code: 'CLI-PAIRING-CODE-SECRET',
         },
@@ -907,7 +940,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
         id: 'ws-node-reject-1',
         status: 'called',
         request: {
-          method: 'nodes.reject',
+          method: 'node.pair.reject',
           paramKeys: ['code', 'reason'],
         },
         response: {
@@ -922,7 +955,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
       expect(server.frames[1]).toMatchObject({
         type: 'req',
         id: 'ws-node-reject-1',
-        method: 'nodes.reject',
+        method: 'node.pair.reject',
         params: {
           code: 'CLI-REJECT-CODE-SECRET',
           reason: 'reject because untrusted fixture secret',
@@ -1006,7 +1039,7 @@ describe('OpenClaw gateway bridge compatibility', () => {
         version: 'fixture-1',
       });
       expect(result.probe?.record.status).toBe('connected');
-      expect(result.pendingNodes?.record.request.method).toBe('nodes.pending');
+      expect(result.pendingNodes?.record.request.method).toBe('node.pair.list');
       expect(JSON.stringify(result)).not.toContain('oc_upstream_validation_gateway_secret');
       expect(JSON.stringify(result)).not.toContain('oc_upstream_validation_node_secret');
       expect(JSON.stringify(result)).not.toContain('PAIR-SECRET-123');

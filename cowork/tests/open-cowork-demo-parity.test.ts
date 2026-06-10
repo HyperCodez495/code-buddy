@@ -1,32 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import path from 'node:path';
 
 const coworkRoot = process.cwd();
 const repoRoot = path.resolve(coworkRoot, '..');
 
-const demoVideos = [
-  {
-    heading: 'Folder Organization & Cleanup',
-    url: 'https://github.com/user-attachments/assets/dbeb0337-2d19-4b5d-a438-5220f2a87ca7',
-  },
-  {
-    heading: 'Generate PPT from Files',
-    url: 'https://github.com/user-attachments/assets/30299ded-0260-468f-b11d-d282bb9c97f2',
-  },
-  {
-    heading: 'Generate XLSX Spreadsheets',
-    url: 'https://github.com/user-attachments/assets/f57b9106-4b2c-4747-aecd-a07f78af5dfc',
-  },
-  {
-    heading: 'GUI Operation',
-    url: 'https://github.com/user-attachments/assets/75542c76-210f-414d-8182-1da988c148f2',
-  },
-  {
-    heading: 'Remote control with Feishu',
-    url: 'https://github.com/user-attachments/assets/05a703de-c0f5-407b-9a43-18b6a172fd74',
-  },
-];
+// The demo section now showcases captures recorded from this build, all
+// living under docs/qa/code-buddy-studio/ (no external user-attachments
+// uploads since the readme rebranding).
+const studioMediaPrefix = '../docs/qa/code-buddy-studio/';
 
 const publicMediaSecretPatterns: Array<{ label: string; pattern: RegExp }> = [
   { label: 'GitHub token', pattern: /\b(?:ghp|gho|ghu|ghs|ghr)_[A-Za-z0-9_]{20,}\b/g },
@@ -45,24 +27,34 @@ function readRepoFile(...segments: string[]): string {
 
 function readmeDemoSection(readme: string): string {
   const start = readme.indexOf('## 🎬 Demo');
-  const end = readme.indexOf('<a id="installation">');
+  const end = readme.indexOf('<a id="install">');
   expect(start).toBeGreaterThanOrEqual(0);
   expect(end).toBeGreaterThan(start);
   return readme.slice(start, end);
 }
 
 describe('Open Cowork demo parity', () => {
-  it('keeps every public demo video listed with an explicit media privacy note', () => {
+  it('keeps every public demo asset repo-local under the studio QA folder, with a privacy note', () => {
     const readme = readRepoFile('cowork', 'readme.md');
+    const demoSection = readmeDemoSection(readme);
 
-    for (const video of demoVideos) {
-      expect(readme).toContain(video.heading);
-      expect(readme).toContain(video.url);
+    // Every demo asset is a capture recorded from this build — never an
+    // external upload we can't re-review for leaked credentials.
+    const mediaRefs = Array.from(
+      demoSection.matchAll(/(?:src|href)="([^"]+\.(?:gif|mp4|jpg|png))"/g),
+      (match) => match[1]
+    );
+    expect(mediaRefs.length).toBeGreaterThanOrEqual(10);
+    for (const ref of mediaRefs) {
+      expect(ref.startsWith(studioMediaPrefix)).toBe(true);
+      // The referenced media actually ships in the repo
+      expect(existsSync(path.join(coworkRoot, ref))).toBe(true);
     }
 
-    expect(readme).toContain('Public media review');
-    expect(readme).toContain('access tokens');
-    expect(readme).toContain('OAuth callback URLs');
+    // The media privacy policy survived the readme rebranding
+    expect(demoSection).toContain('tokens');
+    expect(demoSection).toContain('OAuth callback URLs');
+    expect(demoSection).toContain('media privacy rules');
     expect(readme).toContain('workspace-organizer');
   });
 

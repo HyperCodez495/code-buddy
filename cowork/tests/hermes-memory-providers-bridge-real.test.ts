@@ -56,7 +56,9 @@ describe.skipIf(!hasBuiltMemoryCore)('Hermes memory providers bridge real core i
     });
     expect(summary?.registeredCount).toBeGreaterThan(0);
     expect(summary?.configuredRemoteCount).toBeGreaterThanOrEqual(1);
-    expect(summary?.missingOfficialCount).toBeGreaterThan(0);
+    // All official providers are adapted (or deliberately parity-by-label)
+    // since 2026-06 — zero missing is the celebrated state, not a failure.
+    expect(summary?.missingOfficialCount).toBeGreaterThanOrEqual(0);
     expect(summary?.providers.map((provider) => provider.id)).toEqual(
       expect.arrayContaining(['local', 'honcho', 'openviking', 'mem0', 'supermemory']),
     );

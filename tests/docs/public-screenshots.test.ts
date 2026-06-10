@@ -145,6 +145,15 @@ function expectValidPublicImage(sourceFile: string, target: string): void {
     return;
   }
 
+  if (extension === '.gif') {
+    // Animated demo captures (GIF87a/GIF89a) — width/height live in the
+    // logical screen descriptor, little-endian at offsets 6 and 8.
+    expect(bytes.subarray(0, 3).toString('ascii'), label).toBe('GIF');
+    expect(bytes.readUInt16LE(6), label).toBeGreaterThanOrEqual(32);
+    expect(bytes.readUInt16LE(8), label).toBeGreaterThanOrEqual(24);
+    return;
+  }
+
   throw new Error(`Unsupported public screenshot extension: ${label}`);
 }
 
@@ -181,7 +190,7 @@ describe('public README screenshots', () => {
     }
 
     expect(targetsByFile.get(path.join(repoRoot, 'README.md'))?.length).toBeGreaterThan(30);
-    expect(targetsByFile.get(path.join(repoRoot, 'docs', 'screenshots', 'README.md'))).toHaveLength(14);
+    expect(targetsByFile.get(path.join(repoRoot, 'docs', 'screenshots', 'README.md'))).toHaveLength(18);
   });
 
   it('keeps GitHub-visible README anchor links resolvable', () => {
@@ -197,7 +206,7 @@ describe('public README screenshots', () => {
       }
     }
 
-    expect(anchorCountsByFile.get(path.join(repoRoot, 'README.md'))).toBe(5);
+    expect(anchorCountsByFile.get(path.join(repoRoot, 'README.md'))).toBe(8);
     expect(anchorCountsByFile.get(path.join(repoRoot, 'cowork', 'readme.md'))).toBe(6);
   });
 
@@ -225,8 +234,8 @@ describe('public README screenshots', () => {
       }
     }
 
-    expect(targetsByFile.get(path.join(repoRoot, 'README.md'))).toHaveLength(3);
-    expect(targetsByFile.get(screenshotGalleryReadme)).toHaveLength(14);
+    expect(targetsByFile.get(path.join(repoRoot, 'README.md'))).toHaveLength(6);
+    expect(targetsByFile.get(screenshotGalleryReadme)).toHaveLength(15);
   });
 
   it('keeps every tracked screenshot gallery image listed in the gallery README', () => {
@@ -235,6 +244,11 @@ describe('public README screenshots', () => {
       .sort();
     const readmeTargets = localImageTargets(fs.readFileSync(screenshotGalleryReadme, 'utf8'))
       .map(normalizedGalleryTarget)
+      // The gallery may also showcase studio captures living outside
+      // docs/screenshots (../qa/...) — the listed⊆tracked invariant only
+      // applies to gallery-local images; cross-folder refs are validated
+      // by the resolvable-links test above.
+      .filter((target) => !target.startsWith('../'))
       .sort();
 
     expect(trackedTargets).toHaveLength(14);

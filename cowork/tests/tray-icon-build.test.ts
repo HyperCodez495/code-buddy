@@ -26,10 +26,21 @@ describe('tray icon build helper', () => {
     expect(winSection).not.toContain('resources/tray-icon.png');
   });
 
-  it('does not package absent built-in skills as mandatory extraResources', () => {
+  it('packages built-in skills only when they actually ship in the repo', () => {
     const builderConfig = fs.readFileSync(builderConfigPath, 'utf8');
 
-    expect(builderConfig).not.toContain('.claude/skills');
+    // Bundled Agent Skills became a feature (commit 412f6db2): referencing
+    // .claude/skills in extraResources is fine as long as the directory
+    // really exists with SKILL.md entries — referencing an absent folder is
+    // what used to break Windows packaging.
+    if (builderConfig.includes('.claude/skills')) {
+      const skillsRoot = path.resolve(process.cwd(), '.claude/skills');
+      expect(fs.existsSync(skillsRoot)).toBe(true);
+      const skillDirs = fs
+        .readdirSync(skillsRoot)
+        .filter((entry) => fs.existsSync(path.join(skillsRoot, entry, 'SKILL.md')));
+      expect(skillDirs.length).toBeGreaterThanOrEqual(5);
+    }
   });
 
   it('does not ask electron-builder to rebuild optional native accelerators', () => {

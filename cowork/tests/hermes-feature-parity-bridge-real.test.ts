@@ -31,7 +31,11 @@ describe.skipIf(!hasBuiltParityCore)('Hermes feature parity bridge real core int
       source: 'https://github.com/NousResearch/hermes-agent',
     });
     expect(summary?.summary.total).toBeGreaterThanOrEqual(20);
-    expect(summary?.summary.gaps).toBeGreaterThanOrEqual(1);
+    // Parity reached 0 hard gaps on 2026-06 — assert the summary stays
+    // internally coherent instead of requiring a gap to exist forever.
+    expect(summary?.summary.gaps).toBeGreaterThanOrEqual(0);
+    const counts = summary!.summary;
+    expect(counts.covered + counts.coveredPartial + counts.partial + counts.gaps).toBe(counts.total);
     expect(summary?.topWork.map((feature) => feature.id)).not.toContain('openclaw-migration');
     expect(summary?.deferredWork.map((feature) => feature.id)).toContain('openclaw-migration');
     expect(summary?.topWork.some((feature) => feature.verificationCommands.length > 0)).toBe(true);
