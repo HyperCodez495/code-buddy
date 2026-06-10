@@ -16,6 +16,29 @@ central Policy Engine + PII lint (WS5). See
 `claude-et-patrice/propositions/` and the V1.x roadmap section of
 [`docs/fleet-guide.md`](docs/fleet-guide.md).
 
+### Added — WS3 « Mémoire & continuité du run » (2026-06-10)
+
+The continuity workstream from the modernization plan, V1.1's first lot:
+
+- **Session-end flush (WS3-T1)** — at session end Code Buddy writes
+  `.codebuddy/HANDOFF.md` (last goal/state, files touched, heuristic
+  open-risks list, resume pointers — sync-safe for exit handlers) and
+  proposes review-gated lesson candidates from the transcript (approval
+  stays human; approved lessons are re-injected per turn). Feature flag
+  `SESSION_END_FLUSH` (default on), wired in dispose, headless (15 s
+  cap) and interactive SIGINT/SIGTERM paths.
+- **Periodic context snapshot (WS3-T2)** — `ContextManagerV2` snapshots
+  long sessions every `CODEBUDDY_SNAPSHOT_INTERVAL_MIN` (45 min default)
+  to `.codebuddy/context-snapshot.json` + `context_snapshot` run event.
+- **Pause suggestion (WS3-T3)** — `SessionDurationMiddleware` (priority
+  35): past `CODEBUDDY_SESSION_PAUSE_HOURS` (12 h default) it takes a
+  fresh snapshot and suggests a clean pause + `buddy --continue`
+  (warn-only, hourly cadence, `pause_suggested` run event).
+- **Shared guard-rail** — new `redactSecrets()` in `fleet/privacy-lint`:
+  every WS3 memory write is privacy-linted on full text *before*
+  truncation; the lesson auto-proposer now drops candidates containing
+  secret/PII material.
+
 ### Fixed — 1.0.0 validation campaign follow-ups (2026-06-10)
 
 - **MCP stdio servers no longer leak stderr into the CLI** (`9a57b3d0`)
