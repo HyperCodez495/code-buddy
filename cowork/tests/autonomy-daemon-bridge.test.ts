@@ -5,6 +5,7 @@ import {
   controlAutonomyServiceForReview,
   getAutonomyDaemonStatusForReview,
   getAutonomyModelTierForReview,
+  getAutonomyServiceLogsForReview,
   installAutonomyServiceForReview,
   uninstallAutonomyServiceForReview,
 } from '../src/main/autonomy/autonomy-daemon-bridge';
@@ -219,5 +220,91 @@ describe('autonomy model tier', () => {
     expect(review.ok).toBe(true);
     expect(review.ladder).toHaveLength(2);
     expect(review.ladder[1]).toMatchObject({ tier: 'escalated', configured: false, paid: true });
+  });
+});
+
+describe('autonomy service logs', () => {
+  async function withPlatform(platform: string, fn: () => Promise<void>): Promise<void> {
+    const original = Object.getOwnPropertyDescriptor(process, 'platform')!;
+    Object.defineProperty(process, 'platform', { value: platform, configurable: true });
+    try {
+      await fn();
+    } finally {
+      Object.defineProperty(process, 'platform', original);
+    }
+  }
+
+  it('tails the systemd user unit through journalctl on Linux', async () => {
+    await withPlatform('linux', async () => {
+      const calls: Array<{ file: string; args: string[] }> = [];
+      const exec = (
+        file: string,
+        args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        calls.push({ file, args });
+        callback(null, '2026-06-10T07:00:00 tick claimed task-1\n2026-06-10T07:00:03 tick completed\n\n', '');
+        return undefined;
+      };
+
+      const review = await getAutonomyServiceLogsForReview(50, exec as never);
+
+      expect(review.ok).toBe(true);
+      expect(review.source).toContain('journalctl');
+      expect(review.lines).toHaveLength(2);
+      expect(calls[0].file).toBe('journalctl');
+      expect(calls[0].args).toEqual(
+        expect.arrayContaining(['--user', '-u', AUTONOMY_SERVICE_NAME, '-n', '50'])
+      );
+    });
+  });
+
+  it('clamps absurd line counts to 1000', async () => {
+    await withPlatform('linux', async () => {
+      const calls: Array<{ args: string[] }> = [];
+      const exec = (
+        _file: string,
+        args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        calls.push({ args });
+        callback(null, '', '');
+        return undefined;
+      };
+
+      await getAutonomyServiceLogsForReview(999999, exec as never);
+
+      expect(calls[0].args).toEqual(expect.arrayContaining(['-n', '1000']));
+    });
+  });
+
+  it('is honest on non-Linux platforms: no fake tail, just the inspection command', async () => {
+    await withPlatform('darwin', async () => {
+      const review = await getAutonomyServiceLogsForReview(50);
+
+      expect(review.ok).toBe(false);
+      expect(review.error).toContain('launchctl');
+    });
+  });
+
+  it('surfaces journalctl failures', async () => {
+    await withPlatform('linux', async () => {
+      const exec = (
+        _file: string,
+        _args: string[],
+        _options: unknown,
+        callback: (error: Error | null, stdout: string, stderr: string) => void,
+      ) => {
+        callback(new Error('journalctl: command not found'), '', '');
+        return undefined;
+      };
+
+      const review = await getAutonomyServiceLogsForReview(50, exec as never);
+
+      expect(review.ok).toBe(false);
+      expect(review.error).toContain('journalctl');
+    });
   });
 });

@@ -212,6 +212,7 @@ import {
   uninstallAutonomyServiceForReview,
   runAutonomyTickForReview,
   getAutonomyModelTierForReview,
+  getAutonomyServiceLogsForReview,
 } from './autonomy/autonomy-daemon-bridge';
 import {
   addColabTaskForReview,
@@ -2702,6 +2703,12 @@ ipcMain.handle('autonomy.serviceUninstall', async () => uninstallAutonomyService
 ipcMain.handle('autonomy.runTick', async (_event, dir?: string) => runAutonomyTickForReview(dir));
 
 ipcMain.handle('autonomy.modelTier', async () => getAutonomyModelTierForReview());
+
+// Tail the systemd user unit's logs (Linux; other platforms get the
+// inspection command instead). See getAutonomyServiceLogsForReview.
+ipcMain.handle('autonomy.serviceLogs', async (_event, lines?: number) =>
+  getAutonomyServiceLogsForReview(lines)
+);
 
 // ── Autonomy: colab board mutations (the kanban's write half) ────────────
 // add/claim/complete/block/release + expired-claim sweep go through the core

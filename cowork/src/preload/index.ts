@@ -3867,6 +3867,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }>;
       currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
     }> => ipcRenderer.invoke('autonomy.modelTier'),
+    // Tail the always-on service's logs (Linux journalctl; other
+    // platforms return the inspection command in `error`).
+    serviceLogs: (
+      lines?: number
+    ): Promise<{ ok: boolean; error?: string; source?: string; lines?: string[] }> =>
+      ipcRenderer.invoke('autonomy.serviceLogs', lines),
     // Colab board mutations — the kanban's write half (add/claim/complete/
     // block/release + expired-claim sweep), via the core FleetColabStore.
     taskAdd: (input: {
@@ -7323,6 +7329,9 @@ declare global {
           }>;
           currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
         }>;
+        serviceLogs: (
+          lines?: number
+        ) => Promise<{ ok: boolean; error?: string; source?: string; lines?: string[] }>;
         taskAdd: (input: {
           title: string;
           description?: string;

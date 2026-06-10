@@ -397,6 +397,56 @@ function extractJsonObject(raw: string): unknown | null {
   }
 }
 
+export interface AutonomyServiceLogsReview {
+  ok: boolean;
+  error?: string;
+  /** Where the lines came from (e.g. `journalctl --user`). */
+  source?: string;
+  lines?: string[];
+}
+
+type ExecLike = (
+  file: string,
+  args: string[],
+  options: { timeout: number; maxBuffer: number },
+  callback: (error: Error | null, stdout: string, stderr: string) => void,
+) => unknown;
+
+/**
+ * Tail the always-on service's logs. Linux only for now (systemd user
+ * unit via `journalctl --user`); other platforms get an honest error
+ * with the platform's own inspection command instead of a fake tail.
+ */
+export async function getAutonomyServiceLogsForReview(
+  lineCount = 100,
+  execImpl: ExecLike = execFile as unknown as ExecLike,
+): Promise<AutonomyServiceLogsReview> {
+  const count = Number.isFinite(lineCount) && lineCount > 0 ? Math.min(Math.floor(lineCount), 1000) : 100;
+  if (process.platform !== 'linux') {
+    return {
+      ok: false,
+      error: `Log tailing is wired for systemd (Linux) only — inspect with: ${manageCommandFor(process.platform)}`,
+    };
+  }
+  try {
+    const stdout = await new Promise<string>((resolve, reject) => {
+      execImpl(
+        'journalctl',
+        ['--user', '-u', AUTONOMY_SERVICE_NAME, '-n', String(count), '--no-pager', '-o', 'short-iso'],
+        { timeout: 10_000, maxBuffer: 4 * 1024 * 1024 },
+        (error, out, errOut) => {
+          if (error) reject(new Error(`${error.message}${errOut ? `\n${errOut.slice(0, 500)}` : ''}`));
+          else resolve(out);
+        },
+      );
+    });
+    const lines = stdout.split('\n').filter((line) => line.trim().length > 0);
+    return { ok: true, source: `journalctl --user -u ${AUTONOMY_SERVICE_NAME}`, lines };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
 export async function getAutonomyModelTierForReview(): Promise<AutonomyModelTierReview> {
   try {
     const mod = await loadCoreModule<CoreModelTierModule>('agent/model-tier.js');

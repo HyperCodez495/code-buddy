@@ -33,6 +33,7 @@ import {
   Trash2,
   Plus,
   Check,
+  ScrollText,
 } from 'lucide-react';
 
 interface ColabTaskView {
@@ -128,6 +129,16 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
   const [pendingText, setPendingText] = useState<{ taskId: string; kind: 'complete' | 'block'; text: string } | null>(
     null
   );
+  const [showLogs, setShowLogs] = useState(false);
+  const [logs, setLogs] = useState<{ source?: string; lines: string[] } | null>(null);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [showInstallOptions, setShowInstallOptions] = useState(false);
+  const [installModel, setInstallModel] = useState('');
+  const [installOllamaUrl, setInstallOllamaUrl] = useState('');
+  const [installIntervalMs, setInstallIntervalMs] = useState('');
+  const [installExecutor, setInstallExecutor] = useState<'artifact' | 'agent'>('artifact');
+  const [installWorkspace, setInstallWorkspace] = useState('');
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -222,6 +233,39 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
       kind === 'complete' ? api.autonomy.taskComplete(taskId, text) : api.autonomy.taskBlock(taskId, text)
     );
     if (ok) setPendingText(null);
+  };
+
+  const loadLogs = async () => {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const result = await api.autonomy.serviceLogs(120);
+      if (result.ok) {
+        setLogs({ ...(result.source ? { source: result.source } : {}), lines: result.lines ?? [] });
+      } else {
+        setLogs(null);
+        setLogsError(result.error ?? 'logs unavailable');
+      }
+    } catch (err) {
+      setLogsError(String(err));
+    } finally {
+      setLogsLoading(false);
+    }
+  };
+
+  const submitCustomInstall = async () => {
+    const interval = Number.parseInt(installIntervalMs, 10);
+    await runDaemonAction('install-custom', () =>
+      api.autonomy.serviceInstall({
+        ...(installModel.trim() ? { model: installModel.trim() } : {}),
+        ...(installOllamaUrl.trim() ? { ollamaUrl: installOllamaUrl.trim() } : {}),
+        ...(Number.isFinite(interval) && interval > 0 ? { intervalMs: interval } : {}),
+        executor: installExecutor,
+        ...(installExecutor === 'agent' && installWorkspace.trim()
+          ? { workspace: installWorkspace.trim() }
+          : {}),
+      })
+    );
   };
 
   return (
@@ -323,19 +367,30 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
                 </>
               )}
               {service && !service.installed && (
-                <button
-                  onClick={() => void runDaemonAction('install', () => api.autonomy.serviceInstall())}
-                  disabled={busyAction !== null}
-                  className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
-                  title={t(
-                    'autonomy.installHint',
-                    'Installs the always-on service (artifact executor: no repo edits, local $0 model)'
-                  )}
-                  data-testid="autonomy-daemon-install"
-                >
-                  {busyAction === 'install' ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
-                  {t('autonomy.install', 'Install service')}
-                </button>
+                <>
+                  <button
+                    onClick={() => void runDaemonAction('install', () => api.autonomy.serviceInstall())}
+                    disabled={busyAction !== null}
+                    className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
+                    title={t(
+                      'autonomy.installHint',
+                      'Installs the always-on service (artifact executor: no repo edits, local $0 model)'
+                    )}
+                    data-testid="autonomy-daemon-install"
+                  >
+                    {busyAction === 'install' ? <Loader2 size={11} className="animate-spin" /> : <Download size={11} />}
+                    {t('autonomy.install', 'Install service')}
+                  </button>
+                  <button
+                    onClick={() => setShowInstallOptions((v) => !v)}
+                    disabled={busyAction !== null}
+                    className="px-2 py-1 rounded border border-border-muted text-text-muted hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
+                    title={t('autonomy.installOptionsHint', 'Install with a custom model, Ollama URL, interval or executor')}
+                    data-testid="autonomy-daemon-install-options-toggle"
+                  >
+                    {t('autonomy.installOptions', 'Options')}
+                  </button>
+                </>
               )}
               <button
                 onClick={() =>
@@ -355,6 +410,21 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
               </button>
               {service?.installed && (
                 <button
+                  onClick={() => {
+                    const next = !showLogs;
+                    setShowLogs(next);
+                    if (next) void loadLogs();
+                  }}
+                  className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50"
+                  title={t('autonomy.logsHint', 'Tail the service logs (journalctl user unit)')}
+                  data-testid="autonomy-daemon-logs-toggle"
+                >
+                  {logsLoading ? <Loader2 size={11} className="animate-spin" /> : <ScrollText size={11} />}
+                  {t('autonomy.logs', 'Logs')}
+                </button>
+              )}
+              {service?.installed && (
+                <button
                   onClick={() => void runDaemonAction('uninstall', () => api.autonomy.serviceUninstall())}
                   disabled={busyAction !== null}
                   className="ml-auto flex items-center gap-1 px-2 py-1 rounded border border-border-muted text-text-muted hover:text-error hover:border-error/50 disabled:opacity-50"
@@ -365,6 +435,106 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
                 </button>
               )}
             </div>
+            {showInstallOptions && service && !service.installed && (
+              <form
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  void submitCustomInstall();
+                }}
+                className="space-y-1.5"
+                data-testid="autonomy-daemon-install-form"
+              >
+                <input
+                  value={installModel}
+                  onChange={(e) => setInstallModel(e.target.value)}
+                  placeholder={t('autonomy.installModel', 'Model (default qwen2.5:7b-instruct)')}
+                  className="w-full px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                  data-testid="autonomy-install-model"
+                />
+                <div className="flex items-center gap-1.5">
+                  <input
+                    value={installOllamaUrl}
+                    onChange={(e) => setInstallOllamaUrl(e.target.value)}
+                    placeholder={t('autonomy.installOllamaUrl', 'Ollama URL (default localhost:11434)')}
+                    className="flex-1 px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                    data-testid="autonomy-install-ollama-url"
+                  />
+                  <input
+                    value={installIntervalMs}
+                    onChange={(e) => setInstallIntervalMs(e.target.value)}
+                    placeholder={t('autonomy.installInterval', 'Interval ms')}
+                    className="w-24 px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                    data-testid="autonomy-install-interval"
+                  />
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <select
+                    value={installExecutor}
+                    onChange={(e) => setInstallExecutor(e.target.value as 'artifact' | 'agent')}
+                    className="px-2 py-1 rounded bg-background border border-border text-text-secondary"
+                    title={t(
+                      'autonomy.installExecutorHint',
+                      'artifact = scoped outputs, never edits a repo. agent = real headless agent, requires an explicit workspace (fail-closed).'
+                    )}
+                    data-testid="autonomy-install-executor"
+                  >
+                    <option value="artifact">artifact</option>
+                    <option value="agent">agent</option>
+                  </select>
+                  {installExecutor === 'agent' && (
+                    <input
+                      value={installWorkspace}
+                      onChange={(e) => setInstallWorkspace(e.target.value)}
+                      placeholder={t('autonomy.installWorkspace', 'Workspace dir (required)')}
+                      className="flex-1 px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                      data-testid="autonomy-install-workspace"
+                    />
+                  )}
+                  <button
+                    type="submit"
+                    disabled={busyAction !== null || (installExecutor === 'agent' && !installWorkspace.trim())}
+                    className="ml-auto flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
+                    data-testid="autonomy-daemon-install-custom"
+                  >
+                    {busyAction === 'install-custom' ? (
+                      <Loader2 size={11} className="animate-spin" />
+                    ) : (
+                      <Download size={11} />
+                    )}
+                    {t('autonomy.installWithOptions', 'Install with options')}
+                  </button>
+                </div>
+              </form>
+            )}
+            {showLogs && (
+              <div data-testid="autonomy-daemon-logs">
+                <div className="flex items-center gap-1.5 text-[10px] text-text-muted">
+                  <span className="font-mono truncate">{logs?.source ?? ''}</span>
+                  <button
+                    onClick={() => void loadLogs()}
+                    disabled={logsLoading}
+                    className="ml-auto p-1 hover:text-text-primary disabled:opacity-50"
+                    title={t('common.refresh', 'Refresh')}
+                    data-testid="autonomy-daemon-logs-refresh"
+                  >
+                    <RefreshCw size={10} className={logsLoading ? 'animate-spin' : ''} />
+                  </button>
+                </div>
+                {logsError && (
+                  <p className="text-[11px] text-error" data-testid="autonomy-daemon-logs-error">
+                    {logsError}
+                  </p>
+                )}
+                {logs && logs.lines.length > 0 && (
+                  <pre className="mt-1 max-h-48 overflow-y-auto whitespace-pre-wrap rounded bg-background border border-border-muted p-2 text-[10px] text-text-secondary">
+                    {logs.lines.join('\n')}
+                  </pre>
+                )}
+                {logs && logs.lines.length === 0 && (
+                  <p className="text-[10px] text-text-muted">{t('autonomy.noLogs', 'No log lines yet.')}</p>
+                )}
+              </div>
+            )}
             {actionError && (
               <p className="text-[11px] text-error" data-testid="autonomy-daemon-error">
                 {actionError}
