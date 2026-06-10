@@ -99,6 +99,14 @@ const DEFAULT_FEATURE_FLAGS: Record<string, FeatureFlag> = {
     envOverride: 'USER_MODEL_DIALECTIC_ON_SESSION_END',
   },
 
+  SESSION_END_FLUSH: {
+    name: 'SESSION_END_FLUSH',
+    enabled: true,
+    description: 'At session end, write a short handoff (.codebuddy/HANDOFF.md) and propose review-gated lesson candidates from the transcript (WS3-T1)',
+    category: 'ai',
+    envOverride: 'CODEBUDDY_SESSION_END_FLUSH',
+  },
+
   VOICE_CONTROL: {
     name: 'VOICE_CONTROL',
     enabled: false,

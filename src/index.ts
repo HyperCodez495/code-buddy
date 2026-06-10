@@ -867,6 +867,20 @@ async function processPromptHeadless(
     // Process the user message
     const chatEntries = await agent.processUserMessage(prompt);
 
+    // WS3-T1 — session-end flush (handoff + lesson candidates). Awaited with
+    // a hard cap so headless runs keep their continuity write without ever
+    // hanging the exit; trivial sessions no-op inside the module.
+    try {
+      const { runSessionEndFlush } = await import('./agent/session-end-flush.js');
+      const flushTimeoutMs = parseInt(process.env.CODEBUDDY_SESSION_END_FLUSH_TIMEOUT_MS || '15000', 10);
+      await Promise.race([
+        runSessionEndFlush({ chatHistory: chatEntries }),
+        new Promise<void>((resolve) => setTimeout(resolve, flushTimeoutMs).unref()),
+      ]);
+    } catch (e) {
+      logger.debug('Headless session-end flush skipped', { error: String(e) });
+    }
+
     // Log entries to interaction logger
     if (interactionLogger) {
       for (const entry of chatEntries) {
@@ -1913,12 +1927,33 @@ program
             tags: ['interactive'],
           });
           (agent as unknown as Record<string, unknown>).__interactionLogger = interactionLogger;
+          // WS3-T1 — pre-load the flush module so the sync `exit` handler
+          // can call it (ESM has no require; dynamic import is async).
+          const sessionEndFlush = await import('./agent/session-end-flush.js');
           const cleanup = () => {
             try { interactionLogger.endSession(); } catch (e) { logger.debug('Failed to end interaction logger session', { error: String(e) }); }
+            // `exit` handlers are sync-only: write at least the handoff
+            // (no LLM) so an interrupted session still leaves a resume
+            // point. The full async flush runs on SIGINT/SIGTERM below.
+            try {
+              sessionEndFlush.writeHandoffSync(agent.getChatHistory());
+            } catch { /* handoff is best-effort on hard exit */ }
+          };
+          const flushThenExit = () => {
+            cleanup();
+            void (async () => {
+              try {
+                await Promise.race([
+                  sessionEndFlush.runSessionEndFlush({ chatHistory: agent.getChatHistory() }),
+                  new Promise<void>((resolve) => setTimeout(resolve, 8000).unref()),
+                ]);
+              } catch { /* never block exit on the flush */ }
+              process.exit(0);
+            })();
           };
           process.on('exit', cleanup);
-          process.on('SIGINT', () => { cleanup(); process.exit(0); });
-          process.on('SIGTERM', () => { cleanup(); process.exit(0); });
+          process.on('SIGINT', flushThenExit);
+          process.on('SIGTERM', flushThenExit);
         } catch (err) {
           logger.warn('Failed to initialize interaction logger', { error: String(err) });
         }

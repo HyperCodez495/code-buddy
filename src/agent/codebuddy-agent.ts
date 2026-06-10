@@ -1844,6 +1844,21 @@ Look at the screenshot and find the element matching the user's intent. Output o
           });
       }
     }
+    // WS3-T1 — session-end flush: handoff + review-gated lesson candidates.
+    // Fire-and-forget like the dialectic above; callers that need the flush
+    // to complete before process exit await runSessionEndFlush directly.
+    {
+      const chatHistory = this.historyManager.getChatHistory();
+      if (chatHistory && chatHistory.length > 0) {
+        import('./session-end-flush.js')
+          .then(({ runSessionEndFlush }) =>
+            runSessionEndFlush({ chatHistory, client: this.codebuddyClient }),
+          )
+          .catch((err) => {
+            logger.debug('[session-end-flush] dispose-path flush failed', { error: String(err) });
+          });
+      }
+    }
     // Remove only the forwarding listeners we attached (not other listeners)
     const { start, success, failed, error } = this.repairListeners;
     if (start) {

@@ -20,6 +20,7 @@ import {
   getLessonCandidateQueue,
   type LessonCandidate,
 } from './lesson-candidate-queue.js';
+import { scanForSecrets } from '../fleet/privacy-lint.js';
 import { logger } from '../utils/logger.js';
 
 type Category = 'PATTERN' | 'RULE' | 'CONTEXT' | 'INSIGHT';
@@ -107,6 +108,15 @@ export async function proposeLessonsFromSession(
     const category = String(cand.category || '').toUpperCase() as Category;
     const content = (cand.content || '').trim();
     if (!content || !VALID.includes(category)) continue;
+    // WS3 guard-rail: never persist secrets/PII into memory — even into the
+    // review queue, where a reviewer could approve them into lessons.md.
+    const lint = scanForSecrets(`${content}\n${cand.context ?? ''}`);
+    if (lint.hasSecrets) {
+      logger.warn('[lesson-auto-proposer] candidate dropped: contains secret/PII material', {
+        kinds: lint.matches.map((m) => m.kind),
+      });
+      continue;
+    }
     try {
       const { candidate } = queue.propose({
         category,
