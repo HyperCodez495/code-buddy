@@ -340,7 +340,7 @@ Enable opt-in stream retry:
 export CODEBUDDY_STREAM_RETRY=1     # Exponential backoff, 4 attempts max
 buddy
 ```
-Trade-off: a retried stream restarts from the beginning, so you may see duplicated content across the retry boundary. Default-off in 1.0.0-rc.2 pending observation; will become default-on in 1.0.0 final after a week of clean opt-in usage.
+Trade-off: a retried stream restarts from the beginning, so you may see duplicated content across the retry boundary. Still opt-in as of 1.0.0.
 
 ### Cowork launch fails after a Windows or Electron update
 If Cowork reports that it cannot locate `better_sqlite3.node`, rebuild the

@@ -16,6 +16,23 @@ central Policy Engine + PII lint (WS5). See
 `claude-et-patrice/propositions/` and the V1.x roadmap section of
 [`docs/fleet-guide.md`](docs/fleet-guide.md).
 
+### Fixed — 1.0.0 validation campaign follow-ups (2026-06-10)
+
+- **MCP stdio servers no longer leak stderr into the CLI** (`9a57b3d0`)
+  — the SDK default (`stderr: 'inherit'`) let noisy MCP servers break
+  the `--quiet`/pipeable-JSON headless contract; now piped and drained
+  to the logger.
+- **22 stale tests realigned** (`00f505b7`) — docs inventories after
+  the readme rebranding, the OpenClaw WS fixture brought up to the
+  a7354b11 paired-device handshake + 2026.6.x `node.pair.*` methods,
+  Cowork demo/skills/parity assertions following the product.
+- **QA report** ([`docs/qa/v1.0.0-validation.md`](docs/qa/v1.0.0-validation.md),
+  `f05008ba`) — GA confirmed; open findings: Ollama `num_ctx` guard
+  (V1.1), 9 machine-coupled tests to `skipIf` (V1.1).
+- **Docs** — local-model agentic checklist in
+  [`docs/providers.md`](docs/providers.md) (provider forcing, `qwen3*`
+  tool support, Ollama `num_ctx`), FAQ updated to GA status.
+
 ---
 
 ## [1.0.0] — 2026-06-10 🎉

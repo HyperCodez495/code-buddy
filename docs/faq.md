@@ -23,7 +23,7 @@ Code Buddy's niche is **local-first + multi-surface**: the *same* engine runs in
 Linux, macOS, Windows. **15 providers** (Claude, GPT, Grok, Gemini, Ollama, LM Studio, Bedrock, Azure, Groq, Together, Fireworks, OpenRouter, vLLM, Copilot, Mistral) with auto-failover. Cowork desktop needs Node ≥ 22; the CLI needs ≥ 18.
 
 ### Is it production-ready?
-It's a **1.0 release candidate** (rc.8): ~30k tests, builds clean from source (`npm run build`), and the core has been used heavily. Treat it as a capable RC — pin a version, and file issues for anything rough.
+**Yes — 1.0.0 GA** (tagged 2026-06-10): ~30k tests, a [documented validation campaign](qa/v1.0.0-validation.md) covering the built artifact end-to-end (CLI, server, local agentic loop), and a [production deployment guide](deployment.md). Pin a version and file issues for anything rough.
 
 ### How do I try it in 60 seconds?
 ```bash

@@ -24,6 +24,40 @@ Code Buddy supports 15 LLM providers with automatic failover and per-provider ci
 
 Additional providers (MiniMax, Moonshot, Venice AI, Deepgram) are available via `src/providers/additional-providers.ts`.
 
+## Local Models (Ollama) — Agentic Loop Checklist
+
+Three things decide whether a free local model can actually *drive the
+agent* (edit files, call tools) instead of just chatting. All three were
+validated end-to-end in the [1.0.0 QA campaign](qa/v1.0.0-validation.md):
+
+1. **Force the provider.** Auto-detection prefers an active ChatGPT
+   login over `OLLAMA_HOST` — set `CODEBUDDY_PROVIDER=ollama`
+   explicitly:
+
+   ```bash
+   CODEBUDDY_PROVIDER=ollama OLLAMA_HOST=http://localhost:11434 \
+     GROK_MODEL=qwen3.5:35b buddy -p "..." --output-format json
+   ```
+
+2. **Pick a tool-capable family.** `src/config/model-tools.ts`
+   deliberately gates `gemma*`, `llama3*`, `deepseek*` and `qwen2.5*` to
+   **chat-only** (`supportsToolCalls: false` — they hallucinate tool
+   JSON as text). **`qwen3*` is the supported local agentic family**: it
+   reliably emits structured OpenAI tool calls through Ollama.
+
+3. **Raise Ollama's context window.** Ollama's default `num_ctx` (4096)
+   is silently fatal for agentic use: the system prompt + tools
+   (~6k tokens) overflow it, generation is truncated at 0 tokens
+   (`finish_reason: "length"`) and the agent degrades to a placeholder
+   answer. Either start the service with `OLLAMA_CONTEXT_LENGTH=16384`
+   (or higher), or derive a model with a bigger window:
+
+   ```bash
+   printf 'FROM qwen3.5:35b\nPARAMETER num_ctx 32768\n' > Modelfile
+   ollama create qwen3.5-ctx32k -f Modelfile
+   GROK_MODEL=qwen3.5-ctx32k ...
+   ```
+
 ## Connection Profiles
 
 Configure profiles in `~/.codebuddy/user-settings.json`:
