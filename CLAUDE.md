@@ -79,6 +79,7 @@ User → ChatInterface (Ink/React) → CodeBuddyAgent → LLM provider
    | `TurnLimitMiddleware` | 10 | Enforce max turns per session |
    | `CostLimitMiddleware` | 20 | Enforce session cost budget |
    | `ContextWarningMiddleware` | 30 | Warn when nearing context limits |
+   | `SessionDurationMiddleware` | 35 | Suggest a clean pause + snapshot past `CODEBUDDY_SESSION_PAUSE_HOURS` (12 h) |
    | `ReasoningMiddleware` | 42 | Auto-detect complex queries, inject `<reasoning_guidance>` |
    | `WorkflowGuardMiddleware` | 45 | Suggest plan init for complex first messages |
    | `AutoObservationMiddleware` | 50 | Capture auto-observations (registered separately, ~line 1503) |

@@ -346,6 +346,19 @@ export class CodeBuddyAgent extends BaseAgent {
         } catch (err) {
           logger.debug('Failed to register ContextWarningMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
         }
+        // Session duration middleware (priority 35) — suggests a clean pause
+        // with a fresh resume point past CODEBUDDY_SESSION_PAUSE_HOURS (12 h)
+        try {
+          const { SessionDurationMiddleware } = await import('./middleware/session-duration.js');
+          pipeline.use(new SessionDurationMiddleware({
+            takeSnapshot: () => {
+              this.contextManager.takeSnapshot?.(this.historyManager.getMessagesRef());
+            },
+          }));
+          logger.debug('SessionDurationMiddleware registered in pipeline (priority 35)');
+        } catch (err) {
+          logger.debug('Failed to register SessionDurationMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
+        }
         // Reasoning middleware (priority 42) — auto-detects complex queries
         try {
           const { createReasoningMiddleware } = await import('./middleware/reasoning-middleware.js');

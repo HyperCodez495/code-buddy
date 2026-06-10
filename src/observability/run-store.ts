@@ -37,7 +37,8 @@ export type RunEventType =
   | 'lesson_added'
   | 'lesson_candidate_proposed'
   | 'skill_selected'
-  | 'context_snapshot';
+  | 'context_snapshot'
+  | 'pause_suggested';
 
 export interface RunEvent {
   ts: number;
