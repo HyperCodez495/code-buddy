@@ -85,6 +85,7 @@ import { LessonCandidateReviewStrip } from './lesson-candidate-review-strip';
 import { LessonsVaultStrip } from './lessons-vault-strip';
 import { LessonsVaultGraph } from './LessonsVaultGraph';
 import { SagaBoard } from './fleet-saga-board';
+import { FleetCostStrip } from './FleetCostStrip';
 import { PeerDetail, PeerRow } from './fleet-peer-panel';
 import { SagaDetail } from './fleet-saga-detail';
 import {
@@ -1162,6 +1163,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                     />
                   </>
                 )}
+                <FleetCostStrip refreshToken={sagaUpdateToken} />
                 <ScheduledWorkStrip
                   tasks={scheduledTasks}
                   upcomingTasks={upcomingScheduledTasks}

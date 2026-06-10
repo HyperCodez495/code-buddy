@@ -3043,6 +3043,18 @@ contextBridge.exposeInMainWorld('electronAPI', {
       dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
       lintWarning?: string;
     }> => ipcRenderer.invoke('fleet.replaySaga', sagaId),
+    /** Today's fleet spend vs caps (per provider / per peer) + 7-day total. */
+    costSummary: (): Promise<{
+      ok: boolean;
+      error?: string;
+      summary?: {
+        todayUsd: number;
+        todayByProvider: Record<string, number>;
+        todayByPeer: Record<string, number>;
+        weekUsd: number;
+      };
+      budget?: { maxDailyUsd: number; maxSagaUsd: number };
+    }> => ipcRenderer.invoke('fleet.costSummary'),
   },
 
   // Reasoning trace viewer (Claude Cowork parity Phase 3 step 17)
@@ -6475,6 +6487,17 @@ declare global {
           privacyTag?: 'public' | 'sensitive';
           dispatchProfile?: 'balanced' | 'research' | 'code' | 'review' | 'safe';
           lintWarning?: string;
+        }>;
+        costSummary: () => Promise<{
+          ok: boolean;
+          error?: string;
+          summary?: {
+            todayUsd: number;
+            todayByProvider: Record<string, number>;
+            todayByPeer: Record<string, number>;
+            weekUsd: number;
+          };
+          budget?: { maxDailyUsd: number; maxSagaUsd: number };
         }>;
       };
       team: {

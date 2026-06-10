@@ -234,6 +234,37 @@ export function registerFleetIpcHandlers(
     return runner.cancel(sagaId.trim());
   });
 
+  // Cost observability — today's fleet spend vs the configured caps, by
+  // provider and by peer, plus the 7-day total. Read-only view over the
+  // same core CostTracker ledger the dispatch cost gate (W5) charges.
+  ipcMain.handle('fleet.costSummary', async () => {
+    try {
+      type CostMod = {
+        getCostTracker: () => {
+          summary: () => Promise<{
+            todayUsd: number;
+            todayByProvider: Record<string, number>;
+            todayByPeer: Record<string, number>;
+            weekUsd: number;
+          }>;
+        };
+        DEFAULT_BUDGET?: { maxDailyUsd: number; maxSagaUsd: number };
+      };
+      const costMod = await loadCoreModule<CostMod>('fleet/cost-tracker.js');
+      if (!costMod) return { ok: false, error: 'core cost-tracker unavailable' };
+      const summary = await costMod.getCostTracker().summary();
+      return {
+        ok: true,
+        summary,
+        budget: costMod.DEFAULT_BUDGET ?? { maxDailyUsd: 5, maxSagaUsd: 1 },
+      };
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logError('[fleet.costSummary] failed:', message);
+      return { ok: false, error: message };
+    }
+  });
+
   // Replay — re-dispatch a terminal saga as a NEW saga with the same
   // goal and routing intent (profile, council, chain roles, target
   // peers). Routing itself is recomputed against the peers available

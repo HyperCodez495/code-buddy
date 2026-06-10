@@ -571,3 +571,53 @@ describe('buildSagaReplayInput', () => {
     expect(input.privacyTag).toBeUndefined();
   });
 });
+
+describe('fleet.costSummary', () => {
+  beforeEach(() => {
+    electronMock.handlers.clear();
+    electronMock.handle.mockClear();
+    coreLoaderMock.loadCoreModule.mockReset();
+  });
+
+  it('returns the core ledger summary with the configured caps', async () => {
+    coreLoaderMock.loadCoreModule.mockImplementation(async (path: string) => {
+      if (path !== 'fleet/cost-tracker.js') return null;
+      return {
+        DEFAULT_BUDGET: { maxDailyUsd: 5, maxSagaUsd: 1 },
+        getCostTracker: () => ({
+          summary: async () => ({
+            todayUsd: 0.42,
+            todayByProvider: { grok: 0.42 },
+            todayByPeer: { 'darkstar/repo': 0.42 },
+            weekUsd: 1.1,
+          }),
+        }),
+      };
+    });
+    registerFleetIpcHandlers(null);
+
+    const handler = electronMock.handlers.get('fleet.costSummary');
+    expect(handler).toBeDefined();
+    const result = (await handler?.({})) as {
+      ok: boolean;
+      summary?: { todayUsd: number; weekUsd: number };
+      budget?: { maxDailyUsd: number };
+    };
+
+    expect(result.ok).toBe(true);
+    expect(result.summary?.todayUsd).toBe(0.42);
+    expect(result.summary?.weekUsd).toBe(1.1);
+    expect(result.budget?.maxDailyUsd).toBe(5);
+  });
+
+  it('degrades cleanly when the core module is unavailable', async () => {
+    coreLoaderMock.loadCoreModule.mockResolvedValue(null);
+    registerFleetIpcHandlers(null);
+
+    const handler = electronMock.handlers.get('fleet.costSummary');
+    await expect(handler?.({})).resolves.toEqual({
+      ok: false,
+      error: 'core cost-tracker unavailable',
+    });
+  });
+});
