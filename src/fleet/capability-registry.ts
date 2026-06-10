@@ -27,6 +27,7 @@ import * as fs from 'node:fs';
 import * as os from 'os';
 import * as path from 'node:path';
 import { logger } from '../utils/logger.js';
+import { getFleetLoad } from './fleet-load.js';
 import { getModelToolConfig } from '../config/model-tools.js';
 import type {
   FleetModelDescriptor,
@@ -55,11 +56,13 @@ export async function getLocalCapabilities(
     cached &&
     now - lastRefreshAt < REFRESH_INTERVAL_MS
   ) {
-    return cached;
+    // `activeRequests` is live load, never cached — a 5-min-old count
+    // would make the router's load term worse than useless.
+    return { ...cached, activeRequests: getFleetLoad().activeRequests };
   }
   cached = await buildCapabilitySnapshot();
   lastRefreshAt = now;
-  return cached;
+  return { ...cached, activeRequests: getFleetLoad().activeRequests };
 }
 
 /** Sync getter — returns last cached snapshot or empty stub. */

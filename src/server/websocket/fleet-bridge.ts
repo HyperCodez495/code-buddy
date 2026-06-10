@@ -152,7 +152,16 @@ export function broadcastFleetEvent(
  * just need to see SOMETHING with their peer's source identifier on it.
  */
 export function broadcastFleetHeartbeat(
-  payload: { idleSince?: number; busyWith?: string } = {},
+  payload: {
+    idleSince?: number;
+    busyWith?: string;
+    /** Live in-flight fleet work count (see src/fleet/fleet-load.ts). */
+    activeRequests?: number;
+    /** Configured capacity (CODEBUDDY_FLEET_MAX_CONCURRENCY). */
+    maxConcurrency?: number;
+    /** activeRequests / maxConcurrency — omitted when capacity is unknown. */
+    utilization?: number;
+  } = {},
 ): void {
   broadcastFleetEvent('fleet:peer:heartbeat', { ...payload });
 }

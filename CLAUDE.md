@@ -177,6 +177,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 | `CODEBUDDY_PEER_TOOL_WORKSPACE_ROOT` | **Required to enable** `peer.tool.invoke` — fail-closed when unset |
 | `CODEBUDDY_PEER_TOOL_ALLOWLIST` | csv override for default `view_file,list_directory,search` |
 | `CODEBUDDY_PEER_SESSION_IDLE_MS` / `CODEBUDDY_PEER_MAX_DEPTH` / `CODEBUDDY_PEER_ROLE` | Fleet limits |
+| `CODEBUDDY_FLEET_MAX_CONCURRENCY` | Peer capacity → live `utilization` in heartbeats + daemon saturation backpressure (`src/fleet/fleet-load.ts`) |
 | Search keys | `BRAVE_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` |
 | `PICOVOICE_ACCESS_KEY` | Porcupine wake word (text-match fallback if absent) |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Observability |

@@ -108,3 +108,56 @@ describe('fleet heartbeat broadcaster — Phase (d).9 V0.4.1', () => {
     expect(getFleetHeartbeatIntervalMs()).toBe(30_000);
   });
 });
+
+describe('fleet heartbeat — live load payload', () => {
+  const originalCap = process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+
+  beforeEach(async () => {
+    broadcastMock.mockReset();
+    _stopHeartbeatForTests();
+    vi.useFakeTimers();
+    const { _resetFleetLoadForTests } = await import('../../src/fleet/fleet-load.js');
+    _resetFleetLoadForTests();
+  });
+
+  afterEach(async () => {
+    _stopHeartbeatForTests();
+    vi.useRealTimers();
+    const { _resetFleetLoadForTests } = await import('../../src/fleet/fleet-load.js');
+    _resetFleetLoadForTests();
+    if (originalCap === undefined) delete process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+    else process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY = originalCap;
+  });
+
+  it('carries activeRequests + capacity + utilization in every beacon', async () => {
+    const { beginFleetWork } = await import('../../src/fleet/fleet-load.js');
+    process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY = '2';
+    const done = beginFleetWork('peer.dispatch');
+
+    startFleetHeartbeat(100);
+    vi.advanceTimersByTime(100);
+
+    expect(broadcastMock).toHaveBeenCalledWith({
+      activeRequests: 1,
+      maxConcurrency: 2,
+      utilization: 0.5,
+    });
+    done();
+
+    vi.advanceTimersByTime(100);
+    expect(broadcastMock).toHaveBeenLastCalledWith({
+      activeRequests: 0,
+      maxConcurrency: 2,
+      utilization: 0,
+    });
+  });
+
+  it('omits capacity fields when CODEBUDDY_FLEET_MAX_CONCURRENCY is unset', async () => {
+    delete process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+
+    startFleetHeartbeat(100);
+    vi.advanceTimersByTime(100);
+
+    expect(broadcastMock).toHaveBeenCalledWith({ activeRequests: 0 });
+  });
+});

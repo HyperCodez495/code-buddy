@@ -31,6 +31,7 @@
  */
 
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
+import { beginFleetWork } from './fleet-load.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
 import {
   broadcastChatSessionEnd,
@@ -400,6 +401,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
 
       const turnStartedAt = Date.now();
       let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
+      const doneLoad = beginFleetWork('peer.chat-session');
       try {
         response = await client.chat(requestMessages, undefined, chatOptions);
       } catch (err) {
@@ -408,6 +410,8 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
         // model has actually seen.
         session.messages.pop();
         throw err;
+      } finally {
+        doneLoad();
       }
 
       const text = response?.choices?.[0]?.message?.content ?? '';

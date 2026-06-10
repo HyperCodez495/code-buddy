@@ -781,6 +781,15 @@ LLM (continuing with peer's answer in context): "darkstar suggests …"
 >   "Preview route" that dry-runs lint+classifier+TaskRouter with lane scores and rationale, no saga created
 >   (`fleet.routePreview`); and interactive `peer.chat-session.*` piloting from the peer detail panel — start/attach/
 >   turn/end with a local transcript, metadata-only listing (`fleet.peerSession*`).
+> - **Load balancing & fleet utilization.** Every peer counts its in-flight fleet work live
+>   (`src/fleet/fleet-load.ts` — peer.chat / chat-session turns / peer.dispatch runs / daemon task executions).
+>   `peer.describe` reports `activeRequests` live (never the 5-min capability cache) and the 30s heartbeat carries
+>   `{activeRequests, maxConcurrency, utilization}`, so the TaskRouter's 20% load term works from real data and
+>   Cowork keeps per-peer load fresh between describes. With `CODEBUDDY_FLEET_MAX_CONCURRENCY` set, a saturated
+>   peer's daemon **abstains from claiming** colab tasks (tick outcome `saturated`) — the shared queue then lets an
+>   idle peer win the claim, spreading utilization across the fleet with no new RPC. Opt-in: without a declared
+>   capacity, utilization is reported as unknown and backpressure never triggers. Cowork renders per-actor load
+>   bars + the fleet-wide rate (`FleetUtilizationStrip`).
 
 Fleet bus = the `claude-et-patrice/.codebuddy/` repo on a shared
 Tailscale mesh. Each peer periodically:

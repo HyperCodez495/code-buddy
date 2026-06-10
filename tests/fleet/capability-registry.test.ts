@@ -311,3 +311,27 @@ describe('capability-registry — caching', () => {
     expect(fetchSpy.mock.calls.length).toBeGreaterThan(callsAfterFirst);
   });
 });
+
+describe('capability registry — live load overlay', () => {
+  it('reports live activeRequests on every call, even cache hits', async () => {
+    global.fetch = vi.fn().mockRejectedValue(new Error('no network')) as unknown as typeof fetch;
+    const { beginFleetWork, _resetFleetLoadForTests } = await import('../../src/fleet/fleet-load.js');
+    _resetFleetLoadForTests();
+    resetCapabilityCache();
+
+    const cold = await getLocalCapabilities();
+    expect(cold.activeRequests).toBe(0);
+
+    const done = beginFleetWork('peer.dispatch');
+    // Second call is a cache hit (no force) — load must still be live.
+    const warm = await getLocalCapabilities();
+    expect(warm.activeRequests).toBe(1);
+
+    done();
+    const after = await getLocalCapabilities();
+    expect(after.activeRequests).toBe(0);
+
+    _resetFleetLoadForTests();
+    global.fetch = originalFetch;
+  });
+});

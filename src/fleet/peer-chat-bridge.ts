@@ -20,6 +20,7 @@
  */
 
 import type { CodeBuddyClient, ChatOptions } from '../codebuddy/client.js';
+import { beginFleetWork } from './fleet-load.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-method-registry.js';
 import { logger } from '../utils/logger.js';
 import {
@@ -133,14 +134,20 @@ export function wirePeerChatBridge(
     }
 
     const chatOptions: ChatOptions | undefined = model ? { model } : undefined;
-    const response = await client.chat(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
-      ],
-      undefined, // no tools
-      chatOptions,
-    );
+    const doneLoad = beginFleetWork('peer.chat');
+    let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
+    try {
+      response = await client.chat(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt },
+        ],
+        undefined, // no tools
+        chatOptions,
+      );
+    } finally {
+      doneLoad();
+    }
 
     return {
       text: response?.choices?.[0]?.message?.content ?? '',
@@ -181,30 +188,35 @@ export function wirePeerChatBridge(
     }
 
     const chatOptions: ChatOptions | undefined = model ? { model } : undefined;
-    const stream = client.chatStream(
-      [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: prompt },
-      ],
-      undefined, // no tools
-      chatOptions,
-    );
-
+    const doneLoad = beginFleetWork('peer.chat');
     let aggregate = '';
     let finishReason: string | null | undefined;
     let usage: unknown;
-    for await (const chunk of stream as AsyncIterable<ContentChunk>) {
-      const delta = chunk?.choices?.[0]?.delta?.content ?? '';
-      if (delta) {
-        aggregate += delta;
-        // Best-effort emit — undefined when the transport doesn't support
-        // streaming. We still aggregate locally for the final response so
-        // the client gets the full text either way.
-        ctx.emitChunk?.(delta);
+    try {
+      const stream = client.chatStream(
+        [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: prompt },
+        ],
+        undefined, // no tools
+        chatOptions,
+      );
+
+      for await (const chunk of stream as AsyncIterable<ContentChunk>) {
+        const delta = chunk?.choices?.[0]?.delta?.content ?? '';
+        if (delta) {
+          aggregate += delta;
+          // Best-effort emit — undefined when the transport doesn't support
+          // streaming. We still aggregate locally for the final response so
+          // the client gets the full text either way.
+          ctx.emitChunk?.(delta);
+        }
+        const fr = chunk?.choices?.[0]?.finish_reason;
+        if (fr) finishReason = fr;
+        if (chunk?.usage) usage = chunk.usage;
       }
-      const fr = chunk?.choices?.[0]?.finish_reason;
-      if (fr) finishReason = fr;
-      if (chunk?.usage) usage = chunk.usage;
+    } finally {
+      doneLoad();
     }
 
     return {
@@ -350,14 +362,20 @@ async function runDispatchedTask(state: DispatchState): Promise<void> {
   const chatOptions: ChatOptions | undefined = state.model
     ? { model: state.model }
     : undefined;
-  const response = await client.chat(
-    [
-      { role: 'system', content: buildDispatchSystemPrompt(state.dispatchProfile) },
-      { role: 'user', content: state.prompt },
-    ],
-    [],
-    chatOptions,
-  );
+  const doneLoad = beginFleetWork('peer.dispatch');
+  let response: Awaited<ReturnType<CodeBuddyClient['chat']>>;
+  try {
+    response = await client.chat(
+      [
+        { role: 'system', content: buildDispatchSystemPrompt(state.dispatchProfile) },
+        { role: 'user', content: state.prompt },
+      ],
+      [],
+      chatOptions,
+    );
+  } finally {
+    doneLoad();
+  }
   state.result = response?.choices?.[0]?.message?.content ?? '';
   state.status = 'completed';
   state.completedAt = Date.now();

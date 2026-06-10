@@ -298,6 +298,7 @@ export class FleetBridge {
         peerMeta.lastSeenAt = record.receivedAt;
         peerMeta.lastEventType = record.type;
         this.applyChatSessionEvent(peerMeta, record);
+        this.applyHeartbeatLoad(peerMeta, record);
         this.sendToRenderer({ type: 'fleet.peer.update', payload: { peer: { ...peerMeta } } });
       }
       this.sendToRenderer({ type: 'fleet.event', payload: record });
@@ -316,6 +317,22 @@ export class FleetBridge {
   async listPeers(): Promise<FleetPeer[]> {
     await this.refreshAllCapabilities();
     return Array.from(this.peers.values()).map((e) => ({ ...e.meta }));
+  }
+
+  /**
+   * Keep the cached capability's load fields live from the 30s
+   * heartbeat beacons, so the router's load term and the utilization
+   * strip don't wait for the next (5-min) capability refresh.
+   */
+  private applyHeartbeatLoad(peer: FleetPeer, record: FleetEventRecord): void {
+    if (record.type !== 'fleet:peer:heartbeat' || !peer.capability) return;
+    const payload = record.payload;
+    if (typeof payload.activeRequests === 'number' && payload.activeRequests >= 0) {
+      peer.capability.activeRequests = payload.activeRequests;
+    }
+    if (typeof payload.maxConcurrency === 'number' && payload.maxConcurrency > 0) {
+      peer.capability.maxConcurrency = payload.maxConcurrency;
+    }
   }
 
   private applyChatSessionEvent(peer: FleetPeer, record: FleetEventRecord): void {

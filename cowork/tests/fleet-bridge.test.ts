@@ -308,4 +308,41 @@ describe('FleetBridge', () => {
     expect(result.success).toBe(false);
     expect(result.error).toContain('apiKey');
   });
+
+  it('keeps capability load live from fleet:peer:heartbeat beacons', async () => {
+    const events: ServerEvent[] = [];
+    const bridge = new FleetBridge((e) => events.push(e));
+    await bridge.init();
+
+    await bridge.addPeer({ url: 'ws://example/ws', apiKey: 'k', label: 'spoke-1' });
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+
+    // Populate capability via peer.describe first.
+    const peersBefore = await bridge.listPeers();
+    expect(peersBefore[0].capability).toBeDefined();
+    expect(peersBefore[0].capability?.activeRequests).toBeUndefined();
+
+    const listener = FakeFleetListener.instances[0];
+    listener.emit('fleet:event', {
+      type: 'fleet:peer:heartbeat',
+      payload: { activeRequests: 3, maxConcurrency: 4, utilization: 0.75 },
+    });
+    await new Promise((r) => setImmediate(r));
+
+    // The 30s beacon refreshed the load fields without waiting for the
+    // next (interval-gated) peer.describe.
+    const peersAfter = await bridge.listPeers();
+    expect(peersAfter[0].capability?.activeRequests).toBe(3);
+    expect(peersAfter[0].capability?.maxConcurrency).toBe(4);
+
+    // Idle beacon brings it back down.
+    listener.emit('fleet:event', {
+      type: 'fleet:peer:heartbeat',
+      payload: { activeRequests: 0, maxConcurrency: 4 },
+    });
+    await new Promise((r) => setImmediate(r));
+    const peersIdle = await bridge.listPeers();
+    expect(peersIdle[0].capability?.activeRequests).toBe(0);
+  });
 });

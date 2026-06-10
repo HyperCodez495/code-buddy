@@ -27,6 +27,7 @@ import {
   type ModelTierConfig,
   type ModelTierPolicy,
 } from '../agent/model-tier.js';
+import { beginFleetWork, isFleetSaturated } from '../fleet/fleet-load.js';
 import type {
   ColabTask,
   ColabWorklogFileChange,
@@ -56,7 +57,7 @@ export interface AutonomousLoopConfig {
 }
 
 export interface TickResult {
-  outcome: 'disabled' | 'idle' | 'completed' | 'failed';
+  outcome: 'disabled' | 'idle' | 'completed' | 'failed' | 'saturated';
   taskId?: string;
   taskTitle?: string;
   model?: AutonomousModelChoice;
@@ -91,6 +92,17 @@ export class FleetAutonomousLoop {
       return { outcome: 'disabled' };
     }
 
+    // Saturation backpressure (fleet load balancing): when this peer is
+    // at its configured capacity (CODEBUDDY_FLEET_MAX_CONCURRENCY), it
+    // ABSTAINS from claiming. The colab queue is shared across machines,
+    // so an idle peer's daemon wins the claim instead — utilization
+    // spreads over the fleet without any new RPC. Opt-in: with no
+    // configured capacity this never triggers.
+    if (isFleetSaturated()) {
+      this.store.updatePresence({ status: 'active' });
+      return { outcome: 'saturated', detail: 'at capacity — leaving the queue to idle peers' };
+    }
+
     this.store.updatePresence({ status: 'active' });
 
     const next = this.store.nextClaimable();
@@ -118,10 +130,13 @@ export class FleetAutonomousLoop {
     );
 
     let result: TaskExecutionResult;
+    const doneLoad = beginFleetWork('autonomy.task');
     try {
       result = await this.executor(task, model);
     } catch (err) {
       result = { ok: false, summary: 'executor threw', error: err instanceof Error ? err.message : String(err) };
+    } finally {
+      doneLoad();
     }
 
     if (result.ok) {

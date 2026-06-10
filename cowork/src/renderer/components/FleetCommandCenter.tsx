@@ -87,6 +87,7 @@ import { LessonsVaultGraph } from './LessonsVaultGraph';
 import { SagaBoard } from './fleet-saga-board';
 import { FleetCostStrip } from './FleetCostStrip';
 import { FleetRoutePreview } from './FleetRoutePreview';
+import { FleetUtilizationStrip } from './FleetUtilizationStrip';
 import { PeerDetail, PeerRow } from './fleet-peer-panel';
 import { SagaDetail } from './fleet-saga-detail';
 import {
@@ -1176,6 +1177,7 @@ export const FleetCommandCenter: React.FC<Props> = ({ isOpen, onClose }) => {
                   </>
                 )}
                 <FleetCostStrip refreshToken={sagaUpdateToken} />
+                <FleetUtilizationStrip peers={peers} />
                 <ScheduledWorkStrip
                   tasks={scheduledTasks}
                   upcomingTasks={upcomingScheduledTasks}

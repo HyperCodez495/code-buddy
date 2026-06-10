@@ -119,3 +119,90 @@ describe('FleetAutonomousLoop', () => {
     expect(tiersSeen).toEqual(['local', 'network']);
   });
 });
+
+describe('FleetAutonomousLoop — fleet load + saturation backpressure', () => {
+  let dir: string;
+  let store: FleetColabStore;
+  const originalCap = process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+
+  beforeEach(async () => {
+    dir = mkdtempSync(join(tmpdir(), 'auto-loop-load-'));
+    store = new FleetColabStore({ dir, agentId: 'ministar-linux/code-buddy', now: () => 1_000, generateId: (p) => `${p}-x` });
+    const { _resetFleetLoadForTests } = await import('../../src/fleet/fleet-load.js');
+    _resetFleetLoadForTests();
+  });
+
+  afterEach(async () => {
+    rmSync(dir, { recursive: true, force: true });
+    const { _resetFleetLoadForTests } = await import('../../src/fleet/fleet-load.js');
+    _resetFleetLoadForTests();
+    if (originalCap === undefined) delete process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+    else process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY = originalCap;
+  });
+
+  function seedTasks(tasks: unknown[]): void {
+    writeFileSync(join(dir, 'colab-tasks.json'), JSON.stringify({ version: '0.1', tasks }, null, 2));
+  }
+
+  it('abstains from claiming when at capacity, leaving the task for idle peers', async () => {
+    const { beginFleetWork } = await import('../../src/fleet/fleet-load.js');
+    process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY = '1';
+    const done = beginFleetWork('peer.dispatch'); // peer is busy answering someone
+
+    seedTasks([{ id: 't1', title: 'task', status: 'open', priority: 'high', claimedBy: null }]);
+    const executor = vi.fn().mockResolvedValue({ ok: true, summary: 'done after backpressure' });
+    const loop = new FleetAutonomousLoop({ store, tierConfig: TIER, executor: executor as unknown as TaskExecutor });
+
+    const result = await loop.tick();
+
+    expect(result.outcome).toBe('saturated');
+    expect(executor).not.toHaveBeenCalled();
+    // The task stays open and unclaimed — an idle peer's daemon can win it.
+    expect(store.getTask('t1')?.status).toBe('open');
+    expect(store.getTask('t1')?.claimedBy).toBeNull();
+
+    // Capacity freed → the next tick claims normally.
+    done();
+    const retry = await loop.tick();
+    expect(retry.outcome).toBe('completed');
+    expect(executor).toHaveBeenCalledTimes(1);
+  });
+
+  it('registers the running task as fleet load while the executor runs', async () => {
+    const { getFleetLoad } = await import('../../src/fleet/fleet-load.js');
+    seedTasks([{ id: 't1', title: 'measure me', status: 'open', priority: 'low', claimedBy: null }]);
+
+    let observedDuringRun = -1;
+    const loop = new FleetAutonomousLoop({
+      store,
+      tierConfig: TIER,
+      executor: async () => {
+        observedDuringRun = getFleetLoad({}).activeRequests;
+        return { ok: true, summary: 'done' };
+      },
+    });
+
+    const result = await loop.tick();
+
+    expect(result.outcome).toBe('completed');
+    expect(observedDuringRun).toBe(1);
+    expect(getFleetLoad({}).activeRequests).toBe(0);
+  });
+
+  it('does not trigger saturation without a configured capacity (opt-in)', async () => {
+    const { beginFleetWork } = await import('../../src/fleet/fleet-load.js');
+    delete process.env.CODEBUDDY_FLEET_MAX_CONCURRENCY;
+    beginFleetWork('peer.dispatch');
+    beginFleetWork('peer.dispatch');
+
+    seedTasks([{ id: 't1', title: 'task', status: 'open', priority: 'low', claimedBy: null }]);
+    const loop = new FleetAutonomousLoop({
+      store,
+      tierConfig: TIER,
+      executor: async () => ({ ok: true, summary: 'done' }),
+    });
+
+    const result = await loop.tick();
+    expect(result.outcome).toBe('completed');
+  });
+});

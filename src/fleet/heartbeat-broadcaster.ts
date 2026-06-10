@@ -21,6 +21,7 @@
  */
 
 import { broadcastFleetHeartbeat } from '../server/websocket/fleet-bridge.js';
+import { getFleetLoad } from './fleet-load.js';
 import { logger } from '../utils/logger.js';
 
 const DEFAULT_INTERVAL_MS = 30_000;
@@ -47,7 +48,16 @@ export function startFleetHeartbeat(intervalMs: number = DEFAULT_INTERVAL_MS): (
   activeIntervalMs = intervalMs;
   timer = setInterval(() => {
     try {
-      broadcastFleetHeartbeat();
+      // Carry the live load in every beacon so remote peers can balance
+      // (router load term, utilization views) without an extra
+      // peer.describe round-trip. Additive payload — old consumers that
+      // only look at the event type keep working unchanged.
+      const load = getFleetLoad();
+      broadcastFleetHeartbeat({
+        activeRequests: load.activeRequests,
+        ...(load.maxConcurrency !== undefined ? { maxConcurrency: load.maxConcurrency } : {}),
+        ...(load.utilization !== null ? { utilization: load.utilization } : {}),
+      });
     } catch (err) {
       // Best-effort — broadcast helper already swallows server-not-running,
       // this catch handles any future failure mode without crashing the
