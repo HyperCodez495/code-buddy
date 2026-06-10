@@ -213,6 +213,15 @@ import {
   runAutonomyTickForReview,
   getAutonomyModelTierForReview,
 } from './autonomy/autonomy-daemon-bridge';
+import {
+  addColabTaskForReview,
+  blockColabTaskForReview,
+  claimColabTaskForReview,
+  completeColabTaskForReview,
+  releaseColabTaskForReview,
+  reclaimExpiredColabForReview,
+  type ColabBoardAddInput,
+} from './autonomy/colab-board-bridge';
 import { getHermesMobileSupervisionForReview } from './tools/hermes-mobile-supervision-bridge';
 import { getHermesFeatureParityForReview } from './tools/hermes-feature-parity-bridge';
 import { getHermesPortalForReview } from './tools/hermes-portal-bridge';
@@ -2693,6 +2702,30 @@ ipcMain.handle('autonomy.serviceUninstall', async () => uninstallAutonomyService
 ipcMain.handle('autonomy.runTick', async (_event, dir?: string) => runAutonomyTickForReview(dir));
 
 ipcMain.handle('autonomy.modelTier', async () => getAutonomyModelTierForReview());
+
+// ── Autonomy: colab board mutations (the kanban's write half) ────────────
+// add/claim/complete/block/release + expired-claim sweep go through the core
+// FleetColabStore so GUI edits share the protocol invariants (DAG readiness,
+// claim lease, worklog append). See autonomy/colab-board-bridge.ts.
+ipcMain.handle('autonomy.taskAdd', async (_event, input: ColabBoardAddInput) => addColabTaskForReview(input));
+
+ipcMain.handle('autonomy.taskClaim', async (_event, taskId: string, dir?: string) =>
+  claimColabTaskForReview(taskId, dir)
+);
+
+ipcMain.handle('autonomy.taskComplete', async (_event, taskId: string, summary: string, dir?: string) =>
+  completeColabTaskForReview(taskId, summary, dir)
+);
+
+ipcMain.handle('autonomy.taskBlock', async (_event, taskId: string, reason: string, dir?: string) =>
+  blockColabTaskForReview(taskId, reason, dir)
+);
+
+ipcMain.handle('autonomy.taskRelease', async (_event, taskId: string, dir?: string) =>
+  releaseColabTaskForReview(taskId, dir)
+);
+
+ipcMain.handle('autonomy.reclaimExpired', async (_event, dir?: string) => reclaimExpiredColabForReview(dir));
 
 // ── Pluggable memory provider selector (GAP-10) ─────────────────────────
 ipcMain.handle('memoryProvider.list', async () => {

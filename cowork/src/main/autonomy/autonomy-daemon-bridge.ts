@@ -136,7 +136,8 @@ interface CoreModelTierModule {
   ) => { model: string; baseUrl?: string; tier: string; paid: boolean; reason: string };
 }
 
-function defaultQueueDir(): string {
+/** The daemon's colab queue dir — shared with the board bridge so GUI mutations land on the same files. */
+export function defaultQueueDir(): string {
   return process.env.CODEBUDDY_FLEET_COLAB_DIR || path.join(os.homedir(), '.codebuddy', 'fleet');
 }
 

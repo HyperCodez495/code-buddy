@@ -3777,6 +3777,73 @@ contextBridge.exposeInMainWorld('electronAPI', {
       }>;
       currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
     }> => ipcRenderer.invoke('autonomy.modelTier'),
+    // Colab board mutations — the kanban's write half (add/claim/complete/
+    // block/release + expired-claim sweep), via the core FleetColabStore.
+    taskAdd: (input: {
+      title: string;
+      description?: string;
+      priority?: 'critical' | 'high' | 'medium' | 'low';
+      dependsOn?: string[];
+      verifyCommand?: string;
+      acceptanceCriteria?: string[];
+      dir?: string;
+    }): Promise<{
+      ok: boolean;
+      error?: string;
+      task?: {
+        id: string;
+        title: string;
+        description?: string;
+        status: string;
+        priority: string;
+        claimedBy?: string | null;
+        blockedReason?: string;
+        dependsOn?: string[];
+      };
+      dir?: string;
+    }> => ipcRenderer.invoke('autonomy.taskAdd', input),
+    taskClaim: (
+      taskId: string,
+      dir?: string
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+      dir?: string;
+    }> => ipcRenderer.invoke('autonomy.taskClaim', taskId, dir),
+    taskComplete: (
+      taskId: string,
+      summary: string,
+      dir?: string
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+      dir?: string;
+    }> => ipcRenderer.invoke('autonomy.taskComplete', taskId, summary, dir),
+    taskBlock: (
+      taskId: string,
+      reason: string,
+      dir?: string
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      task?: { id: string; title: string; status: string; priority: string; blockedReason?: string };
+      dir?: string;
+    }> => ipcRenderer.invoke('autonomy.taskBlock', taskId, reason, dir),
+    taskRelease: (
+      taskId: string,
+      dir?: string
+    ): Promise<{
+      ok: boolean;
+      error?: string;
+      task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+      dir?: string;
+    }> => ipcRenderer.invoke('autonomy.taskRelease', taskId, dir),
+    reclaimExpired: (
+      dir?: string
+    ): Promise<{ ok: boolean; error?: string; reclaimed: string[]; dir?: string }> =>
+      ipcRenderer.invoke('autonomy.reclaimExpired', dir),
   },
 
   lessons: {
@@ -7093,6 +7160,70 @@ declare global {
           }>;
           currentChoice?: { model: string; tier: string; paid: boolean; reason: string };
         }>;
+        taskAdd: (input: {
+          title: string;
+          description?: string;
+          priority?: 'critical' | 'high' | 'medium' | 'low';
+          dependsOn?: string[];
+          verifyCommand?: string;
+          acceptanceCriteria?: string[];
+          dir?: string;
+        }) => Promise<{
+          ok: boolean;
+          error?: string;
+          task?: {
+            id: string;
+            title: string;
+            description?: string;
+            status: string;
+            priority: string;
+            claimedBy?: string | null;
+            blockedReason?: string;
+            dependsOn?: string[];
+          };
+          dir?: string;
+        }>;
+        taskClaim: (
+          taskId: string,
+          dir?: string
+        ) => Promise<{
+          ok: boolean;
+          error?: string;
+          task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+          dir?: string;
+        }>;
+        taskComplete: (
+          taskId: string,
+          summary: string,
+          dir?: string
+        ) => Promise<{
+          ok: boolean;
+          error?: string;
+          task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+          dir?: string;
+        }>;
+        taskBlock: (
+          taskId: string,
+          reason: string,
+          dir?: string
+        ) => Promise<{
+          ok: boolean;
+          error?: string;
+          task?: { id: string; title: string; status: string; priority: string; blockedReason?: string };
+          dir?: string;
+        }>;
+        taskRelease: (
+          taskId: string,
+          dir?: string
+        ) => Promise<{
+          ok: boolean;
+          error?: string;
+          task?: { id: string; title: string; status: string; priority: string; claimedBy?: string | null };
+          dir?: string;
+        }>;
+        reclaimExpired: (
+          dir?: string
+        ) => Promise<{ ok: boolean; error?: string; reclaimed: string[]; dir?: string }>;
       };
       lessons: {
         add: (

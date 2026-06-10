@@ -7,8 +7,12 @@
  *    that goes through the real CLI (`autonomy.daemonStatus` & friends IPC).
  * 2. Free-first model ladder — local → network → paid rungs and the model a
  *    tick would use right now (`autonomy.modelTier` IPC).
- * 3. Colab queue — the shared task queue (status + priority + claim + DAG
- *    deps), live presence, recent worklog (`autonomy.snapshot` IPC).
+ * 3. Colab board — the shared task queue (status + priority + claim + DAG
+ *    deps), live presence, recent worklog (`autonomy.snapshot` IPC), plus the
+ *    write half of the kanban: add tasks and claim/complete/block/release
+ *    them, and sweep expired claims (`autonomy.task*` IPC). Completing or
+ *    blocking asks for a summary/reason inline — the bridge refuses empty
+ *    ones because they feed the fleet's shared worklog.
  * Mirrors the ReasoningTraceViewer/MemoryPanel shell.
  */
 import { useCallback, useEffect, useState } from 'react';
@@ -27,6 +31,8 @@ import {
   Zap,
   Download,
   Trash2,
+  Plus,
+  Check,
 } from 'lucide-react';
 
 interface ColabTaskView {
@@ -35,6 +41,7 @@ interface ColabTaskView {
   status: string;
   priority: string;
   claimedBy?: string | null;
+  blockedReason?: string;
   dependsOn?: string[];
 }
 interface WorklogView {
@@ -112,6 +119,15 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
   const [busyAction, setBusyAction] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [lastTick, setLastTick] = useState<TickResultView | null>(null);
+  const [boardError, setBoardError] = useState<string | null>(null);
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [newTitle, setNewTitle] = useState('');
+  const [newDescription, setNewDescription] = useState('');
+  const [newPriority, setNewPriority] = useState<'critical' | 'high' | 'medium' | 'low'>('medium');
+  // Inline text capture for the two mutations that require one (complete → worklog summary, block → reason).
+  const [pendingText, setPendingText] = useState<{ taskId: string; kind: 'complete' | 'block'; text: string } | null>(
+    null
+  );
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -153,12 +169,60 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
     [load]
   );
 
+  const runBoardAction = useCallback(
+    async (name: string, action: () => Promise<{ ok: boolean; error?: string }>): Promise<boolean> => {
+      setBusyAction(name);
+      setBoardError(null);
+      try {
+        const result = await action();
+        if (!result.ok) setBoardError(result.error ?? `${name} failed`);
+        return result.ok;
+      } catch (err) {
+        setBoardError(String(err));
+        return false;
+      } finally {
+        setBusyAction(null);
+        void load();
+      }
+    },
+    [load]
+  );
+
   if (!isOpen) return null;
 
   const tasks = snap?.tasks ?? [];
   const presence = Object.entries(snap?.presence ?? {});
   const service = daemon?.service ?? null;
   const api = window.electronAPI;
+
+  const submitAdd = async () => {
+    const title = newTitle.trim();
+    if (!title) return;
+    const ok = await runBoardAction('task-add', () =>
+      api.autonomy.taskAdd({
+        title,
+        priority: newPriority,
+        ...(newDescription.trim() ? { description: newDescription.trim() } : {}),
+      })
+    );
+    if (ok) {
+      setNewTitle('');
+      setNewDescription('');
+      setNewPriority('medium');
+      setShowAddForm(false);
+    }
+  };
+
+  const confirmPendingText = async () => {
+    if (!pendingText) return;
+    const text = pendingText.text.trim();
+    if (!text) return;
+    const { taskId, kind } = pendingText;
+    const ok = await runBoardAction(`task-${kind}`, () =>
+      kind === 'complete' ? api.autonomy.taskComplete(taskId, text) : api.autonomy.taskBlock(taskId, text)
+    );
+    if (ok) setPendingText(null);
+  };
 
   return (
     <div
@@ -387,6 +451,98 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
           </div>
         </section>
 
+        {/* Task board — write half of the kanban */}
+        <section data-testid="autonomy-board-section">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+              {t('autonomy.board', 'Task board')} ({tasks.length})
+            </h3>
+            <button
+              onClick={() => {
+                setShowAddForm((v) => !v);
+                setBoardError(null);
+              }}
+              className="ml-auto flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50"
+              data-testid="autonomy-board-add-toggle"
+            >
+              <Plus size={11} />
+              {t('autonomy.addTask', 'Add task')}
+            </button>
+            <button
+              onClick={() => void runBoardAction('reclaim', () => api.autonomy.reclaimExpired())}
+              disabled={busyAction !== null}
+              className="flex items-center gap-1 px-2 py-1 rounded border border-border-muted text-text-muted hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
+              title={t('autonomy.reclaimHint', 'Sweep expired claims back to the open pool (crashed agents)')}
+              data-testid="autonomy-board-reclaim"
+            >
+              {busyAction === 'reclaim' ? <Loader2 size={11} className="animate-spin" /> : <RotateCcw size={11} />}
+              {t('autonomy.reclaim', 'Reclaim expired')}
+            </button>
+          </div>
+          {showAddForm && (
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                void submitAdd();
+              }}
+              className="p-2.5 rounded-lg bg-surface/40 border border-border-muted space-y-1.5 mb-2"
+              data-testid="autonomy-board-add-form"
+            >
+              <input
+                value={newTitle}
+                onChange={(e) => setNewTitle(e.target.value)}
+                placeholder={t('autonomy.addTitlePlaceholder', 'Task title')}
+                className="w-full px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                autoFocus
+                data-testid="autonomy-board-add-title"
+              />
+              <input
+                value={newDescription}
+                onChange={(e) => setNewDescription(e.target.value)}
+                placeholder={t('autonomy.addDescriptionPlaceholder', 'Description (optional)')}
+                className="w-full px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                data-testid="autonomy-board-add-description"
+              />
+              <div className="flex items-center gap-1.5">
+                <select
+                  value={newPriority}
+                  onChange={(e) => setNewPriority(e.target.value as 'critical' | 'high' | 'medium' | 'low')}
+                  className="px-2 py-1 rounded bg-background border border-border text-text-secondary"
+                  data-testid="autonomy-board-add-priority"
+                >
+                  {(['critical', 'high', 'medium', 'low'] as const).map((p) => (
+                    <option key={p} value={p}>
+                      {p}
+                    </option>
+                  ))}
+                </select>
+                <button
+                  type="submit"
+                  disabled={!newTitle.trim() || busyAction !== null}
+                  className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50 disabled:opacity-50"
+                  data-testid="autonomy-board-add-submit"
+                >
+                  {busyAction === 'task-add' ? <Loader2 size={11} className="animate-spin" /> : <Plus size={11} />}
+                  {t('autonomy.add', 'Add')}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-2 py-1 rounded border border-border-muted text-text-muted hover:text-text-primary"
+                  data-testid="autonomy-board-add-cancel"
+                >
+                  {t('common.cancel', 'Cancel')}
+                </button>
+              </div>
+            </form>
+          )}
+          {boardError && (
+            <p className="text-[11px] text-error mb-1.5" data-testid="autonomy-board-error">
+              {boardError}
+            </p>
+          )}
+        </section>
+
         {/* Tasks by status */}
         {STATUS_ORDER.map((grp) => {
           const groupTasks = tasks.filter((task) => task.status === grp.id);
@@ -411,13 +567,106 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
                         {task.priority}
                       </span>
                       <span className="text-text-secondary truncate flex-1">{task.title}</span>
+                      {task.status === 'open' && (
+                        <button
+                          onClick={() => void runBoardAction('task-claim', () => api.autonomy.taskClaim(task.id))}
+                          disabled={busyAction !== null}
+                          className="p-1 rounded text-text-muted hover:text-success disabled:opacity-50"
+                          title={t('autonomy.claim', 'Claim this task')}
+                          data-testid={`autonomy-task-claim-${task.id}`}
+                        >
+                          <Play size={11} />
+                        </button>
+                      )}
+                      {task.status === 'in_progress' && (
+                        <>
+                          <button
+                            onClick={() => setPendingText({ taskId: task.id, kind: 'complete', text: '' })}
+                            disabled={busyAction !== null}
+                            className="p-1 rounded text-text-muted hover:text-success disabled:opacity-50"
+                            title={t('autonomy.complete', 'Complete (asks for a worklog summary)')}
+                            data-testid={`autonomy-task-complete-${task.id}`}
+                          >
+                            <CheckCircle2 size={11} />
+                          </button>
+                          <button
+                            onClick={() => void runBoardAction('task-release', () => api.autonomy.taskRelease(task.id))}
+                            disabled={busyAction !== null}
+                            className="p-1 rounded text-text-muted hover:text-warning disabled:opacity-50"
+                            title={t('autonomy.release', 'Release the claim back to the open pool')}
+                            data-testid={`autonomy-task-release-${task.id}`}
+                          >
+                            <RotateCcw size={11} />
+                          </button>
+                        </>
+                      )}
+                      {(task.status === 'open' || task.status === 'in_progress') && (
+                        <button
+                          onClick={() => setPendingText({ taskId: task.id, kind: 'block', text: '' })}
+                          disabled={busyAction !== null}
+                          className="p-1 rounded text-text-muted hover:text-error disabled:opacity-50"
+                          title={t('autonomy.block', 'Block (asks for a reason)')}
+                          data-testid={`autonomy-task-block-${task.id}`}
+                        >
+                          <Ban size={11} />
+                        </button>
+                      )}
+                      {task.status === 'blocked' && (
+                        <button
+                          onClick={() => void runBoardAction('task-release', () => api.autonomy.taskRelease(task.id))}
+                          disabled={busyAction !== null}
+                          className="p-1 rounded text-text-muted hover:text-success disabled:opacity-50"
+                          title={t('autonomy.reopen', 'Reopen this task')}
+                          data-testid={`autonomy-task-release-${task.id}`}
+                        >
+                          <RotateCcw size={11} />
+                        </button>
+                      )}
                     </div>
+                    {task.status === 'blocked' && task.blockedReason && (
+                      <p className="mt-1 text-[10px] text-error/80 truncate" title={task.blockedReason}>
+                        {task.blockedReason}
+                      </p>
+                    )}
                     {(task.claimedBy || (task.dependsOn && task.dependsOn.length > 0)) && (
                       <div className="mt-1 flex items-center gap-2 text-[10px] text-text-muted">
                         {task.claimedBy && <span className="font-mono truncate">@{task.claimedBy}</span>}
                         {task.dependsOn && task.dependsOn.length > 0 && (
                           <span className="ml-auto">⬑ {task.dependsOn.length} dep{task.dependsOn.length > 1 ? 's' : ''}</span>
                         )}
+                      </div>
+                    )}
+                    {pendingText?.taskId === task.id && (
+                      <div className="mt-1.5 flex items-center gap-1.5">
+                        <input
+                          value={pendingText.text}
+                          onChange={(e) => setPendingText({ ...pendingText, text: e.target.value })}
+                          placeholder={
+                            pendingText.kind === 'complete'
+                              ? t('autonomy.summaryPlaceholder', 'Worklog summary…')
+                              : t('autonomy.reasonPlaceholder', 'Why is it blocked?')
+                          }
+                          className="flex-1 px-2 py-1 rounded bg-background border border-border text-text-primary placeholder:text-text-muted"
+                          autoFocus
+                          data-testid="autonomy-task-input"
+                        />
+                        <button
+                          onClick={() => void confirmPendingText()}
+                          disabled={!pendingText.text.trim() || busyAction !== null}
+                          className="p-1 rounded text-text-muted hover:text-success disabled:opacity-50"
+                          title={t('common.confirm', 'Confirm')}
+                          data-testid="autonomy-task-input-confirm"
+                        >
+                          <Check size={12} />
+                        </button>
+                        <button
+                          onClick={() => setPendingText(null)}
+                          className="p-1 rounded text-text-muted hover:text-text-primary"
+                          title={t('common.cancel', 'Cancel')}
+                          data-testid="autonomy-task-input-cancel"
+                        >
+                          <X size={12} />
+                        </button>
                       </div>
                     )}
                   </div>

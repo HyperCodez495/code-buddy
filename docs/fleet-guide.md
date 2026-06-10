@@ -766,6 +766,11 @@ LLM (continuing with peer's answer in context): "darkstar suggests …"
 >   service status + start/stop/restart/install/uninstall, a one-shot "run one tick" through the real CLI,
 >   the free-first model ladder with the model the next tick would use, plus the live queue/presence/worklog
 >   (`cowork/src/main/autonomy/autonomy-daemon-bridge.ts`).
+> - **GUI board mutations.** The same panel also carries the kanban's write half: add tasks, claim (human-supervised,
+>   so `critical` is allowed there), complete (worklog summary required), block (reason required), release/reopen,
+>   and a one-click sweep of expired claims — all through the core `FleetColabStore` so GUI edits share the protocol
+>   invariants (DAG readiness, claim lease, worklog append). Mutations are attributed to `<host>/cowork`
+>   (`cowork/src/main/autonomy/colab-board-bridge.ts`, `autonomy.task*` IPC).
 
 Fleet bus = the `claude-et-patrice/.codebuddy/` repo on a shared
 Tailscale mesh. Each peer periodically:
