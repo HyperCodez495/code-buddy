@@ -11,10 +11,11 @@ once it reaches `1.0.0`.
 ## [Unreleased]
 
 Post-1.0 work tracked in the V1.1 roadmap: OpenAPI spec (WS8-T2),
-GitNexus integration (WS2), Lessons store + Context Engine v2 (WS3),
-central Policy Engine + PII lint (WS5). See
+GitNexus integration (WS2), central Policy Engine + PII lint (WS5). See
 `claude-et-patrice/propositions/` and the V1.x roadmap section of
 [`docs/fleet-guide.md`](docs/fleet-guide.md).
+
+## [1.1.0] — 2026-06-11
 
 ### Added — `/goal` Ralph loop, parité Hermes Agent (2026-06-11)
 
