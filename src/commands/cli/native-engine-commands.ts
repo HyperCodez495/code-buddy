@@ -870,11 +870,13 @@ export function registerFleetAutonomyCommands(program: Command): void {
     .option('--priority <p>', 'critical | high | medium | low', 'medium')
     .option('--depends-on <ids>', 'comma-separated task ids this task depends on')
     .option('--description <text>', 'task description')
+    .option('--goal-mode', 'judge-gated loop: the worker keeps going until an LLM judge confirms the task is done, then blocks for human review when the budget is spent')
+    .option('--goal-max-turns <n>', 'goal-mode turn budget (default 5)')
     .option('--dir <path>', 'colab dir')
     .option('--json', 'output JSON')
     .action(async (
       title: string,
-      opts: { priority?: string; dependsOn?: string; description?: string; dir?: string; json?: boolean },
+      opts: { priority?: string; dependsOn?: string; description?: string; goalMode?: boolean; goalMaxTurns?: string; dir?: string; json?: boolean },
     ) => {
       const { FleetColabStore } = await import('../../fleet/colab-store.js');
       const store = new FleetColabStore({ ...(opts.dir ? { dir: opts.dir } : {}) });
@@ -884,9 +886,12 @@ export function registerFleetAutonomyCommands(program: Command): void {
         priority,
         ...(opts.description ? { description: opts.description } : {}),
         ...(opts.dependsOn ? { dependsOn: opts.dependsOn.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
+        ...(opts.goalMode ? { goalMode: true } : {}),
+        ...(opts.goalMaxTurns ? { goalMaxTurns: parseInt(opts.goalMaxTurns, 10) } : {}),
       });
       if (opts.json) { console.log(JSON.stringify({ task }, null, 2)); return; }
-      console.log(`Added task ${task.id} [${task.priority}]${task.dependsOn ? ` depends on ${task.dependsOn.join(', ')}` : ''}`);
+      const goalNote = task.goalMode ? ` goal-mode(${task.goalMaxTurns ?? 5} turns)` : '';
+      console.log(`Added task ${task.id} [${task.priority}]${goalNote}${task.dependsOn ? ` depends on ${task.dependsOn.join(', ')}` : ''}`);
     });
 
   fleet

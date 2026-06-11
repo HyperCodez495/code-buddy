@@ -38,6 +38,10 @@ import { spawnSync, type SpawnSyncReturns, type SpawnSyncOptionsWithStringEncodi
 import type { ColabTask } from '../fleet/colab-store.js';
 import type { AutonomousModelChoice } from '../agent/model-tier.js';
 import type { TaskExecutor, TaskExecutionResult } from './autonomous-loop.js';
+import { buildColabGoalContinuationPrompt } from './colab-goal.js';
+
+/** Tail of agent stdout kept for the goal-mode judge (matches the judge's 4 KB cap). */
+const OUTPUT_TAIL_CHARS = 4000;
 
 export type SpawnFn = (
   command: string,
@@ -122,7 +126,11 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
       return { ok: false, summary: 'no buddy entrypoint', error: `no src/index.ts or dist/index.js under ${repoRoot}` };
     }
 
-    const prompt = `${task.title}\n\n${task.description ?? ''}`.trim();
+    // Goal-mode continuation: on later turns the worker gets the judge's
+    // nudge instead of the bare task text, so it targets the remaining gap.
+    const prompt = task.goalMode && (task.goalTurnsUsed ?? 0) > 0
+      ? buildColabGoalContinuationPrompt(task)
+      : `${task.title}\n\n${task.description ?? ''}`.trim();
     const env = buildAgentEnv(model);
     const started = Date.now();
     const res = doSpawn(
@@ -143,6 +151,9 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
         error: reason,
       };
     }
+
+    // Tail of the agent's real output — what the goal-mode judge evaluates.
+    const output = (res.stdout ?? '').slice(-OUTPUT_TAIL_CHARS).trim();
 
     // Acceptance gate: if the task carries a verify command AND running task-
     // supplied shell is allowed (opt-in), the agent "finishing" isn't enough —
@@ -171,6 +182,7 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
         ok: true,
         summary: `agent ran ${task.id} [${model.tier}/${model.model}] + gate \`${gate}\` passed (${elapsedSeconds}s)`,
         elapsedSeconds,
+        ...(output ? { output } : {}),
       };
     }
 
@@ -179,6 +191,7 @@ export function createAgentTaskExecutor(opts: AgentTaskExecutorOptions = {}): Ta
       ok: true,
       summary: `agent ran ${task.id} [${model.tier}/${model.model}] in ${workspaceRoot} (${elapsedSeconds}s)`,
       elapsedSeconds,
+      ...(output ? { output } : {}),
     };
   };
 }

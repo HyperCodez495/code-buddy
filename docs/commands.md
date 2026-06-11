@@ -79,6 +79,10 @@
 
 | Command | Description |
 |:--------|:------------|
+| `/goal <text>` | Set a standing goal and start the Ralph loop — after each turn a judge model checks completion and auto-continues until done, paused, or the turn budget (default 20) is spent |
+| `/goal status\|pause\|resume\|clear` | Inspect or control the goal loop (`resume` resets the budget; aliases `stop`/`done` clear) |
+| `/subgoal <text>` | Add a numbered acceptance criterion mid-loop (judge then requires evidence for every criterion) |
+| `/subgoal remove <n>\|clear` | Manage subgoals (bare `/subgoal` lists them) |
 | `/yolo on\|off\|safe\|status` | YOLO mode control |
 | `/yolo allow "<cmd>"` | Add command to auto-execute list |
 | `/yolo deny "<cmd>"` | Block a command pattern |
@@ -164,6 +168,7 @@ The REST endpoint mirrors that shape with
 ```bash
 buddy research "<topic>" [--workers N] [--rounds N] [--output file.md]
 buddy flow "<goal>" [--max-retries N] [--verbose]
+buddy goal "<goal>" [--max-turns N] [--judge-model <model>] [-m <model>]   # headless Ralph loop: full agent + judge until done (exit 0) or paused (exit 1)
 buddy hermes profile|agent|doctor|plan|toolsets|hooks|prompt-size|parity|tools-parity|tools [dispatchProfile] [--json] [--markdown] [--plan-output file]
 buddy hermes status [dispatchProfile] [--json]
 buddy hermes smoke [--json]

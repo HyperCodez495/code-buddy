@@ -69,6 +69,9 @@ export const FLEET_EVENT_TYPES = [
   'fleet:chat-session:start',
   'fleet:chat-session:turn',
   'fleet:chat-session:end',
+  // Goal Ralph-loop on peer sessions (Hermes gateway parity). Metadata
+  // only — status/verdict/turn counters, never goal text or reasons.
+  'fleet:chat-session:goal',
 ] as const;
 
 export type FleetEventType = (typeof FLEET_EVENT_TYPES)[number];
@@ -235,4 +238,21 @@ export function broadcastChatSessionEnd(
   payload: { sessionId: string; reason?: 'end' | 'expired' },
 ): void {
   broadcastFleetEvent('fleet:chat-session:end', { ...payload });
+}
+
+/**
+ * Goal Ralph-loop on a peer session (Hermes gateway parity) — emitted on
+ * goal attach/pause/resume/clear and after each post-turn judge verdict.
+ * Metadata only: status/verdict/counters, never goal text or judge reasons.
+ */
+export function broadcastChatSessionGoal(
+  payload: {
+    sessionId: string;
+    status: string;
+    verdict?: string;
+    turnsUsed?: number;
+    maxTurns?: number;
+  },
+): void {
+  broadcastFleetEvent('fleet:chat-session:goal', { ...payload });
 }

@@ -265,6 +265,9 @@ export {
 // Heartbeat handler (fleet AUTONOMOUS-FLEET-PROTOCOL v0.1)
 export { handleHeartbeat } from './heartbeat-handler.js';
 
+// Goal handler (Hermes Agent parity — Ralph loop)
+export { handleGoal, handleSubgoal } from './goal-handler.js';
+
 // Daily reset handler (audit OpenClaw heritage activation)
 export { handleDailyReset } from './daily-reset-handler.js';
 

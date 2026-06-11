@@ -33,6 +33,7 @@ import type {
   ColabWorklogFileChange,
   FleetColabStore,
 } from '../fleet/colab-store.js';
+import { DEFAULT_COLAB_GOAL_MAX_TURNS, type ColabGoalJudge } from './colab-goal.js';
 
 export interface TaskExecutionResult {
   ok: boolean;
@@ -40,6 +41,12 @@ export interface TaskExecutionResult {
   filesModified?: ColabWorklogFileChange[];
   elapsedSeconds?: number;
   error?: string;
+  /**
+   * Tail of the worker's actual output (capped). Goal-mode judges evaluate
+   * this; absent for executors that don't capture output (judge falls back
+   * to `summary`).
+   */
+  output?: string;
 }
 
 export type TaskExecutor = (
@@ -54,10 +61,15 @@ export interface AutonomousLoopConfig {
   policy?: ModelTierPolicy;
   /** Kill-switch — when it returns false the tick is a no-op. Default: always on. */
   enabled?: () => boolean;
+  /**
+   * Judge for `goalMode` tasks (Hermes kanban goal-mode parity). When absent,
+   * goal-mode tasks complete like plain tasks (no judge gate).
+   */
+  goalJudge?: ColabGoalJudge;
 }
 
 export interface TickResult {
-  outcome: 'disabled' | 'idle' | 'completed' | 'failed' | 'saturated';
+  outcome: 'disabled' | 'idle' | 'completed' | 'failed' | 'saturated' | 'goal_continue' | 'goal_blocked';
   taskId?: string;
   taskTitle?: string;
   model?: AutonomousModelChoice;
@@ -77,6 +89,7 @@ export class FleetAutonomousLoop {
    * success. Resets across process restarts — escalation is a within-run feature.
    */
   private readonly failures = new Map<string, number>();
+  private readonly goalJudge: ColabGoalJudge | undefined;
 
   constructor(config: AutonomousLoopConfig) {
     this.store = config.store;
@@ -84,6 +97,7 @@ export class FleetAutonomousLoop {
     this.executor = config.executor;
     this.policy = config.policy ?? {};
     this.enabled = config.enabled ?? (() => true);
+    this.goalJudge = config.goalJudge;
   }
 
   /** Run a single autonomous tick. Never throws — failures are logged + reported. */
@@ -140,6 +154,13 @@ export class FleetAutonomousLoop {
     }
 
     if (result.ok) {
+      // Goal-mode gate (Hermes kanban goal-mode): a successful attempt is not
+      // enough — the judge must confirm the task's criteria are satisfied.
+      if (task.goalMode && this.goalJudge) {
+        const goalOutcome = await this.evaluateGoalModeTask(task, result, model);
+        if (goalOutcome) return goalOutcome;
+        // null → judge said done (or skipped): fall through to completion.
+      }
       this.failures.delete(task.id);
       this.store.completeTask(task.id, {
         summary: result.summary,
@@ -171,5 +192,60 @@ export class FleetAutonomousLoop {
       model,
       ...(result.error ? { detail: result.error } : {}),
     };
+  }
+
+  /**
+   * Goal-mode decision ladder. Returns a TickResult when the loop should NOT
+   * complete the task (judge says continue / budget exhausted), or null when
+   * the task may complete (judge done/skipped, or judge unreachable —
+   * fail-open like the interactive Ralph loop).
+   */
+  private async evaluateGoalModeTask(
+    task: ColabTask,
+    result: TaskExecutionResult,
+    model: AutonomousModelChoice,
+  ): Promise<TickResult | null> {
+    let verdict;
+    try {
+      verdict = await this.goalJudge!(task, result, model);
+    } catch {
+      return null; // fail-open: an unusable judge never blocks completion
+    }
+    if (verdict.verdict !== 'continue') return null;
+
+    const maxTurns = task.goalMaxTurns ?? DEFAULT_COLAB_GOAL_MAX_TURNS;
+    const turnsUsed = (task.goalTurnsUsed ?? 0) + 1;
+
+    if (turnsUsed >= maxTurns) {
+      // Hermes rule: block for human review instead of spinning forever.
+      const reason = `goal budget exhausted (${turnsUsed}/${maxTurns}) — judge: ${verdict.reason}`;
+      this.store.blockTask(task.id, reason);
+      this.store.appendWorklog({
+        agent: this.store.agentId,
+        taskId: task.id,
+        summary: `Goal-mode blocked after ${turnsUsed}/${maxTurns} turns: ${verdict.reason}`,
+        filesModified: result.filesModified ?? [],
+        issues: [reason],
+        nextSteps: ['human review: unblock, split, or complete the task manually'],
+      });
+      this.store.updatePresence({ status: 'idle', currentTask: null });
+      return { outcome: 'goal_blocked', taskId: task.id, taskTitle: task.title, model, detail: verdict.reason };
+    }
+
+    // Under budget: persist the consumed turn + reason, release the task so a
+    // later tick continues it with the continuation nudge. A judge "continue"
+    // is NOT an executor failure — the model ladder must not escalate.
+    this.store.recordGoalTurn(task.id, verdict.reason);
+    this.store.appendWorklog({
+      agent: this.store.agentId,
+      taskId: task.id,
+      summary: `Goal-mode turn ${turnsUsed}/${maxTurns} — judge: continue: ${verdict.reason}`,
+      filesModified: result.filesModified ?? [],
+      issues: [],
+      nextSteps: ['continue on a later tick with the goal continuation nudge'],
+    });
+    this.store.releaseTask(task.id);
+    this.store.updatePresence({ status: 'idle', currentTask: null });
+    return { outcome: 'goal_continue', taskId: task.id, taskTitle: task.title, model, detail: verdict.reason };
   }
 }

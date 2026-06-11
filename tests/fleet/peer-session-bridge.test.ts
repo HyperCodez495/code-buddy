@@ -57,6 +57,7 @@ vi.mock('../../src/server/websocket/fleet-bridge.js', () => ({
   broadcastChatSessionStart: vi.fn(),
   broadcastChatSessionTurn: vi.fn(),
   broadcastChatSessionEnd: vi.fn(),
+  broadcastChatSessionGoal: vi.fn(),
 }));
 
 import {

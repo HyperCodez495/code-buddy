@@ -806,6 +806,17 @@ Tailscale mesh. Each peer periodically:
    else rollback + mark blocked.
 7. Append `colab-worklog.json` entry, mark task completed, push.
 
+**Goal-mode tasks** (Hermes kanban goal-mode parity): add a task with
+`buddy fleet tasks add "<title>" --goal-mode [--goal-max-turns N]` and a
+successful worker attempt is no longer enough — an LLM judge (fail-open,
+free local tier by default, overridable via `goals.judgeModel`) checks the
+task title/description with `acceptanceCriteria` as strict numbered
+criteria. Judge "continue" re-opens the task with a continuation nudge
+(turn counter persisted on the task, default budget 5; never escalates the
+model ladder); once the budget is spent the task is **blocked for human
+review** instead of spinning. Tick outcomes: `goal_continue`,
+`goal_blocked`.
+
 Configure via TOML `[autonomous_fleet]`:
 
 ```toml
@@ -877,6 +888,18 @@ append turns with `continue`, close with `end`.
   external monitoring.
 - `peer.chat-session.end({ sessionId })`
   → `{ closed: boolean, traceId }`
+- `peer.chat-session.goal({ sessionId, action, goal?, maxTurns?, text?, index? })`
+  — standing-goal Ralph loop on a peer session (Hermes gateway parity).
+  Actions: `set | status | pause | resume | clear | subgoal-add |
+  subgoal-list | subgoal-remove | subgoal-clear`. Setting a new goal while
+  one is active is rejected (`GOAL_ACTIVE`) — pause/clear first. With an
+  active goal, every `continue`/`continue-stream` response carries
+  `goal: { status, verdict, reason, message, turnsUsed, maxTurns,
+  continuationPrompt? }`: the judge runs **server-side** after the turn and
+  the **caller drives the loop** by sending `continuationPrompt` back as the
+  next `continue` prompt. Goal state persists with the session record and
+  follows the same idle TTL. Verdict/status changes emit metadata-only
+  `fleet:chat-session:goal` events (never goal text).
 
 #### Idle TTL
 

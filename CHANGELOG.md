@@ -16,6 +16,54 @@ central Policy Engine + PII lint (WS5). See
 `claude-et-patrice/propositions/` and the V1.x roadmap section of
 [`docs/fleet-guide.md`](docs/fleet-guide.md).
 
+### Added — `/goal` Ralph loop, parité Hermes Agent (2026-06-11)
+
+- **`/goal <text>`** — standing goal with judge-gated auto-continue
+  (1:1 port of Hermes Agent's goal system, `hermes_cli/goals.py`).
+  After each turn an auxiliary LLM judge replies
+  `{"done": bool, "reason": str}`; on `continue` a plain user-role
+  continuation prompt is auto-submitted (no system-prompt mutation,
+  prompt cache intact) until the goal is done, the turn budget is
+  exhausted (default 20), the user pauses/clears it, or Esc interrupts
+  (auto-pause). Subcommands: `status | pause | resume | clear`
+  (aliases `stop`, `done`). A real user message mid-loop preempts the
+  continuation; the judge then evaluates after that turn.
+- **`/subgoal <text>`** — numbered acceptance criteria added mid-loop
+  (`remove <n>`, `clear`, bare to list); the judge then requires
+  specific evidence for every criterion.
+- **Robustness** — judge is fail-open (transport errors → continue);
+  3 consecutive unparseable judge replies auto-pause with a config
+  hint; per-session persistence under `~/.codebuddy/goals/` survives
+  `--resume`/`--continue` (cleared goals keep an audit tombstone).
+- **Config** — `goals.{maxTurns,judgeModel,judgeMaxTokens,judgeTimeoutMs}`
+  in `settings.json`; env `CODEBUDDY_GOAL_MAX_TURNS`,
+  `CODEBUDDY_GOAL_JUDGE_MODEL` (route the judge to a free local model).
+  New module `src/goals/`.
+- **`buddy goal "<text>"`** — headless Ralph loop: runs the full agent
+  (tools included) in-process, judge-gated continuation until done
+  (exit 0) or paused (exit 1). `--max-turns`, `--judge-model`, `-m`.
+- **Colab board goal-mode** (Hermes kanban goal-mode parity) —
+  `buddy fleet tasks add --goal-mode [--goal-max-turns N]`: the
+  autonomous worker's successful attempt must now pass the judge
+  (acceptanceCriteria become strict numbered criteria); "continue"
+  re-opens the task with a continuation nudge (persisted turn budget,
+  default 5); budget exhausted → task **blocked for human review**
+  instead of spinning. Judge "continue" never escalates the model
+  ladder. New tick outcomes `goal_continue` / `goal_blocked`.
+- **Peer-session goal parity** (Hermes gateway semantics) —
+  `peer.chat-session.goal` RPC (set/status/pause/resume/clear/
+  subgoal-add/-list/-remove/-clear); after each `continue`/
+  `continue-stream` the judge runs server-side and the response carries
+  `goal: {status, verdict, reason, message, continuationPrompt?}` —
+  the **caller drives the loop**. Setting a new goal while one is
+  active is rejected (`GOAL_ACTIVE`). Goal state persists in the
+  peer-session store (survives restarts, follows the session TTL);
+  metadata-only `fleet:chat-session:goal` broadcasts.
+- **Judge cost tracking** — every goal-judge call records its token
+  usage in the session cost ledger (`getCostTracker().recordUsage`).
+  ~115 tests across `tests/goals/`, `tests/commands/`, `tests/daemon/`,
+  `tests/fleet/`.
+
 ### Added — WS3 « Mémoire & continuité du run » (2026-06-10)
 
 The continuity workstream from the modernization plan, V1.1's first lot:

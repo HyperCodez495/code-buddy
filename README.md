@@ -193,7 +193,7 @@ From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still sup
 |:---------|:-----------|:-----|
 | **AI Providers** | 15 providers (Grok, Claude, GPT, Gemini, Ollama, LM Studio, AWS Bedrock, Azure, Groq, Together, Fireworks, OpenRouter, vLLM, Copilot, Mistral), circuit breaker, model pairs | [providers.md](docs/providers.md) |
 | **Tools** | ~110 tools with RAG selection, multi-strategy edit matching, Codex-style apply_patch, streaming, BM25 tool search, code exec sandbox | [tools-reference.md](docs/tools-reference.md) |
-| **Commands** | 190+ slash commands, CLI subcommands (`/dev`, `/pr`, `/lint`, `/switch`, `/think`, `/batch`, `/watch`, `/conflicts`, `/vulns`, `/replace`) | [commands.md](docs/commands.md) |
+| **Commands** | 190+ slash commands, CLI subcommands (`/goal`, `/dev`, `/pr`, `/lint`, `/switch`, `/think`, `/batch`, `/watch`, `/conflicts`, `/vulns`, `/replace`) | [commands.md](docs/commands.md) |
 | **Cowork Desktop** | Electron cockpit, embedded Code Buddy engine, backend health/start controls, model settings, permission rules, visual workflows, traces, artifacts, MCP/skills/plugin management | [Cowork Desktop](docs/cowork.md), [cowork/readme.md](cowork/readme.md), [cowork/ARCHITECTURE.md](cowork/ARCHITECTURE.md) |
 | **Buddy Companion** | ChatGPT-backed identity, voice/TTS, proactive check-ins, self-evaluation, competitive radar, mission board, learned routines, safety ledger, local percept journal | [commands.md](docs/commands.md) |
 | **Vision & Presence** | Opt-in webcam snapshots, MediaPipe face/hand/pose/finger-tip analysis, local face enrollment, presence state for the agent | [cowork/ARCHITECTURE.md](cowork/ARCHITECTURE.md) |
@@ -202,7 +202,7 @@ From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still sup
 | **Security** | Guardian Agent (AI risk scoring), OS/Docker/OpenShell sandbox, SSRF guard, secrets vault, write policy, exec policy, loop detection, omission detection, output sanitizer | [security.md](docs/security.md) |
 | **Channels** | 20+ messaging channels (Telegram, Discord, Slack, WhatsApp, Signal, Teams, Matrix, IRC, and more), DM pairing, send policy | [channels.md](docs/channels.md) |
 | **Context Engine** | Smart compression, tool output masking, image pruning, transcript repair, pre-compaction flush, restorable compression, JIT context, importance-weighted window | [context-engine.md](docs/context-engine.md) |
-| **Fleet & Autonomy** | Peer-to-peer hub (`peer.chat` / `peer.tool.invoke` / `peer_delegate`), A2A + ACP + MCP interop, 24/7 autonomous service (`buddy autonomy install`), event-driven daemon, claim TTL/lease, DAG task dependencies, workers→verifier→synthesizer swarm, free-first local→Tailscale→paid model tier | [fleet-guide.md](docs/fleet-guide.md) |
+| **Fleet & Autonomy** | Peer-to-peer hub (`peer.chat` / `peer.tool.invoke` / `peer_delegate`), A2A + ACP + MCP interop, 24/7 autonomous service (`buddy autonomy install`), event-driven daemon, claim TTL/lease, DAG task dependencies, workers→verifier→synthesizer swarm, free-first local→Tailscale→paid model tier, judge-gated goal loops (`/goal` Ralph loop, `buddy goal`, board goal-mode, peer-session goals) | [fleet-guide.md](docs/fleet-guide.md) |
 | **Infrastructure** | HTTP server (OpenAI-compatible), WebSocket gateway, daemon mode, cron, device nodes, canvas/A2UI, 6 cloud deploy configs, MCP, plugins | [infrastructure.md](docs/infrastructure.md) |
 | **Configuration** | Env vars, TOML config with profiles, model-aware limits, per-agent params, i18n (6 locales), personas | [configuration.md](docs/configuration.md) |
 | **Development** | TypeScript strict, Vitest (27,334 tests), ESM, middleware pipeline, facade architecture | [development.md](docs/development.md) |
@@ -214,6 +214,7 @@ From source, Cowork requires Node.js `>=22` in `cowork/`; the root CLI still sup
 - **Vision**: local camera snapshots, MediaPipe face/hand/pose/finger-tip percepts, face enrollment, and presence state for context-aware collaboration
 - **Memory**: Persistent + semantic + prospective + decision + coding style memory, ICM cross-session memory
 - **Knowledge**: Knowledge base injection, 40 bundled skills, self-authoring skills at runtime
+- **Goal Loops (Ralph loop)**: `/goal <text>` + `/subgoal` — a judge model re-checks completion after every turn and auto-continues until done (turn budget, pause/resume, fail-open judge); also headless (`buddy goal`), on fleet board tasks (`--goal-mode`, blocks for human review when the budget is spent), and on peer sessions (`peer.chat-session.goal`)
 - **Git Workflow**: Auto-commit (Aider-style), `/pr` creation, merge conflict resolver, ghost snapshots
 - **Code Intelligence**: LSP rename/refactor, auto-import, bug finder (25+ patterns, 6 langs), OpenAPI generator, log analyzer
 - **IDE Integration**: VS Code extension (diff view, inline edit, model switch), JetBrains plugin, LSP server

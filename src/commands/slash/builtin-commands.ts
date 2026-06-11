@@ -835,6 +835,26 @@ const personaCommands: SlashCommand[] = [
 
 const autonomyCommands: SlashCommand[] = [
   {
+    name: 'goal',
+    description: 'Standing goal with judge + auto-continue loop (Ralph loop): /goal <text> | status | pause | resume | clear',
+    prompt: '__GOAL__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: '<text> to set a goal, or status, pause, resume, clear', required: false }
+    ]
+  },
+  {
+    name: 'subgoal',
+    description: 'Add acceptance criteria to the active goal: /subgoal <text> | remove <n> | clear',
+    prompt: '__SUBGOAL__',
+    filePath: '',
+    isBuiltin: true,
+    arguments: [
+      { name: 'action', description: '<text> to add a criterion, remove <n>, clear, or empty to list', required: false }
+    ]
+  },
+  {
     name: 'yolo',
     description: 'Toggle YOLO mode (full auto-execution with guardrails)',
     prompt: '__YOLO_MODE__',

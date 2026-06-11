@@ -21,6 +21,7 @@ import { extractFileReference, getFileSuggestions, FileSuggestion } from "../ui/
 
 // Import interaction logger for session tracking
 import { getInteractionLogger } from "../logging/interaction-logger.js";
+import { maybeContinueGoalAfterTurn } from "../goals/goal-loop.js";
 import { logger } from '../utils/logger.js';
 
 // Import history manager for persistent command history
@@ -87,6 +88,12 @@ export function useInputHandler({
   const lastEscapeTimeRef = useRef<number>(0);
   const DOUBLE_ESCAPE_THRESHOLD = 500; // ms
 
+  // Goal loop (Ralph loop): monotonically increasing turn sequence. A real
+  // user submit mid-turn bumps it, which voids the stale turn's continuation
+  // (the judge then runs after the user's turn instead — Hermes preemption).
+  const turnSeqRef = useRef(0);
+  const goalInterruptedRef = useRef(false);
+
   /**
    * Save instruction to .codebuddyrules file (Standard # capture)
    */
@@ -145,6 +152,7 @@ export function useInputHandler({
       return true;
     }
     if (isProcessing || isStreaming) {
+      goalInterruptedRef.current = true;
       agent.abortCurrentOperation();
       setIsProcessing(false);
       setIsStreaming(false);
@@ -579,6 +587,8 @@ export function useInputHandler({
   };
 
   const processUserMessage = async (userInput: string) => {
+    const mySeq = ++turnSeqRef.current;
+    goalInterruptedRef.current = false;
     const userEntry: ChatEntry = {
       type: "user",
       content: userInput,
@@ -598,10 +608,10 @@ export function useInputHandler({
     setCurrentActivity?.('Sending to LLM...');
     clearInput();
 
+    let fullResponseContent = "";
     try {
       setIsStreaming(true);
       let streamingEntry: ChatEntry | null = null;
-      let fullResponseContent = "";
 
       for await (const chunk of agent.processUserMessageStream(userInput)) {
         switch (chunk.type) {
@@ -800,6 +810,32 @@ export function useInputHandler({
     setIsProcessing(false);
     setCurrentActivity?.('');
     processingStartTime.current = 0;
+
+    // Goal loop (Ralph loop): judge the finished turn and maybe auto-continue.
+    // Failures here must never break a turn — the goal system is advisory.
+    try {
+      const outcome = await maybeContinueGoalAfterTurn({
+        client: agent.getClient(),
+        lastResponse: fullResponseContent,
+        interrupted: goalInterruptedRef.current,
+      });
+      if (outcome?.message) {
+        setChatHistory((prev) => [
+          ...prev,
+          { type: 'assistant', content: outcome.message!, timestamp: new Date() },
+        ]);
+      }
+      // Skip the continuation if a newer turn started while we were judging —
+      // the user's message preempts the loop and gets judged after its turn.
+      if (outcome?.continuationPrompt && turnSeqRef.current === mySeq) {
+        const continuation = outcome.continuationPrompt;
+        setTimeout(() => {
+          void processUserMessage(continuation);
+        }, 50);
+      }
+    } catch (error) {
+      logger.debug('goal after-turn hook failed', { error: String(error) });
+    }
   };
 
 

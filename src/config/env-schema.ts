@@ -106,6 +106,20 @@ export const ENV_SCHEMA: EnvVarDef[] = [
     min: 1000,
   },
   {
+    name: 'CODEBUDDY_GOAL_MAX_TURNS',
+    type: 'number',
+    description: 'Turn budget for /goal auto-continue loops (default 20)',
+    category: 'core',
+    min: 1,
+    max: 1000,
+  },
+  {
+    name: 'CODEBUDDY_GOAL_JUDGE_MODEL',
+    type: 'string',
+    description: 'Model used by the /goal judge (default: current session model)',
+    category: 'core',
+  },
+  {
     name: 'GROK_FORCE_TOOLS',
     type: 'boolean',
     default: 'false',

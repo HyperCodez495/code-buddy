@@ -63,6 +63,20 @@ export interface ColabTask {
   verifyCommand?: string;
   /** Ids of tasks that must be `completed` before this one is claimable (DAG). */
   dependsOn?: string[];
+  /**
+   * Goal-mode (Hermes kanban goal-mode parity): the worker loops on this task
+   * — after each attempt an LLM judge checks the title/description (+
+   * `acceptanceCriteria` as strict criteria); "continue" re-opens the task
+   * with a continuation nudge until `goalMaxTurns` is spent, then it is
+   * BLOCKED for human review instead of spinning.
+   */
+  goalMode?: boolean;
+  /** Per-task turn budget for goal-mode (default 5). */
+  goalMaxTurns?: number;
+  /** Goal-mode turns consumed so far (persisted — survives daemon restarts). */
+  goalTurnsUsed?: number;
+  /** Last judge reason (shown in the next continuation nudge). */
+  goalLastReason?: string;
   createdBy?: string;
   createdAt?: string;
 }
@@ -125,6 +139,8 @@ export interface AddTaskInput {
   acceptanceCriteria?: string[];
   verifyCommand?: string;
   dependsOn?: string[];
+  goalMode?: boolean;
+  goalMaxTurns?: number;
   createdBy?: string;
   id?: string;
 }
@@ -326,6 +342,20 @@ export class FleetColabStore {
     return { ...task };
   }
 
+  /**
+   * Record a consumed goal-mode turn (persisted, so the budget survives daemon
+   * restarts) and remember the judge's reason for the next continuation nudge.
+   */
+  recordGoalTurn(taskId: string, reason: string): ColabTask {
+    const file = this.readTasks();
+    const task = file.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
+    task.goalTurnsUsed = (task.goalTurnsUsed ?? 0) + 1;
+    task.goalLastReason = reason;
+    this.writeTasks(file);
+    return { ...task };
+  }
+
   /** Release a claimed task back to the open pool. */
   releaseTask(taskId: string): ColabTask {
     const file = this.readTasks();
@@ -353,6 +383,8 @@ export class FleetColabStore {
       ...(input.acceptanceCriteria ? { acceptanceCriteria: input.acceptanceCriteria } : {}),
       ...(input.verifyCommand ? { verifyCommand: input.verifyCommand } : {}),
       ...(input.dependsOn && input.dependsOn.length > 0 ? { dependsOn: [...new Set(input.dependsOn)] } : {}),
+      ...(input.goalMode ? { goalMode: true } : {}),
+      ...(input.goalMaxTurns && input.goalMaxTurns > 0 ? { goalMaxTurns: Math.trunc(input.goalMaxTurns) } : {}),
       createdBy: input.createdBy ?? this.agentId,
       createdAt: this.isoNow(),
     };

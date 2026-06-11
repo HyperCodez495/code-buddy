@@ -2575,6 +2575,17 @@ addLazyCommand(
   },
 );
 
+// Goal Ralph loop — headless judge-gated auto-continue (Hermes Agent parity)
+addLazyCommand(
+  program,
+  'goal',
+  'Run the agent toward a standing goal until a judge model confirms it is done (Ralph loop)',
+  async () => {
+    const { createGoalCommand } = await import('./commands/goal-cli.js');
+    return createGoalCommand();
+  },
+);
+
 // Todo attention bias — Manus AI-inspired persistent task list
 addLazyCommand(
   program,

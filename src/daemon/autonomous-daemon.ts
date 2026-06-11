@@ -19,6 +19,7 @@ import { FileWatcherTrigger } from '../agent/file-watcher-trigger.js';
 import { FleetAutonomousLoop, type TickResult } from './autonomous-loop.js';
 import { createLocalModelTaskExecutor } from './ollama-task-executor.js';
 import { createAgentTaskExecutor } from './agent-task-executor.js';
+import { createColabGoalJudge } from './colab-goal.js';
 
 export interface AutonomousDaemonConfig {
   loop: FleetAutonomousLoop;
@@ -182,6 +183,7 @@ export function createDefaultAutonomousLoop(opts: DefaultAutonomousLoopOptions =
     store,
     tierConfig,
     executor,
+    goalJudge: createColabGoalJudge(),
     ...(opts.policy ? { policy: opts.policy } : {}),
     ...(opts.enabled ? { enabled: opts.enabled } : {}),
   });

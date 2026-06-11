@@ -33,6 +33,7 @@ import * as os from 'os';
 import * as path from 'path';
 import { withSessionLock } from '../persistence/session-lock.js';
 import { logger } from '../utils/logger.js';
+import type { GoalState } from '../goals/goal-state.js';
 import type {
   FleetDispatchProfile,
   FleetHermesToolsetDescriptor,
@@ -55,6 +56,8 @@ export interface PersistedChatSession {
   toolset?: FleetHermesToolsetDescriptor;
   /** User/assistant turns (system prompt is held separately). */
   messages: PersistedChatMessage[];
+  /** Standing goal attached via `peer.chat-session.goal` (Hermes gateway parity). */
+  goal?: GoalState;
   createdAt: number;
   lastUsedAt: number;
 }

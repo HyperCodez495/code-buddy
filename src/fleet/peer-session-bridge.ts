@@ -35,9 +35,20 @@ import { beginFleetWork } from './fleet-load.js';
 import { registerPeerMethod, unregisterPeerMethod } from '../server/websocket/peer-rpc.js';
 import {
   broadcastChatSessionEnd,
+  broadcastChatSessionGoal,
   broadcastChatSessionStart,
   broadcastChatSessionTurn,
 } from '../server/websocket/fleet-bridge.js';
+import { judgeGoal } from '../goals/goal-judge.js';
+import { resolveGoalsConfig } from '../goals/goal-manager.js';
+import {
+  applyJudgeOutcome,
+  createGoalState,
+  formatGoalStatusLine,
+  normalizeGoalState,
+  renderSubgoalsBlock,
+  type GoalState,
+} from '../goals/goal-state.js';
 import { logger } from '../utils/logger.js';
 import {
   getPeerSessionStore,
@@ -76,6 +87,8 @@ interface ChatSession {
   toolset?: FleetHermesToolsetDescriptor;
   /** User/assistant turns only — system prompt is held separately and prepended on each call. */
   messages: ChatSessionMessage[];
+  /** Standing goal attached via `peer.chat-session.goal` (Hermes gateway parity). */
+  goal?: GoalState;
   createdAt: number;
   lastUsedAt: number;
   /** Promise chain for FIFO serialisation of concurrent `continue` calls. */
@@ -227,9 +240,78 @@ function snapshot(session: ChatSession): PersistedChatSession {
     toolDecisions: session.toolDecisions,
     toolset: session.toolset,
     messages: [...session.messages],
+    ...(session.goal ? { goal: { ...session.goal, subgoals: [...session.goal.subgoals] } } : {}),
     createdAt: session.createdAt,
     lastUsedAt: session.lastUsedAt,
   };
+}
+
+/** What the post-turn judge reports back to the remote caller. */
+interface SessionGoalTurnReport {
+  status: string;
+  verdict: string;
+  reason: string;
+  turnsUsed: number;
+  maxTurns: number;
+  message: string;
+  /**
+   * Present when the judge said "continue" under budget. The CALLER drives
+   * the loop (Hermes gateway parity): send this back as the next
+   * `peer.chat-session.continue` prompt to keep working toward the goal.
+   */
+  continuationPrompt?: string;
+}
+
+/**
+ * Post-turn goal hook shared by `continue` and `continue-stream`. Judges the
+ * assistant's response against the session goal, applies the Hermes decision
+ * ladder, and returns the report embedded in the RPC response. The judge is
+ * fail-open; this never throws. The caller persists the session afterwards.
+ */
+async function evaluateSessionGoalAfterTurn(
+  session: ChatSession,
+  assistantText: string
+): Promise<SessionGoalTurnReport | null> {
+  const goal = session.goal;
+  if (!goal || goal.status !== 'active') return null;
+  if (!assistantText.trim()) return null; // empty turn: don't burn budget
+
+  let report: SessionGoalTurnReport;
+  try {
+    const config = resolveGoalsConfig();
+    const outcome = await judgeGoal(cachedGetter?.() ?? null, {
+      goal: goal.goal,
+      lastResponse: assistantText,
+      ...(goal.subgoals.length ? { subgoals: goal.subgoals } : {}),
+      ...(config.judgeModel ? { model: config.judgeModel } : {}),
+      timeoutMs: config.judgeTimeoutMs,
+    });
+    const decision = applyJudgeOutcome(goal, outcome);
+    report = {
+      status: decision.status,
+      verdict: decision.verdict,
+      reason: decision.reason,
+      turnsUsed: goal.turnsUsed,
+      maxTurns: goal.maxTurns,
+      message: decision.message,
+      ...(decision.continuationPrompt ? { continuationPrompt: decision.continuationPrompt } : {}),
+    };
+  } catch (err) {
+    logger.warn('[peer-session-bridge] goal evaluation failed — skipping this turn', {
+      sessionId: session.sessionId,
+      error: err instanceof Error ? err.message : String(err),
+    });
+    return null;
+  }
+
+  broadcastChatSessionGoal({
+    sessionId: session.sessionId,
+    status: report.status,
+    verdict: report.verdict,
+    turnsUsed: report.turnsUsed,
+    maxTurns: report.maxTurns,
+  });
+  return report;
 }
 
 /**
@@ -258,6 +340,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
     const persisted = await store.loadAll();
     for (const p of persisted) {
       if (now - p.lastUsedAt > idleMs) continue; // double-check vs the boundary
+      const goal = p.goal ? normalizeGoalState(p.goal) : null;
       sessions.set(p.sessionId, {
         sessionId: p.sessionId,
         systemPrompt: p.systemPrompt,
@@ -267,6 +350,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
         toolDecisions: p.toolDecisions,
         toolset: p.toolset,
         messages: [...p.messages],
+        ...(goal && goal.status !== 'cleared' ? { goal } : {}),
         createdAt: p.createdAt,
         lastUsedAt: p.lastUsedAt,
         pending: Promise.resolve(),
@@ -378,6 +462,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
       finishReason: string | null | undefined;
       usage: unknown;
       traceId: string;
+      goal?: SessionGoalTurnReport;
       dispatchProfile?: FleetDispatchProfile;
       toolPolicy?: FleetDispatchToolPolicy;
       toolDecisions?: FleetDispatchToolDecision[];
@@ -418,6 +503,12 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
       session.messages.push({ role: 'assistant', content: text });
       session.lastUsedAt = Date.now();
 
+      // Goal Ralph-loop (Hermes gateway parity): judge the turn server-side,
+      // mutate the session goal state, and report the verdict to the caller
+      // (who drives the continuation). Runs BEFORE the disk flush so the
+      // snapshot below persists the updated goal counters.
+      const goalReport = await evaluateSessionGoalAfterTurn(session, text);
+
       // V1.2-saga — flush the new turn to disk before returning so a
       // crash mid-conversation can be replayed on next boot. Failure
       // logs but doesn't fail the turn: the caller already got an
@@ -447,6 +538,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
         finishReason: response?.choices?.[0]?.finish_reason,
         usage: response?.usage,
         traceId: ctx.traceId,
+        ...(goalReport ? { goal: goalReport } : {}),
         ...sessionPolicyMetadata(session),
       };
     };
@@ -499,6 +591,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
       finishReason: string | null | undefined;
       usage: unknown;
       traceId: string;
+      goal?: SessionGoalTurnReport;
       dispatchProfile?: FleetDispatchProfile;
       toolPolicy?: FleetDispatchToolPolicy;
       toolDecisions?: FleetDispatchToolDecision[];
@@ -563,6 +656,9 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
       session.messages.push({ role: 'assistant', content: aggregate });
       session.lastUsedAt = Date.now();
 
+      // Goal Ralph-loop — same server-side judge as the non-streaming path.
+      const goalReport = await evaluateSessionGoalAfterTurn(session, aggregate);
+
       try {
         await getPeerSessionStore().save(snapshot(session));
       } catch (err) {
@@ -585,6 +681,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
         finishReason,
         usage,
         traceId: ctx.traceId,
+        ...(goalReport ? { goal: goalReport } : {}),
         ...sessionPolicyMetadata(session),
       };
     };
@@ -625,6 +722,150 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
     };
   });
 
+  // Goal Ralph-loop controls (Hermes gateway parity). One method, action-
+  // dispatched: set | status | pause | resume | clear | subgoal-add |
+  // subgoal-list | subgoal-remove | subgoal-clear. Mirrors the /goal +
+  // /subgoal slash surface. Setting a NEW goal while one is active is
+  // rejected (Hermes mid-run rule) — pause/clear first. status/pause/
+  // resume/clear are safe mid-turn: they only touch goal metadata.
+  registerPeerMethod('peer.chat-session.goal', async (params, ctx) => {
+    const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
+    const action = typeof params.action === 'string' ? params.action : 'status';
+    if (!sessionId) {
+      throw new Error('peer.chat-session.goal: sessionId is required (string)');
+    }
+    const session = sessions.get(sessionId);
+    if (!session) {
+      throw new Error(`SESSION_NOT_FOUND: no session with id "${sessionId}"`);
+    }
+
+    const persist = async (): Promise<void> => {
+      try {
+        await getPeerSessionStore().save(snapshot(session));
+      } catch (err) {
+        logger.warn('[peer-session-bridge] save on goal mutation failed', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+    };
+    const emitGoal = (status: string): void => {
+      broadcastChatSessionGoal({
+        sessionId,
+        status,
+        ...(session.goal ? { turnsUsed: session.goal.turnsUsed, maxTurns: session.goal.maxTurns } : {}),
+      });
+    };
+    const goalView = (): Record<string, unknown> =>
+      session.goal
+        ? {
+            goal: session.goal.goal,
+            status: session.goal.status,
+            turnsUsed: session.goal.turnsUsed,
+            maxTurns: session.goal.maxTurns,
+            subgoals: [...session.goal.subgoals],
+            ...(session.goal.lastVerdict ? { lastVerdict: session.goal.lastVerdict } : {}),
+            ...(session.goal.lastReason ? { lastReason: session.goal.lastReason } : {}),
+            ...(session.goal.pausedReason ? { pausedReason: session.goal.pausedReason } : {}),
+            statusLine: formatGoalStatusLine(session.goal),
+          }
+        : { status: 'none', statusLine: formatGoalStatusLine(null) };
+
+    switch (action) {
+      case 'set': {
+        const text = typeof params.goal === 'string' ? params.goal.trim() : '';
+        if (!text) {
+          throw new Error('peer.chat-session.goal: action "set" requires goal text (string)');
+        }
+        if (session.goal?.status === 'active') {
+          throw new Error(
+            'GOAL_ACTIVE: a goal is already active on this session. ' +
+              'Use action "status"/"pause"/"clear" mid-run; clear it before setting a new goal.'
+          );
+        }
+        const maxTurns =
+          typeof params.maxTurns === 'number' && params.maxTurns > 0
+            ? Math.trunc(params.maxTurns)
+            : resolveGoalsConfig().maxTurns;
+        session.goal = createGoalState(text, maxTurns);
+        await persist();
+        emitGoal('active');
+        return { ...goalView(), traceId: ctx.traceId };
+      }
+      case 'status':
+        return { ...goalView(), traceId: ctx.traceId };
+      case 'pause': {
+        if (!session.goal) return { ...goalView(), traceId: ctx.traceId };
+        session.goal.status = 'paused';
+        session.goal.pausedReason = 'user-paused';
+        await persist();
+        emitGoal('paused');
+        return { ...goalView(), traceId: ctx.traceId };
+      }
+      case 'resume': {
+        if (!session.goal) return { ...goalView(), traceId: ctx.traceId };
+        session.goal.status = 'active';
+        delete session.goal.pausedReason;
+        session.goal.turnsUsed = 0; // Hermes resume semantics: budget reset
+        await persist();
+        emitGoal('active');
+        return { ...goalView(), traceId: ctx.traceId };
+      }
+      case 'clear': {
+        const had = Boolean(session.goal);
+        delete session.goal;
+        await persist();
+        if (had) emitGoal('cleared');
+        return { cleared: had, ...goalView(), traceId: ctx.traceId };
+      }
+      case 'subgoal-add': {
+        const text = typeof params.text === 'string' ? params.text.trim() : '';
+        if (!text) {
+          throw new Error('peer.chat-session.goal: action "subgoal-add" requires text (string)');
+        }
+        if (!session.goal || !['active', 'paused'].includes(session.goal.status)) {
+          throw new Error('NO_ACTIVE_GOAL: set a goal before adding subgoals');
+        }
+        session.goal.subgoals.push(text);
+        await persist();
+        return { ...goalView(), traceId: ctx.traceId };
+      }
+      case 'subgoal-list':
+        return {
+          ...goalView(),
+          rendered: session.goal ? renderSubgoalsBlock(session.goal.subgoals) : '',
+          traceId: ctx.traceId,
+        };
+      case 'subgoal-remove': {
+        const index = typeof params.index === 'number' ? Math.trunc(params.index) : NaN;
+        if (!session.goal || !['active', 'paused'].includes(session.goal.status)) {
+          throw new Error('NO_ACTIVE_GOAL: set a goal before removing subgoals');
+        }
+        if (!Number.isInteger(index) || index < 1 || index > session.goal.subgoals.length) {
+          throw new Error(
+            `peer.chat-session.goal: subgoal index out of range (1..${session.goal.subgoals.length})`
+          );
+        }
+        const [removed] = session.goal.subgoals.splice(index - 1, 1);
+        await persist();
+        return { removed, ...goalView(), traceId: ctx.traceId };
+      }
+      case 'subgoal-clear': {
+        if (!session.goal || !['active', 'paused'].includes(session.goal.status)) {
+          throw new Error('NO_ACTIVE_GOAL: set a goal before clearing subgoals');
+        }
+        const previous = session.goal.subgoals.length;
+        session.goal.subgoals = [];
+        await persist();
+        return { cleared: previous, ...goalView(), traceId: ctx.traceId };
+      }
+      default:
+        throw new Error(
+          `peer.chat-session.goal: unknown action "${action}" (expected set | status | pause | resume | clear | subgoal-add | subgoal-list | subgoal-remove | subgoal-clear)`
+        );
+    }
+  });
+
   registerPeerMethod('peer.chat-session.end', async (params, ctx) => {
     const sessionId = typeof params.sessionId === 'string' ? params.sessionId : '';
     if (!sessionId) {
@@ -649,12 +890,13 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
   logger.debug('[peer-session-bridge] wired');
 }
 
-/** Detach all three methods. Idempotent. Does NOT clear in-memory sessions. */
+/** Detach all registered methods. Idempotent. Does NOT clear in-memory sessions. */
 export function unwirePeerSessionBridge(): void {
   if (!wired) return;
   unregisterPeerMethod('peer.chat-session.start');
   unregisterPeerMethod('peer.chat-session.continue');
   unregisterPeerMethod('peer.chat-session.continue-stream');
+  unregisterPeerMethod('peer.chat-session.goal');
   unregisterPeerMethod('peer.chat-session.end');
   cachedGetter = null;
   wired = false;
@@ -676,6 +918,7 @@ export function _unwireForTests(): void {
     unregisterPeerMethod('peer.chat-session.start');
     unregisterPeerMethod('peer.chat-session.continue');
     unregisterPeerMethod('peer.chat-session.continue-stream');
+    unregisterPeerMethod('peer.chat-session.goal');
     unregisterPeerMethod('peer.chat-session.list');
     unregisterPeerMethod('peer.chat-session.end');
   } catch {

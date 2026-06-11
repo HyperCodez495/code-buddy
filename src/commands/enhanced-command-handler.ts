@@ -110,6 +110,9 @@ import {
   setBtwClient,
   // Heartbeat handler (V4.x — wire user-facing activation of HeartbeatEngine)
   handleHeartbeat,
+  // Goal handler (Hermes Agent parity — Ralph loop)
+  handleGoal,
+  handleSubgoal,
   // Daily reset handler (audit OpenClaw heritage activation)
   handleDailyReset,
   // Team session handler — slash /share (audit OpenClaw heritage activation, TeamSessionManager wake)
@@ -485,6 +488,10 @@ export class EnhancedCommandHandler {
 
     // Heartbeat engine activation (fleet AUTONOMOUS-FLEET-PROTOCOL v0.1)
     ['__HEARTBEAT__', (args) => handleHeartbeat(args)],
+
+    // Standing goal — judge + auto-continue loop (Hermes Agent parity)
+    ['__GOAL__', (args) => handleGoal(args)],
+    ['__SUBGOAL__', (args) => handleSubgoal(args)],
 
     // Daily reset scheduler (audit OpenClaw heritage activation)
     ['__DAILY_RESET__', (args) => handleDailyReset(args)],
