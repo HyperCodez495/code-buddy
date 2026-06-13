@@ -1,5 +1,5 @@
 import path from 'node:path';
-import type { Page } from '@playwright/test';
+import type { Page, TestInfo } from '@playwright/test';
 import { expect, test } from './fixtures';
 
 const REAL_GPT55_ENABLED = process.env.COWORK_REAL_GPT55 === '1';
@@ -33,7 +33,7 @@ async function configureChatGptProfile(appPage: Page) {
             enableThinking: false,
             updatedAt: new Date().toISOString(),
           }
-        : set,
+        : set
     );
 
     return window.electronAPI?.config?.save?.({
@@ -68,9 +68,27 @@ async function completeOnboardingIfVisible(appPage: Page) {
   }
 }
 
+async function saveOptionalScreenshot(appPage: Page, testInfo: TestInfo) {
+  try {
+    await appPage.screenshot({
+      path: path.resolve(
+        process.cwd(),
+        '../docs/qa/code-buddy-studio/screenshots/public-real-gpt55-cowork-chat.png'
+      ),
+      clip: { x: 350, y: 40, width: 760, height: 820 },
+      timeout: 10_000,
+    });
+  } catch (error) {
+    await testInfo.attach('optional-screenshot-error', {
+      body: error instanceof Error ? error.message : String(error),
+      contentType: 'text/plain',
+    });
+  }
+}
+
 test.skip(!REAL_GPT55_ENABLED, 'Set COWORK_REAL_GPT55=1 to call ChatGPT gpt-5.5 for real.');
 
-test('starts a real Cowork chat through ChatGPT gpt-5.5', async ({ appPage }) => {
+test('starts a real Cowork chat through ChatGPT gpt-5.5', async ({ appPage }, testInfo) => {
   test.setTimeout(240_000);
 
   await configureChatGptProfile(appPage);
@@ -83,11 +101,5 @@ test('starts a real Cowork chat through ChatGPT gpt-5.5', async ({ appPage }) =>
   await expect(appPage.getByText(prompt, { exact: true }).first()).toBeVisible({ timeout: 30_000 });
   await expect(appPage.getByText(new RegExp(`^${MARKER}`))).toBeVisible({ timeout: 180_000 });
 
-  await appPage.screenshot({
-    path: path.resolve(
-      process.cwd(),
-      '../docs/qa/code-buddy-studio/screenshots/public-real-gpt55-cowork-chat.png',
-    ),
-    clip: { x: 350, y: 40, width: 760, height: 820 },
-  });
+  await saveOptionalScreenshot(appPage, testInfo);
 });

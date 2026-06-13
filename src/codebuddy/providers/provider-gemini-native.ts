@@ -261,7 +261,7 @@ export class GeminiNativeProvider implements Provider {
     // Build generationConfig with optional thinkingConfig for Gemini 3.x
     const generationConfig: Record<string, unknown> = {
       temperature: opts?.temperature ?? 0.7,
-      maxOutputTokens: this.defaultMaxTokens,
+      maxOutputTokens: opts?.maxTokens ?? this.defaultMaxTokens,
     };
 
     // Add thinkingLevel for Gemini 3.x models (never mix with budget_tokens)

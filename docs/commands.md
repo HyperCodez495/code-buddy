@@ -53,7 +53,7 @@
 
 | Command | Description |
 |:--------|:------------|
-| `/memory` | Memory management |
+| `/memory [list|recent|context|remember|replace|forget|recall|candidates|accept|reject]` | Bounded Hermes-style persistent memory management and review-gated long-term memory candidates |
 | `/lessons list\|add\|search\|graph\|stats` | Lessons management |
 | `/tools [list\|info]` | List available tools |
 

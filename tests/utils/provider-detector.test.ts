@@ -12,6 +12,7 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { vi } from 'vitest';
+import { RUNTIME_PROVIDER_CATALOG } from '../../src/providers/provider-catalog.js';
 
 let tmpHome: string;
 
@@ -21,24 +22,17 @@ vi.mock('os', async () => {
 });
 
 // Snapshot env so tests can clobber and restore cleanly.
-const envKeysToReset = [
+const catalogEnvKeys = RUNTIME_PROVIDER_CATALOG.flatMap((entry) => [
+  ...entry.apiKeyEnvKeys,
+  ...entry.baseUrlEnvKeys,
+  ...entry.modelEnvKeys,
+]);
+
+const envKeysToReset = [...new Set([
   'CODEBUDDY_PROVIDER',
-  'OLLAMA_HOST',
-  'OLLAMA_MODEL',
-  'GROK_API_KEY',
-  'GROK_BASE_URL',
-  'GROK_MODEL',
-  'XAI_API_KEY',
-  'GOOGLE_API_KEY',
-  'GEMINI_API_KEY',
-  'GEMINI_MODEL',
-  'OPENAI_API_KEY',
-  'OPENAI_BASE_URL',
-  'OPENAI_MODEL',
-  'ANTHROPIC_API_KEY',
-  'ANTHROPIC_MODEL',
   'CHATGPT_MODEL',
-];
+  ...catalogEnvKeys,
+])];
 const envBackup: Record<string, string | undefined> = {};
 
 beforeEach(() => {
@@ -161,5 +155,61 @@ describe('detectProviderFromEnv — priority chain', () => {
     process.env.CHATGPT_MODEL = 'gpt-5.1-codex';
     const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
     expect(detectProviderFromEnv()?.defaultModel).toBe('gpt-5.1-codex');
+  });
+
+  it('detects LM Studio when its host is configured', async () => {
+    process.env.LMSTUDIO_HOST = 'localhost:1234';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('lmstudio');
+    expect(detected?.apiKey).toBe('lm-studio');
+    expect(detected?.baseURL).toBe('http://localhost:1234/v1');
+  });
+
+  it('detects Groq as an OpenAI-compatible provider', async () => {
+    process.env.GROQ_API_KEY = 'groq-key';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('groq');
+    expect(detected?.apiKey).toBe('groq-key');
+    expect(detected?.baseURL).toBe('https://api.groq.com/openai/v1');
+    expect(detected?.defaultModel).toBe('llama-3.3-70b-versatile');
+  });
+
+  it('detects OpenRouter when configured', async () => {
+    process.env.OPENROUTER_API_KEY = 'openrouter-key';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('openrouter');
+    expect(detected?.baseURL).toBe('https://openrouter.ai/api/v1');
+  });
+
+  it('detects Hermes-style OpenAI-compatible providers by env key', async () => {
+    process.env.GLM_API_KEY = 'glm-key';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('zai');
+    expect(detected?.baseURL).toBe('https://api.z.ai/api/paas/v4');
+    expect(detected?.defaultModel).toBe('glm-5');
+  });
+
+  it('normalizes vLLM base URLs for the OpenAI-compatible client', async () => {
+    process.env.VLLM_BASE_URL = 'http://localhost:8000';
+    process.env.VLLM_MODEL = 'served-model';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('vllm');
+    expect(detected?.apiKey).toBe('vllm');
+    expect(detected?.baseURL).toBe('http://localhost:8000/v1');
+    expect(detected?.defaultModel).toBe('served-model');
+  });
+
+  it('CODEBUDDY_PROVIDER can force a provider alias', async () => {
+    process.env.CODEBUDDY_PROVIDER = 'claude';
+    process.env.ANTHROPIC_API_KEY = 'anthropic-key';
+    const { detectProviderFromEnv } = await import('../../src/utils/provider-detector.js');
+    const detected = detectProviderFromEnv();
+    expect(detected?.provider).toBe('anthropic');
+    expect(detected?.apiKey).toBe('anthropic-key');
   });
 });

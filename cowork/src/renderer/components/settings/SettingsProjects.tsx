@@ -26,6 +26,9 @@ export function SettingsProjects() {
   const [draftAutoConsolidate, setDraftAutoConsolidate] = useState(true);
   const [draftIncludeIcm, setDraftIncludeIcm] = useState(false);
   const [draftMaxEntries, setDraftMaxEntries] = useState('100');
+  const [draftMemoryStrategy, setDraftMemoryStrategy] = useState<'auto' | 'manual' | 'rolling'>(
+    'auto'
+  );
   const [editingId, setEditingId] = useState<string | null>(null);
 
   const activeProject = useMemo(
@@ -40,6 +43,7 @@ export function SettingsProjects() {
     setDraftAutoConsolidate(true);
     setDraftIncludeIcm(false);
     setDraftMaxEntries('100');
+    setDraftMemoryStrategy('auto');
     setEditingId(null);
   }, [workingDir]);
 
@@ -75,6 +79,7 @@ export function SettingsProjects() {
     setDraftAutoConsolidate(project.memoryConfig?.autoConsolidate ?? true);
     setDraftIncludeIcm(project.memoryConfig?.includeICM ?? false);
     setDraftMaxEntries(String(project.memoryConfig?.maxMemoryEntries ?? 100));
+    setDraftMemoryStrategy(project.memoryConfig?.memoryStrategy ?? 'auto');
   }, []);
 
   const handleSubmit = useCallback(async () => {
@@ -94,6 +99,7 @@ export function SettingsProjects() {
           autoConsolidate: draftAutoConsolidate,
           includeICM: draftIncludeIcm,
           maxMemoryEntries: Number(draftMaxEntries) || 100,
+          memoryStrategy: draftMemoryStrategy,
         },
       };
 
@@ -228,6 +234,20 @@ export function SettingsProjects() {
             placeholder={t('projects.maxEntries', 'Max memory entries')}
             className="w-full rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary"
           />
+          <label className="flex items-center gap-2 text-sm text-text-secondary">
+            <span className="shrink-0">{t('projects.memoryStrategy', 'Memory strategy')}</span>
+            <select
+              value={draftMemoryStrategy}
+              onChange={(event) =>
+                setDraftMemoryStrategy(event.target.value as 'auto' | 'manual' | 'rolling')
+              }
+              className="min-w-0 rounded-lg border border-border bg-background px-3 py-2 text-sm text-text-primary"
+            >
+              <option value="auto">{t('projects.memoryStrategyAuto', 'Auto')}</option>
+              <option value="manual">{t('projects.memoryStrategyManual', 'Manual')}</option>
+              <option value="rolling">{t('projects.memoryStrategyRolling', 'Rolling')}</option>
+            </select>
+          </label>
           <div className="flex items-center gap-2">
             <button
               type="button"

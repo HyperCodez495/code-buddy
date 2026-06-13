@@ -12,7 +12,7 @@
 import { spawn, ChildProcess } from 'child_process';
 import { createInterface, Interface } from 'readline';
 import { join } from 'path';
-import { existsSync } from 'fs';
+import { accessSync, constants, existsSync } from 'fs';
 import { logger } from '../utils/logger.js';
 
 // ============================================================================
@@ -66,23 +66,32 @@ export class SidecarBridge {
    * Find the sidecar binary
    */
   private findBinary(): string | null {
+    const localBinary = process.platform === 'win32' ? 'codebuddy-sidecar.exe' : 'codebuddy-sidecar';
     const candidates = [
       // Development: built via `cargo build`
-      join(process.cwd(), 'src-sidecar', 'target', 'release', 'codebuddy-sidecar.exe'),
-      join(process.cwd(), 'src-sidecar', 'target', 'release', 'codebuddy-sidecar'),
-      join(process.cwd(), 'src-sidecar', 'target', 'debug', 'codebuddy-sidecar.exe'),
-      join(process.cwd(), 'src-sidecar', 'target', 'debug', 'codebuddy-sidecar'),
+      join(process.cwd(), 'src-sidecar', 'target', 'release', localBinary),
+      join(process.cwd(), 'src-sidecar', 'target', 'debug', localBinary),
       // Installed globally
-      join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', 'codebuddy-sidecar.exe'),
-      join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', 'codebuddy-sidecar'),
+      join(process.env.HOME || process.env.USERPROFILE || '', '.cargo', 'bin', localBinary),
     ];
 
-    for (const path of candidates) {
-      if (existsSync(path)) {
-        return path;
+    for (const candidate of candidates) {
+      if (this.isExecutableCandidate(candidate)) {
+        return candidate;
       }
     }
     return null;
+  }
+
+  private isExecutableCandidate(filePath: string): boolean {
+    if (!existsSync(filePath)) return false;
+    if (process.platform === 'win32') return true;
+    try {
+      accessSync(filePath, constants.X_OK);
+      return true;
+    } catch {
+      return false;
+    }
   }
 
   /**

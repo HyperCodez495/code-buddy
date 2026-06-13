@@ -49,6 +49,7 @@ export type ProviderType =
   | 'lmstudio';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
+export type MemoryStrategy = 'auto' | 'manual' | 'rolling';
 export type ProviderProfileKey =
   | 'chatgpt'
   | 'openrouter'
@@ -125,6 +126,9 @@ export interface AppConfig {
 
   // UI theme preference
   theme: AppTheme;
+
+  // Memory retrieval preference
+  memoryStrategy: MemoryStrategy;
 
   // Sandbox mode (WSL/Lima isolation)
   sandboxEnabled: boolean;
@@ -236,6 +240,7 @@ const DIRECT_READ_KEYS = new Set<keyof AppConfig>([
   'globalSkillsPath',
   'enableDevLogs',
   'theme',
+  'memoryStrategy',
   'sandboxEnabled',
   'enableThinking',
   'isConfigured',
@@ -324,6 +329,7 @@ const defaultConfig: AppConfig = {
   globalSkillsPath: '',
   enableDevLogs: false,
   theme: 'light',
+  memoryStrategy: 'auto',
   sandboxEnabled: false,
   enableThinking: false,
   isConfigured: false,
@@ -396,6 +402,7 @@ const PROFILE_KEYS: ProviderProfileKey[] = [
   'custom:gemini',
 ];
 const VALID_THEMES: AppTheme[] = ['dark', 'light', 'system'];
+const VALID_MEMORY_STRATEGIES: MemoryStrategy[] = ['auto', 'manual', 'rolling'];
 
 function isProviderType(value: unknown): value is ProviderType {
   return (
@@ -420,6 +427,10 @@ function isProfileKey(value: unknown): value is ProviderProfileKey {
 
 function isAppTheme(value: unknown): value is AppTheme {
   return typeof value === 'string' && VALID_THEMES.includes(value as AppTheme);
+}
+
+function isMemoryStrategy(value: unknown): value is MemoryStrategy {
+  return typeof value === 'string' && VALID_MEMORY_STRATEGIES.includes(value as MemoryStrategy);
 }
 
 function profileKeyFromProvider(
@@ -985,6 +996,9 @@ export class ConfigStore {
           : defaultConfig.globalSkillsPath,
       enableDevLogs: toBoolean(raw.enableDevLogs, defaultConfig.enableDevLogs),
       theme: isAppTheme(raw.theme) ? raw.theme : defaultConfig.theme,
+      memoryStrategy: isMemoryStrategy(raw.memoryStrategy)
+        ? raw.memoryStrategy
+        : defaultConfig.memoryStrategy,
       sandboxEnabled: toBoolean(raw.sandboxEnabled, defaultConfig.sandboxEnabled),
       enableThinking: projected.enableThinking,
       isConfigured: toBoolean(raw.isConfigured, defaultConfig.isConfigured),
@@ -1123,6 +1137,9 @@ export class ConfigStore {
           return defaultConfig[key];
         }
         if (key === 'theme' && !isAppTheme(rawValue)) {
+          return defaultConfig[key];
+        }
+        if (key === 'memoryStrategy' && !isMemoryStrategy(rawValue)) {
           return defaultConfig[key];
         }
         if (
@@ -1399,6 +1416,8 @@ export class ConfigStore {
       enableDevLogs:
         updates.enableDevLogs !== undefined ? updates.enableDevLogs : current.enableDevLogs,
       theme: updates.theme !== undefined ? updates.theme : current.theme,
+      memoryStrategy:
+        updates.memoryStrategy !== undefined ? updates.memoryStrategy : current.memoryStrategy,
       sandboxEnabled:
         updates.sandboxEnabled !== undefined ? updates.sandboxEnabled : current.sandboxEnabled,
       isConfigured:

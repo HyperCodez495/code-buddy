@@ -270,6 +270,16 @@ describe('buildRequestBody — assembled body matches Codex Responses contract',
     });
     expect(body.prompt_cache_key).toBe('thread-abc');
   });
+
+  it('does not serialize maxTokens because the Codex backend rejects max_output_tokens', () => {
+    const body = buildRequestBody({
+      model: 'gpt-5.5',
+      input: [],
+      tools: [],
+      maxTokens: 1234,
+    });
+    expect((body as Record<string, unknown>).max_output_tokens).toBeUndefined();
+  });
 });
 
 // ─── 2. SSE parser ──────────────────────────────────────────────────

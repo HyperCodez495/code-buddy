@@ -28,6 +28,10 @@ import {
   recordToolRequest,
   formatToolSelectionMetrics,
 } from '../../tools/tool-selector.js';
+import {
+  filterToolsForModel,
+  getModelToolConfig,
+} from '../../config/model-tools.js';
 import type {
   ToolCategory,
   QueryClassification,
@@ -65,6 +69,12 @@ export interface ToolSelectionConfig {
   enableCaching: boolean;
   /** Cache TTL in milliseconds (default: 5 minutes) */
   cacheTTLMs: number;
+  /**
+   * Active model name. When present, model capability rules from
+   * model-tools.ts are applied to the model-facing schemas before they are
+   * cached or sent to the provider.
+   */
+  modelName?: string;
 }
 
 /**
@@ -92,10 +102,10 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   useRAG: true,
   maxTools: 15,
   minScore: 0.5,
-  // `remember` is force-included so the LLM can always auto-persist non-obvious
-  // facts to .codebuddy/CODEBUDDY_MEMORY.md, even on tasks where the RAG selector
-  // wouldn't otherwise surface the memory tools (e.g. a pure code-edit query).
-  // Paired with the auto-memory directive in `prompt-builder.ts`.
+  // `remember` and `memory_propose` are force-included so the LLM can always
+  // either persist explicit durable facts or queue inferred/ambiguous facts for
+  // review, even on tasks where the RAG selector wouldn't otherwise surface the
+  // memory tools. Paired with the auto-memory directive in `prompt-builder.ts`.
   //
   // `lessons_add`, `lessons_propose`, and `lessons_search` are force-included for
   // the same reason (Manus AI-inspired self-improvement loop) — paired with the
@@ -103,7 +113,7 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   // "agent proposes, human approves" path, so the model must always see it (a
   // RAG-gated propose tool would rarely surface). `lessons_list` stays out
   // (admin-style, not needed per-turn). Wakes the dormant feature in lessons-tracker.ts.
-  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'lessons_add', 'lessons_propose', 'lessons_search'],
+  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes
@@ -134,6 +144,7 @@ export class ToolSelectionStrategy {
   private config: ToolSelectionConfig;
   private cachedTools: CodeBuddyTool[] | null = null;
   private cachedToolNames: string[] = [];
+  private cacheModelName: string | null = null;
   private lastQuery: string = '';
   private lastSelection: ToolSelectionResult | null = null;
   private cacheTimestamp: number = 0;
@@ -163,10 +174,11 @@ export class ToolSelectionStrategy {
     options: Partial<ToolSelectionConfig> = {}
   ): Promise<SelectionResult> {
     const effectiveConfig = { ...this.config, ...options };
+    const modelName = ToolSelectionStrategy.normalizeModelName(effectiveConfig.modelName);
     this.lastQuery = query;
 
     // Check if we should use cached tools
-    if (effectiveConfig.enableCaching && this.isCacheValid()) {
+    if (effectiveConfig.enableCaching && this.isCacheValid(modelName)) {
       logger.debug('Using cached tools for query', { query: query.slice(0, 50) });
       return {
         tools: this.cachedTools!,
@@ -221,6 +233,16 @@ export class ToolSelectionStrategy {
       });
     }
 
+    tools = this.applyModelFacingSchemaFilter(tools, modelName);
+    this.cachedToolNames = tools.map(t => t.function.name);
+    if (selection) {
+      selection = {
+        ...selection,
+        selectedTools: tools,
+      };
+      this.lastSelection = selection;
+    }
+
     // Cache tools for prompt optimization
     const promptCacheManager = getPromptCacheManager();
     promptCacheManager.cacheTools(tools);
@@ -251,15 +273,17 @@ export class ToolSelectionStrategy {
    *
    * @param tools - Tools to cache
    */
-  cacheTools(tools: CodeBuddyTool[]): void {
+  cacheTools(tools: CodeBuddyTool[], modelName?: string): void {
     if (!this.config.enableCaching) return;
 
     this.cachedTools = tools;
     this.cachedToolNames = tools.map(t => t.function.name);
+    this.cacheModelName = ToolSelectionStrategy.normalizeModelName(modelName);
     this.cacheTimestamp = Date.now();
 
     logger.debug('Tools cached for multi-round consistency', {
       toolCount: tools.length,
+      modelName: this.cacheModelName,
     });
   }
 
@@ -268,9 +292,9 @@ export class ToolSelectionStrategy {
    *
    * @returns Cached tools or null if cache is invalid/empty
    */
-  getCachedTools(): CodeBuddyTool[] | null {
+  getCachedTools(modelName?: string): CodeBuddyTool[] | null {
     if (!this.config.enableCaching) return null;
-    if (!this.isCacheValid()) return null;
+    if (!this.isCacheValid(modelName)) return null;
     return this.cachedTools;
   }
 
@@ -329,6 +353,7 @@ export class ToolSelectionStrategy {
   clearCache(): void {
     this.cachedTools = null;
     this.cachedToolNames = [];
+    this.cacheModelName = null;
     this.cacheTimestamp = 0;
     this.activeSkill = null;
     logger.debug('Tool selection cache cleared');
@@ -337,13 +362,67 @@ export class ToolSelectionStrategy {
   /**
    * Check if the cache is still valid
    */
-  private isCacheValid(): boolean {
+  private isCacheValid(modelName?: string | null): boolean {
     if (!this.cachedTools || this.cachedTools.length === 0) return false;
     if (this.cacheTimestamp === 0) return false;
+    if (modelName !== undefined) {
+      const normalizedModelName = ToolSelectionStrategy.normalizeModelName(modelName);
+      if (this.cacheModelName !== normalizedModelName) return false;
+    }
 
     const now = Date.now();
     const age = now - this.cacheTimestamp;
     return age < this.config.cacheTTLMs;
+  }
+
+  private static normalizeModelName(modelName?: string | null): string | null {
+    const normalized = modelName?.trim();
+    return normalized ? normalized : null;
+  }
+
+  private applyModelFacingSchemaFilter(
+    tools: CodeBuddyTool[],
+    modelName: string | null,
+  ): CodeBuddyTool[] {
+    if (!modelName || tools.length === 0) {
+      return tools;
+    }
+
+    try {
+      const modelConfig = getModelToolConfig(modelName);
+      if (modelConfig.supportsToolCalls === false && process.env.GROK_FORCE_TOOLS !== 'true') {
+        logger.debug('Model-facing tool schemas suppressed for chat-only model', {
+          modelName,
+          removed: tools.map(t => t.function.name),
+        });
+        return [];
+      }
+
+      const allowedNames = new Set(
+        filterToolsForModel(
+          tools.map(tool => tool.function.name),
+          modelConfig,
+        ),
+      );
+      const filtered = tools.filter(tool => allowedNames.has(tool.function.name));
+
+      if (filtered.length !== tools.length) {
+        logger.debug('Model-facing tool schemas filtered by model capabilities', {
+          modelName,
+          removed: tools
+            .map(tool => tool.function.name)
+            .filter(name => !allowedNames.has(name)),
+        });
+      }
+
+      return filtered;
+    } catch (error) {
+      logger.debug('Model-facing tool schema filter skipped', {
+        modelName,
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return tools;
+    }
   }
 
   /**

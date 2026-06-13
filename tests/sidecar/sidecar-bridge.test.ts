@@ -40,6 +40,7 @@ vi.mock('fs', async (importOriginal) => {
       if (typeof path === 'string' && path.includes('codebuddy-sidecar')) return true;
       return false;
     }),
+    accessSync: vi.fn(),
   };
 });
 
@@ -247,12 +248,23 @@ describe('SidecarBridge real binary integration', () => {
     const fs = await vi.importActual<typeof import('fs')>('fs');
     const { join } = await import('path');
 
-    const releasePath = join(process.cwd(), 'src-sidecar', 'target', 'release', 'codebuddy-sidecar.exe');
-    const debugPath = join(process.cwd(), 'src-sidecar', 'target', 'debug', 'codebuddy-sidecar.exe');
+    const binaryName = process.platform === 'win32' ? 'codebuddy-sidecar.exe' : 'codebuddy-sidecar';
+    const releasePath = join(process.cwd(), 'src-sidecar', 'target', 'release', binaryName);
+    const debugPath = join(process.cwd(), 'src-sidecar', 'target', 'debug', binaryName);
 
-    const binaryExists = fs.existsSync(releasePath) || fs.existsSync(debugPath);
+    const isExecutable = (filePath: string): boolean => {
+      if (!fs.existsSync(filePath)) return false;
+      if (process.platform === 'win32') return true;
+      try {
+        fs.accessSync(filePath, fs.constants.X_OK);
+        return true;
+      } catch {
+        return false;
+      }
+    };
+    const binaryPath = [releasePath, debugPath].find(isExecutable);
 
-    if (!binaryExists) {
+    if (!binaryPath) {
       console.log('Skipping real binary test — sidecar not built');
       return;
     }
@@ -260,7 +272,6 @@ describe('SidecarBridge real binary integration', () => {
     const { spawn } = await vi.importActual<typeof import('child_process')>('child_process');
     const { createInterface } = await import('readline');
 
-    const binaryPath = fs.existsSync(releasePath) ? releasePath : debugPath;
     const proc = spawn(binaryPath, [], { stdio: ['pipe', 'pipe', 'pipe'] });
 
     const rl = createInterface({ input: proc.stdout!, crlfDelay: Infinity });

@@ -10,11 +10,14 @@
 
 import { logger } from '../utils/logger.js';
 import { createHash } from 'node:crypto';
+import { maybeContinueGoalAfterTurn } from '../goals/goal-loop.js';
 import type {
   EngineAdapter,
   EngineStreamCallback,
   EnginePermissionCallback,
 } from './engine-adapter.js';
+import type { StreamingChunk } from '../agent/types.js';
+import type { CodeBuddyClient } from '../codebuddy/client.js';
 import type {
   EngineMessage,
   EngineSessionConfig,
@@ -22,6 +25,14 @@ import type {
   EngineModelInfo,
   EngineMcpServerConfig,
 } from '../shared/engine-types.js';
+
+const COWORK_GOAL_SESSION_PREFIX = 'cowork:';
+const GOAL_LOOP_HARD_BACKSTOP = 100;
+
+interface GoalStreamingAgent {
+  processUserMessageStream(prompt: string): AsyncIterable<StreamingChunk>;
+  getClient?: () => CodeBuddyClient;
+}
 
 /**
  * Concrete implementation of EngineAdapter that wraps CodeBuddyAgent.
@@ -207,103 +218,150 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           };
       }
 
-      // Stream the response
-      const stream = agent.processUserMessageStream(lastMessage.content);
+      const streamingAgent = agent as GoalStreamingAgent;
+      const goalSessionKey = buildCoworkGoalSessionKey(sessionId);
 
-      for await (const chunk of stream) {
-        // Check for abort
-        if (abortController.signal.aborted) {
-          break;
-        }
+      const runPromptTurn = async (
+        prompt: string
+      ): Promise<{ interrupted: boolean; judgeResponse: string }> => {
+        let turnContent = '';
+        const toolEvidence: string[] = [];
+        const stream = streamingAgent.processUserMessageStream(prompt);
 
-        switch (chunk.type) {
-          case 'content':
-            if (chunk.content) {
-              fullContent += chunk.content;
-              onEvent({ type: 'content', content: chunk.content });
-            }
-            break;
+        for await (const chunk of stream) {
+          // Check for abort
+          if (abortController.signal.aborted) {
+            return { interrupted: true, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence) };
+          }
 
-          case 'reasoning':
-            if (chunk.reasoning) {
-              onEvent({ type: 'thinking', thinking: chunk.reasoning });
-            }
-            break;
+          switch (chunk.type) {
+            case 'content':
+              if (chunk.content) {
+                turnContent += chunk.content;
+                fullContent += chunk.content;
+                onEvent({ type: 'content', content: chunk.content });
+              }
+              break;
 
-          case 'tool_calls':
-            if (chunk.toolCalls) {
-              for (const tc of chunk.toolCalls) {
-                toolCallCount++;
+            case 'reasoning':
+              if (chunk.reasoning) {
+                onEvent({ type: 'thinking', thinking: chunk.reasoning });
+              }
+              break;
+
+            case 'tool_calls':
+              if (chunk.toolCalls) {
+                for (const tc of chunk.toolCalls) {
+                  toolCallCount++;
+                  onEvent({
+                    type: 'tool_start',
+                    tool: {
+                      id: tc.id,
+                      name: tc.function.name,
+                      input: tc.function.arguments,
+                    },
+                  });
+                }
+              }
+              break;
+
+            case 'tool_result':
+              if (chunk.toolCall && chunk.toolResult) {
+                const finalOutput = chunk.toolResult.output || chunk.toolResult.error;
+                const toolStatus = chunk.toolResult.success ? 'success' : 'error';
+                if (finalOutput) {
+                  toolEvidence.push(
+                    `[tool:${chunk.toolCall.function.name} ${toolStatus}]\n${String(finalOutput)}`
+                  );
+                }
                 onEvent({
-                  type: 'tool_start',
+                  type: 'tool_end',
                   tool: {
-                    id: tc.id,
-                    name: tc.function.name,
-                    input: tc.function.arguments,
+                    id: chunk.toolCall.id,
+                    name: chunk.toolCall.function.name,
+                    output: finalOutput,
+                    isError: !chunk.toolResult.success,
+                    data: chunk.toolResult.data,
                   },
                 });
               }
-            }
-            break;
+              break;
 
-          case 'tool_result':
-            if (chunk.toolCall && chunk.toolResult) {
-              const finalOutput = chunk.toolResult.output || chunk.toolResult.error;
-              onEvent({
-                type: 'tool_end',
-                tool: {
-                  id: chunk.toolCall.id,
-                  name: chunk.toolCall.function.name,
-                  output: finalOutput,
-                  isError: !chunk.toolResult.success,
-                  data: chunk.toolResult.data,
-                },
-              });
-            }
-            break;
+            case 'tool_stream':
+              if (chunk.toolStreamData) {
+                onEvent({
+                  type: 'tool_stream',
+                  tool: {
+                    id: chunk.toolStreamData.toolCallId,
+                    name: chunk.toolStreamData.toolName,
+                    delta: chunk.toolStreamData.delta,
+                  },
+                });
+              }
+              break;
 
-          case 'tool_stream':
-            if (chunk.toolStreamData) {
-              onEvent({
-                type: 'tool_stream',
-                tool: {
-                  id: chunk.toolStreamData.toolCallId,
-                  name: chunk.toolStreamData.toolName,
-                  delta: chunk.toolStreamData.delta,
-                },
-              });
-            }
-            break;
+            case 'token_count':
+              if (chunk.tokenCount !== undefined) {
+                totalTokens = chunk.tokenCount;
+                onEvent({ type: 'token_count', tokenCount: chunk.tokenCount });
+              }
+              break;
 
-          case 'token_count':
-            if (chunk.tokenCount !== undefined) {
-              totalTokens = chunk.tokenCount;
-              onEvent({ type: 'token_count', tokenCount: chunk.tokenCount });
-            }
-            break;
+            case 'ask_user':
+              if (chunk.askUser) {
+                onEvent({ type: 'ask_user', askUser: chunk.askUser });
+              }
+              break;
 
-          case 'ask_user':
-            if (chunk.askUser) {
-              onEvent({ type: 'ask_user', askUser: chunk.askUser });
-            }
-            break;
+            case 'plan_progress':
+              if (chunk.planProgress) {
+                onEvent({ type: 'plan_progress', planProgress: chunk.planProgress });
+              }
+              break;
 
-          case 'plan_progress':
-            if (chunk.planProgress) {
-              onEvent({ type: 'plan_progress', planProgress: chunk.planProgress });
-            }
-            break;
+            case 'steer':
+              if (chunk.steer) {
+                onEvent({ type: 'steer', steer: chunk.steer });
+              }
+              break;
 
-          case 'diff_preview':
-            if (chunk.diffPreview) {
-              onEvent({ type: 'diff_preview', diffPreview: chunk.diffPreview });
-            }
-            break;
+            case 'diff_preview':
+              if (chunk.diffPreview) {
+                onEvent({ type: 'diff_preview', diffPreview: chunk.diffPreview });
+              }
+              break;
 
-          case 'done':
-            onEvent({ type: 'done' });
-            break;
+            case 'done':
+              onEvent({ type: 'done' });
+              break;
+          }
         }
+
+        return { interrupted: false, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence) };
+      };
+
+      const emitGoalStatus = (message: string): void => {
+        const content = `${fullContent ? '\n\n' : ''}${message}\n\n`;
+        fullContent += content;
+        onEvent({ type: 'content', content });
+      };
+
+      let turn = await runPromptTurn(lastMessage.content);
+      for (let i = 0; i < GOAL_LOOP_HARD_BACKSTOP; i++) {
+        const outcome = await maybeContinueGoalAfterTurn({
+          client: streamingAgent.getClient?.() ?? null,
+          lastResponse: turn.judgeResponse,
+          interrupted: turn.interrupted,
+          sessionKey: goalSessionKey,
+        });
+
+        if (outcome?.message) {
+          emitGoalStatus(outcome.message);
+        }
+        if (turn.interrupted || !outcome?.continuationPrompt) {
+          break;
+        }
+        turn = await runPromptTurn(outcome.continuationPrompt);
       }
 
       return {
@@ -330,6 +388,21 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       controller.abort();
       logger.info('[CodeBuddyEngineAdapter] cancelled session', { sessionId });
     }
+  }
+
+  steer(sessionId: string, prompt: string): boolean {
+    const controller = this.abortControllers.get(sessionId);
+    const agent = this.agents.get(sessionId) as
+      | { getMessageQueue?: () => { setMode: (mode: 'steer') => void; enqueue: (msg: { content: string; source: string; timestamp: Date }) => void } }
+      | undefined;
+    const queue = agent?.getMessageQueue?.();
+    if (!controller || controller.signal.aborted || !queue) {
+      return false;
+    }
+    queue.setMode('steer');
+    queue.enqueue({ content: prompt, source: 'cowork', timestamp: new Date() });
+    logger.info('[CodeBuddyEngineAdapter] steer delivered', { sessionId });
+    return true;
   }
 
   clearSession(sessionId: string): void {
@@ -541,4 +614,13 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       model: this.config.model,
     });
   }
+}
+
+function buildCoworkGoalSessionKey(sessionId: string): string {
+  return `${COWORK_GOAL_SESSION_PREFIX}${sessionId}`;
+}
+
+function buildGoalJudgeResponse(content: string, toolEvidence: string[]): string {
+  const parts = [content.trim(), ...toolEvidence.map((part) => part.trim())].filter(Boolean);
+  return parts.join('\n\n');
 }

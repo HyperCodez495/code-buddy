@@ -6,6 +6,7 @@
 
 import type { Command } from 'commander';
 import { resolve } from 'path';
+import { buildOllamaUpdatePlan, fetchOllamaStatus, runOllamaUpdatePlan } from '../ollama.js';
 
 function resolveCommandDirectory(program: Command): string {
   const directory = (program.opts() as { directory?: string }).directory;
@@ -106,6 +107,56 @@ export function registerUtilityCommands(program: Command): void {
     .action(async () => {
       const { runOnboarding } = await import('../../wizard/onboarding.js');
       await runOnboarding();
+    });
+
+  const ollamaCommand = program
+    .command('ollama')
+    .description('Inspect or update the local Ollama runtime');
+
+  ollamaCommand
+    .command('status')
+    .description('Show local Ollama version and models')
+    .option('--url <url>', 'Ollama base URL', process.env.OLLAMA_HOST ?? 'http://localhost:11434')
+    .option('--json', 'Output JSON')
+    .action(async (options: { url: string; json?: boolean }) => {
+      const status = await fetchOllamaStatus(options.url);
+      if (options.json) {
+        console.log(JSON.stringify(status, null, 2));
+        return;
+      }
+
+      console.log('\nOllama status\n');
+      console.log(`  Base URL: ${status.baseUrl}`);
+      console.log(`  Reachable: ${status.reachable ? 'YES' : 'NO'}`);
+      console.log(`  Version: ${status.version ?? '(unknown)'}`);
+      console.log(`  Models: ${status.models.length > 0 ? status.models.join(', ') : '(none)'}`);
+      if (status.error) {
+        console.log(`  Error: ${status.error}`);
+      }
+      console.log('');
+    });
+
+  ollamaCommand
+    .command('update')
+    .description('Run the official Ollama Windows update script')
+    .option('--script-url <url>', 'Official installer/update script URL', 'https://ollama.com/install.ps1')
+    .option('--repo-root <dir>', 'Repository root', resolveCommandDirectory(program))
+    .action(async (options: { scriptUrl: string; repoRoot: string }) => {
+      const plan = buildOllamaUpdatePlan({
+        repoRoot: options.repoRoot,
+        scriptUrl: options.scriptUrl,
+      });
+
+      if (!plan.supported) {
+        console.error(plan.message);
+        console.error(`Use the update script directly on Windows: ${plan.scriptPath}`);
+        process.exit(1);
+        return;
+      }
+
+      console.log(`Running Ollama updater: ${plan.scriptPath}`);
+      await runOllamaUpdatePlan(plan);
+      console.log('Ollama update completed.');
     });
 
   // Webhook command

@@ -125,6 +125,100 @@ const READ_ONLY_FILE_TOOLS = new Set<string>([
   'search_multi',
 ]);
 
+export interface NormalizedHallucinatedToolCall {
+  toolName: string;
+  args: Record<string, unknown>;
+}
+
+export function normalizeHallucinatedLocalToolCall(
+  toolName: string,
+  args: Record<string, unknown>
+): NormalizedHallucinatedToolCall | null {
+  const normalizedName = toolName.toLowerCase().replace(/\s+/g, '');
+  const thoughtToolCallSuffix = normalizedName.match(
+    /^thought_tool_call_\d+(?:_\d+)*\.(bash|create_file|write_file|view_file|read_file)$/
+  )?.[1];
+
+  if (thoughtToolCallSuffix === 'bash') {
+    const command = firstStringValue(
+      args.command,
+      args.cmd,
+      args.shell_command,
+      args.command_to_execute,
+      args.code
+    );
+    return {
+      toolName: 'bash',
+      args: command ? { ...args, command } : args,
+    };
+  }
+
+  if (thoughtToolCallSuffix === 'create_file' || thoughtToolCallSuffix === 'write_file') {
+    const path = firstStringValue(args.path, args.file_path, args.target_file, args.filename, args.file);
+    const content = firstStringValue(args.content, args.file_content, args.contents, args.text);
+    return {
+      toolName: 'create_file',
+      args: {
+        ...args,
+        ...(path ? { path } : {}),
+        ...(content !== undefined ? { content } : {}),
+      },
+    };
+  }
+
+  if (thoughtToolCallSuffix === 'view_file' || thoughtToolCallSuffix === 'read_file') {
+    const path = firstStringValue(args.path, args.file_path, args.target_file, args.filename, args.file);
+    return {
+      toolName: 'view_file',
+      args: path ? { ...args, path } : args,
+    };
+  }
+
+  if (
+    normalizedName.includes('bash_tool:execute') ||
+    normalizedName.includes('thought-tool:execute_command') ||
+    normalizedName === 'execute_command'
+  ) {
+    const command = firstStringValue(
+      args.command,
+      args.cmd,
+      args.shell_command,
+      args.command_to_execute,
+      args.code
+    );
+    return {
+      toolName: 'bash',
+      args: command ? { ...args, command } : args,
+    };
+  }
+
+  if (
+    normalizedName.includes('bash_tool:write_file') ||
+    normalizedName.includes('thought-tool:write_file') ||
+    normalizedName.includes('call:bash_tool:write_file')
+  ) {
+    const path = firstStringValue(args.path, args.file_path, args.target_file, args.filename, args.file);
+    const content = firstStringValue(args.content, args.file_content, args.contents, args.text);
+    return {
+      toolName: 'create_file',
+      args: {
+        ...args,
+        ...(path ? { path } : {}),
+        ...(content !== undefined ? { content } : {}),
+      },
+    };
+  }
+
+  return null;
+}
+
+function firstStringValue(...values: unknown[]): string | undefined {
+  for (const value of values) {
+    if (typeof value === 'string' && value.trim()) return value;
+  }
+  return undefined;
+}
+
 /**
  * ToolHandler manages tool instantiation and execution
  *
@@ -346,8 +440,25 @@ export class ToolHandler {
     const hooksManager = getToolHooksManager();
 
     try {
-      const args = JSON.parse(toolCall.function.arguments);
-      const toolName = toolCall.function.name;
+      let args = JSON.parse(toolCall.function.arguments) as Record<string, unknown>;
+      let toolName = toolCall.function.name;
+      const normalized = normalizeHallucinatedLocalToolCall(toolName, args);
+      if (normalized) {
+        logger.debug('Normalized hallucinated local tool name', {
+          from: toolName,
+          to: normalized.toolName,
+        });
+        toolName = normalized.toolName;
+        args = normalized.args;
+        toolCall = {
+          ...toolCall,
+          function: {
+            ...toolCall.function,
+            name: toolName,
+            arguments: JSON.stringify(args),
+          },
+        };
+      }
 
       // Create hook context
       let hookContext: ToolHookContext = {

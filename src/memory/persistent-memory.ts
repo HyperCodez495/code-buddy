@@ -55,6 +55,11 @@ export interface MemoryConfig {
   autoCapture: boolean;        // Auto-capture important context
   maxMemories: number;         // Max memories per scope
   relevanceThreshold: number;  // For semantic matching (0-1)
+  enforceCharLimits: boolean;  // Hermes-style bounded memory: reject writes over the char budget
+  projectCharLimit: number;    // Project MEMORY.md-equivalent budget
+  userCharLimit: number;       // USER.md-equivalent budget
+  securityScan: boolean;       // Reject prompt-injection/exfiltration patterns before durable writes
+  rejectExactDuplicates: boolean;
 }
 
 const DEFAULT_CONFIG: MemoryConfig = {
@@ -63,7 +68,61 @@ const DEFAULT_CONFIG: MemoryConfig = {
   autoCapture: true,
   maxMemories: 100,
   relevanceThreshold: 0.5,
+  enforceCharLimits: process.env.CODEBUDDY_MEMORY_ENFORCE_LIMITS !== 'false',
+  projectCharLimit: parsePositiveInt(process.env.CODEBUDDY_MEMORY_PROJECT_CHAR_LIMIT, 2200),
+  userCharLimit: parsePositiveInt(process.env.CODEBUDDY_MEMORY_USER_CHAR_LIMIT, 1375),
+  securityScan: process.env.CODEBUDDY_MEMORY_SECURITY_SCAN !== 'false',
+  rejectExactDuplicates: process.env.CODEBUDDY_MEMORY_REJECT_DUPLICATES !== 'false',
 };
+
+export type MemoryScope = "project" | "user";
+
+export interface MemoryUsage {
+  scope: MemoryScope;
+  used: number;
+  limit: number;
+  percent: number;
+}
+
+export type MemoryWriteStatus = 'stored' | 'updated' | 'duplicate' | 'replaced' | 'missing';
+
+export interface MemoryWriteResult {
+  status: MemoryWriteStatus;
+  key: string;
+  scope: MemoryScope;
+  category?: MemoryCategory;
+  usage: MemoryUsage;
+  message: string;
+}
+
+export class MemoryWriteRejectedError extends Error {
+  constructor(
+    message: string,
+    readonly code: 'memory_limit_exceeded' | 'memory_security_rejected',
+    readonly usage?: MemoryUsage,
+  ) {
+    super(message);
+    this.name = 'MemoryWriteRejectedError';
+  }
+}
+
+function parsePositiveInt(value: string | undefined, fallback: number): number {
+  if (!value) return fallback;
+  const parsed = Number.parseInt(value, 10);
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback;
+}
+
+function cloneMemoryMap(memories: Map<string, Memory>): Map<string, Memory> {
+  return new Map(Array.from(memories.entries()).map(([key, memory]) => [
+    key,
+    {
+      ...memory,
+      createdAt: new Date(memory.createdAt),
+      updatedAt: new Date(memory.updatedAt),
+      tags: memory.tags ? [...memory.tags] : undefined,
+    },
+  ]));
+}
 
 const MEMORY_TEMPLATE = `# Code Buddy Memory
 
@@ -188,6 +247,7 @@ export class PersistentMemoryManager extends EventEmitter {
       "User Preferences": "preferences",
       "Decisions": "decisions",
       "Patterns": "patterns",
+      "Context": "context",
       "Custom": "custom",
     };
 
@@ -261,13 +321,32 @@ export class PersistentMemoryManager extends EventEmitter {
     key: string,
     value: string,
     options: {
-      scope?: "project" | "user";
+      scope?: MemoryScope;
       category?: MemoryCategory;
       tags?: string[];
     } = {}
-  ): Promise<void> {
+  ): Promise<MemoryWriteResult> {
     const { scope = "project", category = "context", tags } = options;
     const memories = scope === "project" ? this.projectMemories : this.userMemories;
+    const normalizedKey = key.trim();
+    const normalizedValue = value.trim();
+
+    this.assertMemoryWriteSafe(normalizedKey, normalizedValue);
+
+    const existing = memories.get(normalizedKey);
+    if (this.config.rejectExactDuplicates && existing?.value === normalizedValue) {
+      return {
+        status: 'duplicate',
+        key: normalizedKey,
+        scope,
+        category: existing.category,
+        usage: this.getMemoryUsage(scope),
+        message: `No duplicate added for "${normalizedKey}".`,
+      };
+    }
+
+    const previousMemories = cloneMemoryMap(memories);
+    const status: MemoryWriteStatus = existing ? 'updated' : 'stored';
 
     try {
       const { FactsMemoryService } = await import('./facts-memory.js');
@@ -276,7 +355,7 @@ export class PersistentMemoryManager extends EventEmitter {
       if (await service.isAvailable()) {
         const newFact: Fact = {
           category: mapMemoryCategoryToFactCategory(category),
-          text: `${key}: ${value}`,
+          text: `${normalizedKey}: ${normalizedValue}`,
           source: tags?.join(', ') || 'manual',
           updatedAt: new Date()
         };
@@ -313,36 +392,209 @@ export class PersistentMemoryManager extends EventEmitter {
         }
       } else {
         // Fallback to default direct write
-        const existing = memories.get(key);
-        const memory: Memory = {
-          key,
-          value,
-          category,
-          createdAt: existing?.createdAt || new Date(),
-          updatedAt: new Date(),
-          accessCount: existing?.accessCount || 0,
-          tags,
-        };
-        memories.set(key, memory);
+        this.setMemoryDirect(memories, normalizedKey, normalizedValue, category, tags);
       }
-    } catch (err: any) {
-      logger.warn(`[FactsMemory] Failed to reconcile remember, falling back to default behavior: ${err.message}`);
-      const existing = memories.get(key);
-      const memory: Memory = {
-        key,
-        value,
-        category,
-        createdAt: existing?.createdAt || new Date(),
-        updatedAt: new Date(),
-        accessCount: existing?.accessCount || 0,
-        tags,
-      };
-      memories.set(key, memory);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`[FactsMemory] Failed to reconcile remember, falling back to default behavior: ${message}`);
+      memories.clear();
+      for (const [memoryKey, memory] of previousMemories) {
+        memories.set(memoryKey, memory);
+      }
+      this.setMemoryDirect(memories, normalizedKey, normalizedValue, category, tags);
+    }
+
+    try {
+      this.assertScopeWithinLimit(scope);
+    } catch (err) {
+      memories.clear();
+      for (const [memoryKey, memory] of previousMemories) {
+        memories.set(memoryKey, memory);
+      }
+      throw err;
     }
 
     await this.saveMemories(scope);
 
-    this.emit("memory:remembered", { key, scope, category });
+    this.emit("memory:remembered", { key: normalizedKey, scope, category });
+    return {
+      status,
+      key: normalizedKey,
+      scope,
+      category,
+      usage: this.getMemoryUsage(scope),
+      message: status === 'updated'
+        ? `Updated "${normalizedKey}" in ${scope} memory.`
+        : `Stored "${normalizedKey}" in ${scope} memory.`,
+    };
+  }
+
+  async replace(
+    key: string,
+    value: string,
+    options: {
+      scope?: MemoryScope;
+      category?: MemoryCategory;
+      tags?: string[];
+    } = {},
+  ): Promise<MemoryWriteResult> {
+    const { scope = 'project', category, tags } = options;
+    const memories = scope === 'project' ? this.projectMemories : this.userMemories;
+    const normalizedKey = key.trim();
+    const normalizedValue = value.trim();
+    const existing = memories.get(normalizedKey);
+
+    if (!existing) {
+      return {
+        status: 'missing',
+        key: normalizedKey,
+        scope,
+        category,
+        usage: this.getMemoryUsage(scope),
+        message: `No memory found for key "${normalizedKey}" in ${scope} scope.`,
+      };
+    }
+
+    this.assertMemoryWriteSafe(normalizedKey, normalizedValue);
+
+    const previousMemories = cloneMemoryMap(memories);
+    memories.set(normalizedKey, {
+      ...existing,
+      value: normalizedValue,
+      category: category ?? existing.category,
+      updatedAt: new Date(),
+      tags: tags ?? existing.tags,
+    });
+
+    try {
+      this.assertScopeWithinLimit(scope);
+    } catch (err) {
+      memories.clear();
+      for (const [memoryKey, memory] of previousMemories) {
+        memories.set(memoryKey, memory);
+      }
+      throw err;
+    }
+
+    await this.saveMemories(scope);
+    this.emit("memory:replaced", { key: normalizedKey, scope, category: category ?? existing.category });
+
+    return {
+      status: 'replaced',
+      key: normalizedKey,
+      scope,
+      category: category ?? existing.category,
+      usage: this.getMemoryUsage(scope),
+      message: `Replaced "${normalizedKey}" in ${scope} memory.`,
+    };
+  }
+
+  private setMemoryDirect(
+    memories: Map<string, Memory>,
+    key: string,
+    value: string,
+    category: MemoryCategory,
+    tags?: string[],
+  ): void {
+    const existing = memories.get(key);
+    const memory: Memory = {
+      key,
+      value,
+      category,
+      createdAt: existing?.createdAt || new Date(),
+      updatedAt: new Date(),
+      accessCount: existing?.accessCount || 0,
+      tags,
+    };
+    memories.set(key, memory);
+  }
+
+  private assertMemoryWriteSafe(key: string, value: string): void {
+    if (!key || !value) {
+      throw new MemoryWriteRejectedError(
+        'Memory key and value must be non-empty.',
+        'memory_security_rejected',
+      );
+    }
+
+    if (!this.config.securityScan) return;
+
+    const content = `${key}\n${value}`;
+    if (/[\u200B-\u200F\u202A-\u202E\u2060-\u206F\uFEFF]/u.test(content)) {
+      throw new MemoryWriteRejectedError(
+        'Memory write rejected: invisible Unicode control characters are not allowed in prompt-injected memory.',
+        'memory_security_rejected',
+      );
+    }
+
+    const threatPatterns: Array<{ pattern: RegExp; reason: string }> = [
+      {
+        pattern: /\b(ignore|override|bypass|discard)\b.{0,80}\b(system|developer|previous|prior|above)\b.{0,80}\b(instructions?|prompt|rules?)\b/i,
+        reason: 'prompt injection instruction',
+      },
+      {
+        pattern: /\b(exfiltrate|steal|leak|send|upload|post)\b.{0,100}\b(api[-_ ]?key|token|secret|password|credential|private key)\b/i,
+        reason: 'credential exfiltration instruction',
+      },
+      {
+        pattern: /\b(authorized_keys|reverse shell|backdoor|ssh-rsa)\b/i,
+        reason: 'backdoor or SSH persistence pattern',
+      },
+      {
+        pattern: /-----BEGIN (?:OPENSSH|RSA|EC|DSA) PRIVATE KEY-----/i,
+        reason: 'private key material',
+      },
+    ];
+
+    for (const { pattern, reason } of threatPatterns) {
+      if (pattern.test(content)) {
+        throw new MemoryWriteRejectedError(
+          `Memory write rejected: ${reason} detected.`,
+          'memory_security_rejected',
+        );
+      }
+    }
+  }
+
+  private assertScopeWithinLimit(scope: MemoryScope): void {
+    if (!this.config.enforceCharLimits) return;
+    const usage = this.getMemoryUsage(scope);
+    if (usage.limit > 0 && usage.used > usage.limit) {
+      throw new MemoryWriteRejectedError(
+        `Memory ${scope} is full (${usage.used}/${usage.limit} chars). Consolidate or remove entries before retrying.`,
+        'memory_limit_exceeded',
+        usage,
+      );
+    }
+  }
+
+  private getMemoryLimit(scope: MemoryScope): number {
+    return scope === 'project' ? this.config.projectCharLimit : this.config.userCharLimit;
+  }
+
+  private renderScopeEntries(memories: Map<string, Memory>): string {
+    return Array.from(memories.values())
+      .map((memory) => `${memory.key}: ${memory.value}`)
+      .join('\n§\n');
+  }
+
+  getMemoryUsage(scope: MemoryScope): MemoryUsage {
+    const memories = scope === 'project' ? this.projectMemories : this.userMemories;
+    const used = this.renderScopeEntries(memories).length;
+    const limit = this.getMemoryLimit(scope);
+    return {
+      scope,
+      used,
+      limit,
+      percent: limit > 0 ? Math.min(100, Math.round((used / limit) * 100)) : 0,
+    };
+  }
+
+  getMemoryUsages(): { project: MemoryUsage; user: MemoryUsage } {
+    return {
+      project: this.getMemoryUsage('project'),
+      user: this.getMemoryUsage('user'),
+    };
   }
 
   /**
@@ -557,24 +809,46 @@ export class PersistentMemoryManager extends EventEmitter {
    * Get context string for system prompt
    */
   getContextForPrompt(): string {
-    const relevant = [
-      ...this.getByCategory("project", "project"),
-      ...this.getByCategory("preferences", "user"),
-      ...this.getByCategory("decisions"),
-      ...this.getByCategory("patterns"),
-    ].slice(0, 20);
+    const snapshot = this.getHermesSnapshotForPrompt();
+    if (!snapshot) return "";
+    return `--- PERSISTENT MEMORY ---\n${snapshot}\n--- END MEMORY ---\n`;
+  }
 
-    if (relevant.length === 0) {
-      return "";
+  getHermesSnapshotForPrompt(): string {
+    const sections: string[] = [];
+    const projectEntries = this.renderScopeEntries(this.projectMemories);
+    const userEntries = this.renderScopeEntries(this.userMemories);
+
+    if (projectEntries) {
+      const usage = this.getMemoryUsage('project');
+      sections.push(this.renderHermesMemorySection(
+        'MEMORY (project notes)',
+        usage,
+        projectEntries,
+      ));
     }
 
-    let context = "\n--- PERSISTENT MEMORY ---\n";
-    for (const memory of relevant) {
-      context += `• ${memory.key}: ${memory.value}\n`;
+    if (userEntries) {
+      const usage = this.getMemoryUsage('user');
+      sections.push(this.renderHermesMemorySection(
+        'USER (profile and preferences)',
+        usage,
+        userEntries,
+      ));
     }
-    context += "--- END MEMORY ---\n";
 
-    return context;
+    return sections.join('\n\n');
+  }
+
+  private renderHermesMemorySection(title: string, usage: MemoryUsage, entries: string): string {
+    const width = 46;
+    const bar = '═'.repeat(width);
+    return [
+      bar,
+      `${title} [${usage.percent}% - ${usage.used}/${usage.limit} chars]`,
+      bar,
+      entries,
+    ].join('\n');
   }
 
   /**
@@ -630,8 +904,9 @@ export class PersistentMemoryManager extends EventEmitter {
       }
 
       await this.saveMemories("project");
-    } catch (err: any) {
-      logger.warn(`[FactsMemory] Failed to autoCapture facts, falling back to pattern matching: ${err.message}`);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.warn(`[FactsMemory] Failed to autoCapture facts, falling back to pattern matching: ${message}`);
       // Fallback: Detect project context
       const projectPatterns = [
         /this (?:is|project) (?:a|an) ([^.]+)/i,
@@ -720,8 +995,10 @@ export class PersistentMemoryManager extends EventEmitter {
   formatMemories(scope?: "project" | "user"): string {
     let output = `\n🧠 Persistent Memory\n${"═".repeat(50)}\n\n`;
 
-    const formatScope = (name: string, memories: Map<string, Memory>) => {
+    const formatScope = (name: string, memories: Map<string, Memory>, memoryScope: MemoryScope) => {
+      const usage = this.getMemoryUsage(memoryScope);
       output += `📁 ${name}\n`;
+      output += `   Capacity: ${usage.used}/${usage.limit} chars (${usage.percent}%)\n`;
       if (memories.size === 0) {
         output += `   (empty)\n`;
       } else {
@@ -734,14 +1011,14 @@ export class PersistentMemoryManager extends EventEmitter {
     };
 
     if (!scope || scope === "project") {
-      formatScope("Project Memory", this.projectMemories);
+      formatScope("Project Memory", this.projectMemories, 'project');
     }
     if (!scope || scope === "user") {
-      formatScope("User Memory", this.userMemories);
+      formatScope("User Memory", this.userMemories, 'user');
     }
 
     output += `${"═".repeat(50)}\n`;
-    output += `💡 Commands: /remember <key> <value>, /recall <key>, /forget <key>\n`;
+    output += `💡 Commands: /remember <key> <value>, /memory replace <key> <value>, /recall <key>, /forget <key>\n`;
 
     return output;
   }

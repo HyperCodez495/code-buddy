@@ -221,6 +221,7 @@ import {
   getAutonomyModelTierForReview,
   getAutonomyServiceLogsForReview,
 } from './autonomy/autonomy-daemon-bridge';
+import { bootstrapDarkstarNetworkModel } from './config/darkstar-network-model';
 import {
   addColabTaskForReview,
   blockColabTaskForReview,
@@ -1510,6 +1511,12 @@ app
     // labelled concat). Runs regardless of the embedded engine: the Council
     // executes in this main process via saga-runner. Best-effort.
     void wireFleetAggregator(configStore);
+    const darkstarBootstrap = await bootstrapDarkstarNetworkModel(process.env);
+    if (darkstarBootstrap.applied) {
+      log('[main] Darkstar network model bootstrapped:', darkstarBootstrap.model, darkstarBootstrap.baseUrl);
+    } else {
+      log('[main] Darkstar network model bootstrap skipped:', darkstarBootstrap.reason);
+    }
 
     // Single source of truth for which runtime is in use. Logged AFTER
     // the load attempt so it never contradicts the engine init log
@@ -1560,6 +1567,10 @@ app
     // Initialize session manager before creating an interactive window.
     // This avoids session.start racing the startup path and hitting a null manager.
     sessionManager = new SessionManager(db, sendToRenderer, pluginRuntimeService, engineAdapter);
+    const recovery = sessionManager.recoverFromTurnJournals();
+    if (recovery.sessionsChanged > 0 || recovery.errors > 0) {
+      log('[main] Turn journal startup recovery:', recovery);
+    }
 
     // Initialize ProjectManager for Claude Cowork parity
     projectManager = new ProjectManager(db);
@@ -1574,6 +1585,7 @@ app
     const projectMemoryService = new ProjectMemoryService(projectManager);
     projectMemoryServiceRef = projectMemoryService;
     sessionManager.setProjectServices(projectManager, projectMemoryService);
+    sessionManager.recoverQueuedPromptsFromTurnJournals();
 
     // Initialize sub-agent bridge (Claude Cowork parity)
     subAgentBridge = new SubAgentBridge(sendToRenderer);
@@ -1776,6 +1788,8 @@ app
       listSessions: () => sessionInsightsSource.listSessions(),
       getMessages: (sessionId: string) => sessionInsightsSource.getMessages(sessionId),
       getTraceSteps: (sessionId: string) => sessionInsightsSource.getTraceSteps(sessionId),
+      getTurnJournal: (sessionId: string) => sessionInsightsSource.getTurnJournal(sessionId),
+      getMemoryPreview: (sessionId: string) => sessionInsightsSource.getMemoryPreview(sessionId),
       replaceMessages: (sessionId: string, messages) =>
         sessionInsightsSource.replaceMessages(sessionId, messages),
     });
@@ -2561,6 +2575,10 @@ ipcMain.handle(
       executionMode?: 'chat' | 'task';
       isBackground?: boolean;
       title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+      tags?: string[];
+      source?: string;
     }
   ) => {
     if (!sessionManager) return false;
@@ -4188,6 +4206,28 @@ ipcMain.handle('sessionInsights.detail', async (_event, sessionId: string) => {
   }
 });
 
+ipcMain.handle(
+  'sessionInsights.recallPrefill',
+  async (
+    _event,
+    prompt: string,
+    options?: {
+      currentSessionId?: string;
+      cwd?: string;
+      limit?: number;
+      maxChars?: number;
+      perSessionMaxChars?: number;
+    }
+  ) => {
+    try {
+      return sessionInsightsBridge?.getRecallPrefill(prompt ?? '', options ?? {}) ?? null;
+    } catch (err) {
+      logError('[sessionInsights.recallPrefill] failed:', err);
+      return null;
+    }
+  }
+);
+
 ipcMain.handle('sessionInsights.audit', async (_event, sessionId: string) => {
   try {
     return sessionInsightsBridge?.getAudit(sessionId) ?? null;
@@ -5696,6 +5736,34 @@ ipcMain.handle('audit.searchRuns', async (_event, filter?: Record<string, unknow
       filters: { limit: 20, sources: [] },
       count: 0,
       results: [],
+    };
+  }
+});
+
+ipcMain.handle('audit.getArtifactIndexDoctorStatus', async () => {
+  try {
+    const { getArtifactIndexDoctorStatus } = await import('./observability/audit-bridge');
+    return await getArtifactIndexDoctorStatus();
+  } catch (err) {
+    logError('[audit.getArtifactIndexDoctorStatus] failed:', err);
+    return {
+      schemaVersion: 1,
+      generatedAt: new Date().toISOString(),
+      kind: 'artifact_index_doctor_status',
+      status: 'unavailable',
+      unavailable: true,
+      totalRows: 0,
+      healthyRows: 0,
+      staleRows: 0,
+      orphanedRows: 0,
+      rows: [],
+      recommendations: [
+        'Artifact index health is unavailable; verify the core RunStore and SQLite/FTS layer.',
+      ],
+      repairCommands: {
+        staleOnly: 'buddy run index-doctor --repair',
+        includeOrphans: 'buddy run index-doctor --repair --include-orphans',
+      },
     };
   }
 });
@@ -7432,6 +7500,11 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
     return null;
   }
 
+  if (event.type === 'session.steer' && !configStore.hasUsableCredentialsForActiveSet()) {
+    sendActiveSetConfigRequiredError(event.payload.sessionId);
+    return null;
+  }
+
   if (eventRequiresSessionManager(event) && !sessionManager) {
     throw new Error('Session manager not initialized');
   }
@@ -7467,6 +7540,14 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
         event.payload.content
       );
 
+    case 'session.steer':
+      return sm.steerSession(
+        event.payload.sessionId,
+        event.payload.prompt,
+        event.payload.content,
+        event.payload.intentId
+      );
+
     case 'session.stop':
       return sm.stopSession(event.payload.sessionId);
 
@@ -7475,6 +7556,24 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
 
     case 'session.batchDelete':
       return sm.batchDeleteSessions(event.payload.sessionIds);
+
+    case 'session.duplicate':
+      return sm.duplicateSession(event.payload.sessionId);
+
+    case 'session.updateSettings':
+      return sm.updateSessionSettings(event.payload.sessionId, {
+        projectId: event.payload.updates.projectId,
+        executionMode:
+          event.payload.updates.executionMode === 'chat' || event.payload.updates.executionMode === 'task'
+            ? event.payload.updates.executionMode
+            : undefined,
+        isBackground: event.payload.updates.isBackground,
+        title: event.payload.updates.title,
+        pinned: event.payload.updates.pinned,
+        archived: event.payload.updates.archived,
+        tags: event.payload.updates.tags,
+        source: event.payload.updates.source,
+      });
 
     case 'session.list': {
       const sessions = sm.listSessions();
@@ -7552,6 +7651,20 @@ async function handleClientEvent(event: ClientEvent): Promise<unknown> {
           },
         });
       }
+      if (
+        event.payload.memoryStrategy === 'auto' ||
+        event.payload.memoryStrategy === 'manual' ||
+        event.payload.memoryStrategy === 'rolling'
+      ) {
+        configStore.update({ memoryStrategy: event.payload.memoryStrategy });
+      }
+      sendToRenderer({
+        type: 'config.status',
+        payload: {
+          isConfigured: configStore.isConfigured(),
+          config: configStore.getAll(),
+        },
+      });
       return null;
 
     default:

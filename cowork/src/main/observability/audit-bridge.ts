@@ -660,6 +660,28 @@ export interface AuditMobileSupervisionApprovalQueueResponse {
   };
 }
 
+export interface AuditArtifactIndexDoctorStatusResponse {
+  schemaVersion: 1;
+  generatedAt: string;
+  kind: 'artifact_index_doctor_status';
+  status: 'healthy' | 'attention' | 'unavailable';
+  unavailable: boolean;
+  totalRows: number;
+  healthyRows: number;
+  staleRows: number;
+  orphanedRows: number;
+  rows: Array<{
+    runId: string;
+    artifact: string;
+    reason: 'missing_run' | 'missing_artifact';
+  }>;
+  recommendations: string[];
+  repairCommands: {
+    staleOnly: string;
+    includeOrphans: string;
+  };
+}
+
 const AUDIT_RUN_SEARCH_SCHEMA_VERSION = 1;
 
 interface CoreRunSummaryLike {
@@ -709,6 +731,18 @@ interface CoreRunStoreInstance {
   getRun(runId: string): CoreRunRecordLike | null;
   getEvents(runId: string): CoreRunEventLike[];
   getArtifact?: (runId: string, name: string) => string | null;
+  checkArtifactIndexHealth?: () => {
+    unavailable: boolean;
+    totalRows: number;
+    healthyRows: number;
+    staleRows: number;
+    orphanedRows: number;
+    rows: Array<{
+      runId: string;
+      artifact: string;
+      reason: 'missing_run' | 'missing_artifact';
+    }>;
+  };
   searchRuns?: (
     query: string,
     options?: { limit?: number; sources?: string[] },
@@ -1089,6 +1123,78 @@ export async function searchRuns(filter?: AuditRunSearchFilter): Promise<AuditRu
   } catch (err) {
     logWarn('[AuditBridge] searchRuns failed:', err);
     return empty();
+  }
+}
+
+export async function getArtifactIndexDoctorStatus(): Promise<AuditArtifactIndexDoctorStatusResponse> {
+  const emptyUnavailable = (): AuditArtifactIndexDoctorStatusResponse => ({
+    schemaVersion: AUDIT_RUN_SEARCH_SCHEMA_VERSION,
+    generatedAt: new Date().toISOString(),
+    kind: 'artifact_index_doctor_status',
+    status: 'unavailable',
+    unavailable: true,
+    totalRows: 0,
+    healthyRows: 0,
+    staleRows: 0,
+    orphanedRows: 0,
+    rows: [],
+    recommendations: [
+      'Artifact index health is unavailable; verify the core RunStore and SQLite/FTS layer.',
+    ],
+    repairCommands: {
+      staleOnly: 'buddy run index-doctor --repair',
+      includeOrphans: 'buddy run index-doctor --repair --include-orphans',
+    },
+  });
+
+  let mod = await loadModule();
+  if (!mod) return emptyUnavailable();
+
+  try {
+    let store = mod.RunStore.getInstance();
+    if (typeof store.checkArtifactIndexHealth !== 'function' && cachedModule) {
+      cachedModule = null;
+      mod = await loadModule();
+      if (!mod) return emptyUnavailable();
+      store = mod.RunStore.getInstance();
+    }
+    if (typeof store.checkArtifactIndexHealth !== 'function') {
+      logWarn('[AuditBridge] Core RunStore.checkArtifactIndexHealth unavailable');
+      return emptyUnavailable();
+    }
+
+    const health = store.checkArtifactIndexHealth();
+    const status = health.unavailable
+      ? 'unavailable'
+      : health.staleRows > 0 || health.orphanedRows > 0
+        ? 'attention'
+        : 'healthy';
+    const recommendations = buildArtifactIndexDoctorRecommendations(health);
+
+    return {
+      schemaVersion: AUDIT_RUN_SEARCH_SCHEMA_VERSION,
+      generatedAt: new Date().toISOString(),
+      kind: 'artifact_index_doctor_status',
+      status,
+      unavailable: health.unavailable,
+      totalRows: health.totalRows,
+      healthyRows: health.healthyRows,
+      staleRows: health.staleRows,
+      orphanedRows: health.orphanedRows,
+      rows: health.rows.map((row) => ({
+        runId: row.runId,
+        artifact: row.artifact,
+        reason: row.reason,
+      })),
+      recommendations,
+      repairCommands: {
+        staleOnly: 'buddy run index-doctor --repair',
+        includeOrphans: 'buddy run index-doctor --repair --include-orphans',
+      },
+    };
+  } catch (err) {
+    logWarn('[AuditBridge] getArtifactIndexDoctorStatus failed:', err);
+    return emptyUnavailable();
   }
 }
 
@@ -2028,6 +2134,30 @@ function csvEscape(value: unknown): string {
     return `"${str.replace(/"/g, '""')}"`;
   }
   return str;
+}
+
+function buildArtifactIndexDoctorRecommendations(health: {
+  unavailable: boolean;
+  staleRows: number;
+  orphanedRows: number;
+}): string[] {
+  if (health.unavailable) {
+    return [
+      'Artifact index health is unavailable; verify the core RunStore and SQLite/FTS layer.',
+    ];
+  }
+  if (health.staleRows === 0 && health.orphanedRows === 0) {
+    return ['Artifact index is healthy; no repair is needed.'];
+  }
+
+  const recommendations: string[] = [];
+  if (health.staleRows > 0) {
+    recommendations.push('Run `buddy run index-doctor --repair` to remove rows for pruned or moved run folders.');
+  }
+  if (health.orphanedRows > 0) {
+    recommendations.push('Run `buddy run index-doctor --repair --include-orphans` to also remove rows for deleted artifact files.');
+  }
+  return recommendations;
 }
 
 function normalizeSearchQuery(value: string | undefined): string {

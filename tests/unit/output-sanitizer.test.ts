@@ -79,6 +79,12 @@ describe('output-sanitizer', () => {
         expect(sanitizeModelOutput(input)).toBe('textmore');
       });
 
+      it('strips malformed local channel markers without removing XML-like tags', () => {
+        expect(sanitizeModelOutput('thought\n<channel|>42')).toBe('42');
+        expect(sanitizeModelOutput('before <|tool_call> after')).toBe('before  after');
+        expect(sanitizeModelOutput('<message>legit</message>')).toBe('<message>legit</message>');
+      });
+
       it('strips JSON-escaped control tokens', () => {
         const input = 'before\\u003c|im_start|\\u003eafter';
         expect(sanitizeModelOutput(input)).toBe('beforeafter');

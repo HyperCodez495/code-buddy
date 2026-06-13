@@ -75,12 +75,18 @@ describe('CodeBuddyClient', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    getModelInfo.mockReturnValue({
+      maxTokens: 8192,
+      provider: 'xai',
+      isSupported: true,
+    });
 
     // Reset environment variables
     delete process.env.GROK_BASE_URL;
     delete process.env.CODEBUDDY_MAX_TOKENS;
     delete process.env.GROK_FORCE_TOOLS;
     delete process.env.GROK_CONVERT_TOOL_MESSAGES;
+    delete process.env.CODEBUDDY_OLLAMA_REASONING_EFFORT;
   });
 
   describe('Client Initialization', () => {
@@ -262,6 +268,22 @@ describe('CodeBuddyClient', () => {
                 content: 'You are a helpful coding assistant.',
               }),
             ]),
+          })
+        );
+      });
+
+      it('should use per-call maxTokens when provided', async () => {
+        mockCreate.mockResolvedValueOnce({
+          choices: [
+            { message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' },
+          ],
+        });
+
+        await client.chat([{ role: 'user', content: 'Hi' }], [], { maxTokens: 1234 });
+
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            max_tokens: 1234,
           })
         );
       });
@@ -526,6 +548,28 @@ describe('CodeBuddyClient', () => {
           })
         );
       });
+
+      it('should disable Ollama reasoning by default so local thinking models return content', async () => {
+        getModelInfo.mockReturnValue({
+          maxTokens: 8192,
+          provider: 'ollama',
+          isSupported: true,
+        });
+        client = new CodeBuddyClient(mockApiKey, 'gemma4:12b', 'http://localhost:11434/v1');
+        mockCreate.mockResolvedValueOnce({
+          choices: [
+            { message: { role: 'assistant', content: 'OK' }, finish_reason: 'stop' },
+          ],
+        });
+
+        await client.chat([{ role: 'user', content: 'Hi' }]);
+
+        expect(mockCreate).toHaveBeenCalledWith(
+          expect.objectContaining({
+            reasoning_effort: 'none',
+          })
+        );
+      });
     });
 
     describe('response usage tracking', () => {
@@ -624,6 +668,28 @@ describe('CodeBuddyClient', () => {
         expect.objectContaining({
           tools,
           tool_choice: 'auto',
+          stream: true,
+        })
+      );
+    });
+
+    it('should use per-call maxTokens in streaming request', async () => {
+      async function* mockGenerator() {
+        yield { choices: [{ delta: { content: 'Done' }, index: 0 }] };
+      }
+      mockCreate.mockResolvedValueOnce(mockGenerator());
+
+      for await (const _ of client.chatStream(
+        [{ role: 'user', content: 'Hi' }],
+        [],
+        { maxTokens: 777 }
+      )) {
+        // consume
+      }
+
+      expect(mockCreate).toHaveBeenCalledWith(
+        expect.objectContaining({
+          max_tokens: 777,
           stream: true,
         })
       );

@@ -12,6 +12,7 @@
 
 import { EventEmitter } from 'events';
 import { logger } from '../utils/logger.js';
+import { detectProviderFromEnv } from '../utils/provider-detector.js';
 import {
   ConnectionConfig,
   ConnectionProfile,
@@ -153,52 +154,16 @@ export class ConfigResolver extends EventEmitter {
 
   /**
    * Resolve from environment variables
-   * Priority: Gemini > Grok > OpenAI > Anthropic
+   * Priority comes from the runtime provider catalog.
    */
   private resolveFromEnv(): ResolvedConfig {
-    // Check Gemini first (preferred)
-    const geminiKey = process.env.GOOGLE_API_KEY || process.env.GEMINI_API_KEY;
-    if (geminiKey) {
+    const detected = detectProviderFromEnv();
+    if (detected) {
       return {
-        baseURL: 'https://generativelanguage.googleapis.com/v1beta',
-        apiKey: geminiKey,
-        model: process.env.GEMINI_MODEL || 'gemini-2.5-flash',
-        provider: 'gemini',
-        source: 'environment',
-      };
-    }
-
-    // Check Grok
-    const grokKey = process.env.GROK_API_KEY || process.env.XAI_API_KEY;
-    if (grokKey) {
-      const baseURL = process.env.GROK_BASE_URL || 'https://api.x.ai/v1';
-      return {
-        baseURL,
-        apiKey: grokKey,
-        model: process.env.GROK_MODEL || 'grok-code-fast-1',
-        provider: 'grok',
-        source: 'environment',
-      };
-    }
-
-    // Check OpenAI
-    if (process.env.OPENAI_API_KEY) {
-      return {
-        baseURL: 'https://api.openai.com/v1',
-        apiKey: process.env.OPENAI_API_KEY,
-        model: process.env.OPENAI_MODEL || 'gpt-4o',
-        provider: 'openai',
-        source: 'environment',
-      };
-    }
-
-    // Check Anthropic
-    if (process.env.ANTHROPIC_API_KEY) {
-      return {
-        baseURL: 'https://api.anthropic.com/v1',
-        apiKey: process.env.ANTHROPIC_API_KEY,
-        model: process.env.ANTHROPIC_MODEL || 'claude-sonnet-4-20250514',
-        provider: 'claude',
+        baseURL: detected.baseURL,
+        apiKey: detected.apiKey,
+        model: detected.defaultModel,
+        provider: this.normalizeDetectedProvider(detected.provider),
         source: 'environment',
       };
     }
@@ -212,6 +177,12 @@ export class ConfigResolver extends EventEmitter {
       provider: this.detectProvider(baseURL) || 'grok',
       source: 'environment',
     };
+  }
+
+  private normalizeDetectedProvider(provider: string): ProviderType {
+    if (provider === 'anthropic') return 'claude';
+    if (provider === 'unknown') return 'grok';
+    return provider as ProviderType;
   }
 
   /**
@@ -245,6 +216,25 @@ export class ConfigResolver extends EventEmitter {
     if (urlLower.includes('groq.com')) return 'groq';
     if (urlLower.includes('together.xyz') || urlLower.includes('together.ai')) return 'together';
     if (urlLower.includes('fireworks.ai')) return 'fireworks';
+    if (urlLower.includes('openrouter.ai')) return 'openrouter';
+    if (urlLower.includes('novita.ai')) return 'novita';
+    if (urlLower.includes('z.ai') || urlLower.includes('bigmodel')) return 'zai';
+    if (urlLower.includes('moonshot.ai')) return 'kimi-coding';
+    if (urlLower.includes('moonshot.cn')) return 'kimi-coding-cn';
+    if (urlLower.includes('arcee.ai')) return 'arcee';
+    if (urlLower.includes('gmi-serving.com')) return 'gmi';
+    if (urlLower.includes('minimax.io')) return 'minimax';
+    if (urlLower.includes('minimaxi.com')) return 'minimax-cn';
+    if (urlLower.includes('dashscope') || urlLower.includes('aliyuncs.com')) return 'alibaba';
+    if (urlLower.includes('kilo.ai')) return 'kilocode';
+    if (urlLower.includes('xiaomimimo.com')) return 'xiaomi';
+    if (urlLower.includes('tencentmaas.com')) return 'tencent-tokenhub';
+    if (urlLower.includes('opencode.ai/zen/go')) return 'opencode-go';
+    if (urlLower.includes('opencode.ai/zen')) return 'opencode-zen';
+    if (urlLower.includes('router.huggingface.co') || urlLower.includes('huggingface.co')) return 'huggingface';
+    if (urlLower.includes('api.nvidia.com')) return 'nvidia';
+    if (urlLower.includes('ollama.com')) return 'ollama-cloud';
+    if (urlLower.includes('stepfun.ai')) return 'stepfun';
 
     // Local providers (by port)
     if (urlLower.includes(':1234')) return 'lmstudio';
@@ -453,7 +443,7 @@ export class ConfigResolver extends EventEmitter {
             models,
           };
         }
-      } catch (error) {
+      } catch (_error) {
         // Server not available on this port, try next
         continue;
       }

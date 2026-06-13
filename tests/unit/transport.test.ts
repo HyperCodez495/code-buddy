@@ -216,6 +216,7 @@ describe('Transport Module', () => {
         expect(StdioClientTransport).toHaveBeenCalledWith({
           command: 'node',
           args: ['--version'],
+          stderr: 'pipe',
           env: expect.objectContaining({
             MCP_REMOTE_QUIET: '1',
             MCP_REMOTE_SILENT: '1',
@@ -240,6 +241,7 @@ describe('Transport Module', () => {
         expect(StdioClientTransport).toHaveBeenCalledWith({
           command: 'python',
           args: ['mcp_server.py'],
+          stderr: 'pipe',
           env: expect.objectContaining({
             CUSTOM_VAR: 'value',
           }),
@@ -258,6 +260,7 @@ describe('Transport Module', () => {
         expect(StdioClientTransport).toHaveBeenCalledWith({
           command: 'server',
           args: [],
+          stderr: 'pipe',
           env: expect.any(Object),
         });
       });
@@ -1245,6 +1248,7 @@ describe('Transport Module', () => {
       expect(StdioClientTransport).toHaveBeenCalledWith({
         command: 'node',
         args: [],
+        stderr: 'pipe',
         env: expect.objectContaining({
           EXISTING_VAR: 'existing',
           CUSTOM_VAR: 'custom',
@@ -1264,6 +1268,7 @@ describe('Transport Module', () => {
       expect(StdioClientTransport).toHaveBeenCalledWith({
         command: 'node',
         args: [],
+        stderr: 'pipe',
         env: expect.objectContaining({
           MCP_REMOTE_QUIET: '1',
           MCP_REMOTE_SILENT: '1',

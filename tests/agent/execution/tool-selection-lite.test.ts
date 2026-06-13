@@ -6,9 +6,35 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { CodeBuddyTool } from '../../../src/codebuddy/client.js';
+
+function makeTool(name: string): CodeBuddyTool {
+  return {
+    type: 'function',
+    function: {
+      name,
+      description: `${name} tool`,
+      parameters: {
+        type: 'object',
+        properties: {},
+        required: [],
+      },
+    },
+  };
+}
+
+function makeSelection(toolNames: string[]) {
+  return {
+    selectedTools: toolNames.map(makeTool),
+    classification: { categories: [], confidence: 0 },
+    scores: new Map<string, number>(),
+    originalTokens: 0,
+    reducedTokens: 0,
+  };
+}
 
 const ragMock = vi.hoisted(() => ({
-  getRelevantToolsMock: vi.fn(async (_query: string, _opts: { maxTools?: number; useRAG?: boolean; alwaysInclude?: string[] }) => ({
+  getRelevantToolsMock: vi.fn(async (_query: string, _opts: { maxTools?: number; useRAG?: boolean; alwaysInclude?: string[]; modelName?: string }) => ({
     selectedTools: [],
     classification: { categories: [], confidence: 0 },
     scores: new Map<string, number>(),
@@ -47,7 +73,8 @@ import { ToolSelectionStrategy } from '../../../src/agent/execution/tool-selecti
 
 describe('ToolSelectionStrategy lite-profile overrides', () => {
   beforeEach(() => {
-    ragMock.getRelevantToolsMock.mockClear();
+    ragMock.getRelevantToolsMock.mockReset();
+    ragMock.getRelevantToolsMock.mockImplementation(async () => makeSelection([]));
   });
 
   it('passes the caller-supplied maxTools=5 to RAG when promptProfile=lite', async () => {
@@ -84,6 +111,7 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     // No memory/lessons tools — the LLM on a lite model can't call them
     // and would hallucinate JSON instead.
     expect(alwaysInclude).not.toContain('remember');
+    expect(alwaysInclude).not.toContain('memory_propose');
     expect(alwaysInclude).not.toContain('lessons_add');
     expect(alwaysInclude).not.toContain('lessons_search');
   });
@@ -94,6 +122,7 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
 
     const alwaysInclude = ragMock.getRelevantToolsMock.mock.calls[0]![1]?.alwaysInclude;
     expect(alwaysInclude).toContain('remember');
+    expect(alwaysInclude).toContain('memory_propose');
     expect(alwaysInclude).toContain('lessons_add');
     expect(alwaysInclude).toContain('lessons_search');
   });
@@ -106,6 +135,72 @@ describe('ToolSelectionStrategy lite-profile overrides', () => {
     expect(callArgs[1]?.maxTools).toBe(7);
     // alwaysInclude falls back to the strategy's default (with memory tools)
     expect(callArgs[1]?.alwaysInclude).toContain('remember');
+    expect(callArgs[1]?.alwaysInclude).toContain('memory_propose');
+  });
+
+  it('filters model-facing schemas using the active model tool config', async () => {
+    ragMock.getRelevantToolsMock.mockResolvedValueOnce(
+      makeSelection(['view_file', 'browser', 'screenshot', 'computer_control']),
+    );
+
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    const result = await strategy.selectToolsForQuery('inspect the browser screenshot', {
+      modelName: 'qwen3:8b',
+      alwaysInclude: ['view_file', 'browser', 'screenshot', 'computer_control'],
+    });
+
+    expect(result.tools.map(tool => tool.function.name)).toEqual(['view_file']);
+    expect(result.selection?.selectedTools.map(tool => tool.function.name)).toEqual(['view_file']);
+  });
+
+  it('drops all model-facing schemas for chat-only model configs', async () => {
+    ragMock.getRelevantToolsMock.mockResolvedValueOnce(
+      makeSelection(['view_file', 'bash']),
+    );
+
+    const strategy = new ToolSelectionStrategy({ enableCaching: false });
+    const result = await strategy.selectToolsForQuery('run a command', {
+      modelName: 'qwen2.5-coder:7b',
+    });
+
+    expect(result.tools).toEqual([]);
+    expect(result.selection?.selectedTools).toEqual([]);
+  });
+
+  it('keeps forced chat-only schemas for lab probes while still applying capability filters', async () => {
+    const previous = process.env.GROK_FORCE_TOOLS;
+    process.env.GROK_FORCE_TOOLS = 'true';
+    try {
+      ragMock.getRelevantToolsMock.mockResolvedValueOnce(
+        makeSelection(['view_file', 'bash', 'browser', 'screenshot']),
+      );
+
+      const strategy = new ToolSelectionStrategy({ enableCaching: false });
+      const result = await strategy.selectToolsForQuery('force a local probe', {
+        modelName: 'qwen2.5-coder:7b',
+      });
+
+      expect(result.tools.map(tool => tool.function.name)).toEqual(['view_file', 'bash']);
+    } finally {
+      if (previous === undefined) delete process.env.GROK_FORCE_TOOLS;
+      else process.env.GROK_FORCE_TOOLS = previous;
+    }
+  });
+
+  it('does not reuse cached model-facing schemas across model configs', async () => {
+    const strategy = new ToolSelectionStrategy({ enableCaching: true });
+    strategy.cacheTools([makeTool('view_file'), makeTool('browser')], 'gpt-4o');
+    ragMock.getRelevantToolsMock.mockResolvedValueOnce(
+      makeSelection(['view_file', 'browser']),
+    );
+
+    const result = await strategy.selectToolsForQuery('browse locally', {
+      modelName: 'qwen3:8b',
+    });
+
+    expect(result.fromCache).toBe(false);
+    expect(ragMock.getRelevantToolsMock).toHaveBeenCalledTimes(1);
+    expect(result.tools.map(tool => tool.function.name)).toEqual(['view_file']);
   });
 
   it('enables web search for internet automation and current docs queries', () => {

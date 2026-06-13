@@ -56,6 +56,21 @@ Operations: `Add File`, `Delete File`, `Update File` (with `Move to`). The `seek
 
 9 tools support extended streaming for real-time output: `view_file`, `search`, `grep`, `web_fetch`, `list_files`, `tree`, and more. Line-based chunking sends results as they arrive.
 
+## RTK Shell Output Compression
+
+The `bash` tool can optionally route supported shell commands through
+[RTK](https://github.com/rtk-ai/rtk) before execution. Enable it with:
+
+```bash
+CODEBUDDY_RTK=1 buddy
+```
+
+When enabled, Code Buddy calls `rtk rewrite <command>` before spawning Bash.
+The integration is fail-open: if `rtk` is missing, returns no rewrite, times
+out, or proposes a command that fails Code Buddy's normal safety checks, the
+original command runs unchanged. Rewritten commands are revalidated before
+execution and the default rewrite timeout is `CODEBUDDY_RTK_TIMEOUT_MS=1000`.
+
 ## Tool Aliases (Codex-style)
 
 Tools have alternate names for compatibility: `shell_exec`, `file_read`, `browser_search`, etc. Defined in `src/tools/registry/tool-aliases.ts`.
@@ -96,8 +111,10 @@ Stagehand-inspired proof loop without adding a new runtime dependency:
 
 Use this shape for internet tasks that must be auditable:
 `web_search` -> `web_fetch` -> `browser` `observe` -> `browser`
-`extract` -> `browser` `assert_text` -> `remember` / `lessons_add`
-only when the fact or workflow is proven.
+`extract` -> `browser` `assert_text` -> `memory_propose` or `remember` /
+`lessons_add` only when the fact or workflow is proven. Prefer
+`memory_propose` when the fact was inferred and should be reviewed before
+future prompt injection.
 
 `buildInternetProofPlan()` in `src/browser-automation/internet-proof-plan.ts`
 turns that proof loop into a side-effect-free plan object so CLI, Cowork

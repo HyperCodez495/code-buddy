@@ -40,6 +40,8 @@ export interface GoalJudgeParams {
   subgoals?: string[];
   /** Override the judge model (config `goals.judgeModel`). Empty → client default. */
   model?: string;
+  /** Optional per-call cap for judge output. */
+  maxTokens?: number;
   timeoutMs?: number;
 }
 
@@ -73,7 +75,11 @@ export async function judgeGoal(
           { role: 'user', content: prompt },
         ],
         [],
-        { ...(params.model ? { model: params.model } : {}), temperature: 0 }
+        {
+          ...(params.model ? { model: params.model } : {}),
+          ...(params.maxTokens ? { maxTokens: params.maxTokens } : {}),
+          temperature: 0,
+        }
       ),
       timeoutMs
     );
@@ -140,13 +146,34 @@ export function parseJudgeResponse(raw: string): GoalJudgeResult {
   }
 
   const record = data as Record<string, unknown>;
-  const doneVal = record.done;
-  const done =
-    typeof doneVal === 'string'
-      ? ['true', 'yes', '1', 'done'].includes(doneVal.trim().toLowerCase())
-      : Boolean(doneVal);
+  const parsedDone = parseDoneField(record.done);
+  if (!parsedDone.ok) {
+    return {
+      verdict: 'continue',
+      reason: `judge reply had invalid done field: ${truncateText(raw, 200)}`,
+      parseFailed: true,
+    };
+  }
   const reason = String(record.reason ?? '').trim() || 'no reason provided';
-  return { verdict: done ? 'done' : 'continue', reason, parseFailed: false };
+  return { verdict: parsedDone.done ? 'done' : 'continue', reason, parseFailed: false };
+}
+
+function parseDoneField(value: unknown): { ok: true; done: boolean } | { ok: false } {
+  if (typeof value === 'boolean') return { ok: true, done: value };
+  if (typeof value === 'number') {
+    if (value === 1) return { ok: true, done: true };
+    if (value === 0) return { ok: true, done: false };
+    return { ok: false };
+  }
+  if (typeof value !== 'string') return { ok: false };
+  const normalized = value.trim().toLowerCase();
+  if (['true', 'yes', '1', 'done'].includes(normalized)) {
+    return { ok: true, done: true };
+  }
+  if (['false', 'no', '0', 'continue', 'not_done', 'not done'].includes(normalized)) {
+    return { ok: true, done: false };
+  }
+  return { ok: false };
 }
 
 /** Judge calls consume real tokens — record them in the session cost ledger. */

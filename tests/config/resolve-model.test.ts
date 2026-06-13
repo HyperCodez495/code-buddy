@@ -69,6 +69,7 @@ describe('resolve-model', () => {
       expect(inferProvider('phi3')).toBe('ollama');
       expect(inferProvider('gemma2')).toBe('ollama');
       expect(inferProvider('qwen2.5')).toBe('ollama');
+      expect(inferProvider('qwen3.5-ctx32k:latest')).toBe('ollama');
       expect(inferProvider('command-r')).toBe('ollama');
     });
 

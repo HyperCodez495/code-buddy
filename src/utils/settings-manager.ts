@@ -50,6 +50,13 @@ export interface ProjectSettings {
   model?: string; // Current model for this project
   mcpServers?: Record<string, unknown>; // MCP server configurations
   thinkingLevel?: 'off' | 'minimal' | 'low' | 'medium' | 'high'; // Gemini 3.x thinking depth
+  goals?: {
+    maxTurns?: number;
+    judgeModel?: string;
+    plannerModel?: string;
+    judgeMaxTokens?: number;
+    judgeTimeoutMs?: number;
+  }; // Persistent goal continuation and judging settings
 }
 
 /**

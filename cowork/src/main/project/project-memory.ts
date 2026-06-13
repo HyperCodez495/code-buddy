@@ -27,6 +27,14 @@ export interface ConsolidationSummary {
   memoryDir: string;
 }
 
+export interface MemoryCandidate {
+  category: MemoryEntry['category'];
+  content: string;
+  sourceSessionId?: string;
+  sourceKind: 'user' | 'assistant';
+  evidence: string;
+}
+
 // Lazy reference to the core memory-consolidation module
 type MemoryConsolidationModule = {
   extractMemoriesFromMessages: (
@@ -135,9 +143,17 @@ export class ProjectMemoryService {
 
     try {
       const extracted = mod.extractMemoriesFromMessages(messages, `session:${sessionId}`);
+      const semanticCandidates = this.extractMemoryCandidates(messages, sessionId);
       if (extracted.length === 0) {
         log('[ProjectMemory] No memories extracted from session:', sessionId);
-        return { added: 0, duplicatesSkipped: 0, memoryDir: join(project.workspacePath, '.codebuddy', 'memory') };
+        if (semanticCandidates.length === 0) {
+          return {
+            added: 0,
+            duplicatesSkipped: 0,
+            memoryDir: join(project.workspacePath, '.codebuddy', 'memory'),
+          };
+        }
+        return this.fallbackConsolidation(project, sessionId, messages, semanticCandidates);
       }
 
       const result = mod.consolidateMemories(extracted, project.workspacePath);
@@ -153,11 +169,63 @@ export class ProjectMemoryService {
     }
   }
 
+  /** Preview the candidate memories that would be consolidated from a session transcript. */
+  previewProjectMemory(
+    projectId: string,
+    sessionId: string,
+    messages: Array<{ role: string; content: string }>
+  ): {
+    projectId: string;
+    candidateCount: number;
+    candidates: MemoryCandidate[];
+    hasWorkspace: boolean;
+    projectMemoryPath?: string;
+  } | null {
+    const project = this.projectManager.get(projectId);
+    if (!project) return null;
+    const candidates = this.extractMemoryCandidates(messages, sessionId);
+    const projectMemoryPath = project.workspacePath
+      ? join(project.workspacePath, '.codebuddy', 'memory')
+      : undefined;
+    return {
+      projectId,
+      candidateCount: candidates.length,
+      candidates,
+      hasWorkspace: Boolean(project.workspacePath),
+      ...(projectMemoryPath ? { projectMemoryPath } : {}),
+    };
+  }
+
+  extractMemoryCandidates(
+    messages: Array<{ role: string; content: string }>,
+    sessionId: string
+  ): MemoryCandidate[] {
+    const candidates: MemoryCandidate[] = [];
+    const seen = new Set<string>();
+    for (const message of messages) {
+      const lines = message.content
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .filter(Boolean);
+      for (const line of lines) {
+        const sourceKind = message.role === 'assistant' ? 'assistant' : 'user';
+        const candidate = this.classifyMemoryLine(line, sourceKind, sessionId);
+        if (!candidate) continue;
+        const key = `${candidate.category}:${candidate.content.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        candidates.push(candidate);
+      }
+    }
+    return candidates.slice(0, 12);
+  }
+
   /** Fallback consolidation: basic keyword-based extraction + append to MEMORY.md */
   private fallbackConsolidation(
     project: Project,
     sessionId: string,
-    messages: Array<{ role: string; content: string }>
+    messages: Array<{ role: string; content: string }>,
+    precomputedCandidates?: MemoryCandidate[]
   ): ConsolidationSummary {
     const memoryDir = join(project.workspacePath!, '.codebuddy', 'memory');
     if (!existsSync(memoryDir)) {
@@ -165,15 +233,11 @@ export class ProjectMemoryService {
     }
     const memoryFile = join(memoryDir, 'MEMORY.md');
 
-    const signals = /\b(prefer|always|never|don't|remember|note|important|convention|rule|pattern)\b/i;
-    const entries: string[] = [];
-    for (const msg of messages) {
-      if (msg.role !== 'user') continue;
-      if (signals.test(msg.content)) {
-        const trimmed = msg.content.trim().slice(0, 300);
-        entries.push(`- [context] ${trimmed} (from session:${sessionId})`);
-      }
-    }
+    const candidates = precomputedCandidates ?? this.extractMemoryCandidates(messages, sessionId);
+    const entries = candidates.map((candidate) => {
+      const sourceSession = candidate.sourceSessionId ?? sessionId;
+      return `- [${candidate.category}] ${candidate.content} (from session:${sourceSession}; source:${candidate.sourceKind}; evidence:${candidate.evidence})`;
+    });
 
     if (entries.length === 0) {
       return { added: 0, duplicatesSkipped: 0, memoryDir };
@@ -200,6 +264,63 @@ export class ProjectMemoryService {
 
     writeFileSync(memoryFile, appended, 'utf-8');
     return { added: newEntries.length, duplicatesSkipped: entries.length - newEntries.length, memoryDir };
+  }
+
+  private classifyMemoryLine(
+    line: string,
+    role: 'user' | 'assistant',
+    sessionId: string
+  ): MemoryCandidate | null {
+    const normalized = line.replace(/\s+/g, ' ').trim();
+    if (normalized.length < 12) return null;
+
+    const preferenceMatch = normalized.match(
+      /(?:prefer|please use|use|always|never|must|should|avoid)\b(.+)/i
+    );
+    if (preferenceMatch) {
+      return {
+        category: 'preference',
+        content: preferenceMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        sourceSessionId: sessionId,
+        sourceKind: role,
+        evidence: normalized.slice(0, 120),
+      };
+    }
+
+    const decisionMatch = normalized.match(/(?:decided|decision|chosen|selected|we will|will use)\b(.+)/i);
+    if (decisionMatch) {
+      return {
+        category: 'decision',
+        content: decisionMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        sourceSessionId: sessionId,
+        sourceKind: role,
+        evidence: normalized.slice(0, 120),
+      };
+    }
+
+    const contextMatch = normalized.match(/(?:context|important|remember|note|constraint|rule)\b(.+)/i);
+    if (contextMatch) {
+      return {
+        category: 'context',
+        content: contextMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        sourceSessionId: sessionId,
+        sourceKind: role,
+        evidence: normalized.slice(0, 120),
+      };
+    }
+
+    const patternMatch = normalized.match(/(?:pattern|repeated|usually|typically|for now|from now on)\b(.+)/i);
+    if (patternMatch) {
+      return {
+        category: 'pattern',
+        content: patternMatch[1].trim().replace(/^[,:;\-]\s*/, ''),
+        sourceSessionId: sessionId,
+        sourceKind: role,
+        evidence: normalized.slice(0, 120),
+      };
+    }
+
+    return null;
   }
 
   /** Read memories from MEMORY.md, returning a parsed list for the browser UI. */

@@ -61,7 +61,66 @@ export interface ValidationResult {
 /**
  * Valid AI provider options
  */
-export const AI_PROVIDERS = ['grok', 'claude', 'openai', 'gemini', 'ollama', 'lmstudio', 'local'] as const;
+export const AI_PROVIDERS = [
+  'grok',
+  'xai',
+  'claude',
+  'anthropic',
+  'openai',
+  'chatgpt',
+  'gemini',
+  'google',
+  'ollama',
+  'ollama-cloud',
+  'lmstudio',
+  'lm-studio',
+  'local',
+  'mistral',
+  'groq',
+  'together',
+  'fireworks',
+  'openrouter',
+  'novita',
+  'novita-ai',
+  'zai',
+  'glm',
+  'kimi-coding',
+  'kimi',
+  'moonshot',
+  'kimi-coding-cn',
+  'kimi-cn',
+  'moonshot-cn',
+  'arcee',
+  'arcee-ai',
+  'gmi',
+  'gmi-cloud',
+  'gmicloud',
+  'minimax',
+  'minimax-cn',
+  'alibaba',
+  'qwen',
+  'dashscope',
+  'alibaba-coding-plan',
+  'alibaba-coding',
+  'kilocode',
+  'kilo-code',
+  'xiaomi',
+  'mimo',
+  'tencent-tokenhub',
+  'tencent',
+  'tokenhub',
+  'opencode-zen',
+  'opencode',
+  'opencode-go',
+  'deepseek',
+  'huggingface',
+  'hf',
+  'nvidia',
+  'nvidia-nim',
+  'stepfun',
+  'vllm',
+  'custom',
+] as const;
 export type AIProvider = typeof AI_PROVIDERS[number];
 
 /**
@@ -167,6 +226,40 @@ export const SettingsSchema = z.object({
   thinkingLevel: z.enum(['off', 'minimal', 'low', 'medium', 'high'])
     .optional()
     .describe('Gemini 3.x thinking/reasoning depth level'),
+
+  goals: z.object({
+    maxTurns: z.number()
+      .int('Must be an integer')
+      .min(1, 'Minimum 1 turn')
+      .max(1000, 'Maximum 1000 turns')
+      .optional()
+      .describe('Maximum continuation turns for persistent goals'),
+    judgeModel: z.string()
+      .trim()
+      .min(1, 'Judge model cannot be empty')
+      .max(100, 'Judge model name too long')
+      .optional()
+      .describe('Optional model override used to judge goal completion'),
+    plannerModel: z.string()
+      .trim()
+      .min(1, 'Planner model cannot be empty')
+      .max(100, 'Planner model name too long')
+      .optional()
+      .describe('Optional model override used to decompose complex goals'),
+    judgeMaxTokens: z.number()
+      .int('Must be an integer')
+      .min(1, 'Minimum 1 token')
+      .max(200000, 'Maximum 200000 tokens')
+      .optional()
+      .describe('Maximum output tokens for the goal judge'),
+    judgeTimeoutMs: z.number()
+      .int('Must be an integer')
+      .min(1000, 'Minimum 1000ms')
+      .max(600000, 'Maximum 600000ms')
+      .optional()
+      .describe('Timeout for goal judging requests'),
+  }).strict().optional()
+    .describe('Persistent goal continuation and judging settings'),
 
   turboquant: z.object({
     vllmEndpoint: z.string().url().optional()
@@ -529,6 +622,43 @@ export const SCHEMAS: Record<string, JSONSchema> = {
         minimum: 100,
         maximum: 200000,
         description: 'Maximum tokens per request',
+      },
+      goals: {
+        type: 'object',
+        description: 'Persistent goal continuation and judging settings',
+        properties: {
+          maxTurns: {
+            type: 'number',
+            minimum: 1,
+            maximum: 1000,
+            description: 'Maximum continuation turns for persistent goals',
+          },
+          judgeModel: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 100,
+            description: 'Optional model override used to judge goal completion',
+          },
+          plannerModel: {
+            type: 'string',
+            minLength: 1,
+            maxLength: 100,
+            description: 'Optional model override used to decompose complex goals',
+          },
+          judgeMaxTokens: {
+            type: 'number',
+            minimum: 1,
+            maximum: 200000,
+            description: 'Maximum output tokens for the goal judge',
+          },
+          judgeTimeoutMs: {
+            type: 'number',
+            minimum: 1000,
+            maximum: 600000,
+            description: 'Timeout for goal judging requests',
+          },
+        },
+        additionalProperties: false,
       },
     },
     additionalProperties: false,

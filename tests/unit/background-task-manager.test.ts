@@ -55,7 +55,7 @@ describe('BackgroundTaskManager (agent)', () => {
       expect(args).toEqual(['/d', '/s', '/c', 'echo hello']);
       expect(options?.detached).toBe(false);
     } else {
-      expect(cmd).toBe('sh');
+      expect(cmd).toBe('bash');
       expect(args).toEqual(['-c', 'echo hello']);
       expect(options?.detached).toBe(true);
     }
@@ -111,4 +111,3 @@ describe('BackgroundTaskManager (agent)', () => {
     expect(manager.killTask('bg-999')).toBe(false);
   });
 });
-

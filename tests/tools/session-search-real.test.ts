@@ -79,8 +79,10 @@ describe('session_search real saved-session integration', () => {
         name: string;
         model: string;
         messageCount: number;
-        match: { snippet: string; role?: string };
+        citation: { sessionId: string; messageId?: number; role?: string; snippet: string; label: string };
+        match: { snippet: string; role?: string; citation?: { sessionId: string; snippet: string } };
       }>;
+      citations: Array<{ sessionId: string; snippet: string; label: string }>;
     };
 
     expect(payload.query).toBe(uniqueTerm);
@@ -92,5 +94,9 @@ describe('session_search real saved-session integration', () => {
     });
     expect(payload.sessions[0]?.match.snippet).toContain(uniqueTerm);
     expect(payload.sessions[0]?.match.role).toBe('assistant');
+    expect(payload.sessions[0]?.citation.sessionId).toBe(session.id);
+    expect(payload.sessions[0]?.citation.snippet).toContain(uniqueTerm);
+    expect(payload.sessions[0]?.citation.label).toContain(session.id);
+    expect(payload.citations[0]?.sessionId).toBe(session.id);
   });
 });

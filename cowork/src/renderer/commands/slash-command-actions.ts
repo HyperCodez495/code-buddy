@@ -208,23 +208,27 @@ export function applySlashCommandResult(result: SlashExecuteResult, ctx: SlashAc
     return true;
   }
 
-  // 2. Engine output → render as an assistant chat message.
+  // 2. Prompt-forwarding commands may also return a status/output line
+  // (notably /goal). Render that line first, then send the prompt onward.
+  if (result.success && result.prompt) {
+    if (result.output && ctx.activeSessionId) {
+      renderOutput(ctx.activeSessionId, result.output);
+    }
+    void ctx.continueWithPrompt(result.prompt);
+    return true;
+  }
+
+  // 3. Engine output → render as an assistant chat message.
   if (result.output && ctx.activeSessionId) {
     renderOutput(ctx.activeSessionId, result.output);
     return true;
   }
 
-  // 3. Handled with only a toast (info / denied / "not yet pilotable").
+  // 4. Handled with only a toast (info / denied / "not yet pilotable").
   if (result.handled) {
     if (result.message) {
       notice('info', ctx.commandName ? `/${ctx.commandName}: ${result.message}` : result.message);
     }
-    return true;
-  }
-
-  // 4. A prompt to forward to the LLM.
-  if (result.success && result.prompt) {
-    void ctx.continueWithPrompt(result.prompt);
     return true;
   }
 

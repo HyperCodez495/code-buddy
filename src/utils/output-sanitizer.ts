@@ -36,6 +36,15 @@ const CHATML_TOKEN_PATTERN = /<\|(?:im_start|im_end|endoftext|assistant|user|sys
 const GENERIC_CONTROL_TOKEN_PATTERN = /<\|[^|>]+\|>/g;
 
 /**
+ * Some local OpenAI-compatible runtimes leak malformed channel tokens that
+ * miss one side of the ChatML pipe pair, e.g. `thought\n<channel|>42` or
+ * `<|tool_call>...`. Require at least one pipe so legitimate XML/HTML tags
+ * such as `<message>` are preserved.
+ */
+const LOCAL_CHANNEL_HEADER_PATTERN = /^(?:thought|analysis|commentary)\s*\n\s*(?=<(?:\|(?:channel|message|tool_call|constrain)\|?|(?:channel|message|tool_call|constrain)\|)>)/i;
+const MALFORMED_PIPE_CONTROL_TOKEN_PATTERN = /<(?:\|(?:channel|message|tool_call|constrain)\|?|(?:channel|message|tool_call|constrain)\|)>/gi;
+
+/**
  * JSON-escaped control tokens: \u003c|token|\u003e
  */
 const JSON_ESCAPED_CONTROL_TOKEN_PATTERN = /\\u003c\|[^|>]+\|\\u003e/gi;
@@ -76,6 +85,9 @@ const SANITIZATION_RULES: Array<{ pattern: RegExp; replacement: string }> = [
   { pattern: CHATML_TOKEN_PATTERN, replacement: '' },
   // Generic <|...|> control tokens
   { pattern: GENERIC_CONTROL_TOKEN_PATTERN, replacement: '' },
+  // Local malformed channel/control markers
+  { pattern: LOCAL_CHANNEL_HEADER_PATTERN, replacement: '' },
+  { pattern: MALFORMED_PIPE_CONTROL_TOKEN_PATTERN, replacement: '' },
   // JSON-escaped control tokens
   { pattern: JSON_ESCAPED_CONTROL_TOKEN_PATTERN, replacement: '' },
   // LLaMA system prompt blocks

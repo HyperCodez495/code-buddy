@@ -35,6 +35,7 @@ import { SafeBinariesChecker } from '../../security/safe-binaries.js';
 import { getCheckpointManager } from '../../checkpoints/checkpoint-manager.js';
 import { auditLogger } from '../../security/audit-logger.js';
 import { buildBashEnvPrelude, CONTROLLED_SUBPROCESS_ENV } from './env-overrides.js';
+import { rewriteCommandWithRtk } from './rtk-rewrite.js';
 
 export class BashTool implements Disposable {
   private currentDirectory: string = process.cwd();
@@ -372,8 +373,10 @@ export class BashTool implements Disposable {
         }
       }
 
+      const executionCommand = await this.resolveRtkCommand(command);
+
       // Execute using spawn (safer than exec)
-      const result = await this.executeWithSpawn(command, {
+      const result = await this.executeWithSpawn(executionCommand, {
         timeout,
         cwd: this.currentDirectory,
       });
@@ -384,7 +387,7 @@ export class BashTool implements Disposable {
         // Attempt self-healing if enabled
         if (this.selfHealingEnabled) {
           const healingResult = await this.selfHealingEngine.attemptHealing(
-            command,
+            executionCommand,
             errorMessage,
             async (fixCmd: string) => {
               // Execute fix command without self-healing to avoid recursion
@@ -457,6 +460,19 @@ export class BashTool implements Disposable {
         error: `Command failed: ${errorMessage}`,
       };
     }
+  }
+
+  private async resolveRtkCommand(command: string): Promise<string> {
+    const rewrite = await rewriteCommandWithRtk(command);
+    if (!rewrite.rewritten) return command;
+
+    const safetyValidation = validateCommandSafety(rewrite.command);
+    if (!safetyValidation.valid) return command;
+
+    const validation = this.validateCommand(rewrite.command);
+    if (!validation.valid) return command;
+
+    return rewrite.command;
   }
 
   /**

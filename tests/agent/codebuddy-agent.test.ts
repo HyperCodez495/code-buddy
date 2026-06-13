@@ -15,6 +15,7 @@ import { EventEmitter } from 'events';
 import { CodeBuddyAgent } from '../../src/agent/codebuddy-agent';
 import type { ChatEntry, StreamingChunk } from '../../src/agent/types';
 import { findSkill } from '../../src/skills/index.js';
+import { PromptBuilder } from '../../src/services/prompt-builder.js';
 
 const mockChat = jest.fn();
 const mockChatStream = jest.fn();
@@ -494,6 +495,25 @@ describe('CodeBuddyAgent', () => {
       const messages = (agent as any).messages;
       expect(messages.length).toBeGreaterThanOrEqual(1);
       expect(messages[0].role).toBe('system');
+    });
+
+    it('should use an initial system prompt override without building the default prompt', async () => {
+      agent = new CodeBuddyAgent(
+        'test-api-key',
+        undefined,
+        'gemma4:12b',
+        undefined,
+        true,
+        undefined,
+        undefined,
+        undefined,
+        'Compact goal actor prompt'
+      );
+      await agent.systemPromptReady;
+
+      const builder = (PromptBuilder as jest.Mock).mock.results.at(-1)?.value;
+      expect(builder.buildSystemPrompt).not.toHaveBeenCalled();
+      expect(agent.getSystemPrompt()).toBe('Compact goal actor prompt');
     });
   });
 

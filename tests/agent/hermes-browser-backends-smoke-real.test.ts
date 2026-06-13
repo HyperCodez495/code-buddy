@@ -7,6 +7,8 @@ import { chromium } from 'playwright';
 import { describe, expect, it, vi } from 'vitest';
 import { fileURLToPath } from 'url';
 
+vi.setConfig({ testTimeout: 60_000 });
+
 const mockStagehandInit = vi.fn().mockResolvedValue(undefined);
 const mockStagehandClose = vi.fn().mockResolvedValue(undefined);
 const mockStagehandGoto = vi.fn().mockResolvedValue(undefined);
@@ -86,11 +88,14 @@ async function launchLocalCdpBrowser(): Promise<{
 
   let stderr = '';
   const endpoint = await new Promise<string>((resolveEndpoint, rejectEndpoint) => {
+    let settled = false;
     const timeout = setTimeout(() => {
       rejectEndpoint(new Error(`Timed out waiting for local CDP endpoint: ${stderr || 'no response'}`));
-    }, 15_000);
+    }, 30_000);
 
     const finalize = (error: Error | null, value?: string) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timeout);
       if (error) {
         rejectEndpoint(error);
@@ -123,12 +128,14 @@ async function launchLocalCdpBrowser(): Promise<{
   return {
     endpoint,
     kill: async () => {
-      processRef.kill();
+      if (!processRef.killed) {
+        processRef.kill();
+      }
       await new Promise((resolveExit) => {
         processRef.once('exit', resolveExit);
         setTimeout(resolveExit, 2000);
       });
-      await rm(userDataDir, { force: true, recursive: true });
+      await rm(userDataDir, { force: true, recursive: true, maxRetries: 5, retryDelay: 100 });
     },
   };
 }

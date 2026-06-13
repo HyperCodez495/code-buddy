@@ -28,6 +28,7 @@ export interface ProjectMemoryConfig {
   autoConsolidate?: boolean;
   maxMemoryEntries?: number;
   includeICM?: boolean;
+  memoryStrategy?: 'auto' | 'manual' | 'rolling';
 }
 
 export interface ProjectCreateInput {
@@ -48,6 +49,7 @@ const DEFAULT_MEMORY_CONFIG: ProjectMemoryConfig = {
   autoConsolidate: true,
   maxMemoryEntries: 100,
   includeICM: false,
+  memoryStrategy: 'auto',
 };
 
 export class ProjectManager {

@@ -75,6 +75,12 @@ export interface EngineAdapter {
   cancel(sessionId: string): void;
 
   /**
+   * Deliver user guidance into an active run when the underlying agent
+   * supports steer mode. Returns false when there is no active run/agent.
+   */
+  steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
+
+  /**
    * Clear internal state for a session (free memory, close resources).
    */
   clearSession(sessionId: string): void;

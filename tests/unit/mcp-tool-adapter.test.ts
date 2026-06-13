@@ -108,6 +108,7 @@ describe('StdioTransport', () => {
       expect(StdioClientTransport).toHaveBeenCalledWith({
         command: 'node',
         args: ['--port', '3000'],
+        stderr: 'pipe',
         env: expect.objectContaining({
           DEBUG: '',
           MCP_REMOTE_QUIET: '1',

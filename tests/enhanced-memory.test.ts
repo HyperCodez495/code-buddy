@@ -4,6 +4,13 @@
 
 import { EnhancedMemory, getEnhancedMemory, resetEnhancedMemory } from '../src/memory/enhanced-memory';
 
+async function flushAsyncInitialization(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
 // Mock fs-extra
 jest.mock('fs-extra', () => {
   const impl = {
@@ -48,6 +55,19 @@ describe('EnhancedMemory', () => {
       });
       expect(m).toBeDefined();
       m.dispose();
+    });
+
+    it('should not start decay timer after immediate dispose', async () => {
+      const m = new EnhancedMemory({
+        embeddingEnabled: false,
+        useSQLite: false,
+      });
+      const timerState = m as unknown as { decayIntervalId: ReturnType<typeof setInterval> | null };
+
+      m.dispose();
+      await flushAsyncInitialization();
+
+      expect(timerState.decayIntervalId).toBeNull();
     });
   });
 

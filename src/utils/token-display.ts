@@ -50,9 +50,9 @@ function formatCost(cost: number): string {
  * Uses a simple heuristic; for accurate cost tracking use CostTracker.
  *
  * Special-case: returns 0 when `model` indicates a ChatGPT subscription
- * call (`gpt-5.2`, `gpt-5.5*`, `*-codex*`, `codex-1`). Those are billed against
- * the user's flat-fee Plus/Pro plan, NOT per token, so reporting USD
- * spend would be misleading. See `cost-tracker.ts:isChatGptSubscriptionModel`.
+ * call (`gpt-5.2`, `gpt-5.5*`, `*-codex*`, `codex-1`) or a local Ollama /
+ * LM Studio model. Those are not billed per token through Code Buddy, so
+ * reporting USD spend would be misleading.
  */
 export function estimateCost(
   inputTokens: number,
@@ -61,7 +61,7 @@ export function estimateCost(
   outputPricePer1k: number = 0.015,
   model?: string,
 ): number {
-  if (model && isChatGptSubscriptionModel(model)) return 0;
+  if (model && (isChatGptSubscriptionModel(model) || isLocalNoCostModel(model))) return 0;
   return (inputTokens / 1000) * inputPricePer1k + (outputTokens / 1000) * outputPricePer1k;
 }
 
@@ -74,5 +74,26 @@ function isChatGptSubscriptionModel(model: string): boolean {
     m.includes('-codex') ||
     m === 'codex-1' ||
     m.startsWith('codex-mini')
+  );
+}
+
+function isLocalNoCostModel(model: string): boolean {
+  const m = model.toLowerCase();
+  return (
+    m === 'ollama' ||
+    m.startsWith('ollama/') ||
+    m === 'lmstudio' ||
+    m === 'local-model' ||
+    m.startsWith('llama') ||
+    m.startsWith('qwen') ||
+    m.startsWith('gemma') ||
+    m.startsWith('phi') ||
+    m.startsWith('codellama') ||
+    m.startsWith('deepseek') ||
+    m.startsWith('command-r') ||
+    m === 'mistral' ||
+    m.startsWith('mistral:') ||
+    m === 'mixtral' ||
+    m.startsWith('mixtral:')
   );
 }

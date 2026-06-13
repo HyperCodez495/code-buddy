@@ -28,6 +28,28 @@ function isChatGptSubscriptionModel(model: string): boolean {
   );
 }
 
+function isLocalNoCostModel(model: string): boolean {
+  if (!model) return false;
+  const m = model.toLowerCase();
+  return (
+    m === 'ollama' ||
+    m.startsWith('ollama/') ||
+    m === 'lmstudio' ||
+    m === 'local-model' ||
+    m.startsWith('llama') ||
+    m.startsWith('qwen') ||
+    m.startsWith('gemma') ||
+    m.startsWith('phi') ||
+    m.startsWith('codellama') ||
+    m.startsWith('deepseek') ||
+    m.startsWith('command-r') ||
+    m === 'mistral' ||
+    m.startsWith('mistral:') ||
+    m === 'mixtral' ||
+    m.startsWith('mixtral:')
+  );
+}
+
 export interface TokenUsage {
   inputTokens: number;
   outputTokens: number;
@@ -181,7 +203,7 @@ export class CostTracker extends EventEmitter {
    * misleading and shows up in dashboards as "spend" that doesn't exist.
    */
   calculateCost(inputTokens: number, outputTokens: number, model: string, cachedTokens: number = 0): number {
-    if (isChatGptSubscriptionModel(model)) {
+    if (isChatGptSubscriptionModel(model) || isLocalNoCostModel(model)) {
       return 0;
     }
     const pricing = MODEL_PRICING[model] ?? MODEL_PRICING["default"] ?? { inputPer1k: 0.003, outputPer1k: 0.015 };

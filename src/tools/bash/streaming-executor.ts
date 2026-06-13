@@ -13,6 +13,7 @@ import { validateCommand } from './command-validator.js';
 import { getFilteredEnv } from './command-validator.js';
 import { getShellEnvPolicy } from '../../security/shell-env-policy.js';
 import { buildBashEnvPrelude, CONTROLLED_SUBPROCESS_ENV } from './env-overrides.js';
+import { rewriteCommandWithRtk } from './rtk-rewrite.js';
 
 export interface StreamingExecutorDeps {
   getCurrentDirectory: () => string;
@@ -65,6 +66,21 @@ export async function* executeStreaming(
     }
   }
 
+  const rewrite = await rewriteCommandWithRtk(command);
+  let executionCommand = command;
+  if (rewrite.rewritten) {
+    const rewrittenValidation = validateCommand(rewrite.command);
+    const rewrittenSandboxValidation = deps.getSandboxManager().validateCommand(rewrite.command);
+    const rewrittenSafetyValidation = validateCommandSafety(rewrite.command);
+    if (
+      rewrittenValidation.valid &&
+      rewrittenSandboxValidation.valid &&
+      rewrittenSafetyValidation.valid
+    ) {
+      executionCommand = rewrite.command;
+    }
+  }
+
   // Spawn the process
   const isWindows = process.platform === 'win32';
   const policyEnv = getShellEnvPolicy().buildEnv(getFilteredEnv());
@@ -73,7 +89,7 @@ export async function* executeStreaming(
     ...CONTROLLED_SUBPROCESS_ENV,
   };
 
-  const proc = spawn('bash', ['-c', `${buildBashEnvPrelude()}\n${command}`], {
+  const proc = spawn('bash', ['-c', `${buildBashEnvPrelude()}\n${executionCommand}`], {
     shell: false,
     cwd: deps.getCurrentDirectory(),
     env: controlledEnv,

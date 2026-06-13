@@ -20,6 +20,16 @@ import type {
 
 export { buildHeartbeatStatusReport };
 
+function parsePositiveIntegerCliOption(value: string | undefined, flagName: string): number | undefined {
+  if (value === undefined) return undefined;
+  const trimmed = value.trim();
+  const n = Number(trimmed);
+  if (!/^[1-9]\d*$/.test(trimmed) || !Number.isSafeInteger(n)) {
+    throw new Error(`${flagName} must be a positive integer`);
+  }
+  return n;
+}
+
 export function registerHeartbeatCommands(program: Command): void {
   const heartbeat = program
     .command('heartbeat')
@@ -793,7 +803,7 @@ export function registerFleetAutonomyCommands(program: Command): void {
     }) => {
       const { createDefaultAutonomousLoop, FleetAutonomousDaemon, watchFleetTasks } = await import('../../daemon/autonomous-daemon.js');
       const path = await import('path');
-      const loop = createDefaultAutonomousLoop({
+      const loop = await createDefaultAutonomousLoop({
         ...(opts.dir ? { dir: opts.dir } : {}),
         ...(opts.outputDir ? { outputDir: opts.outputDir } : {}),
       });
@@ -829,6 +839,110 @@ export function registerFleetAutonomyCommands(program: Command): void {
       } else {
         console.log(`\nDone: ${summary.ticks} tick(s), ${JSON.stringify(summary.outcomes)} (${summary.stoppedReason}).`);
       }
+    });
+
+  fleet
+    .command('bench')
+    .description('Benchmark live Tailnet Ollama peers and rank the network model tier')
+    .option('--peer <pattern>', 'only benchmark peers whose hostname or IP contains the pattern')
+    .option('--models <csv>', 'only benchmark models whose name contains one of the comma-separated patterns')
+    .option('--prompt-set <name>', 'prompt set: balanced, coding, or latency', 'coding')
+    .option('--runs <n>', 'repeat the prompt set N times per candidate', '1')
+    .option('--timeout <ms>', 'request timeout per prompt', '60000')
+    .option('--json', 'output JSON')
+    .option('--no-write-cache', 'do not persist the score cache used by the router')
+    .action(async (opts: {
+      peer?: string;
+      models?: string;
+      promptSet: 'balanced' | 'coding' | 'latency';
+      runs: string;
+      timeout: string;
+      json?: boolean;
+      writeCache?: boolean;
+    }) => {
+      const { TailscaleManager } = await import('../../integrations/tailscale.js');
+      const {
+        BENCHMARK_PROMPT_SETS,
+        benchmarkCandidates,
+        writeBenchmarkIndex,
+        defaultBenchmarkIndexPath,
+      } = await import('../../agent/model-benchmark.js');
+
+      const peers = await TailscaleManager.getInstance().discoverOllamaPeers();
+      const filteredPeers = opts.peer
+        ? peers.filter((peer) =>
+            peer.hostname.toLowerCase().includes(opts.peer!.toLowerCase())
+            || peer.ip.includes(opts.peer!.trim()),
+          )
+        : peers;
+      const modelFilters = opts.models
+        ? opts.models.split(',').map((part) => part.trim()).filter(Boolean)
+        : [];
+      const candidates = filteredPeers.flatMap((peer) =>
+        peer.models
+          .filter((model) =>
+            modelFilters.length === 0
+              ? true
+              : modelFilters.some((filter) => model.toLowerCase().includes(filter.toLowerCase())),
+          )
+          .map((model) => ({
+            model,
+            baseUrl: peer.baseURL,
+            label: peer.hostname,
+          })),
+      );
+
+      if (candidates.length === 0) {
+        const message = opts.peer
+          ? `No Tailnet Ollama peers matched "${opts.peer}".`
+          : 'No Tailnet Ollama peers were discovered.';
+        if (opts.json) {
+          console.log(JSON.stringify({ ok: false, error: message }, null, 2));
+          return;
+        }
+        console.log(message);
+        return;
+      }
+
+      const suite = BENCHMARK_PROMPT_SETS[opts.promptSet] ? opts.promptSet : 'coding';
+      const reports = await benchmarkCandidates(candidates, {
+        promptSet: suite,
+        runs: Math.max(1, parseInt(opts.runs, 10) || 1),
+        timeoutMs: Math.max(5_000, parseInt(opts.timeout, 10) || 60_000),
+      });
+      const ranked = [...reports].sort((a, b) => b.summary.score - a.summary.score);
+      let indexPath: string | undefined;
+      if (opts.writeCache !== false) {
+        indexPath = defaultBenchmarkIndexPath();
+        await writeBenchmarkIndex(ranked, suite, indexPath);
+      }
+
+      const best = ranked[0];
+      if (opts.json) {
+        console.log(JSON.stringify({
+          ok: true,
+          suite,
+          indexPath,
+          best,
+          reports: ranked,
+        }, null, 2));
+        return;
+      }
+
+      console.log(`\nTailnet Ollama benchmark (${suite})`);
+      if (indexPath) console.log(`  Cache: ${indexPath}`);
+      console.log(`  Candidates: ${ranked.length}`);
+      if (best) {
+        console.log(`  Best: ${best.candidate.label ?? best.candidate.model} / ${best.candidate.model}`);
+        console.log(`    Score: ${best.summary.score.toFixed(1)}  compliance ${(best.summary.complianceRate * 100).toFixed(0)}%  ttft ${Math.round(best.summary.avgTtftMs)}ms  total ${Math.round(best.summary.avgTotalMs)}ms`);
+      }
+      console.log('');
+      ranked.forEach((report, index) => {
+        console.log(`${String(index + 1).padStart(2, ' ')}. ${report.candidate.label ?? report.candidate.model} / ${report.candidate.model}`);
+        console.log(`    ${report.candidate.baseUrl}`);
+        console.log(`    score=${report.summary.score.toFixed(1)} compliance=${(report.summary.complianceRate * 100).toFixed(0)}% ttft=${Math.round(report.summary.avgTtftMs)}ms total=${Math.round(report.summary.avgTotalMs)}ms`);
+      });
+      console.log('');
     });
 
   fleet
@@ -878,6 +992,14 @@ export function registerFleetAutonomyCommands(program: Command): void {
       title: string,
       opts: { priority?: string; dependsOn?: string; description?: string; goalMode?: boolean; goalMaxTurns?: string; dir?: string; json?: boolean },
     ) => {
+      let goalMaxTurns: number | undefined;
+      try {
+        goalMaxTurns = parsePositiveIntegerCliOption(opts.goalMaxTurns, '--goal-max-turns');
+      } catch (error) {
+        console.error(error instanceof Error ? error.message : String(error));
+        process.exit(1);
+        return;
+      }
       const { FleetColabStore } = await import('../../fleet/colab-store.js');
       const store = new FleetColabStore({ ...(opts.dir ? { dir: opts.dir } : {}) });
       const priority = (['critical', 'high', 'medium', 'low'] as const).find((p) => p === opts.priority) ?? 'medium';
@@ -887,7 +1009,7 @@ export function registerFleetAutonomyCommands(program: Command): void {
         ...(opts.description ? { description: opts.description } : {}),
         ...(opts.dependsOn ? { dependsOn: opts.dependsOn.split(',').map((s) => s.trim()).filter(Boolean) } : {}),
         ...(opts.goalMode ? { goalMode: true } : {}),
-        ...(opts.goalMaxTurns ? { goalMaxTurns: parseInt(opts.goalMaxTurns, 10) } : {}),
+        ...(goalMaxTurns !== undefined ? { goalMaxTurns } : {}),
       });
       if (opts.json) { console.log(JSON.stringify({ task }, null, 2)); return; }
       const goalNote = task.goalMode ? ` goal-mode(${task.goalMaxTurns ?? 5} turns)` : '';

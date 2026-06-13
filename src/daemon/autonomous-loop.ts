@@ -54,6 +54,16 @@ export type TaskExecutor = (
   model: AutonomousModelChoice,
 ) => Promise<TaskExecutionResult>;
 
+function resolveGoalMaxTurns(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0
+    ? raw
+    : DEFAULT_COLAB_GOAL_MAX_TURNS;
+}
+
+function resolveGoalTurnsUsed(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
+}
+
 export interface AutonomousLoopConfig {
   store: FleetColabStore;
   tierConfig: ModelTierConfig;
@@ -213,12 +223,13 @@ export class FleetAutonomousLoop {
     }
     if (verdict.verdict !== 'continue') return null;
 
-    const maxTurns = task.goalMaxTurns ?? DEFAULT_COLAB_GOAL_MAX_TURNS;
-    const turnsUsed = (task.goalTurnsUsed ?? 0) + 1;
+    const maxTurns = resolveGoalMaxTurns(task.goalMaxTurns);
+    const turnsUsed = resolveGoalTurnsUsed(task.goalTurnsUsed) + 1;
 
     if (turnsUsed >= maxTurns) {
       // Hermes rule: block for human review instead of spinning forever.
       const reason = `goal budget exhausted (${turnsUsed}/${maxTurns}) — judge: ${verdict.reason}`;
+      this.store.recordGoalTurn(task.id, verdict.reason);
       this.store.blockTask(task.id, reason);
       this.store.appendWorklog({
         agent: this.store.agentId,

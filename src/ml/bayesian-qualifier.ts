@@ -223,9 +223,20 @@ export class BayesianQualifier {
   /**
    * Load the qualifier state from a JSON string
    */
-  loadState(stateJson: string): void {
+  loadState(stateJson: string): boolean {
+    const trimmed = stateJson.trim();
+    if (!trimmed) {
+      logger.debug('[BayesianQualifier] Ignoring empty persisted state');
+      return false;
+    }
+
     try {
-      const state: BayesianState = JSON.parse(stateJson);
+      const parsed = JSON.parse(trimmed) as unknown;
+      if (!isBayesianState(parsed)) {
+        throw new Error('invalid bayesian state shape');
+      }
+
+      const state = parsed;
       this.X = state.X;
       this.y = state.y;
       this.scaler.means = state.means;
@@ -237,8 +248,11 @@ export class BayesianQualifier {
       if (this.X.length > 0) {
         this.train();
       }
-    } catch (err: any) {
-      logger.error(`[BayesianQualifier] Failed to load state: ${err.message}`);
+      return true;
+    } catch (err: unknown) {
+      const message = err instanceof Error ? err.message : String(err);
+      logger.debug(`[BayesianQualifier] Ignoring invalid persisted state: ${message}`);
+      return false;
     }
   }
 
@@ -285,4 +299,29 @@ export class BayesianQualifier {
     }
     return x;
   }
+}
+
+function isNumberArray(value: unknown): value is number[] {
+  return Array.isArray(value) && value.every(item => typeof item === 'number' && Number.isFinite(item));
+}
+
+function isNumberMatrix(value: unknown): value is number[][] {
+  return Array.isArray(value) && value.every(isNumberArray);
+}
+
+function isBayesianState(value: unknown): value is BayesianState {
+  if (!value || typeof value !== 'object') return false;
+  const state = value as Partial<BayesianState>;
+  return (
+    isNumberMatrix(state.X) &&
+    isNumberArray(state.y) &&
+    isNumberArray(state.means) &&
+    isNumberArray(state.stds) &&
+    typeof state.lengthScale === 'number' &&
+    Number.isFinite(state.lengthScale) &&
+    typeof state.signalVariance === 'number' &&
+    Number.isFinite(state.signalVariance) &&
+    typeof state.noiseVariance === 'number' &&
+    Number.isFinite(state.noiseVariance)
+  );
 }

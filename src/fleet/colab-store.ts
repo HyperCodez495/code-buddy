@@ -170,6 +170,18 @@ export function defaultFleetAgentId(cwd: string = process.cwd()): string {
   return `${host}/${repo}`;
 }
 
+function resolveGoalMaxTurns(raw: unknown): number | undefined {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+    throw new Error('goalMaxTurns must be a positive integer');
+  }
+  return raw;
+}
+
+function normalizeGoalTurnsUsed(raw: unknown): number {
+  return typeof raw === 'number' && Number.isSafeInteger(raw) && raw >= 0 ? raw : 0;
+}
+
 export class FleetColabStore {
   private readonly dir: string;
   readonly agentId: string;
@@ -350,7 +362,7 @@ export class FleetColabStore {
     const file = this.readTasks();
     const task = file.tasks.find((t) => t.id === taskId);
     if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
-    task.goalTurnsUsed = (task.goalTurnsUsed ?? 0) + 1;
+    task.goalTurnsUsed = normalizeGoalTurnsUsed(task.goalTurnsUsed) + 1;
     task.goalLastReason = reason;
     this.writeTasks(file);
     return { ...task };
@@ -370,6 +382,7 @@ export class FleetColabStore {
 
   addTask(input: AddTaskInput): ColabTask {
     const file = this.readTasks();
+    const goalMaxTurns = resolveGoalMaxTurns(input.goalMaxTurns);
     const task: ColabTask = {
       id: input.id ?? this.generateId('task'),
       title: input.title,
@@ -384,7 +397,7 @@ export class FleetColabStore {
       ...(input.verifyCommand ? { verifyCommand: input.verifyCommand } : {}),
       ...(input.dependsOn && input.dependsOn.length > 0 ? { dependsOn: [...new Set(input.dependsOn)] } : {}),
       ...(input.goalMode ? { goalMode: true } : {}),
-      ...(input.goalMaxTurns && input.goalMaxTurns > 0 ? { goalMaxTurns: Math.trunc(input.goalMaxTurns) } : {}),
+      ...(goalMaxTurns !== undefined ? { goalMaxTurns } : {}),
       createdBy: input.createdBy ?? this.agentId,
       createdAt: this.isoNow(),
     };

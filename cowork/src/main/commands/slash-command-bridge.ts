@@ -349,7 +349,7 @@ type CoreHeadlessModule = {
     token: string,
     args: string[],
     allow: ReadonlySet<string>,
-    ctx?: { conversationHistory?: unknown; client?: unknown }
+    ctx?: { conversationHistory?: unknown; client?: unknown; goalSessionKey?: string }
   ) => Promise<HeadlessSlashResult>;
 };
 
@@ -370,11 +370,14 @@ async function loadHeadlessModule(): Promise<CoreHeadlessModule | null> {
 /**
  * Slice S0 allowlist: tokens that are safe to run headlessly from Cowork **today**.
  *
- * Scope is deliberately limited to info / read-only commands. Their worst-case
- * failure mode is benign — if the bridge's core module instance and the engine
- * adapter's instance ever resolve to different `dist/` realms (core-loader tries
- * several candidate roots), a read just returns empty/default data; it never
- * lies about having changed state.
+ * Scope is deliberately limited to info / read-only commands, plus
+ * session-scoped goal state (`/goal`, `/subgoal`) that Cowork wires to the same
+ * `cowork:<sessionId>` key used by the embedded engine's continuation loop.
+ * For read-only commands, the worst-case failure mode is benign — if the
+ * bridge's core module instance and the engine adapter's instance ever resolve
+ * to different `dist/` realms (core-loader tries several candidate roots), a
+ * read just returns empty/default data; it never lies about having changed
+ * state.
  *
  * Deliberately excluded until their realm/context is positively confirmed:
  * - **mutating** (would silently no-op + falsely report success if realms differ):
@@ -410,7 +413,16 @@ const COWORK_HEADLESS_ALLOW: ReadonlySet<string> = new Set([
   // (home-based, cwd-independent — verified). Both read-only.
   '__EXPORT_FORMATS__',
   '__EXPORT_LIST__',
+  // Standing goal loop. Cowork passes a `cowork:<sessionId>` goal key so each
+  // GUI conversation gets isolated `/goal` and `/subgoal` state.
+  '__GOAL__',
+  '__SUBGOAL__',
 ]);
+
+function buildCoworkGoalSessionKey(sessionId: string | undefined): string | undefined {
+  const trimmed = sessionId?.trim();
+  return trimmed ? `cowork:${trimmed}` : undefined;
+}
 
 type UiEffectResolution =
   | { uiEffect: SlashUiEffectKind; args: string[] }
@@ -628,7 +640,7 @@ export class SlashCommandBridge {
   async execute(
     name: string,
     args: string[] = [],
-    _sessionId?: string
+    sessionId?: string
   ): Promise<SlashCommandExecuteResult> {
     const all = await this.listCommands();
     const cmd = all.find((c) => c.name === name);
@@ -682,7 +694,9 @@ export class SlashCommandBridge {
       if (!headlessMod) {
         return { success: true, handled: true, message: `/${name} indisponible (moteur non chargé).` };
       }
-      const res = await headlessMod.executeHeadlessSlashToken(token, args, COWORK_HEADLESS_ALLOW);
+      const res = await headlessMod.executeHeadlessSlashToken(token, args, COWORK_HEADLESS_ALLOW, {
+        goalSessionKey: buildCoworkGoalSessionKey(sessionId),
+      });
       if (res.denied) {
         return {
           success: true,
@@ -691,7 +705,7 @@ export class SlashCommandBridge {
         };
       }
       if (res.passToAI && res.prompt) {
-        return { success: true, prompt: res.prompt, handled: false };
+        return { success: true, prompt: res.prompt, output: res.output, handled: false };
       }
       if (res.output) {
         return { success: true, handled: true, output: res.output };

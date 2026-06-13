@@ -4,12 +4,24 @@ import {
   buildContinuationPrompt,
   createGoalState,
   formatGoalStatusLine,
+  getGoalJudgeCriteria,
   normalizeGoalState,
   renderSubgoalsBlock,
   truncateText,
 } from '../../src/goals/goal-state.js';
 
 describe('goal-state', () => {
+  describe('createGoalState', () => {
+    it('rejects invalid turn budgets', () => {
+      expect(() => createGoalState('g', 0)).toThrow('maxTurns must be a positive integer');
+      expect(() => createGoalState('g', -1)).toThrow('maxTurns must be a positive integer');
+      expect(() => createGoalState('g', 1.5)).toThrow('maxTurns must be a positive integer');
+      expect(() => createGoalState('g', Number.MAX_SAFE_INTEGER + 1)).toThrow(
+        'maxTurns must be a positive integer'
+      );
+    });
+  });
+
   describe('normalizeGoalState', () => {
     it('round-trips a freshly created state', () => {
       const state = createGoalState('ship the feature', 10);
@@ -53,6 +65,77 @@ describe('goal-state', () => {
       expect(restored!.maxTurns).toBe(DEFAULT_MAX_TURNS);
       expect(restored!.subgoals).toEqual(['a', '42']);
     });
+
+    it('does not truncate persisted decimal or negative counters', () => {
+      const restored = normalizeGoalState({
+        goal: 'g',
+        turnsUsed: 1.5,
+        maxTurns: 2.5,
+        consecutiveParseFailures: -1,
+      });
+      expect(restored!.turnsUsed).toBe(0);
+      expect(restored!.maxTurns).toBe(DEFAULT_MAX_TURNS);
+      expect(restored!.consecutiveParseFailures).toBe(0);
+    });
+
+    it('does not restore unsafe integer counters', () => {
+      const restored = normalizeGoalState({
+        goal: 'g',
+        turnsUsed: '9007199254740992',
+        maxTurns: '9007199254740992',
+        consecutiveParseFailures: '9007199254740992',
+      });
+      expect(restored!.turnsUsed).toBe(0);
+      expect(restored!.maxTurns).toBe(DEFAULT_MAX_TURNS);
+      expect(restored!.consecutiveParseFailures).toBe(0);
+    });
+
+    it('loads decimal string counters but does not coerce other JS values', () => {
+      const restored = normalizeGoalState({
+        goal: 'g',
+        turnsUsed: '2',
+        maxTurns: '5',
+        consecutiveParseFailures: '1',
+      });
+      expect(restored!.turnsUsed).toBe(2);
+      expect(restored!.maxTurns).toBe(5);
+      expect(restored!.consecutiveParseFailures).toBe(1);
+
+      const coerced = normalizeGoalState({
+        goal: 'g',
+        turnsUsed: true,
+        maxTurns: [6],
+        consecutiveParseFailures: { valueOf: () => 1 },
+      });
+      expect(coerced!.turnsUsed).toBe(0);
+      expect(coerced!.maxTurns).toBe(DEFAULT_MAX_TURNS);
+      expect(coerced!.consecutiveParseFailures).toBe(0);
+    });
+
+    it('normalizes persisted goal plans without requiring them on old states', () => {
+      const restored = normalizeGoalState({
+        goal: 'ship it',
+        goalPlanAttempted: true,
+        goalPlan: {
+          summary: 'Plan',
+          tasks: [
+            {
+              id: 'T1',
+              title: 'Implement',
+              acceptanceCriteria: ['diff exists'],
+              subtasks: [{ id: 'T1.1', title: 'Patch', acceptanceCriteria: ['file changed'] }],
+            },
+          ],
+        },
+      });
+
+      expect(restored!.goalPlanAttempted).toBe(true);
+      expect(restored!.goalPlan?.tasks[0]!.subtasks[0]!.id).toBe('T1.1');
+      expect(getGoalJudgeCriteria(restored!)).toEqual([
+        'T1 Implement: diff exists',
+        'T1.1 Implement / Patch: file changed',
+      ]);
+    });
   });
 
   describe('formatGoalStatusLine', () => {
@@ -73,6 +156,21 @@ describe('goal-state', () => {
       state.subgoals = ['one'];
       expect(formatGoalStatusLine(state)).toBe(
         '⊙ Goal (active, 3/20 turns, 1 subgoal): Fix every failing test'
+      );
+      state.goalPlan = {
+        summary: 'Plan',
+        tasks: [
+          {
+            id: 'T1',
+            title: 'Fix',
+            acceptanceCriteria: ['diff exists'],
+            dependsOn: [],
+            subtasks: [],
+          },
+        ],
+      };
+      expect(formatGoalStatusLine(state)).toBe(
+        '⊙ Goal (active, 3/20 turns, 1 subgoal, plan 1 task): Fix every failing test'
       );
     });
 
@@ -117,6 +215,45 @@ describe('goal-state', () => {
       expect(prompt).toContain('Additional criteria the user added mid-loop:');
       expect(prompt).toContain('- 1. include a regression test');
       expect(prompt).toContain('goal AND all additional criteria');
+    });
+
+    it('includes the decomposition plan when one is attached', () => {
+      const state = createGoalState('ship it');
+      state.goalPlan = {
+        summary: 'Two lanes',
+        tasks: [
+          {
+            id: 'T1',
+            title: 'Implement',
+            acceptanceCriteria: ['diff exists'],
+            dependsOn: [],
+            subtasks: [
+              {
+                id: 'T1.1',
+                title: 'Patch code',
+                acceptanceCriteria: ['file changed'],
+              },
+            ],
+          },
+          {
+            id: 'T2',
+            title: 'Verify',
+            acceptanceCriteria: ['test passes'],
+            dependsOn: ['T1'],
+            subtasks: [],
+          },
+        ],
+      };
+      state.subgoals = ['mention exact command'];
+
+      const prompt = buildContinuationPrompt(state);
+
+      expect(prompt).toContain('Decomposition plan:');
+      expect(prompt).toContain('- T1: Implement');
+      expect(prompt).toContain('- T1.1: Patch code');
+      expect(prompt).toContain('depends on: T1');
+      expect(prompt).toContain('Additional user criteria:');
+      expect(prompt).toContain('- 1. mention exact command');
     });
   });
 

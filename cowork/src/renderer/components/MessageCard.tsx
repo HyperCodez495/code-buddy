@@ -2,9 +2,10 @@
 // Delegates block rendering to ContentBlockView and its sub-components.
 import { useState, useCallback, memo, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Copy, Check, Clock, XCircle, Code2, Star, Pencil, RefreshCw } from 'lucide-react';
+import { Copy, Check, Clock, XCircle, Code2, Star, Pencil, RefreshCw, Target } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
+import { ActivityGroupBlock } from './message/ActivityGroupBlock';
 import { detectArtifacts } from '../utils/artifact-detector';
 import { useAppStore } from '../store';
 
@@ -29,6 +30,11 @@ export const MessageCard = memo(function MessageCard({
   const isUser = message.role === 'user';
   const isQueued = message.localStatus === 'queued';
   const isCancelled = message.localStatus === 'cancelled';
+  const isSteer = message.metadata?.pendingIntent?.kind === 'steer';
+  const activityDisplayMode = useAppStore(
+    (s) => s.settings.chatActivityDisplayMode ?? 'compact_worklog'
+  );
+  const isTransparentStream = activityDisplayMode === 'transparent_stream';
   const rawContent = message.content as unknown;
   const contentBlocks = Array.isArray(rawContent)
     ? (rawContent as ContentBlock[])
@@ -49,6 +55,32 @@ export const MessageCard = memo(function MessageCard({
     }
     return ids;
   }, [contentBlocks]);
+
+  const { visibleBlocks, activityBlocks } = useMemo(() => {
+    if (isUser) {
+      return { visibleBlocks: contentBlocks, activityBlocks: [] as ContentBlock[] };
+    }
+    if (isTransparentStream) {
+      return { visibleBlocks: contentBlocks, activityBlocks: [] as ContentBlock[] };
+    }
+    const activity: ContentBlock[] = [];
+    const visible: ContentBlock[] = [];
+    for (const block of contentBlocks) {
+      const isMergedToolResult =
+        block.type === 'tool_result' &&
+        mergedResultIds.has((block as ToolResultContent).toolUseId);
+      const isActivity =
+        block.type === 'thinking' ||
+        block.type === 'tool_use' ||
+        (block.type === 'tool_result' && !isMergedToolResult);
+      if (isActivity) {
+        activity.push(block);
+      } else if (!isMergedToolResult) {
+        visible.push(block);
+      }
+    }
+    return { visibleBlocks: visible, activityBlocks: activity };
+  }, [contentBlocks, isTransparentStream, isUser, mergedResultIds]);
 
   // Extract text content for copying
   const getTextContent = () =>
@@ -130,6 +162,19 @@ export const MessageCard = memo(function MessageCard({
               <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
                 <XCircle className="w-3 h-3" />
                 <span>{t('messageCard.cancelled')}</span>
+              </div>
+            )}
+            {isSteer && (
+              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
+                <Target className="w-3 h-3" />
+                <span>
+                  {t(
+                    'messageCard.steerDelivered',
+                    message.metadata?.pendingIntent?.status === 'queued_fallback'
+                      ? 'Queued after steer fallback'
+                      : 'Steer delivered'
+                  )}
+                </span>
               </div>
             )}
             {contentBlocks.length === 0 ? (
@@ -231,25 +276,24 @@ export const MessageCard = memo(function MessageCard({
               </button>
             )}
           </div>
-          {contentBlocks.map((block, index) => {
-            // Skip tool_result blocks that are merged into their tool_use card
-            if (
-              block.type === 'tool_result' &&
-              mergedResultIds.has((block as ToolResultContent).toolUseId)
-            ) {
-              return null;
-            }
-            return (
-              <ContentBlockView
-                key={'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`}
-                block={block}
-                isUser={isUser}
-                isStreaming={isStreaming}
-                allBlocks={contentBlocks}
-                message={message}
-              />
-            );
-          })}
+          {visibleBlocks.map((block, index) => (
+            <ContentBlockView
+              key={'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`}
+              block={block}
+              isUser={isUser}
+              isStreaming={isStreaming}
+              allBlocks={contentBlocks}
+              message={message}
+            />
+          ))}
+          {activityBlocks.length > 0 && (
+            <ActivityGroupBlock
+              blocks={activityBlocks}
+              allBlocks={contentBlocks}
+              message={message}
+              isStreaming={isStreaming}
+            />
+          )}
           {detectedArtifacts.length > 0 && (
             <div className="flex flex-wrap gap-2 pt-1">
               {detectedArtifacts.map((artifact) => (

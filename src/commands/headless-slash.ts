@@ -39,6 +39,8 @@ export interface HeadlessSlashContext {
   conversationHistory?: ChatEntry[];
   /** LLM client, for tokens that call the model directly (ai-test, btw). */
   client?: CodeBuddyClient;
+  /** Optional goal-state key for non-TUI surfaces with their own session ids. */
+  goalSessionKey?: string;
 }
 
 /** Result of running a special token outside the TUI. */
@@ -92,6 +94,20 @@ export async function executeHeadlessSlashToken(
   if (ctx.client) handler.setCodeBuddyClient(ctx.client);
 
   try {
+    if (ctx.goalSessionKey && (token === '__GOAL__' || token === '__SUBGOAL__')) {
+      const { handleGoal, handleSubgoal } = await import('./handlers/goal-handler.js');
+      const result =
+        token === '__GOAL__'
+          ? await handleGoal(args, { sessionKey: ctx.goalSessionKey, client: ctx.client ?? null })
+          : await handleSubgoal(args, { sessionKey: ctx.goalSessionKey });
+      return {
+        handled: result.handled,
+        output: result.entry?.content,
+        prompt: result.prompt,
+        passToAI: result.passToAI,
+      };
+    }
+
     const result: CommandHandlerResult = await handler.handleCommand(
       token,
       args,

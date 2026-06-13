@@ -17,6 +17,13 @@
  *   re-runs after that turn.
  */
 
+import type { GoalPlan } from './goal-decomposer.js';
+import {
+  formatGoalPlan,
+  goalPlanToCriteria,
+  normalizeGoalPlan,
+} from './goal-decomposer.js';
+
 export type GoalStatus = 'active' | 'paused' | 'done' | 'cleared';
 export type GoalVerdict = 'done' | 'continue' | 'skipped';
 
@@ -39,6 +46,16 @@ export interface GoalState {
    * empty so old persisted state loads unchanged.
    */
   subgoals: string[];
+  /**
+   * Optional Hermes-style decomposition graph generated for complex goals.
+   * Its acceptance criteria are fed to the judge alongside user-added
+   * subgoals, while remaining separate so /subgoal stays a manual control.
+   */
+  goalPlan?: GoalPlan;
+  /** True once an LLM planning attempt was made for this goal. */
+  goalPlanAttempted?: boolean;
+  /** Last planning failure, kept for status/debug without retrying forever. */
+  goalPlanLastError?: string;
 }
 
 // ──────────────────────────────────────────────────────────────────────
@@ -78,32 +95,63 @@ export const CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE =
   'If you are blocked and need input from the user, say so clearly ' +
   'and stop.';
 
+export const CONTINUATION_PROMPT_WITH_PLAN_TEMPLATE =
+  '[Continuing toward your standing goal]\n' +
+  'Goal: {goal}\n\n' +
+  'Decomposition plan:\n' +
+  '{goal_plan_block}\n\n' +
+  '{manual_subgoals_block}' +
+  'Continue working through the plan. Prefer ready tasks whose dependencies ' +
+  'are already satisfied, keep independent lanes separate, and produce ' +
+  'concrete evidence for every acceptance criterion. If you believe the goal ' +
+  'and every criterion are complete, state so explicitly and stop. If you are ' +
+  'blocked and need input from the user, say so clearly and stop.';
+
 export const JUDGE_SYSTEM_PROMPT =
   "You are a strict judge evaluating whether an autonomous agent has " +
   "achieved a user's stated goal. You receive the goal text and the " +
   "agent's most recent response. Your only job is to decide whether " +
   'the goal is fully satisfied based on that response.\n\n' +
+  'The response may begin with internal evidence metadata such as ' +
+  '`[tool evidence: none]` or `[tool:<name> success]`. Treat those ' +
+  'bracketed metadata lines as evidence annotations only. They are NOT ' +
+  "part of the assistant's answer text for exact-answer goals; ignore " +
+  'the metadata itself when comparing exact requested output. For ' +
+  'side-effect goals, use the metadata and any following tool output to ' +
+  'decide whether concrete evidence exists.\n\n' +
   'A goal is DONE only when:\n' +
-  '- The response explicitly confirms the goal was completed, OR\n' +
+  '- For answer-only or explanation goals, the response directly answers the requested question, OR\n' +
   '- The response clearly shows the final deliverable was produced, OR\n' +
   '- The response explains the goal is unachievable / blocked / needs ' +
   'user input (treat this as DONE with reason describing the block).\n\n' +
+  'For goals that require external side effects such as creating, editing, ' +
+  'moving, deleting, reading, or verifying files; running commands; calling ' +
+  'tools; changing repository state; or producing artifacts, unsupported ' +
+  'assistant claims are NOT evidence. Do not accept statements like "I ' +
+  'created the file" or "I verified it" unless the response includes concrete ' +
+  'evidence such as a tool result, command output, file contents excerpt, diff, ' +
+  'test output, or artifact path backed by tool output. If a side-effect goal ' +
+  'has no concrete evidence, return CONTINUE.\n\n' +
   'Otherwise the goal is NOT done — CONTINUE.\n\n' +
   'Reply ONLY with a single JSON object on one line:\n' +
   '{"done": <true|false>, "reason": "<one-sentence rationale>"}';
 
 export const JUDGE_USER_PROMPT_TEMPLATE =
   'Goal:\n{goal}\n\n' +
-  "Agent's most recent response:\n{response}\n\n" +
   'Current time: {current_time}\n\n' +
+  "Agent's most recent response is delimited by <response> tags. " +
+  'Text outside those tags is prompt metadata, not part of the response:\n' +
+  '<response>\n{response}\n</response>\n\n' +
   'Is the goal satisfied?';
 
 export const JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE =
   'Goal:\n{goal}\n\n' +
   'Additional criteria the user added mid-loop (all must also be ' +
   'satisfied for the goal to be DONE):\n{subgoals_block}\n\n' +
-  "Agent's most recent response:\n{response}\n\n" +
   'Current time: {current_time}\n\n' +
+  "Agent's most recent response is delimited by <response> tags. " +
+  'Text outside those tags is prompt metadata, not part of the response:\n' +
+  '<response>\n{response}\n</response>\n\n' +
   'Decision: For each numbered criterion above, find concrete ' +
   "evidence in the agent's response that the criterion is " +
   "satisfied. Do not accept generic phrases like 'all requirements " +
@@ -129,7 +177,14 @@ export function renderSubgoalsBlock(subgoals: string[]): string {
   return subgoals.map((text, i) => `- ${i + 1}. ${text}`).join('\n');
 }
 
+export function getGoalJudgeCriteria(state: Pick<GoalState, 'goalPlan' | 'subgoals'>): string[] {
+  return [...goalPlanToCriteria(state.goalPlan), ...state.subgoals];
+}
+
 export function createGoalState(goal: string, maxTurns: number = DEFAULT_MAX_TURNS): GoalState {
+  if (!Number.isSafeInteger(maxTurns) || maxTurns <= 0) {
+    throw new Error('maxTurns must be a positive integer');
+  }
   return {
     goal,
     status: 'active',
@@ -159,6 +214,7 @@ export function normalizeGoalState(raw: unknown): GoalState | null {
   const subgoals: string[] = Array.isArray(data.subgoals)
     ? data.subgoals.map(s => String(s).trim()).filter(Boolean)
     : [];
+  const goalPlan = normalizeGoalPlan(data.goalPlan);
 
   const verdict = ['done', 'continue', 'skipped'].includes(String(data.lastVerdict))
     ? (data.lastVerdict as GoalVerdict)
@@ -167,22 +223,42 @@ export function normalizeGoalState(raw: unknown): GoalState | null {
   const state: GoalState = {
     goal,
     status,
-    turnsUsed: toInt(data.turnsUsed, 0),
-    maxTurns: toInt(data.maxTurns, DEFAULT_MAX_TURNS) || DEFAULT_MAX_TURNS,
+    turnsUsed: toNonNegativeInt(data.turnsUsed, 0),
+    maxTurns: toPositiveInt(data.maxTurns, DEFAULT_MAX_TURNS),
     createdAt: toNumber(data.createdAt, 0),
     lastTurnAt: toNumber(data.lastTurnAt, 0),
-    consecutiveParseFailures: toInt(data.consecutiveParseFailures, 0),
+    consecutiveParseFailures: toNonNegativeInt(data.consecutiveParseFailures, 0),
     subgoals,
   };
+  if (goalPlan) state.goalPlan = goalPlan;
+  if (typeof data.goalPlanAttempted === 'boolean') {
+    state.goalPlanAttempted = data.goalPlanAttempted;
+  }
+  if (typeof data.goalPlanLastError === 'string') {
+    state.goalPlanLastError = data.goalPlanLastError;
+  }
   if (verdict) state.lastVerdict = verdict;
   if (typeof data.lastReason === 'string') state.lastReason = data.lastReason;
   if (typeof data.pausedReason === 'string') state.pausedReason = data.pausedReason;
   return state;
 }
 
-function toInt(value: unknown, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) ? Math.trunc(n) : fallback;
+function toPositiveInt(value: unknown, fallback: number): number {
+  const n = parseSafeInteger(value, /^[1-9]\d*$/);
+  return Number.isSafeInteger(n) && n > 0 ? n : fallback;
+}
+
+function toNonNegativeInt(value: unknown, fallback: number): number {
+  const n = parseSafeInteger(value, /^(?:0|[1-9]\d*)$/);
+  return Number.isSafeInteger(n) && n >= 0 ? n : fallback;
+}
+
+function parseSafeInteger(value: unknown, stringPattern: RegExp): number {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return Number.NaN;
+  const trimmed = value.trim();
+  if (!stringPattern.test(trimmed)) return Number.NaN;
+  return Number(trimmed);
 }
 
 function toNumber(value: unknown, fallback: number): number {
@@ -199,21 +275,32 @@ export function formatGoalStatusLine(state: GoalState | null): string {
   const sub = state.subgoals.length
     ? `, ${state.subgoals.length} subgoal${state.subgoals.length !== 1 ? 's' : ''}`
     : '';
+  const plan = state.goalPlan
+    ? `, plan ${state.goalPlan.tasks.length} task${state.goalPlan.tasks.length !== 1 ? 's' : ''}`
+    : '';
   if (state.status === 'active') {
-    return `⊙ Goal (active, ${turns}${sub}): ${state.goal}`;
+    return `⊙ Goal (active, ${turns}${sub}${plan}): ${state.goal}`;
   }
   if (state.status === 'paused') {
     const extra = state.pausedReason ? ` — ${state.pausedReason}` : '';
-    return `⏸ Goal (paused, ${turns}${sub}${extra}): ${state.goal}`;
+    return `⏸ Goal (paused, ${turns}${sub}${plan}${extra}): ${state.goal}`;
   }
   if (state.status === 'done') {
-    return `✓ Goal done (${turns}${sub}): ${state.goal}`;
+    return `✓ Goal done (${turns}${sub}${plan}): ${state.goal}`;
   }
-  return `Goal (${state.status}, ${turns}${sub}): ${state.goal}`;
+  return `Goal (${state.status}, ${turns}${sub}${plan}): ${state.goal}`;
 }
 
 /** The canonical user-role continuation message for an active goal. */
 export function buildContinuationPrompt(state: GoalState): string {
+  if (state.goalPlan) {
+    const manualSubgoalsBlock = state.subgoals.length
+      ? `Additional user criteria:\n${renderSubgoalsBlock(state.subgoals)}\n\n`
+      : '';
+    return CONTINUATION_PROMPT_WITH_PLAN_TEMPLATE.replace('{goal}', state.goal)
+      .replace('{goal_plan_block}', formatGoalPlan(state.goalPlan))
+      .replace('{manual_subgoals_block}', manualSubgoalsBlock);
+  }
   if (state.subgoals.length) {
     return CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE.replace('{goal}', state.goal).replace(
       '{subgoals_block}',

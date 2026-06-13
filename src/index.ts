@@ -1481,9 +1481,14 @@ program
 
     try {
       // Get API key from options, environment, or user settings
-      const apiKey = options.apiKey || await loadApiKey();
-      const baseURL = options.baseUrl || await loadBaseURL();
-      let model = options.model || await loadModel();  // let: can be overridden by --agent
+      const explicitProvider = options.model && !options.apiKey && !options.baseUrl
+        ? (await import('./commands/llm-provider-resolution.js')).resolveCommandProvider({
+            explicitModel: options.model,
+          })
+        : null;
+      const apiKey = options.apiKey || explicitProvider?.apiKey || await loadApiKey();
+      const baseURL = options.baseUrl || explicitProvider?.baseURL || await loadBaseURL();
+      let model = options.model || explicitProvider?.model || await loadModel();  // let: can be overridden by --agent
       const maxToolRounds = parseInt(options.maxToolRounds) || 400;
 
       if (!apiKey) {
@@ -1937,7 +1942,7 @@ program
             // point. The full async flush runs on SIGINT/SIGTERM below.
             try {
               sessionEndFlush.writeHandoffSync(agent.getChatHistory());
-            } catch { /* handoff is best-effort on hard exit */ }
+            } catch (_err) { /* handoff is best-effort on hard exit */ }
           };
           const flushThenExit = () => {
             cleanup();
@@ -1947,7 +1952,7 @@ program
                   sessionEndFlush.runSessionEndFlush({ chatHistory: agent.getChatHistory() }),
                   new Promise<void>((resolve) => setTimeout(resolve, 8000).unref()),
                 ]);
-              } catch { /* never block exit on the flush */ }
+              } catch (_err) { /* never block exit on the flush */ }
               process.exit(0);
             })();
           };
@@ -2110,6 +2115,7 @@ function addLazyCommand(
   name: string,
   description: string,
   loader: () => Promise<import('commander').Command>,
+  prevalidateArgv?: (argv: readonly string[]) => void | Promise<void>,
 ): void {
   // Create a pass-through command that accepts arbitrary args
   const stub = parent
@@ -2121,6 +2127,13 @@ function addLazyCommand(
 
   // Override the parse to delegate to the real command
   stub.action(async () => {
+    try {
+      await prevalidateArgv?.(process.argv);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      process.stderr.write(`error: ${message}\n`);
+      process.exit(1);
+    }
     const realCommand = await loader();
     // Replace the stub with the real command and re-parse
     removeCommands(parent, name);
@@ -2389,7 +2402,7 @@ addLazyCommandGroup(program, 'speak', 'Synthesize speech using AudioReader TTS',
 // Utility commands (doctor, security-audit, onboard, webhook) are all registered
 // by a single registerUtilityCommands() call, so we must remove all stubs before
 // re-registering to avoid Commander duplicate command errors.
-const utilityCommandNames = ['doctor', 'security-audit', 'onboard', 'webhook'];
+const utilityCommandNames = ['doctor', 'security-audit', 'onboard', 'webhook', 'ollama'];
 const loadUtilityCommands = async () => {
   // Remove all utility stubs at once
   removeCommands(program, utilityCommandNames);
@@ -2402,6 +2415,7 @@ for (const cmdName of utilityCommandNames) {
   const desc = cmdName === 'doctor' ? 'Diagnose Code Buddy environment, dependencies, and configuration'
     : cmdName === 'security-audit' ? 'Run a security audit of your Code Buddy environment'
     : cmdName === 'onboard' ? 'Interactive setup wizard for Code Buddy'
+    : cmdName === 'ollama' ? 'Inspect or update the local Ollama runtime'
     : 'Manage webhook triggers';
 
   const stub = program
@@ -2583,6 +2597,10 @@ addLazyCommand(
   async () => {
     const { createGoalCommand } = await import('./commands/goal-cli.js');
     return createGoalCommand();
+  },
+  async argv => {
+    const { validateGoalCommandNumericOptions } = await import('./commands/goal-cli.js');
+    validateGoalCommandNumericOptions(argv);
   },
 );
 

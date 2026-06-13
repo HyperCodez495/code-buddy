@@ -28,6 +28,7 @@ import type {
   TeamMailboxMessage,
   MissionRuntime,
   MissionRuntimeEvent,
+  QueuedIntent,
 } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
@@ -93,6 +94,7 @@ export interface SessionState {
   partialMessage: string;
   partialThinking: string;
   pendingTurns: string[];
+  queuedIntents: QueuedIntent[];
   activeTurn: { stepId: string; userMessageId: string } | null;
   executionClock: SessionExecutionClock;
   traceSteps: TraceStep[];
@@ -104,6 +106,7 @@ const DEFAULT_SESSION_STATE: SessionState = {
   partialMessage: '',
   partialThinking: '',
   pendingTurns: [],
+  queuedIntents: [],
   activeTurn: null,
   executionClock: { startAt: null, endAt: null },
   traceSteps: [],
@@ -129,6 +132,60 @@ function appendMissionRuntimeEvent(
     : next;
 }
 
+function queuedIntentStorageKey(sessionId: string): string {
+  return `cowork.queuedIntents.${sessionId}`;
+}
+
+function readQueuedIntents(sessionId: string): QueuedIntent[] {
+  try {
+    if (typeof window === 'undefined') return [];
+    const raw = window.localStorage?.getItem(queuedIntentStorageKey(sessionId));
+    if (!raw) return [];
+    const parsed = JSON.parse(raw) as QueuedIntent[];
+    return Array.isArray(parsed)
+      ? parsed.filter(
+          (item) => item && item.sessionId === sessionId && Array.isArray(item.content)
+        )
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeQueuedIntents(sessionId: string, intents: QueuedIntent[]): void {
+  try {
+    if (typeof window === 'undefined') return;
+    const key = queuedIntentStorageKey(sessionId);
+    if (intents.length === 0) {
+      window.localStorage?.removeItem(key);
+      return;
+    }
+    window.localStorage?.setItem(key, JSON.stringify(intents));
+  } catch {
+    /* queue persistence must never break chat rendering */
+  }
+}
+
+function readChatActivityDisplayMode(): Settings['chatActivityDisplayMode'] {
+  try {
+    if (typeof window === 'undefined') return 'compact_worklog';
+    const raw = window.localStorage?.getItem('cowork.chatActivityDisplayMode');
+    return raw === 'transparent_stream' ? 'transparent_stream' : 'compact_worklog';
+  } catch {
+    return 'compact_worklog';
+  }
+}
+
+function readMemoryStrategy(): Settings['memoryStrategy'] {
+  try {
+    if (typeof window === 'undefined') return 'auto';
+    const raw = window.localStorage?.getItem('cowork.memory.strategy');
+    return raw === 'manual' || raw === 'rolling' || raw === 'auto' ? raw : 'auto';
+  } catch {
+    return 'auto';
+  }
+}
+
 // Helper to immutably update a single session's state within the record
 function patchSession(
   states: Record<string, SessionState>,
@@ -144,7 +201,7 @@ function patchSession(
 
 // Helper to get a session's state with safe defaults
 function getSession(states: Record<string, SessionState>, sessionId: string): SessionState {
-  return states[sessionId] ?? DEFAULT_SESSION_STATE;
+  return states[sessionId] ?? { ...DEFAULT_SESSION_STATE, queuedIntents: readQueuedIntents(sessionId) };
 }
 
 interface AppState {
@@ -465,6 +522,14 @@ interface AppState {
   updateActiveTurnStep: (sessionId: string, stepId: string) => void;
   clearActiveTurn: (sessionId: string, stepId?: string) => void;
   clearPendingTurns: (sessionId: string) => void;
+  enqueueQueuedIntent: (intent: QueuedIntent) => void;
+  updateQueuedIntent: (
+    sessionId: string,
+    intentId: string,
+    updates: Partial<Pick<QueuedIntent, 'prompt' | 'content' | 'source'>>
+  ) => void;
+  removeQueuedIntent: (sessionId: string, intentId: string) => void;
+  shiftQueuedIntent: (sessionId: string) => QueuedIntent | null;
   clearQueuedMessages: (sessionId: string) => void;
   cancelQueuedMessages: (sessionId: string) => void;
 
@@ -731,6 +796,7 @@ interface AppState {
 
 const defaultSettings: Settings = {
   theme: 'light',
+  chatActivityDisplayMode: readChatActivityDisplayMode(),
   defaultTools: [
     'askuserquestion',
     'todowrite',
@@ -753,7 +819,7 @@ const defaultSettings: Settings = {
     { tool: 'bash', action: 'ask' },
   ],
   globalSkillsPath: '',
-  memoryStrategy: 'auto',
+  memoryStrategy: readMemoryStrategy(),
   maxContextTokens: 180000,
 };
 
@@ -919,14 +985,26 @@ export const useAppStore = create<AppState>((set) => ({
   showNotificationCenter: false,
 
   // Session actions
-  setSessions: (sessions) => set({ sessions }),
+  setSessions: (sessions) =>
+    set((state) => {
+      const sessionStates = { ...state.sessionStates };
+      for (const session of sessions) {
+        if (!sessionStates[session.id]) {
+          sessionStates[session.id] = {
+            ...DEFAULT_SESSION_STATE,
+            queuedIntents: readQueuedIntents(session.id),
+          };
+        }
+      }
+      return { sessions, sessionStates };
+    }),
 
   addSession: (session) =>
     set((state) => ({
       sessions: [session, ...state.sessions],
       sessionStates: {
         ...state.sessionStates,
-        [session.id]: { ...DEFAULT_SESSION_STATE },
+        [session.id]: { ...DEFAULT_SESSION_STATE, queuedIntents: readQueuedIntents(session.id) },
       },
     })),
 
@@ -937,6 +1015,7 @@ export const useAppStore = create<AppState>((set) => ({
 
   removeSession: (sessionId) =>
     set((state) => {
+      writeQueuedIntents(sessionId, []);
       const { [sessionId]: _, ...restSessionStates } = state.sessionStates;
       return {
         sessions: state.sessions.filter((s) => s.id !== sessionId),
@@ -949,6 +1028,9 @@ export const useAppStore = create<AppState>((set) => ({
   removeSessions: (sessionIds) =>
     set((state) => {
       const idSet = new Set(sessionIds);
+      for (const sessionId of sessionIds) {
+        writeQueuedIntents(sessionId, []);
+      }
       const newSessionStates: Record<string, SessionState> = {};
       for (const key of Object.keys(state.sessionStates)) {
         if (!idSet.has(key)) newSessionStates[key] = state.sessionStates[key];
@@ -977,13 +1059,26 @@ export const useAppStore = create<AppState>((set) => ({
               t.sessionId === sessionId ? { ...t, unread: 0 } : t
             )
           : state.openTabs;
-        return { activeSessionId: sessionId, openTabs: cleared };
+        return {
+          activeSessionId: sessionId,
+          openTabs: cleared,
+          sessionStates: state.sessionStates[sessionId]
+            ? state.sessionStates
+            : patchSession(state.sessionStates, sessionId, {
+                queuedIntents: readQueuedIntents(sessionId),
+              }),
+        };
       }
       const session = state.sessions.find((s) => s.id === sessionId);
       const title = session?.title ?? `Session ${state.openTabs.length + 1}`;
       return {
         activeSessionId: sessionId,
         openTabs: [...state.openTabs, { id: `tab-${sessionId}`, sessionId, title }],
+        sessionStates: state.sessionStates[sessionId]
+          ? state.sessionStates
+          : patchSession(state.sessionStates, sessionId, {
+              queuedIntents: readQueuedIntents(sessionId),
+            }),
       };
     }),
 
@@ -1173,6 +1268,65 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       sessionStates: patchSession(state.sessionStates, sessionId, { pendingTurns: [] }),
     })),
+
+  enqueueQueuedIntent: (intent) =>
+    set((state) => {
+      const ss = getSession(state.sessionStates, intent.sessionId);
+      const nextIntent: QueuedIntent = {
+        ...intent,
+        source: intent.source ?? 'queue',
+        updatedAt: Date.now(),
+      };
+      const next = [...ss.queuedIntents.filter((item) => item.id !== intent.id), nextIntent];
+      writeQueuedIntents(intent.sessionId, next);
+      return {
+        sessionStates: patchSession(state.sessionStates, intent.sessionId, {
+          queuedIntents: next,
+        }),
+      };
+    }),
+
+  updateQueuedIntent: (sessionId, intentId, updates) =>
+    set((state) => {
+      const ss = getSession(state.sessionStates, sessionId);
+      let changed = false;
+      const next = ss.queuedIntents.map((intent) => {
+        if (intent.id !== intentId) return intent;
+        changed = true;
+        return { ...intent, ...updates, updatedAt: Date.now() };
+      });
+      if (!changed) return {};
+      writeQueuedIntents(sessionId, next);
+      return {
+        sessionStates: patchSession(state.sessionStates, sessionId, { queuedIntents: next }),
+      };
+    }),
+
+  removeQueuedIntent: (sessionId, intentId) =>
+    set((state) => {
+      const ss = getSession(state.sessionStates, sessionId);
+      const next = ss.queuedIntents.filter((intent) => intent.id !== intentId);
+      if (next.length === ss.queuedIntents.length) return {};
+      writeQueuedIntents(sessionId, next);
+      return {
+        sessionStates: patchSession(state.sessionStates, sessionId, { queuedIntents: next }),
+      };
+    }),
+
+  shiftQueuedIntent: (sessionId) => {
+    let shifted: QueuedIntent | null = null;
+    set((state) => {
+      const ss = getSession(state.sessionStates, sessionId);
+      if (ss.queuedIntents.length === 0) return {};
+      const [first, ...rest] = ss.queuedIntents;
+      shifted = first ?? null;
+      writeQueuedIntents(sessionId, rest);
+      return {
+        sessionStates: patchSession(state.sessionStates, sessionId, { queuedIntents: rest }),
+      };
+    });
+    return shifted;
+  },
 
   clearQueuedMessages: (sessionId) =>
     set((state) => {

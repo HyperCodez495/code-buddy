@@ -133,6 +133,26 @@ describe('applySlashCommandResult (renderer dispatch)', () => {
     expect(continueWithPrompt).toHaveBeenCalledWith('do X');
   });
 
+  it('renders command output before forwarding a prompt for /goal-style commands', () => {
+    const continueWithPrompt = vi.fn();
+    const handled = applySlashCommandResult(
+      {
+        success: true,
+        handled: false,
+        output: 'Goal set: ship it',
+        prompt: 'ship it',
+      },
+      ctx({ continueWithPrompt })
+    );
+    expect(handled).toBe(true);
+    expect(addMessage).toHaveBeenCalledTimes(1);
+    expect(addMessage.mock.calls[0][1].content[0]).toMatchObject({
+      type: 'text',
+      text: 'Goal set: ship it',
+    });
+    expect(continueWithPrompt).toHaveBeenCalledWith('ship it');
+  });
+
   it('returns false when there is nothing to apply', () => {
     expect(applySlashCommandResult({ success: true }, ctx())).toBe(false);
   });

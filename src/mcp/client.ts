@@ -117,6 +117,7 @@ export class MCPManager extends EventEmitter {
         this.handleServerError(serverName, error);
       }
     }, 30000);
+    interval.unref?.();
 
     this.healthCheckIntervals.set(serverName, interval);
   }

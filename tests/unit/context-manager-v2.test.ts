@@ -722,6 +722,20 @@ describe('ContextManagerV2', () => {
       // After dispose, token count should be reset
       expect(testManager.getLastTokenCount()).toBe(0);
     });
+
+    it('should stop periodic snapshot timers on dispose', () => {
+      const testManager = new ContextManagerV2();
+      const timerState = testManager as unknown as {
+        snapshotTimer: NodeJS.Timeout | null;
+      };
+
+      testManager.startPeriodicSnapshot(() => [], 60_000);
+      expect(timerState.snapshotTimer).not.toBeNull();
+
+      testManager.dispose();
+
+      expect(timerState.snapshotTimer).toBeNull();
+    });
   });
 
   describe('Edge Cases', () => {

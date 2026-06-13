@@ -13,6 +13,10 @@ export interface Session {
   projectId?: string | null;
   isBackground?: boolean;
   executionMode?: ExecutionMode;
+  pinned?: boolean;
+  archived?: boolean;
+  tags?: string[];
+  source?: 'cowork' | 'cli-import' | 'remote' | string;
   createdAt: number;
   updatedAt: number;
 }
@@ -36,6 +40,7 @@ export interface ProjectMemoryConfig {
   autoConsolidate?: boolean;
   maxMemoryEntries?: number;
   includeICM?: boolean;
+  memoryStrategy?: 'auto' | 'manual' | 'rolling';
 }
 
 export interface ProjectCreateInput {
@@ -1085,10 +1090,40 @@ export interface Message {
   timestamp: number;
   tokenUsage?: TokenUsage;
   localStatus?: 'queued' | 'cancelled';
+  metadata?: MessageMetadata;
   executionTimeMs?: number;
 }
 
 export type MessageRole = 'user' | 'assistant' | 'system';
+
+export interface MessageMetadata {
+  turn?: {
+    id: string;
+    role: MessageRole;
+  };
+  pendingIntent?: {
+    kind: 'steer';
+    status: 'delivered' | 'queued_fallback';
+    sourceIntentId?: string;
+  };
+  recovery?: {
+    kind: 'turn_interrupted' | 'user_turn_recovered';
+    source: 'turn_journal';
+    turnId: string;
+    status: 'marker' | 'message';
+    reason?: string;
+  };
+}
+
+export interface QueuedIntent {
+  id: string;
+  sessionId: string;
+  prompt: string;
+  content: ContentBlock[];
+  createdAt: number;
+  updatedAt?: number;
+  source?: 'queue' | 'leftover_steer';
+}
 
 export type ContentBlock =
   | TextContent
@@ -1440,9 +1475,12 @@ export type ClientEvent =
       };
     }
   | { type: 'session.continue'; payload: { sessionId: string; prompt: string; content?: ContentBlock[] } }
+  | { type: 'session.steer'; payload: { sessionId: string; prompt: string; content?: ContentBlock[]; intentId?: string } }
   | { type: 'session.stop'; payload: { sessionId: string } }
   | { type: 'session.delete'; payload: { sessionId: string } }
   | { type: 'session.batchDelete'; payload: { sessionIds: string[] } }
+  | { type: 'session.duplicate'; payload: { sessionId: string } }
+  | { type: 'session.updateSettings'; payload: { sessionId: string; updates: Partial<Session> } }
   | { type: 'session.list'; payload: Record<string, never> }
   | { type: 'session.getMessages'; payload: { sessionId: string } }
   | { type: 'session.getTraceSteps'; payload: { sessionId: string } }
@@ -1779,6 +1817,7 @@ export interface BrowserActionEvent {
 // Settings types
 export interface Settings {
   theme: AppTheme;
+  chatActivityDisplayMode?: 'compact_worklog' | 'transparent_stream';
   apiKey?: string;
   defaultTools: string[];
   permissionRules: PermissionRule[];
@@ -1816,6 +1855,7 @@ export type ProviderType =
   | 'lmstudio';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
 export type AppTheme = 'dark' | 'light' | 'system';
+export type MemoryStrategy = 'auto' | 'manual' | 'rolling';
 export type ProviderProfileKey =
   | 'chatgpt'
   | 'openrouter'
@@ -1871,6 +1911,7 @@ export interface AppConfig {
   defaultWorkdir?: string;
   globalSkillsPath?: string;
   theme?: AppTheme;
+  memoryStrategy?: MemoryStrategy;
   sandboxEnabled?: boolean;
   enableThinking?: boolean;
   isConfigured: boolean;

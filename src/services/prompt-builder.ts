@@ -135,13 +135,16 @@ export class PromptBuilder {
     // confuse the LLM into hallucinating JSON tool calls. Force-off here.
     const toolCfg = getModelToolConfig(modelName);
     const activeToolFilter = getToolFilter();
-    if (toolCfg.supportsToolCalls === false) {
+    const forceTools = process.env.GROK_FORCE_TOOLS === 'true';
+    if (toolCfg.supportsToolCalls === false && !forceTools) {
       gates.includeMemoryDirective = false;
       gates.includeLessonsDirective = false;
       gates.includeUserModelDirective = false;
       gates.includeWorkflowRules = false;
     }
-    if (!isToolNameAllowed('remember', activeToolFilter)) {
+    const rememberToolAllowed = isToolNameAllowed('remember', activeToolFilter);
+    const memoryProposeToolAllowed = isToolNameAllowed('memory_propose', activeToolFilter);
+    if (!rememberToolAllowed && !memoryProposeToolAllowed) {
       gates.includeMemoryDirective = false;
     }
     if (!['lessons_add', 'lessons_search', 'lessons_graph'].every(toolName =>
@@ -241,7 +244,7 @@ export class PromptBuilder {
           memoryContext,
         });
         logger.debug(`Auto-selected prompt: ${autoId} (based on ${modelName})`);
-      } else if (toolCfg.supportsToolCalls === false) {
+      } else if (toolCfg.supportsToolCalls === false && !forceTools) {
         // Chat-only base prompt for models that can't dispatch tool calls.
         // The default body lists `bash`, `view_file`, `str_replace_editor`,
         // etc. by name — small Ollama models read those mentions and try to
@@ -429,17 +432,32 @@ export class PromptBuilder {
         } catch { /* fleet registry optional — module not loaded yet */ }
       }
 
-      // Inject auto-memory directive — tells the LLM WHEN to call the
-      // `remember` tool to auto-persist non-obvious facts to
+      // Inject auto-memory directive — tells the LLM WHEN to call `remember`
+      // or the review-gated `memory_propose` tool for non-obvious facts from
       // .codebuddy/CODEBUDDY_MEMORY.md (project) or ~/.codebuddy/memory.md
       // (user). Without this directive, the tool is registered but the LLM
       // has no instruction on when to use it, so the file stays empty.
-      // Paired with `alwaysInclude: ['remember']` in tool-selection-strategy.
+      // Paired with `alwaysInclude: ['remember', 'memory_propose']` in
+      // tool-selection-strategy.
       if (this.config.memoryEnabled && this.persistentMemory && gates.includeMemoryDirective) {
+        const memoryWriteInstruction = memoryProposeToolAllowed
+          ? 'Use `remember` only for explicit, high-confidence durable facts. Use `memory_propose` for inferred, ambiguous, or model-derived facts so the user can review them before they become prompt-injected memory.'
+          : 'Use `remember` only for explicit, high-confidence durable facts. Do not store inferred or ambiguous facts silently.';
+        const inferredFactInstruction = memoryProposeToolAllowed
+          ? 'When to call `memory_propose`:'
+          : 'When to consider durable memory, but skip if it is only inferred or ambiguous:';
+        const closingMemoryInstruction = memoryProposeToolAllowed
+          ? 'Prefer `memory_propose` over `remember` when the fact came from your interpretation rather than an explicit user instruction.'
+          : 'Only call `remember` when the fact came from an explicit user instruction or correction.';
         systemPrompt += `\n\n<auto_memory_directive>
-You have a persistent memory system at .codebuddy/CODEBUDDY_MEMORY.md (project-scoped) and ~/.codebuddy/memory.md (user-scoped, all projects). Use the \`remember\` tool to save facts that will be useful in future sessions.
+You have a persistent memory system at .codebuddy/CODEBUDDY_MEMORY.md (project-scoped) and ~/.codebuddy/memory.md (user-scoped, all projects).
+${memoryWriteInstruction}
 
 When to call \`remember\`:
+- The user explicitly says to remember/store a fact or preference
+- The user directly corrects an existing stable fact
+
+${inferredFactInstruction}
 - User preferences ("user prefers single quotes", "always use Vitest, not Jest")
 - Architectural decisions ("API uses JWT in HttpOnly cookies, not localStorage")
 - Non-obvious gotchas ("vi.hoisted() needed for mock factories in this repo")
@@ -456,7 +474,7 @@ Format:
 - \`scope\`: \`project\` (default — fact is specific to THIS repo) or \`user\` (preference across all projects)
 - \`category\`: \`preferences\`, \`decisions\`, \`patterns\`, \`project\`, or \`custom\`
 
-Call \`remember\` proactively when you learn something worth remembering — don't wait for the user to ask.
+${closingMemoryInstruction}
 </auto_memory_directive>`;
         logger.debug('Injected auto-memory directive into system prompt');
       }

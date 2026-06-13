@@ -13,6 +13,7 @@ import * as path from 'path';
 import { existsSync } from 'fs';
 import { EventEmitter } from 'events';
 import { spawn } from 'child_process';
+import { performance } from 'perf_hooks';
 
 // ============================================================================
 // Types
@@ -729,7 +730,7 @@ export class TemplateEngine extends EventEmitter {
    * Generate project from template
    */
   async generate(options: GenerateOptions): Promise<GenerateResult> {
-    const startTime = Date.now();
+    const startTime = performance.now();
     const warnings: string[] = [];
     const filesCreated: string[] = [];
 
@@ -847,7 +848,7 @@ export class TemplateEngine extends EventEmitter {
       success: true,
       projectPath,
       filesCreated,
-      duration: Date.now() - startTime,
+      duration: Math.max(1, Math.ceil(performance.now() - startTime)),
       warnings,
       nextSteps,
     };

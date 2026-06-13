@@ -218,15 +218,13 @@ describe('OCRTool', () => {
 
       const promise = tool.batchOCR(['img1.png', 'img2.png']);
 
-      await new Promise(resolve => setImmediate(resolve));
+      await vi.waitFor(() => expect(mockSpawn).toHaveBeenCalledTimes(2));
 
       const tsv = `level\tpage_num\tblock_num\tpar_num\tline_num\tword_num\tleft\ttop\twidth\theight\tconf\ttext
 5\t1\t1\t1\t1\t1\t10\t10\t50\t20\t95\tText`;
       
       proc1.stdout.emit('data', Buffer.from(tsv));
       proc1.emit('close', 0);
-      
-      await new Promise(resolve => setImmediate(resolve));
 
       proc2.stdout.emit('data', Buffer.from(tsv));
       proc2.emit('close', 0);

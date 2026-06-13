@@ -41,9 +41,47 @@ describe('GoalStore', () => {
 
   it('sanitizes keys so they cannot escape the store directory', () => {
     const state = createGoalState('g');
-    store.save('../escape', state);
-    expect(fs.existsSync(path.join(tmpDir, '.._escape.json'))).toBe(true);
-    expect(store.load('../escape')).toEqual(state);
+    const escapeName = `escape-${path.basename(tmpDir)}`;
+    const escapedPath = path.join(tmpDir, '..', `${escapeName}.json`);
+    fs.rmSync(escapedPath, { force: true });
+
+    store.save(`../${escapeName}`, state);
+
+    const storedFiles = fs.readdirSync(tmpDir);
+    expect(storedFiles).toHaveLength(1);
+    expect(storedFiles[0]).not.toContain('/');
+    expect(fs.existsSync(escapedPath)).toBe(false);
+    expect(store.load(`../${escapeName}`)).toEqual(state);
+  });
+
+  it('keeps sanitized key collisions in separate files', () => {
+    const slashState = createGoalState('slash');
+    const underscoreState = createGoalState('underscore');
+
+    store.save('a/b', slashState);
+    store.save('a_b', underscoreState);
+
+    expect(store.load('a/b')).toEqual(slashState);
+    expect(store.load('a_b')).toEqual(underscoreState);
+    expect(fs.readdirSync(tmpDir)).toHaveLength(2);
+  });
+
+  it('loads legacy sanitized filenames for existing persisted goals', () => {
+    const state = createGoalState('legacy');
+    fs.writeFileSync(path.join(tmpDir, 'a_b.json'), JSON.stringify(state), 'utf-8');
+
+    expect(store.load('a/b')).toEqual(state);
+  });
+
+  it('deletes both current and legacy filenames for a key', () => {
+    const state = createGoalState('g');
+    store.save('a/b', state);
+    fs.writeFileSync(path.join(tmpDir, 'a_b.json'), JSON.stringify(state), 'utf-8');
+
+    store.delete('a/b');
+
+    expect(store.load('a/b')).toBeNull();
+    expect(fs.readdirSync(tmpDir)).toEqual([]);
   });
 
   it('ignores empty keys', () => {

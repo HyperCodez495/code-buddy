@@ -9,8 +9,9 @@
 
 import { CodeBuddyClient } from '../codebuddy/client.js';
 import { logger } from '../utils/logger.js';
+import { decomposeGoal, shouldAutoDecomposeGoal } from './goal-decomposer.js';
 import { judgeGoal } from './goal-judge.js';
-import { getGoalManager, resolveGoalsConfig } from './goal-manager.js';
+import { GoalManager, getGoalManager, resolveGoalsConfig } from './goal-manager.js';
 
 export interface GoalTurnOutcome {
   /** User-visible status line (✓ / ⏸ / ↻) to append to chat history. */
@@ -25,6 +26,8 @@ export interface GoalAfterTurnOptions {
   lastResponse: string;
   /** True when the turn was user-interrupted (Esc). */
   interrupted: boolean;
+  /** Optional goal-state key for host surfaces with their own session ids. */
+  sessionKey?: string;
 }
 
 // The executor appends a per-turn usage footer ("[tokens: … | cost: …]") as a
@@ -34,7 +37,7 @@ const USAGE_FOOTER_RE = /\n?\[tokens: [^\]]*\]\s*$/;
 export async function maybeContinueGoalAfterTurn(
   options: GoalAfterTurnOptions
 ): Promise<GoalTurnOutcome | null> {
-  const manager = getGoalManager();
+  const manager = getGoalManager(options.sessionKey);
   if (!manager.isActive()) return null;
 
   // If the turn was user-interrupted, auto-pause instead of judging: the
@@ -57,11 +60,13 @@ export async function maybeContinueGoalAfterTurn(
   if (!lastResponse) return null;
 
   const config = resolveGoalsConfig();
+  await maybeAttachGoalPlan(manager, options.client, config.plannerModel);
   const decision = await manager.evaluateAfterTurn(lastResponse, {
     judge: params =>
       judgeGoal(options.client, {
         ...params,
         ...(config.judgeModel ? { model: config.judgeModel } : {}),
+        maxTokens: config.judgeMaxTokens,
         timeoutMs: config.judgeTimeoutMs,
       }),
   });
@@ -74,4 +79,29 @@ export async function maybeContinueGoalAfterTurn(
     outcome.continuationPrompt = decision.continuationPrompt;
   }
   return outcome;
+}
+
+async function maybeAttachGoalPlan(
+  manager: GoalManager,
+  client: CodeBuddyClient | null,
+  model?: string
+): Promise<void> {
+  const state = manager.state;
+  if (!state || state.goalPlan || state.goalPlanAttempted) return;
+  if (!client || !shouldAutoDecomposeGoal(state.goal)) return;
+
+  try {
+    const plan = await decomposeGoal(state.goal, client, {
+      ...(model ? { model } : {}),
+    });
+    if (plan) {
+      manager.attachGoalPlan(plan);
+    } else {
+      manager.markGoalPlanAttempted('planner returned no usable task graph');
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    manager.markGoalPlanAttempted(message);
+    logger.debug('goal decomposition failed', { error: message });
+  }
 }

@@ -56,6 +56,15 @@ describe('CostTracker.calculateCost — ChatGPT subscription zeroing', () => {
     expect(tracker.calculateCost(1000, 500, 'GPT-5.5')).toBe(0);
     expect(tracker.calculateCost(1000, 500, 'Gpt-5-Codex')).toBe(0);
   });
+
+  it('returns 0 for local Ollama and LM Studio models', () => {
+    expect(tracker.calculateCost(3000, 500, 'gemma4:12b')).toBe(0);
+    expect(tracker.calculateCost(3000, 500, 'qwen3.5-ctx32k')).toBe(0);
+    expect(tracker.calculateCost(3000, 500, 'ollama/qwen3.6:35b-a3b-q4_K_M')).toBe(0);
+    expect(tracker.calculateCost(3000, 500, 'llama3.2')).toBe(0);
+    expect(tracker.calculateCost(3000, 500, 'local-model')).toBe(0);
+    expect(tracker.calculateCost(3000, 500, 'lmstudio')).toBe(0);
+  });
 });
 
 describe('estimateCost (token-display) — same zeroing as CostTracker', () => {
@@ -79,5 +88,11 @@ describe('estimateCost (token-display) — same zeroing as CostTracker', () => {
   it('returns NON-zero for billable models even with model param', () => {
     expect(estimateCost(1000, 500, undefined, undefined, 'grok-3-fast')).toBeGreaterThan(0);
     expect(estimateCost(1000, 500, undefined, undefined, 'gpt-4o')).toBeGreaterThan(0);
+  });
+
+  it('returns 0 for local models when model is passed', () => {
+    expect(estimateCost(3000, 500, undefined, undefined, 'gemma4:12b')).toBe(0);
+    expect(estimateCost(3000, 500, undefined, undefined, 'qwen3.5-ctx32k')).toBe(0);
+    expect(estimateCost(3000, 500, undefined, undefined, 'ollama/qwen3.6:35b-a3b-q4_K_M')).toBe(0);
   });
 });

@@ -82,6 +82,10 @@ export interface SessionRow {
   project_id: string | null;
   is_background: number;
   execution_mode: string | null;
+  pinned?: number;
+  archived?: number;
+  tags?: string | null;
+  source?: string | null;
   created_at: number;
   updated_at: number;
 }
@@ -103,6 +107,7 @@ export interface MessageRow {
   content: string; // JSON string
   timestamp: number;
   token_usage: string | null; // JSON string
+  metadata?: string | null; // JSON string
   execution_time_ms: number | null;
 }
 
@@ -282,6 +287,10 @@ function initializeSchema(database: Database.Database): void {
     ensureColumn(database, 'sessions', 'project_id', 'project_id TEXT');
     ensureColumn(database, 'sessions', 'is_background', 'is_background INTEGER DEFAULT 0');
     ensureColumn(database, 'sessions', 'execution_mode', 'execution_mode TEXT');
+    ensureColumn(database, 'sessions', 'pinned', 'pinned INTEGER DEFAULT 0');
+    ensureColumn(database, 'sessions', 'archived', 'archived INTEGER DEFAULT 0');
+    ensureColumn(database, 'sessions', 'tags', 'tags TEXT');
+    ensureColumn(database, 'sessions', 'source', 'source TEXT');
 
     // Create messages table
     database.exec(`
@@ -297,6 +306,7 @@ function initializeSchema(database: Database.Database): void {
   `);
 
     ensureColumn(database, 'messages', 'execution_time_ms', 'execution_time_ms INTEGER');
+    ensureColumn(database, 'messages', 'metadata', 'metadata TEXT');
 
     // Create trace steps table
     database.exec(`
@@ -577,8 +587,8 @@ export function initDatabase(): DatabaseInstance {
   // Prepare statements for better performance
   const insertSession = rawDb.prepare(`
     INSERT OR REPLACE INTO sessions
-    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, project_id, is_background, execution_mode, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    (id, title, claude_session_id, openai_thread_id, status, cwd, mounted_paths, allowed_tools, memory_enabled, model, project_id, is_background, execution_mode, pinned, archived, tags, source, created_at, updated_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   // Note: Dynamic update queries are built in sessions.update() for flexibility
@@ -599,8 +609,8 @@ export function initDatabase(): DatabaseInstance {
   `);
 
   const insertMessage = rawDb.prepare(`
-    INSERT INTO messages (id, session_id, role, content, timestamp, token_usage, execution_time_ms)
-    VALUES (?, ?, ?, ?, ?, ?, ?)
+    INSERT INTO messages (id, session_id, role, content, timestamp, token_usage, execution_time_ms, metadata)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
   `);
 
   const getMessagesBySessionStmt = rawDb.prepare(`
@@ -719,6 +729,10 @@ export function initDatabase(): DatabaseInstance {
           session.project_id ?? null,
           session.is_background ?? 0,
           session.execution_mode ?? null,
+          session.pinned ?? 0,
+          session.archived ?? 0,
+          session.tags ?? null,
+          session.source ?? 'cowork',
           session.created_at,
           session.updated_at
         );
@@ -775,7 +789,8 @@ export function initDatabase(): DatabaseInstance {
           message.content,
           message.timestamp,
           message.token_usage,
-          message.execution_time_ms ?? null
+          message.execution_time_ms ?? null,
+          message.metadata ?? null
         );
       },
 

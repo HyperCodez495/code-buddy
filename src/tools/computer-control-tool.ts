@@ -1920,7 +1920,7 @@ if ($clickButtonName) {
   private withDerivedAppWindowTarget(input: ComputerControlInput, profile: ApplicationProfile): ComputerControlInput {
     const next: ComputerControlInput = { ...input };
     if (profile.id === 'notepad' && input.filePath && !next.windowTitle && !next.windowTitleRegex) {
-      next.windowTitle = path.basename(input.filePath);
+      next.windowTitle = this.basenameForWindowTitle(input.filePath);
       next.windowTitleMatch = 'contains';
     }
     return next;
@@ -2029,10 +2029,14 @@ if ($clickButtonName) {
       }
     }
     if (profile?.id === 'notepad' && input.filePath && !next.windowTitle && !next.windowTitleRegex) {
-      next.windowTitle = path.basename(input.filePath);
+      next.windowTitle = this.basenameForWindowTitle(input.filePath);
       next.windowTitleMatch = 'contains';
     }
     return next;
+  }
+
+  private basenameForWindowTitle(filePath: string): string {
+    return filePath.includes('\\') ? path.win32.basename(filePath) : path.basename(filePath);
   }
 
   private async excelOpenWorkbook(input: ComputerControlInput): Promise<ToolResult> {

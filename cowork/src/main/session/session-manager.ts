@@ -23,6 +23,9 @@ import type {
   TextContent,
   TraceStep,
   FileAttachmentContent,
+  ToolUseContent,
+  ToolResultContent,
+  MessageMetadata,
 } from '../../renderer/types';
 import type { DatabaseInstance, TraceStepRow } from '../db/database';
 import { PathResolver } from '../sandbox/path-resolver';
@@ -60,6 +63,8 @@ import {
 import { generateTitleWithClaudeSdk } from '../claude/claude-sdk-one-shot';
 import { buildScheduledTaskTitle } from '../../shared/schedule/task-title';
 import { CodeBuddyEngineRunner } from '../engine/codebuddy-engine-runner';
+import { TurnJournal, type TurnJournalReadResult } from './turn-journal';
+import { buildSessionRecallPrefill, repairSessionTranscript } from './session-insights-bridge';
 
 export { formatFileAttachmentPromptLine } from './file-attachment-context';
 
@@ -86,6 +91,7 @@ export function createUniqueAttachmentFilename(
 interface AgentRunner {
   run(session: Session, prompt: string, existingMessages: Message[]): Promise<void>;
   cancel(sessionId: string): void;
+  steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSdkSession?(sessionId: string): void;
 }
 
@@ -101,6 +107,7 @@ export interface EngineAdapterLike {
     options?: Record<string, unknown>,
   ): Promise<{ content: string; tokenCount?: number; toolCallCount?: number }>;
   cancel(sessionId: string): void;
+  steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSession(sessionId: string): void;
   /**
    * Toggle Gemini server-side Google Search grounding default for this
@@ -159,11 +166,33 @@ export interface ProjectMemoryServiceLike {
     sessionId: string,
     messages: Array<{ role: string; content: string }>
   ): Promise<{ added: number; duplicatesSkipped: number; memoryDir: string } | null>;
+  previewProjectMemory?: (
+    projectId: string,
+    sessionId: string,
+    messages: Array<{ role: string; content: string }>
+  ) => {
+    projectId: string;
+    candidateCount: number;
+    candidates: Array<{
+      category: 'preference' | 'pattern' | 'context' | 'decision';
+      content: string;
+      sourceSessionId?: string;
+      sourceKind: 'user' | 'assistant';
+      evidence: string;
+    }>;
+    hasWorkspace: boolean;
+    projectMemoryPath?: string;
+  } | null;
 }
 
 /** Minimal interface for the project manager */
 export interface ProjectManagerLike {
-  get(id: string): { id: string; name: string; workspacePath?: string } | null;
+  get(id: string): {
+    id: string;
+    name: string;
+    workspacePath?: string;
+    memoryConfig?: { memoryStrategy?: 'auto' | 'manual' | 'rolling' };
+  } | null;
   getActiveId(): string | null;
 }
 
@@ -210,8 +239,141 @@ export interface ICMIntegrationLike {
   ): string | null;
 }
 
+export interface SessionMemoryPreview {
+  sessionId: string;
+  projectId?: string | null;
+  memoryStrategy: 'auto' | 'manual' | 'rolling';
+  automatedMemoryEnabled: boolean;
+  projectMemoryAvailable: boolean;
+  projectMemoryPath?: string;
+  projectContextAvailable: boolean;
+  icmAvailable: boolean;
+  recallEnabled: boolean;
+  candidateCount: number;
+  candidates: Array<{
+    category: 'preference' | 'pattern' | 'context' | 'decision';
+    content: string;
+    sourceSessionId?: string;
+    sourceKind: 'user' | 'assistant';
+    evidence: string;
+  }>;
+}
+
 const WORKSPACE_MOUNT_VIRTUAL_PATH = '/mnt/workspace';
 const TITLE_GENERATION_TIMEOUT_MS = 20000;
+
+function extractSessionTags(title: string): string[] {
+  const tags = title.match(/#[\p{L}\p{N}_-]+/gu) ?? [];
+  return Array.from(
+    new Set(
+      tags
+        .map((tag) => tag.slice(1).trim().toLowerCase())
+        .filter(Boolean)
+    )
+  );
+}
+
+function parseSessionTags(raw: string | null | undefined, fallbackTitle: string): string[] {
+  if (raw) {
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      if (Array.isArray(parsed)) {
+        return parsed.filter((tag): tag is string => typeof tag === 'string' && tag.length > 0);
+      }
+    } catch {
+      // Fall through to title-derived tags.
+    }
+  }
+  return extractSessionTags(fallbackTitle);
+}
+
+function remapDuplicatedContentBlocks(
+  content: ContentBlock[],
+  toolUseIdMap: Map<string, string>
+): ContentBlock[] {
+  return content.map((block) => {
+    if (block.type === 'tool_use') {
+      const toolUse = block as ToolUseContent;
+      const nextId = toolUseIdMap.get(toolUse.id) ?? uuidv4();
+      toolUseIdMap.set(toolUse.id, nextId);
+      return { ...toolUse, id: nextId };
+    }
+    if (block.type === 'tool_result') {
+      const toolResult = block as ToolResultContent;
+      const nextToolUseId = toolUseIdMap.get(toolResult.toolUseId) ?? toolResult.toolUseId;
+      return { ...toolResult, toolUseId: nextToolUseId };
+    }
+    return { ...block } as ContentBlock;
+  });
+}
+
+function remapDuplicatedMessageMetadata(
+  metadata: MessageMetadata | undefined,
+  turnIdMap: Map<string, string>
+): MessageMetadata | undefined {
+  if (!metadata) return undefined;
+  const next: MessageMetadata = { ...metadata };
+  if (metadata.turn) {
+    const nextTurnId = turnIdMap.get(metadata.turn.id) ?? uuidv4();
+    turnIdMap.set(metadata.turn.id, nextTurnId);
+    next.turn = { ...metadata.turn, id: nextTurnId };
+  }
+  if (metadata.pendingIntent) {
+    next.pendingIntent = { ...metadata.pendingIntent };
+  }
+  if (metadata.recovery) {
+    const nextTurnId = turnIdMap.get(metadata.recovery.turnId) ?? uuidv4();
+    turnIdMap.set(metadata.recovery.turnId, nextTurnId);
+    next.recovery = { ...metadata.recovery, turnId: nextTurnId };
+  }
+  return next;
+}
+
+function buildTurnSubmissionSnapshot(content: ContentBlock[]): {
+  content: ContentBlock[];
+  recoverable: boolean;
+  nonRecoverableTypes: string[];
+} {
+  const snapshot: ContentBlock[] = [];
+  const nonRecoverableTypes: string[] = [];
+
+  for (const block of content) {
+    if (block.type === 'text') {
+      snapshot.push({ ...block });
+      continue;
+    }
+    if (block.type === 'file_attachment') {
+      const fileBlock = { ...block };
+      delete fileBlock.inlineDataBase64;
+      if (!fileBlock.relativePath) {
+        nonRecoverableTypes.push(block.type);
+        continue;
+      }
+      snapshot.push(fileBlock);
+      continue;
+    }
+    nonRecoverableTypes.push(block.type);
+  }
+
+  return {
+    content: snapshot,
+    recoverable: snapshot.length > 0 && nonRecoverableTypes.length === 0,
+    nonRecoverableTypes,
+  };
+}
+
+interface QueuedPromptItem {
+  turnId: string;
+  prompt: string;
+  content?: ContentBlock[];
+}
+
+interface RecoveredQueuedPromptSnapshot {
+  prompt: string;
+  content?: ContentBlock[];
+  recoverable: boolean;
+  nonRecoverableTypes: string[];
+}
 
 export class SessionManager {
   private db: DatabaseInstance;
@@ -222,8 +384,7 @@ export class SessionManager {
   private mcpManager: MCPManager;
   private pluginRuntimeService?: PluginRuntimeService;
   private activeSessions: Map<string, AbortController> = new Map();
-  private promptQueues: Map<string, Array<{ prompt: string; content?: ContentBlock[] }>> =
-    new Map();
+  private promptQueues: Map<string, QueuedPromptItem[]> = new Map();
   private pendingPermissions: Map<string, (result: PermissionResult) => void> = new Map();
   private pendingSudoPasswords: Map<
     string,
@@ -234,6 +395,8 @@ export class SessionManager {
   private titleGenerationTokens: Map<string, symbol> = new Map();
   private messageCache: Map<string, Message[]> = new Map();
   private static readonly MAX_CACHE_SIZE = 100;
+  private turnJournal = new TurnJournal();
+  private activeTurnJournalIds: Map<string, string> = new Map();
 
   /** Optional Code Buddy engine adapter for in-process execution */
   private engineAdapter?: EngineAdapterLike;
@@ -264,9 +427,20 @@ export class SessionManager {
     this.sendToRenderer = (event) => {
       if (event.type === 'trace.step') {
         this.saveTraceStep(event.payload.sessionId, event.payload.step);
+        this.turnJournal.append(event.payload.sessionId, 'trace_step', {
+          stepId: event.payload.step.id,
+          stepType: event.payload.step.type,
+          status: event.payload.step.status,
+          title: event.payload.step.title,
+          toolName: event.payload.step.toolName,
+        });
       }
       if (event.type === 'trace.update') {
         this.updateTraceStep(event.payload.stepId, event.payload.updates);
+        this.turnJournal.append(event.payload.sessionId, 'trace_update', {
+          stepId: event.payload.stepId,
+          updates: event.payload.updates,
+        });
       }
       sendToRenderer(event);
     };
@@ -636,6 +810,10 @@ export class SessionManager {
       ],
       memoryEnabled,
       model: configStore.get('model') || undefined,
+      pinned: false,
+      archived: false,
+      tags: extractSessionTags(title),
+      source: 'cowork',
       createdAt: now,
       updatedAt: now,
     };
@@ -657,6 +835,10 @@ export class SessionManager {
       project_id: session.projectId ?? null,
       is_background: session.isBackground ? 1 : 0,
       execution_mode: session.executionMode ?? null,
+      pinned: session.pinned ? 1 : 0,
+      archived: session.archived ? 1 : 0,
+      tags: JSON.stringify(session.tags ?? extractSessionTags(session.title)),
+      source: session.source ?? 'cowork',
       created_at: session.createdAt,
       updated_at: session.updatedAt,
     });
@@ -697,6 +879,10 @@ export class SessionManager {
       projectId: row.project_id ?? null,
       isBackground: row.is_background === 1,
       executionMode: (row.execution_mode as 'chat' | 'task' | null) ?? undefined,
+      pinned: row.pinned === 1,
+      archived: row.archived === 1,
+      tags: parseSessionTags(row.tags, row.title),
+      source: row.source ?? 'cowork',
       createdAt: row.created_at,
       updatedAt: row.updated_at,
     };
@@ -737,6 +923,10 @@ export class SessionManager {
         projectId: row.project_id ?? null,
         isBackground: row.is_background === 1,
         executionMode: (row.execution_mode as 'chat' | 'task' | null) ?? undefined,
+        pinned: row.pinned === 1,
+        archived: row.archived === 1,
+        tags: parseSessionTags(row.tags, row.title),
+        source: row.source ?? 'cowork',
         createdAt: row.created_at,
         updatedAt: row.updated_at,
       };
@@ -816,6 +1006,74 @@ export class SessionManager {
     });
   }
 
+  private buildRecallPrefillContext(session: Session, prompt: string): string | null {
+    if (!session.memoryEnabled) {
+      return null;
+    }
+    const memoryStrategy = this.resolveMemoryStrategy(session);
+    if (memoryStrategy === 'manual') {
+      return null;
+    }
+    const recallLimits =
+      memoryStrategy === 'rolling'
+        ? { limit: 8, maxChars: 8_000, perSessionMaxChars: 700 }
+        : { limit: 5, maxChars: 6_000, perSessionMaxChars: 900 };
+    const recall = buildSessionRecallPrefill(prompt, this, {
+      currentSessionId: session.id,
+      cwd: session.cwd,
+      ...recallLimits,
+    });
+    if (!recall.text || recall.entries.length === 0) {
+      return null;
+    }
+    this.sendToRenderer({
+      type: 'trace.step',
+      payload: {
+        sessionId: session.id,
+        step: {
+          id: `session-recall-prefill-${Date.now()}`,
+          type: 'thinking',
+          status: 'completed',
+          title: 'Session recall prefill',
+          content:
+            `${recall.entries.length} prior session(s) matched ` +
+            `from ${recall.totalCandidateCount} candidate(s)` +
+            (recall.truncated ? ' (truncated)' : ''),
+          timestamp: Date.now(),
+        },
+      },
+    });
+    this.turnJournal.append(
+      session.id,
+      'trace_update',
+      {
+        kind: 'session_recall_prefill',
+        entries: recall.entries.map((entry) => ({
+          sessionId: entry.sessionId,
+          score: entry.score,
+          messageIds: entry.messageIds,
+        })),
+        totalCandidateCount: recall.totalCandidateCount,
+        truncated: recall.truncated,
+      },
+      this.activeTurnJournalIds.get(session.id)
+    );
+    return recall.text;
+  }
+
+  private shouldUseAutomatedMemory(session: Session): boolean {
+    return this.resolveMemoryStrategy(session) !== 'manual';
+  }
+
+  private resolveMemoryStrategy(session: Session): 'auto' | 'manual' | 'rolling' {
+    const projectStrategy = session.projectId ? this.projectManager?.get(session.projectId)?.memoryConfig?.memoryStrategy : undefined;
+    if (projectStrategy === 'auto' || projectStrategy === 'manual' || projectStrategy === 'rolling') {
+      return projectStrategy;
+    }
+    const globalStrategy = configStore.get('memoryStrategy');
+    return globalStrategy === 'manual' || globalStrategy === 'rolling' ? globalStrategy : 'auto';
+  }
+
   // Continue an existing session
   async continueSession(
     sessionId: string,
@@ -830,6 +1088,59 @@ export class SessionManager {
     }
 
     this.enqueuePrompt(session, prompt, content);
+  }
+
+  async steerSession(
+    sessionId: string,
+    prompt: string,
+    content?: ContentBlock[],
+    intentId?: string
+  ): Promise<{ delivered: boolean; fallbackQueued: boolean }> {
+    const session = this.loadSession(sessionId);
+    if (!session) {
+      throw new Error(`Session not found: ${sessionId}`);
+    }
+
+    const delivered = Boolean(
+      this.activeSessions.has(sessionId) &&
+        this.agentRunner.steer &&
+        (await this.agentRunner.steer(sessionId, prompt))
+    );
+
+    if (!delivered) {
+      this.enqueuePrompt(session, prompt, content);
+      this.turnJournal.append(session.id, 'steer_fallback_queued', {
+        intentId,
+        promptPreview: prompt.slice(0, 240),
+      });
+      return { delivered: false, fallbackQueued: true };
+    }
+
+    const steerMessage: Message = {
+      id: uuidv4(),
+      sessionId: session.id,
+      role: 'user',
+      content: content && content.length > 0 ? content : [{ type: 'text', text: prompt }],
+      timestamp: Date.now(),
+      metadata: {
+        pendingIntent: {
+          kind: 'steer',
+          status: 'delivered',
+          sourceIntentId: intentId,
+        },
+      },
+    };
+    this.saveMessage(steerMessage);
+    this.turnJournal.append(session.id, 'steer_delivered', {
+      intentId,
+      messageId: steerMessage.id,
+      promptPreview: prompt.slice(0, 240),
+    });
+    this.sendToRenderer({
+      type: 'stream.message',
+      payload: { sessionId: session.id, message: steerMessage },
+    });
+    return { delivered: true, fallbackQueued: false };
   }
 
   async generateSessionTitleFromPrompt(prompt: string): Promise<string> {
@@ -1033,11 +1344,21 @@ export class SessionManager {
   private async processPrompt(
     session: Session,
     prompt: string,
-    content?: ContentBlock[]
+    content?: ContentBlock[],
+    options?: { turnId?: string }
   ): Promise<void> {
-    const traceId = generateTraceId();
+    const traceId = options?.turnId ?? generateTraceId();
     return runWithLogContext({ sessionId: session.id, traceId }, async () => {
       logCtx('[SessionManager] Processing prompt for session:', session.id, 'traceId:', traceId);
+      this.turnJournal.append(
+        session.id,
+        'turn_started',
+        {
+          promptPreview: prompt.slice(0, 240),
+          contentTypes: content?.map((block) => block.type) ?? ['text'],
+        },
+        traceId
+      );
       logCtx(
         '[SessionManager] Received content:',
         content
@@ -1053,6 +1374,7 @@ export class SessionManager {
       // Ensure sandbox is initialized for this workspace
       await this.ensureSandboxInitialized(session);
 
+      this.activeTurnJournalIds.set(session.id, traceId);
       try {
         // Use provided content blocks or fall back to simple text
         let messageContent: ContentBlock[] =
@@ -1100,9 +1422,11 @@ export class SessionManager {
           }
         }
 
+        const useAutomatedMemory = this.shouldUseAutomatedMemory(session);
+
         // Inject project memory context (Claude Cowork parity)
         const projectId = session.projectId ?? this.projectManager?.getActiveId() ?? null;
-        if (projectId && this.projectMemory) {
+        if (useAutomatedMemory && projectId && this.projectMemory) {
           try {
             const projectContext = await this.projectMemory.loadProjectContext(projectId);
             if (projectContext) {
@@ -1115,7 +1439,7 @@ export class SessionManager {
         }
 
         // Query ICM cross-session memory (Claude Cowork parity)
-        if (this.icmIntegration?.isAvailable()) {
+        if (useAutomatedMemory && this.icmIntegration?.isAvailable()) {
           try {
             const memories = await this.icmIntegration.searchRelevantMemories(
               promptForAgent,
@@ -1132,10 +1456,32 @@ export class SessionManager {
           }
         }
 
+        const recallPrefill = this.buildRecallPrefillContext(session, promptForAgent);
+        if (recallPrefill) {
+          enhancedPrompt = `${recallPrefill}\n\n${enhancedPrompt}`;
+          logCtx('[SessionManager] Injected session recall prefill');
+        }
+
         // Save user message to database for persistence
         const existingMessages = this.getMessages(session.id);
+        const userMessageId = uuidv4();
+        const submissionSnapshot = buildTurnSubmissionSnapshot(messageContent);
+        this.turnJournal.append(
+          session.id,
+          'turn_submitted',
+          {
+            messageId: userMessageId,
+            role: 'user',
+            content: submissionSnapshot.content,
+            recoverable: submissionSnapshot.recoverable,
+            nonRecoverableTypes: submissionSnapshot.nonRecoverableTypes,
+            promptPreview: promptForAgent.slice(0, 240),
+            contentTypes: messageContent.map((block) => block.type),
+          },
+          traceId
+        );
         const userMessage: Message = {
-          id: uuidv4(),
+          id: userMessageId,
           sessionId: session.id,
           role: 'user',
           content: messageContent, // Save full content including images and files
@@ -1164,9 +1510,10 @@ export class SessionManager {
 
         // Run the agent
         await this.agentRunner.run(session, enhancedPrompt, messagesForContext);
+        this.turnJournal.append(session.id, 'turn_completed', {}, traceId);
 
         // Store ICM episode for cross-session recall (Claude Cowork parity)
-        if (this.icmIntegration?.isAvailable()) {
+        if (useAutomatedMemory && this.icmIntegration?.isAvailable()) {
           void this.icmIntegration
             .storeEpisode(
               `User asked: ${promptForAgent.slice(0, 500)}`,
@@ -1194,7 +1541,7 @@ export class SessionManager {
         }
 
         // Consolidate project memory asynchronously (Claude Cowork parity)
-        if (projectId && this.projectMemory) {
+        if (useAutomatedMemory && projectId && this.projectMemory) {
           void this.projectMemory
             .consolidateSessionMemory(
               projectId,
@@ -1224,6 +1571,7 @@ export class SessionManager {
       } catch (error) {
         logCtxError('[SessionManager] Error processing prompt:', error);
         const errorText = error instanceof Error ? error.message : 'Unknown error';
+        this.turnJournal.append(session.id, 'turn_failed', { error: errorText }, traceId);
         const alreadyReportedToUser = Boolean(
           error &&
           typeof error === 'object' &&
@@ -1247,6 +1595,8 @@ export class SessionManager {
           type: 'error',
           payload: { message: errorText },
         });
+      } finally {
+        this.activeTurnJournalIds.delete(session.id);
       }
     }); // end runWithLogContext
   }
@@ -1341,10 +1691,38 @@ export class SessionManager {
     );
   }
 
-  private enqueuePrompt(session: Session, prompt: string, content?: ContentBlock[]): void {
+  private enqueuePrompt(
+    session: Session,
+    prompt: string,
+    content?: ContentBlock[],
+    options?: { turnId?: string; recordJournal?: boolean }
+  ): void {
+    const turnId = options?.turnId ?? generateTraceId();
     const queue = this.promptQueues.get(session.id) || [];
-    queue.push({ prompt, content });
+    queue.push({ turnId, prompt, content });
     this.promptQueues.set(session.id, queue);
+    if (options?.recordJournal !== false) {
+      const submissionSnapshot = content ? buildTurnSubmissionSnapshot(content) : null;
+      this.turnJournal.append(
+        session.id,
+        'intent_queued',
+        {
+          turnId,
+          prompt,
+          promptPreview: prompt.slice(0, 240),
+          queueLength: queue.length,
+          contentTypes: content?.map((block) => block.type) ?? ['text'],
+          ...(submissionSnapshot
+            ? {
+                recoverable: submissionSnapshot.recoverable,
+                nonRecoverableTypes: submissionSnapshot.nonRecoverableTypes,
+                contentSnapshot: submissionSnapshot.content,
+              }
+            : {}),
+        },
+        turnId
+      );
+    }
 
     if (!this.activeSessions.has(session.id)) {
       this.processQueue(session).catch((err) => {
@@ -1389,7 +1767,9 @@ export class SessionManager {
             return; // finally handles cleanup
           }
 
-          await this.processPrompt(latestSession, item.prompt, item.content);
+          await this.processPrompt(latestSession, item.prompt, item.content, {
+            turnId: item.turnId,
+          });
 
           if (controller.signal.aborted) return; // finally handles cleanup
         }
@@ -1433,6 +1813,12 @@ export class SessionManager {
   // Stop a running session
   stopSession(sessionId: string): void {
     log('[SessionManager] Stopping session:', sessionId);
+    this.turnJournal.append(
+      sessionId,
+      'cancel_requested',
+      {},
+      this.activeTurnJournalIds.get(sessionId)
+    );
     this.titleGenerationTokens.delete(sessionId);
     this.agentRunner.cancel(sessionId);
     // Cancel any pending sudo password requests for this session
@@ -1475,6 +1861,7 @@ export class SessionManager {
     this.messageCache.delete(sessionId);
     this.sessionTitleAttempts.delete(sessionId);
     this.titleGenerationTokens.delete(sessionId);
+    this.turnJournal.delete(sessionId);
 
     log('[SessionManager] Session deleted:', sessionId);
   }
@@ -1499,6 +1886,7 @@ export class SessionManager {
         this.messageCache.delete(sessionId);
         this.sessionTitleAttempts.delete(sessionId);
         this.titleGenerationTokens.delete(sessionId);
+        this.turnJournal.delete(sessionId);
       }
     })();
 
@@ -1523,6 +1911,10 @@ export class SessionManager {
       executionMode?: 'chat' | 'task';
       isBackground?: boolean;
       title?: string;
+      pinned?: boolean;
+      archived?: boolean;
+      tags?: string[];
+      source?: string;
     }
   ): boolean {
     const existing = this.db.sessions.get(sessionId);
@@ -1536,6 +1928,13 @@ export class SessionManager {
     if (updates.executionMode !== undefined) dbUpdates.execution_mode = updates.executionMode;
     if (updates.isBackground !== undefined) dbUpdates.is_background = updates.isBackground ? 1 : 0;
     if (updates.title !== undefined) dbUpdates.title = updates.title;
+    if (updates.pinned !== undefined) dbUpdates.pinned = updates.pinned ? 1 : 0;
+    if (updates.archived !== undefined) dbUpdates.archived = updates.archived ? 1 : 0;
+    if (updates.tags !== undefined) dbUpdates.tags = JSON.stringify(updates.tags);
+    if (updates.source !== undefined) dbUpdates.source = updates.source;
+    if (updates.title !== undefined && updates.tags === undefined) {
+      dbUpdates.tags = JSON.stringify(extractSessionTags(updates.title));
+    }
 
     if (Object.keys(dbUpdates).length === 0) return true;
 
@@ -1547,6 +1946,13 @@ export class SessionManager {
     if (updates.executionMode !== undefined) rendererUpdates.executionMode = updates.executionMode;
     if (updates.isBackground !== undefined) rendererUpdates.isBackground = updates.isBackground;
     if (updates.title !== undefined) rendererUpdates.title = updates.title;
+    if (updates.pinned !== undefined) rendererUpdates.pinned = updates.pinned;
+    if (updates.archived !== undefined) rendererUpdates.archived = updates.archived;
+    if (updates.tags !== undefined) rendererUpdates.tags = updates.tags;
+    if (updates.source !== undefined) rendererUpdates.source = updates.source;
+    if (updates.title !== undefined && updates.tags === undefined) {
+      rendererUpdates.tags = extractSessionTags(updates.title);
+    }
 
     this.sendToRenderer({
       type: 'session.update',
@@ -1556,16 +1962,91 @@ export class SessionManager {
     return true;
   }
 
+  duplicateSession(sessionId: string): Session | null {
+    const existing = this.loadSession(sessionId);
+    if (!existing) {
+      logWarn('[SessionManager] duplicateSession: unknown session', sessionId);
+      return null;
+    }
+
+    const now = Date.now();
+    const duplicate: Session = {
+      ...existing,
+      id: uuidv4(),
+      title: `${existing.title} copy`,
+      status: 'idle',
+      claudeSessionId: undefined,
+      openaiThreadId: undefined,
+      pinned: false,
+      archived: false,
+      tags: existing.tags ?? extractSessionTags(existing.title),
+      source: existing.source ?? 'cowork',
+      createdAt: now,
+      updatedAt: now,
+    };
+
+    const toolUseIdMap = new Map<string, string>();
+    const turnIdMap = new Map<string, string>();
+    const messages = this.getMessages(sessionId).map((message, index) => ({
+      ...message,
+      id: uuidv4(),
+      sessionId: duplicate.id,
+      content: remapDuplicatedContentBlocks(message.content, toolUseIdMap),
+      metadata: remapDuplicatedMessageMetadata(message.metadata, turnIdMap),
+      timestamp: now + index,
+      localStatus: undefined,
+    }));
+    const traceSteps = this.getTraceSteps(sessionId);
+
+    this.db.raw.transaction(() => {
+      this.saveSession(duplicate);
+      for (const message of messages) {
+        this.db.messages.create({
+          id: message.id,
+          session_id: message.sessionId,
+          role: message.role,
+          content: JSON.stringify(message.content),
+          timestamp: message.timestamp,
+          token_usage: message.tokenUsage ? JSON.stringify(message.tokenUsage) : null,
+          execution_time_ms: message.executionTimeMs ?? null,
+          metadata: message.metadata ? JSON.stringify(message.metadata) : null,
+        });
+      }
+      for (const [index, step] of traceSteps.entries()) {
+        const stepId = toolUseIdMap.get(step.id) ?? uuidv4();
+        this.db.traceSteps.create({
+          id: stepId,
+          session_id: duplicate.id,
+          type: step.type,
+          status: step.status,
+          title: step.title,
+          content: step.content ?? null,
+          tool_name: step.toolName ?? null,
+          tool_input: step.toolInput ? JSON.stringify(step.toolInput) : null,
+          tool_output: step.toolOutput ?? null,
+          is_error: step.isError ? 1 : null,
+          timestamp: now + index,
+          duration: step.duration ?? null,
+        });
+      }
+    })();
+
+    this.messageCache.set(duplicate.id, messages);
+    log('[SessionManager] Duplicated session:', sessionId, '->', duplicate.id);
+    return duplicate;
+  }
+
   private updateSessionTitle(sessionId: string, title: string): boolean {
     const existing = this.db.sessions.get(sessionId);
     if (!existing) {
       log('[SessionTitle] Skip title update for deleted session:', sessionId);
       return false;
     }
-    this.db.sessions.update(sessionId, { title });
+    const tags = extractSessionTags(title);
+    this.db.sessions.update(sessionId, { title, tags: JSON.stringify(tags) });
     this.sendToRenderer({
       type: 'session.update',
-      payload: { sessionId, updates: { title } },
+      payload: { sessionId, updates: { title, tags } },
     });
     return true;
   }
@@ -1606,6 +2087,16 @@ export class SessionManager {
 
   // Save message to database
   saveMessage(message: Message): void {
+    const activeTurnId = this.activeTurnJournalIds.get(message.sessionId);
+    if (activeTurnId && !message.metadata?.turn) {
+      message.metadata = {
+        ...message.metadata,
+        turn: {
+          id: activeTurnId,
+          role: message.role,
+        },
+      };
+    }
     this.db.messages.create({
       id: message.id,
       session_id: message.sessionId,
@@ -1614,6 +2105,7 @@ export class SessionManager {
       timestamp: message.timestamp,
       token_usage: message.tokenUsage ? JSON.stringify(message.tokenUsage) : null,
       execution_time_ms: message.executionTimeMs ?? null,
+      metadata: message.metadata ? JSON.stringify(message.metadata) : null,
     });
     const cached = this.messageCache.get(message.sessionId);
     if (cached) {
@@ -1631,6 +2123,18 @@ export class SessionManager {
     }
 
     log('[SessionManager] Message saved:', message.id, 'role:', message.role);
+    this.turnJournal.append(
+      message.sessionId,
+      'message_saved',
+      {
+        messageId: message.id,
+        role: message.role,
+        contentTypes: message.content.map((block) => block.type),
+        localStatus: message.localStatus,
+        metadata: message.metadata,
+      },
+      this.activeTurnJournalIds.get(message.sessionId)
+    );
   }
 
   // Get messages for a session
@@ -1648,10 +2152,245 @@ export class SessionManager {
       content: this.normalizeContent(row.content),
       timestamp: row.timestamp,
       tokenUsage: row.token_usage ? JSON.parse(row.token_usage) : undefined,
+      metadata: row.metadata ? JSON.parse(row.metadata) : undefined,
       executionTimeMs: row.execution_time_ms ?? undefined,
     }));
     this.messageCache.set(sessionId, messages);
     return [...messages];
+  }
+
+  getTurnJournal(sessionId: string): TurnJournalReadResult {
+    return this.turnJournal.read(sessionId);
+  }
+
+  getMemoryPreview(sessionId: string): SessionMemoryPreview | null {
+    const session = this.loadSession(sessionId);
+    if (!session) return null;
+    const memoryStrategy = this.resolveMemoryStrategy(session);
+    const projectId = session.projectId ?? this.projectManager?.getActiveId() ?? null;
+    const messages = this.getMessages(session.id)
+      .map((message) => ({
+        role: message.role,
+        content:
+          typeof message.content === 'string'
+            ? message.content
+            : message.content
+                .filter((block) => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n'),
+      }))
+      .filter((message) => message.content.trim().length > 0)
+      .slice(-12);
+
+    const projectPreview =
+      projectId && this.projectMemory?.previewProjectMemory
+        ? this.projectMemory.previewProjectMemory(projectId, session.id, messages)
+        : null;
+    const projectContextAvailable = Boolean(
+      projectId && this.projectMemory && this.projectManager?.get(projectId)?.workspacePath
+    );
+    const automatedMemoryEnabled = memoryStrategy !== 'manual';
+    return {
+      sessionId: session.id,
+      projectId,
+      memoryStrategy,
+      automatedMemoryEnabled,
+      projectMemoryAvailable: Boolean(projectPreview?.hasWorkspace),
+      ...(projectPreview?.projectMemoryPath ? { projectMemoryPath: projectPreview.projectMemoryPath } : {}),
+      projectContextAvailable,
+      icmAvailable: Boolean(this.icmIntegration?.isAvailable()),
+      recallEnabled: automatedMemoryEnabled && session.memoryEnabled,
+      candidateCount: projectPreview?.candidateCount ?? 0,
+      candidates: projectPreview?.candidates ?? [],
+    };
+  }
+
+  recoverFromTurnJournals(): {
+    sessionsScanned: number;
+    sessionsChanged: number;
+    injectedJournalUserMessages: number;
+    injectedJournalInterruptionMarkers: number;
+    errors: number;
+  } {
+    let sessionsScanned = 0;
+    let sessionsChanged = 0;
+    let injectedJournalUserMessages = 0;
+    let injectedJournalInterruptionMarkers = 0;
+    let errors = 0;
+
+    for (const session of this.listSessions()) {
+      sessionsScanned += 1;
+      try {
+        const journal = this.getTurnJournal(session.id);
+        if (!journal.exists || journal.totalEventCount === 0) {
+          continue;
+        }
+        this.turnJournal.primeSequenceState(session.id);
+        const result = repairSessionTranscript(session.id, this.getMessages(session.id), journal);
+        if (!result.changed) {
+          continue;
+        }
+        this.replaceMessages(session.id, result.messages);
+        sessionsChanged += 1;
+        injectedJournalUserMessages += result.injectedJournalUserMessages;
+        injectedJournalInterruptionMarkers += result.injectedJournalInterruptionMarkers;
+        const replayRun =
+          journal.replay.runs.find((run) => run.status === 'running') ?? journal.replay.runs[0];
+        this.turnJournal.append(
+          session.id,
+          'trace_update',
+          {
+          kind: 'startup_recovery',
+          injectedJournalUserMessages: result.injectedJournalUserMessages,
+          injectedJournalInterruptionMarkers: result.injectedJournalInterruptionMarkers,
+          removedOrphanToolResults: result.removedOrphanToolResults,
+          injectedSyntheticToolResults: result.injectedSyntheticToolResults,
+          removedEmptyMessages: result.removedEmptyMessages,
+            replayRunId: replayRun?.runId,
+            replayTurnId: replayRun?.turnId,
+            replayStatus: replayRun?.status,
+            replayEventCount: replayRun?.eventCount ?? 0,
+            replayAnchorCount: replayRun?.anchorCount ?? 0,
+            replayLatestType: replayRun?.latestType,
+            replayTerminalType: replayRun?.terminalEvent?.type,
+            replayAnchorIds: replayRun?.anchors.slice(0, 8).map((anchor) => anchor.eventId) ?? [],
+          },
+          replayRun?.turnId,
+          replayRun ? { runId: replayRun.runId } : undefined
+        );
+      } catch (error) {
+        errors += 1;
+        logWarn('[SessionManager] Turn journal startup recovery failed:', error);
+      }
+    }
+
+    return {
+      sessionsScanned,
+      sessionsChanged,
+      injectedJournalUserMessages,
+      injectedJournalInterruptionMarkers,
+      errors,
+    };
+  }
+
+  recoverQueuedPromptsFromTurnJournals(): {
+    sessionsScanned: number;
+    sessionsChanged: number;
+    recoveredQueuedPrompts: number;
+    skippedQueuedPrompts: number;
+    errors: number;
+  } {
+    let sessionsScanned = 0;
+    let sessionsChanged = 0;
+    let recoveredQueuedPrompts = 0;
+    let skippedQueuedPrompts = 0;
+    let errors = 0;
+
+    for (const session of this.listSessions()) {
+      sessionsScanned += 1;
+      try {
+        const journal = this.getTurnJournal(session.id);
+        if (!journal.exists || journal.totalEventCount === 0) {
+          continue;
+        }
+
+        this.turnJournal.primeSequenceState(session.id);
+
+        const recoverableQueuedPrompts = this.getRecoverableQueuedPromptEvents(journal);
+        if (recoverableQueuedPrompts.length === 0) {
+          continue;
+        }
+
+        const queue = this.promptQueues.get(session.id) ?? [];
+        for (const event of recoverableQueuedPrompts) {
+          const snapshot = this.readQueuedPromptSnapshot(event.data);
+          if (!snapshot || !snapshot.recoverable) {
+            skippedQueuedPrompts += 1;
+            continue;
+          }
+
+          queue.push({
+            turnId: event.turnId ?? event.runId ?? generateTraceId(),
+            prompt: snapshot.prompt,
+            content: snapshot.content,
+          });
+          recoveredQueuedPrompts += 1;
+        }
+
+        if (queue.length === 0) {
+          continue;
+        }
+
+        this.promptQueues.set(session.id, queue);
+        sessionsChanged += 1;
+        if (!this.activeSessions.has(session.id)) {
+          this.processQueue(session).catch((err) => {
+            logError('[SessionManager] Queue recovery processing error:', err);
+          });
+        }
+      } catch (error) {
+        errors += 1;
+        logWarn('[SessionManager] Turn journal queued prompt recovery failed:', error);
+      }
+    }
+
+    return {
+      sessionsScanned,
+      sessionsChanged,
+      recoveredQueuedPrompts,
+      skippedQueuedPrompts,
+      errors,
+    };
+  }
+
+  private getRecoverableQueuedPromptEvents(journal: TurnJournalReadResult): Array<{
+    turnId?: string;
+    runId?: string;
+    data?: Record<string, unknown>;
+    ts: number;
+    seq?: number;
+    eventId?: string;
+  }> {
+    const startedTurnIds = new Set(
+      journal.replay.runs.flatMap((run) =>
+        run.events
+          .filter((event) => event.type === 'turn_started' && typeof event.turnId === 'string')
+          .map((event) => event.turnId as string)
+      )
+    );
+
+    return journal.replay.runs
+      .flatMap((run) => run.events)
+      .filter(
+        (event) =>
+          event.type === 'intent_queued' &&
+          typeof event.turnId === 'string' &&
+          !startedTurnIds.has(event.turnId)
+      )
+      .sort((a, b) => {
+        if (a.ts !== b.ts) return a.ts - b.ts;
+        const aSeq = typeof a.seq === 'number' ? a.seq : Number.MAX_SAFE_INTEGER;
+        const bSeq = typeof b.seq === 'number' ? b.seq : Number.MAX_SAFE_INTEGER;
+        if (aSeq !== bSeq) return aSeq - bSeq;
+        return (a.eventId ?? '').localeCompare(b.eventId ?? '');
+      });
+  }
+
+  private readQueuedPromptSnapshot(data?: Record<string, unknown>): RecoveredQueuedPromptSnapshot | null {
+    if (!data) return null;
+    const prompt = typeof data.prompt === 'string' ? data.prompt : null;
+    if (!prompt) return null;
+    const content = Array.isArray(data.contentSnapshot)
+      ? (data.contentSnapshot as ContentBlock[])
+      : undefined;
+    return {
+      prompt,
+      content,
+      recoverable: data.recoverable !== false,
+      nonRecoverableTypes: Array.isArray(data.nonRecoverableTypes)
+        ? data.nonRecoverableTypes.filter((value): value is string => typeof value === 'string')
+        : [],
+    };
   }
 
   replaceMessages(sessionId: string, messages: Message[]): void {
@@ -1671,6 +2410,7 @@ export class SessionManager {
           timestamp: message.timestamp,
           token_usage: message.tokenUsage ? JSON.stringify(message.tokenUsage) : null,
           execution_time_ms: message.executionTimeMs ?? null,
+          metadata: message.metadata ? JSON.stringify(message.metadata) : null,
         });
       }
     });

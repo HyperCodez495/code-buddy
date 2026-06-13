@@ -55,6 +55,11 @@ export {
 } from './additional-providers.js';
 export type { ProviderConfig as AdditionalProviderConfig } from './additional-providers.js';
 
+// Hermes-style runtime provider catalog and auxiliary provider routing
+export * from './provider-catalog.js';
+export * from './provider-fallback.js';
+export * from './auxiliary-provider.js';
+
 // Fallback chain
 export {
   ProviderFallbackChain,

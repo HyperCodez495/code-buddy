@@ -4,19 +4,23 @@ This file stores persistent memory for the Code Buddy agent.
 It is automatically managed but can be manually edited.
 
 ## Project Context
-<!-- Key information about this project -->
+<!-- No memories in this category -->
 
 ## User Preferences
-<!-- Coding style, conventions, preferences -->
+<!-- No memories in this category -->
 
 ## Decisions
-<!-- Important architectural or design decisions -->
+<!-- No memories in this category -->
 
 ## Patterns
-<!-- Code patterns and conventions used -->
+- **codebuddy-memory-probe**: Code Buddy connector self-test: the validation token is cb-probe-mq9uuu95. Please remember this exact token.
+- **fk**: fv
+
+## Context
+- **test-key**: test-value
 
 ## Custom
-<!-- User-defined memories -->
+<!-- No memories in this category -->
 
 ---
-*Last updated: 2026-03-28T21:10:41.031Z*
+*Last updated: 2026-06-11T20:32:59.469Z*

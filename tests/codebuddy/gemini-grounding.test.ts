@@ -185,6 +185,13 @@ describe('GeminiNativeProvider buildGeminiBody — googleSearch flag', () => {
     expect(gen.responseMimeType).toBe('application/json');
   });
 
+  it('uses per-call maxTokens for generationConfig.maxOutputTokens', () => {
+    const provider = makeProvider(false);
+    const body = callBuild(provider, aFewMessages, undefined, { maxTokens: 1234 });
+    const gen = body.generationConfig as Record<string, unknown>;
+    expect(gen.maxOutputTokens).toBe(1234);
+  });
+
   it('setDefaultGoogleSearch toggles the default mid-flight', () => {
     const provider = makeProvider(false);
     expect(callBuild(provider, aFewMessages).tools).toBeUndefined();

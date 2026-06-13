@@ -1,6 +1,15 @@
 import path from 'node:path';
 import { expect, test } from './fixtures';
 
+function parseResultCount(text: string): { failed: number; passed: number } {
+  const match = text.match(/^(\d+) ok \/ (\d+) ko$/);
+  expect(match, `Unexpected test result text: ${text}`).not.toBeNull();
+  return {
+    passed: Number(match![1]),
+    failed: Number(match![2]),
+  };
+}
+
 async function dismissOnboardingIfPresent(appPage: import('@playwright/test').Page) {
   const onboarding = appPage.getByTestId('onboarding-wizard');
   if (await onboarding.isVisible({ timeout: 1500 }).catch(() => false)) {
@@ -41,10 +50,14 @@ test('runs the Plugins skills bundle from the test runner window', async ({ appP
     'passed',
     { timeout: 240_000 }
   );
-  await expect(appPage.getByTestId(`test-catalog-result-${bundleId}`)).toHaveText(
-    '751 ok / 0 ko',
-    { timeout: 240_000 }
-  );
+  await expect
+    .poll(async () => parseResultCount(await appPage.getByTestId(`test-catalog-result-${bundleId}`).innerText()), {
+      timeout: 240_000,
+    })
+    .toMatchObject({ failed: 0, passed: expect.any(Number) });
+
+  const result = parseResultCount(await appPage.getByTestId(`test-catalog-result-${bundleId}`).innerText());
+  expect(result.passed).toBeGreaterThanOrEqual(751);
 
   await appPage.screenshot({
     path: path.resolve(

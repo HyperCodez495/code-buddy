@@ -287,6 +287,7 @@ export class ChatGptResponsesProvider implements Provider {
       input,
       tools,
       reasoningEffort,
+      maxTokens: opts.maxTokens,
       promptCacheKey: this.promptCacheKey,
       // Only ask for encrypted reasoning when reasoning effort is set —
       // saves bandwidth on plain Q&A turns.
@@ -602,6 +603,11 @@ interface BuildRequestBodyOpts {
   input: ResponsesInputItem[];
   tools: CodeBuddyTool[];
   reasoningEffort?: string;
+  /**
+   * Accepted for Provider interface parity, but deliberately not serialized:
+   * the ChatGPT Codex backend rejects `max_output_tokens` with 400.
+   */
+  maxTokens?: number;
   promptCacheKey?: string;
   /** When true, ask the backend to emit encrypted reasoning blobs so we
    *  can re-inject them next turn (preserves chain-of-thought across

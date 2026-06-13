@@ -449,13 +449,13 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
     patchFormat: 'full_file',
     promptProfile: 'lite',
   },
-  // Gemma 4 (Ollama, e2b/e4b) — local lightweight model. Same lite
-  // profile as qwen/llama: minimal SP, no tool_calls advertised,
-  // chat-only base prompt to avoid JSON hallucination on small models.
+  // Gemma 4 (Ollama, e2b/e4b) — local model with tool support. Keep the
+  // lite prompt/tool profile, but do not gate off tool calls: real `buddy goal`
+  // smoke with gemma4:12b only succeeds when the selected tools are preserved.
   {
     model: 'gemma4*',
     supportsReasoning: false,
-    supportsToolCalls: false,
+    supportsToolCalls: true,
     supportsVision: false,
     contextWindow: 8192,
     maxOutputTokens: 2048,

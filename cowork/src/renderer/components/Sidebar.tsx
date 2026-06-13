@@ -20,6 +20,9 @@ import {
   Bot,
   Eye,
   Download,
+  Pin,
+  Archive,
+  Copy,
 } from 'lucide-react';
 import type { Session } from '../types';
 import { ExportDialog } from './ExportDialog';
@@ -51,6 +54,8 @@ export function Sidebar() {
   const {
     deleteSession,
     batchDeleteSessions,
+    duplicateSession,
+    updateSessionSettings,
     getSessionMessages,
     getSessionTraceSteps,
     isElectron,
@@ -60,6 +65,7 @@ export function Sidebar() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showArchived, setShowArchived] = useState(false);
   // Phase 2 step 16: session export dialog
   const [exportSessionId, setExportSessionId] = useState<string | null>(null);
   const [exportSessionTitle, setExportSessionTitle] = useState<string | undefined>(undefined);
@@ -83,13 +89,26 @@ export function Sidebar() {
     const projectScoped = activeProjectId
       ? sessions.filter((session) => session.projectId === activeProjectId)
       : sessions;
+    const archiveScoped = showArchived
+      ? projectScoped
+      : projectScoped.filter((session) => !session.archived);
     return normalizedQuery
-      ? projectScoped.filter((session) => session.title.toLowerCase().includes(normalizedQuery))
-      : projectScoped;
-  }, [sessions, normalizedQuery, activeProjectId]);
+      ? archiveScoped.filter((session) => {
+          const tags = session.tags?.join(' ') ?? '';
+          return `${session.title} ${tags}`.toLowerCase().includes(normalizedQuery);
+        })
+      : archiveScoped;
+  }, [sessions, normalizedQuery, activeProjectId, showArchived]);
 
   const groupedSessions = useMemo(
-    () => groupSessionsByDate(filteredSessions, t),
+    () =>
+      groupSessionsByDate(filteredSessions, {
+        pinned: t('sidebar.pinned', 'Pinned'),
+        today: t('sidebar.today'),
+        yesterday: t('sidebar.yesterday'),
+        previousWeek: t('sidebar.previousWeek'),
+        older: t('sidebar.older'),
+      }),
     [filteredSessions, t]
   );
 
@@ -229,6 +248,25 @@ export function Sidebar() {
     deleteSession(sessionId);
   };
 
+  const handleTogglePinned = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    void updateSessionSettings(session.id, { pinned: !session.pinned });
+  };
+
+  const handleToggleArchived = (e: React.MouseEvent, session: Session) => {
+    e.stopPropagation();
+    void updateSessionSettings(session.id, { archived: !session.archived });
+  };
+
+  const handleDuplicateSession = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    const duplicate = await duplicateSession(sessionId);
+    if (duplicate) {
+      setActiveSession(duplicate.id);
+      setShowSettings(false);
+    }
+  };
+
   const toggleTheme = () => {
     const next =
       settings.theme === 'dark' ? 'light' : settings.theme === 'light' ? 'system' : 'dark';
@@ -336,7 +374,7 @@ export function Sidebar() {
           <ProjectSelector />
         </div>
 
-        {sessions.length > 0 && (
+          {sessions.length > 0 && (
           <div className="mt-2 flex items-center gap-2">
             <div className="relative flex-1 min-w-0">
               <SearchIcon className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-text-muted" />
@@ -348,6 +386,17 @@ export function Sidebar() {
                 className="w-full rounded-xl border border-transparent bg-background/50 pl-9 pr-3 py-2 text-[13px] text-text-primary placeholder:text-text-muted focus:outline-none focus:border-border focus:bg-background transition-colors"
               />
             </div>
+            <button
+              onClick={() => setShowArchived((value) => !value)}
+              className={`w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-colors ${
+                showArchived
+                  ? 'bg-accent-muted/20 text-accent'
+                  : 'text-text-secondary hover:text-text-primary hover:bg-surface-hover'
+              }`}
+              title={t('sidebar.showArchived', 'Show archived sessions')}
+            >
+              <Archive className="w-3.5 h-3.5" />
+            </button>
             <button
               onClick={() => {
                 if (isSelectMode) {
@@ -434,11 +483,60 @@ export function Sidebar() {
                               )}
                               <span className="truncate">{session.title}</span>
                             </div>
+                            {session.tags?.length ? (
+                              <div className="mt-0.5 flex min-w-0 gap-1 overflow-hidden">
+                                {session.tags.slice(0, 3).map((tag) => (
+                                  <span
+                                    key={tag}
+                                    className="shrink-0 rounded bg-background/70 px-1 py-0.5 text-[10px] leading-none text-text-muted"
+                                  >
+                                    #{tag}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : null}
                           </div>
                         </div>
 
                         {!isSelectMode && hoveredSession === session.id && (
                           <div className="absolute right-1.5 top-1/2 -translate-y-1/2 flex items-center gap-0.5">
+                            <button
+                              onClick={(e) => handleTogglePinned(e, session)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                                session.pinned
+                                  ? 'text-warning bg-warning/10'
+                                  : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+                              }`}
+                              title={
+                                session.pinned
+                                  ? t('sidebar.unpinSession', 'Unpin session')
+                                  : t('sidebar.pinSession', 'Pin session')
+                              }
+                            >
+                              <Pin className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => void handleDuplicateSession(e, session.id)}
+                              className="w-6 h-6 rounded-lg flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-active transition-colors"
+                              title={t('sidebar.duplicateSession', 'Duplicate session')}
+                            >
+                              <Copy className="w-3 h-3" />
+                            </button>
+                            <button
+                              onClick={(e) => handleToggleArchived(e, session)}
+                              className={`w-6 h-6 rounded-lg flex items-center justify-center transition-colors ${
+                                session.archived
+                                  ? 'text-accent bg-accent-muted/10'
+                                  : 'text-text-muted hover:text-text-primary hover:bg-surface-active'
+                              }`}
+                              title={
+                                session.archived
+                                  ? t('sidebar.unarchiveSession', 'Unarchive session')
+                                  : t('sidebar.archiveSession', 'Archive session')
+                              }
+                            >
+                              <Archive className="w-3 h-3" />
+                            </button>
                             <button
                               onClick={(e) => {
                                 e.stopPropagation();
@@ -568,32 +666,46 @@ export function Sidebar() {
   );
 }
 
-function groupSessionsByDate(sessions: Session[], t: (key: string) => string): SessionGroup[] {
+function groupSessionsByDate(
+  sessions: Session[],
+  labels: {
+    pinned: string;
+    today: string;
+    yesterday: string;
+    previousWeek: string;
+    older: string;
+  }
+): SessionGroup[] {
   const now = new Date();
   const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
   const startOfYesterday = startOfToday - 86_400_000;
   const startOfPreviousWeek = startOfToday - 7 * 86_400_000;
 
   const buckets: SessionGroup[] = [
-    { key: 'today', label: t('sidebar.today'), sessions: [] },
-    { key: 'yesterday', label: t('sidebar.yesterday'), sessions: [] },
-    { key: 'previousWeek', label: t('sidebar.previousWeek'), sessions: [] },
-    { key: 'older', label: t('sidebar.older'), sessions: [] },
+    { key: 'pinned', label: labels.pinned, sessions: [] },
+    { key: 'today', label: labels.today, sessions: [] },
+    { key: 'yesterday', label: labels.yesterday, sessions: [] },
+    { key: 'previousWeek', label: labels.previousWeek, sessions: [] },
+    { key: 'older', label: labels.older, sessions: [] },
   ];
 
   const sortedSessions = [...sessions].sort(
     (a, b) => (b.updatedAt || b.createdAt) - (a.updatedAt || a.createdAt)
   );
   for (const session of sortedSessions) {
+    if (session.pinned) {
+      buckets[0].sessions.push(session);
+      continue;
+    }
     const timestamp = session.updatedAt || session.createdAt;
     if (timestamp >= startOfToday) {
-      buckets[0].sessions.push(session);
-    } else if (timestamp >= startOfYesterday) {
       buckets[1].sessions.push(session);
-    } else if (timestamp >= startOfPreviousWeek) {
+    } else if (timestamp >= startOfYesterday) {
       buckets[2].sessions.push(session);
-    } else {
+    } else if (timestamp >= startOfPreviousWeek) {
       buckets[3].sessions.push(session);
+    } else {
+      buckets[4].sessions.push(session);
     }
   }
 

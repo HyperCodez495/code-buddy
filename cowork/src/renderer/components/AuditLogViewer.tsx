@@ -86,6 +86,28 @@ interface AuditRunSearchResponse {
   results: AuditRunSearchResult[];
 }
 
+interface AuditArtifactIndexDoctorStatus {
+  schemaVersion: 1;
+  generatedAt: string;
+  kind: 'artifact_index_doctor_status';
+  status: 'healthy' | 'attention' | 'unavailable';
+  unavailable: boolean;
+  totalRows: number;
+  healthyRows: number;
+  staleRows: number;
+  orphanedRows: number;
+  rows: Array<{
+    runId: string;
+    artifact: string;
+    reason: 'missing_run' | 'missing_artifact';
+  }>;
+  recommendations: string[];
+  repairCommands: {
+    staleOnly: string;
+    includeOrphans: string;
+  };
+}
+
 interface AuditRunRecallPackResponse extends AuditRunSearchResponse {
   filters: AuditRunSearchResponse['filters'] & {
     maxMemories: number;
@@ -626,6 +648,18 @@ export function AuditLogViewer() {
     useState<AuditMobilePairingAcceptancePlanResponse | null>(null);
   const [mobileApprovalQueuePreview, setMobileApprovalQueuePreview] =
     useState<AuditMobileApprovalQueueResponse | null>(null);
+  const [artifactIndexDoctorStatus, setArtifactIndexDoctorStatus] =
+    useState<AuditArtifactIndexDoctorStatus | null>(null);
+
+  const loadArtifactIndexDoctorStatus = useCallback(async () => {
+    if (!window.electronAPI?.audit?.getArtifactIndexDoctorStatus) return;
+    try {
+      const status = await window.electronAPI.audit.getArtifactIndexDoctorStatus();
+      setArtifactIndexDoctorStatus(status as AuditArtifactIndexDoctorStatus);
+    } catch {
+      setArtifactIndexDoctorStatus(null);
+    }
+  }, []);
 
   const load = useCallback(async () => {
     if (!window.electronAPI?.audit?.listRuns) {
@@ -695,6 +729,10 @@ export function AuditLogViewer() {
   useEffect(() => {
     void load();
   }, [load]);
+
+  useEffect(() => {
+    void loadArtifactIndexDoctorStatus();
+  }, [loadArtifactIndexDoctorStatus]);
 
   const handleToggleRow = useCallback(
     async (runId: string) => {
@@ -1527,7 +1565,10 @@ export function AuditLogViewer() {
               : t('audit.copyMobileApprovalQueue', 'Copy approval queue')}
           </button>
           <button
-            onClick={() => void load()}
+            onClick={() => {
+              void load();
+              void loadArtifactIndexDoctorStatus();
+            }}
             disabled={isLoading}
             className="flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-md bg-surface border border-border text-text-primary hover:bg-surface-hover disabled:opacity-50 transition-colors"
           >
@@ -1548,6 +1589,66 @@ export function AuditLogViewer() {
           </button>
         </div>
       </div>
+
+      {artifactIndexDoctorStatus && (
+        <div
+          className={[
+            'flex flex-wrap items-start justify-between gap-3 rounded-md border px-3 py-2 text-xs',
+            artifactIndexDoctorStatus.status === 'healthy'
+              ? 'border-success/30 bg-success/10 text-text-primary'
+              : artifactIndexDoctorStatus.status === 'attention'
+                ? 'border-warning/30 bg-warning/10 text-text-primary'
+                : 'border-error/30 bg-error/10 text-text-primary',
+          ].join(' ')}
+          aria-label={t('audit.artifactIndexDoctorTitle', 'Artifact index doctor')}
+        >
+          <div className="flex min-w-[260px] flex-1 items-start gap-2">
+            {artifactIndexDoctorStatus.status === 'healthy' ? (
+              <Check size={14} className="mt-0.5 shrink-0 text-success" />
+            ) : (
+              <AlertCircle
+                size={14}
+                className={[
+                  'mt-0.5 shrink-0',
+                  artifactIndexDoctorStatus.status === 'attention' ? 'text-warning' : 'text-error',
+                ].join(' ')}
+              />
+            )}
+            <div className="space-y-1">
+              <div className="font-medium text-text-primary">
+                {t('audit.artifactIndexDoctorLabel', 'Artifact index')}: {' '}
+                {artifactIndexDoctorStatus.status === 'healthy'
+                  ? t('audit.artifactIndexHealthy', 'healthy')
+                  : artifactIndexDoctorStatus.status === 'attention'
+                    ? t('audit.artifactIndexAttention', 'attention')
+                    : t('audit.artifactIndexUnavailable', 'unavailable')}
+              </div>
+              <div className="text-text-muted">
+                {t('audit.artifactIndexRowsLabel', 'Rows')}: {formatAppNumber(artifactIndexDoctorStatus.totalRows)}
+                {' · '}
+                {t('audit.artifactIndexStaleLabel', 'stale')}: {formatAppNumber(artifactIndexDoctorStatus.staleRows)}
+                {' · '}
+                {t('audit.artifactIndexOrphanedLabel', 'orphaned')}: {formatAppNumber(artifactIndexDoctorStatus.orphanedRows)}
+              </div>
+              {artifactIndexDoctorStatus.recommendations[0] && (
+                <div className="text-text-muted">{artifactIndexDoctorStatus.recommendations[0]}</div>
+              )}
+            </div>
+          </div>
+          {artifactIndexDoctorStatus.status !== 'healthy' && (
+            <div className="flex flex-wrap gap-2 text-[11px] text-text-muted">
+              <code className="rounded bg-surface px-2 py-1 text-text-primary">
+                {artifactIndexDoctorStatus.repairCommands.staleOnly}
+              </code>
+              {artifactIndexDoctorStatus.orphanedRows > 0 && (
+                <code className="rounded bg-surface px-2 py-1 text-text-primary">
+                  {artifactIndexDoctorStatus.repairCommands.includeOrphans}
+                </code>
+              )}
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="flex flex-wrap items-center gap-2 text-xs">
         <select

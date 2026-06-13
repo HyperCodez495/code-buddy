@@ -4,6 +4,13 @@
 
 import { PluginMarketplace, getPluginMarketplace, resetPluginMarketplace } from '../src/plugins/marketplace';
 
+async function flushAsyncInitialization(): Promise<void> {
+  for (let i = 0; i < 5; i++) {
+    await Promise.resolve();
+  }
+  await new Promise<void>(resolve => setImmediate(resolve));
+}
+
 // Mock dependencies
 jest.mock('fs-extra', () => {
   const impl = {
@@ -50,6 +57,19 @@ describe('PluginMarketplace', () => {
       });
       expect(m).toBeDefined();
       await m.dispose();
+    });
+
+    it('should not start update checker after immediate dispose', async () => {
+      const m = new PluginMarketplace({
+        autoUpdate: true,
+        checkUpdatesInterval: 60_000,
+      });
+      const timerState = m as unknown as { updateCheckerIntervalId: ReturnType<typeof setInterval> | null };
+
+      await m.dispose();
+      await flushAsyncInitialization();
+
+      expect(timerState.updateCheckerIntervalId).toBeNull();
     });
   });
 

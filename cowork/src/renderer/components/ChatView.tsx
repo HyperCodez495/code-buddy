@@ -7,6 +7,7 @@ import {
   useActivePartialContent,
   useActiveTurn,
   usePendingTurns,
+  useActiveQueuedIntents,
   useActiveExecutionClock,
   useAppConfig,
 } from '../store/selectors';
@@ -53,7 +54,20 @@ import {
   CHAT_COMPOSER_INSERT_EVENT,
   type ChatComposerInsertDetail,
 } from '../utils/chat-composer-events';
-import { Send, Square, Plus, Loader2, Plug, X, Clock, Eye, FileSearch } from 'lucide-react';
+import {
+  Send,
+  Square,
+  Plus,
+  Loader2,
+  Plug,
+  X,
+  Clock,
+  Eye,
+  FileSearch,
+  Target,
+  Pencil,
+  Trash2,
+} from 'lucide-react';
 
 function toScheduleCreateInput(
   input: {
@@ -95,6 +109,7 @@ export function ChatView() {
   const { partialMessage, partialThinking } = useActivePartialContent();
   const activeTurn = useActiveTurn();
   const pendingTurns = usePendingTurns();
+  const queuedIntents = useActiveQueuedIntents();
   const executionClock = useActiveExecutionClock();
   const appConfig = useAppConfig();
   const permissionMode = usePermissionMode();
@@ -105,10 +120,12 @@ export function ChatView() {
   const setShowSettings = useAppStore((s) => s.setShowSettings);
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const setScheduleDraft = useAppStore((s) => s.setScheduleDraft);
+  const removeQueuedIntent = useAppStore((s) => s.removeQueuedIntent);
   const focusedMessageTarget = useAppStore((s) => s.focusedMessageTarget);
   const clearFocusedMessageTarget = useAppStore((s) => s.clearFocusedMessageTarget);
-  const { continueSession, stopSession, isElectron } = useIPC();
+  const { continueSession, steerSession, stopSession, isElectron } = useIPC();
   const [prompt, setPrompt] = useState('');
+  const [goalComposerActive, setGoalComposerActive] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [activeConnectors, setActiveConnectors] = useState<
     { id: string; name: string; connected: boolean; toolCount: number }[]
@@ -159,6 +176,8 @@ export function ChatView() {
     () => attachedFiles.some(hasDocumentWorkshopAttachment) && prompt.trim().length === 0,
     [attachedFiles, prompt]
   );
+  const goalComposerDisabled =
+    pastedImages.length > 0 || attachedFiles.length > 0 || isSubmitting || !activeSessionId;
 
   const displayedMessages = useMemo(() => {
     if (!activeSessionId) return messages;
@@ -409,6 +428,12 @@ export function ChatView() {
     textareaRef.current?.focus();
   }, [activeSessionId]);
 
+  useEffect(() => {
+    if (goalComposerActive && (pastedImages.length > 0 || attachedFiles.length > 0)) {
+      setGoalComposerActive(false);
+    }
+  }, [attachedFiles.length, goalComposerActive, pastedImages.length]);
+
   // Phase 3 step 3: fetch vision capability when model changes
   useEffect(() => {
     const model = activeSession?.model || appConfig?.model;
@@ -616,6 +641,44 @@ export function ChatView() {
       textareaRef.current.setSelectionRange(end, end);
     }
   }, [documentWorkshopPrompt]);
+
+  const setComposerText = useCallback((text: string) => {
+    setPrompt(text);
+    requestAnimationFrame(() => {
+      const textarea = textareaRef.current;
+      if (!textarea) return;
+      textarea.value = text;
+      textarea.focus();
+      textarea.setSelectionRange(text.length, text.length);
+    });
+  }, []);
+
+  const handleEditQueuedIntent = useCallback(
+    (intentId: string, text: string) => {
+      if (!activeSessionId) return;
+      removeQueuedIntent(activeSessionId, intentId);
+      setComposerText(text);
+    },
+    [activeSessionId, removeQueuedIntent, setComposerText]
+  );
+
+  const handleSteerQueuedIntent = useCallback(
+    async (intentId: string) => {
+      if (!activeSessionId) return;
+      const intent = queuedIntents.find((item) => item.id === intentId);
+      if (!intent) return;
+      removeQueuedIntent(activeSessionId, intentId);
+      const result = await steerSession(activeSessionId, intent.content, intent.id);
+      if (!result.delivered && !result.fallbackQueued) {
+        useAppStore.getState().enqueueQueuedIntent({
+          ...intent,
+          source: 'leftover_steer',
+          updatedAt: Date.now(),
+        });
+      }
+    },
+    [activeSessionId, queuedIntents, removeQueuedIntent, steerSession]
+  );
 
   const handleFileSelect = async () => {
     if (!isElectron || !window.electronAPI) {
@@ -829,6 +892,35 @@ export function ChatView() {
             continueSession(activeSessionId, [{ type: 'text', text: p }]),
         });
         if (handledLocally) {
+          setPrompt('');
+          if (textareaRef.current) {
+            textareaRef.current.value = '';
+          }
+          return;
+        }
+      }
+
+      if (
+        goalComposerActive &&
+        pastedImages.length === 0 &&
+        attachedFiles.length === 0 &&
+        !isSlashInput &&
+        window.electronAPI?.command?.execute
+      ) {
+        const args = trimmedPrompt.split(/\s+/).filter(Boolean);
+        const result = await window.electronAPI.command.execute(
+          'goal',
+          args,
+          activeSessionId ?? undefined
+        );
+        const handledLocally = applySlashCommandResult(result, {
+          commandName: 'goal',
+          activeSessionId: activeSessionId ?? null,
+          continueWithPrompt: (p) =>
+            continueSession(activeSessionId, [{ type: 'text', text: p }]),
+        });
+        if (handledLocally) {
+          setGoalComposerActive(false);
           setPrompt('');
           if (textareaRef.current) {
             textareaRef.current.value = '';
@@ -1208,6 +1300,53 @@ export function ChatView() {
               </div>
             )}
 
+            {queuedIntents.length > 0 && (
+              <div
+                className="mb-3 space-y-1.5"
+                data-testid="chat-queued-intents"
+                aria-label={t('chat.queuedIntents', 'Queued messages')}
+              >
+                {queuedIntents.map((intent) => (
+                  <div
+                    key={intent.id}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-surface/70 px-3 py-2"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs text-text-secondary">
+                        {intent.prompt || t('chat.queuedAttachmentIntent', 'Attachment message')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => removeQueuedIntent(intent.sessionId, intent.id)}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-error hover:bg-error/10 transition-colors"
+                      title={t('common.delete', 'Delete')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleEditQueuedIntent(intent.id, intent.prompt)}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                      title={t('common.edit', 'Edit')}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void handleSteerQueuedIntent(intent.id)}
+                      disabled={!hasActiveTurn && !isSessionRunning}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title={t('chat.steerQueuedIntent', 'Steer current run')}
+                    >
+                      <Target className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
             {/* Phase 2 step 17: inline memory editor */}
             {showMemoryEditor && (
               <div className="mb-3">
@@ -1228,6 +1367,29 @@ export function ChatView() {
                 title={t('welcome.attachFiles')}
               >
                 <Plus className="w-5 h-5" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  if (!goalComposerDisabled) setGoalComposerActive((active) => !active);
+                }}
+                disabled={goalComposerDisabled}
+                data-testid="chat-goal-mode-toggle"
+                aria-pressed={goalComposerActive}
+                className={`h-9 min-w-9 rounded-2xl inline-flex items-center justify-center gap-1.5 px-2.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
+                  goalComposerActive
+                    ? 'border border-accent/35 bg-accent/10 text-accent hover:bg-accent/15'
+                    : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
+                }`}
+                title={
+                  goalComposerActive
+                    ? t('goalMode.composerActiveTitle', 'Goal mode active')
+                    : t('goalMode.composerToggleTitle', 'Send as a standing goal')
+                }
+              >
+                <Target className="w-4 h-4" />
+                <span className="hidden sm:inline">{t('goalMode.composerLabel', 'Goal')}</span>
               </button>
 
               <textarea
@@ -1294,7 +1456,11 @@ export function ChatView() {
                     handleSubmit();
                   }
                 }}
-                placeholder={t('chat.typeMessage')}
+                placeholder={
+                  goalComposerActive
+                    ? t('goalMode.promptPlaceholder', 'Describe the standing goal')
+                    : t('chat.typeMessage')
+                }
                 disabled={isSubmitting}
                 rows={1}
                 className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
@@ -1324,7 +1490,11 @@ export function ChatView() {
                     type="button"
                     onClick={handleStop}
                     className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
-                    title={t('chat.stop')}
+                    title={
+                      queuedIntents.length > 0
+                        ? t('chat.stopAndSendQueued', 'Stop and send queued message')
+                        : t('chat.stop')
+                    }
                   >
                     <Square className="w-4 h-4" />
                   </button>

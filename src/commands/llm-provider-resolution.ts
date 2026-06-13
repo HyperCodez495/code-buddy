@@ -6,16 +6,21 @@
  * provider + the `PROVIDERS` map (paid keys), so a machine running on
  * local Ollama (`CODEBUDDY_PROVIDER=ollama`, $0) hit the "no API key"
  * exit even though the rest of Code Buddy — including the autonomous
- * daemon — runs fine there. This resolver keeps the legacy path first
- * (backward compatible) and falls back to {@link detectProviderFromEnv}
- * (ollama / chatgpt-oauth / env-detected providers) when either:
+ * daemon — runs fine there. This resolver keeps the legacy path for
+ * ambient paid-key defaults, but honors explicit local / ChatGPT
+ * subscription model choices before a cloud key can hijack them. It
+ * falls back to {@link detectProviderFromEnv} (ollama / chatgpt-oauth /
+ * env-detected providers) when either:
  *   - `CODEBUDDY_PROVIDER` is explicitly set (operator intent wins), or
  *   - the legacy path found no key.
  */
 
 import { getSettingsManager } from '../utils/settings-manager.js';
 import { detectProviderFromEnv } from '../utils/provider-detector.js';
-import { PROVIDERS } from './provider.js';
+import { inferProvider } from '../config/resolve-model.js';
+import { hasCodexCredentials } from '../providers/codex-oauth.js';
+import { resolveProviderFromCatalog } from '../providers/provider-catalog.js';
+import { PROVIDERS, resolveProviderCommandKey } from './provider.js';
 
 export interface ResolvedCommandProvider {
   apiKey: string;
@@ -28,50 +33,58 @@ export interface ResolvedCommandProvider {
 export function resolveCommandProvider(
   options: { explicitModel?: string } = {},
 ): ResolvedCommandProvider | null {
+  const settingsManager = getSettingsManager();
+  const settings = settingsManager.loadUserSettings();
+  const configuredModel = options.explicitModel || settingsManager.getCurrentModel();
   const detectFirst = Boolean(process.env.CODEBUDDY_PROVIDER);
   if (detectFirst) {
     const detected = fromEnvDetection(options.explicitModel);
     if (detected) return detected;
   }
 
-  const settingsManager = getSettingsManager();
-  const settings = settingsManager.loadUserSettings();
-  const currentProviderKey = settings.provider || 'grok';
-  const providerInfo = PROVIDERS[currentProviderKey];
+  const explicitLocal = resolveExplicitOllamaModel(configuredModel);
+  if (explicitLocal) return explicitLocal;
 
-  let apiKey = process.env[providerInfo?.envVar || ''] || '';
-  if (!apiKey && currentProviderKey === 'grok') apiKey = process.env.XAI_API_KEY || '';
-  if (!apiKey && currentProviderKey === 'gemini') apiKey = process.env.GOOGLE_API_KEY || '';
-  if (!apiKey) {
-    apiKey =
-      process.env.GROK_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      process.env.GOOGLE_API_KEY ||
-      '';
+  const explicitChatGpt = resolveExplicitChatGptModel(configuredModel);
+  if (explicitChatGpt) return explicitChatGpt;
+
+  const currentProviderKey = settings.provider || 'grok';
+  const providerInfoKey = resolveProviderCommandKey(currentProviderKey) || currentProviderKey;
+  const providerInfo = PROVIDERS[providerInfoKey];
+
+  if (providerInfo) {
+    const configuredProvider = resolveProviderFromCatalog({
+      providerOverride: providerInfo.providerId,
+      hasChatGptOAuth: hasCodexCredentials(),
+      requireConfigured: providerInfo.authMode === 'api-key',
+    });
+
+    if (configuredProvider) {
+      return {
+        apiKey: configuredProvider.apiKey,
+        baseURL: configuredProvider.baseURL,
+        model: configuredModel || configuredProvider.defaultModel,
+        providerLabel: configuredProvider.provider,
+      };
+    }
   }
 
-  if (apiKey) {
-    const providerEnvBaseURL: Record<string, string | undefined> = {
-      grok: process.env.GROK_BASE_URL,
-      claude: process.env.ANTHROPIC_BASE_URL,
-      openai: process.env.OPENAI_BASE_URL,
-      gemini: process.env.GEMINI_BASE_URL,
-    };
+  const ambientProvider = resolveProviderFromCatalog({
+    hasChatGptOAuth: hasCodexCredentials(),
+    requireConfigured: true,
+  });
+  if (ambientProvider) {
     return {
-      apiKey,
-      baseURL: providerEnvBaseURL[currentProviderKey] || providerInfo?.baseURL,
-      model:
-        options.explicitModel ||
-        settingsManager.getCurrentModel() ||
-        providerInfo?.defaultModel,
-      providerLabel: providerInfo?.name || currentProviderKey,
+      apiKey: ambientProvider.apiKey,
+      baseURL: ambientProvider.baseURL,
+      model: configuredModel || ambientProvider.defaultModel,
+      providerLabel: ambientProvider.provider,
     };
   }
 
   // Legacy path found nothing — fall back to env detection (local
   // Ollama, ChatGPT OAuth, …) so a $0 local machine can still run.
-  return fromEnvDetection(options.explicitModel);
+  return fromEnvDetection(configuredModel);
 }
 
 function fromEnvDetection(explicitModel?: string): ResolvedCommandProvider | null {
@@ -83,4 +96,52 @@ function fromEnvDetection(explicitModel?: string): ResolvedCommandProvider | nul
     model: explicitModel || detected.defaultModel,
     providerLabel: detected.provider,
   };
+}
+
+function resolveExplicitOllamaModel(explicitModel: string | undefined): ResolvedCommandProvider | null {
+  const model = explicitModel?.trim();
+  if (!model || !isLocalOllamaModel(model)) return null;
+
+  let host = process.env.OLLAMA_HOST || 'http://localhost:11434';
+  if (!/^https?:\/\//i.test(host)) host = `http://${host}`;
+  if (!host.endsWith('/v1')) host = host.replace(/\/+$/, '') + '/v1';
+
+  return {
+    apiKey: 'ollama',
+    baseURL: host,
+    model,
+    providerLabel: 'ollama',
+  };
+}
+
+function isLocalOllamaModel(model: string): boolean {
+  const normalized = model.trim().toLowerCase();
+  return inferProvider(normalized) === 'ollama' || normalized.startsWith('devstral-small-2');
+}
+
+function resolveExplicitChatGptModel(explicitModel: string | undefined): ResolvedCommandProvider | null {
+  const model = explicitModel?.trim();
+  if (!model || !isChatGptSubscriptionModel(model)) return null;
+
+  const detected = detectProviderFromEnv();
+  if (detected?.provider !== 'chatgpt') return null;
+
+  return {
+    apiKey: detected.apiKey,
+    baseURL: detected.baseURL,
+    model,
+    providerLabel: detected.provider,
+  };
+}
+
+function isChatGptSubscriptionModel(model: string): boolean {
+  const m = model.trim().toLowerCase();
+  return (
+    m === 'gpt-5.2' ||
+    m === 'gpt-5.5' ||
+    m.startsWith('gpt-5.5-') ||
+    m.includes('-codex') ||
+    m === 'codex-1' ||
+    m.startsWith('codex-mini')
+  );
 }

@@ -5,17 +5,19 @@
 
 // Mock dependencies before imports
 
-import { MCPManager, MCPTool } from '../../src/mcp/client';
+import { MCPTool } from '../../src/mcp/client';
 import { loadMCPConfig } from '../../src/mcp/config';
 import { CodeBuddyTool } from '../../src/codebuddy/client';
 
 jest.mock('../../src/mcp/client', () => ({
-  MCPManager: jest.fn().mockImplementation(function() { return {
-    getTools: jest.fn().mockReturnValue([]),
-    addServer: jest.fn().mockResolvedValue(undefined),
-    ensureServersInitialized: jest.fn().mockResolvedValue(undefined),
-    callTool: jest.fn().mockResolvedValue({ isError: false, content: [] }),
-  }; }),
+  MCPManager: jest.fn().mockImplementation(function () {
+    return {
+      getTools: jest.fn().mockReturnValue([]),
+      addServer: jest.fn().mockResolvedValue(undefined),
+      ensureServersInitialized: jest.fn().mockResolvedValue(undefined),
+      callTool: jest.fn().mockResolvedValue({ isError: false, content: [] }),
+    };
+  }),
   MCPTool: jest.fn(),
 }));
 
@@ -109,7 +111,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('should include core tools', () => {
-      const toolNames = ALL_TOOLS.map(t => t.function.name);
+      const toolNames = ALL_TOOLS.map((t) => t.function.name);
 
       expect(toolNames).toContain('view_file');
       expect(toolNames).toContain('create_file');
@@ -118,20 +120,20 @@ describe('ALL_TOOLS', () => {
     });
 
     it('should include search tools', () => {
-      const toolNames = ALL_TOOLS.map(t => t.function.name);
+      const toolNames = ALL_TOOLS.map((t) => t.function.name);
 
       expect(toolNames).toContain('search');
     });
 
     it('should include todo tools', () => {
-      const toolNames = ALL_TOOLS.map(t => t.function.name);
+      const toolNames = ALL_TOOLS.map((t) => t.function.name);
 
       expect(toolNames).toContain('create_todo_list');
       expect(toolNames).toContain('update_todo_list');
     });
 
     it('should include web tools', () => {
-      const toolNames = ALL_TOOLS.map(t => t.function.name);
+      const toolNames = ALL_TOOLS.map((t) => t.function.name);
 
       expect(toolNames).toContain('web_search');
       expect(toolNames).toContain('web_fetch');
@@ -153,7 +155,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('should have unique tool names', () => {
-      const toolNames = ALL_TOOLS.map(t => t.function.name);
+      const toolNames = ALL_TOOLS.map((t) => t.function.name);
       const uniqueNames = new Set(toolNames);
 
       expect(uniqueNames.size).toBe(toolNames.length);
@@ -162,7 +164,7 @@ describe('ALL_TOOLS', () => {
 
   describe('Tool Parameters', () => {
     it('view_file should have path parameter', () => {
-      const viewFile = ALL_TOOLS.find(t => t.function.name === 'view_file');
+      const viewFile = ALL_TOOLS.find((t) => t.function.name === 'view_file');
 
       expect(viewFile).toBeDefined();
       expect(viewFile!.function.parameters.properties.path).toBeDefined();
@@ -170,7 +172,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('create_file should have path and content parameters', () => {
-      const createFile = ALL_TOOLS.find(t => t.function.name === 'create_file');
+      const createFile = ALL_TOOLS.find((t) => t.function.name === 'create_file');
 
       expect(createFile).toBeDefined();
       expect(createFile!.function.parameters.properties.path).toBeDefined();
@@ -180,7 +182,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('str_replace_editor should have path, old_str, and new_str parameters', () => {
-      const strReplace = ALL_TOOLS.find(t => t.function.name === 'str_replace_editor');
+      const strReplace = ALL_TOOLS.find((t) => t.function.name === 'str_replace_editor');
 
       expect(strReplace).toBeDefined();
       expect(strReplace!.function.parameters.properties.path).toBeDefined();
@@ -192,7 +194,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('bash should have command parameter', () => {
-      const bash = ALL_TOOLS.find(t => t.function.name === 'bash');
+      const bash = ALL_TOOLS.find((t) => t.function.name === 'bash');
 
       expect(bash).toBeDefined();
       expect(bash!.function.parameters.properties.command).toBeDefined();
@@ -200,7 +202,7 @@ describe('ALL_TOOLS', () => {
     });
 
     it('search should have query parameter', () => {
-      const search = ALL_TOOLS.find(t => t.function.name === 'search');
+      const search = ALL_TOOLS.find((t) => t.function.name === 'search');
 
       expect(search).toBeDefined();
       expect(search!.function.parameters.properties.query).toBeDefined();
@@ -238,9 +240,7 @@ describe('MCP Integration', () => {
 
     it('should handle server initialization errors gracefully', async () => {
       (loadMCPConfig as jest.Mock).mockReturnValue({
-        servers: [
-          { name: 'test-server', command: 'test' },
-        ],
+        servers: [{ name: 'test-server', command: 'test' }],
       });
 
       const manager = getMCPManager();
@@ -367,7 +367,7 @@ describe('MCP Integration', () => {
       const result = addMCPToolsToCodeBuddyTools(baseTools);
 
       expect(result.length).toBe(baseTools.length + mockMCPTools.length);
-      expect(result.some(t => t.function.name === 'mcp__test__tool1')).toBe(true);
+      expect(result.some((t) => t.function.name === 'mcp__test__tool1')).toBe(true);
     });
   });
 
@@ -405,13 +405,17 @@ describe('MCP Integration', () => {
     // are absent for the entire run.
     describe('headless MCP init race', () => {
       const prevHeadless = process.env.CODEBUDDY_HEADLESS;
+      const prevDisableMcp = process.env.CODEBUDDY_DISABLE_MCP;
       afterEach(() => {
         if (prevHeadless === undefined) delete process.env.CODEBUDDY_HEADLESS;
         else process.env.CODEBUDDY_HEADLESS = prevHeadless;
+        if (prevDisableMcp === undefined) delete process.env.CODEBUDDY_DISABLE_MCP;
+        else process.env.CODEBUDDY_DISABLE_MCP = prevDisableMcp;
       });
 
       it('awaits MCP server initialization when CODEBUDDY_HEADLESS=true', async () => {
         process.env.CODEBUDDY_HEADLESS = 'true';
+        delete process.env.CODEBUDDY_DISABLE_MCP;
         const manager = getMCPManager();
 
         let initialized = false;
@@ -424,7 +428,7 @@ describe('MCP Integration', () => {
                 initialized = true;
                 resolve();
               }, 0);
-            }),
+            })
         );
 
         await getAllCodeBuddyTools();
@@ -435,6 +439,7 @@ describe('MCP Integration', () => {
 
       it('does not block on MCP init when not headless (fire-and-forget)', async () => {
         delete process.env.CODEBUDDY_HEADLESS;
+        delete process.env.CODEBUDDY_DISABLE_MCP;
         const manager = getMCPManager();
 
         let initialized = false;
@@ -445,7 +450,7 @@ describe('MCP Integration', () => {
                 initialized = true;
                 resolve();
               }, 0);
-            }),
+            })
         );
 
         await getAllCodeBuddyTools();
@@ -453,6 +458,17 @@ describe('MCP Integration', () => {
         // Interactive mode must not block on a slow MCP server: the deferred
         // init has not resolved yet when tools are returned.
         expect(initialized).toBe(false);
+      });
+
+      it('does not initialize MCP servers when CODEBUDDY_DISABLE_MCP=true', async () => {
+        process.env.CODEBUDDY_HEADLESS = 'true';
+        process.env.CODEBUDDY_DISABLE_MCP = 'true';
+        const manager = getMCPManager();
+        (manager.ensureServersInitialized as jest.Mock).mockClear();
+
+        await getAllCodeBuddyTools();
+
+        expect(manager.ensureServersInitialized).not.toHaveBeenCalled();
       });
     });
   });
@@ -567,7 +583,7 @@ describe('Morph Integration', () => {
   it('should not include edit_file when MORPH_API_KEY is not set', () => {
     delete process.env.MORPH_API_KEY;
 
-    const toolNames = ALL_TOOLS.map(t => t.function.name);
+    const toolNames = ALL_TOOLS.map((t) => t.function.name);
 
     expect(toolNames.length).toBeGreaterThan(0);
   });
@@ -595,7 +611,7 @@ describe('Tool Description Quality', () => {
 
 describe('Error Handling', () => {
   it('should handle MCP initialization errors', async () => {
-    (loadMCPConfig as jest.Mock).mockImplementation(function() {
+    (loadMCPConfig as jest.Mock).mockImplementation(function () {
       throw new Error('Config file not found');
     });
 
@@ -632,9 +648,7 @@ describe('Performance', () => {
       'Commit changes',
     ];
 
-    const results = await Promise.all(
-      queries.map(q => getRelevantTools(q))
-    );
+    const results = await Promise.all(queries.map((q) => getRelevantTools(q)));
 
     expect(results.length).toBe(5);
     for (const result of results) {

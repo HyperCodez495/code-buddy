@@ -59,7 +59,9 @@ describe("OSSandbox", () => {
       const capabilities = await detectCapabilities();
       const platform = os.platform();
 
-      if (platform === "linux" && capabilities.bubblewrap) {
+      if (platform === "linux" && capabilities.landlock && capabilities.bubblewrap) {
+        expect(capabilities.recommended).toBe("landlock");
+      } else if (platform === "linux" && capabilities.bubblewrap) {
         expect(capabilities.recommended).toBe("bubblewrap");
       } else if (platform === "darwin" && capabilities.seatbelt) {
         expect(capabilities.recommended).toBe("seatbelt");
@@ -79,7 +81,7 @@ describe("OSSandbox", () => {
       await sandbox.initialize();
       const backend = sandbox.getBackend();
 
-      expect(["bubblewrap", "seatbelt", "docker", "none"]).toContain(backend);
+      expect(["landlock", "bubblewrap", "seatbelt", "docker", "none"]).toContain(backend);
     });
 
     it("should report availability status", async () => {

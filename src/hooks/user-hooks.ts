@@ -300,6 +300,8 @@ export class UserHooksManager {
 
       const child = spawn(shell, [shellFlag, expandedCommand], {
         stdio: ['pipe', 'pipe', 'pipe'],
+        detached: !isWindows,
+        windowsHide: true,
         env: {
           ...process.env,
           TOOL_NAME: context.toolName ?? '',
@@ -316,13 +318,23 @@ export class UserHooksManager {
 
       const timer = setTimeout(() => {
         timedOut = true;
-        child.kill('SIGTERM');
+        if (!isWindows && child.pid) {
+          try {
+            process.kill(-child.pid, 'SIGTERM');
+          } catch {
+            child.kill('SIGTERM');
+          }
+        } else {
+          child.kill('SIGTERM');
+        }
       }, timeout);
 
       // Write context JSON to stdin
+      child.stdin.on('error', (err: Error) => {
+        logger.debug(`[user-hooks] command stdin closed: ${err.message}`);
+      });
       try {
-        child.stdin.write(JSON.stringify({ event, ...context }));
-        child.stdin.end();
+        child.stdin.end(JSON.stringify({ event, ...context }));
       } catch {
         // stdin may already be closed
       }

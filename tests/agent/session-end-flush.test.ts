@@ -15,12 +15,20 @@ const { mockIsFeatureEnabled, mockProposeLessons } = vi.hoisted(() => ({
   mockProposeLessons: vi.fn().mockResolvedValue([]),
 }));
 
+const { mockProposeMemories } = vi.hoisted(() => ({
+  mockProposeMemories: vi.fn().mockResolvedValue([]),
+}));
+
 vi.mock('../../src/config/feature-flags.js', () => ({
   isFeatureEnabled: mockIsFeatureEnabled,
 }));
 
 vi.mock('../../src/agent/lesson-auto-proposer.js', () => ({
   proposeLessonsFromSession: mockProposeLessons,
+}));
+
+vi.mock('../../src/memory/memory-auto-proposer.js', () => ({
+  proposeMemoryCandidatesFromSession: mockProposeMemories,
 }));
 
 import {
@@ -66,6 +74,7 @@ describe('session-end-flush (WS3-T1)', () => {
     resetSessionEndFlushState();
     mockIsFeatureEnabled.mockReturnValue(true);
     mockProposeLessons.mockResolvedValue([]);
+    mockProposeMemories.mockResolvedValue([]);
   });
 
   afterEach(() => {
@@ -168,6 +177,7 @@ describe('session-end-flush (WS3-T1)', () => {
       const result = await runSessionEndFlush({ chatHistory: richSession(), workDir });
       expect(result.skipped).toBe('disabled');
       expect(mockProposeLessons).not.toHaveBeenCalled();
+      expect(mockProposeMemories).not.toHaveBeenCalled();
     });
 
     it('no-ops on trivial sessions without calling the LLM proposer', async () => {
@@ -177,26 +187,31 @@ describe('session-end-flush (WS3-T1)', () => {
       });
       expect(result.skipped).toBe('trivial');
       expect(mockProposeLessons).not.toHaveBeenCalled();
+      expect(mockProposeMemories).not.toHaveBeenCalled();
     });
 
-    it('writes the handoff and reports proposed lesson candidates', async () => {
+    it('writes the handoff and reports proposed lesson and memory candidates', async () => {
       mockProposeLessons.mockResolvedValue([{ id: 'lc-1' }, { id: 'lc-2' }]);
+      mockProposeMemories.mockResolvedValue([{ id: 'mc-1' }]);
       const history = richSession();
 
       const result = await runSessionEndFlush({ chatHistory: history, workDir, sessionId: 'sess-1' });
 
       expect(result.skipped).toBeUndefined();
       expect(result.proposedLessons).toBe(2);
+      expect(result.proposedMemories).toBe(1);
       expect(result.openRisks).toHaveLength(1);
       expect(result.handoffPath).toBeDefined();
       expect(readFileSync(result.handoffPath!, 'utf8')).toContain('sess-1');
       expect(mockProposeLessons).toHaveBeenCalledWith(history, workDir, undefined);
+      expect(mockProposeMemories).toHaveBeenCalledWith(history, workDir, undefined, 'sess-1');
     });
 
     it('survives a failing lesson proposer and still writes the handoff', async () => {
       mockProposeLessons.mockRejectedValue(new Error('no provider'));
       const result = await runSessionEndFlush({ chatHistory: richSession(), workDir });
       expect(result.proposedLessons).toBe(0);
+      expect(result.proposedMemories).toBe(0);
       expect(result.handoffPath).toBeDefined();
     });
   });

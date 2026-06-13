@@ -1,5 +1,5 @@
 {
-  "detectedAt": "2026-06-09T14:32:34.561Z",
+  "detectedAt": "2026-06-11T09:31:47.947Z",
   "languages": [
     "TypeScript",
     "JavaScript"
@@ -26,7 +26,7 @@
     ]
   },
   "contextPack": "Language: TypeScript, JavaScript | Framework: Ink (terminal UI) | Package manager: npm | Commands: test=\"npm run test\", lint=\"npm run lint\", format=\"npm run format\", build=\"npm run build\", typecheck=\"npm run typecheck\", validate=\"npm run validate\" | Dirs: src=src, tests=tests, docs=docs | Naming: camelCase (JS/TS)",
-  "_configMtime": 1781015343165.5117,
+  "_configMtime": 1781166737657.4424,
   "name": "@phuetz/code-buddy",
   "description": "Open-source multi-provider AI coding agent for the terminal. Supports Grok, Claude, ChatGPT, Gemini, Ollama and LM Studio with 52+ tools, multi-channel messaging, skills system, and Enterprise-grade architecture.",
   "moduleType": "esm",
@@ -57,18 +57,18 @@
   "cartography": {
     "fileStats": {
       "byExtension": {
-        ".ts": 2882,
+        ".ts": 2910,
         ".js": 27,
         ".cs": 1,
         ".tsx": 49
       },
       "locEstimate": {
-        "TypeScript": 996685,
+        "TypeScript": 1003509,
         "JavaScript": 319,
         "C#": 685
       },
-      "totalSourceFiles": 1843,
-      "totalTestFiles": 1116,
+      "totalSourceFiles": 1856,
+      "totalTestFiles": 1131,
       "largestFiles": [
         {
           "path": "src/agent/autonomous/agentic-coding-runner.ts",
@@ -100,15 +100,15 @@
         },
         {
           "path": "src/index.ts",
-          "lines": 2728
+          "lines": 2774
         },
         {
           "path": "src/skills/hub.ts",
-          "lines": 2932
+          "lines": 3034
         },
         {
-          "path": "src/agent/codebuddy-agent.ts",
-          "lines": 1872
+          "path": "src/openclaw/gateway-bridge.ts",
+          "lines": 2628
         }
       ]
     },
@@ -117,7 +117,7 @@
         {
           "name": "Agent core",
           "directory": "src/agent",
-          "fileCount": 248
+          "fileCount": 250
         },
         {
           "name": "Tool implementations",
@@ -127,7 +127,7 @@
         {
           "name": "Command handlers",
           "directory": "src/commands",
-          "fileCount": 125
+          "fileCount": 128
         },
         {
           "name": "Utilities",
@@ -195,14 +195,14 @@
           "fileCount": 25
         },
         {
-          "name": "Provider adapters",
-          "directory": "src/providers",
+          "name": "fleet",
+          "directory": "src/fleet",
           "fileCount": 22
         },
         {
-          "name": "fleet",
-          "directory": "src/fleet",
-          "fileCount": 21
+          "name": "Provider adapters",
+          "directory": "src/providers",
+          "fileCount": 22
         },
         {
           "name": "Observability",
@@ -242,7 +242,7 @@
         {
           "name": "daemon",
           "directory": "src/daemon",
-          "fileCount": 14
+          "fileCount": 15
         },
         {
           "name": "analytics",
@@ -362,6 +362,11 @@
         {
           "name": "Gateway",
           "directory": "src/gateway",
+          "fileCount": 6
+        },
+        {
+          "name": "goals",
+          "directory": "src/goals",
           "fileCount": 6
         },
         {
@@ -652,7 +657,7 @@
       "hotModules": [
         {
           "module": "src/utils/logger",
-          "importedBy": 588
+          "importedBy": 595
         },
         {
           "module": "src/types",
@@ -660,19 +665,19 @@
         },
         {
           "module": "src/codebuddy/client",
-          "importedBy": 92
+          "importedBy": 97
         },
         {
           "module": "src/tools/registry/types",
           "importedBy": 51
         },
         {
-          "module": "src/services/vfs/unified-vfs-router",
+          "module": "src/agent/codebuddy-agent",
           "importedBy": 46
         },
         {
-          "module": "src/agent/codebuddy-agent",
-          "importedBy": 45
+          "module": "src/services/vfs/unified-vfs-router",
+          "importedBy": 46
         },
         {
           "module": "src/codebuddy/tool-definitions/types",
@@ -688,11 +693,11 @@
         },
         {
           "module": "src/commands/handlers/branch-handlers",
-          "importedBy": 30
+          "importedBy": 31
         },
         {
           "module": "src/utils/confirmation-service",
-          "importedBy": 24
+          "importedBy": 25
         },
         {
           "module": "src/ui/context/theme-context",
@@ -700,14 +705,14 @@
         },
         {
           "module": "src/observability/run-store",
-          "importedBy": 19
+          "importedBy": 20
         },
         {
           "module": "src/plugins/types",
           "importedBy": 17
         },
         {
-          "module": "src/utils/settings-manager",
+          "module": "src/agent/types",
           "importedBy": 15
         }
       ],
@@ -735,6 +740,10 @@
         {
           "a": "src/knowledge/knowledge-graph",
           "b": "src/knowledge/graph-pagerank"
+        },
+        {
+          "a": "src/daemon/autonomous-loop",
+          "b": "src/daemon/colab-goal"
         },
         {
           "a": "src/events/typed-emitter",
@@ -1687,6 +1696,7 @@
         "MiddlewarePipeline",
         "QualityGateMiddleware",
         "ReasoningMiddleware",
+        "SessionDurationMiddleware",
         "ToolFilterMiddleware",
         "TurnLimitMiddleware",
         "types",
@@ -2420,6 +2430,11 @@
           "priority": 35
         },
         {
+          "name": "SessionDurationMiddleware",
+          "file": "src/agent/middleware/session-duration.ts",
+          "priority": 35
+        },
+        {
           "name": "ReasoningMiddleware",
           "file": "src/agent/middleware/reasoning-middleware.ts",
           "priority": 42
@@ -2492,8 +2507,8 @@
             "VerificationEnforcementMiddleware",
             "ToolExecutionOrchestrator",
             "AutoObservationMiddleware",
-            "ContextWarningMiddleware",
-            "AdvancedParallelExecutor"
+            "SessionDurationMiddleware",
+            "ContextWarningMiddleware"
           ]
         },
         {
@@ -2844,6 +2859,16 @@
             "SessionManager",
             "GatewayServer",
             "AgentRegistry"
+          ]
+        },
+        {
+          "module": "goals",
+          "exports": [
+            "GoalManager",
+            "GoalStore",
+            "CONTINUATION_PROMPT_WITH_SUBGOALS_TEMPLATE",
+            "JUDGE_USER_PROMPT_WITH_SUBGOALS_TEMPLATE",
+            "MAX_CONSECUTIVE_PARSE_FAILURES"
           ]
         },
         {

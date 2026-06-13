@@ -1107,6 +1107,41 @@ describe('Native Engine CLI Commands', () => {
       expect(getLogOutput()).toContain('Added task task-1');
     });
 
+    it('passes goal-mode max turns as a strict positive integer', async () => {
+      await program.parseAsync([
+        'node', 'test', 'autonomy', 'tasks', 'add', 'Goal task',
+        '--goal-mode',
+        '--goal-max-turns', '7',
+      ]);
+      expect(mockColabStore.addTask).toHaveBeenCalledWith(expect.objectContaining({
+        title: 'Goal task',
+        goalMode: true,
+        goalMaxTurns: 7,
+      }));
+    });
+
+    it('rejects invalid goal-mode max turns before addTask can truncate them', async () => {
+      await program.parseAsync([
+        'node', 'test', 'autonomy', 'tasks', 'add', 'Bad goal task',
+        '--goal-mode',
+        '--goal-max-turns', '1.5',
+      ]);
+      expect(getErrorOutput()).toContain('--goal-max-turns must be a positive integer');
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(mockColabStore.addTask).not.toHaveBeenCalled();
+    });
+
+    it('rejects unsafe goal-mode max turns before addTask can round them', async () => {
+      await program.parseAsync([
+        'node', 'test', 'autonomy', 'tasks', 'add', 'Huge goal task',
+        '--goal-mode',
+        '--goal-max-turns', '9007199254740992',
+      ]);
+      expect(getErrorOutput()).toContain('--goal-max-turns must be a positive integer');
+      expect(processExitSpy).toHaveBeenCalledWith(1);
+      expect(mockColabStore.addTask).not.toHaveBeenCalled();
+    });
+
     it('creates a swarm graph (workers → verifier → synthesizer)', async () => {
       await program.parseAsync(['node', 'test', 'autonomy', 'swarm', 'find bugs', '--worker', 'scan a', '--worker', 'scan b']);
       expect(mockCreateSwarm).toHaveBeenCalledWith(expect.anything(), expect.objectContaining({

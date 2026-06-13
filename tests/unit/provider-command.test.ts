@@ -86,6 +86,8 @@ describe('Provider Command', () => {
       expect(output).toContain('Claude');
       expect(output).toContain('ChatGPT');
       expect(output).toContain('Gemini');
+      expect(output).toContain('Kimi');
+      expect(output).toContain('Hugging Face');
     });
 
     it('should show environment variable names', () => {
@@ -98,6 +100,22 @@ describe('Provider Command', () => {
       expect(output).toContain('OPENAI_API_KEY');
       expect(output).toContain('CODEBUDDY_CHATGPT_OAUTH');
       expect(output).toContain('GOOGLE_API_KEY');
+      expect(output).toContain('KIMI_API_KEY');
+      expect(output).toContain('HF_TOKEN');
+    });
+
+    it('should list plugin-native providers separately', () => {
+      command.parse(['list'], { from: 'user' });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+
+      expect(output).toContain('Plugin-native providers');
+      expect(output).toContain('Azure OpenAI');
+      expect(output).toContain('AWS Bedrock');
+      expect(output).toContain('GitHub Copilot');
+      expect(output).toContain('bundled-azure-openai');
+      expect(output).toContain('bundled-bedrock');
+      expect(output).toContain('bundled-copilot');
     });
   });
 
@@ -144,6 +162,23 @@ describe('Provider Command', () => {
       const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
       expect(output).toContain('Active provider set to');
     });
+
+    it('should accept Hermes-style provider aliases', () => {
+      command.parse(['set', 'kimi'], { from: 'user' });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(output).toContain('Active provider set to: Kimi');
+    });
+
+    it('should reject plugin-native providers in the direct provider setter', () => {
+      expect(() => {
+        command.parse(['set', 'azure'], { from: 'user' });
+      }).toThrow();
+
+      expect(loggerErrorSpy).toHaveBeenCalled();
+      const errorOutput = loggerErrorSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+      expect(errorOutput).toContain('Unknown provider: azure');
+    });
   });
 
   describe('models command', () => {
@@ -172,6 +207,15 @@ describe('Provider Command', () => {
 
       expect(output).toContain('Models for ChatGPT (OAuth)');
       expect(output).toContain('gpt-5.5');
+    });
+
+    it('should list models for Hermes-style provider aliases', () => {
+      command.parse(['models', 'glm'], { from: 'user' });
+
+      const output = consoleLogSpy.mock.calls.map((c) => c.join(' ')).join('\n');
+
+      expect(output).toContain('Models for z.ai / GLM');
+      expect(output).toContain('glm-5');
     });
 
     it('should reject unknown provider', () => {
@@ -203,7 +247,7 @@ describe('Provider Configuration', () => {
 
   describe('Environment Variables', () => {
     it('should recognize standard env vars', () => {
-      for (const [provider, envVar] of Object.entries(PROVIDER_KEYS)) {
+      for (const envVar of Object.values(PROVIDER_KEYS)) {
         expect(envVar).toBeDefined();
         expect(typeof envVar).toBe('string');
       }
@@ -220,7 +264,7 @@ describe('Provider Configuration', () => {
     };
 
     it('should have models for each provider', () => {
-      for (const [provider, models] of Object.entries(PROVIDER_MODELS)) {
+      for (const models of Object.values(PROVIDER_MODELS)) {
         expect(models.length).toBeGreaterThan(0);
       }
     });

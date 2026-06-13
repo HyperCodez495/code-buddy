@@ -32,6 +32,7 @@ interface EngineAdapter {
     options?: Record<string, unknown>
   ): Promise<{ content: string; tokenCount?: number; toolCallCount?: number }>;
   cancel(sessionId: string): void;
+  steer?(sessionId: string, prompt: string): boolean | Promise<boolean>;
   clearSession(sessionId: string): void;
 }
 
@@ -58,6 +59,10 @@ interface EngineStreamEvent {
     total: number;
     completed: number;
     message?: string;
+  };
+  steer?: {
+    content: string;
+    source: string;
   };
   diffPreview?: { turnId: number; diffs: Array<Record<string, unknown>>; plan?: string };
 }
@@ -373,6 +378,25 @@ export class CodeBuddyEngineRunner {
               }
               break;
 
+            case 'steer':
+              if (event.steer) {
+                sendToRenderer({
+                  type: 'trace.step',
+                  payload: {
+                    sessionId: session.id,
+                    step: {
+                      id: `steer_${Date.now()}`,
+                      type: 'thinking',
+                      status: 'completed',
+                      title: 'Guidance received',
+                      content: event.steer.content,
+                      timestamp: Date.now(),
+                    },
+                  },
+                } as ServerEvent);
+              }
+              break;
+
             case 'done':
               sendToRenderer({
                 type: 'stream.done',
@@ -520,6 +544,10 @@ export class CodeBuddyEngineRunner {
     result.push({ role: 'user', content: currentPrompt });
 
     return result;
+  }
+
+  async steer(sessionId: string, prompt: string): Promise<boolean> {
+    return Boolean(await this.adapter.steer?.(sessionId, prompt));
   }
 
   private async resolveActivePersonaPrompt(): Promise<string | undefined> {

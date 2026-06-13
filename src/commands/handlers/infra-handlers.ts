@@ -7,6 +7,7 @@
  */
 
 import { logger } from '../../utils/logger.js';
+import { fetchOllamaStatus } from '../ollama.js';
 import type { CommandHandlerResult } from './backup-handlers.js';
 
 // ---------------------------------------------------------------------------
@@ -71,6 +72,37 @@ function formatRoutingStats(stats: {
     lines.push(`  Last health check: ${stats.lastChecked.toISOString()}`);
   }
   return lines.join('\n');
+}
+
+function formatOllamaSummary(status: {
+  reachable: boolean;
+  version: string | null;
+  models: string[];
+  error: string | null;
+}): string {
+  const lines = [
+    `  Reachable: ${status.reachable ? 'YES' : 'NO'}`,
+    `  Version: ${status.version ?? '(unknown)'}`,
+    `  Models: ${status.models.length > 0 ? status.models.join(', ') : '(none)'}`,
+  ];
+  if (status.error) {
+    lines.push(`  Error: ${status.error}`);
+  }
+  lines.push(`  Gemma 4 ready: ${isGemma4Ready(status.version, status.models) ? 'YES' : 'NO'}`);
+  return lines.join('\n');
+}
+
+function isGemma4Ready(version: string | null, models: string[]): boolean {
+  if (!version) return false;
+  const [majorRaw, minorRaw, patchRaw] = version.split('.');
+  const major = Number.parseInt(majorRaw ?? '', 10);
+  const minor = Number.parseInt(minorRaw ?? '', 10);
+  const patch = Number.parseInt(patchRaw ?? '', 10);
+  if (!Number.isFinite(major) || !Number.isFinite(minor) || !Number.isFinite(patch)) return false;
+  if (major > 0) return true;
+  if (minor > 24) return true;
+  if (minor === 24 && patch >= 1) return true;
+  return models.some((model) => model.toLowerCase().includes('gemma4'));
 }
 
 // ---------------------------------------------------------------------------
@@ -140,6 +172,14 @@ async function handleInfraDashboard(): Promise<CommandHandlerResult> {
   }
 
   lines.push('');
+  lines.push('Ollama Summary:');
+  lines.push(
+    formatOllamaSummary(
+      await fetchOllamaStatus(ollamaUrl),
+    ),
+  );
+
+  lines.push('');
 
   // Routing stats from TurboQuant plugin
   try {
@@ -205,6 +245,10 @@ async function handleInfraHealth(): Promise<CommandHandlerResult> {
   for (const s of statuses) {
     lines.push(formatStatus(s));
   }
+
+  lines.push('');
+  lines.push('Ollama Summary:');
+  lines.push(formatOllamaSummary(await fetchOllamaStatus(ollamaUrl)));
 
   return { handled: true, response: lines.join('\n') };
 }

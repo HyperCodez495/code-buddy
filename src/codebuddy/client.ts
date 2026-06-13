@@ -14,6 +14,13 @@ import { OpenAICompatProvider } from "./providers/provider-openai-compat.js";
 import { ChatGptResponsesProvider } from "./providers/provider-chatgpt-responses.js";
 import { GeminiCliProvider } from "./providers/provider-gemini-cli.js";
 import { withStreamRetry } from "./stream-retry.js";
+import {
+  recordRuntimeFallbackFailure,
+  recordRuntimeFallbackSuccess,
+  resolveRuntimeCredentialPoolProviders,
+  resolveRuntimeFallbackProviders,
+  type RuntimeFallbackProvider,
+} from "../providers/provider-fallback.js";
 export { hasToolCalls } from './message-guards.js';
 export type { CodeBuddyMessageWithToolCalls } from './message-guards.js';
 
@@ -98,6 +105,8 @@ export type GeminiThinkingLevel = 'minimal' | 'low' | 'medium' | 'high';
 export interface ChatOptions {
   model?: string;
   temperature?: number;
+  /** Optional per-call output-token cap. Providers fall back to their model default when omitted. */
+  maxTokens?: number;
   searchOptions?: SearchOptions;
   /** Optional request timeout override (ms) for Gemini native API calls */
   timeoutMs?: number;
@@ -115,6 +124,8 @@ export interface ChatOptions {
   responseFormat?: 'text' | 'json';
   /** tool_choice override for this request */
   tool_choice?: 'auto' | 'none' | 'required';
+  /** Disable Hermes-style cross-provider fallback for this one request. */
+  disableProviderFallback?: boolean;
   /**
    * Enable Gemini's native server-side Google Search grounding for this
    * request. Only affects the GeminiNativeProvider — ignored by the
@@ -148,6 +159,17 @@ export interface ChatOptions {
     initialDelayMs?: number;
     maxDelayMs?: number;
   };
+}
+
+export interface CodeBuddyClientOptions {
+  /** Enable env-configured fallback providers. Default: true. */
+  enableFallbacks?: boolean;
+  /** Enable same-provider auth profile rotation before cross-provider fallback. Default: true. */
+  enableCredentialPool?: boolean;
+  /** Explicit same-provider credential pool candidates, mainly for tests and controlled embedding. */
+  credentialPoolProviders?: RuntimeFallbackProvider[];
+  /** Explicit fallback providers, mainly for tests and controlled embedding. */
+  fallbackProviders?: RuntimeFallbackProvider[];
 }
 
 export interface CodeBuddyResponse {
@@ -190,6 +212,10 @@ export class CodeBuddyClient {
   private geminiCliProvider: GeminiCliProvider | null = null;
   /** True when routed through the Gemini CLI subprocess. */
   private isGeminiCliProvider: boolean = false;
+  /** Same-provider auth profile candidates, tried before cross-provider fallback. */
+  private credentialPoolProviders: RuntimeFallbackProvider[] = [];
+  /** Hermes-style cross-provider fallback candidates, tried per failed chat turn. */
+  private fallbackProviders: RuntimeFallbackProvider[] = [];
 
   /**
    * Configure the circuit breaker for this client.
@@ -225,7 +251,7 @@ export class CodeBuddyClient {
     return model.toLowerCase().includes('gemini');
   }
 
-  constructor(apiKey: string, model?: string, baseURL?: string) {
+  constructor(apiKey: string, model?: string, baseURL?: string, options: CodeBuddyClientOptions = {}) {
     // Validate API key
     if (!apiKey || typeof apiKey !== 'string') {
       throw new Error('API key is required and must be a non-empty string');
@@ -361,6 +387,25 @@ export class CodeBuddyClient {
         );
       }
     }
+
+    if (options.enableFallbacks !== false) {
+      if (options.enableCredentialPool !== false) {
+        this.credentialPoolProviders = options.credentialPoolProviders ?? resolveRuntimeCredentialPoolProviders({
+          active: {
+            apiKey: this.apiKey,
+            baseURL: this.baseURL,
+            model: this.currentModel,
+          },
+        });
+      }
+      this.fallbackProviders = options.fallbackProviders ?? resolveRuntimeFallbackProviders({
+        active: {
+          apiKey: this.apiKey,
+          baseURL: this.baseURL,
+          model: this.currentModel,
+        },
+      });
+    }
   }
 
   /**
@@ -494,6 +539,19 @@ export class CodeBuddyClient {
       : options || {};
 
     // Dispatch to the active strategy.
+    try {
+      return await this.dispatchChat(messages, tools, opts, searchOptions);
+    } catch (error) {
+      return await this.chatWithProviderFallback(error, messages, tools, opts, searchOptions);
+    }
+  }
+
+  private async dispatchChat(
+    messages: CodeBuddyMessage[],
+    tools: CodeBuddyTool[] | undefined,
+    opts: ChatOptions,
+    searchOptions?: SearchOptions,
+  ): Promise<CodeBuddyResponse> {
     if (this.geminiProvider) {
       return this.geminiProvider.chat(messages, tools, opts);
     }
@@ -504,6 +562,71 @@ export class CodeBuddyClient {
       return this.geminiCliProvider.chat(messages, tools, opts);
     }
     return this.openaiCompatProvider!.chat(messages, tools, opts, searchOptions);
+  }
+
+  private async chatWithProviderFallback(
+    primaryError: unknown,
+    messages: CodeBuddyMessage[],
+    tools: CodeBuddyTool[] | undefined,
+    opts: ChatOptions,
+    searchOptions?: SearchOptions,
+  ): Promise<CodeBuddyResponse> {
+    const fallbackCandidates = [
+      ...this.credentialPoolProviders,
+      ...this.fallbackProviders,
+    ];
+
+    if (opts.disableProviderFallback || fallbackCandidates.length === 0) {
+      throw primaryError;
+    }
+
+    const fallbackOptsBase: ChatOptions = {
+      ...opts,
+      disableProviderFallback: true,
+    };
+
+    for (const fallback of fallbackCandidates) {
+      try {
+        logger.warn('Primary provider failed; trying fallback provider', {
+          source: 'CodeBuddyClient',
+          primaryProvider: this.getProviderName(),
+          fallbackProvider: fallback.provider,
+          fallbackModel: fallback.model,
+          fallbackSource: fallback.fallbackSource,
+          profileId: fallback.profileId,
+          error: primaryError instanceof Error ? primaryError.message : String(primaryError),
+        });
+
+        const fallbackClient = new CodeBuddyClient(
+          fallback.apiKey,
+          fallback.model,
+          fallback.baseURL,
+          { enableFallbacks: false },
+        );
+        if (this.circuitBreakerConfig) {
+          fallbackClient.setCircuitBreakerConfig(this.circuitBreakerConfig);
+        }
+
+        const response = await fallbackClient.chat(messages, tools, {
+          ...fallbackOptsBase,
+          model: fallback.model,
+        }, searchOptions);
+        recordRuntimeFallbackSuccess(fallback);
+        return response;
+      } catch (fallbackError) {
+        recordRuntimeFallbackFailure(fallback, fallbackError);
+        logger.warn('Fallback provider failed', {
+          source: 'CodeBuddyClient',
+          fallbackProvider: fallback.provider,
+          fallbackModel: fallback.model,
+          fallbackSource: fallback.fallbackSource,
+          profileId: fallback.profileId,
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        });
+      }
+    }
+
+    throw primaryError;
   }
 
   async *chatStream(
@@ -517,34 +640,115 @@ export class CodeBuddyClient {
       ? { model: options, searchOptions }
       : options || {};
 
-    // Dispatch to the active strategy. Wrapped in a factory so we can
-    // re-invoke it inside `withStreamRetry` when opt-in retry is enabled.
-    const factory = (): AsyncGenerator<ChatCompletionChunk, void, unknown> => {
-      if (this.geminiProvider) {
-        return this.geminiProvider.chatStream(messages, tools, opts);
-      }
-      if (this.chatgptProvider) {
-        return this.chatgptProvider.chatStream(messages, tools, opts);
-      }
-      if (this.geminiCliProvider) {
-        return this.geminiCliProvider.chatStream(messages, tools, opts);
-      }
-      return this.openaiCompatProvider!.chatStream(messages, tools, opts, searchOptions);
-    };
-
     // Resolve retry opt-in. Per-call `streamRetry` wins over env var when
     // explicitly set (including `false`, which forces no retry).
     const envOptIn = process.env.CODEBUDDY_STREAM_RETRY === '1';
     const callOptIn = opts.streamRetry;
     const retryEnabled = callOptIn !== undefined ? !!callOptIn : envOptIn;
+    const retryOpts = typeof callOptIn === 'object' && callOptIn !== null ? callOptIn : {};
+    const primaryFactory = (): AsyncGenerator<ChatCompletionChunk, void, unknown> =>
+      this.dispatchChatStream(messages, tools, opts, searchOptions);
+    const primaryStream = retryEnabled
+      ? withStreamRetry(primaryFactory, retryOpts)
+      : primaryFactory();
 
-    if (!retryEnabled) {
-      yield* factory();
-      return;
+    let yieldedAnyChunk = false;
+    try {
+      for await (const chunk of primaryStream) {
+        yieldedAnyChunk = true;
+        yield chunk;
+      }
+    } catch (error) {
+      if (yieldedAnyChunk) {
+        throw error;
+      }
+      yield* this.chatStreamWithProviderFallback(error, messages, tools, opts, searchOptions);
+    }
+  }
+
+  private dispatchChatStream(
+    messages: CodeBuddyMessage[],
+    tools: CodeBuddyTool[] | undefined,
+    opts: ChatOptions,
+    searchOptions?: SearchOptions,
+  ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
+    if (this.geminiProvider) {
+      return this.geminiProvider.chatStream(messages, tools, opts);
+    }
+    if (this.chatgptProvider) {
+      return this.chatgptProvider.chatStream(messages, tools, opts);
+    }
+    if (this.geminiCliProvider) {
+      return this.geminiCliProvider.chatStream(messages, tools, opts);
+    }
+    return this.openaiCompatProvider!.chatStream(messages, tools, opts, searchOptions);
+  }
+
+  private async *chatStreamWithProviderFallback(
+    primaryError: unknown,
+    messages: CodeBuddyMessage[],
+    tools: CodeBuddyTool[] | undefined,
+    opts: ChatOptions,
+    searchOptions?: SearchOptions,
+  ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
+    const fallbackCandidates = [
+      ...this.credentialPoolProviders,
+      ...this.fallbackProviders,
+    ];
+
+    if (opts.disableProviderFallback || fallbackCandidates.length === 0) {
+      throw primaryError;
     }
 
-    const retryOpts = typeof callOptIn === 'object' && callOptIn !== null ? callOptIn : {};
-    yield* withStreamRetry(factory, retryOpts);
+    const fallbackOptsBase: ChatOptions = {
+      ...opts,
+      disableProviderFallback: true,
+    };
+
+    for (const fallback of fallbackCandidates) {
+      try {
+        logger.warn('Primary provider stream failed before first chunk; trying fallback provider', {
+          source: 'CodeBuddyClient',
+          primaryProvider: this.getProviderName(),
+          fallbackProvider: fallback.provider,
+          fallbackModel: fallback.model,
+          fallbackSource: fallback.fallbackSource,
+          profileId: fallback.profileId,
+          error: primaryError instanceof Error ? primaryError.message : String(primaryError),
+        });
+
+        const fallbackClient = new CodeBuddyClient(
+          fallback.apiKey,
+          fallback.model,
+          fallback.baseURL,
+          { enableFallbacks: false },
+        );
+        if (this.circuitBreakerConfig) {
+          fallbackClient.setCircuitBreakerConfig(this.circuitBreakerConfig);
+        }
+
+        for await (const chunk of fallbackClient.chatStream(messages, tools, {
+          ...fallbackOptsBase,
+          model: fallback.model,
+        }, searchOptions)) {
+          yield chunk;
+        }
+        recordRuntimeFallbackSuccess(fallback);
+        return;
+      } catch (fallbackError) {
+        recordRuntimeFallbackFailure(fallback, fallbackError);
+        logger.warn('Fallback provider stream failed', {
+          source: 'CodeBuddyClient',
+          fallbackProvider: fallback.provider,
+          fallbackModel: fallback.model,
+          fallbackSource: fallback.fallbackSource,
+          profileId: fallback.profileId,
+          error: fallbackError instanceof Error ? fallbackError.message : String(fallbackError),
+        });
+      }
+    }
+
+    throw primaryError;
   }
 
   async search(

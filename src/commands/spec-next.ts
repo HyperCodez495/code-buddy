@@ -217,7 +217,8 @@ function pickStory(
     }
     return story;
   }
-  const approved = store.listStories(projectId, 'approved'); // oldest first (createdAt)
+  const approved = store.listStories(projectId, 'approved')
+    .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
   const first = approved[0];
   if (!first) {
     console.log('No approved stories. Approve one with: buddy spec story approve <id> --by <name>');

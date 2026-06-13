@@ -8,71 +8,111 @@ import { Command } from 'commander';
 import { logger } from "../utils/logger.js";
 import { getSettingsManager } from '../utils/settings-manager.js';
 import { hasCodexCredentials } from '../providers/codex-oauth.js';
+import {
+  findRuntimeProvider,
+  getPluginNativeRuntimeProviderCatalog,
+  getProviderEnvSummary,
+  getRuntimeProviderCatalog,
+  isProviderConfigured,
+  resolvePluginRuntimeProvider,
+  type RuntimeProviderCatalogEntry,
+  type RuntimeProviderId,
+} from '../providers/provider-catalog.js';
 
 interface ProviderInfo {
   name: string;
   envVar: string;
+  envVars: string[];
   models: string[];
   defaultModel: string;
   baseURL?: string;
+  providerId: RuntimeProviderId;
+  authMode: RuntimeProviderCatalogEntry['authMode'];
 }
 
-export const PROVIDERS: Record<string, ProviderInfo> = {
-  grok: {
-    name: 'Grok (xAI)',
-    envVar: 'GROK_API_KEY',
-    models: ['grok-4-1-fast', 'grok-4-latest', 'grok-4-fast', 'grok-code-fast-1', 'grok-3-latest', 'grok-3-fast', 'grok-3-mini'],
-    defaultModel: 'grok-3-fast',
-    baseURL: 'https://api.x.ai/v1',
-  },
-  claude: {
-    name: 'Claude (Anthropic)',
-    envVar: 'ANTHROPIC_API_KEY',
-    models: [
-      'claude-sonnet-4-20250514',
-      'claude-opus-4-20250514',
-      'claude-3-5-sonnet-latest',
-      'claude-3-5-haiku-latest',
-      'claude-3-opus-latest',
-    ],
-    defaultModel: 'claude-sonnet-4-20250514',
-  },
-  openai: {
-    name: 'ChatGPT (OpenAI)',
-    envVar: 'OPENAI_API_KEY',
-    models: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o1', 'o1-mini', 'o3-mini'],
-    defaultModel: 'gpt-4o',
-    baseURL: 'https://api.openai.com/v1',
-  },
-  chatgpt: {
-    name: 'ChatGPT (OAuth)',
-    envVar: 'CODEBUDDY_CHATGPT_OAUTH',
-    models: ['gpt-5.5'],
-    defaultModel: 'gpt-5.5',
-    baseURL: 'https://chatgpt.com/backend-api/codex',
-  },
-  gemini: {
-    name: 'Gemini (Google)',
-    envVar: 'GOOGLE_API_KEY',
-    models: ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro', 'gemini-1.5-flash'],
-    defaultModel: 'gemini-2.5-flash',
-    baseURL: 'https://generativelanguage.googleapis.com/v1beta',
-  },
+const PROVIDER_COMMAND_KEYS: Record<RuntimeProviderId, string> = {
+  chatgpt: 'chatgpt',
+  ollama: 'ollama',
+  'ollama-cloud': 'ollama-cloud',
+  lmstudio: 'lmstudio',
+  grok: 'grok',
+  gemini: 'gemini',
+  openai: 'openai',
+  anthropic: 'claude',
+  mistral: 'mistral',
+  groq: 'groq',
+  together: 'together',
+  fireworks: 'fireworks',
+  openrouter: 'openrouter',
+  novita: 'novita',
+  zai: 'zai',
+  'kimi-coding': 'kimi-coding',
+  'kimi-coding-cn': 'kimi-coding-cn',
+  arcee: 'arcee',
+  gmi: 'gmi',
+  minimax: 'minimax',
+  'minimax-cn': 'minimax-cn',
+  alibaba: 'alibaba',
+  'alibaba-coding-plan': 'alibaba-coding-plan',
+  kilocode: 'kilocode',
+  xiaomi: 'xiaomi',
+  'tencent-tokenhub': 'tencent-tokenhub',
+  'opencode-zen': 'opencode-zen',
+  'opencode-go': 'opencode-go',
+  deepseek: 'deepseek',
+  huggingface: 'huggingface',
+  nvidia: 'nvidia',
+  stepfun: 'stepfun',
+  vllm: 'vllm',
+  custom: 'custom',
+  azure: 'azure',
+  bedrock: 'bedrock',
+  copilot: 'copilot',
 };
+
+export const PROVIDERS: Record<string, ProviderInfo> = Object.fromEntries(
+  getRuntimeProviderCatalog()
+    .filter((entry) => entry.runtimeSupport === 'direct')
+    .map((entry) => {
+      const key = PROVIDER_COMMAND_KEYS[entry.id];
+      return [
+        key,
+        {
+          name: entry.label,
+          envVar: getProviderEnvSummary(entry),
+          envVars: entry.id === 'chatgpt'
+            ? ['CODEBUDDY_CHATGPT_OAUTH']
+            : [...entry.apiKeyEnvKeys, ...entry.baseUrlEnvKeys],
+          models: entry.models,
+          defaultModel: entry.defaultModel,
+          baseURL: entry.defaultBaseURL,
+          providerId: entry.id,
+          authMode: entry.authMode,
+        } satisfies ProviderInfo,
+      ];
+    }),
+);
 
 function getConfiguredProviders(): string[] {
   const configured: string[] = [];
 
   for (const [key, info] of Object.entries(PROVIDERS)) {
-    const hasKey = process.env[info.envVar] ||
-                   (key === 'grok' && process.env.XAI_API_KEY) ||
-                   (key === 'gemini' && process.env.GEMINI_API_KEY) ||
-                   (key === 'chatgpt' && hasCodexCredentials());
-    if (hasKey) {
+    const entry = findRuntimeProvider(info.providerId);
+    if (entry && isProviderConfigured(entry, process.env, hasCodexCredentials())) {
       configured.push(key);
     }
   }
 
+  return configured;
+}
+
+function getConfiguredPluginNativeProviders(): string[] {
+  const configured: string[] = [];
+  for (const entry of getPluginNativeRuntimeProviderCatalog()) {
+    if (isProviderConfigured(entry, process.env, hasCodexCredentials())) {
+      configured.push(entry.id);
+    }
+  }
   return configured;
 }
 
@@ -114,7 +154,7 @@ function setCurrentModel(model: string): void {
 
 export function createProviderCommand(): Command {
   const provider = new Command('provider')
-    .description('Manage AI providers (Claude, ChatGPT, Grok, Gemini)');
+    .description('Manage AI providers');
 
   // List providers
   provider
@@ -123,7 +163,8 @@ export function createProviderCommand(): Command {
     .description('List available AI providers')
     .action(() => {
       const configured = getConfiguredProviders();
-      const current = getCurrentProvider();
+      const configuredPluginProviders = getConfiguredPluginNativeProviders();
+      const current = resolveProviderCommandKey(getCurrentProvider()) || getCurrentProvider();
 
       console.log('\nAvailable AI Providers:\n');
 
@@ -140,7 +181,22 @@ export function createProviderCommand(): Command {
         console.log('');
       }
 
-      if (configured.length === 0) {
+      const pluginProviders = getPluginNativeRuntimeProviderCatalog();
+      if (pluginProviders.length > 0) {
+        console.log('Plugin-native providers (available through bundled transports):\n');
+        for (const entry of pluginProviders) {
+          const status = configuredPluginProviders.includes(entry.id) ? '✅' : '❌';
+          const runtime = resolvePluginRuntimeProvider(entry.id);
+          console.log(`  ${status} ${entry.label}`);
+          console.log(`     Key: ${PROVIDER_COMMAND_KEYS[entry.id]}`);
+          console.log(`     Env: ${getProviderEnvSummary(entry)}`);
+          console.log(`     Transport: ${runtime?.pluginId ?? 'bundled plugin'}`);
+          console.log(`     Models: ${entry.models.slice(0, 3).join(', ')}${entry.models.length > 3 ? '...' : ''}`);
+          console.log('');
+        }
+      }
+
+      if (configured.length === 0 && configuredPluginProviders.length === 0) {
         console.log('⚠️  No providers configured. Set an API key environment variable.');
         console.log('   Example: export ANTHROPIC_API_KEY="your-key"');
       }
@@ -154,13 +210,14 @@ export function createProviderCommand(): Command {
     .action(() => {
       const current = getCurrentProvider();
       const model = getCurrentModel();
-      const info = PROVIDERS[current];
+      const key = resolveProviderCommandKey(current) || current;
+      const info = PROVIDERS[key];
 
       console.log(`\nActive Provider: ${info?.name || current}`);
       console.log(`Model: ${model || info?.defaultModel || 'default'}`);
 
       const configured = getConfiguredProviders();
-      if (!configured.includes(current)) {
+      if (!configured.includes(key)) {
         console.log(`\n⚠️  Warning: ${info?.envVar || 'API key'} not set`);
       }
     });
@@ -172,9 +229,9 @@ export function createProviderCommand(): Command {
     .description('Set the active AI provider')
     .option('-m, --model <model>', 'Also set the model')
     .action((providerKey: string, options: { model?: string }) => {
-      const key = providerKey.toLowerCase();
+      const key = resolveProviderCommandKey(providerKey);
 
-      if (!PROVIDERS[key]) {
+      if (!key || !PROVIDERS[key]) {
         logger.error(`❌ Unknown provider: ${providerKey}`);
         logger.error(`   Available: ${Object.keys(PROVIDERS).join(', ')}`);
         process.exit(1);
@@ -204,9 +261,9 @@ export function createProviderCommand(): Command {
     .command('models [provider]')
     .description('List available models for a provider')
     .action((providerKey?: string) => {
-      const key = (providerKey || getCurrentProvider()).toLowerCase();
+      const key = resolveProviderCommandKey(providerKey || getCurrentProvider());
 
-      if (!PROVIDERS[key]) {
+      if (!key || !PROVIDERS[key]) {
         logger.error(`❌ Unknown provider: ${providerKey}`);
         process.exit(1);
       }
@@ -238,6 +295,15 @@ export function createProviderCommand(): Command {
     });
 
   return provider;
+}
+
+export function resolveProviderCommandKey(provider: string): string | null {
+  const normalized = provider.toLowerCase();
+  if (PROVIDERS[normalized]) return normalized;
+  const entry = findRuntimeProvider(normalized);
+  if (!entry) return null;
+  if (entry.runtimeSupport !== 'direct') return null;
+  return PROVIDER_COMMAND_KEYS[entry.id] ?? null;
 }
 
 export default createProviderCommand;

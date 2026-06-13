@@ -6,6 +6,7 @@ const sessionInsightsPath = path.resolve(
   process.cwd(),
   'src/renderer/components/SessionInsightsPanel.tsx'
 );
+const preloadPath = path.resolve(process.cwd(), 'src/preload/index.ts');
 const chatViewPath = path.resolve(process.cwd(), 'src/renderer/components/ChatView.tsx');
 
 describe('Session insights jump to message', () => {
@@ -22,6 +23,34 @@ describe('Session insights jump to message', () => {
     expect(source).toContain("t('sessionInsights.auditTranscript'");
     expect(source).toContain("t('sessionInsights.auditTitle'");
     expect(source).toContain("t('sessionInsights.repairTranscript'");
+    expect(source).toContain("t('sessionInsights.auditPendingJournalTurns'");
+    expect(source).toContain("t('sessionInsights.auditMissingJournalUserMessages'");
+    expect(source).toContain("t('sessionInsights.auditUnrecoverableJournalSubmissions'");
+    expect(source).toContain("t('sessionInsights.auditMalformedJournalEvents'");
+  });
+
+  it('exposes the turn journal section in SessionInsightsPanel', () => {
+    const source = fs.readFileSync(sessionInsightsPath, 'utf8');
+    expect(source).toContain('session-insights-turn-journal');
+    expect(source).toContain("t('sessionInsights.turnJournal'");
+    expect(source).toContain('detail.turnJournal.events');
+  });
+
+  it('exposes memory preview accept/reject controls in SessionInsightsPanel', () => {
+    const source = fs.readFileSync(sessionInsightsPath, 'utf8');
+    expect(source).toContain("t('sessionInsights.memoryPreview'");
+    expect(source).toContain('acceptMemoryCandidate');
+    expect(source).toContain('rejectMemoryCandidate');
+    expect(source).toContain("window.electronAPI?.memory?.add");
+    expect(source).toContain("t('common.accept'");
+    expect(source).toContain("t('common.reject'");
+    expect(source).toContain('visibleMemoryCandidates');
+  });
+
+  it('exposes session recall prefill diagnostics through preload', () => {
+    const source = fs.readFileSync(preloadPath, 'utf8');
+    expect(source).toContain('recallPrefill');
+    expect(source).toContain('sessionInsights.recallPrefill');
   });
 
   it('ChatView scrolls to a focused message target after switching sessions', () => {

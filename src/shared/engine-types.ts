@@ -22,6 +22,7 @@ export type EngineStreamEventType =
   | 'error'
   | 'ask_user'
   | 'plan_progress'
+  | 'steer'
   | 'diff_preview';
 
 export interface EngineStreamEvent {
@@ -62,6 +63,11 @@ export interface EngineStreamEvent {
     total: number;
     completed: number;
     message?: string;
+  };
+  /** User guidance delivered to an active run. */
+  steer?: {
+    content: string;
+    source: string;
   };
   /** Diff preview */
   diffPreview?: {

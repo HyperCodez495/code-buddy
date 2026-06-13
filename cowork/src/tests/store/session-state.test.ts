@@ -32,6 +32,7 @@ describe('SessionState unified store', () => {
       expect(state.sessionStates['s1'].partialMessage).toBe('');
       expect(state.sessionStates['s1'].partialThinking).toBe('');
       expect(state.sessionStates['s1'].pendingTurns).toEqual([]);
+      expect(state.sessionStates['s1'].queuedIntents).toEqual([]);
       expect(state.sessionStates['s1'].activeTurn).toBeNull();
       expect(state.sessionStates['s1'].executionClock).toEqual({ startAt: null, endAt: null });
       expect(state.sessionStates['s1'].traceSteps).toEqual([]);
@@ -269,6 +270,57 @@ describe('SessionState unified store', () => {
   });
 
   describe('queued messages', () => {
+    it('should manage durable queued intents independently from transcript messages', () => {
+      useAppStore.getState().addSession(makeSession('s1'));
+      useAppStore.getState().enqueueQueuedIntent({
+        id: 'intent-1',
+        sessionId: 's1',
+        prompt: 'follow up',
+        content: [{ type: 'text', text: 'follow up' }],
+        createdAt: 1,
+      });
+
+      let ss = useAppStore.getState().sessionStates['s1'];
+      expect(ss.messages).toEqual([]);
+      expect(ss.queuedIntents).toHaveLength(1);
+      expect(ss.queuedIntents[0].source).toBe('queue');
+
+      useAppStore.getState().updateQueuedIntent('s1', 'intent-1', {
+        prompt: 'edited follow up',
+        content: [{ type: 'text', text: 'edited follow up' }],
+      });
+      ss = useAppStore.getState().sessionStates['s1'];
+      expect(ss.queuedIntents[0].prompt).toBe('edited follow up');
+
+      const drained = useAppStore.getState().shiftQueuedIntent('s1');
+      expect(drained?.id).toBe('intent-1');
+      expect(useAppStore.getState().sessionStates['s1'].queuedIntents).toEqual([]);
+    });
+
+    it('should keep queued intents scoped to their original session', () => {
+      useAppStore.getState().addSession(makeSession('s1'));
+      useAppStore.getState().addSession(makeSession('s2'));
+      useAppStore.getState().enqueueQueuedIntent({
+        id: 'intent-1',
+        sessionId: 's1',
+        prompt: 'session one',
+        content: [{ type: 'text', text: 'session one' }],
+        createdAt: 1,
+      });
+      useAppStore.getState().enqueueQueuedIntent({
+        id: 'intent-2',
+        sessionId: 's2',
+        prompt: 'session two',
+        content: [{ type: 'text', text: 'session two' }],
+        createdAt: 2,
+      });
+
+      useAppStore.getState().removeQueuedIntent('s1', 'intent-1');
+      expect(useAppStore.getState().sessionStates['s1'].queuedIntents).toEqual([]);
+      expect(useAppStore.getState().sessionStates['s2'].queuedIntents).toHaveLength(1);
+      expect(useAppStore.getState().shiftQueuedIntent('s2')?.id).toBe('intent-2');
+    });
+
     it('should clear queued message status', () => {
       useAppStore.getState().addSession(makeSession('s1'));
       // Manually set messages with queued status

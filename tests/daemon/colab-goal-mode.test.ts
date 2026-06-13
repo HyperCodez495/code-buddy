@@ -70,6 +70,27 @@ describe('colab goal-mode (Hermes kanban goal-mode parity)', () => {
     expect(store.listWorklog()[0]?.summary).toContain('Goal-mode turn 1/3');
   });
 
+  it('normalizes legacy invalid goal counters before applying the goal budget', async () => {
+    seedTasks([{
+      id: 'g1',
+      title: 'ship it',
+      status: 'open',
+      priority: 'medium',
+      claimedBy: null,
+      goalMode: true,
+      goalMaxTurns: 0,
+      goalTurnsUsed: '1',
+    }]);
+    const judge: ColabGoalJudge = async () => ({ verdict: 'continue', reason: 'tests missing', parseFailed: false });
+
+    const result = await makeLoop(okExecutor, judge).tick();
+    expect(result.outcome).toBe('goal_continue');
+    const task = store.getTask('g1');
+    expect(task?.status).toBe('open');
+    expect(task?.goalTurnsUsed).toBe(1);
+    expect(store.listWorklog()[0]?.summary).toContain('Goal-mode turn 1/5');
+  });
+
   it('blocks the task for human review when the goal budget is exhausted', async () => {
     seedTasks([{
       id: 'g1', title: 'ship it', status: 'open', priority: 'medium', claimedBy: null,
@@ -83,6 +104,8 @@ describe('colab goal-mode (Hermes kanban goal-mode parity)', () => {
     const task = store.getTask('g1');
     expect(task?.status).toBe('blocked');
     expect(task?.blockedReason).toContain('goal budget exhausted (2/2)');
+    expect(task?.goalTurnsUsed).toBe(2);
+    expect(task?.goalLastReason).toBe('still failing');
     expect(store.listWorklog()[0]?.nextSteps[0]).toContain('human review');
   });
 

@@ -81,4 +81,15 @@ describe('BayesianQualifier', () => {
     expect(pLoaded.mean).toBeCloseTo(pOriginal.mean, 5);
     expect(pLoaded.std).toBeCloseTo(pOriginal.std, 5);
   });
+
+  it('should ignore empty, truncated, or invalid persisted state', () => {
+    const model = new BayesianQualifier();
+
+    expect(model.loadState('')).toBe(false);
+    expect(model.loadState('{')).toBe(false);
+    expect(model.loadState('{"X":[],"y":[]}')).toBe(false);
+
+    const prediction = model.predict([1.0, 2.0]);
+    expect(prediction.mean).toBe(0.5);
+  });
 });

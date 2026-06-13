@@ -1,5 +1,5 @@
 import { ChatEntry } from "../../agent/codebuddy-agent.js";
-import { getEnhancedMemory, getMemoryManager, type MemoryCategory } from "../../memory/index.js";
+import { getEnhancedMemory, getMemoryManager } from "../../memory/index.js";
 import { getCommentWatcher } from "../../tools/comment-watcher.js";
 import { getErrorMessage } from "../../errors/index.js";
 
@@ -30,6 +30,10 @@ function formatTimeAgo(date: Date, now: Date = new Date()): string {
   if (mon < 12) return `${mon} month${mon === 1 ? "" : "s"} ago`;
   const yr = Math.floor(day / 365);
   return `${yr} year${yr === 1 ? "" : "s"} ago`;
+}
+
+function clip(text: string, max = 180): string {
+  return text.length > max ? text.slice(0, max - 1) + "…" : text;
 }
 
 /**
@@ -113,10 +117,10 @@ export async function handleMemory(args: string[]): Promise<CommandHandlerResult
             content = `Usage: /memory remember <key> <content> [project|user]`;
             break;
           }
-          const value = args.slice(2).join(" ");
           const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project")
             ? args.pop() as "project" | "user"
             : "project";
+          const value = args.slice(2).join(" ");
 
           // Store in both for redundancy and better retrieval
           await persistentMemory.remember(key, value, { scope, category: "custom" });
@@ -130,6 +134,30 @@ export async function handleMemory(args: string[]): Promise<CommandHandlerResult
           content = `✅ Remembered: "${key}" in persistent ${scope} memory and semantic index.`;
         } else {
           content = `Usage: /memory remember <key> <content> [project|user]`;
+        }
+        break;
+
+      case "replace":
+      case "update":
+        if (args.length >= 3) {
+          const key = args[1];
+          if (key === undefined) {
+            content = `Usage: /memory replace <key> <content> [project|user]`;
+            break;
+          }
+          const scope = (args[args.length - 1] === "user" || args[args.length - 1] === "project")
+            ? args.pop() as "project" | "user"
+            : "project";
+          const value = args.slice(2).join(" ");
+
+          const result = await persistentMemory.replace(key, value, { scope });
+          if (result.status === 'missing') {
+            content = result.message;
+          } else {
+            content = `✅ ${result.message}\nCapacity: ${result.usage.used}/${result.usage.limit} chars (${result.usage.percent}%).`;
+          }
+        } else {
+          content = `Usage: /memory replace <key> <content> [project|user]`;
         }
         break;
 
@@ -166,6 +194,77 @@ export async function handleMemory(args: string[]): Promise<CommandHandlerResult
           }
           content = lines.join("\n").trimEnd();
         }
+        break;
+      }
+
+      case "candidates":
+      case "candidate":
+      case "pending": {
+        const { getMemoryCandidateQueue } = await import("../../memory/memory-candidate-queue.js");
+        const statusArg = args[1];
+        const status = statusArg === "pending" || statusArg === "accepted" || statusArg === "rejected"
+          ? statusArg
+          : undefined;
+        const rawLimit = parseInt(args[status ? 2 : 1] ?? "20", 10);
+        const limit = Math.min(50, Math.max(1, Number.isFinite(rawLimit) ? rawLimit : 20));
+        const candidates = getMemoryCandidateQueue(process.cwd()).list(status).slice(0, limit);
+
+        if (candidates.length === 0) {
+          content = status ? `No ${status} memory candidates.` : "No memory candidates yet.";
+        } else {
+          const lines = [`🧠 Memory candidates (${candidates.length}${status ? ` ${status}` : ""})`, "═".repeat(50)];
+          for (const candidate of candidates) {
+            const created = formatTimeAgo(new Date(candidate.createdAt));
+            const confidence = typeof candidate.confidence === "number"
+              ? ` | confidence ${(candidate.confidence * 100).toFixed(0)}%`
+              : "";
+            lines.push(`[${candidate.status}] ${candidate.id} | ${candidate.scope}/${candidate.category}${confidence} | ${created}`);
+            lines.push(`  ${candidate.key}: ${clip(candidate.value)}`);
+            const citation = candidate.citations?.[0];
+            if (citation) {
+              const label = citation.sessionId
+                ? `${citation.sessionId}${citation.messageId ? `#${citation.messageId}` : citation.messageIndex ? `#${citation.messageIndex}` : ""}`
+                : citation.messageIndex ? `message ${citation.messageIndex}` : "evidence";
+              lines.push(`  citation: ${label}${citation.role ? ` (${citation.role})` : ""} — ${clip(citation.snippet, 140)}`);
+            }
+            lines.push("");
+          }
+          lines.push("Approve: /memory accept <id> [reviewer]");
+          lines.push("Reject:  /memory reject <id> [reason]");
+          content = lines.join("\n").trimEnd();
+        }
+        break;
+      }
+
+      case "accept":
+      case "approve": {
+        const id = args[1];
+        if (!id) {
+          content = `Usage: /memory accept <candidate-id> [reviewer]`;
+          break;
+        }
+        const reviewedBy = args.slice(2).join(" ").trim() || "user";
+        const { getMemoryCandidateQueue } = await import("../../memory/memory-candidate-queue.js");
+        const { candidate, write } = await getMemoryCandidateQueue(process.cwd()).accept(id, { reviewedBy });
+        content = `✅ Accepted ${candidate.id} into ${candidate.scope} memory as "${candidate.key}".\n` +
+          `Write status: ${write.status}. Capacity: ${write.usage.used}/${write.usage.limit} chars (${write.usage.percent}%).`;
+        break;
+      }
+
+      case "reject":
+      case "discard": {
+        const id = args[1];
+        if (!id) {
+          content = `Usage: /memory reject <candidate-id> [reason]`;
+          break;
+        }
+        const reason = args.slice(2).join(" ").trim();
+        const { getMemoryCandidateQueue } = await import("../../memory/memory-candidate-queue.js");
+        const candidate = getMemoryCandidateQueue(process.cwd()).reject(id, {
+          reviewedBy: "user",
+          ...(reason ? { reason } : {}),
+        });
+        content = `🗑️ Rejected memory candidate ${candidate.id}.`;
         break;
       }
 

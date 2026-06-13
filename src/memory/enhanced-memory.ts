@@ -165,6 +165,7 @@ export class EnhancedMemory extends EventEmitter {
   private dbRepository: MemoryRepository | null = null;
   private embeddingProvider: EmbeddingProvider | null = null;
   private bayesianQualifier = new BayesianQualifier();
+  private disposed = false;
 
   constructor(config: Partial<MemoryConfig> = {}) {
     super();
@@ -222,8 +223,11 @@ export class EnhancedMemory extends EventEmitter {
       }
     }
 
+    if (this.disposed) return;
+
     // Start decay timer
     this.decayIntervalId = setInterval(() => this.applyDecay(), 3600000); // Every hour
+    this.decayIntervalId.unref?.();
   }
 
   /**
@@ -1049,6 +1053,7 @@ export class EnhancedMemory extends EventEmitter {
    * Dispose
    */
   dispose(): void {
+    this.disposed = true;
     // Clear decay interval timer
     if (this.decayIntervalId) {
       clearInterval(this.decayIntervalId);

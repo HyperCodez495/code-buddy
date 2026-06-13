@@ -131,6 +131,63 @@ describe('AuditLogViewer run recall', () => {
     expect(target.textContent).toContain('summary.md: candidate queue artifact for Cowork review');
   });
 
+  it('renders artifact index doctor status from the Cowork audit bridge', async () => {
+    const listRuns = vi.fn().mockResolvedValue([]);
+    const getArtifactIndexDoctorStatus = vi.fn().mockResolvedValue({
+      schemaVersion: 1,
+      generatedAt: '2026-06-13T12:00:00.000Z',
+      kind: 'artifact_index_doctor_status',
+      status: 'attention',
+      unavailable: false,
+      totalRows: 12,
+      healthyRows: 10,
+      staleRows: 1,
+      orphanedRows: 1,
+      rows: [
+        { runId: 'run_pruned', artifact: 'summary.md', reason: 'missing_run' },
+        { runId: 'run_orphan', artifact: 'proof.md', reason: 'missing_artifact' },
+      ],
+      recommendations: [
+        'Run `buddy run index-doctor --repair` to remove rows for pruned or moved run folders.',
+      ],
+      repairCommands: {
+        staleOnly: 'buddy run index-doctor --repair',
+        includeOrphans: 'buddy run index-doctor --repair --include-orphans',
+      },
+    });
+    (window as unknown as {
+      electronAPI?: {
+        audit?: {
+          getArtifactIndexDoctorStatus: typeof getArtifactIndexDoctorStatus;
+          listRuns: typeof listRuns;
+        };
+      };
+    }).electronAPI = {
+      audit: {
+        getArtifactIndexDoctorStatus,
+        listRuns,
+      },
+    };
+
+    const target = document.createElement('div');
+    document.body.appendChild(target);
+    root = createRoot(target);
+
+    await act(async () => {
+      root?.render(React.createElement(AuditLogViewer));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+
+    expect(getArtifactIndexDoctorStatus).toHaveBeenCalled();
+    expect(target.textContent).toContain('Artifact index');
+    expect(target.textContent).toContain('attention');
+    expect(target.textContent).toContain('stale: 1');
+    expect(target.textContent).toContain('orphaned: 1');
+    expect(target.textContent).toContain('buddy run index-doctor --repair');
+    expect(target.textContent).toContain('buddy run index-doctor --repair --include-orphans');
+  });
+
   it('copies a redacted trajectory export from an expanded run', async () => {
     const listRuns = vi.fn().mockResolvedValue([
       {

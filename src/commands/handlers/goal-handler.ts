@@ -1,5 +1,18 @@
+import type { CodeBuddyClient } from '../../codebuddy/client.js';
+import {
+  decomposeGoal,
+  formatGoalPlan,
+  shouldAutoDecomposeGoal,
+  type GoalPlan,
+} from '../../goals/goal-decomposer.js';
 import { getGoalManager } from '../../goals/goal-manager.js';
 import { CommandHandlerResult } from './branch-handlers.js';
+
+export interface GoalHandlerOptions {
+  sessionKey?: string;
+  client?: CodeBuddyClient | null;
+  planner?: (goal: string, client: CodeBuddyClient) => Promise<GoalPlan | null>;
+}
 
 /**
  * /goal — standing goal with judge + auto-continue loop (the Ralph loop,
@@ -12,10 +25,13 @@ import { CommandHandlerResult } from './branch-handlers.js';
  *   /goal resume     restart the loop (resets the turn budget)
  *   /goal clear      discard the goal (aliases: stop, done)
  */
-export async function handleGoal(args: string[]): Promise<CommandHandlerResult> {
+export async function handleGoal(
+  args: string[],
+  options: GoalHandlerOptions = {}
+): Promise<CommandHandlerResult> {
   const arg = args.join(' ').trim();
   const lower = arg.toLowerCase();
-  const mgr = getGoalManager();
+  const mgr = getGoalManager(options.sessionKey);
 
   if (!arg || lower === 'status') {
     return textResult(mgr.statusLine());
@@ -44,12 +60,37 @@ export async function handleGoal(args: string[]): Promise<CommandHandlerResult> 
   }
 
   // Otherwise treat the arg as the goal text.
+  let plan: GoalPlan | null = null;
+  let planAttempted = false;
+  let planError = '';
+  if (options.client && shouldAutoDecomposeGoal(arg)) {
+    planAttempted = true;
+    try {
+      plan = await (options.planner ?? decomposeGoal)(arg, options.client);
+    } catch (error) {
+      planError = error instanceof Error ? error.message : String(error);
+    }
+  }
+
   let state;
   try {
-    state = mgr.set(arg);
+    state = mgr.set(arg, {
+      ...(plan ? { goalPlan: plan } : {}),
+      ...(planAttempted ? { goalPlanAttempted: true } : {}),
+    });
+    if (planAttempted && !plan && planError) {
+      mgr.markGoalPlanAttempted(planError);
+      state = mgr.state ?? state;
+    }
   } catch (error) {
     return textResult(`Invalid goal: ${error instanceof Error ? error.message : String(error)}`);
   }
+
+  const planBlock = state.goalPlan
+    ? `\n\nHermes-style task graph attached:\n${formatGoalPlan(state.goalPlan)}`
+    : planError
+      ? `\n\nGoal planning was skipped after an LLM planner error: ${planError}`
+      : '';
 
   return {
     handled: true,
@@ -61,7 +102,8 @@ export async function handleGoal(args: string[]): Promise<CommandHandlerResult> 
         'keeps working until it is, you pause/clear it, or the budget is ' +
         'exhausted. Use /goal status, /goal pause, /goal resume, /goal clear. ' +
         'Tip: for unattended runs, enable auto-approval (/yolo or auto-edit) so ' +
-        'the loop is not blocked on confirmations.',
+        'the loop is not blocked on confirmations.' +
+        planBlock,
       timestamp: new Date(),
     },
     // Kick the loop off immediately — the dispatcher feeds the goal text as
@@ -84,9 +126,12 @@ export async function handleGoal(args: string[]): Promise<CommandHandlerResult> 
  * them) and the continuation prompt (agent sees them) on the next turn
  * boundary — no special kick needed.
  */
-export async function handleSubgoal(args: string[]): Promise<CommandHandlerResult> {
+export async function handleSubgoal(
+  args: string[],
+  options: GoalHandlerOptions = {}
+): Promise<CommandHandlerResult> {
   const arg = args.join(' ').trim();
-  const mgr = getGoalManager();
+  const mgr = getGoalManager(options.sessionKey);
 
   if (!mgr.hasGoal()) {
     return textResult('No active goal. Set one with /goal <text>.');
@@ -103,9 +148,10 @@ export async function handleSubgoal(args: string[]): Promise<CommandHandlerResul
     if (!rest) {
       return textResult('Usage: /subgoal remove <n>');
     }
-    const idx = Number(rest.split(/\s+/)[0]);
-    if (!Number.isInteger(idx)) {
-      return textResult('/subgoal remove: <n> must be an integer (1-based index).');
+    const indexToken = rest.split(/\s+/)[0] ?? '';
+    const idx = Number(indexToken);
+    if (!/^[1-9]\d*$/.test(indexToken) || !Number.isSafeInteger(idx)) {
+      return textResult('/subgoal remove: <n> must be a positive integer (1-based index).');
     }
     try {
       const removed = mgr.removeSubgoal(idx);

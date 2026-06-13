@@ -11,7 +11,6 @@
 
 import {
   ENV_SCHEMA,
-  EnvVarDef,
   validateEnv,
   getEnvSummary,
   maskValue,
@@ -32,12 +31,36 @@ describe('ENV_SCHEMA', () => {
     expect(names).toContain('CODEBUDDY_MAX_TOKENS');
     expect(names).toContain('GROK_FORCE_TOOLS');
     expect(names).toContain('GROK_CONVERT_TOOL_MESSAGES');
+    expect(names).toContain('CODEBUDDY_FALLBACK_PROVIDERS');
+    expect(names).toContain('CODEBUDDY_MEMORY_ENFORCE_LIMITS');
+    expect(names).toContain('CODEBUDDY_MEMORY_PROJECT_CHAR_LIMIT');
+    expect(names).toContain('CODEBUDDY_MEMORY_USER_CHAR_LIMIT');
+    expect(names).toContain('CODEBUDDY_MEMORY_SECURITY_SCAN');
+    expect(names).toContain('CODEBUDDY_MEMORY_REJECT_DUPLICATES');
+    expect(names).toContain('CODEBUDDY_MEMORY_AUTO_PROPOSE');
+    expect(names).toContain('CODEBUDDY_AUXILIARY_PROVIDER');
+    expect(names).toContain('CODEBUDDY_AUXILIARY_VISION_PROVIDER');
+    expect(names).toContain('AUXILIARY_VISION_MODEL');
+    expect(names).toContain('CODEBUDDY_AUXILIARY_COMPRESSION_PROVIDER');
 
     // Provider
     expect(names).toContain('OPENAI_API_KEY');
     expect(names).toContain('ANTHROPIC_API_KEY');
     expect(names).toContain('GOOGLE_API_KEY');
     expect(names).toContain('GEMINI_API_KEY');
+    expect(names).toContain('NOVITA_API_KEY');
+    expect(names).toContain('GLM_API_KEY');
+    expect(names).toContain('KIMI_API_KEY');
+    expect(names).toContain('DASHSCOPE_API_KEY');
+    expect(names).toContain('HF_TOKEN');
+    expect(names).toContain('NVIDIA_API_KEY');
+    expect(names).toContain('AZURE_OPENAI_ENDPOINT');
+    expect(names).toContain('AZURE_OPENAI_API_KEY');
+    expect(names).toContain('AZURE_OPENAI_AD_TOKEN');
+    expect(names).toContain('AWS_BEDROCK_REGION');
+    expect(names).toContain('AWS_ACCESS_KEY_ID');
+    expect(names).toContain('AWS_SECRET_ACCESS_KEY');
+    expect(names).toContain('GITHUB_COPILOT_TOKEN');
     expect(names).toContain('ELEVENLABS_API_KEY');
 
     // Search

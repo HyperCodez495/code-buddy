@@ -2,7 +2,7 @@
  * Tests for Configuration Validator
  */
 
-import { ConfigValidator, getConfigValidator } from '../src/utils/config-validator';
+import { ConfigValidator, ZodConfigValidator, getConfigValidator } from '../src/utils/config-validator';
 
 describe('ConfigValidator', () => {
   let validator: ConfigValidator;
@@ -25,6 +25,24 @@ describe('ConfigValidator', () => {
 
         expect(result.valid).toBe(true);
         expect(result.errors).toHaveLength(0);
+      });
+
+      it('should accept persistent goal settings', () => {
+        const config = {
+          goals: {
+            maxTurns: 12,
+            judgeModel: 'gpt-5.5',
+            plannerModel: 'gpt-5.5-mini',
+            judgeMaxTokens: 1024,
+            judgeTimeoutMs: 30000,
+          },
+        };
+
+        const result = validator.validate(config, 'settings.json');
+
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+        expect(result.warnings).toHaveLength(0);
       });
 
       it('should reject invalid autonomyLevel', () => {
@@ -59,6 +77,40 @@ describe('ConfigValidator', () => {
 
         expect(result.warnings.length).toBeGreaterThan(0);
         expect(result.warnings[0].message).toContain('Unknown property');
+      });
+    });
+
+    describe('settings.json Zod schema', () => {
+      it('should accept persistent goal settings at runtime', () => {
+        const zodValidator = new ZodConfigValidator();
+        const result = zodValidator.validate<{
+          goals?: { judgeModel?: string; plannerModel?: string };
+        }>({
+          goals: {
+            maxTurns: 12,
+            judgeModel: ' gpt-5.5 ',
+            plannerModel: ' gpt-5.5-mini ',
+            judgeMaxTokens: 1024,
+            judgeTimeoutMs: 30000,
+          },
+        }, 'settings.json');
+
+        expect(result.valid).toBe(true);
+        expect(result.errors).toHaveLength(0);
+        expect(result.data?.goals?.judgeModel).toBe('gpt-5.5');
+        expect(result.data?.goals?.plannerModel).toBe('gpt-5.5-mini');
+      });
+
+      it('should reject invalid persistent goal settings', () => {
+        const zodValidator = new ZodConfigValidator();
+        const result = zodValidator.validate({
+          goals: {
+            maxTurns: 1.5,
+          },
+        }, 'settings.json');
+
+        expect(result.valid).toBe(false);
+        expect(result.errors[0].path).toContain('goals.maxTurns');
       });
     });
 

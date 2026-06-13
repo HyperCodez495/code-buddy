@@ -2,6 +2,14 @@
 import { handleMemory, handleRemember } from '../../src/commands/handlers/memory-handlers.js';
 import { getEnhancedMemory, getMemoryManager } from '../../src/memory/index.js';
 
+const { mockCandidateQueue } = vi.hoisted(() => ({
+  mockCandidateQueue: {
+    list: vi.fn(),
+    accept: vi.fn(),
+    reject: vi.fn(),
+  },
+}));
+
 // Mock getEnhancedMemory and getMemoryManager
 vi.mock('../../src/memory/index.js', () => {
   const mockEnhancedMemory = {
@@ -14,6 +22,13 @@ vi.mock('../../src/memory/index.js', () => {
   };
   const mockPersistentMemory = {
     remember: vi.fn().mockResolvedValue(undefined),
+    replace: vi.fn().mockResolvedValue({
+      status: 'replaced',
+      key: 'key',
+      scope: 'project',
+      usage: { used: 12, limit: 2200, percent: 1 },
+      message: 'Replaced "key" in project memory.',
+    }),
     recall: vi.fn().mockReturnValue(null),
     forget: vi.fn().mockResolvedValue(false),
     formatMemories: vi.fn().mockReturnValue('Persistent Memory Status OK'),
@@ -27,6 +42,10 @@ vi.mock('../../src/memory/index.js', () => {
   };
 });
 
+vi.mock('../../src/memory/memory-candidate-queue.js', () => ({
+  getMemoryCandidateQueue: vi.fn(() => mockCandidateQueue),
+}));
+
 vi.mock('../../src/tools/comment-watcher.js', () => ({
   getCommentWatcher: vi.fn(),
 }));
@@ -36,13 +55,56 @@ vi.mock('../../src/errors/index.js', () => ({
 }));
 
 describe('Memory Commands', () => {
-  let mockEnhancedMem: any;
-  let mockPersistentMem: any;
+  type MockEnhancedMemory = {
+    store: ReturnType<typeof vi.fn>;
+    recall: ReturnType<typeof vi.fn>;
+    forget: ReturnType<typeof vi.fn>;
+    buildContext: ReturnType<typeof vi.fn>;
+  };
+  type MockPersistentMemory = {
+    remember: ReturnType<typeof vi.fn>;
+    replace: ReturnType<typeof vi.fn>;
+    recall: ReturnType<typeof vi.fn>;
+    forget: ReturnType<typeof vi.fn>;
+    formatMemories: ReturnType<typeof vi.fn>;
+    getContextForPrompt: ReturnType<typeof vi.fn>;
+    getRecentMemories: ReturnType<typeof vi.fn>;
+  };
+
+  let mockEnhancedMem: MockEnhancedMemory;
+  let mockPersistentMem: MockPersistentMemory;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    mockEnhancedMem = getEnhancedMemory();
-    mockPersistentMem = getMemoryManager();
+    mockEnhancedMem = getEnhancedMemory() as unknown as MockEnhancedMemory;
+    mockPersistentMem = getMemoryManager() as unknown as MockPersistentMemory;
+    mockCandidateQueue.list.mockReturnValue([]);
+    mockCandidateQueue.accept.mockResolvedValue({
+      candidate: {
+        id: 'mc-1',
+        key: 'runtime',
+        value: 'Node 22',
+        scope: 'project',
+        category: 'project',
+        status: 'accepted',
+        createdAt: Date.now(),
+        source: 'manual',
+      },
+      write: {
+        status: 'stored',
+        usage: { used: 20, limit: 2200, percent: 1 },
+      },
+    });
+    mockCandidateQueue.reject.mockReturnValue({
+      id: 'mc-1',
+      key: 'runtime',
+      value: 'Node 22',
+      scope: 'project',
+      category: 'project',
+      status: 'rejected',
+      createdAt: Date.now(),
+      source: 'manual',
+    });
   });
 
   describe('handleMemory', () => {
@@ -61,6 +123,14 @@ describe('Memory Commands', () => {
       // Both persistent and enhanced memory are called
       expect(mockPersistentMem.remember).toHaveBeenCalled();
       expect(mockEnhancedMem.store).toHaveBeenCalled();
+    });
+
+    it('should handle replace command', async () => {
+      const result = await handleMemory(['replace', 'key', 'new', 'value']);
+
+      expect(result.handled).toBe(true);
+      expect(result.entry?.content).toContain('Replaced "key"');
+      expect(mockPersistentMem.replace).toHaveBeenCalledWith('key', 'new value', { scope: 'project' });
     });
 
     it('should handle recall command with results', async () => {
@@ -173,6 +243,52 @@ describe('Memory Commands', () => {
         // Garbage scope arg → undefined (no filter)
         await handleMemory(['recent', '10', 'whatever']);
         expect(mockPersistentMem.getRecentMemories).toHaveBeenLastCalledWith(10, undefined);
+      });
+    });
+
+    describe('memory candidates', () => {
+      it('lists pending memory candidates with citations', async () => {
+        mockCandidateQueue.list.mockReturnValueOnce([
+          {
+            id: 'mc-1',
+            key: 'runtime',
+            value: 'The project targets Node 22.',
+            scope: 'project',
+            category: 'project',
+            status: 'pending',
+            createdAt: Date.now(),
+            source: 'session_end',
+            confidence: 0.8,
+            citations: [{ sessionId: 'sess-1', messageIndex: 2, role: 'user', snippet: 'Project targets Node 22.' }],
+          },
+        ]);
+
+        const result = await handleMemory(['candidates']);
+
+        expect(result.handled).toBe(true);
+        expect(result.entry?.content).toContain('Memory candidates');
+        expect(result.entry?.content).toContain('mc-1');
+        expect(result.entry?.content).toContain('runtime');
+        expect(result.entry?.content).toContain('sess-1#2');
+      });
+
+      it('accepts a memory candidate using the slash command as reviewer when omitted', async () => {
+        const result = await handleMemory(['accept', 'mc-1']);
+
+        expect(result.handled).toBe(true);
+        expect(result.entry?.content).toContain('Accepted mc-1');
+        expect(mockCandidateQueue.accept).toHaveBeenCalledWith('mc-1', { reviewedBy: 'user' });
+      });
+
+      it('rejects a memory candidate with a reason', async () => {
+        const result = await handleMemory(['reject', 'mc-1', 'too', 'transient']);
+
+        expect(result.handled).toBe(true);
+        expect(result.entry?.content).toContain('Rejected memory candidate mc-1');
+        expect(mockCandidateQueue.reject).toHaveBeenCalledWith('mc-1', {
+          reviewedBy: 'user',
+          reason: 'too transient',
+        });
       });
     });
 

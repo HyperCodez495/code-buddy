@@ -20,7 +20,7 @@ import type { SessionStore } from "../persistence/session-store.js";
 import type { CostTracker } from "../utils/cost-tracker.js";
 import { getLaneQueue } from "../concurrency/lane-queue.js";
 import type { RouteAgentConfig } from "../channels/peer-routing.js";
-import { findSkill, findStarterPack } from "../skills/index.js";
+import { findSkill, findStarterPack, resetSkillRegistry } from "../skills/index.js";
 import { skillMdToUnified } from "../skills/adapters/index.js";
 import { getSkillsHub } from "../skills/hub.js";
 import { MessageQueue, type MessageQueueMode } from "./message-queue.js";
@@ -30,6 +30,12 @@ import { initializeMemory, getMemoryManager } from "../memory/persistent-memory.
 import { getUserHooksManager } from "../hooks/user-hooks.js";
 import { isFeatureEnabled } from "../config/feature-flags.js";
 import { getActiveRunStore } from "../observability/run-store.js";
+import { resetIdentityManager } from "../identity/identity-manager.js";
+import { resetHotReloadManager } from "../config/hot-reload/index.js";
+import { resetConfigWatcher } from "../config/hot-reload/watcher.js";
+import { resetPersonaManager } from "../personas/persona-manager.js";
+import { resetEnhancedMemory } from "../memory/enhanced-memory.js";
+import { resetPluginMarketplace } from "../plugins/marketplace.js";
 
 // Re-export types for backwards compatibility
 export type { ChatEntry, StreamingChunk } from "./types.js";
@@ -101,9 +107,11 @@ export class CodeBuddyAgent extends BaseAgent {
     systemPromptId?: string,  // New: external prompt ID (default, minimal, secure, etc.)
     workingDirectory?: string,
     systemPromptAppend?: string,
+    initialSystemPromptOverride?: string,
   ) {
     super();
     this.systemPromptAppend = systemPromptAppend;
+    this.customSystemPromptOverride = initialSystemPromptOverride?.trim() || null;
     this.visionGroundingModel = process.env.CODEBUDDY_VISION_GROUNDING_MODEL || undefined;
     const initialWorkingDirectory = workingDirectory || process.cwd();
 
@@ -562,18 +570,22 @@ Look at the screenshot and find the element matching the user's intent. Output o
     customInstructions: string | null
   ): Promise<void> {
     try {
-      let systemPrompt = await this.promptBuilder.buildSystemPrompt(systemPromptId, modelName, customInstructions);
+      const hasInitialOverride = !!this.customSystemPromptOverride;
+      let systemPrompt = this.customSystemPromptOverride
+        ?? await this.promptBuilder.buildSystemPrompt(systemPromptId, modelName, customInstructions);
 
       // Inject repoProfile.contextPack if available
-      try {
-        const profiler = getRepoProfiler();
-        const profile = await profiler.getProfile();
-        if (profile.contextPack) {
-          systemPrompt = `${systemPrompt}\n\n[Repo] ${profile.contextPack}`;
-          logger.debug('RepoProfiler: injected contextPack into system prompt');
+      if (!hasInitialOverride) {
+        try {
+          const profiler = getRepoProfiler();
+          const profile = await profiler.getProfile();
+          if (profile.contextPack) {
+            systemPrompt = `${systemPrompt}\n\n[Repo] ${profile.contextPack}`;
+            logger.debug('RepoProfiler: injected contextPack into system prompt');
+          }
+        } catch {
+          // Non-fatal — repo profiling is best-effort
         }
-      } catch {
-        // Non-fatal — repo profiling is best-effort
       }
 
       systemPrompt = this.applyRuntimeSystemPromptAppend(systemPrompt);
@@ -1845,7 +1857,11 @@ Look at the screenshot and find the element matching the user's intent. Output o
     getUserHooksManager(process.cwd()).executeHooks('SessionEnd', {}).catch(
       (err) => logger.warn(`[user-hooks] SessionEnd error: ${err instanceof Error ? err.message : String(err)}`)
     );
-    if (isFeatureEnabled('USER_MODEL_DIALECTIC_ON_SESSION_END')) {
+    const skipAsyncSessionLearning =
+      process.env.CODEBUDDY_HEADLESS === 'true' ||
+      process.env.CODEBUDDY_HEADLESS === '1';
+
+    if (!skipAsyncSessionLearning && isFeatureEnabled('USER_MODEL_DIALECTIC_ON_SESSION_END')) {
       const chatHistory = this.historyManager.getChatHistory();
       if (chatHistory && chatHistory.length > 0) {
         import('../memory/user-model.js')
@@ -1865,7 +1881,7 @@ Look at the screenshot and find the element matching the user's intent. Output o
     // WS3-T1 — session-end flush: handoff + review-gated lesson candidates.
     // Fire-and-forget like the dialectic above; callers that need the flush
     // to complete before process exit await runSessionEndFlush directly.
-    {
+    if (!skipAsyncSessionLearning) {
       const chatHistory = this.historyManager.getChatHistory();
       if (chatHistory && chatHistory.length > 0) {
         import('./session-end-flush.js')
@@ -1901,5 +1917,26 @@ Look at the screenshot and find the element matching the user's intent. Output o
     this.contextManager.stopPeriodicSnapshot?.();
     this.peerRoutingConfig = null;
     super.dispose();
+    if (skipAsyncSessionLearning) {
+      cleanupHeadlessSingletonWatchers();
+    }
+  }
+}
+
+function cleanupHeadlessSingletonWatchers(): void {
+  for (const cleanup of [
+    resetSkillRegistry,
+    resetIdentityManager,
+    resetHotReloadManager,
+    resetConfigWatcher,
+    resetPersonaManager,
+    resetEnhancedMemory,
+    resetPluginMarketplace,
+  ]) {
+    try {
+      cleanup();
+    } catch (error) {
+      logger.debug('Headless watcher cleanup skipped', { error: String(error) });
+    }
   }
 }

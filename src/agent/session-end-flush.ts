@@ -9,7 +9,10 @@
  *  2. reusable lesson candidates via the existing review-gated
  *     auto-proposer (PENDING only — a human approves them into lessons.md,
  *     which the per-turn `<lessons_context>` injection then re-injects on
- *     future runs).
+ *     future runs);
+ *  3. declarative long-term memory candidates via the review-gated memory
+ *     queue. These do not enter prompt-injected persistent memory until a
+ *     human accepts them.
  *
  * Guard-rails: trivial sessions are skipped (no LLM call, no file), and
  * everything written here passes the privacy lint first (PII/secret spans
@@ -44,6 +47,8 @@ export interface SessionEndFlushInput {
 export interface SessionEndFlushResult {
   /** Lesson candidates enqueued for review (`buddy lessons` to approve). */
   proposedLessons: number;
+  /** Declarative memory candidates enqueued for review (`/memory candidates`). */
+  proposedMemories: number;
   /** Absolute path of the handoff file, when one was (re)written. */
   handoffPath?: string;
   openRisks: string[];
@@ -195,6 +200,7 @@ export function writeHandoffSync(
       ? '- Commencer par lever les risques ouverts ci-dessus.'
       : '- Continuer le dernier objectif, ou `buddy --continue` pour recharger la session.',
     '- Leçons en attente de revue : `buddy lessons` (candidats proposés en fin de session).',
+    '- Mémoires en attente de revue : `/memory candidates` puis `/memory accept <id> <reviewer>`.',
     '',
   );
 
@@ -223,7 +229,7 @@ export function writeHandoffSync(
 export async function runSessionEndFlush(
   input: SessionEndFlushInput,
 ): Promise<SessionEndFlushResult> {
-  const empty: SessionEndFlushResult = { proposedLessons: 0, openRisks: [] };
+  const empty: SessionEndFlushResult = { proposedLessons: 0, proposedMemories: 0, openRisks: [] };
   try {
     if (!isFeatureEnabled('SESSION_END_FLUSH')) {
       return { ...empty, skipped: 'disabled' };
@@ -252,15 +258,33 @@ export async function runSessionEndFlush(
       logger.debug('[session-end-flush] lesson proposal failed', { err: String(err) });
     }
 
-    if (proposedLessons > 0 || handoffPath) {
+    let proposedMemories = 0;
+    if (process.env.CODEBUDDY_MEMORY_AUTO_PROPOSE !== 'false') {
+      try {
+        const { proposeMemoryCandidatesFromSession } = await import('../memory/memory-auto-proposer.js');
+        const proposed = await proposeMemoryCandidatesFromSession(
+          history,
+          workDir,
+          input.client,
+          input.sessionId,
+        );
+        proposedMemories = proposed.length;
+      } catch (err) {
+        logger.debug('[session-end-flush] memory proposal failed', { err: String(err) });
+      }
+    }
+
+    if (proposedLessons > 0 || proposedMemories > 0 || handoffPath) {
       logger.info(
         `[session-end-flush] ${proposedLessons} lesson candidate(s) proposed` +
+        `, ${proposedMemories} memory candidate(s) proposed` +
         (handoffPath ? `, handoff written to ${path.relative(workDir, handoffPath)}` : ''),
       );
     }
 
     return {
       proposedLessons,
+      proposedMemories,
       ...(handoffPath ? { handoffPath } : {}),
       openRisks,
     };

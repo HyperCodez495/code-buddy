@@ -315,6 +315,101 @@ describe('Run CLI commands', () => {
     expect(new Date(output.generatedAt).toString()).not.toBe('Invalid Date');
   });
 
+  it('prints and repairs artifact index doctor JSON from the CLI', async () => {
+    const staleRunId = startRun('Pruned Cowork artifact index run', {
+      channel: 'cowork',
+      tags: ['fleet'],
+    });
+    store.saveArtifact(staleRunId, 'stale.md', 'Stale indexed artifact from a pruned run folder.');
+    store.endRun(staleRunId, 'completed');
+
+    const orphanRunId = startRun('Orphaned Cowork artifact index run', {
+      channel: 'cowork',
+      tags: ['fleet'],
+    });
+    store.saveArtifact(orphanRunId, 'orphan.md', 'Orphaned indexed artifact with a missing file.');
+    store.endRun(orphanRunId, 'completed');
+
+    activeRunIds = activeRunIds.filter((id) => id !== staleRunId && id !== orphanRunId);
+    await new Promise((resolve) => setTimeout(resolve, 60));
+
+    const baseline = store.checkArtifactIndexHealth();
+    if (baseline.unavailable) {
+      return;
+    }
+
+    fs.rmSync(path.join(tempDir, staleRunId), { recursive: true, force: true });
+    fs.rmSync(path.join(tempDir, orphanRunId, 'artifacts', 'orphan.md'), { force: true });
+
+    const checkProgram = createProgram();
+    registerRunCommands(checkProgram);
+
+    await checkProgram.parseAsync([
+      'node',
+      'test',
+      'run',
+      'index-doctor',
+      '--json',
+    ]);
+
+    const checkOutput = JSON.parse(getLogOutput()) as {
+      generatedAt: string;
+      includeOrphans: boolean;
+      mode: string;
+      orphanedRows: number;
+      rows: Array<{ artifact: string; reason: string; runId: string }>;
+      schemaVersion: number;
+      staleRows: number;
+      unavailable: boolean;
+    };
+
+    expect(checkOutput).toMatchObject({
+      includeOrphans: false,
+      mode: 'check',
+      orphanedRows: 1,
+      schemaVersion: 1,
+      staleRows: 1,
+      unavailable: false,
+    });
+    expect(new Date(checkOutput.generatedAt).toString()).not.toBe('Invalid Date');
+    expect(checkOutput.rows).toEqual(expect.arrayContaining([
+      expect.objectContaining({ artifact: 'stale.md', reason: 'missing_run', runId: staleRunId }),
+      expect.objectContaining({ artifact: 'orphan.md', reason: 'missing_artifact', runId: orphanRunId }),
+    ]));
+
+    consoleLogSpy.mockClear();
+    const repairProgram = createProgram();
+    registerRunCommands(repairProgram);
+
+    await repairProgram.parseAsync([
+      'node',
+      'test',
+      'run',
+      'index-doctor',
+      '--repair',
+      '--include-orphans',
+      '--json',
+    ]);
+
+    const repairOutput = JSON.parse(getLogOutput()) as {
+      includedOrphans: boolean;
+      mode: string;
+      removedRows: number;
+      repaired: boolean;
+    };
+
+    expect(repairOutput).toMatchObject({
+      includedOrphans: true,
+      mode: 'repair',
+      removedRows: 2,
+      repaired: true,
+    });
+
+    const final = store.checkArtifactIndexHealth();
+    expect(final.staleRows).toBe(0);
+    expect(final.orphanedRows).toBe(0);
+  });
+
   it('prints JSON recall packs for agent handoffs', async () => {
     const runId = startRun('Hermes architect lead discovery', {
       channel: 'cowork',

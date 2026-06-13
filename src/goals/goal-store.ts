@@ -10,6 +10,7 @@
  * Hermes' SessionDB behavior.
  */
 
+import { createHash } from 'crypto';
 import fs from 'fs';
 import path from 'path';
 import { getCodeBuddyPath } from '../utils/codebuddy-home.js';
@@ -34,15 +35,18 @@ export class GoalStore {
 
   load(key: string): GoalState | null {
     if (!key) return null;
-    const file = this.fileFor(key);
-    try {
-      if (!fs.existsSync(file)) return null;
-      const raw = fs.readFileSync(file, 'utf-8');
-      return normalizeGoalState(JSON.parse(raw));
-    } catch (error) {
-      logger.debug('GoalStore: failed to load goal state', { key, error: String(error) });
-      return null;
+
+    for (const file of this.fileCandidatesForRead(key)) {
+      try {
+        if (!fs.existsSync(file)) continue;
+        const raw = fs.readFileSync(file, 'utf-8');
+        return normalizeGoalState(JSON.parse(raw));
+      } catch (error) {
+        logger.debug('GoalStore: failed to load goal state', { key, file, error: String(error) });
+      }
     }
+
+    return null;
   }
 
   save(key: string, state: GoalState): void {
@@ -60,17 +64,35 @@ export class GoalStore {
 
   delete(key: string): void {
     if (!key) return;
-    try {
-      fs.rmSync(this.fileFor(key), { force: true });
-    } catch (error) {
-      logger.debug('GoalStore: failed to delete goal state', { key, error: String(error) });
+
+    for (const file of this.fileCandidatesForRead(key)) {
+      try {
+        fs.rmSync(file, { force: true });
+      } catch (error) {
+        logger.debug('GoalStore: failed to delete goal state', { key, file, error: String(error) });
+      }
     }
   }
 
   private fileFor(key: string): string {
+    const label = this.fileLabel(key);
+    const digest = createHash('sha256').update(key).digest('hex').slice(0, 16);
+    return path.join(this.storeDir, `${label}-${digest}.json`);
+  }
+
+  private fileCandidatesForRead(key: string): string[] {
+    return Array.from(new Set([this.fileFor(key), this.legacyFileFor(key)]));
+  }
+
+  private legacyFileFor(key: string): string {
     // Session ids and dir-hash keys are already filesystem-safe; sanitize
     // anyway so a malformed key can't escape the store directory.
     const safe = key.replace(/[^a-zA-Z0-9._-]/g, '_');
     return path.join(this.storeDir, `${safe}.json`);
+  }
+
+  private fileLabel(key: string): string {
+    const safe = key.replace(/[^a-zA-Z0-9._-]/g, '_').replace(/^\.+$/, '_').slice(0, 80);
+    return safe || 'goal';
   }
 }

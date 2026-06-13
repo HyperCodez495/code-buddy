@@ -187,6 +187,7 @@ export class PluginMarketplace extends EventEmitter {
   private providers: Map<string, { pluginId: string; provider: ProviderDefinition }> = new Map();
   private hooks: Map<string, Array<{ pluginId: string; handler: HookHandler }>> = new Map();
   private updateCheckerIntervalId: ReturnType<typeof setInterval> | null = null;
+  private disposed = false;
 
   constructor(config: Partial<MarketplaceConfig> = {}) {
     super();
@@ -203,6 +204,8 @@ export class PluginMarketplace extends EventEmitter {
     await fs.ensureDir(path.join(this.pluginsDir, 'installed'));
     await fs.ensureDir(path.join(this.pluginsDir, 'cache'));
     await this.loadInstalledPlugins();
+
+    if (this.disposed) return;
 
     if (this.config.autoUpdate) {
       this.startUpdateChecker();
@@ -466,9 +469,11 @@ export class PluginMarketplace extends EventEmitter {
    * Start update checker
    */
   private startUpdateChecker(): void {
+    if (this.disposed || this.updateCheckerIntervalId) return;
     this.updateCheckerIntervalId = setInterval(() => {
       this.checkUpdates();
     }, this.config.checkUpdatesInterval);
+    this.updateCheckerIntervalId.unref?.();
   }
 
   /**
@@ -895,6 +900,7 @@ export class PluginMarketplace extends EventEmitter {
    * Dispose
    */
   async dispose(): Promise<void> {
+    this.disposed = true;
     if (this.updateCheckerIntervalId) {
       clearInterval(this.updateCheckerIntervalId);
       this.updateCheckerIntervalId = null;

@@ -16,7 +16,7 @@
 
 import { useShallow } from 'zustand/react/shallow';
 import { useAppStore } from './index';
-import type { Session, Message, TraceStep, Settings, AppConfig } from '../types';
+import type { Session, Message, TraceStep, Settings, AppConfig, QueuedIntent } from '../types';
 import type { GlobalNotice, SessionExecutionClock } from './index';
 
 // ---------------------------------------------------------------------------
@@ -132,6 +132,7 @@ export function useActiveTurn(): { stepId: string; userMessageId: string } | nul
 }
 
 const EMPTY_PENDING_TURNS: string[] = [];
+const EMPTY_QUEUED_INTENTS: QueuedIntent[] = [];
 
 /** Returns the list of pending turn message IDs for the active session. */
 export function usePendingTurns(): string[] {
@@ -139,6 +140,15 @@ export function usePendingTurns(): string[] {
     s.activeSessionId
       ? (s.sessionStates[s.activeSessionId]?.pendingTurns ?? EMPTY_PENDING_TURNS)
       : EMPTY_PENDING_TURNS
+  );
+}
+
+/** Returns the queued user intents for the active session. */
+export function useActiveQueuedIntents(): QueuedIntent[] {
+  return useAppStore((s) =>
+    s.activeSessionId
+      ? (s.sessionStates[s.activeSessionId]?.queuedIntents ?? EMPTY_QUEUED_INTENTS)
+      : EMPTY_QUEUED_INTENTS
   );
 }
 

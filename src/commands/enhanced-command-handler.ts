@@ -490,7 +490,7 @@ export class EnhancedCommandHandler {
     ['__HEARTBEAT__', (args) => handleHeartbeat(args)],
 
     // Standing goal — judge + auto-continue loop (Hermes Agent parity)
-    ['__GOAL__', (args) => handleGoal(args)],
+    ['__GOAL__', (args) => handleGoal(args, { client: this.codebuddyClient })],
     ['__SUBGOAL__', (args) => handleSubgoal(args)],
 
     // Daily reset scheduler (audit OpenClaw heritage activation)

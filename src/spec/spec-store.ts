@@ -147,6 +147,7 @@ export class SpecTransitionError extends Error {
 // ============================================================================
 
 const registry = new Map<string, SpecStore>();
+let lastStoryCreatedAt = 0;
 
 export function getSpecStore(workDir: string = process.cwd()): SpecStore {
   const key = path.resolve(workDir);
@@ -163,6 +164,7 @@ export function getSpecStore(workDir: string = process.cwd()): SpecStore {
 /** Test helper: drop cached store instances. */
 export function resetSpecStores(): void {
   registry.clear();
+  lastStoryCreatedAt = 0;
 }
 
 /** Whether `from → to` is a legal story status transition. */
@@ -306,7 +308,7 @@ export class SpecStore {
     this.requireProject(projectId);
     const title = (input.title ?? '').trim();
     if (!title) throw new Error('Story title is required.');
-    const now = Date.now();
+    const now = nextStoryCreatedAt();
     const allowedPaths = cleanList(input.allowedPaths);
     const verification = cleanList(input.verification);
     const story: SpecStory = {
@@ -588,6 +590,12 @@ function parseFrontmatter(content: string): Record<string, unknown> | null {
 
 function randomId(): string {
   return `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function nextStoryCreatedAt(): number {
+  const now = Date.now();
+  lastStoryCreatedAt = now > lastStoryCreatedAt ? now : lastStoryCreatedAt + 1;
+  return lastStoryCreatedAt;
 }
 
 /** Trim, drop blanks, and de-duplicate a string list (used for contract fields). */

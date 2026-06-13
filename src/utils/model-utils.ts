@@ -21,13 +21,23 @@ export function isSupportedModel(model: string): model is ModelName {
   return model in SUPPORTED_MODELS;
 }
 
+function resolveSupportedModelName(model: string): ModelName | null {
+  if (isSupportedModel(model)) return model;
+
+  const withoutLatest = model.endsWith(':latest') ? model.slice(0, -':latest'.length) : '';
+  if (withoutLatest && isSupportedModel(withoutLatest)) return withoutLatest;
+
+  return null;
+}
+
 /**
  * Get information about a model
  */
 export function getModelInfo(model: string): ModelInfo {
-  if (isSupportedModel(model)) {
+  const supportedModel = resolveSupportedModelName(model);
+  if (supportedModel) {
     return {
-      ...SUPPORTED_MODELS[model],
+      ...SUPPORTED_MODELS[supportedModel],
       isSupported: true,
     };
   }

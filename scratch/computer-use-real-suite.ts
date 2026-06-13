@@ -17,6 +17,8 @@ interface SuiteResult {
   resultPath: string;
   stdoutTail: string;
   stderrTail: string;
+  skipped?: boolean;
+  skipReason?: string;
   parsedResult?: unknown;
 }
 
@@ -70,7 +72,20 @@ async function runCase(testCase: SuiteCase): Promise<SuiteResult> {
   });
 
   const exitCode = await new Promise<number | null>((resolve) => {
-    child.on('close', (code) => resolve(code));
+    let settled = false;
+    child.on('error', (error) => {
+      if (settled) return;
+      settled = true;
+      const message = error instanceof Error ? error.message : String(error);
+      stderr += message;
+      process.stderr.write(`${message}\n`);
+      resolve(null);
+    });
+    child.on('close', (code) => {
+      if (settled) return;
+      settled = true;
+      resolve(code);
+    });
   });
 
   let parsedResult: unknown;
@@ -96,19 +111,41 @@ async function runCase(testCase: SuiteCase): Promise<SuiteResult> {
   };
 }
 
+const summaryPath = path.join(root, 'scratch/computer-use-real-suite-result.json');
 const results: SuiteResult[] = [];
-for (const testCase of cases) {
-  console.log(`\n=== ${testCase.name} ===`);
-  results.push(await runCase(testCase));
+let platformError: string | undefined;
+
+if (process.platform !== 'win32') {
+  platformError =
+    `Computer Use real suite requires Windows because it drives WinForms, Notepad, and Excel COM; current platform is ${process.platform}.`;
+  for (const testCase of cases) {
+    results.push({
+      name: testCase.name,
+      script: testCase.script,
+      exitCode: null,
+      durationMs: 0,
+      passed: false,
+      resultPath: testCase.resultPath,
+      stdoutTail: '',
+      stderrTail: platformError,
+      skipped: true,
+      skipReason: platformError,
+    });
+  }
+} else {
+  for (const testCase of cases) {
+    console.log(`\n=== ${testCase.name} ===`);
+    results.push(await runCase(testCase));
+  }
 }
 
 const summary = {
   passed: results.every((result) => result.passed),
   generatedAt: new Date().toISOString(),
+  ...(platformError ? { platformError } : {}),
   results,
 };
 
-const summaryPath = path.join(root, 'scratch/computer-use-real-suite-result.json');
 await fs.writeFile(summaryPath, `${JSON.stringify(summary, null, 2)}\n`, 'utf8');
 
 console.log(JSON.stringify({
@@ -119,5 +156,6 @@ console.log(JSON.stringify({
 }, null, 2));
 
 if (!summary.passed) {
-  throw new Error('Computer Use real suite failed.');
+  console.error(platformError ?? 'Computer Use real suite failed.');
+  process.exit(1);
 }

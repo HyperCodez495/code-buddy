@@ -138,6 +138,35 @@ describe('FleetColabStore', () => {
       expect(task.createdBy).toBe('ministar-linux/code-buddy');
       expect(store.listTasks({ status: 'open' }).map((t) => t.title)).toContain('new work');
     });
+
+    it('rejects invalid goalMaxTurns instead of silently falling back or truncating', () => {
+      for (const goalMaxTurns of [0, -1, 1.5, Number.NaN, Number.MAX_SAFE_INTEGER + 1]) {
+        expect(() => store.addTask({ title: 'bad goal task', goalMode: true, goalMaxTurns }))
+          .toThrow(/goalMaxTurns must be a positive integer/);
+      }
+      expect(() => store.addTask({
+        title: 'bad goal task',
+        goalMode: true,
+        goalMaxTurns: '2' as unknown as number,
+      })).toThrow(/goalMaxTurns must be a positive integer/);
+    });
+
+    it('normalizes legacy invalid goalTurnsUsed before incrementing', () => {
+      seedTasks([{
+        id: 'legacy-goal',
+        title: 'legacy goal',
+        status: 'open',
+        priority: 'medium',
+        claimedBy: null,
+        goalMode: true,
+        goalTurnsUsed: '1',
+      }]);
+
+      const updated = store.recordGoalTurn('legacy-goal', 'needs proof');
+      expect(updated.goalTurnsUsed).toBe(1);
+      expect(updated.goalLastReason).toBe('needs proof');
+      expect(store.getTask('legacy-goal')?.goalTurnsUsed).toBe(1);
+    });
   });
 
   describe('presence', () => {

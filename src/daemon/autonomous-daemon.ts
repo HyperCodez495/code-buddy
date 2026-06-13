@@ -14,7 +14,10 @@
  */
 
 import { FleetColabStore } from '../fleet/colab-store.js';
-import { resolveModelTierConfig, type ModelTierPolicy } from '../agent/model-tier.js';
+import {
+  resolveLiveModelTierConfig,
+  type ModelTierPolicy,
+} from '../agent/model-tier.js';
 import { FileWatcherTrigger } from '../agent/file-watcher-trigger.js';
 import { FleetAutonomousLoop, type TickResult } from './autonomous-loop.js';
 import { createLocalModelTaskExecutor } from './ollama-task-executor.js';
@@ -166,12 +169,14 @@ export interface DefaultAutonomousLoopOptions {
  * local/network executor. The CLI uses this so the same config drives one-shot
  * and continuous runs.
  */
-export function createDefaultAutonomousLoop(opts: DefaultAutonomousLoopOptions = {}): FleetAutonomousLoop {
+export async function createDefaultAutonomousLoop(
+  opts: DefaultAutonomousLoopOptions = {},
+): Promise<FleetAutonomousLoop> {
   const store = new FleetColabStore({
     ...(opts.dir ? { dir: opts.dir } : {}),
     ...(opts.agentId ? { agentId: opts.agentId } : {}),
   });
-  const tierConfig = resolveModelTierConfig();
+  const tierConfig = await resolveLiveModelTierConfig();
   const executorMode = opts.executorMode ?? (process.env['CODEBUDDY_AUTONOMY_EXECUTOR'] === 'agent' ? 'agent' : 'artifact');
   const executor = executorMode === 'agent'
     ? createAgentTaskExecutor({ ...(opts.workspaceRoot ? { workspaceRoot: opts.workspaceRoot } : {}) })

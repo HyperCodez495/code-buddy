@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 const handleCommand = vi.fn();
 const setConversationHistory = vi.fn();
 const setCodeBuddyClient = vi.fn();
+const handleGoal = vi.fn();
+const handleSubgoal = vi.fn();
 
 vi.mock('../../src/commands/enhanced-command-handler.js', () => ({
   getEnhancedCommandHandler: () => ({
@@ -10,6 +12,11 @@ vi.mock('../../src/commands/enhanced-command-handler.js', () => ({
     setConversationHistory,
     setCodeBuddyClient,
   }),
+}));
+
+vi.mock('../../src/commands/handlers/goal-handler.js', () => ({
+  handleGoal,
+  handleSubgoal,
 }));
 
 import {
@@ -22,6 +29,8 @@ describe('headless slash execution', () => {
     handleCommand.mockReset();
     setConversationHistory.mockReset();
     setCodeBuddyClient.mockReset();
+    handleGoal.mockReset();
+    handleSubgoal.mockReset();
   });
 
   describe('isSpecialCommandToken', () => {
@@ -73,6 +82,29 @@ describe('headless slash execution', () => {
     await executeHeadlessSlashToken('__HELP__', [], new Set(['__HELP__']), { conversationHistory: history });
     expect(setConversationHistory).toHaveBeenCalledWith(history);
     expect(setCodeBuddyClient).not.toHaveBeenCalled();
+  });
+
+  it('routes goal tokens through the session-scoped goal handler when provided', async () => {
+    handleGoal.mockResolvedValue({
+      handled: true,
+      entry: { type: 'assistant', content: 'goal set', timestamp: new Date() },
+      passToAI: true,
+      prompt: 'ship it',
+    });
+    const res = await executeHeadlessSlashToken('__GOAL__', ['ship', 'it'], new Set(['__GOAL__']), {
+      goalSessionKey: 'cowork:s1',
+    });
+    expect(res).toMatchObject({
+      handled: true,
+      output: 'goal set',
+      passToAI: true,
+      prompt: 'ship it',
+    });
+    expect(handleGoal).toHaveBeenCalledWith(['ship', 'it'], {
+      sessionKey: 'cowork:s1',
+      client: null,
+    });
+    expect(handleCommand).not.toHaveBeenCalled();
   });
 
   it('returns a reason instead of throwing when a handler errors', async () => {

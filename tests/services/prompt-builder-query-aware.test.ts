@@ -19,6 +19,7 @@ const promptMocks = vi.hoisted(() => ({
   getSystemPromptForModeMock: vi.fn(
     (_mode: string, _morph: boolean, _cwd: string, _custom?: string) => 'LEGACY_BODY',
   ),
+  getChatOnlySystemPromptMock: vi.fn(() => 'CHAT_ONLY_BODY'),
 }));
 
 vi.mock('../../src/prompts/index.js', () => ({
@@ -26,7 +27,7 @@ vi.mock('../../src/prompts/index.js', () => ({
   getPromptManager: () => ({ buildSystemPrompt: vi.fn(async () => 'PM_BODY') }),
   autoSelectPromptId: vi.fn(() => 'auto-id'),
   // Phase d.23: prompt-builder swaps to chat-only when supportsToolCalls=false.
-  getChatOnlySystemPrompt: vi.fn(() => 'CHAT_ONLY_BODY'),
+  getChatOnlySystemPrompt: promptMocks.getChatOnlySystemPromptMock,
 }));
 
 const modelToolsMock = vi.hoisted(() => ({
@@ -196,6 +197,37 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).not.toContain('<auto_memory_directive>');
     expect(sp).not.toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+  });
+
+  it('GROK_FORCE_TOOLS bypasses the chat-only fallback for lab validation', async () => {
+    const prev = process.env.GROK_FORCE_TOOLS;
+    process.env.GROK_FORCE_TOOLS = 'true';
+    promptMocks.getSystemPromptForModeMock.mockClear();
+    promptMocks.getChatOnlySystemPromptMock.mockClear();
+    try {
+      modelToolsMock.getModelToolConfigMock.mockReturnValue({
+        contextWindow: 200000,
+        maxOutputTokens: 16000,
+        supportsToolCalls: false,
+        promptProfile: 'lite',
+      });
+
+      const { builder } = buildBuilder();
+      const sp = await builder.buildForQuery(
+        'run echo LOCAL_CHAT_ONLY_GOAL_OK',
+        undefined,
+        'qwen2.5-coder:7b',
+        null,
+      );
+
+      expect(sp).toContain('LEGACY_BODY');
+      expect(sp).not.toContain('CHAT_ONLY_BODY');
+      expect(promptMocks.getSystemPromptForModeMock).toHaveBeenCalled();
+      expect(promptMocks.getChatOnlySystemPromptMock).not.toHaveBeenCalled();
+    } finally {
+      if (prev === undefined) delete process.env.GROK_FORCE_TOOLS;
+      else process.env.GROK_FORCE_TOOLS = prev;
+    }
   });
 
   it('default (no profile field) = standard, classified by query', async () => {

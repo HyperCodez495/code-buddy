@@ -11,11 +11,43 @@ const settingsState = vi.hoisted(() => ({
   model: undefined as string | undefined,
 }));
 
+const detectedState = vi.hoisted(() => ({
+  chatgptCredentials: false,
+}));
+
 vi.mock('../../src/utils/settings-manager.js', () => ({
   getSettingsManager: () => ({
     loadUserSettings: () => ({ provider: settingsState.provider }),
     getCurrentModel: () => settingsState.model,
   }),
+}));
+
+vi.mock('../../src/utils/provider-detector.js', () => ({
+  detectProviderFromEnv: () => {
+    const override = process.env.CODEBUDDY_PROVIDER?.toLowerCase();
+    if ((override === 'chatgpt' || !override) && detectedState.chatgptCredentials) {
+      return {
+        provider: 'chatgpt',
+        apiKey: 'oauth-chatgpt',
+        baseURL: 'https://chatgpt.com/backend-api/codex',
+        defaultModel: process.env.CHATGPT_MODEL || 'gpt-5.5',
+      };
+    }
+
+    if (override === 'ollama' || (!override && process.env.OLLAMA_HOST)) {
+      let host = process.env.OLLAMA_HOST || 'http://localhost:11434';
+      if (!/^https?:\/\//i.test(host)) host = `http://${host}`;
+      if (!host.endsWith('/v1')) host = host.replace(/\/+$/, '') + '/v1';
+      return {
+        provider: 'ollama',
+        apiKey: 'ollama',
+        baseURL: host,
+        defaultModel: process.env.GROK_MODEL || process.env.OLLAMA_MODEL || 'qwen2.5-coder:7b',
+      };
+    }
+
+    return null;
+  },
 }));
 
 import { resolveCommandProvider } from '../../src/commands/llm-provider-resolution';
@@ -49,6 +81,7 @@ beforeEach(() => {
   // explicit provider or an API key, so ordering keeps this deterministic.
   settingsState.provider = 'grok';
   settingsState.model = undefined;
+  detectedState.chatgptCredentials = false;
 });
 
 afterEach(() => {
@@ -92,6 +125,79 @@ describe('resolveCommandProvider', () => {
 
     expect(resolved!.apiKey).toBe('ollama');
     expect(resolved!.baseURL).toBe('http://darkstar:11434/v1');
+  });
+
+  it('routes an explicit Ollama model to local Ollama even when a cloud key exists', () => {
+    process.env.GROK_API_KEY = 'xai-test-key';
+    process.env.OLLAMA_HOST = 'http://darkstar:11434';
+
+    const resolved = resolveCommandProvider({ explicitModel: 'gemma4:12b' });
+
+    expect(resolved).toMatchObject({
+      apiKey: 'ollama',
+      baseURL: 'http://darkstar:11434/v1',
+      model: 'gemma4:12b',
+      providerLabel: 'ollama',
+    });
+  });
+
+  it('uses localhost Ollama for explicit local models when OLLAMA_HOST is unset', () => {
+    process.env.GROK_API_KEY = 'xai-test-key';
+
+    const resolved = resolveCommandProvider({ explicitModel: 'qwen3.5-ctx32k:latest' });
+
+    expect(resolved).toMatchObject({
+      apiKey: 'ollama',
+      baseURL: 'http://localhost:11434/v1',
+      model: 'qwen3.5-ctx32k:latest',
+      providerLabel: 'ollama',
+    });
+  });
+
+  it('routes explicit local Devstral Small 2 tags to Ollama instead of the saved cloud provider', () => {
+    detectedState.chatgptCredentials = true;
+    settingsState.provider = 'openai';
+    settingsState.model = 'gpt-5.5';
+
+    const resolved = resolveCommandProvider({
+      explicitModel: 'devstral-small-2:24b-instruct-2512-q4_K_M',
+    });
+
+    expect(resolved).toMatchObject({
+      apiKey: 'ollama',
+      baseURL: 'http://localhost:11434/v1',
+      model: 'devstral-small-2:24b-instruct-2512-q4_K_M',
+      providerLabel: 'ollama',
+    });
+  });
+
+  it('routes a configured local model to Ollama even when no --model flag is passed', () => {
+    detectedState.chatgptCredentials = true;
+    settingsState.provider = 'openai';
+    settingsState.model = 'qwen3.5-ctx32k:latest';
+
+    const resolved = resolveCommandProvider();
+
+    expect(resolved).toMatchObject({
+      apiKey: 'ollama',
+      baseURL: 'http://localhost:11434/v1',
+      model: 'qwen3.5-ctx32k:latest',
+      providerLabel: 'ollama',
+    });
+  });
+
+  it('routes explicit ChatGPT subscription models to ChatGPT OAuth when credentials exist', () => {
+    detectedState.chatgptCredentials = true;
+    process.env.GROK_API_KEY = 'xai-test-key';
+
+    const resolved = resolveCommandProvider({ explicitModel: 'gpt-5.5' });
+
+    expect(resolved).toMatchObject({
+      apiKey: 'oauth-chatgpt',
+      baseURL: 'https://chatgpt.com/backend-api/codex',
+      model: 'gpt-5.5',
+      providerLabel: 'chatgpt',
+    });
   });
 
   it('an explicit --model override wins on both paths', () => {

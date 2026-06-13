@@ -14,6 +14,7 @@
 
 import { CodeBuddyClient } from '../codebuddy/client.js';
 import type { ColabTask } from '../fleet/colab-store.js';
+import { resolveGoalJudgeClient } from '../goals/goal-judge-client.js';
 import { GoalJudgeResult, judgeGoal } from '../goals/goal-judge.js';
 import { resolveGoalsConfig } from '../goals/goal-manager.js';
 import type { AutonomousModelChoice } from '../agent/model-tier.js';
@@ -70,16 +71,23 @@ export function createColabGoalJudge(): ColabGoalJudge {
   return async (task, result, model) => {
     try {
       const config = resolveGoalsConfig();
-      const client = new CodeBuddyClient(
-        process.env.GROK_API_KEY || process.env.OPENAI_API_KEY || 'local',
-        config.judgeModel || model.model,
+      const apiKey = process.env.GROK_API_KEY || process.env.OPENAI_API_KEY || 'local';
+      const baseClient = new CodeBuddyClient(
+        apiKey,
+        model.model,
         model.baseUrl
       );
+      const client = await resolveGoalJudgeClient(baseClient, config.judgeModel, {
+        apiKey,
+        ...(model.baseUrl ? { baseURL: model.baseUrl } : {}),
+        providerLabel: model.baseUrl?.includes(':11434') ? 'ollama' : model.tier,
+      });
       return await judgeGoal(client, {
         goal: goalTextForTask(task),
         lastResponse: result.output || result.summary,
         ...(task.acceptanceCriteria?.length ? { subgoals: task.acceptanceCriteria } : {}),
         ...(config.judgeModel ? { model: config.judgeModel } : {}),
+        maxTokens: config.judgeMaxTokens,
         timeoutMs: config.judgeTimeoutMs,
       });
     } catch (error) {

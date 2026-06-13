@@ -15,6 +15,8 @@
  * returns which model to use and why. It performs no inference/routing itself.
  */
 
+import { normalizeBaseURL } from '../utils/base-url.js';
+
 export type ModelTier = 'local' | 'network' | 'escalated';
 
 export type TaskPriority = 'critical' | 'high' | 'medium' | 'low';
@@ -37,6 +39,14 @@ export interface ModelTierConfig {
   networkModels?: NetworkModel[];
   /** Paid cloud model, last resort (undefined = never escalate to paid). */
   escalationModel?: string;
+}
+
+export interface LiveModelTierDiscoveryOptions {
+  /**
+   * When true, the resolver keeps the static `CODEBUDDY_NETWORK_MODELS`
+   * entries and appends live Tailnet peers discovered at runtime.
+   */
+  augmentConfiguredNetworkModels?: boolean;
 }
 
 export interface EscalationSignal {
@@ -95,6 +105,49 @@ export function resolveModelTierConfig(env: NodeJS.ProcessEnv = process.env): Mo
   };
 }
 
+/**
+ * Resolve the ladder and enrich the network rung with live Tailnet Ollama peers
+ * when the `tailscale` CLI is available. This keeps the system dynamic: the
+ * network tier grows as peers come and go instead of relying on a hardcoded
+ * host list.
+ */
+export async function resolveLiveModelTierConfig(
+  env: NodeJS.ProcessEnv = process.env,
+  options: LiveModelTierDiscoveryOptions = {},
+): Promise<ModelTierConfig> {
+  const config = resolveModelTierConfig(env);
+  let discovered: NetworkModel[] = [];
+  let benchmarkScores = new Map<string, number>();
+  try {
+    const { TailscaleManager } = await import('../integrations/tailscale.js');
+    discovered = (await TailscaleManager.getInstance().discoverOllamaPeers()).flatMap((peer) =>
+      peer.models.map((model) => ({
+        model,
+        baseUrl: peer.baseURL,
+        label: peer.hostname,
+      }))
+    );
+  } catch {
+    discovered = [];
+  }
+  try {
+    const { loadBenchmarkScoreMap } = await import('./model-benchmark.js');
+    benchmarkScores = await loadBenchmarkScoreMap();
+  } catch {
+    benchmarkScores = new Map<string, number>();
+  }
+
+  const configured = config.networkModels ?? [];
+  const merged = options.augmentConfiguredNetworkModels === false
+    ? discovered
+    : mergeNetworkModels(configured, discovered);
+
+  return {
+    ...config,
+    networkModels: rankNetworkModelsByBenchmark(merged, benchmarkScores),
+  };
+}
+
 export function parseNetworkModels(raw: string | undefined): NetworkModel[] {
   if (!raw?.trim()) return [];
   return raw.split(',').map((part) => part.trim()).filter(Boolean).flatMap((entry) => {
@@ -108,6 +161,42 @@ export function parseNetworkModels(raw: string | undefined): NetworkModel[] {
 
 function normalizeBaseUrl(url: string): string {
   return url.replace(/\/+$/, '');
+}
+
+function mergeNetworkModels(primary: NetworkModel[], secondary: NetworkModel[]): NetworkModel[] {
+  const seen = new Set<string>();
+  const merged: NetworkModel[] = [];
+  for (const item of [...primary, ...secondary]) {
+    const key = `${item.model}@${normalizeBaseUrl(item.baseUrl)}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    merged.push(item);
+  }
+  return merged;
+}
+
+function rankNetworkModelsByBenchmark(
+  networkModels: NetworkModel[],
+  benchmarkScores: Map<string, number>,
+): NetworkModel[] {
+  if (networkModels.length === 0 || benchmarkScores.size === 0) {
+    return networkModels;
+  }
+
+  return networkModels
+    .map((model, index) => ({
+      model,
+      index,
+      score: benchmarkScores.get(`${normalizeBaseURL(model.baseUrl)}::${model.model}`),
+    }))
+    .sort((a, b) => {
+      const aHas = typeof a.score === 'number';
+      const bHas = typeof b.score === 'number';
+      if (aHas && bHas && a.score !== b.score) return (b.score ?? 0) - (a.score ?? 0);
+      if (aHas !== bHas) return aHas ? -1 : 1;
+      return a.index - b.index;
+    })
+    .map((entry) => entry.model);
 }
 
 /** Escalation rung 0 (local) / 1 (network) / 2 (paid) implied by the signal. */

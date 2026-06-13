@@ -20,6 +20,7 @@ describe('Model Utilities', () => {
       expect(isSupportedModel('grok-4-latest')).toBe(true);
       expect(isSupportedModel('grok-3-latest')).toBe(true);
       expect(isSupportedModel('claude-opus-4-6')).toBe(true);
+      expect(isSupportedModel('gemma4:12b')).toBe(true);
     });
 
     it('should return false for unsupported models', () => {
@@ -34,6 +35,34 @@ describe('Model Utilities', () => {
       expect(info.isSupported).toBe(true);
       expect(info.maxTokens).toBe(256000);
       expect(info.provider).toBe('xai');
+    });
+
+    it('should return Ollama info for gemma4:12b', () => {
+      const info = getModelInfo('gemma4:12b');
+      expect(info.isSupported).toBe(true);
+      expect(info.maxTokens).toBe(8192);
+      expect(info.provider).toBe('ollama');
+    });
+
+    it('should return Ollama info for qwen3.5-ctx32k', () => {
+      const info = getModelInfo('qwen3.5-ctx32k');
+      expect(info.isSupported).toBe(true);
+      expect(info.maxTokens).toBe(32768);
+      expect(info.provider).toBe('ollama');
+    });
+
+    it('should resolve Ollama :latest tags to their supported base model', () => {
+      const info = getModelInfo('qwen3.5-ctx32k:latest');
+      expect(info.isSupported).toBe(true);
+      expect(info.maxTokens).toBe(32768);
+      expect(info.provider).toBe('ollama');
+    });
+
+    it('should return Ollama info for the local Devstral Small 2 tag', () => {
+      const info = getModelInfo('devstral-small-2:24b-instruct-2512-q4_K_M');
+      expect(info.isSupported).toBe(true);
+      expect(info.maxTokens).toBe(131072);
+      expect(info.provider).toBe('ollama');
     });
 
     it('should return default info for unsupported models', () => {

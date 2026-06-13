@@ -26,7 +26,7 @@ import {
 } from '../spec/spec-plan-runner.js';
 import type { SpecLlmCall } from '../spec/spec-planner.js';
 import { getSettingsManager } from '../utils/settings-manager.js';
-import { PROVIDERS } from './provider.js';
+import { resolveCommandProvider } from './llm-provider-resolution.js';
 
 /** Builds the one-shot model call when a phase actually needs the LLM. */
 export type SpecLlmProvider = () => Promise<SpecLlmCall>;
@@ -172,24 +172,12 @@ function printAdvanceResult(
 
 async function defaultLlmProvider(): Promise<SpecLlmCall> {
   const settingsManager = getSettingsManager();
-  const userSettings = settingsManager.loadUserSettings();
-  const providerKey = userSettings.provider || 'grok';
-  const providerInfo = PROVIDERS[providerKey];
-
-  let apiKey = process.env[providerInfo?.envVar || ''] || '';
-  if (!apiKey) {
-    apiKey =
-      process.env.GROK_API_KEY ||
-      process.env.ANTHROPIC_API_KEY ||
-      process.env.OPENAI_API_KEY ||
-      process.env.GEMINI_API_KEY ||
-      '';
-  }
-  if (!apiKey) throw new Error('No API key configured. Run: buddy onboard');
+  const resolved = resolveCommandProvider();
+  if (!resolved) throw new Error('No API key configured. Run: buddy onboard');
 
   const { CodeBuddyClient } = await import('../codebuddy/client.js');
-  const model = settingsManager.getCurrentModel() || providerInfo?.defaultModel;
-  const client = new CodeBuddyClient(apiKey, model, providerInfo?.baseURL);
+  const model = settingsManager.getCurrentModel() || resolved.model;
+  const client = new CodeBuddyClient(resolved.apiKey, model, resolved.baseURL);
 
   return async (system: string, user: string): Promise<string> => {
     const response = await client.chat([

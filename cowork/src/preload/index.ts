@@ -115,9 +115,12 @@ let ipcListener: ((event: Electron.IpcRendererEvent, data: ServerEvent) => void)
 const ALLOWED_CLIENT_EVENTS: ReadonlySet<string> = new Set<ClientEvent['type']>([
   'session.start',
   'session.continue',
+  'session.steer',
   'session.stop',
   'session.delete',
   'session.batchDelete',
+  'session.duplicate',
+  'session.updateSettings',
   'session.list',
   'session.getMessages',
   'session.getTraceSteps',
@@ -1587,7 +1590,129 @@ contextBridge.exposeInMainWorld('electronAPI', {
       };
       messages: import('../renderer/types').Message[];
       traceSteps: import('../renderer/types').TraceStep[];
+      turnJournal?: {
+        sessionId: string;
+        path: string;
+        exists: boolean;
+        totalEventCount: number;
+        malformedLineCount: number;
+        pendingTurnCount: number;
+        events: Array<{
+          schemaVersion: 1;
+          type: string;
+          sessionId: string;
+          ts: number;
+          eventId?: string;
+          runId?: string;
+          seq?: number;
+          turnId?: string;
+          data?: Record<string, unknown>;
+        }>;
+        turns: Array<{
+          turnId: string;
+          startedAt: number;
+          updatedAt: number;
+          latestType: string;
+          status: 'running' | 'completed' | 'failed' | 'cancelled';
+          eventCount: number;
+          messageCount: number;
+          traceStepCount: number;
+        }>;
+        replay: {
+          sessionId: string;
+          path: string;
+          exists: boolean;
+          totalEventCount: number;
+          malformedLineCount: number;
+          pendingTurnCount: number;
+          runCount: number;
+          runs: Array<{
+            runId: string;
+            turnId?: string;
+            startedAt: number;
+            updatedAt: number;
+            latestType: string;
+            status: 'running' | 'completed' | 'failed' | 'cancelled';
+            eventCount: number;
+            anchorCount: number;
+            terminalEvent?: {
+              schemaVersion: 1;
+              type: string;
+              sessionId: string;
+              ts: number;
+              eventId?: string;
+              runId?: string;
+              seq?: number;
+              turnId?: string;
+              data?: Record<string, unknown>;
+            };
+            anchors: Array<{
+              eventId: string;
+              runId: string;
+              seq: number;
+              type: string;
+              ts: number;
+              turnId?: string;
+            }>;
+            events: Array<{
+              schemaVersion: 1;
+              type: string;
+              sessionId: string;
+              ts: number;
+              eventId?: string;
+              runId?: string;
+              seq?: number;
+              turnId?: string;
+              data?: Record<string, unknown>;
+            }>;
+          }>;
+        };
+        memoryPreview?: {
+          sessionId: string;
+          projectId?: string | null;
+          memoryStrategy: 'auto' | 'manual' | 'rolling';
+          automatedMemoryEnabled: boolean;
+          projectMemoryAvailable: boolean;
+          projectMemoryPath?: string;
+          projectContextAvailable: boolean;
+          icmAvailable: boolean;
+          recallEnabled: boolean;
+          candidateCount: number;
+          candidates: Array<{
+            category: 'preference' | 'pattern' | 'context' | 'decision';
+            content: string;
+            sourceSessionId?: string;
+            sourceKind: 'user' | 'assistant';
+            evidence: string;
+          }>;
+        };
+      };
     } | null> => ipcRenderer.invoke('sessionInsights.detail', sessionId),
+    recallPrefill: (
+      prompt: string,
+      options?: {
+        currentSessionId?: string;
+        cwd?: string;
+        limit?: number;
+        maxChars?: number;
+        perSessionMaxChars?: number;
+      }
+    ): Promise<{
+      prompt: string;
+      text: string;
+      entries: Array<{
+        sessionId: string;
+        title: string;
+        cwd?: string;
+        updatedAt: number;
+        score: number;
+        snippet: string;
+        messageIds: string[];
+      }>;
+      totalCandidateCount: number;
+      maxChars: number;
+      truncated: boolean;
+    } | null> => ipcRenderer.invoke('sessionInsights.recallPrefill', prompt, options),
     audit: (
       sessionId: string
     ): Promise<{
@@ -1596,10 +1721,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
       orphanToolResults: number;
       missingToolResults: number;
       emptyMessages: number;
+      pendingJournalTurns: number;
+      missingJournalUserMessages: number;
+      unrecoverableJournalSubmissions: number;
+      malformedJournalEvents: number;
       issues: Array<{
-        kind: 'orphan_tool_result' | 'missing_tool_result' | 'empty_message';
+        kind:
+          | 'orphan_tool_result'
+          | 'missing_tool_result'
+          | 'empty_message'
+          | 'turn_journal_pending_turn'
+          | 'turn_journal_missing_user_message'
+          | 'turn_journal_unrecoverable_submission'
+          | 'turn_journal_malformed_event';
         messageId?: string;
         toolUseId?: string;
+        turnId?: string;
         detail: string;
       }>;
     } | null> => ipcRenderer.invoke('sessionInsights.audit', sessionId),
@@ -1610,6 +1747,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
       changed: boolean;
       removedOrphanToolResults: number;
       injectedSyntheticToolResults: number;
+      injectedJournalUserMessages: number;
+      injectedJournalInterruptionMarkers: number;
       removedEmptyMessages: number;
       messages: import('../renderer/types').Message[];
       audit: {
@@ -1618,10 +1757,22 @@ contextBridge.exposeInMainWorld('electronAPI', {
         orphanToolResults: number;
         missingToolResults: number;
         emptyMessages: number;
+        pendingJournalTurns: number;
+        missingJournalUserMessages: number;
+        unrecoverableJournalSubmissions: number;
+        malformedJournalEvents: number;
         issues: Array<{
-          kind: 'orphan_tool_result' | 'missing_tool_result' | 'empty_message';
+          kind:
+            | 'orphan_tool_result'
+            | 'missing_tool_result'
+            | 'empty_message'
+            | 'turn_journal_pending_turn'
+            | 'turn_journal_missing_user_message'
+            | 'turn_journal_unrecoverable_submission'
+            | 'turn_journal_malformed_event';
           messageId?: string;
           toolUseId?: string;
+          turnId?: string;
           detail: string;
         }>;
       };
@@ -3280,6 +3431,27 @@ contextBridge.exposeInMainWorld('electronAPI', {
         source?: string;
       }>;
     }> => ipcRenderer.invoke('audit.searchRuns', filter),
+    getArtifactIndexDoctorStatus: (): Promise<{
+      schemaVersion: 1;
+      generatedAt: string;
+      kind: 'artifact_index_doctor_status';
+      status: 'healthy' | 'attention' | 'unavailable';
+      unavailable: boolean;
+      totalRows: number;
+      healthyRows: number;
+      staleRows: number;
+      orphanedRows: number;
+      rows: Array<{
+        runId: string;
+        artifact: string;
+        reason: 'missing_run' | 'missing_artifact';
+      }>;
+      recommendations: string[];
+      repairCommands: {
+        staleOnly: string;
+        includeOrphans: string;
+      };
+    }> => ipcRenderer.invoke('audit.getArtifactIndexDoctorStatus'),
     buildRecallPack: (filter?: {
       cwd?: string;
       includeLessons?: boolean;
@@ -5307,6 +5479,128 @@ declare global {
           };
           messages: import('../renderer/types').Message[];
           traceSteps: import('../renderer/types').TraceStep[];
+          turnJournal?: {
+            sessionId: string;
+            path: string;
+            exists: boolean;
+            totalEventCount: number;
+            malformedLineCount: number;
+            pendingTurnCount: number;
+            events: Array<{
+              schemaVersion: 1;
+              type: string;
+              sessionId: string;
+              ts: number;
+              eventId?: string;
+              runId?: string;
+              seq?: number;
+              turnId?: string;
+              data?: Record<string, unknown>;
+            }>;
+            turns: Array<{
+              turnId: string;
+              startedAt: number;
+              updatedAt: number;
+              latestType: string;
+              status: 'running' | 'completed' | 'failed' | 'cancelled';
+              eventCount: number;
+              messageCount: number;
+              traceStepCount: number;
+            }>;
+            replay: {
+              sessionId: string;
+              path: string;
+              exists: boolean;
+              totalEventCount: number;
+              malformedLineCount: number;
+              pendingTurnCount: number;
+              runCount: number;
+              runs: Array<{
+                runId: string;
+                turnId?: string;
+                startedAt: number;
+                updatedAt: number;
+                latestType: string;
+                status: 'running' | 'completed' | 'failed' | 'cancelled';
+                eventCount: number;
+                anchorCount: number;
+                terminalEvent?: {
+                  schemaVersion: 1;
+                  type: string;
+                  sessionId: string;
+                  ts: number;
+                  eventId?: string;
+                  runId?: string;
+                  seq?: number;
+                  turnId?: string;
+                  data?: Record<string, unknown>;
+                };
+                anchors: Array<{
+                  eventId: string;
+                  runId: string;
+                  seq: number;
+                  type: string;
+                  ts: number;
+                  turnId?: string;
+                }>;
+                events: Array<{
+                  schemaVersion: 1;
+                  type: string;
+                  sessionId: string;
+                  ts: number;
+                  eventId?: string;
+                  runId?: string;
+                  seq?: number;
+                  turnId?: string;
+                  data?: Record<string, unknown>;
+                }>;
+              }>;
+            };
+          };
+          memoryPreview?: {
+            sessionId: string;
+            projectId?: string | null;
+            memoryStrategy: 'auto' | 'manual' | 'rolling';
+            automatedMemoryEnabled: boolean;
+            projectMemoryAvailable: boolean;
+            projectMemoryPath?: string;
+            projectContextAvailable: boolean;
+            icmAvailable: boolean;
+            recallEnabled: boolean;
+            candidateCount: number;
+            candidates: Array<{
+              category: 'preference' | 'pattern' | 'context' | 'decision';
+              content: string;
+              sourceSessionId?: string;
+              sourceKind: 'user' | 'assistant';
+              evidence: string;
+            }>;
+          };
+        } | null>;
+        recallPrefill: (
+          prompt: string,
+          options?: {
+            currentSessionId?: string;
+            cwd?: string;
+            limit?: number;
+            maxChars?: number;
+            perSessionMaxChars?: number;
+          }
+        ) => Promise<{
+          prompt: string;
+          text: string;
+          entries: Array<{
+            sessionId: string;
+            title: string;
+            cwd?: string;
+            updatedAt: number;
+            score: number;
+            snippet: string;
+            messageIds: string[];
+          }>;
+          totalCandidateCount: number;
+          maxChars: number;
+          truncated: boolean;
         } | null>;
         audit: (sessionId: string) => Promise<{
           sessionId: string;
@@ -5314,10 +5608,22 @@ declare global {
           orphanToolResults: number;
           missingToolResults: number;
           emptyMessages: number;
+          pendingJournalTurns: number;
+          missingJournalUserMessages: number;
+          unrecoverableJournalSubmissions: number;
+          malformedJournalEvents: number;
           issues: Array<{
-            kind: 'orphan_tool_result' | 'missing_tool_result' | 'empty_message';
+            kind:
+              | 'orphan_tool_result'
+              | 'missing_tool_result'
+              | 'empty_message'
+              | 'turn_journal_pending_turn'
+              | 'turn_journal_missing_user_message'
+              | 'turn_journal_unrecoverable_submission'
+              | 'turn_journal_malformed_event';
             messageId?: string;
             toolUseId?: string;
+            turnId?: string;
             detail: string;
           }>;
         } | null>;
@@ -5326,6 +5632,8 @@ declare global {
           changed: boolean;
           removedOrphanToolResults: number;
           injectedSyntheticToolResults: number;
+          injectedJournalUserMessages: number;
+          injectedJournalInterruptionMarkers: number;
           removedEmptyMessages: number;
           messages: import('../renderer/types').Message[];
           audit: {
@@ -5334,10 +5642,22 @@ declare global {
             orphanToolResults: number;
             missingToolResults: number;
             emptyMessages: number;
+            pendingJournalTurns: number;
+            missingJournalUserMessages: number;
+            unrecoverableJournalSubmissions: number;
+            malformedJournalEvents: number;
             issues: Array<{
-              kind: 'orphan_tool_result' | 'missing_tool_result' | 'empty_message';
+              kind:
+                | 'orphan_tool_result'
+                | 'missing_tool_result'
+                | 'empty_message'
+                | 'turn_journal_pending_turn'
+                | 'turn_journal_missing_user_message'
+                | 'turn_journal_unrecoverable_submission'
+                | 'turn_journal_malformed_event';
               messageId?: string;
               toolUseId?: string;
+              turnId?: string;
               detail: string;
             }>;
           };
@@ -6852,6 +7172,27 @@ declare global {
             eventType?: string;
             source?: string;
           }>;
+        }>;
+        getArtifactIndexDoctorStatus: () => Promise<{
+          schemaVersion: 1;
+          generatedAt: string;
+          kind: 'artifact_index_doctor_status';
+          status: 'healthy' | 'attention' | 'unavailable';
+          unavailable: boolean;
+          totalRows: number;
+          healthyRows: number;
+          staleRows: number;
+          orphanedRows: number;
+          rows: Array<{
+            runId: string;
+            artifact: string;
+            reason: 'missing_run' | 'missing_artifact';
+          }>;
+          recommendations: string[];
+          repairCommands: {
+            staleOnly: string;
+            includeOrphans: string;
+          };
         }>;
         buildRecallPack: (filter?: {
           cwd?: string;

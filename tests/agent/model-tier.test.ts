@@ -1,10 +1,41 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import {
   resolveModelTierConfig,
+  resolveLiveModelTierConfig,
   chooseAutonomousModel,
   parseNetworkModels,
   type ModelTierConfig,
 } from '../../src/agent/model-tier';
+
+vi.mock('../../src/integrations/tailscale.js', () => ({
+  TailscaleManager: {
+    getInstance: () => ({
+      discoverOllamaPeers: vi.fn(async () => [
+        {
+          hostname: 'darkstar',
+          ip: '100.73.222.64',
+          baseURL: 'http://100.73.222.64:11434/v1',
+          models: ['qwen3.6:35b-a3b-q4_K_M', 'phi4:latest'],
+        },
+        {
+          hostname: 'ministar-linux',
+          ip: '100.98.18.76',
+          baseURL: 'http://100.98.18.76:11434/v1',
+          models: ['qwen3.6:27b'],
+        },
+      ]),
+    }),
+  },
+}));
+
+vi.mock('../../src/agent/model-benchmark.js', () => ({
+  loadBenchmarkScoreMap: vi.fn(async () => new Map<string, number>([
+    ['http://100.73.222.64:11434/v1::qwen3.6:35b-a3b-q4_K_M', 950],
+    ['http://100.73.222.64:11434/v1::phi4:latest', 850],
+    ['http://100.98.18.76:11434/v1::qwen3.6:27b', 900],
+    ['http://g7:11434/v1::devstral', 100],
+  ])),
+}));
 
 describe('resolveModelTierConfig', () => {
   it('defaults to a local Ollama tier with no network/escalation', () => {
@@ -46,6 +77,38 @@ describe('parseNetworkModels', () => {
     ]);
     expect(parseNetworkModels('')).toEqual([]);
     expect(parseNetworkModels(undefined)).toEqual([]);
+  });
+});
+
+describe('resolveLiveModelTierConfig', () => {
+  it('augments the free-first ladder with live Tailnet Ollama peers', async () => {
+    const cfg = await resolveLiveModelTierConfig(
+      {
+        CODEBUDDY_LOCAL_MODEL: 'qwen2.5:7b-instruct',
+        CODEBUDDY_NETWORK_MODELS: 'devstral@http://g7:11434/v1',
+      },
+      { augmentConfiguredNetworkModels: true },
+    );
+
+    expect(cfg.localModel).toBe('qwen2.5:7b-instruct');
+    expect(cfg.networkModels).toEqual([
+      {
+        model: 'qwen3.6:35b-a3b-q4_K_M',
+        baseUrl: 'http://100.73.222.64:11434/v1',
+        label: 'darkstar',
+      },
+      {
+        model: 'qwen3.6:27b',
+        baseUrl: 'http://100.98.18.76:11434/v1',
+        label: 'ministar-linux',
+      },
+      {
+        model: 'phi4:latest',
+        baseUrl: 'http://100.73.222.64:11434/v1',
+        label: 'darkstar',
+      },
+      { model: 'devstral', baseUrl: 'http://g7:11434/v1' },
+    ]);
   });
 });
 

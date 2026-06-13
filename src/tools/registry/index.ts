@@ -233,6 +233,8 @@ export { BrowserOperatorTool, createBrowserOperatorTools } from './browser-opera
 // Tool Adapters - Persistent Memory (remember, recall, forget)
 export {
   RememberTool,
+  ReplaceMemoryTool,
+  MemoryProposeTool,
   RecallTool,
   ForgetTool,
   createMemoryTools,

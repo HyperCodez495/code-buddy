@@ -10,6 +10,7 @@ import {
   Clock3,
   FolderOpen,
   ArrowRight,
+  ListTree,
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import type { Message, TraceStep } from '../types';
@@ -41,6 +42,109 @@ interface SessionInsightDetail {
   summary: SessionInsightSummary;
   messages: Message[];
   traceSteps: TraceStep[];
+  turnJournal?: TurnJournalReadResult;
+  memoryPreview?: SessionMemoryPreview | null;
+}
+
+type TurnJournalEventType =
+  | 'intent_queued'
+  | 'turn_started'
+  | 'message_saved'
+  | 'trace_step'
+  | 'trace_update'
+  | 'steer_delivered'
+  | 'steer_fallback_queued'
+  | 'turn_completed'
+  | 'turn_failed'
+  | 'cancel_requested';
+
+interface TurnJournalEvent {
+  schemaVersion: 1;
+  type: TurnJournalEventType;
+  sessionId: string;
+  ts: number;
+  eventId?: string;
+  runId?: string;
+  seq?: number;
+  turnId?: string;
+  data?: Record<string, unknown>;
+}
+
+interface TurnJournalReplayAnchor {
+  eventId: string;
+  runId: string;
+  seq: number;
+  type: TurnJournalEventType;
+  ts: number;
+  turnId?: string;
+}
+
+interface TurnJournalReplayRun {
+  runId: string;
+  turnId?: string;
+  startedAt: number;
+  updatedAt: number;
+  latestType: TurnJournalEventType;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  eventCount: number;
+  anchorCount: number;
+  terminalEvent?: TurnJournalEvent;
+  anchors: TurnJournalReplayAnchor[];
+  events: TurnJournalEvent[];
+}
+
+interface TurnJournalReplayResult {
+  sessionId: string;
+  path: string;
+  exists: boolean;
+  totalEventCount: number;
+  malformedLineCount: number;
+  pendingTurnCount: number;
+  runCount: number;
+  runs: TurnJournalReplayRun[];
+}
+
+interface TurnJournalTurnSummary {
+  turnId: string;
+  startedAt: number;
+  updatedAt: number;
+  latestType: TurnJournalEventType;
+  status: 'running' | 'completed' | 'failed' | 'cancelled';
+  eventCount: number;
+  messageCount: number;
+  traceStepCount: number;
+}
+
+interface TurnJournalReadResult {
+  sessionId: string;
+  path: string;
+  exists: boolean;
+  totalEventCount: number;
+  malformedLineCount: number;
+  pendingTurnCount: number;
+  events: TurnJournalEvent[];
+  turns: TurnJournalTurnSummary[];
+  replay: TurnJournalReplayResult;
+}
+
+interface SessionMemoryPreview {
+  sessionId: string;
+  projectId?: string | null;
+  memoryStrategy: 'auto' | 'manual' | 'rolling';
+  automatedMemoryEnabled: boolean;
+  projectMemoryAvailable: boolean;
+  projectMemoryPath?: string;
+  projectContextAvailable: boolean;
+  icmAvailable: boolean;
+  recallEnabled: boolean;
+  candidateCount: number;
+  candidates: Array<{
+    category: 'preference' | 'pattern' | 'context' | 'decision';
+    content: string;
+    sourceSessionId?: string;
+    sourceKind: 'user' | 'assistant';
+    evidence: string;
+  }>;
 }
 
 interface SessionTranscriptAudit {
@@ -49,10 +153,22 @@ interface SessionTranscriptAudit {
   orphanToolResults: number;
   missingToolResults: number;
   emptyMessages: number;
+  pendingJournalTurns: number;
+  missingJournalUserMessages: number;
+  unrecoverableJournalSubmissions: number;
+  malformedJournalEvents: number;
   issues: Array<{
-    kind: 'orphan_tool_result' | 'missing_tool_result' | 'empty_message';
+    kind:
+      | 'orphan_tool_result'
+      | 'missing_tool_result'
+      | 'empty_message'
+      | 'turn_journal_pending_turn'
+      | 'turn_journal_missing_user_message'
+      | 'turn_journal_unrecoverable_submission'
+      | 'turn_journal_malformed_event';
     messageId?: string;
     toolUseId?: string;
+    turnId?: string;
     detail: string;
   }>;
 }
@@ -90,6 +206,22 @@ function flattenMessageText(message: Message): string {
     .trim();
 }
 
+function formatJournalData(data?: Record<string, unknown>): string {
+  if (!data || Object.keys(data).length === 0) return '';
+  const json = JSON.stringify(data);
+  return json.length > 180 ? `${json.slice(0, 177)}...` : json;
+}
+
+function formatJournalAnchor(anchor: TurnJournalReplayAnchor): string {
+  const seq = anchor.seq > 0 ? `#${anchor.seq}` : '#0';
+  const turn = anchor.turnId ? ` · ${anchor.turnId}` : '';
+  return `${seq} ${anchor.type}${turn}`;
+}
+
+function formatMemoryCandidate(candidate: SessionMemoryPreview['candidates'][number]): string {
+  return `[${candidate.category}] ${candidate.content}`;
+}
+
 export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open, onClose }) => {
   const { t } = useTranslation();
   const activeSessionId = useAppStore((s) => s.activeSessionId);
@@ -106,6 +238,8 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
   const [loadingAudit, setLoadingAudit] = useState(false);
   const [repairingAudit, setRepairingAudit] = useState(false);
   const [audit, setAudit] = useState<SessionTranscriptAudit | null>(null);
+  const [dismissedCandidates, setDismissedCandidates] = useState<Record<string, boolean>>({});
+  const [writingMemory, setWritingMemory] = useState<string | null>(null);
 
   const loadList = useCallback(async () => {
     if (!window.electronAPI?.sessionInsights) return;
@@ -210,7 +344,46 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
 
   useEffect(() => {
     setAudit(null);
+    setDismissedCandidates({});
+    setWritingMemory(null);
   }, [selectedId]);
+
+  const visibleMemoryCandidates = useMemo(() => {
+    if (!detail?.memoryPreview?.candidates) return [];
+    return detail.memoryPreview.candidates.filter(
+      (candidate) => !dismissedCandidates[`${candidate.category}:${candidate.evidence}`]
+    );
+  }, [detail?.memoryPreview?.candidates, dismissedCandidates]);
+
+  const acceptMemoryCandidate = useCallback(
+    async (candidate: SessionMemoryPreview['candidates'][number]) => {
+      if (!detail?.memoryPreview?.projectId || !window.electronAPI?.memory?.add) return;
+      setWritingMemory(`${candidate.category}:${candidate.evidence}`);
+      try {
+        const result = await window.electronAPI.memory.add(
+          candidate.category,
+          candidate.content,
+          detail.memoryPreview.projectId
+        );
+        if (result.success) {
+          setDismissedCandidates((current) => ({
+            ...current,
+            [`${candidate.category}:${candidate.evidence}`]: true,
+          }));
+        }
+      } finally {
+        setWritingMemory(null);
+      }
+    },
+    [detail?.memoryPreview?.projectId]
+  );
+
+  const rejectMemoryCandidate = useCallback((candidate: SessionMemoryPreview['candidates'][number]) => {
+    setDismissedCandidates((current) => ({
+      ...current,
+      [`${candidate.category}:${candidate.evidence}`]: true,
+    }));
+  }, []);
 
   if (!open) return null;
 
@@ -391,6 +564,26 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                       <div>{t('sessionInsights.auditMissingResults', { count: audit.missingToolResults })}</div>
                       <div>{t('sessionInsights.auditOrphans', { count: audit.orphanToolResults })}</div>
                       <div>{t('sessionInsights.auditEmptyMessages', { count: audit.emptyMessages })}</div>
+                      <div>
+                        {t('sessionInsights.auditPendingJournalTurns', {
+                          count: audit.pendingJournalTurns,
+                        })}
+                      </div>
+                      <div>
+                        {t('sessionInsights.auditMissingJournalUserMessages', {
+                          count: audit.missingJournalUserMessages,
+                        })}
+                      </div>
+                      <div>
+                        {t('sessionInsights.auditUnrecoverableJournalSubmissions', {
+                          count: audit.unrecoverableJournalSubmissions,
+                        })}
+                      </div>
+                      <div>
+                        {t('sessionInsights.auditMalformedJournalEvents', {
+                          count: audit.malformedJournalEvents,
+                        })}
+                      </div>
                     </div>
                     {audit.issueCount === 0 ? (
                       <div className="text-[11px] text-success">
@@ -400,7 +593,9 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                       <div className="space-y-2">
                         {audit.issues.map((issue, index) => (
                           <div
-                            key={`${issue.kind}-${issue.messageId || issue.toolUseId || index}`}
+                            key={`${issue.kind}-${
+                              issue.messageId || issue.toolUseId || issue.turnId || index
+                            }`}
                             className="rounded-md border border-border bg-background px-2.5 py-2 text-[11px]"
                           >
                             <div className="flex items-start justify-between gap-3">
@@ -432,6 +627,225 @@ export const SessionInsightsPanel: React.FC<SessionInsightsPanelProps> = ({ open
                   <div className="flex items-center justify-center gap-2 py-12 text-xs text-text-muted">
                     <Loader2 size={14} className="animate-spin" />
                     {t('common.loading')}
+                  </div>
+                )}
+
+                {!loadingDetail && detail?.turnJournal && (
+                  <div
+                    className="rounded-lg border border-border-muted overflow-hidden"
+                    data-testid="session-insights-turn-journal"
+                  >
+                    <div className="px-3 py-2 bg-surface flex items-center justify-between text-[11px]">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                        <ListTree size={12} />
+                        {t('sessionInsights.turnJournal', 'Turn journal')}
+                      </span>
+                      <span className="text-text-muted">
+                        {t('sessionInsights.turnJournalEvents', {
+                          count: detail.turnJournal.totalEventCount,
+                        })}
+                      </span>
+                    </div>
+                    <div className="px-3 py-2 space-y-3">
+                      <div className="grid grid-cols-3 gap-2 text-[11px] text-text-muted">
+                        <div>
+                          {t('sessionInsights.turnJournalTurns', {
+                            count: detail.turnJournal.turns.length,
+                          })}
+                        </div>
+                        <div>
+                          {t('sessionInsights.turnJournalPending', {
+                            count: detail.turnJournal.pendingTurnCount,
+                          })}
+                        </div>
+                        <div>
+                          {t('sessionInsights.turnJournalMalformed', {
+                            count: detail.turnJournal.malformedLineCount,
+                          })}
+                        </div>
+                      </div>
+
+                      {detail.turnJournal.replay.runs.length > 0 && (
+                        <div className="space-y-1.5">
+                          <div className="text-[11px] font-medium text-text-secondary">
+                            {t('sessionInsights.turnJournalReplay', 'Replay anchors')} -{' '}
+                            {t('sessionInsights.turnJournalRunCount', {
+                              count: detail.turnJournal.replay.runCount,
+                            })}
+                          </div>
+                          {detail.turnJournal.replay.runs.slice(0, 3).map((run) => (
+                            <div
+                              key={run.runId}
+                              className="rounded-md border border-border bg-background px-2.5 py-2 text-[11px]"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-mono text-text-primary truncate">
+                                  {run.runId}
+                                </span>
+                                <span className="shrink-0 text-text-muted">{run.status}</span>
+                              </div>
+                              <div className="mt-1 text-text-muted">
+                                {run.eventCount}{' '}
+                                {t('sessionInsights.turnJournalEventUnit', 'events')} -{' '}
+                                {run.anchorCount}{' '}
+                                {t('sessionInsights.turnJournalAnchorUnit', 'anchors')}
+                              </div>
+                              {run.terminalEvent && (
+                                <div className="mt-1 text-text-secondary truncate">
+                                  {t('sessionInsights.turnJournalTerminalEvent', 'terminal')}: {' '}
+                                  {run.terminalEvent.type}
+                                </div>
+                              )}
+                              <div className="mt-1.5 space-y-1">
+                                {run.anchors.slice(0, 4).map((anchor) => (
+                                  <div
+                                    key={anchor.eventId}
+                                    className="font-mono text-[10px] text-text-secondary truncate"
+                                  >
+                                    {formatJournalAnchor(anchor)} · {formatAppDateTime(anchor.ts)}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      {detail.turnJournal.turns.length > 0 && (
+                        <div className="space-y-1.5">
+                          {detail.turnJournal.turns.slice(0, 4).map((turn) => (
+                            <div
+                              key={turn.turnId}
+                              className="rounded-md border border-border bg-background px-2.5 py-2 text-[11px]"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-mono text-text-primary truncate">
+                                  {turn.turnId}
+                                </span>
+                                <span className="shrink-0 text-text-muted">{turn.status}</span>
+                              </div>
+                              <div className="mt-1 text-text-muted">
+                                {turn.latestType} - {turn.eventCount}{' '}
+                                {t('sessionInsights.turnJournalEventUnit', 'events')} -{' '}
+                                {formatAppDateTime(turn.updatedAt)}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+
+                      <div className="space-y-1.5">
+                        {detail.turnJournal.events.slice(-8).reverse().map((event, index) => {
+                          const dataPreview = formatJournalData(event.data);
+                          return (
+                            <div
+                              key={`${event.ts}-${event.type}-${event.turnId || index}`}
+                              className="rounded-md border border-border bg-background px-2.5 py-2 text-[11px]"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-medium text-text-primary">{event.type}</span>
+                                <span className="shrink-0 text-text-muted">
+                                  {formatAppDateTime(event.ts)}
+                                </span>
+                              </div>
+                              {event.turnId && (
+                                <div className="mt-1 font-mono text-text-muted truncate">
+                                  {event.turnId}
+                                </div>
+                              )}
+                              {dataPreview && (
+                                <div className="mt-1 text-text-secondary break-words">
+                                  {dataPreview}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {!loadingDetail && detail?.memoryPreview && (
+                  <div className="rounded-lg border border-border-muted overflow-hidden">
+                    <div className="px-3 py-2 bg-surface flex items-center justify-between text-[11px]">
+                      <span className="inline-flex items-center gap-1.5 font-medium text-text-primary">
+                        <MessageSquare size={12} />
+                        {t('sessionInsights.memoryPreview', 'Memory preview')}
+                      </span>
+                      <span className="text-text-muted">
+                        {detail.memoryPreview.memoryStrategy} ·{' '}
+                        {t('sessionInsights.memoryCandidates', {
+                          count: detail.memoryPreview.candidateCount,
+                        })}
+                      </span>
+                    </div>
+                    <div className="px-3 py-2 space-y-2 text-[11px] text-text-muted">
+                      <div className="grid grid-cols-2 gap-2">
+                        <div>
+                          {t('sessionInsights.automatedMemory', 'Automated memory')}: {' '}
+                          {detail.memoryPreview.automatedMemoryEnabled ? 'on' : 'off'}
+                        </div>
+                        <div>
+                          {t('sessionInsights.recallEnabled', 'Recall')}: {' '}
+                          {detail.memoryPreview.recallEnabled ? 'on' : 'off'}
+                        </div>
+                        <div>
+                          {t('sessionInsights.projectMemory', 'Project memory')}: {' '}
+                          {detail.memoryPreview.projectMemoryAvailable ? 'available' : 'missing'}
+                        </div>
+                        <div>
+                          {t('sessionInsights.icmMemory', 'ICM memory')}: {' '}
+                          {detail.memoryPreview.icmAvailable ? 'available' : 'missing'}
+                        </div>
+                      </div>
+                      {detail.memoryPreview.projectMemoryPath && (
+                        <div className="font-mono text-[10px] truncate">
+                          {detail.memoryPreview.projectMemoryPath}
+                        </div>
+                      )}
+                      {visibleMemoryCandidates.length > 0 && (
+                        <div className="space-y-1.5">
+                          {visibleMemoryCandidates.slice(0, 4).map((candidate, index) => (
+                            <div
+                              key={`${candidate.category}-${index}`}
+                              className="rounded-md border border-border bg-background px-2.5 py-2 text-[11px]"
+                            >
+                              <div className="flex items-center justify-between gap-3">
+                                <span className="font-medium text-text-primary">
+                                  {formatMemoryCandidate(candidate)}
+                                </span>
+                                <span className="shrink-0 text-text-muted">
+                                  {candidate.sourceKind}
+                                </span>
+                              </div>
+                              <div className="mt-1 text-text-secondary break-words">
+                                {candidate.evidence}
+                              </div>
+                              <div className="mt-2 flex items-center gap-2">
+                                <button
+                                  type="button"
+                                  onClick={() => void acceptMemoryCandidate(candidate)}
+                                  disabled={writingMemory === `${candidate.category}:${candidate.evidence}`}
+                                  className="rounded-md border border-border px-2 py-1 text-[10px] text-text-primary hover:bg-surface-hover disabled:opacity-50"
+                                >
+                                  {writingMemory === `${candidate.category}:${candidate.evidence}`
+                                    ? t('common.saving', 'Saving')
+                                    : t('common.accept', 'Accept')}
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => rejectMemoryCandidate(candidate)}
+                                  className="rounded-md border border-border px-2 py-1 text-[10px] text-text-muted hover:bg-surface-hover"
+                                >
+                                  {t('common.reject', 'Reject')}
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
                   </div>
                 )}
 

@@ -10,6 +10,27 @@ const doctorMocks = vi.hoisted(() => ({
 
 vi.mock('../../src/doctor/index.js', () => doctorMocks);
 
+const ollamaMocks = vi.hoisted(() => ({
+  fetchOllamaStatus: vi.fn(async () => ({
+    baseUrl: 'http://localhost:11434',
+    reachable: true,
+    version: '0.30.0',
+    models: ['phi4:latest'],
+    error: null,
+  })),
+  buildOllamaUpdatePlan: vi.fn(() => ({
+    supported: false,
+    platform: 'linux',
+    repoRoot: '/repo',
+    scriptPath: '/repo/scripts/update-ollama-windows.ps1',
+    scriptUrl: 'https://ollama.com/install.ps1',
+    message: 'Windows only',
+  })),
+  runOllamaUpdatePlan: vi.fn(async () => {}),
+}));
+
+vi.mock('../../src/commands/ollama.js', () => ollamaMocks);
+
 describe('utility CLI commands', () => {
   it('runs doctor checks against the global --directory target', async () => {
     const program = new Command();
@@ -33,5 +54,26 @@ describe('utility CLI commands', () => {
 
     expect(logs.length).toBeGreaterThan(0);
     expect(doctorMocks.runDoctorChecks).toHaveBeenCalledWith(targetDir);
+  });
+
+  it('registers the ollama status command', async () => {
+    const program = new Command();
+    const logs: unknown[][] = [];
+
+    program.exitOverride();
+    registerUtilityCommands(program);
+
+    const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+      logs.push(args);
+    });
+
+    try {
+      await program.parseAsync(['node', 'test', 'ollama', 'status']);
+    } finally {
+      logSpy.mockRestore();
+    }
+
+    expect(ollamaMocks.fetchOllamaStatus).toHaveBeenCalled();
+    expect(logs.some((entry) => String(entry[0] ?? '').includes('Ollama status'))).toBe(true);
   });
 });

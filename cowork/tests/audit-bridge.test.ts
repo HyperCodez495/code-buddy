@@ -11,6 +11,7 @@ import {
   buildGoldenWorkflowEvalReport,
   buildPolicyEvalReport,
   buildTrajectoryExport,
+  getArtifactIndexDoctorStatus,
   buildRecallPack,
   listRuns,
   searchRuns,
@@ -169,6 +170,74 @@ describe('audit bridge run search', () => {
       count: 0,
       results: [],
     });
+  });
+
+  it('exposes artifact index doctor status for Cowork diagnostics', async () => {
+    const checkArtifactIndexHealth = vi.fn(() => ({
+      unavailable: false,
+      totalRows: 12,
+      healthyRows: 10,
+      staleRows: 1,
+      orphanedRows: 1,
+      rows: [
+        {
+          runId: 'run_pruned',
+          artifact: 'summary.md',
+          reason: 'missing_run' as const,
+        },
+        {
+          runId: 'run_orphan',
+          artifact: 'proof.md',
+          reason: 'missing_artifact' as const,
+        },
+      ],
+    }));
+    mockedLoadCoreModule.mockResolvedValue({
+      RunStore: {
+        getInstance: () => ({
+          checkArtifactIndexHealth,
+          getEvents: vi.fn(),
+          getRun: vi.fn(),
+          listRuns: vi.fn(),
+        }),
+      },
+    });
+
+    const response = await getArtifactIndexDoctorStatus();
+
+    expect(mockedLoadCoreModule).toHaveBeenCalledWith('observability/run-store.js');
+    expect(checkArtifactIndexHealth).toHaveBeenCalled();
+    expect(response).toMatchObject({
+      schemaVersion: 1,
+      kind: 'artifact_index_doctor_status',
+      status: 'attention',
+      unavailable: false,
+      totalRows: 12,
+      healthyRows: 10,
+      staleRows: 1,
+      orphanedRows: 1,
+      rows: [
+        {
+          runId: 'run_pruned',
+          artifact: 'summary.md',
+          reason: 'missing_run',
+        },
+        {
+          runId: 'run_orphan',
+          artifact: 'proof.md',
+          reason: 'missing_artifact',
+        },
+      ],
+      repairCommands: {
+        staleOnly: 'buddy run index-doctor --repair',
+        includeOrphans: 'buddy run index-doctor --repair --include-orphans',
+      },
+    });
+    expect(response.recommendations).toEqual([
+      'Run `buddy run index-doctor --repair` to remove rows for pruned or moved run folders.',
+      'Run `buddy run index-doctor --repair --include-orphans` to also remove rows for deleted artifact files.',
+    ]);
+    expect(new Date(response.generatedAt).toString()).not.toBe('Invalid Date');
   });
 
   it('builds a recall pack through the core recall-pack module', async () => {

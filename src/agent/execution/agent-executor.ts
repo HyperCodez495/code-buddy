@@ -8,9 +8,9 @@
  * @module agent/execution
  */
 
-import { CodeBuddyClient, CodeBuddyMessage } from "../../codebuddy/client.js";
+import { CodeBuddyClient, CodeBuddyMessage, CodeBuddyToolCall } from "../../codebuddy/client.js";
 import { ChatEntry, StreamingChunk } from "../types.js";
-import { ToolHandler } from "../tool-handler.js";
+import { ToolHandler, normalizeHallucinatedLocalToolCall } from "../tool-handler.js";
 import { ToolSelectionStrategy } from "./tool-selection-strategy.js";
 import { StreamingHandler, RawStreamingChunk } from "../streaming/index.js";
 import { ContextManagerV2 } from "../../context/context-manager-v2.js";
@@ -67,6 +67,25 @@ function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T): Promise<T
     promise,
     new Promise<T>(resolve => setTimeout(() => resolve(fallback), ms)),
   ]);
+}
+
+function isIgnorableControlToolCall(toolCall: CodeBuddyToolCall): boolean {
+  const name = toolCall.function?.name?.trim();
+  if (!name) return true;
+
+  // Some local models leak thinking/channel markers as tool names. Keep
+  // malformed-but-actionable aliases such as `thought-tool:execute_command`
+  // because ToolHandler normalizes those to real tools.
+  if (normalizeHallucinatedLocalToolCall(name, {})) return false;
+
+  const lower = name.toLowerCase();
+  return (
+    lower === 'thought' ||
+    lower === 'thought|' ||
+    lower.startsWith('thought|') ||
+    lower.includes('<|channel>') ||
+    lower.includes('<|tool_call>')
+  );
 }
 
 // Lazy-loaded workspace context to avoid blocking tests.
@@ -696,12 +715,15 @@ export class AgentExecutor {
         // shrink the tool set to ~5 with a minimal alwaysInclude — we
         // don't want to dangle `remember`/`lessons_*` in front of a model
         // that can't actually call tools and would inline-hallucinate them.
-        let selectionOpts: Parameters<typeof this.deps.toolSelectionStrategy.selectToolsForQuery>[1] = {};
+        const activeModelName = this.deps.client.getCurrentModel() ?? '';
+        let selectionOpts: Parameters<typeof this.deps.toolSelectionStrategy.selectToolsForQuery>[1] =
+          activeModelName ? { modelName: activeModelName } : {};
         try {
           const { getModelToolConfig } = await import('../../config/model-tools.js');
-          const cfg = getModelToolConfig(this.deps.client.getCurrentModel() ?? '');
+          const cfg = getModelToolConfig(activeModelName);
           if (cfg.promptProfile === 'lite') {
             selectionOpts = {
+              ...selectionOpts,
               maxTools: 5,
               alwaysInclude: ['view_file', 'bash', 'search'],
             };
@@ -709,7 +731,8 @@ export class AgentExecutor {
         } catch { /* model-tools optional, never block */ }
         const selectionResult = await this.deps.toolSelectionStrategy.selectToolsForQuery(message, selectionOpts);
         let tools = selectionResult.tools;
-        if (toolRounds === 0) this.deps.toolSelectionStrategy.cacheTools(tools);
+        let forcedChatOnlyToolRunModel: string | null = null;
+        if (toolRounds === 0) this.deps.toolSelectionStrategy.cacheTools(tools, activeModelName);
 
         // If the active model is flagged `supportsToolCalls: false` in
         // model-tools.ts (typical of small Ollama / LM Studio models that
@@ -725,14 +748,18 @@ export class AgentExecutor {
           // `(client as { defaultModel? }).defaultModel` access always
           // resolved to undefined because that field doesn't exist on
           // the dispatcher class — left the guard latent for ages.
-          const modelName = this.deps.client.getCurrentModel() ?? '';
+          const modelName = activeModelName;
           if (modelName) {
             const cfg = getModelToolConfig(modelName);
             if (cfg.supportsToolCalls === false && tools.length > 0) {
-              logger.debug(
-                `[agent-executor] supportsToolCalls=false for ${modelName} — dropping ${tools.length} tools from chat call`,
-              );
-              tools = [];
+              if (process.env.GROK_FORCE_TOOLS === 'true') {
+                forcedChatOnlyToolRunModel = modelName;
+              } else {
+                logger.debug(
+                  `[agent-executor] supportsToolCalls=false for ${modelName} — dropping ${tools.length} tools from chat call`,
+                );
+                tools = [];
+              }
             }
           }
         } catch { /* model-tools is optional, never block the loop */ }
@@ -833,7 +860,7 @@ export class AgentExecutor {
           }
         }
 
-        if (!this.deps.streamingHandler.hasYieldedToolCalls()) {
+        if (tools.length > 0 && !this.deps.streamingHandler.hasYieldedToolCalls()) {
           const extracted = this.deps.streamingHandler.extractToolCalls();
           if (extracted.toolCalls.length > 0) {
             yield { type: "tool_calls", toolCalls: extracted.toolCalls };
@@ -842,9 +869,28 @@ export class AgentExecutor {
 
         const accumulatedMessage = this.deps.streamingHandler.getAccumulatedMessage();
         // Sanitize streamed assistant content: strip model control tokens and invisible chars
-        const rawStreamedContent = accumulatedMessage.content || "Using tools to help you...";
+        let toolCalls = accumulatedMessage.tool_calls;
+        if (Array.isArray(toolCalls) && toolCalls.length > 0) {
+          const filteredToolCalls = toolCalls.filter((toolCall) => !isIgnorableControlToolCall(toolCall));
+          if (filteredToolCalls.length !== toolCalls.length) {
+            logger.debug('[agent-executor] dropped hallucinated control tool calls', {
+              dropped: toolCalls.length - filteredToolCalls.length,
+              kept: filteredToolCalls.length,
+            });
+          }
+          toolCalls = filteredToolCalls.length > 0 ? filteredToolCalls : undefined;
+        }
+        const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+        let rawStreamedContent = accumulatedMessage.content || "";
+        if (forcedChatOnlyToolRunModel && !hasToolCalls && !rawStreamedContent.trim()) {
+          rawStreamedContent =
+            `Blocked: ${forcedChatOnlyToolRunModel} is configured as a chat-only local model and ` +
+            'returned no structured tool call even with GROK_FORCE_TOOLS=true. ' +
+            'Use a tool-capable model such as qwen3.5-ctx32k or gpt-5.5 for goals that need shell/tools.';
+          yield { type: "content", content: `${rawStreamedContent}\n` };
+        }
+        if (!rawStreamedContent) rawStreamedContent = "Using tools to help you...";
         const content = sanitizeAssistantOutput(rawStreamedContent);
-        const toolCalls = accumulatedMessage.tool_calls;
 
         const assistantEntry: ChatEntry = {
           type: "assistant",
@@ -854,6 +900,10 @@ export class AgentExecutor {
         };
         history.push(assistantEntry);
         messages.push({ role: "assistant", content: content, tool_calls: toolCalls });
+
+        const currentOutputTokens = this.deps.streamingHandler.getTokenCount() || 0;
+        totalOutputTokens += currentOutputTokens;
+        yield { type: "token_count", tokenCount: inputTokens + totalOutputTokens };
 
         if (toolCalls && toolCalls.length > 0) {
           toolRounds++;
@@ -1186,8 +1236,6 @@ export class AgentExecutor {
           if (terminateDetectedStreaming) break;
 
           inputTokens = this.deps.tokenCounter.countMessageTokens(messages as Parameters<typeof this.deps.tokenCounter.countMessageTokens>[0]);
-          const currentOutputTokens = this.deps.streamingHandler.getTokenCount() || 0;
-          totalOutputTokens += currentOutputTokens;
           yield { type: "token_count", tokenCount: inputTokens + totalOutputTokens };
 
           // Run after_turn middleware (handles cost recording + limit)

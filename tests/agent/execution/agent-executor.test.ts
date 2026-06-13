@@ -294,6 +294,190 @@ describe('AgentExecutor', () => {
       );
     });
 
+    it('drops selected tools for models configured as chat-only', async () => {
+      const tool = {
+        type: 'function' as const,
+        function: {
+          name: 'bash',
+          description: 'Run a command',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+      };
+      (deps.client.getCurrentModel as jest.Mock).mockReturnValue('qwen2.5-coder:7b');
+      (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mockResolvedValue({
+        tools: [tool],
+        selection: null,
+        fromCache: false,
+        query: '',
+        timestamp: new Date(),
+      });
+
+      await executor.processUserMessage('Run echo TOOL_OK', [], []);
+
+      expect((deps.client.chatStream as jest.Mock).mock.calls[0][1]).toEqual([]);
+    });
+
+    it('does not extract textual tool calls after dropping tools for chat-only models', async () => {
+      const tool = {
+        type: 'function' as const,
+        function: {
+          name: 'bash',
+          description: 'Run a command',
+          parameters: {
+            type: 'object',
+            properties: {},
+            required: [],
+          },
+        },
+      };
+      (deps.client.getCurrentModel as jest.Mock).mockReturnValue('qwen2.5-coder:7b');
+      (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mockResolvedValue({
+        tools: [tool],
+        selection: null,
+        fromCache: false,
+        query: '',
+        timestamp: new Date(),
+      });
+      (deps.client.chatStream as jest.Mock).mockImplementationOnce(async function* () {
+        yield {
+          choices: [
+            {
+              delta: {
+                content: 'commentary to=bash {"command":"echo SHOULD_NOT_RUN"}',
+              },
+            },
+          ],
+        };
+      });
+      (deps.streamingHandler.getAccumulatedMessage as jest.Mock).mockReturnValueOnce({
+        content: 'commentary to=bash {"command":"echo SHOULD_NOT_RUN"}',
+        tool_calls: undefined,
+      });
+      (deps.streamingHandler.extractToolCalls as jest.Mock).mockReturnValueOnce({
+        toolCalls: [makeToolCall('bash', { command: 'echo SHOULD_NOT_RUN' })],
+        remainingContent: '',
+      });
+
+      await executor.processUserMessage('Run echo SHOULD_NOT_RUN', [], []);
+
+      expect((deps.client.chatStream as jest.Mock).mock.calls[0][1]).toEqual([]);
+      expect(deps.streamingHandler.extractToolCalls).not.toHaveBeenCalled();
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+    });
+
+    it('drops local thinking-channel tool calls before execution', async () => {
+      (deps.client.chatStream as jest.Mock).mockImplementationOnce(async function* () {
+        yield {
+          choices: [
+            {
+              delta: {
+                tool_calls: [
+                  {
+                    index: 0,
+                    id: 'call_thought',
+                    type: 'function',
+                    function: {
+                      name: 'thought|',
+                      arguments: '{}',
+                    },
+                  },
+                ],
+              },
+            },
+          ],
+        };
+      });
+      (deps.streamingHandler.getAccumulatedMessage as jest.Mock).mockReturnValueOnce({
+        content: '',
+        tool_calls: [makeToolCall('thought|', {}, 'call_thought')],
+      });
+
+      const entries = await executor.processUserMessage('Create a file', [], []);
+      const assistant = entries.find(entry => entry.type === 'assistant');
+
+      expect(deps.toolHandler.executeTool).not.toHaveBeenCalled();
+      expect(assistant?.toolCalls).toBeUndefined();
+    });
+
+    it('keeps selected tools for chat-only models when GROK_FORCE_TOOLS is enabled', async () => {
+      const prev = process.env.GROK_FORCE_TOOLS;
+      process.env.GROK_FORCE_TOOLS = 'true';
+      try {
+        const tool = {
+          type: 'function' as const,
+          function: {
+            name: 'bash',
+            description: 'Run a command',
+            parameters: {
+              type: 'object',
+              properties: {},
+              required: [],
+            },
+          },
+        };
+        (deps.client.getCurrentModel as jest.Mock).mockReturnValue('qwen2.5-coder:7b');
+        (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mockResolvedValue({
+          tools: [tool],
+          selection: null,
+          fromCache: false,
+          query: '',
+          timestamp: new Date(),
+        });
+
+        await executor.processUserMessage('Run echo TOOL_OK', [], []);
+
+        expect((deps.client.chatStream as jest.Mock).mock.calls[0][1]).toEqual([tool]);
+      } finally {
+        if (prev === undefined) delete process.env.GROK_FORCE_TOOLS;
+        else process.env.GROK_FORCE_TOOLS = prev;
+      }
+    });
+
+    it('surfaces a diagnostic when a forced chat-only model returns no tool call or content', async () => {
+      const prev = process.env.GROK_FORCE_TOOLS;
+      process.env.GROK_FORCE_TOOLS = 'true';
+      try {
+        const tool = {
+          type: 'function' as const,
+          function: {
+            name: 'bash',
+            description: 'Run a command',
+            parameters: {
+              type: 'object',
+              properties: {},
+              required: [],
+            },
+          },
+        };
+        (deps.client.getCurrentModel as jest.Mock).mockReturnValue('qwen2.5-coder:7b');
+        (deps.toolSelectionStrategy.selectToolsForQuery as jest.Mock).mockResolvedValue({
+          tools: [tool],
+          selection: null,
+          fromCache: false,
+          query: '',
+          timestamp: new Date(),
+        });
+        (deps.client.chatStream as jest.Mock).mockImplementationOnce(async function* () {});
+        (deps.streamingHandler.getAccumulatedMessage as jest.Mock).mockReturnValueOnce({
+          content: '',
+          tool_calls: undefined,
+        });
+
+        const entries = await executor.processUserMessage('Run echo TOOL_OK', [], []);
+        const assistant = entries.find(entry => entry.type === 'assistant');
+
+        expect(assistant?.content).toContain('qwen2.5-coder:7b is configured as a chat-only local model');
+        expect(assistant?.content).toContain('returned no structured tool call');
+      } finally {
+        if (prev === undefined) delete process.env.GROK_FORCE_TOOLS;
+        else process.env.GROK_FORCE_TOOLS = prev;
+      }
+    });
+
     it('should call context manager to prepare messages', async () => {
       const history: ChatEntry[] = [];
       const messages: CodeBuddyMessage[] = [];
@@ -519,7 +703,7 @@ describe('AgentExecutor', () => {
       expect((toolMsg as any).tool_call_id).toBe('call_123');
     });
 
-    it('should use output token count from usage when available', async () => {
+    it('should record output token count for a final response without tool calls', async () => {
       setupLLMFlow(deps, [{ content: 'Response' }]);
 
       const history: ChatEntry[] = [];
@@ -530,7 +714,7 @@ describe('AgentExecutor', () => {
       // recordSessionCost should be called with token counts
       expect(config.recordSessionCost).toHaveBeenCalledWith(
         expect.any(Number),
-        expect.any(Number)
+        50
       );
     });
 

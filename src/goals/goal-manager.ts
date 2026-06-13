@@ -15,6 +15,7 @@ import { getSettingsHierarchy } from '../config/settings-hierarchy.js';
 import { getSessionStore } from '../persistence/session-store.js';
 import { logger } from '../utils/logger.js';
 import { GoalJudgeFn } from './goal-judge.js';
+import type { GoalPlan } from './goal-decomposer.js';
 import {
   DEFAULT_JUDGE_MAX_TOKENS,
   DEFAULT_JUDGE_TIMEOUT_MS,
@@ -26,6 +27,7 @@ import {
   buildContinuationPrompt,
   createGoalState,
   formatGoalStatusLine,
+  getGoalJudgeCriteria,
   renderSubgoalsBlock,
 } from './goal-state.js';
 import { GoalStore } from './goal-store.js';
@@ -43,6 +45,7 @@ export interface GoalTurnDecision {
 export interface GoalsConfig {
   maxTurns: number;
   judgeModel: string;
+  plannerModel: string;
   judgeMaxTokens: number;
   judgeTimeoutMs: number;
 }
@@ -80,19 +83,44 @@ export class GoalManager {
 
   // --- mutation -----------------------------------------------------
 
-  set(goal: string, options: { maxTurns?: number } = {}): GoalState {
+  set(goal: string, options: { maxTurns?: number; goalPlan?: GoalPlan; goalPlanAttempted?: boolean } = {}): GoalState {
     const text = (goal || '').trim();
     if (!text) {
       throw new Error('goal text is empty');
     }
-    const state = createGoalState(text, options.maxTurns || this.defaultMaxTurns);
+    const state = createGoalState(text, options.maxTurns ?? this.defaultMaxTurns);
+    if (options.goalPlan) state.goalPlan = options.goalPlan;
+    if (typeof options.goalPlanAttempted === 'boolean') {
+      state.goalPlanAttempted = options.goalPlanAttempted;
+    }
     this._state = state;
     this.store.save(this.sessionKey, state);
     return state;
   }
 
+  attachGoalPlan(plan: GoalPlan): GoalState | null {
+    if (!this.hasGoal() || !this._state) return null;
+    this._state.goalPlan = plan;
+    this._state.goalPlanAttempted = true;
+    delete this._state.goalPlanLastError;
+    this.store.save(this.sessionKey, this._state);
+    return this._state;
+  }
+
+  markGoalPlanAttempted(error?: string): GoalState | null {
+    if (!this.hasGoal() || !this._state) return null;
+    this._state.goalPlanAttempted = true;
+    if (error) {
+      this._state.goalPlanLastError = error;
+    } else {
+      delete this._state.goalPlanLastError;
+    }
+    this.store.save(this.sessionKey, this._state);
+    return this._state;
+  }
+
   pause(reason: string = 'user-paused'): GoalState | null {
-    if (!this._state) return null;
+    if (!this._state || !['active', 'paused'].includes(this._state.status)) return null;
     this._state.status = 'paused';
     this._state.pausedReason = reason;
     this.store.save(this.sessionKey, this._state);
@@ -100,9 +128,12 @@ export class GoalManager {
   }
 
   resume(options: { resetBudget?: boolean } = {}): GoalState | null {
-    if (!this._state) return null;
+    if (!this._state || this._state.status !== 'paused') return null;
     this._state.status = 'active';
     delete this._state.pausedReason;
+    delete this._state.lastVerdict;
+    delete this._state.lastReason;
+    this._state.consecutiveParseFailures = 0;
     if (options.resetBudget ?? true) {
       this._state.turnsUsed = 0;
     }
@@ -144,7 +175,10 @@ export class GoalManager {
     if (!this.hasGoal() || !this._state) {
       throw new Error('no active goal');
     }
-    const idx = Math.trunc(index1Based) - 1;
+    if (!Number.isSafeInteger(index1Based) || index1Based < 1) {
+      throw new Error('index must be a positive integer');
+    }
+    const idx = index1Based - 1;
     if (idx < 0 || idx >= this._state.subgoals.length) {
       throw new Error(`index out of range (1..${this._state.subgoals.length})`);
     }
@@ -190,10 +224,11 @@ export class GoalManager {
       };
     }
 
+    const criteria = getGoalJudgeCriteria(state);
     const outcome = await deps.judge({
       goal: state.goal,
       lastResponse,
-      ...(state.subgoals.length ? { subgoals: state.subgoals } : {}),
+      ...(criteria.length ? { subgoals: criteria } : {}),
     });
     const decision = applyJudgeOutcome(state, outcome);
     this.store.save(this.sessionKey, state);
@@ -213,7 +248,9 @@ export class GoalManager {
 export function resolveGoalsConfig(): GoalsConfig {
   let raw: Record<string, unknown> = {};
   try {
-    const settings = getSettingsHierarchy().getAllSettings() as Record<string, unknown>;
+    const hierarchy = getSettingsHierarchy(process.cwd());
+    hierarchy.loadAllLevels?.();
+    const settings = hierarchy.getAllSettings() as Record<string, unknown>;
     if (settings && typeof settings.goals === 'object' && settings.goals !== null) {
       raw = settings.goals as Record<string, unknown>;
     }
@@ -221,25 +258,42 @@ export function resolveGoalsConfig(): GoalsConfig {
     logger.debug('goals: settings hierarchy unavailable, using defaults', { error: String(error) });
   }
 
-  const envMaxTurns = Number(process.env.CODEBUDDY_GOAL_MAX_TURNS);
   const maxTurns =
-    Number.isFinite(envMaxTurns) && envMaxTurns > 0
-      ? Math.trunc(envMaxTurns)
-      : positiveInt(raw.maxTurns, DEFAULT_MAX_TURNS);
+    positiveInt(process.env.CODEBUDDY_GOAL_MAX_TURNS, 0)
+      || positiveInt(raw.maxTurns, DEFAULT_MAX_TURNS);
 
-  const judgeModel = process.env.CODEBUDDY_GOAL_JUDGE_MODEL || String(raw.judgeModel ?? '').trim();
+  const judgeModel =
+    nonEmptyString(process.env.CODEBUDDY_GOAL_JUDGE_MODEL)
+      || nonEmptyString(raw.judgeModel);
+  const plannerModel =
+    nonEmptyString(process.env.CODEBUDDY_GOAL_PLANNER_MODEL)
+      || nonEmptyString(raw.plannerModel);
 
   return {
     maxTurns,
     judgeModel,
+    plannerModel,
     judgeMaxTokens: positiveInt(raw.judgeMaxTokens, DEFAULT_JUDGE_MAX_TOKENS),
     judgeTimeoutMs: positiveInt(raw.judgeTimeoutMs, DEFAULT_JUDGE_TIMEOUT_MS),
   };
 }
 
 function positiveInt(value: unknown, fallback: number): number {
-  const n = Number(value);
-  return Number.isFinite(n) && n > 0 ? Math.trunc(n) : fallback;
+  const n = parsePositiveSafeInteger(value);
+  return Number.isSafeInteger(n) && n > 0 ? n : fallback;
+}
+
+function nonEmptyString(value: unknown): string {
+  if (typeof value !== 'string') return '';
+  return value.trim();
+}
+
+function parsePositiveSafeInteger(value: unknown): number {
+  if (typeof value === 'number') return value;
+  if (typeof value !== 'string') return Number.NaN;
+  const trimmed = value.trim();
+  if (!/^[1-9]\d*$/.test(trimmed)) return Number.NaN;
+  return Number(trimmed);
 }
 
 // ============================================================================

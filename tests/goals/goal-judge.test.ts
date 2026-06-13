@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { judgeGoal, parseJudgeResponse } from '../../src/goals/goal-judge.js';
+import { buildJudgeUserPrompt, judgeGoal, parseJudgeResponse } from '../../src/goals/goal-judge.js';
 import { JUDGE_SYSTEM_PROMPT } from '../../src/goals/goal-state.js';
 
 const recordUsageSpy = vi.hoisted(() => vi.fn());
@@ -104,6 +104,53 @@ describe('judgeGoal', () => {
     );
   });
 
+  it('instructs the judge not to accept unsupported side-effect claims', () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain('unsupported assistant claims are NOT evidence');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('creating, editing, moving, deleting, reading, or verifying files');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('tool result');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('If a side-effect goal has no concrete evidence, return CONTINUE');
+  });
+
+  it('tells the judge evidence metadata is not exact-answer output text', () => {
+    expect(JUDGE_SYSTEM_PROMPT).toContain('internal evidence metadata');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('NOT part of the assistant');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('exact-answer goals');
+    expect(JUDGE_SYSTEM_PROMPT).toContain('use the metadata and any following tool output');
+  });
+
+  it('delimits the response so prompt metadata is not exact-answer output', () => {
+    const prompt = buildJudgeUserPrompt({
+      goal: 'Respond exactly OK',
+      lastResponse: '[tool evidence: none]\n\nOK',
+    });
+
+    expect(prompt).toContain('Text outside those tags is prompt metadata');
+    expect(prompt).toContain('<response>\n[tool evidence: none]\n\nOK\n</response>');
+    expect(prompt.indexOf('Current time:')).toBeLessThan(prompt.indexOf('<response>'));
+    expect(prompt.indexOf('</response>')).toBeLessThan(prompt.indexOf('Is the goal satisfied?'));
+  });
+
+  it('keeps response delimiters when additional subgoal criteria are present', () => {
+    const prompt = buildJudgeUserPrompt({
+      goal: 'Create proof.txt',
+      subgoals: ['read proof.txt back'],
+      lastResponse: '[tool:view_file success]\nGOAL_FILE_OK',
+    });
+
+    expect(prompt).toContain('- 1. read proof.txt back');
+    expect(prompt).toContain('<response>\n[tool:view_file success]\nGOAL_FILE_OK\n</response>');
+    expect(prompt.indexOf('Current time:')).toBeLessThan(prompt.indexOf('<response>'));
+    expect(prompt.indexOf('</response>')).toBeLessThan(
+      prompt.indexOf('Decision: For each numbered criterion')
+    );
+  });
+
+  it('forwards the per-call max token cap', async () => {
+    const client = mockClient('{"done": false, "reason": "x"}');
+    await judgeGoal(client, { goal: 'g', lastResponse: 'r', maxTokens: 1234 });
+    expect(client.chat.mock.calls[0]![2]).toEqual({ maxTokens: 1234, temperature: 0 });
+  });
+
   it('omits the model option when none is configured', async () => {
     const client = mockClient('{"done": false, "reason": "x"}');
     await judgeGoal(client, { goal: 'g', lastResponse: 'r' });
@@ -163,6 +210,28 @@ describe('parseJudgeResponse', () => {
   it('defaults missing reason', () => {
     const result = parseJudgeResponse('{"done": false}');
     expect(result.reason).toBe('no reason provided');
+  });
+
+  it('accepts only explicit done values instead of arbitrary truthy JSON', () => {
+    expect(parseJudgeResponse('{"done": true, "reason": "ok"}').verdict).toBe('done');
+    expect(parseJudgeResponse('{"done": 1, "reason": "ok"}').verdict).toBe('done');
+    expect(parseJudgeResponse('{"done": "yes", "reason": "ok"}').verdict).toBe('done');
+    expect(parseJudgeResponse('{"done": false, "reason": "not yet"}').verdict).toBe('continue');
+    expect(parseJudgeResponse('{"done": 0, "reason": "not yet"}').verdict).toBe('continue');
+    expect(parseJudgeResponse('{"done": "no", "reason": "not yet"}').verdict).toBe('continue');
+  });
+
+  it('treats ambiguous done values as parse failures, not done', () => {
+    for (const raw of [
+      '{"done": {}, "reason": "object should not pass"}',
+      '{"done": [], "reason": "array should not pass"}',
+      '{"done": "maybe", "reason": "ambiguous"}',
+      '{"reason": "missing done"}',
+    ]) {
+      const result = parseJudgeResponse(raw);
+      expect(result.verdict).toBe('continue');
+      expect(result.parseFailed).toBe(true);
+    }
   });
 
   it('rejects JSON arrays as parse failures', () => {

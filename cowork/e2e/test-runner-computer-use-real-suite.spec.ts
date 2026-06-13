@@ -3,6 +3,7 @@ import fs from 'node:fs';
 import { expect, test } from './fixtures';
 
 const REAL_COMPUTER_USE_ENABLED = process.env.CODEBUDDY_REAL_COMPUTER_USE === '1';
+const REAL_COMPUTER_USE_SUPPORTED = process.platform === 'win32';
 
 async function dismissOnboardingIfPresent(appPage: import('@playwright/test').Page) {
   const onboarding = appPage.getByTestId('onboarding-wizard');
@@ -13,8 +14,10 @@ async function dismissOnboardingIfPresent(appPage: import('@playwright/test').Pa
 }
 
 test.skip(
-  !REAL_COMPUTER_USE_ENABLED,
-  'Set CODEBUDDY_REAL_COMPUTER_USE=1 to run the real Computer Use desktop suite from the GUI test runner.'
+  !REAL_COMPUTER_USE_ENABLED || !REAL_COMPUTER_USE_SUPPORTED,
+  REAL_COMPUTER_USE_SUPPORTED
+    ? 'Set CODEBUDDY_REAL_COMPUTER_USE=1 to run the real Computer Use desktop suite from the GUI test runner.'
+    : 'Computer Use real desktop suite requires Windows for WinForms, Notepad, and Excel COM.'
 );
 
 test('runs the real Computer Use desktop suite from the test runner window', async ({

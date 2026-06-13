@@ -17,6 +17,9 @@ const mockEnsureDir = jest.fn();
 const mockStat = jest.fn();
 const mockReadDirectory = jest.fn();
 const mockRemove = jest.fn();
+const mockSpawn = jest.fn();
+const mockExec = jest.fn();
+const mockExecSync = jest.fn();
 
 jest.mock('../../src/services/vfs/unified-vfs-router.js', () => ({
   UnifiedVfsRouter: {
@@ -31,6 +34,12 @@ jest.mock('../../src/services/vfs/unified-vfs-router.js', () => ({
       remove: (...args: unknown[]) => mockRemove(...args),
     },
   },
+}));
+
+jest.mock('child_process', () => ({
+  exec: (...args: unknown[]) => mockExec(...args),
+  spawn: (...args: unknown[]) => mockSpawn(...args),
+  execSync: (...args: unknown[]) => mockExecSync(...args),
 }));
 
 // Mock Database for MigrationManager
@@ -51,6 +60,12 @@ jest.mock('better-sqlite3', () => {
 describe('Miscellaneous Tools VFS Migration', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    mockExec.mockImplementation((_command: string, callback?: (error: Error | null, stdout: string, stderr: string) => void) => {
+      callback?.(null, '', '');
+    });
+    mockExecSync.mockImplementation(() => {
+      throw new Error('No screenshot tool available in unit test');
+    });
   });
 
   describe('CommentWatcher', () => {

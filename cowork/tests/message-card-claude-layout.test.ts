@@ -25,4 +25,12 @@ describe('MessageCard Claude-style layout', () => {
     expect(source).toContain('rounded-2xl border overflow-hidden');
     expect(source).toContain('rounded-2xl border border-border-subtle bg-background/40 overflow-hidden');
   });
+
+  it('supports Hermes-style transparent stream without compact activity grouping', () => {
+    const source = readAllMessageContent();
+    expect(source).toContain("chatActivityDisplayMode ?? 'compact_worklog'");
+    expect(source).toContain("activityDisplayMode === 'transparent_stream'");
+    expect(source).toContain('return { visibleBlocks: contentBlocks, activityBlocks: [] as ContentBlock[] }');
+    expect(source).toContain('<ActivityGroupBlock');
+  });
 });

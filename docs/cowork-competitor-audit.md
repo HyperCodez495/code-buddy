@@ -128,24 +128,31 @@ Code Buddy should become:
 - `RunStore.searchRuns()` queries that artifact index before falling
   back to the existing file scan, so newly generated plans, summaries
   and scripts stay searchable across store restarts.
+- `buddy run index-doctor [--repair] [--include-orphans] [--json]`
+  reports and repairs stale artifact-index rows left by pruned, moved
+  or partially deleted run folders.
+- Cowork Audit Log shows artifact-index doctor health, stale/orphan
+  counts and the exact CLI repair commands before recall search silently
+  degrades.
+- Model-facing tool schemas are now patched by the active
+  `model-tools.ts` capabilities before prompt-cache/local cache/provider
+  calls, so disabled tools and unsupported vision tools do not leak across
+  model switches or local-model profiles.
 
 ## Revised next TODOs
 
 1. Make every long-running CLI/Cowork action create or link an
    `AgentRun` and visible work item.
-2. Add artifact-index health/repair reporting for stale or moved run folders.
-3. Finish dynamic schema patching so disabled tools disappear from
-   model-facing schemas.
-4. Add a Cowork profile permission inspector for the exact next run,
+2. Add a Cowork profile permission inspector for the exact next run,
    including write/network/browser consent.
-5. Add Browser Operator mode: local browser consent, dedicated tab,
+3. Add Browser Operator mode: local browser consent, dedicated tab,
    visible action log, stop button and proof artifact export.
-6. Add mobile-safe remote supervision: list runs, open artifacts,
+4. Add mobile-safe remote supervision: list runs, open artifacts,
    approve/cancel, send prompt, no secret-heavy payloads.
-7. Add hook lifecycle: before tool call, after tool call, before memory
+5. Add hook lifecycle: before tool call, after tool call, before memory
    write, after run complete and before delivery.
-8. Add skill package manager in Cowork: browse, enable, disable,
+6. Add skill package manager in Cowork: browse, enable, disable,
    inspect telemetry, install only after review.
-9. Add trajectory export with privacy redaction for debugging/evals.
-10. Add golden workflow evals for lead discovery, code fix, doc
+7. Add trajectory export with privacy redaction for debugging/evals.
+8. Add golden workflow evals for lead discovery, code fix, doc
     workshop, Fleet review and scheduled run.

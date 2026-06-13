@@ -17,9 +17,14 @@ import {
 import {
   ConnectionConfig,
   ConnectionProfile,
-  DEFAULT_PROFILES,
-  DEFAULT_CONNECTION_CONFIG,
 } from '../../src/config/types.js';
+import { RUNTIME_PROVIDER_CATALOG } from '../../src/providers/provider-catalog.js';
+
+const catalogEnvKeys = RUNTIME_PROVIDER_CATALOG.flatMap((entry) => [
+  ...entry.apiKeyEnvKeys,
+  ...entry.baseUrlEnvKeys,
+  ...entry.modelEnvKeys,
+]);
 
 describe('ConfigResolver', () => {
   // Store original env vars
@@ -31,14 +36,10 @@ describe('ConfigResolver', () => {
     delete process.env.GROK_API_KEY;
     delete process.env.GROK_BASE_URL;
     delete process.env.GROK_MODEL;
-    delete process.env.XAI_API_KEY;
-    delete process.env.GEMINI_API_KEY;
-    delete process.env.GOOGLE_API_KEY;
-    delete process.env.GEMINI_MODEL;
-    delete process.env.OPENAI_API_KEY;
-    delete process.env.OPENAI_MODEL;
-    delete process.env.ANTHROPIC_API_KEY;
-    delete process.env.ANTHROPIC_MODEL;
+    delete process.env.CODEBUDDY_PROVIDER;
+    for (const key of catalogEnvKeys) {
+      delete process.env[key];
+    }
   });
 
   afterEach(() => {
@@ -116,6 +117,7 @@ describe('ConfigResolver', () => {
     });
 
     it('should fall back to env vars when no profile active', () => {
+      process.env.CODEBUDDY_PROVIDER = 'grok';
       process.env.GROK_API_KEY = 'env-key';
       process.env.GROK_BASE_URL = 'https://env.api.com/v1';
       process.env.GROK_MODEL = 'env-model';
@@ -136,6 +138,7 @@ describe('ConfigResolver', () => {
     });
 
     it('should use defaults when nothing else available', () => {
+      process.env.CODEBUDDY_PROVIDER = 'grok';
       const config: ConnectionConfig = {
         profiles: [],
         activeProfileId: 'nonexistent',
@@ -148,6 +151,48 @@ describe('ConfigResolver', () => {
       expect(result.baseURL).toBe('https://api.x.ai/v1');
       expect(result.model).toBe('grok-code-fast-1');
       expect(result.source).toBe('default');
+    });
+
+    it('should fall back to catalog providers beyond the legacy four', () => {
+      process.env.CODEBUDDY_PROVIDER = 'openrouter';
+      process.env.OPENROUTER_API_KEY = 'openrouter-key';
+      process.env.OPENROUTER_MODEL = 'anthropic/claude-sonnet-4';
+
+      const config: ConnectionConfig = {
+        profiles: [],
+        activeProfileId: 'nonexistent',
+        envVarsFallback: true,
+      };
+
+      const resolver = new ConfigResolver(config);
+      const result = resolver.resolve();
+
+      expect(result.provider).toBe('openrouter');
+      expect(result.baseURL).toBe('https://openrouter.ai/api/v1');
+      expect(result.apiKey).toBe('openrouter-key');
+      expect(result.model).toBe('anthropic/claude-sonnet-4');
+      expect(result.source).toBe('environment');
+    });
+
+    it('should resolve Hermes-style provider aliases from the runtime catalog', () => {
+      process.env.CODEBUDDY_PROVIDER = 'kimi';
+      process.env.KIMI_API_KEY = 'kimi-key';
+      process.env.KIMI_MODEL = 'kimi-k2-thinking';
+
+      const config: ConnectionConfig = {
+        profiles: [],
+        activeProfileId: 'nonexistent',
+        envVarsFallback: true,
+      };
+
+      const resolver = new ConfigResolver(config);
+      const result = resolver.resolve();
+
+      expect(result.provider).toBe('kimi-coding');
+      expect(result.baseURL).toBe('https://api.moonshot.ai/v1');
+      expect(result.apiKey).toBe('kimi-key');
+      expect(result.model).toBe('kimi-k2-thinking');
+      expect(result.source).toBe('environment');
     });
 
     it('should NOT use env vars when profile is set (user-first priority)', () => {

@@ -291,6 +291,31 @@ function buildSpawnEnv(extra?: Record<string, string>): NodeJS.ProcessEnv {
   return env;
 }
 
+function terminateProcessTree(child: ChildProcess, signal: NodeJS.Signals = 'SIGTERM'): void {
+  const pid = child.pid;
+  if (!pid) {
+    child.kill(signal);
+    return;
+  }
+
+  if (process.platform === 'win32') {
+    const killed = spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
+      stdio: 'ignore',
+      timeout: 5000,
+    });
+    if (killed.status !== 0) {
+      child.kill(signal);
+    }
+    return;
+  }
+
+  try {
+    process.kill(-pid, signal);
+  } catch {
+    child.kill(signal);
+  }
+}
+
 export class TestRunnerBridge extends EventEmitter {
   private workspaceDir: string | null = null;
   private framework: string | null = null;
@@ -3486,18 +3511,63 @@ export class TestRunnerBridge extends EventEmitter {
       const child = spawn(invocation.command, invocation.args, {
         cwd: item.cwd,
         env: buildSpawnEnv(item.env),
+        detached: process.platform !== 'win32',
       });
       this.activeProcess = child;
       let timeout: ReturnType<typeof setTimeout> | undefined;
+      let forceKillTimeout: ReturnType<typeof setTimeout> | undefined;
+      let settled = false;
       if (item.timeoutMs && item.timeoutMs > 0) {
         timeout = setTimeout(() => {
-          if (this.activeProcess !== child) return;
+          if (this.activeProcess !== child || settled) return;
           this.timeoutRequested = true;
           const text = `\n[TestRunnerBridge] Timed out after ${item.timeoutMs}ms\n`;
           stderr += text;
+          const duration = Date.now() - startTime;
+          const output = stdout + stderr;
+          const result: TestResult = {
+            success: false,
+            passed: 0,
+            failed: 1,
+            skipped: 0,
+            total: 1,
+            duration,
+            framework: item.framework,
+            tests: [
+              {
+                name: item.label ?? 'Timed out test runner check',
+                suite: item.framework,
+                status: 'failed',
+                duration,
+                error: `Timed out after ${item.timeoutMs}ms`,
+              },
+            ],
+          };
           audit?.emit('error', { message: text.trim(), timeoutMs: item.timeoutMs });
           this.emit('test.output', { stream: 'stderr', text });
           this.terminateActiveProcess();
+          settled = true;
+          this.timeoutRequested = false;
+          this.activeProcess = null;
+          this.lastResult = result;
+          audit?.emit('tool_result', {
+            toolName: 'test-runner.catalog',
+            success: false,
+            timeout: true,
+            exitCode: null,
+          });
+          audit?.saveArtifact('test-output.txt', output);
+          audit?.end('failed', {
+            durationMs: duration,
+            toolCallCount: 1,
+          });
+          this.emit('test.complete', result);
+          resolve(result);
+          forceKillTimeout = setTimeout(() => {
+            if (child.exitCode === null && child.signalCode === null) {
+              terminateProcessTree(child, 'SIGKILL');
+            }
+          }, 1000);
         }, item.timeoutMs);
       }
 
@@ -3514,7 +3584,10 @@ export class TestRunnerBridge extends EventEmitter {
         this.emit('test.output', { stream: 'stderr', text });
       });
       child.on('error', (err) => {
+        if (settled) return;
+        settled = true;
         if (timeout) clearTimeout(timeout);
+        if (forceKillTimeout) clearTimeout(forceKillTimeout);
         this.activeProcess = null;
         const result: TestResult = {
           success: false,
@@ -3541,7 +3614,13 @@ export class TestRunnerBridge extends EventEmitter {
         resolve(result);
       });
       child.on('close', (code) => {
+        if (settled) {
+          if (forceKillTimeout) clearTimeout(forceKillTimeout);
+          return;
+        }
+        settled = true;
         if (timeout) clearTimeout(timeout);
+        if (forceKillTimeout) clearTimeout(forceKillTimeout);
         this.activeProcess = null;
         const duration = Date.now() - startTime;
         const output = stdout + stderr;
@@ -3826,18 +3905,7 @@ export class TestRunnerBridge extends EventEmitter {
   private terminateActiveProcess(): void {
     if (!this.activeProcess) return;
     try {
-      const pid = this.activeProcess.pid;
-      if (process.platform === 'win32' && pid) {
-        const killed = spawnSync('taskkill', ['/pid', String(pid), '/t', '/f'], {
-          stdio: 'ignore',
-          timeout: 5000,
-        });
-        if (killed.status !== 0) {
-          this.activeProcess.kill('SIGTERM');
-        }
-      } else {
-        this.activeProcess.kill('SIGTERM');
-      }
+      terminateProcessTree(this.activeProcess);
     } catch {
       /* ignore */
     }

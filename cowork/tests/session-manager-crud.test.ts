@@ -3,6 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { describe, expect, it, vi } from 'vitest';
 import type { DatabaseInstance } from '../src/main/db/database';
+import type { Session } from '../src/renderer/types';
 
 vi.mock('electron', () => ({
   app: {
@@ -50,11 +51,23 @@ vi.mock('../src/main/mcp/mcp-config-store', () => ({
   },
 }));
 
+vi.mock('../src/main/config/config-store', () => ({
+  configStore: {
+    get: (key: string) => {
+      if (key === 'memoryStrategy') return 'auto';
+      if (key === 'model') return 'model';
+      return undefined;
+    },
+    getAll: () => ({ memoryStrategy: 'auto', model: 'model' }),
+  },
+}));
+
 import {
   SessionManager,
   createUniqueAttachmentFilename,
   formatFileAttachmentPromptLine,
 } from '../src/main/session/session-manager';
+import { TurnJournal } from '../src/main/session/turn-journal';
 
 // Shared minimal DB factory used across tests
 function makeDb(overrides: Partial<DatabaseInstance> = {}): DatabaseInstance {
@@ -136,8 +149,53 @@ describe('SessionManager.listSessions', () => {
     expect(s.projectId).toBe('project-1');
     expect(s.isBackground).toBe(true);
     expect(s.executionMode).toBe('task');
+    expect(s.pinned).toBe(false);
+    expect(s.archived).toBe(false);
+    expect(s.tags).toEqual([]);
+    expect(s.source).toBe('cowork');
     expect(s.createdAt).toBe(1000);
     expect(s.updatedAt).toBe(2000);
+  });
+
+  it('maps pinned/archive metadata and falls back to title-derived tags', () => {
+    const row = {
+      id: 's-tags',
+      title: 'Work on #Fleet #Hermes',
+      claude_session_id: null,
+      openai_thread_id: null,
+      status: 'idle',
+      cwd: null,
+      mounted_paths: '[]',
+      allowed_tools: '[]',
+      memory_enabled: 0,
+      model: null,
+      project_id: null,
+      is_background: 0,
+      execution_mode: null,
+      pinned: 1,
+      archived: 1,
+      tags: null,
+      source: 'cli-import',
+      created_at: 1,
+      updated_at: 2,
+    };
+    const db = makeDb({
+      sessions: {
+        create: vi.fn(),
+        get: vi.fn(() => null),
+        getAll: vi.fn(() => [row]),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+    });
+
+    const manager = new SessionManager(db, vi.fn());
+    const [session] = manager.listSessions();
+
+    expect(session.pinned).toBe(true);
+    expect(session.archived).toBe(true);
+    expect(session.tags).toEqual(['fleet', 'hermes']);
+    expect(session.source).toBe('cli-import');
   });
 
   it('falls back to empty arrays when mounted_paths or allowed_tools JSON is malformed', () => {
@@ -170,6 +228,426 @@ describe('SessionManager.listSessions', () => {
 
     expect(s.mountedPaths).toEqual([]);
     expect(s.allowedTools).toEqual([]);
+  });
+});
+
+describe('SessionManager session recall prefill', () => {
+  it('only builds recall context for memory-enabled sessions', () => {
+    const now = Date.now();
+    const createdTraceSteps: any[] = [];
+    const sessions = [
+      {
+        id: 'current',
+        title: 'Current auth work',
+        claude_session_id: null,
+        openai_thread_id: null,
+        status: 'idle',
+        cwd: '/repo',
+        mounted_paths: JSON.stringify([]),
+        allowed_tools: JSON.stringify([]),
+        memory_enabled: 1,
+        model: 'gpt-5.5',
+        project_id: null,
+        is_background: 0,
+        execution_mode: null,
+        pinned: 0,
+        archived: 0,
+        tags: JSON.stringify([]),
+        source: 'cowork',
+        created_at: now - 1_000,
+        updated_at: now,
+      },
+      {
+        id: 'previous',
+        title: 'Auth regression fix',
+        claude_session_id: null,
+        openai_thread_id: null,
+        status: 'completed',
+        cwd: '/repo',
+        mounted_paths: JSON.stringify([]),
+        allowed_tools: JSON.stringify([]),
+        memory_enabled: 1,
+        model: 'gpt-5.5',
+        project_id: null,
+        is_background: 0,
+        execution_mode: null,
+        pinned: 0,
+        archived: 0,
+        tags: JSON.stringify(['auth']),
+        source: 'cowork',
+        created_at: now - 2_000,
+        updated_at: now - 500,
+      },
+    ];
+    const db = makeDb({
+      sessions: {
+        create: vi.fn(),
+        get: vi.fn(() => null),
+        getAll: vi.fn(() => sessions),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      messages: {
+        create: vi.fn(),
+        getBySessionId: vi.fn((sessionId: string) =>
+          sessionId === 'previous'
+            ? [
+                {
+                  id: 'm-prev',
+                  session_id: 'previous',
+                  role: 'assistant',
+                  content: JSON.stringify([
+                    {
+                      type: 'text',
+                      text: 'The auth regression was fixed by refreshing the OAuth token cache.',
+                    },
+                  ]),
+                  timestamp: now - 400,
+                  token_usage: null,
+                  execution_time_ms: null,
+                  metadata: null,
+                },
+              ]
+            : []
+        ),
+        delete: vi.fn(),
+        deleteBySessionId: vi.fn(),
+      } as any,
+      traceSteps: {
+        create: vi.fn((step) => createdTraceSteps.push(step)),
+        update: vi.fn(),
+        getBySessionId: vi.fn(() => []),
+        deleteBySessionId: vi.fn(),
+      } as any,
+    });
+    const manager = new SessionManager(db, vi.fn());
+    const memoryEnabledSession: Session = {
+      id: 'current',
+      title: 'Current auth work',
+      status: 'idle',
+      cwd: '/repo',
+      mountedPaths: [],
+      allowedTools: [],
+      memoryEnabled: true,
+      createdAt: now - 1_000,
+      updatedAt: now,
+    };
+    const memoryDisabledSession: Session = {
+      ...memoryEnabledSession,
+      memoryEnabled: false,
+    };
+    const testManager = manager as unknown as {
+      buildRecallPrefillContext(session: Session, prompt: string): string | null;
+    };
+
+    expect(
+      testManager.buildRecallPrefillContext(memoryDisabledSession, 'auth regression')
+    ).toBeNull();
+    const context = testManager.buildRecallPrefillContext(memoryEnabledSession, 'auth regression');
+
+    expect(context).toContain('<session_recall_context>');
+    expect(context).toContain('Auth regression fix');
+    expect(context).toContain('OAuth token cache');
+    expect(createdTraceSteps[0]).toMatchObject({
+      type: 'thinking',
+      status: 'completed',
+      title: 'Session recall prefill',
+    });
+    expect(createdTraceSteps[0]?.content).toContain('prior session(s) matched');
+  });
+});
+
+describe('SessionManager Hermes-style session actions', () => {
+  it('recovers missing user turns and interruption markers from turn journals on startup', () => {
+    const journalDir = mkdtempSync(join(tmpdir(), 'cowork-startup-journal-'));
+    try {
+      const createdMessages: any[] = [];
+      const sessionRow = {
+        id: 's-recover',
+        title: 'Recover me',
+        claude_session_id: null,
+        openai_thread_id: null,
+        status: 'idle',
+        cwd: '/tmp/work',
+        mounted_paths: '[]',
+        allowed_tools: '[]',
+        memory_enabled: 1,
+        model: 'model',
+        project_id: null,
+        is_background: 0,
+        execution_mode: null,
+        pinned: 0,
+        archived: 0,
+        tags: '[]',
+        source: 'cowork',
+        created_at: 1,
+        updated_at: 2,
+      };
+      const db = makeDb({
+        raw: {
+          transaction: (fn: (messages: any[]) => void) => (messages: any[]) => fn(messages),
+        } as any,
+        sessions: {
+          create: vi.fn(),
+          get: vi.fn(() => sessionRow),
+          getAll: vi.fn(() => [sessionRow]),
+          update: vi.fn(),
+          delete: vi.fn(),
+        } as any,
+        messages: {
+          create: vi.fn((message) => createdMessages.push(message)),
+          update: vi.fn(),
+          delete: vi.fn(),
+          deleteBySessionId: vi.fn(),
+          getBySessionId: vi.fn(() => []),
+        } as any,
+      });
+      const manager = new SessionManager(db, vi.fn());
+      const journal = new TurnJournal(journalDir);
+      (manager as unknown as { turnJournal: TurnJournal }).turnJournal = journal;
+      journal.append(
+        's-recover',
+        'turn_submitted',
+        {
+          messageId: 'm-user-recovered',
+          recoverable: true,
+          content: [{ type: 'text', text: 'Recover this submitted turn' }],
+        },
+        'turn-recover'
+      );
+      journal.append('s-recover', 'turn_started', {}, 'turn-recover');
+
+      const result = manager.recoverFromTurnJournals();
+
+      expect(result).toMatchObject({
+        sessionsScanned: 1,
+        sessionsChanged: 1,
+        injectedJournalUserMessages: 1,
+        injectedJournalInterruptionMarkers: 1,
+        errors: 0,
+      });
+      expect(createdMessages.map((message) => message.role)).toEqual(['user', 'assistant']);
+      expect(JSON.parse(createdMessages[0].metadata)).toMatchObject({
+        recovery: {
+          kind: 'user_turn_recovered',
+          turnId: 'turn-recover',
+        },
+      });
+      expect(JSON.parse(createdMessages[1].metadata)).toMatchObject({
+        recovery: {
+          kind: 'turn_interrupted',
+          turnId: 'turn-recover',
+        },
+      });
+
+      const replay = journal.read('s-recover');
+      const recoveryEvent = replay.events.find(
+        (event) => event.type === 'trace_update' && event.data?.kind === 'startup_recovery'
+      );
+      expect(recoveryEvent?.runId).toBe('turn-recover');
+      expect(recoveryEvent?.data).toMatchObject({
+        replayRunId: 'turn-recover',
+        replayTurnId: 'turn-recover',
+        replayStatus: 'running',
+        replayEventCount: 2,
+        replayAnchorCount: 2,
+        replayLatestType: 'turn_started',
+      });
+    } finally {
+      rmSync(journalDir, { recursive: true, force: true });
+    }
+  });
+
+  it('adds a stable turn anchor to messages saved during an active turn', () => {
+    const createMessage = vi.fn();
+    const db = makeDb({
+      messages: {
+        create: createMessage,
+        update: vi.fn(),
+        delete: vi.fn(),
+        deleteBySessionId: vi.fn(),
+        getBySessionId: vi.fn(() => []),
+        searchContent: vi.fn(() => []),
+      } as any,
+    });
+    const manager = new SessionManager(db, vi.fn());
+    (manager as unknown as { activeTurnJournalIds: Map<string, string> }).activeTurnJournalIds.set(
+      's1',
+      'turn-1'
+    );
+
+    const message = {
+      id: 'm1',
+      sessionId: 's1',
+      role: 'assistant' as const,
+      content: [{ type: 'text' as const, text: 'done' }],
+      timestamp: 1,
+    };
+    manager.saveMessage(message);
+
+    expect(message.metadata?.turn).toEqual({ id: 'turn-1', role: 'assistant' });
+    expect(createMessage).toHaveBeenCalledWith(
+      expect.objectContaining({
+        id: 'm1',
+        metadata: JSON.stringify({ turn: { id: 'turn-1', role: 'assistant' } }),
+      })
+    );
+  });
+
+  it('updates pin/archive/title tags and echoes renderer updates', () => {
+    const update = vi.fn();
+    const sendToRenderer = vi.fn();
+    const db = makeDb({
+      sessions: {
+        create: vi.fn(),
+        get: vi.fn(() => ({
+          id: 's1',
+          title: 'Old',
+          claude_session_id: null,
+          openai_thread_id: null,
+          status: 'idle',
+          cwd: null,
+          mounted_paths: '[]',
+          allowed_tools: '[]',
+          memory_enabled: 0,
+          model: null,
+          project_id: null,
+          is_background: 0,
+          execution_mode: null,
+          created_at: 1,
+          updated_at: 1,
+        })),
+        getAll: vi.fn(() => []),
+        update,
+        delete: vi.fn(),
+      } as any,
+    });
+    const manager = new SessionManager(db, sendToRenderer);
+
+    expect(
+      manager.updateSessionSettings('s1', {
+        title: 'New #Memory',
+        pinned: true,
+        archived: true,
+      })
+    ).toBe(true);
+
+    expect(update).toHaveBeenCalledWith('s1', {
+      title: 'New #Memory',
+      pinned: 1,
+      archived: 1,
+      tags: JSON.stringify(['memory']),
+    });
+    expect(sendToRenderer).toHaveBeenCalledWith({
+      type: 'session.update',
+      payload: {
+        sessionId: 's1',
+        updates: {
+          title: 'New #Memory',
+          pinned: true,
+          archived: true,
+          tags: ['memory'],
+        },
+      },
+    });
+  });
+
+  it('duplicates messages while remapping tool ids inside the copied session', () => {
+    const createdSessions: any[] = [];
+    const createdMessages: any[] = [];
+    const createdTraceSteps: any[] = [];
+    const db = makeDb({
+      raw: {
+        transaction: (fn: () => void) => () => fn(),
+      } as any,
+      sessions: {
+        create: vi.fn((session) => createdSessions.push(session)),
+        get: vi.fn(() => ({
+          id: 's1',
+          title: 'Original #tag',
+          claude_session_id: 'claude-session',
+          openai_thread_id: 'thread',
+          status: 'idle',
+          cwd: '/tmp/work',
+          mounted_paths: '[]',
+          allowed_tools: '[]',
+          memory_enabled: 1,
+          model: 'model',
+          project_id: 'project',
+          is_background: 0,
+          execution_mode: 'chat',
+          pinned: 1,
+          archived: 0,
+          tags: JSON.stringify(['tag']),
+          source: 'cowork',
+          created_at: 1,
+          updated_at: 2,
+        })),
+        getAll: vi.fn(() => []),
+        update: vi.fn(),
+        delete: vi.fn(),
+      } as any,
+      messages: {
+        create: vi.fn((message) => createdMessages.push(message)),
+        update: vi.fn(),
+        delete: vi.fn(),
+        deleteBySessionId: vi.fn(),
+        getBySessionId: vi.fn(() => [
+          {
+            id: 'm1',
+            session_id: 's1',
+            role: 'assistant',
+            content: JSON.stringify([
+              { type: 'tool_use', id: 'tool-1', name: 'read', input: { path: 'a.ts' } },
+              { type: 'tool_result', toolUseId: 'tool-1', content: 'ok' },
+            ]),
+            timestamp: 10,
+            token_usage: null,
+            metadata: JSON.stringify({ turn: { id: 'turn-original', role: 'assistant' } }),
+            execution_time_ms: null,
+          },
+        ]),
+      } as any,
+      traceSteps: {
+        create: vi.fn((step) => createdTraceSteps.push(step)),
+        update: vi.fn(),
+        getBySessionId: vi.fn(() => [
+          {
+            id: 'tool-1',
+            session_id: 's1',
+            type: 'tool_call',
+            status: 'completed',
+            title: 'read',
+            content: null,
+            tool_name: 'read',
+            tool_input: JSON.stringify({ path: 'a.ts' }),
+            tool_output: 'ok',
+            is_error: null,
+            timestamp: 11,
+            duration: 12,
+          },
+        ]),
+        deleteBySessionId: vi.fn(),
+      } as any,
+    });
+    const manager = new SessionManager(db, vi.fn());
+
+    const duplicate = manager.duplicateSession('s1');
+
+    expect(duplicate?.id).toBeTruthy();
+    expect(duplicate?.id).not.toBe('s1');
+    expect(duplicate?.title).toBe('Original #tag copy');
+    expect(duplicate?.pinned).toBe(false);
+    expect(duplicate?.archived).toBe(false);
+    expect(createdSessions).toHaveLength(1);
+    expect(createdMessages).toHaveLength(1);
+    const copiedContent = JSON.parse(createdMessages[0].content);
+    expect(copiedContent[0].id).not.toBe('tool-1');
+    expect(copiedContent[1].toolUseId).toBe(copiedContent[0].id);
+    const copiedMetadata = JSON.parse(createdMessages[0].metadata);
+    expect(copiedMetadata.turn.id).not.toBe('turn-original');
+    expect(copiedMetadata.turn.role).toBe('assistant');
+    expect(createdTraceSteps[0].id).toBe(copiedContent[0].id);
   });
 });
 
@@ -589,5 +1067,141 @@ describe('SessionManager file attachment processing', () => {
     expect(enhancedPrompt).toContain('[Document workshop guidance]');
     expect(enhancedPrompt).toContain('[Document workshop path hints]');
     expect(enhancedPrompt).toContain('questions-livrable.docx');
+  });
+
+  it('recovers queued prompts that never reached turn_started after a crash', async () => {
+    const journalDir = mkdtempSync(join(tmpdir(), 'cowork-queue-recovery-'));
+    try {
+      const session = {
+        id: 's-queue-recover',
+        title: 'Queued prompt recovery',
+        status: 'idle' as const,
+        cwd: '/tmp/work',
+        mountedPaths: [],
+        allowedTools: [],
+        memoryEnabled: true,
+        model: 'model',
+        projectId: null,
+        isBackground: false,
+      };
+      const sessionRow = {
+        id: session.id,
+        title: session.title,
+        claude_session_id: null,
+        openai_thread_id: null,
+        status: session.status,
+        cwd: session.cwd,
+        mounted_paths: '[]',
+        allowed_tools: '[]',
+        memory_enabled: 1,
+        model: 'model',
+        project_id: null,
+        is_background: 0,
+        execution_mode: null,
+        pinned: 0,
+        archived: 0,
+        tags: '[]',
+        source: 'cowork',
+        created_at: 1,
+        updated_at: 2,
+      };
+      const db = makeDb({
+        raw: {
+          transaction: (fn: (messages: any[]) => void) => (messages: any[]) => fn(messages),
+        } as any,
+        sessions: {
+          create: vi.fn(),
+          get: vi.fn(() => sessionRow),
+          getAll: vi.fn(() => [sessionRow]),
+          update: vi.fn(),
+          delete: vi.fn(),
+        } as any,
+        messages: {
+          create: vi.fn(),
+          update: vi.fn(),
+          delete: vi.fn(),
+          deleteBySessionId: vi.fn(),
+          getBySessionId: vi.fn(() => []),
+        } as any,
+      });
+      const manager = new SessionManager(db, vi.fn());
+      const journal = new TurnJournal(journalDir);
+      (manager as unknown as { turnJournal: TurnJournal }).turnJournal = journal;
+      (manager as unknown as { loadSession: (id: string) => unknown }).loadSession = () => session;
+      (manager as any).agentRunner = { run: vi.fn(async () => undefined), cancel: vi.fn() };
+      (manager as any).ensureSandboxInitialized = vi.fn(async () => undefined);
+      (manager as any).runSessionTitleGeneration = vi.fn(async () => undefined);
+
+      journal.append(
+        's-queue-recover',
+        'intent_queued',
+        {
+          turnId: 'turn-pending',
+          prompt: 'Resume the queued prompt',
+          promptPreview: 'Resume the queued prompt',
+          queueLength: 1,
+          contentTypes: ['text'],
+          recoverable: true,
+          contentSnapshot: [{ type: 'text', text: 'Resume the queued prompt' }],
+        },
+        'turn-pending'
+      );
+      journal.append(
+        's-queue-recover',
+        'intent_queued',
+        {
+          turnId: 'turn-active',
+          prompt: 'Already started',
+          promptPreview: 'Already started',
+          queueLength: 1,
+          contentTypes: ['text'],
+          recoverable: true,
+          contentSnapshot: [{ type: 'text', text: 'Already started' }],
+        },
+        'turn-active'
+      );
+      journal.append('s-queue-recover', 'turn_started', { promptPreview: 'Already started' }, 'turn-active');
+
+      const result = manager.recoverQueuedPromptsFromTurnJournals();
+      expect(result).toMatchObject({
+        sessionsScanned: 1,
+        sessionsChanged: 1,
+        recoveredQueuedPrompts: 1,
+        skippedQueuedPrompts: 0,
+        errors: 0,
+      });
+
+      await new Promise((resolve) => setTimeout(resolve, 10));
+
+      expect((manager as any).agentRunner.run).toHaveBeenCalledTimes(1);
+      const runArgs = (manager as any).agentRunner.run.mock.calls[0];
+      expect(runArgs[0]).toBe(session);
+      expect(runArgs[1]).toBe('Resume the queued prompt');
+      expect(runArgs[2]).toHaveLength(1);
+      expect(runArgs[2][0]).toMatchObject({
+        role: 'user',
+        sessionId: session.id,
+        content: [{ type: 'text', text: 'Resume the queued prompt' }],
+        metadata: {
+          turn: {
+            id: 'turn-pending',
+            role: 'user',
+          },
+        },
+      });
+
+      const replay = journal.read('s-queue-recover');
+      const pendingRun = replay.replay.runs.find((run) => run.runId === 'turn-pending');
+      expect(pendingRun?.events.map((event) => event.type)).toEqual([
+        'intent_queued',
+        'turn_started',
+        'turn_submitted',
+        'message_saved',
+        'turn_completed',
+      ]);
+      expect(pendingRun?.events.map((event) => event.seq)).toEqual([1, 2, 3, 4, 5]);
+    } finally {
+      rmSync(journalDir, { recursive: true, force: true });
+    }
   });
 });

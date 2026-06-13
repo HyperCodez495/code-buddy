@@ -907,6 +907,7 @@ export class ContextManagerV2 {
    * Clean up resources
    */
   dispose(): void {
+    this.stopPeriodicSnapshot();
     this.tokenCounter.dispose();
     this.summaries = [];
     this.triggeredWarnings.clear();

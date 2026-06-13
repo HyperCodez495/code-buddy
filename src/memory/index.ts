@@ -14,7 +14,35 @@ export {
   initializeMemory,
   type Memory,
   type MemoryCategory,
+  type MemoryScope,
+  type MemoryUsage,
+  type MemoryWriteResult,
+  MemoryWriteRejectedError,
 } from "./persistent-memory.js";
+
+// Review-gated long-term memory candidates
+export {
+  MemoryCandidateQueue,
+  getMemoryCandidateQueue,
+  resetMemoryCandidateQueues,
+  MEMORY_CANDIDATE_SCHEMA_VERSION,
+  type MemoryCandidate,
+  type MemoryCandidateCitation,
+  type MemoryCandidateSource,
+  type MemoryCandidateStatus,
+  type MemoryCandidateStats,
+  type ProposeMemoryCandidateInput,
+  type ProposeMemoryCandidateResult,
+  type AcceptMemoryCandidateInput,
+  type AcceptMemoryCandidateResult,
+  type RejectMemoryCandidateInput,
+} from "./memory-candidate-queue.js";
+
+export {
+  proposeMemoryCandidatesFromSession,
+  buildMemoryCitations,
+  extractHeuristicMemoryCandidates,
+} from "./memory-auto-proposer.js";
 
 // Enhanced Memory (SQLite + embeddings)
 export {

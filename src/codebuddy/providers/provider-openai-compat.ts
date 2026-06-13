@@ -152,6 +152,74 @@ export class OpenAICompatProvider implements Provider {
     return 'API';
   }
 
+  private getOpenRouterProviderRouting(): Record<string, unknown> | undefined {
+    if (!this.baseURL.toLowerCase().includes('openrouter.ai')) return undefined;
+
+    const provider: Record<string, unknown> = {};
+    this.setListProviderOption(provider, 'only', 'OPENROUTER_PROVIDER_ONLY', 'CODEBUDDY_OPENROUTER_PROVIDER_ONLY');
+    this.setListProviderOption(provider, 'ignore', 'OPENROUTER_PROVIDER_IGNORE', 'CODEBUDDY_OPENROUTER_PROVIDER_IGNORE');
+    this.setListProviderOption(provider, 'order', 'OPENROUTER_PROVIDER_ORDER', 'CODEBUDDY_OPENROUTER_PROVIDER_ORDER');
+
+    const sort = this.readEnv('OPENROUTER_PROVIDER_SORT', 'CODEBUDDY_OPENROUTER_PROVIDER_SORT')?.toLowerCase();
+    if (sort && ['price', 'throughput', 'latency'].includes(sort)) {
+      provider.sort = sort;
+    }
+
+    const dataCollection = this.readEnv(
+      'OPENROUTER_PROVIDER_DATA_COLLECTION',
+      'CODEBUDDY_OPENROUTER_PROVIDER_DATA_COLLECTION',
+    )?.toLowerCase();
+    if (dataCollection && ['allow', 'deny'].includes(dataCollection)) {
+      provider.data_collection = dataCollection;
+    }
+
+    const requireParameters = this.readBooleanEnv(
+      'OPENROUTER_PROVIDER_REQUIRE_PARAMETERS',
+      'CODEBUDDY_OPENROUTER_PROVIDER_REQUIRE_PARAMETERS',
+    );
+    if (requireParameters !== undefined) {
+      provider.require_parameters = requireParameters;
+    }
+
+    const allowFallbacks = this.readBooleanEnv(
+      'OPENROUTER_PROVIDER_ALLOW_FALLBACKS',
+      'CODEBUDDY_OPENROUTER_PROVIDER_ALLOW_FALLBACKS',
+    );
+    if (allowFallbacks !== undefined) {
+      provider.allow_fallbacks = allowFallbacks;
+    }
+
+    return Object.keys(provider).length > 0 ? provider : undefined;
+  }
+
+  private setListProviderOption(provider: Record<string, unknown>, field: string, ...keys: string[]): void {
+    const value = this.readEnv(...keys);
+    if (!value) return;
+    const items = value
+      .split(',')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    if (items.length > 0) {
+      provider[field] = items;
+    }
+  }
+
+  private readBooleanEnv(...keys: string[]): boolean | undefined {
+    const value = this.readEnv(...keys)?.toLowerCase();
+    if (!value) return undefined;
+    if (['1', 'true', 'yes', 'on'].includes(value)) return true;
+    if (['0', 'false', 'no', 'off'].includes(value)) return false;
+    return undefined;
+  }
+
+  private readEnv(...keys: string[]): string | undefined {
+    for (const key of keys) {
+      const value = process.env[key]?.trim();
+      if (value) return value;
+    }
+    return undefined;
+  }
+
   /**
    * Get prompt cache statistics
    */
@@ -342,6 +410,17 @@ export class OpenAICompatProvider implements Provider {
     return true;
   }
 
+  private getOllamaReasoningEffort(model: string): string | undefined {
+    const modelInfo = getModelInfo(model);
+    const isOllama =
+      modelInfo.provider === 'ollama' ||
+      this.baseURL.includes('localhost:11434') ||
+      this.baseURL.includes('127.0.0.1:11434');
+    if (!isOllama) return undefined;
+
+    return process.env.CODEBUDDY_OLLAMA_REASONING_EFFORT?.trim() || 'none';
+  }
+
   private isAsyncIterableStream(value: unknown): value is AsyncIterable<ChatCompletionChunk> {
     return !!value
       && typeof value === 'object'
@@ -502,8 +581,16 @@ export class OpenAICompatProvider implements Provider {
         tools: useTools ? tools : [],
         tool_choice: useTools ? 'auto' : undefined,
         temperature: opts.temperature ?? 0.7,
-        max_tokens: this.defaultMaxTokens,
+        max_tokens: opts.maxTokens ?? this.defaultMaxTokens,
       };
+      const openRouterProviderRouting = this.getOpenRouterProviderRouting();
+      if (openRouterProviderRouting) {
+        (requestPayload as unknown as Record<string, unknown>).provider = openRouterProviderRouting;
+      }
+      const ollamaReasoningEffort = this.getOllamaReasoningEffort(requestPayload.model);
+      if (ollamaReasoningEffort) {
+        (requestPayload as unknown as Record<string, unknown>).reasoning_effort = ollamaReasoningEffort;
+      }
 
       const searchOpts = opts.searchOptions || searchOptions;
       const searchParameters = searchOpts?.search_parameters;
@@ -651,8 +738,16 @@ export class OpenAICompatProvider implements Provider {
         tools: useTools ? tools : [],
         tool_choice: useTools ? 'auto' as const : undefined,
         temperature: opts.temperature ?? 0.7,
-        max_tokens: this.defaultMaxTokens,
+        max_tokens: opts.maxTokens ?? this.defaultMaxTokens,
       };
+      const openRouterProviderRouting = this.getOpenRouterProviderRouting();
+      if (openRouterProviderRouting) {
+        (requestPayload as unknown as Record<string, unknown>).provider = openRouterProviderRouting;
+      }
+      const ollamaReasoningEffort = this.getOllamaReasoningEffort(requestPayload.model);
+      if (ollamaReasoningEffort) {
+        (requestPayload as unknown as Record<string, unknown>).reasoning_effort = ollamaReasoningEffort;
+      }
 
       const searchOpts = opts.searchOptions || searchOptions;
       const searchParameters = searchOpts?.search_parameters;

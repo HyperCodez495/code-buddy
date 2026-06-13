@@ -46,6 +46,29 @@ export interface TailscaleStatus {
   version: string;
 }
 
+export interface TailnetOllamaPeer {
+  hostname: string;
+  ip: string;
+  baseURL: string;
+  models: string[];
+}
+
+interface TailscalePeerStatus {
+  Online?: boolean;
+  HostName?: string;
+  DNSName?: string;
+  TailscaleIPs?: string[];
+}
+
+interface TailscaleStatusPayload {
+  BackendState?: string;
+  MagicDNSSuffix?: string;
+  CurrentTailnet?: { Name?: string };
+  TailscaleIPs?: string[];
+  Self?: { HostName?: string; TailscaleIPs?: string[] };
+  Peer?: Record<string, TailscalePeerStatus>;
+}
+
 // ============================================================================
 // TailscaleManager
 // ============================================================================
@@ -83,8 +106,8 @@ export class TailscaleManager {
    * Get live Tailscale status from the CLI.
    */
   async getStatus(): Promise<TailscaleStatus> {
-    const installed = await this.isInstalled();
-    if (!installed) {
+    const payload = await this.readStatusPayload();
+    if (!payload) {
       return {
         installed: false,
         running: false,
@@ -97,45 +120,49 @@ export class TailscaleManager {
       };
     }
 
+    const status: TailscaleStatus = {
+      installed: true,
+      running: !!payload.BackendState && payload.BackendState === 'Running',
+      hostname: payload.Self?.HostName || '',
+      tailnetName: payload.MagicDNSSuffix || payload.CurrentTailnet?.Name || '',
+      ip: payload.TailscaleIPs?.[0] || payload.Self?.TailscaleIPs?.[0] || '',
+      serving: this.serving,
+      serveUrl: this.getServeUrl(),
+      version: '',
+    };
+
+    // Get version separately (status --json doesn't always include it)
     try {
-      const { stdout } = await execFileAsync(
-        'tailscale', ['status', '--json'],
-        { timeout: EXEC_TIMEOUT },
-      );
-      const data = JSON.parse(stdout);
+      const { stdout: ver } = await execFileAsync('tailscale', ['version'], { timeout: EXEC_TIMEOUT });
+      status.version = ver.trim().split('\n')[0] ?? '';
+    } catch { /* non-critical */ }
 
-      const status: TailscaleStatus = {
-        installed: true,
-        running: !!data.BackendState && data.BackendState === 'Running',
-        hostname: data.Self?.HostName || '',
-        tailnetName: data.MagicDNSSuffix || data.CurrentTailnet?.Name || '',
-        ip: data.TailscaleIPs?.[0] || data.Self?.TailscaleIPs?.[0] || '',
-        serving: this.serving,
-        serveUrl: this.getServeUrl(),
-        version: '',
-      };
+    this.cachedStatus = status;
+    return status;
+  }
 
-      // Get version separately (status --json doesn't always include it)
-      try {
-        const { stdout: ver } = await execFileAsync('tailscale', ['version'], { timeout: EXEC_TIMEOUT });
-        status.version = ver.trim().split('\n')[0] ?? '';
-      } catch { /* non-critical */ }
+  /**
+   * Discover Ollama peers on the tailnet and return their OpenAI-compatible
+   * endpoints with the models they expose.
+   */
+  async discoverOllamaPeers(): Promise<TailnetOllamaPeer[]> {
+    const payload = await this.readStatusPayload();
+    if (!payload) return [];
 
-      this.cachedStatus = status;
-      return status;
-    } catch (err) {
-      logger.debug(`Tailscale status failed: ${err instanceof Error ? err.message : String(err)}`);
-      return {
-        installed: true,
-        running: false,
-        hostname: '',
-        tailnetName: '',
-        ip: '',
-        serving: this.serving,
-        serveUrl: null,
-        version: '',
-      };
+    const peers = payload.Peer ?? {};
+    const discovered: TailnetOllamaPeer[] = [];
+    for (const info of Object.values(peers)) {
+      if (!info?.Online) continue;
+      const ip = info.TailscaleIPs?.[0]?.trim();
+      if (!ip) continue;
+      const hostname = (info.HostName ?? info.DNSName ?? '').trim();
+      if (!hostname) continue;
+      const baseURL = `http://${ip}:11434/v1`;
+      const models = await this.listOllamaModels(baseURL);
+      if (!models.length) continue;
+      discovered.push({ hostname, ip, baseURL, models });
     }
+    return discovered;
   }
 
   /**
@@ -317,5 +344,45 @@ export class TailscaleManager {
         path: config.path,
       };
     }
+  }
+
+  private async readStatusPayload(): Promise<TailscaleStatusPayload | null> {
+    const installed = await this.isInstalled();
+    if (!installed) return null;
+    try {
+      const { stdout } = await execFileAsync('tailscale', ['status', '--json'], { timeout: EXEC_TIMEOUT });
+      return JSON.parse(stdout) as TailscaleStatusPayload;
+    } catch (err) {
+      logger.debug(`Tailscale status failed: ${err instanceof Error ? err.message : String(err)}`);
+      return null;
+    }
+  }
+
+  private async listOllamaModels(baseURL: string): Promise<string[]> {
+    const probeUrls = [`${baseURL}/models`, `${baseURL.replace(/\/v1$/, '')}/api/tags`];
+    for (const url of probeUrls) {
+      try {
+        const response = await fetch(url, { signal: AbortSignal.timeout(8_000) });
+        if (!response.ok) continue;
+        const json = await response.json() as { data?: Array<{ id?: unknown }>; models?: Array<{ model?: unknown; name?: unknown }> };
+        const ids = (json.data ?? json.models ?? [])
+          .map((item) => {
+            const record = item as { id?: unknown; model?: unknown; name?: unknown };
+            const id = typeof record.id === 'string'
+              ? record.id.trim()
+              : typeof record.model === 'string'
+                ? record.model.trim()
+                : typeof record.name === 'string'
+                  ? record.name.trim()
+                  : '';
+            return id || null;
+          })
+          .filter((value): value is string => Boolean(value));
+        if (ids.length > 0) return ids;
+      } catch {
+        // try next probe
+      }
+    }
+    return [];
   }
 }

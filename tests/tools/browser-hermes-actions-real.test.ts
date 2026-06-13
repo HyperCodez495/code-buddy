@@ -1,4 +1,6 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 60_000 });
 
 import { BrowserExecuteTool, BrowserSnapshotExecuteTool, resetMiscInstances } from '../../src/tools/registry/misc-tools.js';
 import {

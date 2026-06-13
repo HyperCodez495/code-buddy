@@ -20,11 +20,22 @@
 | `TOGETHER_API_KEY` | Together AI |
 | `FIREWORKS_API_KEY` | Fireworks AI |
 | `OPENROUTER_API_KEY` | OpenRouter |
-| `GITHUB_COPILOT_TOKEN` | GitHub Copilot |
+| `NOVITA_API_KEY` | NovitaAI |
+| `GLM_API_KEY` / `ZAI_API_KEY` | z.ai / GLM |
+| `KIMI_API_KEY` / `MOONSHOT_API_KEY` | Kimi / Moonshot |
+| `MINIMAX_API_KEY` | MiniMax |
+| `DASHSCOPE_API_KEY` | Alibaba / DashScope |
+| `DEEPSEEK_API_KEY` | DeepSeek |
+| `HF_TOKEN` | Hugging Face router |
+| `NVIDIA_API_KEY` | NVIDIA NIM |
+| `STEPFUN_API_KEY` | StepFun |
+| `GITHUB_COPILOT_TOKEN` / `COPILOT_GITHUB_TOKEN` | GitHub Copilot |
 | `OLLAMA_HOST` | Ollama (default: localhost:11434) |
 | `VLLM_BASE_URL` | vLLM server URL |
-| `AWS_BEDROCK_REGION` | AWS Bedrock region |
+| `AWS_BEDROCK_REGION` / `AWS_REGION` | AWS Bedrock region |
+| `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` | AWS Bedrock credentials |
 | `AZURE_OPENAI_ENDPOINT` | Azure OpenAI endpoint |
+| `AZURE_OPENAI_API_KEY` / `AZURE_OPENAI_AD_TOKEN` | Azure OpenAI credentials |
 
 ### Search and Tools
 
@@ -58,7 +69,35 @@
 | `YOLO_MODE` | Full autonomy mode | false |
 | `JWT_SECRET` | API server auth | Required in production |
 | `CODEBUDDY_AUTOCOMPACT_PCT` | Auto-compact threshold (% of context window) | - |
+| `CODEBUDDY_RTK` | Enable RTK shell command rewriting | false |
+| `CODEBUDDY_RTK_REWRITE` | Alias flag for RTK shell command rewriting | false |
+| `CODEBUDDY_RTK_TIMEOUT_MS` | Timeout for `rtk rewrite` before fallback | 1000 |
+| `CODEBUDDY_FALLBACK_PROVIDERS` | Comma-separated provider/model fallbacks, for example `openai:gpt-4o,glm:glm-5-code` | unset |
+| `CODEBUDDY_FALLBACK_PROVIDER` / `CODEBUDDY_FALLBACK_MODEL` | Single provider/model fallback pair | unset |
+| `OPENROUTER_PROVIDER_*` | OpenRouter provider routing options | unset |
+| `CODEBUDDY_AUXILIARY_<TASK>_*` | Hermes-style auxiliary provider/model/base URL/API key/timeout overrides | unset |
+| `AUXILIARY_VISION_MODEL` | Hermes-compatible vision model override | unset |
 | `HTTP_PROXY` / `HTTPS_PROXY` / `NO_PROXY` | HTTP proxy support | - |
+
+### Persistent Memory
+
+Code Buddy's markdown memory is bounded like Hermes: project memory defaults to
+2,200 chars and user/profile memory defaults to 1,375 chars. Writes that would
+overflow return an error so the agent can consolidate or remove entries before
+retrying.
+
+| Variable | Description | Default |
+|:---------|:------------|:--------|
+| `CODEBUDDY_MEMORY_ENFORCE_LIMITS` | Reject writes over the char budget | true |
+| `CODEBUDDY_MEMORY_PROJECT_CHAR_LIMIT` | Project memory budget | 2200 |
+| `CODEBUDDY_MEMORY_USER_CHAR_LIMIT` | User/profile memory budget | 1375 |
+| `CODEBUDDY_MEMORY_SECURITY_SCAN` | Block prompt-injection, credential-exfiltration, private-key, and invisible-Unicode memory writes | true |
+| `CODEBUDDY_MEMORY_REJECT_DUPLICATES` | Treat exact duplicate memory writes as successful no-ops | true |
+| `CODEBUDDY_MEMORY_AUTO_PROPOSE` | Enqueue review-gated long-term memory candidates at session end | true |
+
+Session-end auto-memory never writes accepted memory directly. It stores
+pending candidates in `.codebuddy/memory-candidates.json`; approve them with
+`/memory accept <id>` after review.
 
 ### Debugging
 

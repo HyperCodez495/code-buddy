@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -33,6 +33,37 @@ describe('/goal and /subgoal handlers', () => {
       expect(result.entry?.content).toContain('⊙ Goal set (20-turn budget): Fix every failing test');
       expect(result.passToAI).toBe(true);
       expect(result.prompt).toBe('Fix every failing test');
+    });
+
+    it('attaches a planner graph when a complex goal is set with an LLM client', async () => {
+      const planner = vi.fn(async () => ({
+        summary: 'Fix then verify',
+        tasks: [
+          {
+            id: 'T1',
+            title: 'Fix',
+            acceptanceCriteria: ['diff exists'],
+            dependsOn: [],
+            subtasks: [
+              {
+                id: 'T1.1',
+                title: 'Patch',
+                acceptanceCriteria: ['file changed'],
+              },
+            ],
+          },
+        ],
+      }));
+
+      const result = await handleGoal(
+        ['Fix', 'the', 'parser', 'then', 'verify', 'with', 'tests'],
+        { client: {} as never, planner }
+      );
+
+      expect(planner).toHaveBeenCalled();
+      expect(result.entry?.content).toContain('Hermes-style task graph attached');
+      expect(result.entry?.content).toContain('T1.1');
+      expect((await handleGoal(['status'])).entry?.content).toContain('plan 1 task');
     });
 
     it('reports status of an active goal', async () => {
@@ -97,7 +128,16 @@ describe('/goal and /subgoal handlers', () => {
       await handleGoal(['ship', 'it']);
       expect((await handleSubgoal(['remove'])).entry?.content).toBe('Usage: /subgoal remove <n>');
       expect((await handleSubgoal(['remove', 'abc'])).entry?.content).toContain(
-        'must be an integer'
+        'must be a positive integer'
+      );
+      expect((await handleSubgoal(['remove', '1.5'])).entry?.content).toContain(
+        'must be a positive integer'
+      );
+      expect((await handleSubgoal(['remove', '1e0'])).entry?.content).toContain(
+        'must be a positive integer'
+      );
+      expect((await handleSubgoal(['remove', '0x1'])).entry?.content).toContain(
+        'must be a positive integer'
       );
       expect((await handleSubgoal(['remove', '7'])).entry?.content).toContain('index out of range');
     });

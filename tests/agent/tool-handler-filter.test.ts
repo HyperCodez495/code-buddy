@@ -3,7 +3,10 @@ import os from 'os';
 import path from 'path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ToolHandler } from '../../src/agent/tool-handler.js';
+import {
+  ToolHandler,
+  normalizeHallucinatedLocalToolCall,
+} from '../../src/agent/tool-handler.js';
 import { evaluatePolicyEval } from '../../src/observability/policy-evals.js';
 import {
   buildRunTrajectoryExport,
@@ -188,5 +191,116 @@ describe('ToolHandler active tool filter enforcement', () => {
     expect(renderRunTrajectoryExport(trajectory!)).toContain(
       'tool_filter_block create_file source=active_tool_filter',
     );
+  });
+});
+
+describe('normalizeHallucinatedLocalToolCall', () => {
+  it('maps local model bash execution aliases to the bash tool', () => {
+    expect(
+      normalizeHallucinatedLocalToolCall('bash_tool:execute', { cmd: 'echo OK' })
+    ).toEqual({
+      toolName: 'bash',
+      args: { cmd: 'echo OK', command: 'echo OK' },
+    });
+
+    expect(
+      normalizeHallucinatedLocalToolCall('thought-tool:execute_command', {
+        shell_command: 'pwd',
+      })
+    ).toEqual({
+      toolName: 'bash',
+      args: { shell_command: 'pwd', command: 'pwd' },
+    });
+  });
+
+  it('maps noisy local write-file aliases to create_file', () => {
+    expect(
+      normalizeHallucinatedLocalToolCall(
+        'thought|<|channel>thought\n<channel|><|tool_call>call:bash_tool:write_file',
+        {
+          filename: 'goal-real-tool.txt',
+          text: 'REAL_TOOL_OK',
+        }
+      )
+    ).toEqual({
+      toolName: 'create_file',
+      args: {
+        filename: 'goal-real-tool.txt',
+        text: 'REAL_TOOL_OK',
+        path: 'goal-real-tool.txt',
+        content: 'REAL_TOOL_OK',
+      },
+    });
+  });
+
+  it('maps timestamped local thought tool wrappers to real tools', () => {
+    expect(
+      normalizeHallucinatedLocalToolCall(
+        'thought_tool_call_20241030_181659_476490.write_file',
+        {
+          filename: 'a.txt',
+          text: 'GEMMA_A_OK',
+        }
+      )
+    ).toEqual({
+      toolName: 'create_file',
+      args: {
+        filename: 'a.txt',
+        text: 'GEMMA_A_OK',
+        path: 'a.txt',
+        content: 'GEMMA_A_OK',
+      },
+    });
+
+    expect(
+      normalizeHallucinatedLocalToolCall(
+        'thought_tool_call_20241030_181659_476490.create_file',
+        {
+          path: 'b.txt',
+          content: 'GEMMA_B_OK',
+        }
+      )
+    ).toEqual({
+      toolName: 'create_file',
+      args: {
+        path: 'b.txt',
+        content: 'GEMMA_B_OK',
+      },
+    });
+
+    expect(
+      normalizeHallucinatedLocalToolCall(
+        'thought_tool_call_20241030_181659_476490.bash',
+        {
+          cmd: 'printf 42 > answer.txt',
+        }
+      )
+    ).toEqual({
+      toolName: 'bash',
+      args: {
+        cmd: 'printf 42 > answer.txt',
+        command: 'printf 42 > answer.txt',
+      },
+    });
+
+    expect(
+      normalizeHallucinatedLocalToolCall(
+        'thought_tool_call_20241030_181659_476490.read_file',
+        {
+          filename: 'answer.txt',
+        }
+      )
+    ).toEqual({
+      toolName: 'view_file',
+      args: {
+        filename: 'answer.txt',
+        path: 'answer.txt',
+      },
+    });
+  });
+
+  it('leaves normal tool names alone', () => {
+    expect(normalizeHallucinatedLocalToolCall('create_file', { path: 'x', content: 'y' }))
+      .toBeNull();
   });
 });

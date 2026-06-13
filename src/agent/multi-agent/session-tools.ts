@@ -416,18 +416,33 @@ export class SessionToolExecutor {
     const { getSessionStore } = await import('../../persistence/session-store.js');
     const sessions = (await getSessionStore().searchSessions(query)).slice(0, limit);
 
+    const citations: Array<Record<string, unknown>> = [];
     const formatted = sessions.map(session => {
       const metadata = session.metadata && typeof session.metadata === 'object'
         ? session.metadata
         : {};
+      const messageId = typeof metadata.searchMessageId === 'number' ? metadata.searchMessageId : undefined;
+      const role = typeof metadata.searchRole === 'string' ? metadata.searchRole : undefined;
+      const snippet = typeof metadata.searchSnippet === 'string' ? metadata.searchSnippet : '';
+      const citation: Record<string, unknown> = {
+        sessionId: session.id,
+        snippet,
+        label: messageId ? `session:${session.id}#message:${messageId}` : `session:${session.id}`,
+      };
+      if (messageId !== undefined) citation.messageId = messageId;
+      if (role) citation.role = role;
+
       const match: Record<string, unknown> = {
-        snippet: metadata.searchSnippet ?? '',
+        snippet,
+        citation,
       };
 
-      if (metadata.searchRole) match.role = metadata.searchRole;
+      if (role) match.role = role;
       if (typeof metadata.searchScore === 'number') match.score = metadata.searchScore;
-      if (typeof metadata.searchMessageId === 'number') match.messageId = metadata.searchMessageId;
+      if (messageId !== undefined) match.messageId = messageId;
       if (metadata.parentSessionId) match.parentSessionId = metadata.parentSessionId;
+
+      citations.push(citation);
 
       return {
         id: session.id,
@@ -437,6 +452,7 @@ export class SessionToolExecutor {
         messageCount: Array.isArray(session.messages) ? session.messages.length : 0,
         createdAt: session.createdAt.toISOString(),
         lastAccessedAt: session.lastAccessedAt.toISOString(),
+        citation,
         match,
       };
     });
@@ -445,6 +461,7 @@ export class SessionToolExecutor {
       query,
       total: formatted.length,
       sessions: formatted,
+      citations,
     };
 
     return {

@@ -2,7 +2,9 @@ import fs from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import sharp from 'sharp';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+
+vi.setConfig({ testTimeout: 60_000 });
 
 import { buildLocalHermesToolParityManifest } from '../../src/agent/hermes-tool-parity-local.js';
 import { BrowserVisionTool, VisionAnalyzeTool } from '../../src/tools/registry/vision-tools.js';

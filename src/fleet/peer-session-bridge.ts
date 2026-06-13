@@ -39,12 +39,14 @@ import {
   broadcastChatSessionStart,
   broadcastChatSessionTurn,
 } from '../server/websocket/fleet-bridge.js';
+import { resolveGoalJudgeClientFailOpen } from '../goals/goal-judge-client.js';
 import { judgeGoal } from '../goals/goal-judge.js';
 import { resolveGoalsConfig } from '../goals/goal-manager.js';
 import {
   applyJudgeOutcome,
   createGoalState,
   formatGoalStatusLine,
+  getGoalJudgeCriteria,
   normalizeGoalState,
   renderSubgoalsBlock,
   type GoalState,
@@ -200,6 +202,14 @@ function newSessionId(): string {
   return `sess_${ts}_${rand}`;
 }
 
+function resolvePeerGoalMaxTurns(raw: unknown): number {
+  if (raw === undefined) return resolveGoalsConfig().maxTurns;
+  if (typeof raw !== 'number' || !Number.isSafeInteger(raw) || raw <= 0) {
+    throw new Error('peer.chat-session.goal: maxTurns must be a positive integer');
+  }
+  return raw;
+}
+
 /**
  * Opportunistic GC — drop sessions whose `lastUsedAt` is older than
  * the configured idle window. Called at the top of each `start` and
@@ -274,16 +284,39 @@ async function evaluateSessionGoalAfterTurn(
 ): Promise<SessionGoalTurnReport | null> {
   const goal = session.goal;
   if (!goal || goal.status !== 'active') return null;
-  if (!assistantText.trim()) return null; // empty turn: don't burn budget
+  if (!assistantText.trim()) {
+    goal.status = 'paused';
+    goal.pausedReason = 'empty response (nothing to evaluate)';
+    const report: SessionGoalTurnReport = {
+      status: 'paused',
+      verdict: 'skipped',
+      reason: goal.pausedReason,
+      turnsUsed: goal.turnsUsed,
+      maxTurns: goal.maxTurns,
+      message: '⏸ Goal paused — the peer produced no judgeable response.',
+    };
+    broadcastChatSessionGoal({
+      sessionId: session.sessionId,
+      status: report.status,
+      verdict: report.verdict,
+      turnsUsed: report.turnsUsed,
+      maxTurns: report.maxTurns,
+    });
+    return report;
+  }
 
   let report: SessionGoalTurnReport;
   try {
     const config = resolveGoalsConfig();
-    const outcome = await judgeGoal(cachedGetter?.() ?? null, {
+    const baseClient = cachedGetter?.() ?? null;
+    const judgeClient = await resolveGoalJudgeClientFailOpen(baseClient, config.judgeModel);
+    const criteria = getGoalJudgeCriteria(goal);
+    const outcome = await judgeGoal(judgeClient, {
       goal: goal.goal,
       lastResponse: assistantText,
-      ...(goal.subgoals.length ? { subgoals: goal.subgoals } : {}),
+      ...(criteria.length ? { subgoals: criteria } : {}),
       ...(config.judgeModel ? { model: config.judgeModel } : {}),
+      maxTokens: config.judgeMaxTokens,
       timeoutMs: config.judgeTimeoutMs,
     });
     const decision = applyJudgeOutcome(goal, outcome);
@@ -764,6 +797,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
             turnsUsed: session.goal.turnsUsed,
             maxTurns: session.goal.maxTurns,
             subgoals: [...session.goal.subgoals],
+            ...(session.goal.goalPlan ? { goalPlan: session.goal.goalPlan } : {}),
             ...(session.goal.lastVerdict ? { lastVerdict: session.goal.lastVerdict } : {}),
             ...(session.goal.lastReason ? { lastReason: session.goal.lastReason } : {}),
             ...(session.goal.pausedReason ? { pausedReason: session.goal.pausedReason } : {}),
@@ -783,10 +817,7 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
               'Use action "status"/"pause"/"clear" mid-run; clear it before setting a new goal.'
           );
         }
-        const maxTurns =
-          typeof params.maxTurns === 'number' && params.maxTurns > 0
-            ? Math.trunc(params.maxTurns)
-            : resolveGoalsConfig().maxTurns;
+        const maxTurns = resolvePeerGoalMaxTurns(params.maxTurns);
         session.goal = createGoalState(text, maxTurns);
         await persist();
         emitGoal('active');
@@ -795,7 +826,9 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
       case 'status':
         return { ...goalView(), traceId: ctx.traceId };
       case 'pause': {
-        if (!session.goal) return { ...goalView(), traceId: ctx.traceId };
+        if (!session.goal || !['active', 'paused'].includes(session.goal.status)) {
+          return { ...goalView(), traceId: ctx.traceId };
+        }
         session.goal.status = 'paused';
         session.goal.pausedReason = 'user-paused';
         await persist();
@@ -803,9 +836,14 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
         return { ...goalView(), traceId: ctx.traceId };
       }
       case 'resume': {
-        if (!session.goal) return { ...goalView(), traceId: ctx.traceId };
+        if (!session.goal || session.goal.status !== 'paused') {
+          return { ...goalView(), traceId: ctx.traceId };
+        }
         session.goal.status = 'active';
         delete session.goal.pausedReason;
+        delete session.goal.lastVerdict;
+        delete session.goal.lastReason;
+        session.goal.consecutiveParseFailures = 0;
         session.goal.turnsUsed = 0; // Hermes resume semantics: budget reset
         await persist();
         emitGoal('active');
@@ -837,11 +875,14 @@ export async function wirePeerSessionBridge(getClient: PeerChatClientGetter): Pr
           traceId: ctx.traceId,
         };
       case 'subgoal-remove': {
-        const index = typeof params.index === 'number' ? Math.trunc(params.index) : NaN;
+        const index = typeof params.index === 'number' ? params.index : NaN;
         if (!session.goal || !['active', 'paused'].includes(session.goal.status)) {
           throw new Error('NO_ACTIVE_GOAL: set a goal before removing subgoals');
         }
-        if (!Number.isInteger(index) || index < 1 || index > session.goal.subgoals.length) {
+        if (!Number.isSafeInteger(index) || index < 1) {
+          throw new Error('peer.chat-session.goal: subgoal index must be a positive integer');
+        }
+        if (index > session.goal.subgoals.length) {
           throw new Error(
             `peer.chat-session.goal: subgoal index out of range (1..${session.goal.subgoals.length})`
           );

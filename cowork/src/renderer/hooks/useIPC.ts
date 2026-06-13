@@ -9,6 +9,7 @@ import type {
   Message,
   TraceStep,
   ContentBlock,
+  QueuedIntent,
 } from '../types';
 import i18n from '../i18n/config';
 import { shouldAutoInferUserModel, toInferenceHistory } from '../components/user-model-inference';
@@ -168,7 +169,15 @@ export function useIPC() {
           : config;
       store.setIsConfigured(isConfigured);
       store.setAppConfig(nextConfig);
-      store.setSettings({ theme: nextConfig.theme || 'light' });
+      store.setSettings({
+        theme: nextConfig.theme || 'light',
+        memoryStrategy:
+          nextConfig.memoryStrategy === 'manual' ||
+          nextConfig.memoryStrategy === 'rolling' ||
+          nextConfig.memoryStrategy === 'auto'
+            ? nextConfig.memoryStrategy
+            : 'auto',
+      });
       if (isInitialConfigStatus) {
         store.markInitialConfigStatusSeen();
       }
@@ -197,6 +206,31 @@ export function useIPC() {
               // D1/D2: auto-learn from a substantial session (user model + lessons).
               maybeAutoInferUserModel(event.payload.sessionId, event.payload.status);
               maybeAutoProposeLessons(event.payload.sessionId, event.payload.status);
+              if (event.payload.status === 'idle') {
+                const intent = store.shiftQueuedIntent(event.payload.sessionId);
+                if (intent) {
+                  const userMessage: Message = {
+                    id: `msg-user-${Date.now()}`,
+                    sessionId: event.payload.sessionId,
+                    role: 'user',
+                    content: intent.content,
+                    timestamp: Date.now(),
+                  };
+                  store.addMessage(event.payload.sessionId, userMessage);
+                  store.startExecutionClock(event.payload.sessionId, userMessage.timestamp);
+                  store.activateNextTurn(event.payload.sessionId, `pending-step-${Date.now()}`);
+                  store.setLoading(true);
+                  store.updateSession(event.payload.sessionId, { status: 'running' });
+                  window.electronAPI.send({
+                    type: 'session.continue',
+                    payload: {
+                      sessionId: event.payload.sessionId,
+                      prompt: intent.prompt,
+                      content: intent.content,
+                    },
+                  });
+                }
+              }
             }
             break;
 
@@ -629,6 +663,7 @@ export function useIPC() {
   const activateNextTurn = useAppStore((s) => s.activateNextTurn);
   const clearPendingTurns = useAppStore((s) => s.clearPendingTurns);
   const cancelQueuedMessages = useAppStore((s) => s.cancelQueuedMessages);
+  const enqueueQueuedIntent = useAppStore((s) => s.enqueueQueuedIntent);
   const startExecutionClock = useAppStore((s) => s.startExecutionClock);
   const finishExecutionClock = useAppStore((s) => s.finishExecutionClock);
 
@@ -792,7 +827,6 @@ export function useIPC() {
   // Continue an existing session
   const continueSession = useCallback(
     async (sessionId: string, promptOrContent: string | ContentBlock[]) => {
-      setLoading(true);
       console.log('[useIPC] Continuing session:', sessionId);
 
       // Normalize input to ContentBlock array
@@ -813,13 +847,26 @@ export function useIPC() {
       const hasActiveTurn = Boolean(ss?.activeTurn);
       const hasPending = (ss?.pendingTurns?.length ?? 0) > 0;
       const shouldQueue = isSessionRunning || hasActiveTurn || hasPending;
+      if (shouldQueue) {
+        const intent: QueuedIntent = {
+          id: `intent-${Date.now()}`,
+          sessionId,
+          prompt,
+          content,
+          createdAt: Date.now(),
+          source: 'queue',
+        };
+        enqueueQueuedIntent(intent);
+        return;
+      }
+
+      setLoading(true);
       const userMessage: Message = {
         id: `msg-user-${Date.now()}`,
         sessionId,
         role: 'user',
         content,
         timestamp: Date.now(),
-        localStatus: shouldQueue ? 'queued' : undefined,
       };
       addMessage(sessionId, userMessage);
       startExecutionClock(sessionId, userMessage.timestamp);
@@ -850,10 +897,8 @@ export function useIPC() {
 
       // Electron mode - send to backend (user message already added above)
       // Immediately activate turn to show processing indicator while waiting for API
-      if (!shouldQueue) {
-        const mockStepId = `pending-step-${Date.now()}`;
-        activateNextTurn(sessionId, mockStepId);
-      }
+      const mockStepId = `pending-step-${Date.now()}`;
+      activateNextTurn(sessionId, mockStepId);
 
       try {
         send({
@@ -884,7 +929,49 @@ export function useIPC() {
       clearActiveTurn,
       clearPendingTurns,
       startExecutionClock,
+      enqueueQueuedIntent,
     ]
+  );
+
+  const steerSession = useCallback(
+    async (
+      sessionId: string,
+      promptOrContent: string | ContentBlock[],
+      intentId?: string
+    ): Promise<{ delivered: boolean; fallbackQueued: boolean }> => {
+      const content: ContentBlock[] =
+        typeof promptOrContent === 'string'
+          ? [{ type: 'text', text: promptOrContent }]
+          : promptOrContent;
+      const textContent = content.find((block) => block.type === 'text');
+      const prompt = textContent && 'text' in textContent ? textContent.text : '';
+
+      if (!isElectron) {
+        const steerMessage: Message = {
+          id: `msg-steer-${Date.now()}`,
+          sessionId,
+          role: 'user',
+          content,
+          timestamp: Date.now(),
+          metadata: {
+            pendingIntent: {
+              kind: 'steer',
+              status: 'delivered',
+              sourceIntentId: intentId,
+            },
+          },
+        };
+        addMessage(sessionId, steerMessage);
+        return { delivered: true, fallbackQueued: false };
+      }
+
+      const result = await invoke<{ delivered: boolean; fallbackQueued: boolean }>({
+        type: 'session.steer',
+        payload: { sessionId, prompt, content, intentId },
+      });
+      return result ?? { delivered: false, fallbackQueued: true };
+    },
+    [addMessage, invoke]
   );
 
   const stopSession = useCallback(
@@ -930,6 +1017,48 @@ export function useIPC() {
       }
     },
     [send]
+  );
+
+  const duplicateSession = useCallback(
+    async (sessionId: string): Promise<Session | null> => {
+      if (!isElectron) {
+        const original = useAppStore.getState().sessions.find((session) => session.id === sessionId);
+        if (!original) return null;
+        const duplicate: Session = {
+          ...original,
+          id: `mock-session-copy-${Date.now()}`,
+          title: `${original.title} copy`,
+          status: 'idle',
+          pinned: false,
+          archived: false,
+          createdAt: Date.now(),
+          updatedAt: Date.now(),
+        };
+        addSession(duplicate);
+        return duplicate;
+      }
+      const duplicate = await invoke<Session | null>({
+        type: 'session.duplicate',
+        payload: { sessionId },
+      });
+      if (duplicate) {
+        addSession(duplicate);
+      }
+      return duplicate;
+    },
+    [addSession, invoke, isElectron]
+  );
+
+  const updateSessionSettings = useCallback(
+    async (sessionId: string, updates: Partial<Session>): Promise<boolean> => {
+      updateSession(sessionId, updates);
+      if (!isElectron) return true;
+      return invoke<boolean>({
+        type: 'session.updateSettings',
+        payload: { sessionId, updates },
+      });
+    },
+    [invoke, isElectron, updateSession]
   );
 
   const listSessions = useCallback(() => {
@@ -1100,9 +1229,12 @@ export function useIPC() {
     invoke,
     startSession,
     continueSession,
+    steerSession,
     stopSession,
     deleteSession,
     batchDeleteSessions,
+    duplicateSession,
+    updateSessionSettings,
     listSessions,
     getSessionMessages,
     getSessionTraceSteps,

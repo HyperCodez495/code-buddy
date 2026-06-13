@@ -139,12 +139,7 @@ export class BrowserVisionTool implements ITool {
         `browser-vision-${sanitizeFilename(this.options.createId?.() ?? String(Date.now()))}.png`,
       );
 
-      const screenshot = await this.browser.execute({
-        action: 'screenshot',
-        fullPage: input.full_page === true,
-        format: 'png',
-        outputPath: screenshotPath,
-      });
+      const screenshot = await this.captureScreenshotWithRetry(input, screenshotPath);
       if (!screenshot.success) return screenshot;
 
       const analysis = await analyzeVisionImage(screenshotPath, {
@@ -269,6 +264,38 @@ export class BrowserVisionTool implements ITool {
   async dispose(): Promise<void> {
     await this.browser.execute({ action: 'close' }).catch(() => undefined);
     await this.browser.dispose?.();
+  }
+
+  private async captureScreenshotWithRetry(
+    input: Record<string, unknown>,
+    screenshotPath: string
+  ): Promise<ToolResult> {
+    const fullPage = input.full_page === true;
+    const baseInput = {
+      action: 'screenshot',
+      fullPage,
+      format: 'png',
+      outputPath: screenshotPath,
+    };
+    const first = await this.browser.execute(baseInput);
+    if (first.success) return first;
+
+    await delay(150);
+    const second = await this.browser.execute(baseInput);
+    if (second.success) return second;
+
+    if (!fullPage) {
+      await delay(150);
+      const fullPageRetry = await this.browser.execute({
+        ...baseInput,
+        fullPage: true,
+      });
+      if (fullPageRetry.success) return fullPageRetry;
+
+      return combineScreenshotFailures(first, second, fullPageRetry);
+    }
+
+    return combineScreenshotFailures(first, second);
   }
 }
 
@@ -519,4 +546,18 @@ function optionalString(data: Record<string, unknown>, key: string): string | un
 
 function sanitizeFilename(id: string): string {
   return id.trim().replace(/[^A-Za-z0-9_.-]+/g, '-').replace(/^-+|-+$/g, '') || String(Date.now());
+}
+
+async function delay(ms: number): Promise<void> {
+  await new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function combineScreenshotFailures(...results: ToolResult[]): ToolResult {
+  const errors = results
+    .map(result => result.error || result.output)
+    .filter((message): message is string => typeof message === 'string' && message.trim().length > 0);
+  return {
+    success: false,
+    error: `Browser screenshot failed after retries: ${errors.join(' | ') || 'unknown error'}`,
+  };
 }

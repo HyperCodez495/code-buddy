@@ -14,6 +14,14 @@ vi.mock('../src/main/utils/core-loader', () => ({
           if (!allow.has(token)) {
             return { handled: true, denied: true, reason: `${token} not available` };
           }
+          if (token === '__GOAL__') {
+            return {
+              handled: true,
+              output: `goal set ${args.join(' ')}`.trim(),
+              prompt: args.join(' '),
+              passToAI: true,
+            };
+          }
           return { handled: true, output: `ran ${token} ${args.join(' ')}`.trim() };
         },
       };
@@ -69,6 +77,8 @@ function bridgeWithCatalog(): SlashCommandBridge {
     { name: 'export-formats', description: 'Export formats', prompt: '__EXPORT_FORMATS__', isBuiltin: true },
     { name: 'export-list', description: 'Export list', prompt: '__EXPORT_LIST__', isBuiltin: true },
     { name: 'knowledge-graph', description: 'Knowledge graph', prompt: '__KNOWLEDGE_GRAPH__', isBuiltin: true },
+    { name: 'goal', description: 'Goal mode', prompt: '__GOAL__', isBuiltin: true },
+    { name: 'subgoal', description: 'Subgoal', prompt: '__SUBGOAL__', isBuiltin: true },
   ];
   return bridge;
 }
@@ -213,6 +223,22 @@ describe('SlashCommandBridge headless routing (S0)', () => {
   it('runs /export-formats and /export-list headlessly (read-only, allowlisted)', async () => {
     expect((await bridge.execute('export-formats', [])).output).toBe('ran __EXPORT_FORMATS__');
     expect((await bridge.execute('export-list', [])).output).toBe('ran __EXPORT_LIST__');
+  });
+
+  it('runs /goal through the headless handler and forwards the first goal turn', async () => {
+    const res = await bridge.execute('goal', ['ship', 'Cowork', 'goal', 'mode'], 'sess-42');
+    expect(res).toMatchObject({
+      success: true,
+      handled: false,
+      output: 'goal set ship Cowork goal mode',
+      prompt: 'ship Cowork goal mode',
+    });
+  });
+
+  it('runs /subgoal headlessly for the active Cowork goal session', async () => {
+    const res = await bridge.execute('subgoal', ['include', 'tests'], 'sess-42');
+    expect(res).toMatchObject({ success: true, handled: true });
+    expect(res.output).toBe('ran __SUBGOAL__ include tests');
   });
 
   it('routes /identity to the identity panel (C3)', async () => {

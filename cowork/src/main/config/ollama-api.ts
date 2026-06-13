@@ -184,6 +184,23 @@ export async function listOllamaModels(input: {
   return result.models;
 }
 
+export async function fetchOllamaVersion(input: {
+  baseUrl?: string;
+}): Promise<string | null> {
+  try {
+    const normalizedBase = normalizeOllamaBaseUrl(input.baseUrl);
+    const nativeBase = ollamaNativeBaseUrl(normalizedBase ?? 'http://localhost:11434/v1');
+    const response = await fetch(`${nativeBase}/api/version`, {
+      signal: AbortSignal.timeout(3000),
+    });
+    if (!response.ok) return null;
+    const data = await response.json() as { version?: unknown };
+    return typeof data.version === 'string' ? data.version.trim() : null;
+  } catch {
+    return null;
+  }
+}
+
 export async function testOllamaConnection(input: ApiTestInput): Promise<ApiTestResult> {
   const start = Date.now();
   try {

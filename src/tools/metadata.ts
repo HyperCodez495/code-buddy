@@ -962,6 +962,20 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Store persistent memory entries'
   },
   {
+    name: 'replace_memory',
+    category: 'utility',
+    keywords: ['memory', 'replace', 'rewrite', 'update', 'persist', 'preference'],
+    priority: 5,
+    description: 'Replace an existing persistent memory entry under the memory char budget'
+  },
+  {
+    name: 'memory_propose',
+    category: 'utility',
+    keywords: ['memory', 'candidate', 'propose', 'review', 'long-term', 'persist'],
+    priority: 5,
+    description: 'Propose a review-gated long-term memory candidate without silently writing prompt-injected memory'
+  },
+  {
     name: 'recall',
     category: 'utility',
     keywords: ['memory', 'recall', 'retrieve', 'lookup', 'context'],
