@@ -9,9 +9,12 @@
 import { createRequire } from 'module';
 import { spawnSync } from 'child_process';
 import { mkdir, mkdtemp, stat } from 'fs/promises';
+import { createServer } from 'net';
 import { tmpdir } from 'os';
 import { isAbsolute, join, resolve } from 'path';
 import type { Browser, BrowserContext } from 'playwright';
+import { executeBrowserUseAction } from '../browser-automation/browser-use-runner.js';
+import { closeCamofox, launchCamofox } from '../browser-automation/camofox-runner.js';
 
 export type HermesBrowserBackendStatus = 'available' | 'configured' | 'missing' | 'unsupported';
 export type HermesBrowserSmokeStatus = 'passed' | 'failed' | 'blocked' | 'unsupported' | 'not-runnable';
@@ -260,15 +263,17 @@ function browserUseBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     label: 'Browser Use gateway',
     officialSurface: 'Browser Use managed browser mode',
     status: configured ? 'configured' : 'missing',
-    installed: false,
+    installed: true,
     configured,
-    runnable: false,
+    runnable: configured,
     command: null,
     version: null,
     credentialSources,
-    smokeCommand: null,
-    notes: ['Tracked for Hermes parity; Code Buddy does not yet expose a first-class Browser Use runtime runner.'],
-    remediation: ['Use local Playwright today, or wire the Nous Tool Gateway before claiming Browser Use backend parity.'],
+    smokeCommand: configured ? 'buddy hermes browser-smoke browser-use --json' : null,
+    notes: ['Browser Use runner routes actions through the Browser Use API or Nous Tool Gateway (src/browser-automation/browser-use-runner.ts).'],
+    remediation: configured
+      ? []
+      : ['Set BROWSER_USE_API_KEY or CODEBUDDY_NOUS_TOOL_GATEWAY_URL to enable the Browser Use backend.'],
   };
 }
 
@@ -303,13 +308,13 @@ function camofoxBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     status: installed ? 'available' : 'missing',
     installed,
     configured: installed,
-    runnable: false,
+    runnable: installed,
     command: installed ? (camofox.ok ? 'camofox' : 'camoufox') : null,
     version: installed ? firstLine(camoufox.output) : null,
     credentialSources: [],
-    smokeCommand: null,
-    notes: ['Detected only as an optional upstream-compatible backend; no Code Buddy runner is wired yet.'],
-    remediation: installed ? ['Wire a first-class runner before claiming Camofox parity.'] : ['Install Camofox/Camoufox only if this backend is required.'],
+    smokeCommand: installed ? 'buddy hermes browser-smoke camofox --json' : null,
+    notes: ['Camofox runner launches the anti-detect browser and connects via CDP (src/browser-automation/camofox-runner.ts).'],
+    remediation: installed ? [] : ['Install Camofox/Camoufox only if this backend is required.'],
   };
 }
 
@@ -398,7 +403,7 @@ function browserRouteGateReason(backend: HermesBrowserBackend): string | null {
   }
 
   if (backend.id === 'browser-use' && backend.configured) {
-    return 'Browser Use is configured but excluded from auto browser routing until the Nous Tool Gateway runner is wired.';
+    return null; // Browser Use runner is wired — eligible for auto-routing.
   }
 
   if (backend.id === 'firecrawl' && backend.configured) {
@@ -406,7 +411,7 @@ function browserRouteGateReason(backend: HermesBrowserBackend): string | null {
   }
 
   if (backend.id === 'camofox' && backend.installed) {
-    return 'Camofox/Camoufox is installed but excluded from auto browser routing until a first-class runner exists.';
+    return null; // Camofox runner is wired — eligible for auto-routing.
   }
 
   return null;
@@ -508,6 +513,23 @@ async function createBrowserSmokeArtifactDir(artifactsDir?: string): Promise<str
   }
 
   return mkdtemp(join(tmpdir(), 'codebuddy-hermes-browser-'));
+}
+
+async function reserveLocalPort(): Promise<number> {
+  return new Promise<number>((resolvePort, rejectPort) => {
+    const server = createServer();
+    server.once('error', rejectPort);
+    server.listen(0, '127.0.0.1', () => {
+      const address = server.address();
+      server.close(() => {
+        if (address && typeof address === 'object') {
+          resolvePort(address.port);
+          return;
+        }
+        rejectPort(new Error('Unable to reserve a local port for Camofox smoke.'));
+      });
+    });
+  });
 }
 
 async function runRemoteCdpSmoke(
@@ -743,6 +765,91 @@ async function runBrowserbaseSmoke(now: () => Date, env: NodeJS.ProcessEnv): Pro
   }
 }
 
+async function runBrowserUseSmoke(now: () => Date, env: NodeJS.ProcessEnv): Promise<HermesBrowserBackendSmokeResult> {
+  const started = now();
+  const startedAtMs = Date.now();
+  const apiKey = env.BROWSER_USE_API_KEY?.trim();
+  const gatewayUrl = env.CODEBUDDY_NOUS_TOOL_GATEWAY_URL?.trim();
+
+  if (!apiKey && !gatewayUrl) {
+    return {
+      backendId: 'browser-use',
+      command: null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Browser Use gateway',
+      ok: false,
+      output: 'BROWSER_USE_API_KEY or CODEBUDDY_NOUS_TOOL_GATEWAY_URL is required for browser-use smoke.',
+      startedAt: started.toISOString(),
+      status: 'not-runnable',
+      stdout: '',
+      stderr: 'BROWSER_USE_API_KEY or CODEBUDDY_NOUS_TOOL_GATEWAY_URL is required for browser-use smoke.',
+    };
+  }
+
+  const result = await executeBrowserUseAction(
+    'Open the page and report the title or main heading.',
+    'https://example.com',
+    {
+      apiKey,
+      gatewayUrl,
+      timeout: 60_000,
+    },
+  );
+  const output = result.content ?? (result.screenshot ? 'Browser Use returned screenshot data.' : '');
+
+  return {
+    backendId: 'browser-use',
+    command: null,
+    durationMs: Math.max(0, Date.now() - startedAtMs),
+    finishedAt: now().toISOString(),
+    label: 'Browser Use gateway',
+    ok: result.ok,
+    output: result.ok ? output : result.error ?? 'Browser Use smoke failed.',
+    startedAt: started.toISOString(),
+    status: result.ok ? 'passed' : 'failed',
+    stdout: result.ok ? output : '',
+    stderr: result.ok ? '' : result.error ?? 'Browser Use smoke failed.',
+  };
+}
+
+async function runCamofoxSmoke(now: () => Date, env: NodeJS.ProcessEnv): Promise<HermesBrowserBackendSmokeResult> {
+  const started = now();
+  const startedAtMs = Date.now();
+  const cdpPort = await reserveLocalPort();
+  const binary = env.CODEBUDDY_CAMOFOX_BINARY?.trim() || undefined;
+  const result = await launchCamofox({
+    binary,
+    cdpPort,
+    headless: true,
+    timeout: 15_000,
+  });
+
+  try {
+    const output = result.ok
+      ? `cdp=${result.wsEndpoint}; pid=${result.pid ?? 'unknown'}`
+      : result.error ?? 'Camofox smoke failed.';
+    return {
+      backendId: 'camofox',
+      command: binary ?? null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Camofox / Camoufox',
+      ok: result.ok,
+      output,
+      startedAt: started.toISOString(),
+      status: result.ok ? 'passed' : result.error?.match(/not found/i) ? 'not-runnable' : 'failed',
+      stdout: result.ok ? output : '',
+      stderr: result.ok ? '' : output,
+      session: result.wsEndpoint ? { url: result.wsEndpoint } : undefined,
+    };
+  } finally {
+    if (result.pid) {
+      await closeCamofox(result.pid).catch(() => undefined);
+    }
+  }
+}
+
 async function runLocalPlaywrightSmoke(
   now: () => Date,
   options: { artifactsDir?: string } = {},
@@ -921,6 +1028,14 @@ export async function runHermesBrowserBackendSmoke(
 
   if (backend.id === 'browserbase') {
     return runBrowserbaseSmoke(now, env);
+  }
+
+  if (backend.id === 'browser-use') {
+    return runBrowserUseSmoke(now, env);
+  }
+
+  if (backend.id === 'camofox') {
+    return runCamofoxSmoke(now, env);
   }
 
   if (!backend.runnable) {

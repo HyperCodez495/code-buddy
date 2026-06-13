@@ -133,6 +133,209 @@ describe('IMessageAdapter', () => {
 });
 
 // ============================================================================
+// iMessage / BlueBubbles — reconnection (ReconnectionManager wiring)
+// ============================================================================
+
+describe('IMessageAdapter reconnection', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+    vi.useRealTimers();
+  });
+
+  /**
+   * Build a fetch mock whose poll requests fail, but whose health-check
+   * (/server/info) requests are configurable. `pollOk` controls the polling
+   * endpoint; `healthOk` controls the reconnect health check.
+   */
+  function makeFetch(opts: { healthOk: boolean }) {
+    return vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/server/info')) {
+        // health check
+        return { ok: opts.healthOk, status: opts.healthOk ? 200 : 503, json: async () => ({}), text: async () => '' };
+      }
+      // polling endpoint — always fails to drive the retry path
+      return { ok: false, status: 500, statusText: 'err', json: async () => ({}), text: async () => 'boom' };
+    }) as unknown as typeof fetch;
+  }
+
+  it('routes repeated polling failures through ReconnectionManager.scheduleReconnect', async () => {
+    vi.useFakeTimers();
+    // Health check succeeds on connect, then the poll loop fails repeatedly.
+    let healthOk = true;
+    global.fetch = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/server/info')) {
+        return { ok: healthOk, status: healthOk ? 200 : 503, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: false, status: 500, statusText: 'err', json: async () => ({}), text: async () => 'boom' };
+    }) as unknown as typeof fetch;
+
+    const adapter = new IMessageAdapter({
+      serverUrl: 'http://localhost',
+      password: 'pw',
+      pollingInterval: 10,
+      maxRetries: 3,
+      retryDelay: 50,
+    });
+    adapter.on('error', () => {}); // swallow the error emitted on max-retry
+
+    // Spy on the manager that lives on the adapter instance.
+    const mgr = (adapter as unknown as { reconnectionManager: { scheduleReconnect: (fn: () => Promise<void>) => void } }).reconnectionManager;
+    const scheduleSpy = vi.spyOn(mgr, 'scheduleReconnect');
+
+    await adapter.start();
+    expect(adapter.isRunning()).toBe(true);
+
+    // From here the health check should report DOWN so reconnect attempts fail.
+    healthOk = false;
+
+    // Advance enough poll cycles to exceed maxRetries (3) and trigger reconnect.
+    for (let i = 0; i < 5; i++) {
+      await vi.advanceTimersByTimeAsync(10);
+    }
+
+    expect(scheduleSpy).toHaveBeenCalled();
+    // The connect-time healthCheck plus polling attempts all went through fetch.
+    expect((global.fetch as unknown as { mock: { calls: unknown[] } }).mock.calls.length).toBeGreaterThan(3);
+
+    await adapter.stop().catch(() => {});
+  });
+
+  it('recovers (emits "reconnected") when the health check passes on a reconnect attempt', async () => {
+    vi.useFakeTimers();
+    global.fetch = makeFetch({ healthOk: true });
+
+    const adapter = new IMessageAdapter({
+      serverUrl: 'http://localhost',
+      password: 'pw',
+      pollingInterval: 10,
+      maxRetries: 2,
+      retryDelay: 20,
+    });
+    adapter.on('error', () => {});
+    const reconnected = vi.fn();
+    adapter.on('reconnected', reconnected);
+
+    await adapter.start();
+    // Drive the poll loop past maxRetries → reconnect scheduled. The manager's
+    // backoff delay includes up to 500ms of random jitter on top of the 20ms
+    // base, so advance generously (well past base+maxJitter) to deterministically
+    // fire the scheduled reconnect closure regardless of the jitter draw.
+    for (let i = 0; i < 20; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    // health check succeeds, so the reconnect closure should have re-armed
+    // polling and emitted 'reconnected'.
+    expect(reconnected).toHaveBeenCalled();
+
+    await adapter.stop().catch(() => {});
+  });
+
+  it('cancel()s any pending reconnect on stop()', async () => {
+    vi.useFakeTimers();
+    let healthOk = true;
+    global.fetch = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/server/info')) {
+        return { ok: healthOk, status: healthOk ? 200 : 503, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: false, status: 500, statusText: 'err', json: async () => ({}), text: async () => 'boom' };
+    }) as unknown as typeof fetch;
+
+    const adapter = new IMessageAdapter({
+      serverUrl: 'http://localhost',
+      password: 'pw',
+      pollingInterval: 10,
+      maxRetries: 2,
+      retryDelay: 10_000, // long delay so the reconnect stays pending
+    });
+    adapter.on('error', () => {});
+
+    const mgr = (adapter as unknown as { reconnectionManager: { cancel: () => void; isPending: () => boolean } }).reconnectionManager;
+    const cancelSpy = vi.spyOn(mgr, 'cancel');
+
+    await adapter.start();
+    healthOk = false;
+    // Trigger a reconnect schedule (pending due to long retryDelay).
+    for (let i = 0; i < 4; i++) {
+      await vi.advanceTimersByTimeAsync(10);
+    }
+    expect(mgr.isPending()).toBe(true);
+
+    await adapter.stop();
+    expect(cancelSpy).toHaveBeenCalled();
+    expect(mgr.isPending()).toBe(false);
+    expect(adapter.isRunning()).toBe(false);
+  });
+
+  it('retries repeatedly and finally gives up (running=false, emits "disconnected") on a sustained outage', async () => {
+    vi.useFakeTimers();
+    let healthOk = true; // OK on connect, then forced down for the whole outage
+    global.fetch = vi.fn(async (url: string) => {
+      const u = String(url);
+      if (u.includes('/server/info')) {
+        return { ok: healthOk, status: healthOk ? 200 : 503, json: async () => ({}), text: async () => '' };
+      }
+      return { ok: false, status: 500, statusText: 'err', json: async () => ({}), text: async () => 'boom' };
+    }) as unknown as typeof fetch;
+
+    const adapter = new IMessageAdapter({
+      serverUrl: 'http://localhost',
+      password: 'pw',
+      pollingInterval: 10,
+      maxRetries: 3,
+      retryDelay: 20,
+    });
+    adapter.on('error', () => {});
+    const disconnected = vi.fn();
+    adapter.on('disconnected', disconnected);
+
+    const mgr = (adapter as unknown as {
+      reconnectionManager: { scheduleReconnect: (fn: () => Promise<void>) => void };
+    }).reconnectionManager;
+    const scheduleSpy = vi.spyOn(mgr, 'scheduleReconnect');
+
+    await adapter.start();
+    healthOk = false; // sustained outage: every poll AND every reconnect fails
+
+    // Advance well past base delay + max jitter (500ms) across many cycles so
+    // each scheduled attempt fires, fails, and re-drives the next attempt.
+    for (let i = 0; i < 60; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    // The single-shot manager must have been re-driven more than once...
+    expect(scheduleSpy.mock.calls.length).toBeGreaterThan(1);
+    // ...and the sustained outage must eventually be surfaced as a permanent
+    // failure rather than silently wedging the adapter.
+    expect(disconnected).toHaveBeenCalled();
+    expect(adapter.isRunning()).toBe(false);
+
+    // --- Second episode: a fresh start() must NOT inherit a pre-exhausted
+    // retryCount from episode 1, otherwise the next immediate-failure outage
+    // would give up after a single attempt.
+    const episode1Calls = scheduleSpy.mock.calls.length;
+    healthOk = true; // BlueBubbles briefly back up so start()'s health check passes
+    await adapter.start();
+    expect(adapter.isRunning()).toBe(true);
+
+    healthOk = false; // drops again before any poll succeeds
+    for (let i = 0; i < 60; i++) {
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    const episode2Calls = scheduleSpy.mock.calls.length - episode1Calls;
+    // The second episode must get a real retry budget (> 1 attempt), proving
+    // the manager's backoff state was reset on the new session.
+    expect(episode2Calls).toBeGreaterThan(1);
+
+    await adapter.stop().catch(() => {});
+  });
+});
+
+// ============================================================================
 // Nostr
 // ============================================================================
 

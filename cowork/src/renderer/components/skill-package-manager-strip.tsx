@@ -185,9 +185,10 @@ export const SkillPackageManagerStrip: React.FC<{
   cwd?: string;
   error?: string | null;
   maxVisible?: number;
+  onLifecycleComplete?: () => void;
   onUseAsGoal?: (goal: string) => void;
   summary?: SkillPackageManagerSummary | null;
-}> = ({ cwd, error = null, maxVisible = 3, onUseAsGoal, summary }) => {
+}> = ({ cwd, error = null, maxVisible = 3, onLifecycleComplete, onUseAsGoal, summary }) => {
   const { t } = useTranslation();
   const [lifecycleError, setLifecycleError] = useState<string | null>(null);
   const [lifecycleFeedback, setLifecycleFeedback] = useState<string | null>(null);
@@ -346,6 +347,7 @@ export const SkillPackageManagerStrip: React.FC<{
           setLoadedSummary(refreshed);
         }
       }
+      onLifecycleComplete?.();
     } catch (lifecycleErrorValue: unknown) {
       setLifecycleError(
         lifecycleErrorValue instanceof Error ? lifecycleErrorValue.message : String(lifecycleErrorValue)

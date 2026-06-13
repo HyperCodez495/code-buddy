@@ -92,7 +92,10 @@ export interface ClawMigrationReport {
 
 const HOME_CANDIDATES = ['.openclaw', '.clawdbot', '.moltbot'];
 const CONFIG_NAMES = ['clawdbot.json', 'moltbot.json', 'openclaw.json', 'config.json'];
-const SKILL_DIR_CANDIDATES = ['skills', 'agent/skills', '.skills', 'skill'];
+// `plugin-skills` is the OpenClaw 2026.6.x location; each entry there is usually
+// a *symlink* into the installed openclaw npm package (verified against a real
+// install). `discoverSkillDirs` therefore follows symlinks via `statSync`.
+const SKILL_DIR_CANDIDATES = ['skills', 'plugin-skills', 'agent/skills', '.skills', 'skill'];
 const COMMAND_DIR_CANDIDATES = ['commands', 'slash-commands', 'agent/commands', '.commands'];
 
 // Categories that `--preset user-data` keeps as imports (user content only).
@@ -123,7 +126,7 @@ interface ArchiveCategorySpec {
  * Archive categories whose slice can embed credentials. Their review files are
  * chmod 0600 like `secrets.json` (best-effort; no-op where chmod is unsupported).
  */
-const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets', 'custom_providers']);
+const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets', 'custom_providers', 'gateway']);
 
 /**
  * Dev-only invariant: every config key is claimed by at most one archive spec.
@@ -306,7 +309,174 @@ export function mapClawAgentBehavior(cfg: Record<string, unknown>): ClawAgentBeh
   return out;
 }
 
-/** Discover OpenClaw skill directories: each subdir containing a `SKILL.md`. */
+// ---------------------------------------------------------------------------
+// Promoted category mappers — each mirrors the conservative pattern of
+// mapClawAgentBehavior: only well-understood, safely-typed fields are mapped;
+// credentials and complex shapes are left unmapped.
+// ---------------------------------------------------------------------------
+
+/**
+ * Cron job entry as translated from an OpenClaw `cronJobs` array element into
+ * the shape consumed by CronScheduler.addJob().
+ */
+export interface ClawCronJobEntry {
+  name: string;
+  schedule: string;
+  task: string;
+}
+
+/**
+ * Map OpenClaw cron config to a list of CronJob-compatible entries.
+ *
+ * OpenClaw stores cron jobs as an array of `{ schedule, task, label? }` objects
+ * or — in 2026.6.x — under `scheduler.jobs`. Only entries with both a valid
+ * 5-field cron expression and a non-empty task string are mapped. Everything
+ * else is silently dropped (will remain in the archived raw slice if one
+ * exists).
+ */
+export function mapClawCronJobs(cfg: Record<string, unknown>): ClawCronJobEntry[] {
+  const out: ClawCronJobEntry[] = [];
+  const candidates = [
+    cfg.cronJobs, cfg.cron, cfg.cronjobs,
+    nestedValue(cfg, 'scheduler.jobs'),
+  ];
+  for (const raw of candidates) {
+    if (!Array.isArray(raw)) continue;
+    for (const item of raw) {
+      if (!item || typeof item !== 'object') continue;
+      const rec = item as Record<string, unknown>;
+      const schedule = typeof rec.schedule === 'string' ? rec.schedule.trim() : undefined;
+      const task = typeof rec.task === 'string' ? rec.task.trim() : undefined;
+      if (!schedule || !task) continue;
+      // Basic 5-field cron validation: must have exactly 5 space-separated fields.
+      if (schedule.split(/\s+/).length !== 5) continue;
+      const name = typeof rec.label === 'string' && rec.label.trim()
+        ? rec.label.trim()
+        : typeof rec.name === 'string' && rec.name.trim()
+          ? rec.name.trim()
+          : `claw-cron-${out.length}`;
+      out.push({ name, schedule, task });
+    }
+    if (out.length > 0) break; // first populated candidate wins
+  }
+  return out;
+}
+
+/**
+ * Map OpenClaw command allowlist into a flat string array of allowed command
+ * basenames / patterns, consumable by Code Buddy's command validator.
+ *
+ * OpenClaw stores these as a flat string array under `commandAllowlist`,
+ * `allowlist`, or `allowedCommands`. Items that look like credentials or paths
+ * outside of simple command names are filtered out.
+ */
+export function mapClawCommandAllowlist(cfg: Record<string, unknown>): string[] {
+  const candidates = [cfg.commandAllowlist, cfg.allowlist, cfg.allowedCommands];
+  for (const raw of candidates) {
+    if (!Array.isArray(raw)) continue;
+    const out: string[] = [];
+    for (const item of raw) {
+      if (typeof item !== 'string') continue;
+      const trimmed = item.trim();
+      // Skip empty, absolute paths, and anything resembling a secret.
+      if (!trimmed) continue;
+      if (trimmed.startsWith('/') || trimmed.startsWith('~')) continue;
+      if (/(token|secret|key|password)/i.test(trimmed)) continue;
+      out.push(trimmed);
+    }
+    if (out.length > 0) return out;
+  }
+  return [];
+}
+
+// Known memory provider names that Code Buddy supports.
+const KNOWN_MEMORY_PROVIDERS = new Set(['local', 'honcho', 'mem0', 'redis', 'sqlite', 'json', 'markdown']);
+
+/**
+ * Map OpenClaw memory backend config to a Code Buddy memory provider name.
+ *
+ * Only well-known provider names are accepted; unknown strings are left
+ * unmapped (will stay in the archive). Credentials (API keys, URLs) in the
+ * memory backend config are never imported.
+ */
+export function mapClawMemoryBackend(cfg: Record<string, unknown>): string | undefined {
+  const raw = firstDefined(cfg, [
+    'memoryBackend', 'memory_backend', 'memory.provider', 'memory.backend',
+  ]);
+  // Could be a string name or an object { provider: "...", ... }.
+  let name: string | undefined;
+  if (typeof raw === 'string') {
+    name = raw.trim().toLowerCase();
+  } else if (raw && typeof raw === 'object' && !Array.isArray(raw)) {
+    const rec = raw as Record<string, unknown>;
+    const p = rec.provider ?? rec.backend ?? rec.type;
+    if (typeof p === 'string') name = p.trim().toLowerCase();
+  }
+  if (name && KNOWN_MEMORY_PROVIDERS.has(name)) return name;
+  return undefined;
+}
+
+/**
+ * Map OpenClaw exec timeout to a numeric millisecond value for Code Buddy's
+ * `execTimeout` setting.
+ *
+ * OpenClaw stores this as seconds (integer) or milliseconds (large integer).
+ * Values ≤ 0 are ignored. Values that look like seconds (≤ 3600) are
+ * multiplied by 1000. Clamped to a maximum of 3600000 ms (1 hour).
+ */
+export function mapClawExecTimeout(cfg: Record<string, unknown>): number | undefined {
+  const raw = firstDefined(cfg, [
+    'execTimeout', 'exec_timeout', 'timeout',
+    'agents.defaults.execTimeout', 'agent.execTimeout',
+  ]);
+  if (typeof raw !== 'number' || raw <= 0 || !Number.isFinite(raw)) return undefined;
+  // Heuristic: values ≤ 3600 are likely seconds; larger ones milliseconds.
+  const ms = raw <= 3600 ? Math.round(raw * 1000) : Math.round(raw);
+  return Math.min(ms, 3_600_000);
+}
+
+/**
+ * Vision config fields that Code Buddy consumes.
+ */
+export interface ClawVisionSettings {
+  visionEnabled?: boolean;
+  visionModel?: string;
+}
+
+/**
+ * Map OpenClaw vision settings to Code Buddy's vision config keys.
+ *
+ * Only the `enabled` boolean and `model` string are imported. Provider
+ * credentials, endpoint URLs, and other complex fields are left archived.
+ */
+export function mapClawVisionSettings(cfg: Record<string, unknown>): ClawVisionSettings {
+  const out: ClawVisionSettings = {};
+  const block = firstDefined(cfg, ['vision', 'visionSettings']);
+  if (block && typeof block === 'object' && !Array.isArray(block)) {
+    const rec = block as Record<string, unknown>;
+    if (typeof rec.enabled === 'boolean') out.visionEnabled = rec.enabled;
+    if (typeof rec.model === 'string' && rec.model.trim()) {
+      // Only import model names, not URLs or credentials.
+      const model = rec.model.trim();
+      if (!model.startsWith('http') && !/(token|secret|key)/i.test(model)) {
+        out.visionModel = model;
+      }
+    }
+  }
+  return out;
+}
+
+/**
+ * Discover OpenClaw skill directories: each subdir containing a `SKILL.md`.
+ *
+ * Entries may be plain dirs (legacy `skills/<name>/SKILL.md`) or **symlinks** to
+ * a skill dir inside the installed openclaw npm package (2026.6.x
+ * `plugin-skills/<name>` → `.../dist/extensions/.../<name>`). A Dirent for a
+ * symlink reports `isDirectory() === false`, so we resolve the link with
+ * `statSync` (in a try/catch, to survive a dangling link when openclaw has been
+ * uninstalled) and accept any entry that resolves to a directory holding a
+ * readable `SKILL.md`.
+ */
 function discoverSkillDirs(home: string): Array<{ name: string; skillFile: string }> {
   const found: Array<{ name: string; skillFile: string }> = [];
   const seen = new Set<string>();
@@ -314,7 +484,16 @@ function discoverSkillDirs(home: string): Array<{ name: string; skillFile: strin
     const root = path.join(home, rel);
     if (!fs.existsSync(root) || !fs.statSync(root).isDirectory()) continue;
     for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-      if (!entry.isDirectory()) continue;
+      // Resolve symlinks (plugin-skills entries are links into the npm package).
+      let isDir = entry.isDirectory();
+      if (!isDir && entry.isSymbolicLink()) {
+        try {
+          isDir = fs.statSync(path.join(root, entry.name)).isDirectory();
+        } catch {
+          continue; // dangling symlink (openclaw uninstalled) — skip.
+        }
+      }
+      if (!isDir) continue;
       const skillFile = path.join(root, entry.name, 'SKILL.md');
       const safeName = entry.name.replace(/[^a-zA-Z0-9_-]/g, '-');
       if (fs.existsSync(skillFile) && !seen.has(safeName)) {
@@ -324,6 +503,46 @@ function discoverSkillDirs(home: string): Array<{ name: string; skillFile: strin
     }
   }
   return found;
+}
+
+/**
+ * Resolve the base directories that may hold OpenClaw identity / memory markdown
+ * files. OpenClaw 2026.6.x stores SOUL/USER/AGENTS/… under the configured
+ * **workspace** dir (`agents.defaults.workspace`, real value
+ * `~/.openclaw/workspace`), not at the home root used by legacy clawdbot/moltbot
+ * installs. Both are searched (home root first for back-compat, then the
+ * configured workspace, then the conventional `home/workspace` fallback);
+ * callers dedup per category so an entry is emitted once. Only directories under
+ * (or equal to) `home` are accepted — an absolute `workspace` pointing outside
+ * the OpenClaw home is ignored to avoid reading arbitrary user paths.
+ */
+function identityBaseDirs(home: string, cfg: Record<string, unknown>): string[] {
+  const dirs: string[] = [home];
+  const configured = firstStringPath(cfg, [
+    'agents.defaults.workspace', 'agent.workspace', 'workspace',
+  ]);
+  const candidates = [configured, path.join(home, 'workspace')];
+  for (const cand of candidates) {
+    if (!cand) continue;
+    const resolved = path.resolve(home, cand);
+    // Only trust workspace dirs inside the OpenClaw home (the real layout). An
+    // out-of-tree absolute path is left to the archive/manual path, never read.
+    const rel = path.relative(home, resolved);
+    const insideHome = resolved === home || (!rel.startsWith('..') && !path.isAbsolute(rel));
+    if (insideHome && !dirs.includes(resolved) && fs.existsSync(resolved) && fs.statSync(resolved).isDirectory()) {
+      dirs.push(resolved);
+    }
+  }
+  return dirs;
+}
+
+/** First existing path for `name` across the identity base dirs (or null). */
+function findIdentityFile(bases: string[], name: string): string | null {
+  for (const base of bases) {
+    const full = path.join(base, name);
+    if (fs.existsSync(full) && fs.statSync(full).isFile()) return full;
+  }
+  return null;
 }
 
 /** Discover OpenClaw custom slash command files consumable by Code Buddy. */
@@ -356,6 +575,24 @@ function detectSecretSourceNames(config: Record<string, unknown>): string[] {
   for (const key of Object.keys(config)) {
     if (/(token|api[_-]?key|secret)$/i.test(key) && typeof config[key] === 'string') {
       names.push(key);
+    }
+  }
+  // Known nested credential locations in the OpenClaw 2026.6.x layout. Verified
+  // against a real install: the gateway auth token and per-provider apiKeys live
+  // in nested objects, not at the top level. We surface their dotted *names*
+  // only — the values are already carried (0600) in the gateway / custom_providers
+  // archive slices; nothing here ever exposes a value.
+  const gatewayToken = nestedValue(config, 'gateway.auth.token');
+  if (typeof gatewayToken === 'string' && gatewayToken.trim()) names.push('gateway.auth.token');
+  const providers = nestedValue(config, 'models.providers');
+  if (providers && typeof providers === 'object' && !Array.isArray(providers)) {
+    for (const [provName, prov] of Object.entries(providers as Record<string, unknown>)) {
+      if (prov && typeof prov === 'object' && !Array.isArray(prov)) {
+        const apiKey = (prov as Record<string, unknown>).apiKey;
+        if (typeof apiKey === 'string' && apiKey.trim()) {
+          names.push(`models.providers.${provName}.apiKey`);
+        }
+      }
     }
   }
   return Array.from(new Set(names));
@@ -398,6 +635,10 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
     codebuddyDir,
   };
 
+  // Identity/memory markdown files live either at the home root (legacy
+  // clawdbot/moltbot) or under the configured workspace dir (OpenClaw 2026.6.x).
+  const identityBases = identityBaseDirs(home, config?.raw ?? {});
+
   // --- Directly imported identity files (consumed by bootstrap loader / prompt builder) ---
   const identityFiles: Array<{ category: string; file: string; dest: string }> = [
     { category: 'persona', file: 'SOUL.md', dest: path.join(target, 'SOUL.md') },
@@ -405,15 +646,16 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
     { category: 'agents', file: 'AGENTS.md', dest: path.join(target, 'AGENTS.md') },
   ];
   for (const { category, file, dest } of identityFiles) {
-    const src = path.join(home, file);
-    if (fs.existsSync(src)) {
+    const src = findIdentityFile(identityBases, file);
+    if (src) {
+      const fromWorkspace = path.dirname(src) !== home;
       entries.push({
         category,
         label: file,
         action: importOrPresetArchive(category, ctx),
         source: src,
         destination: dest,
-        detail: `OpenClaw ${file} -> workspace ${file} (loaded as identity/bootstrap context).`,
+        detail: `OpenClaw ${file}${fromWorkspace ? ' (workspace)' : ''} -> workspace ${file} (loaded as identity/bootstrap context).`,
       });
     } else {
       entries.push({ category, label: file, action: 'skip', source: null, destination: null, detail: `No ${file} in source.` });
@@ -422,9 +664,9 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
 
   // --- MEMORY.md -> project memory file ---
   {
-    const src = path.join(home, 'MEMORY.md');
+    const src = findIdentityFile(identityBases, 'MEMORY.md');
     const dest = path.join(codebuddyDir, 'CODEBUDDY_MEMORY.md');
-    if (fs.existsSync(src)) {
+    if (src) {
       entries.push({
         category: 'memory',
         label: 'MEMORY.md',
@@ -539,6 +781,99 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
     }
   }
 
+  // --- Promoted categories: cron, command_allowlist, memory_backend, exec_timeout, vision ---
+  // These were previously archived-for-review but now have confirmed Code Buddy
+  // consumers. Each gets a dedicated mapper that conservatively translates
+  // well-understood fields; unmapped / complex fields stay in the archive.
+
+  // cron -> CronScheduler jobs written to settings.json:cronJobs
+  {
+    const jobs = mapClawCronJobs(cfg);
+    if (jobs.length > 0) {
+      entries.push({
+        category: 'cron',
+        label: `cron jobs (${jobs.length})`,
+        action: importOrPresetArchive('cron', ctx),
+        source: 'config:cronJobs',
+        destination: settingsKeyDest(ctx, 'cronJobs'),
+        detail: `Mapped ${jobs.length} cron job(s): ${jobs.map((j) => j.name).join(', ')}.`,
+      });
+    } else {
+      entries.push({ category: 'cron', label: 'cron jobs', action: 'skip', source: null, destination: null, detail: 'No mappable cron jobs in config.' });
+    }
+  }
+
+  // command_allowlist -> settings.json:commandAllowlist
+  {
+    const allowlist = mapClawCommandAllowlist(cfg);
+    if (allowlist.length > 0) {
+      entries.push({
+        category: 'command_allowlist',
+        label: `command allowlist (${allowlist.length})`,
+        action: importOrPresetArchive('command_allowlist', ctx),
+        source: 'config:commandAllowlist',
+        destination: settingsKeyDest(ctx, 'commandAllowlist'),
+        detail: `Imported: ${allowlist.join(', ')}.`,
+      });
+    } else {
+      entries.push({ category: 'command_allowlist', label: 'command allowlist', action: 'skip', source: null, destination: null, detail: 'No mappable command allowlist in config.' });
+    }
+  }
+
+  // memory_backend -> settings.json:memoryProvider
+  {
+    const provider = mapClawMemoryBackend(cfg);
+    if (provider) {
+      entries.push({
+        category: 'memory_backend',
+        label: `memory backend (${provider})`,
+        action: importOrPresetArchive('memory_backend', ctx),
+        source: 'config:memoryBackend',
+        destination: settingsKeyDest(ctx, 'memoryProvider'),
+        detail: `Mapped memory provider: "${provider}".`,
+      });
+    } else {
+      entries.push({ category: 'memory_backend', label: 'memory backend', action: 'skip', source: null, destination: null, detail: 'No mappable memory backend in config.' });
+    }
+  }
+
+  // exec_timeout -> settings.json:execTimeout
+  {
+    const timeout = mapClawExecTimeout(cfg);
+    if (timeout !== undefined) {
+      entries.push({
+        category: 'exec_timeout',
+        label: `exec timeout (${timeout}ms)`,
+        action: importOrPresetArchive('exec_timeout', ctx),
+        source: 'config:execTimeout',
+        destination: settingsKeyDest(ctx, 'execTimeout'),
+        detail: `Exec timeout: ${timeout}ms.`,
+      });
+    } else {
+      entries.push({ category: 'exec_timeout', label: 'exec timeout', action: 'skip', source: null, destination: null, detail: 'No mappable exec timeout in config.' });
+    }
+  }
+
+  // vision -> settings.json:visionEnabled + visionModel
+  {
+    const vision = mapClawVisionSettings(cfg);
+    const mappedKeys = Object.keys(vision);
+    if (mappedKeys.length > 0) {
+      entries.push({
+        category: 'vision',
+        label: `vision config (${mappedKeys.join(', ')})`,
+        action: importOrPresetArchive('vision', ctx),
+        source: 'config:vision',
+        destination: settingsKeyDest(ctx, mappedKeys.join('+')),
+        detail: `Imported: ${mappedKeys
+          .map((k) => `${k}=${JSON.stringify((vision as Record<string, unknown>)[k])}`)
+          .join(', ')}.`,
+      });
+    } else {
+      entries.push({ category: 'vision', label: 'vision config', action: 'skip', source: null, destination: null, detail: 'No mappable vision settings in config.' });
+    }
+  }
+
   // --- Archived-for-review categories (no confirmed live consumer / safety) ---
   //
   // Each category is archived (never imported) because Code Buddy has no
@@ -558,25 +893,20 @@ export function buildClawMigrationPlan(opts: ClawMigrationOptions = {}): ClawMig
     { category: 'tts', keys: ['tts', 'textToSpeech', 'voice'], label: 'TTS / voice config' },
     { category: 'browser', keys: ['browser', 'browserSettings', 'browserBackend'], label: 'browser automation settings' },
     { category: 'tool_settings', keys: ['tools', 'toolSettings', 'tool_settings'], label: 'tool settings' },
-    { category: 'command_allowlist', keys: ['commandAllowlist', 'allowlist', 'allowedCommands'], label: 'command allowlist' },
     { category: 'gateway', keys: ['gateway', 'gatewayConfig'], label: 'gateway config' },
-    { category: 'cron', keys: ['cron', 'cronJobs', 'cronjobs'], label: 'cron jobs' },
     { category: 'plugins', keys: ['plugins'], label: 'plugins' },
     // `hooks` and `webhooks` are split so each lands in its own archive slice;
     // both can carry shell commands / credentials, so both archive (never run).
     { category: 'hooks', keys: ['hooks', 'lifecycleHooks'], label: 'lifecycle hooks', sensitive: true },
     { category: 'webhooks', keys: ['webhooks', 'webhookEndpoints'], label: 'webhook endpoints', sensitive: true },
-    { category: 'memory_backend', keys: ['memoryBackend', 'memory_backend'], label: 'memory backend' },
     { category: 'agent_defaults', keys: ['agent', 'agentDefaults', 'multiAgent'], label: 'agent defaults / multi-agent' },
     { category: 'session_policies', keys: ['session', 'sessionReset', 'sessionPolicies'], label: 'session reset policies' },
     { category: 'approval_rules', keys: ['approval', 'approvalRules'], label: 'approval rules' },
-    { category: 'exec_timeout', keys: ['execTimeout', 'exec_timeout', 'timeout'], label: 'exec timeout' },
     // --- Expanded category set (toward upstream `hermes claw migrate` parity) ---
     { category: 'toolsets', keys: ['toolsets', 'toolSets', 'toolset'], label: 'toolsets' },
     { category: 'profiles', keys: ['profiles', 'agentProfiles'], label: 'agent profiles' },
     { category: 'bundles', keys: ['bundles', 'skillBundles'], label: 'bundles' },
     { category: 'pairing', keys: ['pairing', 'pairedDevices', 'devices'], label: 'device pairing / allowlist' },
-    { category: 'vision', keys: ['vision', 'visionSettings'], label: 'vision config' },
     { category: 'image_video', keys: ['image', 'video', 'media'], label: 'image / video generation config' },
     { category: 'runtimes', keys: ['runtimes', 'backends', 'runtime'], label: 'runtime backends (Docker/SSH/Modal/Daytona)' },
     { category: 'portal', keys: ['portal', 'nousPortal', 'toolGateway'], label: 'Nous Portal Tool Gateway config', sensitive: true },
@@ -751,6 +1081,70 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
         set('autoCompact', behavior.autoCompact);
         set('permissions', behavior.permissions);
         set('theme', behavior.theme);
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'cron': {
+      const jobs = mapClawCronJobs(ctx.config?.raw ?? {});
+      if (jobs.length === 0) return;
+      mergeSettings(ctx, (settings) => {
+        const existing = (settings.cronJobs as Array<Record<string, unknown>> | undefined) ?? [];
+        const mapped = jobs.map((j) => ({
+          name: j.name,
+          type: 'cron' as const,
+          schedule: { cron: j.schedule },
+          task: { type: 'message' as const, message: j.task },
+          enabled: true,
+        }));
+        settings.cronJobs = overwrite ? mapped : [...existing, ...mapped];
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'command_allowlist': {
+      const allowlist = mapClawCommandAllowlist(ctx.config?.raw ?? {});
+      if (allowlist.length === 0) return;
+      mergeSettings(ctx, (settings) => {
+        const existing = (settings.commandAllowlist as string[] | undefined) ?? [];
+        settings.commandAllowlist = overwrite
+          ? allowlist
+          : Array.from(new Set([...existing, ...allowlist]));
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'memory_backend': {
+      const provider = mapClawMemoryBackend(ctx.config?.raw ?? {});
+      if (!provider) return;
+      mergeSettings(ctx, (settings) => {
+        if (overwrite || settings.memoryProvider === undefined) {
+          settings.memoryProvider = provider;
+        }
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'exec_timeout': {
+      const timeout = mapClawExecTimeout(ctx.config?.raw ?? {});
+      if (timeout === undefined) return;
+      mergeSettings(ctx, (settings) => {
+        if (overwrite || settings.execTimeout === undefined) {
+          settings.execTimeout = timeout;
+        }
+      });
+      entry.applied = true;
+      return;
+    }
+    case 'vision': {
+      const vision = mapClawVisionSettings(ctx.config?.raw ?? {});
+      if (Object.keys(vision).length === 0) return;
+      mergeSettings(ctx, (settings) => {
+        const set = (key: string, value: unknown) => {
+          if (value !== undefined && (overwrite || settings[key] === undefined)) settings[key] = value;
+        };
+        set('visionEnabled', vision.visionEnabled);
+        set('visionModel', vision.visionModel);
       });
       entry.applied = true;
       return;

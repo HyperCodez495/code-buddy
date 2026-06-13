@@ -160,6 +160,10 @@ export interface JobRun {
   result?: unknown;
   error?: string;
   duration?: number;
+  /** Structured output from this job run, passed as inputData to chained jobs. */
+  outputData?: string;
+  /** Input data received from a parent job in a chain. */
+  inputData?: string;
 }
 
 export interface CronSchedulerConfig {
@@ -304,7 +308,7 @@ export class CronScheduler extends EventEmitter {
   private timers: Map<string, NodeJS.Timeout> = new Map();
   private tickTimer: NodeJS.Timeout | null = null;
   private running: boolean = false;
-  private taskExecutor?: (job: CronJob) => Promise<unknown>;
+  private taskExecutor?: (job: CronJob, inputData?: string) => Promise<unknown>;
 
   constructor(config: Partial<CronSchedulerConfig> = {}) {
     super();
@@ -318,7 +322,7 @@ export class CronScheduler extends EventEmitter {
   /**
    * Set the task executor (for CronAgentBridge integration)
    */
-  setTaskExecutor(executor: (job: CronJob) => Promise<unknown>): void {
+  setTaskExecutor(executor: (job: CronJob, inputData?: string) => Promise<unknown>): void {
     this.taskExecutor = executor;
   }
 
@@ -334,7 +338,7 @@ export class CronScheduler extends EventEmitter {
     await this.loadJobs();
   }
 
-  async start(taskExecutor?: (job: CronJob) => Promise<unknown>): Promise<void> {
+  async start(taskExecutor?: (job: CronJob, inputData?: string) => Promise<unknown>): Promise<void> {
     if (this.running) return;
 
     if (taskExecutor) this.taskExecutor = taskExecutor;
@@ -554,11 +558,11 @@ export class CronScheduler extends EventEmitter {
   /**
    * Run a job immediately
    */
-  async runJobNow(jobId: string): Promise<JobRun | null> {
+  async runJobNow(jobId: string, inputData?: string): Promise<JobRun | null> {
     const job = this.jobs.get(jobId);
     if (!job) return null;
 
-    return await this.executeJob(job);
+    return await this.executeJob(job, 0, inputData);
   }
 
   // ==========================================================================
@@ -640,12 +644,13 @@ export class CronScheduler extends EventEmitter {
   // Execution
   // ==========================================================================
 
-  private async executeJob(job: CronJob, chainDepth = 0): Promise<JobRun> {
+  private async executeJob(job: CronJob, chainDepth = 0, inputData?: string): Promise<JobRun> {
     const run: JobRun = {
       id: crypto.randomUUID(),
       jobId: job.id,
       startedAt: new Date(),
       status: 'running',
+      ...(inputData !== undefined ? { inputData } : {}),
     };
 
     this.emit('job:run:start', run);
@@ -655,7 +660,7 @@ export class CronScheduler extends EventEmitter {
       let result: unknown;
 
       if (this.taskExecutor) {
-        result = await this.taskExecutor(job);
+        result = await this.taskExecutor(job, inputData);
       } else {
         // Default execution (just log)
         result = { executed: true, task: job.task };
@@ -665,6 +670,11 @@ export class CronScheduler extends EventEmitter {
       run.status = 'success';
       run.result = result;
       run.duration = run.completedAt.getTime() - run.startedAt.getTime();
+
+      // Extract outputData from the executor result for cross-job data passing.
+      // The executor may return an object with an `output` or `outputData`
+      // field; we cap at 64KB to keep run history manageable.
+      run.outputData = CronScheduler.extractOutputData(result);
 
       job.lastRunAt = run.startedAt;
       job.runCount++;
@@ -716,10 +726,48 @@ export class CronScheduler extends EventEmitter {
     // successful run, so the chain runs inside a guarded helper that swallows
     // (and logs) any error from the chained job.
     if (run.status === 'success' && job.then) {
-      await this.runChainedJob(job, chainDepth);
+      await this.runChainedJob(job, chainDepth, run.outputData);
     }
 
     return run;
+  }
+
+  /** Max bytes for outputData passed between chained jobs. */
+  private static readonly MAX_OUTPUT_DATA_BYTES = 65_536; // 64 KiB
+
+  /**
+   * Extract a string `outputData` from the executor result. Looks for an
+   * explicit `outputData` field first, then falls back to `output`, then
+   * stringifies the whole result. Always capped at 64KB.
+   */
+  static extractOutputData(result: unknown): string | undefined {
+    if (result == null) return undefined;
+
+    let raw: string | undefined;
+
+    if (typeof result === 'string') {
+      raw = result;
+    } else if (typeof result === 'object') {
+      const obj = result as Record<string, unknown>;
+      if (typeof obj.outputData === 'string') {
+        raw = obj.outputData;
+      } else if (typeof obj.output === 'string') {
+        raw = obj.output;
+      } else {
+        try {
+          raw = JSON.stringify(result);
+        } catch {
+          return undefined;
+        }
+      }
+    } else {
+      raw = String(result);
+    }
+
+    if (!raw || raw.length === 0) return undefined;
+    return raw.length > CronScheduler.MAX_OUTPUT_DATA_BYTES
+      ? raw.slice(0, CronScheduler.MAX_OUTPUT_DATA_BYTES)
+      : raw;
   }
 
   /**
@@ -729,7 +777,7 @@ export class CronScheduler extends EventEmitter {
    * authored out of order. A missing/disabled target, a self-reference, or a
    * depth-cap breach is logged and stops the chain — it never throws.
    */
-  private async runChainedJob(parent: CronJob, chainDepth: number): Promise<void> {
+  private async runChainedJob(parent: CronJob, chainDepth: number, outputData?: string): Promise<void> {
     const target = parent.then;
     if (!target) return;
 
@@ -769,7 +817,8 @@ export class CronScheduler extends EventEmitter {
     }
 
     try {
-      await this.executeJob(next, chainDepth + 1);
+      // Pass the parent job's outputData as the chained job's inputData.
+      await this.executeJob(next, chainDepth + 1, outputData);
     } catch (err) {
       // A chained failure is captured in the chained job's own run record; it
       // must not fail the parent's already-successful run.

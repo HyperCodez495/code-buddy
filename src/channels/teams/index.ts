@@ -253,6 +253,9 @@ export class TeamsChannel extends BaseChannel {
   /**
    * Connect to Teams by validating the app credentials.
    * The actual message receiving happens via webhooks.
+   *
+   * REST/webhook adapter — no persistent connection is held open here, so
+   * reconnection (ReconnectionManager) is N/A.
    */
   async connect(): Promise<void> {
     try {

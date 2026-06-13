@@ -17,9 +17,17 @@
  *      override via env `CODEBUDDY_EXECUTE_CODE_TOOL_RPC_ALLOWLIST` (csv).
  *   3. **fleetSafe** — the tool's registry metadata must declare
  *      `fleetSafe: true` (read-only by definition).
+ *   4. **Per-tool opt-in** — `CODEBUDDY_EXECUTE_CODE_RPC_TOOLS` (csv)
+ *      adds specific executor-backed tools to the allowlist. These tools
+ *      bypass the `fleetSafe` gate since they are explicitly opted in by the
+ *      operator. Each tool name is validated against both the registry and
+ *      this module's executor table; unknown or unsupported names are logged
+ *      and skipped.
  *
- * No write/exec tool is reachable; the executors below physically only
- * read. This mirrors the audited `peer-tool-bridge.ts` pattern.
+ * No write/exec tool is reachable by default; the default executors
+ * below physically only read. Tools added via RPC_TOOLS opt-in are the
+ * operator's responsibility. This mirrors the audited
+ * `peer-tool-bridge.ts` pattern.
  */
 
 import { spawn } from 'child_process';
@@ -30,6 +38,7 @@ import { logger } from '../utils/logger.js';
 import { getToolRegistry } from './registry.js';
 
 const DEFAULT_ALLOWLIST = ['view_file', 'list_directory', 'search'] as const;
+const EXECUTOR_TOOL_NAMES = new Set<string>(DEFAULT_ALLOWLIST);
 
 const READ_TRUNCATE_BYTES = 256 * 1024;
 const LIST_DIRECTORY_MAX_ENTRIES = 256;
@@ -69,11 +78,48 @@ export function getExecuteCodeToolRpcAllowlist(
   return items.length > 0 ? new Set(items) : new Set(DEFAULT_ALLOWLIST);
 }
 
+/**
+ * Parse `CODEBUDDY_EXECUTE_CODE_RPC_TOOLS` — a csv of additional tool names
+ * to add to the RPC allowlist. Each name is validated against the registry
+ * and this module's executor table; unknown or unsupported names are logged
+ * as warnings and silently skipped so a typo never opens an unintended tool.
+ *
+ * Tools listed here bypass the `fleetSafe` gate because the operator
+ * explicitly opted them in — requiring `fleetSafe: true` would defeat
+ * the purpose of this escape hatch.
+ */
+export function getExecuteCodeRpcExtraTools(
+  raw: string | undefined = process.env.CODEBUDDY_EXECUTE_CODE_RPC_TOOLS,
+  isRegistered: (name: string) => boolean = (name) => !!getToolRegistry().getTool(name),
+  hasExecutor: (name: string) => boolean = (name) => EXECUTOR_TOOL_NAMES.has(name),
+): Set<string> {
+  if (!raw) return new Set();
+  const items = raw.split(',').map((item) => item.trim()).filter(Boolean);
+  const validated = new Set<string>();
+  for (const name of items) {
+    if (!isRegistered(name)) {
+      logger.warn('[execute-code-rpc] CODEBUDDY_EXECUTE_CODE_RPC_TOOLS: unknown tool, skipping', { tool: name });
+      continue;
+    }
+    if (!hasExecutor(name)) {
+      logger.warn('[execute-code-rpc] CODEBUDDY_EXECUTE_CODE_RPC_TOOLS: tool has no execute_code RPC executor, skipping', { tool: name });
+      continue;
+    }
+    validated.add(name);
+  }
+  return validated;
+}
+
 interface InvokerOptions {
   /** Root the read-only executors are confined to. Defaults to cwd. */
   workspaceRoot: string;
   allowlist?: Set<string>;
   isFleetSafe?: (name: string) => boolean;
+  /**
+   * Additional tools to allow through RPC, bypassing the fleetSafe gate.
+   * Parsed from `CODEBUDDY_EXECUTE_CODE_RPC_TOOLS` by default.
+   */
+  extraTools?: Set<string>;
 }
 
 /**
@@ -82,20 +128,24 @@ interface InvokerOptions {
  * decided RPC is enabled, keeping the flag boundary in the parent.
  */
 export function createExecuteCodeRpcInvoker(options: InvokerOptions): ExecuteCodeRpcInvoker {
-  const allowlist = options.allowlist ?? getExecuteCodeToolRpcAllowlist();
+  const baseAllowlist = options.allowlist ?? getExecuteCodeToolRpcAllowlist();
+  const extraTools = options.extraTools ?? getExecuteCodeRpcExtraTools();
+  const combinedAllowlist = new Set([...baseAllowlist, ...extraTools]);
   const isFleetSafe = options.isFleetSafe ?? ((name: string) => getToolRegistry().isFleetSafe(name));
   const workspaceRoot = path.resolve(options.workspaceRoot);
 
   return async (request) => {
     const tool = request.tool;
     try {
-      if (!allowlist.has(tool)) {
+      if (!combinedAllowlist.has(tool)) {
         return {
           ok: false,
           error: `TOOL_NOT_ALLOWED_FOR_EXECUTE_CODE_RPC: tool "${tool}" is not in the execute_code RPC allowlist`,
         };
       }
-      if (!isFleetSafe(tool)) {
+      // Tools explicitly opted in via CODEBUDDY_EXECUTE_CODE_RPC_TOOLS
+      // bypass the fleetSafe gate — the operator accepted responsibility.
+      if (!extraTools.has(tool) && !isFleetSafe(tool)) {
         return {
           ok: false,
           error: `TOOL_NOT_FLEET_SAFE: tool "${tool}" lacks fleetSafe metadata`,

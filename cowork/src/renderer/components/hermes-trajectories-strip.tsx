@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { AlertTriangle, FlaskConical, Route, Terminal } from 'lucide-react';
+import { AlertTriangle, FlaskConical, Route, Terminal, Download } from 'lucide-react';
 
 export type HermesTrajectoryCapabilityStatus = 'available' | 'partial' | 'missing';
 
@@ -29,6 +29,7 @@ export interface HermesTrajectoriesReview {
 
 interface HermesTrajectoriesApi {
   get?: () => Promise<HermesTrajectoriesReview | null>;
+  export?: (options?: any) => Promise<{ success: boolean; path?: string; error?: string }>;
 }
 
 export const HermesTrajectoriesStrip: React.FC<{
@@ -38,8 +39,10 @@ export const HermesTrajectoriesStrip: React.FC<{
   const { t } = useTranslation();
   const [loadedReadiness, setLoadedReadiness] = useState<HermesTrajectoriesReview | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isExporting, setIsExporting] = useState(false);
+  const [exportError, setExportError] = useState<string | null>(null);
   const visibleReadiness = readiness ?? loadedReadiness;
-  const visibleError = error ?? loadError;
+  const visibleError = error ?? loadError ?? exportError;
   const command = visibleReadiness?.command ?? 'buddy hermes trajectories status --json';
   const statusClass = visibleReadiness?.ok
     ? 'border-success/40 bg-success/10 text-success'
@@ -137,9 +140,35 @@ export const HermesTrajectoriesStrip: React.FC<{
         </div>
       )}
 
-      <div className="mt-1.5 flex min-w-0 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-muted">
-        <Terminal size={10} className="shrink-0 text-text-muted" />
-        <code className="truncate">{command}</code>
+      <div className="mt-1.5 flex items-center justify-between">
+        <div className="flex min-w-0 flex-1 items-center gap-1.5 rounded bg-surface/80 px-2 py-1 text-[10px] text-text-muted">
+          <Terminal size={10} className="shrink-0 text-text-muted" />
+          <code className="truncate">{command}</code>
+        </div>
+        <button
+          onClick={async () => {
+            const api = getHermesTrajectoriesApi();
+            if (!api?.export) return;
+            setIsExporting(true);
+            setExportError(null);
+            try {
+              const res = await api.export();
+              if (!res.success) {
+                setExportError(res.error || 'Export failed');
+              }
+            } catch (err) {
+              setExportError(err instanceof Error ? err.message : String(err));
+            } finally {
+              setIsExporting(false);
+            }
+          }}
+          disabled={isExporting}
+          className="ml-2 flex shrink-0 items-center gap-1 rounded bg-accent/10 px-2 py-1 text-[10px] font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+          title={t('fleet.hermesTrajectories.exportTitle', 'Export trajectory batch')}
+        >
+          <Download size={10} />
+          <span>{isExporting ? t('common.exporting', 'Exporting...') : t('common.export', 'Export')}</span>
+        </button>
       </div>
     </section>
   );

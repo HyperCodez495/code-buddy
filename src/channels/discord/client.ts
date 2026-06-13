@@ -888,6 +888,19 @@ export class DiscordChannel extends BaseChannel {
   }
 
   /**
+   * Return the slash command names registered with this adapter.
+   *
+   * Implements {@link SlashCommandProvider} so the slash-parity checker can
+   * report real parity instead of falling back to an empty list. Names come
+   * from the configured `commands` (the same set registered with Discord via
+   * {@link registerCommands}), normalized without a leading slash.
+   */
+  getRegisteredCommands(): string[] {
+    const commands = this.discordConfig.commands ?? [];
+    return commands.map((cmd) => cmd.name.replace(/^\//, ''));
+  }
+
+  /**
    * Send typing indicator
    */
   async sendTyping(channelId: string): Promise<void> {

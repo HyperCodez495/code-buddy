@@ -1969,6 +1969,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
     hermesTrajectories: {
       get: (): Promise<HermesTrajectoriesReviewPayload | null> =>
         ipcRenderer.invoke('tools.hermesTrajectories.get'),
+      export: (options?: {
+        includeArtifactContent?: boolean;
+        limit?: number;
+        maxArtifactBytes?: number;
+        maxCompressedBytes?: number;
+        maxEventValueBytes?: number;
+        query?: string;
+        runIds?: string[];
+        sources?: string[];
+      }): Promise<{ success: boolean; path?: string; error?: string }> =>
+        ipcRenderer.invoke('tools.hermesTrajectories.export', options),
     },
     hermesDoctor: {
       get: (): Promise<HermesDoctorReviewPayload | null> =>
@@ -5842,6 +5853,16 @@ declare global {
         };
         hermesTrajectories: {
           get: () => Promise<HermesTrajectoriesReviewPayload | null>;
+          export: (options?: {
+            includeArtifactContent?: boolean;
+            limit?: number;
+            maxArtifactBytes?: number;
+            maxCompressedBytes?: number;
+            maxEventValueBytes?: number;
+            query?: string;
+            runIds?: string[];
+            sources?: string[];
+          }) => Promise<{ success: boolean; path?: string; error?: string }>;
         };
         hermesDoctor: {
           get: () => Promise<HermesDoctorReviewPayload | null>;

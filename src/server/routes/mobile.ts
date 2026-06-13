@@ -1,5 +1,6 @@
 import { Router, Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import { EventEmitter } from 'events';
 import path from 'path';
 import fs from 'fs';
 import { logger } from '../../utils/logger.js';
@@ -42,6 +43,11 @@ function rotatePairingCode(): string {
   }
   activePairingCode = nextCode;
   activePairingCodeExpiresAt = Date.now() + getPairingCodeTtlMs();
+  mobileEventBus.emit('event', {
+    type: 'pairing_rotated',
+    pairingCodeExpiresAt: activePairingCodeExpiresAt,
+    timestamp: Date.now(),
+  });
   return activePairingCode;
 }
 
@@ -55,11 +61,17 @@ function ensureActivePairingCodeFresh(): void {
  * A follow-up prompt review draft. The mobile device (or a draft-only call) can
  * *propose* a prompt, but it never executes: it lands here as
  * `needs_local_operator` and only a local operator (loopback) can `approve` or
- * `cancel` it. Approval is a review-gate marker — it records who/when but never
- * dispatches work, matching the gateway contract's `autoDispatch:false` /
- * `remoteExecutionDisabled:true` invariants.
+ * `cancel` it. When `CODEBUDDY_MOBILE_ALLOW_DISPATCH=true`, an approved draft
+ * can optionally be dispatched to the agent for execution. When the env var is
+ * OFF (default), approval remains a review-gate marker only.
  */
-export type FollowupDraftStatus = 'needs_local_operator' | 'approved' | 'cancelled';
+export type FollowupDraftStatus =
+  | 'needs_local_operator'
+  | 'approved'
+  | 'cancelled'
+  | 'dispatched'
+  | 'completed'
+  | 'failed';
 
 export interface FollowupDraft {
   id: string;
@@ -70,10 +82,25 @@ export interface FollowupDraft {
   approvedBy?: string;
   approvedAt?: number;
   cancelledAt?: number;
+  dispatchedAt?: number;
+  completedAt?: number;
+  failedAt?: number;
+  failureReason?: string;
   [key: string]: unknown;
 }
 
 export const followupDrafts: FollowupDraft[] = [];
+
+// ──────────────────────────────────────────────────────────────────────────
+// Mobile event bus — emits SSE-pushed events for mobile clients.
+// ──────────────────────────────────────────────────────────────────────────
+export const mobileEventBus = new EventEmitter();
+mobileEventBus.setMaxListeners(50);
+
+/** Check whether dispatch is enabled via environment variable. */
+export function isDispatchEnabled(): boolean {
+  return process.env.CODEBUDDY_MOBILE_ALLOW_DISPATCH === 'true';
+}
 
 function pruneExpiredTokens(now = Date.now()): void {
   for (const [token, tokenData] of activeTokens) {
@@ -204,7 +231,8 @@ mobileRouter.get('/followup-drafts', loopbackOnlyMiddleware, (req: Request, res:
 });
 
 // POST /api/mobile/followup-draft/:id/approve: local operator approves a draft.
-// Approval is a review-gate marker only — it NEVER dispatches or executes work.
+// When CODEBUDDY_MOBILE_ALLOW_DISPATCH is OFF (default), approval is a
+// review-gate marker only — it never dispatches or executes work.
 mobileRouter.post('/followup-draft/:id/approve', loopbackOnlyMiddleware, (req: Request, res: Response) => {
   const draft = followupDrafts.find((d) => d.id === req.params.id);
   if (!draft) {
@@ -221,6 +249,12 @@ mobileRouter.post('/followup-draft/:id/approve', loopbackOnlyMiddleware, (req: R
   draft.status = 'approved';
   draft.approvedBy = reviewer;
   draft.approvedAt = Date.now();
+  mobileEventBus.emit('event', {
+    type: 'draft_status_changed',
+    draftId: draft.id,
+    status: draft.status,
+    timestamp: Date.now(),
+  });
   res.json({
     ok: true,
     message: 'Draft approved by local operator. No work is dispatched automatically — execution stays local and explicit.',
@@ -241,7 +275,52 @@ mobileRouter.post('/followup-draft/:id/cancel', loopbackOnlyMiddleware, (req: Re
   }
   draft.status = 'cancelled';
   draft.cancelledAt = Date.now();
+  mobileEventBus.emit('event', {
+    type: 'draft_status_changed',
+    draftId: draft.id,
+    status: draft.status,
+    timestamp: Date.now(),
+  });
   res.json({ ok: true, message: 'Draft cancelled by local operator.', draft });
+});
+
+// POST /api/mobile/followup-draft/:id/dispatch: local operator dispatches an
+// approved draft to the agent. Gated behind CODEBUDDY_MOBILE_ALLOW_DISPATCH.
+mobileRouter.post('/followup-draft/:id/dispatch', loopbackOnlyMiddleware, (req: Request, res: Response) => {
+  if (!isDispatchEnabled()) {
+    res.status(403).json({
+      ok: false,
+      error: 'Dispatch is disabled. Set CODEBUDDY_MOBILE_ALLOW_DISPATCH=true to enable.',
+    });
+    return;
+  }
+  const draft = followupDrafts.find((d) => d.id === req.params.id);
+  if (!draft) {
+    res.status(404).json({ ok: false, error: 'Draft not found' });
+    return;
+  }
+  if (draft.status !== 'approved') {
+    res.status(409).json({
+      ok: false,
+      error: `Draft must be approved before dispatch (status: ${draft.status})`,
+    });
+    return;
+  }
+  draft.status = 'dispatched';
+  draft.dispatchedAt = Date.now();
+  mobileEventBus.emit('event', {
+    type: 'draft_status_changed',
+    draftId: draft.id,
+    status: draft.status,
+    timestamp: Date.now(),
+  });
+  // Emit a dispatch queue entry for the agent to pick up.
+  mobileEventBus.emit('dispatch', { draftId: draft.id, prompt: draft.prompt });
+  res.json({
+    ok: true,
+    message: 'Draft dispatched to agent for execution.',
+    draft,
+  });
 });
 
 // 1. POST /api/mobile/pair: Validate pairing request and issue short-lived token
@@ -269,6 +348,55 @@ mobileRouter.post('/pair', (req: Request, res: Response) => {
     token,
     scopes: ['mobile:read', 'mobile:draft'],
     expiresAt,
+  });
+});
+
+// ──────────────────────────────────────────────────────────────────────────
+// SSE push endpoint — authenticated via mobile bearer token (query param
+// fallback for EventSource API which doesn't support Authorization header).
+// Pushes: draft_status_changed, snapshot_available, pairing_rotated.
+// ──────────────────────────────────────────────────────────────────────────
+const HEARTBEAT_INTERVAL_MS = 30_000;
+
+mobileRouter.get('/events', (req: Request, res: Response) => {
+  // Auth: prefer Authorization header, fall back to ?token= query param.
+  const authHeader = req.headers.authorization;
+  let token: string | undefined;
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    token = authHeader.substring(7).trim();
+  } else if (typeof req.query.token === 'string') {
+    token = req.query.token.trim();
+  }
+  if (!token || !isValidToken(token)) {
+    res.status(401).json({ ok: false, error: 'Unauthorized: Invalid or expired pairing token' });
+    return;
+  }
+
+  // SSE headers.
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.flushHeaders();
+
+  const sendSSE = (payload: Record<string, unknown>) => {
+    res.write(`data: ${JSON.stringify(payload)}\n\n`);
+  };
+
+  // Heartbeat to keep the connection alive.
+  const heartbeat = setInterval(() => {
+    sendSSE({ type: 'heartbeat', timestamp: Date.now() });
+  }, HEARTBEAT_INTERVAL_MS);
+
+  // Forward bus events to this SSE client.
+  const onEvent = (payload: Record<string, unknown>) => {
+    sendSSE(payload);
+  };
+  mobileEventBus.on('event', onEvent);
+
+  // Cleanup on disconnect.
+  req.on('close', () => {
+    clearInterval(heartbeat);
+    mobileEventBus.off('event', onEvent);
   });
 });
 
@@ -394,6 +522,12 @@ async function enqueuePendingFollowupDraft(
     createdAt: Date.now(),
   };
   followupDrafts.push(savedDraft);
+  mobileEventBus.emit('event', {
+    type: 'draft_status_changed',
+    draftId: savedDraft.id,
+    status: savedDraft.status,
+    timestamp: Date.now(),
+  });
   return savedDraft;
 }
 

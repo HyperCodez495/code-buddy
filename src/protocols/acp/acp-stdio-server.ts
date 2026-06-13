@@ -32,6 +32,7 @@
 
 import { randomUUID } from 'crypto';
 import type { Readable, Writable } from 'node:stream';
+import { AcpSessionStore } from './acp-session-store.js';
 
 export const ACP_PROTOCOL_VERSION = 1;
 
@@ -66,6 +67,7 @@ export interface AcpPromptContext {
   sessionId: string;
   cwd: string;
   clientCapabilities: AcpClientCapabilities;
+  mcpServers?: unknown;
   canRequestClient: (method: string) => boolean;
   prompt: AcpContentBlock[];
   signal: AbortSignal;
@@ -82,6 +84,7 @@ export interface AcpAgentInfo {
 }
 
 export interface AcpStdioServerOptions {
+  store?: AcpSessionStore;
   promptRunner: AcpPromptRunner;
   /** Defaults to process.stdin. */
   input?: Readable;
@@ -108,6 +111,7 @@ interface AcpSession {
   history: AcpSessionUpdate[];
   title?: string;
   updatedAt: string;
+  mcpServers?: unknown;
 }
 
 interface PendingClientRequest {
@@ -144,6 +148,8 @@ export class AcpStdioServer {
   private readonly clientRequestTimeoutMs: number;
   private readonly sessions = new Map<string, AcpSession>();
   private readonly pendingClientRequests = new Map<string, PendingClientRequest>();
+  private readonly store: AcpSessionStore;
+  private storeLoaded = false;
   private clientCapabilities: AcpClientCapabilities = {};
   private nextClientRequestId = 0;
   private buffer = '';
@@ -157,6 +163,7 @@ export class AcpStdioServer {
     this.agentInfo = options.agentInfo ?? { name: 'Code Buddy', title: 'Code Buddy', version: '1.0.0' };
     this.protocolVersion = options.protocolVersion ?? ACP_PROTOCOL_VERSION;
     this.clientRequestTimeoutMs = options.clientRequestTimeoutMs ?? 120_000;
+    this.store = options.store ?? new AcpSessionStore();
   }
 
   start(): void {
@@ -191,8 +198,44 @@ export class AcpStdioServer {
   private sendUpdate(sessionId: string, update: AcpSessionUpdate, options: { record?: boolean } = {}): void {
     if (options.record !== false) {
       this.sessions.get(sessionId)?.history.push(update);
+      void this.persistSession(sessionId);
     }
     this.write({ jsonrpc: '2.0', method: 'session/update', params: { sessionId, update } });
+  }
+
+  private ensureStoreLoaded(): void | Promise<void> {
+    if (this.storeLoaded) return;
+    this.storeLoaded = true;
+    return this.store.listAll().then((loaded) => {
+      for (const s of loaded) {
+        if (!this.sessions.has(s.sessionId)) {
+          this.sessions.set(s.sessionId, {
+            cwd: s.cwd,
+            active: null,
+            history: s.history as AcpSessionUpdate[],
+            mcpServers: s.mcpServers,
+            title: s.title,
+            updatedAt: s.updatedAt,
+          });
+        }
+      }
+    }).catch((err) => {
+      this.storeLoaded = false;
+      throw err;
+    });
+  }
+
+  private async persistSession(sessionId: string): Promise<void> {
+    const s = this.sessions.get(sessionId);
+    if (!s) return;
+    await this.store.save({
+      sessionId,
+      cwd: s.cwd,
+      history: s.history,
+      mcpServers: s.mcpServers,
+      title: s.title,
+      updatedAt: s.updatedAt,
+    });
   }
 
   private requestClient(
@@ -344,24 +387,32 @@ export class AcpStdioServer {
     }
   }
 
-  private async dispatch(method: string, params: Record<string, unknown>): Promise<unknown> {
-    switch (method) {
-      case 'initialize':
-        return this.handleInitialize(params);
-      case 'session/new':
-        return this.handleNewSession(params);
-      case 'session/list':
-        return this.handleListSessions(params);
-      case 'session/load':
-        return this.handleLoadSession(params);
-      case 'session/prompt':
-        return this.handlePrompt(params);
-      default: {
-        const error = new Error(`Method not found: ${method}`) as Error & { code?: number };
-        error.code = -32601;
-        throw error;
+  private dispatch(method: string, params: Record<string, unknown>): unknown {
+    const run = () => {
+      switch (method) {
+        case 'initialize':
+          return this.handleInitialize(params);
+        case 'session/new':
+          return this.handleNewSession(params);
+        case 'session/list':
+          return this.handleListSessions(params);
+        case 'session/load':
+          return this.handleLoadSession(params);
+        case 'session/prompt':
+          return this.handlePrompt(params);
+        default: {
+          const error = new Error(`Method not found: ${method}`) as Error & { code?: number };
+          error.code = -32601;
+          throw error;
+        }
       }
+    };
+
+    if (method.startsWith('session/') && !this.storeLoaded) {
+      const p = this.ensureStoreLoaded();
+      if (p) return p.then(run);
     }
+    return run();
   }
 
   private handleInitialize(params: Record<string, unknown>): unknown {
@@ -394,8 +445,10 @@ export class AcpStdioServer {
       cwd,
       active: null,
       history: [],
+      mcpServers: params.mcpServers,
       updatedAt: new Date().toISOString(),
     });
+    void this.persistSession(sessionId);
     return { sessionId };
   }
 
@@ -440,7 +493,9 @@ export class AcpStdioServer {
 
     const cwd = optionalStringParam(params, 'cwd', 'Invalid session/load cwd');
     if (cwd) session.cwd = cwd;
+    if ('mcpServers' in params) session.mcpServers = params.mcpServers;
     session.updatedAt = new Date().toISOString();
+    void this.persistSession(sessionId);
 
     for (const update of session.history) {
       this.sendUpdate(sessionId, update, { record: false });
@@ -476,6 +531,7 @@ export class AcpStdioServer {
         sessionId,
         cwd: session.cwd,
         clientCapabilities,
+        mcpServers: session.mcpServers,
         canRequestClient: (method) => canRequestClientWithCapabilities(method, clientCapabilities),
         prompt,
         signal: controller.signal,
@@ -486,6 +542,7 @@ export class AcpStdioServer {
         sendUpdate: (update) => this.sendUpdate(sessionId, update),
       });
       session.updatedAt = new Date().toISOString();
+      void this.persistSession(sessionId);
       return { stopReason: controller.signal.aborted ? 'cancelled' : stopReason };
     } catch (err) {
       if (controller.signal.aborted) return { stopReason: 'cancelled' };

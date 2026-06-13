@@ -114,6 +114,9 @@ export class LINEChannel extends BaseChannel {
     });
   }
 
+  // REST/webhook adapter — outbound via the LINE Messaging API, inbound via
+  // webhook callbacks; no persistent connection is held open, so reconnection
+  // (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

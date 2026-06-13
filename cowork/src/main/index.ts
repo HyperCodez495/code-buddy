@@ -4395,6 +4395,30 @@ ipcMain.handle('tools.hermesTrajectories.get', async () => {
   }
 });
 
+import { exportHermesTrajectoriesBatch } from './tools/hermes-trajectories-bridge';
+
+ipcMain.handle('tools.hermesTrajectories.export', async (_, options) => {
+  try {
+    const dialogResult = await dialog.showSaveDialog(mainWindow!, {
+      title: 'Export Trajectories Batch',
+      defaultPath: `hermes-trajectories-batch-${new Date().toISOString().split('T')[0]}.json`,
+      filters: [{ name: 'JSON', extensions: ['json'] }],
+    });
+    if (dialogResult.canceled || !dialogResult.filePath) {
+      return { success: false, error: 'Cancelled' };
+    }
+    const result = await exportHermesTrajectoriesBatch(options);
+    if (!result.success || !result.data) {
+      return { success: false, error: result.error || 'Unknown error' };
+    }
+    fs.writeFileSync(dialogResult.filePath, result.data);
+    return { success: true, path: dialogResult.filePath };
+  } catch (err) {
+    logWarn('[tools.hermesTrajectories.export] failed:', err);
+    return { success: false, error: String(err) };
+  }
+});
+
 ipcMain.handle('tools.hermesDoctor.get', async () => {
   try {
     return await getHermesDoctorForReview();

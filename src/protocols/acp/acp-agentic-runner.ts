@@ -5,7 +5,7 @@
  * (https://agentclientprotocol.com). Unlike the original text-only runner,
  * this drives a real agentic loop:
  *
- *   1. Ask the LLM (with a small read-only toolset) for the next step.
+ *   1. Ask the LLM (with a small toolset) for the next step.
  *   2. If it emits tool calls, EXECUTE each one and feed the result back.
  *   3. Repeat until the model stops calling tools (`end_turn`) or we hit
  *      the round cap (`max_turn_requests`).
@@ -26,10 +26,11 @@
  *     `session/request_permission` when that round-trip is available; a
  *     rejection fails the tool call instead of leaking content.
  *
- * Only read-only tools are exposed (`view_file`, `list_directory`,
- * `search`) — this runner never writes. Cancellation is honoured by
- * checking `signal.aborted` on every loop iteration and after every client
- * round-trip.
+ * Read-only tools are always exposed (`view_file`, `list_directory`,
+ * `search`). `write_file` is exposed only when the editor advertises
+ * `fs.writeTextFile`, and the write is routed through the editor permission
+ * flow. Cancellation is honoured by checking `signal.aborted` on every loop
+ * iteration and after every client round-trip.
  */
 
 import { spawn } from 'child_process';
@@ -72,9 +73,9 @@ const SEARCH_MAX_RESULTS = 200;
 
 const SYSTEM_PROMPT =
   'You are Code Buddy, a coding assistant operating over the Agent Client Protocol ' +
-  'inside a code editor. You have read-only tools (view_file, list_directory, search) ' +
-  'to inspect the workspace. Use them when you need to look at files, then answer ' +
-  'concisely in Markdown. Never claim to have modified files — you cannot write.';
+  'inside a code editor. Use the tools provided for this turn when you need workspace context. ' +
+  'If write_file is not available, never claim to have modified files. If write_file is available, ' +
+  'writes are routed through the editor and require client permission. Answer concisely in Markdown.';
 
 const READONLY_TOOLS: CodeBuddyTool[] = [
   {
@@ -122,11 +123,27 @@ const READONLY_TOOLS: CodeBuddyTool[] = [
   },
 ];
 
-/** Maps each read-only tool to its ACP tool-call `kind` (spec enum). */
-const TOOL_KIND: Record<string, 'read' | 'search'> = {
+const WRITE_FILE_TOOL: CodeBuddyTool = {
+  type: 'function',
+  function: {
+    name: 'write_file',
+    description: 'Write text content to a file through the editor client. Will overwrite existing files after permission.',
+    parameters: {
+      type: 'object',
+      properties: {
+        file_path: { type: 'string', description: 'Path to the file (absolute, or relative to the workspace).' },
+        content: { type: 'string', description: 'The exact string content to write into the file.' },
+      },
+      required: ['file_path', 'content'],
+    },
+  },
+};
+
+const TOOL_KIND: Record<string, 'read' | 'search' | 'edit'> = {
   view_file: 'read',
   list_directory: 'read',
   search: 'search',
+  write_file: 'edit',
 };
 
 interface ToolExecResult {
@@ -144,16 +161,60 @@ export function createAcpAgenticRunner(
   const maxRounds = options.maxRounds ?? DEFAULT_MAX_ROUNDS;
   const maxToolOutputBytes = options.maxToolOutputBytes ?? DEFAULT_MAX_TOOL_OUTPUT_BYTES;
 
+  // Cache of MCPClientManager instances per session, so we don't reconnect on every prompt
+  const mcpManagers = new Map<string, any>();
+
   return async function run(ctx: AcpPromptContext): Promise<{ stopReason: AcpStopReason }> {
     const userText = extractPromptText(ctx.prompt);
     if (!userText) {
       return { stopReason: 'end_turn' };
     }
 
+    let mcpManager = mcpManagers.get(ctx.sessionId);
+    if (!mcpManager && ctx.mcpServers) {
+      try {
+        const { MCPManager } = await import('../../mcp/client.js');
+        mcpManager = new MCPManager();
+        mcpManagers.set(ctx.sessionId, mcpManager);
+
+        const servers = Array.isArray(ctx.mcpServers)
+          ? ctx.mcpServers
+          : typeof ctx.mcpServers === 'object' && ctx.mcpServers !== null
+            ? Object.entries(ctx.mcpServers).map(([name, conf]) => ({ name, ...(conf as object) }))
+            : [];
+
+        for (const server of servers) {
+          try {
+            await mcpManager.addServer(server);
+          } catch (e) {
+            logger.warn(`Failed to add MCP server ${server.name}`, { error: String(e) });
+          }
+        }
+      } catch (e) {
+        logger.warn('Failed to initialize MCPManager for passthrough', { error: String(e) });
+      }
+    }
+
     const messages: CodeBuddyMessage[] = [
       { role: 'system', content: SYSTEM_PROMPT },
       { role: 'user', content: userText },
     ];
+
+    const allTools: CodeBuddyTool[] = [...READONLY_TOOLS];
+    if (ctx.canRequestClient('fs/write_text_file')) {
+      allTools.push(WRITE_FILE_TOOL);
+    }
+    if (mcpManager) {
+      const mcpTools = mcpManager.getTools().map((tool: any) => ({
+        type: 'function',
+        function: {
+          name: tool.name,
+          description: tool.description,
+          parameters: tool.inputSchema,
+        }
+      } as CodeBuddyTool));
+      allTools.push(...mcpTools);
+    }
 
     let toolCallSeq = 0;
 
@@ -162,7 +223,7 @@ export function createAcpAgenticRunner(
 
       let response: CodeBuddyResponse;
       try {
-        response = await options.chat(messages, READONLY_TOOLS);
+        response = await options.chat(messages, allTools);
       } catch (err) {
         if (ctx.signal.aborted) return { stopReason: 'cancelled' };
         const message = err instanceof Error ? err.message : String(err);
@@ -211,13 +272,26 @@ export function createAcpAgenticRunner(
           rawInput: args,
         });
 
-        const result = await executeAcpTool({
-          name: call.function.name,
-          args,
-          ctx,
-          toolCallId,
-          maxToolOutputBytes,
-        });
+        let result: ToolExecResult;
+        if (call.function.name.startsWith('mcp__') && mcpManager) {
+          try {
+            const mcpRes = await mcpManager.callTool(call.function.name, args);
+            const outputText = Array.isArray(mcpRes.content)
+              ? mcpRes.content.map((c: any) => c.text).join('\n')
+              : String(mcpRes);
+            result = { output: outputText, isError: !!mcpRes.isError };
+          } catch (e) {
+            result = { output: String(e), isError: true };
+          }
+        } else {
+          result = await executeAcpTool({
+            name: call.function.name,
+            args,
+            ctx,
+            toolCallId,
+            maxToolOutputBytes,
+          });
+        }
         if (ctx.signal.aborted) return { stopReason: 'cancelled' };
 
         ctx.sendUpdate({
@@ -267,6 +341,8 @@ async function executeAcpTool(input: ExecuteAcpToolInput): Promise<ToolExecResul
         return { output: await listDirectory(args, ctx.cwd), isError: false };
       case 'search':
         return { output: await searchWorkspace(args, ctx.cwd, maxToolOutputBytes), isError: false };
+      case 'write_file':
+        return { output: await writeFileViaClientOrDisk(args, ctx, toolCallId), isError: false };
       default:
         return { output: `Unknown tool: ${name}`, isError: true };
     }
@@ -317,6 +393,35 @@ async function readFileViaClientOrDisk(
   const resolved = resolveInsideCwd(rawPath, ctx.cwd);
   const content = await fs.readFile(resolved, 'utf-8');
   return truncate(content, maxBytes);
+}
+
+/**
+ * Write a file through the editor client. There is deliberately no direct disk
+ * fallback: ACP writes are only allowed when the editor advertises
+ * `fs.writeTextFile`, and they are always gated by client permission.
+ */
+async function writeFileViaClientOrDisk(
+  args: Record<string, unknown>,
+  ctx: AcpPromptContext,
+  toolCallId: string,
+): Promise<string> {
+  const rawPath = stringArg(args, 'file_path') ?? stringArg(args, 'path');
+  const content = stringArg(args, 'content');
+  if (!rawPath) throw new Error('write_file: missing string file_path');
+  if (typeof content !== 'string') throw new Error('write_file: missing string content');
+
+  if (!ctx.canRequestClient('fs/write_text_file')) {
+    throw new Error('write_file is unavailable because the ACP client did not advertise fs.writeTextFile.');
+  }
+
+  const absolute = path.isAbsolute(rawPath) ? rawPath : path.resolve(ctx.cwd, rawPath);
+  const allowed = await requestPermission(ctx, toolCallId, absolute);
+  if (!allowed) {
+    throw new Error(`Permission to write ${rawPath} was denied by the editor.`);
+  }
+
+  await ctx.requestClient('fs/write_text_file', { sessionId: ctx.sessionId, path: absolute, content });
+  return `Successfully wrote to ${rawPath} via editor client`;
 }
 
 async function requestPermission(ctx: AcpPromptContext, toolCallId: string, target: string): Promise<boolean> {
@@ -472,5 +577,5 @@ function truncate(text: string, maxBytes: number): string {
   return `${text.slice(0, maxBytes)}\n... [truncated]`;
 }
 
-/** Test-only: the static read-only toolset this runner exposes. */
+/** Test-only: the static read-only toolset this runner always exposes. */
 export const ACP_READONLY_TOOLS: ReadonlyArray<CodeBuddyTool> = READONLY_TOOLS;

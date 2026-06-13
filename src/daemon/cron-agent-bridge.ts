@@ -52,6 +52,12 @@ export interface JobExecutionResult {
   skipReason?: string;
   /** For watchdog jobs: false when any check produced an alert/error. */
   watchdogOk?: boolean;
+  /**
+   * Structured output data for cross-job data passing. When this job is part
+   * of a chain (`then`), its outputData is forwarded as the next job's
+   * inputData.
+   */
+  outputData?: string;
 }
 
 const DEFAULT_BRIDGE_CONFIG: Partial<BridgeConfig> = {
@@ -75,16 +81,16 @@ export class CronAgentBridge extends EventEmitter {
   /**
    * Create a task executor function for the CronScheduler
    */
-  createTaskExecutor(): (job: CronJob) => Promise<unknown> {
-    return async (job: CronJob): Promise<unknown> => {
-      return this.executeJob(job);
+  createTaskExecutor(): (job: CronJob, inputData?: string) => Promise<unknown> {
+    return async (job: CronJob, inputData?: string): Promise<unknown> => {
+      return this.executeJob(job, inputData);
     };
   }
 
   /**
    * Execute a cron job by creating an agent instance
    */
-  async executeJob(job: CronJob): Promise<JobExecutionResult> {
+  async executeJob(job: CronJob, inputData?: string): Promise<JobExecutionResult> {
     const startTime = Date.now();
     const abortController = new AbortController();
     this.activeJobs.set(job.id, abortController);
@@ -132,10 +138,11 @@ export class CronAgentBridge extends EventEmitter {
 
       let output: string;
       let watchdogOk: boolean | undefined;
+      let scriptStdout: string | undefined;
 
       switch (job.task.type) {
         case 'message': {
-          output = await this.executeMessageTask(job);
+          output = await this.executeMessageTask(job, inputData);
           break;
         }
         case 'tool': {
@@ -153,7 +160,9 @@ export class CronAgentBridge extends EventEmitter {
           break;
         }
         case 'script': {
-          output = await this.executeScriptTask(job);
+          const scriptResult = await this.executeScriptTaskFull(job);
+          output = scriptResult.output;
+          scriptStdout = scriptResult.stdout;
           break;
         }
         case 'skill': {
@@ -189,6 +198,11 @@ export class CronAgentBridge extends EventEmitter {
         ...(watchdogOk !== undefined ? { watchdogOk } : {}),
       });
 
+      // For script jobs, outputData is the captured stdout only (structured
+      // data channel, capped at 64KB in the script runner). For all other
+      // task types, the full output serves as outputData.
+      const outputData = job.task.type === 'script' ? scriptStdout : output;
+
       const result: JobExecutionResult = {
         jobId: job.id,
         runId: recordedRunId ?? `run-${Date.now()}`,
@@ -197,6 +211,7 @@ export class CronAgentBridge extends EventEmitter {
         duration,
         delivered,
         deliveryChannel,
+        outputData,
         ...(watchdogOk !== undefined ? { watchdogOk } : {}),
       };
 
@@ -289,7 +304,7 @@ export class CronAgentBridge extends EventEmitter {
   /**
    * Execute a message-type task
    */
-  private async executeMessageTask(job: CronJob): Promise<string> {
+  private async executeMessageTask(job: CronJob, inputData?: string): Promise<string> {
     if (!job.task.message) {
       throw new Error('Message task requires a message');
     }
@@ -318,7 +333,13 @@ export class CronAgentBridge extends EventEmitter {
       }
     }
 
-    const entries = await agent.processUserMessage(job.task.message);
+    // Prepend inputData from parent chained job if available
+    let message = job.task.message;
+    if (inputData) {
+      message = `[Chained job context — output from parent job]:\n${inputData}\n\n[Task]:\n${message}`;
+    }
+
+    const entries = await agent.processUserMessage(message);
     const assistantEntries = entries.filter(e => e.type === 'assistant');
     return assistantEntries.map(e => e.content).join('\n') || 'No response';
   }
@@ -370,8 +391,11 @@ export class CronAgentBridge extends EventEmitter {
    * WITHOUT instantiating a CodeBuddyAgent or calling any model provider.
    * A non-zero exit (or timeout) throws so the run is recorded as failed and
    * any chained `then` job does not fire.
+   *
+   * Returns both the combined output (for logging/delivery) and the separate
+   * stdout (for cross-job data passing, capped at 64KB by the script runner).
    */
-  private async executeScriptTask(job: CronJob): Promise<string> {
+  private async executeScriptTaskFull(job: CronJob): Promise<{ output: string; stdout: string }> {
     const command = job.task.command;
     if (!command || typeof command.executable !== 'string' || command.executable.length === 0) {
       throw new Error('Script task requires a command with an executable');
@@ -392,7 +416,7 @@ export class CronAgentBridge extends EventEmitter {
         `script failed: ${command.executable} (exit ${result.exitCode})\n${result.output}`.trim(),
       );
     }
-    return result.output;
+    return { output: result.output, stdout: result.stdout };
   }
 
   /**

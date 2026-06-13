@@ -75,3 +75,33 @@ export async function getHermesTrajectoriesForReview(): Promise<HermesTrajectori
     total: report.summary.total,
   };
 }
+
+export async function exportHermesTrajectoriesBatch(options?: {
+  includeArtifactContent?: boolean;
+  limit?: number;
+  maxArtifactBytes?: number;
+  maxCompressedBytes?: number;
+  maxEventValueBytes?: number;
+  query?: string;
+  runIds?: string[];
+  sources?: string[];
+}): Promise<{ success: boolean; data?: string; error?: string }> {
+  const mod = await loadCoreModule<Record<string, any>>('observability/run-trajectory-batch.js');
+  if (!mod?.buildRunTrajectoryBatchExport) return { success: false, error: 'Module missing' };
+
+  try {
+    const batch = mod.buildRunTrajectoryBatchExport({
+      includeArtifactContent: options?.includeArtifactContent === true,
+      limit: options?.limit,
+      maxArtifactBytes: options?.maxArtifactBytes,
+      maxCompressedBytes: options?.maxCompressedBytes,
+      maxEventValueBytes: options?.maxEventValueBytes,
+      query: options?.query,
+      runIds: options?.runIds,
+      sources: options?.sources,
+    });
+    return { success: true, data: JSON.stringify(batch, null, 2) };
+  } catch (error) {
+    return { success: false, error: error instanceof Error ? error.message : String(error) };
+  }
+}

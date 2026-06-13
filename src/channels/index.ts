@@ -143,3 +143,31 @@ export type { NtfyConfig, NtfyChannelConfig, NtfyPublishOptions, NtfyPublishResu
 
 // Niche Channels (Twitch, Tlon, Gmail)
 export { TwitchAdapter, TlonAdapter, GmailWebhookAdapter, DocsSearchTool } from './niche-channels.js';
+
+// Gateway Lifecycle
+export {
+  GatewayLifecycleManager,
+  getGatewayLifecycle,
+  resetGatewayLifecycle,
+} from './gateway-lifecycle.js';
+export type {
+  ChannelReadiness,
+  GatewayChannelStatus,
+  GatewayStatus,
+} from './gateway-lifecycle.js';
+
+// Slash-Command Parity
+export {
+  buildSlashParityManifest,
+  buildPlatformParityReport,
+  extractActualCommands,
+  renderSlashParityManifest,
+  EXPECTED_SLASH_COMMANDS,
+} from './slash-parity.js';
+export type {
+  SlashCommandSpec,
+  SlashCommandParityEntry,
+  PlatformSlashParityReport,
+  SlashParityManifest,
+  SlashCommandProvider,
+} from './slash-parity.js';

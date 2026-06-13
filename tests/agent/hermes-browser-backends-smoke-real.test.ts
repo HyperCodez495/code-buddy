@@ -14,6 +14,11 @@ const mockStagehandClose = vi.fn().mockResolvedValue(undefined);
 const mockStagehandGoto = vi.fn().mockResolvedValue(undefined);
 const mockStagehandTitle = vi.fn().mockResolvedValue('OK-HERMES-BROWSERBASE');
 const mockStagehandTextContent = vi.fn().mockResolvedValue('OK-HERMES-BROWSERBASE');
+const browserRunnerMocks = vi.hoisted(() => ({
+  closeCamofox: vi.fn(),
+  executeBrowserUseAction: vi.fn(),
+  launchCamofox: vi.fn(),
+}));
 const mockStagehandActivePage = {
   goto: mockStagehandGoto,
   locator: vi.fn().mockReturnValue({
@@ -21,6 +26,9 @@ const mockStagehandActivePage = {
   }),
   title: mockStagehandTitle,
 };
+const mockExecuteBrowserUseAction = browserRunnerMocks.executeBrowserUseAction;
+const mockLaunchCamofox = browserRunnerMocks.launchCamofox;
+const mockCloseCamofox = browserRunnerMocks.closeCamofox;
 
 vi.mock('@browserbasehq/stagehand', () => {
   return {
@@ -38,6 +46,15 @@ vi.mock('@browserbasehq/stagehand', () => {
     },
   };
 });
+
+vi.mock('../../src/browser-automation/browser-use-runner.js', () => ({
+  executeBrowserUseAction: browserRunnerMocks.executeBrowserUseAction,
+}));
+
+vi.mock('../../src/browser-automation/camofox-runner.js', () => ({
+  closeCamofox: browserRunnerMocks.closeCamofox,
+  launchCamofox: browserRunnerMocks.launchCamofox,
+}));
 
 import {
   buildHermesBrowserBackendsReadiness,
@@ -261,7 +278,6 @@ describe('Hermes browser backend readiness and live smoke', () => {
     ]));
     expect(readiness.routePlan.gatedBackendIds).toEqual(expect.arrayContaining([
       'browserbase',
-      'browser-use',
       'firecrawl',
     ]));
     expect(readiness.routePlan.gatedBackends).toEqual(expect.arrayContaining([
@@ -296,6 +312,14 @@ describe('Hermes browser backend readiness and live smoke', () => {
           credentialSources: ['BROWSERBASE_API_KEY', 'BROWSERBASE_PROJECT_ID'],
           runnable: true,
           smokeCommand: 'buddy hermes browser-smoke browserbase --json',
+          status: 'configured',
+        }),
+        expect.objectContaining({
+          id: 'browser-use',
+          configured: true,
+          credentialSources: ['BROWSER_USE_API_KEY'],
+          runnable: true,
+          smokeCommand: 'buddy hermes browser-smoke browser-use --json',
           status: 'configured',
         }),
         expect.objectContaining({
@@ -386,6 +410,66 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(result.output).toContain('OK-HERMES-BROWSERBASE');
     expect(JSON.stringify(result)).not.toContain('secret-browserbase-key');
     expect(JSON.stringify(result)).not.toContain('secret-browserbase-project');
+  });
+
+  it('runs the Browser Use smoke through the Browser Use runner when configured', async () => {
+    mockExecuteBrowserUseAction.mockResolvedValueOnce({
+      ok: true,
+      content: 'Example Domain',
+    });
+
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'browser-use',
+      env: {
+        BROWSER_USE_API_KEY: 'secret-browser-use-key',
+      },
+      now: () => new Date('2026-05-31T13:37:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'browser-use',
+      ok: true,
+      status: 'passed',
+      stdout: 'Example Domain',
+    });
+    expect(mockExecuteBrowserUseAction).toHaveBeenCalledWith(
+      expect.stringContaining('Open the page'),
+      'https://example.com',
+      expect.objectContaining({
+        apiKey: 'secret-browser-use-key',
+        timeout: 60_000,
+      }),
+    );
+    expect(JSON.stringify(result)).not.toContain('secret-browser-use-key');
+  });
+
+  it('runs the Camofox smoke through the Camofox runner when installed', async () => {
+    mockLaunchCamofox.mockResolvedValueOnce({
+      ok: true,
+      pid: 12345,
+      wsEndpoint: 'ws://127.0.0.1:9230',
+    });
+    mockCloseCamofox.mockResolvedValueOnce(undefined);
+
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'camofox',
+      env: {
+        CODEBUDDY_CAMOFOX_BINARY: '/opt/camofox/camofox',
+      },
+      now: () => new Date('2026-05-31T13:37:30.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'camofox',
+      ok: true,
+      status: 'passed',
+    });
+    expect(result.output).toContain('ws://127.0.0.1:9230');
+    expect(mockLaunchCamofox).toHaveBeenCalledWith(expect.objectContaining({
+      binary: '/opt/camofox/camofox',
+      headless: true,
+    }));
+    expect(mockCloseCamofox).toHaveBeenCalledWith(12345);
   });
 
   it('routes auto browser smoke to a real safe backend', async () => {

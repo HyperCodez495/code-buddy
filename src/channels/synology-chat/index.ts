@@ -102,6 +102,9 @@ export class SynologyChatChannel extends BaseChannel {
     super('synology-chat', config);
   }
 
+  // REST/webhook adapter — outbound via incoming webhooks, inbound via
+  // outgoing-webhook callbacks; no persistent connection is held open, so
+  // reconnection (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     const cfg = this.config as SynologyChatChannelConfig;
     this.adapter = new SynologyChatAdapter({

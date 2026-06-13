@@ -90,6 +90,12 @@ import {
   type HermesRuntimeSmokeResult,
 } from '../../agent/hermes-runtime-backends.js';
 import {
+  buildBackendLifecycleStatusReport,
+  executeBackendLifecycleAction,
+  renderBackendLifecycleAction,
+  renderBackendLifecycleStatusReport,
+} from '../../agent/hermes-runtime-lifecycle.js';
+import {
   buildHermesBrowserBackendsReadiness,
   renderHermesBrowserBackendsReadiness,
   renderHermesBrowserSmoke,
@@ -3402,6 +3408,55 @@ export function registerHermesCommands(program: Command): void {
       console.log(renderHermesMessagingGatewayStatus(status));
     });
 
+  messaging
+    .command('gateway-status')
+    .description('Print gateway lifecycle status and per-platform slash-command parity')
+    .option('--json', 'output JSON')
+    .action(async (options: HermesCommandOptions) => {
+      const { getGatewayLifecycle, buildSlashParityManifest, renderSlashParityManifest } = await import('../../channels/index.js');
+      const lifecycle = getGatewayLifecycle();
+      const gatewayStatus = lifecycle.status();
+      const slashParity = buildSlashParityManifest(lifecycle.getManager());
+      const command = 'buddy hermes messaging gateway-status --json';
+
+      const payload = {
+        command,
+        kind: 'hermes_messaging_gateway_lifecycle_status',
+        schemaVersion: 1,
+        gateway: gatewayStatus,
+        slashParity,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      const lines = [
+        `Command: ${command}`,
+        '',
+        'Gateway lifecycle status:',
+        `  Status: ${gatewayStatus.ok ? 'ok' : 'needs attention'}`,
+        `  Channels: ${gatewayStatus.totalChannels} total, ${gatewayStatus.connectedCount} connected, ${gatewayStatus.disconnectedCount} disconnected, ${gatewayStatus.errorCount} errors`,
+      ];
+
+      if (gatewayStatus.channels.length > 0) {
+        lines.push('');
+        lines.push('Per-channel readiness:');
+        for (const ch of gatewayStatus.channels) {
+          lines.push(
+            `  - ${ch.channelId}: ${ch.readiness}` +
+              `${ch.authenticated ? ', authenticated' : ''}` +
+              `${ch.error ? `, error: ${ch.error}` : ''}`,
+          );
+        }
+      }
+
+      lines.push('');
+      lines.push(renderSlashParityManifest(slashParity));
+      console.log(lines.join('\n'));
+    });
+
   const mobile = hermes
     .command('mobile')
     .description('Inspect Hermes mobile supervision gateway readiness');
@@ -3889,6 +3944,91 @@ export function registerHermesCommands(program: Command): void {
 
       console.log(`Command: ${command}`);
       console.log(renderHermesRuntimeBackendsReadiness(readiness));
+    });
+
+  runtime
+    .command('hibernate')
+    .description('Hibernate (suspend) a managed runtime backend')
+    .argument('<backendId>', 'backend id to hibernate (e.g. docker, ssh, modal, daytona)')
+    .option('--container-id <id>', 'Docker container id or name')
+    .option('--ssh-host <host>', 'SSH host for ssh backend')
+    .option('--modal-app <app>', 'Modal app name')
+    .option('--daytona-workspace <ws>', 'Daytona workspace id')
+    .option('--json', 'output JSON')
+    .action((backendId: string, options: HermesCommandOptions & {
+      containerId?: string;
+      sshHost?: string;
+      modalApp?: string;
+      daytonaWorkspace?: string;
+    }) => {
+      const result = executeBackendLifecycleAction(backendId, 'hibernate', {
+        containerId: options.containerId,
+        sshHost: options.sshHost,
+        modalApp: options.modalApp,
+        daytonaWorkspace: options.daytonaWorkspace,
+      });
+      const payload = {
+        kind: 'hermes_runtime_lifecycle_action',
+        schemaVersion: 1,
+        result,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderBackendLifecycleAction(result));
+    });
+
+  runtime
+    .command('wake')
+    .description('Wake (resume) a managed runtime backend')
+    .argument('<backendId>', 'backend id to wake (e.g. docker, ssh, modal, daytona)')
+    .option('--container-id <id>', 'Docker container id or name')
+    .option('--ssh-host <host>', 'SSH host for ssh backend')
+    .option('--modal-app <app>', 'Modal app name')
+    .option('--daytona-workspace <ws>', 'Daytona workspace id')
+    .option('--json', 'output JSON')
+    .action((backendId: string, options: HermesCommandOptions & {
+      containerId?: string;
+      sshHost?: string;
+      modalApp?: string;
+      daytonaWorkspace?: string;
+    }) => {
+      const result = executeBackendLifecycleAction(backendId, 'wake', {
+        containerId: options.containerId,
+        sshHost: options.sshHost,
+        modalApp: options.modalApp,
+        daytonaWorkspace: options.daytonaWorkspace,
+      });
+      const payload = {
+        kind: 'hermes_runtime_lifecycle_action',
+        schemaVersion: 1,
+        result,
+      };
+
+      if (options.json) {
+        console.log(stableJson(payload));
+        return;
+      }
+
+      console.log(renderBackendLifecycleAction(result));
+    });
+
+  runtime
+    .command('lifecycle-status')
+    .description('Show lifecycle state for all runtime backends')
+    .option('--json', 'output JSON')
+    .action((options: HermesCommandOptions) => {
+      const report = buildBackendLifecycleStatusReport();
+
+      if (options.json) {
+        console.log(stableJson(report));
+        return;
+      }
+
+      console.log(renderBackendLifecycleStatusReport(report));
     });
 
   hermes

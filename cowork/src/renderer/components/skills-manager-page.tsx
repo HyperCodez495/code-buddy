@@ -187,6 +187,7 @@ export function SkillsManagerPage({ onClose, cwd, onUseAsGoal }: SkillsManagerPa
               cwd={activeWorkspaceCwd}
               error={loadError}
               maxVisible={FULL_LIST_LIMIT}
+              onLifecycleComplete={() => setRefreshToken((value) => value + 1)}
               onUseAsGoal={onUseAsGoal}
               summary={summary}
             />

@@ -113,7 +113,13 @@ export class WebChatChannel extends BaseChannel {
   // ==========================================================================
 
   /**
-   * Start the HTTP and WebSocket servers
+   * Start the HTTP and WebSocket servers.
+   *
+   * Server-side adapter — this hosts a WebSocket *server* that browsers
+   * connect *into*; it does not dial out to a remote endpoint that could
+   * drop, so there is nothing to reconnect to and ReconnectionManager is N/A.
+   * (Per-client socket drops are handled by the connections map, not by
+   * re-establishing an outbound link.)
    */
   async connect(): Promise<void> {
     let WebSocketModule: typeof import('ws');

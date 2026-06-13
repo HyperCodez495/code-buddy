@@ -9,6 +9,7 @@
 import { EventEmitter } from 'events';
 import { logger } from '../../utils/logger.js';
 import { BaseChannel, ChannelConfig, DeliveryResult, OutboundMessage } from '../core.js';
+import { ReconnectionManager } from '../reconnection-manager.js';
 
 // ============================================================================
 // Types
@@ -73,6 +74,8 @@ export class IMessageAdapter extends EventEmitter {
   private pollingTimer: ReturnType<typeof setInterval> | null = null;
   private lastMessageTimestamp: number = 0;
   private retryCount = 0;
+  private reconnecting = false;
+  private reconnectionManager: ReconnectionManager;
 
   constructor(config: IMessageConfig) {
     super();
@@ -85,6 +88,13 @@ export class IMessageAdapter extends EventEmitter {
     if (this.config.port === undefined) {
       this.config.port = 1234;
     }
+    // Persistent long-poll connection to BlueBubbles — drops are recovered
+    // with shared exponential backoff (same idiom as discord/slack/telegram).
+    this.reconnectionManager = new ReconnectionManager('imessage', {
+      maxRetries: this.config.maxRetries ?? 5,
+      initialDelayMs: this.config.retryDelay ?? 5000,
+      maxDelayMs: 60000,
+    });
   }
 
   // ============================================================================
@@ -104,6 +114,12 @@ export class IMessageAdapter extends EventEmitter {
     // Verify connectivity
     await this.healthCheck();
 
+    // Connectivity is confirmed for this session — reset the shared backoff
+    // state so a fresh start() never inherits a pre-exhausted retryCount from
+    // a previous outage episode (onConnected() resets retryCount + active +
+    // any pending timer; cancel() alone does not).
+    this.reconnectionManager.onConnected();
+
     this.running = true;
     this.lastMessageTimestamp = Date.now();
     this.retryCount = 0;
@@ -120,6 +136,9 @@ export class IMessageAdapter extends EventEmitter {
       throw new Error('IMessageAdapter is not running');
     }
 
+    // Cancel any pending reconnect so it can't fire after an explicit stop.
+    this.reconnectionManager.cancel();
+    this.reconnecting = false;
     this.stopPolling();
     this.running = false;
 
@@ -243,6 +262,9 @@ export class IMessageAdapter extends EventEmitter {
       try {
         await this.pollMessages();
         this.retryCount = 0;
+        // A successful poll means the connection is healthy again — reset
+        // the shared backoff state so a future drop starts from delay 0.
+        this.reconnectionManager.onConnected();
       } catch (error) {
         this.retryCount++;
         const errMsg = error instanceof Error ? error.message : String(error);
@@ -251,7 +273,7 @@ export class IMessageAdapter extends EventEmitter {
         if (this.retryCount >= (this.config.maxRetries || 5)) {
           logger.error('IMessageAdapter: max retries exceeded, attempting reconnect');
           this.emit('error', new Error('Polling failed after max retries'));
-          await this.reconnect();
+          this.reconnect();
         }
       }
     }, this.config.pollingInterval);
@@ -300,36 +322,59 @@ export class IMessageAdapter extends EventEmitter {
   // Reconnection
   // ============================================================================
 
-  private async reconnect(): Promise<void> {
+  /**
+   * Recover a dropped BlueBubbles connection via the shared
+   * ReconnectionManager (exponential backoff + jitter + max-retry
+   * exhaustion). Replaces the previous hand-rolled backoff loop so we
+   * never run two competing backoffs at once.
+   *
+   * `scheduleReconnect` is single-shot — one call schedules exactly one
+   * attempt — so on a failed health check we must re-drive it (the way
+   * discord's repeated WS `close` events and telegram's repeating poll loop
+   * naturally do) until the connection recovers or the manager exhausts its
+   * retries and emits `exhausted`.
+   */
+  private reconnect(): void {
+    // Pause polling while we attempt to re-establish the connection; the
+    // backoff timer in the manager now owns the retry cadence.
     this.stopPolling();
 
-    const maxRetries = this.config.maxRetries || 5;
-    const retryDelay = this.config.retryDelay || 5000;
-
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        logger.info(`IMessageAdapter: reconnection attempt ${attempt}/${maxRetries}`);
-
-        await this.healthCheck();
-
-        // Reconnected successfully
-        this.retryCount = 0;
-        this.startPolling();
-        this.emit('reconnected');
-        logger.info('IMessageAdapter: reconnected successfully');
-        return;
-      } catch {
-        if (attempt < maxRetries) {
-          const delay = retryDelay * Math.pow(2, attempt - 1);
-          logger.warn(`IMessageAdapter: reconnection failed, retrying in ${delay}ms`);
-          await new Promise(resolve => setTimeout(resolve, delay));
-        }
-      }
+    // Surface permanent failure once the manager exhausts its retries.
+    if (this.reconnectionManager.listenerCount('exhausted') === 0) {
+      this.reconnectionManager.on('exhausted', () => {
+        this.reconnecting = false;
+        this.running = false;
+        this.emit('disconnected', new Error('Reconnection failed after all retries'));
+        logger.error('IMessageAdapter: reconnection failed permanently');
+      });
     }
 
-    this.running = false;
-    this.emit('disconnected', new Error('Reconnection failed after all retries'));
-    logger.error('IMessageAdapter: reconnection failed permanently');
+    this.reconnecting = true;
+    this.reconnectionManager.scheduleReconnect(async () => {
+      try {
+        await this.healthCheck();
+        // Health check passed — resume the poll loop and reset counters.
+        this.reconnecting = false;
+        this.retryCount = 0;
+        this.startPolling();
+        this.reconnectionManager.onConnected();
+        this.emit('reconnected');
+        logger.info('IMessageAdapter: reconnected successfully');
+      } catch (error) {
+        // This attempt failed. Defer re-driving the manager until after it
+        // clears its internal `active` flag (which it does in its own
+        // `finally`, once this closure settles), so the next attempt is
+        // actually scheduled instead of being dropped by the active-guard.
+        if (this.running) {
+          setTimeout(() => {
+            if (this.running && this.reconnecting) {
+              this.reconnect();
+            }
+          }, 0).unref?.();
+        }
+        throw error instanceof Error ? error : new Error(String(error));
+      }
+    });
   }
 
   // ============================================================================

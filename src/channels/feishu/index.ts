@@ -286,6 +286,12 @@ export class FeishuChannel extends BaseChannel {
     super('feishu', config);
   }
 
+  // Feishu/Lark supports a persistent long-connection (WebSocket) transport,
+  // but this adapter is currently an in-process stub: FeishuAdapter.start()
+  // only mints a fake tenant access token and flips a `running` flag — no
+  // long-connection socket is opened, so there is no close/error event to
+  // recover from. Reconnection (ReconnectionManager) is N/A until a real
+  // long-connection transport with drop detection is wired in here.
   async connect(): Promise<void> {
     const cfg = this.config as FeishuChannelConfig;
     this.adapter = new FeishuAdapter({

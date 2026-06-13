@@ -31,12 +31,15 @@ export interface CronScriptResult {
   exitCode: number | null;
   /** Combined stdout + stderr, capped. */
   output: string;
+  /** Stdout only, capped at 64KB. Used for cross-job data passing. */
+  stdout: string;
   /** True when the timeout fired and the process was killed. */
   timedOut: boolean;
 }
 
 const DEFAULT_SCRIPT_TIMEOUT_MS = 600_000;
 const MAX_OUTPUT_BYTES = 1_048_576; // 1 MiB cap on captured output
+const MAX_STDOUT_BYTES = 65_536; // 64 KiB cap on stdout for data passing
 
 const DEFAULT_ALLOWED_EXECUTABLES = new Set([
   'bash',
@@ -95,10 +98,16 @@ function spawnScript(command: CronScriptCommand, timeoutMs: number): Promise<Cro
     });
 
     let output = '';
+    let stdoutOnly = '';
     let timedOut = false;
-    const append = (chunk: string): void => {
+    const appendOutput = (chunk: string): void => {
       if (output.length < MAX_OUTPUT_BYTES) {
         output += chunk;
+      }
+    };
+    const appendStdout = (chunk: string): void => {
+      if (stdoutOnly.length < MAX_STDOUT_BYTES) {
+        stdoutOnly += chunk;
       }
     };
 
@@ -108,9 +117,12 @@ function spawnScript(command: CronScriptCommand, timeoutMs: number): Promise<Cro
     }, timeoutMs);
 
     child.stdout.setEncoding('utf8');
-    child.stdout.on('data', append);
+    child.stdout.on('data', (chunk: string) => {
+      appendOutput(chunk);
+      appendStdout(chunk);
+    });
     child.stderr.setEncoding('utf8');
-    child.stderr.on('data', append);
+    child.stderr.on('data', appendOutput);
 
     child.on('error', (error) => {
       clearTimeout(timer);
@@ -118,7 +130,12 @@ function spawnScript(command: CronScriptCommand, timeoutMs: number): Promise<Cro
     });
     child.on('close', (exitCode) => {
       clearTimeout(timer);
-      resolve({ exitCode, output: output.trimEnd(), timedOut });
+      resolve({
+        exitCode,
+        output: output.trimEnd(),
+        stdout: stdoutOnly.trimEnd(),
+        timedOut,
+      });
     });
   });
 }

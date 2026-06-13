@@ -263,6 +263,12 @@ export class NostrChannel extends BaseChannel {
     });
   }
 
+  // Nostr is a genuinely persistent protocol (WebSocket relay connections),
+  // but this adapter is currently an in-process stub: NostrAdapter.start()
+  // only records the relay list and flips a `running` flag — no relay sockets
+  // are actually opened, so there is no close/error event to recover from.
+  // Reconnection (ReconnectionManager) is N/A until real relay sockets with
+  // drop detection are wired in here.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

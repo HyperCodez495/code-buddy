@@ -98,6 +98,11 @@ export class MattermostChannel extends BaseChannel {
     });
   }
 
+  // Mattermost is a genuinely persistent protocol (real-time WebSocket), but
+  // this adapter is currently an in-process stub: MattermostAdapter.start()
+  // only flips a `running` flag and never opens a real WebSocket, so there is
+  // no close/error event to recover from. Reconnection (ReconnectionManager)
+  // is N/A until a real WebSocket transport with drop detection is wired in.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

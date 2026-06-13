@@ -110,6 +110,12 @@ export class NextcloudTalkChannel extends BaseChannel {
     });
   }
 
+  // Nextcloud Talk receives messages via a long-polling loop, a genuinely
+  // persistent connection model, but this adapter is currently an in-process
+  // stub: NextcloudTalkAdapter.start() only flips a `running` flag and never
+  // runs a real poll loop, so there is no error/drop event to recover from.
+  // Reconnection (ReconnectionManager) is N/A until a real long-poll loop with
+  // drop detection is wired in here.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

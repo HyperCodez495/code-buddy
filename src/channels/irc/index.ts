@@ -141,6 +141,11 @@ export class IRCChannel extends BaseChannel {
     super('irc', config);
   }
 
+  // IRC is a genuinely persistent protocol (long-lived TCP socket), but this
+  // adapter is currently an in-process stub: IRCAdapter.start() only flips a
+  // `running` flag and never opens a real socket, so there is no close/error
+  // event to recover from. Reconnection (ReconnectionManager) is N/A until a
+  // real TCP transport with drop detection is wired in here.
   async connect(): Promise<void> {
     const cfg = this.config as IRCChannelConfig;
     this.adapter = new IRCAdapter({

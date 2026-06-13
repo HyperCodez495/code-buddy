@@ -154,6 +154,9 @@ export class QQChannel extends BaseChannel {
     });
   }
 
+  // REST adapter — outbound messages are one-shot HTTP POSTs to a OneBot v11
+  // gateway; there is no persistent connection held open here, so reconnection
+  // (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

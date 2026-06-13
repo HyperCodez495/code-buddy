@@ -303,7 +303,11 @@ export class GoogleChatChannel extends BaseChannel {
 
   /**
    * Connect to Google Chat by validating the service account and
-   * verifying API access
+   * verifying API access.
+   *
+   * REST/webhook adapter — outbound via the Google Chat REST API, inbound via
+   * webhook (or Pub/Sub) callbacks; no persistent connection is held open
+   * here, so reconnection (ReconnectionManager) is N/A.
    */
   async connect(): Promise<void> {
     try {

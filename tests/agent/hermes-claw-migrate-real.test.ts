@@ -9,6 +9,11 @@ import {
   detectOpenClawHome,
   runClawMigration,
   buildClawMigrationPlan,
+  mapClawCronJobs,
+  mapClawCommandAllowlist,
+  mapClawMemoryBackend,
+  mapClawExecTimeout,
+  mapClawVisionSettings,
 } from '../../src/agent/hermes-claw-migrate.js';
 import { registerHermesCommands } from '../../src/commands/cli/hermes-commands.js';
 import {
@@ -50,7 +55,11 @@ function writeOpenClawFixture(home: string): void {
     providers: { customA: { baseURL: 'https://example.invalid' } },
     channels: { telegram: { enabled: true } },
     tts: { voice: 'alloy' },
-    cron: [{ schedule: '0 9 * * *', task: 'daily' }],
+    cron: [{ schedule: '0 9 * * *', task: 'daily', label: 'morning-report' }],
+    commandAllowlist: ['git', 'npm', 'docker', 'ls'],
+    memoryBackend: 'honcho',
+    execTimeout: 120,
+    vision: { enabled: true, model: 'gpt-4-vision-preview' },
     // Expanded category set (toward upstream `hermes claw migrate` parity).
     toolsets: { core: ['file', 'terminal'] },
     profiles: { coder: { model: 'gpt-5.5' } },
@@ -164,7 +173,24 @@ describe('hermes claw migrate (real)', () => {
     // Archive-for-review categories written, not applied to live config.
     const archiveDir = path.join(target, '.codebuddy', 'openclaw-migration', 'archive');
     expect(fs.existsSync(path.join(archiveDir, 'custom_providers.json'))).toBe(true);
-    expect(fs.existsSync(path.join(archiveDir, 'cron.json'))).toBe(true);
+
+    // Promoted categories are imported into settings.json, NOT archived.
+    expect(fs.existsSync(path.join(archiveDir, 'cron.json'))).toBe(false);
+    expect(fs.existsSync(path.join(archiveDir, 'command_allowlist.json'))).toBe(false);
+    expect(fs.existsSync(path.join(archiveDir, 'memory_backend.json'))).toBe(false);
+    expect(fs.existsSync(path.join(archiveDir, 'exec_timeout.json'))).toBe(false);
+    expect(fs.existsSync(path.join(archiveDir, 'vision.json'))).toBe(false);
+
+    // Promoted categories are written to live settings.
+    expect(settings.cronJobs).toBeDefined();
+    expect(settings.cronJobs).toHaveLength(1);
+    expect(settings.cronJobs[0].name).toBe('morning-report');
+    expect(settings.cronJobs[0].schedule).toEqual({ cron: '0 9 * * *' });
+    expect(settings.commandAllowlist).toEqual(['git', 'npm', 'docker', 'ls']);
+    expect(settings.memoryProvider).toBe('honcho');
+    expect(settings.execTimeout).toBe(120000); // 120s → 120000ms
+    expect(settings.visionEnabled).toBe(true);
+    expect(settings.visionModel).toBe('gpt-4-vision-preview');
 
     // Expanded categories are archived (never imported), each to its own file.
     for (const file of ['toolsets.json', 'profiles.json', 'bundles.json', 'pairing.json', 'runtimes.json', 'webhooks.json', 'hooks.json']) {
@@ -221,6 +247,123 @@ describe('hermes claw migrate (real)', () => {
     }
   });
 
+  it('imports the REAL 2026.6.x live-install shape: workspace identity files, symlinked plugin-skill, nested secrets archived 0600', async () => {
+    // This mirrors a *populated* `~/.openclaw` (verified against the real install
+    // on 2026-06-13): identity markdown lives under the configured workspace dir
+    // (NOT the home root, as legacy clawdbot did), skills are *symlinks* under
+    // `plugin-skills/`, and the gateway token + provider apiKey are nested.
+    const home = path.join(tmp, '.openclaw-live');
+    const workspace = path.join(home, 'workspace');
+    fs.ensureDirSync(workspace);
+
+    // Identity files in the workspace dir (the 2026.6.x location). IDENTITY.md /
+    // BOOTSTRAP.md exist on the real install but have no Code Buddy consumer, so
+    // they are intentionally NOT migrated — only SOUL/USER/AGENTS are.
+    fs.writeFileSync(path.join(workspace, 'SOUL.md'), '# Soul\nLive-install workspace persona.\n');
+    fs.writeFileSync(path.join(workspace, 'USER.md'), '# User\nName: LiveUser\n');
+    fs.writeFileSync(path.join(workspace, 'AGENTS.md'), '# Agents\nLive workspace agent doc\n');
+    fs.writeFileSync(path.join(workspace, 'IDENTITY.md'), 'id doc with no consumer\n');
+    fs.writeFileSync(path.join(workspace, 'BOOTSTRAP.md'), 'bootstrap doc with no consumer\n');
+
+    // A symlinked plugin-skill, exactly like `plugin-skills/browser-automation`
+    // -> the installed openclaw npm package. The Dirent reports isDirectory()
+    // === false for the link, so the reader must follow it via statSync.
+    const realSkillDir = path.join(tmp, 'npm-pkg', 'skills', 'browser-automation');
+    fs.ensureDirSync(realSkillDir);
+    fs.writeFileSync(path.join(realSkillDir, 'SKILL.md'), skillContent('browser-automation'));
+    const pluginSkillsDir = path.join(home, 'plugin-skills');
+    fs.ensureDirSync(pluginSkillsDir);
+    const skillsSupported = process.platform !== 'win32';
+    if (skillsSupported) {
+      fs.symlinkSync(realSkillDir, path.join(pluginSkillsDir, 'browser-automation'), 'dir');
+    }
+
+    const GATEWAY_TOKEN = 'live-gateway-token-placeholder';
+    const PROVIDER_KEY = 'live-provider-apikey-placeholder';
+    fs.writeJsonSync(path.join(home, 'openclaw.json'), {
+      agents: { defaults: { workspace, model: { primary: 'ollama/gemma4:12b' } } },
+      models: {
+        mode: 'merge',
+        providers: { ollama: { baseUrl: 'http://127.0.0.1:11434', api: 'openai', apiKey: PROVIDER_KEY, models: ['gemma4'] } },
+      },
+      // gateway carries a nested auth token -> must archive 0600 (the live install
+      // does exactly this; gateway was previously archived at default perms).
+      gateway: { mode: 'local', bind: '127.0.0.1', port: 18789, auth: { mode: 'token', token: GATEWAY_TOKEN } },
+      plugins: { entries: { ollama: { enabled: true } } },
+      session: { dmScope: 'per-conversation' },
+      tools: { profile: 'coder' },
+    });
+
+    const report = await runClawMigration({ source: home, workspaceTarget: target, skillsHub: hub, apply: true });
+    expect(report.detected).toBe(true);
+    expect(report.summary.failedCount).toBe(0);
+    const action = new Map(report.entries.map((e) => [e.category, e.action]));
+
+    // Identity files resolved from the WORKSPACE dir (were skipped before the fix).
+    expect(action.get('persona')).toBe('import');
+    expect(action.get('user')).toBe('import');
+    expect(action.get('agents')).toBe('import');
+    expect(fs.readFileSync(path.join(target, 'SOUL.md'), 'utf-8')).toContain('Live-install workspace persona');
+    expect(fs.readFileSync(path.join(target, 'USER.md'), 'utf-8')).toContain('LiveUser');
+    expect(fs.readFileSync(path.join(target, 'AGENTS.md'), 'utf-8')).toContain('Live workspace agent doc');
+
+    // IDENTITY.md / BOOTSTRAP.md have no consumer -> never copied.
+    expect(fs.existsSync(path.join(target, 'IDENTITY.md'))).toBe(false);
+    expect(fs.existsSync(path.join(target, 'BOOTSTRAP.md'))).toBe(false);
+
+    // No MEMORY.md on the live install -> memory honestly skips.
+    expect(action.get('memory')).toBe('skip');
+
+    // The symlinked plugin-skill is discovered (Dirent.isDirectory() is false for
+    // the link; the reader follows it via statSync) and installed.
+    if (skillsSupported) {
+      expect(report.entries.some((e) => e.category === 'skills' && e.action === 'import')).toBe(true);
+      expect(hub.list().map((s) => s.name)).toContain('browser-automation');
+    }
+
+    // Nested gateway/provider blocks archived (never imported into live settings).
+    expect(action.get('gateway')).toBe('archive');
+    expect(action.get('custom_providers')).toBe('archive');
+    const settings = fs.readJsonSync(path.join(target, '.codebuddy', 'settings.json'));
+    expect(settings.model).toBe('ollama/gemma4:12b');
+    expect(settings.gateway).toBeUndefined();
+    expect(settings.models).toBeUndefined();
+
+    // SECURITY: the gateway archive carries a nested token, so it MUST be 0600
+    // (this file was written at default 0644 before `gateway` joined the
+    // sensitive set). custom_providers was already 0600; assert both.
+    const archiveDir = path.join(target, '.codebuddy', 'openclaw-migration', 'archive');
+    const gatewayFile = path.join(archiveDir, 'gateway.json');
+    const provFile = path.join(archiveDir, 'custom_providers.json');
+    expect(fs.existsSync(gatewayFile)).toBe(true);
+    if (process.platform !== 'win32') {
+      expect(fs.statSync(gatewayFile).mode & 0o777).toBe(0o600);
+      expect(fs.statSync(provFile).mode & 0o777).toBe(0o600);
+    }
+
+    // The secrets category surfaces the nested credential NAMES (never values).
+    const secrets = report.entries.find((e) => e.category === 'secrets');
+    expect(secrets?.detail).toContain('gateway.auth.token');
+    expect(secrets?.detail).toContain('models.providers.ollama.apiKey');
+
+    // No placeholder secret value leaks anywhere into the report object.
+    expect(JSON.stringify(report)).not.toContain(GATEWAY_TOKEN);
+    expect(JSON.stringify(report)).not.toContain(PROVIDER_KEY);
+  });
+
+  it('still reads root-level identity files for legacy clawdbot installs (no workspace dir)', async () => {
+    // The legacy clawdbot.json fixture (writeOpenClawFixture) keeps SOUL/USER/
+    // AGENTS at the home root with no `agents.defaults.workspace`. The
+    // workspace-aware reader must not regress that path.
+    const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: false });
+    const action = new Map(report.entries.map((e) => [e.category, e.action]));
+    expect(action.get('persona')).toBe('import');
+    expect(action.get('user')).toBe('import');
+    expect(action.get('agents')).toBe('import');
+    // Exactly one entry per identity category (workspace+root dedup).
+    expect(report.entries.filter((e) => e.category === 'persona')).toHaveLength(1);
+  });
+
   it('covers the expanded category set (30+) and never leaks secrets in expanded slices', async () => {
     const report = await runClawMigration({ source: openclaw, workspaceTarget: target, skillsHub: hub, apply: true });
 
@@ -239,7 +382,13 @@ describe('hermes claw migrate (real)', () => {
     const action = new Map(report.entries.map((e) => [e.category, e.action]));
     expect(action.get('toolsets')).toBe('archive');
     expect(action.get('webhooks')).toBe('archive');
-    expect(action.get('vision')).toBe('skip'); // not present in fixture
+
+    // Promoted categories present in fixture are imported, not archived.
+    expect(action.get('cron')).toBe('import');
+    expect(action.get('command_allowlist')).toBe('import');
+    expect(action.get('memory_backend')).toBe('import');
+    expect(action.get('exec_timeout')).toBe('import');
+    expect(action.get('vision')).toBe('import');
 
     // A webhook token in the source must never surface in the report object.
     expect(JSON.stringify(report)).not.toContain(SECRET_VALUE);
@@ -333,6 +482,110 @@ describe('hermes claw migrate (real)', () => {
     const entries = buildClawMigrationPlan({ source: openclaw, workspaceTarget: target });
     expect(entries.length).toBeGreaterThan(0);
     expect(fs.existsSync(path.join(target, '.codebuddy'))).toBe(false);
+  });
+
+  // -----------------------------------------------------------------------
+  // Promoted category mapper unit tests
+  // -----------------------------------------------------------------------
+
+  describe('mapClawCronJobs', () => {
+    it('maps a standard cron array with label', () => {
+      const jobs = mapClawCronJobs({ cron: [{ schedule: '*/5 * * * *', task: 'health-check', label: 'health' }] });
+      expect(jobs).toEqual([{ name: 'health', schedule: '*/5 * * * *', task: 'health-check' }]);
+    });
+
+    it('falls through to cronJobs key', () => {
+      const jobs = mapClawCronJobs({ cronJobs: [{ schedule: '0 0 * * *', task: 'nightly' }] });
+      expect(jobs).toHaveLength(1);
+      expect(jobs[0].name).toMatch(/^claw-cron-/);
+    });
+
+    it('rejects entries without valid 5-field schedule', () => {
+      const jobs = mapClawCronJobs({ cron: [{ schedule: 'every 5 minutes', task: 'bad' }] });
+      expect(jobs).toEqual([]);
+    });
+
+    it('returns empty for missing key', () => {
+      expect(mapClawCronJobs({})).toEqual([]);
+    });
+  });
+
+  describe('mapClawCommandAllowlist', () => {
+    it('maps a flat string array', () => {
+      expect(mapClawCommandAllowlist({ commandAllowlist: ['git', 'npm', 'docker'] }))
+        .toEqual(['git', 'npm', 'docker']);
+    });
+
+    it('filters out absolute paths and secret-looking items', () => {
+      const result = mapClawCommandAllowlist({
+        commandAllowlist: ['git', '/usr/bin/evil', 'my-secret-key', 'npm'],
+      });
+      expect(result).toEqual(['git', 'npm']);
+    });
+
+    it('returns empty for non-array', () => {
+      expect(mapClawCommandAllowlist({ commandAllowlist: 'git' })).toEqual([]);
+    });
+  });
+
+  describe('mapClawMemoryBackend', () => {
+    it('maps a known string provider', () => {
+      expect(mapClawMemoryBackend({ memoryBackend: 'honcho' })).toBe('honcho');
+      expect(mapClawMemoryBackend({ memoryBackend: 'Mem0' })).toBe('mem0');
+    });
+
+    it('maps an object with provider key', () => {
+      expect(mapClawMemoryBackend({ memoryBackend: { provider: 'redis', url: 'redis://localhost' } }))
+        .toBe('redis');
+    });
+
+    it('rejects unknown providers', () => {
+      expect(mapClawMemoryBackend({ memoryBackend: 'custom-unknown' })).toBeUndefined();
+    });
+
+    it('returns undefined for missing key', () => {
+      expect(mapClawMemoryBackend({})).toBeUndefined();
+    });
+  });
+
+  describe('mapClawExecTimeout', () => {
+    it('converts seconds to milliseconds', () => {
+      expect(mapClawExecTimeout({ execTimeout: 30 })).toBe(30000);
+      expect(mapClawExecTimeout({ execTimeout: 3600 })).toBe(3600000);
+    });
+
+    it('passes through large ms values', () => {
+      expect(mapClawExecTimeout({ execTimeout: 60000 })).toBe(60000);
+    });
+
+    it('clamps to 1 hour max', () => {
+      expect(mapClawExecTimeout({ execTimeout: 99999999 })).toBe(3600000);
+    });
+
+    it('ignores non-positive values', () => {
+      expect(mapClawExecTimeout({ execTimeout: 0 })).toBeUndefined();
+      expect(mapClawExecTimeout({ execTimeout: -5 })).toBeUndefined();
+    });
+  });
+
+  describe('mapClawVisionSettings', () => {
+    it('maps enabled and model', () => {
+      const result = mapClawVisionSettings({ vision: { enabled: true, model: 'gpt-4o' } });
+      expect(result).toEqual({ visionEnabled: true, visionModel: 'gpt-4o' });
+    });
+
+    it('skips model that looks like a URL', () => {
+      const result = mapClawVisionSettings({ vision: { enabled: true, model: 'https://example.com/model' } });
+      expect(result).toEqual({ visionEnabled: true });
+    });
+
+    it('returns empty for missing key', () => {
+      expect(mapClawVisionSettings({})).toEqual({});
+    });
+
+    it('returns empty for non-object value', () => {
+      expect(mapClawVisionSettings({ vision: 'true' })).toEqual({});
+    });
   });
 
   it('exposes `buddy hermes claw status --json` through the CLI', async () => {

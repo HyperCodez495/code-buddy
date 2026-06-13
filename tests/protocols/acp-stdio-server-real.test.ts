@@ -1,4 +1,7 @@
 import { PassThrough } from 'stream';
+import * as fs from 'fs';
+import * as path from 'path';
+import * as os from 'os';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -7,6 +10,7 @@ import {
   type AcpStdioServerOptions,
   type AcpPromptRunner,
 } from '../../src/protocols/acp/acp-stdio-server.js';
+import { AcpSessionStore } from '../../src/protocols/acp/acp-session-store.js';
 
 /** Drives a real AcpStdioServer over in-memory ndjson streams. */
 class AcpHarness {
@@ -26,7 +30,9 @@ class AcpHarness {
         if (trimmed) this.messages.push(JSON.parse(trimmed));
       }
     });
-    this.server = new AcpStdioServer({ input: this.input, output: this.output, promptRunner, ...options });
+    const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-acp-test-'));
+    const store = new AcpSessionStore({ storeDir: tmpDir });
+    this.server = new AcpStdioServer({ input: this.input, output: this.output, promptRunner, store, ...options });
     this.server.start();
   }
 
@@ -500,6 +506,56 @@ describe('AcpStdioServer (real ndjson transport)', () => {
       newerSessionId,
       olderSessionId,
     ]);
+  });
+
+  it('persists mcpServers across ACP server restarts', async () => {
+    const storeDir = fs.mkdtempSync(path.join(os.tmpdir(), 'codebuddy-acp-persist-mcp-'));
+    const mcpServers = {
+      filesystem: {
+        command: 'node',
+        args: ['server.js'],
+      },
+    };
+    const seenMcpServers: unknown[] = [];
+
+    try {
+      harness = new AcpHarness(async () => ({ stopReason: 'end_turn' }), {
+        store: new AcpSessionStore({ storeDir }),
+      });
+      harness.send({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'session/new',
+        params: { cwd: '/tmp/project', mcpServers },
+      });
+      await harness.flush();
+      const sessionId = harness.responseFor(1)?.result.sessionId as string;
+      harness.server.stop();
+
+      harness = new AcpHarness(async ({ mcpServers: restored, sendUpdate }) => {
+        seenMcpServers.push(restored);
+        sendUpdate({
+          sessionUpdate: 'agent_message_chunk',
+          content: { type: 'text', text: JSON.stringify(restored) },
+        });
+        return { stopReason: 'end_turn' };
+      }, {
+        store: new AcpSessionStore({ storeDir }),
+      });
+      harness.send({
+        jsonrpc: '2.0',
+        id: 2,
+        method: 'session/prompt',
+        params: { sessionId, prompt: [{ type: 'text', text: 'use persisted mcp' }] },
+      });
+      await harness.flush();
+
+      expect(harness.responseFor(2)?.result).toEqual({ stopReason: 'end_turn' });
+      expect(seenMcpServers[0]).toEqual(mcpServers);
+      expect(harness.notifications('session/update').at(-1)?.params.update.content.text).toBe(JSON.stringify(mcpServers));
+    } finally {
+      fs.rmSync(storeDir, { recursive: true, force: true });
+    }
   });
 
   it('rejects unsupported session/list cursors instead of pretending pagination exists', async () => {

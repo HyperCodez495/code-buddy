@@ -53,6 +53,8 @@ class SimulatedEditor {
   readonly server: AcpStdioServer;
   /** Records of fs/read_text_file requests the agent made. */
   readonly reads: Array<Record<string, any>> = [];
+  /** Records of fs/write_text_file requests the agent made. */
+  readonly writes: Array<Record<string, any>> = [];
   readonly permissions: Array<Record<string, any>> = [];
 
   constructor(
@@ -100,6 +102,11 @@ class SimulatedEditor {
       this.send({ jsonrpc: '2.0', id: msg.id, result: { content } });
       return;
     }
+    if (msg.method === 'fs/write_text_file') {
+      this.writes.push(msg);
+      this.send({ jsonrpc: '2.0', id: msg.id, result: null });
+      return;
+    }
     // Unknown agent→client method — fail it so the runner doesn't hang.
     this.send({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'unsupported' } });
   }
@@ -129,6 +136,7 @@ class SimulatedEditor {
 }
 
 const FS_CAPS: AcpClientCapabilities = { fs: { readTextFile: true, writeTextFile: false } };
+const FS_WRITE_CAPS: AcpClientCapabilities = { fs: { readTextFile: true, writeTextFile: true } };
 
 describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
   let editor: SimulatedEditor;
@@ -188,12 +196,12 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'initialize',
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_CAPS },
     });
-    await editor.flush(1);
+    await editor.flush(10);
     expect(editor.responseFor(1)?.result?.protocolVersion).toBe(ACP_PROTOCOL_VERSION);
 
     // session/new
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(1);
+    await editor.flush(10);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
     expect(sessionId).toBeTruthy();
 
@@ -204,7 +212,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'What does app.ts define?' }] },
     });
-    await editor.flush();
+    await editor.flush(50);
 
     // (1) The turn completed with end_turn.
     expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
@@ -288,7 +296,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(1);
+    await editor.flush(10);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -297,7 +305,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'read missing.ts' }] },
     });
-    await editor.flush();
+    await editor.flush(50);
 
     // No client fs/read_text_file or permission requests were made.
     expect(editor.reads).toHaveLength(0);
@@ -305,6 +313,139 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
     // Tool failed (disk miss) but the turn still ended cleanly.
     const toolUpdate = editor.updatesOfType('tool_call_update').at(-1)?.params.update;
     expect(toolUpdate.status).toBe('failed');
+    expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
+  it('does not expose or execute write_file without the editor write capability', async () => {
+    const seenToolNames: string[][] = [];
+    const chat: AcpChatFn = vi.fn(async (_messages, tools) => {
+      seenToolNames.push((tools ?? []).map((tool) => tool.function.name));
+      const round = (chat as any).mock.calls.length;
+      if (round === 1) {
+        return {
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call_write',
+                    type: 'function',
+                    function: {
+                      name: 'write_file',
+                      arguments: JSON.stringify({ file_path: 'app.ts', content: 'changed' }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        } as CodeBuddyResponse;
+      }
+      return {
+        choices: [{ message: { role: 'assistant', content: 'done', tool_calls: [] }, finish_reason: 'stop' }],
+      } as CodeBuddyResponse;
+    });
+
+    const runner = createAcpAgenticRunner({ chat });
+    editor = new SimulatedEditor(runner, {});
+
+    editor.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_CAPS },
+    });
+    editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
+    await editor.flush(10);
+    const sessionId = editor.responseFor(2)?.result?.sessionId as string;
+
+    editor.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'try to write app.ts' }] },
+    });
+    await editor.flush(50);
+
+    expect(seenToolNames[0]).not.toContain('write_file');
+    expect(editor.writes).toHaveLength(0);
+    const toolUpdate = editor.updatesOfType('tool_call_update').at(-1)?.params.update;
+    expect(toolUpdate.status).toBe('failed');
+    expect(toolUpdate.content[0].content.text).toContain('did not advertise fs.writeTextFile');
+    expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
+  });
+
+  it('routes write_file through editor permission and fs.write_text_file when advertised', async () => {
+    const absPath = '/workspace/app.ts';
+    const seenToolNames: string[][] = [];
+    const chat: AcpChatFn = vi.fn(async (_messages, tools) => {
+      seenToolNames.push((tools ?? []).map((tool) => tool.function.name));
+      const round = (chat as any).mock.calls.length;
+      if (round === 1) {
+        return {
+          choices: [
+            {
+              message: {
+                role: 'assistant',
+                content: '',
+                tool_calls: [
+                  {
+                    id: 'call_write',
+                    type: 'function',
+                    function: {
+                      name: 'write_file',
+                      arguments: JSON.stringify({ file_path: absPath, content: 'export const value = 1;\n' }),
+                    },
+                  },
+                ],
+              },
+              finish_reason: 'tool_calls',
+            },
+          ],
+        } as CodeBuddyResponse;
+      }
+      return {
+        choices: [{ message: { role: 'assistant', content: 'write complete', tool_calls: [] }, finish_reason: 'stop' }],
+      } as CodeBuddyResponse;
+    });
+
+    const runner = createAcpAgenticRunner({ chat });
+    editor = new SimulatedEditor(runner, {});
+
+    editor.send({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_WRITE_CAPS },
+    });
+    editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
+    await editor.flush(10);
+    const sessionId = editor.responseFor(2)?.result?.sessionId as string;
+
+    editor.send({
+      jsonrpc: '2.0',
+      id: 3,
+      method: 'session/prompt',
+      params: { sessionId, prompt: [{ type: 'text', text: 'write app.ts' }] },
+    });
+    await editor.flush(50);
+
+    expect(seenToolNames[0]).toContain('write_file');
+    const toolCall = editor.updatesOfType('tool_call')[0]!.params.update;
+    expect(toolCall.kind).toBe('edit');
+    expect(editor.permissions).toHaveLength(1);
+    expect(editor.permissions[0]!.params.toolCall.toolCallId).toBe(toolCall.toolCallId);
+    expect(editor.writes).toHaveLength(1);
+    expect(editor.writes[0]!.params).toMatchObject({
+      sessionId,
+      path: absPath,
+      content: 'export const value = 1;\n',
+    });
+    const toolUpdate = editor.updatesOfType('tool_call_update').at(-1)?.params.update;
+    expect(toolUpdate.status).toBe('completed');
     expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
   });
 
@@ -339,7 +480,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await editor.flush(1);
+    await editor.flush(10);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -348,7 +489,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'loop forever' }] },
     });
-    await editor.flush();
+    await editor.flush(50);
 
     expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'max_turn_requests' });
     expect((chat as any).mock.calls.length).toBe(3);

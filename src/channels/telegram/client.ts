@@ -359,6 +359,19 @@ export class TelegramChannel extends BaseChannel {
   }
 
   /**
+   * Return the bot command names registered with this adapter.
+   *
+   * Implements {@link SlashCommandProvider} so the slash-parity checker can
+   * report real parity instead of falling back to an empty list. Names come
+   * from the configured `commands` (the same set pushed to Telegram via
+   * {@link setCommands}), normalized without a leading slash.
+   */
+  getRegisteredCommands(): string[] {
+    const commands = this.telegramConfig.commands ?? [];
+    return commands.map((cmd) => cmd.command.replace(/^\//, ''));
+  }
+
+  /**
    * Start polling for updates
    */
   private async startPolling(): Promise<void> {

@@ -147,6 +147,9 @@ export class NtfyChannel extends BaseChannel {
     });
   }
 
+  // REST adapter — outbound messages are one-shot HTTP POSTs to an ntfy topic;
+  // there is no persistent subscription stream held open here, so reconnection
+  // (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

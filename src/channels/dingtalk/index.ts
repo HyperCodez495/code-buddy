@@ -180,6 +180,9 @@ export class DingTalkChannel extends BaseChannel {
     }, options);
   }
 
+  // REST/webhook adapter — outbound messages are one-shot HTTPS POSTs to the
+  // DingTalk robot webhook; there is no persistent connection, so reconnection
+  // (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;

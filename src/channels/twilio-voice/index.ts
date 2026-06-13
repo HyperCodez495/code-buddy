@@ -124,6 +124,9 @@ export class TwilioVoiceChannel extends BaseChannel {
     });
   }
 
+  // REST/webhook adapter — calls are placed via the Twilio REST API and
+  // driven by TwiML webhook callbacks; no persistent connection is held open,
+  // so reconnection (ReconnectionManager) is N/A.
   async connect(): Promise<void> {
     await this.adapter.start();
     this.status.connected = true;
