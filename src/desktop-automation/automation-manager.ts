@@ -457,6 +457,13 @@ export class DesktopAutomationManager extends EventEmitter {
       const nativeProvider = await this.createNativeProvider();
       if (nativeProvider) {
         this.registerProvider(nativeProvider);
+        // The created provider registers under its own name (e.g. 'nutjs' on
+        // Linux when xdotool/xclip are unavailable). Also expose it under the
+        // requested 'native' key so the preferred-provider lookup resolves it
+        // instead of silently falling through to the mock provider.
+        if (!this.providers.has('native')) {
+          this.providers.set('native', nativeProvider);
+        }
       }
     }
 
@@ -920,6 +927,15 @@ export class DesktopAutomationManager extends EventEmitter {
           return new WindowsNativeProvider({ wsl: false });
         }
         case 'linux': {
+          // Prefer nut-js (libnut): it provides mouse/keyboard/screen control
+          // without xdotool/xclip/wmctrl, which are frequently absent on minimal
+          // or remote Linux desktops. Fall back to the xdotool-based provider
+          // (which also does window management) only when libnut is unavailable.
+          const { NutJsProvider } = await import('./nutjs-provider.js');
+          const nut = new NutJsProvider();
+          if (await nut.isAvailable()) {
+            return nut;
+          }
           const { LinuxNativeProvider } = await import('./linux-native-provider.js');
           return new LinuxNativeProvider();
         }

@@ -40,6 +40,7 @@ import type { ToolResult } from '../types/index.js';
 import { registerAgentTools } from './mcp-agent-tools.js';
 import { registerMemoryTools } from './mcp-memory-tools.js';
 import { registerSessionTools } from './mcp-session-tools.js';
+import { registerDesktopTools } from './mcp-desktop-tools.js';
 import { registerResources } from './mcp-resources.js';
 import { registerPrompts } from './mcp-prompts.js';
 
@@ -150,6 +151,7 @@ export class CodeBuddyMCPServer {
     registerAgentTools(this.mcpServer, getAgent);
     registerMemoryTools(this.mcpServer);
     registerSessionTools(this.mcpServer, getAgent);
+    registerDesktopTools(this.mcpServer);
     registerResources(this.mcpServer);
     registerPrompts(this.mcpServer);
   }
