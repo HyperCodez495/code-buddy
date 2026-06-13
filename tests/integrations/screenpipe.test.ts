@@ -2,9 +2,14 @@ import { describe, it, expect } from 'vitest';
 import { ScreenpipeClient } from '../../src/integrations/screenpipe/screenpipe-client.js';
 import { ScreenMemoryTool } from '../../src/tools/registry/screenpipe-tools.js';
 
-function fakeFetch(handler: (url: string) => { ok: boolean; status?: number; body?: unknown }) {
-  return async (url: string) => {
-    const r = handler(url);
+function fakeFetch(
+  handler: (
+    url: string,
+    init?: { method?: string; headers?: Record<string, string> },
+  ) => { ok: boolean; status?: number; body?: unknown },
+) {
+  return async (url: string, init?: { method?: string; headers?: Record<string, string> }) => {
+    const r = handler(url, init);
     return { ok: r.ok, status: r.status ?? (r.ok ? 200 : 500), json: async () => r.body ?? {} };
   };
 }
@@ -50,6 +55,76 @@ describe('ScreenpipeClient', () => {
 
   it('respects SCREENPIPE_URL / explicit baseUrl and strips trailing slash', () => {
     expect(new ScreenpipeClient({ baseUrl: 'http://host:9999/' }).baseUrl).toBe('http://host:9999');
+  });
+
+  it('attaches Authorization: Bearer when an explicit apiKey is set (search + health)', async () => {
+    let searchHeaders: Record<string, string> | undefined;
+    let healthHeaders: Record<string, string> | undefined;
+    const client = new ScreenpipeClient({
+      apiKey: 'tok-123',
+      fetchImpl: fakeFetch((url, init) => {
+        if (url.includes('/search')) searchHeaders = init?.headers;
+        if (url.includes('/health')) healthHeaders = init?.headers;
+        return { ok: true, body: { data: [], pagination: { total: 0 } } };
+      }),
+    });
+    await client.search({ query: 'x' });
+    await client.health();
+    expect(searchHeaders?.['Authorization']).toBe('Bearer tok-123');
+    expect(healthHeaders?.['Authorization']).toBe('Bearer tok-123');
+  });
+
+  it('reads the apiKey from SCREENPIPE_API_KEY when not passed explicitly', async () => {
+    const prev = process.env['SCREENPIPE_API_KEY'];
+    process.env['SCREENPIPE_API_KEY'] = 'env-tok';
+    try {
+      let seen: Record<string, string> | undefined;
+      const client = new ScreenpipeClient({
+        fetchImpl: fakeFetch((_url, init) => {
+          seen = init?.headers;
+          return { ok: true, body: { data: [], pagination: { total: 0 } } };
+        }),
+      });
+      await client.search({ query: 'x' });
+      expect(seen?.['Authorization']).toBe('Bearer env-tok');
+    } finally {
+      if (prev === undefined) delete process.env['SCREENPIPE_API_KEY'];
+      else process.env['SCREENPIPE_API_KEY'] = prev;
+    }
+  });
+
+  it('sends NO Authorization header when no apiKey/SCREENPIPE_API_KEY is set', async () => {
+    const prev = process.env['SCREENPIPE_API_KEY'];
+    delete process.env['SCREENPIPE_API_KEY'];
+    try {
+      let searchHeaders: Record<string, string> | undefined;
+      let healthHeaders: Record<string, string> | undefined;
+      let sawSearchInit = false;
+      let sawHealthInit = false;
+      const client = new ScreenpipeClient({
+        fetchImpl: fakeFetch((url, init) => {
+          if (url.includes('/search')) {
+            sawSearchInit = true;
+            searchHeaders = init?.headers;
+          }
+          if (url.includes('/health')) {
+            sawHealthInit = true;
+            healthHeaders = init?.headers;
+          }
+          return { ok: true, body: { data: [], pagination: { total: 0 } } };
+        }),
+      });
+      await client.search({ query: 'x' });
+      await client.health();
+      expect(sawSearchInit).toBe(true);
+      expect(sawHealthInit).toBe(true);
+      // No headers object at all, or one without Authorization.
+      expect(searchHeaders?.['Authorization']).toBeUndefined();
+      expect(healthHeaders?.['Authorization']).toBeUndefined();
+    } finally {
+      if (prev === undefined) delete process.env['SCREENPIPE_API_KEY'];
+      else process.env['SCREENPIPE_API_KEY'] = prev;
+    }
   });
 });
 

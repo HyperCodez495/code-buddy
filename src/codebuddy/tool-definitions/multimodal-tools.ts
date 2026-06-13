@@ -363,6 +363,49 @@ export const CAMERA_SNAPSHOT_TOOL: CodeBuddyTool = {
   }
 };
 
+// Camera Analyze Tool - Capture a webcam frame AND describe it with a vision model
+export const CAMERA_ANALYZE_TOOL: CodeBuddyTool = {
+  type: "function",
+  function: {
+    name: "camera_analyze",
+    description: "Capture one local webcam frame and return a natural-language description from a local multimodal vision model (default Ollama gemma4:12b). Use this to actually SEE what the camera shows, not just save a PNG. Requires ffmpeg, OS camera permission, and a reachable local vision model.",
+    parameters: {
+      type: "object",
+      properties: {
+        prompt: {
+          type: "string",
+          description: "What to ask the vision model about the frame. Default \"Describe what you see.\""
+        },
+        device: {
+          type: "string",
+          description: "Optional ffmpeg camera device. Linux example: /dev/video0; Windows: video=Integrated Camera; macOS: 0."
+        },
+        model: {
+          type: "string",
+          description: "Local multimodal model id served by Ollama. Default gemma4:12b."
+        },
+        include_ocr: {
+          type: "boolean",
+          description: "Also attach local OCR text evidence from the captured frame (default: false)."
+        },
+        ocr_language: {
+          type: "string",
+          description: "OCR language code when include_ocr is true (default: eng)."
+        },
+        output_path: {
+          type: "string",
+          description: "Optional output image path. Defaults to .codebuddy/camera/camera-<timestamp>.png in the active workspace."
+        },
+        timeout_ms: {
+          type: "number",
+          description: "Capture timeout in milliseconds (default: 10000)."
+        }
+      },
+      required: []
+    }
+  }
+};
+
 // Clipboard Tool - System clipboard operations
 export const CLIPBOARD_TOOL: CodeBuddyTool = {
   type: "function",
@@ -819,6 +862,7 @@ export const MULTIMODAL_TOOLS: CodeBuddyTool[] = [
   VIDEO_GENERATE_TOOL,
   SCREENSHOT_TOOL,
   CAMERA_SNAPSHOT_TOOL,
+  CAMERA_ANALYZE_TOOL,
   CLIPBOARD_TOOL,
   DOCUMENT_TOOL,
   OCR_TOOL,

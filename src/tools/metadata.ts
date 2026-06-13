@@ -697,6 +697,13 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Capture one local webcam frame and record a vision percept'
   },
   {
+    name: 'camera_analyze',
+    category: 'media',
+    keywords: ['camera', 'webcam', 'see', 'vision', 'describe', 'look', 'photo', 'companion', 'eyes', 'analyze', 'what do you see'],
+    priority: 7,
+    description: 'Capture a local webcam frame and describe it with a local multimodal vision model'
+  },
+  {
     name: 'audio',
     category: 'media',
     keywords: ['audio', 'sound', 'music', 'transcribe', 'speech', 'voice', 'mp3', 'wav'],

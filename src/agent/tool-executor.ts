@@ -209,6 +209,7 @@ const TOOL_CATEGORY_MAP: Record<string, ToolCategory> = {
   // Media
   screenshot: 'media',
   camera_snapshot: 'media',
+  camera_analyze: 'media',
   audio: 'media',
   video: 'media',
   ocr: 'media',

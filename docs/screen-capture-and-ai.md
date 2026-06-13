@@ -56,6 +56,70 @@ This is intentionally the **portable, cheap** path (capture + dedup + OCR + reda
 10. **Screen-grounded self-operation** (Set-of-Mark/coord-hashmap) — gated hard behind `bypassPermissions` + Confirmation Service.
 11. **Continuous-video + per-frame VLM** — highest fidelity, lowest Linux feasibility (Wayland forks capture; per-frame VLM is GPU-heavy). Later milestone.
 
+## Screenpipe — install, auth, and the `screen_memory` tool
+
+Code Buddy ships a thin HTTP client (`src/integrations/screenpipe/screenpipe-client.ts`) and a
+read-only `screen_memory` tool that queries a locally-running [screenpipe](https://github.com/mediar-ai/screenpipe)
+instance, so the agent can answer "what did I see / say / hear?" from your screen+audio history —
+local-first, no cloud.
+
+### Install + run (Linux)
+
+```bash
+# system deps for audio capture + encode
+sudo apt install -y libasound2-dev ffmpeg
+
+# record screen + audio 24/7 (data lives in ~/.screenpipe, REST API on :3030)
+npx -y screenpipe@latest record
+```
+
+The recorder indexes OCR text and audio transcripts into a local SQLite DB and serves a search API
+on `http://localhost:3030`.
+
+### Auth (Bearer token)
+
+Recent screenpipe builds require a Bearer token on the local API. Export it so the `screen_memory`
+tool authenticates:
+
+```bash
+export SCREENPIPE_API_KEY=$(screenpipe auth token)
+```
+
+When `SCREENPIPE_API_KEY` is set (or `apiKey` is passed to `ScreenpipeClient`), every request carries
+`Authorization: Bearer <key>`. When it is unset, requests are sent unauthenticated — older / no-auth
+local instances keep working unchanged.
+
+### The `screen_memory` tool
+
+`screen_memory` is **read-only** and **PII-redacted**: every hit is passed through `src/fleet/privacy-lint.ts`
+before it reaches the model, so secrets (tokens, IBAN, SSN, credit cards…) are stripped, not surfaced.
+It calls screenpipe's `/search` endpoint and normalizes the snake_case results.
+
+| Env var | Purpose | Default |
+|---|---|---|
+| `SCREENPIPE_URL` | Base URL of the local screenpipe API | `http://localhost:3030` |
+| `SCREENPIPE_API_KEY` | Bearer token for the local API (omit for no-auth instances) | _(unset)_ |
+
+### Alternative: the first-class MCP server
+
+screenpipe also publishes an MCP server that exposes screen memory directly:
+
+```bash
+npx -y screenpipe-mcp@latest
+```
+
+You can wire it through Code Buddy's MCP client via `CODEBUDDY_MCP_COMMAND`. We keep the **HTTP client
+the default** because it already PII-redacts via `privacy-lint` before anything reaches the model —
+the MCP path returns raw hits, so reserve it for cases where you want screenpipe's full tool surface
+and are handling redaction yourself.
+
+### License note
+
+screenpipe is **source-available** — free for personal / local CLI / MCP use; a paid license is only
+required for **commercial embedding, redistribution, or SaaS**. Code Buddy only acts as a **client** to
+a screenpipe instance you run yourself (it does not bundle or redistribute screenpipe), so there's no
+licensing blocker for users.
+
 ## Feasibility note (the load-bearing Linux constraint)
 
 The **Wayland-vs-X11 capture split** is the key constraint: `x11grab`/`scrot` die on a pure Wayland session (GNOME 40+/KDE) — design for the `mss`/portal path for portability. Per-frame VLM is heavy even on local Ollama; gate it behind the dedup/event layer. The high-feasibility foundation is **periodic capture + dedup + OCR + redact** (what Code Buddy ships); continuous video + per-frame VLM is the low-feasibility end. **Biggest single reuse win: point `privacy-lint` at any screen-OCR pipeline before indexing** — done.

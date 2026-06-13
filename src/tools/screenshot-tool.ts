@@ -202,8 +202,22 @@ export class ScreenshotTool {
         }
         args.push('-f', outputPath);
       } else if (availableTool === 'import') {
-        // ImageMagick import
-        if (options.window) {
+        // ImageMagick import. Without an explicit window/region, `import` enters
+        // interactive crosshair mode and blocks forever waiting for a click — so
+        // a headless fullscreen capture MUST target the root window. Only an
+        // explicit region (-crop) leaves the root grab intact.
+        if (options.region) {
+          args.push('-window', 'root');
+          args.push(
+            '-crop',
+            `${options.region.width}x${options.region.height}+${options.region.x}+${options.region.y}`,
+            // Reset the virtual canvas so the saved PNG is a clean WxH+0+0, not the
+            // full-screen page geometry with a crop offset.
+            '+repage'
+          );
+        } else {
+          // fullscreen or active-window: capture the whole root (import's -window
+          // can't reliably target a foreign window by title on X11 without an id).
           args.push('-window', 'root');
         }
         args.push(outputPath);

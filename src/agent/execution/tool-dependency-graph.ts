@@ -235,6 +235,13 @@ export const TOOL_METADATA: Record<string, Partial<ToolMetadata>> = {
     parallelSafe: false, // Single local camera device + explicit privacy boundary
     priority: 6,
   },
+  camera_analyze: {
+    reads: [],
+    writes: ["file"],
+    hasSideEffects: true,
+    parallelSafe: false, // Single local camera device + network vision call
+    priority: 6,
+  },
   diagram: {
     reads: [],
     writes: ["file"],

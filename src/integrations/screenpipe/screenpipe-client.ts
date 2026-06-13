@@ -7,6 +7,11 @@
  * say / hear?" from screen+audio history — local-first, no cloud. Base URL is
  * configurable via `SCREENPIPE_URL` (default http://localhost:3030).
  *
+ * Recent screenpipe builds require a Bearer token on the local API. Pass it via
+ * `apiKey` (or `SCREENPIPE_API_KEY`) and it is attached as `Authorization:
+ * Bearer <key>` to every request. When unset, requests are sent unauthenticated
+ * exactly as before, so local no-auth instances keep working.
+ *
  * `fetchImpl` is injectable for tests.
  */
 export type ScreenpipeContentType = 'all' | 'ocr' | 'audio' | 'ui';
@@ -38,7 +43,10 @@ export interface ScreenpipeSearchResult {
   total: number;
 }
 
-type FetchLike = (url: string, init?: { method?: string; signal?: AbortSignal }) => Promise<{
+type FetchLike = (
+  url: string,
+  init?: { method?: string; signal?: AbortSignal; headers?: Record<string, string> },
+) => Promise<{
   ok: boolean;
   status: number;
   json: () => Promise<unknown>;
@@ -47,16 +55,28 @@ type FetchLike = (url: string, init?: { method?: string; signal?: AbortSignal })
 export class ScreenpipeClient {
   readonly baseUrl: string;
   private readonly doFetch: FetchLike;
+  private readonly apiKey?: string;
 
-  constructor(opts: { baseUrl?: string; fetchImpl?: FetchLike } = {}) {
+  constructor(opts: { baseUrl?: string; fetchImpl?: FetchLike; apiKey?: string } = {}) {
     this.baseUrl = (opts.baseUrl || process.env['SCREENPIPE_URL'] || 'http://localhost:3030').replace(/\/$/, '');
     this.doFetch = opts.fetchImpl ?? (globalThis.fetch as unknown as FetchLike);
+    const apiKey = opts.apiKey ?? process.env['SCREENPIPE_API_KEY'];
+    if (apiKey) this.apiKey = apiKey;
+  }
+
+  /** Build request headers, attaching Bearer auth when an API key is configured. */
+  private buildHeaders(): Record<string, string> | undefined {
+    return this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : undefined;
   }
 
   /** True if a screenpipe server answers on the health endpoint. */
   async health(timeoutMs = 2500): Promise<boolean> {
     try {
-      const res = await this.withTimeout((signal) => this.doFetch(`${this.baseUrl}/health`, { signal }), timeoutMs);
+      const headers = this.buildHeaders();
+      const res = await this.withTimeout(
+        (signal) => this.doFetch(`${this.baseUrl}/health`, { signal, ...(headers ? { headers } : {}) }),
+        timeoutMs,
+      );
       return res.ok;
     } catch {
       return false;
@@ -76,7 +96,11 @@ export class ScreenpipeClient {
     if (opts.endTime) params.set('end_time', opts.endTime);
 
     const url = `${this.baseUrl}/search?${params.toString()}`;
-    const res = await this.withTimeout((signal) => this.doFetch(url, { signal }), timeoutMs);
+    const headers = this.buildHeaders();
+    const res = await this.withTimeout(
+      (signal) => this.doFetch(url, { signal, ...(headers ? { headers } : {}) }),
+      timeoutMs,
+    );
     if (!res.ok) {
       throw new Error(`screenpipe /search returned ${res.status}`);
     }

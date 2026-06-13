@@ -187,6 +187,8 @@ export class SmartSnapshotManager extends EventEmitter {
   private snapshotCache: Map<string, Snapshot> = new Map();
   private static readonly MAX_CACHE_SIZE = 20;
   private nextRef: number = 1;
+  /** Cached python interpreter that has the Atspi GI binding (`''` = none found, `null` = not yet probed). */
+  private atspiPython: string | null = null;
 
   constructor(config: Partial<SmartSnapshotConfig> = {}) {
     super();
@@ -911,17 +913,69 @@ if ($focused) {
   }
 
   /**
+   * Resolve a python3 interpreter that actually has the Atspi GObject-Introspection
+   * binding. `python3` on PATH is frequently a conda/pyenv interpreter that lacks the
+   * system `gi`/Atspi typelib (PyGObject is installed against the system python), so a
+   * bare `python3 -c "import gi"` silently fails and the snapshot falls back to mock
+   * elements. We probe a small candidate list once and cache the winner.
+   * Returns '' when no interpreter has the binding.
+   */
+  private resolveAtspiPython(): string {
+    if (this.atspiPython !== null) {
+      return this.atspiPython;
+    }
+
+    const candidates = [
+      process.env.CODEBUDDY_ATSPI_PYTHON,
+      'python3',
+      '/usr/bin/python3',
+      'python',
+    ].filter((c): c is string => typeof c === 'string' && c.length > 0);
+
+    // Probe the *exact* requirement — a python can have `gi` yet lack the Atspi typelib.
+    const probe = `import gi; gi.require_version('Atspi','2.0'); from gi.repository import Atspi; print('OK')`;
+    for (const candidate of candidates) {
+      try {
+        const out = execSync(`${candidate} -c "${probe}" 2>/dev/null`, {
+          encoding: 'utf-8',
+          timeout: 5000,
+        }).trim();
+        if (out.includes('OK')) {
+          this.atspiPython = candidate;
+          return candidate;
+        }
+      } catch {
+        // Candidate missing or binding absent — try the next one.
+      }
+    }
+
+    this.atspiPython = '';
+    return '';
+  }
+
+  /**
    * Detect elements on native Linux via AT-SPI
    */
   private async detectLinuxATSPIElements(_options: SnapshotOptions): Promise<UIElement[]> {
     const elements: UIElement[] = [];
+
+    const python = this.resolveAtspiPython();
+    if (!python) {
+      logger.warn(
+        'AT-SPI element enumeration unavailable: no python3 interpreter with the gi/Atspi binding found. ' +
+          'Install python3-gi + gir1.2-atspi-2.0, or set CODEBUDDY_ATSPI_PYTHON to a python that has them. ' +
+          'Falling back to mock UI elements (NOT a real snapshot).'
+      );
+      elements.push(...this.getMockElements());
+      return elements;
+    }
 
     try {
       // Use AT-SPI via python-atspi or accerciser
       // This requires libatspi and python3-atspi2 to be installed
       const script = `
 import gi
-gi.require_version('Atspi', '2.0')
+gi.require_version("Atspi", "2.0")
 from gi.repository import Atspi
 import json
 
@@ -967,9 +1021,14 @@ for i in range(desktop.get_child_count()):
 print(json.dumps(all_elements[:100]))
       `;
 
-      // Try to run the Python script
+      // Try to run the Python script. Pass it base64-encoded and decode inside the
+      // interpreter — embedding a multi-line script (which itself contains quotes)
+      // directly in a `-c '...'` shell argument breaks quoting and silently yields a
+      // NameError, masking real AT-SPI output behind the mock fallback.
       try {
-        const { stdout } = await execAsync(`python3 -c '${script}' 2>/dev/null`, {
+        const encoded = Buffer.from(script, 'utf-8').toString('base64');
+        const runner = `import base64; exec(base64.b64decode("${encoded}").decode("utf-8"))`;
+        const { stdout } = await execAsync(`${python} -c '${runner}' 2>/dev/null`, {
           timeout: 10000,
         });
 
@@ -992,11 +1051,12 @@ print(json.dumps(all_elements[:100]))
           });
         }
       } catch (_err) {
-        // Intentionally ignored: AT-SPI parsing may fail, fallback to mock elements
+        // AT-SPI query/parse failed even though a gi-capable python was found.
+        logger.warn('AT-SPI enumeration failed at query time; falling back to mock UI elements (NOT a real snapshot)', { error: _err });
         elements.push(...this.getMockElements());
       }
     } catch (error) {
-      logger.debug('Linux accessibility detection failed', { error });
+      logger.warn('Linux accessibility detection failed; falling back to mock UI elements (NOT a real snapshot)', { error });
       elements.push(...this.getMockElements());
     }
 
