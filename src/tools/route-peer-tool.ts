@@ -29,6 +29,7 @@ import type { PeerCapability } from '../fleet/types.js';
 import { getFleetRegistry } from '../fleet/fleet-registry.js';
 import { classifyTaskComplexity } from '../optimization/model-routing.js';
 import type { ToolResult } from '../types/index.js';
+import { getGlobalEventBus } from '../events/event-bus.js';
 
 export interface RoutePeerParams {
   prompt: string;
@@ -221,6 +222,20 @@ export async function executeRoutePeer(params: RoutePeerParams): Promise<ToolRes
       ...(chainNextCalls ? { nextCalls: chainNextCalls } : {}),
     };
 
+    try {
+      if (output.recommendation && output.recommendation.peer) {
+        getGlobalEventBus().emit('fleet:activity', {
+          
+          
+          activityType: 'fleet.route',
+          title: 'Fleet Route Planned',
+          description: `Task routed to peer ${output.recommendation.peer}`,
+          metadata: { peer: output.recommendation.peer, model: output.recommendation.model, prompt: params.prompt }
+        });
+      }
+    } catch (err) {
+      // ignore
+    }
     return {
       success: true,
       output: JSON.stringify(output, null, 2),

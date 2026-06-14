@@ -39,6 +39,7 @@ import { PolicyEngine } from '../security/policy-engine.js';
 import { ConfirmationService } from '../utils/confirmation-service.js';
 import { auditLogger } from '../security/audit-logger.js';
 import { assertPeerToolInvokeAllowed } from './permissions.js';
+import { getGlobalEventBus } from '../events/event-bus.js';
 
 // ──────────────────────────────────────────────────────────────────
 // Types
@@ -458,6 +459,20 @@ function logAudit(input: {
   error?: string;
   start: number;
 }): void {
+  try {
+    getGlobalEventBus().emit('fleet:activity', {
+      
+      
+      activityType: 'fleet.tool.invoke',
+      title: 'Peer Tool Invoked',
+      description: input.error 
+        ? `Peer ${input.ctx.connectionId} failed to invoke ${input.tool}: ${input.error}`
+        : `Peer ${input.ctx.connectionId} invoked ${input.tool}`,
+      metadata: { peerId: input.ctx.connectionId, tool: input.tool, ok: input.ok, error: input.error }
+    });
+  } catch (err) {
+    // ignore
+  }
   auditLogger.log({
     action: 'tool_execution',
     decision: input.ok ? 'allow' : 'block',

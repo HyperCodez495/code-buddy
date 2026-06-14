@@ -776,6 +776,23 @@ export interface CostEvents extends Record<string, BaseEvent> {
 }
 
 // ============================================================================
+
+// ============================================================================
+// Fleet Events
+// ============================================================================
+
+export interface FleetActivityEvent extends BaseEvent {
+  type: 'fleet:activity';
+  activityType: string;
+  title: string;
+  description: string;
+  metadata?: Record<string, unknown>;
+}
+
+export interface FleetEvents extends Record<string, BaseEvent> {
+  'fleet:activity': FleetActivityEvent;
+}
+
 // All Events Map (Unified)
 // ============================================================================
 
@@ -910,6 +927,9 @@ export interface AllEvents extends Record<string, BaseEvent> {
   'sandbox:created': SandboxCreatedEvent;
   'sandbox:destroyed': SandboxDestroyedEvent;
   'sandbox:execution': SandboxExecutionEvent;
+
+  // Fleet Events
+  'fleet:activity': FleetActivityEvent;
 
   // Cost Events
   'cost:updated': CostUpdatedEvent;

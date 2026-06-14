@@ -1798,6 +1798,24 @@ app
     activityFeed = new ActivityFeed(db);
     fleetBridge?.setActivityFeed(activityFeed);
 
+    try {
+      const { loadCoreModule } = await import('./utils/core-loader');
+      const eventBusMod = await loadCoreModule<any>('events/index.js');
+      const globalBus = eventBusMod?.getGlobalEventBus();
+      if (globalBus && activityFeed) {
+        globalBus.on('fleet:activity', (event: any) => {
+          activityFeed!.record({
+            type: event.activityType || 'fleet.activity',
+            title: event.title,
+            description: event.description,
+            metadata: event.metadata
+          });
+        });
+      }
+    } catch (err) {
+      logWarn('[ActivityFeed] Failed to subscribe to fleet:activity', err);
+    }
+
     // Phase 3 step 4: bookmarks service (starred messages)
     bookmarksService = new BookmarksService(db);
 
