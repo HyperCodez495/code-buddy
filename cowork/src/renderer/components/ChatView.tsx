@@ -15,24 +15,16 @@ import { useAppStore } from '../store';
 import { applySlashCommandResult } from '../commands/slash-command-actions';
 import { useIPC } from '../hooks/useIPC';
 import { MessageCard } from './MessageCard';
-import { ModelSwitcher } from './ModelSwitcher';
-import { PermissionModeSelector } from './PermissionModeSelector';
 import { SessionSearch } from './SessionSearch';
 import { SubAgentPanel } from './SubAgentPanel';
+import { ChatHeader } from './ChatHeader';
 import { MentionAutocomplete, type MentionItem } from './MentionAutocomplete';
 import { SlashCommandPalette, type SlashCommandItem } from './SlashCommandPalette';
-import { BranchSwitcher } from './BranchSwitcher';
-import { TaskModeToggle } from './TaskModeToggle';
 import { MicButton } from './MicButton';
-import { VoiceOutputToggle, interruptSpeech, speakText } from './VoiceOutputToggle';
+import { interruptSpeech, speakText } from './VoiceOutputToggle';
 import { MemoryEditCard } from './MemoryEditCard';
 import { FileAttachmentChip } from './FileAttachmentChip';
-import { ContextWindowGauge } from './ContextWindowGauge';
-import { LiveBudgetMeter } from './LiveBudgetMeter';
-import { ReasoningLevelPicker } from './ReasoningLevelPicker';
-import { YoloModeToggle } from './YoloModeToggle';
 import { APP_NAME } from '../brand';
-import type { ExecutionMode } from '../types';
 import { usePermissionMode, useSearchState } from '../store/selectors';
 import type { Message, ContentBlock, ScheduleCreateInput, ScheduleWeekday } from '../types';
 import {
@@ -59,7 +51,6 @@ import {
   Square,
   Plus,
   Loader2,
-  Plug,
   X,
   Clock,
   Eye,
@@ -127,14 +118,7 @@ export function ChatView() {
   const [prompt, setPrompt] = useState('');
   const [goalComposerActive, setGoalComposerActive] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [activeConnectors, setActiveConnectors] = useState<
-    { id: string; name: string; connected: boolean; toolCount: number }[]
-  >([]);
-  const [showConnectorLabel, setShowConnectorLabel] = useState(true);
   const [currentSearchMatch, setCurrentSearchMatch] = useState(0);
-  const headerRef = useRef<HTMLDivElement>(null);
-  const titleRef = useRef<HTMLHeadingElement>(null);
-  const connectorMeasureRef = useRef<HTMLDivElement>(null);
   const [pastedImages, setPastedImages] = useState<
     Array<{ url: string; base64: string; mediaType: string }>
   >([]);
@@ -771,56 +755,6 @@ export function ChatView() {
     }
   };
 
-  // Load active MCP connectors
-  useEffect(() => {
-    if (isElectron && typeof window !== 'undefined' && window.electronAPI) {
-      const loadConnectors = async () => {
-        try {
-          const statuses = await window.electronAPI.mcp.getServerStatus();
-          const active =
-            (
-              statuses as Array<{ id: string; name: string; connected: boolean; toolCount: number }>
-            )?.filter((s) => s.connected && s.toolCount > 0) || [];
-          setActiveConnectors(active);
-        } catch (err) {
-          console.error('Failed to load MCP connectors:', err);
-        }
-      };
-      loadConnectors();
-      // Refresh every 5 seconds
-      const interval = setInterval(loadConnectors, 5000);
-      return () => clearInterval(interval);
-    }
-  }, [isElectron]);
-
-  useEffect(() => {
-    const titleEl = titleRef.current;
-    const headerEl = headerRef.current;
-    const measureEl = connectorMeasureRef.current;
-    if (!titleEl || !headerEl || !measureEl) {
-      setShowConnectorLabel(true);
-      return;
-    }
-    const updateLabelVisibility = () => {
-      const isTruncated = titleEl.scrollWidth > titleEl.clientWidth;
-      const headerStyle = window.getComputedStyle(headerEl);
-      const paddingLeft = Number.parseFloat(headerStyle.paddingLeft) || 0;
-      const paddingRight = Number.parseFloat(headerStyle.paddingRight) || 0;
-      const contentWidth = headerEl.clientWidth - paddingLeft - paddingRight;
-      const titleWidth = titleEl.getBoundingClientRect().width;
-      const rightColumnWidth = Math.max(0, (contentWidth - titleWidth) / 2);
-      const connectorFullWidth = measureEl.getBoundingClientRect().width;
-      setShowConnectorLabel(!isTruncated && rightColumnWidth >= connectorFullWidth);
-    };
-    updateLabelVisibility();
-    const observer = new ResizeObserver(() => {
-      updateLabelVisibility();
-    });
-    observer.observe(titleEl);
-    observer.observe(headerEl);
-    return () => observer.disconnect();
-  }, [activeSession?.title, activeConnectors.length]);
-
   const handleSubmit = async (e?: React.FormEvent) => {
     e?.preventDefault();
 
@@ -1005,92 +939,7 @@ export function ChatView() {
 
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-background">
-      {/* Header */}
-      <div
-        ref={headerRef}
-        className="relative h-12 border-b border-border-muted grid grid-cols-[1fr_auto_1fr] items-center px-4 lg:px-8 bg-background/88 backdrop-blur-md"
-      >
-        <div className="text-[11px] font-medium tracking-[0.08em] uppercase text-text-muted">
-          {APP_NAME}
-        </div>
-        <h2
-          ref={titleRef}
-          className="text-[15px] font-medium text-text-primary text-center truncate max-w-[40vw] lg:max-w-[32rem]"
-        >
-          {activeSession.title}
-        </h2>
-        {activeConnectors.length > 0 && (
-          <>
-            <div
-              ref={connectorMeasureRef}
-              aria-hidden="true"
-              className="absolute left-0 top-0 -z-10 opacity-0 pointer-events-none"
-            >
-              <div className="flex items-center gap-2 px-2 py-1 rounded-lg border border-mcp/20">
-                <Plug className="w-3.5 h-3.5" />
-                <span className="text-xs font-medium whitespace-nowrap">
-                  {t('chat.connectorCount', { count: activeConnectors.length })}
-                </span>
-              </div>
-            </div>
-            <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-mcp/8 border border-mcp/15 justify-self-end">
-              <Plug className="w-3.5 h-3.5 text-mcp" />
-              <span className="text-xs text-mcp font-medium">
-                {showConnectorLabel
-                  ? t('chat.connectorCount', { count: activeConnectors.length })
-                  : activeConnectors.length}
-              </span>
-            </div>
-          </>
-        )}
-
-        {/* Model switcher and permission mode */}
-        <div className="flex items-center gap-1.5 justify-self-end">
-          <ContextWindowGauge />
-          <LiveBudgetMeter />
-          <ReasoningLevelPicker />
-          <YoloModeToggle />
-          {appConfig?.model && (
-            <ModelSwitcher
-              currentModel={appConfig.model}
-              onModelChange={(model) => {
-                window.electronAPI?.model?.switch(model);
-                useAppStore.getState().setAppConfig({ ...appConfig, model });
-              }}
-            />
-          )}
-          <PermissionModeSelector
-            currentMode={permissionMode}
-            onModeChange={(mode) => {
-              window.electronAPI?.permission?.setMode(mode);
-              useAppStore.getState().setPermissionMode(mode);
-            }}
-          />
-          {activeSession && (
-            <TaskModeToggle
-              mode={(activeSession.executionMode as ExecutionMode) ?? 'chat'}
-              onChange={(newMode) => {
-                // Optimistic local update
-                useAppStore.getState().updateSession(activeSession.id, { executionMode: newMode });
-                // Persist to DB. The preload typing only knows the legacy
-                // 'chat'|'task' values; new modes (ask, architect) are
-                // forwarded as-is — the main process round-trips the
-                // string verbatim into SQLite.
-                void window.electronAPI?.session?.updateSettings?.(activeSession.id, {
-                  executionMode: newMode as unknown as 'chat' | 'task',
-                });
-                // If switching to task mode, auto-enable dontAsk permission mode
-                if (newMode === 'task') {
-                  window.electronAPI?.permission?.setMode('dontAsk');
-                  useAppStore.getState().setPermissionMode('dontAsk');
-                }
-              }}
-            />
-          )}
-          {activeSessionId && <BranchSwitcher sessionId={activeSessionId} />}
-          <VoiceOutputToggle />
-        </div>
-      </div>
+      <ChatHeader />
 
       {/* Session search */}
       {searchActive && (
