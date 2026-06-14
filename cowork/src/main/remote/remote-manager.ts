@@ -10,6 +10,7 @@ import { RemoteGateway } from './gateway';
 import { MessageRouter } from './message-router';
 import { FeishuChannel } from './channels/feishu';
 import { SlackChannel } from './channels/slack';
+import { TelegramChannel } from './channels/telegram';
 import { remoteConfigStore } from './remote-config-store';
 import { tunnelManager, TunnelStatus } from './tunnel-manager';
 import { buildRemoteSessionTitle } from './remote-title';
@@ -18,6 +19,7 @@ import type {
   GatewayConfig,
   FeishuChannelConfig,
   SlackChannelConfig,
+  TelegramChannelConfig,
   ChannelType,
   RemoteSessionMapping,
   PairedUser,
@@ -351,6 +353,18 @@ export class RemoteManager extends EventEmitter {
    */
   async updateSlackConfig(config: SlackChannelConfig): Promise<void> {
     remoteConfigStore.setSlackConfig(config);
+
+    // Restart to apply changes
+    if (this.gateway?.running) {
+      await this.restart();
+    }
+  }
+
+  /**
+   * Update telegram channel config
+   */
+  async updateTelegramConfig(config: TelegramChannelConfig): Promise<void> {
+    remoteConfigStore.setTelegramConfig(config);
 
     // Restart to apply changes
     if (this.gateway?.running) {
@@ -1120,7 +1134,15 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Slack channel registered');
     }
 
-    // TODO: Register other channels (WeChat, Telegram, DingTalk)
+    // Register Telegram channel if configured
+    const telegramConfig = config.channels.telegram;
+    if (telegramConfig && telegramConfig.botToken) {
+      const telegramChannel = new TelegramChannel(telegramConfig);
+      this.gateway.registerChannel(telegramChannel);
+      log('[RemoteManager] Telegram channel registered');
+    }
+
+    // TODO: Register other channels (WeChat, DingTalk)
   }
 
   /**
