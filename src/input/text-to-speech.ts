@@ -7,7 +7,7 @@ import { commandExists } from '../utils/command-exists.js';
 
 export interface TTSConfig {
   enabled: boolean;
-  provider: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader' | 'kokoro';
+  provider: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader';
   voice?: string;
   rate?: string;
   volume?: string;
@@ -108,9 +108,6 @@ export class TextToSpeechManager extends EventEmitter {
    * Check if TTS is available
    */
   async isAvailable(): Promise<{ available: boolean; reason?: string }> {
-    if (this.config.provider === 'kokoro') {
-      return { available: true };
-    }
     // AudioReader uses HTTP API, not a CLI binary
     if (this.config.provider === 'audioreader') {
       try {
@@ -202,9 +199,6 @@ export class TextToSpeechManager extends EventEmitter {
           break;
         case 'audioreader':
           await this.speakWithAudioReader(text);
-          break;
-        case 'kokoro':
-          await this.speakWithKokoro(text);
           break;
         default:
           await this.speakWithEdgeTTS(text, language);
@@ -344,7 +338,7 @@ export class TextToSpeechManager extends EventEmitter {
   }
 
   /**
-   * Speak with AudioReader (Kokoro-82M via local API)
+   * Speak with AudioReader via local API
    */
   private async speakWithAudioReader(text: string): Promise<void> {
     const voice = this.config.voice || 'ff_siwis';
@@ -352,7 +346,7 @@ export class TextToSpeechManager extends EventEmitter {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        model: 'kokoro',
+        model: 'audioreader',
         input: text,
         voice,
         speed: 1.0,
@@ -366,24 +360,6 @@ export class TextToSpeechManager extends EventEmitter {
 
     const audioFile = path.join(this.tempDir, `tts_${Date.now()}.wav`);
     const buffer = Buffer.from(await response.arrayBuffer());
-    fs.writeFileSync(audioFile, buffer);
-
-    try {
-      await this.playAudio(audioFile);
-    } finally {
-      try { fs.unlinkSync(audioFile); } catch { /* ignore */ }
-    }
-  }
-
-  /**
-   * Speak with local Kokoro TTS model (quantized ONNX hexgrad/Kokoro-82M)
-   */
-  private async speakWithKokoro(text: string): Promise<void> {
-    const { kokoroTtsService } = await import('../utils/kokoro-tts.js');
-    const voice = this.config.voice || 'af_bella';
-    const buffer = await kokoroTtsService.generateSpeech(text, voice);
-
-    const audioFile = path.join(this.tempDir, `tts_${Date.now()}.wav`);
     fs.writeFileSync(audioFile, buffer);
 
     try {

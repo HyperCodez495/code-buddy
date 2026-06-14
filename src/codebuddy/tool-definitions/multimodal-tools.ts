@@ -101,7 +101,7 @@ export const TEXT_TO_SPEECH_TOOL: CodeBuddyTool = {
         },
         provider: {
           type: "string",
-          enum: ["auto", "system", "edge-tts", "espeak", "say", "kokoro", "audioreader"],
+          enum: ["auto", "system", "edge-tts", "espeak", "say", "audioreader"],
           description: "TTS provider. auto detects a local provider; system uses Windows SAPI"
         },
         voice: {

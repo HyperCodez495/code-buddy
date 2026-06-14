@@ -4,7 +4,7 @@ import path from 'path';
 
 import { commandExists } from '../utils/command-exists.js';
 
-export type TextToSpeechProvider = 'auto' | 'system' | 'edge-tts' | 'espeak' | 'say' | 'kokoro' | 'audioreader';
+export type TextToSpeechProvider = 'auto' | 'system' | 'edge-tts' | 'espeak' | 'say' | 'audioreader';
 
 export interface TextToSpeechOptions {
   rootDir?: string;
@@ -155,7 +155,7 @@ async function resolveProvider(
   if (await commandExists('espeak', { platform })) {
     return 'espeak';
   }
-  throw new Error('No local TTS provider available. Install edge-tts/espeak, use macOS say, Windows PowerShell SAPI, or choose kokoro/audioreader when configured.');
+  throw new Error('No local TTS provider available. Install edge-tts/espeak, use macOS say, Windows PowerShell SAPI, or choose audioreader when configured.');
 }
 
 function resolveOutputFormat(
@@ -187,7 +187,6 @@ function validateProviderFormat(provider: Exclude<TextToSpeechProvider, 'auto'>,
     'edge-tts': ['mp3'],
     espeak: ['wav'],
     say: ['aiff'],
-    kokoro: ['wav'],
     audioreader: ['wav'],
   };
   if (!supported[provider].includes(format)) {
@@ -253,15 +252,6 @@ function buildProviderCommand(
           input.text,
         ],
       };
-    case 'kokoro':
-      return {
-        kind: 'node',
-        run: async () => {
-          const { kokoroTtsService } = await import('../utils/kokoro-tts.js');
-          const buffer = await kokoroTtsService.generateSpeech(input.text, input.voice ?? 'af_bella');
-          await fs.writeFile(input.outputPath, buffer);
-        },
-      };
     case 'audioreader':
       return {
         kind: 'node',
@@ -270,7 +260,7 @@ function buildProviderCommand(
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
-              model: 'kokoro',
+              model: 'audioreader',
               input: input.text,
               voice: input.voice ?? 'ff_siwis',
               speed: 1.0,

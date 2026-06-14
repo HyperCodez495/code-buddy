@@ -1,7 +1,7 @@
 /**
  * AudioReader TTS Provider
  *
- * Uses a local AudioReader API (Kokoro-82M engine) for high-quality,
+ * Uses a local AudioReader API for high-quality,
  * free text-to-speech synthesis via an OpenAI-compatible REST API.
  */
 
@@ -15,11 +15,11 @@ import type {
 import type { ITTSProvider } from '../tts-manager.js';
 
 const DEFAULT_BASE_URL = 'http://localhost:8000';
-const DEFAULT_MODEL = 'kokoro';
+const DEFAULT_MODEL = 'audioreader';
 const DEFAULT_VOICE = 'ff_siwis';
 
-/** Known Kokoro voices with metadata */
-const KOKORO_VOICES: Record<string, { name: string; language: string; gender: 'male' | 'female' }> = {
+/** Known AudioReader voices with metadata */
+const AUDIOREADER_VOICES: Record<string, { name: string; language: string; gender: 'male' | 'female' }> = {
   ff_siwis: { name: 'Siwis', language: 'fr-FR', gender: 'female' },
   af_bella: { name: 'Bella', language: 'en-US', gender: 'female' },
   af_heart: { name: 'Heart', language: 'en-US', gender: 'female' },
@@ -32,7 +32,7 @@ const KOKORO_VOICES: Record<string, { name: string; language: string; gender: 'm
   bm_george: { name: 'George', language: 'en-GB', gender: 'male' },
 };
 
-/** OpenAI voice name to Kokoro voice mapping */
+/** OpenAI voice name to AudioReader voice mapping */
 const OPENAI_VOICE_MAP: Record<string, string> = {
   alloy: 'af_bella',
   echo: 'am_adam',
@@ -87,7 +87,7 @@ export class AudioReaderTTSProvider implements ITTSProvider {
     } catch {
       // Fall back to known voices
     }
-    return Object.keys(KOKORO_VOICES).map(id => this.buildVoice(id));
+    return Object.keys(AUDIOREADER_VOICES).map(id => this.buildVoice(id));
   }
 
   async synthesize(text: string, options?: SynthesisOptions): Promise<SynthesisResult> {
@@ -153,11 +153,11 @@ export class AudioReaderTTSProvider implements ITTSProvider {
   }
 
   private buildVoice(id: string): Voice {
-    const meta = KOKORO_VOICES[id];
+    const meta = AUDIOREADER_VOICES[id];
     return {
       id: `audioreader-${id}`,
       name: meta?.name ?? id,
-      description: `AudioReader Kokoro voice - ${meta?.name ?? id}`,
+      description: `AudioReader voice - ${meta?.name ?? id}`,
       language: meta?.language ?? 'en-US',
       gender: meta?.gender ?? 'female',
       provider: 'audioreader',

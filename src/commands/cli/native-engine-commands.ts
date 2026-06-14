@@ -1314,7 +1314,7 @@ export function registerCompanionCommands(program: Command): void {
     .option('--no-set-model', 'Do not set the project model to the ChatGPT companion default')
     .option('--language <lang>', 'Voice language', 'fr')
     .option('--stt-provider <provider>', 'Voice input provider (system, whisper-local, whisper-api)')
-    .option('--tts-provider <provider>', 'TTS provider (edge-tts, espeak, say, piper, audioreader, kokoro)')
+    .option('--tts-provider <provider>', 'TTS provider (edge-tts, espeak, say, piper, audioreader)')
     .option('--tts-voice <voice>', 'TTS voice name')
     .option('--model <model>', 'ChatGPT model to use when OAuth credentials are present')
     .action(async (opts: {
@@ -1323,7 +1323,7 @@ export function registerCompanionCommands(program: Command): void {
       setModel?: boolean;
       language?: string;
       sttProvider?: 'system' | 'whisper-local' | 'whisper-api';
-      ttsProvider?: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader' | 'kokoro';
+      ttsProvider?: 'edge-tts' | 'espeak' | 'say' | 'piper' | 'audioreader';
       ttsVoice?: string;
       model?: string;
     }) => {

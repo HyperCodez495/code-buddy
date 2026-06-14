@@ -253,7 +253,7 @@ export class TextToSpeechTool implements ITool {
           },
           provider: {
             type: 'string',
-            enum: ['auto', 'system', 'edge-tts', 'espeak', 'say', 'kokoro', 'audioreader'],
+            enum: ['auto', 'system', 'edge-tts', 'espeak', 'say', 'audioreader'],
             description: 'TTS provider. auto detects a local provider; system uses Windows SAPI.',
           },
           voice: {
@@ -1239,7 +1239,7 @@ function optionalStringList(value: unknown): string[] | undefined {
 function optionalProvider(value: unknown): TextToSpeechProvider | undefined {
   if (typeof value !== 'string' || !value.trim()) return undefined;
   const provider = value.trim();
-  if (['auto', 'system', 'edge-tts', 'espeak', 'say', 'kokoro', 'audioreader'].includes(provider)) {
+  if (['auto', 'system', 'edge-tts', 'espeak', 'say', 'audioreader'].includes(provider)) {
     return provider as TextToSpeechProvider;
   }
   throw new Error(`Unsupported text_to_speech provider: ${provider}`);

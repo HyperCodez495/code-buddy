@@ -1258,7 +1258,7 @@ program
   )
   .option(
     "--tts-provider <provider>",
-    "TTS provider (edge-tts, espeak, say, piper, audioreader, kokoro)"
+    "TTS provider (edge-tts, espeak, say, piper, audioreader)"
   )
   .action(async (message, options) => {
     // Apply --quiet / --verbose flags
@@ -1280,7 +1280,7 @@ program
         ttsManager.setAutoSpeak(true);
       }
       if (options.ttsProvider) {
-        const validProviders = ['edge-tts', 'espeak', 'say', 'piper', 'audioreader', 'kokoro'];
+        const validProviders = ['edge-tts', 'espeak', 'say', 'piper', 'audioreader'];
         if (validProviders.includes(options.ttsProvider)) {
           ttsManager.updateConfig({ provider: options.ttsProvider as any });
         } else {

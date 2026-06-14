@@ -211,18 +211,10 @@ function checkTtsProviders(): DoctorCheck[] {
 
   const found = providers.filter(p => commandExists(p.cmd));
 
-  try {
-    // Check if kokoro-js is installed in workspace node_modules
-    import.meta.resolve?.('kokoro-js');
-    found.push({ cmd: 'kokoro', label: 'kokoro (npm)' });
-  } catch {
-    // ignore
-  }
-
   return [{
     name: 'TTS providers',
     status: found.length > 0 ? 'ok' : 'warn',
-    message: found.length > 0 ? `available: ${found.map(p => p.label).join(', ')}` : 'none found (install edge-tts, espeak or use kokoro via npm)',
+    message: found.length > 0 ? `available: ${found.map(p => p.label).join(', ')}` : 'none found (install edge-tts, espeak)',
   }];
 }
 
