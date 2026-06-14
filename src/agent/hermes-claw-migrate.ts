@@ -123,12 +123,6 @@ interface ArchiveCategorySpec {
 }
 
 /**
- * Archive categories whose slice can embed credentials. Their review files are
- * chmod 0600 like `secrets.json` (best-effort; no-op where chmod is unsupported).
- */
-const SENSITIVE_ARCHIVE_CATEGORIES = new Set<string>(['hooks', 'webhooks', 'portal', 'secrets', 'custom_providers', 'gateway']);
-
-/**
  * Dev-only invariant: every config key is claimed by at most one archive spec.
  * Two specs sharing a key would archive the same slice into two files. Throws
  * in non-production so the mistake is caught in tests; silent no-op otherwise.
@@ -971,8 +965,23 @@ function backupSource(home: string, codebuddyDir: string): string {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupRoot = path.join(codebuddyDir, 'openclaw-migration', 'backup', stamp);
   ensureDir(backupRoot);
+  // The backup aggregates the WHOLE source tree — including ~/.openclaw/identity
+  // device credentials and openclaw.json (gateway token / provider apiKey). Lock
+  // the backup root to owner-only (0700) BEFORE copying so the secrets never sit
+  // under a world-traversable 0755 directory, even briefly.
+  try {
+    fs.chmodSync(backupRoot, 0o700);
+  } catch {
+    /* best-effort on platforms without chmod */
+  }
   // Shallow recursive copy of the source tree (fs.cpSync available on Node >= 16.7).
   fs.cpSync(home, path.join(backupRoot, path.basename(home)), { recursive: true });
+  // cpSync preserves source perms; harden the copied home wrapper dir too.
+  try {
+    fs.chmodSync(path.join(backupRoot, path.basename(home)), 0o700);
+  } catch {
+    /* best-effort */
+  }
   return backupRoot;
 }
 
@@ -1154,13 +1163,16 @@ function applyEntry(entry: ClawMigrationEntry, opts: ClawMigrationOptions, ctx: 
       if (entry.action !== 'archive' || !entry.destination || !entry.source) return;
       ensureDir(path.dirname(entry.destination));
       const slice = sliceForArchive(entry, ctx);
-      fs.writeFileSync(entry.destination, JSON.stringify(slice, null, 2), 'utf-8');
-      if (SENSITIVE_ARCHIVE_CATEGORIES.has(entry.category)) {
-        try {
-          fs.chmodSync(entry.destination, 0o600);
-        } catch {
-          /* best-effort on platforms without chmod */
-        }
+      // Archive slices are credential-review artifacts. Write owner-only (0600)
+      // for EVERY category (not just a hand-maintained sensitive set) so a
+      // mis-tagged or newly-added credential-bearing category can never be left
+      // world-readable. Create at 0600 to close the write-then-chmod window,
+      // then re-harden defensively.
+      fs.writeFileSync(entry.destination, JSON.stringify(slice, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      try {
+        fs.chmodSync(entry.destination, 0o600);
+      } catch {
+        /* best-effort on platforms without chmod */
       }
       entry.applied = true;
     }

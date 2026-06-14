@@ -934,6 +934,7 @@ if ($focused) {
 
     // Probe the *exact* requirement — a python can have `gi` yet lack the Atspi typelib.
     const probe = `import gi; gi.require_version('Atspi','2.0'); from gi.repository import Atspi; print('OK')`;
+    let transientFailure = false;
     for (const candidate of candidates) {
       try {
         const out = execSync(`${candidate} -c "${probe}" 2>/dev/null`, {
@@ -944,11 +945,22 @@ if ($focused) {
           this.atspiPython = candidate;
           return candidate;
         }
-      } catch {
-        // Candidate missing or binding absent — try the next one.
+      } catch (err) {
+        // Distinguish a transient timeout/kill (machine under load) from a genuine
+        // missing interpreter/binding. A timeout must NOT poison the cache, or a
+        // single slow probe would silently downgrade every later snapshot to mock
+        // until the process restarts.
+        const e = err as { signal?: string; code?: string };
+        if (e?.signal === 'SIGTERM' || e?.code === 'ETIMEDOUT') transientFailure = true;
       }
     }
 
+    if (transientFailure) {
+      // Leave the cache unset (null) so the next snapshot re-probes once load clears.
+      return '';
+    }
+    // Every candidate cleanly failed (absent/binding missing) — cache to avoid
+    // re-probing 3 interpreters on every snapshot.
     this.atspiPython = '';
     return '';
   }
