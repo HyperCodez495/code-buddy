@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
+import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import { useIPC } from '../hooks/useIPC';
 import { usePermissionRuleAssist } from '../hooks/usePermissionRuleAssist';
@@ -22,6 +23,51 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab);
   const setPermissionRuleTestDraft = useAppStore((s) => s.setPermissionRuleTestDraft);
   const setPermissionRuleDraft = useAppStore((s) => s.setPermissionRuleDraft);
+
+  const modalRef = useRef<HTMLDivElement>(null);
+
+  // Focus trap
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Tab') {
+        if (!modalRef.current) return;
+        const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+          'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusableElements.length === 0) return;
+        const firstElement = focusableElements[0];
+        const lastElement = focusableElements[focusableElements.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === firstElement) {
+            lastElement.focus();
+            e.preventDefault();
+          }
+        } else {
+          if (document.activeElement === lastElement) {
+            firstElement.focus();
+            e.preventDefault();
+          }
+        }
+      } else if (e.key === 'Escape') {
+        respondToPermission(permission.toolUseId, 'deny');
+      }
+    };
+    document.addEventListener('keydown', handleKeyDown);
+    return () => document.removeEventListener('keydown', handleKeyDown);
+  }, [permission.toolUseId, respondToPermission]);
+
+  // Initial focus
+  useEffect(() => {
+    if (modalRef.current) {
+      const focusableElements = modalRef.current.querySelectorAll<HTMLElement>(
+        'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
+      );
+      if (focusableElements.length > 0) {
+        setTimeout(() => focusableElements[0].focus(), 100);
+      }
+    }
+  }, []);
 
   const getToolDescription = (toolName: string): string => {
     const key = `permission.toolDescriptions.${toolName}`;
@@ -102,11 +148,22 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
   });
 
   return (
-    <div
-      className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50 animate-fade-in"
+    <motion.div
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      className="fixed inset-0 bg-black/20 backdrop-blur-sm flex items-center justify-center z-50"
       data-testid="permission-dialog"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="permission-dialog-title"
     >
-      <div className="card w-full max-w-md p-6 m-4 shadow-elevated animate-slide-up">
+      <motion.div
+        ref={modalRef}
+        initial={{ opacity: 0, scale: 0.95, y: 10 }}
+        animate={{ opacity: 1, scale: 1, y: 0 }}
+        transition={{ type: 'spring', damping: 25, stiffness: 300 }}
+        className="card w-full max-w-md p-6 m-4 shadow-elevated"
+      >
         {/* Header */}
         <div className="flex items-start gap-4">
           <div
@@ -124,7 +181,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
           </div>
 
           <div className="flex-1">
-            <h2 className="text-lg font-semibold text-text-primary">
+            <h2 id="permission-dialog-title" className="text-lg font-semibold text-text-primary">
               {t('permission.permissionRequired')}
             </h2>
             <p className="text-sm text-text-secondary mt-1">
@@ -287,7 +344,7 @@ export function PermissionDialog({ permission }: PermissionDialogProps) {
             </div>
           </div>
         )}
-      </div>
-    </div>
+      </motion.div>
+    </motion.div>
   );
 }
