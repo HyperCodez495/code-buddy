@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { motion } from 'framer-motion';
 import { useTranslation } from 'react-i18next';
 import {
   useActiveSessionId,
@@ -997,7 +998,12 @@ export function ChatView() {
               const isStreaming =
                 typeof message.id === 'string' && message.id.startsWith('partial-');
               return (
-                <div key={message.id}>
+                <motion.div
+                  key={message.id}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ type: 'spring', damping: 20, stiffness: 100 }}
+                >
                   <MessageCard
                     message={message}
                     isStreaming={isStreaming}
@@ -1011,7 +1017,7 @@ export function ChatView() {
                     onEdit={handleEditMessage}
                     onRegenerate={handleRegenerateMessage}
                   />
-                </div>
+                </motion.div>
               );
             })
           )}
