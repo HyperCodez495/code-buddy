@@ -503,7 +503,7 @@ export function ContextPanel() {
 
   if (contextPanelCollapsed) {
     return (
-      <div className="w-10 bg-background border-l border-border-muted flex items-start justify-center pt-3">
+      <div className="w-10 h-full bg-background border-l border-border-muted flex items-start justify-center pt-3">
         <button
           onClick={toggleContextPanel}
           className="w-7 h-7 rounded-md flex items-center justify-center hover:bg-surface-hover text-text-muted hover:text-text-primary transition-colors"
@@ -516,7 +516,7 @@ export function ContextPanel() {
   }
 
   return (
-    <div className="w-72 bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
+    <div className="w-full h-full bg-background border-l border-border-muted flex flex-col overflow-hidden text-sm">
       {/* Header */}
       <div className="px-3 h-10 flex items-center gap-2 border-b border-border-muted shrink-0">
         <button

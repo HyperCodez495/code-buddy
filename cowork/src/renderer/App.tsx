@@ -48,6 +48,7 @@ import { MemoryPanel } from './components/MemoryPanel';
 import { LiveLauncherPanel } from './components/LiveLauncherPanel';
 import { FocusView } from './components/FocusView';
 import { SplitPaneLayout } from './components/SplitPaneLayout';
+import { Group, Panel, Separator } from 'react-resizable-panels';
 import { UpdateNotification } from './components/UpdateNotification';
 import { NotificationToastContainer } from './components/NotificationToast';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -130,6 +131,7 @@ function App() {
   const systemDarkMode = useSystemDarkMode();
   const { showSettings } = useSettingsState();
   const { sidebarCollapsed } = useLayoutState();
+  const contextPanelCollapsed = useAppStore((s) => s.contextPanelCollapsed);
   const { showConfigModal, isConfigured, appConfig } = useConfigModalState();
   const globalNotice = useGlobalNotice();
   const { progress: sandboxSetupProgress, isComplete: isSandboxSetupComplete } =
@@ -449,54 +451,90 @@ function App() {
           <ShellNavigation />
         </PanelErrorBoundary>
 
-        {/* Sidebar */}
-        <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
-          <Sidebar />
-        </PanelErrorBoundary>
-
-        {/* Main Content Area */}
-        <main className="flex-1 min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
-          {showSettings ? (
-            <PanelErrorBoundary
-              name="SettingsPanel"
-              resetKey="settings"
-              fallback={<MainPanelFallback />}
-            >
-              <Suspense fallback={<MainPanelFallback />}>
-                <SettingsPanel onClose={() => setShowSettings(false)} />
-              </Suspense>
-            </PanelErrorBoundary>
-          ) : activeSessionId ? (
-            <PanelErrorBoundary
-              name="ChatView"
-              resetKey={activeSessionId}
-              fallback={<MainPanelFallback />}
-            >
-              <Suspense fallback={<MainPanelFallback />}>
-                {splitPaneEnabled ? (
-                  <SplitPaneLayout left={<ChatView />} right={<FilePreviewPane inline />} />
-                ) : (
-                  <ChatView />
-                )}
-              </Suspense>
-            </PanelErrorBoundary>
-          ) : (
-            <WelcomeView />
+        <Group orientation="horizontal" id="cowork-layout">
+          {/* Sidebar */}
+          {!sidebarCollapsed && (
+            <>
+              <Panel id="sidebar" defaultSize={20} minSize={15} maxSize={40} className="flex-shrink-0 z-10">
+                <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
+                  <Sidebar />
+                </PanelErrorBoundary>
+              </Panel>
+              <Separator className="w-1 bg-border-muted hover:bg-accent transition-colors z-20 flex-shrink-0 cursor-col-resize" />
+            </>
           )}
-        </main>
+          {sidebarCollapsed && (
+            <div className="flex-shrink-0 z-10">
+              <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
+                <Sidebar />
+              </PanelErrorBoundary>
+            </div>
+          )}
 
-        {/* Context Panel - only show when in session and not in settings */}
-        {activeSessionId && !showSettings && (
-          <PanelErrorBoundary
-            name="ContextPanel"
-            resetKey={activeSessionId}
-            fallback={<ContextPanelFallback />}
-          >
-            <Suspense fallback={<ContextPanelFallback />}>
-              <ContextPanel />
-            </Suspense>
-          </PanelErrorBoundary>
-        )}
+          {/* Main Content Area */}
+          <Panel id="main" minSize={30}>
+            <main className="h-full min-h-0 min-w-0 flex flex-col overflow-hidden bg-background">
+              {showSettings ? (
+                <PanelErrorBoundary
+                  name="SettingsPanel"
+                  resetKey="settings"
+                  fallback={<MainPanelFallback />}
+                >
+                  <Suspense fallback={<MainPanelFallback />}>
+                    <SettingsPanel onClose={() => setShowSettings(false)} />
+                  </Suspense>
+                </PanelErrorBoundary>
+              ) : activeSessionId ? (
+                <PanelErrorBoundary
+                  name="ChatView"
+                  resetKey={activeSessionId}
+                  fallback={<MainPanelFallback />}
+                >
+                  <Suspense fallback={<MainPanelFallback />}>
+                    {splitPaneEnabled ? (
+                      <SplitPaneLayout left={<ChatView />} right={<FilePreviewPane inline />} />
+                    ) : (
+                      <ChatView />
+                    )}
+                  </Suspense>
+                </PanelErrorBoundary>
+              ) : (
+                <WelcomeView />
+              )}
+            </main>
+          </Panel>
+
+          {/* Context Panel - only show when in session and not in settings */}
+          {activeSessionId && !showSettings && !contextPanelCollapsed && (
+            <>
+              <Separator className="w-1 bg-border-muted hover:bg-accent transition-colors z-20 flex-shrink-0 cursor-col-resize" />
+              <Panel id="context" defaultSize={25} minSize={15} maxSize={40} className="flex-shrink-0 z-10">
+                <PanelErrorBoundary
+                  name="ContextPanel"
+                  resetKey={activeSessionId}
+                  fallback={<ContextPanelFallback />}
+                >
+                  <Suspense fallback={<ContextPanelFallback />}>
+                    <ContextPanel />
+                  </Suspense>
+                </PanelErrorBoundary>
+              </Panel>
+            </>
+          )}
+          {activeSessionId && !showSettings && contextPanelCollapsed && (
+            <div className="flex-shrink-0 z-10">
+              <PanelErrorBoundary
+                name="ContextPanel"
+                resetKey={activeSessionId}
+                fallback={<ContextPanelFallback />}
+              >
+                <Suspense fallback={<ContextPanelFallback />}>
+                  <ContextPanel />
+                </Suspense>
+              </PanelErrorBoundary>
+            </div>
+          )}
+        </Group>
       </div>
 
       {/* Permission Dialog */}
