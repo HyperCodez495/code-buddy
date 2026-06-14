@@ -9,7 +9,6 @@
 import { createRequire } from 'module';
 import { spawnSync } from 'child_process';
 import { mkdir, mkdtemp, stat } from 'fs/promises';
-import { createServer } from 'net';
 import { tmpdir } from 'os';
 import { isAbsolute, join, resolve } from 'path';
 import type { Browser, BrowserContext } from 'playwright';
@@ -313,7 +312,7 @@ function camofoxBackend(env: NodeJS.ProcessEnv): HermesBrowserBackend {
     version: installed ? firstLine(camoufox.output) : null,
     credentialSources: [],
     smokeCommand: installed ? 'buddy hermes browser-smoke camofox --json' : null,
-    notes: ['Camofox runner launches the anti-detect browser and connects via CDP (src/browser-automation/camofox-runner.ts).'],
+    notes: ['Camofox runner launches the anti-detect Firefox Playwright server and connects via firefox.connect() (src/browser-automation/camofox-runner.ts).'],
     remediation: installed ? [] : ['Install Camofox/Camoufox only if this backend is required.'],
   };
 }
@@ -513,23 +512,6 @@ async function createBrowserSmokeArtifactDir(artifactsDir?: string): Promise<str
   }
 
   return mkdtemp(join(tmpdir(), 'codebuddy-hermes-browser-'));
-}
-
-async function reserveLocalPort(): Promise<number> {
-  return new Promise<number>((resolvePort, rejectPort) => {
-    const server = createServer();
-    server.once('error', rejectPort);
-    server.listen(0, '127.0.0.1', () => {
-      const address = server.address();
-      server.close(() => {
-        if (address && typeof address === 'object') {
-          resolvePort(address.port);
-          return;
-        }
-        rejectPort(new Error('Unable to reserve a local port for Camofox smoke.'));
-      });
-    });
-  });
 }
 
 async function runRemoteCdpSmoke(
@@ -816,34 +798,91 @@ async function runBrowserUseSmoke(now: () => Date, env: NodeJS.ProcessEnv): Prom
 async function runCamofoxSmoke(now: () => Date, env: NodeJS.ProcessEnv): Promise<HermesBrowserBackendSmokeResult> {
   const started = now();
   const startedAtMs = Date.now();
-  const cdpPort = await reserveLocalPort();
-  const binary = env.CODEBUDDY_CAMOFOX_BINARY?.trim() || undefined;
+  const binaryPath = env.CODEBUDDY_CAMOFOX_BINARY?.trim() || undefined;
+  const pythonPath = env.CODEBUDDY_CAMOFOX_PYTHON?.trim() || undefined;
+
+  // Camoufox is Firefox: launch its Playwright server and connect via
+  // firefox.connect() — NOT chromium.connectOverCDP(). The launch step returns
+  // a Playwright-server wsEndpoint; the connect below proves the repo's pinned
+  // Playwright can actually drive it (this is where the version-lock, if any,
+  // surfaces honestly rather than being faked as success on the endpoint alone).
   const result = await launchCamofox({
-    binary,
-    cdpPort,
+    binaryPath,
+    pythonPath,
     headless: true,
-    timeout: 15_000,
+    timeout: 30_000,
   });
 
-  try {
-    const output = result.ok
-      ? `cdp=${result.wsEndpoint}; pid=${result.pid ?? 'unknown'}`
-      : result.error ?? 'Camofox smoke failed.';
+  if (!result.ok) {
+    const message = result.error ?? 'Camofox smoke failed.';
     return {
       backendId: 'camofox',
-      command: binary ?? null,
+      command: binaryPath ?? pythonPath ?? null,
       durationMs: Math.max(0, Date.now() - startedAtMs),
       finishedAt: now().toISOString(),
       label: 'Camofox / Camoufox',
-      ok: result.ok,
+      ok: false,
+      output: message,
+      startedAt: started.toISOString(),
+      status: /not (found|importable)|No module named/i.test(message) ? 'not-runnable' : 'failed',
+      stdout: '',
+      stderr: message,
+    };
+  }
+
+  const wsEndpoint = result.wsEndpoint!;
+  let browser: Browser | null = null;
+  let context: BrowserContext | null = null;
+
+  try {
+    const playwright = await import('playwright');
+    browser = await playwright.firefox.connect(wsEndpoint);
+    context = await browser.newContext();
+    const page = await context.newPage();
+    await page.goto('data:text/html,<title>OK-HERMES-CAMOFOX</title><h1>OK-HERMES-CAMOFOX</h1>', {
+      waitUntil: 'domcontentloaded',
+    });
+    const title = await page.title();
+    const heading = await page.locator('h1').textContent();
+    const ok = title === 'OK-HERMES-CAMOFOX' && heading === 'OK-HERMES-CAMOFOX';
+    const output = `title=${title}; heading=${heading ?? ''}; pid=${result.pid ?? 'unknown'}`;
+
+    return {
+      backendId: 'camofox',
+      command: binaryPath ?? pythonPath ?? null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Camofox / Camoufox',
+      ok,
       output,
       startedAt: started.toISOString(),
-      status: result.ok ? 'passed' : result.error?.match(/not found/i) ? 'not-runnable' : 'failed',
-      stdout: result.ok ? output : '',
-      stderr: result.ok ? '' : output,
-      session: result.wsEndpoint ? { url: result.wsEndpoint } : undefined,
+      status: ok ? 'passed' : 'failed',
+      stdout: ok ? output : '',
+      stderr: ok ? '' : 'Unexpected Camofox page content.',
+      // Never expose the host:port wsEndpoint in the result.
+      session: { url: 'camoufox-firefox-server' },
+    };
+  } catch (error) {
+    // A Playwright version-guard mismatch (server driver vs repo client) lands
+    // here. Report it honestly as a failure with the connect error message —
+    // do not fall back to a fake success.
+    const message = errorMessage(error);
+    return {
+      backendId: 'camofox',
+      command: binaryPath ?? pythonPath ?? null,
+      durationMs: Math.max(0, Date.now() - startedAtMs),
+      finishedAt: now().toISOString(),
+      label: 'Camofox / Camoufox',
+      ok: false,
+      output: message,
+      startedAt: started.toISOString(),
+      status: 'failed',
+      stdout: '',
+      stderr: message,
     };
   } finally {
+    await context?.close().catch(() => undefined);
+    await browser?.close().catch(() => undefined);
     if (result.pid) {
       await closeCamofox(result.pid).catch(() => undefined);
     }

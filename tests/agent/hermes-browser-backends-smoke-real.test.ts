@@ -18,6 +18,7 @@ const browserRunnerMocks = vi.hoisted(() => ({
   closeCamofox: vi.fn(),
   executeBrowserUseAction: vi.fn(),
   launchCamofox: vi.fn(),
+  firefoxConnect: vi.fn(),
 }));
 const mockStagehandActivePage = {
   goto: mockStagehandGoto,
@@ -55,6 +56,22 @@ vi.mock('../../src/browser-automation/camofox-runner.js', () => ({
   closeCamofox: browserRunnerMocks.closeCamofox,
   launchCamofox: browserRunnerMocks.launchCamofox,
 }));
+
+// Partial-mock Playwright: keep the real `chromium` (used by the real
+// local-playwright + remote-CDP smokes and by launchLocalCdpBrowser), but fake
+// `firefox.connect` so the Camofox smoke can be exercised against a mocked
+// Playwright-server endpoint without standing up a real Camoufox server here.
+const mockFirefoxConnect = browserRunnerMocks.firefoxConnect;
+vi.mock('playwright', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('playwright')>();
+  return {
+    ...actual,
+    firefox: {
+      ...actual.firefox,
+      connect: (...args: unknown[]) => mockFirefoxConnect(...args),
+    },
+  };
+});
 
 import {
   buildHermesBrowserBackendsReadiness,
@@ -443,13 +460,31 @@ describe('Hermes browser backend readiness and live smoke', () => {
     expect(JSON.stringify(result)).not.toContain('secret-browser-use-key');
   });
 
-  it('runs the Camofox smoke through the Camofox runner when installed', async () => {
+  it('runs the Camofox smoke: launches the server then firefox.connect()', async () => {
     mockLaunchCamofox.mockResolvedValueOnce({
       ok: true,
       pid: 12345,
-      wsEndpoint: 'ws://127.0.0.1:9230',
+      wsEndpoint: 'ws://localhost:44477/deadbeef',
     });
     mockCloseCamofox.mockResolvedValueOnce(undefined);
+
+    // Fake the Firefox Playwright-server connection: connect → context → page.
+    const fakePage = {
+      goto: vi.fn().mockResolvedValue(undefined),
+      title: vi.fn().mockResolvedValue('OK-HERMES-CAMOFOX'),
+      locator: vi.fn().mockReturnValue({
+        textContent: vi.fn().mockResolvedValue('OK-HERMES-CAMOFOX'),
+      }),
+    };
+    const fakeContext = {
+      newPage: vi.fn().mockResolvedValue(fakePage),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    const fakeBrowser = {
+      newContext: vi.fn().mockResolvedValue(fakeContext),
+      close: vi.fn().mockResolvedValue(undefined),
+    };
+    mockFirefoxConnect.mockResolvedValueOnce(fakeBrowser);
 
     const result = await runHermesBrowserBackendSmoke({
       backendId: 'camofox',
@@ -464,12 +499,41 @@ describe('Hermes browser backend readiness and live smoke', () => {
       ok: true,
       status: 'passed',
     });
-    expect(result.output).toContain('ws://127.0.0.1:9230');
+    expect(result.output).toContain('OK-HERMES-CAMOFOX');
+    // Firefox protocol — connect, NOT connectOverCDP.
+    expect(mockFirefoxConnect).toHaveBeenCalledWith('ws://localhost:44477/deadbeef');
     expect(mockLaunchCamofox).toHaveBeenCalledWith(expect.objectContaining({
-      binary: '/opt/camofox/camofox',
+      binaryPath: '/opt/camofox/camofox',
       headless: true,
     }));
     expect(mockCloseCamofox).toHaveBeenCalledWith(12345);
+    // The raw host:port wsEndpoint must never leak into the result.
+    expect(JSON.stringify(result)).not.toContain('ws://localhost:44477/deadbeef');
+  });
+
+  it('reports a Camofox connect/version-guard failure honestly (no fake success)', async () => {
+    mockLaunchCamofox.mockResolvedValueOnce({
+      ok: true,
+      pid: 22222,
+      wsEndpoint: 'ws://localhost:44477/cafe',
+    });
+    mockCloseCamofox.mockResolvedValueOnce(undefined);
+    mockFirefoxConnect.mockRejectedValueOnce(
+      new Error('server is using Playwright 1.49.1 which is incompatible with this client'),
+    );
+
+    const result = await runHermesBrowserBackendSmoke({
+      backendId: 'camofox',
+      now: () => new Date('2026-05-31T13:38:00.000Z'),
+    });
+
+    expect(result).toMatchObject({
+      backendId: 'camofox',
+      ok: false,
+      status: 'failed',
+    });
+    expect(result.stderr).toMatch(/incompatible|Playwright/i);
+    expect(mockCloseCamofox).toHaveBeenCalledWith(22222);
   });
 
   it('routes auto browser smoke to a real safe backend', async () => {

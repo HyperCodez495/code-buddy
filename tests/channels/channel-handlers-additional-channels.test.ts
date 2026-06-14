@@ -32,6 +32,7 @@ describe('handleChannels additional channel activation', () => {
     'teams',
     'imessage',
     'mattermost',
+    'nextcloud-talk',
   ]);
 
   async function mockConnect(channelType: ChannelType): Promise<void> {
@@ -86,6 +87,26 @@ describe('handleChannels additional channel activation', () => {
         const { IMessageChannel } = await import('../../src/channels/imessage/index.js');
         vi.spyOn(IMessageChannel.prototype, 'connect').mockImplementation(markConnected);
         vi.spyOn(IMessageChannel.prototype, 'disconnect').mockImplementation(async function (this: unknown): Promise<void> {
+          const channel = this as { status?: { connected: boolean; authenticated: boolean; lastActivity?: Date } };
+          if (channel.status) {
+            channel.status.connected = false;
+            channel.status.authenticated = false;
+            channel.status.lastActivity = new Date();
+          }
+        });
+        break;
+      }
+      case 'nextcloud-talk': {
+        // Nextcloud Talk now runs a real Spreed long-poll loop and only flips
+        // connected on the first successful poll (async). Mock connect() so this
+        // synchronous activation test doesn't dial out to a non-existent host,
+        // and disconnect() since the real one tears down transport state a
+        // mocked connect() never created (same tier/idiom as imessage). The real
+        // long-poll + reconnect transport is proven against a loopback mock in
+        // nextcloud-talk-transport.test.ts.
+        const { NextcloudTalkChannel } = await import('../../src/channels/nextcloud-talk/index.js');
+        vi.spyOn(NextcloudTalkChannel.prototype, 'connect').mockImplementation(markConnected);
+        vi.spyOn(NextcloudTalkChannel.prototype, 'disconnect').mockImplementation(async function (this: unknown): Promise<void> {
           const channel = this as { status?: { connected: boolean; authenticated: boolean; lastActivity?: Date } };
           if (channel.status) {
             channel.status.connected = false;
