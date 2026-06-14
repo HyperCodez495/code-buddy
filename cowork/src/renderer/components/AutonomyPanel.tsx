@@ -17,6 +17,7 @@
  */
 import { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
+import { LiveBudgetMeter } from './LiveBudgetMeter';
 import {
   X,
   Cpu,
@@ -277,25 +278,30 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
       <div className="flex items-center gap-2 px-4 py-3 border-b border-border-muted flex-shrink-0">
         <Cpu size={16} className="text-accent" />
         <h2 className="text-sm font-semibold text-text-primary">
-          {t('autonomy.title', 'Autonomy')}
+          {t('autonomy.title', 'Advanced Autonomy Dashboard (YOLO / Daemon)')}
         </h2>
-        <button
-          onClick={() => void load()}
-          className="ml-auto p-1 text-text-muted hover:text-text-primary"
-          title={t('common.refresh', 'Refresh')}
-          data-testid="autonomy-refresh"
-        >
-          <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
-        </button>
-        <button
-          onClick={onClose}
-          className="p-1 text-text-muted hover:text-text-primary"
-          aria-label={t('common.close', 'Close')}
-          title={t('common.close', 'Close')}
-          data-testid="autonomy-panel-close"
-        >
-          <X size={16} />
-        </button>
+        <div className="ml-auto flex items-center gap-3">
+          <LiveBudgetMeter />
+          <div className="flex items-center gap-1">
+            <button
+              onClick={() => void load()}
+              className="p-1 text-text-muted hover:text-text-primary"
+              title={t('common.refresh', 'Refresh')}
+              data-testid="autonomy-refresh"
+            >
+              <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1 text-text-muted hover:text-text-primary"
+              aria-label={t('common.close', 'Close')}
+              title={t('common.close', 'Close')}
+              data-testid="autonomy-panel-close"
+            >
+              <X size={16} />
+            </button>
+          </div>
+        </div>
       </div>
 
       <div className="flex-1 overflow-y-auto p-3 space-y-4 text-xs">
@@ -408,21 +414,6 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
                 {busyAction === 'tick' ? <Loader2 size={11} className="animate-spin" /> : <Zap size={11} />}
                 {t('autonomy.tick', 'Run one tick')}
               </button>
-              {service?.installed && (
-                <button
-                  onClick={() => {
-                    const next = !showLogs;
-                    setShowLogs(next);
-                    if (next) void loadLogs();
-                  }}
-                  className="flex items-center gap-1 px-2 py-1 rounded border border-border text-text-secondary hover:text-text-primary hover:border-accent/50"
-                  title={t('autonomy.logsHint', 'Tail the service logs (journalctl user unit)')}
-                  data-testid="autonomy-daemon-logs-toggle"
-                >
-                  {logsLoading ? <Loader2 size={11} className="animate-spin" /> : <ScrollText size={11} />}
-                  {t('autonomy.logs', 'Logs')}
-                </button>
-              )}
               {service?.installed && (
                 <button
                   onClick={() => void runDaemonAction('uninstall', () => api.autonomy.serviceUninstall())}
@@ -604,18 +595,39 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
 
         {/* Presence */}
         <section>
-          <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted mb-1.5">
-            {t('autonomy.agents', 'Agents')} ({presence.length})
-          </h3>
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted">
+              {t('autonomy.agents', 'Active Subagents')} ({presence.length})
+            </h3>
+            {presence.length > 0 && (
+               <div className="flex items-center gap-2">
+                 <span className="text-[10px] text-text-muted">{presence.filter(([, p]) => p.status === 'active').length} active</span>
+                 <div className="w-16 h-1.5 bg-surface rounded-full overflow-hidden border border-border-muted">
+                   <div 
+                     className="h-full bg-success transition-all duration-500" 
+                     style={{ width: `${(presence.filter(([, p]) => p.status === 'active').length / presence.length) * 100}%` }} 
+                   />
+                 </div>
+               </div>
+            )}
+          </div>
           {presence.length === 0 && <p className="text-text-muted">{t('autonomy.noAgents', 'No agents present.')}</p>}
-          <div className="space-y-1">
+          <div className="grid grid-cols-2 gap-2">
             {presence.map(([id, p]) => (
-              <div key={id} className="flex items-center gap-2 px-2 py-1 rounded bg-surface/40 border border-border-muted">
-                <span
-                  className={`w-1.5 h-1.5 rounded-full ${p.status === 'active' ? 'bg-success' : p.status === 'idle' ? 'bg-warning' : 'bg-text-muted'}`}
-                />
-                <span className="font-mono truncate">{id}</span>
-                {p.currentTask && <span className="ml-auto text-text-muted truncate">{p.currentTask}</span>}
+              <div key={id} className="flex flex-col gap-1.5 p-2 rounded-lg bg-surface/40 border border-border-muted shadow-sm hover:border-accent/40 transition-colors">
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`w-2 h-2 rounded-full shadow-[0_0_8px_rgba(0,0,0,0.5)] ${p.status === 'active' ? 'bg-success animate-pulse shadow-success/50' : p.status === 'idle' ? 'bg-warning shadow-warning/50' : 'bg-text-muted'}`}
+                  />
+                  <span className="font-mono text-xs font-semibold truncate text-text-primary">{id}</span>
+                </div>
+                {p.currentTask ? (
+                  <span className="text-[10px] text-text-secondary truncate bg-background px-1.5 py-0.5 rounded border border-border">
+                    {p.currentTask}
+                  </span>
+                ) : (
+                  <span className="text-[10px] text-text-muted italic px-1.5">Idle</span>
+                )}
               </div>
             ))}
           </div>
@@ -869,6 +881,57 @@ export function AutonomyPanel({ isOpen, onClose }: AutonomyPanelProps) {
             </div>
           </section>
         )}
+
+        {/* YOLO Mode Logs */}
+        <section data-testid="autonomy-logs-section" className="mt-4 border-t border-border-muted pt-4">
+          <div className="flex items-center justify-between mb-2">
+            <h3 className="text-[10px] font-semibold uppercase tracking-[0.14em] text-text-muted flex items-center gap-1.5">
+              <ScrollText size={11} />
+              {t('autonomy.yoloLogs', 'YOLO Mode & Daemon Logs')}
+            </h3>
+            <button
+              onClick={() => {
+                const next = !showLogs;
+                setShowLogs(next);
+                if (next) void loadLogs();
+              }}
+              className={`flex items-center gap-1 px-2 py-1 rounded border text-[10px] transition-colors ${
+                showLogs ? 'bg-accent/10 border-accent/40 text-accent' : 'border-border-muted text-text-muted hover:text-text-primary'
+              }`}
+            >
+              {logsLoading ? <Loader2 size={10} className="animate-spin" /> : showLogs ? <Square size={10} /> : <Play size={10} />}
+              {showLogs ? t('common.hide', 'Hide Logs') : t('autonomy.tailLogs', 'Live Tail')}
+            </button>
+          </div>
+          {showLogs && (
+            <div data-testid="autonomy-daemon-logs" className="bg-[#1e1e1e] rounded-lg border border-[#333] p-2 overflow-hidden flex flex-col mt-2">
+              <div className="flex items-center gap-1.5 mb-1 text-[10px] text-[#888]">
+                <span className="font-mono truncate">{logs?.source ?? 'service logs'}</span>
+                <button
+                  onClick={() => void loadLogs()}
+                  disabled={logsLoading}
+                  className="ml-auto p-1 hover:text-[#fff] disabled:opacity-50"
+                  title={t('common.refresh', 'Refresh')}
+                >
+                  <RefreshCw size={10} className={logsLoading ? 'animate-spin' : ''} />
+                </button>
+              </div>
+              {logsError && (
+                <p className="text-[11px] text-[#ff5555] px-1" data-testid="autonomy-daemon-logs-error">
+                  {logsError}
+                </p>
+              )}
+              {logs && logs.lines.length > 0 && (
+                <pre className="mt-1 max-h-64 overflow-y-auto whitespace-pre-wrap text-[10px] text-[#00ff00] font-mono leading-relaxed">
+                  {logs.lines.join('\n')}
+                </pre>
+              )}
+              {logs && logs.lines.length === 0 && (
+                <p className="text-[10px] text-[#888] px-1 font-mono">{t('autonomy.noLogs', 'Waiting for logs...')}</p>
+              )}
+            </div>
+          )}
+        </section>
       </div>
     </div>
   );
