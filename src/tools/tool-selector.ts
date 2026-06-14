@@ -52,74 +52,7 @@ interface CacheEntry<T> {
   accessCount: number;
 }
 
-/**
- * Simple LRU Cache implementation
- */
-class LRUCache<K, V> {
-  private cache: Map<K, CacheEntry<V>>;
-  private maxSize: number;
-  private ttlMs: number;
-
-  constructor(maxSize: number = 100, ttlMs: number = 5 * 60 * 1000) {
-    this.cache = new Map();
-    this.maxSize = maxSize;
-    this.ttlMs = ttlMs;
-  }
-
-  get(key: K): V | undefined {
-    const entry = this.cache.get(key);
-    if (!entry) return undefined;
-
-    // Check TTL
-    if (Date.now() - entry.timestamp > this.ttlMs) {
-      this.cache.delete(key);
-      return undefined;
-    }
-
-    // Update access count and move to end (most recently used)
-    entry.accessCount++;
-    this.cache.delete(key);
-    this.cache.set(key, entry);
-
-    return entry.value;
-  }
-
-  set(key: K, value: V): void {
-    // Remove oldest if at capacity
-    if (this.cache.size >= this.maxSize) {
-      const firstKey = this.cache.keys().next().value;
-      if (firstKey !== undefined) {
-        this.cache.delete(firstKey);
-      }
-    }
-
-    this.cache.set(key, {
-      value,
-      timestamp: Date.now(),
-      accessCount: 1
-    });
-  }
-
-  has(key: K): boolean {
-    return this.get(key) !== undefined;
-  }
-
-  clear(): void {
-    this.cache.clear();
-  }
-
-  get size(): number {
-    return this.cache.size;
-  }
-
-  getStats(): { size: number; hitRate: number } {
-    return {
-      size: this.cache.size,
-      hitRate: 0 // Would need to track hits/misses
-    };
-  }
-}
-
+import { LRUCache } from '../utils/lru-cache.js';
 import { TOOL_METADATA, CATEGORY_KEYWORDS } from "./metadata.js";
 
 /**
@@ -152,8 +85,8 @@ export class ToolSelector {
   private adaptationRate: number = 0.1;
 
   // Classification cache
-  private classificationCache: LRUCache<string, QueryClassification>;
-  private selectionCache: LRUCache<string, ToolSelectionResult>;
+  private classificationCache: LRUCache<QueryClassification>;
+  private selectionCache: LRUCache<ToolSelectionResult>;
 
   constructor() {
     this.toolIndex = new Map();
@@ -172,8 +105,8 @@ export class ToolSelector {
     };
 
     // Initialize caches
-    this.classificationCache = new LRUCache<string, QueryClassification>(100, 5 * 60 * 1000);
-    this.selectionCache = new LRUCache<string, ToolSelectionResult>(50, 2 * 60 * 1000);
+    this.classificationCache = new LRUCache<QueryClassification>({ maxSize: 100, ttlMs: 5 * 60 * 1000 });
+    this.selectionCache = new LRUCache<ToolSelectionResult>({ maxSize: 50, ttlMs: 2 * 60 * 1000 });
 
     this.buildIndex();
   }

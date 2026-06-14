@@ -256,3 +256,11 @@ export function broadcastChatSessionGoal(
 ): void {
   broadcastFleetEvent('fleet:chat-session:goal', { ...payload });
 }
+
+// Wire up the agent runtime hooks (breaks circular dependency #2)
+import { registerFleetBroadcaster } from '../../agent/execution/tool-hooks.js';
+registerFleetBroadcaster(broadcastFleetEvent);
+
+import { registerSessionFleetBroadcaster } from '../../agent/multi-agent/session-fleet-bridge.js';
+registerSessionFleetBroadcaster(broadcastFleetEvent);
+

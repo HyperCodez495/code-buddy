@@ -7,16 +7,16 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 
-const broadcastFleetEventMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../../../src/server/websocket/fleet-bridge.js', () => ({
-  broadcastFleetEvent: broadcastFleetEventMock,
-}));
+const broadcastFleetEventMock = vi.fn();
 
 import {
   emitFleetToolStarted,
   emitFleetToolCompleted,
+  registerFleetBroadcaster,
 } from '../../../src/agent/execution/tool-hooks.js';
+
+// Wire the mock manually since we broke the hardcoded dependency
+registerFleetBroadcaster(broadcastFleetEventMock);
 
 const flushMicrotasks = () => new Promise((r) => setTimeout(r, 0));
 

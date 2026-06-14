@@ -23,14 +23,6 @@ const KNOWN_CYCLES: string[] = [
   JSON.stringify(['agent/operating-modes.ts', 'agent/profiles/index.ts', 'agent/profiles/profile-loader.ts']),
   // Phase 2.1 hand-off cycles: still runtime-coupled, documented in PHASE2-CIRCULAR-DEPS.md.
   JSON.stringify(['agent/autonomous/fleet-tick-handler.ts', 'agent/codebuddy-agent.ts']),
-  JSON.stringify([
-    'agent/codebuddy-agent.ts',
-    'agent/execution/agent-executor.ts',
-    'agent/execution/tool-hooks.ts',
-    'server/agent-adapter.ts',
-    'server/websocket/fleet-bridge.ts',
-    'server/websocket/handler.ts',
-  ]),
   JSON.stringify(['agent/codebuddy-agent.ts', 'daemon/heartbeat.ts']),
   JSON.stringify(['config/config-mutator.ts', 'config/toml-config.ts']),
   // Lessons loop ↔ run store: run-store lazily imports learning-agent

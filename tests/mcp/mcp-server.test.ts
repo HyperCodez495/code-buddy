@@ -103,6 +103,16 @@ jest.mock('@modelcontextprotocol/sdk/server/stdio.js', () => {
 });
 
 
+jest.mock('../../src/agent/codebuddy-agent.js', () => {
+  return {
+    CodeBuddyAgent: jest.fn().mockImplementation(function() { return {
+      dispose: jest.fn(),
+    }; }),
+  };
+});
+
+import { z } from 'zod';
+
 describe('CodeBuddyMCPServer', () => {
   let server: CodeBuddyMCPServer;
 
@@ -213,6 +223,57 @@ describe('CodeBuddyMCPServer', () => {
       const listFiles = tools.find((t: MCPToolDefinition) => t.name === 'list_files')!;
       const required = listFiles.inputSchema.required as string[] | undefined;
       expect(!required || required.length === 0).toBe(true);
+    });
+  });
+
+  describe('Zod Tool Schema Validation', () => {
+    let getRegisteredSchema: (name: string) => Record<string, z.ZodTypeAny>;
+
+    beforeAll(() => {
+      getRegisteredSchema = (name: string) => {
+        const mcpServer = (server as any).mcpServer;
+        const entry = mcpServer._registeredTools.get(name);
+        return entry?.schema;
+      };
+    });
+
+    it('should validate read_file schema properly', () => {
+      const schemaObj = getRegisteredSchema('read_file');
+      const schema = z.object(schemaObj);
+      expect(schema.safeParse({ path: '/tmp/test.txt' }).success).toBe(true);
+      expect(schema.safeParse({ path: '/tmp/test.txt', start_line: 1, end_line: 5 }).success).toBe(true);
+      expect(schema.safeParse({}).success).toBe(false); // missing path
+      expect(schema.safeParse({ path: 123 }).success).toBe(false); // wrong type
+    });
+
+    it('should validate write_file schema properly', () => {
+      const schemaObj = getRegisteredSchema('write_file');
+      const schema = z.object(schemaObj);
+      expect(schema.safeParse({ path: '/tmp/test.txt', content: 'data' }).success).toBe(true);
+      expect(schema.safeParse({ path: '/tmp/test.txt' }).success).toBe(false); // missing content
+    });
+
+    it('should validate edit_file schema properly', () => {
+      const schemaObj = getRegisteredSchema('edit_file');
+      const schema = z.object(schemaObj);
+      expect(schema.safeParse({ path: '/tmp/test.txt', old_string: 'old', new_string: 'new' }).success).toBe(true);
+      expect(schema.safeParse({ path: '/tmp/test.txt', old_string: 'old' }).success).toBe(false); // missing new_string
+    });
+
+    it('should validate bash schema properly', () => {
+      const schemaObj = getRegisteredSchema('bash');
+      const schema = z.object(schemaObj);
+      expect(schema.safeParse({ command: 'echo hello' }).success).toBe(true);
+      expect(schema.safeParse({ command: 'echo hello', timeout: 5000 }).success).toBe(true);
+      expect(schema.safeParse({}).success).toBe(false);
+    });
+
+    it('should validate git schema properly', () => {
+      const schemaObj = getRegisteredSchema('git');
+      const schema = z.object(schemaObj);
+      expect(schema.safeParse({ subcommand: 'status' }).success).toBe(true);
+      expect(schema.safeParse({ subcommand: 'commit', args: { message: 'msg' } }).success).toBe(true);
+      expect(schema.safeParse({ subcommand: 'invalid_cmd' }).success).toBe(false);
     });
   });
 
@@ -395,5 +456,42 @@ describe('CodeBuddyMCPServer', () => {
       await server.start();
       expect(server.isRunning()).toBe(true);
     });
+
+    it('should properly dispose of the agent when stop is called', async () => {
+      await server.start();
+      
+      process.env.OPENAI_API_KEY = 'test-key';
+      
+      // We trigger the lazy-loading of the agent by calling agent_chat
+      const handler = getRegisteredHandler('agent_chat');
+      if (handler) {
+        await handler({ message: 'hello', mode: 'ask' });
+      }
+
+      // Ensure the internal agent is assigned
+      const internalAgent = (server as any).agent;
+      expect(internalAgent).toBeTruthy();
+
+      await server.stop();
+
+      expect((server as any).agent).toBeNull();
+      expect(internalAgent.dispose).toHaveBeenCalled();
+      
+      delete process.env.OPENAI_API_KEY;
+    });
+
+    it('should set transport to null after stop', async () => {
+      await server.start();
+      expect((server as any).transport).not.toBeNull();
+      await server.stop();
+      expect((server as any).transport).toBeNull();
+    });
   });
+
+  // Helper to get registered handler for lifecycle tests
+  function getRegisteredHandler(name: string): Function | undefined {
+    const mcpServer = (server as unknown as { mcpServer: { _registeredTools: Map<string, { handler: Function }> } }).mcpServer;
+    const entry = mcpServer._registeredTools.get(name);
+    return entry?.handler;
+  }
 });

@@ -122,6 +122,7 @@ export interface MemorySearchOptions {
   minImportance?: number;
   limit?: number;
   includeExpired?: boolean;
+  explorationFactor?: number; // Weight for uncertainty in Bayesian retrieval (UCB)
 }
 
 export interface MemoryConfig {
@@ -575,8 +576,11 @@ export class EnhancedMemory extends EventEmitter {
         results = results
           .map(m => {
             const features = this.extractMemoryFeatures(m, queryEmbedding);
-            const { mean } = this.bayesianQualifier.predict(features);
-            return { memory: m, score: mean };
+            const { mean, std } = this.bayesianQualifier.predict(features);
+            // Bayesian Active Learning: Upper Confidence Bound (UCB)
+            const explorationFactor = options.explorationFactor ?? 0.05;
+            const score = mean + (explorationFactor * std);
+            return { memory: m, score };
           })
           .filter(r => r.score > 0.3)
           .sort((a, b) => b.score - a.score)
@@ -1098,6 +1102,33 @@ export class EnhancedMemory extends EventEmitter {
     const features = this.extractMemoryFeatures(entry, queryEmbedding);
     const { mean, std } = this.bayesianQualifier.predict(features);
     return { score: mean, uncertainty: std };
+  }
+
+  /**
+   * Active Learning: Retrieve memories with the highest uncertainty (BALD score)
+   * so the system can solicit user feedback and improve its relevance model.
+   */
+  async getActiveLearningTargets(limit: number = 5, query?: string): Promise<{ memory: MemoryEntry; baldScore: number }[]> {
+    if (!this.bayesianQualifier || !(this.bayesianQualifier as any).isTrained) {
+      return [];
+    }
+
+    const queryEmbedding = query && this.config.embeddingEnabled
+      ? await this.generateEmbedding(query)
+      : undefined;
+
+    const allMemories = Array.from(this.memories.values());
+    
+    return allMemories
+      .map(m => {
+        const features = this.extractMemoryFeatures(m, queryEmbedding);
+        const baldScore = this.bayesianQualifier.getAcquisitionScore(features);
+        return { memory: m, baldScore };
+      })
+      // Only keep entries with non-trivial uncertainty
+      .filter(r => r.baldScore > 0.01)
+      .sort((a, b) => b.baldScore - a.baldScore)
+      .slice(0, limit);
   }
 }
 

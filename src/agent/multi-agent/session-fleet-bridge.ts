@@ -28,8 +28,20 @@
  *   could fill the WS send buffer.
  */
 
-import { broadcastFleetEvent } from '../../server/websocket/fleet-bridge.js';
 import type { SessionRegistry, SessionInfo, SessionMessage } from './session-registry.js';
+
+export type FleetEventBroadcaster = (type: any, payload: any, agentId?: string) => void;
+let _fleetBroadcaster: FleetEventBroadcaster | null = null;
+
+export function registerSessionFleetBroadcaster(broadcaster: FleetEventBroadcaster): void {
+  _fleetBroadcaster = broadcaster;
+}
+
+function broadcastFleetEvent(type: any, payload: any, agentId?: string): void {
+  if (_fleetBroadcaster) {
+    _fleetBroadcaster(type, payload, agentId);
+  }
+}
 
 function isFleetStreamEnabled(): boolean {
   const v = process.env.CODEBUDDY_FLEET_STREAM;

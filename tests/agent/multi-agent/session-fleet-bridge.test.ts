@@ -8,16 +8,15 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { EventEmitter } from 'events';
 
-const broadcastFleetEventMock = vi.hoisted(() => vi.fn());
-
-vi.mock('../../../src/server/websocket/fleet-bridge.js', () => ({
-  broadcastFleetEvent: broadcastFleetEventMock,
-}));
+const broadcastFleetEventMock = vi.fn();
 
 import {
   enableSessionFleetBridge,
+  registerSessionFleetBroadcaster,
 } from '../../../src/agent/multi-agent/session-fleet-bridge.js';
 import type { SessionRegistry } from '../../../src/agent/multi-agent/session-registry.js';
+
+registerSessionFleetBroadcaster(broadcastFleetEventMock);
 
 /**
  * Lightweight stand-in for SessionRegistry — only needs the EventEmitter

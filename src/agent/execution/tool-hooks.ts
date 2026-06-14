@@ -17,7 +17,27 @@ import { getUserHooksManager } from '../../hooks/user-hooks.js';
 // serialized through dynamic-import promise chains (same fix as (d).3
 // for workflow events). fleet-bridge stays lean; it lazy-imports its
 // own deps so this doesn't bloat CLI-only startup.
-import { broadcastFleetEvent as _broadcastFleetEvent } from '../../server/websocket/fleet-bridge.js';
+// 
+// UPDATE (2026-06): Replaced direct import of `fleet-bridge` with a callback
+// registry to break the 7-module circular dependency. `fleet-bridge.js` now
+// registers its broadcaster here at module load time.
+
+export type FleetEventBroadcaster = (type: any, payload: any, agentId?: string) => void;
+let _fleetBroadcaster: FleetEventBroadcaster | null = null;
+
+/**
+ * Register the fleet event broadcaster. Called by the server at boot
+ * to wire up fleet events without introducing a circular dependency.
+ */
+export function registerFleetBroadcaster(broadcaster: FleetEventBroadcaster): void {
+  _fleetBroadcaster = broadcaster;
+}
+
+function _broadcastFleetEvent(type: any, payload: any, agentId?: string): void {
+  if (_fleetBroadcaster) {
+    _fleetBroadcaster(type, payload, agentId);
+  }
+}
 
 /**
  * Phase (d).2 V0.4.1 — fleet stream opt-in. When CODEBUDDY_FLEET_STREAM=1
