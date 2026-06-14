@@ -20,6 +20,7 @@ import type {
   GatewayEvent,
 } from './types';
 import { MessageRouter } from './message-router';
+import { remoteConfigStore } from './remote-config-store';
 
 // WebSocket client connection
 interface WSClient {
@@ -405,8 +406,22 @@ export class RemoteGateway extends EventEmitter {
       return true;
     }
 
-    // TODO: Check channel-specific group settings
-    // For now, require mention in groups by default
+    // Check channel-specific group settings
+    const fullConfig = remoteConfigStore.getAll();
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const channelConfig = fullConfig.channels[message.channelType as keyof typeof fullConfig.channels] as any;
+    
+    if (channelConfig) {
+      const groupConfig = channelConfig.groups?.[message.channelId];
+      if (groupConfig && groupConfig.requireMention === false) {
+        return true;
+      }
+      if (!groupConfig && channelConfig.defaultGroupSettings?.requireMention === false) {
+        return true;
+      }
+    }
+
+    // Require mention by default
     return false;
   }
 

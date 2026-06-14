@@ -1142,7 +1142,8 @@ export class RemoteManager extends EventEmitter {
       log('[RemoteManager] Telegram channel registered');
     }
 
-    // TODO: Register other channels (WeChat, DingTalk)
+    // Support for WeChat and DingTalk is planned for a future release.
+    // They will be registered here once their channel classes are implemented.
   }
 
   /**
