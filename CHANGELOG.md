@@ -74,6 +74,22 @@ GitNexus integration (WS2), central Policy Engine + PII lint (WS5). See
   outside its abort timeout.
 - **runtime SSH** lifecycle validated on localhost (real `ssh` round-trips).
 
+### Added — more local gap closures (2026-06-14)
+
+- **Nostr publishing** — real BIP-340 Schnorr signing (`@noble/curves`): `send()`
+  now signs and publishes a real kind-1 event and awaits the relay `OK` ack
+  (sign→verify round-trip tested). nsec/hex secret keys supported.
+- **Browser Use — local execution** — when no managed key/gateway is set, the
+  runner now drives a *local* `browser-use` (pip) + local Ollama + Chromium
+  (installed and validated end-to-end here). The managed gateway stays optional.
+- **Mobile-supervision HTTPS** — optional TLS for the server that hosts
+  `/api/mobile` (`CODEBUDDY_HTTPS=1` + `CODEBUDDY_TLS_CERT`/`CODEBUDDY_TLS_KEY`,
+  or an `openssl` dev self-signed cert) via Node built-ins; HTTP default and the
+  dispatch product-gate unchanged.
+- **Feishu/Lark real-time inbound** — wired to the official
+  `@larksuiteoapi/node-sdk` WSClient via an *optional* runtime import (not a core
+  dependency); degrades to the honest send-only state when the SDK is absent.
+
 > Parity vs Hermes Agent / OpenClaw: **15 covered / 4 covered-partial / 1 partial
 > / 0 gap** — see [`docs/hermes-openclaw-parity.md`](docs/hermes-openclaw-parity.md).
 

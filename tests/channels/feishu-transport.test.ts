@@ -18,7 +18,12 @@
  */
 
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { FeishuChannel } from '../../src/channels/feishu/index.js';
+import {
+  FeishuChannel,
+  parseFeishuMessageEvent,
+  type FeishuReceiveEventBody,
+} from '../../src/channels/feishu/index.js';
+import type { InboundMessage } from '../../src/channels/core.js';
 
 vi.mock('../../src/utils/logger.js', () => ({
   logger: { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() },
@@ -245,5 +250,193 @@ describe('FeishuChannel — honest inbound receive state', () => {
     expect(disconnectedSpy).toHaveBeenCalledWith('feishu');
     expect(channel.getReceiveStatus()).toBeNull();
     expect(channel.getStatus().error).toBeUndefined();
+  });
+
+  it('SDK-absent: connect() does not throw and stays in the honest send-only state', async () => {
+    // @larksuiteoapi/node-sdk is NOT a dependency, so the optional dynamic
+    // import inside connect() rejects → the channel must degrade gracefully to
+    // outbound-only WITHOUT throwing.
+    vi.stubGlobal('fetch', vi.fn());
+    const channel = makeChannel();
+
+    await expect(channel.connect()).resolves.toBeUndefined();
+
+    const recv = channel.getReceiveStatus();
+    expect(recv?.connected).toBe(false);
+    expect(recv?.reason).toBe('lark-sdk-required');
+    expect(channel.getStatus().connected).toBe(false);
+    expect(channel.getStatus().info).toMatchObject({
+      outbound: 'ready',
+      inbound: 'lark-sdk-required',
+    });
+  });
+});
+
+// ============================================================================
+// Inbound event parsing (im.message.receive_v1) — unit-tested in isolation.
+//
+// We cannot run the live long-connection here (it needs a real Feishu/Lark app
+// + tenant credentials — an external-account gate). But the inbound WIRING is
+// fully testable: inject a representative im.message.receive_v1 payload into the
+// real parser/dispatch seam and assert the resulting InboundMessage + emits.
+// ============================================================================
+
+/** A representative `im.message.receive_v1` event body (unwrapped, as the SDK's
+ *  EventDispatcher hands it to the handler). */
+function makeReceiveEventBody(overrides: Partial<FeishuReceiveEventBody> = {}): FeishuReceiveEventBody {
+  return {
+    sender: {
+      sender_id: { open_id: 'ou_sender123', union_id: 'on_union123', user_id: 'u_123' },
+      sender_type: 'user',
+      tenant_key: 'tk_1',
+    },
+    message: {
+      message_id: 'om_msg123',
+      create_time: '1700000000000',
+      chat_id: 'oc_chat123',
+      chat_type: 'p2p',
+      message_type: 'text',
+      content: JSON.stringify({ text: 'hello from feishu' }),
+    },
+    ...overrides,
+  };
+}
+
+describe('parseFeishuMessageEvent() — inbound message parsing', () => {
+  it('parses a text event into a Code Buddy InboundMessage', () => {
+    const parsed = parseFeishuMessageEvent(makeReceiveEventBody());
+    expect(parsed).not.toBeNull();
+    const msg = parsed as InboundMessage;
+
+    expect(msg.id).toBe('om_msg123');
+    expect(msg.channel.id).toBe('oc_chat123');
+    expect(msg.channel.type).toBe('feishu');
+    expect(msg.channel.isDM).toBe(true);
+    // sender is the open_id (preferred), with union/user_id as fallbacks.
+    expect(msg.sender.id).toBe('ou_sender123');
+    // content is the JSON-decoded text, NOT the raw `{"text":...}` string.
+    expect(msg.content).toBe('hello from feishu');
+    expect(msg.contentType).toBe('text');
+    expect(msg.timestamp.getTime()).toBe(1700000000000);
+  });
+
+  it('falls back open_id → union_id → user_id for the sender id', () => {
+    const noOpen = makeReceiveEventBody({
+      sender: { sender_id: { union_id: 'on_union123', user_id: 'u_123' } },
+    });
+    expect(parseFeishuMessageEvent(noOpen)?.sender.id).toBe('on_union123');
+
+    const onlyUser = makeReceiveEventBody({
+      sender: { sender_id: { user_id: 'u_123' } },
+    });
+    expect(parseFeishuMessageEvent(onlyUser)?.sender.id).toBe('u_123');
+  });
+
+  it('is envelope-tolerant: accepts the full { schema, header, event } wrapper', () => {
+    const parsed = parseFeishuMessageEvent({
+      schema: '2.0',
+      header: { event_type: 'im.message.receive_v1' },
+      event: makeReceiveEventBody(),
+    });
+    expect(parsed?.content).toBe('hello from feishu');
+    expect(parsed?.channel.id).toBe('oc_chat123');
+  });
+
+  it('extracts plain text from a post (rich-text) message', () => {
+    const post = makeReceiveEventBody({
+      message: {
+        message_id: 'om_post',
+        chat_id: 'oc_chat123',
+        chat_type: 'group',
+        create_time: '1700000000000',
+        message_type: 'post',
+        content: JSON.stringify({
+          zh_cn: {
+            title: 'Title',
+            content: [[{ tag: 'text', text: 'first line' }], [{ tag: 'text', text: 'second' }]],
+          },
+        }),
+      },
+    });
+    const parsed = parseFeishuMessageEvent(post);
+    expect(parsed?.content).toContain('first line');
+    expect(parsed?.content).toContain('second');
+    expect(parsed?.channel.isGroup).toBe(true);
+  });
+
+  it('returns null for an event with no message body', () => {
+    expect(parseFeishuMessageEvent({ sender: { sender_id: { open_id: 'x' } } })).toBeNull();
+    expect(parseFeishuMessageEvent(undefined)).toBeNull();
+    expect(parseFeishuMessageEvent(null)).toBeNull();
+  });
+});
+
+describe('FeishuChannel.dispatchInboundEvent() — inbound emit wiring', () => {
+  afterEach(() => vi.restoreAllMocks());
+
+  it("emits 'message' with the parsed InboundMessage (proves the handler wiring)", async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const channel = makeChannel();
+    await channel.connect(); // SDK absent → send-only, but the seam still works.
+
+    const messageSpy = vi.fn();
+    const commandSpy = vi.fn();
+    channel.on('message', messageSpy);
+    channel.on('command', commandSpy);
+
+    const result = channel.dispatchInboundEvent(makeReceiveEventBody());
+
+    expect(result).not.toBeNull();
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+    const emitted = messageSpy.mock.calls[0]?.[0] as InboundMessage;
+    expect(emitted.content).toBe('hello from feishu');
+    expect(emitted.sender.id).toBe('ou_sender123');
+    // A plain (non-slash) message is not a command.
+    expect(commandSpy).not.toHaveBeenCalled();
+    expect(emitted.isCommand).toBeFalsy();
+  });
+
+  it("also emits 'command' for a message starting with '/'", async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const channel = makeChannel();
+    await channel.connect();
+
+    const messageSpy = vi.fn();
+    const commandSpy = vi.fn();
+    channel.on('message', messageSpy);
+    channel.on('command', commandSpy);
+
+    channel.dispatchInboundEvent(
+      makeReceiveEventBody({
+        message: {
+          message_id: 'om_cmd',
+          chat_id: 'oc_chat123',
+          chat_type: 'p2p',
+          create_time: '1700000000000',
+          message_type: 'text',
+          content: JSON.stringify({ text: '/help me' }),
+        },
+      }),
+    );
+
+    expect(messageSpy).toHaveBeenCalledTimes(1);
+    expect(commandSpy).toHaveBeenCalledTimes(1);
+    const cmd = commandSpy.mock.calls[0]?.[0] as InboundMessage;
+    expect(cmd.isCommand).toBe(true);
+    expect(cmd.commandName).toBe('help');
+    expect(cmd.commandArgs).toEqual(['me']);
+  });
+
+  it('returns null and emits nothing for an event with no usable message', async () => {
+    vi.stubGlobal('fetch', vi.fn());
+    const channel = makeChannel();
+    await channel.connect();
+
+    const messageSpy = vi.fn();
+    channel.on('message', messageSpy);
+
+    const result = channel.dispatchInboundEvent({ sender: { sender_id: { open_id: 'x' } } });
+    expect(result).toBeNull();
+    expect(messageSpy).not.toHaveBeenCalled();
   });
 });

@@ -22,11 +22,11 @@ Code Buddy supports 20+ messaging channels for remote interaction.
 | **Weixin/WeChat Official Account** | Customer service API | Text messages to OpenID recipients |
 | **QQ** | OneBot v11 HTTP | Private/group messages through a QQ bot gateway |
 | **IRC** | TCP/TLS (RFC 1459/2812) | SASL auth, TLS, multi-channel, auto-reconnect |
-| **Feishu/Lark** | REST (outbound) | Interactive cards, reasoning hooks; real-time inbound needs the Lark SDK |
+| **Feishu/Lark** | REST out + optional Lark SDK in | Interactive cards, reasoning hooks; real-time inbound via the optional `@larksuiteoapi/node-sdk` WSClient (install it + app creds) |
 | **Synology Chat** | Webhooks | Incoming/outgoing webhooks |
 | **ntfy** | HTTP POST | Push notifications to self-hosted or ntfy.sh topics |
 | **LINE** | Messaging API | Rich messages |
-| **Nostr** | WebSocket relays (NIP-01) | Decentralized, auto-reconnect; publishing needs a Schnorr signer |
+| **Nostr** | WebSocket relays (NIP-01) | Decentralized, auto-reconnect; BIP-340 Schnorr signing — publishes with a configured key |
 | **Zalo** | OA API | Vietnam market |
 | **Mattermost** | WebSocket + REST | Self-hosted Slack alternative, auto-reconnect |
 | **Nextcloud Talk** | HTTP long-poll + REST | On-premise collaboration, auto-reconnect |

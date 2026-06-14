@@ -10,7 +10,14 @@
  */
 
 import { logger } from '../../utils/logger.js';
-import { BaseChannel, ChannelConfig, DeliveryResult, OutboundMessage } from '../core.js';
+import {
+  BaseChannel,
+  ChannelConfig,
+  ContentType,
+  DeliveryResult,
+  InboundMessage,
+  OutboundMessage,
+} from '../core.js';
 
 // ============================================================================
 // Types
@@ -65,6 +72,187 @@ export interface FeishuMessage {
   content: string;
   messageType: 'text' | 'post' | 'image' | 'interactive' | 'file';
   createTime: string;
+}
+
+// ============================================================================
+// Inbound event parsing (im.message.receive_v1)
+// ============================================================================
+
+/**
+ * Shape of the `im.message.receive_v1` event body. Mirrors the Lark Open
+ * Platform schema. The official `EventDispatcher` hands the handler the
+ * UNWRAPPED `event` body (`{ sender, message }`); the full
+ * `{ schema, header, event }` envelope only appears on the raw webhook. We
+ * accept both (see {@link parseFeishuMessageEvent}).
+ */
+export interface FeishuReceiveEventBody {
+  sender?: {
+    sender_id?: {
+      open_id?: string;
+      union_id?: string;
+      user_id?: string;
+    };
+    sender_type?: string;
+    tenant_key?: string;
+  };
+  message?: {
+    message_id?: string;
+    root_id?: string;
+    parent_id?: string;
+    create_time?: string;
+    chat_id?: string;
+    thread_id?: string;
+    chat_type?: 'p2p' | 'group' | string;
+    message_type?: string;
+    /** JSON-encoded string; structure varies by message_type. */
+    content?: string;
+    mentions?: Array<Record<string, unknown>>;
+  };
+}
+
+/** The raw event as it may arrive: either the body, or the full envelope. */
+export interface FeishuReceiveEventEnvelope {
+  schema?: string;
+  header?: Record<string, unknown>;
+  event?: FeishuReceiveEventBody;
+}
+
+/** Map a Feishu `message_type` onto a Code Buddy {@link ContentType}. */
+function feishuMessageTypeToContentType(messageType: string | undefined): ContentType {
+  switch (messageType) {
+    case 'image':
+      return 'image';
+    case 'audio':
+      return 'audio';
+    case 'media':
+      return 'video';
+    case 'file':
+      return 'file';
+    case 'sticker':
+      return 'sticker';
+    // 'text', 'post', 'interactive', 'share_chat', … all surface as text.
+    default:
+      return 'text';
+  }
+}
+
+/**
+ * Best-effort plain-text extraction from a Feishu message `content` JSON string.
+ *
+ * - `text`     → `{ "text": "hello" }`
+ * - `post`     → `{ "<locale>": { "title": "...", "content": [[{tag,text}, …]] } }`
+ * - otherwise  → the raw JSON string (so callers still see *something*).
+ */
+function extractFeishuText(messageType: string | undefined, contentJson: string | undefined): string {
+  if (!contentJson) return '';
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(contentJson);
+  } catch {
+    // Not JSON (shouldn't happen for real events) — fall back to the raw string.
+    return contentJson;
+  }
+
+  if (parsed && typeof parsed === 'object') {
+    const obj = parsed as Record<string, unknown>;
+
+    // text / share_chat / etc.
+    if (typeof obj.text === 'string') return obj.text;
+
+    // post: locale-keyed rich text. Walk the first locale's `content` matrix
+    // and concatenate every `text` segment.
+    if (messageType === 'post' || (!('text' in obj) && hasPostShape(obj))) {
+      const localeKey = Object.keys(obj)[0];
+      const post = localeKey ? (obj[localeKey] as Record<string, unknown> | undefined) : undefined;
+      const rows = post?.['content'];
+      if (Array.isArray(rows)) {
+        const pieces: string[] = [];
+        const title = typeof post?.['title'] === 'string' ? (post['title'] as string) : '';
+        if (title) pieces.push(title);
+        for (const row of rows) {
+          if (!Array.isArray(row)) continue;
+          for (const seg of row) {
+            if (seg && typeof seg === 'object') {
+              const t = (seg as Record<string, unknown>).text;
+              if (typeof t === 'string') pieces.push(t);
+            }
+          }
+        }
+        return pieces.join(' ').trim();
+      }
+    }
+  }
+
+  // Unknown structure — return the raw JSON so nothing is silently dropped.
+  return contentJson;
+}
+
+function hasPostShape(obj: Record<string, unknown>): boolean {
+  const firstKey = Object.keys(obj)[0];
+  if (!firstKey) return false;
+  const v = obj[firstKey];
+  return !!v && typeof v === 'object' && 'content' in (v as Record<string, unknown>);
+}
+
+/**
+ * Parse a Lark `im.message.receive_v1` event into a Code Buddy
+ * {@link InboundMessage}.
+ *
+ * Envelope-tolerant: accepts either the unwrapped event body (what the SDK's
+ * `EventDispatcher` hands the handler) or the full `{ schema, header, event }`
+ * webhook envelope.
+ *
+ * Returns `null` when the event carries no usable message (e.g. a non-message
+ * event slipped through, or no chat/text could be resolved).
+ */
+export function parseFeishuMessageEvent(
+  raw: FeishuReceiveEventBody | FeishuReceiveEventEnvelope | undefined | null,
+): InboundMessage | null {
+  if (!raw || typeof raw !== 'object') return null;
+
+  // Unwrap `{ event: … }` if present; otherwise treat `raw` as the body.
+  const body: FeishuReceiveEventBody =
+    'event' in raw && raw.event ? raw.event : (raw as FeishuReceiveEventBody);
+
+  const message = body.message;
+  if (!message) return null;
+
+  const chatId = message.chat_id;
+  if (!chatId) return null;
+
+  const senderId =
+    body.sender?.sender_id?.open_id ??
+    body.sender?.sender_id?.union_id ??
+    body.sender?.sender_id?.user_id ??
+    'unknown';
+
+  const content = extractFeishuText(message.message_type, message.content);
+
+  const createTimeMs = message.create_time ? Number(message.create_time) : NaN;
+  const timestamp = Number.isFinite(createTimeMs) ? new Date(createTimeMs) : new Date();
+
+  const inbound: InboundMessage = {
+    id: message.message_id ?? `feishu_${Date.now()}`,
+    channel: {
+      id: chatId,
+      type: 'feishu',
+      isDM: message.chat_type === 'p2p',
+      isGroup: message.chat_type === 'group',
+    },
+    sender: {
+      id: senderId,
+      raw: body.sender,
+    },
+    content,
+    contentType: feishuMessageTypeToContentType(message.message_type),
+    timestamp,
+    raw,
+  };
+
+  if (message.thread_id) inbound.threadId = message.thread_id;
+  if (message.parent_id) inbound.replyTo = message.parent_id;
+
+  return inbound;
 }
 
 /**
@@ -313,15 +501,44 @@ const DEFAULT_FEISHU_BASE_URL = 'https://open.feishu.cn';
  * (`@larksuiteoapi/node-sdk`). We deliberately do NOT reimplement it from a
  * guess: a hand-rolled framing would not be the real protocol, and any "mock"
  * exercising it would only validate our own invention rather than the wire
- * contract. The outbound REST path, by contrast, IS fully implemented below.
+ * contract. Instead, when the official SDK IS installed we drive its
+ * {@link https://github.com/larksuite/node-sdk WSClient} (see
+ * {@link FeishuChannel.connect}); when it is NOT installed we keep the honest
+ * send-only state below. The outbound REST path is always fully implemented.
  */
 export interface FeishuReceiveStatus {
-  /** Always false — no genuine inbound socket is opened. */
-  connected: false;
-  /** Machine-readable reason code. */
-  reason: 'lark-sdk-required';
+  /**
+   * `true` only when the official Lark `WSClient` long-connection is live;
+   * `false` when the SDK is absent (or no app credentials are configured).
+   */
+  connected: boolean;
+  /**
+   * Machine-readable state code:
+   * - `'lark-sdk-required'` — the optional `@larksuiteoapi/node-sdk` is not
+   *   installed, so no inbound socket exists (outbound REST still works).
+   * - `'lark-ws'` — the official SDK's long-connection is live.
+   */
+  reason: 'lark-sdk-required' | 'lark-ws';
   /** Human-readable explanation. */
   detail: string;
+}
+
+// ============================================================================
+// Optional Lark SDK surface (structural — the package is NOT a dependency)
+// ============================================================================
+
+/** Minimal structural view of the bits of `@larksuiteoapi/node-sdk` we touch. */
+interface LarkEventDispatcher {
+  register(handlers: Record<string, (data: unknown) => unknown>): LarkEventDispatcher;
+}
+interface LarkWSClient {
+  start(opts: { eventDispatcher: LarkEventDispatcher }): void | Promise<void>;
+  stop?(): void | Promise<void>;
+}
+interface LarkSdkModule {
+  WSClient: new (opts: Record<string, unknown>) => LarkWSClient;
+  EventDispatcher: new (opts: Record<string, unknown>) => LarkEventDispatcher;
+  LoggerLevel?: Record<string, unknown>;
 }
 
 export class FeishuChannel extends BaseChannel {
@@ -330,6 +547,8 @@ export class FeishuChannel extends BaseChannel {
   /** Cached tenant_access_token (re-minted on demand if the API rejects it). */
   private tenantToken: string | null = null;
   private receiveStatus: FeishuReceiveStatus | null = null;
+  /** Live official-SDK long-connection client, when the SDK is installed. */
+  private wsClient: LarkWSClient | null = null;
 
   constructor(config: FeishuChannelConfig) {
     super('feishu', config);
@@ -348,13 +567,18 @@ export class FeishuChannel extends BaseChannel {
    * `tenant_access_token` and POSTs to `/open-apis/im/v1/messages`.
    *
    * Inbound (receiving user messages) requires Feishu's proprietary
-   * long-connection — see {@link FeishuReceiveStatus}. We do NOT fake it, so
-   * `connect()` records an honest "send-only" state: it provisions the legacy
-   * adapter surface (card builders / reasoning hooks) and sets
-   * `status.connected = false` for the receive side, surfacing the reason in
-   * `status.error` / `status.info`. There is no live socket and therefore no
-   * drop to recover from, so the shared ReconnectionManager is intentionally
-   * not wired here.
+   * long-connection — see {@link FeishuReceiveStatus}. We do NOT fake it. We
+   * attempt to bring up the REAL inbound socket using the official Lark SDK
+   * (`@larksuiteoapi/node-sdk`), imported OPTIONALLY at runtime — it is not a
+   * declared dependency, so most installs won't have it. When it IS present
+   * (and app credentials are configured) we start its `WSClient` and register
+   * the `im.message.receive_v1` handler, which parses each message into an
+   * {@link InboundMessage} and re-emits it via `this.emit('message' | 'command')`.
+   * The SDK owns the long-connection + reconnect internally.
+   *
+   * When the SDK is absent (the default) we keep the honest "send-only" state:
+   * `status.connected = false`, the receive reason surfaced in
+   * `status.error` / `status.info`. No throw — outbound still works.
    */
   async connect(): Promise<void> {
     const cfg = this.config as FeishuChannelConfig;
@@ -367,18 +591,19 @@ export class FeishuChannel extends BaseChannel {
     });
     await this.adapter.start();
 
+    // Default to the honest send-only state. `tryStartInbound()` upgrades it
+    // in place if (and only if) the optional SDK is installed and usable.
     this.receiveStatus = {
       connected: false,
       reason: 'lark-sdk-required',
       detail:
-        'Feishu inbound long-connection (real-time receive) is not implemented: ' +
-        "its Protobuf 'pbbp2' framing ships only inside the official Lark SDK and " +
-        'cannot be reproduced faithfully without it. Outbound send() is fully ' +
-        'functional via the REST im/v1/messages API.',
+        'Feishu inbound long-connection (real-time receive) is not active: the ' +
+        'official Lark SDK (@larksuiteoapi/node-sdk) — which owns the proprietary ' +
+        "Protobuf 'pbbp2' long-connection framing — is not installed (it is an " +
+        'optional dependency). Install it and configure app credentials to enable ' +
+        'real-time receive. Outbound send() is fully functional via the REST ' +
+        'im/v1/messages API.',
     };
-
-    // Honest status: outbound is ready, but we have NOT established a live
-    // inbound socket, so we must not claim the receive channel is connected.
     this.status.connected = false;
     this.status.authenticated = false;
     this.status.error = this.receiveStatus.detail;
@@ -386,9 +611,124 @@ export class FeishuChannel extends BaseChannel {
       outbound: 'ready',
       inbound: this.receiveStatus.reason,
     };
+
+    await this.tryStartInbound(cfg);
+  }
+
+  /**
+   * Attempt to bring up the REAL inbound long-connection via the optional
+   * official Lark SDK. Mutates `this.receiveStatus` / `this.status` to the live
+   * `'lark-ws'` state on success; otherwise leaves the honest send-only state
+   * untouched. Never throws — a missing SDK or a start() failure degrades
+   * gracefully to outbound-only.
+   */
+  private async tryStartInbound(cfg: FeishuChannelConfig): Promise<void> {
+    // Optional dependency: the `as string` specifier keeps TS/Vite from trying
+    // to statically resolve a package that isn't installed, so this becomes a
+    // genuine runtime import that rejects (→ caught) when the SDK is absent.
+    const lark = (await import('@larksuiteoapi/node-sdk' as string).catch(
+      () => null,
+    )) as LarkSdkModule | null;
+
+    if (!lark || typeof lark.WSClient !== 'function' || typeof lark.EventDispatcher !== 'function') {
+      // SDK not installed — keep the honest 'lark-sdk-required' state.
+      return;
+    }
+    if (!cfg.appId || !cfg.appSecret) {
+      // SDK present but unconfigured — still send-only. Keep the reason code
+      // (`lark-sdk-required`, so the honest-state contract holds) but correct
+      // the detail: the SDK is here; the missing piece is app credentials.
+      logger.warn('Feishu: Lark SDK installed but appId/appSecret missing — inbound disabled');
+      if (this.receiveStatus) {
+        this.receiveStatus.detail =
+          'Feishu inbound long-connection is not active: the official Lark SDK ' +
+          '(@larksuiteoapi/node-sdk) IS installed, but appId/appSecret are not ' +
+          'configured, so the WSClient cannot authenticate. Provide app credentials ' +
+          'to enable real-time receive. Outbound send() is fully functional.';
+        this.status.error = this.receiveStatus.detail;
+      }
+      return;
+    }
+
+    try {
+      const dispatcher = new lark.EventDispatcher({}).register({
+        'im.message.receive_v1': (data: unknown) => {
+          try {
+            this.dispatchInboundEvent(data as FeishuReceiveEventBody | FeishuReceiveEventEnvelope);
+          } catch (err) {
+            logger.warn(`Feishu inbound handler error: ${err instanceof Error ? err.message : err}`);
+          }
+        },
+      });
+
+      const wsClient = new lark.WSClient({
+        appId: cfg.appId,
+        appSecret: cfg.appSecret,
+      });
+      await wsClient.start({ eventDispatcher: dispatcher });
+      this.wsClient = wsClient;
+
+      this.receiveStatus = {
+        connected: true,
+        reason: 'lark-ws',
+        detail:
+          'Feishu inbound is live over the official Lark SDK WSClient long-connection ' +
+          '(@larksuiteoapi/node-sdk). im.message.receive_v1 events are parsed into ' +
+          'InboundMessages and re-emitted; the SDK manages reconnect internally.',
+      };
+      this.status.connected = true;
+      this.status.authenticated = true;
+      delete this.status.error;
+      this.status.info = { outbound: 'ready', inbound: 'lark-ws' };
+      this.status.lastActivity = new Date();
+      logger.info('Feishu: inbound long-connection established via @larksuiteoapi/node-sdk');
+    } catch (err) {
+      // start() failed (bad creds, network). Stay honest: send-only.
+      logger.warn(
+        `Feishu: Lark WSClient failed to start, falling back to send-only: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      this.wsClient = null;
+    }
+  }
+
+  /**
+   * Parse a raw `im.message.receive_v1` event and re-emit it as a Code Buddy
+   * `message` (and `command`) event. This is the seam the live SDK handler
+   * delegates to; it is also unit-testable directly without a live tenant.
+   *
+   * @returns the parsed {@link InboundMessage}, or `null` if the event carried
+   *   no usable message.
+   */
+  dispatchInboundEvent(
+    event: FeishuReceiveEventBody | FeishuReceiveEventEnvelope,
+  ): InboundMessage | null {
+    const parsed = parseFeishuMessageEvent(event);
+    if (!parsed) return null;
+
+    // Skip messages from the bot itself / disallowed users where configured.
+    if (!this.isUserAllowed(parsed.sender.id)) return null;
+    if (!this.isChannelAllowed(parsed.channel.id)) return null;
+
+    const withCommand = this.parseCommand(parsed);
+    this.status.lastActivity = new Date();
+    this.emit('message', withCommand);
+    if (withCommand.isCommand) {
+      this.emit('command', withCommand);
+    }
+    return withCommand;
   }
 
   async disconnect(): Promise<void> {
+    if (this.wsClient) {
+      try {
+        await this.wsClient.stop?.();
+      } catch (err) {
+        logger.debug(`Feishu: WSClient stop error: ${err instanceof Error ? err.message : err}`);
+      }
+      this.wsClient = null;
+    }
     if (this.adapter) {
       await this.adapter.stop();
       this.adapter = null;
