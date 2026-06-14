@@ -43,10 +43,8 @@ import { SessionResumeDialog } from './components/SessionResumeDialog';
 import { BookmarksPanel } from './components/BookmarksPanel';
 import { SnippetsLibrary } from './components/SnippetsLibrary';
 import { PersonaSwitcherDialog } from './components/PersonaSwitcherDialog';
-import { TestRunnerPanel } from './components/TestRunnerPanel';
-import { ReasoningTraceViewer } from './components/ReasoningTraceViewer';
 import { MemoryPanel } from './components/MemoryPanel';
-import { AutonomyPanel } from './components/AutonomyPanel';
+// AutonomyPanel is lazy loaded below
 import { LiveLauncherPanel } from './components/LiveLauncherPanel';
 import { FocusView } from './components/FocusView';
 import { SplitPaneLayout } from './components/SplitPaneLayout';
@@ -57,7 +55,7 @@ import { EnrollmentDialog } from './components/EnrollmentDialog';
 import { ModelInstallDialog } from './components/ModelInstallDialog';
 import { OrchestratorLauncher } from './components/OrchestratorLauncher';
 import { FleetPanel } from './components/FleetPanel';
-import { FleetCommandCenter } from './components/FleetCommandCenter';
+// FleetCommandCenter is lazy loaded below
 import { SkillsManagerWrapper } from './components/skills-manager-page';
 import { ClawMigrationDialog } from './components/ClawMigrationDialog';
 import { KanbanPanel } from './components/KanbanPanel';
@@ -69,7 +67,7 @@ import { MobileSupervisionPanel } from './components/MobileSupervisionPanel';
 import { IdentityPanel } from './components/IdentityPanel';
 import { DevicePanel } from './components/DevicePanel';
 import { ChannelsPanel } from './components/ChannelsPanel';
-import { CompanionPanel } from './components/CompanionPanel';
+// CompanionPanel is lazy loaded below
 import { MissionBoardPanel } from './components/MissionBoardPanel';
 import { DesktopSnapshotPanel } from './components/DesktopSnapshotPanel';
 import { OnboardingWizard } from './components/OnboardingWizard';
@@ -91,6 +89,21 @@ const ConfigModal = lazy(() =>
 );
 const SettingsPanel = lazy(() =>
   import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
+);
+const CompanionPanel = lazy(() =>
+  import('./components/CompanionPanel').then((module) => ({ default: module.CompanionPanel }))
+);
+const TestRunnerPanel = lazy(() =>
+  import('./components/TestRunnerPanel').then((module) => ({ default: module.TestRunnerPanel }))
+);
+const AutonomyPanel = lazy(() =>
+  import('./components/AutonomyPanel').then((module) => ({ default: module.AutonomyPanel }))
+);
+const FleetCommandCenter = lazy(() =>
+  import('./components/FleetCommandCenter').then((module) => ({ default: module.FleetCommandCenter }))
+);
+const ReasoningTraceViewer = lazy(() =>
+  import('./components/ReasoningTraceViewer').then((module) => ({ default: module.ReasoningTraceViewer }))
 );
 
 function MainPanelFallback() {
@@ -141,8 +154,6 @@ function App() {
   const setShowReasoningViewer = useAppStore((s) => s.setShowReasoningViewer);
   const showMemoryEditor = useAppStore((s) => s.showMemoryEditor);
   const setShowMemoryEditor = useAppStore((s) => s.setShowMemoryEditor);
-  const showAutonomyPanel = useAppStore((s) => s.showAutonomyPanel);
-  const setShowAutonomyPanel = useAppStore((s) => s.setShowAutonomyPanel);
   const showLiveLauncher = useAppStore((s) => s.showLiveLauncher);
   const setShowLiveLauncher = useAppStore((s) => s.setShowLiveLauncher);
   const showEnrollmentDialog = useAppStore((s) => s.showEnrollmentDialog);
@@ -652,13 +663,10 @@ function App() {
         isOpen={showPersonaSwitcher}
         onClose={() => setShowPersonaSwitcher(false)}
       />
-      <TestRunnerPanel isOpen={showTestRunner} onClose={() => setShowTestRunner(false)} />
-      <ReasoningTraceViewer
-        isOpen={showReasoningViewer}
-        onClose={() => setShowReasoningViewer(false)}
-      />
+      <TestRunnerWrapper showTestRunner={showTestRunner} onClose={() => setShowTestRunner(false)} />
+      <ReasoningViewerWrapper show={showReasoningViewer} onClose={() => setShowReasoningViewer(false)} />
       <MemoryPanel isOpen={showMemoryEditor} onClose={() => setShowMemoryEditor(false)} />
-      <AutonomyPanel isOpen={showAutonomyPanel} onClose={() => setShowAutonomyPanel(false)} />
+      <AutonomyWrapper />
       <LiveLauncherPanel isOpen={showLiveLauncher} onClose={() => setShowLiveLauncher(false)} />
 
       {/* Notification toasts + center (Claude Cowork parity) */}
@@ -697,7 +705,7 @@ function App() {
       <IdentityPanel />
       <DevicePanel />
       <ChannelsPanel />
-      <CompanionPanel />
+      <CompanionWrapper />
 
       {/* OpenClaw migration dialog — Hermes claw parity (dry-run by default) */}
       <ClawMigrationWrapper />
@@ -725,7 +733,12 @@ export default App;
 function FleetCommandCenterWrapper() {
   const open = useAppStore((s) => s.showFleetCommandCenter);
   const close = useAppStore((s) => s.setShowFleetCommandCenter);
-  return <FleetCommandCenter isOpen={open} onClose={() => close(false)} />;
+  if (!open) return null;
+  return (
+    <Suspense fallback={null}>
+      <FleetCommandCenter isOpen={open} onClose={() => close(false)} />
+    </Suspense>
+  );
 }
 
 /** Reactive wrapper for the OpenClaw migration dialog (Hermes claw parity). */
@@ -758,4 +771,43 @@ function DesktopSnapshotWrapper() {
   const close = useAppStore((s) => s.setShowDesktopSnapshot);
   if (!open) return null;
   return <DesktopSnapshotPanel onClose={() => close(false)} />;
+}
+
+/** Reactive wrapper for CompanionPanel to allow lazy loading. */
+function CompanionWrapper() {
+  const show = useAppStore((s) => s.showCompanionPanel);
+  if (!show) return null;
+  return (
+    <Suspense fallback={null}>
+      <CompanionPanel />
+    </Suspense>
+  );
+}
+
+function AutonomyWrapper() {
+  const show = useAppStore((s) => s.showAutonomyPanel);
+  if (!show) return null;
+  return (
+    <Suspense fallback={null}>
+      <AutonomyPanel isOpen={show} onClose={() => useAppStore.getState().setShowAutonomyPanel(false)} />
+    </Suspense>
+  );
+}
+
+function TestRunnerWrapper({ showTestRunner, onClose }: { showTestRunner: boolean; onClose: () => void }) {
+  if (!showTestRunner) return null;
+  return (
+    <Suspense fallback={null}>
+      <TestRunnerPanel isOpen={showTestRunner} onClose={onClose} />
+    </Suspense>
+  );
+}
+
+function ReasoningViewerWrapper({ show, onClose }: { show: boolean; onClose: () => void }) {
+  if (!show) return null;
+  return (
+    <Suspense fallback={null}>
+      <ReasoningTraceViewer isOpen={show} onClose={onClose} />
+    </Suspense>
+  );
 }
