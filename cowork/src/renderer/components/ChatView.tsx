@@ -16,13 +16,11 @@ import { applySlashCommandResult } from '../commands/slash-command-actions';
 import { useIPC } from '../hooks/useIPC';
 import { SessionSearch } from './SessionSearch';
 import { ChatList } from './ChatList';
+import { MessageComposer } from './MessageComposer';
+import type { MentionItem } from './MentionAutocomplete';
+import type { SlashCommandItem } from './SlashCommandPalette';
 import { ChatHeader } from './ChatHeader';
-import { MentionAutocomplete, type MentionItem } from './MentionAutocomplete';
-import { SlashCommandPalette, type SlashCommandItem } from './SlashCommandPalette';
-import { MicButton } from './MicButton';
 import { interruptSpeech, speakText } from './VoiceOutputToggle';
-import { MemoryEditCard } from './MemoryEditCard';
-import { FileAttachmentChip } from './FileAttachmentChip';
 import { usePermissionMode, useSearchState } from '../store/selectors';
 import type { Message, ContentBlock, ScheduleCreateInput, ScheduleWeekday } from '../types';
 import {
@@ -44,18 +42,7 @@ import {
   CHAT_COMPOSER_INSERT_EVENT,
   type ChatComposerInsertDetail,
 } from '../utils/chat-composer-events';
-import {
-  Send,
-  Square,
-  Plus,
-  X,
-  Clock,
-  Eye,
-  FileSearch,
-  Target,
-  Pencil,
-  Trash2,
-} from 'lucide-react';
+import { Eye } from 'lucide-react';
 
 function toScheduleCreateInput(
   input: {
@@ -981,406 +968,120 @@ export function ChatView() {
         />
       </div>
 
-      {/* Input */}
-      <div className="border-t border-border-muted bg-background/92 backdrop-blur-md">
-        <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
-          <form
-            onSubmit={handleSubmit}
-            onDragOver={handleDragOver}
-            onDragLeave={handleDragLeave}
-            onDrop={handleDrop}
-            className="relative w-full"
-          >
-            {/* Phase 3 step 15: full overlay while dragging */}
-            {isDragging && (
-              <div className="absolute inset-0 z-10 rounded-[2rem] border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
-                <span className="text-sm font-medium text-accent">
-                  {t('chat.dropToAttach', 'Drop files to attach')}
-                </span>
-              </div>
-            )}
+            {/* Input */}
+      <MessageComposer
+        prompt={prompt}
+        setPrompt={setPrompt}
+        isSubmitting={isSubmitting}
+        pastedImages={pastedImages}
+        attachedFiles={attachedFiles}
+        modelSupportsVision={modelSupportsVision}
+        isDragging={isDragging}
+        mentionState={mentionState}
+        setMentionState={setMentionState}
+        slashState={slashState}
+        setSlashState={setSlashState}
+        textareaRef={textareaRef}
+        isComposingRef={isComposingRef}
+        goalComposerActive={goalComposerActive}
+        setGoalComposerActive={setGoalComposerActive}
+        goalComposerDisabled={goalComposerDisabled}
+        activeSessionId={activeSessionId}
+        activeSession={activeSession}
+        appConfig={appConfig}
+        queuedIntents={queuedIntents}
+        hasActiveTurn={hasActiveTurn}
+        isSessionRunning={isSessionRunning}
+        canStop={canStop}
+        shouldShowDocumentWorkshopAction={shouldShowDocumentWorkshopAction}
+        showMemoryEditor={showMemoryEditor}
+        setShowMemoryEditor={setShowMemoryEditor}
+        removeQueuedIntent={removeQueuedIntent}
+        setPreviewFilePath={useAppStore.getState().setPreviewFilePath}
+        handleSubmit={handleSubmit}
+        handleStop={handleStop}
+        handleDragOver={handleDragOver}
+        handleDragLeave={handleDragLeave}
+        handleDrop={handleDrop}
+        handlePaste={handlePaste}
+        handleFileSelect={handleFileSelect}
+        removeImage={removeImage}
+        removeFile={removeFile}
+        applyDocumentWorkshopPrompt={applyDocumentWorkshopPrompt}
+        handleEditQueuedIntent={handleEditQueuedIntent}
+        handleSteerQueuedIntent={handleSteerQueuedIntent}
+        onMentionSelect={(item: MentionItem) => {
+          if (!mentionState || !textareaRef.current) return;
+          const before = prompt.slice(0, mentionState.startPos);
+          const afterCaret = prompt.slice(mentionState.startPos + mentionState.prefix.length + 1);
+          const newValue = `${before}${item.value}${afterCaret}`;
+          setPrompt(newValue);
+          setMentionState(null);
+          setTimeout(() => {
+            const newCaret = before.length + item.value.length;
+            textareaRef.current?.focus();
+            textareaRef.current?.setSelectionRange(newCaret, newCaret);
+          }, 0);
+        }}
+        onSlashCommandSelect={async (item: SlashCommandItem) => {
+          if (!textareaRef.current) return;
+          const api = window.electronAPI;
+          if (!api?.command) {
+            setSlashState(null);
+            return;
+          }
 
-            {/* Phase 3 step 3: vision model warning */}
-            {pastedImages.length > 0 && modelSupportsVision === false && (
-              <div className="mb-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
-                <span className="font-medium">{t('chat.visionWarningTitle')}</span>
-                <span className="text-warning/80">{t('chat.visionWarningBody')}</span>
-              </div>
-            )}
-
-            {/* Image previews */}
-            {pastedImages.length > 0 && (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
-                {pastedImages.map((img, index) => (
-                  <div key={img.url || `pasted-image-${index}`} className="relative group">
-                    <img
-                      src={img.url}
-                      alt={t('common.pastedImageAlt', { index: index + 1 })}
-                      className="w-full aspect-square object-cover rounded-lg border border-border block"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => removeImage(index)}
-                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                    >
-                      <X className="w-3 h-3" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* File attachments (Phase 3 step 15: chips with preview) */}
-            {attachedFiles.length > 0 && (
-              <div className="flex flex-wrap items-center gap-1.5 mb-3">
-                {attachedFiles.map((file, index) => (
-                  <FileAttachmentChip
-                    key={file.path || `attached-file-${index}`}
-                    file={file}
-                    onRemove={() => removeFile(index)}
-                    onPreview={(f) => {
-                      if (f.path) {
-                        useAppStore.getState().setPreviewFilePath(f.path);
-                      }
-                    }}
-                  />
-                ))}
-                {shouldShowDocumentWorkshopAction && (
-                  <button
-                    type="button"
-                    onClick={applyDocumentWorkshopPrompt}
-                    data-testid="chat-document-workshop-action"
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/35 bg-accent/10 text-xs font-medium text-accent hover:bg-accent/15 transition-colors"
-                    title={t('chat.documentWorkshopActionTitle', 'Prepare a Word workshop prompt')}
-                  >
-                    <FileSearch className="w-3.5 h-3.5" />
-                    <span>{t('chat.documentWorkshopAction', 'Atelier Word')}</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {queuedIntents.length > 0 && (
-              <div
-                className="mb-3 space-y-1.5"
-                data-testid="chat-queued-intents"
-                aria-label={t('chat.queuedIntents', 'Queued messages')}
-              >
-                {queuedIntents.map((intent) => (
-                  <div
-                    key={intent.id}
-                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-surface/70 px-3 py-2"
-                  >
-                    <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                    <div className="min-w-0 flex-1">
-                      <div className="truncate text-xs text-text-secondary">
-                        {intent.prompt || t('chat.queuedAttachmentIntent', 'Attachment message')}
-                      </div>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={() => removeQueuedIntent(intent.sessionId, intent.id)}
-                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-error hover:bg-error/10 transition-colors"
-                      title={t('common.delete', 'Delete')}
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleEditQueuedIntent(intent.id, intent.prompt)}
-                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                      title={t('common.edit', 'Edit')}
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => void handleSteerQueuedIntent(intent.id)}
-                      disabled={!hasActiveTurn && !isSessionRunning}
-                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                      title={t('chat.steerQueuedIntent', 'Steer current run')}
-                    >
-                      <Target className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
-
-            {/* Phase 2 step 17: inline memory editor */}
-            {showMemoryEditor && (
-              <div className="mb-3">
-                <MemoryEditCard onClose={() => setShowMemoryEditor(false)} />
-              </div>
-            )}
-
-            <div
-              className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
-                isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
-              }`}
-            >
-              <button
-                type="button"
-                onClick={handleFileSelect}
-                data-testid="chat-attach-files"
-                className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                title={t('welcome.attachFiles')}
-              >
-                <Plus className="w-5 h-5" />
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  if (!goalComposerDisabled) setGoalComposerActive((active) => !active);
-                }}
-                disabled={goalComposerDisabled}
-                data-testid="chat-goal-mode-toggle"
-                aria-pressed={goalComposerActive}
-                className={`h-9 min-w-9 rounded-2xl inline-flex items-center justify-center gap-1.5 px-2.5 text-xs font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed ${
-                  goalComposerActive
-                    ? 'border border-accent/35 bg-accent/10 text-accent hover:bg-accent/15'
-                    : 'text-text-muted hover:text-text-primary hover:bg-surface-hover'
-                }`}
-                title={
-                  goalComposerActive
-                    ? t('goalMode.composerActiveTitle', 'Goal mode active')
-                    : t('goalMode.composerToggleTitle', 'Send as a standing goal')
-                }
-              >
-                <Target className="w-4 h-4" />
-                <span className="hidden sm:inline">{t('goalMode.composerLabel', 'Goal')}</span>
-              </button>
-
-              <textarea
-                ref={textareaRef}
-                data-testid="chat-prompt-input"
-                value={prompt}
-                onChange={(e) => {
-                  const newValue = e.target.value;
-                  setPrompt(newValue);
-
-                  // Detect @ mention trigger
-                  const caretPos = e.target.selectionStart ?? newValue.length;
-                  const textBeforeCaret = newValue.slice(0, caretPos);
-                  const atMatch = textBeforeCaret.match(/(?:^|\s)@([^\s]*)$/);
-                  if (atMatch) {
-                    const startPos = caretPos - atMatch[1].length - 1;
-                    const rect = e.target.getBoundingClientRect();
-                    setMentionState({
-                      prefix: atMatch[1],
-                      startPos,
-                      anchor: {
-                        top: rect.top - 300,
-                        left: rect.left + 20,
-                      },
-                    });
-                  } else {
-                    setMentionState(null);
-                  }
-
-                  // Detect slash command trigger — only at line start or
-                  // after whitespace, and only when the slash is the first
-                  // non-whitespace run ending at the caret.
-                  const slashMatch = textBeforeCaret.match(/^\s*\/([\w-]*)$/);
-                  if (slashMatch) {
-                    const prefix = slashMatch[1];
-                    const startPos = textBeforeCaret.lastIndexOf('/');
-                    const rect = e.target.getBoundingClientRect();
-                    setSlashState({
-                      prefix,
-                      startPos,
-                      anchor: {
-                        top: rect.top - 340,
-                        left: rect.left + 20,
-                      },
-                    });
-                  } else {
-                    setSlashState(null);
-                  }
-                }}
-                onCompositionStart={() => {
-                  isComposingRef.current = true;
-                }}
-                onCompositionEnd={() => {
-                  isComposingRef.current = false;
-                }}
-                onPaste={handlePaste}
-                onKeyDown={(e) => {
-                  // Enter to send, Shift+Enter for new line
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    if (e.nativeEvent.isComposing || isComposingRef.current || e.keyCode === 229) {
-                      return;
-                    }
-                    e.preventDefault();
-                    handleSubmit();
-                  }
-                }}
-                placeholder={
-                  goalComposerActive
-                    ? t('goalMode.promptPlaceholder', 'Describe the standing goal')
-                    : t('chat.typeMessage')
-                }
-                disabled={isSubmitting}
-                rows={1}
-                className="flex-1 resize-none bg-transparent border-none outline-none text-text-primary placeholder:text-text-muted text-[15px] py-2"
-              />
-
-              <div className="flex items-center gap-2">
-                {/* Phase 8 — local voice transcription via faster-whisper.
-                    Replaces the Web-Speech-API VoiceButton which required
-                    network. MicButton appends the transcript to the
-                    current prompt instead of overwriting it, so users
-                    can dictate fragments. */}
-                <MicButton
-                  language="fr"
-                  onTranscript={(text) => {
-                    setPrompt((current) => (current ? `${current} ${text}` : text));
-                    textareaRef.current?.focus();
-                  }}
-                />
-
-                {/* Model display */}
-                <span className="hidden sm:inline-flex px-2.5 py-1 rounded-full border border-border-subtle bg-background/60 text-xs text-text-muted">
-                  {appConfig?.model || t('chat.noModel')}
-                </span>
-
-                {canStop && (
-                  <button
-                    type="button"
-                    onClick={handleStop}
-                    className="w-9 h-9 rounded-2xl flex items-center justify-center bg-error/10 text-error hover:bg-error/20 transition-colors"
-                    title={
-                      queuedIntents.length > 0
-                        ? t('chat.stopAndSendQueued', 'Stop and send queued message')
-                        : t('chat.stop')
-                    }
-                  >
-                    <Square className="w-4 h-4" />
-                  </button>
-                )}
-                <button
-                  type="submit"
-                  disabled={
-                    (!prompt.trim() &&
-                      !textareaRef.current?.value.trim() &&
-                      pastedImages.length === 0 &&
-                      attachedFiles.length === 0) ||
-                    isSubmitting
-                  }
-                  className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
-                  title={t('chat.sendMessage')}
-                >
-                  <Send className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-
-            <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
-              {t('chat.disclaimer')}
-            </p>
-          </form>
-        </div>
-      </div>
-
-      {/* @mention autocomplete dropdown (Claude Cowork parity) */}
-      {mentionState && (
-        <MentionAutocomplete
-          prefix={mentionState.prefix}
-          cwd={activeSession?.cwd}
-          anchorPosition={mentionState.anchor}
-          onSelect={(item: MentionItem) => {
-            if (!mentionState || !textareaRef.current) return;
-            const before = prompt.slice(0, mentionState.startPos);
-            const afterCaret = prompt.slice(mentionState.startPos + mentionState.prefix.length + 1);
-            const newValue = `${before}${item.value}${afterCaret}`;
-            setPrompt(newValue);
-            setMentionState(null);
-            setTimeout(() => {
-              const newCaret = before.length + item.value.length;
-              textareaRef.current?.focus();
-              textareaRef.current?.setSelectionRange(newCaret, newCaret);
-            }, 0);
-          }}
-          onClose={() => setMentionState(null)}
-        />
-      )}
-
-      {/* Slash command palette (Claude Cowork parity Phase 2) */}
-      {slashState && (
-        <SlashCommandPalette
-          prefix={slashState.prefix}
-          anchorPosition={slashState.anchor}
-          onSelect={async (item: SlashCommandItem) => {
-            if (!textareaRef.current) return;
-            const api = window.electronAPI;
-            if (!api?.command) {
+          try {
+            if (item.name === 'memory' || item.name.startsWith('memory')) {
+              useAppStore.getState().setShowMemoryEditor(true);
+              setPrompt('');
               setSlashState(null);
               return;
             }
 
-            // Execute command via bridge. If it resolves to a prompt, we
-            // swap the slash text for the resolved prompt in the textarea.
-            // If it's handled client-side (__TOKEN__), we fire the built-in
-            // effect and clear the textarea.
-            try {
-              // Phase 2 step 17: intercept /memory to open the inline editor
-              if (item.name === 'memory' || item.name.startsWith('memory')) {
-                useAppStore.getState().setShowMemoryEditor(true);
-                setPrompt('');
-                setSlashState(null);
-                return;
-              }
+            const result = await api.command.execute(item.name, [], activeSessionId ?? undefined);
 
-              const result = await api.command.execute(item.name, [], activeSessionId ?? undefined);
-
-              if (result.action?.type === 'create_schedule' && result.action.createInput) {
-                await window.electronAPI.schedule.create(
-                  toScheduleCreateInput(result.action.createInput, activeSession?.cwd || '')
-                );
-                useAppStore.getState().setGlobalNotice?.({
-                  id: `schedule-created-${Date.now()}`,
-                  type: 'success',
-                  message: t('schedule.created'),
-                });
-                setPrompt('');
-              } else if (result.action?.type === 'open_schedule' && result.action.draft) {
-                setScheduleDraft({
-                  ...result.action.draft,
-                  cwd: result.action.draft.cwd || activeSession?.cwd || undefined,
-                });
-                setSettingsTab('schedule');
-                setShowSettings(true);
-                setPrompt('');
-              } else {
-                // Engine output, ui_effect, toast/denied and prompt-forward are
-                // applied by the shared dispatcher. In the palette, a
-                // prompt-resolving command fills the textarea for editing rather
-                // than sending immediately, so we keep that UX in the callback.
-                let promptFilled = false;
-                applySlashCommandResult(result, {
-                  commandName: item.name,
-                  activeSessionId: activeSessionId ?? null,
-                  continueWithPrompt: (p) => {
-                    promptFilled = true;
-                    setPrompt(p);
-                    setTimeout(() => {
-                      textareaRef.current?.focus();
-                      textareaRef.current?.setSelectionRange(p.length, p.length);
-                    }, 0);
-                  },
-                });
-                if (!promptFilled) setPrompt('');
-              }
-            } catch (err) {
-              console.error('[ChatView] Slash command execute failed:', err);
-            } finally {
-              setSlashState(null);
+            if (result.action?.type === 'create_schedule' && result.action.createInput) {
+              await window.electronAPI.schedule.create(
+                toScheduleCreateInput(result.action.createInput, activeSession?.cwd || '')
+              );
+              useAppStore.getState().setGlobalNotice?.({
+                id: `schedule-created-${Date.now()}`,
+                type: 'success',
+                message: t('schedule.created'),
+              });
+              setPrompt('');
+            } else if (result.action?.type === 'open_schedule' && result.action.draft) {
+              setScheduleDraft({
+                ...result.action.draft,
+                cwd: result.action.draft.cwd || activeSession?.cwd || undefined,
+              });
+              setSettingsTab('schedule');
+              setShowSettings(true);
+              setPrompt('');
+            } else {
+              let promptFilled = false;
+              applySlashCommandResult(result, {
+                commandName: item.name,
+                activeSessionId: activeSessionId ?? null,
+                continueWithPrompt: (p) => {
+                  promptFilled = true;
+                  setPrompt(p);
+                  setTimeout(() => {
+                    textareaRef.current?.focus();
+                    textareaRef.current?.setSelectionRange(p.length, p.length);
+                  }, 0);
+                },
+              });
+              if (!promptFilled) setPrompt('');
             }
-          }}
-          onClose={() => setSlashState(null)}
-        />
-      )}
+          } catch (err) {
+            console.error('[ChatView] Slash command execute failed:', err);
+          } finally {
+            setSlashState(null);
+          }
+        }}
+      />
     </div>
   );
 }
