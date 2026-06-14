@@ -232,8 +232,8 @@ const FEATURES: HermesParityFeature[] = [
       'npx tsx src/index.ts hermes messaging status --json',
       'npx tsx src/index.ts hermes messaging gateway-status --json',
     ],
-    notes: 'Channel coverage spans 26 adapter slots, but they are NOT uniform (honest breakdown 2026-06-13): ~10 have a real working persistent transport (discord, slack, telegram, whatsapp, signal, matrix, imessage BlueBubbles long-poll, plus irc/nostr/mattermost — real TCP/WS clients added 2026-06-14, ReconnectionManager-wired and loopback-mock-tested); ~a dozen are functional REST/webhook adapters that genuinely send over request/response with no socket to reconnect (e.g. dingtalk, qq, ntfy, line, zalo, twilio-voice, teams, google-chat, synology-chat, wecom, weixin, webchat); and two adapters for persistent protocols remain in-process stubs — start() only flips a `running` flag, no socket (feishu Lark WS long-conn, nextcloud-talk long-poll). Gateway readiness is machine-readable through dedicated Hermes CLI status plus Cowork; send_message exists with dry-run outbox plus approval-gated live delivery; the exact discord tool covers upstream core REST actions; gateway lifecycle manager provides start/stop/restart/status per-channel and startAll/stopAll. ReconnectionManager (exponential backoff + jitter) was audited across all of them: the 6 original persistent adapters already had it, imessage is now wired (bespoke backoff replaced), and the new irc/nostr/mattermost transports are wired (reconnect proven against a loopback server dropping the connection). Reconnection is N/A for the REST/webhook class (no socket) and not-yet-applicable for the stub class (no real transport to drop) — documented per-adapter, not force-fitted. Slash-command parity: getRegisteredCommands() is implemented on the two adapters with a real command registry (discord, telegram); slack/matrix have no in-adapter registry so they are intentionally not fabricated. CLI: `buddy hermes messaging gateway-status --json`.',
-    nextWork: 'irc/nostr/mattermost now have real, tested transports (2026-06-14); feishu (Lark WS long-conn) and nextcloud-talk (long-poll) remain stubs needing real transports. dingtalk/qq/ntfy are REST/webhook (no persistent socket — reconnection N/A). Live multi-platform delivery still needs ~20 platform tokens; Nostr publishing additionally needs a Schnorr signer.',
+    notes: 'Channel coverage spans 26 adapter slots, but they are NOT uniform (honest breakdown 2026-06-13): ~11 have a real working persistent transport (discord, slack, telegram, whatsapp, signal, matrix, imessage BlueBubbles long-poll, plus irc/nostr/mattermost/nextcloud-talk — real TCP/WS/long-poll clients added 2026-06-14, ReconnectionManager-wired and loopback-mock-tested); ~a dozen are functional REST/webhook adapters that genuinely send over request/response with no socket to reconnect (e.g. dingtalk, qq, ntfy, line, zalo, twilio-voice, teams, google-chat, synology-chat, wecom, weixin, webchat); and only feishu real-time INBOUND remains unimplemented — the proprietary Lark long-connection (Protobuf pbbp2 framing) lives only in @larksuiteoapi/node-sdk and is not faithfully mockable, so connect() now honestly reports inbound:"lark-sdk-required" while its REST outbound (tenant token -> im/v1/messages) works. Gateway readiness is machine-readable through dedicated Hermes CLI status plus Cowork; send_message exists with dry-run outbox plus approval-gated live delivery; the exact discord tool covers upstream core REST actions; gateway lifecycle manager provides start/stop/restart/status per-channel and startAll/stopAll. ReconnectionManager (exponential backoff + jitter) was audited across all of them: the 6 original persistent adapters already had it, imessage is now wired (bespoke backoff replaced), and the new irc/nostr/mattermost transports are wired (reconnect proven against a loopback server dropping the connection). Reconnection is N/A for the REST/webhook class (no socket) and not-yet-applicable for the stub class (no real transport to drop) — documented per-adapter, not force-fitted. Slash-command parity: getRegisteredCommands() is implemented on the two adapters with a real command registry (discord, telegram); slack/matrix have no in-adapter registry so they are intentionally not fabricated. CLI: `buddy hermes messaging gateway-status --json`.',
+    nextWork: 'irc/nostr/mattermost/nextcloud-talk now have real, tested transports (2026-06-14). Only feishu real-time inbound remains (needs @larksuiteoapi/node-sdk for the proprietary long-connection; REST outbound already works). dingtalk/qq/ntfy are REST/webhook (no persistent socket — reconnection N/A). Live multi-platform delivery still needs ~20 platform tokens; Nostr publishing additionally needs a Schnorr signer.',
   },
   {
     id: 'browser-automation',
@@ -261,8 +261,8 @@ const FEATURES: HermesParityFeature[] = [
       'cd cowork && npm test -- --run tests/hermes-browser-backends-bridge.test.ts tests/hermes-browser-backends-strip.test.ts',
       'npm test -- tests/tools/vision-analyze-real.test.ts --run',
     ],
-    notes: 'Local Playwright (Chromium) is the validated working path: `buddy hermes browser-smoke local-playwright` was run end-to-end against a real Chromium launch (status=passed, trace artifact written). Remote CDP, Browserbase/Stagehand, Firecrawl, and session recording are operational. HONEST CORRECTION (2026-06-13): the Camofox runner was validated against a freshly-installed real Camoufox (v0.4.11, Firefox 135) and the shipped --cdp-port/CDP-polling path does NOT work — Camoufox is Firefox and serves no Chrome DevTools Protocol (404 on /json/version); its supported automation is `camoufox server` + playwright firefox.connect(), which currently has no working version combination against the repo-pinned Playwright 1.58.2. The runner therefore launches but cannot be driven end-to-end here; its CDP contract is marked unverified in source. Browser Use gateway runner is genuinely account/gateway-gated (BROWSER_USE_API_KEY or CODEBUDDY_NOUS_TOOL_GATEWAY_URL) and was not faked.',
-    nextWork: 'Camofox: rework the runner to the camoufox-server + firefox.connect() path once a Playwright/Camoufox version pair is mutually compatible (today none is). Browser Use: needs a managed gateway/account for a real round-trip.',
+    notes: 'Local Playwright (Chromium) is the validated working path: `buddy hermes browser-smoke local-playwright` was run end-to-end against a real Chromium launch (status=passed, trace artifact written). Remote CDP, Browserbase/Stagehand, Firecrawl, and session recording are operational. Camofox: first found (2026-06-13) that the shipped --cdp-port/CDP path was wrong — real Camoufox is Firefox and serves no Chrome DevTools Protocol. REWORKED + VALIDATED (2026-06-14): the runner now uses the correct `camoufox server` + playwright.firefox.connect() path and works END-TO-END here — a real page round-trip (OK-HERMES-CAMOFOX) was driven through the production runner against the repo-pinned Playwright 1.58.2 (server launched by camoufox bundled pw 1.58.0; same minor, version-guard tolerant). A camoufox 0.4.11 server bug (null proxy) is worked around via an inline launcher; a wider version mismatch surfaces an honest error, never a fake success. Browser Use gateway runner is genuinely account/gateway-gated (BROWSER_USE_API_KEY or CODEBUDDY_NOUS_TOOL_GATEWAY_URL) and was not faked.',
+    nextWork: 'Camofox now works end-to-end (camoufox-server + firefox.connect, validated 2026-06-14). Remaining gates are external accounts only: Browser Use needs a managed gateway/key; Browserbase/Stagehand needs an account.',
   },
   {
     id: 'nous-portal',
@@ -586,7 +586,7 @@ const FEATURES: HermesParityFeature[] = [
       'cowork/src/main/tools/hermes-claw-migrate-bridge.ts',
       'cowork/src/renderer/components/ClawMigrationDialog.tsx',
     ],
-    status: 'covered-partial',
+    status: 'partial',
     verificationCommands: [
       'npm test -- tests/agent/hermes-claw-migrate-real.test.ts tests/agent/hermes-claw-agent-settings.test.ts --run',
       'npx tsx src/index.ts hermes claw status --json',
@@ -609,18 +609,19 @@ const FEATURES: HermesParityFeature[] = [
       '-> maxToolRounds (/10), compaction.mode -> autoCompact, approvals.exec.mode -> permissions (conservative enum map), ' +
       'theme -> theme — each mapped only onto a confirmed CodeBuddySettings consumer (mapClawAgentBehavior); unmapped ' +
       'fields stay archived for review and existing user settings are not clobbered without --overwrite. ' +
-      'PROMOTED partial -> covered-partial (2026-06-13): verified against the now-POPULATED live ~/.openclaw (2026.6.1) ' +
+      'SIGNIFICANT VALIDATION PROGRESS (2026-06-13) but STAYS `partial`: verified against the now-POPULATED live ~/.openclaw (2026.6.1) ' +
       'install, which the prior audit could not do because the install was empty. Five reader paths now import real data — ' +
       'the nested default model, and SOUL/USER/AGENTS persona resolved from agents.defaults.workspace, and a symlinked ' +
       'plugin-skill — taking the live dry-run from import 1 to import 5. Fixed a real SECURITY bug found in the process: ' +
-      'the gateway.auth.token archive was written 0644 and is now 0600 (added to SENSITIVE_ARCHIVE_CATEGORIES); nested ' +
+      'the gateway.auth.token archive was written 0644 and is now 0600 (all archive slices are now written 0600 unconditionally); nested ' +
       'secret names (gateway.auth.token, models.providers.*.apiKey) are now surfaced by name only. Regression-locked with ' +
       'sanitized real-shape fixtures. Remaining skips (memory/MCP/cron/...) are genuine source absences on this install, ' +
       'not unverified readers.',
     nextWork:
-      'Stays covered-partial (not covered): MEMORY/MCP/cron readers are unexercised only because this install has no such ' +
-      'data; confirm them against an install that does before promoting further. identityBaseDirs intentionally ignores a ' +
-      'workspace resolving outside the OpenClaw home (safety) — revisit if a real out-of-tree workspace appears.',
+      'Stays `partial`: MEMORY/MCP/cron readers are unexercised (this install has no such data), so the migrator full ' +
+      'reader set is not yet validated; flip to covered-partial only when a populated install exercises them. ' +
+      'identityBaseDirs intentionally ignores a workspace resolving outside the OpenClaw home (safety) — revisit if a ' +
+      'real out-of-tree workspace appears.',
   },
 ];
 

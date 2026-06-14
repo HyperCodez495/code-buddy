@@ -1,16 +1,19 @@
 # Hermes Agent & OpenClaw — parity and gaps (canonical)
 
-**Date: 2026-06-13** (supersedes 2026-06-09) · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified
+**Date: 2026-06-14** (supersedes 2026-06-09/13) · Machine: Ministar Linux (Ryzen AI 9 HX 470, Ollama Vulkan) · Verified
 against live installs: Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
 
-> **2026-06-13 validation pass** — real-instance/real-LLM round-trips, no metric-gaming: (1) Docker hibernate/wake
-> exercised against the live daemon with independent `docker inspect` proof; (2) the OpenClaw migrator verified against
-> the now-**populated** `~/.openclaw` (import 1→5, plus a real 0644→0600 secret-archive **security fix**) → promoted
-> `partial`→`covered-partial`; (3) channel auto-reconnect audited across all 26 adapters (wired into the one genuinely-
-> persistent gap, imessage; the rest are REST/webhook or in-process stubs — documented N/A, not force-fitted); (4) the
-> Camofox runner **honestly downgraded** — real Camoufox is Firefox and does not speak Chrome CDP, so the shipped
-> `--cdp-port` path does not work (prior note overclaimed); local Playwright remains the validated path; (5) agentic
-> loop + tool execution + the `buddy goal` Ralph loop proven end-to-end on a real LLM (local Ollama `$0`, and gpt-5.5).
+> **2026-06-13/14 validation pass** — real-instance/real-LLM round-trips, no metric-gaming: (1) Docker hibernate/wake
+> exercised against the live daemon with independent `docker inspect` proof; SSH connection lifecycle validated on
+> localhost (real `ssh` round-trips). (2) Screenpipe installed WITHOUT sudo (conda OpenBLAS) and recording live — the
+> `screen_memory` tool returns real redacted OCR (the Bearer-auth gap is fixed). (3) Channels: real network transports
+> added for irc (TCP), nostr (WS/NIP-01), mattermost (WS+REST) and nextcloud-talk (long-poll) — each was a boolean-flip
+> stub, now loopback-mock-proven and ReconnectionManager-wired; feishu real-time inbound is honestly SDK-gated (REST
+> outbound works); plus a `camera_analyze` tool and desktop-automation exposed over MCP. (4) Camofox: reworked from the
+> wrong Chrome-CDP assumption to the correct `camoufox server` + `firefox.connect()` path and now works END-TO-END at the
+> repo-pinned Playwright 1.58.2. (5) OpenClaw migrator: 5 reader paths validated against the now-populated `~/.openclaw`
+> + a real 0644→0600 secret-archive **security fix** — STAYS `partial` (MEMORY/MCP/cron readers unexercised: no such data
+> on this install). (6) Agentic loop + tool execution + the `buddy goal` Ralph loop proven on a real LLM (Ollama `$0`, gpt-5.5).
 
 > **This is the single source of truth** for where Code Buddy stands versus Hermes Agent and OpenClaw. It supersedes the
 > dated audit/status/TODO docs now under [`archive/2026-q2-hermes-audits/`](archive/2026-q2-hermes-audits/). Living
@@ -21,11 +24,11 @@ against live installs: Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
 ## TL;DR
 
 - **Vs Hermes** — the parity manifest (`src/agent/hermes-parity-manifest.ts`, surfaced by `buddy hermes parity --json`)
-  reports **15 `covered` + 5 `covered-partial` + 0 `partial`, 0 `gap`** (total 20); tool parity = **65 exact + 6
-  native-equivalent**. *This is the project's own self-assessment.* The 5 `covered-partial` are gated on external
-  accounts, product decisions, or an ecosystem version-lock — **not on missing Code Buddy code** (table below). Each
-  has been pushed as far as honestly possible with local resources this session; none was flipped to `covered` on a
-  mock.
+  reports **15 `covered` + 4 `covered-partial` + 1 `partial`, 0 `gap`** (total 20); tool parity = **65 exact + 6
+  native-equivalent**. *This is the project's own self-assessment.* The 4 `covered-partial` are gated on external
+  accounts or product decisions — **not on missing Code Buddy code**; the 1 `partial` (openclaw-migration) has real
+  validation progress but stays partial because some readers are unexercised for lack of source data (table + §4). Each
+  was pushed as far as honestly possible with local resources this session; nothing was flipped to `covered` on a mock.
 - **Vs OpenClaw** — the gateway bridge + CLI `validate-upstream` are **validated against a live OpenClaw 2026.6.1 daemon**
   (`openclaw gateway status --json`, exitCode 0, and raw WS `protocol:4` `connect.challenge` -> signed `req(connect)` ->
   `res` -> `req(status)` -> `res`). The optional live `node.pair.list` check is scope-gated by OpenClaw
@@ -60,15 +63,15 @@ The multi-AI comparison doc that called TTL/DAG/swarm "the honest gap" predates 
 > on `colab-store`. Remaining nuance is cross-machine *atomicity* — Code Buddy's JSON queue is advisory across machines
 > (arbitration = `git push`), by design, vs Hermes' single-machine SQLite atomicity. That is an architectural choice, not a gap.
 
-## 2. Gaps vs Hermes Agent — the 5 `covered-partial`
+## 2. Gaps vs Hermes Agent — the 4 `covered-partial` + 1 `partial`
 
-| Feature (manifest id) | Gate type | Why it isn't `covered` (2026-06-13) | Module |
+| Feature (manifest id) | Status / gate | Why it isn't `covered` (2026-06-14) | Module |
 |---|---|---|---|
-| `messaging-gateway` | **External** (accounts) + partially unimplemented | The 26 adapter slots are not uniform: ~7 have a real persistent transport (discord/slack/telegram/whatsapp/signal/matrix + imessage), ~a dozen are functional REST/webhook adapters (dingtalk/qq/ntfy/line/teams/google-chat/…), and several for persistent protocols are still **in-process stubs whose `start()` only flips a flag** (verified: irc, mattermost, nostr, feishu, nextcloud-talk). Auto-reconnect is now wired into all 7 real-persistent adapters (imessage added this session); N/A for REST, not-yet-applicable for stubs. Live delivery still needs ~20 platform tokens. `getRegisteredCommands()` on discord+telegram. | `src/channels/*` |
-| `browser-automation` | **Version-lock** (ecosystem) | Local Playwright/Chromium validated end-to-end. **Camofox does NOT work as previously claimed**: real Camoufox is Firefox (no Chrome CDP); its `camoufox server`+`firefox.connect()` path has no compatible pair against repo-pinned Playwright 1.58.2. Browser Use needs a managed gateway/key. | `src/agent/hermes-browser-backends.ts`, `src/browser-automation/camofox-runner.ts` |
-| `runtime-backends` | **External** (accounts) | **Docker hibernate/wake validated for real** (running→paused→running, `docker inspect` proof). SSH not locally testable (host-key); Modal/Daytona need accounts. | `src/agent/hermes-runtime-backends.ts`, `src/agent/hermes-runtime-lifecycle.ts` |
-| `mobile-supervision` | **Product** (by design) | Silent remote execution is refused on purpose; local-operator-gated. Off-device TLS packaging + client UX remain product work. | `src/server/routes/mobile.ts` |
-| `openclaw-migration` | **Promoted** `partial`→`covered-partial` (see §4) | Verified against the now-populated `~/.openclaw`: 5 reader paths import real data (import 1→5), plus a real 0644→0600 secret-archive **security fix**. Stays `covered-partial` because MEMORY/MCP readers are unexercised (no such data on this install). | `src/agent/hermes-claw-migrate.ts` |
+| `messaging-gateway` | covered-partial — **External** (accounts) | ~11 adapters now have a real persistent transport (discord/slack/telegram/whatsapp/signal/matrix/imessage + **irc/nostr/mattermost/nextcloud-talk** — real TCP/WS/long-poll clients added 2026-06-14, loopback-mock-proven, ReconnectionManager-wired); ~a dozen are functional REST/webhook adapters (dingtalk/qq/ntfy/line/teams/…, reconnection N/A). Only **feishu real-time inbound** remains unimplemented (proprietary Lark long-connection, SDK-only) — its `connect()` is honest (`inbound:lark-sdk-required`), REST outbound works. Live delivery still needs ~20 platform tokens; Nostr publishing needs a Schnorr signer. | `src/channels/*` |
+| `browser-automation` | covered-partial — **External** (accounts) | Local Playwright/Chromium validated. **Camofox now WORKS end-to-end** (2026-06-14): runner reworked to the correct `camoufox server` + `firefox.connect()` path (real Camoufox is Firefox, not Chrome CDP) — a real page round-trip ran through the production runner at repo-pinned Playwright 1.58.2. Remaining gates are accounts only: Browser Use (gateway/key), Browserbase/Stagehand (account). | `src/agent/hermes-browser-backends.ts`, `src/browser-automation/camofox-runner.ts` |
+| `runtime-backends` | covered-partial — **External** (accounts) | **Docker hibernate/wake validated for real** (running→paused→running, `docker inspect` proof). **SSH connection lifecycle validated on localhost** (real `ssh` round-trips; hibernate is a no-op by design). Modal/Daytona need accounts. | `src/agent/hermes-runtime-backends.ts`, `src/agent/hermes-runtime-lifecycle.ts` |
+| `mobile-supervision` | covered-partial — **Product** (by design) | Silent remote execution is refused on purpose; local-operator-gated. Off-device TLS packaging + client UX remain product work. | `src/server/routes/mobile.ts` |
+| `openclaw-migration` | **`partial`** — validation progress (see §4) | Verified against the now-populated `~/.openclaw`: 5 reader paths import real data (import 1→5), plus a real 0644→0600 secret-archive **security fix**. STAYS `partial` because MEMORY/MCP/cron readers are unexercised (no such data on this install) — the full reader set isn't validated. | `src/agent/hermes-claw-migrate.ts` |
 
 Local/free is covered wherever possible (Playwright/Chromium, Docker/WSL/SSH, Honcho/ByteRover via CLI). What pins these
 at `covered-partial` is **paid accounts, a product decision, or an ecosystem version-lock** — not missing code. Flipping
@@ -103,16 +106,18 @@ it has **no shared peer task board**. OpenClaw "enterprise" modules (policy/hook
 - **OpenClaw**: central **gateway hub** — isolated agents behind one gateway, routing bindings, node pairing, ACP bridge, channels. Human↔agent / agent↔node routing.
 - **Code Buddy**: richer **peer.* fleet** (A2A/ACP/MCP) + `colab-store` queue **now with TTL/lease + DAG + swarm** + event-driven autonomous daemon + free-first model tier. Cross-machine arbitration via git.
 
-## 4. OpenClaw migrator readers — promoted `partial` → `covered-partial` (2026-06-13)
+## 4. OpenClaw migrator readers — validation progress, STAYS `partial` (2026-06-14)
 
-> **Status (2026-06-13): PROMOTED to `covered-partial`.** The `~/.openclaw` install is now **populated** (the 2026-06-08
-> audit ran against an empty one), so the identity/persona/skill readers could finally be exercised against real data.
-> Live dry-run: **import 1 → 5** (the nested default model, SOUL/USER/AGENTS persona resolved from
+> **Status: still `partial`, with significant validation progress.** The `~/.openclaw` install is now **populated** (the
+> 2026-06-08 audit ran against an empty one), so the identity/persona/skill readers could finally be exercised against
+> real data. Live dry-run: **import 1 → 5** (the nested default model, SOUL/USER/AGENTS persona resolved from
 > `agents.defaults.workspace`, and a symlinked plugin-skill). A real **security bug** was found and fixed in the process:
-> the `gateway.auth.token` archive was written `0644` and is now `0600`. Regression-locked by
-> `tests/agent/hermes-claw-migrate-real.test.ts` with sanitized real-shape fixtures. It stays `covered-partial` (not
-> `covered`) because MEMORY/MCP/cron readers remain unexercised — this install genuinely has no such data, so writing
-> those readers blind is still refused. The 2026-06-08 tables below are kept as the record of the original schema-drift fix.
+> the `gateway.auth.token` archive was written `0644` and is now `0600` (and all archive slices are now written `0600`
+> unconditionally + the backup root is `0700`). Regression-locked by `tests/agent/hermes-claw-migrate-real.test.ts` with
+> sanitized real-shape fixtures. It **stays `partial` (not flipped to covered-partial)** because MEMORY/MCP/cron readers
+> remain **unexercised** — this install genuinely has no such data, so per §4's own rule ("flip only after a populated
+> install exercises **the rest**") the flip condition is not yet met, and writing those readers blind is refused. The
+> 2026-06-08 tables below are kept as the record of the original schema-drift fix.
 
 **Original empirical finding (dry-run against the live `~/.openclaw`, 2026-06-08, before the fix):**
 `detected: true`, but of **36 categories: 32 → `skip`, 4 → `archive`, 0 → `import`**. The migrator loads `openclaw.json`
