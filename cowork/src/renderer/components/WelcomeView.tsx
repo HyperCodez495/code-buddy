@@ -14,17 +14,18 @@ import {
   type AttachedFile,
 } from '../utils/file-attachment-helpers';
 import {
-  FileText,
-  BarChart3,
-  FolderOpen,
+  Wrench,
+  Bug,
+  Search,
+  TestTube,
+  ShieldCheck,
   ArrowRight,
   History,
-  Mail,
   X,
   Paperclip,
-  BookOpen,
-  FileSearch,
   Brain,
+  FileSearch,
+  FolderOpen,
 } from 'lucide-react';
 import { ProjectSelector } from './ProjectSelector';
 import { FileAttachmentChip } from './FileAttachmentChip';
@@ -393,43 +394,34 @@ export function WelcomeView() {
 
   const quickTags = [
     {
-      id: 'create',
-      label: t('welcome.createFile'),
-      icon: FileText,
-      prompt: t('welcome.quickPromptCreate'),
+      id: 'refactor',
+      label: t('welcome.refactorCode'),
+      icon: Wrench,
+      prompt: t('welcome.quickPromptRefactor'),
     },
     {
-      id: 'crunch',
-      label: t('welcome.crunchData'),
-      icon: BarChart3,
-      prompt: t('welcome.quickPromptCrunch'),
+      id: 'bug',
+      label: t('welcome.fixBug'),
+      icon: Bug,
+      prompt: t('welcome.quickPromptBug'),
     },
     {
-      id: 'organize',
-      label: t('welcome.organizeFiles'),
-      icon: FolderOpen,
-      prompt: t('welcome.quickPromptOrganize'),
+      id: 'explain',
+      label: t('welcome.explainCode'),
+      icon: Search,
+      prompt: t('welcome.quickPromptExplain'),
     },
     {
-      id: 'email',
-      label: t('welcome.checkEmails'),
-      icon: Mail,
-      prompt: t('welcome.quickPromptEmail'),
-      requiresChrome: true,
+      id: 'tests',
+      label: t('welcome.writeTests'),
+      icon: TestTube,
+      prompt: t('welcome.quickPromptTests'),
     },
     {
-      id: 'papers',
-      label: t('welcome.searchPapers'),
-      icon: BookOpen,
-      prompt: t('welcome.quickPromptPapers'),
-      requiresChrome: true,
-    },
-    {
-      id: 'research-notion',
-      label: t('welcome.summarizePapersToNotion'),
-      icon: FileSearch,
-      prompt: t('welcome.quickPromptNotion'),
-      requiresNotion: true,
+      id: 'review',
+      label: t('welcome.codeReview'),
+      icon: ShieldCheck,
+      prompt: t('welcome.quickPromptReview'),
     },
   ];
 
@@ -504,27 +496,12 @@ export function WelcomeView() {
                 selectedTag === tag.id
                   ? 'border-accent/30 bg-accent-muted text-accent'
                   : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
-              } ${
-                ('requiresChrome' in tag && tag.requiresChrome) ||
-                ('requiresNotion' in tag && tag.requiresNotion)
-                  ? 'relative'
-                  : ''
               }`}
             >
               <tag.icon
                 className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`}
               />
               <span>{tag.label}</span>
-              {'requiresChrome' in tag && tag.requiresChrome && (
-                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
-                  {t('welcome.chromeRequired')}
-                </span>
-              )}
-              {'requiresNotion' in tag && tag.requiresNotion && (
-                <span className="ml-1 px-1.5 py-px text-[9px] rounded bg-surface-active text-text-muted">
-                  {t('welcome.notionRequired')}
-                </span>
-              )}
             </button>
           ))}
         </div>
