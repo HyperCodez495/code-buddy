@@ -243,10 +243,27 @@ export class BrowserOperatorExecutor {
             'security checkpoint',
           ];
 
+          const sensitivePlatforms = [
+            'yandex.com',
+            'yandex.ru',
+            'login.microsoftonline.com',
+            'zoom.us',
+          ];
+
           for (const indicator of antiBotIndicators) {
             if (lower.includes(indicator)) {
               raiseCheckpoint(`Security checkpoint detected: "${indicator}"`);
               break;
+            }
+          }
+
+          if (!checkpointDetected) {
+            const currentUrl = String(this.page.url?.() ?? '').toLowerCase();
+            for (const platform of sensitivePlatforms) {
+              if (currentUrl.includes(platform)) {
+                raiseCheckpoint(`OSINT Policy Violation: Target-specific exploit scripts are strictly declined for "${platform}"`);
+                break;
+              }
             }
           }
         } catch {
