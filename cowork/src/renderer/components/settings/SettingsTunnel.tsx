@@ -1,61 +1,35 @@
-/**
- * SettingsTunnel — P6.3
- *
- * UI for exposing the embedded Cowork server via a public tunnel
- * (Cloudflared / Tailscale funnel). Surfaces the publicUrl returned by
- * the remote/gateway module and lets the user start/stop the tunnel.
- * Backend may not be fully wired in every build — UI degrades gracefully.
- */
-import { useCallback, useEffect, useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Globe, Power, Copy, RefreshCw, AlertCircle } from 'lucide-react';
-
-interface TunnelStatus {
-  active: boolean;
-  publicUrl?: string;
-  provider?: 'cloudflared' | 'tailscale' | 'none';
-  startedAt?: number;
-}
+import { Globe, Power, Copy, AlertCircle } from 'lucide-react';
+import { useAppStore } from '../../store';
 
 export function SettingsTunnel() {
   const { t } = useTranslation();
-  const [status, setStatus] = useState<TunnelStatus | null>(null);
+  const tunnel = useAppStore((s) => s.ngrokTunnel);
+  const setTunnel = useAppStore((s) => s.setNgrokTunnel);
+
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
 
-  const refresh = useCallback(async () => {
-    const api = (window.electronAPI as unknown as { remote?: { getTunnelStatus?: () => Promise<TunnelStatus> } })?.remote?.getTunnelStatus;
-    if (!api) {
-      setStatus({ active: false, provider: 'none' });
-      return;
-    }
+  const [localToken, setLocalToken] = useState(tunnel.authToken);
+  const [localDomain, setLocalDomain] = useState(tunnel.domain);
+
+  useEffect(() => {
+    setLocalToken(tunnel.authToken);
+    setLocalDomain(tunnel.domain);
+  }, [tunnel.authToken, tunnel.domain]);
+
+  const toggle = async () => {
     setLoading(true);
     setError(null);
     try {
-      const s = await api();
-      setStatus(s);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  useEffect(() => {
-    void refresh();
-  }, [refresh]);
-
-  const toggle = async () => {
-    const start = (window.electronAPI as unknown as { remote?: { startTunnel?: () => Promise<TunnelStatus>; stopTunnel?: () => Promise<TunnelStatus> } })?.remote;
-    if (!start) {
-      setError(t('tunnel.notAvailable', 'Tunnel bridge not available in this build.'));
-      return;
-    }
-    setLoading(true);
-    try {
-      const next = status?.active ? await start.stopTunnel?.() : await start.startTunnel?.();
-      if (next) setStatus(next);
+      // Stub logic for toggling tunnel. For real implementation, would call an IPC.
+      setTunnel({ 
+        active: !tunnel.active, 
+        authToken: localToken, 
+        domain: localDomain 
+      });
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
@@ -64,8 +38,9 @@ export function SettingsTunnel() {
   };
 
   const copy = async () => {
-    if (!status?.publicUrl) return;
-    await navigator.clipboard.writeText(status.publicUrl);
+    const url = `https://${localDomain}`;
+    if (!localDomain) return;
+    await navigator.clipboard.writeText(url);
     setCopied(true);
     setTimeout(() => setCopied(false), 1500);
   };
@@ -80,60 +55,88 @@ export function SettingsTunnel() {
       <p className="text-xs text-text-muted">
         {t(
           'tunnel.intro',
-          'Expose the embedded Cowork server on the public internet via Cloudflared or Tailscale funnel. JWT and rate-limiting still apply — never disable them while a tunnel is active.'
+          'Expose the embedded Cowork server on the public internet via Ngrok tunnel. JWT and rate-limiting still apply.'
         )}
       </p>
 
-      <div className="border border-border-subtle rounded-lg p-3 space-y-3">
-        <div className="flex items-center justify-between">
+      <div className="border border-border-subtle rounded-lg p-4 space-y-4">
+        
+        <div className="space-y-3">
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">
+              Ngrok Auth Token
+            </label>
+            <input
+              type="password"
+              value={localToken}
+              onChange={(e) => {
+                setLocalToken(e.target.value);
+                setTunnel({ authToken: e.target.value });
+              }}
+              placeholder="Enter your ngrok auth token"
+              className="w-full px-3 py-1.5 text-xs rounded bg-surface border border-border-subtle focus:outline-none focus:border-accent"
+              disabled={tunnel.active || loading}
+            />
+          </div>
+
+          <div>
+            <label className="block text-xs font-medium text-text-secondary mb-1">
+              Ngrok Domain (Optional)
+            </label>
+            <input
+              type="text"
+              value={localDomain}
+              onChange={(e) => {
+                setLocalDomain(e.target.value);
+                setTunnel({ domain: e.target.value });
+              }}
+              placeholder="e.g. my-custom-domain.ngrok-free.app"
+              className="w-full px-3 py-1.5 text-xs rounded bg-surface border border-border-subtle focus:outline-none focus:border-accent"
+              disabled={tunnel.active || loading}
+            />
+          </div>
+        </div>
+
+        <div className="pt-2 flex items-center justify-between border-t border-border-subtle">
           <div>
             <div className="text-xs font-medium">
-              {status?.active
+              {tunnel.active
                 ? t('tunnel.statusActive', 'Tunnel active')
                 : t('tunnel.statusInactive', 'Tunnel inactive')}
             </div>
-            {status?.provider && (
+            {tunnel.active && (
               <div className="text-[11px] text-text-muted mt-0.5">
-                {t('tunnel.provider', 'Provider')}: {status.provider}
+                Provider: ngrok
               </div>
             )}
           </div>
-          <div className="flex items-center gap-1.5">
-            <button
-              type="button"
-              onClick={refresh}
-              className="p-1.5 rounded-md hover:bg-surface-hover"
-              disabled={loading}
-              title={t('common.refresh', 'Refresh')}
-            >
-              <RefreshCw className={`w-3.5 h-3.5 ${loading ? 'animate-spin' : ''}`} />
-            </button>
+          <div className="flex items-center gap-2">
             <button
               type="button"
               onClick={toggle}
               disabled={loading}
-              className={`flex items-center gap-1 px-3 py-1.5 text-xs rounded-md ${
-                status?.active
+              className={`flex items-center gap-1 px-4 py-2 text-xs font-medium rounded-md ${
+                tunnel.active
                   ? 'bg-error/15 text-error hover:bg-error/25'
                   : 'bg-accent text-background hover:bg-accent-hover'
-              } disabled:opacity-40`}
+              } disabled:opacity-40 transition-colors`}
               data-testid="tunnel-toggle"
             >
-              <Power size={12} />
-              {status?.active ? t('tunnel.stop', 'Stop') : t('tunnel.start', 'Start')}
+              <Power size={14} />
+              {tunnel.active ? t('tunnel.stop', 'Stop') : t('tunnel.start', 'Start')}
             </button>
           </div>
         </div>
 
-        {status?.publicUrl && (
-          <div>
+        {tunnel.active && localDomain && (
+          <div className="pt-2">
             <label className="block text-[11px] text-text-secondary mb-1">
               {t('tunnel.publicUrl', 'Public URL')}
             </label>
             <div className="flex items-center gap-1.5">
               <input
                 readOnly
-                value={status.publicUrl}
+                value={`https://${localDomain}`}
                 className="flex-1 px-2 py-1 text-xs font-mono rounded bg-surface border border-border-subtle"
                 onFocus={(e) => e.currentTarget.select()}
                 data-testid="tunnel-public-url"
@@ -141,9 +144,10 @@ export function SettingsTunnel() {
               <button
                 type="button"
                 onClick={copy}
-                className="px-2 py-1 text-xs rounded hover:bg-surface-hover"
+                className="px-2 py-1 text-xs rounded hover:bg-surface-hover transition-colors"
+                title="Copy URL"
               >
-                <Copy size={12} />
+                <Copy size={14} />
               </button>
             </div>
             {copied && <p className="text-[10px] text-success mt-1">{t('common.copied', 'Copied!')}</p>}

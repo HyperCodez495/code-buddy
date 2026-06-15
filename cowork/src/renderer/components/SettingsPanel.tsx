@@ -58,6 +58,7 @@ import { SettingsPlugins } from './settings/SettingsPlugins';
 import { SettingsTelemetry } from './settings/SettingsTelemetry';
 import { SettingsControlCenter } from './settings/SettingsControlCenter';
 import { SettingsRemoteBackend } from './settings/SettingsRemoteBackend';
+import { SettingsTunnel } from './settings/SettingsTunnel';
 import { SkillsBrowser } from './SkillsBrowser';
 
 interface SettingsPanelProps {
@@ -73,6 +74,7 @@ interface SettingsPanelProps {
     | 'projects'
     | 'schedule'
     | 'remote'
+    | 'tunnel'
     | 'logs'
     | 'codebuddy'
     | 'workflows'
@@ -102,6 +104,7 @@ type TabId =
   | 'projects'
   | 'schedule'
   | 'remote'
+  | 'tunnel'
   | 'logs'
   | 'workflows'
   | 'cost'
@@ -132,6 +135,7 @@ const VALID_TABS = new Set<TabId>([
   'projects',
   'schedule',
   'remote',
+  'tunnel',
   'logs',
   'workflows',
   'cost',
@@ -190,6 +194,7 @@ const TAB_GROUP: Record<TabId, string> = {
   profiles: 'security',
   server: 'ops',
   remote: 'ops',
+  tunnel: 'ops',
   logs: 'ops',
   telemetry: 'ops',
 };
@@ -321,6 +326,12 @@ export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanel
       label: t('settings.remote', '远程控制'),
       icon: Wifi,
       description: t('settings.remoteDesc', '通过飞书等平台远程使用'),
+    },
+    {
+      id: 'tunnel' as TabId,
+      label: 'Network / Tunnel',
+      icon: Globe,
+      description: 'Configure public tunnel access via Ngrok',
     },
     {
       id: 'logs' as TabId,
@@ -630,6 +641,9 @@ export function SettingsPanel({ onClose, initialTab = 'control' }: SettingsPanel
                 {viewedTabs.has('remote') && (
                   <RemoteControlPanel isActive={activeTab === 'remote'} />
                 )}
+              </div>
+              <div className={activeTab === 'tunnel' ? '' : 'hidden'}>
+                {viewedTabs.has('tunnel') && <SettingsTunnel />}
               </div>
               <div className={activeTab === 'logs' ? '' : 'hidden'}>
                 {viewedTabs.has('logs') && <SettingsLogs isActive={activeTab === 'logs'} />}

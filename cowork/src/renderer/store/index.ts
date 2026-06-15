@@ -255,6 +255,12 @@ interface AppState {
   // remote Code Buddy backend; management surfaces remain local.
   remoteBackend: { connected: boolean; host: string | null };
 
+  ngrokTunnel: {
+    active: boolean;
+    authToken: string;
+    domain: string;
+  };
+
   // System theme (from OS native theme)
   systemDarkMode: boolean;
 
@@ -585,6 +591,7 @@ interface AppState {
 
   // Remote backend actions
   setRemoteBackend: (state: { connected: boolean; host: string | null }) => void;
+  setNgrokTunnel: (updates: Partial<{ active: boolean; authToken: string; domain: string }>) => void;
 
   // System theme actions
   setSystemDarkMode: (dark: boolean) => void;
@@ -850,6 +857,7 @@ export const useAppStore = create<AppState>((set) => ({
   isSandboxSetupComplete: false,
   sandboxSyncStatus: null,
   remoteBackend: { connected: false, host: null },
+  ngrokTunnel: { active: false, authToken: '', domain: '' },
   skillsStorageChangedAt: 0,
   skillsStorageChangeEvent: null,
   systemDarkMode: false,
@@ -1478,6 +1486,10 @@ export const useAppStore = create<AppState>((set) => ({
 
   // System theme actions
   setRemoteBackend: (state) => set({ remoteBackend: state }),
+  setNgrokTunnel: (updates) =>
+    set((state) => ({
+      ngrokTunnel: { ...state.ngrokTunnel, ...updates },
+    })),
 
   setSystemDarkMode: (dark) => set({ systemDarkMode: dark }),
 
