@@ -59,6 +59,10 @@ class BruteForceIndex {
           this.vectors = new Map(data);
       }
   }
+
+  remove(id: number): void {
+      this.vectors.delete(id);
+  }
 }
 
 export interface WorkspaceIndexerConfig {
@@ -165,17 +169,60 @@ export class WorkspaceIndexer extends EventEmitter {
         absolute: false,
       });
 
+      const mtimeCachePath = path.join(path.dirname(this.config.indexPath), 'mtimes.json');
+      let mtimeCache: Record<string, number> = {};
+      try {
+        if (fs.existsSync(mtimeCachePath)) {
+          mtimeCache = JSON.parse(await fs.readFile(mtimeCachePath, 'utf-8'));
+        }
+      } catch (e) {
+        logger.warn('Failed to load mtime cache, starting fresh.');
+      }
+
+      const newMtimeCache: Record<string, number> = {};
+      const filesToIndex: string[] = [];
+      const currentFiles = new Set(files);
+
+      for (const file of files) {
+        const fullPath = path.join(this.config.workspaceRoot, file);
+        try {
+            const stats = await fs.promises.stat(fullPath);
+            newMtimeCache[file] = stats.mtimeMs;
+            if (mtimeCache[file] !== stats.mtimeMs) {
+                filesToIndex.push(file);
+            }
+        } catch (err) {
+            // Can't stat, skip
+        }
+      }
+
+      const filesToRemove = new Set<string>();
+      for (const file of filesToIndex) {
+          filesToRemove.add(file);
+      }
+      for (const entry of this.entries.values()) {
+          if (!currentFiles.has(entry.filePath)) {
+              filesToRemove.add(entry.filePath);
+          }
+      }
+
+      if (filesToRemove.size > 0) {
+          for (const [id, entry] of this.entries.entries()) {
+              if (filesToRemove.has(entry.filePath)) {
+                  this.entries.delete(id);
+                  if (this.vectorIndex instanceof BruteForceIndex) {
+                      this.vectorIndex.remove(id);
+                  } else if (this.vectorIndex && this.vectorIndex.remove) {
+                      this.vectorIndex.remove(String(id));
+                  }
+              }
+          }
+      }
+
       let processedFiles = 0;
       let totalChunks = 0;
 
-      // TODO: In a real implementation, we should diff mtimes to only index changed files.
-      // For this PoC, we rebuild the index.
-      this.entries.clear();
-      this.nextId = 0;
-      if (this.vectorIndex.clear) this.vectorIndex.clear();
-      else if (this.vectorIndex instanceof BruteForceIndex) this.vectorIndex = new BruteForceIndex(384);
-
-      for (const file of files) {
+      for (const file of filesToIndex) {
         const fullPath = path.join(this.config.workspaceRoot, file);
         try {
           const content = await fs.readFile(fullPath, 'utf-8');
@@ -214,6 +261,8 @@ export class WorkspaceIndexer extends EventEmitter {
             // Skip unreadable files
         }
       }
+
+      await fs.writeFile(mtimeCachePath, JSON.stringify(newMtimeCache, null, 2));
 
       await this.saveIndexMetadata();
       logger.info(`Workspace indexing complete: ${processedFiles} files, ${totalChunks} chunks.`);
