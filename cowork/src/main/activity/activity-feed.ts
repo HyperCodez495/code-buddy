@@ -50,6 +50,7 @@ const MAX_ENTRIES = 200;
 export class ActivityFeed {
   constructor(private db: DatabaseInstance) {
     this.ensureSchema();
+    this.compactAsync();
   }
 
   private ensureSchema(): void {
@@ -77,6 +78,11 @@ export class ActivityFeed {
       database
         .prepare(
           `CREATE INDEX IF NOT EXISTS idx_activity_project ON activity_log(project_id)`
+        )
+        .run();
+      database
+        .prepare(
+          `CREATE INDEX IF NOT EXISTS idx_activity_type_timestamp ON activity_log(type, timestamp DESC)`
         )
         .run();
     } catch (err) {
@@ -188,5 +194,17 @@ export class ActivityFeed {
     } catch (err) {
       logWarn('[ActivityFeed] clear failed:', err);
     }
+  }
+
+  compactAsync(daysOld = 30): void {
+    setTimeout(() => {
+      try {
+        const cutoff = Date.now() - daysOld * 24 * 60 * 60 * 1000;
+        this.db.raw.prepare(`DELETE FROM activity_log WHERE timestamp < ?`).run(cutoff);
+        this.db.raw.exec('VACUUM');
+      } catch (err) {
+        logWarn('[ActivityFeed] compaction failed:', err);
+      }
+    }, 0);
   }
 }
