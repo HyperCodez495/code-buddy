@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { X, Brain, Zap, RefreshCw, Trash2, Play, Pause, SkipBack, SkipForward } from 'lucide-react';
+import { X, Brain, Zap, RefreshCw, Trash2, Play, Pause, SkipBack, SkipForward, ChevronDown } from 'lucide-react';
 import { buildReasoningPlaybackState } from '../utils/reasoning-playback';
 import { formatAppNumber, formatAppTime } from '../utils/i18n-format';
 
@@ -59,6 +59,19 @@ export function ReasoningTraceViewer({ isOpen, onClose }: ReasoningTraceViewerPr
   const [error, setError] = useState<string | null>(null);
   const [playbackIndex, setPlaybackIndex] = useState(0);
   const [isPlaying, setIsPlaying] = useState(false);
+  const [collapsedNodes, setCollapsedNodes] = useState<Set<string>>(new Set());
+
+  const toggleNode = useCallback((nodeId: string) => {
+    setCollapsedNodes((prev) => {
+      const next = new Set(prev);
+      if (next.has(nodeId)) {
+        next.delete(nodeId);
+      } else {
+        next.add(nodeId);
+      }
+      return next;
+    });
+  }, []);
 
   const load = useCallback(async () => {
     if (!window.electronAPI?.reasoning?.listTraces) return;
@@ -86,6 +99,7 @@ export function ReasoningTraceViewer({ isOpen, onClose }: ReasoningTraceViewerPr
       setDetail(null);
       setPlaybackIndex(0);
       setIsPlaying(false);
+      setCollapsedNodes(new Set());
       return;
     }
     let cancelled = false;
@@ -99,12 +113,14 @@ export function ReasoningTraceViewer({ isOpen, onClose }: ReasoningTraceViewerPr
           setDetail(nextDetail);
           setPlaybackIndex(nextDetail?.nodes?.length ? nextDetail.nodes.length - 1 : 0);
           setIsPlaying(false);
+          setCollapsedNodes(new Set());
         }
       } catch {
         if (!cancelled) {
           setDetail(null);
           setPlaybackIndex(0);
           setIsPlaying(false);
+          setCollapsedNodes(new Set());
         }
       }
     })();
@@ -122,6 +138,7 @@ export function ReasoningTraceViewer({ isOpen, onClose }: ReasoningTraceViewerPr
     setDetail(null);
     setPlaybackIndex(0);
     setIsPlaying(false);
+    setCollapsedNodes(new Set());
   }, [t]);
 
   const playback = useMemo(
@@ -169,30 +186,58 @@ export function ReasoningTraceViewer({ isOpen, onClose }: ReasoningTraceViewerPr
   const renderNode = (node: ReasoningNode, depth: number): React.ReactNode => {
     const children = tree?.byId.get(node.id)?.children ?? [];
     const hasScore = typeof node.score === 'number';
+    const isCollapsed = collapsedNodes.has(node.id);
+    const hasChildren = children.length > 0;
+
     return (
-      <div key={node.id} style={{ marginLeft: depth * 16 }}>
-        <div
-          className={`flex items-start gap-2 px-2 py-1 rounded text-xs ${
-            node.selected ? 'bg-accent/10 border-l-2 border-accent' : ''
-          }`}
-        >
-          <Zap
-            size={10}
-            className={node.selected ? 'text-accent mt-0.5' : 'text-text-muted mt-0.5'}
-          />
-          <div className="flex-1 min-w-0">
-            <div className="text-text-primary line-clamp-2">{node.label}</div>
-            {hasScore && (
-              <div className="text-[10px] text-text-muted mt-0.5">
-                {t('reasoning.score', 'Score')}: {(node.score ?? 0).toFixed(3)}
-                {node.tokensUsed
-                  ? ` · ${formatAppNumber(node.tokensUsed)} ${t('reasoning.tokens', 'tokens')}`
-                  : ''}
-              </div>
-            )}
+      <div key={node.id} className={depth > 0 ? 'ml-2 border-l border-border-muted pl-2 mt-1' : 'mt-1'}>
+        <div className="flex items-start gap-1 group">
+          {hasChildren ? (
+            <button
+              onClick={() => toggleNode(node.id)}
+              className="mt-0.5 p-0.5 rounded hover:bg-surface-hover text-text-muted transition-colors flex-shrink-0"
+              title={isCollapsed ? t('common.expand', 'Expand') : t('common.collapse', 'Collapse')}
+            >
+              <ChevronDown
+                size={12}
+                className={`transform transition-transform ${isCollapsed ? '-rotate-90' : ''}`}
+              />
+            </button>
+          ) : (
+            <div className="w-4 flex-shrink-0" />
+          )}
+          <div
+            className={`flex-1 flex items-start gap-2 px-2 py-1 rounded text-xs transition-colors ${
+              node.selected ? 'bg-accent/10 border-l-2 border-accent' : 'border-l-2 border-transparent hover:bg-surface-hover/50'
+            }`}
+          >
+            <Zap
+              size={10}
+              className={node.selected ? 'text-accent mt-0.5 flex-shrink-0' : 'text-text-muted mt-0.5 flex-shrink-0'}
+            />
+            <div className="flex-1 min-w-0">
+              <div className="text-text-primary whitespace-pre-wrap">{node.label}</div>
+              {hasScore && (
+                <div className="text-[10px] text-text-muted mt-0.5 flex items-center gap-2 flex-wrap">
+                  <span>{t('reasoning.score', 'Score')}: {(node.score ?? 0).toFixed(3)}</span>
+                  {node.tokensUsed ? (
+                    <span>· {formatAppNumber(node.tokensUsed)} {t('reasoning.tokens', 'tokens')}</span>
+                  ) : null}
+                  {hasChildren && (
+                    <span className="text-[9px] px-1.5 py-0.5 rounded bg-surface border border-border-muted">
+                      {children.length} {t('reasoning.branches', 'branches')}
+                    </span>
+                  )}
+                </div>
+              )}
+            </div>
           </div>
         </div>
-        {children.map((child) => renderNode(child, depth + 1))}
+        {!isCollapsed && hasChildren && (
+          <div className="space-y-0.5">
+            {children.map((child) => renderNode(child, depth + 1))}
+          </div>
+        )}
       </div>
     );
   };
