@@ -2670,6 +2670,17 @@ addLazyCommand(
   },
 );
 
+// Tunnel — manage ngrok tunnels
+addLazyCommand(
+  program,
+  'tunnel',
+  'Manage ngrok tunnels for the Code Buddy remote gateway',
+  async () => {
+    const { createTunnelCommand } = await import('./commands/tunnel.js');
+    return createTunnelCommand();
+  },
+);
+
 // Nodes — companion app node management (macOS, iOS, Android)
 addLazyCommandGroup(program, 'nodes', 'Manage companion app nodes (macOS, iOS, Android)', async () => {
   const { registerNodeCommands } = await import('./commands/cli/node-commands.js');
