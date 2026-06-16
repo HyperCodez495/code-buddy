@@ -829,3 +829,88 @@ export async function executeGenerateDocument(args: {
     },
   };
 }
+
+/**
+ * Streaming variant of {@link executeGenerateDocument}: identical output, but
+ * yields the build phases (prepare → parse → build → write → verify → done) as
+ * they happen so a host UI (e.g. the Cowork trace panel) can show the steps
+ * unfold one by one instead of a single opaque "Created X" at the end. Used by
+ * the tool-handler streaming path (`STREAMING_TOOLS`).
+ */
+export async function* executeGenerateDocumentStreaming(args: {
+  type: string;
+  title: string;
+  content: string;
+  outputPath: string;
+  theme?: string;
+}): AsyncGenerator<string, ToolResult, undefined> {
+  const type = args.type as DocumentType;
+  const { title, content, outputPath, theme } = args;
+  const file = path.basename(outputPath);
+  const label = type.toUpperCase();
+  try {
+    const expectedExt = expectedExtensionForType(type);
+    if (path.extname(outputPath).toLowerCase() !== expectedExt) {
+      return { success: false, error: `outputPath must end with ${expectedExt} for ${label} documents` };
+    }
+
+    yield `📄 Preparing ${label} "${title}"…\n`;
+    const outDir = path.dirname(path.resolve(outputPath));
+    if (!fs.existsSync(outDir)) fs.mkdirSync(outDir, { recursive: true });
+
+    yield `📑 Parsing content…\n`;
+    const sections = parseMarkdownSections(content);
+    yield `   parsed ${sections.length} section(s)\n`;
+
+    const buildLabel =
+      type === 'pptx' ? `Building ${sections.length + 1} slide(s)`
+      : type === 'xlsx' ? 'Building spreadsheet'
+      : type === 'docx' ? 'Building document'
+      : 'Rendering pages';
+    yield `🧩 ${buildLabel}…\n`;
+
+    let embeddedImages: GeneratedDocumentImage[] | undefined;
+    let rowCount = 0;
+    switch (type) {
+      case 'pptx': await generatePptx(title, sections, outputPath, theme); break;
+      case 'docx': embeddedImages = await generateDocx(title, sections, outputPath); break;
+      case 'xlsx': rowCount = await generateXlsx(title, content, outputPath); break;
+      case 'pdf': await generatePdf(title, sections, outputPath); break;
+      default: return { success: false, error: `Unknown document type: ${type}` };
+    }
+
+    yield `💾 Wrote ${file}\n`;
+
+    yield `✅ Verifying…\n`;
+    const docxValidation = type === 'docx' ? await validateDocxPackage(outputPath) : undefined;
+    const sizeKb = fs.existsSync(outputPath)
+      ? Math.max(1, Math.round(fs.statSync(outputPath).size / 1024))
+      : 0;
+    logger.info(`Document generated (streaming): ${outputPath} (${type})`);
+    yield `✓ Created ${file} (${sizeKb} KB)\n`;
+
+    const embImgs = embeddedImages ?? [];
+    const embeddedImageLines = embImgs.length > 0
+      ? ['Embedded images:', ...embImgs.map((i) => `- ${i.path}${i.caption ? ` (${i.caption})` : ''} [${i.width}x${i.height}]`)]
+      : [];
+    const validationLines = docxValidation
+      ? [
+          'DOCX validation:',
+          `- relationships: ${docxValidation.relationshipCount}`,
+          `- embedded image relationships: ${docxValidation.embeddedRelationshipCount}`,
+          `- media files: ${docxValidation.mediaFileCount}`,
+        ]
+      : [];
+    const xlsxLine = type === 'xlsx' ? [`Rows: ${rowCount}`] : [];
+
+    return {
+      success: true,
+      output: [`Created ${label}: ${outputPath}`, ...xlsxLine, ...embeddedImageLines, ...validationLines].join('\n'),
+      data: { outputPath, embeddedImages: embImgs, ...(docxValidation ? { docxValidation } : {}) },
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    logger.error('Document generation (streaming) failed', { error: msg });
+    return { success: false, error: `Document generation failed: ${msg}` };
+  }
+}

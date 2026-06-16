@@ -1093,6 +1093,31 @@ export class ToolHandler {
       }
     }
 
+    // generate_document: stream the build phases (prepare → parse → build →
+    // write → verify → done) so the UI shows the steps unfold one by one
+    // instead of a single opaque "Created X" at the end.
+    if (toolName === 'generate_document') {
+      try {
+        const args = JSON.parse(toolCall.function.arguments);
+        const { executeGenerateDocumentStreaming } = await import('../tools/document-generator.js');
+        const gen = executeGenerateDocumentStreaming({
+          type: args.type,
+          title: args.title,
+          content: args.content,
+          outputPath: args.outputPath ?? args.output_path,
+          theme: args.theme,
+        });
+        let r = await gen.next();
+        while (!r.done) {
+          yield r.value;
+          r = await gen.next();
+        }
+        return r.value ?? { success: false, error: 'Document tool returned no result' };
+      } catch (error) {
+        return { success: false, error: `Document streaming error: ${getErrorMessage(error)}` };
+      }
+    }
+
     // Fallback: non-streaming execution
     return await this.executeTool(toolCall);
   }

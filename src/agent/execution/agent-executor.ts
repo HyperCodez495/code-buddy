@@ -1024,7 +1024,7 @@ export class AgentExecutor {
             // Use streaming execution for tools that support it (bash, reason, + adapter-based)
             let result;
             const _streamToolStartMs = Date.now();
-            const STREAMING_TOOLS = ['bash', 'reason'];
+            const STREAMING_TOOLS = ['bash', 'reason', 'generate_document'];
             if (STREAMING_TOOLS.includes(toolCall.function.name)) {
               const gen = this.deps.toolHandler.executeToolStreaming(toolCall);
               let genResult = await gen.next();
