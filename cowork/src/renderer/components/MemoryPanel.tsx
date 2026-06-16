@@ -7,7 +7,7 @@
  */
 import { X, Brain } from 'lucide-react';
 import { useTranslation } from 'react-i18next';
-import { MemoryBrowser } from './MemoryBrowser';
+import { MemoryInspector } from './MemoryInspector';
 
 interface MemoryPanelProps {
   isOpen: boolean;
@@ -38,7 +38,7 @@ export function MemoryPanel({ isOpen, onClose }: MemoryPanelProps) {
         </button>
       </div>
       <div className="flex-1 overflow-hidden">
-        <MemoryBrowser />
+        <MemoryInspector />
       </div>
     </div>
   );
