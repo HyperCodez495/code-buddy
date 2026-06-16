@@ -18,7 +18,7 @@ against live installs: Hermes Agent `v0.16.0`, OpenClaw `2026.6.1`.
 > **This is the single source of truth** for where Code Buddy stands versus Hermes Agent and OpenClaw. It supersedes the
 > dated audit/status/TODO docs now under [`archive/2026-q2-hermes-audits/`](archive/2026-q2-hermes-audits/). Living
 > reference docs that remain authoritative for their own topic: [`hermes-memory-providers-selfhost.md`](hermes-memory-providers-selfhost.md)
-> (connector how-to), [`hermes-agent-strategy.md`](hermes-agent-strategy.md) (strategy), and the Fleet bus itself in
+> (connector how-to), [`hermes-agent-strategy.md`](archive/internal/hermes-agent-strategy.md) (strategy), and the Fleet bus itself in
 > [`fleet-guide.md`](fleet-guide.md).
 
 ## TL;DR

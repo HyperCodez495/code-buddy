@@ -4,7 +4,7 @@
 > (the Avalonia/Skia/custom-drawn case our hardening study flags as "fallback is the
 > only recourse"), resolve the target with a **set-of-marks + multimodal LLM** call —
 > our no-training substitute for Agent S2's trained visual grounding expert.
-> See [`piloting-hardening-study-2026-05.md`](piloting-hardening-study-2026-05.md) and the
+> See [`piloting-hardening-study-2026-05.md`](archive/internal/piloting-hardening-study-2026-05.md) and the
 > Agent S2 portability brief (backlog).
 
 ## Status

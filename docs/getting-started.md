@@ -278,8 +278,8 @@ This auto-enables `MultiAgentSystem`, decomposes the task, and dispatches subtas
 See [`docs/fleet-guide.md`](fleet-guide.md) for: provider auto-detection (Ollama priority), all peer-rpc methods, env vars (`CODEBUDDY_FLEET_*`), Tailscale lab examples, security model, hub-vs-spoke topology, and the V1.x roadmap.
 
 For the reprise path, use the short operator checklists:
-[`docs/reprise/cli-smoke.md`](reprise/cli-smoke.md) and
-[`docs/reprise/fleet-minimal.md`](reprise/fleet-minimal.md).
+[`docs/reprise/cli-smoke.md`](archive/internal/reprise/cli-smoke.md) and
+[`docs/reprise/fleet-minimal.md`](archive/internal/reprise/fleet-minimal.md).
 
 ## Troubleshooting
 

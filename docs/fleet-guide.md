@@ -10,7 +10,7 @@ multiple AIs running on different hosts**, each potentially backed by
 a different LLM provider.
 
 > **What's shipped vs. deferred?** See the consolidated
-> [Fleet V1.x Roadmap](./fleet-roadmap-v1.x.md).
+> [Fleet V1.x Roadmap](./archive/internal/fleet-roadmap-v1.x.md).
 
 ---
 
@@ -1192,7 +1192,7 @@ Branche OpenClaw quand tu veux les canaux externes — c'est un
 add-on, pas un remplacement.
 
 Pour rejouer le chemin minimal sans lire toute cette page, utilise
-[`docs/reprise/fleet-minimal.md`](reprise/fleet-minimal.md).
+[`docs/reprise/fleet-minimal.md`](archive/internal/reprise/fleet-minimal.md).
 
 ### Topologie quand les deux tournent (Phase (e).7)
 

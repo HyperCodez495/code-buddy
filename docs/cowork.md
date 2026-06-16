@@ -292,8 +292,8 @@ loopback endpoint, and no gateway token value.
 - [Cowork architecture](../cowork/ARCHITECTURE.md)
 - [Application validation guide](application-validation-guide.md)
 - [Autonomous coding + Cowork progress](autonomous-coding-cowork-progress.md)
-- [Cowork pilotability matrix](cowork-pilotability-matrix.md)
-- [Hermes / Cowork / CLI improvement log](hermes-cowork-cli-improvement-plan.md)
+- [Cowork pilotability matrix](archive/internal/cowork-pilotability-matrix.md)
+- [Hermes / Cowork / CLI improvement log](archive/internal/hermes-cowork-cli-improvement-plan.md)
 - [Full QA ledger](qa/code-buddy-studio/feature-qa.md)
 
 ## Troubleshooting
