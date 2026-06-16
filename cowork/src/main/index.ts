@@ -1884,6 +1884,35 @@ app
     } catch (err) {
       logWarn('[Main] Failed to wire bundled skills dir for embedded engine:', err);
     }
+    // Put the bundled Python on PATH so the document skills' `python3 …` scripts
+    // (python-pptx/openpyxl/python-docx — see resources/python/requirements-skills.txt)
+    // run with the office libs we bundle, in BOTH dev and packaged builds. The
+    // Claude-runner enrich only covers production; the embedded CB engine's bash
+    // (which the agent uses to run skill scripts) needs it in dev too.
+    try {
+      const pyArch = process.arch === 'arm64' ? 'arm64' : 'x64';
+      const pyPlatTag =
+        process.platform === 'darwin' ? `darwin-${pyArch}`
+        : process.platform === 'win32' ? 'win-x64'
+        : 'linux-x64';
+      const pyExe = process.platform === 'win32' ? 'python.exe' : 'python3';
+      const coworkRoot = resolve(__dirname, '..', '..');
+      const pyBinCandidates = app.isPackaged
+        ? [join(process.resourcesPath, 'python', 'bin'), join(process.resourcesPath, 'python')]
+        : [
+            join(coworkRoot, 'resources', 'python', pyPlatTag, 'bin'),
+            join(coworkRoot, 'resources', 'python', pyPlatTag),
+            join(coworkRoot, 'resources', 'python', 'bin'),
+          ];
+      const pyBin = pyBinCandidates.find((d) => fs.existsSync(join(d, pyExe)));
+      const pyDelim = process.platform === 'win32' ? ';' : ':';
+      if (pyBin && !(process.env.PATH || '').split(pyDelim).includes(pyBin)) {
+        process.env.PATH = `${pyBin}${pyDelim}${process.env.PATH || ''}`;
+        log(`[Main] Bundled Python on PATH → ${pyBin}`);
+      }
+    } catch (err) {
+      logWarn('[Main] Failed to add bundled Python to PATH:', err);
+    }
     skillsManager.onStorageChanged((event) => {
       sendToRenderer({
         type: 'skills.storageChanged',
