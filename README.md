@@ -145,6 +145,17 @@ See [Getting Started](docs/getting-started.md) for install options, headless mod
 
 Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, settings, permissions, models, MCP connectors, skills, artifacts, and companion controls — all against the same core agent as the CLI. The Code Buddy settings panel can probe the local backend, start it, discover models, and route turns through the embedded engine or a configured server.
 
+<table>
+  <tr>
+    <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/00-welcome.png" alt="Cowork desktop cockpit" width="430"/><br/><sub>Desktop cockpit — menus, sessions, composer</sub></td>
+    <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/01-chat-gpt55-real.png" alt="Real gpt-5.5 chat at $0" width="430"/><br/><sub>Real <code>gpt-5.5</code> chat · cost <code>$0.0000</code></sub></td>
+  </tr>
+  <tr>
+    <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/02-chat-dark-theme.png" alt="Cowork dark theme" width="430"/><br/><sub>Light &amp; dark themes</sub></td>
+    <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/03-fleet-autonomy.png" alt="Fleet and autonomy dashboard" width="430"/><br/><sub>Fleet dispatch · tool-permission posture · Hermes toolsets</sub></td>
+  </tr>
+</table>
+
 ```bash
 buddy server --port 3000   # local backend for Cowork, Fleet, and OpenAI-compatible clients
 buddy gui                  # launch the desktop app (or: buddy desktop)
