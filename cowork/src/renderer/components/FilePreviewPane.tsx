@@ -25,6 +25,7 @@ import {
 } from 'lucide-react';
 import { useAppStore } from '../store';
 import { AgenticHarnessStrip, parseAgenticHarnessArtifact } from './agentic-harness-strip';
+import { MessageMarkdown } from './MessageMarkdown';
 
 interface PreviewResult {
   kind: 'text' | 'image' | 'pdf' | 'document' | 'binary' | 'error';
@@ -272,9 +273,7 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
         {!loading && preview?.kind === 'pdf' && (
           <div className="p-4">
             {preview.pdfText ? (
-              <pre className="text-[11px] leading-relaxed text-text-primary whitespace-pre-wrap break-words">
-                {preview.pdfText}
-              </pre>
+              <MessageMarkdown normalizedText={preview.pdfText} />
             ) : (
               <div className="text-center text-xs text-text-muted py-8">
                 {preview.error ?? t('preview.noPdfText')}
@@ -286,9 +285,7 @@ export const FilePreviewPane: React.FC<FilePreviewPaneProps> = ({ inline = false
         {!loading && preview?.kind === 'document' && (
           <div className="p-4">
             {preview.documentText ? (
-              <pre className="text-[11px] leading-relaxed text-text-primary whitespace-pre-wrap break-words">
-                {preview.documentText}
-              </pre>
+              <MessageMarkdown normalizedText={preview.documentText} />
             ) : (
               <div className="text-center text-xs text-text-muted py-8">
                 {preview.error ?? t('preview.noDocumentText')}

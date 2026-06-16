@@ -291,6 +291,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
                   tool: {
                     id: chunk.toolCall.id,
                     name: chunk.toolCall.function.name,
+                    input: chunk.toolCall.function.arguments,
                     output: finalOutput,
                     isError: !chunk.toolResult.success,
                     data: chunk.toolResult.data,

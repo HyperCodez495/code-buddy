@@ -349,8 +349,9 @@ export function Sidebar() {
   }
 
   return (
-    <aside className="w-full h-full bg-surface flex flex-col overflow-hidden">
-      <div className="px-3 pt-4 pb-2">
+    <aside className="w-full h-full glass-panel border-r border-border flex flex-col overflow-hidden relative">
+      <div className="absolute inset-0 bg-gradient-to-b from-transparent to-black/10 pointer-events-none" />
+      <div className="px-3 pt-4 pb-2 relative z-10">
         <div className="flex items-center justify-between gap-3 px-1">
           <div className="min-w-0 flex items-center gap-2">
             <img

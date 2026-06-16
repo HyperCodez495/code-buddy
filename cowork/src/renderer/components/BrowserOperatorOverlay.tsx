@@ -14,7 +14,7 @@
 
 import React, { useMemo, useState } from 'react';
 import { useTranslation } from 'react-i18next';
-import { Globe, X, Minimize2, Maximize2, StopCircle } from 'lucide-react';
+import { Globe, X, Minimize2, Maximize2, StopCircle, MonitorPlay, Image as ImageIcon } from 'lucide-react';
 import { useAppStore } from '../store';
 import { useIPC } from '../hooks/useIPC';
 
@@ -27,11 +27,16 @@ export const BrowserOperatorOverlay: React.FC = () => {
   const activeSessionId = useAppStore((s) => s.activeSessionId);
 
   const [minimized, setMinimized] = useState(false);
+  const [liveView, setLiveView] = useState(false);
 
   const sessionActions = useMemo(() => {
     if (!activeSessionId) return browserActions;
     return browserActions.filter((a) => a.sessionId === activeSessionId);
   }, [browserActions, activeSessionId]);
+
+  const currentUrl = useMemo(() => {
+    return [...sessionActions].reverse().find((a) => a.url)?.url;
+  }, [sessionActions]);
 
   if (!show || sessionActions.length === 0) return null;
 
@@ -62,7 +67,7 @@ export const BrowserOperatorOverlay: React.FC = () => {
   }
 
   return (
-    <div className="fixed bottom-4 left-4 z-40 w-[420px] max-w-[90vw] bg-background border border-border rounded-xl shadow-elevated flex flex-col overflow-hidden">
+    <div data-testid="browser-operator-overlay" className={`fixed bottom-4 left-4 z-40 ${liveView ? 'w-[800px] h-[600px]' : 'w-[420px] max-h-[600px]'} max-w-[90vw] bg-background border border-border rounded-xl shadow-elevated flex flex-col overflow-hidden transition-all duration-200`}>
       {/* Header */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border-muted shrink-0">
         <div className="flex items-center gap-2">
@@ -78,6 +83,16 @@ export const BrowserOperatorOverlay: React.FC = () => {
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {currentUrl && (
+            <button
+              onClick={() => setLiveView(!liveView)}
+              className={`flex items-center gap-1 px-2 py-0.5 rounded transition-colors mr-2 ${liveView ? 'bg-accent/20 text-accent' : 'text-text-muted hover:bg-surface-hover hover:text-text-primary'}`}
+              title={liveView ? 'Show Screenshot' : 'Show Live WebView'}
+            >
+              {liveView ? <ImageIcon size={12} /> : <MonitorPlay size={12} />}
+              <span className="text-[10px] font-medium">{liveView ? 'Screenshot' : 'Live View'}</span>
+            </button>
+          )}
           <button
             onClick={() => {
               if (activeSessionId) stopSession(activeSessionId);
@@ -105,16 +120,27 @@ export const BrowserOperatorOverlay: React.FC = () => {
         </div>
       </div>
 
-      {/* Latest screenshot (if any) */}
-      {screenshotSrc && (
-        <div className="relative bg-surface/50 border-b border-border-muted max-h-[240px] overflow-auto flex items-center justify-center">
-          <img src={screenshotSrc} alt="browser-screenshot" className="max-w-full max-h-[240px] block" />
+      {/* Body: Webview OR Screenshot + Log */}
+      {liveView && currentUrl ? (
+        <div className="flex-1 w-full h-full bg-surface">
+          <webview
+            src={currentUrl}
+            className="w-full h-full"
+            webpreferences="contextIsolation=yes, sandbox=yes"
+          />
         </div>
-      )}
+      ) : (
+        <>
+          {/* Latest screenshot (if any) */}
+          {screenshotSrc && (
+            <div className="relative bg-surface/50 border-b border-border-muted max-h-[240px] overflow-auto flex items-center justify-center shrink-0">
+              <img src={screenshotSrc} alt="browser-screenshot" className="max-w-full max-h-[240px] block" />
+            </div>
+          )}
 
-      {/* Live action log (latest last) */}
-      <div className="max-h-[260px] overflow-y-auto divide-y divide-border-muted/60">
-        {sessionActions.map((a, idx) => (
+          {/* Live action log (latest last) */}
+          <div className="flex-1 overflow-y-auto divide-y divide-border-muted/60 min-h-[100px]">
+            {sessionActions.map((a, idx) => (
           <div key={`${a.toolUseId}-${idx}`} className="px-3 py-2">
             <div className="flex items-center gap-2">
               <span className="text-[10px] uppercase tracking-wide font-semibold text-accent">
@@ -137,6 +163,8 @@ export const BrowserOperatorOverlay: React.FC = () => {
           </div>
         ))}
       </div>
+        </>
+      )}
     </div>
   );
 };
