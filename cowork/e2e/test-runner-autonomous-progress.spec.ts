@@ -77,7 +77,8 @@ test('shows autonomous coding progress in the executions tab', async ({
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   await appPage.getByTestId('test-runner-executions-tab').click();

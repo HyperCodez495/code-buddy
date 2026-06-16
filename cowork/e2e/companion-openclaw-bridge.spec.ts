@@ -357,7 +357,8 @@ test('shows a public-safe OpenClaw bridge proof in the Companion cockpit', async
   await completeOnboardingForTest(appPage);
   await mockOpenClawCompanionBackend(electronApp, workspacePath);
 
-  await appPage.getByTestId('companion-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Companion').click();
   const bridge = appPage.getByTestId('companion-openclaw-bridge');
   await expect(bridge).toBeVisible({ timeout: 20_000 });
   await expect(bridge.getByText('OpenClaw bridge')).toBeVisible();

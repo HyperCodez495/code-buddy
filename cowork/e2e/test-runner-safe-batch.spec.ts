@@ -44,7 +44,8 @@ test('runs only safe catalog checks and leaves manual checks pending', async ({ 
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   const safeItemId = 'script-test-test';

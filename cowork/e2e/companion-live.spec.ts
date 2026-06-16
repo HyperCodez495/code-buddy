@@ -29,7 +29,8 @@ async function createProjectThroughSettings(
   const workspacePath = path.join(userDataDir, 'buddy-live-workspace');
   mkdirSync(workspacePath, { recursive: true });
 
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20_000 });
   await completeOnboardingForTest(appPage);
   await appPage.getByTestId('settings-tab-projects').click();
@@ -56,7 +57,8 @@ test('validates Buddy companion against real core IPC and local hardware surface
 }) => {
   await completeOnboardingForTest(appPage);
 
-  await appPage.getByTestId('companion-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Companion').click();
   await expect(appPage.getByRole('heading', { name: 'Buddy companion' })).toBeVisible();
   await expect(
     appPage.getByText('Select a project before opening Buddy companion senses.'),
@@ -66,7 +68,8 @@ test('validates Buddy companion against real core IPC and local hardware surface
   const workspacePath = await createProjectThroughSettings(appPage, userDataDir);
 
   await completeOnboardingForTest(appPage);
-  await appPage.getByTestId('companion-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Companion').click();
   await expect(appPage.getByRole('heading', { name: 'Buddy companion' })).toBeVisible();
   await expect(appPage.getByText(workspacePath, { exact: true })).toBeVisible();
   await expect(appPage.getByTestId('status-tile-brain')).toBeVisible();

@@ -26,7 +26,8 @@ test('runs the Fleet peer tool security suite from the test runner window', asyn
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   const fleetId = 'code-buddy-fleet-peer-tool-security-suite';

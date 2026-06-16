@@ -33,7 +33,8 @@ test('runs the real server ChatGPT gpt-5.5 API smoke from the test runner window
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   const realServerId = 'code-buddy-server-real-gpt55-chat';

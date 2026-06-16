@@ -26,7 +26,8 @@ test('uses Fleet and Team controls without starting external services', async ({
   test.setTimeout(120_000);
   await prepareWorkspace(appPage);
 
-  await appPage.getByTestId('fleet-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Fleet').click();
   await expect(appPage.getByTestId('fleet-panel')).toBeVisible();
   await appPage.getByTestId('fleet-add-peer-button').click();
   await appPage.getByTestId('fleet-add-connect-button').click();
@@ -38,7 +39,8 @@ test('uses Fleet and Team controls without starting external services', async ({
   await expect(appPage.getByTestId('fleet-add-label-input')).toHaveValue('E2E local peer');
   await appPage.getByLabel('Close fleet panel').click();
 
-  await appPage.getByTestId('team-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Équipe').click();
   await expect(appPage.getByTestId('team-panel')).toBeVisible();
   await appPage.getByTestId('team-start-button').click();
   await appPage.getByTestId('team-goal-input').fill('Coordinate a safe E2E panel proof');
@@ -62,7 +64,8 @@ test('uses automation settings forms for commands, hooks, and schedules', async 
   test.setTimeout(180_000);
   const repoRoot = await prepareWorkspace(appPage);
 
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible();
 
   await appPage.getByTestId('settings-tab-customCommands').scrollIntoViewIfNeeded();

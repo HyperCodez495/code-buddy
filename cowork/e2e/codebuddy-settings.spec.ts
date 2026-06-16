@@ -90,7 +90,8 @@ test('selects a Code Buddy model discovered from a real local backend', async ({
 
   try {
     await dismissOnboardingIfPresent(appPage);
-    await appPage.getByTestId('sidebar-settings-button').click();
+    await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
     await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
     await dismissOnboardingIfPresent(appPage);
     await appPage.getByTestId('settings-tab-codebuddy').click();

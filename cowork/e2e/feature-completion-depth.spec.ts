@@ -565,7 +565,8 @@ test('uses clipboard summary, orchestrator, and Fleet command dispatch', async (
   await appPage.getByTestId('clipboard-monitor-toggle').click();
   await appPage.getByTestId('clipboard-summary-panel').getByLabel('Close').click();
 
-  await appPage.getByTestId('orchestrator-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Orchestrateur').click();
   await expect(appPage.getByTestId('orchestrator-launcher')).toBeVisible();
   await appPage.getByTestId('orchestrator-goal-input').fill('ORCHESTRATOR_PANEL_OK: prove team launch');
   await appPage.getByTestId('orchestrator-strategy-select').selectOption('peer_review');
@@ -573,7 +574,8 @@ test('uses clipboard summary, orchestrator, and Fleet command dispatch', async (
   await appPage.getByTestId('orchestrator-spawn-button').click();
   await expect(appPage.getByTestId('orchestrator-launcher')).toHaveCount(0);
 
-  await appPage.getByTestId('fleet-command-center-button').click();
+  await appPage.getByRole('button', { name: 'Outils' }).click();
+    await appPage.getByRole('button', { name: 'Fleet' }).click();
   await expect(appPage.getByTestId('fleet-command-center')).toBeVisible();
   await expect(appPage.getByText('E2E Fleet Peer')).toBeVisible();
   await appPage.getByTestId('fleet-command-goal-input').fill('FLEET_COMMAND_OK: dispatch this proof');
@@ -596,7 +598,8 @@ test('uses bookmarks, activity, session insights, and focus view with seeded dat
 }) => {
   test.setTimeout(180_000);
 
-  await appPage.getByTestId('bookmarks-button').click();
+  await appPage.getByText('Vue').click();
+  await appPage.getByText('Signets').click();
   await expect(appPage.getByTestId('bookmarks-panel')).toBeVisible();
   await appPage.getByTestId('bookmarks-search-input').fill('BOOKMARK_PANEL_OK');
   await expect(appPage.getByTestId('bookmark-row-501')).toContainText('BOOKMARK_PANEL_OK');
@@ -610,7 +613,8 @@ test('uses bookmarks, activity, session insights, and focus view with seeded dat
     ).useAppStore?.getState().setShowBookmarksPanel?.(false);
   });
 
-  await appPage.getByTestId('activity-button').click();
+  await appPage.getByRole('button', { name: 'Vue' }).click();
+    await appPage.getByRole('button', { name: 'Activité' }).click();
   await expect(appPage.getByTestId('activity-feed')).toBeVisible();
   await appPage.getByTestId('activity-filter-fleet').click();
   await expect(appPage.getByTestId('activity-entry-4101')).toContainText('FLEET_ACTIVITY_OK');
@@ -624,7 +628,8 @@ test('uses bookmarks, activity, session insights, and focus view with seeded dat
     ).useAppStore?.getState().setShowActivityFeed?.(false);
   });
 
-  await appPage.getByTestId('session-insights-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Insights').click();
   await expect(appPage.getByTestId('session-insights-panel')).toBeVisible();
   await appPage.getByTestId('session-insights-search').fill('SESSION_INSIGHTS_OK');
   await expect(appPage.getByTestId('session-insights-row-session-deep-proof')).toContainText(
@@ -642,7 +647,8 @@ test('uses bookmarks, activity, session insights, and focus view with seeded dat
     ).useAppStore?.getState().setShowSessionInsights?.(false);
   });
 
-  await appPage.getByTestId('focus-view-button').click();
+  await appPage.getByText('Vue').click();
+  await appPage.getByText('Focus').click();
   await expect(appPage.getByTestId('focus-view')).toContainText('FOCUS_PANEL_OK');
   await expect(appPage.getByTestId('focus-view')).toContainText('FOCUS_RESPONSE_OK');
   await appPage.getByTestId('focus-view-open-insights').click();
@@ -660,7 +666,8 @@ test('uses bookmarks, activity, session insights, and focus view with seeded dat
 test('uses workflow, lesson, user-model, and spec backlog review flows', async ({ appPage }) => {
   test.setTimeout(240_000);
 
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await appPage.getByTestId('settings-tab-workflows').scrollIntoViewIfNeeded();
   await appPage.getByTestId('settings-tab-workflows').click();
   await expect(appPage.getByTestId('settings-workflows')).toBeVisible();
@@ -681,7 +688,8 @@ test('uses workflow, lesson, user-model, and spec backlog review flows', async (
     ).useAppStore?.getState().setShowSettings?.(false);
   });
 
-  await appPage.getByTestId('lesson-candidate-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Leçons').click();
   await expect(appPage.getByTestId('lesson-candidate-panel')).toBeVisible();
   await expect(appPage.getByTestId('lesson-candidate')).toContainText('LESSON_PANEL_OK');
   await appPage.getByTestId('lesson-reviewer-input').fill('Patrice QA');
@@ -696,7 +704,8 @@ test('uses workflow, lesson, user-model, and spec backlog review flows', async (
     ).useAppStore?.getState().setShowLessonCandidatePanel?.(false);
   });
 
-  await appPage.getByTestId('user-model-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Modèle Utilisateur').click();
   await expect(appPage.getByTestId('user-model-panel')).toBeVisible();
   await expect(appPage.getByTestId('user-observation')).toContainText('USER_MODEL_PANEL_OK');
   await appPage.getByTestId('user-model-reviewer-input').fill('Patrice QA');
@@ -711,7 +720,8 @@ test('uses workflow, lesson, user-model, and spec backlog review flows', async (
     ).useAppStore?.getState().setShowUserModelPanel?.(false);
   });
 
-  await appPage.getByTestId('spec-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Specs').click();
   await expect(appPage.getByTestId('spec-panel')).toBeVisible();
   await appPage.getByTestId('spec-project-title-input').fill('SPEC_PROJECT_CREATED_OK');
   await appPage.getByTestId('spec-project-create').click();
@@ -740,7 +750,8 @@ test('uses workflow, lesson, user-model, and spec backlog review flows', async (
 test('uses MCP connector playground and plugin manager controls', async ({ appPage }) => {
   test.setTimeout(180_000);
 
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await appPage.getByTestId('settings-tab-mcpMarketplace').scrollIntoViewIfNeeded();
   await appPage.getByTestId('settings-tab-mcpMarketplace').click();
   await expect(appPage.getByTestId('settings-mcp-marketplace')).toBeVisible();

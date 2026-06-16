@@ -57,7 +57,8 @@ test('re-runs the failing Vitest file after the fixture is fixed', async ({ appP
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   await expect(appPage.getByText('Vitest')).toBeVisible({ timeout: 15_000 });

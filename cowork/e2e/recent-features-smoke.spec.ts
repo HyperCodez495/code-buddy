@@ -21,11 +21,8 @@ async function dismissOnboardingIfPresent(appPage: Page) {
 }
 
 test('titlebar help button is rendered with the right test id (Phase 1)', async ({ appPage }) => {
-  const helpBtn = appPage.getByTestId('shortcuts-help-button');
+  const helpBtn = appPage.getByTestId('documentation-button');
   await expect(helpBtn).toBeVisible();
-  // Click-to-open is exercised via the keyboard shortcut test below; here
-  // we only assert the button surface so that a future regression
-  // removing the help icon trips the suite.
 });
 
 test('shortcuts dialog opens via Ctrl+/ keyboard shortcut (Phase 1)', async ({ appPage }) => {

@@ -587,7 +587,8 @@ test('renders the complete Word-workshop progress rail from session evidence', a
 
 test('opens Settings and renders the A2A registry tab', async ({ appPage }) => {
   await dismissOnboardingIfPresent(appPage);
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
 
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
   await dismissOnboardingIfPresent(appPage);
@@ -605,7 +606,8 @@ test('reviews Audit Log golden and policy eval summaries in-place', async ({
   await dismissOptionalModelDialogs(appPage);
 
   await dismissOnboardingIfPresent(appPage);
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
   await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('settings-tab-logs').click();
@@ -632,7 +634,8 @@ test('reviews Audit Log golden and policy eval summaries in-place', async ({
 
 test('switches the renderer language to French from Settings', async ({ appPage }) => {
   await dismissOnboardingIfPresent(appPage);
-  await appPage.getByTestId('sidebar-settings-button').click();
+  await appPage.getByText('Fichier', { exact: true }).click();
+    await appPage.getByText('Paramètres').click();
   await expect(appPage.getByTestId('settings-panel')).toBeVisible({ timeout: 20000 });
   await dismissOnboardingIfPresent(appPage);
   await appPage.getByTestId('settings-tab-general').click();
@@ -661,7 +664,8 @@ test('opens the reasoning trace viewer from the keyboard shortcut', async ({ app
 });
 
 test('opens the session insights panel from the titlebar', async ({ appPage }) => {
-  await appPage.getByTestId('session-insights-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Insights').click();
 
   await expect(appPage.getByTestId('session-insights-panel')).toBeVisible();
   await expect(appPage.getByTestId('session-insights-empty')).toBeVisible();
@@ -675,7 +679,8 @@ test('opens the session resume dialog from the welcome view', async ({ appPage }
 });
 
 test('opens the focus view from the titlebar', async ({ appPage }) => {
-  await appPage.getByTestId('focus-view-button').click();
+  await appPage.getByText('Vue').click();
+  await appPage.getByText('Focus').click();
 
   await expect(appPage.getByTestId('focus-view')).toBeVisible();
   await expect(appPage.getByTestId('focus-view-empty')).toBeVisible();

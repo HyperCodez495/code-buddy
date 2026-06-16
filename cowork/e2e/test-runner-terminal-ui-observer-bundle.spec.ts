@@ -24,7 +24,8 @@ test('runs the UI terminal observer bundle from the test runner window', async (
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   const bundleId = 'code-buddy-terminal-ui-observer-bundle';

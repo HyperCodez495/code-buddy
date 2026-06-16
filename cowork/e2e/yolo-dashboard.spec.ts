@@ -53,7 +53,8 @@ test('opens AutonomyPanel and verifies LiveBudgetMeter and Subagent active gauge
 
   await completeOnboardingForTest(appPage);
 
-  await appPage.getByTestId('autonomy-panel-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Autonomie').click();
 
   const panel = appPage.getByTestId('autonomy-panel');
   await expect(panel).toBeVisible({ timeout: 10_000 });

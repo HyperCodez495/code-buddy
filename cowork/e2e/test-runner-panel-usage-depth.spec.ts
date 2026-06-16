@@ -24,7 +24,8 @@ test('runs the panel usage depth suite from the test runner window', async ({ ap
   );
   expect(workdirResult).toMatchObject({ success: true });
 
-  await appPage.getByTestId('test-runner-button').click();
+  await appPage.getByText('Outils').click();
+  await appPage.getByText('Test Runner').click();
   await expect(appPage.getByRole('heading', { name: 'Tests & executions' })).toBeVisible();
 
   const panelUsageId = 'code-buddy-cowork-panel-usage-depth';
