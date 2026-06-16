@@ -40,6 +40,7 @@ import {
   type PermissionType,
   type WindowInfo,
 } from '../desktop-automation/index.js';
+import { OmniParserRunner } from "../desktop-automation/omniparser-runner.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -123,6 +124,13 @@ export type ComputerAction =
   | 'excel_set_cell'
   | 'excel_get_cell'
   | 'excel_save_workbook'
+  | 'powerpoint_open_presentation'
+  | 'powerpoint_add_slide'
+  | 'powerpoint_set_text'
+  | 'powerpoint_save_presentation'
+  | 'word_open_document'
+  | 'word_type_text'
+  | 'word_save_document'
   | 'use_app_workflow'
   | 'macro'
   | 'click_text'
@@ -198,6 +206,7 @@ export interface ComputerControlInput {
   policyOverrides?: Record<string, 'allow' | 'block' | 'confirm'>;
   // Snapshot params
   interactiveOnly?: boolean;
+  useOmniParser?: boolean;
   // Element params
   ref?: number;
   role?: string;
@@ -208,6 +217,9 @@ export interface ComputerControlInput {
   sheetName?: string;
   cell?: string;
   value?: string | number | boolean | null;
+  slideIndex?: number;
+  shapeIndex?: number;
+  layoutIndex?: number;
   // Mouse params
   x?: number;
   y?: number;
@@ -328,6 +340,7 @@ export class ComputerControlTool {
   private systemControl = getSystemControl();
   private snapshotManager = getSmartSnapshotManager();
   private screenRecorder = getScreenRecorder();
+  private omniParser = new OmniParserRunner();
   private lastTargetFocusProof: TargetFocusProof | null = null;
   private lastVisualContextProof: VisualContextProof | null = null;
 
@@ -440,6 +453,20 @@ export class ComputerControlTool {
           return run(() => this.excelGetCell(enrichedInput));
         case 'excel_save_workbook':
           return run(() => this.excelSaveWorkbook(enrichedInput));
+        case 'powerpoint_open_presentation':
+          return run(() => this.powerpointOpenPresentation(enrichedInput));
+        case 'powerpoint_add_slide':
+          return run(() => this.powerpointAddSlide(enrichedInput));
+        case 'powerpoint_set_text':
+          return run(() => this.powerpointSetText(enrichedInput));
+        case 'powerpoint_save_presentation':
+          return run(() => this.powerpointSavePresentation(enrichedInput));
+        case 'word_open_document':
+          return run(() => this.wordOpenDocument(enrichedInput));
+        case 'word_type_text':
+          return run(() => this.wordTypeText(enrichedInput));
+        case 'word_save_document':
+          return run(() => this.wordSaveDocument(enrichedInput));
         case 'use_app_workflow':
         case 'macro':
           return run(() => this.executeMacro(enrichedInput));
@@ -713,7 +740,7 @@ export class ComputerControlTool {
       interactiveOnly: input.interactiveOnly ?? true,
     });
 
-    const textRepresentation = this.snapshotManager.toTextRepresentation(snapshot);
+    let textRepresentation = this.snapshotManager.toTextRepresentation(snapshot);
 
     // Capture and normalize screenshot for LLM
     let screenshotData: { base64?: string; contentType?: string; width?: number; height?: number } = {};
@@ -742,6 +769,31 @@ export class ComputerControlTool {
       }
     } catch (err) {
       logger.debug('Screenshot capture failed in snapshot_with_screenshot', { error: err });
+    }
+
+    // Apply OmniParser if requested and screenshot was successful
+    if (input.useOmniParser && screenshotData.base64) {
+      const omniResult = await this.omniParser.parseScreen(screenshotData.base64, {
+        width: screenshotData.width,
+        height: screenshotData.height,
+      });
+
+      if (omniResult.elements.length > 0) {
+        // Override screenshot with the annotated (Set-of-Marks) image whose numbers match the ids below.
+        screenshotData.base64 = omniResult.annotatedImageBase64;
+
+        const unit = omniResult.elements[0]?.normalized ? 'ratio 0-1' : 'px';
+        const parsedText = omniResult.elements
+          .map(
+            (e) =>
+              `[${e.id}] ${e.type}${e.interactable ? ' (interactive)' : ''} "${e.content}" center=(${e.center[0]},${e.center[1]})`,
+          )
+          .join('\n');
+        textRepresentation += `\n\n[OmniParser Elements] (coords in ${unit}; use 'click' at an element center to act):\n${parsedText}`;
+      } else {
+        // No elements => server down/misconfigured or empty parse. Keep the original snapshot, don't add noise.
+        logger.debug('OmniParser returned no elements; keeping original screenshot and snapshot text');
+      }
     }
 
     return {
@@ -2106,6 +2158,104 @@ if ($clickButtonName) {
     };
   }
 
+  private async powerpointOpenPresentation(input: ComputerControlInput): Promise<ToolResult> {
+    const result = await this.runPowerpointAutomation({
+      operation: 'open',
+      filePath: input.filePath,
+    });
+    return {
+      success: true,
+      output: `PowerPoint presentation ready: ${result.presentationName ?? result.filePath ?? 'new presentation'}`,
+      data: result,
+    };
+  }
+
+  private async powerpointAddSlide(input: ComputerControlInput): Promise<ToolResult> {
+    const result = await this.runPowerpointAutomation({
+      operation: 'addSlide',
+      filePath: input.filePath,
+      layoutIndex: input.layoutIndex,
+    });
+    return {
+      success: true,
+      output: `PowerPoint slide added (index ${result.slideIndex})`,
+      data: result,
+    };
+  }
+
+  private async powerpointSetText(input: ComputerControlInput): Promise<ToolResult> {
+    if (input.slideIndex === undefined || input.shapeIndex === undefined) {
+      return { success: false, error: 'slideIndex and shapeIndex are required' };
+    }
+    const result = await this.runPowerpointAutomation({
+      operation: 'setText',
+      filePath: input.filePath,
+      slideIndex: input.slideIndex,
+      shapeIndex: input.shapeIndex,
+      value: input.value ?? input.text ?? '',
+    });
+    return {
+      success: true,
+      output: `PowerPoint slide ${input.slideIndex} shape ${input.shapeIndex} text set.`,
+      data: result,
+    };
+  }
+
+  private async powerpointSavePresentation(input: ComputerControlInput): Promise<ToolResult> {
+    const result = await this.runPowerpointAutomation({
+      operation: 'save',
+      filePath: input.filePath,
+      saveAsPath: input.saveAsPath,
+    });
+    return {
+      success: true,
+      output: `PowerPoint presentation saved${result.filePath ? `: ${result.filePath}` : ''}`,
+      data: result,
+    };
+  }
+
+  private async wordOpenDocument(input: ComputerControlInput): Promise<ToolResult> {
+    const result = await this.runWordAutomation({
+      operation: 'open',
+      filePath: input.filePath,
+    });
+    return {
+      success: true,
+      output: `Word document ready: ${result.documentName ?? result.filePath ?? 'new document'}`,
+      data: result,
+    };
+  }
+
+  private async wordTypeText(input: ComputerControlInput): Promise<ToolResult> {
+    const value = input.value ?? input.text;
+    if (value === undefined || value === null) {
+      return { success: false, error: 'value (or text) is required for word_type_text' };
+    }
+    const result = await this.runWordAutomation({
+      operation: 'typeText',
+      filePath: input.filePath,
+      value,
+    });
+    return {
+      success: true,
+      output: `Word document text appended.`,
+      data: result,
+    };
+  }
+
+  private async wordSaveDocument(input: ComputerControlInput): Promise<ToolResult> {
+    const result = await this.runWordAutomation({
+      operation: 'save',
+      filePath: input.filePath,
+      saveAsPath: input.saveAsPath,
+    });
+    return {
+      success: true,
+      output: `Word document saved${result.filePath ? `: ${result.filePath}` : ''}`,
+      data: result,
+    };
+  }
+
   // ============================================================================
   // Mouse Actions
   // ============================================================================
@@ -3314,6 +3464,205 @@ switch ($operation) {
   cell = $cell
   value = $value
   visible = $excel.Visible
+} | ConvertTo-Json -Compress
+`;
+
+    const stdout = await this.runPowerShellEncoded(script, 30000);
+    return JSON.parse(stdout || '{}') as Record<string, unknown>;
+  }
+
+  private async runPowerpointAutomation(payload: {
+    operation: 'open' | 'addSlide' | 'setText' | 'save';
+    filePath?: string;
+    saveAsPath?: string;
+    slideIndex?: number;
+    shapeIndex?: number;
+    layoutIndex?: number;
+    value?: string | number | boolean | null;
+  }): Promise<Record<string, unknown>> {
+    if (process.platform !== 'win32') {
+      throw new Error('PowerPoint application profile currently requires Windows COM automation.');
+    }
+
+    const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+    const script = `
+$ErrorActionPreference = 'Stop'
+$payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPayload}')) | ConvertFrom-Json
+
+function Get-PowerPointApplication {
+  try {
+    return [Runtime.InteropServices.Marshal]::GetActiveObject('PowerPoint.Application')
+  } catch {
+    return New-Object -ComObject PowerPoint.Application
+  }
+}
+
+function Resolve-Presentation($ppt, $filePath) {
+  if ($filePath) {
+    $fullPath = [System.IO.Path]::GetFullPath([string]$filePath)
+    foreach ($pres in @($ppt.Presentations)) {
+      try {
+        if ($pres.FullName -eq $fullPath) { return $pres }
+      } catch {}
+    }
+    if (Test-Path -LiteralPath $fullPath) {
+      return $ppt.Presentations.Open($fullPath)
+    }
+    $pres = $ppt.Presentations.Add()
+    $pres.SaveAs($fullPath)
+    return $pres
+  }
+
+  if ($ppt.Presentations.Count -gt 0) {
+    return $ppt.ActivePresentation
+  }
+  return $ppt.Presentations.Add()
+}
+
+$ppt = Get-PowerPointApplication
+$ppt.Visible = 1
+$presentation = Resolve-Presentation $ppt $payload.filePath
+$operation = [string]$payload.operation
+$slideIndex = $payload.slideIndex
+$shapeIndex = $payload.shapeIndex
+$value = $null
+
+switch ($operation) {
+  'open' {
+    $value = $null
+  }
+  'addSlide' {
+    $layoutIndex = 1
+    if ($null -ne $payload.layoutIndex) { $layoutIndex = $payload.layoutIndex }
+    # ppLayoutText = 2, ppLayoutTitle = 1
+    $slideCount = $presentation.Slides.Count
+    $slide = $presentation.Slides.Add($slideCount + 1, $layoutIndex)
+    $slideIndex = $slide.SlideIndex
+  }
+  'setText' {
+    if ($null -eq $slideIndex -or $null -eq $shapeIndex) { throw 'slideIndex and shapeIndex are required' }
+    $slide = $presentation.Slides.Item([int]$slideIndex)
+    $shape = $slide.Shapes.Item([int]$shapeIndex)
+    if ($shape.HasTextFrame) {
+      $shape.TextFrame.TextRange.Text = $payload.value
+    } else {
+      throw 'Shape does not have a text frame'
+    }
+    $value = $payload.value
+  }
+  'save' {
+    if ($payload.saveAsPath) {
+      $savePath = [System.IO.Path]::GetFullPath([string]$payload.saveAsPath)
+      $presentation.SaveAs($savePath)
+    } elseif ($payload.filePath) {
+      $presentation.Save()
+    } elseif ($presentation.Path) {
+      $presentation.Save()
+    } else {
+      throw 'saveAsPath is required for an unsaved presentation.'
+    }
+    $value = $null
+  }
+  default {
+    throw "Unknown PowerPoint operation '$operation'"
+  }
+}
+
+[pscustomobject]@{
+  operation = $operation
+  filePath = $presentation.FullName
+  presentationName = $presentation.Name
+  slideIndex = $slideIndex
+  value = $value
+} | ConvertTo-Json -Compress
+`;
+
+    const stdout = await this.runPowerShellEncoded(script, 30000);
+    return JSON.parse(stdout || '{}') as Record<string, unknown>;
+  }
+
+  private async runWordAutomation(payload: {
+    operation: 'open' | 'typeText' | 'save';
+    filePath?: string;
+    saveAsPath?: string;
+    value?: string | number | boolean | null;
+  }): Promise<Record<string, unknown>> {
+    if (process.platform !== 'win32') {
+      throw new Error('Word application profile currently requires Windows COM automation.');
+    }
+
+    const encodedPayload = Buffer.from(JSON.stringify(payload), 'utf8').toString('base64');
+    const script = `
+$ErrorActionPreference = 'Stop'
+$payload = [System.Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encodedPayload}')) | ConvertFrom-Json
+
+function Get-WordApplication {
+  try {
+    return [Runtime.InteropServices.Marshal]::GetActiveObject('Word.Application')
+  } catch {
+    return New-Object -ComObject Word.Application
+  }
+}
+
+function Resolve-Document($word, $filePath) {
+  if ($filePath) {
+    $fullPath = [System.IO.Path]::GetFullPath([string]$filePath)
+    foreach ($doc in @($word.Documents)) {
+      try {
+        if ($doc.FullName -eq $fullPath) { return $doc }
+      } catch {}
+    }
+    if (Test-Path -LiteralPath $fullPath) {
+      return $word.Documents.Open($fullPath)
+    }
+    $doc = $word.Documents.Add()
+    $doc.SaveAs([string]$fullPath)
+    return $doc
+  }
+
+  if ($word.Documents.Count -gt 0) {
+    return $word.ActiveDocument
+  }
+  return $word.Documents.Add()
+}
+
+$word = Get-WordApplication
+$word.Visible = 1
+$document = Resolve-Document $word $payload.filePath
+$operation = [string]$payload.operation
+$value = $null
+
+switch ($operation) {
+  'open' {
+    $value = $null
+  }
+  'typeText' {
+    $document.Content.InsertAfter([string]$payload.value)
+    $value = $payload.value
+  }
+  'save' {
+    if ($payload.saveAsPath) {
+      $savePath = [System.IO.Path]::GetFullPath([string]$payload.saveAsPath)
+      $document.SaveAs([string]$savePath)
+    } elseif ($payload.filePath) {
+      $document.Save()
+    } elseif ($document.Path) {
+      $document.Save()
+    } else {
+      throw 'saveAsPath is required for an unsaved document.'
+    }
+    $value = $null
+  }
+  default {
+    throw "Unknown Word operation '$operation'"
+  }
+}
+
+[pscustomobject]@{
+  operation = $operation
+  filePath = $document.FullName
+  documentName = $document.Name
+  value = $value
 } | ConvertTo-Json -Compress
 `;
 
@@ -6028,8 +6377,8 @@ $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
   private requiresApplicationConfirmation(input: ComputerControlInput): boolean {
     if (input.simulateOnly) return false;
 
-    if (input.action.startsWith('excel_')) {
-      return ['excel_open_workbook', 'excel_set_cell', 'excel_save_workbook'].includes(input.action);
+    if (input.action.startsWith('excel_') || input.action.startsWith('powerpoint_') || input.action.startsWith('word_')) {
+      return ['excel_open_workbook', 'excel_set_cell', 'excel_save_workbook', 'powerpoint_open_presentation', 'powerpoint_add_slide', 'powerpoint_set_text', 'powerpoint_save_presentation', 'word_open_document', 'word_type_text', 'word_save_document'].includes(input.action);
     }
 
     if (input.action === 'save_app_document') {
@@ -6068,6 +6417,8 @@ $proc = Get-Process -Id $pid -ErrorAction SilentlyContinue
       'set_slider_value', 'select_tree_item', 'expand_tree_item', 'collapse_tree_item',
       'click_dialog_button', 'handle_dialog',
       'open_app', 'focus_app', 'save_app_document', 'excel_open_workbook', 'excel_set_cell', 'excel_save_workbook',
+      'powerpoint_open_presentation', 'powerpoint_add_slide', 'powerpoint_set_text', 'powerpoint_save_presentation',
+      'word_open_document', 'word_type_text', 'word_save_document',
       'click', 'left_click', 'middle_click', 'double_click', 'right_click', 'move_mouse', 'drag', 'scroll',
       'type', 'key', 'key_down', 'key_up', 'hotkey',
       'focus_window', 'close_window', 'minimize_window', 'maximize_window', 'restore_window',

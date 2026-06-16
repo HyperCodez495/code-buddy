@@ -44,6 +44,16 @@ const cases: SuiteCase[] = [
     script: 'scratch/computer-use-excel-real-test.ts',
     resultPath: 'scratch/computer-use-excel-real-test-result.json',
   },
+  {
+    name: 'PowerPoint COM profile',
+    script: 'scratch/computer-use-powerpoint-real-test.ts',
+    resultPath: 'scratch/computer-use-powerpoint-real-test-result.json',
+  },
+  {
+    name: 'Word COM profile',
+    script: 'scratch/computer-use-word-real-test.ts',
+    resultPath: 'scratch/computer-use-word-real-test-result.json',
+  },
 ];
 
 function tail(text: string, maxLength = 4000): string {
@@ -117,7 +127,7 @@ let platformError: string | undefined;
 
 if (process.platform !== 'win32') {
   platformError =
-    `Computer Use real suite requires Windows because it drives WinForms, Notepad, and Excel COM; current platform is ${process.platform}.`;
+    `Computer Use real suite requires Windows because it drives WinForms, Notepad, Excel COM, PowerPoint COM, and Word COM; current platform is ${process.platform}.`;
   for (const testCase of cases) {
     results.push({
       name: testCase.name,

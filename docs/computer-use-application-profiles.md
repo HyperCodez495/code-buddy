@@ -11,6 +11,8 @@ Profiles live in `src/tools/application-profiles.ts`.
 | Profile | Risk | Default policy | Primary path |
 | --- | --- | --- | --- |
 | `excel` | high | confirm | Windows COM for workbook/cell actions, UI fallback for visible controls |
+| `powerpoint` | high | confirm | Windows COM for presentation actions, UI fallback for visible controls |
+| `word` | high | confirm | Windows COM for document actions, UI fallback for visible controls |
 | `notepad` | medium | allow | Desktop UI typing, UIAutomation text read, targeted document save |
 | `calculator` | low | allow | Desktop UI buttons and keyboard input |
 | `file_explorer` | high | confirm | Desktop UI navigation |
@@ -71,9 +73,45 @@ Excel write/save operations are treated as high risk:
 - `excel_open_workbook`
 - `excel_save_workbook`
 
+PowerPoint write/save operations are treated as high risk:
+
+- `powerpoint_set_text`
+- `powerpoint_add_slide`
+- `powerpoint_open_presentation`
+- `powerpoint_save_presentation`
+
+Word write/save operations are treated as high risk:
+
+- `word_type_text`
+- `word_open_document`
+- `word_save_document`
+
 Terminal, VS Code, and File Explorer launch actions are guarded by the profile
 policy. This prevents prompt-injected page content from silently escalating into
 system-level actions.
+
+## Visual grounding — OmniParser (optional, self-hosted)
+
+`computer_control` action `snapshot_with_screenshot` accepts `useOmniParser: true`
+to route the screenshot through [Microsoft OmniParser
+v2](https://github.com/microsoft/OmniParser) and get numbered, clickable UI
+elements back. OmniParser is a GPU/Python model you **self-host** — Code Buddy
+only ships the HTTP client (`src/desktop-automation/omniparser-runner.ts`), not
+the model or server.
+
+1. Run the OmniParser `omnitool/omniparserserver` (FastAPI, default port 8000).
+2. Point Code Buddy at it: `OMNIPARSER_API_URL=http://<host>:8000` (base URL;
+   the client calls `POST /parse/` and `GET /probe/`). Optional bearer:
+   `OMNIPARSER_API_KEY`.
+3. Call `computer_control` with `action: snapshot_with_screenshot`,
+   `useOmniParser: true`.
+
+The client speaks the OmniParser v2 contract (`{base64_image}` →
+`{som_image_base64, parsed_content_list}`) and scales the normalized boxes to
+pixels using the snapshot dimensions, so each element exposes a clickable
+`center=(x,y)`. If the server is unreachable the call is a **no-op** — you get
+the plain snapshot back, never a hard failure. Runtime behaviour requires a live
+OmniParser server and is not covered by the repo test suite.
 
 ## Real Evidence
 
@@ -82,11 +120,13 @@ Real Windows tests are currently available under `scratch/`:
 - `computer-use-real-test.ts` drives a Windows Forms fixture through text input,
   dropdown selection, checkbox, radio, tab, list item, slider value, tree item
   expand/select, button click, and final visible-text assertion.
-- `computer-use-notepad-real-test.ts` opens Notepad, writes text through the
+- `computer-use-notepad-real-test.ts` drives the standard Desktop Notepad via the
   profile workflow, saves the targeted text document without global keyboard
   shortcuts, and verifies the file content.
 - `computer-use-excel-real-test.ts` writes and reads cells in a temporary Excel
   workbook through COM, then saves the workbook.
+- `computer-use-powerpoint-real-test.ts` adds a slide and sets shape text in a temporary PowerPoint presentation through COM, then saves it.
+- `computer-use-word-real-test.ts` opens a temporary Word document, types text through COM, then saves it.
 - `computer-use-dialog-real-test.ts` opens a real Windows Forms dialog,
   inspects the prompt, classifies Save/Delete/Cancel choices, and clicks the
   safe Cancel path.
@@ -98,6 +138,8 @@ Latest evidence files:
 - `scratch/computer-use-real-test-result.json`
 - `scratch/computer-use-notepad-real-test-result.json`
 - `scratch/computer-use-excel-real-test-result.json`
+- `scratch/computer-use-powerpoint-real-test-result.json`
+- `scratch/computer-use-word-real-test-result.json`
 - `scratch/computer-use-dialog-real-test-result.json`
 - `scratch/computer-use-real-suite-result.json`
 

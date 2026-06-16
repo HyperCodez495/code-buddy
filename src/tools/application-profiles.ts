@@ -34,6 +34,41 @@ export const APPLICATION_PROFILES: ApplicationProfile[] = [
     notes: 'Uses Windows COM automation when Excel is installed, then falls back to desktop control. Cell writes and saves require explicit confirmation for live runs.',
   },
   {
+    id: 'powerpoint',
+    aliases: ['ppt', 'pptx', 'microsoft powerpoint', 'presentation', 'slides'],
+    name: 'Microsoft PowerPoint',
+    riskLevel: 'high',
+    defaultPolicy: 'confirm',
+    processNames: ['POWERPNT'],
+    titleHints: ['PowerPoint'],
+    launchCommand: 'powerpnt.exe',
+    executableCandidates: ['powerpnt.exe'],
+    capabilities: [
+      'open presentation',
+      'add slide',
+      'set text via COM',
+      'save presentation',
+    ],
+    notes: 'Uses Windows COM automation when PowerPoint is installed.',
+  },
+  {
+    id: 'word',
+    aliases: ['doc', 'docx', 'microsoft word', 'word processor'],
+    name: 'Microsoft Word',
+    riskLevel: 'high',
+    defaultPolicy: 'confirm',
+    processNames: ['WINWORD'],
+    titleHints: ['Word'],
+    launchCommand: 'winword.exe',
+    executableCandidates: ['winword.exe'],
+    capabilities: [
+      'open document',
+      'type text via COM',
+      'save document',
+    ],
+    notes: 'Uses Windows COM automation when Word is installed.',
+  },
+  {
     id: 'notepad',
     aliases: ['bloc-notes', 'notepad.exe', 'text editor'],
     name: 'Notepad',
@@ -114,6 +149,9 @@ export const APPLICATION_PROFILES: ApplicationProfile[] = [
 ];
 
 export function listApplicationProfiles(): ApplicationProfile[] {
+  // The Office profiles (excel/powerpoint/word) are advertised on every platform
+  // for a consistent catalog; their COM-backed actions fail closed with a clear
+  // "requires Windows COM" error off-Windows, so listing them cross-platform is safe.
   return APPLICATION_PROFILES;
 }
 

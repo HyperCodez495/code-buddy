@@ -396,6 +396,15 @@ export class CodeBuddyAgent extends BaseAgent {
         } catch (err) {
           logger.debug('Failed to register VerificationEnforcementMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
         }
+
+        // Visual validation middleware (priority 156) — suggests taking screenshots of generated Office documents
+        try {
+          const { VisualValidationMiddleware } = await import('./middleware/visual-validation-middleware.js');
+          pipeline.use(new VisualValidationMiddleware());
+          logger.debug('VisualValidationMiddleware registered in pipeline (priority 156)');
+        } catch (err) {
+          logger.debug('Failed to register VisualValidationMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
+        }
         // Quality gate middleware (priority 200) — auto-delegates to specialized agents
         try {
           const { createQualityGateMiddleware } = await import('./middleware/quality-gate-middleware.js');

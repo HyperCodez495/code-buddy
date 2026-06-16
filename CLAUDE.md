@@ -181,6 +181,7 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 | `CODEBUDDY_FLEET_MAX_CONCURRENCY` | Peer capacity → live `utilization` in heartbeats + daemon saturation backpressure (`src/fleet/fleet-load.ts`) |
 | Search keys | `BRAVE_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` |
 | `PICOVOICE_ACCESS_KEY` | Porcupine wake word (text-match fallback if absent) |
+| `OMNIPARSER_API_URL` / `OMNIPARSER_API_KEY` | Base URL (default `http://localhost:8000`) + optional Bearer for a self-hosted OmniParser v2 server, enabling `computer_control` `snapshot_with_screenshot` + `useOmniParser` (no-op if unreachable) |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Observability |
 | `PERF_TIMING`, `CACHE_TRACE`, `VERBOSE` | Debug flags |
 

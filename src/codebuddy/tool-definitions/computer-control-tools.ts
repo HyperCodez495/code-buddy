@@ -61,6 +61,13 @@ ACTIONS:
 - excel_set_cell: Set an Excel cell value via Windows COM
 - excel_get_cell: Read an Excel cell value via Windows COM
 - excel_save_workbook: Save or Save As an Excel workbook via Windows COM
+- powerpoint_open_presentation: Open or create a PowerPoint presentation via Windows COM
+- powerpoint_add_slide: Add a slide (layoutIndex optional) via Windows COM
+- powerpoint_set_text: Set text of a shape (slideIndex + shapeIndex) via Windows COM
+- powerpoint_save_presentation: Save or Save As a PowerPoint presentation via Windows COM
+- word_open_document: Open or create a Word document via Windows COM
+- word_type_text: Append text (value) to a Word document via Windows COM
+- word_save_document: Save or Save As a Word document via Windows COM
 - use_app_workflow: Execute a short sequence of computer_control steps
 - click_text: Click visible text using OCR fallback
 - click: Click at position or element ref
@@ -149,6 +156,13 @@ ACTIONS:
             'excel_set_cell',
             'excel_get_cell',
             'excel_save_workbook',
+            'powerpoint_open_presentation',
+            'powerpoint_add_slide',
+            'powerpoint_set_text',
+            'powerpoint_save_presentation',
+            'word_open_document',
+            'word_type_text',
+            'word_save_document',
             'use_app_workflow',
             'macro',
             'click_text',
@@ -249,11 +263,23 @@ ACTIONS:
         },
         filePath: {
           type: 'string',
-          description: 'File/folder path for app launch or Excel workbook path',
+          description: 'File/folder path for app launch or Office document path (Excel workbook, PowerPoint presentation, Word document)',
         },
         saveAsPath: {
           type: 'string',
-          description: 'Save-as path for Excel workbook',
+          description: 'Save-as path for an Office document (Excel/PowerPoint/Word)',
+        },
+        slideIndex: {
+          type: 'number',
+          description: 'PowerPoint 1-based slide index for powerpoint_set_text',
+        },
+        shapeIndex: {
+          type: 'number',
+          description: 'PowerPoint 1-based shape index on the slide for powerpoint_set_text',
+        },
+        layoutIndex: {
+          type: 'number',
+          description: 'PowerPoint slide layout index for powerpoint_add_slide (e.g. 1=title, 2=text); defaults to 1',
         },
         sheetName: {
           type: 'string',
@@ -430,6 +456,10 @@ ACTIONS:
         interactiveOnly: {
           type: 'boolean',
           description: 'Only include interactive elements in snapshot',
+        },
+        useOmniParser: {
+          type: 'boolean',
+          description: 'For snapshot_with_screenshot: route the screenshot through a self-hosted OmniParser v2 server (set OMNIPARSER_API_URL) to overlay numbered bounding boxes and append parsed elements with clickable center coordinates. No-op (original snapshot) when the server is unavailable.',
         },
         steps: {
           type: 'array',
