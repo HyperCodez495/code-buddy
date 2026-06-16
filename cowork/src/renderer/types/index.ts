@@ -1705,6 +1705,7 @@ export type ServerEvent =
   | { type: 'plugins.runtimeApplied'; payload: { sessionId: string; plugins: Array<{ name: string; path: string }> } }
   | { type: 'workdir.changed'; payload: { path: string } }
   | { type: 'session.contextInfo'; payload: { sessionId: string; contextWindow: number } }
+  | { type: 'goal.status'; payload: { sessionId: string; goal: GoalStatusPayload } }
   | { type: 'navigate.to'; payload: { page: 'welcome' | 'settings' | 'session'; tab?: string; sessionId?: string } }
   | { type: 'native-theme.changed'; payload: { shouldUseDarkColors: boolean } }
   | { type: 'new-session' }
@@ -1779,6 +1780,16 @@ export type ServerEvent =
       };
     }
   | { type: 'panic-stop'; payload: Record<string, never> };
+
+/** Autonomous goal-loop progress, surfaced by the chat goal banner. */
+export interface GoalStatusPayload {
+  goal: string;
+  status: 'active' | 'paused' | 'done' | 'cleared';
+  turnsUsed: number;
+  maxTurns: number;
+  lastVerdict?: 'done' | 'continue' | 'skipped';
+  lastReason?: string;
+}
 
 // Computer Use overlay events (Claude Cowork parity Phase 2 step 13)
 export interface GuiActionEvent {

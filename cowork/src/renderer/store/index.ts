@@ -29,6 +29,7 @@ import type {
   MissionRuntime,
   MissionRuntimeEvent,
   QueuedIntent,
+  GoalStatusPayload,
 } from '../types';
 import { applySessionUpdate } from '../utils/session-update';
 
@@ -211,6 +212,9 @@ interface AppState {
 
   // Per-session state (messages, partials, turns, traces, etc.)
   sessionStates: Record<string, SessionState>;
+
+  // Per-session autonomous goal-loop status (drives the chat goal banner).
+  goalStatesBySession: Record<string, GoalStatusPayload>;
 
   // UI state
   isLoading: boolean;
@@ -589,6 +593,10 @@ interface AppState {
   // Context window actions
   setSessionContextWindow: (sessionId: string, contextWindow: number) => void;
 
+  // Autonomous goal-loop status actions
+  setGoalStatus: (sessionId: string, goal: GoalStatusPayload) => void;
+  clearGoalStatus: (sessionId: string) => void;
+
   // Remote backend actions
   setRemoteBackend: (state: { connected: boolean; host: string | null }) => void;
   setNgrokTunnel: (updates: Partial<{ active: boolean; authToken: string; domain: string }>) => void;
@@ -835,6 +843,7 @@ export const useAppStore = create<AppState>((set) => ({
   sessions: [],
   activeSessionId: null,
   sessionStates: {},
+  goalStatesBySession: {},
   isLoading: false,
   sidebarCollapsed: false,
   contextPanelCollapsed: false,
@@ -1483,6 +1492,30 @@ export const useAppStore = create<AppState>((set) => ({
     set((state) => ({
       sessionStates: patchSession(state.sessionStates, sessionId, { contextWindow }),
     })),
+
+  setGoalStatus: (sessionId, goal) =>
+    set((state) => {
+      // 'cleared' means the user dropped the goal → hide the banner. 'active',
+      // 'paused' and 'done' all stay visible (done shows a green ✓ until the
+      // user clears it or starts a new goal).
+      if (goal.status === 'cleared') {
+        if (!state.goalStatesBySession[sessionId]) return {};
+        const next = { ...state.goalStatesBySession };
+        delete next[sessionId];
+        return { goalStatesBySession: next };
+      }
+      return {
+        goalStatesBySession: { ...state.goalStatesBySession, [sessionId]: goal },
+      };
+    }),
+
+  clearGoalStatus: (sessionId) =>
+    set((state) => {
+      if (!state.goalStatesBySession[sessionId]) return {};
+      const next = { ...state.goalStatesBySession };
+      delete next[sessionId];
+      return { goalStatesBySession: next };
+    }),
 
   // System theme actions
   setRemoteBackend: (state) => set({ remoteBackend: state }),

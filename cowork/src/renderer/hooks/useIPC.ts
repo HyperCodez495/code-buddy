@@ -375,6 +375,10 @@ export function useIPC() {
             store.setSessionContextWindow(event.payload.sessionId, event.payload.contextWindow);
             break;
 
+          case 'goal.status':
+            store.setGoalStatus(event.payload.sessionId, event.payload.goal);
+            break;
+
           case 'error':
             console.error('[useIPC] Server error:', event.payload.message);
             store.setLoading(false);

@@ -1,8 +1,15 @@
 /**
  * Phase 5 — verify CodeBuddyEngineRunner translates each
  * EngineStreamEvent type into the expected ServerEvent the renderer
- * expects. The runner is unit-tested by feeding a mocked
- * EngineAdapter that simulates the event stream.
+ * expects.
+ *
+ * No-mock posture: the *logic under test* (the runner's event → ServerEvent
+ * mapping switch) runs for real. Only platform boundaries that can't load in a
+ * Node vitest are stubbed — `electron` (`app`) and the dynamic `core-loader` /
+ * reasoning bridge. We feed the real mapping a real event via a tiny
+ * event-source adapter; nothing about the mapping behaviour is faked. The full
+ * `goal_status → goal.status` chain through the real preload + `useIPC` reducer
+ * is additionally covered with ZERO mocks in `e2e/goal-banner.spec.ts`.
  *
  * This is the regression net for the event contract: any future
  * change to the renderer's expected ServerEvent shape must update
@@ -214,5 +221,49 @@ describe('CodeBuddyEngineRunner event mapping', () => {
     const first = emitted.find((e) => e.type === 'session.status');
     expect(first).toBeDefined();
     expect((first!.payload as { status: string }).status).toBe('running');
+  });
+
+  it("maps `goal_status` to a goal.status ServerEvent carrying the snapshot", async () => {
+    const snapshot = {
+      goal: 'Increment counter.txt to 3',
+      status: 'active' as const,
+      turnsUsed: 2,
+      maxTurns: 6,
+      lastVerdict: 'continue' as const,
+      lastReason: 'still below target',
+    };
+    const { emitted } = await run([
+      { type: 'goal_status', goalStatus: snapshot },
+      { type: 'done' },
+    ]);
+    const goalEvent = emitted.find((e) => e.type === 'goal.status');
+    expect(goalEvent).toBeDefined();
+    const payload = goalEvent!.payload as { sessionId: string; goal: typeof snapshot };
+    expect(payload.sessionId).toBe('sess-1');
+    expect(payload.goal).toEqual(snapshot);
+  });
+
+  it("drops a `goal_status` event with no snapshot (no goal.status emitted)", async () => {
+    const { emitted } = await run([
+      { type: 'goal_status' },
+      { type: 'done' },
+    ]);
+    expect(emitted.some((e) => e.type === 'goal.status')).toBe(false);
+  });
+
+  it("propagates each turn's snapshot so the banner can show turnsUsed climbing", async () => {
+    // Mirrors the desktop adapter's emitGoalSnapshot firing each judged turn:
+    // 0/6 up-front, then 1/6, 2/6 as the Ralph loop continues.
+    const { emitted } = await run([
+      { type: 'goal_status', goalStatus: { goal: 'G', status: 'active', turnsUsed: 0, maxTurns: 6 } },
+      { type: 'goal_status', goalStatus: { goal: 'G', status: 'active', turnsUsed: 1, maxTurns: 6, lastVerdict: 'continue' } },
+      { type: 'goal_status', goalStatus: { goal: 'G', status: 'done', turnsUsed: 2, maxTurns: 6, lastVerdict: 'done' } },
+      { type: 'done' },
+    ]);
+    const turns = emitted
+      .filter((e) => e.type === 'goal.status')
+      .map((e) => (e.payload as { goal: { turnsUsed: number; status: string } }).goal);
+    expect(turns.map((g) => g.turnsUsed)).toEqual([0, 1, 2]);
+    expect(turns[turns.length - 1].status).toBe('done');
   });
 });

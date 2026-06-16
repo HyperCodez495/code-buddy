@@ -65,6 +65,14 @@ interface EngineStreamEvent {
     source: string;
   };
   diffPreview?: { turnId: number; diffs: Array<Record<string, unknown>>; plan?: string };
+  goalStatus?: {
+    goal: string;
+    status: 'active' | 'paused' | 'done' | 'cleared';
+    turnsUsed: number;
+    maxTurns: number;
+    lastVerdict?: 'done' | 'continue' | 'skipped';
+    lastReason?: string;
+  };
 }
 
 /** Callbacks injected by SessionManager */
@@ -393,6 +401,15 @@ export class CodeBuddyEngineRunner {
                       timestamp: Date.now(),
                     },
                   },
+                } as ServerEvent);
+              }
+              break;
+
+            case 'goal_status':
+              if (event.goalStatus) {
+                sendToRenderer({
+                  type: 'goal.status',
+                  payload: { sessionId: session.id, goal: event.goalStatus },
                 } as ServerEvent);
               }
               break;

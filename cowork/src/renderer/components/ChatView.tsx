@@ -20,6 +20,7 @@ import { MessageComposer } from './MessageComposer';
 import type { MentionItem } from './MentionAutocomplete';
 import type { SlashCommandItem } from './SlashCommandPalette';
 import { ChatHeader } from './ChatHeader';
+import { GoalBanner } from './GoalBanner';
 import { interruptSpeech, speakText } from './VoiceOutputToggle';
 import { usePermissionMode, useSearchState } from '../store/selectors';
 import type { Message, ContentBlock, ScheduleCreateInput, ScheduleWeekday } from '../types';
@@ -915,6 +916,7 @@ export function ChatView() {
   return (
     <div className="flex-1 flex flex-col overflow-hidden bg-background">
       <ChatHeader />
+      <GoalBanner />
 
       {/* Session search */}
       {searchActive && (

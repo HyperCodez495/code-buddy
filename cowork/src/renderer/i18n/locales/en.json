@@ -1,4 +1,9 @@
 {
+  "goal": {
+    "label": "Goal",
+    "pause": "Pause goal",
+    "clear": "Clear goal"
+  },
   "lessonCandidate": {
     "title": "Lesson candidates — review queue"
   },
