@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { Copy, Check, Clock, XCircle, Code2, Star, Pencil, RefreshCw, Target } from 'lucide-react';
 import type { Message, ContentBlock, ToolUseContent, ToolResultContent } from '../types';
 import { ContentBlockView } from './message/ContentBlockView';
+import { User } from 'lucide-react';
 import { ActivityGroupBlock } from './message/ActivityGroupBlock';
 import { detectArtifacts } from '../utils/artifact-detector';
 import { useAppStore } from '../store';
@@ -135,7 +136,9 @@ export const MessageCard = memo(function MessageCard({
 
   return (
     <div
-      className={`animate-fade-in rounded-xl transition-all ${
+      className={`animate-fade-in transition-all ${
+        isUser ? 'py-6' : 'py-6 bg-black/[0.03] dark:bg-white/[0.03] w-full'
+      } ${
         searchMatchState === 'active'
           ? 'ring-2 ring-accent/60 bg-accent/5'
           : searchMatchState === 'match'
@@ -144,184 +147,195 @@ export const MessageCard = memo(function MessageCard({
       }`}
       id={`message-${message.id}`}
     >
-      {isUser ? (
-        // User message - compact styling with smaller padding and radius
-        <div className="flex items-start gap-2 justify-end group">
-          <div
-            className={`message-user px-4 py-3 rounded-[1.65rem] max-w-[80%] min-w-0 break-words ${
-              isQueued ? 'opacity-70 border-dashed' : ''
-            } ${isCancelled ? 'opacity-60' : ''}`}
-          >
-            {isQueued && (
-              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
-                <Clock className="w-3 h-3" />
-                <span>{t('messageCard.queued')}</span>
-              </div>
-            )}
-            {isCancelled && (
-              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
-                <XCircle className="w-3 h-3" />
-                <span>{t('messageCard.cancelled')}</span>
-              </div>
-            )}
-            {isSteer && (
-              <div className="mb-1 flex items-center gap-1 text-[11px] text-text-muted">
-                <Target className="w-3 h-3" />
-                <span>
-                  {t(
-                    'messageCard.steerDelivered',
-                    message.metadata?.pendingIntent?.status === 'queued_fallback'
-                      ? 'Queued after steer fallback'
-                      : 'Steer delivered'
-                  )}
-                </span>
-              </div>
-            )}
-            {contentBlocks.length === 0 ? (
-              <span className="text-text-muted italic">{t('messageCard.emptyMessage')}</span>
-            ) : (
-              contentBlocks.map((block, index) => (
-                <ContentBlockView
-                  key={
-                    'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`
-                  }
-                  block={block}
-                  isUser={isUser}
-                  isStreaming={isStreaming}
-                />
-              ))
-            )}
-          </div>
-          <div className="mt-1 flex flex-col gap-1 flex-shrink-0">
-            {onEdit && (
-              <button
-                onClick={() => onEdit(message, getTextContent())}
-                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
-                title={t('messageCard.editMessage', 'Edit & resend')}
-                data-testid={`message-edit-${message.id}`}
-              >
-                <Pencil className="w-3 h-3 text-text-muted" />
-              </button>
-            )}
-            <button
-              onClick={handleCopy}
-              className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
-              title={t('messageCard.copyMessage')}
-              data-testid={`message-copy-${message.id}`}
-            >
-              {copied ? (
-                <Check className="w-3 h-3 text-success" />
-              ) : (
-                <Copy className="w-3 h-3 text-text-muted" />
-              )}
-            </button>
-            <button
-              onClick={handleToggleBookmark}
-              className={`w-6 h-6 flex items-center justify-center rounded-md transition-all ${
-                isBookmarked
-                  ? 'bg-warning/20 opacity-100'
-                  : 'bg-surface-muted hover:bg-surface-active opacity-0 group-hover:opacity-100'
-              }`}
-              title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
-            >
-              <Star
-                className={`w-3 h-3 ${
-                  isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
-                }`}
-              />
-            </button>
-          </div>
-        </div>
-      ) : (
-        // Assistant message — no bubble, direct content (Claude style)
-        <div className="space-y-1.5 group/assistant relative">
-          <div className="absolute -left-8 top-0 flex flex-col gap-1">
-            <button
-              onClick={handleToggleBookmark}
-              className={`w-6 h-6 flex items-center justify-center rounded-md transition-all ${
-                isBookmarked
-                  ? 'bg-warning/20 opacity-100'
-                  : 'bg-surface-muted hover:bg-surface-active opacity-0 group-hover/assistant:opacity-100'
-              }`}
-              title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
-            >
-              <Star
-                className={`w-3 h-3 ${
-                  isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
-                }`}
-              />
-            </button>
-            {!isStreaming && (
-              <button
-                onClick={handleCopy}
-                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
-                title={t('messageCard.copyMessage')}
-                data-testid={`message-copy-${message.id}`}
-              >
-                {copied ? (
-                  <Check className="w-3 h-3 text-success" />
-                ) : (
-                  <Copy className="w-3 h-3 text-text-muted" />
-                )}
-              </button>
-            )}
-            {onRegenerate && !isStreaming && (
-              <button
-                onClick={() => onRegenerate(message)}
-                className="w-6 h-6 flex items-center justify-center rounded-md bg-surface-muted hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
-                title={t('messageCard.regenerate', 'Regenerate response')}
-                data-testid={`message-regenerate-${message.id}`}
-              >
-                <RefreshCw className="w-3 h-3 text-text-muted" />
-              </button>
-            )}
-          </div>
-          {visibleBlocks.map((block, index) => (
-            <ContentBlockView
-              key={'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`}
-              block={block}
-              isUser={isUser}
-              isStreaming={isStreaming}
-              allBlocks={contentBlocks}
-              message={message}
-            />
-          ))}
-          {activityBlocks.length > 0 && (
-            <ActivityGroupBlock
-              blocks={activityBlocks}
-              allBlocks={contentBlocks}
-              message={message}
-              isStreaming={isStreaming}
-            />
-          )}
-          {detectedArtifacts.length > 0 && (
-            <div className="flex flex-wrap gap-2 pt-1">
-              {detectedArtifacts.map((artifact) => (
+      <div className="max-w-3xl mx-auto px-4 w-full flex justify-center">
+        <div className="w-full">
+          {isUser ? (
+            <div className="flex items-start gap-4 justify-end group">
+              <div className="mt-1 flex gap-1 flex-shrink-0 flex-row">
                 <button
-                  key={artifact.id}
-                  onClick={() =>
-                    setActiveArtifact({
-                      id: artifact.id,
-                      kind: artifact.kind,
-                      language: artifact.language,
-                      source: artifact.source,
-                      title: artifact.title,
-                    })
-                  }
-                  className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-surface hover:bg-surface-hover border border-border rounded-lg transition-colors group"
-                  title={t('artifact.openPanel')}
+                  onClick={handleToggleBookmark}
+                  className={`w-6 h-6 flex items-center justify-center rounded-md transition-all ${
+                    isBookmarked
+                      ? 'bg-warning/20 opacity-100'
+                      : 'bg-transparent hover:bg-surface-active opacity-0 group-hover:opacity-100'
+                  }`}
+                  title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
                 >
-                  <Code2 size={12} className="text-accent" />
-                  <span className="text-text-primary font-medium">
-                    {artifact.title ?? t(`artifact.kind.${artifact.kind}`)}
-                  </span>
-                  <span className="text-text-muted uppercase text-[9px]">{artifact.kind}</span>
+                  <Star
+                    className={`w-3 h-3 ${
+                      isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
+                    }`}
+                  />
                 </button>
-              ))}
+                <button
+                  onClick={handleCopy}
+                  className="w-6 h-6 flex items-center justify-center rounded-md bg-transparent hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
+                  title={t('messageCard.copyMessage')}
+                  data-testid={`message-copy-${message.id}`}
+                >
+                  {copied ? (
+                    <Check className="w-3 h-3 text-success" />
+                  ) : (
+                    <Copy className="w-3 h-3 text-text-muted" />
+                  )}
+                </button>
+                {onEdit && (
+                  <button
+                    onClick={() => onEdit(message, getTextContent())}
+                    className="w-6 h-6 flex items-center justify-center rounded-md bg-transparent hover:bg-surface-active transition-all opacity-0 group-hover:opacity-100"
+                    title={t('messageCard.editMessage', 'Edit & resend')}
+                    data-testid={`message-edit-${message.id}`}
+                  >
+                    <Pencil className="w-3 h-3 text-text-muted" />
+                  </button>
+                )}
+              </div>
+              <div
+                className={`max-w-[85%] min-w-0 break-words text-right ${
+                  isQueued ? 'opacity-70' : ''
+                } ${isCancelled ? 'opacity-60' : ''}`}
+              >
+                {isQueued && (
+                  <div className="mb-1 flex items-center justify-end gap-1 text-[11px] text-text-muted">
+                    <span>{t('messageCard.queued')}</span>
+                    <Clock className="w-3 h-3" />
+                  </div>
+                )}
+                {isCancelled && (
+                  <div className="mb-1 flex items-center justify-end gap-1 text-[11px] text-text-muted">
+                    <span>{t('messageCard.cancelled')}</span>
+                    <XCircle className="w-3 h-3" />
+                  </div>
+                )}
+                {isSteer && (
+                  <div className="mb-1 flex items-center justify-end gap-1 text-[11px] text-text-muted">
+                    <span>
+                      {t(
+                        'messageCard.steerDelivered',
+                        message.metadata?.pendingIntent?.status === 'queued_fallback'
+                          ? 'Queued after steer fallback'
+                          : 'Steer delivered'
+                      )}
+                    </span>
+                    <Target className="w-3 h-3" />
+                  </div>
+                )}
+                {contentBlocks.length === 0 ? (
+                  <span className="text-text-muted italic">{t('messageCard.emptyMessage')}</span>
+                ) : (
+                  contentBlocks.map((block, index) => (
+                    <ContentBlockView
+                      key={
+                        'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`
+                      }
+                      block={block}
+                      isUser={isUser}
+                      isStreaming={isStreaming}
+                    />
+                  ))
+                )}
+              </div>
+              <div className="w-8 h-8 rounded-full bg-surface-muted border border-border flex items-center justify-center flex-shrink-0 mt-1">
+                <User className="w-4 h-4 text-text-secondary" />
+              </div>
+            </div>
+          ) : (
+            <div className="flex items-start gap-4 group/assistant relative">
+              <div className="w-8 h-8 flex-shrink-0 rounded-full flex items-center justify-center bg-accent/10 border border-accent/20 mt-1">
+                <img src="icon.png" alt="AI" className="w-4 h-4 object-contain" onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <Code2 className="w-4 h-4 text-accent absolute" />
+              </div>
+              <div className="min-w-0 flex-1 space-y-1.5">
+                <div className="absolute -left-10 top-1 flex flex-col gap-1">
+                  <button
+                    onClick={handleToggleBookmark}
+                    className={`w-6 h-6 flex items-center justify-center rounded-md transition-all ${
+                      isBookmarked
+                        ? 'bg-warning/20 opacity-100'
+                        : 'bg-transparent hover:bg-surface-active opacity-0 group-hover/assistant:opacity-100'
+                    }`}
+                    title={isBookmarked ? t('bookmarks.remove') : t('bookmarks.add')}
+                  >
+                    <Star
+                      className={`w-3 h-3 ${
+                        isBookmarked ? 'text-warning fill-warning' : 'text-text-muted'
+                      }`}
+                    />
+                  </button>
+                  {!isStreaming && (
+                    <button
+                      onClick={handleCopy}
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-transparent hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
+                      title={t('messageCard.copyMessage')}
+                      data-testid={`message-copy-${message.id}`}
+                    >
+                      {copied ? (
+                        <Check className="w-3 h-3 text-success" />
+                      ) : (
+                        <Copy className="w-3 h-3 text-text-muted" />
+                      )}
+                    </button>
+                  )}
+                  {onRegenerate && !isStreaming && (
+                    <button
+                      onClick={() => onRegenerate(message)}
+                      className="w-6 h-6 flex items-center justify-center rounded-md bg-transparent hover:bg-surface-active transition-all opacity-0 group-hover/assistant:opacity-100"
+                      title={t('messageCard.regenerate', 'Regenerate response')}
+                      data-testid={`message-regenerate-${message.id}`}
+                    >
+                      <RefreshCw className="w-3 h-3 text-text-muted" />
+                    </button>
+                  )}
+                </div>
+                {visibleBlocks.map((block, index) => (
+                  <ContentBlockView
+                    key={'id' in block ? (block as { id: string }).id : `block-${block.type}-${index}`}
+                    block={block}
+                    isUser={isUser}
+                    isStreaming={isStreaming}
+                    allBlocks={contentBlocks}
+                    message={message}
+                  />
+                ))}
+                {activityBlocks.length > 0 && (
+                  <ActivityGroupBlock
+                    blocks={activityBlocks}
+                    allBlocks={contentBlocks}
+                    message={message}
+                    isStreaming={isStreaming}
+                  />
+                )}
+                {detectedArtifacts.length > 0 && (
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    {detectedArtifacts.map((artifact) => (
+                      <button
+                        key={artifact.id}
+                        onClick={() =>
+                          setActiveArtifact({
+                            id: artifact.id,
+                            kind: artifact.kind,
+                            language: artifact.language,
+                            source: artifact.source,
+                            title: artifact.title,
+                          })
+                        }
+                        className="flex items-center gap-1.5 px-3 py-1.5 text-[11px] bg-surface hover:bg-surface-hover border border-border rounded-lg transition-colors group"
+                        title={t('artifact.openPanel')}
+                      >
+                        <Code2 size={12} className="text-accent" />
+                        <span className="text-text-primary font-medium">
+                          {artifact.title ?? t(`artifact.kind.${artifact.kind}`)}
+                        </span>
+                        <span className="text-text-muted uppercase text-[9px]">{artifact.kind}</span>
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           )}
         </div>
-      )}
+      </div>
     </div>
   );
 });

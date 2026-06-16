@@ -63,148 +63,149 @@ export function MessageComposer(props: MessageComposerProps) {
   
   return (
     <div
-      className="border-t border-border-muted bg-background/92 backdrop-blur-md"
+      className="pb-4 pt-2 w-full bg-gradient-to-t from-background via-background to-transparent"
       onDragOver={props.handleDragOver}
       onDragLeave={props.handleDragLeave}
       onDrop={props.handleDrop}
     >
-      <div className="max-w-[920px] mx-auto px-5 lg:px-8 py-5">
+      <div className="max-w-3xl mx-auto px-4 w-full">
         <form
           onSubmit={props.handleSubmit}
-          className="relative w-full"
+          className="relative w-full bg-white dark:bg-[#2F2F2F] rounded-3xl shadow-sm border border-black/5 dark:border-white/5"
         >
           {props.isDragging && (
-            <div className="absolute inset-0 z-10 rounded-[2rem] border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
+            <div className="absolute inset-0 z-10 rounded-3xl border-2 border-dashed border-accent bg-accent/10 backdrop-blur-sm flex items-center justify-center pointer-events-none">
               <span className="text-sm font-medium text-accent">
                 {t('chat.dropToAttach', 'Drop files to attach')}
               </span>
             </div>
           )}
 
-          {props.pastedImages.length > 0 && props.modelSupportsVision === false && (
-            <div className="mb-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
-              <span className="font-medium">{t('chat.visionWarningTitle')}</span>
-              <span className="text-warning/80">{t('chat.visionWarningBody')}</span>
-            </div>
-          )}
+          <div className="p-3.5 pb-2">
+            {props.pastedImages.length > 0 && props.modelSupportsVision === false && (
+              <div className="mb-3 px-3 py-2 rounded-lg bg-warning/10 border border-warning/30 text-xs text-warning flex items-start gap-2">
+                <span className="font-medium">{t('chat.visionWarningTitle')}</span>
+                <span className="text-warning/80">{t('chat.visionWarningBody')}</span>
+              </div>
+            )}
 
-          {props.pastedImages.length > 0 && (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
-              {props.pastedImages.map((img, index) => (
-                <div key={img.url || `pasted-image-${index}`} className="relative group">
-                  <img
-                    src={img.url}
-                    alt={t('common.pastedImageAlt', { index: index + 1 })}
-                    className="w-full aspect-square object-cover rounded-lg border border-border block"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => props.removeImage(index)}
-                    className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
-                  >
-                    <X className="w-3 h-3" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {props.attachedFiles.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1.5 mb-3">
-              {props.attachedFiles.map((file, index) => (
-                <FileAttachmentChip
-                  key={file.path || `attached-file-${index}`}
-                  file={file}
-                  onRemove={() => props.removeFile(index)}
-                  onPreview={(f) => {
-                    if (f.path) {
-                      props.setPreviewFilePath(f.path);
-                    }
-                  }}
-                />
-              ))}
-              {props.shouldShowDocumentWorkshopAction && (
-                <button
-                  type="button"
-                  onClick={props.applyDocumentWorkshopPrompt}
-                  data-testid="chat-document-workshop-action"
-                  className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/35 bg-accent/10 text-xs font-medium text-accent hover:bg-accent/15 transition-colors"
-                  title={t('chat.documentWorkshopActionTitle', 'Prepare a Word workshop prompt')}
-                >
-                  <FileSearch className="w-3.5 h-3.5" />
-                  <span>{t('chat.documentWorkshopAction', 'Atelier Word')}</span>
-                </button>
-              )}
-            </div>
-          )}
-
-          {props.queuedIntents.length > 0 && (
-            <div
-              className="mb-3 space-y-1.5"
-              data-testid="chat-queued-intents"
-              aria-label={t('chat.queuedIntents', 'Queued messages')}
-            >
-              {props.queuedIntents.map((intent) => (
-                <div
-                  key={intent.id}
-                  className="flex items-center gap-2 rounded-xl border border-border-subtle bg-surface/70 px-3 py-2"
-                >
-                  <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
-                  <div className="min-w-0 flex-1">
-                    <div className="truncate text-xs text-text-secondary">
-                      {intent.prompt || t('chat.queuedAttachmentIntent', 'Attachment message')}
-                    </div>
+            {props.pastedImages.length > 0 && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-2 mb-3">
+                {props.pastedImages.map((img, index) => (
+                  <div key={img.url || `pasted-image-${index}`} className="relative group">
+                    <img
+                      src={img.url}
+                      alt={t('common.pastedImageAlt', { index: index + 1 })}
+                      className="w-full aspect-square object-cover rounded-lg border border-border block"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => props.removeImage(index)}
+                      className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-error text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity"
+                    >
+                      <X className="w-3 h-3" />
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => props.removeQueuedIntent(intent.sessionId, intent.id)}
-                    className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-error hover:bg-error/10 transition-colors"
-                    title={t('common.delete', 'Delete')}
-                  >
-                    <Trash2 className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => props.handleEditQueuedIntent(intent.id, intent.prompt)}
-                    className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-                    title={t('common.edit', 'Edit')}
-                  >
-                    <Pencil className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void props.handleSteerQueuedIntent(intent.id)}
-                    disabled={!props.hasActiveTurn && !props.isSessionRunning}
-                    className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
-                    title={t('chat.steerQueuedIntent', 'Steer current run')}
-                  >
-                    <Target className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              ))}
-            </div>
-          )}
+                ))}
+              </div>
+            )}
 
-          {props.showMemoryEditor && (
-            <div className="mb-3">
-              <MemoryEditCard onClose={() => props.setShowMemoryEditor(false)} />
-            </div>
-          )}
+            {props.attachedFiles.length > 0 && (
+              <div className="flex flex-wrap items-center gap-1.5 mb-3">
+                {props.attachedFiles.map((file, index) => (
+                  <FileAttachmentChip
+                    key={file.path || `attached-file-${index}`}
+                    file={file}
+                    onRemove={() => props.removeFile(index)}
+                    onPreview={(f) => {
+                      if (f.path) {
+                        props.setPreviewFilePath(f.path);
+                      }
+                    }}
+                  />
+                ))}
+                {props.shouldShowDocumentWorkshopAction && (
+                  <button
+                    type="button"
+                    onClick={props.applyDocumentWorkshopPrompt}
+                    data-testid="chat-document-workshop-action"
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border border-accent/35 bg-accent/10 text-xs font-medium text-accent hover:bg-accent/15 transition-colors"
+                    title={t('chat.documentWorkshopActionTitle', 'Prepare a Word workshop prompt')}
+                  >
+                    <FileSearch className="w-3.5 h-3.5" />
+                    <span>{t('chat.documentWorkshopAction', 'Atelier Word')}</span>
+                  </button>
+                )}
+              </div>
+            )}
 
-          <div
-            className={`flex items-end gap-2 p-3.5 rounded-[1.75rem] bg-background/88 border border-border-muted shadow-soft transition-colors ${
-              props.isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
-            }`}
-          >
-            <button
-              type="button"
-              onClick={props.handleFileSelect}
-              data-testid="chat-attach-files"
-              className="w-9 h-9 rounded-2xl flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
-              title={t('welcome.attachFiles')}
+            {props.queuedIntents.length > 0 && (
+              <div
+                className="mb-3 space-y-1.5"
+                data-testid="chat-queued-intents"
+                aria-label={t('chat.queuedIntents', 'Queued messages')}
+              >
+                {props.queuedIntents.map((intent) => (
+                  <div
+                    key={intent.id}
+                    className="flex items-center gap-2 rounded-xl border border-border-subtle bg-surface/70 px-3 py-2"
+                  >
+                    <Clock className="w-3.5 h-3.5 text-text-muted shrink-0" />
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-xs text-text-secondary">
+                        {intent.prompt || t('chat.queuedAttachmentIntent', 'Attachment message')}
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => props.removeQueuedIntent(intent.sessionId, intent.id)}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-error hover:bg-error/10 transition-colors"
+                      title={t('common.delete', 'Delete')}
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => props.handleEditQueuedIntent(intent.id, intent.prompt)}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                      title={t('common.edit', 'Edit')}
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void props.handleSteerQueuedIntent(intent.id)}
+                      disabled={!props.hasActiveTurn && !props.isSessionRunning}
+                      className="w-7 h-7 rounded-lg inline-flex items-center justify-center text-text-muted hover:text-accent hover:bg-accent/10 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                      title={t('chat.steerQueuedIntent', 'Steer current run')}
+                    >
+                      <Target className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {props.showMemoryEditor && (
+              <div className="mb-3">
+                <MemoryEditCard onClose={() => props.setShowMemoryEditor(false)} />
+              </div>
+            )}
+
+            <div
+              className={`flex items-end gap-2 transition-colors ${
+                props.isDragging ? 'ring-2 ring-accent bg-accent/5' : ''
+              }`}
             >
-              <Plus className="w-5 h-5" />
-            </button>
+              <button
+                type="button"
+                onClick={props.handleFileSelect}
+                data-testid="chat-attach-files"
+                className="w-9 h-9 rounded-full flex items-center justify-center text-text-muted hover:text-text-primary hover:bg-surface-hover transition-colors"
+                title={t('welcome.attachFiles')}
+              >
+                <Plus className="w-5 h-5" />
+              </button>
 
             <button
               type="button"
@@ -334,15 +335,15 @@ export function MessageComposer(props: MessageComposerProps) {
                     props.attachedFiles.length === 0) ||
                   props.isSubmitting
                 }
-                className="w-9 h-9 rounded-2xl flex items-center justify-center bg-accent text-background disabled:opacity-50 disabled:cursor-not-allowed hover:bg-accent-hover transition-colors"
+                className="w-9 h-9 rounded-full flex items-center justify-center bg-accent text-white disabled:bg-surface-muted disabled:text-text-muted disabled:cursor-not-allowed transition-colors"
                 title={t('chat.sendMessage')}
               >
                 <Send className="w-4 h-4" />
               </button>
             </div>
           </div>
-
-          <p className="text-[11px] text-text-muted/60 text-center mt-2.5">
+          </div>
+          <p className="text-[11px] text-text-muted/60 text-center pb-2.5">
             {t('chat.disclaimer')}
           </p>
         </form>

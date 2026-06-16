@@ -45,9 +45,11 @@ export function ChatList({
   const { t } = useTranslation();
 
   return (
-    <div className="w-full max-w-[920px] mx-auto py-8 px-5 lg:px-8 space-y-5">
+    <div className="w-full pb-8 pt-4 space-y-0">
       {/* Sub-agent panel (Claude Cowork parity) */}
-      <SubAgentPanel compact />
+      <div className="max-w-3xl mx-auto px-4 mb-6">
+        <SubAgentPanel compact />
+      </div>
 
       {displayedMessages.length === 0 ? (
         <div className="flex flex-col items-center justify-center py-28 text-text-muted space-y-3 text-center">
@@ -83,34 +85,36 @@ export function ChatList({
       )}
 
       {hasActiveTurn && (!partialMessage || partialMessage.trim() === '') && !partialThinking && (
-        <div className="flex flex-col gap-1 px-4 py-3 rounded-2xl bg-background/80 border border-border-subtle max-w-fit">
-          <div className="flex items-center gap-3">
-            <Loader2 className="w-4 h-4 text-accent animate-spin" />
-            <span className="text-sm text-text-secondary">
-              {t('chat.processing')}
-              {liveElapsed > 1000 && (
-                <span className="text-text-muted/80 ml-2 tabular-nums">
-                  · {Math.floor(liveElapsed / 1000)}s
-                </span>
-              )}
-            </span>
+        <div className="max-w-3xl mx-auto px-4 w-full">
+          <div className="flex flex-col gap-1 px-4 py-3 rounded-2xl bg-background/80 border border-border-subtle max-w-fit">
+            <div className="flex items-center gap-3">
+              <Loader2 className="w-4 h-4 text-accent animate-spin" />
+              <span className="text-sm text-text-secondary">
+                {t('chat.processing')}
+                {liveElapsed > 1000 && (
+                  <span className="text-text-muted/80 ml-2 tabular-nums">
+                    · {Math.floor(liveElapsed / 1000)}s
+                  </span>
+                )}
+              </span>
+            </div>
+            {liveElapsed > 5000 && liveElapsed < 30000 && (
+              <span className="text-[11px] text-text-muted/70 ml-7 italic">
+                {t(
+                  'chat.modelLoading',
+                  'Loading model or generating thinking — first token usually arrives within 30 s.'
+                )}
+              </span>
+            )}
+            {liveElapsed >= 30000 && (
+              <span className="text-[11px] text-warning/80 ml-7 italic">
+                {t(
+                  'chat.modelColdStart',
+                  'Cold start in progress (large local models can take 30–120 s on first run).'
+                )}
+              </span>
+            )}
           </div>
-          {liveElapsed > 5000 && liveElapsed < 30000 && (
-            <span className="text-[11px] text-text-muted/70 ml-7 italic">
-              {t(
-                'chat.modelLoading',
-                'Loading model or generating thinking — first token usually arrives within 30 s.'
-              )}
-            </span>
-          )}
-          {liveElapsed >= 30000 && (
-            <span className="text-[11px] text-warning/80 ml-7 italic">
-              {t(
-                'chat.modelColdStart',
-                'Cold start in progress (large local models can take 30–120 s on first run).'
-              )}
-            </span>
-          )}
         </div>
       )}
 
