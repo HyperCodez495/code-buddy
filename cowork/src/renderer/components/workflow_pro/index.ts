@@ -6,8 +6,7 @@
 // Editor components
 export * from './editor';
 
-// Execution components
-export * from './execution';
+// Execution components removed
 
 // Workflow Organization
 export { default as WorkflowTags, type WorkflowTag } from './WorkflowTags';
