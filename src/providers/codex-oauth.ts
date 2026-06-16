@@ -39,6 +39,10 @@ const CLIENT_ID = 'app_EMoamEEZ73f0CkXaXp7hrann';
 /** OAuth issuer — both authorize and token endpoints live under here. */
 const ISSUER = 'https://auth.openai.com';
 
+/** Hard ceiling on the token exchange/refresh fetches so a stalled IdP can't
+ *  hang an inline refresh (runs on the first chat call when tokens are stale). */
+const OAUTH_TOKEN_TIMEOUT_MS = 30_000;
+
 /** Primary callback port. Must match OpenAI's allow-list of registered
  *  redirect URIs for the Codex CLI client_id. */
 const CALLBACK_PORT = 1455;
@@ -266,6 +270,8 @@ async function exchangeCodeForTokens(
     method: 'POST',
     headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
     body: params.toString(),
+    // Bound the network await so a stalled IdP can't hang the caller indefinitely.
+    signal: AbortSignal.timeout(OAUTH_TOKEN_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -287,6 +293,9 @@ async function refreshTokens(refreshToken: string): Promise<OauthTokens> {
       refresh_token: refreshToken,
       client_id: CLIENT_ID,
     }),
+    // A stale-token refresh runs inline on the first chat call; bound it so a
+    // stalled IdP surfaces as a timeout error instead of an indefinite hang.
+    signal: AbortSignal.timeout(OAUTH_TOKEN_TIMEOUT_MS),
   });
 
   if (!response.ok) {
@@ -446,7 +455,7 @@ async function bindCallbackServer(
  * Returns the parsed `ChatGptAuth` so callers can show the user their
  * email/plan immediately. Throws on failure / timeout (5 minutes).
  */
-export async function loginInteractive(): Promise<ChatGptAuth> {
+export function loginInteractive(openUrl?: (url: string) => void | Promise<void>): Promise<ChatGptAuth> {
   const pkce = generatePkce();
   const state = randomState();
 
@@ -545,11 +554,24 @@ export async function loginInteractive(): Promise<ChatGptAuth> {
 
         // Open the browser. If it fails, log the URL so the user can
         // copy-paste manually.
-        open(authUrl).catch(() => {
-          console.error(
-            `Couldn't auto-open the browser. Open this URL manually:\n${authUrl}`
-          );
-        });
+        if (openUrl) {
+          try {
+            const res = openUrl(authUrl);
+            if (res instanceof Promise) {
+              res.catch(() => {
+                console.error(`Couldn't auto-open the browser. Open this URL manually:\n${authUrl}`);
+              });
+            }
+          } catch {
+            console.error(`Couldn't auto-open the browser. Open this URL manually:\n${authUrl}`);
+          }
+        } else {
+          open(authUrl).catch(() => {
+            console.error(
+              `Couldn't auto-open the browser. Open this URL manually:\n${authUrl}`
+            );
+          });
+        }
       })
       .catch(reject);
   });

@@ -57,6 +57,7 @@ export interface BuildOptions {
   includeWritingRules?: boolean;
   includeCodingStyle?: boolean;
   includeWorkflowRules?: boolean;
+  includeExecutionDiscipline?: boolean;
   includeVariation?: boolean;
 }
 
@@ -75,6 +76,7 @@ const ALL_BLOCKS: Required<BuildOptions> = {
   includeWritingRules: true,
   includeCodingStyle: true,
   includeWorkflowRules: true,
+  includeExecutionDiscipline: true,
   includeVariation: true,
 };
 
@@ -141,6 +143,7 @@ export class PromptBuilder {
       gates.includeLessonsDirective = false;
       gates.includeUserModelDirective = false;
       gates.includeWorkflowRules = false;
+      gates.includeExecutionDiscipline = false;
     }
     const rememberToolAllowed = isToolNameAllowed('remember', activeToolFilter);
     const memoryProposeToolAllowed = isToolNameAllowed('memory_propose', activeToolFilter);
@@ -290,6 +293,26 @@ export class PromptBuilder {
       if (introHookContent) {
         systemPrompt = `# Role & Instructions (from intro_hook.txt)\n\n${introHookContent}\n\n---\n\n${systemPrompt}`;
         logger.debug("Prepended intro hook content to system prompt");
+      }
+
+      // Inject execution-discipline guidance (tool-use enforcement, anti-stub
+      // completion, mandatory-tool, pre-finalize self-check). Borrowed from the
+      // Hermes Agent prompt audit — its highest-leverage agentic-reliability
+      // block. Placed HERE in the STABLE PREFIX (not near the footer) on
+      // purpose: the footer reminder section is shuffled by the variation
+      // injector (varySystemPrompt → extractBlocks splits on bullet lines), so
+      // a late placement fragmented this block — foreign bullets got interleaved
+      // between its lines. Up here it stays contiguous, cache-stable, and
+      // survives head-truncation. Gated off for trivial/lite + tool-callless
+      // models (see gating above).
+      if (gates.includeExecutionDiscipline) {
+        try {
+          const { getExecutionDisciplineBlock } = await import('../prompts/execution-discipline.js');
+          systemPrompt += '\n\n' + getExecutionDisciplineBlock();
+          logger.debug('Injected execution-discipline guidance into system prompt');
+        } catch (err) {
+          logger.warn('Failed to inject execution-discipline block', { error: getErrorMessage(err) });
+        }
       }
 
       // Inject bootstrap context files (BOOTSTRAP.md, AGENTS.md, SOUL.md, etc.)
@@ -749,6 +772,7 @@ export function gatesForComplexity(complexity: QueryComplexity): BuildOptions {
         includeWritingRules: true,
         includeCodingStyle: false,
         includeWorkflowRules: false,
+        includeExecutionDiscipline: false,
         includeVariation: false,
       };
     case 'simple':

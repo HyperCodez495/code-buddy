@@ -188,11 +188,18 @@ export function extractBlocks(prompt: string): {
   const rawBlocks = lines.slice(blockStart, blockEnd);
   const suffix = '';
 
-  // Split rawBlocks into individual bullet points
+  // Split rawBlocks into HEADING-ATOMIC sections: a new block begins at every
+  // `##`/`###` heading and absorbs ALL following lines (bullets, numbered items,
+  // blank lines) until the next heading. Previously this split at every bullet
+  // line, so the Fisher-Yates shuffle in applyVariation() interleaved foreign
+  // bullets (e.g. tool-parameter docs) into the middle of a `##`-headed block
+  // such as the Verification Contract (`## Workflow Orchestration`), corrupting
+  // structured guidance. Heading-atomic grouping shuffles whole sections instead
+  // — the anti-repetition variation is preserved, but no block is ever fragmented.
   const blocks: string[] = [];
   let current = '';
   for (const line of rawBlocks) {
-    if ((line.startsWith('- ') || line.startsWith('* ') || line.match(/^\d+\./)) && current) {
+    if (/^#{2,3}\s+/.test(line.trim()) && current.trim()) {
       blocks.push(current.trim());
       current = line;
     } else {

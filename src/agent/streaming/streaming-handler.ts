@@ -155,6 +155,13 @@ export interface AccumulatedMessage {
   /** Accumulated tool calls */
   tool_calls?: CodeBuddyToolCall[];
 
+  /**
+   * The terminal `finish_reason`/`stop_reason` reported by the provider on the
+   * final chunk (`'stop'` | `'length'` | `'tool_calls'` | …). Used by the
+   * executor's in-loop recovery to detect a length-truncated turn.
+   */
+  finishReason?: string | null;
+
   /** Any additional fields from the API */
   [key: string]: unknown;
 }
@@ -191,6 +198,7 @@ export class StreamingHandler {
   private accumulatedMessage: AccumulatedMessage = {};
   private accumulatedRawContent: string = '';
   private accumulatedReasoningContent: string = '';
+  private accumulatedFinishReason: string | null = null;
   private tokenCounter: TokenCounter | null = null;
   private lastTokenUpdate: number = 0;
   private toolCallsYielded: boolean = false;
@@ -243,6 +251,12 @@ export class StreamingHandler {
       this.accumulatedMessage,
       chunk
     ) as AccumulatedMessage;
+
+    // Capture the terminal finish_reason (present on the final chunk). The last
+    // non-null value wins so a trailing usage-only chunk can't clear it.
+    if (chunk.choices[0].finish_reason) {
+      this.accumulatedFinishReason = chunk.choices[0].finish_reason;
+    }
 
     // Extract content delta
     const rawContentDelta = chunk.choices[0].delta?.content || '';
@@ -395,7 +409,7 @@ export class StreamingHandler {
    * @returns The accumulated message with all processed content and tool calls
    */
   getAccumulatedMessage(): AccumulatedMessage {
-    return { ...this.accumulatedMessage };
+    return { ...this.accumulatedMessage, finishReason: this.accumulatedFinishReason };
   }
 
   /**
@@ -459,6 +473,7 @@ export class StreamingHandler {
     this.accumulatedMessage = {};
     this.accumulatedRawContent = '';
     this.accumulatedReasoningContent = '';
+    this.accumulatedFinishReason = null;
     this.lastTokenUpdate = 0;
     this.toolCallsYielded = false;
   }

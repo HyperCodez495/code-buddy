@@ -385,6 +385,17 @@ export class CodeBuddyAgent extends BaseAgent {
         } catch (err) {
           logger.debug('Failed to register AutoRepairMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
         }
+        // Verification enforcement (priority 155) — after >= 3 file changes with
+        // no task_verify/run_tests, nudges the model to verify before finishing.
+        // Closes the "loop completes on no-more-tool-calls without a verify gate"
+        // gap surfaced by the Hermes agentic-loop audit (2026-06-16).
+        try {
+          const { createVerificationEnforcementMiddleware } = await import('./middleware/verification-enforcement.js');
+          pipeline.use(createVerificationEnforcementMiddleware());
+          logger.debug('VerificationEnforcementMiddleware registered in pipeline (priority 155)');
+        } catch (err) {
+          logger.debug('Failed to register VerificationEnforcementMiddleware (non-critical)', { error: err instanceof Error ? err.message : String(err) });
+        }
         // Quality gate middleware (priority 200) — auto-delegates to specialized agents
         try {
           const { createQualityGateMiddleware } = await import('./middleware/quality-gate-middleware.js');

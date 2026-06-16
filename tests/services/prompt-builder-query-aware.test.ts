@@ -129,6 +129,8 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).toContain('<auto_memory_directive>');
     expect(sp).toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    // Execution-discipline block injected on rich (complex gates) + tool-capable models.
+    expect(sp).toContain('## Execution discipline');
   });
 
   it('standard profile + trivial query: minimal SP (writing rules only directive)', async () => {
@@ -150,6 +152,8 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).not.toContain('<auto_memory_directive>');
     expect(sp).not.toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    // Trivial query → execution-discipline gated off (greetings don't need it).
+    expect(sp).not.toContain('## Execution discipline');
   });
 
   it('standard profile + complex query: full directive set', async () => {
@@ -174,6 +178,8 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).toContain('<auto_memory_directive>');
     expect(sp).toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    // Complex code task → execution-discipline present.
+    expect(sp).toContain('## Execution discipline');
   });
 
   it('supportsToolCalls=false on rich profile: still suppresses tool-mention directives', async () => {
@@ -197,6 +203,9 @@ describe('PromptBuilder.buildForQuery() — Phase d.22 gating', () => {
     expect(sp).not.toContain('<auto_memory_directive>');
     expect(sp).not.toContain('<lessons_directive>');
     expect(sp).toContain('<writing_rules>');
+    // Models without tool-call support: execution-discipline force-off
+    // (telling them to "use tools" would tempt JSON-call hallucination).
+    expect(sp).not.toContain('## Execution discipline');
   });
 
   it('GROK_FORCE_TOOLS bypasses the chat-only fallback for lab validation', async () => {

@@ -12,12 +12,24 @@ import { logger } from '../utils/logger.js';
 import { decomposeGoal, shouldAutoDecomposeGoal } from './goal-decomposer.js';
 import { judgeGoal } from './goal-judge.js';
 import { GoalManager, getGoalManager, resolveGoalsConfig } from './goal-manager.js';
+import type { GoalStatus, GoalVerdict } from './goal-state.js';
 
 export interface GoalTurnOutcome {
   /** User-visible status line (✓ / ⏸ / ↻) to append to chat history. */
   message?: string;
   /** When set, the caller should auto-submit this as the next user message. */
   continuationPrompt?: string;
+  /**
+   * Structured snapshot for host UIs (e.g. the Cowork goal banner). Mirrors the
+   * post-decision GoalState so the renderer can show turn progress + verdict
+   * without re-reading goal storage. Absent fields when no goal is active.
+   */
+  goalText?: string;
+  status?: GoalStatus;
+  turnsUsed?: number;
+  maxTurns?: number;
+  lastVerdict?: GoalVerdict;
+  lastReason?: string;
 }
 
 export interface GoalAfterTurnOptions {
@@ -51,6 +63,7 @@ export async function maybeContinueGoalAfterTurn(
     }
     return {
       message: '⏸ Goal paused — turn was interrupted. Use /goal resume to continue, or /goal clear to stop.',
+      ...goalSnapshot(manager),
     };
   }
 
@@ -73,12 +86,30 @@ export async function maybeContinueGoalAfterTurn(
 
   if (decision.verdict === 'inactive') return null;
 
-  const outcome: GoalTurnOutcome = {};
+  const outcome: GoalTurnOutcome = { ...goalSnapshot(manager) };
   if (decision.message) outcome.message = decision.message;
   if (decision.shouldContinue && decision.continuationPrompt) {
     outcome.continuationPrompt = decision.continuationPrompt;
   }
   return outcome;
+}
+
+/**
+ * Structured per-session goal snapshot for host UIs. Reads the manager's
+ * post-decision state; returns an empty object when no state is present so
+ * spreading it is always safe.
+ */
+function goalSnapshot(manager: GoalManager): Partial<GoalTurnOutcome> {
+  const s = manager.state;
+  if (!s) return {};
+  return {
+    goalText: s.goal,
+    status: s.status,
+    turnsUsed: s.turnsUsed,
+    maxTurns: s.maxTurns,
+    ...(s.lastVerdict ? { lastVerdict: s.lastVerdict } : {}),
+    ...(s.lastReason ? { lastReason: s.lastReason } : {}),
+  };
 }
 
 async function maybeAttachGoalPlan(

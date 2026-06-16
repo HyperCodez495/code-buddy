@@ -81,8 +81,14 @@ describe('maybeContinueGoalAfterTurn', () => {
       interrupted: false,
     });
 
-    expect(outcome).toEqual({
+    // Outcome carries the human message AND the structured snapshot used by host
+    // UIs (Cowork goal banner). toMatchObject tolerates the added snapshot fields.
+    expect(outcome).toMatchObject({
       message: '✓ Goal achieved: patch applied and verification command passed',
+      status: 'done',
+      turnsUsed: 1,
+      lastVerdict: 'done',
+      goalText: 'Patch the flaky export test and report the verification command',
     });
     expect(manager.state).toMatchObject({
       status: 'done',

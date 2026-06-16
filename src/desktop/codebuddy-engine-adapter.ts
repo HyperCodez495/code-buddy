@@ -11,6 +11,7 @@
 import { logger } from '../utils/logger.js';
 import { createHash } from 'node:crypto';
 import { maybeContinueGoalAfterTurn } from '../goals/goal-loop.js';
+import { getGoalManager } from '../goals/goal-manager.js';
 import type {
   EngineAdapter,
   EngineStreamCallback,
@@ -226,12 +227,16 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
       ): Promise<{ interrupted: boolean; judgeResponse: string }> => {
         let turnContent = '';
         const toolEvidence: string[] = [];
+        // Tracks FAILED tool actions this turn so the goal judge can't be fooled
+        // into a premature "done" by an assistant that narrates success after a
+        // write/patch/command actually failed (Hermes-style mutation verifier).
+        const toolFailures: string[] = [];
         const stream = streamingAgent.processUserMessageStream(prompt);
 
         for await (const chunk of stream) {
           // Check for abort
           if (abortController.signal.aborted) {
-            return { interrupted: true, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence) };
+            return { interrupted: true, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence, toolFailures) };
           }
 
           switch (chunk.type) {
@@ -273,6 +278,13 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
                   toolEvidence.push(
                     `[tool:${chunk.toolCall.function.name} ${toolStatus}]\n${String(finalOutput)}`
                   );
+                }
+                // Record failures INDEPENDENTLY of finalOutput — a tool that
+                // fails with no output/error would otherwise be invisible to the
+                // judge (the silent-failure hole).
+                if (!chunk.toolResult.success) {
+                  const detail = finalOutput ? `: ${truncateFailureDetail(String(finalOutput))}` : '';
+                  toolFailures.push(`${chunk.toolCall.function.name}${detail}`);
                 }
                 onEvent({
                   type: 'tool_end',
@@ -337,7 +349,7 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
           }
         }
 
-        return { interrupted: false, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence) };
+        return { interrupted: false, judgeResponse: buildGoalJudgeResponse(turnContent, toolEvidence, toolFailures) };
       };
 
       const emitGoalStatus = (message: string): void => {
@@ -346,6 +358,28 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
         onEvent({ type: 'content', content });
       };
 
+      // Structured goal-status event for host UIs (Cowork goal banner). Emits the
+      // current GoalState snapshot so the renderer can show turn progress without
+      // re-reading goal storage. Safe no-op when no goal is set.
+      const emitGoalSnapshot = (): void => {
+        const s = getGoalManager(goalSessionKey).state;
+        if (!s || s.status === 'cleared') return;
+        onEvent({
+          type: 'goal_status',
+          goalStatus: {
+            goal: s.goal,
+            status: s.status,
+            turnsUsed: s.turnsUsed,
+            maxTurns: s.maxTurns,
+            ...(s.lastVerdict ? { lastVerdict: s.lastVerdict } : {}),
+            ...(s.lastReason ? { lastReason: s.lastReason } : {}),
+          },
+        });
+      };
+
+      // Emit once up-front so the banner appears the instant a goal turn starts
+      // (before the first judge verdict), then again after each judged turn.
+      emitGoalSnapshot();
       let turn = await runPromptTurn(lastMessage.content);
       for (let i = 0; i < GOAL_LOOP_HARD_BACKSTOP; i++) {
         const outcome = await maybeContinueGoalAfterTurn({
@@ -357,6 +391,9 @@ export class CodeBuddyEngineAdapter implements EngineAdapter {
 
         if (outcome?.message) {
           emitGoalStatus(outcome.message);
+        }
+        if (outcome) {
+          emitGoalSnapshot();
         }
         if (turn.interrupted || !outcome?.continuationPrompt) {
           break;
@@ -620,7 +657,36 @@ function buildCoworkGoalSessionKey(sessionId: string): string {
   return `${COWORK_GOAL_SESSION_PREFIX}${sessionId}`;
 }
 
-function buildGoalJudgeResponse(content: string, toolEvidence: string[]): string {
-  const parts = [content.trim(), ...toolEvidence.map((part) => part.trim())].filter(Boolean);
+/** Cap a single failure detail so the footer stays compact for the judge. */
+export function truncateFailureDetail(detail: string, max = 160): string {
+  const flat = detail.replace(/\s+/g, ' ').trim();
+  return flat.length > max ? `${flat.slice(0, max - 1)}…` : flat;
+}
+
+/**
+ * Build a prominent, NON-bracketed footer listing failed tool actions. The goal
+ * judge prompt (goal-state.ts) treats `[tool:…]` bracketed lines as ignorable
+ * metadata, so failures must be surfaced as a plain instruction line or the
+ * judge discounts them. Returns '' when there are no failures.
+ */
+export function buildToolFailureFooter(failures: string[]): string {
+  if (!failures.length) return '';
+  return (
+    `⚠️ ${failures.length} tool action(s) failed this turn: ${failures.join('; ')}. ` +
+    `Do NOT treat the goal as done if these failures block it — fix or work around them first.`
+  );
+}
+
+export function buildGoalJudgeResponse(
+  content: string,
+  toolEvidence: string[],
+  toolFailures: string[] = [],
+): string {
+  const footer = buildToolFailureFooter(toolFailures);
+  const parts = [
+    content.trim(),
+    ...toolEvidence.map((part) => part.trim()),
+    footer, // last → most prominent for the LLM judge
+  ].filter(Boolean);
   return parts.join('\n\n');
 }

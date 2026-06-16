@@ -23,7 +23,8 @@ export type EngineStreamEventType =
   | 'ask_user'
   | 'plan_progress'
   | 'steer'
-  | 'diff_preview';
+  | 'diff_preview'
+  | 'goal_status';
 
 export interface EngineStreamEvent {
   type: EngineStreamEventType;
@@ -80,6 +81,15 @@ export interface EngineStreamEvent {
       excerpt: string;
     }>;
     plan?: string;
+  };
+  /** Autonomous goal-loop progress (for host UIs like the Cowork goal banner). */
+  goalStatus?: {
+    goal: string;
+    status: 'active' | 'paused' | 'done' | 'cleared';
+    turnsUsed: number;
+    maxTurns: number;
+    lastVerdict?: 'done' | 'continue' | 'skipped';
+    lastReason?: string;
   };
 }
 

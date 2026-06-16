@@ -15,7 +15,7 @@ export const VIEW_FILE_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "view_file",
-    description: "View contents of a file or list directory contents",
+    description: "View contents of a file or list directory contents. Read/inspect a file before editing it — never guess its contents.",
     parameters: {
       type: "object",
       properties: {
@@ -101,7 +101,7 @@ export const STR_REPLACE_EDITOR_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "str_replace_editor",
-    description: "Replace specific text in a file. Use this for single line edits only",
+    description: "Replace specific text in a file. Use this for single line edits only. After editing, verify the change with view_file.",
     parameters: {
       type: "object",
       properties: {
@@ -202,7 +202,7 @@ export const BASH_TOOL: CodeBuddyTool = {
   type: "function",
   function: {
     name: "bash",
-    description: "Execute a bash command",
+    description: "Execute a bash command. Prefer it to check facts and state you can verify (git status, test output, file existence, exit codes) rather than assuming.",
     parameters: {
       type: "object",
       properties: {

@@ -640,6 +640,22 @@ export class AgentExecutor {
     let toolRounds = 0;
     let totalOutputTokens = 0;
 
+    // In-loop recovery budgets (Hermes parity): bound re-prompts WITHIN a turn
+    // so a length-truncated or post-tool-empty response is recovered instead of
+    // returned half-written. 0 disables. Per-turn counters.
+    const parseRecoveryBudget = (raw: string | undefined, dflt: number): number => {
+      const n = Number.parseInt(raw ?? '', 10);
+      return Number.isFinite(n) && n >= 0 ? n : dflt;
+    };
+    const maxLengthContinuations = parseRecoveryBudget(process.env.CODEBUDDY_MAX_LENGTH_CONTINUATIONS, 3);
+    // Length-continuation ships ON (default 3, real-tested). The post-tool
+    // empty-response re-prompt is harder to trigger deterministically with a
+    // real model, so it ships OFF by default (no untested-by-default behaviour
+    // in the hot loop) — opt in with CODEBUDDY_MAX_EMPTY_RETRIES=N.
+    const maxEmptyRetries = parseRecoveryBudget(process.env.CODEBUDDY_MAX_EMPTY_RETRIES, 0);
+    let lengthContinuations = 0;
+    let emptyRetries = 0;
+
     // Phase (d).21 ship 4 — start a progress session for this turn.
     // The default sink (boot-wired) logs at 25/50/75/100. Lazy-import to
     // avoid circular load at module init time.
@@ -881,6 +897,10 @@ export class AgentExecutor {
           toolCalls = filteredToolCalls.length > 0 ? filteredToolCalls : undefined;
         }
         const hasToolCalls = Array.isArray(toolCalls) && toolCalls.length > 0;
+        // Pre-fallback raw content — used by in-loop recovery to tell a real
+        // partial answer (retry-able) from a truly empty turn (give up).
+        const streamedContentRaw = (accumulatedMessage.content || "").trim();
+        const streamFinishReason = accumulatedMessage.finishReason;
         let rawStreamedContent = accumulatedMessage.content || "";
         if (forcedChatOnlyToolRunModel && !hasToolCalls && !rawStreamedContent.trim()) {
           rawStreamedContent =
@@ -1263,6 +1283,58 @@ export class AgentExecutor {
             applyToolOutputMasking(messages);
           } catch { /* masking is optional */ }
         } else {
+          // ── In-loop recovery (Hermes parity) ─────────────────────────────
+          // Re-prompt WITHIN the turn before accepting this as the final answer.
+          // Only reachable in the no-tool-calls branch, so we never split a
+          // tool_call/tool_result pair (keeps transcript-repair invariants intact).
+          if (!abortController?.signal.aborted) {
+            // (1) Length truncation: the model hit the output-token cap mid-prose.
+            // Ask it to continue from where it stopped, bounded. A continuation
+            // that produced ZERO new tokens (e.g. a too-small num_ctx) leaves
+            // `streamedContentRaw` empty — we do NOT retry that (the fix is config,
+            // not looping); we fall through and stop.
+            if (
+              streamFinishReason === 'length' &&
+              streamedContentRaw.length > 0 &&
+              lengthContinuations < maxLengthContinuations
+            ) {
+              lengthContinuations++;
+              logger.debug('[agent-executor] length-truncation continuation', {
+                attempt: lengthContinuations,
+                max: maxLengthContinuations,
+              });
+              messages.push({
+                role: 'user',
+                content:
+                  'Your previous message was cut off because it reached the output length limit. ' +
+                  'Continue it from exactly where it stopped — do not repeat earlier text and do not ' +
+                  'restart. When the full response is complete, finish normally.',
+              });
+              continue;
+            }
+            // (2) Post-tool empty response: the model went silent after running
+            // tools. Nudge it to use the results and continue, bounded.
+            if (
+              streamedContentRaw.length === 0 &&
+              streamFinishReason !== 'length' &&
+              toolRounds > 0 &&
+              emptyRetries < maxEmptyRetries
+            ) {
+              emptyRetries++;
+              logger.debug('[agent-executor] empty-response re-prompt', {
+                attempt: emptyRetries,
+                max: maxEmptyRetries,
+              });
+              messages.push({
+                role: 'user',
+                content:
+                  'Your last response was empty. Use the results of the tool calls you just made ' +
+                  'to continue the task and produce your answer.',
+              });
+              continue;
+            }
+          }
+
           // Fire-and-forget auto-capture on final assistant response (streaming)
           try {
             const { getAutoCaptureManager } = await import('../../memory/auto-capture.js');
