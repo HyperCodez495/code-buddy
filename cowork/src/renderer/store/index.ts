@@ -494,6 +494,7 @@ interface AppState {
   teamTasks: Record<string, TeamTask>;
   teamMailbox: TeamMailboxMessage[];
   showTeamPanel: boolean;
+  showWorkflowProPanel: boolean;
 
   // Hermes review-gated surfaces (CLI parity → Cowork)
   showLessonCandidatePanel: boolean;
@@ -791,6 +792,7 @@ interface AppState {
   upsertTeamTask: (task: TeamTask) => void;
   appendTeamMessage: (msg: TeamMailboxMessage) => void;
   setShowTeamPanel: (show: boolean) => void;
+  setShowWorkflowProPanel: (show: boolean) => void;
   setShowLessonCandidatePanel: (show: boolean) => void;
   setShowUserModelPanel: (show: boolean) => void;
   setShowSpecPanel: (show: boolean) => void;
@@ -800,6 +802,8 @@ interface AppState {
   setShowChannelsPanel: (show: boolean) => void;
   setShowLessonsGraph: (show: boolean) => void;
   setShowCompanionPanel: (show: boolean) => void;
+  showHelpDocs: boolean;
+  setShowHelpDocs: (show: boolean) => void;
 
   // Notification actions
   addNotification: (notification: NotificationEntry) => void;
@@ -989,6 +993,7 @@ export const useAppStore = create<AppState>((set) => ({
   teamTasks: {},
   teamMailbox: [],
   showTeamPanel: false,
+  showWorkflowProPanel: false,
   showLessonCandidatePanel: false,
   showUserModelPanel: false,
   showSpecPanel: false,
@@ -998,6 +1003,7 @@ export const useAppStore = create<AppState>((set) => ({
   showChannelsPanel: false,
   showLessonsGraph: false,
   showCompanionPanel: false,
+  showHelpDocs: false,
   notifications: [],
   showNotificationCenter: false,
 
@@ -2111,6 +2117,7 @@ export const useAppStore = create<AppState>((set) => ({
       return { teamMailbox: next };
     }),
   setShowTeamPanel: (show) => set({ showTeamPanel: show }),
+  setShowWorkflowProPanel: (show) => set({ showWorkflowProPanel: show }),
   setShowLessonCandidatePanel: (show) => set({ showLessonCandidatePanel: show }),
   setShowUserModelPanel: (show) => set({ showUserModelPanel: show }),
   setShowSpecPanel: (show) => set({ showSpecPanel: show }),
@@ -2120,6 +2127,7 @@ export const useAppStore = create<AppState>((set) => ({
   setShowChannelsPanel: (show) => set({ showChannelsPanel: show }),
   setShowLessonsGraph: (show) => set({ showLessonsGraph: show }),
   setShowCompanionPanel: (show) => set({ showCompanionPanel: show }),
+  setShowHelpDocs: (show) => set({ showHelpDocs: show }),
   clearSubAgents: (sessionId) =>
     set((state) => {
       const { [sessionId]: _dropped, ...rest } = state.subAgents;

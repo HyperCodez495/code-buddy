@@ -377,6 +377,13 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('config.discover-lmstudio-local', payload),
   },
 
+  // Workflow Builder Pro API
+  workflowBuilder: {
+    start: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('workflow.start'),
+    stop: (): Promise<{ success: boolean; error?: string }> => ipcRenderer.invoke('workflow.stop'),
+    status: (): Promise<{ running: boolean; port: number }> => ipcRenderer.invoke('workflow.status'),
+  },
+
   // Window control methods
   window: {
     minimize: () => ipcRenderer.send('window.minimize'),
@@ -4491,6 +4498,11 @@ declare global {
         diagnose: (input: DiagnosticInput) => Promise<DiagnosticResult>;
         discoverLocal: (payload?: { baseUrl?: string }) => Promise<LocalOllamaDiscoveryResult>;
         discoverLocalLmStudio: (payload?: { baseUrl?: string }) => Promise<LocalLmStudioDiscoveryResult>;
+      };
+      workflowBuilder: {
+        start: () => Promise<{ success: boolean; error?: string }>;
+        stop: () => Promise<{ success: boolean; error?: string }>;
+        status: () => Promise<{ running: boolean; port: number }>;
       };
       window: {
         minimize: () => void;

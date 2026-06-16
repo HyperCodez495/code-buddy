@@ -18,8 +18,7 @@ import {
 import { useIPC } from './hooks/useIPC';
 import { useWindowSize } from './hooks/useWindowSize';
 import { useTabPinPersistence } from './hooks/useTabPinPersistence';
-import { Sidebar } from './components/Sidebar';
-import { ShellNavigation } from './components/ShellNavigation';
+import { TopMenuBar } from './components/TopMenuBar';
 import { PermissionDialog } from './components/PermissionDialog';
 import { SudoPasswordDialog } from './components/SudoPasswordDialog';
 import { Titlebar } from './components/Titlebar';
@@ -46,7 +45,7 @@ import { MemoryPanel } from './components/MemoryPanel';
 // AutonomyPanel is lazy loaded below
 import { LiveLauncherPanel } from './components/LiveLauncherPanel';
 import { FocusView } from './components/FocusView';
-import { Group, Panel, Separator } from 'react-resizable-panels';
+import { Group, Panel } from 'react-resizable-panels';
 import { UpdateNotification } from './components/UpdateNotification';
 import { NotificationToastContainer } from './components/NotificationToast';
 import { NotificationCenter } from './components/NotificationCenter';
@@ -87,9 +86,12 @@ const CompanionPanel = lazy(() =>
 const TestRunnerPanel = lazy(() =>
   import('./components/TestRunnerPanel').then((module) => ({ default: module.TestRunnerPanel }))
 );
-
 const FleetCommandCenter = lazy(() =>
   import('./components/FleetCommandCenter').then((module) => ({ default: module.FleetCommandCenter }))
+);
+
+const SettingsPanel = lazy(() =>
+  import('./components/SettingsPanel').then((module) => ({ default: module.SettingsPanel }))
 );
 
 function App() {
@@ -410,37 +412,26 @@ function App() {
     >
       {/* Titlebar - draggable region */}
       <Titlebar />
+      <TopMenuBar />
 
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
-        <PanelErrorBoundary name="ShellNavigation" fallback={<div className="w-0" />}>
-          <ShellNavigation />
-        </PanelErrorBoundary>
-
-        <Group orientation="horizontal" id="cowork-layout">
-          {/* Sidebar */}
-          {!sidebarCollapsed && (
-            <>
-              <Panel id="sidebar" defaultSize={20} minSize={15} maxSize={40} className="flex-shrink-0 z-10">
-                <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
-                  <Sidebar />
-                </PanelErrorBoundary>
-              </Panel>
-              <Separator className="w-1 bg-border-muted hover:bg-accent transition-colors z-20 flex-shrink-0 cursor-col-resize" />
-            </>
-          )}
-          {sidebarCollapsed && (
-            <div className="flex-shrink-0 z-10">
-              <PanelErrorBoundary name="Sidebar" fallback={<div className="w-0" />}>
-                <Sidebar />
-              </PanelErrorBoundary>
-            </div>
-          )}
-
+        <Group orientation="horizontal" id="cowork-layout" className="flex-1">
           {/* Main Content Area */}
           <Panel id="main" minSize={30}>
             <main className="h-full min-h-0 min-w-0 flex flex-col overflow-hidden bg-background relative">
-              <DockWorkspace />
+              <div className={`absolute inset-0 z-0 ${showSettings ? 'hidden' : ''}`}>
+                <DockWorkspace />
+              </div>
+              {showSettings && (
+                <div className="absolute inset-0 z-10 bg-background">
+                  <PanelErrorBoundary name="SettingsPanel" resetKey="settings" fallback={null}>
+                    <Suspense fallback={null}>
+                      <SettingsPanel onClose={() => useAppStore.getState().setShowSettings(false)} />
+                    </Suspense>
+                  </PanelErrorBoundary>
+                </div>
+              )}
             </main>
           </Panel>
         </Group>
@@ -638,9 +629,10 @@ function App() {
 
       {/* Skills Manager — full-page Hermes skills parity (Cmd/Ctrl+Shift+L) */}
       <SkillsManagerWrapper />
+      <TeamWrapper />
 
       {/* Team panel — Agent Teams (Phase 4 layer 9) */}
-      <TeamPanel />
+      
 
       {/* Hermes review-gated surfaces (CLI parity → Cowork) */}
       <LessonCandidatePanel />
@@ -684,6 +676,19 @@ function FleetCommandCenterWrapper() {
       <FleetCommandCenter isOpen={open} onClose={() => close(false)} />
     </Suspense>
   );
+}
+
+/**
+ * Wrapper for the Agent Teams panel (Phase 4 layer 9). Gates on the
+ * `showTeamPanel` store flag — TeamPanel renders a full-height
+ * (`h-full w-full`) sibling, so rendering it unconditionally collapses
+ * the main content column (chat/settings) to zero height. Only mount it
+ * when explicitly opened (TeamPanel closes itself via setShowTeamPanel).
+ */
+function TeamWrapper() {
+  const open = useAppStore((s) => s.showTeamPanel);
+  if (!open) return null;
+  return <TeamPanel />;
 }
 
 /** Reactive wrapper for the OpenClaw migration dialog (Hermes claw parity). */

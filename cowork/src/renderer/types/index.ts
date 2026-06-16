@@ -1835,6 +1835,9 @@ export interface Settings {
   globalSkillsPath: string;
   memoryStrategy: 'auto' | 'manual' | 'rolling';
   maxContextTokens: number;
+  ttsEnabled?: boolean;
+  piperModel?: string;
+  piperSpeed?: number;
 }
 
 // Tool types
@@ -1865,7 +1868,7 @@ export type ProviderType =
   | 'ollama'
   | 'lmstudio';
 export type CustomProtocolType = 'anthropic' | 'openai' | 'gemini';
-export type AppTheme = 'dark' | 'light' | 'system';
+export type AppTheme = 'dark' | 'light' | 'system' | 'open-cowork';
 export type MemoryStrategy = 'auto' | 'manual' | 'rolling';
 export type ProviderProfileKey =
   | 'chatgpt'

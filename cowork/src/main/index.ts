@@ -2457,7 +2457,7 @@ ipcMain.handle('config.geminiOauthClear', async () => {
 
 ipcMain.handle('config.codexOauthLogin', async () => {
   try {
-    const auth = await codexLoginInteractive();
+    const auth = await codexLoginInteractive((url) => { shell.openExternal(url); });
     return {
       success: true,
       email: auth.email ?? null,
@@ -2906,6 +2906,11 @@ ipcMain.handle(
     return sessionExportService.exportSession(sessionId, options);
   }
 );
+
+import { WorkflowService } from './workflow-service';
+ipcMain.handle('workflow.start', async () => await WorkflowService.start());
+ipcMain.handle('workflow.stop', async () => await WorkflowService.stop());
+ipcMain.handle('workflow.status', () => WorkflowService.status());
 
 ipcMain.handle(
   'session.exportToFile',
