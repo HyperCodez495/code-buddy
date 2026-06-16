@@ -21,7 +21,7 @@
 > - **24/7 autonomous service** that claims & runs tasks free-first on local models.
 > - ~110 tools, skills, MCP, voice + opt-in vision companion.
 >
-> MIT, TypeScript, ~30k tests. Repo + demos: https://github.com/phuetz/code-buddy
+> MIT, TypeScript, 27K+ tests. Repo + demos: https://github.com/phuetz/code-buddy
 >
 > Genuinely after feedback — what would make this your daily driver locally?
 
@@ -35,7 +35,7 @@
 >
 > **First comment (post it yourself, right after submitting):**
 > Author here. It's a terminal agent + an Electron desktop app on the same engine. The bit I'm proud of: it runs **fully local on Ollama for `$0`** (or any of 15 providers), shows the model's reasoning on screen, and can run **autonomously 24/7** claiming tasks free-first on local models. There's also a multi-AI "fleet" where peers call each other's models/tools over your network.
-> MIT, TS, ~30k tests, builds clean from source. Demos in the README. Happy to answer anything — especially keen on what breaks for you on a fresh clone.
+> MIT, TS, 27K+ tests, builds clean from source. Demos in the README. Happy to answer anything — especially keen on what breaks for you on a fresh clone.
 
 *Tips: submit Tue–Thu ~8–10am ET. The title must be plain — no hype words. The first comment is where you sell it.*
 
@@ -45,13 +45,13 @@
 
 > **1/** I built an open-source AI coding agent that runs **free on your own machine** 🧵
 > Terminal + a desktop app, one engine. Local Ollama = $0. Watch it reason, then act 👇
-> [attach `docs/qa/code-buddy-studio/cowork-demo-moneyshot.gif`]
+> [attach `docs/qa/code-buddy-studio/cowork-demo-moneyshot.gif` — or the newer desktop chat-stream `docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-chat-stream.gif` (real gpt-5.5 streaming at $0)]
 >
 > **2/** It's not just chat — it uses tools. *"create robot-haiku.md"* → the local model **thinks**, writes the file, confirms. ~$0.0001, no cloud.
 >
 > **3/** And it scales: a **multi-AI fleet** where peers observe each other and call each other's models/tools across your network. Plus a 24/7 autonomous service that runs tasks free-first on local models.
 >
-> **4/** 15 providers, ~110 tools, skills + MCP, voice + opt-in vision. MIT, TypeScript, ~30k tests.
+> **4/** 15 providers, ~110 tools, skills + MCP, voice + opt-in vision. MIT, TypeScript, 27K+ tests.
 > ⭐ https://github.com/phuetz/code-buddy
 
 ---
@@ -94,7 +94,7 @@ Entry template:
 >
 > **Autonomous.** `buddy autonomy install` registers a background service that claims tasks off a shared queue (with TTL leases so a crashed agent's task auto-reclaims, DAG deps, and a workers→verifier→synthesizer swarm) and runs them free-first on local models.
 >
-> It's MIT, TypeScript, ~30k tests, and builds clean from source. Repo + demos: https://github.com/phuetz/code-buddy — feedback very welcome.
+> It's MIT, TypeScript, 27K+ tests, and builds clean from source. Repo + demos: https://github.com/phuetz/code-buddy — feedback very welcome.
 
 *Tips: cross-post to dev.to, Hashnode, and your blog. Add tags: `ai`, `opensource`, `ollama`, `typescript`, `localllm`. Link it from the HN/Reddit threads as "more detail here."*
 
@@ -104,6 +104,7 @@ Entry template:
 
 - [x] `git clone … && npm install && npm run build && buddy --help` works (build verified ✅).
 - [x] README hero demo renders + autoplays on github.com.
+- [x] Cowork desktop showcase embedded (welcome, real-$0 chat-stream MP4/GIF, onboarding provider picker, fleet/autonomy) — `docs/qa/code-buddy-studio/showcase-2026-06-16/`.
 - [x] No falsifiable badges (Coverage badge removed; Build/Tests verified).
 - [ ] **Upload the social preview** — `docs/qa/code-buddy-studio/social-preview.png` (1280×640) in **repo Settings → Social preview**. This is the card shown whenever your link is shared on Reddit/X/Discord/Slack — it materially raises click-through. (GitHub only lets the owner set this; the agent built the image, you upload it.)
 - [ ] Skim open issues; pin a friendly "good first issue" or two.
