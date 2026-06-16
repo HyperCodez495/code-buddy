@@ -39,6 +39,7 @@ Watch a **local model reason on screen, then use real tools to do the work** —
 
 <br/>
 
+[Live site ↗](https://phuetz.github.io/code-buddy/) ·
 [Quick Start](#quick-start) ·
 [In action](#in-action) ·
 [Features](#features) ·
