@@ -71,6 +71,12 @@ function jestCompatTransform() {
   };
 }
 
+// Real, no-mock integration tests (`*.real.test.ts`) hit live services
+// (Ollama, Hermes, a browser, …) — they are slow and environment-dependent, so
+// the default `npm test` skips them. Opt in with RUN_REAL_TESTS=1 to run them
+// (e.g. locally with the services up, or on a real-environment runner).
+const RUN_REAL_TESTS = process.env.RUN_REAL_TESTS === '1' || process.env.RUN_REAL_TESTS === 'true';
+
 export default defineConfig({
   plugins: [jestCompatTransform()],
   test: {
@@ -97,7 +103,16 @@ export default defineConfig({
       },
     },
     include: ['tests/**/*.{test,spec}.{ts,tsx}', 'src/**/*.{test,spec}.{ts,tsx}'],
-    exclude: ['node_modules', 'dist', '.idea', '.git', '.cache', 'tests/_archived/**'],
+    exclude: [
+      'node_modules',
+      'dist',
+      '.idea',
+      '.git',
+      '.cache',
+      'tests/_archived/**',
+      // Skip the slow, env-dependent real-integration tests unless opted in.
+      ...(RUN_REAL_TESTS ? [] : ['tests/**/*.real.test.ts']),
+    ],
     pool: 'forks',
     poolOptions: {
       forks: {
