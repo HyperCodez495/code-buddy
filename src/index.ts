@@ -2412,8 +2412,8 @@ async function loginXaiCli(codeArg?: string): Promise<void> {
     const openModule = await import("open");
     await openModule.default(authorizeUrl);
     cli.stdout("Opening your browser to authorize Code Buddy with your xAI / SuperGrok plan ...");
-  } catch {
-    /* fall back to the printed URL below */
+  } catch (_err) {
+    /* browser open is best-effort — fall back to the printed URL below */
   }
   cli.stdout(`\nIf your browser didn't open, visit this URL:\n${authorizeUrl}\n`);
   cli.stdout("xAI shows an authorization CODE in the page. Copy it, then run:");
