@@ -165,12 +165,12 @@ Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, se
   </tr>
 </table>
 
-**📄 It also builds real Office documents.** Ask in plain language → the agent calls its `generate_document` tool → a real **PowerPoint, Word, Excel, or PDF**. Below, `gpt-5.5` generates a `.pptx` in the desktop app — cost `$0.0000`:
+**📄 It also builds real Office documents — via multi-step skills.** Ask in plain language → the agent triggers an open-source document **skill** that drives `openpyxl` / `python-pptx` / `python-docx` in **visible steps** (check the lib → write the script → run it → verify) → a real, professionally-styled **Excel, PowerPoint, Word, or PDF**. Below, `gpt-5.5` builds an Excel budget in the desktop app — the activity shows each step, cost `$0.0000`:
 
 <p align="center">
-  <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen-result.png" alt="The Cowork agent generates a real PowerPoint at $0" width="760"/></a>
+  <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-office-skill.mp4"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/office-skill-steps.png" alt="The Cowork agent builds a styled Excel file via a multi-step skill at $0" width="820"/></a>
   <br/>
-  <sub>Plain-language prompt → <code>generate_document</code> → a verified <code>deck.pptx</code> (3 tool calls, <code>$0.0000</code>). <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4">▶ Watch the run (MP4) →</a></sub>
+  <sub>Prompt → the <code>xlsx</code> skill runs <code>openpyxl</code> in visible steps → a verified <code>budget.xlsx</code> with a live <code>=SUM</code> formula and styling, <code>$0.0000</code>. <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-office-skill.mp4">▶ Watch the run (MP4) →</a></sub>
 </p>
 
 **🤖 It coordinates a team of agents.** `/swarm <task>` decomposes a goal, delegates to specialist sub-agents (coder → tester → reviewer), then synthesizes — each agent's live activity (`round N`, tool calls) and output visible in the panel. Below, `gpt-5.5` writes **and tests** a Python function end-to-end — cost `$0.0000`:
