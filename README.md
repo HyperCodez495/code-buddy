@@ -168,9 +168,25 @@ Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, se
 **📄 It also builds real Office documents.** Ask in plain language → the agent calls its `generate_document` tool → a real **PowerPoint, Word, Excel, or PDF**. Below, `gpt-5.5` generates a `.pptx` in the desktop app — cost `$0.0000`:
 
 <p align="center">
-  <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.gif" alt="The Cowork agent generates a real PowerPoint at $0" width="760"/></a>
+  <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen-result.png" alt="The Cowork agent generates a real PowerPoint at $0" width="760"/></a>
   <br/>
-  <sub>Plain-language prompt → <code>generate_document</code> → a verified <code>deck.pptx</code> (3 tool calls, <code>$0.0000</code>). <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4">MP4 →</a></sub>
+  <sub>Plain-language prompt → <code>generate_document</code> → a verified <code>deck.pptx</code> (3 tool calls, <code>$0.0000</code>). <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4">▶ Watch the run (MP4) →</a></sub>
+</p>
+
+**🤖 It coordinates a team of agents.** `/swarm <task>` decomposes a goal, delegates to specialist sub-agents (coder → tester → reviewer), then synthesizes — each agent's live activity (`round N`, tool calls) and output visible in the panel. Below, `gpt-5.5` writes **and tests** a Python function end-to-end — cost `$0.0000`:
+
+<p align="center">
+  <img src="docs/qa/code-buddy-studio/showcase-2026-06-16/swarm-real-team.png" alt="A swarm of coder/tester/reviewer agents completes a task at $0" width="760"/>
+  <br/>
+  <sub>Orchestrator plans → <code>coder</code> / <code>tester</code> / <code>reviewer</code> run in turn (live activity) → tester reports <code>4 tests · OK</code> → synthesized result, all on <code>gpt-5.5</code> for <code>$0.0000</code>.</sub>
+</p>
+
+**🎯 It works toward a standing goal.** Goal mode runs an autonomous loop: the agent acts, an LLM judge checks whether the goal is satisfied after each turn, and it keeps going (within a turn budget) until done — self-correcting on the judge's feedback:
+
+<p align="center">
+  <img src="docs/qa/code-buddy-studio/showcase-2026-06-16/goal-mode-real-loop.png" alt="Goal mode autonomous loop with LLM judge verification at $0" width="760"/>
+  <br/>
+  <sub>Act → judge rejects turn 1/20 (<em>"not exactly one line"</em>) → agent self-corrects → <code>✓ Goal achieved</code>. Real <code>gpt-5.5</code> loop, <code>$0.0000</code>.</sub>
 </p>
 
 ```bash
