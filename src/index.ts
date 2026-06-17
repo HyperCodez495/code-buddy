@@ -2287,18 +2287,143 @@ program
     await installGUI();
   });
 
+/**
+ * After a successful xAI login, probe api.x.ai with one tiny real call so the
+ * user learns immediately whether their subscription includes API inference
+ * (a SuperGrok plan does not always — the OAuth `api:access` scope is
+ * requested, not guaranteed granted).
+ */
+async function probeXaiInference(): Promise<void> {
+  const { getValidXaiAccessToken, XAI_OAUTH_BASE_URL } = await import(
+    "./providers/xai-oauth.js"
+  );
+  cli.stdout("\nVerifying inference access (api.x.ai) ...");
+  const token = await getValidXaiAccessToken();
+  if (!token) {
+    cli.error("❌ Could not load a valid token after login.");
+    return;
+  }
+  const probeModel = process.env.GROK_MODEL || "grok-3";
+  try {
+    const res = await fetch(`${XAI_OAUTH_BASE_URL}/chat/completions`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+      body: JSON.stringify({
+        model: probeModel,
+        max_tokens: 1,
+        messages: [{ role: "user", content: "hi" }],
+      }),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (res.ok) {
+      cli.stdout("✅ Inference access confirmed — your subscription works in Code Buddy.");
+      cli.stdout(`   Try: buddy --model ${probeModel} -p "hello"   (or just \`buddy\`)`);
+    } else if (res.status === 401 || res.status === 403) {
+      const body = await res.text().catch(() => "");
+      cli.error(
+        `⚠️ Login succeeded, but api.x.ai returned ${res.status} — your subscription may not include API inference.`
+      );
+      if (body) cli.error(`   Detail: ${body.slice(0, 200)}`);
+      cli.error("   You can still use Grok with a metered API key: set XAI_API_KEY.");
+    } else {
+      const body = await res.text().catch(() => "");
+      cli.error(`⚠️ Probe returned ${res.status} (model "${probeModel}"?): ${body.slice(0, 200)}`);
+    }
+  } catch (err) {
+    cli.error(`⚠️ Probe call failed (network?): ${err instanceof Error ? err.message : String(err)}`);
+    cli.stdout('   Tokens are stored; try `buddy -p "hello"`.');
+  }
+}
+
+/**
+ * xAI / Grok subscription login (`buddy login xai`). Two-step so it works in
+ * backgrounded / non-interactive / remote shells where stdin can't be pasted
+ * into: step 1 opens the browser + persists the PKCE material, step 2
+ * (`--code <code>`) exchanges the code xAI shows in-page. In an interactive
+ * TTY, step 1 also accepts the code inline for a one-shot experience.
+ */
+async function loginXaiCli(codeArg?: string): Promise<void> {
+  const xai = await import("./providers/xai-oauth.js");
+
+  // Step 2 — complete a pending login with the copied code.
+  if (codeArg) {
+    try {
+      const auth = await xai.completeLogin(codeArg);
+      cli.stdout("✅ Authenticated with xAI");
+      if (auth.email) cli.stdout(`   Account:   ${auth.email}`);
+      if (typeof auth.expires_in_seconds === "number") {
+        cli.stdout(`   Token TTL: ~${Math.round(auth.expires_in_seconds / 60)} min`);
+      }
+      cli.stdout(`   Tokens stored at: ${xai.getXaiAuthFilePath()}`);
+      await probeXaiInference();
+    } catch (err) {
+      cli.error(`❌ Login failed: ${err instanceof Error ? err.message : String(err)}`);
+      process.exit(1);
+    }
+    return;
+  }
+
+  // Step 1 — open the browser and persist the pending PKCE material.
+  cli.stdout("🔐 xAI / Grok login");
+  let authorizeUrl: string;
+  try {
+    ({ authorizeUrl } = await xai.beginLogin());
+  } catch (err) {
+    cli.error(`❌ Could not start login: ${err instanceof Error ? err.message : String(err)}`);
+    process.exit(1);
+    return;
+  }
+  try {
+    const openModule = await import("open");
+    await openModule.default(authorizeUrl);
+    cli.stdout("Opening your browser to authorize Code Buddy with your xAI / SuperGrok plan ...");
+  } catch {
+    /* fall back to the printed URL below */
+  }
+  cli.stdout(`\nIf your browser didn't open, visit this URL:\n${authorizeUrl}\n`);
+  cli.stdout("xAI shows an authorization CODE in the page. Copy it, then run:");
+  cli.stdout("   buddy login xai --code <PASTE_THE_CODE>\n");
+
+  // Interactive convenience: if we have a real TTY, accept the code inline.
+  if (process.stdin.isTTY) {
+    const readline = await import("readline");
+    const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+    const answer: string = await new Promise((resolve) =>
+      rl.question("Paste the code here (or Ctrl-C to finish later): ", resolve)
+    );
+    rl.close();
+    if (answer.trim()) {
+      try {
+        const auth = await xai.completeLogin(answer);
+        cli.stdout("✅ Authenticated with xAI");
+        if (auth.email) cli.stdout(`   Account:   ${auth.email}`);
+        cli.stdout(`   Tokens stored at: ${xai.getXaiAuthFilePath()}`);
+        await probeXaiInference();
+      } catch (err) {
+        cli.error(`❌ Login failed: ${err instanceof Error ? err.message : String(err)}`);
+        process.exit(1);
+      }
+    }
+  }
+}
+
 // Phase d.23+ — Authentication commands.
 // Run the OAuth flow directly from the CLI so users don't have to enter
 // the interactive TUI just to log in. Mirrors the `/login` slash command
 // that's available inside a session.
 program
   .command("login [provider]")
-  .description("Authenticate with a provider (default: chatgpt — uses your ChatGPT subscription)")
-  .action(async (provider?: string) => {
+  .description("Authenticate with a provider (chatgpt | xai — uses your subscription, no API key)")
+  .option("--code <code>", "Complete an xAI login with the code shown in the browser")
+  .action(async (provider: string | undefined, options: { code?: string }) => {
     const target = (provider ?? "chatgpt").toLowerCase();
+    if (target === "xai" || target === "grok" || target === "xai-oauth") {
+      await loginXaiCli(options.code);
+      return;
+    }
     if (target !== "chatgpt" && target !== "codex" && target !== "openai") {
-      cli.stdout(`Unknown provider: "${provider}". Only \`chatgpt\` is supported.`);
-      cli.stdout("Other providers (Gemini, Anthropic, Grok) authenticate via API key env vars.");
+      cli.stdout(`Unknown provider: "${provider}". Supported: \`chatgpt\`, \`xai\`.`);
+      cli.stdout("Other providers (Gemini, Anthropic) authenticate via API key env vars.");
       process.exit(1);
     }
     const { loginInteractive, getCodexAuthFilePath } = await import(
@@ -2324,11 +2449,22 @@ program
 
 program
   .command("logout [provider]")
-  .description("Clear stored credentials for a provider (default: chatgpt)")
+  .description("Clear stored credentials for a provider (chatgpt | xai)")
   .action(async (provider?: string) => {
     const target = (provider ?? "chatgpt").toLowerCase();
+    if (target === "xai" || target === "grok" || target === "xai-oauth") {
+      const { hasXaiCredentials, clearXaiCredentials, getXaiAuthFilePath } =
+        await import("./providers/xai-oauth.js");
+      if (!hasXaiCredentials()) {
+        cli.stdout("No xAI credentials on disk — already logged out.");
+        return;
+      }
+      clearXaiCredentials();
+      cli.stdout(`✅ xAI credentials cleared (${getXaiAuthFilePath()})`);
+      return;
+    }
     if (target !== "chatgpt" && target !== "codex" && target !== "openai") {
-      cli.stdout(`Unknown provider: "${provider}". Only \`chatgpt\` is supported.`);
+      cli.stdout(`Unknown provider: "${provider}". Supported: \`chatgpt\`, \`xai\`.`);
       process.exit(1);
     }
     const { hasCodexCredentials, clearCodexCredentials, getCodexAuthFilePath } =
