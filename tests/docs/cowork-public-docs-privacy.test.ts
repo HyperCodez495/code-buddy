@@ -9,10 +9,13 @@ const gitignoreFile = path.join(repoRoot, '.gitignore');
 const rootReadme = path.join(repoRoot, 'README.md');
 const coworkReadme = path.join(repoRoot, 'cowork', 'readme.md');
 const publicCoworkDoc = path.join(repoRoot, 'docs', 'cowork.md');
+// Only scan planning docs that still exist — the docs set is actively
+// restructured, and a doc that's no longer published carries no privacy risk.
+// (Avoids ENOENT when an audited doc is removed, e.g. cowork-competitor-audit.md.)
 const publicCoworkPlanningDocs = [
   path.join(repoRoot, 'docs', 'cowork-competitor-audit.md'),
   path.join(repoRoot, 'docs', 'hermes-cowork-cli-improvement-plan.md'),
-] as const;
+].filter((f) => fs.existsSync(f));
 const publicDocsDir = path.join(repoRoot, 'docs');
 const publicCoworkQaDir = path.join(repoRoot, 'docs', 'qa', 'code-buddy-studio');
 const publicCoworkQaReport = path.join(publicCoworkQaDir, 'feature-qa-report.json');
