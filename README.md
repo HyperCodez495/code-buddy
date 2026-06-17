@@ -165,6 +165,14 @@ Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, se
   </tr>
 </table>
 
+**📄 It also builds real Office documents.** Ask in plain language → the agent calls its `generate_document` tool → a real **PowerPoint, Word, Excel, or PDF**. Below, `gpt-5.5` generates a `.pptx` in the desktop app — cost `$0.0000`:
+
+<p align="center">
+  <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.gif" alt="The Cowork agent generates a real PowerPoint at $0" width="760"/></a>
+  <br/>
+  <sub>Plain-language prompt → <code>generate_document</code> → a verified <code>deck.pptx</code> (3 tool calls, <code>$0.0000</code>). <a href="docs/qa/code-buddy-studio/showcase-2026-06-16/cowork-docgen.mp4">MP4 →</a></sub>
+</p>
+
 ```bash
 # Node >= 22 required for the desktop app (the CLI runs on >= 18)
 buddy install-gui          # one-time: install Electron + build the desktop bundle
