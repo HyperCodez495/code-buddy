@@ -15,7 +15,6 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/phuetz/code-buddy/actions/workflows/ci.yml"><img src="https://github.com/phuetz/code-buddy/actions/workflows/ci.yml/badge.svg" alt="CI"/></a>
   <img src="https://img.shields.io/badge/Tests-27K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
   <img src="https://img.shields.io/badge/v1.1.0-GA-blueviolet?style=flat-square" alt="Version 1.1.0 GA"/>
 </p>
@@ -99,7 +98,7 @@ More desktop demos (Fleet, Autonomy, Companion, …) and captures: [`cowork/read
 - ✅ **Goal loops (Ralph loop)** — a judge model re-checks completion every turn and auto-continues until done; proven multi-turn on a free local model, with a real in-loop length-truncation recovery ([test](tests/agent/in-loop-recovery.real.test.ts), no mocks).
 - ✅ **Multi-AI Fleet** — peers observe each other live and call each other's models & read-only tools (`peer.chat` / `peer.tool.invoke`).
 - ✅ **15 providers** with automatic failover and per-provider circuit breakers; **~110 tools**, MCP connectors, and a skills marketplace.
-- ✅ **~27K Vitest tests** wired to CI (badge above is the real workflow status).
+- ✅ **~27K Vitest tests** — run locally and on a real-environment runner (the suite is no-mocks / real-integration, so it needs live Ollama/Hermes/browser rather than a vanilla CI box).
 
 **Honest about scope:** [Hermes / OpenClaw parity](docs/hermes-openclaw-parity.md) lays out exactly what's shipped, what's externally-gated, and where the edges are — including which messaging channels are full integrations vs. in-process stubs.
 
