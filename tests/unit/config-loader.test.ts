@@ -375,7 +375,9 @@ describe('config-loader', () => {
 
       expect(result.errors[0]).toContain('GROK_API_KEY');
       expect(result.errors[0]).toContain('--api-key');
-      expect(result.errors[0]).toContain('~/.codebuddy/user-settings.json');
+      // The message guides users to the zero-cost onboarding paths first.
+      expect(result.errors[0]).toContain('buddy login');
+      expect(result.errors[0]).toContain('buddy doctor');
     });
 
     it('should return correct validation result structure', () => {

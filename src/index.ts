@@ -1499,7 +1499,13 @@ program
 
       if (!apiKey) {
         logger.error(
-          "❌ Error: API key required. Set GOOGLE_API_KEY, GROK_API_KEY, or OPENAI_API_KEY environment variable, use --api-key flag, or save to ~/.codebuddy/user-settings.json"
+          [
+            "❌ No AI provider configured. Pick one to get started:",
+            "   • Free, no API key — sign in with your ChatGPT plan:  buddy login",
+            "   • Local & free — run a model with Ollama, then:        export OLLAMA_HOST=http://localhost:11434",
+            "   • API key — set one of GROK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY (or pass --api-key)",
+            "   Run  buddy doctor  to check your setup.",
+          ].join("\n")
         );
         process.exit(1);
       }
@@ -2071,7 +2077,13 @@ gitCommand
 
       if (!apiKey) {
         logger.error(
-          "❌ Error: API key required. Set GOOGLE_API_KEY, GROK_API_KEY, or OPENAI_API_KEY environment variable, use --api-key flag, or save to ~/.codebuddy/user-settings.json"
+          [
+            "❌ No AI provider configured. Pick one to get started:",
+            "   • Free, no API key — sign in with your ChatGPT plan:  buddy login",
+            "   • Local & free — run a model with Ollama, then:        export OLLAMA_HOST=http://localhost:11434",
+            "   • API key — set one of GROK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY (or pass --api-key)",
+            "   Run  buddy doctor  to check your setup.",
+          ].join("\n")
         );
         process.exit(1);
       }

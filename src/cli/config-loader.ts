@@ -118,7 +118,7 @@ export function validateConfig(config: CLIConfig): { valid: boolean; errors: str
 
   if (!config.apiKey) {
     errors.push(
-      'API key required. Set GROK_API_KEY environment variable, use --api-key flag, or save to ~/.codebuddy/user-settings.json'
+      'API key required. Sign in free with `buddy login` (ChatGPT plan), set GROK_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY / GOOGLE_API_KEY, or use --api-key. Run `buddy doctor` to check your setup.'
     );
   }
 
