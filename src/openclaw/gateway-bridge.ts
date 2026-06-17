@@ -1,5 +1,6 @@
 import { constants as fsConstants } from 'fs';
 import { access, appendFile, mkdir, readFile, writeFile } from 'fs/promises';
+import { rotateIfLarge } from '../utils/disk-guard.js';
 import * as os from 'os';
 import * as path from 'path';
 import { createPublicKey, randomUUID, sign as signPayload } from 'crypto';
@@ -942,6 +943,7 @@ function responseSummary(response: OpenClawHttpTransportResponse): OpenClawGatew
 
 async function appendAttachRecord(attachLogPath: string, record: OpenClawGatewayAttachRecord): Promise<void> {
   await mkdir(path.dirname(attachLogPath), { recursive: true });
+  rotateIfLarge(attachLogPath);
   await appendFile(attachLogPath, `${JSON.stringify(record)}\n`, 'utf8');
 }
 
@@ -967,6 +969,7 @@ function sendResponseSummary(response: OpenClawHttpTransportResponse): OpenClawR
 
 async function appendSendRecord(sendLogPath: string, record: OpenClawResponseSendRecord): Promise<void> {
   await mkdir(path.dirname(sendLogPath), { recursive: true });
+  rotateIfLarge(sendLogPath);
   await appendFile(sendLogPath, `${JSON.stringify(record)}\n`, 'utf8');
 }
 
@@ -975,6 +978,7 @@ async function appendWebSocketProbeRecord(
   record: OpenClawWebSocketProbeRecord,
 ): Promise<void> {
   await mkdir(path.dirname(probeLogPath), { recursive: true });
+  rotateIfLarge(probeLogPath);
   await appendFile(probeLogPath, `${JSON.stringify(record)}\n`, 'utf8');
 }
 
@@ -983,6 +987,7 @@ async function appendWebSocketCallRecord(
   record: OpenClawWebSocketCallRecord,
 ): Promise<void> {
   await mkdir(path.dirname(callLogPath), { recursive: true });
+  rotateIfLarge(callLogPath);
   await appendFile(callLogPath, `${JSON.stringify(record)}\n`, 'utf8');
 }
 

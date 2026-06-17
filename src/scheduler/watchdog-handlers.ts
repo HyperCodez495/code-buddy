@@ -17,8 +17,8 @@
  */
 
 import { spawn } from 'child_process';
-import fs from 'fs';
 import path from 'path';
+import { getFreeSpaceInfo } from '../utils/disk-guard.js';
 
 export type CronWatchdogCheckType = 'disk' | 'http' | 'repo' | 'build';
 
@@ -181,33 +181,20 @@ async function runSingleCheck(
 
 function checkDisk(check: CronWatchdogCheck, name: string): WatchdogCheckResult {
   const target = check.path || process.cwd();
-  const statfs = (fs as unknown as { statfsSync?: (p: string) => { bsize: number; blocks: number; bavail: number } }).statfsSync;
-  if (typeof statfs !== 'function') {
+  // Single source of truth for free space (uses bavail); null when statfs is
+  // unavailable or the path can't be stat'd.
+  const info = getFreeSpaceInfo(target);
+  if (info === null) {
     return {
       type: 'disk',
       name,
       status: 'error',
-      summary: 'fs.statfsSync is not available in this Node runtime',
+      summary: `cannot determine free space at ${target} (fs.statfsSync unavailable or path unreadable)`,
       details: { path: target },
     };
   }
 
-  let stats: { bsize: number; blocks: number; bavail: number };
-  try {
-    stats = statfs(target);
-  } catch (err) {
-    return {
-      type: 'disk',
-      name,
-      status: 'error',
-      summary: `cannot stat filesystem at ${target}: ${errMsg(err)}`,
-      details: { path: target },
-    };
-  }
-
-  const totalBytes = stats.blocks * stats.bsize;
-  const freeBytes = stats.bavail * stats.bsize;
-  const freePercent = totalBytes > 0 ? (freeBytes / totalBytes) * 100 : 0;
+  const { freeBytes, totalBytes, freePercent } = info;
 
   const breaches: string[] = [];
   if (typeof check.minFreeBytes === 'number' && freeBytes < check.minFreeBytes) {

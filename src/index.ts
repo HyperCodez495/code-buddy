@@ -37,6 +37,7 @@ import {
   initializeGracefulShutdown,
   getShutdownManager,
 } from "./utils/graceful-shutdown.js";
+import { sweepStaleCodebuddyTemp } from "./utils/disk-guard.js";
 
 /**
  * CLI output helper.
@@ -198,6 +199,11 @@ const _shutdownManager = initializeGracefulShutdown({
   forceExitOnTimeout: true,
   showProgress: true,
 });
+
+// Startup janitor: remove our own stale /tmp scratch dirs left by crashed or
+// SIGKILL'd runs (the durable backstop for the disk-leak class that caused the
+// 2026-06-17 ENOSPC — see src/utils/disk-guard.ts). Age-gated; never throws.
+sweepStaleCodebuddyTemp();
 
 // Note: SIGINT, SIGTERM, SIGHUP are now handled by GracefulShutdownManager
 // The manager will:

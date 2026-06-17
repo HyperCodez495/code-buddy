@@ -5,12 +5,12 @@ import {
   readFileSync,
   readdirSync,
   statSync,
-  statfsSync,
   unlinkSync,
   writeFileSync,
 } from 'fs';
 import { join } from 'path';
 import { logger } from '../utils/logger.js';
+import { getFreeSpaceInfo } from '../utils/disk-guard.js';
 
 export interface FixResult {
   success: boolean;
@@ -244,17 +244,17 @@ function checkTtsProviders(): DoctorCheck[] {
 }
 
 function checkDiskSpace(cwd: string): DoctorCheck {
-  try {
-    const stats = statfsSync(cwd);
-    const freeBytes = stats.bfree * stats.bsize;
-    const freeGB = freeBytes / (1024 ** 3);
-    if (freeGB < 1) {
-      return { name: 'Disk space', status: 'warn', message: `${freeGB.toFixed(2)} GB free (< 1 GB)` };
-    }
-    return { name: 'Disk space', status: 'ok', message: `${freeGB.toFixed(1)} GB free` };
-  } catch {
+  // Single source of truth (disk-guard). Uses bavail — free space actually
+  // available to a non-root process — rather than bfree.
+  const info = getFreeSpaceInfo(cwd);
+  if (info === null) {
     return { name: 'Disk space', status: 'warn', message: 'unable to check' };
   }
+  const freeGB = info.freeBytes / (1024 ** 3);
+  if (freeGB < 1) {
+    return { name: 'Disk space', status: 'warn', message: `${freeGB.toFixed(2)} GB free (< 1 GB)` };
+  }
+  return { name: 'Disk space', status: 'ok', message: `${freeGB.toFixed(1)} GB free` };
 }
 
 function checkGit(cwd: string): DoctorCheck {

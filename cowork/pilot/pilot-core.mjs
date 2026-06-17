@@ -68,6 +68,13 @@ export class CoworkPilot {
    *      daemon runs at a time, so any existing ones are orphans), and
    *   2. refuse to launch if the tmp filesystem is critically low — fail fast
    *      and loud instead of corrupting a run halfway through.
+   *
+   * CONTRACT: this is the pure-JS twin of `src/utils/disk-guard.ts`
+   * (`sweepOrphans` + `ensureFreeSpace`). The pilot is a standalone package that
+   * intentionally imports nothing from `src/`, so the ~20 lines are duplicated
+   * rather than shared across the package boundary. The 500MB threshold below
+   * MUST match disk-guard's `DISK_GUARD_DEFAULTS.minFreeMb`
+   * (`CODEBUDDY_MIN_FREE_MB` default); a contract test locks the two together.
    */
   _sweepStaleTempAndGuardDisk() {
     const tmp = os.tmpdir();
@@ -88,7 +95,7 @@ export class CoworkPilot {
       const st = statfsSync(tmp);
       const freeMb = (st.bavail * st.bsize) / (1024 * 1024);
       this.log(`[pilot] ${Math.round(freeMb)}MB free on ${tmp}`);
-      if (freeMb < 500) {
+      if (freeMb < 500) {  // keep in sync with disk-guard DISK_GUARD_DEFAULTS.minFreeMb
         throw new Error(
           `cowork-pilot: only ${Math.round(freeMb)}MB free on ${tmp} — ` +
             `refusing to launch Electron (needs headroom; free disk space first).`,
