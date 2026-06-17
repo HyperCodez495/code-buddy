@@ -914,7 +914,7 @@ export function ChatView() {
   }
 
   return (
-    <div className="flex-1 flex flex-col overflow-hidden bg-background">
+    <div className="h-full flex-1 min-h-0 flex flex-col overflow-hidden bg-background">
       <ChatHeader />
       <GoalBanner />
 
@@ -953,8 +953,11 @@ export function ChatView() {
         </div>
       )}
 
-      {/* Messages */}
-      <div ref={scrollContainerRef} className="flex-1 overflow-y-auto">
+      {/* Messages — `min-h-0` lets this flex child shrink below its content
+          height so `overflow-y-auto` actually scrolls (without it the list
+          grows unbounded and gets clipped by the dock pane, leaving long
+          conversations un-scrollable). */}
+      <div ref={scrollContainerRef} className="flex-1 min-h-0 overflow-y-auto">
         <ChatList
           displayedMessages={displayedMessages}
           searchMatches={searchMatches}

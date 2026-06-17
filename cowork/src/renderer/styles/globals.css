@@ -108,23 +108,36 @@
   }
 
   /* Custom scrollbar — only on non-macOS platforms.
-     macOS uses native overlay scrollbars which are better. */
+     macOS uses native overlay scrollbars which are better.
+     Kept clearly visible (not a 1px hairline) so long chats and panels
+     show an obvious "elevator" you can grab and drag. */
   @supports not (font: -apple-system-body) {
     ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
+      width: 12px;
+      height: 12px;
     }
 
     ::-webkit-scrollbar-track {
-      @apply bg-transparent;
+      @apply bg-surface-active;
     }
 
     ::-webkit-scrollbar-thumb {
       @apply bg-border rounded-full;
+      /* Inset the thumb so it reads as a rounded pill inside the track. */
+      border: 3px solid transparent;
+      background-clip: padding-box;
+      min-height: 32px;
     }
 
     ::-webkit-scrollbar-thumb:hover {
       @apply bg-text-muted;
+      background-clip: padding-box;
+    }
+
+    /* Firefox / Gecko-based renderers. */
+    * {
+      scrollbar-width: thin;
+      scrollbar-color: var(--color-border) var(--color-surface-active);
     }
   }
 }
