@@ -12,7 +12,15 @@
 import { _electron as electron, chromium } from 'playwright';
 import electronPath from 'electron';
 import { fileURLToPath } from 'node:url';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import {
+  mkdtempSync,
+  mkdirSync,
+  writeFileSync,
+  existsSync,
+  readdirSync,
+  rmSync,
+  statfsSync,
+} from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -51,8 +59,50 @@ export class CoworkPilot {
 
   // ---- lifecycle ---------------------------------------------------------
 
+  /**
+   * Guard against the failure mode that bit us on 2026-06-17: repeated
+   * launch/restart cycles leak Electron temp (each `close()` only removes its
+   * OWN userDataDir, never the prior runs' leaked dirs), and on a near-full
+   * disk that silently snowballs into ENOSPC mid-run. So before every launch:
+   *   1. sweep leaked `cowork-pilot-*` dirs from dead sessions (only one
+   *      daemon runs at a time, so any existing ones are orphans), and
+   *   2. refuse to launch if the tmp filesystem is critically low — fail fast
+   *      and loud instead of corrupting a run halfway through.
+   */
+  _sweepStaleTempAndGuardDisk() {
+    const tmp = os.tmpdir();
+    try {
+      for (const name of readdirSync(tmp)) {
+        if (name.startsWith('cowork-pilot-')) {
+          try {
+            rmSync(path.join(tmp, name), { recursive: true, force: true });
+          } catch {
+            /* ignore individual failures */
+          }
+        }
+      }
+    } catch {
+      /* readdir failure → skip sweep */
+    }
+    try {
+      const st = statfsSync(tmp);
+      const freeMb = (st.bavail * st.bsize) / (1024 * 1024);
+      this.log(`[pilot] ${Math.round(freeMb)}MB free on ${tmp}`);
+      if (freeMb < 500) {
+        throw new Error(
+          `cowork-pilot: only ${Math.round(freeMb)}MB free on ${tmp} — ` +
+            `refusing to launch Electron (needs headroom; free disk space first).`,
+        );
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message.includes('refusing to launch')) throw e;
+      /* statfsSync unsupported on this platform → skip the guard */
+    }
+  }
+
   async launch() {
     if (this.page) return this.page;
+    this._sweepStaleTempAndGuardDisk();
     if (!this.userDataDir) {
       this.userDataDir = mkdtempSync(path.join(os.tmpdir(), 'cowork-pilot-'));
       this._ownsUserData = !this.opts.keepUserData;
