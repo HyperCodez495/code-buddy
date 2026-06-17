@@ -201,8 +201,13 @@ export class USearchVectorIndex extends EventEmitter {
    */
   private async loadUSearch(): Promise<USearchModule> {
     try {
-      // Dynamic import for optional dependency
-      const usearch = (await import('usearch')) as unknown as USearchModule;
+      // Dynamic import for an OPTIONAL native dependency (see optionalDependencies).
+      // Use a non-literal specifier so `tsc` doesn't require 'usearch' to be
+      // resolvable on every platform — it isn't installed on some CI runners
+      // (e.g. windows-latest), which otherwise fails type-check with TS2307.
+      // Types come from the local USearchModule interface, not the package.
+      const usearchSpecifier = 'usearch';
+      const usearch = (await import(usearchSpecifier)) as unknown as USearchModule;
       return usearch;
     } catch (_err) {
       throw new Error('usearch module not installed. Run: npm install usearch');
