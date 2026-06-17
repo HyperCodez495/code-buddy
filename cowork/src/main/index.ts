@@ -1912,6 +1912,16 @@ app
         process.env.PATH = `${pyBin}${pyDelim}${process.env.PATH || ''}`;
         log(`[Main] Bundled Python on PATH → ${pyBin}`);
       }
+      // Point Playwright (web-automate skill) at the bundled browser cache. The
+      // Firefox binary fetched by prepare:python:extras lives OUTSIDE site-packages
+      // (sibling of bin/), so it only resolves at runtime via this env var.
+      if (pyBin && !process.env.PLAYWRIGHT_BROWSERS_PATH) {
+        const browsers = resolve(pyBin, '..', 'ms-playwright');
+        if (fs.existsSync(browsers)) {
+          process.env.PLAYWRIGHT_BROWSERS_PATH = browsers;
+          log(`[Main] Playwright browsers → ${browsers}`);
+        }
+      }
     } catch (err) {
       logWarn('[Main] Failed to add bundled Python to PATH:', err);
     }
