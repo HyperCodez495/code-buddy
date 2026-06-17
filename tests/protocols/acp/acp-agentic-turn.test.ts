@@ -122,6 +122,23 @@ class SimulatedEditor {
     }
   }
 
+  /**
+   * Wait until a JSON-RPC response (or error) for `id` has been written back,
+   * rather than flushing a fixed number of ticks. A fixed `flush(N)` is flaky
+   * under load — a saturated test box may need more macrotask hops than the
+   * count assumed in isolation. Only the LLM is mocked here, so a response
+   * always arrives; this just polls for it with a generous ceiling.
+   */
+  async waitForResponse(id: number, timeoutMs = 5000): Promise<Record<string, any> | undefined> {
+    const deadline = Date.now() + timeoutMs;
+    while (Date.now() < deadline) {
+      const found = this.responseFor(id);
+      if (found) return found;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    return this.responseFor(id);
+  }
+
   responseFor(id: number): Record<string, any> | undefined {
     return this.messages.find((m) => m.id === id && ('result' in m || 'error' in m));
   }
@@ -196,12 +213,12 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'initialize',
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_CAPS },
     });
-    await editor.flush(10);
+    await editor.waitForResponse(1);
     expect(editor.responseFor(1)?.result?.protocolVersion).toBe(ACP_PROTOCOL_VERSION);
 
     // session/new
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(10);
+    await editor.waitForResponse(2);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
     expect(sessionId).toBeTruthy();
 
@@ -212,7 +229,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'What does app.ts define?' }] },
     });
-    await editor.flush(50);
+    await editor.waitForResponse(3);
 
     // (1) The turn completed with end_turn.
     expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'end_turn' });
@@ -296,7 +313,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(10);
+    await editor.waitForResponse(2);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -305,7 +322,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'read missing.ts' }] },
     });
-    await editor.flush(50);
+    await editor.waitForResponse(3);
 
     // No client fs/read_text_file or permission requests were made.
     expect(editor.reads).toHaveLength(0);
@@ -359,7 +376,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_CAPS },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(10);
+    await editor.waitForResponse(2);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -368,7 +385,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'try to write app.ts' }] },
     });
-    await editor.flush(50);
+    await editor.waitForResponse(3);
 
     expect(seenToolNames[0]).not.toContain('write_file');
     expect(editor.writes).toHaveLength(0);
@@ -422,7 +439,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: FS_WRITE_CAPS },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: '/workspace', mcpServers: [] } });
-    await editor.flush(10);
+    await editor.waitForResponse(2);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -431,7 +448,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'write app.ts' }] },
     });
-    await editor.flush(50);
+    await editor.waitForResponse(3);
 
     expect(seenToolNames[0]).toContain('write_file');
     const toolCall = editor.updatesOfType('tool_call')[0]!.params.update;
@@ -480,7 +497,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       params: { protocolVersion: ACP_PROTOCOL_VERSION, clientCapabilities: {} },
     });
     editor.send({ jsonrpc: '2.0', id: 2, method: 'session/new', params: { cwd: process.cwd(), mcpServers: [] } });
-    await editor.flush(10);
+    await editor.waitForResponse(2);
     const sessionId = editor.responseFor(2)?.result?.sessionId as string;
 
     editor.send({
@@ -489,7 +506,7 @@ describe('ACP agentic tool-using turn (real server + simulated editor)', () => {
       method: 'session/prompt',
       params: { sessionId, prompt: [{ type: 'text', text: 'loop forever' }] },
     });
-    await editor.flush(50);
+    await editor.waitForResponse(3);
 
     expect(editor.responseFor(3)?.result).toEqual({ stopReason: 'max_turn_requests' });
     expect((chat as any).mock.calls.length).toBe(3);
