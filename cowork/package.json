@@ -41,6 +41,7 @@
     "prepare:python": "node scripts/prepare-python.js",
     "prepare:python:all": "node scripts/prepare-python.js --all",
     "prepare:python:skills": "node scripts/install-skill-python-deps.mjs",
+    "prepare:python:extras": "node scripts/install-skill-python-extras.mjs",
     "preview": "vite preview",
     "lint": "node scripts/lint.cjs",
     "format": "prettier --write \"src/**/*.{ts,tsx,css}\"",

@@ -1,0 +1,15 @@
+# OPTIONAL heavy Python deps for the "extras-tier" skills.
+# These are NOT installed by the default build (keeps the bundled-Python download
+# lean, ~177MB). Install on demand with:  npm run prepare:python:extras
+#
+# Each extras-tier skill preflights its import and tells the user to run that
+# command if the lib is missing — so a build without extras degrades cleanly.
+#
+# Capability → lib:
+#   doc-ingest (rich backend)  -> markitdown   (HTML/images-OCR/EPUB/ZIP → Markdown; pulls onnxruntime ~200MB)
+#   data-charts                -> pandas, matplotlib
+#   web-automate               -> playwright   (browser binary fetched separately by the install script)
+markitdown
+pandas
+matplotlib
+playwright
