@@ -1,6 +1,5 @@
 const fs = require('fs');
 const path = require('path');
-const { execSync } = require('child_process');
 
 const workflowProDir = path.join(__dirname, 'cowork/src/renderer/components/workflow_pro');
 
