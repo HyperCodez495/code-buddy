@@ -74,6 +74,7 @@ import { DiagnosticsPanel } from './components/DiagnosticsPanel';
 import { BtwQuickAsk } from './components/BtwQuickAsk';
 import { PresenceService } from './services/presence/PresenceService';
 import { DockWorkspace } from './components/DockWorkspace';
+import { ShellNavigation } from './components/ShellNavigation';
 import type { AppConfig } from './types';
 import type { GlobalNoticeAction } from './store';
 
@@ -416,6 +417,8 @@ function App() {
 
       {/* Main Content */}
       <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* Left rail — panel/agent launchers (fleet, autonomy, memory, reasoning, …) */}
+        <ShellNavigation />
         <Group orientation="horizontal" id="cowork-layout" className="flex-1">
           {/* Main Content Area */}
           <Panel id="main" minSize={30}>
