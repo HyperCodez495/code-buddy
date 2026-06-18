@@ -1,13 +1,13 @@
 /**
- * Provider Onboarding
+ * Provider validation library
  *
- * Guided setup for AI providers with API key validation.
- * Each provider config defines the env key, base URL, and a validation
- * endpoint that is probed with a GET request to confirm the key works.
+ * Shared key/endpoint validation used by the onboarding wizard
+ * (`src/wizard/onboarding.ts`). Each provider config defines the env key, base
+ * URL, and a GET validation endpoint that is probed to confirm the key works
+ * AND to list the provider's available models — the same mechanism Hermes uses
+ * during `hermes setup` so onboarding fails fast on a bad key instead of
+ * persisting it and breaking the first chat.
  */
-
-import * as readline from 'readline';
-import { logger } from '../utils/logger.js';
 
 // ============================================================================
 // Types
@@ -26,12 +26,6 @@ export interface ProviderOnboardingConfig {
   validateEndpoint: string;
   /** User-facing instructions for obtaining an API key */
   instructions: string;
-  /** Optional OAuth flow parameters */
-  oauthFlow?: {
-    authUrl: string;
-    tokenUrl: string;
-    scopes: string[];
-  };
 }
 
 export interface ProviderValidationResult {
@@ -72,7 +66,7 @@ export const PROVIDER_CONFIGS: ProviderOnboardingConfig[] = [
   {
     id: 'google',
     name: 'Google (Gemini)',
-    envKey: 'GOOGLE_API_KEY',
+    envKey: 'GEMINI_API_KEY',
     baseUrl: 'https://generativelanguage.googleapis.com',
     validateEndpoint: '/v1beta/models',
     instructions: 'Get your API key from https://aistudio.google.com/apikey',
@@ -103,6 +97,32 @@ export const PROVIDER_CONFIGS: ProviderOnboardingConfig[] = [
   },
 ];
 
+/**
+ * Map an onboarding-wizard provider id (`src/wizard/onboarding.ts`
+ * PROVIDER_GUIDES) to its validation config. The wizard uses friendlier ids
+ * (`claude`, `gemini`) than the catalog (`anthropic`, `google`), so alias them.
+ * OAuth/unsupported wizard ids (`chatgpt`) return undefined — they don't carry
+ * an API key to validate against a `/models` endpoint.
+ */
+const GUIDE_ID_TO_CONFIG_ID: Record<string, string> = {
+  grok: 'grok',
+  openai: 'openai',
+  claude: 'anthropic',
+  anthropic: 'anthropic',
+  gemini: 'google',
+  google: 'google',
+  ollama: 'ollama',
+  lmstudio: 'lmstudio',
+  openrouter: 'openrouter',
+};
+
+export function getValidationConfigForGuide(
+  guideId: string
+): ProviderOnboardingConfig | undefined {
+  const configId = GUIDE_ID_TO_CONFIG_ID[guideId];
+  return configId ? getProviderConfig(configId) : undefined;
+}
+
 // ============================================================================
 // Validation
 // ============================================================================
@@ -132,8 +152,7 @@ export async function validateProviderKey(
   }
 
   // Gemini uses query parameter for the API key
-  const finalUrl =
-    config.id === 'google' ? `${url}?key=${apiKey}` : url;
+  const finalUrl = config.id === 'google' ? `${url}?key=${apiKey}` : url;
 
   let response: Response;
   try {
@@ -155,7 +174,16 @@ export async function validateProviderKey(
 
   if (!response.ok) {
     const errorText = await response.text().catch(() => '');
-    if (response.status === 401 || response.status === 403) {
+    // Classify clear auth failures uniformly — providers are inconsistent:
+    // OpenAI/Anthropic return 401/403, but xAI returns 400 "Incorrect API key
+    // provided". Without this, a plainly-bad key looks like a network blip and
+    // the wizard would offer to save it anyway.
+    const looksLikeBadKey =
+      response.status === 401 ||
+      response.status === 403 ||
+      (response.status === 400 &&
+        /incorrect api key|invalid api key|invalid.*key|unauthor|api key/i.test(errorText));
+    if (looksLikeBadKey) {
       return { valid: false, error: 'Invalid API key (authentication failed)' };
     }
     return {
@@ -201,177 +229,6 @@ async function extractModels(
   }
 }
 
-// ============================================================================
-// Interactive Onboarding
-// ============================================================================
-
-/**
- * Run interactive onboarding for a specific provider.
- * Prompts for API key, validates it, and saves to the environment.
- */
-export async function runProviderOnboarding(
-  providerId: string
-): Promise<boolean> {
-  const config = PROVIDER_CONFIGS.find((c) => c.id === providerId);
-  if (!config) {
-    logger.error(`Unknown provider: ${providerId}`);
-    return false;
-  }
-
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  const ask = (question: string): Promise<string> =>
-    new Promise((resolve) => {
-      rl.question(`  ${question}`, (answer) => resolve(answer.trim()));
-    });
-
-  try {
-    console.log('');
-    console.log(`  === ${config.name} Setup ===`);
-    console.log('');
-    console.log(`  ${config.instructions}`);
-    console.log('');
-
-    // Check if already configured
-    const existingKey = process.env[config.envKey];
-    if (existingKey) {
-      console.log(`  ${config.envKey} is already set in your environment.`);
-      const revalidate = await ask('  Validate existing key? (y/n) [y]: ');
-      if (revalidate.toLowerCase() !== 'n') {
-        console.log('  Validating...');
-        const result = await validateProviderKey(config, existingKey);
-        if (result.valid) {
-          console.log('  Key is valid!');
-          if (result.models && result.models.length > 0) {
-            console.log(`  Available models: ${result.models.slice(0, 5).join(', ')}${result.models.length > 5 ? '...' : ''}`);
-          }
-          rl.close();
-          return true;
-        }
-        console.log(`  Validation failed: ${result.error}`);
-      }
-    }
-
-    // Local providers (Ollama, LM Studio) check connectivity only
-    if (config.id === 'ollama' || config.id === 'lmstudio') {
-      console.log(`  Checking ${config.name} connectivity...`);
-      const host =
-        config.id === 'ollama'
-          ? process.env.OLLAMA_HOST || config.baseUrl
-          : process.env.LMSTUDIO_HOST || config.baseUrl;
-
-      const result = await validateProviderKey(
-        { ...config, baseUrl: host },
-        ''
-      );
-      if (result.valid) {
-        console.log(`  ${config.name} is running and accessible!`);
-        if (result.models && result.models.length > 0) {
-          console.log(`  Available models: ${result.models.join(', ')}`);
-        }
-        rl.close();
-        return true;
-      }
-      console.log(`  Could not connect: ${result.error}`);
-      console.log(`  Make sure ${config.name} is running.`);
-      rl.close();
-      return false;
-    }
-
-    // Prompt for API key
-    const apiKey = await ask(`  Enter your ${config.name} API key: `);
-    if (!apiKey) {
-      console.log('  No API key provided. Skipping validation.');
-      rl.close();
-      return false;
-    }
-
-    // Validate
-    console.log('  Validating...');
-    const result = await validateProviderKey(config, apiKey);
-
-    if (!result.valid) {
-      console.log(`  Validation failed: ${result.error}`);
-      console.log('');
-      console.log('  The key was not saved. Please check your API key and try again.');
-      rl.close();
-      return false;
-    }
-
-    console.log('  Key is valid!');
-    if (result.models && result.models.length > 0) {
-      console.log(
-        `  Available models: ${result.models.slice(0, 5).join(', ')}${result.models.length > 5 ? ` (+${result.models.length - 5} more)` : ''}`
-      );
-    }
-
-    // Set in process environment (for current session)
-    process.env[config.envKey] = apiKey;
-    console.log('');
-    console.log(`  ${config.envKey} set for this session.`);
-    console.log(
-      `  To persist, add to your shell profile: export ${config.envKey}="${apiKey}"`
-    );
-    console.log('');
-
-    rl.close();
-    return true;
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error('Provider onboarding failed', { provider: providerId, error: msg });
-    rl.close();
-    return false;
-  }
-}
-
-/**
- * Run interactive onboarding that lets the user choose a provider.
- */
-export async function runFullProviderOnboarding(): Promise<boolean> {
-  const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout,
-  });
-
-  const askChoice = (question: string, choices: string[]): Promise<number> =>
-    new Promise((resolve) => {
-      console.log(`\n  ${question}`);
-      choices.forEach((c, i) => console.log(`    ${i + 1}. ${c}`));
-      rl.question(`  Choice [1]: `, (answer) => {
-        const idx = parseInt(answer) - 1;
-        resolve(idx >= 0 && idx < choices.length ? idx : 0);
-      });
-    });
-
-  try {
-    console.log('');
-    console.log('  === Provider Onboarding ===');
-    console.log('');
-
-    const choiceIdx = await askChoice(
-      'Which AI provider would you like to set up?',
-      PROVIDER_CONFIGS.map((c) => `${c.name} (${c.envKey})`)
-    );
-
-    rl.close();
-
-    const config = PROVIDER_CONFIGS[choiceIdx];
-    if (!config) {
-      logger.error('No provider configuration available to onboard');
-      return false;
-    }
-    return await runProviderOnboarding(config.id);
-  } catch (err) {
-    const msg = err instanceof Error ? err.message : String(err);
-    logger.error('Full provider onboarding failed', { error: msg });
-    rl.close();
-    return false;
-  }
-}
-
 /**
  * Get a provider config by ID.
  */
@@ -379,17 +236,4 @@ export function getProviderConfig(
   providerId: string
 ): ProviderOnboardingConfig | undefined {
   return PROVIDER_CONFIGS.find((c) => c.id === providerId);
-}
-
-/**
- * List all configured providers (those with env keys set).
- */
-export function listConfiguredProviders(): ProviderOnboardingConfig[] {
-  return PROVIDER_CONFIGS.filter((c) => {
-    if (c.id === 'ollama' || c.id === 'lmstudio') {
-      // Local providers are always "available" (may not be running)
-      return true;
-    }
-    return !!process.env[c.envKey];
-  });
 }

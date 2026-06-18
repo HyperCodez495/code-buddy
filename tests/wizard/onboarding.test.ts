@@ -30,6 +30,13 @@ describe('onboarding', () => {
       expect(PROVIDER_ENV_MAP['ollama']).toBe('');
       expect(PROVIDER_ENV_MAP['lmstudio']).toBe('');
     });
+
+    it('should onboard OpenAI and OpenRouter via their API keys', () => {
+      expect(PROVIDER_ENV_MAP['openai']).toBe('OPENAI_API_KEY');
+      expect(PROVIDER_ENV_MAP['openrouter']).toBe('OPENROUTER_API_KEY');
+      expect(getProviderGuide('openai')).toMatchObject({ authMode: 'api-key' });
+      expect(getProviderGuide('openrouter')).toMatchObject({ authMode: 'api-key' });
+    });
   });
 
   describe('PROVIDER_DEFAULT_MODEL', () => {

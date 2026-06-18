@@ -13,6 +13,10 @@ import { logger } from "./logger.js";
 import path from 'path';
 import readline from 'readline';
 import { getCodeBuddyHome, ensureCodeBuddyHome } from './codebuddy-home.js';
+import {
+  getApiKey as getStoredApiKey,
+  setApiKey as setStoredApiKey,
+} from '../security/credential-manager.js';
 
 // ============================================================================
 // Types
@@ -247,6 +251,13 @@ export async function runSetup(): Promise<SetupConfig> {
  * Load existing API key from settings
  */
 function loadExistingApiKey(): string | undefined {
+  // Encrypted credential store first; fall back to a legacy plaintext key.
+  try {
+    const stored = getStoredApiKey();
+    if (stored) return stored;
+  } catch {
+    // Ignore — fall through to the legacy settings file.
+  }
   try {
     const settingsPath = path.join(getCodeBuddyHome(), 'user-settings.json');
     if (fs.existsSync(settingsPath)) {
@@ -273,9 +284,23 @@ async function saveConfig(config: SetupConfig): Promise<void> {
       settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
     }
 
-    // Update settings
+    // Update settings.
+    // API keys are secrets: persist them to the encrypted credential store,
+    // NEVER plaintext in user-settings.json. Mirrors the onboarding wizard
+    // (src/wizard/onboarding.ts → persistProviderSelection).
     if (config.apiKey) {
-      settings.apiKey = config.apiKey;
+      try {
+        setStoredApiKey(config.apiKey);
+      } catch (err) {
+        logger.warn('Could not persist API key to the credential store', {
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
+      if (!process.env.GROK_API_KEY) process.env.GROK_API_KEY = config.apiKey;
+    }
+    // Migrate any legacy plaintext key out of the settings file.
+    if (typeof settings.apiKey === 'string') {
+      delete settings.apiKey;
     }
     if (config.baseURL) {
       settings.baseURL = config.baseURL;
@@ -305,6 +330,12 @@ async function saveConfig(config: SetupConfig): Promise<void> {
 export function needsSetup(): boolean {
   if (process.env.GROK_API_KEY) {
     return false;
+  }
+
+  try {
+    if (getStoredApiKey()) return false;
+  } catch {
+    // Ignore — fall through to the legacy settings file.
   }
 
   try {

@@ -1,6 +1,11 @@
 import * as readline from 'readline';
 import { mkdirSync, writeFileSync } from 'fs';
 import { join } from 'path';
+import {
+  getValidationConfigForGuide,
+  validateProviderKey,
+  type ProviderOnboardingConfig,
+} from './provider-onboarding.js';
 
 export interface OnboardingResult {
   provider: string;
@@ -41,6 +46,8 @@ export const PROVIDER_ENV_MAP: Record<string, string> = {
   grok: 'GROK_API_KEY',
   claude: 'ANTHROPIC_API_KEY',
   gemini: 'GEMINI_API_KEY',
+  openai: 'OPENAI_API_KEY',
+  openrouter: 'OPENROUTER_API_KEY',
   ollama: '',
   lmstudio: '',
 };
@@ -50,6 +57,8 @@ export const PROVIDER_DEFAULT_MODEL: Record<string, string> = {
   grok: 'grok-3',
   claude: 'claude-sonnet-4-20250514',
   gemini: 'gemini-2.0-flash',
+  openai: 'gpt-4o',
+  openrouter: 'openai/gpt-4o',
   ollama: 'llama3',
   lmstudio: 'default',
 };
@@ -59,6 +68,8 @@ export const PROVIDER_AUTH_MODE: Record<string, OnboardingAuthMode> = {
   grok: 'api-key',
   claude: 'api-key',
   gemini: 'api-key',
+  openai: 'api-key',
+  openrouter: 'api-key',
   ollama: 'local',
   lmstudio: 'local',
 };
@@ -103,6 +114,26 @@ export const PROVIDER_GUIDES: OnboardingProviderGuide[] = [
     baseURL: 'https://generativelanguage.googleapis.com/v1beta',
     verifyCommand: 'buddy doctor',
     help: 'Set GEMINI_API_KEY in your shell or secret manager.',
+  },
+  {
+    id: 'openai',
+    label: 'OpenAI API key',
+    authMode: 'api-key',
+    envVar: 'OPENAI_API_KEY',
+    defaultModel: 'gpt-4o',
+    baseURL: 'https://api.openai.com/v1',
+    verifyCommand: 'buddy doctor',
+    help: 'Set OPENAI_API_KEY (https://platform.openai.com/api-keys).',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter API key',
+    authMode: 'api-key',
+    envVar: 'OPENROUTER_API_KEY',
+    defaultModel: 'openai/gpt-4o',
+    baseURL: 'https://openrouter.ai/api/v1',
+    verifyCommand: 'buddy doctor',
+    help: 'Set OPENROUTER_API_KEY (https://openrouter.ai/keys).',
   },
   {
     id: 'ollama',
@@ -324,6 +355,102 @@ export function renderOnboardingRoadmap(result?: Pick<OnboardingResult, 'provide
   return lines.join('\n');
 }
 
+/**
+ * Capture an API key and verify it against the provider's `/models` endpoint
+ * before we persist it (Hermes parity: a bad key is rejected here, not saved to
+ * silently break the first chat). Up to 3 attempts. On a connectivity error
+ * (not an auth rejection) the last-entered key can be kept and verified later,
+ * so a transient network blip doesn't discard an otherwise-good key.
+ */
+async function captureAndValidateKey(
+  rl: readline.Interface,
+  guide: OnboardingProviderGuide,
+  config?: ProviderOnboardingConfig
+): Promise<{ apiKey: string; verified: boolean; models?: string[] }> {
+  const maxAttempts = 3;
+  let lastKey = '';
+  let lastErrorWasAuth = true;
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    const key = await askSecret(rl, `Enter your ${guide.envVar} (or press Enter to set it later)`);
+    if (!key) break;
+    lastKey = key;
+    if (!config) {
+      // No known validation endpoint — accept as entered, can't probe.
+      return { apiKey: key, verified: false };
+    }
+    console.log('  Validating…');
+    const result = await validateProviderKey(config, key);
+    if (result.valid) {
+      console.log(`  ✓ Key verified — ${guide.label} reachable.`);
+      return { apiKey: key, verified: true, ...(result.models ? { models: result.models } : {}) };
+    }
+    lastErrorWasAuth = (result.error ?? '').toLowerCase().includes('invalid api key');
+    const left = maxAttempts - attempt;
+    console.log(`  ✗ ${result.error}`);
+    if (left > 0) {
+      console.log(`  Try again (${left} attempt${left === 1 ? '' : 's'} left), or press Enter to skip.`);
+    }
+  }
+  // Exhausted/skipped. If the failure was connectivity (not a rejected key),
+  // offer to keep the entered key and verify on the next run.
+  if (lastKey && !lastErrorWasAuth) {
+    const keep = (await ask(rl, 'Could not reach the provider. Save this key anyway and verify later? (y/N)', 'n'))
+      .toLowerCase();
+    if (keep === 'y' || keep === 'yes') {
+      return { apiKey: lastKey, verified: false };
+    }
+  }
+  return { apiKey: '', verified: false };
+}
+
+/**
+ * Pick a model. When the provider handed us a real model list (from the
+ * validation probe), choose from it; otherwise fall back to free-text entry.
+ */
+async function selectModel(
+  rl: readline.Interface,
+  guide: OnboardingProviderGuide,
+  availableModels?: string[]
+): Promise<string> {
+  const models = (availableModels ?? []).filter(Boolean);
+  if (models.length === 0) {
+    return ask(rl, 'Which model do you want to use?', guide.defaultModel);
+  }
+  const CUSTOM = '✏️  Enter a custom model id…';
+  const MAX_SHOWN = 30;
+  const shown = models.slice(0, MAX_SHOWN);
+  if (models.length > MAX_SHOWN) {
+    console.log(
+      `\n  (${models.length} models available; showing the first ${MAX_SHOWN} — pick "custom" to type any id.)`
+    );
+  }
+  const choices = [...shown, CUSTOM];
+  const defaultIdx = shown.indexOf(guide.defaultModel) >= 0 ? shown.indexOf(guide.defaultModel) : 0;
+  const picked = await askChoice(rl, 'Which model do you want to use?', choices, defaultIdx);
+  if (picked === CUSTOM) {
+    return ask(rl, 'Enter the model id', guide.defaultModel);
+  }
+  return picked;
+}
+
+/**
+ * A light "what's enabled now / add later" capability snapshot for the closing
+ * summary — the Hermes-style reassurance that the agent is ready, derived from
+ * env vars actually present. Kept deliberately minimal (getting-started scope).
+ */
+function renderCapabilitiesFooter(): string {
+  const has = (vars: string[]): boolean => vars.some((v) => Boolean(process.env[v]));
+  const webSearch = has(['BRAVE_API_KEY', 'EXA_API_KEY', 'PERPLEXITY_API_KEY', 'TAVILY_API_KEY']);
+  return [
+    '  Capabilities:',
+    '    ✓ Code tools — file edit, shell, search',
+    '    ✓ Text-to-speech (edge-tts, offline fallback)',
+    webSearch
+      ? '    ✓ Web search'
+      : '    ○ Web search — add BRAVE_API_KEY or EXA_API_KEY to enable',
+  ].join('\n');
+}
+
 export async function runOnboarding(): Promise<OnboardingResult> {
   const rl = readline.createInterface({
     input: process.stdin,
@@ -349,14 +476,16 @@ export async function runOnboarding(): Promise<OnboardingResult> {
       0
     ).then((choice) => choice.split(/\s+—\s+/)[0] ?? choice);
     const guide = getProviderGuide(provider);
+    const validationConfig = getValidationConfigForGuide(provider);
 
-    // 2. Model selection (needed before we persist the provider).
-    const model = await ask(rl, 'Which model do you want to use?', guide.defaultModel);
-
-    // 3. Authentication — captured inline so you leave the wizard ready to chat.
+    // 2. Authentication — captured AND verified inline so you leave the wizard
+    //    ready to chat. A rejected key never gets persisted; a successful probe
+    //    also hands us the provider's real model list for step 3.
     const envVar = guide.envVar;
     let apiKey = '';
     let oauthDone = false;
+    let verified = false;
+    let availableModels: string[] | undefined;
     if (guide.authMode === 'oauth') {
       const doNow = (await ask(rl, 'Sign in with your ChatGPT account now? (Y/n)', 'y')).toLowerCase();
       if (doNow === 'y' || doNow === 'yes') {
@@ -366,6 +495,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
           const auth = await loginInteractive();
           rl.resume();
           oauthDone = true;
+          verified = true;
           console.log(`\n  ✅ Signed in${auth.email ? ` as ${auth.email}` : ''}.`);
         } catch (err) {
           try { rl.resume(); } catch { /* ignore */ }
@@ -377,10 +507,29 @@ export async function runOnboarding(): Promise<OnboardingResult> {
       }
     } else if (guide.authMode === 'api-key' && envVar) {
       console.log(`\n  ${guide.help}`);
-      apiKey = await askSecret(rl, `Enter your ${envVar} (or press Enter to set it later)`);
+      const captured = await captureAndValidateKey(rl, guide, validationConfig);
+      apiKey = captured.apiKey;
+      verified = captured.verified;
+      availableModels = captured.models;
+    } else if (guide.authMode === 'local' && validationConfig) {
+      // Local providers: probe connectivity and list installed models. This is
+      // the real round-trip for the free path (no key required).
+      console.log(`\n  Checking ${guide.label}…`);
+      const probe = await validateProviderKey(validationConfig, '');
+      if (probe.valid) {
+        verified = true;
+        availableModels = probe.models;
+        console.log(`  ✓ ${guide.label} is running (${probe.models?.length ?? 0} model(s) available).`);
+      } else {
+        console.log(`  ⚠️ Could not reach ${guide.label}: ${probe.error}`);
+        console.log(`  ${guide.help}`);
+      }
     } else {
       console.log(`\n  ${guide.help}`);
     }
+
+    // 3. Model selection — from the real list when the probe gave us one.
+    const model = await selectModel(rl, guide, availableModels);
 
     // 4. TTS setup
     const ttsAnswer = await ask(rl, 'Enable text-to-speech? (y/n)', 'n');
@@ -407,10 +556,7 @@ export async function runOnboarding(): Promise<OnboardingResult> {
     writeConfig(join(process.cwd(), '.codebuddy'), result);
 
     // 7. Summary
-    const ready =
-      oauthDone ||
-      (guide.authMode === 'api-key' && Boolean(apiKey)) ||
-      guide.authMode === 'local';
+    const ready = verified || (guide.authMode === 'api-key' && Boolean(apiKey));
     console.log('');
     console.log(`  ${ready ? 'Setup complete — you\'re ready to go!' : 'Setup saved.'}`);
     console.log('');
@@ -420,6 +566,13 @@ export async function runOnboarding(): Promise<OnboardingResult> {
     if (ttsEnabled && ttsProvider) {
       console.log(`  TTS:       ${ttsProvider}`);
     }
+    if (verified) {
+      const modelNote = availableModels?.includes(model) ? `, model ${model} available` : '';
+      console.log('');
+      console.log(`  ✓ Verified — ${provider} reachable${modelNote}.`);
+    }
+    console.log('');
+    console.log(renderCapabilitiesFooter());
     if (guide.authMode === 'oauth' && !oauthDone) {
       console.log('');
       console.log(`  Next: run \`${guide.setupCommand ?? 'buddy login'}\` to finish signing in.`);

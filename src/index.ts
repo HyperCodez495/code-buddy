@@ -409,11 +409,54 @@ async function getDetectedProvider(): Promise<DetectedProvider | null> {
   await ensureEnvLoaded();
   cachedProvider = detectProviderFromEnv();
 
+  // Honor an onboarded LOCAL provider (Ollama / LM Studio) persisted to
+  // user-settings.json by `buddy onboard`. Env detection only inspects
+  // OLLAMA_HOST/oauth files, so a user who completed the wizard and picked
+  // Ollama would otherwise dead-end on "No provider configured" on the next
+  // run — local providers legitimately carry no API key, so the guard that
+  // keys off apiKey presence misfires. Cloud/env providers are matched first
+  // above, so this only triggers when nothing else resolved.
+  if (!cachedProvider) {
+    cachedProvider = await detectOnboardedLocalProvider();
+  }
+
   if (cachedProvider) {
     logger.info(`Auto-detected provider: ${cachedProvider.provider} (model: ${cachedProvider.defaultModel})`);
   }
 
   return cachedProvider;
+}
+
+/**
+ * Resolve an onboarded local provider (Ollama / LM Studio) from
+ * user-settings.json. Returns a detection with a placeholder API key (local
+ * OpenAI-compatible servers ignore it) so the downstream "no provider" guard
+ * passes and the persisted baseURL/model are used.
+ */
+async function detectOnboardedLocalProvider(): Promise<DetectedProvider | null> {
+  try {
+    const getSettingsManager = await lazyImport.settingsManager();
+    const settings = getSettingsManager().loadUserSettings();
+    const provider = (settings.provider || '').toLowerCase();
+    if (provider !== 'ollama' && provider !== 'lmstudio') return null;
+    const fallbackBase = provider === 'ollama'
+      ? 'http://localhost:11434/v1'
+      : 'http://localhost:1234/v1';
+    const baseURL = settings.baseURL || fallbackBase;
+    // Mirror the env path so anything else reading OLLAMA_HOST stays consistent.
+    if (provider === 'ollama' && !process.env.OLLAMA_HOST) {
+      process.env.OLLAMA_HOST = baseURL.replace(/\/v1\/?$/, '');
+    }
+    return {
+      provider: provider as DetectedProvider['provider'],
+      apiKey: provider, // placeholder — ignored by local OpenAI-compat servers
+      baseURL,
+      defaultModel: settings.model || (provider === 'ollama' ? 'llama3' : 'default'),
+      source: 'environment',
+    };
+  } catch {
+    return null;
+  }
 }
 
 // Load API key from environment, secure storage, or legacy settings
