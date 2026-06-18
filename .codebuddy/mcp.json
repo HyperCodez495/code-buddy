@@ -31,10 +31,10 @@
     "gitnexus": {
       "name": "gitnexus",
       "type": "stdio",
-      "command": "gitnexus",
+      "command": "/home/patrice/DEV/gitnexus-rs/target/release/gitnexus",
       "args": ["mcp"],
-      "enabled": false,
-      "description": "Code Explorer (gitnexus) — optional proprietary add-on. Graph-powered code intelligence: query, impact/blast-radius, callers, hotspots, complexity over a pre-indexed knowledge graph. Run `gitnexus analyze .` once, then the agent asks the graph instead of reading dozens of files. https://github.com/phuetz/code-explorer"
+      "enabled": true,
+      "description": "Code Explorer (gitnexus) — optional proprietary add-on. Graph-powered code intelligence: query, impact/blast-radius, callers, hotspots, complexity over a pre-indexed knowledge graph. Local Linux binary points to /home/patrice/DEV/gitnexus-rs/target/release/gitnexus; /home/patrice/code-buddy/src is indexed. https://github.com/phuetz/code-explorer"
     }
   }
 }
