@@ -432,26 +432,31 @@ export function ShellNavigation() {
   ];
 
   return (
+    // Reserves a slim 4.5rem column; an absolutely-positioned panel expands on
+    // hover to reveal labels (overlay → no content reflow).
     <nav
       aria-label={t('shell.navigation', 'Cowork navigation')}
-      className="w-[4.5rem] shrink-0 border-r border-border-muted bg-background-secondary/92 flex flex-col overflow-y-auto overflow-x-hidden"
+      className="group relative z-20 w-[4.5rem] shrink-0"
     >
-      <div className="flex flex-col items-center gap-3 py-3">
-        {groups.map((group) => (
-          <div
-            key={group.id}
-            className="w-full px-2 pb-3 border-b border-border-muted/70 last:border-b-0 last:pb-0"
-          >
-            <div className="mb-1 text-center text-[8px] font-semibold uppercase tracking-[0.12em] text-text-muted/70">
-              {group.label.slice(0, 3)}
+      <div className="absolute inset-y-0 left-0 flex w-[4.5rem] flex-col overflow-y-auto overflow-x-hidden border-r border-border-muted bg-background-secondary/95 shadow-sm backdrop-blur-sm transition-[width,box-shadow] duration-200 ease-out group-hover:w-60 group-hover:shadow-xl">
+        <div className="flex flex-col gap-3 px-2 py-3">
+          {groups.map((group) => (
+            <div
+              key={group.id}
+              className="border-b border-border-muted/60 pb-3 last:border-b-0 last:pb-0"
+            >
+              <div className="mb-1 h-3.5 overflow-hidden whitespace-nowrap px-1.5 text-[9px] font-semibold uppercase tracking-[0.14em] text-text-muted/70">
+                <span className="block text-center group-hover:hidden">{group.label.slice(0, 3)}</span>
+                <span className="hidden group-hover:block">{group.label}</span>
+              </div>
+              <div className="flex flex-col gap-0.5">
+                {group.actions.map((action) => (
+                  <ShellNavButton key={action.id} action={action} />
+                ))}
+              </div>
             </div>
-            <div className="flex flex-col items-center gap-1">
-              {group.actions.map((action) => (
-                <ShellNavButton key={action.id} action={action} />
-              ))}
-            </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </nav>
   );
@@ -466,13 +471,14 @@ function ShellNavButton({ action }: { action: ShellNavAction }) {
       title={action.label}
       aria-label={action.label}
       data-testid={action.testId}
-      className={`relative flex h-9 w-9 items-center justify-center rounded-lg transition-colors ${
+      className={`relative flex h-9 items-center gap-2.5 rounded-lg px-2.5 transition-colors justify-center group-hover:justify-start ${
         action.active
           ? 'bg-accent/10 text-accent'
           : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
       }`}
     >
-      <Icon className="h-4 w-4" />
+      <Icon className="h-4 w-4 shrink-0" />
+      <span className="hidden truncate text-[13px] font-medium group-hover:block">{action.label}</span>
       {action.active && (
         <span className="absolute left-0 top-1/2 h-4 w-0.5 -translate-y-1/2 rounded-r bg-accent" />
       )}
