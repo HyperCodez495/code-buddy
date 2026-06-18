@@ -8,12 +8,49 @@ once it reaches `1.0.0`.
 
 ---
 
-## [Unreleased]
+## [1.2.0] — 2026-06-18
 
 Post-1.0 work tracked in the V1.1 roadmap: OpenAPI spec (WS8-T2),
 GitNexus integration (WS2), central Policy Engine + PII lint (WS5). See
 `claude-et-patrice/propositions/` and the V1.x roadmap section of
 [`docs/fleet-guide.md`](docs/fleet-guide.md).
+
+### Added — Multi-LLM registry: list, auto-failover & ensemble (2026-06-18)
+
+- **`buddy llm`** — lists the LLMs you're actually logged into (ChatGPT OAuth,
+  xAI/Grok OAuth, env keys, reachable local Ollama/LM Studio), which is primary,
+  and the failover order.
+- **Auto-failover across your live logins** — `[llm] enabled` /
+  `CODEBUDDY_LLM_FAILOVER=1` auto-populates the client's cross-provider fallback
+  list from the registry, so a failing primary transparently continues on the next
+  active LLM. Resilience order by default (capable/subscription first, local last);
+  also `free-first` / `manual`. **OFF by default** — single-provider behavior is
+  unchanged. Reuses the existing `chatWithProviderFallback` loop — no new failover
+  logic.
+- **`buddy llm ensemble|consensus|race <prompt>`** — run several active LLMs at once
+  and aggregate (wires the previously-orphaned `ParallelExecutor`); shows each
+  model's own answer plus the synthesis.
+- Proven live (`$0`): primary Grok 404 → auto-failover → ChatGPT answered; and
+  ChatGPT + Grok + Ollama answered one prompt together, synthesized at 100%.
+
+### Added — xAI / Grok subscription login at runtime (2026-06-18)
+
+- **`buddy login xai`** now works end to end: the runtime consumes the stored OAuth
+  token (`getValidXaiAccessToken`) in provider detection, so `buddy -p` routes to
+  Grok on `api.x.ai/v1` with **no API key** (flat-fee SuperGrok plan). Default model
+  `grok-4-latest`; ChatGPT / `GROK_API_KEY` still take precedence, and xAI only
+  overrides when its token actually resolves (a stale login never strands a working
+  provider). Proven live on a real SuperGrok plan.
+
+### Fixed (2026-06-18)
+
+- **bash / reason tools** — a malformed tool call with no `command` / `problem`
+  (common from weaker local models) used to crash on `.trim()` / `.length`; now a
+  clear, recoverable error so auto-repair can re-prompt.
+- **Onboarding** — the Cowork wizard rendered a literal `{{appName}}` (i18n
+  interpolation), and local-provider setup now uses the actually-installed model.
+- **MCTS** — `findBestSolution` could return `null` even with a scored node; falls
+  back to the best non-pruned derived node.
 
 ### Added — computer use, vision & Screenpipe (2026-06-14)
 

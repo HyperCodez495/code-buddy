@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/phuetz/code-buddy/stargazers"><img src="https://img.shields.io/github/stars/phuetz/code-buddy?style=flat-square&logo=github&color=feca57&label=Star" alt="GitHub stars"/></a>
   <img src="https://img.shields.io/badge/Tests-27K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
-  <img src="https://img.shields.io/badge/v1.1.0-GA-blueviolet?style=flat-square" alt="Version 1.1.0 GA"/>
+  <img src="https://img.shields.io/badge/v1.2.0-GA-blueviolet?style=flat-square" alt="Version 1.2.0 GA"/>
 </p>
 
 <br/>
@@ -95,7 +95,7 @@ More desktop demos (Fleet, Autonomy, Companion, …) and captures: [`cowork/read
 
 ## What's shipped
 
-**1.1.0 GA — these aren't roadmap items.** The captures above are unedited, and the core runs today:
+**1.2.0 GA — these aren't roadmap items.** The captures above are unedited, and the core runs today:
 
 - ✅ **`$0` local coding agent** — a local Ollama model reasons on screen, then calls tools to do real work. *(the demos above)*
 - ✅ **ChatGPT Plus/Pro → `gpt-5.5` at `$0`** — `buddy login`, flat-fee, no API key, no per-token metering.
@@ -136,11 +136,22 @@ buddy              # auto-routes to gpt-5.5 via the Codex backend, cost $0.0000
 # Option C — bring your own API key
 export GROK_API_KEY=...   # or GEMINI_API_KEY / OPENAI_API_KEY / ANTHROPIC_API_KEY
 buddy
+
+# Option D — log in with your xAI / SuperGrok subscription (no API key)
+buddy login xai    # browser OAuth → routes to Grok (grok-4-latest), cost $0
 ```
 
 ```bash
 buddy --prompt "analyze the codebase structure"   # one-shot task
 buddy --yolo                                       # full autonomy
+```
+
+**Use several logins at once, or fail over automatically across them:**
+
+```bash
+buddy llm                                    # list the LLMs you're logged into + the failover order
+buddy llm ensemble "is this approach sound?" # ask ChatGPT + Grok + Ollama together, then synthesize
+CODEBUDDY_LLM_FAILOVER=1 buddy -p "…"         # if the primary errors, auto-continue on the next active LLM
 ```
 
 See [Getting Started](docs/getting-started.md) for install options, headless mode, sessions, and typical workflows.
