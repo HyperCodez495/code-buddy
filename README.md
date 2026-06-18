@@ -198,6 +198,12 @@ Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, se
   <sub>…and fully local: a reasoning model (<code>qwen3.6:35b-a3b</code>) <b>thinks on screen</b>, then answers — no cloud, <code>$0</code>. <a href="docs/assets/cowork-chat-demo.mp4">MP4 →</a></sub>
 </p>
 
+<p align="center">
+  <a href="docs/assets/cowork-panels-demo.mp4"><img src="docs/assets/cowork-panels-demo.gif" alt="The Cowork left rail opens the Autonomy dashboard, Memory and other panels as dock tabs" width="760"/></a>
+  <br/>
+  <sub>The left rail opens every panel as a dock tab — here the <b>Autonomy dashboard</b> (24/7 daemon, free-first model ladder, live subagents) and <b>Project Memory</b>. <a href="docs/assets/cowork-panels-demo.mp4">MP4 →</a></sub>
+</p>
+
 <table>
   <tr>
     <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/00-welcome.png" alt="Cowork desktop cockpit" width="430"/><br/><sub>Desktop cockpit — menus, sessions, composer</sub></td>
