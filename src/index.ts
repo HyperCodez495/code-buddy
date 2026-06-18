@@ -2688,10 +2688,10 @@ program
 
 // Active-LLM registry — list the LLMs you're logged into + the failover order.
 program
-  .command("llm [action]")
-  .description("List your active LLMs (logged in + reachable) and the failover order")
+  .command("llm [action] [prompt...]")
+  .description("List active LLMs, or run several together: llm ensemble|consensus|race <prompt>")
   .option("--order <policy>", "Ordering: resilience | free-first | manual")
-  .action(async (_action: string | undefined, opts: { order?: string }) => {
+  .action(async (action: string | undefined, promptParts: string[] = [], opts: { order?: string }) => {
     const primary = await getDetectedProvider();
     const { buildActiveLlmRegistry } = await import("./providers/active-llm-registry.js");
     const registry = await buildActiveLlmRegistry({
@@ -2710,6 +2710,47 @@ program
       cli.stdout("No active LLMs detected. Run `buddy login`, set an API key, or start Ollama.");
       return;
     }
+
+    // "Together" — run several active LLMs at once and aggregate the result.
+    const strategyByAction: Record<string, "ensemble" | "consensus" | "fastest" | "all"> = {
+      ensemble: "ensemble",
+      consensus: "consensus",
+      race: "fastest",
+      together: "all",
+    };
+    const strategy = action ? strategyByAction[action.toLowerCase()] : undefined;
+    if (strategy) {
+      const promptText = promptParts.join(" ").trim();
+      if (!promptText) {
+        cli.error(`Usage: buddy llm ${action} "<prompt>"`);
+        process.exit(1);
+      }
+      const models = registry.all.map((p) => ({
+        id: p.provider,
+        name: p.provider,
+        provider: "codebuddy" as const,
+        model: p.model,
+        apiKey: p.apiKey,
+        baseURL: p.baseURL,
+        enabled: true,
+        costPerToken: p.costInputUsdPerMtok / 1_000_000,
+      }));
+      cli.stdout(`Running ${action} across ${models.map((m) => m.id).join(", ")} …`);
+      const { createParallelExecutor } = await import("./agent/parallel/parallel-executor.js");
+      const executor = createParallelExecutor({ models, strategy });
+      const result = await executor.execute(promptText);
+      // Show each LLM's own answer — the point of running them together.
+      for (const r of result.responses) {
+        if (r.error) {
+          cli.stdout(`\n── ${r.modelName} ❌ ${r.error.slice(0, 140)}`);
+        } else {
+          cli.stdout(`\n── ${r.modelName}  (${r.latency}ms, ${r.tokensUsed} tok)\n${r.content.trim()}`);
+        }
+      }
+      cli.stdout(`\n${executor.formatResult(result)}`);
+      return;
+    }
+
     cli.stdout("Active LLMs (logged in + reachable):");
     for (const p of registry.all) {
       const isPrimary = registry.primaryProvider === p.provider ? "  ← primary" : "";

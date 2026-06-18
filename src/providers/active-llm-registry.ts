@@ -79,21 +79,24 @@ function canonicalProviderId(provider: string | undefined | null): string | unde
   return findRuntimeProvider(provider)?.id ?? provider.trim().toLowerCase();
 }
 
-/** Local runtimes that actually responded to a probe (reuses the fleet
- * capability registry's Ollama/LM Studio HTTP probes). */
-async function getReachableLocalProviders(force?: boolean): Promise<Set<string>> {
+/** Local runtimes that actually responded to a probe → their first real
+ * installed model (reuses the fleet capability registry's Ollama/LM Studio
+ * HTTP probes; `probeOllama` sets `id` to the actual model name). */
+async function getReachableLocalModels(force?: boolean): Promise<Map<string, string>> {
+  const map = new Map<string, string>();
   try {
     const { getLocalCapabilities } = await import('../fleet/capability-registry.js');
     const caps = await getLocalCapabilities({ force });
-    const set = new Set<string>();
     for (const m of caps.models) {
       const id = canonicalProviderId(m.provider);
-      if (id === 'ollama' || id === 'lmstudio') set.add(id);
+      if ((id === 'ollama' || id === 'lmstudio') && !map.has(id)) {
+        map.set(id, m.id);
+      }
     }
-    return set;
   } catch {
-    return new Set<string>();
+    /* no local runtimes reachable */
   }
+  return map;
 }
 
 /** Resolve the xAI subscription-login bearer when there's no GROK_API_KEY,
@@ -177,7 +180,7 @@ export async function buildActiveLlmRegistry(
   const primaryProvider = canonicalProviderId(opts.primary?.provider) ?? null;
 
   const catalog = getDirectRuntimeProviderCatalog();
-  const reachableLocal = await getReachableLocalProviders(opts.force);
+  const reachableLocalModels = await getReachableLocalModels(opts.force);
   const all: ActiveLlm[] = [];
   const seen = new Set<string>();
 
@@ -199,10 +202,12 @@ export async function buildActiveLlmRegistry(
     const isLocal = (entry.authMode ?? resolved.authMode) === 'local';
     if (opts.localOnly && !isLocal) continue;
     // The catalog reports a local provider as "configured" even when it isn't
-    // running — only keep locals we actually probed as reachable, so failover
-    // doesn't waste a hop on a dead LM Studio / vLLM.
-    if (isLocal && !reachableLocal.has(canonicalProviderId(resolved.provider) ?? '')) {
-      continue;
+    // running — only keep locals we actually probed as reachable, and use their
+    // real installed model (not the catalog default, which may not be pulled).
+    if (isLocal) {
+      const realModel = reachableLocalModels.get(canonicalProviderId(resolved.provider) ?? '');
+      if (!realModel) continue;
+      resolved = { ...resolved, defaultModel: realModel };
     }
 
     const key = `${canonicalProviderId(resolved.provider)}:${resolved.baseURL.replace(/\/+$/, '')}`;
