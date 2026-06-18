@@ -2686,6 +2686,55 @@ program
     }
   });
 
+// Active-LLM registry — list the LLMs you're logged into + the failover order.
+program
+  .command("llm [action]")
+  .description("List your active LLMs (logged in + reachable) and the failover order")
+  .option("--order <policy>", "Ordering: resilience | free-first | manual")
+  .action(async (_action: string | undefined, opts: { order?: string }) => {
+    const primary = await getDetectedProvider();
+    const { buildActiveLlmRegistry } = await import("./providers/active-llm-registry.js");
+    const registry = await buildActiveLlmRegistry({
+      primary: primary
+        ? {
+            provider: primary.provider,
+            apiKey: primary.apiKey,
+            baseURL: primary.baseURL,
+            model: primary.defaultModel,
+          }
+        : undefined,
+      policy: opts.order as "resilience" | "free-first" | "manual" | undefined,
+    });
+
+    if (registry.all.length === 0) {
+      cli.stdout("No active LLMs detected. Run `buddy login`, set an API key, or start Ollama.");
+      return;
+    }
+    cli.stdout("Active LLMs (logged in + reachable):");
+    for (const p of registry.all) {
+      const isPrimary = registry.primaryProvider === p.provider ? "  ← primary" : "";
+      const tag = p.isLocal ? "local" : "cloud";
+      const cost = p.costInputUsdPerMtok === 0 ? "$0" : `$${p.costInputUsdPerMtok}/Mtok`;
+      cli.stdout(`  • ${p.provider.padEnd(10)} [${tag}] ${p.model}  (${cost})${isPrimary}`);
+    }
+    if (registry.fallbacks.length > 0) {
+      cli.stdout(
+        `\nFailover order: ${primary?.provider ?? "?"} → ${registry.fallbacks
+          .map((f) => f.provider)
+          .join(" → ")}`,
+      );
+    } else {
+      cli.stdout("\nNo additional active LLMs available for failover.");
+    }
+    const { getConfigManager } = await import("./config/toml-config.js");
+    const on =
+      Boolean(getConfigManager().getConfig().llm?.enabled) ||
+      process.env.CODEBUDDY_LLM_FAILOVER === "1";
+    cli.stdout(
+      `Auto-failover: ${on ? "ON" : "OFF  (enable with [llm].enabled = true, or CODEBUDDY_LLM_FAILOVER=1)"}`,
+    );
+  });
+
 // MCP Server command - run Code Buddy as an MCP tool provider over stdio
 program
   .command("mcp-server")
