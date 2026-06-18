@@ -15,6 +15,7 @@
 </p>
 
 <p align="center">
+  <a href="https://github.com/phuetz/code-buddy/stargazers"><img src="https://img.shields.io/github/stars/phuetz/code-buddy?style=flat-square&logo=github&color=feca57&label=Star" alt="GitHub stars"/></a>
   <img src="https://img.shields.io/badge/Tests-27K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
   <img src="https://img.shields.io/badge/v1.1.0-GA-blueviolet?style=flat-square" alt="Version 1.1.0 GA"/>
 </p>
