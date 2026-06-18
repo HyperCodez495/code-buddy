@@ -206,8 +206,8 @@ Cowork is the desktop cockpit for Code Buddy: chat, tools, traces, workflows, se
 
 <table>
   <tr>
-    <td width="50%" align="center"><img src="docs/assets/cowork-welcome.png" alt="Cowork desktop home with quick-action cards and the panel rail" width="430"/><br/><sub>Home — quick-action cards, gradient hero, panel rail</sub></td>
-    <td width="50%" align="center"><img src="docs/assets/cowork-rail.png" alt="The left rail expands on hover to reveal every panel launcher" width="430"/><br/><sub>Left rail — hover to expand; launches every panel (fleet, autonomy, memory…)</sub></td>
+    <td width="50%" align="center"><img src="docs/assets/cowork-welcome.png" alt="Cowork desktop home with the expanded left menu and quick-action cards" width="430"/><br/><sub>Home — expanded menu, quick-action cards, gradient hero</sub></td>
+    <td width="50%" align="center"><img src="docs/assets/cowork-panel.png" alt="A launcher opens its panel as a tab — here the Autonomy dashboard" width="430"/><br/><sub>A launcher opens its panel as a tab — here the Autonomy dashboard (daemon, model ladder, subagents)</sub></td>
   </tr>
   <tr>
     <td width="50%" align="center"><img src="docs/qa/code-buddy-studio/showcase-2026-06-16/03-fleet-autonomy.png" alt="Fleet and autonomy dashboard" width="430"/><br/><sub>Fleet dispatch · tool-permission posture · Hermes toolsets</sub></td>
