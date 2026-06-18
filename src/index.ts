@@ -607,6 +607,57 @@ async function loadModel(): Promise<string | undefined> {
   return undefined;
 }
 
+/**
+ * Active-LLM auto-failover. When `[llm] enabled` (or CODEBUDDY_LLM_FAILOVER=1),
+ * build the registry of the user's live logins and inject it into the agent's
+ * client fallback list — so a failing primary transparently fails over to the
+ * next active LLM (resilience order by default: capable/subscription first,
+ * local last). OFF by default → single-provider behavior is unchanged.
+ */
+async function applyActiveLlmFailover(
+  agent: import('./agent/codebuddy-agent.js').CodeBuddyAgent,
+): Promise<void> {
+  try {
+    const { getConfigManager } = await import('./config/toml-config.js');
+    const llmCfg = getConfigManager().getConfig().llm;
+    const enabled = Boolean(llmCfg?.enabled) || process.env.CODEBUDDY_LLM_FAILOVER === '1';
+    if (!enabled) return;
+
+    const primary = await getDetectedProvider();
+    const { buildActiveLlmRegistry } = await import('./providers/active-llm-registry.js');
+    const orderEnv = process.env.CODEBUDDY_LLM_ORDER as
+      | 'resilience'
+      | 'free-first'
+      | 'manual'
+      | undefined;
+    const registry = await buildActiveLlmRegistry({
+      primary: primary
+        ? {
+            provider: primary.provider,
+            apiKey: primary.apiKey,
+            baseURL: primary.baseURL,
+            model: primary.defaultModel,
+          }
+        : undefined,
+      policy: orderEnv || llmCfg?.order || 'resilience',
+      manualOrder: llmCfg?.manualOrder,
+      localOnly: llmCfg?.local_only,
+    });
+    if (registry.fallbacks.length > 0) {
+      agent.getClient().setRuntimeFallbackProviders(registry.fallbacks);
+      logger.info(
+        `Active-LLM failover: ${primary?.provider ?? '?'} → ${registry.fallbacks
+          .map((f) => f.provider)
+          .join(' → ')}`,
+      );
+    }
+  } catch (err) {
+    logger.debug('Active-LLM failover setup skipped', {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+}
+
 // Handle commit-and-push command in headless mode
 async function handleCommitAndPushHeadless(
   apiKey: string,
@@ -617,6 +668,7 @@ async function handleCommitAndPushHeadless(
   try {
     const CodeBuddyAgent = await lazyImport.CodeBuddyAgent();
     const agent = new CodeBuddyAgent(apiKey, baseURL, model, maxToolRounds);
+    await applyActiveLlmFailover(agent);
 
     // Configure confirmation service for headless mode (auto-approve all operations)
     const { ConfirmationService } = await import("./utils/confirmation-service.js");
@@ -929,6 +981,7 @@ async function processPromptHeadless(
     const modelToUse = customAgentConfig?.model ?? model;
     const CodeBuddyAgent = await lazyImport.CodeBuddyAgent();
     const agent = new CodeBuddyAgent(apiKey, baseURL, modelToUse, maxToolRounds);
+    await applyActiveLlmFailover(agent);
 
     await agent.systemPromptReady;
     if (customAgentConfig?.systemPrompt) {
@@ -1853,6 +1906,7 @@ program
       recordStartupPhase('agent-create-start');
       const agent = new CodeBuddyAgent(apiKey, baseURL, model, maxToolRounds, true, systemPromptId);
       recordStartupPhase('agent-create-done');
+      await applyActiveLlmFailover(agent);
 
       // Apply custom agent system prompt if configured
       if (customAgentConfig?.systemPrompt) {

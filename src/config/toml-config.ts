@@ -192,6 +192,21 @@ export interface ModelPairsConfig {
   editor?: string;
 }
 
+/** Active-LLM registry: auto-failover across the user's live logins + "together". */
+export interface LlmFailoverConfig {
+  /** Master gate. OFF by default — single-provider behavior is unchanged. */
+  enabled?: boolean;
+  /** Fallback ordering: 'resilience' (capable/subscription first, local last),
+   * 'free-first' (cheapest first), or 'manual' (explicit `manualOrder`). */
+  order?: 'resilience' | 'free-first' | 'manual';
+  /** Provider ids in preferred order when `order: 'manual'`. */
+  manualOrder?: string[];
+  /** Restrict the active set to local runtimes (privacy). */
+  local_only?: boolean;
+  /** Default strategy for `/llm ensemble` (Phase 2). */
+  together_strategy?: 'ensemble' | 'consensus' | 'fastest' | 'cascade';
+}
+
 /**
  * External integrations configuration
  */
@@ -570,6 +585,8 @@ export interface CodeBuddyConfig {
   integrations: IntegrationsConfig;
   /** Model pairs for architect/editor split */
   model_pairs?: ModelPairsConfig;
+  /** Active-LLM registry: auto-failover across live logins + "together" */
+  llm?: LlmFailoverConfig;
   /** Agent defaults (model preferences) — Native Engine v2026.3.14 */
   agent_defaults?: AgentDefaultsConfig;
   /** Advisor tool settings (second opinion model) — V4.1 */
@@ -1076,6 +1093,9 @@ class ConfigManager {
     }
     if (partial.model_pairs) {
       this.config.model_pairs = { ...this.config.model_pairs, ...partial.model_pairs };
+    }
+    if (partial.llm) {
+      this.config.llm = { ...this.config.llm, ...partial.llm };
     }
   }
 

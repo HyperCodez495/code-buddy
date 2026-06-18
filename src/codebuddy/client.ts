@@ -247,6 +247,15 @@ export class CodeBuddyClient {
     // Provider reads via getter at call-time, so no propagation needed.
   }
 
+  /**
+   * Override the cross-provider fallback list after construction. Used by the
+   * active-LLM registry to auto-populate failover from the user's live logins.
+   * `chatWithProviderFallback` reads this per-call, so it takes effect immediately.
+   */
+  setRuntimeFallbackProviders(providers: RuntimeFallbackProvider[]): void {
+    this.fallbackProviders = providers;
+  }
+
   private static isGeminiModelName(model: string): boolean {
     return model.toLowerCase().includes('gemini');
   }
