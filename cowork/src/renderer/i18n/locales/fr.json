@@ -152,7 +152,12 @@
     "readyHealthTitle": "Contrôle de santé",
     "readyHealthDesc": "Vérifiez modèle, backend et autorisations.",
     "skip": "Ignorer l'assistant",
-    "finish": "C'est parti"
+    "finish": "C'est parti",
+    "connected": "Connecté",
+    "notConnected": "Aucun fournisseur configuré pour l'instant",
+    "testConnection": "Tester la connexion",
+    "testOk": "Accessible",
+    "testFailed": "Échec de la connexion"
   },
   "controlCenter": {
     "tabLabel": "Centre de contrôle",

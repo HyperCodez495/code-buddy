@@ -152,7 +152,12 @@
     "readyHealthTitle": "Health check",
     "readyHealthDesc": "Verify model, backend, and permissions.",
     "skip": "Skip onboarding",
-    "finish": "Let's go"
+    "finish": "Let's go",
+    "connected": "Connected",
+    "notConnected": "No provider configured yet",
+    "testConnection": "Test connection",
+    "testOk": "Reachable",
+    "testFailed": "Connection failed"
   },
   "controlCenter": {
     "tabLabel": "Control center",

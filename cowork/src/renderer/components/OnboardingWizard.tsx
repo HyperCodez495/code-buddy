@@ -34,15 +34,23 @@ import {
   ChevronRight,
   X,
   Check,
+  Loader2,
+  AlertTriangle,
 } from 'lucide-react';
 import { useAppStore } from '../store';
+import { useConfigModalState } from '../store/selectors';
 import { APP_NAME } from '../brand';
 
 type Step = 0 | 1 | 2 | 3 | 4;
+type TestState = 'idle' | 'testing' | 'ok' | 'fail';
 
 interface OnboardingWizardProps {
   onClose: () => void;
   onOpenApiSettings: () => void;
+  /** True while the API settings modal is stacked on top of the wizard — the
+   *  wizard suppresses its own keyboard shortcuts so Escape/arrows go to the
+   *  modal, not the wizard underneath. */
+  apiSettingsOpen?: boolean;
 }
 
 const STEPS = [
@@ -53,21 +61,68 @@ const STEPS = [
   { id: 4, key: 'firstPrompt' },
 ] as const;
 
-export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizardProps) {
+export function OnboardingWizard({
+  onClose,
+  onOpenApiSettings,
+  apiSettingsOpen,
+}: OnboardingWizardProps) {
   const { t, i18n } = useTranslation();
   const [step, setStep] = useState<Step>(0);
   const setSettings = useAppStore((s) => s.setSettings);
   const settings = useAppStore((s) => s.settings);
+  const { isConfigured, appConfig } = useConfigModalState();
+  const [testState, setTestState] = useState<TestState>('idle');
+  const [testDetail, setTestDetail] = useState('');
+
+  // Saving a provider clears any stale failure shown earlier.
+  useEffect(() => {
+    if (isConfigured) setTestState((s) => (s === 'fail' ? 'idle' : s));
+  }, [isConfigured, appConfig?.provider, appConfig?.model]);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
+      if (apiSettingsOpen) return; // defer to the stacked settings modal
       if (e.key === 'Escape') onClose();
       if (e.key === 'ArrowRight' && step < 4) setStep((step + 1) as Step);
       if (e.key === 'ArrowLeft' && step > 0) setStep((step - 1) as Step);
     };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
-  }, [step, onClose]);
+  }, [step, onClose, apiSettingsOpen]);
+
+  // Real reachability probe against the saved provider (reuses the same
+  // `config.test` IPC as Settings → API "Test Connection"). This is the
+  // verification step the wizard previously lacked.
+  const runConnectionTest = async () => {
+    const cfg = appConfig;
+    if (!cfg?.provider) {
+      setTestState('fail');
+      setTestDetail(t('onboarding.notConnected', 'No provider configured yet'));
+      return;
+    }
+    setTestState('testing');
+    setTestDetail('');
+    try {
+      const res = await window.electronAPI?.config?.test?.({
+        provider: cfg.provider,
+        apiKey: cfg.apiKey ?? '',
+        baseUrl: cfg.baseUrl,
+        customProtocol: cfg.customProtocol,
+        model: cfg.model,
+        useLiveRequest: true,
+      });
+      if (res?.ok) {
+        setTestState('ok');
+        setTestDetail(`${cfg.provider}${cfg.model ? ` · ${cfg.model}` : ''}`);
+      } else {
+        setTestState('fail');
+        setTestDetail(res?.errorType ?? t('onboarding.testFailed', 'Connection failed'));
+      }
+    } catch (err) {
+      setTestState('fail');
+      setTestDetail(err instanceof Error ? err.message : String(err));
+    }
+  };
 
   const markComplete = async () => {
     try {
@@ -108,6 +163,73 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
       /* ignore */
     }
   };
+
+  const statusConnected = isConfigured && Boolean(appConfig?.provider);
+  const connectionPanel = (
+    <div
+      className="rounded-lg border border-border-subtle bg-surface/40 p-3 space-y-2"
+      data-testid="onboarding-connection-panel"
+    >
+      <div className="flex items-center gap-2 text-xs">
+        {statusConnected ? (
+          <>
+            <Check className="h-4 w-4 text-green-500 shrink-0" />
+            <span className="font-medium text-text-primary">
+              {t('onboarding.connected', 'Connected')}: {appConfig?.provider}
+              {appConfig?.model ? ` · ${appConfig.model}` : ''}
+            </span>
+          </>
+        ) : (
+          <>
+            <AlertTriangle className="h-4 w-4 text-amber-500 shrink-0" />
+            <span className="text-text-muted">
+              {t('onboarding.notConnected', 'No provider configured yet')}
+            </span>
+          </>
+        )}
+      </div>
+      <div className="flex items-center gap-2">
+        <button
+          type="button"
+          onClick={onOpenApiSettings}
+          className="px-3 py-1.5 rounded-md border border-border-subtle text-xs hover:bg-surface-hover"
+          data-testid="onboarding-open-api"
+        >
+          {t('onboarding.openApiSettings', 'Open API settings →')}
+        </button>
+        <button
+          type="button"
+          onClick={runConnectionTest}
+          disabled={testState === 'testing' || !appConfig?.provider}
+          className="px-3 py-1.5 rounded-md bg-accent text-background text-xs font-medium hover:bg-accent-hover disabled:opacity-50 flex items-center gap-1.5"
+          data-testid="onboarding-test-connection"
+        >
+          {testState === 'testing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+          {t('onboarding.testConnection', 'Test connection')}
+        </button>
+      </div>
+      {testState === 'ok' && (
+        <p
+          className="text-[11px] text-green-500 flex items-center gap-1"
+          data-testid="onboarding-test-ok"
+        >
+          <Check className="h-3.5 w-3.5 shrink-0" />
+          {t('onboarding.testOk', 'Reachable')}
+          {testDetail ? ` — ${testDetail}` : ''}
+        </p>
+      )}
+      {testState === 'fail' && (
+        <p
+          className="text-[11px] text-red-500 flex items-center gap-1"
+          data-testid="onboarding-test-fail"
+        >
+          <X className="h-3.5 w-3.5 shrink-0" />
+          {t('onboarding.testFailed', 'Connection failed')}
+          {testDetail ? ` — ${testDetail}` : ''}
+        </p>
+      )}
+    </div>
+  );
 
   return (
     <div
@@ -325,16 +447,7 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
                   </div>
                 ))}
               </div>
-              <button
-                type="button"
-                onClick={() => {
-                  onOpenApiSettings();
-                }}
-                className="w-full px-4 py-2.5 rounded-lg bg-accent text-background text-sm font-medium hover:bg-accent-hover"
-                data-testid="onboarding-open-api"
-              >
-                {t('onboarding.openApiSettings', 'Open API settings →')}
-              </button>
+              {connectionPanel}
             </div>
           )}
 
@@ -489,6 +602,7 @@ export function OnboardingWizard({ onClose, onOpenApiSettings }: OnboardingWizar
                   `${APP_NAME} keeps setup separate from your real sessions so Buddy can introduce itself, check readiness, and propose the next useful action.`
                 )}
               </p>
+              <div className="text-left">{connectionPanel}</div>
               <div
                 className="grid grid-cols-3 gap-2 text-left"
                 data-testid="onboarding-ready-actions"

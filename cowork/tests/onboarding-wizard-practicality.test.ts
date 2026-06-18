@@ -60,4 +60,23 @@ describe('OnboardingWizard practical first-run UX', () => {
     expect(fr.onboarding.skip).toContain("Ignorer");
     expect(fr.onboarding.pathLaterTitle).toContain('Configurer plus tard');
   });
+
+  it('verifies provider reachability inline (real config.test probe)', () => {
+    const source = fs.readFileSync(onboardingPath, 'utf8');
+    // The wizard runs the same reachability probe as Settings → API.
+    expect(source).toContain('window.electronAPI?.config?.test?.');
+    expect(source).toContain('data-testid="onboarding-test-connection"');
+    expect(source).toContain('data-testid="onboarding-connection-panel"');
+    // It stays mounted under the settings modal so the status reflects back.
+    expect(source).toContain('apiSettingsOpen');
+  });
+
+  it('localizes the connection-verification copy in every locale', () => {
+    for (const filePath of [enLocalePath, frLocalePath, zhLocalePath]) {
+      const locale = readLocale(filePath);
+      for (const key of ['connected', 'notConnected', 'testConnection', 'testOk', 'testFailed']) {
+        expect(locale.onboarding[key]).toBeTruthy();
+      }
+    }
+  });
 });

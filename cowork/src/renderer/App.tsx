@@ -447,8 +447,10 @@ function App() {
       {showOnboarding && (
         <OnboardingWizard
           onClose={() => setShowOnboarding(false)}
+          apiSettingsOpen={showConfigModal}
           onOpenApiSettings={() => {
-            setShowOnboarding(false);
+            // Keep the wizard mounted underneath so the user returns to it
+            // (and sees the now-connected status / can verify) after saving.
             setShowConfigModal(true);
           }}
         />

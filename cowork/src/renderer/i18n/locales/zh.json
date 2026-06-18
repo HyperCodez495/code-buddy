@@ -140,7 +140,12 @@
     "readyHealthTitle": "健康检查",
     "readyHealthDesc": "验证模型、后端和权限。",
     "skip": "跳过引导",
-    "finish": "开始"
+    "finish": "开始",
+    "connected": "已连接",
+    "notConnected": "尚未配置服务商",
+    "testConnection": "测试连接",
+    "testOk": "可访问",
+    "testFailed": "连接失败"
   },
   "controlCenter": {
     "tabLabel": "控制中心",
