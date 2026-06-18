@@ -154,6 +154,12 @@ buddy llm ensemble "is this approach sound?" # ask ChatGPT + Grok + Ollama toget
 CODEBUDDY_LLM_FAILOVER=1 buddy -p "…"         # if the primary errors, auto-continue on the next active LLM
 ```
 
+<p align="center">
+  <img src="docs/assets/llm-demo.gif" alt="buddy llm lists your active LLMs, then auto-fails over from Grok to ChatGPT when the primary errors" width="760"/>
+  <br/>
+  <sub>Your logins at a glance — and automatic failover from one to the next when one has a problem, at <code>$0</code>. Real run, unedited.</sub>
+</p>
+
 See [Getting Started](docs/getting-started.md) for install options, headless mode, sessions, and typical workflows.
 
 ---
