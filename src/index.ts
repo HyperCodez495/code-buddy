@@ -435,7 +435,9 @@ async function getDetectedProvider(): Promise<DetectedProvider | null> {
               provider: 'grok',
               apiKey: token,
               baseURL: 'https://api.x.ai/v1',
-              defaultModel: process.env.GROK_MODEL || 'grok-3-latest',
+              // grok-4-latest is an alias of the current flagship grok-4.3
+              // (verified accessible on the SuperGrok plan; Hermes defaults here too).
+              defaultModel: process.env.GROK_MODEL || 'grok-4-latest',
             };
           } else {
             logger.warn('xAI login found but no valid access token — run `buddy login xai` again.');
@@ -581,18 +583,25 @@ async function loadModel(): Promise<string | undefined> {
   // 1. Explicit env var takes highest priority
   if (process.env.GROK_MODEL) return process.env.GROK_MODEL;
 
-  // 2. Project/user settings override auto-detection
+  const detected = await getDetectedProvider();
+
+  // 2. Project/user settings override auto-detection — UNLESS the saved model is
+  //    incompatible with the detected provider. A `gpt-5.5` left in settings.json
+  //    would 404 against xAI after `buddy login xai`; prefer the Grok default then.
   try {
     const getSettingsManager = await lazyImport.settingsManager();
-    const manager = getSettingsManager();
-    const settingsModel = manager.getCurrentModel();
-    if (settingsModel) return settingsModel;
+    const settingsModel = getSettingsManager().getCurrentModel();
+    if (settingsModel) {
+      const grokProvider = detected?.provider === 'grok';
+      if (!grokProvider || /grok/i.test(settingsModel)) {
+        return settingsModel;
+      }
+    }
   } catch (_err) {
     logger.debug('Failed to load model from settings manager', { error: _err });
   }
 
   // 3. Fallback to auto-detected provider's default model
-  const detected = await getDetectedProvider();
   if (detected) return detected.defaultModel;
 
   return undefined;
