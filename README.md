@@ -37,9 +37,12 @@ Watch a **local model reason on screen, then use real tools to do the work** —
 - 🤝 **Multi-AI Fleet** — peers observe each other live and call each other's models & read-only tools (`peer.chat` / `peer.tool.invoke`) across your network.
 - 👁️ **Personal companion** *(optional)* — bidirectional voice, opt-in camera/presence, persistent memory, and 20+ messaging channels.
 
+> **Don't take our word for it — [see it work, reproduce it yourself ✅](docs/proof.md).** Every headline claim above, with the exact command and the real `$0` output (local model writes code + a passing test, goal mode, the desktop app, the autonomous fleet loop).
+
 <br/>
 
 [Live site ↗](https://phuetz.github.io/code-buddy/) ·
+[Proof ✅](docs/proof.md) ·
 [Quick Start](#quick-start) ·
 [In action](#in-action) ·
 [Features](#features) ·
