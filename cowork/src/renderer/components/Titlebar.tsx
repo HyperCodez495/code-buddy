@@ -17,6 +17,7 @@ import { useTranslation } from 'react-i18next';
 import { useAppStore } from '../store';
 import { useUnreadNotificationCount } from '../store/selectors';
 import { TabBar } from './TabBar';
+import { Tooltip } from './Tooltip';
 import { PresenceIndicator } from './PresenceIndicator';
 import { ServerDashboard } from './ServerDashboard';
 import { RunnerBadge } from './RunnerBadge';
@@ -81,34 +82,37 @@ export function Titlebar() {
       <ServerToggle />
 
       {/* Documentation */}
-      <button
-        onClick={() => useAppStore.getState().setShowHelpDocs(true)}
-        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
-        title={t('helpDocs.title', 'Documentation')}
-        aria-label="Show documentation"
-        data-testid="documentation-button"
-      >
-        <Book className="w-4 h-4 text-text-secondary" />
-      </button>
+      <Tooltip label={t('helpDocs.title', 'Documentation')} side="bottom" className="h-full">
+        <button
+          onClick={() => useAppStore.getState().setShowHelpDocs(true)}
+          className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+          aria-label="Show documentation"
+          data-testid="documentation-button"
+        >
+          <Book className="w-4 h-4 text-text-secondary" />
+        </button>
+      </Tooltip>
 
       {/* Keyboard shortcuts help (Ctrl+/) */}
-      <button
-        onClick={() => useAppStore.getState().setShowShortcutsDialog(true)}
-        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
-        title={t('shortcutsDialog.title', 'Keyboard shortcuts (Ctrl+/)')}
-        aria-label="Show keyboard shortcuts"
-        data-testid="shortcuts-help-button"
-      >
-        <HelpCircle className="w-4 h-4 text-text-secondary" />
-      </button>
+      <Tooltip label={t('shortcutsDialog.title', 'Keyboard shortcuts (Ctrl+/)')} side="bottom" className="h-full">
+        <button
+          onClick={() => useAppStore.getState().setShowShortcutsDialog(true)}
+          className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+          aria-label="Show keyboard shortcuts"
+          data-testid="shortcuts-help-button"
+        >
+          <HelpCircle className="w-4 h-4 text-text-secondary" />
+        </button>
+      </Tooltip>
 
       {/* Notification bell (Claude Cowork parity) */}
+      <Tooltip label={t('notifications.title')} side="bottom" className="h-full">
       <button
         onClick={() => setShowNotificationCenter(!showNotificationCenter)}
         className={`w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors relative ${
           isMac ? 'mr-2' : ''
         }`}
-        title={t('notifications.title')}
+        aria-label={t('notifications.title')}
       >
         <Bell className="w-4 h-4 text-text-secondary" />
         {unreadCount > 0 && (
@@ -117,6 +121,7 @@ export function Titlebar() {
           </span>
         )}
       </button>
+      </Tooltip>
 
       {/* Window Controls (for Windows/Linux - macOS uses native traffic lights) */}
       {!isMac && (
@@ -184,22 +189,23 @@ function ClipboardButton() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="relative w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
-        title={t('clipboardSummary.button', 'Clipboard summariser')}
-        aria-label="Clipboard summariser"
-        data-testid="clipboard-summary-button"
-      >
-        {summarising ? (
-          <Loader2 className="w-4 h-4 text-text-secondary animate-spin" />
-        ) : (
-          <ClipboardCopy className="w-4 h-4 text-text-secondary" />
-        )}
-        {monitoringEnabled && !summarising && (
-          <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-success animate-pulse" />
-        )}
-      </button>
+      <Tooltip label={t('clipboardSummary.button', 'Clipboard summariser')} side="bottom" className="h-full">
+        <button
+          onClick={() => setOpen(true)}
+          className="relative w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+          aria-label="Clipboard summariser"
+          data-testid="clipboard-summary-button"
+        >
+          {summarising ? (
+            <Loader2 className="w-4 h-4 text-text-secondary animate-spin" />
+          ) : (
+            <ClipboardCopy className="w-4 h-4 text-text-secondary" />
+          )}
+          {monitoringEnabled && !summarising && (
+            <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-success animate-pulse" />
+          )}
+        </button>
+      </Tooltip>
       <ClipboardSummaryPanel
         isOpen={open}
         onClose={() => setOpen(false)}
@@ -227,15 +233,16 @@ function VoiceOverlayButton() {
 
   return (
     <>
-      <button
-        onClick={() => setOpen(true)}
-        className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
-        title={t('voiceOverlay.button', 'Voice chat overlay')}
-        aria-label="Voice chat overlay"
-        data-testid="voice-overlay-button"
-      >
-        <Headphones className="w-4 h-4 text-text-secondary" />
-      </button>
+      <Tooltip label={t('voiceOverlay.button', 'Voice chat overlay')} side="bottom" className="h-full">
+        <button
+          onClick={() => setOpen(true)}
+          className="w-10 h-full flex items-center justify-center titlebar-no-drag hover:bg-surface transition-colors"
+          aria-label="Voice chat overlay"
+          data-testid="voice-overlay-button"
+        >
+          <Headphones className="w-4 h-4 text-text-secondary" />
+        </button>
+      </Tooltip>
       <VoiceChatOverlay isOpen={open} onClose={() => setOpen(false)} />
     </>
   );
