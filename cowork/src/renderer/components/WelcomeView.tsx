@@ -427,10 +427,15 @@ export function WelcomeView() {
 
   return (
     <div
-      className="flex-1 flex flex-col items-center justify-center px-5 py-10 md:px-8 md:py-14"
+      className="relative flex-1 flex flex-col items-center justify-center overflow-hidden px-5 py-10 md:px-8 md:py-14"
       data-testid="welcome-view"
     >
-      <div className="max-w-[840px] w-full space-y-7 animate-fade-in">
+      {/* Soft accent glow (theme-adaptive sparkle) */}
+      <div
+        aria-hidden
+        className="pointer-events-none absolute left-1/2 top-20 h-72 w-72 -translate-x-1/2 rounded-full bg-accent/10 blur-[110px]"
+      />
+      <div className="relative max-w-[840px] w-full space-y-7 animate-fade-in">
         <div className="space-y-4 text-center">
           <div className="flex items-center justify-center gap-4">
             <img
@@ -439,7 +444,7 @@ export function WelcomeView() {
               className="w-16 h-16 md:w-20 md:h-20 rounded-[1.4rem] object-cover border border-border-subtle bg-background/60 shadow-soft"
             />
             <div className="text-left">
-              <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] text-text-primary">
+              <h1 className="text-[2.35rem] md:text-[3.1rem] leading-none font-semibold tracking-[-0.05em] bg-gradient-to-br from-text-primary via-text-primary to-accent bg-clip-text text-transparent">
                 {APP_NAME}
               </h1>
             </div>
