@@ -36,6 +36,10 @@ export function getRtkRewriteTimeoutMs(env: NodeJS.ProcessEnv = process.env): nu
 
 export async function rewriteCommandWithRtk(command: string): Promise<RtkRewriteResult> {
   const originalCommand = command;
+  // Defensive: a malformed tool call can pass a non-string command.
+  if (typeof command !== 'string') {
+    return { originalCommand, command, rewritten: false, reason: 'invalid-command' };
+  }
   if (!isRtkRewriteEnabled()) {
     return { originalCommand, command, rewritten: false, reason: 'disabled' };
   }

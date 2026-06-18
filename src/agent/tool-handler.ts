@@ -1048,6 +1048,17 @@ export class ToolHandler {
         const command = args.command as string;
         const timeout = (args.timeout as number) || 30000;
 
+        // A weaker model can emit a `bash` call without a `command` (or a
+        // non-string one). Fail with a clear, recoverable message instead of
+        // crashing downstream on `command.trim()` (auto-repair can then re-prompt).
+        if (typeof command !== 'string' || command.trim() === '') {
+          return {
+            success: false,
+            error:
+              'bash: missing a non-empty "command" string argument. Put the shell command to run in the "command" field.',
+          };
+        }
+
         const gen = this.bash.executeStreaming(command, timeout);
         let result = await gen.next();
         while (!result.done) {

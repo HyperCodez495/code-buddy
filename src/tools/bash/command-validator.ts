@@ -26,6 +26,8 @@ import { auditLogger } from '../../security/audit-logger.js';
  * Handles paths, env var prefixes, and common shell constructs
  */
 export function extractBaseCommand(command: string): string | null {
+  // Defensive: a malformed tool call can pass a non-string command.
+  if (typeof command !== 'string') return null;
   // Trim and handle empty
   const trimmed = command.trim();
   if (!trimmed) return null;
