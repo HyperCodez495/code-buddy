@@ -166,6 +166,12 @@ CODEBUDDY_LLM_FAILOVER=1 buddy -p "…"         # if the primary errors, auto-co
   <sub>Your logins at a glance — and automatic failover from one to the next when one has a problem, at <code>$0</code>. Real run, unedited.</sub>
 </p>
 
+<p align="center">
+  <img src="docs/assets/ensemble-demo.gif" alt="buddy llm ensemble asks ChatGPT, Ollama and Grok the same question, then synthesizes one answer" width="760"/>
+  <br/>
+  <sub><code>buddy llm ensemble</code> — every brain you're logged into answers, then it's synthesized into one. Real run, unedited.</sub>
+</p>
+
 See [Getting Started](docs/getting-started.md) for install options, headless mode, sessions, and typical workflows.
 
 ---
