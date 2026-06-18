@@ -89,6 +89,12 @@ An open-source, multi-provider AI coding agent with a terminal UI, an HTTP/WebSo
   <img src="docs/screenshots/chatgpt-oauth-login.png" alt="ChatGPT OAuth login flow" width="820"/>
 </p>
 
+**xAI / SuperGrok login** — `buddy login xai`, sign in once, then Grok answers for `$0` (flat-fee subscription, no API key):
+
+<p align="center">
+  <img src="docs/assets/login-demo.gif" alt="After buddy login xai, Grok writes a haiku with no API key, $0 marginal" width="760"/>
+</p>
+
 **Self-audit.** Asked to find a bug in its own integration code, `gpt-5.5` reads `provider-chatgpt-responses.ts`, spots a stale-variable issue (mutated `body.model` not propagated), and proposes the exact fix:
 
 <p align="center">
