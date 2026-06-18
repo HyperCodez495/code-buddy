@@ -473,11 +473,11 @@ export function WelcomeView() {
           <ProjectSelector />
         </div>
 
-        <div className="flex flex-wrap gap-2 justify-center px-3">
+        <div className="flex justify-center px-3">
           <button
             type="button"
             onClick={() => setShowResumeChooser(true)}
-            className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-background/65 px-3 py-2 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
+            className="inline-flex items-center gap-2 rounded-full border border-border-subtle bg-background/65 px-3 py-1.5 text-sm text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors"
             data-testid="welcome-resume-session"
           >
             <History className="w-4 h-4 text-text-muted" />
@@ -488,20 +488,30 @@ export function WelcomeView() {
               })}
             </span>
           </button>
+        </div>
+
+        {/* Quick-action cards */}
+        <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5 px-3 max-w-2xl mx-auto w-full">
           {quickTags.map((tag) => (
             <button
               key={tag.id}
               onClick={() => handleTagClick(tag.id, tag.prompt)}
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-2 text-sm transition-colors ${
+              className={`group/card flex items-center gap-3 rounded-xl border px-3.5 py-3 text-left transition-all duration-150 hover:-translate-y-0.5 hover:shadow-md ${
                 selectedTag === tag.id
-                  ? 'border-accent/30 bg-accent-muted text-accent'
-                  : 'border-border-subtle bg-background/65 text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+                  ? 'border-accent/40 bg-accent-muted text-accent'
+                  : 'border-border-subtle bg-background/70 text-text-secondary hover:border-accent/30 hover:text-text-primary'
               }`}
             >
-              <tag.icon
-                className={`w-4 h-4 ${selectedTag === tag.id ? 'text-accent' : 'text-text-muted'}`}
-              />
-              <span>{tag.label}</span>
+              <span
+                className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-lg transition-colors ${
+                  selectedTag === tag.id
+                    ? 'bg-accent/15 text-accent'
+                    : 'bg-surface-hover/70 text-text-muted group-hover/card:text-accent'
+                }`}
+              >
+                <tag.icon className="w-4 h-4" />
+              </span>
+              <span className="text-sm font-medium">{tag.label}</span>
             </button>
           ))}
         </div>
