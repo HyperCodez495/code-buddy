@@ -53,13 +53,14 @@ export interface IdentityManagerEvents {
 // Defaults
 // ============================================================================
 
+// AGENTS.md and INSTRUCTIONS.md are intentionally NOT here — they are owned by
+// the unified project-context loader (src/context/project-context.ts). Identity
+// covers only the soul/identity tier.
 const DEFAULT_IDENTITY_FILES = [
   'SOUL.md',
   'USER.md',
-  'AGENTS.md',
   'TOOLS.md',
   'IDENTITY.md',
-  'INSTRUCTIONS.md',
   'BOOT.md',
   'BOOTSTRAP.md',
   'HEARTBEAT.md',

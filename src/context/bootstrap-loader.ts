@@ -44,10 +44,12 @@ export interface BootstrapLoaderConfig {
 // Defaults
 // ============================================================================
 
+// AGENTS.md is intentionally NOT here — instruction files (AGENTS/CODEBUDDY/
+// CONTEXT/INSTRUCTIONS) are owned by the unified project-context loader
+// (src/context/project-context.ts). This loader covers soul/identity files.
 const DEFAULT_BOOTSTRAP_FILES = [
   'BOOT.md',
   'BOOTSTRAP.md',
-  'AGENTS.md',
   'SOUL.md',
   // TOOLS.md excluded: tool descriptions are already sent as function definitions
   'IDENTITY.md',
@@ -123,29 +125,9 @@ export class BootstrapLoader {
       totalChars += text.length;
     }
 
-    // 2. Hierarchical instruction files (Codex CLI pattern)
-    if (totalChars < this.config.maxChars) {
-      const hierarchicalResult = await this.loadHierarchical(cwd);
-      for (const entry of hierarchicalResult) {
-        if (totalChars >= this.config.maxChars) {
-          truncated = true;
-          break;
-        }
-        if (sources.includes(entry.source)) continue;
-
-        const remaining = this.config.maxChars - totalChars;
-        let text = entry.text;
-        if (text.length > remaining) {
-          text = text.slice(0, remaining) + '\n\n... (truncated)';
-          truncated = true;
-        }
-
-        const relSource = path.relative(cwd, entry.source) || entry.source;
-        sections.push(`## ${entry.fileName} (${relSource})\n\n${text}`);
-        sources.push(entry.source);
-        totalChars += text.length;
-      }
-    }
+    // (Instruction-file hierarchy — AGENTS/CODEBUDDY/CONTEXT/INSTRUCTIONS — is
+    // now handled by the unified project-context loader, injected before this
+    // block in prompt-builder. `loadHierarchical` below is retained but unused.)
 
     // 3. Auto-generated project knowledge (from /docs generate --with-llm)
     if (totalChars < this.config.maxChars) {

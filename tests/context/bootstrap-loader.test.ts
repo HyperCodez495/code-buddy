@@ -110,9 +110,9 @@ describe('BootstrapLoader', () => {
       await loader.load(CWD);
 
       // TOOLS.md removed — no longer loaded by BootstrapLoader (handled separately by tool system)
+      // AGENTS.md removed — instruction files are handled by the unified loader.
       const expectedFiles = [
         'BOOTSTRAP.md',
-        'AGENTS.md',
         'SOUL.md',
         'IDENTITY.md',
         'USER.md',
@@ -143,11 +143,11 @@ describe('BootstrapLoader', () => {
 
     it('should separate multiple sections with horizontal rules', async () => {
       const projectBootstrap = path.join(CWD, '.codebuddy', 'BOOTSTRAP.md');
-      const projectAgents = path.join(CWD, '.codebuddy', 'AGENTS.md');
+      const projectSoul2 = path.join(CWD, '.codebuddy', 'SOUL.md');
 
       mockReadFile.mockImplementation(async (filePath: any) => {
         if (filePath === projectBootstrap) return 'Bootstrap content';
-        if (filePath === projectAgents) return 'Agents content';
+        if (filePath === projectSoul2) return 'Agents content';
         throw new Error('ENOENT');
       });
 
@@ -158,7 +158,7 @@ describe('BootstrapLoader', () => {
       const parts = result.content.split('\n\n---\n\n');
       expect(parts).toHaveLength(2);
       expect(parts[0]).toContain('## BOOTSTRAP.md');
-      expect(parts[1]).toContain('## AGENTS.md');
+      expect(parts[1]).toContain('## SOUL.md');
     });
   });
 
@@ -275,11 +275,11 @@ describe('BootstrapLoader', () => {
 
     it('should stop loading additional files once maxChars is reached', async () => {
       const projectBootstrap = path.join(CWD, '.codebuddy', 'BOOTSTRAP.md');
-      const projectAgents = path.join(CWD, '.codebuddy', 'AGENTS.md');
+      const projectSoul2 = path.join(CWD, '.codebuddy', 'SOUL.md');
 
       mockReadFile.mockImplementation(async (filePath: any) => {
         if (filePath === projectBootstrap) return 'A'.repeat(200);
-        if (filePath === projectAgents) return 'Should not be loaded';
+        if (filePath === projectSoul2) return 'Should not be loaded';
         throw new Error('ENOENT');
       });
 
@@ -299,11 +299,11 @@ describe('BootstrapLoader', () => {
 
     it('should truncate mid-file when remaining budget is insufficient', async () => {
       const projectBootstrap = path.join(CWD, '.codebuddy', 'BOOTSTRAP.md');
-      const projectAgents = path.join(CWD, '.codebuddy', 'AGENTS.md');
+      const projectSoul2 = path.join(CWD, '.codebuddy', 'SOUL.md');
 
       mockReadFile.mockImplementation(async (filePath: any) => {
         if (filePath === projectBootstrap) return 'First file content';
-        if (filePath === projectAgents) return 'B'.repeat(500);
+        if (filePath === projectSoul2) return 'B'.repeat(500);
         throw new Error('ENOENT');
       });
 
@@ -408,18 +408,18 @@ describe('BootstrapLoader', () => {
 
     it('should skip dangerous file but continue loading safe files', async () => {
       const projectBootstrap = path.join(CWD, '.codebuddy', 'BOOTSTRAP.md');
-      const projectAgents = path.join(CWD, '.codebuddy', 'AGENTS.md');
+      const projectSoul2 = path.join(CWD, '.codebuddy', 'SOUL.md');
 
       mockReadFile.mockImplementation(async (filePath: any) => {
         if (filePath === projectBootstrap) return 'eval("bad code")';
-        if (filePath === projectAgents) return 'Safe agents content';
+        if (filePath === projectSoul2) return 'Safe agents content';
         throw new Error('ENOENT');
       });
 
       const result = await loader.load(CWD);
 
       expect(result.sources).toHaveLength(1);
-      expect(result.sources[0]).toBe(projectAgents);
+      expect(result.sources[0]).toBe(projectSoul2);
       expect(result.content).toContain('Safe agents content');
       expect(result.content).not.toContain('eval');
     });

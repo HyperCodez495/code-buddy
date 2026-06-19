@@ -148,6 +148,46 @@ describe('CC9: Import Directive Parser', () => {
     // At depth 5 the recursion stops, so level5.md's import won't be resolved
   });
 
+  it('does NOT resolve @imports inside fenced code blocks', async () => {
+    const { resolveImportDirectives } = await import('../../src/context/import-directive-parser.js');
+    fs.writeFileSync(path.join(tmpDir, 'secret.md'), 'SHOULD NOT APPEAR');
+    const content = ['Intro text', '```', '@secret.md', '```', 'Outro'].join('\n');
+    const result = resolveImportDirectives(content, { baseDir: tmpDir });
+    expect(result).toContain('@secret.md');       // left literal
+    expect(result).not.toContain('SHOULD NOT APPEAR');
+  });
+
+  it('does NOT resolve @imports inside ~~~ fenced blocks', async () => {
+    const { resolveImportDirectives } = await import('../../src/context/import-directive-parser.js');
+    fs.writeFileSync(path.join(tmpDir, 'secret.md'), 'SHOULD NOT APPEAR');
+    const content = ['~~~', '@secret.md', '~~~'].join('\n');
+    const result = resolveImportDirectives(content, { baseDir: tmpDir });
+    expect(result).toContain('@secret.md');
+    expect(result).not.toContain('SHOULD NOT APPEAR');
+  });
+
+  it('still resolves bare @imports outside code', async () => {
+    const { resolveImportDirectives } = await import('../../src/context/import-directive-parser.js');
+    fs.writeFileSync(path.join(tmpDir, 'real.md'), 'REAL CONTENT');
+    const content = ['Before', '@real.md', 'After'].join('\n');
+    const result = resolveImportDirectives(content, { baseDir: tmpDir });
+    expect(result).toContain('REAL CONTENT');
+    expect(result).not.toContain('@real.md');
+  });
+
+  it('honors a custom maxDepth option', async () => {
+    const { resolveImportDirectives } = await import('../../src/context/import-directive-parser.js');
+    for (let i = 0; i < 4; i++) {
+      fs.writeFileSync(path.join(tmpDir, `d${i}.md`), `D${i}\n@d${i + 1}.md`);
+    }
+    fs.writeFileSync(path.join(tmpDir, 'd4.md'), 'DEEP');
+    // maxDepth 2 stops before reaching the deepest file.
+    const result = resolveImportDirectives('@d0.md', { baseDir: tmpDir, maxDepth: 2 });
+    expect(result).toContain('D0');
+    expect(result).toContain('D1');
+    expect(result).not.toContain('DEEP');
+  });
+
   it('resolves ~/ paths with custom home dir', async () => {
     const { resolveImportDirectives } = await import('../../src/context/import-directive-parser.js');
     const homeDir = path.join(tmpDir, 'home');

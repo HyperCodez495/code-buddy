@@ -19,12 +19,100 @@ import { logger } from '../utils/logger.js';
 let _excludePatterns: string[] | null = null;
 let _excludeCachePath: string | null = null;
 
+let _contextConfig: ResolvedContextConfig | null = null;
+let _contextConfigCachePath: string | null = null;
+
 /**
- * Clear the excludes cache (for testing).
+ * Clear the excludes cache (for testing / config reload).
  */
 export function clearExcludesCache(): void {
   _excludePatterns = null;
   _excludeCachePath = null;
+}
+
+/**
+ * Clear the context-config cache (for testing / `/context reload`).
+ */
+export function clearContextConfigCache(): void {
+  _contextConfig = null;
+  _contextConfigCachePath = null;
+}
+
+// ============================================================================
+// Context-file configuration (single source of truth for accepted filenames)
+// ============================================================================
+
+/**
+ * Accepted project-instruction filenames, in precedence order. `AGENTS.md` is
+ * the cross-CLI primary (read by Codex/Cursor/Copilot/Claude Code); the rest
+ * are read for interop. All present names compose within a directory.
+ */
+export const DEFAULT_CONTEXT_FILE_NAMES: readonly string[] = [
+  'AGENTS.md',
+  'CODEBUDDY.md',
+  'CLAUDE.md',
+  'GEMINI.md',
+  'CONTEXT.md',
+  'INSTRUCTIONS.md',
+];
+
+export interface ResolvedContextConfig {
+  /** Accepted instruction filenames, in precedence order. */
+  fileNames: string[];
+  /** Total byte budget for the startup hierarchy (Codex project_doc_max_bytes parity). */
+  maxBytes: number;
+  /** Per-touch incremental byte budget for JIT discovery. */
+  jitMaxBytes: number;
+  /** Byte budget passed to the @import resolver. */
+  importMaxBytes: number;
+  /** Max recursion depth for @import. */
+  importMaxDepth: number;
+}
+
+const DEFAULT_CONTEXT_CONFIG: ResolvedContextConfig = {
+  fileNames: [...DEFAULT_CONTEXT_FILE_NAMES],
+  maxBytes: 32_768,
+  jitMaxBytes: 4_096,
+  importMaxBytes: 50_000,
+  importMaxDepth: 5,
+};
+
+/**
+ * Load the `context` block from `.codebuddy/settings.json`, merged over
+ * defaults. Cached by settings path (cleared via `clearContextConfigCache()`).
+ * A missing `context` key returns the defaults, so existing projects are
+ * unaffected.
+ */
+export function loadContextConfig(projectRoot: string = process.cwd()): ResolvedContextConfig {
+  const settingsPath = path.join(projectRoot, '.codebuddy', 'settings.json');
+
+  if (_contextConfig && _contextConfigCachePath === settingsPath) {
+    return _contextConfig;
+  }
+
+  const cfg: ResolvedContextConfig = { ...DEFAULT_CONTEXT_CONFIG, fileNames: [...DEFAULT_CONTEXT_FILE_NAMES] };
+
+  if (fs.existsSync(settingsPath)) {
+    try {
+      const raw = fs.readFileSync(settingsPath, 'utf-8');
+      const ctx = JSON.parse(raw)?.context;
+      if (ctx && typeof ctx === 'object') {
+        if (Array.isArray(ctx.fileNames) && ctx.fileNames.every((n: unknown) => typeof n === 'string') && ctx.fileNames.length > 0) {
+          cfg.fileNames = ctx.fileNames;
+        }
+        if (Number.isFinite(ctx.maxBytes) && ctx.maxBytes > 0) cfg.maxBytes = ctx.maxBytes;
+        if (Number.isFinite(ctx.jitMaxBytes) && ctx.jitMaxBytes > 0) cfg.jitMaxBytes = ctx.jitMaxBytes;
+        if (Number.isFinite(ctx.importMaxBytes) && ctx.importMaxBytes > 0) cfg.importMaxBytes = ctx.importMaxBytes;
+        if (Number.isFinite(ctx.importMaxDepth) && ctx.importMaxDepth > 0) cfg.importMaxDepth = ctx.importMaxDepth;
+      }
+    } catch (err) {
+      logger.debug(`Failed to load context config: ${err}`);
+    }
+  }
+
+  _contextConfig = cfg;
+  _contextConfigCachePath = settingsPath;
+  return cfg;
 }
 
 // ============================================================================

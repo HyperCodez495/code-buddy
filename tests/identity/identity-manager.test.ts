@@ -152,7 +152,8 @@ describe('IdentityManager', () => {
     it('should check all default file names', async () => {
       await manager.load(CWD);
 
-      const expectedFiles = ['SOUL.md', 'USER.md', 'AGENTS.md', 'TOOLS.md', 'IDENTITY.md'];
+      // AGENTS.md / INSTRUCTIONS.md are owned by the unified project-context loader, not identity.
+      const expectedFiles = ['SOUL.md', 'USER.md', 'TOOLS.md', 'IDENTITY.md'];
 
       for (const fileName of expectedFiles) {
         const projectPath = path.join(CWD, '.codebuddy', fileName);

@@ -57,6 +57,18 @@ export interface ProjectSettings {
     judgeMaxTokens?: number;
     judgeTimeoutMs?: number;
   }; // Persistent goal continuation and judging settings
+  /**
+   * Project-instruction context-file loading (the AGENTS.md/CLAUDE.md/GEMINI.md
+   * hierarchy). All fields optional; omitted keys fall back to defaults in
+   * `src/context/instruction-excludes.ts` (`loadContextConfig`).
+   */
+  context?: {
+    fileNames?: string[];     // accepted instruction filenames, in precedence order
+    maxBytes?: number;        // startup hierarchy byte budget (default 32768)
+    jitMaxBytes?: number;     // per-touch JIT byte budget (default 4096)
+    importMaxBytes?: number;  // @import byte budget (default 50000)
+    importMaxDepth?: number;  // @import recursion depth (default 5)
+  };
 }
 
 /**

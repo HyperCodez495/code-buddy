@@ -22,6 +22,7 @@ import { EnhancedMemory, PersistentMemoryManager } from "../memory/index.js";
 import { PromptCacheManager } from "../optimization/prompt-cache.js";
 import { MoltbotHooksManager } from "../hooks/moltbot-hooks.js";
 import { getModelToolConfig } from "../config/model-tools.js";
+import { resolveProjectContext, createContextRegistry, type ContextRegistry } from "../context/project-context.js";
 import { classifyQuery, type QueryComplexity } from "../agent/execution/query-classifier.js";
 import {
   filterToolNames,
@@ -112,6 +113,14 @@ The actual model-facing tool schema for this turn has an active filter.
 }
 
 export class PromptBuilder {
+  /**
+   * Dedup registry for project-instruction files, recreated fresh at the start
+   * of each system-prompt build. The JIT context pass reads it (via
+   * `getContextRegistry()`) so files already injected at startup are not
+   * re-injected when a tool later touches a file in the same tree.
+   */
+  private contextRegistry: ContextRegistry | null = null;
+
   constructor(
     private config: PromptBuilderConfig,
     private promptCacheManager: PromptCacheManager,
@@ -119,6 +128,11 @@ export class PromptBuilder {
     private moltbotHooksManager?: MoltbotHooksManager,
     private persistentMemory?: PersistentMemoryManager
   ) {}
+
+  /** The registry from the most recent system-prompt build (for the JIT pass). */
+  getContextRegistry(): ContextRegistry | null {
+    return this.contextRegistry;
+  }
 
   /**
    * Build the system prompt for the agent. The optional `options`
@@ -315,18 +329,34 @@ export class PromptBuilder {
         }
       }
 
-      // Inject bootstrap context files (BOOTSTRAP.md, AGENTS.md, SOUL.md, etc.)
+      // Inject project-instruction context (AGENTS.md / CODEBUDDY.md / CLAUDE.md
+      // / GEMINI.md / CONTEXT.md / INSTRUCTIONS.md) via the unified hierarchical
+      // loader, then soul/bootstrap files. A fresh dedup registry is created per
+      // build and reused by the JIT pass (`getContextRegistry`).
       if (gates.includeBootstrap) {
+        this.contextRegistry = createContextRegistry();
+        try {
+          const ctx = resolveProjectContext({ cwd: this.config.cwd, registry: this.contextRegistry });
+          if (ctx.text) {
+            systemPrompt += '\n\n# Workspace Context\n\n' + ctx.text;
+            logger.debug(`Loaded project context from ${ctx.sources.length} file(s)`, {
+              sources: ctx.sources.map((s) => s.relPath),
+              chars: ctx.bytes,
+              truncated: ctx.truncated,
+            });
+          }
+        } catch (err) {
+          logger.warn("Failed to load project context", { error: getErrorMessage(err) });
+        }
+
+        // Soul/identity bootstrap files (SOUL.md, USER.md, …) + PROJECT_KNOWLEDGE.md.
+        // Instruction files are handled above by the unified loader, not here.
         try {
           const { BootstrapLoader } = await import('../context/bootstrap-loader.js');
           const bootstrap = await new BootstrapLoader().load(this.config.cwd);
           if (bootstrap.content) {
-            systemPrompt += '\n\n# Workspace Context\n\n' + bootstrap.content;
-            logger.debug(`Loaded bootstrap context from ${bootstrap.sources.length} file(s)`, {
-              sources: bootstrap.sources,
-              chars: bootstrap.tokenCount,
-              truncated: bootstrap.truncated,
-            });
+            systemPrompt += '\n\n' + bootstrap.content;
+            logger.debug(`Loaded bootstrap/soul context from ${bootstrap.sources.length} file(s)`);
           }
         } catch (err) {
           logger.warn("Failed to load bootstrap context", { error: getErrorMessage(err) });
@@ -405,10 +435,11 @@ export class PromptBuilder {
         } catch { /* skills module optional */ }
       }
 
-      // Inject identity (SOUL.md, USER.md, AGENTS.md) — skip if already present to avoid duplication
+      // Inject identity (SOUL.md, USER.md, …) — skip if already present to avoid duplication.
+      // AGENTS.md/INSTRUCTIONS.md are owned by the unified loader, not identity.
       if (gates.includeIdentity) {
         try {
-          if (!systemPrompt.includes('## SOUL.md') && !systemPrompt.includes('## AGENTS.md')) {
+          if (!systemPrompt.includes('## SOUL.md')) {
             const { getIdentityManager } = await import('../identity/identity-manager.js');
             const identityMgr = getIdentityManager();
             await identityMgr.load(this.config.cwd);
