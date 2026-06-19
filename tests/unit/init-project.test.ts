@@ -10,6 +10,7 @@ import {
   generateCODEBUDDYMdContent,
   generateContextMdContent,
   generateAgentsMdContent,
+  buildInitPrompt,
 } from '../../src/utils/init-project.js';
 
 jest.mock('../../src/agent/repo-profiler.js', () => ({
@@ -241,6 +242,33 @@ describe('generateAgentsMdContent', () => {
     // The conditional "deep-dive" pointer is omitted (CLAUDE.md still appears in
     // the accepted-filenames note, which is interop documentation, not a pointer).
     expect(content).not.toContain('Claude Code-specific deep-dive');
+  });
+});
+
+// ============================================================================
+// buildInitPrompt (agent-driven /init)
+// ============================================================================
+
+describe('buildInitPrompt', () => {
+  it('targets a root AGENTS.md and embeds the verified-facts grounding', () => {
+    const prompt = buildInitPrompt('Languages: TypeScript\nTest: npm test\nBuild: npm run build');
+    expect(prompt).toContain('AGENTS.md');
+    expect(prompt).toContain('VERIFIED FACTS');
+    expect(prompt).toContain('npm test');           // grounded on real command
+    expect(prompt).toContain('do NOT invent commands');
+  });
+
+  it('instructs improve-in-place (never blank-overwrite) and not to touch .codebuddy', () => {
+    const prompt = buildInitPrompt('');
+    expect(prompt).toContain('IMPROVE it in place');
+    expect(prompt).toContain('never blank-overwrite');
+    expect(prompt).toContain('Do NOT modify anything under `.codebuddy/`');
+  });
+
+  it('omits the VERIFIED FACTS block when no contextPack is available', () => {
+    const prompt = buildInitPrompt('');
+    expect(prompt).not.toContain('VERIFIED FACTS');
+    expect(prompt).toContain('AGENTS.md'); // still a valid prompt
   });
 });
 

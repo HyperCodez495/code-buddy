@@ -456,7 +456,7 @@ export class EnhancedCommandHandler {
     ['__ULTRAPLAN__', (args) => handleUltraplan(args)],
     ['__LIST_CHECKPOINTS__', (args) => handleListCheckpoints(args)],
     ['__RESTORE_CHECKPOINT__', (args) => handleRestoreCheckpoint(args)],
-    ['__INIT_GROK__', () => handleInitGrok()],
+    ['__INIT_GROK__', (args) => handleInitGrok(args)],
     ['__REINIT_GROK__', () => handleReinitGrok()],
     ['__FEATURES__', () => handleFeatures()],
     ['__LESSONS__', (args) => handleLessonsCommand(args.join(' '))],

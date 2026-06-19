@@ -748,17 +748,43 @@ Use /checkpoints to see available checkpoints.`,
 // /init - Initialize Code Buddy Project
 // ============================================================================
 
-export async function handleInitGrok(): Promise<CommandHandlerResult> {
+export async function handleInitGrok(args: string[] = []): Promise<CommandHandlerResult> {
   try {
-    const { initCodeBuddyProject, formatInitResult } = await import('../../utils/init-project.js');
+    const fast = args.some((a) => a === '--fast' || a === '-f');
+    const { initCodeBuddyProject, formatInitResult, buildInitPrompt } = await import('../../utils/init-project.js');
+
+    // Deterministic scaffolding first (.codebuddy plumbing + template files,
+    // skip-if-exists). This always runs, so the config + a baseline AGENTS.md exist.
     const initResult = await initCodeBuddyProject();
+
+    if (fast) {
+      // --fast: deterministic template only (the legacy behavior).
+      return {
+        handled: true,
+        entry: { type: 'assistant', content: formatInitResult(initResult), timestamp: new Date() },
+      };
+    }
+
+    // Default: hand off to the agent to read the code and write a tailored
+    // AGENTS.md, grounded on the RepoProfiler's verified facts.
+    let contextPack = '';
+    try {
+      const { getRepoProfiler } = await import('../../agent/repo-profiler.js');
+      const profile = await getRepoProfiler().getProfile();
+      contextPack = profile.contextPack ?? '';
+    } catch {
+      /* profiler optional — the prompt still works without the facts block */
+    }
+
     return {
       handled: true,
       entry: {
         type: 'assistant',
-        content: formatInitResult(initResult),
+        content: `${formatInitResult(initResult)}\n\nNow analyzing the repository to write a tailored \`AGENTS.md\`… (run \`/init --fast\` for the deterministic template only)`,
         timestamp: new Date(),
       },
+      passToAI: true,
+      prompt: buildInitPrompt(contextPack),
     };
   } catch (error) {
     return {

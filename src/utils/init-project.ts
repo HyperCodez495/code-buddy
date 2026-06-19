@@ -958,6 +958,36 @@ export function formatInitResult(result: InitResult): string {
   return output;
 }
 
+/**
+ * Build the prompt for the agent-driven `/init`. Instructs the model to analyze
+ * the repository and write/improve a tailored root `AGENTS.md`, grounded on the
+ * RepoProfiler's verified facts so it cannot hallucinate build/test commands.
+ * Modeled on Codex's `prompt_for_init_command.md`.
+ */
+export function buildInitPrompt(contextPack: string): string {
+  const facts = contextPack && contextPack.trim()
+    ? `\nVERIFIED FACTS about this repository (auto-detected — use these, do not invent commands):\n${contextPack.trim()}\n`
+    : '';
+
+  return `Analyze THIS repository and write a tailored \`AGENTS.md\` at the project root — a concise contributor/agent guide (the cross-CLI standard read by Claude Code, Cursor, Codex, Gemini CLI and Code Buddy).
+${facts}
+How to do it:
+1. Explore the real code first — use \`list_directory\`, \`view_file\`, \`search\` (and \`code_graph\` if available) to understand the actual structure, entry points, scripts and conventions. Read \`package.json\` / \`pyproject.toml\` / \`Cargo.toml\`, the README, and a few representative source files.
+2. Trust any auto-detected facts shown above for build/test/lint commands, languages and directories — do NOT invent commands. Confirm anything else by reading the config files.
+3. Write a clear, concise document (aim for 200–400 words, Markdown headings), adapting or omitting sections as appropriate:
+   - **Project Structure & Module Organization** — where source, tests and assets live.
+   - **Build, Test & Dev Commands** — the real commands, each briefly explained.
+   - **Coding Style & Naming Conventions** — indentation, language style, naming, lint/format tools.
+   - **Testing Guidelines** — framework, how to run, naming.
+   - **Commit & Pull Request Guidelines** — infer conventions from the git history.
+   - *(optional)* **Architecture Overview** — for non-obvious design.
+
+Important:
+- Write ONLY \`AGENTS.md\` at the project root. Do NOT modify anything under \`.codebuddy/\` — that config was just scaffolded deterministically.
+- If \`AGENTS.md\` already has meaningful content, IMPROVE it in place: preserve the user's good wording, refine and fill gaps; never blank-overwrite.
+- Keep it specific to THIS repository and actionable. No filler.`;
+}
+
 // ============================================================================
 // Data flow renderer — shows how key components connect
 // ============================================================================

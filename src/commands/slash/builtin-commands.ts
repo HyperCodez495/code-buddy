@@ -46,7 +46,7 @@ const coreCommands: SlashCommand[] = [
   },
   {
     name: 'init',
-    description: 'Initialize .codebuddy directory with templates',
+    description: 'Scaffold .codebuddy, then analyze the repo and write a tailored AGENTS.md (use `--fast` for the deterministic template only)',
     prompt: '__INIT_GROK__',
     filePath: '',
     isBuiltin: true
