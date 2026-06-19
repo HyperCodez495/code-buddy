@@ -237,6 +237,20 @@ export function getMCPManager(): MCPManager {
   return mcpManager;
 }
 
+/**
+ * True when the Code Explorer (gitnexus) MCP tools are connected — i.e. at least
+ * one `mcp__gitnexus__*` tool is registered. Used to conditionally steer the
+ * agent toward Code Explorer for relationship/impact questions. Returns false
+ * (no behavior change) whenever Code Explorer is not installed.
+ */
+export function isCodeExplorerAvailable(): boolean {
+  try {
+    return getMCPManager().getTools().some((t) => t.name.startsWith('mcp__gitnexus__'));
+  } catch {
+    return false;
+  }
+}
+
 export async function initializeMCPServers(): Promise<void> {
   const manager = getMCPManager();
   const config = loadMCPConfig();
@@ -484,6 +498,22 @@ export async function getAllCodeBuddyTools(): Promise<CodeBuddyTool[]> {
 
   // Apply CLI tool filter (--enabled-tools, --disabled-tools, --allowed-tools)
   allTools = applyToolFilter(allTools);
+
+  // When Code Explorer (gitnexus) is connected, make the built-in graph tools
+  // defer to it at the decision point — its graph is broader / more complete.
+  // Conditional & non-mutating: returns fresh objects only for code_graph /
+  // codebase_map, and only when a gitnexus tool is present (no change otherwise).
+  if (allTools.some((t) => t.function.name.startsWith('mcp__gitnexus__'))) {
+    const DEFER =
+      ' NOTE: Code Explorer (gitnexus) is available — for code-relationship, blast-radius/impact, ' +
+      'dead-code and cycle questions PREFER its MCP tools (`mcp__gitnexus__impact` / `context` / ' +
+      '`query` / `find_cycles`); use this built-in only as a fallback if a gitnexus tool errors.';
+    allTools = allTools.map((t) =>
+      t.function.name === 'code_graph' || t.function.name === 'codebase_map'
+        ? { ...t, function: { ...t.function, description: (t.function.description ?? '') + DEFER } }
+        : t,
+    );
+  }
 
   return allTools;
 }

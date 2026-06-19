@@ -424,6 +424,31 @@ export class PromptBuilder {
         } catch { /* rules module optional */ }
       }
 
+      // Steer toward Code Explorer (gitnexus) when it is connected. Conditional:
+      // when Code Explorer is absent this injects nothing, so the built-in
+      // code_graph/codebase_map behaviour is unchanged. Presence is session-
+      // stable, so this stays in the cache-stable prefix.
+      try {
+        const { isCodeExplorerAvailable } = await import('../codebuddy/tools.js');
+        if (isCodeExplorerAvailable()) {
+          systemPrompt +=
+            `\n\n<code_explorer_priority>\n` +
+            `Code Explorer (gitnexus) is connected. For ANY question about code relationships — ` +
+            `callers/callees, blast radius / impact ("what breaks if I change X"), dead code, cycles, ` +
+            `coupling, complexity — PREFER its MCP tools (\`mcp__gitnexus__impact\`, ` +
+            `\`mcp__gitnexus__context\`, \`mcp__gitnexus__query\`, \`mcp__gitnexus__find_cycles\`, …) ` +
+            `over the built-in \`code_graph\` / \`codebase_map\`: the gitnexus graph is broader and more ` +
+            `complete (whole-repo, 14 languages).\n` +
+            `Usage: first call \`mcp__gitnexus__list_repos\` once to get the repo \`path\`/\`id\`, then call ` +
+            `\`mcp__gitnexus__impact\` with the REQUIRED \`target\` = the symbol name (e.g. \`target: "executePlan"\`, ` +
+            `optionally \`direction: "both"\`) and \`repo\` = that path; or \`mcp__gitnexus__context\` with \`name\` = ` +
+            `the symbol. Always include \`target\`/\`name\` — never call these tools with empty arguments. ` +
+            `Use the built-in \`code_graph\`/\`codebase_map\` only as a fallback if a gitnexus tool errors.\n` +
+            `</code_explorer_priority>`;
+          logger.debug('Injected Code Explorer priority directive');
+        }
+      } catch { /* tools module optional */ }
+
       // Inject active skill prompt enhancement
       if (gates.includeSkills) {
         try {
