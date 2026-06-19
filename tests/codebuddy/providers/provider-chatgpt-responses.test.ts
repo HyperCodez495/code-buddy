@@ -22,6 +22,7 @@ import {
 } from '../../../src/codebuddy/providers/provider-chatgpt-responses.js';
 import type { ChatGptAuth } from '../../../src/providers/codex-oauth.js';
 import type { CodeBuddyMessage, CodeBuddyTool } from '../../../src/codebuddy/client.js';
+import { reduceStreamChunk } from '../../../src/agent/streaming/message-reducer.js';
 
 afterEach(() => {
   vi.restoreAllMocks();
@@ -337,6 +338,38 @@ describe('parseSseStream — Codex SSE → OpenAI ChatCompletionChunk', () => {
       }
     }
     expect(toolCalls).toEqual([{ id: 'c1', name: 'search', args: '{"q":"X"}' }]);
+  });
+
+  it('assigns a distinct index to each parallel function_call (regression: call_id concatenation)', async () => {
+    // Two parallel tool calls arrive as separate output_item.done events.
+    // Before the fix every function_call was emitted with index:0, so the
+    // downstream message-reducer merged them into one slot — concatenating
+    // names ("aa"), call_ids ("c1c2", >64 chars in the wild) and arguments.
+    const stream = makeSseStream([
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"code_graph","arguments":"{\\"a\\":1}","call_id":"call_AAAAAAAA"}}\n\n',
+      'data: {"type":"response.output_item.done","item":{"type":"function_call","name":"search","arguments":"{\\"q\\":\\"x\\"}","call_id":"call_BBBBBBBB"}}\n\n',
+      'data: {"type":"response.completed"}\n\n',
+    ]);
+
+    // 1. The parser must hand out distinct indices.
+    const indices: number[] = [];
+    let acc: Record<string, unknown> = {};
+    for await (const chunk of parseSseStream(stream, 'gpt-5.5')) {
+      const tcs = chunk.choices[0]?.delta?.tool_calls;
+      if (tcs) for (const tc of tcs) indices.push(tc.index as number);
+      // 2. Feed every chunk through the real reducer, as the agent loop does.
+      acc = reduceStreamChunk(acc, chunk);
+    }
+    expect(indices).toEqual([0, 1]);
+
+    // 3. After reduction the two calls stay separate and intact — no
+    //    concatenated call_id / name / arguments.
+    const merged = (acc.tool_calls as Array<{ id: string; function: { name: string; arguments: string } }>) ?? [];
+    expect(merged).toHaveLength(2);
+    expect(merged[0]).toMatchObject({ id: 'call_AAAAAAAA', function: { name: 'code_graph', arguments: '{"a":1}' } });
+    expect(merged[1]).toMatchObject({ id: 'call_BBBBBBBB', function: { name: 'search', arguments: '{"q":"x"}' } });
+    // Guard the exact symptom: no id exceeds the Responses backend's 64-char cap.
+    for (const c of merged) expect(c.id.length).toBeLessThanOrEqual(64);
   });
 
   it('throws on response.failed with a useful message', async () => {
