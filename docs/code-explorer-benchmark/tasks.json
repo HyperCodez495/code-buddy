@@ -1,0 +1,43 @@
+{
+  "$comment": "Benchmark tasks for measuring Code Explorer (gitnexus MCP) lift. Each task is a code-navigation/impact question an agent must answer about THIS codebase (code-buddy/src, which gitnexus has indexed). ground_truth is filled in after manual verification (grep + reading) so correctness can be judged independently of the graph itself. Keep tasks graph-favourable but realistic — things a developer actually asks.",
+  "target_repo": "/home/patrice/code-buddy",
+  "indexed_path": "/home/patrice/code-buddy/src",
+  "tasks": [
+    {
+      "id": "impact-executePlan",
+      "category": "impact",
+      "prompt": "In this codebase, list every symbol affected if I change the function executePlan. Give the full transitive set (downstream callees and upstream callers), not just direct mentions.",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": [], "notes": "Confirm against `gitnexus impact executePlan` AND a manual caller trace before trusting." }
+    },
+    {
+      "id": "context-getModelToolConfig",
+      "category": "context",
+      "prompt": "Who calls getModelToolConfig in this codebase, and what does that function itself call? List callers and callees.",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": ["prompt-builder"], "notes": "prompt-builder.ts calls it at least twice." }
+    },
+    {
+      "id": "cycles-context",
+      "category": "find_cycles",
+      "prompt": "Are there any circular dependencies among the modules in src/context/? If so, list each cycle precisely.",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": [], "notes": "Cross-check with `npm run check:circular` (madge)." }
+    },
+    {
+      "id": "search-bootstrap-injection",
+      "category": "search",
+      "prompt": "Where is the workspace/bootstrap context injection implemented — the code that loads AGENTS.md / CODEBUDDY.md into the system prompt at session start? Name the file(s) and the function.",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": ["bootstrap-loader", "prompt-builder"], "notes": "BootstrapLoader.load + prompt-builder injection site." }
+    },
+    {
+      "id": "impact-ConfirmationService",
+      "category": "impact",
+      "prompt": "What is the blast radius of changing ConfirmationService in this codebase? Which call sites and modules are affected?",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": [], "notes": "Singleton, widely used — good stress test of transitive impact." }
+    },
+    {
+      "id": "context-BootstrapLoader-load",
+      "category": "context",
+      "prompt": "Trace the call chain for BootstrapLoader.load: what does it call internally, and who calls it?",
+      "ground_truth": { "status": "TO_VERIFY", "must_include": ["prompt-builder"], "notes": "Calls loadFile/loadHierarchical/findProjectRoot; called by prompt-builder." }
+    }
+  ]
+}

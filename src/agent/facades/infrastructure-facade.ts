@@ -112,12 +112,18 @@ export class InfrastructureFacade {
     return this.mcpClient;
   }
 
+  /** Resolves once initializeMCP() has finished connecting servers (or failed
+   * softly). Callers that need MCP tools available — notably headless one-shot
+   * runs — can await getMCPReady() instead of racing the fire-and-forget init. */
+  private mcpReady: Promise<void> = Promise.resolve();
+
   /**
-   * Initialize MCP servers asynchronously
-   * This is a fire-and-forget operation
+   * Initialize MCP servers asynchronously. Kicks off in the background (the
+   * constructor path stays non-blocking), but the readiness promise is captured
+   * so a one-shot/headless caller can await getMCPReady() before its first turn.
    */
   initializeMCP(): void {
-    (async () => {
+    this.mcpReady = (async () => {
       try {
         const config = loadMCPConfig();
         if (config.servers.length > 0) {
@@ -132,9 +138,14 @@ export class InfrastructureFacade {
       } catch (error) {
         logger.warn('MCP initialization failed', { error: getErrorMessage(error) });
       }
-    })().catch((error) => {
-      logger.warn('Uncaught error in MCP initialization', { error: getErrorMessage(error) });
-    });
+    })();
+    // Never let this become an unhandled rejection for callers that don't await.
+    void this.mcpReady.catch(() => {});
+  }
+
+  /** Promise that resolves when MCP server initialization has settled. */
+  getMCPReady(): Promise<void> {
+    return this.mcpReady;
   }
 
   /**
