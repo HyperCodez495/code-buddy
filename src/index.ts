@@ -973,7 +973,11 @@ async function processPromptHeadless(
 ): Promise<number> {
   const previousDisableMCP = process.env.CODEBUDDY_DISABLE_MCP;
   const previousHeadless = process.env.CODEBUDDY_HEADLESS;
-  process.env.CODEBUDDY_DISABLE_MCP = 'true';
+  // Headless defaults MCP OFF (startup cost / determinism), but respect an
+  // explicit opt-in so `CODEBUDDY_DISABLE_MCP=false buddy -p …` can use MCP
+  // servers (e.g. the Code Explorer / gitnexus bridge, or the benchmark's
+  // "with graph" condition). Mirrors the opt-in pattern in goal-cli.ts.
+  process.env.CODEBUDDY_DISABLE_MCP = process.env.CODEBUDDY_DISABLE_MCP ?? 'true';
   process.env.CODEBUDDY_HEADLESS = 'true';
 
   try {
@@ -984,6 +988,17 @@ async function processPromptHeadless(
     await applyActiveLlmFailover(agent);
 
     await agent.systemPromptReady;
+    // When MCP is opted in for this headless run, wait for the servers to finish
+    // connecting so their tools (e.g. the Code Explorer / gitnexus bridge) are
+    // registered before the first turn — otherwise the one-shot turn races init
+    // and the agent never sees the MCP tools.
+    if (process.env.CODEBUDDY_DISABLE_MCP !== 'true') {
+      try {
+        await agent.getMCPReady();
+      } catch (e) {
+        logger.debug('MCP readiness wait failed (continuing without MCP tools)', { error: String(e) });
+      }
+    }
     if (customAgentConfig?.systemPrompt) {
       agent.setSystemPrompt(customAgentConfig.systemPrompt);
     }

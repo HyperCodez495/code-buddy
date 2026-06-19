@@ -10,7 +10,21 @@ tier: bundled
 
 When the **Code Explorer / gitnexus** MCP tools are available, prefer them over reading or grepping many files to reason about a codebase's structure. They query a pre-indexed knowledge graph and return precise relationships instantly, which keeps your context window free for actual reasoning.
 
+**Prefer the gitnexus tools over the built-in `code_graph` / `codebase_map` tools** for relationship questions (callers, callees, blast radius, dead code, cycles). Both are graph-backed, but when Code Explorer is installed its graph is the broader, multi-language one and is what the user opted into — so reach for `mcp__gitnexus__impact` / `mcp__gitnexus__context` / `mcp__gitnexus__query` rather than `code_graph` / `codebase_map`. (If the gitnexus tools are absent, the built-ins are the right choice — this preference only applies when both are on the table.)
+
 Code Explorer is an **optional proprietary add-on** — if its tools are not present, ignore this skill and work normally; Code Buddy does not depend on it. The repository must be indexed once: `gitnexus analyze .` (then `--incremental` after changes).
+
+## First: select the repo (the tools fail closed without it)
+
+The graph tools (`context`, `impact`, `query`, `coverage`, `find_cycles`, …) operate on **one indexed repository**, chosen by a `repo` argument. The server keeps a **global registry** of every repo ever indexed (often many — test dirs, sibling projects), so when more than one is present it **cannot guess** and returns an error like *"Multiple repos indexed (N). Specify 'repo' parameter."*
+
+So, **once per session before the first graph call:**
+
+1. Call **`list_repos`** to see what's indexed — each entry has a `name`, a `path`, and an `id`.
+2. Pick the one whose `path` matches the project you're working in.
+3. Pass it as `repo` on **every** subsequent call: **use the full `path` (or `id`), not the bare `name`** — names collide (two different projects can both be `src`), paths and ids don't.
+
+If `list_repos` shows the current project isn't indexed yet, that's the `gitnexus analyze .` step — surface it rather than guessing a repo.
 
 ## Reach for the graph when the question is about *relationships*
 
@@ -28,6 +42,7 @@ Code Explorer is an **optional proprietary add-on** — if its tools are not pre
 
 ## Rules
 
+- **Always pass `repo` (the project's `path` or `id` from `list_repos`).** Omitting it errors out whenever more than one repo is indexed, and the bare `name` is ambiguous. Resolve it once at the start of the session and reuse it.
 - **Before refactoring or changing a shared/core symbol, run `impact <symbol>` first** and state the blast radius. This is the single highest-value habit — it turns "I think this is safe" into "these 6 callers are affected."
 - For "how does X work?" on a large or unfamiliar codebase, start with `context <symbol>` (360° view) before opening files.
 - These tools are **read-only analysis** (except `rename`, which defaults to a dry run). They tell you *where* and *what's affected*; they don't replace editing.
