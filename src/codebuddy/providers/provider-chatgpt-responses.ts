@@ -674,6 +674,11 @@ export async function* parseSseStream(
   const decoder = new TextDecoder();
   let buffer = '';
   let chunkIndex = 0;
+  // Monotonic index per function_call so the downstream message-reducer keeps
+  // parallel tool calls in separate slots. Hardcoding 0 made every parallel
+  // call merge into one — names/call_ids/arguments concatenated — producing a
+  // 100+ char call_id the Responses backend rejects (max 64) on the next turn.
+  let functionCallIndex = 0;
 
   const makeChunk = (delta: DeltaWithReasoning, finishReason?: string): ChatCompletionChunk => ({
     id: `chatcmpl-codex-${chunkIndex++}`,
@@ -780,7 +785,7 @@ export async function* parseSseStream(
           if (item.name && item.call_id) {
             yield makeChunk({
               tool_calls: [{
-                index: 0,
+                index: functionCallIndex++,
                 id: item.call_id,
                 type: 'function',
                 function: {
