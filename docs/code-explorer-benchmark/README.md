@@ -12,14 +12,27 @@ the same prompt under two conditions:
 
 | Condition | How |
 |---|---|
-| **With Code Explorer** | the gitnexus MCP enabled (default config) |
-| **Without Code Explorer** | `CODEBUDDY_DISABLE_MCP=true` — gitnexus is the only enabled MCP here, so this is a clean "no graph" run, with **no config mutation** |
+| **With Code Explorer** | the gitnexus MCP enabled (`CODEBUDDY_DISABLE_MCP=false`) |
+| **Without Code Explorer** | `CODEBUDDY_DISABLE_MCP=true` — gitnexus is the only enabled MCP here, so this turns off the gitnexus graph, with **no config mutation** |
 
 and records, per condition: **tokens**, **tool-call count**, **wall-clock**.
 
-The thesis isn't only "fewer tokens." It's two things:
-1. **Cost** — the graph answers relationship questions in one call instead of many file reads.
-2. **Capability** — for transitive questions (`impact`, blast radius), the text-only run often *can't* produce the complete answer at all. That shows up as a wrong/incomplete answer in the correctness pass, not just a higher token count.
+> **⚠️ Honest framing — this is NOT "graph vs no graph."** Code Buddy ships its
+> own built-in graph tools (`code_graph` / `codebase_map`, backed by an internal
+> `KnowledgeGraph`). Disabling the gitnexus MCP does **not** remove those — the
+> "without" run still has a graph. So what this harness measures is
+> **gitnexus's graph vs Code Buddy's built-in graph**, not graph vs grep. On a
+> spot check (`impact executePlan`) the built-in answered ~20 affected symbols
+> vs gitnexus-over-MCP's 18, i.e. roughly on par — the built-in is a real
+> competitor, not a strawman. gitnexus's edge has to come from **breadth**
+> (14 languages, whole-repo, the `--direction both` depth the CLI shows = 187)
+> rather than "the agent had no graph at all." State that in any writeup, and
+> note that gitnexus's MCP `impact direction:both` currently under-reports
+> (18 vs the CLI's 187) — a real gap to close before claiming a capability win.
+
+The thesis is two things, framed against the built-in graph (above):
+1. **Cost** — does the gitnexus graph answer relationship questions in fewer tokens / tool calls than the built-in path?
+2. **Capability** — for transitive questions (`impact`, blast radius), is the answer *more complete*? (Judge against `tasks.json` ground_truth, not against a no-graph run.)
 
 ## How to run
 

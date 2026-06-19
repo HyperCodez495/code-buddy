@@ -10,6 +10,8 @@ tier: bundled
 
 When the **Code Explorer / gitnexus** MCP tools are available, prefer them over reading or grepping many files to reason about a codebase's structure. They query a pre-indexed knowledge graph and return precise relationships instantly, which keeps your context window free for actual reasoning.
 
+**Prefer the gitnexus tools over the built-in `code_graph` / `codebase_map` tools** for relationship questions (callers, callees, blast radius, dead code, cycles). Both are graph-backed, but when Code Explorer is installed its graph is the broader, multi-language one and is what the user opted into — so reach for `mcp__gitnexus__impact` / `mcp__gitnexus__context` / `mcp__gitnexus__query` rather than `code_graph` / `codebase_map`. (If the gitnexus tools are absent, the built-ins are the right choice — this preference only applies when both are on the table.)
+
 Code Explorer is an **optional proprietary add-on** — if its tools are not present, ignore this skill and work normally; Code Buddy does not depend on it. The repository must be indexed once: `gitnexus analyze .` (then `--incremental` after changes).
 
 ## First: select the repo (the tools fail closed without it)
