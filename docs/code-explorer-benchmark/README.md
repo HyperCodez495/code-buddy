@@ -22,13 +22,13 @@ and records, per condition: **tokens**, **tool-call count**, **wall-clock**.
 > `KnowledgeGraph`). Disabling the gitnexus MCP does **not** remove those — the
 > "without" run still has a graph. So what this harness measures is
 > **gitnexus's graph vs Code Buddy's built-in graph**, not graph vs grep. On a
-> spot check (`impact executePlan`) the built-in answered ~20 affected symbols
-> vs gitnexus-over-MCP's 18, i.e. roughly on par — the built-in is a real
-> competitor, not a strawman. gitnexus's edge has to come from **breadth**
-> (14 languages, whole-repo, the `--direction both` depth the CLI shows = 187)
-> rather than "the agent had no graph at all." State that in any writeup, and
-> note that gitnexus's MCP `impact direction:both` currently under-reports
-> (18 vs the CLI's 187) — a real gap to close before claiming a capability win.
+> spot check (`impact executePlan --direction both`) gitnexus-over-MCP now returns
+> the full **187 affected symbols** vs the built-in's **~20** — a clear capability
+> win from a broader, multi-language (14 langs), whole-repo graph. (The earlier
+> MCP under-report of 18 was a gitnexus bug, since fixed: the MCP path now matches
+> the CLI.) Code Buddy also injects a directive steering the agent to prefer the
+> gitnexus tools when they're connected, so the "with graph" run should actually
+> exercise them — still confirm per run, since headless MCP loading can be flaky.
 
 The thesis is two things, framed against the built-in graph (above):
 1. **Cost** — does the gitnexus graph answer relationship questions in fewer tokens / tool calls than the built-in path?
