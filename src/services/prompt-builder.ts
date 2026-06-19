@@ -22,7 +22,7 @@ import { EnhancedMemory, PersistentMemoryManager } from "../memory/index.js";
 import { PromptCacheManager } from "../optimization/prompt-cache.js";
 import { MoltbotHooksManager } from "../hooks/moltbot-hooks.js";
 import { getModelToolConfig } from "../config/model-tools.js";
-import { resolveProjectContext, createContextRegistry, type ContextRegistry } from "../context/project-context.js";
+import { resolveProjectContext, createContextRegistry, setActiveContextRegistry, type ContextRegistry } from "../context/project-context.js";
 import { classifyQuery, type QueryComplexity } from "../agent/execution/query-classifier.js";
 import {
   filterToolNames,
@@ -335,6 +335,8 @@ export class PromptBuilder {
       // build and reused by the JIT pass (`getContextRegistry`).
       if (gates.includeBootstrap) {
         this.contextRegistry = createContextRegistry();
+        // Publish for the JIT pass so it skips files injected here at startup.
+        setActiveContextRegistry(this.contextRegistry);
         try {
           const ctx = resolveProjectContext({ cwd: this.config.cwd, registry: this.contextRegistry });
           if (ctx.text) {

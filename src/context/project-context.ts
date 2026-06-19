@@ -117,6 +117,20 @@ export function createContextRegistry(): ContextRegistry {
   return new ContextRegistry();
 }
 
+// Module-level "active" registry. The prompt builder publishes its per-build
+// registry here (`setActiveContextRegistry`) so the standalone JIT pass — which
+// has no handle to the PromptBuilder — can dedup against files already injected
+// at startup. Defaults to a persistent registry until the first build.
+let activeRegistry: ContextRegistry = new ContextRegistry();
+
+export function setActiveContextRegistry(registry: ContextRegistry): void {
+  activeRegistry = registry;
+}
+
+export function getActiveContextRegistry(): ContextRegistry {
+  return activeRegistry;
+}
+
 // ============================================================================
 // Public API
 // ============================================================================

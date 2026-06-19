@@ -1,31 +1,19 @@
 /**
  * JIT (Just-In-Time) Context Discovery
  *
- * Dynamically loads .codebuddy/ context files when tools access
- * subdirectories. Context grows organically as the agent explores,
- * rather than loading everything at startup.
+ * When a tool accesses a path, this loads the instruction files in that
+ * subtree that weren't already injected at startup (delegated to the unified
+ * `project-context` loader, sharing its dedup registry), plus two JIT-only
+ * concerns: auto-discovered doc pages (DOC_DIR_MAP) and path-scoped rules.
  *
- * Inspired by Gemini CLI's jit-context.ts
+ * Inspired by Gemini CLI's jit-context.
  */
 
 import * as fs from 'fs';
 import * as path from 'path';
 import { logger } from '../utils/logger.js';
 import { discoverRulesForPath } from './rules-loader.js';
-import { shouldExcludeInstructionFile } from './instruction-excludes.js';
-import { resolveImportDirectives } from './import-directive-parser.js';
-
-/** Context file names to discover */
-const CONTEXT_FILES = [
-  'CODEBUDDY.md',
-  'CONTEXT.md',
-  'INSTRUCTIONS.md',
-  'AGENTS.md',
-  'README.md',
-];
-
-/** Directories that may contain context files */
-const CONTEXT_DIRS = ['.codebuddy', '.claude'];
+import { resolveJitContext, getActiveContextRegistry } from './project-context.js';
 
 /**
  * Map of source directory prefixes → relevant doc page slugs.
@@ -50,31 +38,26 @@ const DOC_DIR_MAP: Record<string, string[]> = {
   'tests': ['testing'],
 };
 
-/** Set of already-loaded paths (avoid re-loading) */
+/** Set of already-loaded doc paths (instruction files dedup via the registry). */
 const loadedPaths = new Set<string>();
 
 /** Maximum context size per discovery (chars) */
 const MAX_JIT_CONTEXT_CHARS = 4000;
 
-/** Maximum directory depth to traverse upward */
-const MAX_UPWARD_DEPTH = 10;
-
 export const JIT_CONTEXT_PREFIX = '\n\n--- Discovered Context ---\n';
 export const JIT_CONTEXT_SUFFIX = '\n--- End Context ---';
 
 /**
- * Clear loaded paths cache (for testing).
+ * Clear caches (for testing / `/context reload`). Resets both the doc dedup set
+ * and the active context registry so the next pass re-scans from scratch.
  */
 export function clearJitCache(): void {
   loadedPaths.clear();
+  getActiveContextRegistry().clear();
 }
 
 /**
- * Discover and load context files for a given accessed path.
- *
- * Walks upward from the accessed file's directory to the project root,
- * checking for context files at each level. Only loads files that
- * haven't been loaded before in this session.
+ * Discover and load JIT context for a given accessed path.
  *
  * @param accessedPath - The file/directory path being accessed by a tool
  * @param projectRoot - The project root directory (stop walking here)
@@ -88,101 +71,34 @@ export function discoverJitContext(
     const normalizedRoot = path.resolve(projectRoot);
     const normalizedPath = path.resolve(accessedPath);
 
-    // Start from the accessed file's directory
-    let currentDir = fs.existsSync(normalizedPath) && fs.statSync(normalizedPath).isDirectory()
-      ? normalizedPath
-      : path.dirname(normalizedPath);
-
     const discoveredContent: string[] = [];
-    let depth = 0;
 
-    while (depth < MAX_UPWARD_DEPTH) {
-      // Check if we've gone above the project root
-      if (!currentDir.startsWith(normalizedRoot) && currentDir !== normalizedRoot) {
-        break;
-      }
-
-      // Look for context files in this directory
-      for (const contextFile of CONTEXT_FILES) {
-        const filePath = path.join(currentDir, contextFile);
-        if (!loadedPaths.has(filePath) && fs.existsSync(filePath)) {
-          // CC10: Check instruction excludes
-          if (shouldExcludeInstructionFile(filePath, normalizedRoot)) {
-            logger.debug(`JIT context: excluded ${path.relative(normalizedRoot, filePath)}`);
-            loadedPaths.add(filePath); // Mark as "seen" to avoid re-checking
-            continue;
-          }
-          try {
-            let content = fs.readFileSync(filePath, 'utf-8');
-            if (content.trim()) {
-              // CC9: Resolve @import directives
-              content = resolveImportDirectives(content, {
-                baseDir: path.dirname(filePath),
-                projectRoot: normalizedRoot,
-              });
-              const relativePath = path.relative(normalizedRoot, filePath).replace(/\\/g, '/');
-              discoveredContent.push(`[${relativePath}]\n${content.trim()}`);
-              loadedPaths.add(filePath);
-              logger.debug(`JIT context: loaded ${relativePath}`);
-            }
-          } catch { /* read error — skip */ }
-        }
-      }
-
-      // Also check .codebuddy/ and .claude/ subdirectories
-      for (const contextDir of CONTEXT_DIRS) {
-        const dirPath = path.join(currentDir, contextDir);
-        if (fs.existsSync(dirPath) && fs.statSync(dirPath).isDirectory()) {
-          for (const contextFile of CONTEXT_FILES) {
-            const filePath = path.join(dirPath, contextFile);
-            if (!loadedPaths.has(filePath) && fs.existsSync(filePath)) {
-              // CC10: Check instruction excludes
-              if (shouldExcludeInstructionFile(filePath, normalizedRoot)) {
-                logger.debug(`JIT context: excluded ${path.relative(normalizedRoot, filePath)}`);
-                loadedPaths.add(filePath);
-                continue;
-              }
-              try {
-                let content = fs.readFileSync(filePath, 'utf-8');
-                if (content.trim()) {
-                  // CC9: Resolve @import directives
-                  content = resolveImportDirectives(content, {
-                    baseDir: path.dirname(filePath),
-                    projectRoot: normalizedRoot,
-                  });
-                  const relativePath = path.relative(normalizedRoot, filePath).replace(/\\/g, '/');
-                  discoveredContent.push(`[${relativePath}]\n${content.trim()}`);
-                  loadedPaths.add(filePath);
-                  logger.debug(`JIT context: loaded ${relativePath}`);
-                }
-              } catch { /* read error — skip */ }
-            }
-          }
-        }
-      }
-
-      // Move up
-      const parent = path.dirname(currentDir);
-      if (parent === currentDir) break; // reached filesystem root
-      currentDir = parent;
-      depth++;
+    // 1. Instruction files in the accessed subtree, via the unified loader.
+    //    The shared active registry skips anything already injected at startup,
+    //    so the same AGENTS.md/CODEBUDDY.md is never duplicated.
+    const ctx = resolveJitContext(accessedPath, {
+      projectRoot: normalizedRoot,
+      registry: getActiveContextRegistry(),
+    });
+    if (ctx.text) {
+      discoveredContent.push(ctx.text);
     }
 
-    // Auto-discover relevant doc pages based on accessed path
+    // 2. Auto-discover relevant doc pages based on the accessed path.
     const relativePath = path.relative(normalizedRoot, normalizedPath).replace(/\\/g, '/');
     for (const [prefix, slugPatterns] of Object.entries(DOC_DIR_MAP)) {
       if (!relativePath.startsWith(prefix)) continue;
       const docsDir = path.join(normalizedRoot, '.codebuddy', 'docs');
       if (!fs.existsSync(docsDir)) break;
       try {
-        const docFiles = fs.readdirSync(docsDir).filter(f => f.endsWith('.md'));
+        const docFiles = fs.readdirSync(docsDir).filter((f) => f.endsWith('.md'));
         for (const pattern of slugPatterns) {
-          const match = docFiles.find(f => f.includes(pattern));
+          const match = docFiles.find((f) => f.includes(pattern));
           if (!match) continue;
           const docPath = path.join(docsDir, match);
           if (loadedPaths.has(docPath)) continue;
           const content = fs.readFileSync(docPath, 'utf-8');
-          // Only inject the first 2 sections (title + first H2) to stay compact
+          // Only inject the first 2 sections (title + first H2) to stay compact.
           const sections = content.split(/(?=^## )/m);
           const compact = sections.slice(0, 2).join('').trim();
           if (compact) {
@@ -193,11 +109,13 @@ export function discoverJitContext(
           }
           break; // One doc per prefix
         }
-      } catch { /* docs dir not readable */ }
+      } catch {
+        /* docs dir not readable */
+      }
       break; // One prefix match
     }
 
-    // Discover path-scoped rules matching this access
+    // 3. Path-scoped rules matching this access.
     const rulesContext = discoverRulesForPath(accessedPath, projectRoot);
     if (rulesContext) {
       discoveredContent.push(rulesContext);
