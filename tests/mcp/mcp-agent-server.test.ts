@@ -118,13 +118,13 @@ jest.mock('../../src/tools/web-search', () => ({
   }; }),
 }));
 
-jest.mock('../../src/context/context-files', () => ({
-  loadContext: jest.fn().mockResolvedValue({
-    files: [{ path: 'CLAUDE.md', content: '# Instructions', source: 'project', priority: 1 }],
-    combinedContent: '# Instructions',
-    totalSize: 100,
+jest.mock('../../src/context/project-context', () => ({
+  resolveProjectContext: jest.fn().mockReturnValue({
+    text: '## Project Context\n# Instructions',
+    sources: [{ relPath: 'CLAUDE.md', tier: 'hierarchy', variant: 'base', bytes: 14 }],
+    bytes: 100,
+    truncated: false,
   }),
-  formatContextForPrompt: jest.fn().mockReturnValue('## Project Context\n# Instructions'),
 }));
 
 // Mock tools used by the original server

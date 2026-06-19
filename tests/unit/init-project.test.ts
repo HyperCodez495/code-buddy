@@ -238,7 +238,9 @@ describe('generateAgentsMdContent', () => {
       languages: ['TypeScript'],
       hasClaudeMd: false,
     });
-    expect(content).not.toContain('`CLAUDE.md`');
+    // The conditional "deep-dive" pointer is omitted (CLAUDE.md still appears in
+    // the accepted-filenames note, which is interop documentation, not a pointer).
+    expect(content).not.toContain('Claude Code-specific deep-dive');
   });
 });
 

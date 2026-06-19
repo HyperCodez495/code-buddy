@@ -24,9 +24,8 @@ export function registerResources(server: McpServer): void {
     },
     async () => {
       try {
-        const { loadContext, formatContextForPrompt } = await import('../context/context-files.js');
-        const context = await loadContext(process.cwd());
-        let text = formatContextForPrompt(context);
+        const { resolveProjectContext } = await import('../context/project-context.js');
+        let text = resolveProjectContext({ cwd: process.cwd() }).text;
 
         // Append git status
         try {
