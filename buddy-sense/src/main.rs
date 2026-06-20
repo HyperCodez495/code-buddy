@@ -15,7 +15,7 @@ mod senses;
 
 use tokio::sync::{broadcast, mpsc};
 
-use event::{Modality, SensoryEvent};
+use event::SensoryEvent;
 
 const AUDIO_FRAME_MS: u64 = 20;
 const AUDIO_THRESHOLD: f64 = 0.05;
@@ -41,8 +41,20 @@ async fn main() {
         tokio::spawn(async move { bridge::run_bridge(url, rx).await });
     }
 
+    // Vital sense — the autonomic heartbeat, ALWAYS on and in PARALLEL with the
+    // other senses (like a real heartbeat, independent of sight/hearing).
+    let heartbeat_ms = std::env::var("BUDDY_SENSE_HEARTBEAT_MS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(1000);
+    {
+        let tx = sense_tx.clone();
+        tokio::spawn(async move { senses::vital::run(tx, heartbeat_ms).await });
+    }
+
     match wav {
         Some(path) => {
+            // Audio runs concurrently with the heartbeat — both feed the thalamus.
             match senses::audio::wav_events(&path, AUDIO_FRAME_MS, AUDIO_THRESHOLD) {
                 Ok(events) => {
                     eprintln!("[buddy-sense] audio: {} VAD event(s) from {path}", events.len());
@@ -55,20 +67,12 @@ async fn main() {
                 }
                 Err(e) => eprintln!("[buddy-sense] audio error: {e}"),
             }
-            // Let the bridge flush.
-            tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+            // Keep beating a moment so audio + heartbeat interleave, then flush.
+            tokio::time::sleep(std::time::Duration::from_millis(800)).await;
         }
         None => {
-            eprintln!("[buddy-sense] demo mode — heartbeat every 2s (pass a .wav for the audio sense)");
-            let mut n: u64 = 0;
-            loop {
-                let ev = SensoryEvent::new(Modality::Vital, "heartbeat", 10, serde_json::json!({ "n": n }));
-                if sense_tx.send(ev).await.is_err() {
-                    break;
-                }
-                n += 1;
-                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
-            }
+            eprintln!("[buddy-sense] running — vital heartbeat every {heartbeat_ms}ms (pass a .wav for the audio sense). Ctrl-C to stop.");
+            std::future::pending::<()>().await;
         }
     }
 }
