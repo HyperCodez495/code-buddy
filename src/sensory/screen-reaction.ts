@@ -34,6 +34,7 @@ export function wireScreenReaction(options: ScreenReactionOptions = {}): () => v
   const debounceMs = options.debounceMs ?? Number(process.env.CODEBUDDY_SCREEN_DEBOUNCE_MS ?? 5000);
   const now = options.now ?? (() => Date.now());
   let lastAt = Number.NEGATIVE_INFINITY;
+  let inFlight = false;
 
   const id = bus.on('sensory:perception', (evt: BaseEvent) => {
     const p = perceptionOf(evt);
@@ -44,7 +45,9 @@ export function wireScreenReaction(options: ScreenReactionOptions = {}): () => v
       logger.info('[screen] change (debounced)');
       return;
     }
+    if (inFlight) return; // a prior analyze() is still running — don't stampede
     lastAt = t;
+    inFlight = true;
 
     void (async () => {
       try {
@@ -65,6 +68,8 @@ export function wireScreenReaction(options: ScreenReactionOptions = {}): () => v
         logger.info(`[screen] change recorded${analysis.description ? ` → ${analysis.description}` : ''}`);
       } catch (err) {
         logger.warn(`[screen] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        inFlight = false;
       }
     })();
   });

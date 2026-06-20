@@ -921,6 +921,8 @@ function createApp(config: ServerConfig): Application {
 
 /** Guards the sensory layer against double-wiring on a second in-process start. */
 let sensoryWired = false;
+/** Teardown fns for the sensory layer (bridge close, listener unsubscribes, scheduler stop). */
+let sensoryTeardown: Array<() => void | Promise<void>> = [];
 
 /**
  * Start the server
@@ -1123,31 +1125,45 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
           const { startSensoryBridge } = await import('../sensory/sensory-bridge.js');
           const { wireSensoryReactions } = await import('../sensory/reactions.js');
           const { getHeartbeatScheduler } = await import('../sensory/heartbeat-scheduler.js');
-          startSensoryBridge();
-          wireSensoryReactions();
+          const sensoryBridgeHandle = startSensoryBridge();
+          const unwireReactions = wireSensoryReactions();
+          sensoryTeardown.push(() => sensoryBridgeHandle.close(), unwireReactions);
           // Vision reaction (opt-in) — vision/motion → camera_analyze (local gemma).
           // Requires a shared token: a frame can trigger the webcam, so refuse to
           // wire it on an unauthenticated bridge.
-          if (process.env.CODEBUDDY_SENSORY_CAMERA === 'true') {
-            if (!process.env.CODEBUDDY_SENSORY_TOKEN) {
-              logger.warn('Sensory vision reaction NOT enabled: set CODEBUDDY_SENSORY_TOKEN to allow camera triggering.');
-            } else {
-              const { wireVisionReaction } = await import('../sensory/vision-reaction.js');
-              wireVisionReaction();
+          const sensoryToken = process.env.CODEBUDDY_SENSORY_TOKEN;
+          {
+            const { shouldWireVisionReaction, wireVisionReaction } = await import('../sensory/vision-reaction.js');
+            if (shouldWireVisionReaction({ camera: process.env.CODEBUDDY_SENSORY_CAMERA, token: sensoryToken })) {
+              sensoryTeardown.push(wireVisionReaction());
               logger.info('Sensory vision reaction: Enabled (vision/motion → camera_analyze)');
+            } else if (process.env.CODEBUDDY_SENSORY_CAMERA === 'true') {
+              logger.warn('Sensory vision reaction NOT enabled: set CODEBUDDY_SENSORY_TOKEN to allow camera triggering.');
             }
           }
-          // Screen reaction (opt-in) — screen/change → percept (+ pluggable OCR/describe).
+          // Screen reaction (opt-in) — also token-gated (an injected analyzer could capture the desktop).
           if (process.env.CODEBUDDY_SENSORY_SCREEN === 'true') {
-            const { wireScreenReaction } = await import('../sensory/screen-reaction.js');
-            wireScreenReaction();
-            logger.info('Sensory screen reaction: Enabled (screen/change → percept)');
+            if (sensoryToken) {
+              const { wireScreenReaction } = await import('../sensory/screen-reaction.js');
+              sensoryTeardown.push(wireScreenReaction());
+              logger.info('Sensory screen reaction: Enabled (screen/change → percept)');
+            } else {
+              logger.warn('Sensory screen reaction NOT enabled: set CODEBUDDY_SENSORY_TOKEN.');
+            }
           }
           // Speech reaction (opt-in) — speech_end → STT → 'hearing' percept (+ onHeard hook).
           if (process.env.CODEBUDDY_SENSORY_SPEECH === 'true') {
             const { wireSpeechReaction } = await import('../sensory/speech-reaction.js');
-            wireSpeechReaction();
+            sensoryTeardown.push(wireSpeechReaction());
             logger.info('Sensory speech reaction: Enabled (speech_end → STT → percept)');
+          }
+          // Privacy: camera/screen descriptions land in percepts.jsonl — warn if not encrypted at rest.
+          if (
+            (process.env.CODEBUDDY_SENSORY_CAMERA === 'true' || process.env.CODEBUDDY_SENSORY_SCREEN === 'true') &&
+            !process.env.CODEBUDDY_COMPANION_ENCRYPTION_KEY &&
+            !process.env.CODEBUDDY_MEMORY_KEY
+          ) {
+            logger.warn('Sensory camera/screen percepts are written UNENCRYPTED — set CODEBUDDY_COMPANION_ENCRYPTION_KEY to encrypt scene/screen descriptions at rest.');
           }
           // Heartbeat pacemaker — heartbeats trigger periodic processing (every N beats).
           const heart = getHeartbeatScheduler();
@@ -1168,6 +1184,7 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             },
           });
           heart.start();
+          sensoryTeardown.push(() => heart.stop());
           logger.info(`Sensory bridge: Enabled (buddy-sense → event bus; heartbeat treatments every ${everyBeats} beats)`);
         } catch (err) {
           logger.warn(`Sensory bridge failed to start: ${err instanceof Error ? err.message : String(err)}`);
@@ -1241,6 +1258,16 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
  * Stop the server gracefully
  */
 export async function stopServer(server: HttpServer): Promise<void> {
+  // Tear down the sensory layer (WS bridge, bus listeners, heartbeat scheduler) so
+  // an in-process restart doesn't leak listeners or EADDRINUSE the bridge port.
+  for (const teardown of sensoryTeardown.splice(0)) {
+    try {
+      await teardown();
+    } catch {
+      /* never throw on shutdown */
+    }
+  }
+  sensoryWired = false;
   return new Promise((resolve, reject) => {
     // Phase (d).9 — cancel the heartbeat timer so it doesn't keep
     // emitting against a half-shut server. Idempotent.

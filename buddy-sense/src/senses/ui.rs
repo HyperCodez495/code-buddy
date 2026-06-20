@@ -56,22 +56,27 @@ pub mod live {
         let conn = atspi.connection().clone();
         let events = atspi.event_stream();
         tokio::pin!(events);
-        while let Some(Ok(ev)) = events.next().await {
+        while let Some(item) = events.next().await {
+            // A stream error shouldn't kill the sense for good — skip and keep going.
+            let ev = match item {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
             let Ok(change) = StateChangedEvent::try_from(ev) else {
                 continue;
             };
             if change.state == "focused".into() && change.enabled {
-                // Resolve the accessible's human name (best-effort, time-boxed so a
-                // slow/absent proxy never stalls the event loop). Fall back to a
-                // generic label rather than dropping the event.
-                let resolved = match change.item.clone().into_accessible_proxy(&conn).await {
-                    Ok(proxy) => tokio::time::timeout(std::time::Duration::from_millis(300), proxy.name())
-                        .await
-                        .ok()
-                        .and_then(|r| r.ok())
-                        .unwrap_or_default(),
-                    Err(_) => String::new(),
-                };
+                // Resolve the accessible's human name (best-effort). Time-box the
+                // WHOLE resolve (proxy creation + name) so a slow proxy can't stall
+                // the loop; fall back to a generic label rather than dropping the event.
+                let resolved = tokio::time::timeout(std::time::Duration::from_millis(300), async {
+                    let proxy = change.item.clone().into_accessible_proxy(&conn).await.ok()?;
+                    proxy.name().await.ok()
+                })
+                .await
+                .ok()
+                .flatten()
+                .unwrap_or_default();
                 let name = if resolved.trim().is_empty() { "(focus)".to_string() } else { resolved };
                 if tx.send(map_signal(&UiSignal::ElementFocus { name })).await.is_err() {
                     break;

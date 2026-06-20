@@ -52,6 +52,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   const now = options.now ?? (() => Date.now());
   const transcribe = options.transcriber ?? defaultTranscribe;
   let lastAt = Number.NEGATIVE_INFINITY;
+  let inFlight = false;
 
   const id = bus.on('sensory:perception', (evt: BaseEvent) => {
     const p = perceptionOf(evt);
@@ -61,7 +62,9 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
 
     const t = now();
     if (t - lastAt < debounceMs) return; // one transcription per utterance
+    if (inFlight) return; // a prior STT (faster-whisper, seconds) is still running
     lastAt = t;
+    inFlight = true;
 
     void (async () => {
       try {
@@ -83,6 +86,8 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
         await options.onHeard?.(text);
       } catch (err) {
         logger.warn(`[speech] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        inFlight = false;
       }
     })();
   });

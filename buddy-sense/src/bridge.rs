@@ -84,4 +84,36 @@ mod tests {
         let without = frame_json(&ev(), None).unwrap();
         assert!(!without.contains("token"));
     }
+
+    #[tokio::test]
+    async fn run_bridge_delivers_a_frame_then_reconnects_on_drop() {
+        use tokio::net::TcpListener;
+        use tokio_tungstenite::accept_async;
+
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("ws://{}", listener.local_addr().unwrap());
+        let (btx, rx) = broadcast::channel::<SensoryEvent>(8);
+        let handle = tokio::spawn(run_bridge(url, None, rx));
+
+        // First connection — the bridge sends our event as a JSON frame.
+        let (sock, _) = listener.accept().await.unwrap();
+        let mut ws = accept_async(sock).await.unwrap();
+        tokio::time::sleep(std::time::Duration::from_millis(80)).await;
+        btx.send(ev()).unwrap();
+        // The keepalive may send a Ping first — read until the JSON text frame.
+        let mut text = None;
+        for _ in 0..6 {
+            if let Message::Text(t) = ws.next().await.unwrap().unwrap() {
+                text = Some(t);
+                break;
+            }
+        }
+        assert!(text.unwrap().contains("speech_start"));
+
+        // Drop the peer → the bridge must reconnect (a second accept happens).
+        drop(ws);
+        let reconnected = tokio::time::timeout(std::time::Duration::from_secs(6), listener.accept()).await;
+        assert!(reconnected.is_ok(), "bridge should reconnect after the peer drops");
+        handle.abort();
+    }
 }

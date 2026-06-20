@@ -36,6 +36,15 @@ interface RawSensoryFrame {
   token?: string;
 }
 
+/** The trust boundary: only known modalities pass; kinds are sanitized to a safe
+ * shape (no control chars / newlines, ≤64 chars) so a crafted local frame can't
+ * inject content downstream (e.g. into CODEBUDDY_MEMORY.md via dreaming). */
+const KNOWN_MODALITIES = new Set(['audio', 'vision', 'screen', 'vital', 'ui']);
+
+function sanitizeKind(kind: string): string {
+  return kind.replace(/[^a-zA-Z0-9_:.\-]/g, '').slice(0, 64);
+}
+
 export function startSensoryBridge(options: SensoryBridgeOptions = {}): SensoryBridgeHandle {
   const host = options.host ?? '127.0.0.1';
   const port = options.port ?? Number(process.env.CODEBUDDY_SENSORY_PORT ?? 8129);
@@ -69,6 +78,11 @@ export function startSensoryBridge(options: SensoryBridgeOptions = {}): SensoryB
       }
       if (token && frame.token !== token) return;
       if (!frame.modality || !frame.kind) return;
+      // Validate the string fields at the trust boundary (not just the numbers):
+      // unknown modality is dropped, kind is sanitized — blocks memory injection.
+      if (!KNOWN_MODALITIES.has(frame.modality)) return;
+      const kind = sanitizeKind(frame.kind);
+      if (!kind) return;
 
       // Validate/clamp numeric fields so a malformed frame can't poison downstream.
       const salience = Number.isFinite(frame.salience) ? Math.max(0, Math.min(255, Math.round(frame.salience as number))) : 0;
@@ -78,7 +92,7 @@ export function startSensoryBridge(options: SensoryBridgeOptions = {}): SensoryB
         source: 'buddy-sense',
         metadata: {
           modality: frame.modality,
-          kind: frame.kind,
+          kind,
           salience,
           tsMs,
           payload: frame.payload,

@@ -68,4 +68,25 @@ describe('HeartbeatScheduler — heartbeat-paced treatments', () => {
     const s = new HeartbeatScheduler();
     expect(() => s.register({ name: 'bad', everyBeats: 0, handler: () => {} })).toThrow();
   });
+
+  it('isolates a throwing treatment — the pacemaker keeps the others running', async () => {
+    const s = new HeartbeatScheduler();
+    const fired: string[] = [];
+    s.register({
+      name: 'bad',
+      everyBeats: 1,
+      handler: () => {
+        throw new Error('boom');
+      },
+    });
+    s.register({ name: 'good', everyBeats: 1, handler: () => void fired.push('good') });
+    s.start();
+    try {
+      beat(1);
+      await tick();
+      expect(fired).toEqual(['good']); // the throwing treatment didn't stop the good one
+    } finally {
+      s.stop();
+    }
+  });
 });

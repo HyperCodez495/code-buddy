@@ -209,6 +209,42 @@ mod tests {
         assert_eq!(kinds, vec!["speech_start", "speech_end"]);
     }
 
+    fn write_wav(path: &std::path::Path, channels: u16, bits: u16, fmt: hound::SampleFormat, samples: &[i32]) {
+        let spec = hound::WavSpec { channels, sample_rate: 16_000, bits_per_sample: bits, sample_format: fmt };
+        let mut w = hound::WavWriter::create(path, spec).unwrap();
+        for &s in samples {
+            w.write_sample(s).unwrap();
+        }
+        w.finalize().unwrap();
+    }
+
+    #[test]
+    fn read_wav_mono_decodes_16bit_and_downmixes_stereo() {
+        let dir = std::env::temp_dir();
+        let mono = dir.join("bs_test_mono.wav");
+        write_wav(&mono, 1, 16, hound::SampleFormat::Int, &[100, -200, 300]);
+        let (samples, rate) = read_wav_mono(mono.to_str().unwrap()).unwrap();
+        assert_eq!(rate, 16_000);
+        assert_eq!(samples, vec![100, -200, 300]);
+        std::fs::remove_file(&mono).ok();
+
+        let stereo = dir.join("bs_test_stereo.wav");
+        write_wav(&stereo, 2, 16, hound::SampleFormat::Int, &[100, 200, -100, 100]); // L,R interleaved
+        let (mono_samples, _) = read_wav_mono(stereo.to_str().unwrap()).unwrap();
+        assert_eq!(mono_samples, vec![150, 0]); // downmixed to mono (averaged)
+        std::fs::remove_file(&stereo).ok();
+    }
+
+    #[test]
+    fn read_wav_mono_errors_on_unsupported_depth_rather_than_silence() {
+        let dir = std::env::temp_dir();
+        let p = dir.join("bs_test_24bit.wav");
+        write_wav(&p, 1, 24, hound::SampleFormat::Int, &[1000, -2000, 3000]);
+        // The "never go deaf" arm: an unsupported depth must error, not decode to zeros.
+        assert!(read_wav_mono(p.to_str().unwrap()).is_err());
+        std::fs::remove_file(&p).ok();
+    }
+
     // Real Silero VAD on a real speech WAV. Needs onnxruntime (ORT_DYLIB_PATH) +
     // the model + a 16 kHz speech WAV — set the two env vars to run it; otherwise
     // it self-skips (so the default test run isn't environment-coupled).

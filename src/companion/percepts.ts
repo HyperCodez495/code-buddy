@@ -1,4 +1,4 @@
-import { appendFile, mkdir, readFile, stat } from 'fs/promises';
+import { appendFile, mkdir, readFile, rename, stat } from 'fs/promises';
 import * as crypto from 'crypto';
 import * as path from 'path';
 
@@ -221,6 +221,14 @@ export async function recordCompanionPercept<TPayload extends Record<string, unk
     : percept;
 
   await mkdir(path.dirname(storePath), { recursive: true });
+  // Rotate when large (the disk-guard lesson, mirroring dreams.jsonl): a long-running
+  // companion appends a percept per event, so cap growth + keep one backup.
+  try {
+    const info = await stat(storePath);
+    if (info.size > 1024 * 1024) await rename(storePath, `${storePath}.1`);
+  } catch {
+    /* no file yet */
+  }
   await appendFile(storePath, `${JSON.stringify(storedPercept)}\n`, 'utf8');
   return percept;
 }

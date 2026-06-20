@@ -39,12 +39,20 @@ async function defaultAnalyze(prompt: string): Promise<VisionAnalysis> {
   return { success: result.success, description: data?.description ?? result.output, imagePath: data?.imagePath };
 }
 
+/** Security invariant (pure + testable): the camera reaction may only be wired
+ * when explicitly enabled AND a shared token is set — a crafted local frame can
+ * trigger the webcam, so an unauthenticated bridge must not be able to. */
+export function shouldWireVisionReaction(env: { camera?: string; token?: string }): boolean {
+  return env.camera === 'true' && Boolean(env.token);
+}
+
 export function wireVisionReaction(options: VisionReactionOptions = {}): () => void {
   const bus = getGlobalEventBus();
   const debounceMs = options.debounceMs ?? Number(process.env.CODEBUDDY_VISION_DEBOUNCE_MS ?? 8000);
   const now = options.now ?? (() => Date.now());
   const analyzer: VisionAnalyzer = options.analyzer ?? { analyze: defaultAnalyze };
   let lastAt = Number.NEGATIVE_INFINITY;
+  let inFlight = false;
 
   const id = bus.on('sensory:perception', (evt: BaseEvent) => {
     const p = perceptionOf(evt);
@@ -55,7 +63,9 @@ export function wireVisionReaction(options: VisionReactionOptions = {}): () => v
       logger.info('[vision] motion (debounced — analysis throttled)');
       return;
     }
+    if (inFlight) return; // a prior analyze() (ffmpeg+gemma, 3–10s) is still running
     lastAt = t;
+    inFlight = true;
 
     void (async () => {
       try {
@@ -76,6 +86,8 @@ export function wireVisionReaction(options: VisionReactionOptions = {}): () => v
         logger.info(`[vision] motion analyzed → ${res.description ?? '(no description)'}`);
       } catch (err) {
         logger.warn(`[vision] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        inFlight = false;
       }
     })();
   });

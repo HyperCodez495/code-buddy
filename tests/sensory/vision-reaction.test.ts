@@ -2,8 +2,18 @@ import { describe, it, expect } from 'vitest';
 import { mkdtemp, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { wireVisionReaction, type VisionAnalyzer } from '../../src/sensory/vision-reaction.js';
+import { wireVisionReaction, shouldWireVisionReaction, type VisionAnalyzer } from '../../src/sensory/vision-reaction.js';
 import { getGlobalEventBus } from '../../src/events/event-bus.js';
+
+describe('shouldWireVisionReaction — the camera security invariant', () => {
+  it('only enables the camera when explicitly on AND a token is set', () => {
+    expect(shouldWireVisionReaction({ camera: 'true', token: 'secret' })).toBe(true);
+    expect(shouldWireVisionReaction({ camera: 'true', token: undefined })).toBe(false); // no token → no webcam
+    expect(shouldWireVisionReaction({ camera: 'true', token: '' })).toBe(false);
+    expect(shouldWireVisionReaction({ camera: 'false', token: 'secret' })).toBe(false);
+    expect(shouldWireVisionReaction({})).toBe(false);
+  });
+});
 
 function motion(): void {
   getGlobalEventBus().emit('sensory:perception', {
