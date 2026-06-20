@@ -18,6 +18,12 @@ export interface ValidateSkillOptions {
   keepOnAccept: boolean;
 }
 
+/** Deterministic coverage check: the skill content surfaces all expected guidance. */
+export function coversScenario(content: string, scenario: SkillBenchmarkScenario): boolean {
+  const lower = content.toLowerCase();
+  return scenario.expectIncludes.every((s) => lower.includes(s.toLowerCase()));
+}
+
 export function validateSkillProposal(
   proposal: SkillProposal,
   scenario: SkillBenchmarkScenario,

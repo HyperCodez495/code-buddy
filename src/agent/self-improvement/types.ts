@@ -117,6 +117,8 @@ export interface ArchiveEntry {
   scoreAfter: number;
   /** Id of the applied lesson (so it can be traced/rolled back later). */
   appliedRef?: string;
+  /** For consolidation: the umbrella skill an archived sibling was absorbed into. */
+  absorbedInto?: string;
   createdAt: string;
   /** Sentinel for auditability, mirrors the learning-loop convention. */
   reviewedBy: string;

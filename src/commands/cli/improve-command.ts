@@ -200,6 +200,72 @@ export function registerImproveCommands(program: Command): void {
     });
 
   improve
+    .command('skills-list')
+    .description('List installed authored skills (with pinned status)')
+    .option('--json', 'output JSON')
+    .action(async (options: ImproveOptions) => {
+      const { LiveSkillMutator } = await import('../../agent/self-improvement/skill-mutator.js');
+      const m = new LiveSkillMutator();
+      const skills = m.listAuthored().map((name) => ({ name, pinned: m.isPinned(name) }));
+      const text = skills.length
+        ? skills.map((s) => `  ${s.pinned ? '📌' : '  '} ${s.name}`).join('\n')
+        : 'No authored skills installed';
+      print({ kind: 'authored_skills', skills }, options, text);
+    });
+
+  improve
+    .command('skills-pin <name>')
+    .description('Pin an authored skill (protect it from curation overwrite/remove/consolidation)')
+    .option('--json', 'output JSON')
+    .action(async (name: string, options: ImproveOptions) => {
+      const { LiveSkillMutator } = await import('../../agent/self-improvement/skill-mutator.js');
+      const ok = new LiveSkillMutator().pin(name);
+      print({ kind: 'skill_pin', name, ok }, options, ok ? `Pinned ${name}` : `Skill not found: ${name}`);
+    });
+
+  improve
+    .command('skills-unpin <name>')
+    .description('Unpin an authored skill')
+    .option('--json', 'output JSON')
+    .action(async (name: string, options: ImproveOptions) => {
+      const { LiveSkillMutator } = await import('../../agent/self-improvement/skill-mutator.js');
+      const ok = new LiveSkillMutator().unpin(name);
+      print({ kind: 'skill_unpin', name, ok }, options, ok ? `Unpinned ${name}` : `Skill not found: ${name}`);
+    });
+
+  improve
+    .command('skills-restore <name>')
+    .description('Restore a previously archived authored skill')
+    .option('--json', 'output JSON')
+    .action(async (name: string, options: ImproveOptions) => {
+      const { LiveSkillMutator } = await import('../../agent/self-improvement/skill-mutator.js');
+      const ok = new LiveSkillMutator().restore(name);
+      print({ kind: 'skill_restore', name, ok }, options, ok ? `Restored ${name}` : `No archived skill: ${name}`);
+    });
+
+  improve
+    .command('skills-consolidate')
+    .description('Merge overlapping authored skills into one umbrella (coverage-gated)')
+    .option('--json', 'output JSON')
+    .option('--apply', 'install the umbrella + archive merged siblings (else preview)')
+    .action(async (options: ImproveOptions) => {
+      const { LiveSkillMutator } = await import('../../agent/self-improvement/skill-mutator.js');
+      const { consolidateCluster, buildClusterFromInstalled, LlmUmbrellaProposer } = await import('../../agent/self-improvement/skill-consolidator.js');
+      const { SEED_SKILL_SCENARIOS } = await import('../../agent/self-improvement/skill-benchmark.js');
+      const mutator = new LiveSkillMutator();
+      const cluster = buildClusterFromInstalled(mutator, SEED_SKILL_SCENARIOS);
+      const out = await consolidateCluster(cluster, new LlmUmbrellaProposer(), mutator, new EvolutionaryArchive(), {
+        keepOnAccept: options.apply === true,
+      });
+      const text = out.accepted
+        ? out.absorbed.length
+          ? `Consolidated ${out.absorbed.join(', ')} into ${out.umbrellaName}` + (out.skippedPinned.length ? ` (kept pinned: ${out.skippedPinned.join(', ')})` : '')
+          : `Would consolidate into ${out.umbrellaName} — re-run with --apply` + (out.skippedPinned.length ? ` (would keep pinned: ${out.skippedPinned.join(', ')})` : '')
+        : `No consolidation: ${out.rejectionReason} — ${out.reasons.join('; ')}`;
+      print({ kind: 'skill_consolidation', ...out }, options, text);
+    });
+
+  improve
     .command('loop')
     .description('Run improvement cycles until no further validated progress is made')
     .option('--json', 'output JSON')
