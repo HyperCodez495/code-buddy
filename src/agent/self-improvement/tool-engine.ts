@@ -44,6 +44,8 @@ export class ToolImprovementEngine {
   private readonly archive: EvolutionaryArchive;
   private readonly autonomy: Autonomy;
   private readonly now: () => Date;
+  /** Scenario ids already satisfied this run (coverage is per-scenario, not per tool name). */
+  private readonly covered = new Set<string>();
 
   constructor(options: ToolImprovementEngineOptions) {
     this.scenarios = options.scenarios;
@@ -60,10 +62,16 @@ export class ToolImprovementEngine {
     const base = { kind: 'tool_improvement_cycle' as const, startedAt, autonomy: this.autonomy };
 
     for (const scenario of this.scenarios) {
+      // Coverage is per-scenario: once a tool has satisfied this scenario's gate,
+      // don't re-author it (even if the model would pick a different name).
+      if (this.covered.has(scenario.id)) continue;
       const proposal = await this.proposer.propose(toProposerView(scenario));
       if (!proposal) continue;
-      // Already covered (its tool is registered) — skip to the next gap.
-      if (this.mutator.has(proposal.spec.name)) continue;
+      // A tool with this exact name already exists — skip (avoid dup-register).
+      if (this.mutator.has(proposal.spec.name)) {
+        this.covered.add(scenario.id);
+        continue;
+      }
 
       const gate = await validateToolProposal(proposal, scenario, this.mutator, {
         keepOnAccept: this.autonomy === 'auto-apply',
@@ -71,6 +79,7 @@ export class ToolImprovementEngine {
       const applied = gate.accepted && !!gate.appliedRef;
 
       if (applied) {
+        this.covered.add(scenario.id);
         this.archive.append({
           proposalId: proposal.id,
           kind: 'tool',
