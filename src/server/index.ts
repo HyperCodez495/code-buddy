@@ -1143,6 +1143,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             wireScreenReaction();
             logger.info('Sensory screen reaction: Enabled (screen/change → percept)');
           }
+          // Speech reaction (opt-in) — speech_end → STT → 'hearing' percept (+ onHeard hook).
+          if (process.env.CODEBUDDY_SENSORY_SPEECH === 'true') {
+            const { wireSpeechReaction } = await import('../sensory/speech-reaction.js');
+            wireSpeechReaction();
+            logger.info('Sensory speech reaction: Enabled (speech_end → STT → percept)');
+          }
           // Heartbeat pacemaker — heartbeats trigger periodic processing (every N beats).
           const heart = getHeartbeatScheduler();
           const everyBeats = Math.max(1, Number(process.env.CODEBUDDY_HEARTBEAT_EVERY ?? 10));

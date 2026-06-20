@@ -20,9 +20,23 @@ use event::SensoryEvent;
 const AUDIO_FRAME_MS: u64 = 20;
 const AUDIO_THRESHOLD: f64 = 0.05;
 
+/// Run the VAD and tag speech events with the source WAV path, so Code Buddy can
+/// transcribe the utterance (speech → STT → action) on its side.
+fn audio_events_for(path: &str) -> Result<Vec<SensoryEvent>, String> {
+    let mut events = compute_audio_events(path)?;
+    for ev in &mut events {
+        if ev.kind.starts_with("speech") {
+            if let Some(obj) = ev.payload.as_object_mut() {
+                obj.insert("wav".to_string(), serde_json::Value::String(path.to_string()));
+            }
+        }
+    }
+    Ok(events)
+}
+
 /// Pick the audio VAD: the Silero neural VAD when built with `neural-vad` AND a
 /// model is configured + present, otherwise the energy VAD (always available).
-fn audio_events_for(path: &str) -> Result<Vec<SensoryEvent>, String> {
+fn compute_audio_events(path: &str) -> Result<Vec<SensoryEvent>, String> {
     #[cfg(feature = "neural-vad")]
     {
         if let Ok(model) = std::env::var("BUDDY_SENSE_VAD_MODEL") {

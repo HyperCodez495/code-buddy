@@ -126,7 +126,7 @@ Toward the long-term companion/robot vision, [`buddy-sense/`](buddy-sense/) is a
 
 <p align="center"><img src="buddy-sense/docs/architecture.svg" alt="buddy-sense nervous-system architecture: senses → thalamus → bridge → Code Buddy event bus" width="840"/></p>
 
-**Honestly experimental** — distinct from the GA core above: the default daemon emits the heartbeat (+ audio from a WAV file); the live camera/mic aren't wired into the daemon yet, and `speech → STT → turn` is not yet connected. What's real today: the pure detector cores + thalamus + bridge are unit-tested (`cargo test`, 20 tests, no hardware), and the loopback bridge → event bus → reaction path is covered on the Code Buddy side.
+**Honestly experimental** — distinct from the GA core above: the default daemon emits the heartbeat (+ audio from a WAV file); the live camera/mic aren't wired into the daemon yet. `speech → STT → 'hearing' percept` **is** wired (faster-whisper), with a hook left for driving a full agent turn. What's real today: the pure detector cores + thalamus + bridge are unit-tested (`cargo test`, 20 tests, no hardware), and the loopback bridge → event bus → reaction path (incl. the speech transcription) is covered on the Code Buddy side.
 
 ```bash
 cd buddy-sense && cargo test     # 20 tests, no hardware
