@@ -1,0 +1,96 @@
+/**
+ * Skill sources — a small "referential" of named places skills can be imported
+ * from. A source is a local directory or a git repo. Persisted to
+ * `~/.codebuddy/skill-sources.json`. The importer resolves a source to a local
+ * directory (cloning/pulling a git source into a cache) and then runs the same
+ * firewall-gated import path.
+ *
+ * @module skills/skill-sources
+ */
+
+import fs from 'fs';
+import path from 'path';
+import os from 'os';
+import { execFileSync } from 'child_process';
+import { logger } from '../utils/logger.js';
+
+export interface SkillSource {
+  name: string;
+  type: 'dir' | 'git';
+  location: string;
+}
+
+interface SourcesFile {
+  schemaVersion: 1;
+  sources: SkillSource[];
+}
+
+function configPath(): string {
+  return path.join(os.homedir(), '.codebuddy', 'skill-sources.json');
+}
+
+function cacheRoot(): string {
+  return path.join(os.homedir(), '.codebuddy', 'skills', '.sources-cache');
+}
+
+function read(): SourcesFile {
+  try {
+    const parsed = JSON.parse(fs.readFileSync(configPath(), 'utf-8')) as Partial<SourcesFile>;
+    if (Array.isArray(parsed.sources)) return { schemaVersion: 1, sources: parsed.sources };
+  } catch {
+    /* no config yet */
+  }
+  // Seed Hermes's local repo as a default `dir` source when present.
+  const hermes = path.join(os.homedir(), '.hermes', 'skills');
+  const seed: SkillSource[] = fs.existsSync(hermes) ? [{ name: 'hermes', type: 'dir', location: hermes }] : [];
+  return { schemaVersion: 1, sources: seed };
+}
+
+function write(file: SourcesFile): void {
+  fs.mkdirSync(path.dirname(configPath()), { recursive: true });
+  fs.writeFileSync(configPath(), JSON.stringify(file, null, 2), 'utf-8');
+}
+
+export function listSources(): SkillSource[] {
+  return read().sources;
+}
+
+export function getSource(name: string): SkillSource | undefined {
+  return read().sources.find((s) => s.name === name);
+}
+
+export function addSource(name: string, location: string, type: 'dir' | 'git' = location.endsWith('.git') || location.includes('://') ? 'git' : 'dir'): SkillSource {
+  const file = read();
+  const source: SkillSource = { name, type, location };
+  file.sources = file.sources.filter((s) => s.name !== name);
+  file.sources.push(source);
+  write(file);
+  return source;
+}
+
+export function removeSource(name: string): boolean {
+  const file = read();
+  const before = file.sources.length;
+  file.sources = file.sources.filter((s) => s.name !== name);
+  if (file.sources.length === before) return false;
+  write(file);
+  return true;
+}
+
+/** Resolve a source to a local directory (clone/pull a git source into the cache). */
+export function resolveSourceDir(source: SkillSource): string {
+  if (source.type === 'dir') return source.location;
+  // git: shallow clone or pull into the cache.
+  const dir = path.join(cacheRoot(), source.name);
+  fs.mkdirSync(cacheRoot(), { recursive: true });
+  try {
+    if (fs.existsSync(path.join(dir, '.git'))) {
+      execFileSync('git', ['-C', dir, 'pull', '--ff-only', '--depth', '1'], { stdio: 'ignore' });
+    } else {
+      execFileSync('git', ['clone', '--depth', '1', source.location, dir], { stdio: 'ignore' });
+    }
+  } catch (err) {
+    logger.warn(`skill source "${source.name}": git fetch failed — ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return dir;
+}

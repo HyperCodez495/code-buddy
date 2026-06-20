@@ -772,6 +772,125 @@ export function registerSkillsCommands(program: Command): void {
         console.log(`  ! ${error}`);
       }
     });
+
+  // ── Import external skills (Hermes / a repository), firewall-gated ──────────
+  skills
+    .command('import')
+    .description('Import external skills from a directory or a named source (firewall-gated)')
+    .option('--dir <path>', 'import from a local directory')
+    .option('--source <name>', 'import from a named source (see `skills sources`)')
+    .option('--apply', 'install (default is a dry run)')
+    .option('--include-review', "also import skills the firewall flags as 'review'")
+    .option('--overwrite', 'overwrite an already-imported skill')
+    .option('--category <c>', 'only import skills whose path contains this')
+    .option('--json', 'output JSON')
+    .action(async (opts: { dir?: string; source?: string; apply?: boolean; includeReview?: boolean; overwrite?: boolean; category?: string; json?: boolean }) => {
+      const { importSkills } = await import('../../skills/skill-importer.js');
+      const { getSource, resolveSourceDir } = await import('../../skills/skill-sources.js');
+      let dir: string | undefined;
+      let label = 'import';
+      if (opts.dir) {
+        dir = opts.dir.startsWith('~') ? path.join(os.homedir(), opts.dir.slice(1)) : opts.dir;
+        label = path.basename(dir);
+      } else if (opts.source) {
+        const src = getSource(opts.source);
+        if (!src) {
+          console.log(`Unknown source: ${opts.source} (see \`buddy skills sources list\`)`);
+          return;
+        }
+        dir = resolveSourceDir(src);
+        label = src.name;
+      } else {
+        console.log('Specify --dir <path> or --source <name>.');
+        return;
+      }
+      const fs = await import('fs');
+      if (!fs.existsSync(dir)) {
+        console.log(`Directory not found: ${dir}`);
+        return;
+      }
+      const report = importSkills(dir, {
+        source: label,
+        dryRun: opts.apply !== true,
+        includeReview: opts.includeReview === true,
+        overwrite: opts.overwrite === true,
+        ...(opts.category ? { category: opts.category } : {}),
+      });
+      if (opts.json) {
+        console.log(JSON.stringify({ source: label, report }, null, 2));
+        return;
+      }
+      console.log(report.dryRun ? `Dry run (use --apply to install) — "${label}"` : `Imported from "${label}"`);
+      console.log(`  ${report.dryRun ? 'would import' : 'imported'}: ${report.imported.length} · quarantined: ${report.quarantined.length} · review: ${report.review.length} · skipped: ${report.skipped.length}`);
+      if (report.quarantined.length) {
+        console.log('  ⚠️  quarantined by firewall:');
+        for (const q of report.quarantined.slice(0, 15)) console.log(`     - ${q.sourcePath}`);
+      }
+      if (report.imported.length) {
+        console.log(`  ✓ ${report.dryRun ? 'would import' : 'imported'}:`);
+        for (const s of report.imported.slice(0, 30)) console.log(`     - ${s.name}`);
+      }
+    });
+
+  skills
+    .command('imported')
+    .description('List imported skills (with provenance + pinned status)')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const fs = await import('fs');
+      const { parseSkillFile } = await import('../../skills/parser.js');
+      const root = path.join(os.homedir(), '.codebuddy', 'skills', 'managed');
+      const items: Array<{ name: string; pinned: boolean; source?: string }> = [];
+      if (fs.existsSync(root)) {
+        for (const e of fs.readdirSync(root, { withFileTypes: true })) {
+          if (!e.isDirectory() || !e.name.startsWith('imported-')) continue;
+          const md = path.join(root, e.name, 'SKILL.md');
+          if (!fs.existsSync(md)) continue;
+          let pinned = false;
+          let source: string | undefined;
+          try {
+            const sk = parseSkillFile(fs.readFileSync(md, 'utf-8'), md, 'managed');
+            pinned = sk.metadata.pinned === true;
+            source = sk.metadata.source;
+          } catch { /* ignore */ }
+          items.push({ name: e.name, pinned, ...(source ? { source } : {}) });
+        }
+      }
+      if (opts.json) {
+        console.log(JSON.stringify({ imported: items }, null, 2));
+        return;
+      }
+      console.log(items.length ? items.map((s) => `  ${s.pinned ? '📌' : '  '} ${s.name}${s.source ? ` (source: ${s.source})` : ''}`).join('\n') : 'No imported skills');
+    });
+
+  const sources = skills.command('sources').description('Manage skill sources (the import referential)');
+  sources
+    .command('list')
+    .option('--json', 'output JSON')
+    .action(async (opts: { json?: boolean }) => {
+      const { listSources } = await import('../../skills/skill-sources.js');
+      const list = listSources();
+      if (opts.json) {
+        console.log(JSON.stringify({ sources: list }, null, 2));
+        return;
+      }
+      console.log(list.length ? list.map((s) => `  ${s.name}  [${s.type}]  ${s.location}`).join('\n') : 'No skill sources configured');
+    });
+  sources
+    .command('add <name> <location>')
+    .description('Register a skill source (a local dir or a git url)')
+    .option('--type <type>', "'dir' or 'git'")
+    .action(async (name: string, location: string, opts: { type?: 'dir' | 'git' }) => {
+      const { addSource } = await import('../../skills/skill-sources.js');
+      const src = addSource(name, location, opts.type);
+      console.log(`Added source ${src.name} [${src.type}] → ${src.location}`);
+    });
+  sources
+    .command('remove <name>')
+    .action(async (name: string) => {
+      const { removeSource } = await import('../../skills/skill-sources.js');
+      console.log(removeSource(name) ? `Removed source ${name}` : `No such source: ${name}`);
+    });
 }
 
 async function toggleSkill(
