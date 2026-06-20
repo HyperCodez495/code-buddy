@@ -56,6 +56,16 @@ async fn main() {
         tokio::spawn(async move { senses::vital::run(tx, heartbeat_ms, heartbeat_count).await });
     }
 
+    // Screen sense — light event-driven screen-change detection (opt-in build).
+    #[cfg(feature = "live-screen")]
+    {
+        let tx = sense_tx.clone();
+        let screen_ms = std::env::var("BUDDY_SENSE_SCREEN_MS").ok().and_then(|s| s.parse::<u64>().ok()).unwrap_or(1000);
+        let screen_threshold = std::env::var("BUDDY_SENSE_SCREEN_THRESHOLD").ok().and_then(|s| s.parse::<f64>().ok()).unwrap_or(0.02);
+        eprintln!("[buddy-sense] screen sense active ({screen_ms}ms, threshold {screen_threshold})");
+        tokio::spawn(async move { senses::screen::live::run(tx, screen_ms, screen_threshold).await });
+    }
+
     match wav {
         Some(path) => {
             // Audio runs concurrently with the heartbeat — both feed the thalamus.

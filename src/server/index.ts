@@ -1127,6 +1127,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             wireVisionReaction();
             logger.info('Sensory vision reaction: Enabled (vision/motion → camera_analyze)');
           }
+          // Screen reaction (opt-in) — screen/change → percept (+ pluggable OCR/describe).
+          if (process.env.CODEBUDDY_SENSORY_SCREEN === 'true') {
+            const { wireScreenReaction } = await import('../sensory/screen-reaction.js');
+            wireScreenReaction();
+            logger.info('Sensory screen reaction: Enabled (screen/change → percept)');
+          }
           // Heartbeat pacemaker — heartbeats trigger periodic processing (every N beats).
           const heart = getHeartbeatScheduler();
           const everyBeats = Math.max(1, Number(process.env.CODEBUDDY_HEARTBEAT_EVERY ?? 10));

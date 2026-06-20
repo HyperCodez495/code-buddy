@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 pub enum Modality {
     Audio,
     Vision,
+    /// Desktop screen perception (what's on screen), distinct from camera Vision.
+    Screen,
     /// Internal "vital signs" — the heartbeat/breathing analogue (periodic).
     Vital,
 }

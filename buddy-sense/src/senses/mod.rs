@@ -3,5 +3,6 @@
 //! video motion detection ship; live capture is opt-in per sense.
 
 pub mod audio;
+pub mod screen;
 pub mod video;
 pub mod vital;
