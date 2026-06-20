@@ -110,7 +110,7 @@ export interface GateOutcome {
 /** One accepted improvement, kept as an evolutionary stepping stone (DGM). */
 export interface ArchiveEntry {
   proposalId: string;
-  kind: ImprovementProposal['kind'];
+  kind: ImprovementProposal['kind'] | 'tool' | 'skill';
   targetScenarioId: string;
   experienceId?: string;
   delta: number;

@@ -103,6 +103,15 @@ export class ToolRegistry {
   }
 
   /**
+   * Remove a registered tool by name (used to revert self-authored tools).
+   *
+   * @returns true if a tool was removed, false if it was not registered
+   */
+  public removeTool(name: string): boolean {
+    return this.tools.delete(name);
+  }
+
+  /**
    * Check if a tool is registered and currently enabled.
    *
    * @param name - The name of the tool to check
