@@ -30,8 +30,14 @@ ort = { version = "=2.0.0-rc.6", optional = true, features = ["load-dynamic"] }
 # Pin ort-sys to match ort rc.6 (cargo otherwise resolves an incompatible rc.10).
 ort-sys = { version = "=2.0.0-rc.6", optional = true }
 
+# Live UI sense via AT-SPI (accessibility). zbus is pure-Rust D-Bus → no system
+# deps. The pure mapper builds + tests without it.
+atspi = { version = "0.30", optional = true, features = ["tokio"] }
+tokio-stream = { version = "0.1", optional = true }
+
 [features]
 default = []
 live-mic = ["dep:cpal"]
 live-screen = ["dep:xcap"]
 neural-vad = ["dep:vad-rs", "dep:ort", "dep:ort-sys"]
+live-ui = ["dep:atspi", "dep:tokio-stream"]

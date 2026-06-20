@@ -10,6 +10,8 @@ pub enum Modality {
     Vision,
     /// Desktop screen perception (what's on screen), distinct from camera Vision.
     Screen,
+    /// Semantic UI events (active app / window / focus) via accessibility.
+    Ui,
     /// Internal "vital signs" — the heartbeat/breathing analogue (periodic).
     Vital,
 }

@@ -4,5 +4,6 @@
 
 pub mod audio;
 pub mod screen;
+pub mod ui;
 pub mod video;
 pub mod vital;

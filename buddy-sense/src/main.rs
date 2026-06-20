@@ -83,6 +83,14 @@ async fn main() {
         tokio::spawn(async move { senses::screen::live::run(tx, screen_ms, screen_threshold).await });
     }
 
+    // UI sense — semantic accessibility events (active app / focus), opt-in build.
+    #[cfg(feature = "live-ui")]
+    {
+        let tx = sense_tx.clone();
+        eprintln!("[buddy-sense] ui sense active (AT-SPI)");
+        tokio::spawn(async move { senses::ui::live::run(tx).await });
+    }
+
     match wav {
         Some(path) => {
             // Audio runs concurrently with the heartbeat — both feed the thalamus.
