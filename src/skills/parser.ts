@@ -117,6 +117,7 @@ function parseMetadata(yamlContent: string, sourcePath: string): SkillMetadata {
       // CC11: context fork and disable-model-invocation
       contextFork: parsed.context === 'fork' || parsed.contextFork === true,
       disableModelInvocation: parsed['disable-model-invocation'] === true || parsed.disableModelInvocation === true,
+      pinned: parsed.pinned === true,
     };  } catch (error) {
     throw new Error(
       `Failed to parse YAML frontmatter in ${sourcePath}: ${error instanceof Error ? error.message : String(error)}`

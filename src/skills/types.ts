@@ -33,6 +33,8 @@ export interface SkillMetadata {
   contextFork?: boolean;
   /** CC11: If true, skill content is returned directly without LLM invocation */
   disableModelInvocation?: boolean;
+  /** Self-improvement: if true, curation won't overwrite/remove/consolidate this skill */
+  pinned?: boolean;
 }
 
 export interface SkillRequirements {
