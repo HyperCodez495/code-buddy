@@ -1,17 +1,18 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, afterEach } from 'vitest';
 import { mkdtemp, readFile } from 'fs/promises';
 import os from 'os';
 import path from 'path';
-import { consolidate, runDreamingPass } from '../../src/sensory/dreaming.js';
+import { consolidate, runDreamingPass, promoteSalientDream } from '../../src/sensory/dreaming.js';
 import { getSensoryMemory } from '../../src/sensory/sensory-memory.js';
+import { getMemoryManager, resetMemoryManagerForTests } from '../../src/memory/persistent-memory.js';
 import type { Perception } from '../../src/sensory/reactions.js';
 
-describe('dreaming — heartbeat-paced memory consolidation', () => {
-  it('consolidates a window of perceptions (counts, salient, avg load, span)', () => {
+describe('dreaming — consolidation', () => {
+  it('consolidates a window (counts, salient, avg load, span on receivedAt)', () => {
     const window: Perception[] = [
-      { modality: 'vital', kind: 'heartbeat', salience: 5, tsMs: 100, payload: { load1: 0.4 } },
-      { modality: 'vital', kind: 'heartbeat', salience: 5, tsMs: 200, payload: { load1: 0.6 } },
-      { modality: 'audio', kind: 'speech_start', salience: 200, tsMs: 150, payload: {} },
+      { modality: 'vital', kind: 'heartbeat', salience: 5, receivedAt: 1000, tsMs: 99, payload: { load1: 0.4 } },
+      { modality: 'vital', kind: 'heartbeat', salience: 5, receivedAt: 1200, tsMs: 88, payload: { load1: 0.6 } },
+      { modality: 'audio', kind: 'speech_start', salience: 200, receivedAt: 1100, tsMs: 7, payload: {} },
     ];
     const d = consolidate(window, 9999);
     expect(d.total).toBe(3);
@@ -20,27 +21,66 @@ describe('dreaming — heartbeat-paced memory consolidation', () => {
     expect(d.salient).toHaveLength(1); // only speech is salient
     expect(d.salient[0]!.kind).toBe('speech_start');
     expect(d.avgLoad).toBeCloseTo(0.5);
-    expect(d.windowStartMs).toBe(100);
-    expect(d.windowEndMs).toBe(200);
-    expect(d.dreamedAt).toBe(9999);
+    // Window from the consistent ingest clock (receivedAt), not the mixed tsMs.
+    expect(d.windowStartMs).toBe(1000);
+    expect(d.windowEndMs).toBe(1200);
   });
 
-  it('a dreaming pass drains short-term memory and writes a dream record', async () => {
+  it('a dreaming pass drains short-term memory, writes a dream, and promotes a salient dream', async () => {
     const tmp = await mkdtemp(path.join(os.tmpdir(), 'dream-'));
     const mem = getSensoryMemory();
-    mem.push({ modality: 'vital', kind: 'heartbeat', salience: 5, tsMs: 1, payload: { load1: 0.3 } });
-    mem.push({ modality: 'audio', kind: 'speech_end', salience: 200, tsMs: 2 });
+    mem.push({ modality: 'vital', kind: 'heartbeat', salience: 5, receivedAt: 1, payload: { load1: 0.3 } });
+    mem.push({ modality: 'audio', kind: 'speech_end', salience: 200, receivedAt: 2 });
 
-    const summary = await runDreamingPass({ cwd: tmp, now: 123 });
+    let promotedSalient: number | null = null;
+    const summary = await runDreamingPass({
+      cwd: tmp,
+      now: 123,
+      promote: async (s) => {
+        promotedSalient = s.salient.length;
+      },
+    });
     expect(summary).not.toBeNull();
     expect(summary!.total).toBe(2);
-    expect(mem.size()).toBe(0); // drained — the window was consumed
+    expect(mem.size()).toBe(0); // drained
+    expect(promotedSalient).toBe(1); // salient → promotion invoked
 
     const journal = await readFile(path.join(tmp, '.codebuddy', 'companion', 'dreams.jsonl'), 'utf8');
     expect(journal).toContain('"total":2');
-    expect(journal).toContain('"dreamedAt":123');
+    expect(await runDreamingPass({ cwd: tmp, promote: async () => {} })).toBeNull();
+  });
 
-    // Nothing left to consolidate → null (no empty dreams).
-    expect(await runDreamingPass({ cwd: tmp })).toBeNull();
+  it('does NOT promote a non-salient dream', async () => {
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dream-'));
+    getSensoryMemory().push({ modality: 'vital', kind: 'heartbeat', salience: 5, receivedAt: 1, payload: { load1: 0.2 } });
+    let promoted = false;
+    await runDreamingPass({
+      cwd: tmp,
+      promote: async () => {
+        promoted = true;
+      },
+    });
+    expect(promoted).toBe(false); // no salient events → no promotion
+  });
+});
+
+describe('dreaming — promotion to long-term memory', () => {
+  afterEach(() => resetMemoryManagerForTests());
+
+  it('promotes a salient dream under a stable key (single entry, no growth)', async () => {
+    resetMemoryManagerForTests();
+    const tmp = await mkdtemp(path.join(os.tmpdir(), 'dreammem-'));
+    getMemoryManager({
+      projectMemoryPath: path.join(tmp, '.codebuddy', 'CODEBUDDY_MEMORY.md'),
+      userMemoryPath: path.join(tmp, 'user-memory.md'),
+    });
+
+    const summary = consolidate([{ modality: 'audio', kind: 'speech_start', salience: 200, receivedAt: 1 }], 1);
+    await promoteSalientDream(summary);
+    await promoteSalientDream(summary); // repeat → stable key updates, not a 2nd entry
+
+    const file = await readFile(path.join(tmp, '.codebuddy', 'CODEBUDDY_MEMORY.md'), 'utf8');
+    expect(file).toContain('dream:recent');
+    expect(file.match(/dream:recent/g)!.length).toBe(1); // exactly one entry
   });
 });

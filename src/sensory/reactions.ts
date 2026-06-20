@@ -15,12 +15,16 @@ export interface Perception {
   modality?: string;
   kind?: string;
   salience?: number;
+  /** Sense-relative timestamp (frame-relative for audio, unix-millis for vital). */
   tsMs?: number;
+  /** Ingest wall-clock (one consistent clock across senses — used for dream windows). */
+  receivedAt?: number;
   payload?: unknown;
 }
 
 export function perceptionOf(evt: BaseEvent): Perception {
-  return (evt.metadata as Perception | undefined) ?? {};
+  const meta = (evt.metadata as Perception | undefined) ?? {};
+  return { ...meta, receivedAt: evt.timestamp };
 }
 
 /**

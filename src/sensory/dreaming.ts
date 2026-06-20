@@ -48,9 +48,11 @@ export function consolidate(perceptions: Perception[], now: number): DreamSummar
       loadSum += load;
       loadN += 1;
     }
-    if (typeof p.tsMs === 'number') {
-      minTs = minTs === null ? p.tsMs : Math.min(minTs, p.tsMs);
-      maxTs = maxTs === null ? p.tsMs : Math.max(maxTs, p.tsMs);
+    // Window on the ingest wall-clock (consistent across senses), not the
+    // sense-relative tsMs (frame-relative for audio vs unix for vital).
+    if (typeof p.receivedAt === 'number') {
+      minTs = minTs === null ? p.receivedAt : Math.min(minTs, p.receivedAt);
+      maxTs = maxTs === null ? p.receivedAt : Math.max(maxTs, p.receivedAt);
     }
   }
 
@@ -68,11 +70,14 @@ export function consolidate(perceptions: Perception[], now: number): DreamSummar
 export interface DreamingOptions {
   cwd?: string;
   now?: number;
+  /** Injectable promotion (tests); defaults to promoteSalientDream. */
+  promote?: (summary: DreamSummary) => Promise<void>;
 }
 
 /**
  * One dreaming pass: drain the short-term buffer, consolidate, append to the
- * dream journal. Returns the summary, or null if there was nothing to consolidate.
+ * dream journal, and promote a SALIENT dream into long-term persistent memory.
+ * Returns the summary, or null if there was nothing to consolidate.
  */
 export async function runDreamingPass(options: DreamingOptions = {}): Promise<DreamSummary | null> {
   const perceptions = getSensoryMemory().drain();
@@ -86,8 +91,38 @@ export async function runDreamingPass(options: DreamingOptions = {}): Promise<Dr
   } catch (err) {
     logger.warn(`[dreaming] could not persist dream: ${err instanceof Error ? err.message : String(err)}`);
   }
+
+  // Deep consolidation — salient dreams become long-term memory the agent reads.
+  if (summary.salient.length > 0) {
+    await (options.promote ?? promoteSalientDream)(summary);
+  }
+
   logger.info(
     `[dreaming] consolidated ${summary.total} perception(s) → ${Object.keys(summary.byKind).length} kind(s), ${summary.salient.length} salient, avg load ${summary.avgLoad ?? '?'}`,
   );
   return summary;
+}
+
+/**
+ * Promote a salient dream into Code Buddy's persistent memory under a STABLE key
+ * (`dream:recent`) so repeated promotions UPDATE rather than accumulate (stays
+ * within the memory char budget). Never throws.
+ */
+export async function promoteSalientDream(summary: DreamSummary): Promise<void> {
+  try {
+    const { getMemoryManager } = await import('../memory/persistent-memory.js');
+    const manager = getMemoryManager();
+    await manager.initialize();
+    const kinds = Object.entries(summary.byKind)
+      .map(([k, n]) => `${k}×${n}`)
+      .join(', ');
+    const top = summary.salient
+      .slice(0, 5)
+      .map((s) => `${s.modality}/${s.kind}`)
+      .join(', ');
+    const value = `Recent salient perception: ${summary.total} events (${kinds}); salient: ${top}; avg load ${summary.avgLoad ?? '?'}.`;
+    await manager.remember('dream:recent', value, { scope: 'project', category: 'context', tags: ['dream', 'sensory'] });
+  } catch (err) {
+    logger.warn(`[dreaming] could not promote dream to memory: ${err instanceof Error ? err.message : String(err)}`);
+  }
 }
