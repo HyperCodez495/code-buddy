@@ -19,6 +19,7 @@ import { logger } from "../utils/logger.js";
 
 import { getToolRegistry } from "../tools/registry.js";
 import { createRegisterToolTool } from "../tools/register-tool-handler.js";
+import { loadAuthoredTools } from "../agent/self-improvement/tool-skill-mutator.js";
 import { applyToolFilter } from "../utils/tool-filter.js";
 import { TOOL_METADATA } from "../tools/metadata.js";
 import { getPluginMarketplace } from "../plugins/marketplace.js";
@@ -164,13 +165,18 @@ export function initializeToolRegistry(): void {
   };
   registry.registerTool(MORPH_EDIT_TOOL, morphMetadata, isMorphEnabled);
 
-  // Self-improvement: expose `register_tool` to the model only when opted in.
+  // Self-improvement: expose `register_tool` + reload persisted authored tools,
+  // only when opted in.
   if (process.env.CODEBUDDY_SELF_IMPROVE === 'true') {
     const schema = createRegisterToolTool().getSchema();
     registry.registerTool(
       { type: 'function', function: { name: schema.name, description: schema.description, parameters: schema.parameters as unknown as CodeBuddyTool['function']['parameters'] } },
       { name: schema.name, category: 'system', keywords: ['authored', 'self-extension', 'register', 'tool'], priority: 6, description: schema.description },
     );
+    try {
+      const loaded = loadAuthoredTools();
+      if (loaded.length > 0) logger.info(`[self-improve] reloaded ${loaded.length} authored tool(s): ${loaded.join(', ')}`);
+    } catch { /* persisted store optional */ }
   }
 
   registerGroup(SEARCH_TOOLS);

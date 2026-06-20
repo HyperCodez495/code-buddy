@@ -13,6 +13,7 @@ import type { ToolMetadata } from '../../tools/types.js';
 import { FormalToolRegistry } from '../../tools/registry/tool-registry.js';
 import { getToolRegistry } from '../../tools/registry.js';
 import { buildAuthoredTool, type AuthoredToolSpec } from './authored-tool-runtime.js';
+import { AuthoredToolStore } from './authored-tool-store.js';
 
 export interface ToolMutatorPort {
   register(spec: AuthoredToolSpec): { name: string };
@@ -20,8 +21,22 @@ export interface ToolMutatorPort {
   has(name: string): boolean;
 }
 
-/** Dual-registry mutator over the live singletons. */
+export interface LiveToolMutatorOptions {
+  /** Persist kept tools to disk so they survive a restart (default true). */
+  persist?: boolean;
+  store?: AuthoredToolStore;
+}
+
+/** Dual-registry mutator over the live singletons, with optional disk persistence. */
 export class LiveToolMutator implements ToolMutatorPort {
+  private readonly persist: boolean;
+  private readonly store: AuthoredToolStore;
+
+  constructor(options: LiveToolMutatorOptions = {}) {
+    this.persist = options.persist ?? true;
+    this.store = options.store ?? new AuthoredToolStore();
+  }
+
   register(spec: AuthoredToolSpec): { name: string } {
     const tool = buildAuthoredTool(spec);
     FormalToolRegistry.getInstance().register(tool, { override: true });
@@ -41,16 +56,40 @@ export class LiveToolMutator implements ToolMutatorPort {
       description: spec.description,
     };
     getToolRegistry().registerTool(definition, metadata);
+    if (this.persist) this.store.add(spec);
     return { name: spec.name };
   }
 
   unregister(name: string): boolean {
     const a = FormalToolRegistry.getInstance().unregister(name);
     const b = getToolRegistry().removeTool(name);
+    if (this.persist) this.store.remove(name);
     return a || b;
   }
 
   has(name: string): boolean {
     return FormalToolRegistry.getInstance().has(name) || getToolRegistry().getTool(name) !== undefined;
   }
+}
+
+/**
+ * Re-register persisted authored tools into both registries at startup. Does NOT
+ * re-persist (it's loading what's already on disk). Returns the names loaded.
+ * Gated by callers on CODEBUDDY_SELF_IMPROVE.
+ */
+export function loadAuthoredTools(workDir?: string): string[] {
+  const store = new AuthoredToolStore(workDir ? { workDir } : {});
+  const specs = store.list();
+  if (specs.length === 0) return [];
+  const loader = new LiveToolMutator({ persist: false, store });
+  const loaded: string[] = [];
+  for (const spec of specs) {
+    try {
+      loader.register(spec);
+      loaded.push(spec.name);
+    } catch {
+      /* skip a malformed persisted spec */
+    }
+  }
+  return loaded;
 }
