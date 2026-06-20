@@ -51,6 +51,13 @@ BUDDY_SENSE_BRIDGE_URL=ws://127.0.0.1:8129 \
 ./target/debug/buddy-sense                   # heartbeat-only (pass a .wav for audio)
 ```
 
+Or run the headless end-to-end demo (heartbeat + audio VAD over a generated WAV →
+Code Buddy's event bus, no hardware):
+
+```bash
+./demo.sh
+```
+
 On the Code Buddy side: `CODEBUDDY_SENSORY=true buddy server` starts the bridge.
 
 ### Optional features (opt-in; the core builds + tests without them)
