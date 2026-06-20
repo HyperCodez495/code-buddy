@@ -126,6 +126,44 @@ export function registerImproveCommands(program: Command): void {
     });
 
   improve
+    .command('tools')
+    .description('Author + behaviorally validate NEW tools for the agent (held-out gated, anti-gaming)')
+    .option('--json', 'output JSON')
+    .option('--apply', 'keep validated tools for this session (overrides propose-only)')
+    .action(async (options: ImproveOptions) => {
+      const { ToolImprovementEngine } = await import('../../agent/self-improvement/tool-engine.js');
+      const { LlmToolProposer } = await import('../../agent/self-improvement/llm-tool-proposer.js');
+      const { SEED_TOOL_SCENARIOS } = await import('../../agent/self-improvement/tool-benchmark.js');
+      const engine = new ToolImprovementEngine({
+        scenarios: SEED_TOOL_SCENARIOS,
+        proposer: new LlmToolProposer(),
+        ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
+      });
+      const results = await engine.runLoop();
+      const kept = results.map((r) => (r.applied ? r.gate?.appliedRef : null)).filter(Boolean);
+      const text = [
+        `Autonomy: ${results[0]?.autonomy ?? 'propose-only'}`,
+        `Cycles: ${results.length}`,
+        ...results.map(
+          (r) =>
+            `  ${r.selectedScenarioId ?? '—'}: ${
+              r.applied
+                ? `AUTHORED + KEPT (${r.gate?.appliedRef})`
+                : r.gate?.accepted
+                  ? 'accepted (propose-only) — re-run with --apply to keep'
+                  : r.gate?.rejectionReason
+                    ? `rejected (${r.gate.rejectionReason})`
+                    : r.notes.join('; ')
+            }`,
+        ),
+        kept.length
+          ? `Kept this session: ${kept.join(', ')} (archived for audit; in-memory until disk-persistence ships)`
+          : 'No tool kept this run',
+      ].join('\n');
+      print({ kind: 'self_improvement_tools', cycles: results }, options, text);
+    });
+
+  improve
     .command('loop')
     .description('Run improvement cycles until no further validated progress is made')
     .option('--json', 'output JSON')
