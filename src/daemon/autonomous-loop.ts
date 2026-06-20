@@ -54,6 +54,41 @@ export type TaskExecutor = (
   model: AutonomousModelChoice,
 ) => Promise<TaskExecutionResult>;
 
+/**
+ * Idle-time self-improvement hook. Runs ONE bounded improvement cycle and reports
+ * whether it kept anything. Injected so the loop stays testable and the heavy
+ * engine is swappable; the default (lazy) hook runs the tool-improvement engine.
+ */
+export type SelfImproveHook = () => Promise<{ applied: boolean; detail: string }>;
+
+/**
+ * Default idle self-improvement: author tools for any seed scenario NOT yet in the
+ * evolutionary archive (so it stops once the seed benchmark is covered, and the
+ * bound persists across restarts). Auto-apply; gated by the caller on idle +
+ * CODEBUDDY_SELF_IMPROVE + cooldown.
+ */
+async function defaultSelfImproveHook(): Promise<{ applied: boolean; detail: string }> {
+  const { ToolImprovementEngine } = await import('../agent/self-improvement/tool-engine.js');
+  const { LlmToolProposer } = await import('../agent/self-improvement/llm-tool-proposer.js');
+  const { SEED_TOOL_SCENARIOS } = await import('../agent/self-improvement/tool-benchmark.js');
+  const { EvolutionaryArchive } = await import('../agent/self-improvement/evolutionary-archive.js');
+
+  const archived = new Set(new EvolutionaryArchive().list().map((e) => e.targetScenarioId));
+  const uncovered = SEED_TOOL_SCENARIOS.filter((s) => !archived.has(s.id));
+  if (uncovered.length === 0) return { applied: false, detail: 'all seed tool scenarios already covered' };
+
+  const engine = new ToolImprovementEngine({
+    scenarios: uncovered,
+    proposer: new LlmToolProposer(),
+    autonomy: 'auto-apply',
+  });
+  const r = await engine.runCycle();
+  return {
+    applied: r.applied,
+    detail: r.applied ? `authored ${r.gate?.appliedRef}` : (r.notes[0] ?? 'no improvement kept'),
+  };
+}
+
 function resolveGoalMaxTurns(raw: unknown): number {
   return typeof raw === 'number' && Number.isSafeInteger(raw) && raw > 0
     ? raw
@@ -76,10 +111,20 @@ export interface AutonomousLoopConfig {
    * goal-mode tasks complete like plain tasks (no judge gate).
    */
   goalJudge?: ColabGoalJudge;
+  /**
+   * Idle-time self-improvement. When the queue is empty AND
+   * `CODEBUDDY_SELF_IMPROVE=true`, run one bounded improvement cycle (cooldown-
+   * gated). Injected for tests; defaults to the tool-improvement engine.
+   */
+  selfImprove?: SelfImproveHook;
+  /** Minimum ms between idle self-improvement cycles (default 15 min). */
+  selfImproveCooldownMs?: number;
+  /** Clock for the cooldown (tests). Default Date.now. */
+  now?: () => number;
 }
 
 export interface TickResult {
-  outcome: 'disabled' | 'idle' | 'completed' | 'failed' | 'saturated' | 'goal_continue' | 'goal_blocked';
+  outcome: 'disabled' | 'idle' | 'completed' | 'failed' | 'saturated' | 'goal_continue' | 'goal_blocked' | 'self_improved';
   taskId?: string;
   taskTitle?: string;
   model?: AutonomousModelChoice;
@@ -100,6 +145,10 @@ export class FleetAutonomousLoop {
    */
   private readonly failures = new Map<string, number>();
   private readonly goalJudge: ColabGoalJudge | undefined;
+  private readonly selfImprove: SelfImproveHook;
+  private readonly selfImproveCooldownMs: number;
+  private readonly now: () => number;
+  private lastSelfImproveAt = Number.NEGATIVE_INFINITY;
 
   constructor(config: AutonomousLoopConfig) {
     this.store = config.store;
@@ -108,6 +157,39 @@ export class FleetAutonomousLoop {
     this.policy = config.policy ?? {};
     this.enabled = config.enabled ?? (() => true);
     this.goalJudge = config.goalJudge;
+    this.selfImprove = config.selfImprove ?? defaultSelfImproveHook;
+    this.selfImproveCooldownMs = config.selfImproveCooldownMs ?? 15 * 60 * 1000;
+    this.now = config.now ?? (() => Date.now());
+  }
+
+  /**
+   * Idle hook: when the queue is empty and self-improvement is opted in, run one
+   * bounded, cooldown-gated improvement cycle instead of sitting fully idle.
+   * Double-gated (idle + CODEBUDDY_SELF_IMPROVE) and bounded (cooldown + the
+   * engine no-ops once seed scenarios are covered). Never throws.
+   */
+  private async maybeSelfImprove(): Promise<TickResult> {
+    if (process.env.CODEBUDDY_SELF_IMPROVE !== 'true') {
+      this.store.updatePresence({ status: 'idle', currentTask: null });
+      return { outcome: 'idle' };
+    }
+    const now = this.now();
+    if (now - this.lastSelfImproveAt < this.selfImproveCooldownMs) {
+      this.store.updatePresence({ status: 'idle', currentTask: null });
+      return { outcome: 'idle', detail: 'self-improve on cooldown' };
+    }
+    this.lastSelfImproveAt = now;
+    this.store.updatePresence({ status: 'active', currentTask: 'self-improvement' });
+    const doneLoad = beginFleetWork('autonomy.task');
+    try {
+      const r = await this.selfImprove();
+      return { outcome: r.applied ? 'self_improved' : 'idle', detail: r.detail };
+    } catch (err) {
+      return { outcome: 'idle', detail: `self-improve error: ${err instanceof Error ? err.message : String(err)}` };
+    } finally {
+      doneLoad();
+      this.store.updatePresence({ status: 'idle', currentTask: null });
+    }
   }
 
   /** Run a single autonomous tick. Never throws — failures are logged + reported. */
@@ -131,8 +213,9 @@ export class FleetAutonomousLoop {
 
     const next = this.store.nextClaimable();
     if (!next) {
-      this.store.updatePresence({ status: 'idle', currentTask: null });
-      return { outcome: 'idle' };
+      // No real work — use the idle moment for one bounded self-improvement
+      // cycle (opt-in + cooldown), otherwise sit idle.
+      return this.maybeSelfImprove();
     }
 
     // Claim. If another agent won the race between read and claim, treat it as
