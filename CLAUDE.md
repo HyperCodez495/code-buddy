@@ -99,6 +99,14 @@ Two systems coexist:
 - **Extended Thinking** (`src/agent/thinking/`) — provider-level (Grok `budget_tokens`). Levels: `off`/`minimal`/`low`/`medium`/`high`/`xhigh`.
 - **ToT + MCTS** (`src/agent/reasoning/`) — modes `shallow`/`medium`/`deep`/`exhaustive`. MCTSr Q-value: `Q(a) = 0.5 * (min(R) + mean(R))`. Entry point: `reasoning-facade.ts`. User-facing: `/think` command and the `reason` tool. Reasoning middleware (priority 42) auto-detects complex queries and injects `<reasoning_guidance>`.
 
+## Self-Improvement — `src/agent/self-improvement/`
+
+An empirically-gated, Darwin-Gödel-Machine-style loop that improves the agent's **reversible learnable layer** — never its own `src/` (a hard, scanned invariant). All of it is **opt-in via `CODEBUDDY_SELF_IMPROVE=true`** (default off ⇒ zero behavior change; `propose-only` vs `auto-apply`).
+
+- **Lessons path** (V1): `engine.ts runCycle()` scores a deterministic `capability-benchmark.ts` → picks the weakest scenario → `proposer.ts` drafts a lesson → `empirical-gate.ts validateProposal()` snapshots/applies/re-scores and **rolls back on regression or no gain** → `evolutionary-archive.ts` + git-versioned `learning-store.ts`. CLI: `buddy improve status|cycle|loop`.
+- **Tools path** — the agent **authors its own tools**. `register_tool` (`src/tools/register-tool-handler.ts`) writes BOTH registries — `FormalToolRegistry` (callable) + legacy `ToolRegistry` (visible next turn) — so an authored tool is usable by the agent itself; authored tools are namespaced `authored__*` and run **sandboxed** (`authored-tool-runtime.ts`: throwaway cwd, RPC off). The generative loop: `tool-proposer.ts`/`llm-tool-proposer.ts` (sees a **redacted view — no held-out cases**) → `tool-gate.ts` G1 static scan (`authored-artifact-gate.ts`) → G3 **visible** behavioral cases → G4 **held-out** behavioral cases (the anti-reward-hacking defence: a tool that hardcodes the visible outputs fails fresh inputs → rejected) → `tool-engine.ts` keeps + archives. Behavioral scoring (`sandbox-scorer.ts`) never registers the tool, so a rejected proposal touches nothing. Kept tools persist to `.codebuddy/self-improvement/authored-tools.json` and reload at startup (`tool-skill-mutator.ts loadAuthoredTools`). CLI: `buddy improve tools [--apply]`.
+- **Safety invariants:** never edits `src/`; sandboxed scoring only; held-out hidden from the proposer; `authored__` namespace can't shadow built-ins; append-only archive; opt-in default-off kill-switch. **Skills path** (via `skill_manage` under the same gate) and **autonomy self-trigger** (idle-triggered cycles in `autonomous-loop.ts`) are not yet wired.
+
 ## Fleet (Multi-AI Hub) — `src/fleet/` + `src/server/websocket/`
 
 Stateful WebSocket mesh letting Code Buddy peers observe each other's events live and invoke each other's LLMs / read-only tools. Bridges live in `src/fleet/` and are wired in `src/server/index.ts` on every `buddy server` start.
