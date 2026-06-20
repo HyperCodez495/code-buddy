@@ -18,6 +18,7 @@ import {
 import { logger } from "../utils/logger.js";
 
 import { getToolRegistry } from "../tools/registry.js";
+import { createRegisterToolTool } from "../tools/register-tool-handler.js";
 import { applyToolFilter } from "../utils/tool-filter.js";
 import { TOOL_METADATA } from "../tools/metadata.js";
 import { getPluginMarketplace } from "../plugins/marketplace.js";
@@ -162,6 +163,15 @@ export function initializeToolRegistry(): void {
     description: 'High-speed file editing with Morph'
   };
   registry.registerTool(MORPH_EDIT_TOOL, morphMetadata, isMorphEnabled);
+
+  // Self-improvement: expose `register_tool` to the model only when opted in.
+  if (process.env.CODEBUDDY_SELF_IMPROVE === 'true') {
+    const schema = createRegisterToolTool().getSchema();
+    registry.registerTool(
+      { type: 'function', function: { name: schema.name, description: schema.description, parameters: schema.parameters as unknown as CodeBuddyTool['function']['parameters'] } },
+      { name: schema.name, category: 'system', keywords: ['authored', 'self-extension', 'register', 'tool'], priority: 6, description: schema.description },
+    );
+  }
 
   registerGroup(SEARCH_TOOLS);
   registerGroup(TODO_TOOLS);

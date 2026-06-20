@@ -604,6 +604,16 @@ Lessons complement \`remember\`: \`remember\` stores facts (preferences, decisio
         logger.debug('Injected lessons directive into system prompt');
       }
 
+      // Self-knowledge — only when self-improvement is explicitly opted in. Makes
+      // the agent aware it can author its own tools/skills (and the hard `src/` limit).
+      if (process.env.CODEBUDDY_SELF_IMPROVE === 'true') {
+        try {
+          const { buildSelfKnowledgeBlock } = await import('../agent/self-improvement/self-knowledge.js');
+          systemPrompt += `\n\n<self_knowledge>\n${buildSelfKnowledgeBlock()}\n</self_knowledge>`;
+          logger.debug('Injected self-knowledge block into system prompt');
+        } catch { /* self-improvement module optional */ }
+      }
+
       if (this.config.memoryEnabled && gates.includeUserModelDirective) {
         systemPrompt += `\n\n<user_model_directive>
 You have a persistent user model that builds a deepening profile of who you are, your traits, preferences, expertise, and working style.
