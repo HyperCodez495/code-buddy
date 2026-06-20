@@ -68,25 +68,38 @@ export type SelfImproveHook = () => Promise<{ applied: boolean; detail: string }
  * CODEBUDDY_SELF_IMPROVE + cooldown.
  */
 async function defaultSelfImproveHook(): Promise<{ applied: boolean; detail: string }> {
+  const { EvolutionaryArchive } = await import('../agent/self-improvement/evolutionary-archive.js');
+  const archived = new Set(new EvolutionaryArchive().list().map((e) => e.targetScenarioId));
+
+  // Tools first.
   const { ToolImprovementEngine } = await import('../agent/self-improvement/tool-engine.js');
   const { LlmToolProposer } = await import('../agent/self-improvement/llm-tool-proposer.js');
   const { SEED_TOOL_SCENARIOS } = await import('../agent/self-improvement/tool-benchmark.js');
-  const { EvolutionaryArchive } = await import('../agent/self-improvement/evolutionary-archive.js');
+  const uncoveredTools = SEED_TOOL_SCENARIOS.filter((s) => !archived.has(s.id));
+  if (uncoveredTools.length > 0) {
+    const r = await new ToolImprovementEngine({
+      scenarios: uncoveredTools,
+      proposer: new LlmToolProposer(),
+      autonomy: 'auto-apply',
+    }).runCycle();
+    if (r.applied) return { applied: true, detail: `authored tool ${r.gate?.appliedRef}` };
+  }
 
-  const archived = new Set(new EvolutionaryArchive().list().map((e) => e.targetScenarioId));
-  const uncovered = SEED_TOOL_SCENARIOS.filter((s) => !archived.has(s.id));
-  if (uncovered.length === 0) return { applied: false, detail: 'all seed tool scenarios already covered' };
+  // Then skills.
+  const { SkillImprovementEngine } = await import('../agent/self-improvement/skill-engine.js');
+  const { LlmSkillProposer } = await import('../agent/self-improvement/skill-proposer.js');
+  const { SEED_SKILL_SCENARIOS } = await import('../agent/self-improvement/skill-benchmark.js');
+  const uncoveredSkills = SEED_SKILL_SCENARIOS.filter((s) => !archived.has(s.id));
+  if (uncoveredSkills.length > 0) {
+    const r = await new SkillImprovementEngine({
+      scenarios: uncoveredSkills,
+      proposer: new LlmSkillProposer(),
+      autonomy: 'auto-apply',
+    }).runCycle();
+    if (r.applied) return { applied: true, detail: `authored skill ${r.gate?.appliedRef}` };
+  }
 
-  const engine = new ToolImprovementEngine({
-    scenarios: uncovered,
-    proposer: new LlmToolProposer(),
-    autonomy: 'auto-apply',
-  });
-  const r = await engine.runCycle();
-  return {
-    applied: r.applied,
-    detail: r.applied ? `authored ${r.gate?.appliedRef}` : (r.notes[0] ?? 'no improvement kept'),
-  };
+  return { applied: false, detail: 'all seed tool + skill scenarios already covered (or no proposal)' };
 }
 
 function resolveGoalMaxTurns(raw: unknown): number {

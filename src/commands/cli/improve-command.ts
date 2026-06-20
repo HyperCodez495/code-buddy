@@ -164,6 +164,42 @@ export function registerImproveCommands(program: Command): void {
     });
 
   improve
+    .command('skills')
+    .description('Author + safety-gate NEW skills for the agent (firewall + coverage)')
+    .option('--json', 'output JSON')
+    .option('--apply', 'install validated skills (overrides propose-only)')
+    .action(async (options: ImproveOptions) => {
+      const { SkillImprovementEngine } = await import('../../agent/self-improvement/skill-engine.js');
+      const { LlmSkillProposer } = await import('../../agent/self-improvement/skill-proposer.js');
+      const { SEED_SKILL_SCENARIOS } = await import('../../agent/self-improvement/skill-benchmark.js');
+      const engine = new SkillImprovementEngine({
+        scenarios: SEED_SKILL_SCENARIOS,
+        proposer: new LlmSkillProposer(),
+        ...(options.apply ? { autonomy: 'auto-apply' as const } : {}),
+      });
+      const results = await engine.runLoop();
+      const kept = results.map((r) => (r.applied ? r.gate?.appliedRef : null)).filter(Boolean);
+      const text = [
+        `Autonomy: ${results[0]?.autonomy ?? 'propose-only'}`,
+        `Cycles: ${results.length}`,
+        ...results.map(
+          (r) =>
+            `  ${r.selectedScenarioId ?? '—'}: ${
+              r.applied
+                ? `AUTHORED + INSTALLED (${r.gate?.appliedRef})`
+                : r.gate?.accepted
+                  ? 'accepted (propose-only) — re-run with --apply to install'
+                  : r.gate?.rejectionReason
+                    ? `rejected (${r.gate.rejectionReason})`
+                    : r.notes.join('; ')
+            }`,
+        ),
+        kept.length ? `Installed: ${kept.join(', ')} (under .codebuddy/skills/authored)` : 'No skill installed this run',
+      ].join('\n');
+      print({ kind: 'self_improvement_skills', cycles: results }, options, text);
+    });
+
+  improve
     .command('loop')
     .description('Run improvement cycles until no further validated progress is made')
     .option('--json', 'output JSON')
