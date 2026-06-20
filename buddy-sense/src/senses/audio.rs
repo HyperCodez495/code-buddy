@@ -110,6 +110,61 @@ pub fn wav_events(path: &str, frame_ms: u64, threshold: f64) -> Result<Vec<Senso
     Ok(vad_events(&samples, rate, frame_ms, threshold))
 }
 
+/// Neural VAD (Silero via ONNX Runtime) — a higher-accuracy alternative to the
+/// energy VAD, opt-in behind `neural-vad`. Needs the Silero `.onnx` model and
+/// onnxruntime (loaded dynamically; ORT_DYLIB_PATH). The energy `vad_events`
+/// stays the default fallback when this feature/model is absent.
+#[cfg(feature = "neural-vad")]
+pub mod neural {
+    use super::{Modality, SensoryEvent, SPEECH_SALIENCE};
+    use vad_rs::{Vad, VadStatus};
+
+    const CHUNK: usize = 1600; // 100 ms @ 16 kHz (Silero window)
+    const FRAME_MS: u64 = 100;
+
+    /// Speech_start/end events from 16 kHz mono PCM using Silero VAD.
+    pub fn vad_events_neural(samples: &[i16], sample_rate: u32, model_path: &str) -> Result<Vec<SensoryEvent>, String> {
+        if sample_rate != 16_000 {
+            return Err(format!("neural VAD requires 16 kHz mono (got {sample_rate})"));
+        }
+        let mut vad = Vad::new(model_path, 16_000).map_err(|e| e.to_string())?;
+        let mut out = Vec::new();
+        let mut speaking = false;
+        let mut ts: u64 = 0;
+        for block in samples.chunks(CHUNK) {
+            let f: Vec<f32> = block.iter().map(|&s| s as f32 / 32768.0).collect();
+            if let Ok(mut r) = vad.compute(&f) {
+                match r.status() {
+                    VadStatus::Speech if !speaking => {
+                        speaking = true;
+                        out.push(event("speech_start", ts, r.prob));
+                    }
+                    VadStatus::Silence if speaking => {
+                        speaking = false;
+                        out.push(event("speech_end", ts, r.prob));
+                    }
+                    _ => {}
+                }
+            }
+            ts += FRAME_MS;
+        }
+        if speaking {
+            out.push(event("speech_end", ts, 0.0));
+        }
+        Ok(out)
+    }
+
+    fn event(kind: &str, ts_ms: u64, prob: f32) -> SensoryEvent {
+        SensoryEvent {
+            modality: Modality::Audio,
+            kind: kind.to_string(),
+            ts_ms,
+            salience: SPEECH_SALIENCE,
+            payload: serde_json::json!({ "prob": prob }),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -151,5 +206,24 @@ mod tests {
         let kinds: Vec<&str> = evs.iter().map(|e| e.kind.as_str()).collect();
         // One start, one end — NOT a start/end on every dip (the chatter bug).
         assert_eq!(kinds, vec!["speech_start", "speech_end"]);
+    }
+
+    // Real Silero VAD on a real speech WAV. Needs onnxruntime (ORT_DYLIB_PATH) +
+    // the model + a 16 kHz speech WAV — set the two env vars to run it; otherwise
+    // it self-skips (so the default test run isn't environment-coupled).
+    #[cfg(feature = "neural-vad")]
+    #[test]
+    fn neural_vad_detects_speech_in_a_real_wav() {
+        let (Some(wav), Some(model)) = (
+            std::env::var("BUDDY_SENSE_VAD_TEST_WAV").ok(),
+            std::env::var("BUDDY_SENSE_VAD_MODEL").ok(),
+        ) else {
+            eprintln!("skip: set BUDDY_SENSE_VAD_TEST_WAV + BUDDY_SENSE_VAD_MODEL");
+            return;
+        };
+        let (samples, rate) = read_wav_mono(&wav).unwrap();
+        let evs = neural::vad_events_neural(&samples, rate, &model).unwrap();
+        eprintln!("neural VAD → {} event(s)", evs.len());
+        assert!(evs.iter().any(|e| e.kind == "speech_start"), "expected speech in a real speech WAV");
     }
 }

@@ -19,8 +19,19 @@ cpal = { version = "0.15", optional = true }
 # Live screen capture is opt-in (xcap, X11/Wayland). The pure change detector
 # builds + tests without it.
 xcap = { version = "0.0.14", optional = true }
+# Neural VAD (Silero via ONNX Runtime) is opt-in — ort auto-downloads onnxruntime
+# at build; the energy-RMS VAD remains the default fallback.
+# default-features off drops the `helpers` feature (libsamplerate/ebur128 C deps);
+# we feed 16 kHz mono directly, no resampling needed.
+vad-rs = { version = "0.1.4", optional = true, default-features = false }
+# ort (ONNX Runtime) comes via vad-rs; pin it here only to enable a TLS backend so
+# its download-binaries strategy can fetch onnxruntime at build (no system install).
+ort = { version = "=2.0.0-rc.6", optional = true, features = ["load-dynamic"] }
+# Pin ort-sys to match ort rc.6 (cargo otherwise resolves an incompatible rc.10).
+ort-sys = { version = "=2.0.0-rc.6", optional = true }
 
 [features]
 default = []
 live-mic = ["dep:cpal"]
 live-screen = ["dep:xcap"]
+neural-vad = ["dep:vad-rs", "dep:ort", "dep:ort-sys"]

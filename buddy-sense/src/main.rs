@@ -20,6 +20,22 @@ use event::SensoryEvent;
 const AUDIO_FRAME_MS: u64 = 20;
 const AUDIO_THRESHOLD: f64 = 0.05;
 
+/// Pick the audio VAD: the Silero neural VAD when built with `neural-vad` AND a
+/// model is configured + present, otherwise the energy VAD (always available).
+fn audio_events_for(path: &str) -> Result<Vec<SensoryEvent>, String> {
+    #[cfg(feature = "neural-vad")]
+    {
+        if let Ok(model) = std::env::var("BUDDY_SENSE_VAD_MODEL") {
+            if std::path::Path::new(&model).exists() {
+                let (samples, rate) = senses::audio::read_wav_mono(path)?;
+                eprintln!("[buddy-sense] audio: neural VAD (Silero)");
+                return senses::audio::neural::vad_events_neural(&samples, rate, &model);
+            }
+        }
+    }
+    senses::audio::wav_events(path, AUDIO_FRAME_MS, AUDIO_THRESHOLD)
+}
+
 #[tokio::main]
 async fn main() {
     let url = std::env::var("BUDDY_SENSE_BRIDGE_URL").unwrap_or_else(|_| "ws://127.0.0.1:8129".to_string());
@@ -70,7 +86,7 @@ async fn main() {
     match wav {
         Some(path) => {
             // Audio runs concurrently with the heartbeat — both feed the thalamus.
-            match senses::audio::wav_events(&path, AUDIO_FRAME_MS, AUDIO_THRESHOLD) {
+            match audio_events_for(&path) {
                 Ok(events) => {
                     eprintln!("[buddy-sense] audio: {} VAD event(s) from {path}", events.len());
                     for ev in events {

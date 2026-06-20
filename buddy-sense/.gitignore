@@ -1,1 +1,4 @@
 /target
+
+# VAD models (large, downloadable — see models/README.md)
+/models/*.onnx
