@@ -154,6 +154,15 @@ function expectValidPublicImage(sourceFile: string, target: string): void {
     return;
   }
 
+  if (extension === '.svg') {
+    // Vector diagrams (e.g. buddy-sense architecture). GitHub renders committed
+    // SVGs; validate it's real SVG markup with a viewBox/size, not a stray file.
+    const head = bytes.subarray(0, 600).toString('utf8');
+    expect(/<svg[\s>]/i.test(head), label).toBe(true);
+    expect(/viewBox|width=/i.test(head), label).toBe(true);
+    return;
+  }
+
   throw new Error(`Unsupported public screenshot extension: ${label}`);
 }
 
@@ -206,7 +215,7 @@ describe('public README screenshots', () => {
       }
     }
 
-    expect(anchorCountsByFile.get(path.join(repoRoot, 'README.md'))).toBe(8);
+    expect(anchorCountsByFile.get(path.join(repoRoot, 'README.md'))).toBe(22);
     expect(anchorCountsByFile.get(path.join(repoRoot, 'cowork', 'readme.md'))).toBe(6);
   });
 
@@ -234,7 +243,7 @@ describe('public README screenshots', () => {
       }
     }
 
-    expect(targetsByFile.get(path.join(repoRoot, 'README.md'))).toHaveLength(13);
+    expect(targetsByFile.get(path.join(repoRoot, 'README.md'))).toHaveLength(20);
     expect(targetsByFile.get(screenshotGalleryReadme)).toHaveLength(15);
   });
 

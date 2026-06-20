@@ -45,7 +45,7 @@ Watch a **local model reason on screen, then use real tools to do the work** —
 [Proof ✅](docs/proof.md) ·
 [Quick Start](#quick-start) ·
 [In action](#in-action) ·
-[Features](#features) ·
+[What it does](#what-code-buddy-does) ·
 [FAQ](docs/faq.md) ·
 [Docs](#documentation) ·
 [Contributing](#contributing)
@@ -279,26 +279,68 @@ The CLI guards this: on Node < 22, `buddy gui` prints a clear upgrade message in
 
 ---
 
-## Features
+## What Code Buddy does
 
-| Category | Highlights | Docs |
-|:---------|:-----------|:-----|
-| **AI Providers** | 15 providers (Grok, Claude, GPT, Gemini, Ollama, LM Studio, AWS Bedrock, Azure, Groq, Together, Fireworks, OpenRouter, vLLM, Copilot, Mistral), circuit breaker, model pairs | [providers.md](docs/providers.md) |
-| **Tools** | ~110 tools with RAG selection, multi-strategy edit matching, Codex-style `apply_patch`, streaming, BM25 tool search, code-exec sandbox | [tools-reference.md](docs/tools-reference.md) |
-| **Commands** | 190+ slash commands & CLI subcommands (`/goal`, `/dev`, `/pr`, `/lint`, `/switch`, `/think`, `/batch`, …) | [commands.md](docs/commands.md) |
-| **Cowork Desktop** | Electron cockpit, embedded engine, backend health/start controls, model settings, permission rules, visual workflows, traces, artifacts, MCP/skills/plugins | [cowork.md](docs/cowork.md), [ARCHITECTURE.md](cowork/ARCHITECTURE.md) |
-| **Agents** | Multi-agent orchestration (5-tool API), 8 specialized agents, SWE agent, planning flow, A2A protocol, batch decomposition, agent teams | [agents.md](docs/agents.md) |
-| **Goal loops** | `/goal` + `/subgoal` Ralph loop — a judge model re-checks completion every turn and auto-continues until done (turn budget, pause/resume, fail-open); headless `buddy goal`, board goal-mode, peer-session goals | [fleet-guide.md](docs/fleet-guide.md) |
-| **Reasoning** | Tree-of-Thought + MCTS (4 depth levels), extended thinking, auto-escalation, `/think` | [reasoning.md](docs/reasoning.md) |
-| **Fleet & Autonomy** | Peer-to-peer hub (`peer.chat` / `peer.tool.invoke` / `peer_delegate`), A2A + ACP + MCP interop, 24/7 autonomous service (`buddy autonomy install`), event-driven daemon, free-first local→Tailscale→paid tiering | [fleet-guide.md](docs/fleet-guide.md) |
-| **Security** | Guardian Agent (AI risk scoring), OS/Docker/OpenShell sandbox, SSRF guard, secrets vault, write/exec policy, loop & omission detection, output sanitizer | [security.md](docs/security.md) |
-| **Context Engine** | Smart compression, tool-output masking, image pruning, transcript repair, pre-compaction flush, JIT context, importance-weighted window | [context-engine.md](docs/context-engine.md) |
-| **Channels** | 20+ messaging channels (Telegram, Discord, Slack, WhatsApp, Signal, Teams, Matrix, …), DM pairing, send policy | [channels.md](docs/channels.md) |
-| **Companion & Vision** | ChatGPT-backed identity, voice/TTS, proactive check-ins, self-evaluation, mission board; opt-in webcam + MediaPipe face/hand/pose percepts, local face enrollment | [commands.md](docs/commands.md) |
-| **Memory & Knowledge** | Persistent + semantic + decision + coding-style memory, cross-session ICM, knowledge-base injection, 40 bundled skills, runtime self-authored skills | [context-engine.md](docs/context-engine.md) |
-| **Infrastructure** | HTTP server (OpenAI-compatible), WebSocket gateway, daemon, cron, device nodes, canvas/A2UI, cloud deploy configs, MCP, plugins | [infrastructure.md](docs/infrastructure.md) |
-| **Configuration** | Env vars, TOML config with profiles, model-aware limits, per-agent params, i18n (6 locales), personas | [configuration.md](docs/configuration.md) |
-| **Git & Code Intel** | Auto-commit (Aider-style), `/pr`, merge-conflict resolver, LSP rename/refactor, bug finder (25+ patterns, 6 langs), OpenAPI generator, IDE extensions | [development.md](docs/development.md) |
+Code Buddy is one engine — terminal, desktop, and HTTP — that an LLM drives to read code, edit files, run commands, search the web, open PRs, and plan complex work. Below is the whole surface, explained. Jump to any area:
+
+| Area | In one line | Deep dive |
+|:-----|:------------|:----------|
+| [Providers & login](#providers--login) | 15 LLM providers + ChatGPT/xAI login at **$0** flat-fee, auto-failover, ensembles | [providers.md](docs/providers.md) |
+| [The agentic loop](#the-agentic-loop) | autonomous tool-calling with a middleware pipeline + confirm-before-execute | [CLAUDE.md](CLAUDE.md) |
+| [~110 tools](#110-tools) | edit/shell/web/browser/docs/media, RAG-selected, 5-strategy edit matching | [tools-reference.md](docs/tools-reference.md) |
+| [Reasoning](#reasoning) | extended thinking + Tree-of-Thought / MCTS, `/think` | [reasoning.md](docs/reasoning.md) |
+| [Goal loops & autonomy](#goal-loops--autonomy) | Ralph loop + LLM judge, YOLO, a 24/7 daemon | [fleet-guide.md](docs/fleet-guide.md) |
+| [Multi-AI Fleet](#multi-ai-fleet) | peers call each other's models + read-only tools over WebSocket | [fleet-guide.md](docs/fleet-guide.md) |
+| [Self-improvement](#self-improvement) | authors + empirically gates its own tools/skills (opt-in) | [CLAUDE.md](CLAUDE.md) |
+| [Skills](#skills) | 40 bundled (Office/research/automation) + authored + imported, firewalled | [commands.md](docs/commands.md) |
+| [Memory & context](#memory--context) | compression, importance-weighted window, JIT project context | [context-engine.md](docs/context-engine.md) |
+| [Security & sandboxing](#security--sandboxing) | Guardian risk-scorer, permission modes, sandbox tiers, SSRF guard, secrets | [security.md](docs/security.md) |
+| [Server & infrastructure](#server--infrastructure) | OpenAI-compatible HTTP, WS gateway, daemon, cron | [infrastructure.md](docs/infrastructure.md) |
+| [Channels](#channels) | 20+ messaging platforms with DM-pairing access control | [channels.md](docs/channels.md) |
+| [Git & code intelligence](#git--code-intelligence) | auto-commit, `/pr`, LSP rename, bug finder, the Code Explorer graph | [development.md](docs/development.md) |
+| [Config & modes](#config--modes) | TOML profiles, permission/agent/security modes, model-aware limits | [configuration.md](docs/configuration.md) |
+
+### Providers & login
+Code Buddy talks to **15 LLM providers** through one OpenAI-compatible dispatcher (`src/codebuddy/client.ts`), picking exactly one strategy at startup: Grok, Claude, GPT, Gemini, Ollama, LM Studio, AWS Bedrock, Azure, Groq, Together, Fireworks, OpenRouter, vLLM, Copilot, Mistral. **`buddy login`** signs into a ChatGPT Plus/Pro subscription (routed via OpenAI's Codex Responses backend) and **`buddy login xai`** into SuperGrok — both **flat-fee, no API key, cost reported `$0.0000`** (no per-token metering). Multiple logins coexist: **`buddy llm`** lists them, **`buddy llm ensemble "<q>"`** asks them all and synthesizes one answer, and `CODEBUDDY_LLM_FAILOVER=1` auto-continues on the next active LLM when one errors (per-provider circuit breakers). `[model_pairs]` in TOML splits an *architect* and *editor* model.
+
+### The agentic loop
+The core is a stateful multi-turn loop (`src/agent/execution/agent-executor.ts`, `runTurnLoop`): the LLM proposes tool calls, the executor validates + confirms + runs them, feeds results back, and loops until done or you stop. A **middleware pipeline** (`src/agent/middleware/`) adds turn/cost limits, reasoning injection, workflow guards, auto-repair, and quality gates in priority order. Before any risky action the **ConfirmationService** checks permission mode → declarative rules → session flags → the Guardian Agent, and fail-closed guards block catastrophic commands (`rm -rf /`, fork bombs, `drop database`). Run it interactively (`buddy`), one-shot (`buddy -p "<task>"`), or fully autonomous (`buddy --yolo`).
+
+### ~110 tools
+The agent has **~110 tools** — file edit, shell, web search (5-provider fallback), a real headless browser, PDF/Office, media/vision, code-exec, agent orchestration — and uses **RAG selection** to send only the relevant ones each turn (BM25 `tool_search` as fallback). Edits land even in refactored code via a **5-strategy cascade**: exact → flexible (trim/indent) → regex (tokenized) → fuzzy (Levenshtein 10%) → LCS (90%). It also speaks Codex-style **`apply_patch`**, and `code_exec` runs LLM-written JavaScript in a `vm` sandbox (no `process`/`require`, 30s). Extend it with MCP servers (auto-discovered from `.codebuddy/mcp.json`), plugins, or new tool classes.
+
+### Reasoning
+Two systems: **Extended Thinking** (provider budget tokens — off/minimal/low/medium/high/xhigh) and Code Buddy's own **Tree-of-Thought + MCTS** with four depths (shallow CoT → beam search → MCTS → exhaustive). A reasoning middleware auto-detects complex queries and injects guidance; `/think`, `/megathink`, and `/ultrathink` set the depth, and the `reason` tool streams its search. (MCTSr Q-value `Q(a) = 0.5·(min(R) + mean(R))`.)
+
+### Goal loops & autonomy
+A **goal loop** is autonomy with a referee: the agent acts, an LLM **judge** checks the goal after each turn, and it self-corrects until done or the turn budget runs out — no hand-written retry logic. Drive it with `/goal "<objective>"` + `/subgoal` (numbered criteria), or headless `buddy goal`. **`buddy --yolo`** grants 400 tool rounds under a `$100` cap with guardrails, and the **24/7 autonomous daemon** (`buddy autonomy install`) claims tasks from a shared queue and runs them free-first (local → Tailscale → paid).
+
+### Multi-AI Fleet
+Run several Code Buddy instances as **peers on a WebSocket mesh** that observe each other's events live and call each other's models + read-only tools: `peer.chat` (one-shot), `peer.chat-session.*` (multi-turn, persisted), and `peer.tool.invoke` (remote read-only tools, behind three security gates that fail closed). **`/fleet route "<prompt>"`** classifies a task, gathers peer capabilities, runs a privacy lint (SSN/IBAN/card detection), and recommends a delegation; `/fleet listen|send|status|history` manage the mesh. It interops over A2A + ACP + MCP.
+
+### Self-improvement
+An empirically-gated loop (`src/agent/self-improvement/`) that improves Code Buddy's *learned* layer — never its own `src/`. It can author its own **lessons**, **tools** (`register_tool`, sandboxed, namespaced `authored__*`), and **skills**, each passing a gate before it's kept: tools must pass **held-out** behavioral cases the proposer never sees (a tool that hardcodes the visible answers fails fresh inputs → rejected), and skills pass a prompt-injection **firewall**. It's **opt-in and off by default** (`CODEBUDDY_SELF_IMPROVE=true`); `buddy improve status|cycle|tools|skills` drive it.
+
+### Skills
+Skills are procedural guidance (Markdown + frontmatter + triggers) the agent discovers and injects by topic. **40 are bundled**, including ones that build real Office docs and run analysis in *visible* Python steps (preflight libs → write script → run → verify): `xlsx`/`docx`/`pptx`, `doc-ingest` (PDF/Office → Markdown), `data-charts` (pandas/matplotlib), `web-automate` (Playwright), `web-research` (cited briefs). The agent can also **author** its own skills and **import** external ones from Hermes / OpenClaw — every imported skill is scanned by a **firewall** that quarantines prompt-injection/exfiltration payloads (`buddy skills import|imported|list`).
+
+### Memory & context
+For long sessions, `ContextManagerV2` compresses with a sliding window + **importance-weighted scoring** (errors 0.95, decisions 0.90, code 0.70, chat 0.25 — high-value messages survive truncation), masks old tool output, prunes stale images, and repairs the transcript after compaction. **JIT context** loads nearby `CODEBUDDY.md`/`CONTEXT.md`/`AGENTS.md` files when a tool touches a path, and each turn injects `<lessons_context>` and `<todo_context>`. Durable facts persist to bounded project/user memory (`/memory recent|remember|recall`), security-scanned against injection/secret-exfiltration.
+
+### Security & sandboxing
+Layered, fail-closed safety: the **Guardian Agent** scores each operation 0–100 (auto-approve <80, prompt 80–90, deny ≥90; read-only tools skip the LLM call), **permission modes** (`plan`/`acceptEdits`/`dontAsk`/`bypassPermissions`), **sandbox tiers** (read-only / workspace-write / full-access via bubblewrap·landlock·seatbelt, with `.git`/`.ssh`/`.aws` always read-only), an **SSRF guard** (blocks private ranges + IPv4/IPv6 bypass vectors with a DNS check before every fetch), an AES-256-GCM **secrets vault** (`buddy secrets`), a **write policy** (`strict` forces `apply_patch`), and an **output sanitizer** that strips model-leakage tokens.
+
+### Server & infrastructure
+**`buddy server`** exposes an HTTP API (port 3000) including an **OpenAI-compatible `/api/chat/completions`**, plus a **WebSocket gateway** (3001) for desktop/mobile clients (device pairing, presence, Origin-hardened, JWT in production). A **daemon** runs 24/7 with auto-restart, a heartbeat checklist, daily session reset, and a cross-platform service installer (systemd/launchd/Task Scheduler). **Cron** scheduling (`buddy cron add`) supports no-LLM `--watchdog` monitors and `--pre-check` gates so an expensive LLM run only fires when something actually changed.
+
+### Channels
+Code Buddy runs on **20+ messaging platforms** — Telegram, Discord, Slack, WhatsApp, Signal, Matrix, IRC, Nostr, Mattermost, Nextcloud Talk, iMessage (real persistent transports with auto-reconnect) plus REST/webhook adapters (Teams, Google Chat, Feishu, LINE, ntfy, DingTalk, WeCom, …). **DM pairing** prevents unauthorized credit burn: an unknown user gets a 6-char code (15-min TTL) you approve via `buddy pairing approve`. (A few niche adapters — Twitch/Tlon/Gmail — are in-process stubs, and Feishu real-time *inbound* needs the Lark SDK installed.)
+
+### Git & code intelligence
+`buddy dev run` plans + implements + tests + **auto-commits** with a Conventional-Commit message; **`/pr`** opens a summarized PR; `lsp_rename`/`lsp_code_action` drive language servers for safe refactors; the **bug finder** flags 25+ patterns across 6 languages. For whole-repo understanding, the optional **Code Explorer** (the `gitnexus` MCP server) pre-indexes the repo into a knowledge graph with 31 tools for impact/blast-radius, coupling, hotspots, and execution traces. Code Buddy also runs as an **ACP** agent (`buddy acp`) so editors like Zed can drive it natively.
+
+### Config & modes
+Configure via env vars, **TOML profiles** (`[profiles.<name>]`, `buddy --profile`), and per-project `.codebuddy/settings.json`. **Permission modes** gate approvals, **agent modes** (`plan`/`code`/`ask`/`architect`) restrict the tool surface, and **security modes** (`suggest`/`auto-edit`/`full-auto`) tune the approval flow. Per-model capabilities (context window, max output, patch format) live in `src/config/model-tools.ts`. The UI ships in **English and French (complete)**; `de`/`es`/`ja`/`zh` are registered locale scaffolds that currently fall back to English.
 
 ---
 
