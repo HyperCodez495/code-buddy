@@ -123,6 +123,12 @@ Stateful WebSocket mesh letting Code Buddy peers observe each other's events liv
 - **`route_peer` tool + `/fleet route`** — `TaskRouter` (`task-router.ts`) classifies a prompt, gathers peer capabilities via `peer.describe`, applies privacy/cost/latency constraints, returns the recommended `peer_delegate` call. Privacy lint (`privacy-lint.ts`) detects SSN/IBAN/phone/credit-card before routing.
 - **Slash UX:** `/fleet listen`, `/fleet send <peer> <method> <json>`, `/fleet history [--type glob] [--json]`, `/fleet status [--with-sessions]`, `/fleet chat start|say|end|list`, `/fleet route`, `/fleet describe`.
 
+## Sensory nervous system — `buddy-sense/` (Rust) + `src/sensory/`
+
+A brain-inspired perception layer (for the companion/robot vision). **`buddy-sense/`** is a Rust monorepo subdir (tokio): parallel **senses** (audio via `cpal`/WAV with an energy VAD; video/vital planned) emit `SensoryEvent`s over bounded channels → a **thalamus** (`bus.rs`) that coalesces high-rate events, escalates salient ones, keeps per-modality ring-buffer memory, and broadcasts (the "global workspace") → a WebSocket **bridge**. Heavy analysis (STT, vision) is delegated back to Code Buddy. `cd buddy-sense && cargo test` (6 tests, no system audio deps; live mic is `--features live-mic`, needs libasound2-dev).
+
+The Code Buddy side: **`src/sensory/sensory-bridge.ts`** — a loopback-only `ws` server that receives the daemon's frames and re-emits them onto `getGlobalEventBus()` as `sensory:perception`; **`src/sensory/reactions.ts`** subscribes (Phase 2: speech_end→STT, motion→`camera_analyze`). Started by `CODEBUDDY_SENSORY=true buddy server` (`src/server/index.ts`). Proven end-to-end: a WAV → VAD → bridge → event bus → reaction (speech_start/end). Opt-in, loopback-only, never-throws.
+
 ## Cowork — Desktop GUI (`cowork/`)
 
 Electron app, separate `package.json`, Node ≥22, Vite + React + better-sqlite3, Playwright for e2e. Architecture in `cowork/ARCHITECTURE.md`.

@@ -1,0 +1,23 @@
+[package]
+name = "buddy-sense"
+version = "0.1.0"
+edition = "2021"
+description = "A parallel multi-sensory nervous system feeding Code Buddy"
+license = "MIT"
+
+[dependencies]
+tokio = { version = "1", features = ["rt-multi-thread", "macros", "sync", "time"] }
+tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "handshake"] }
+futures-util = "0.3"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+hound = "3"
+dashmap = "6"
+
+# Live microphone capture is opt-in (needs libasound2-dev on Linux). The core
+# (thalamus + WAV audio + VAD + bridge) builds + tests without it.
+cpal = { version = "0.15", optional = true }
+
+[features]
+default = []
+live-mic = ["dep:cpal"]
