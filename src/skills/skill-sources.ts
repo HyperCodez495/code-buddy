@@ -33,6 +33,21 @@ function cacheRoot(): string {
   return path.join(os.homedir(), '.codebuddy', 'skills', '.sources-cache');
 }
 
+/** Best-effort: locate the OpenClaw skills dir (it lives inside the npm global package). */
+function findOpenclawSkillsDir(): string | undefined {
+  const candidates: string[] = [path.join(os.homedir(), '.openclaw', 'skills')];
+  const nvmRoot = path.join(os.homedir(), '.nvm', 'versions', 'node');
+  try {
+    for (const v of fs.readdirSync(nvmRoot)) {
+      candidates.push(path.join(nvmRoot, v, 'lib', 'node_modules', 'openclaw', 'skills'));
+    }
+  } catch {
+    /* no nvm */
+  }
+  candidates.push('/usr/local/lib/node_modules/openclaw/skills', '/usr/lib/node_modules/openclaw/skills');
+  return candidates.find((c) => fs.existsSync(c));
+}
+
 function read(): SourcesFile {
   try {
     const parsed = JSON.parse(fs.readFileSync(configPath(), 'utf-8')) as Partial<SourcesFile>;
@@ -40,9 +55,12 @@ function read(): SourcesFile {
   } catch {
     /* no config yet */
   }
-  // Seed Hermes's local repo as a default `dir` source when present.
+  // Seed known local skill repos as default `dir` sources when present.
+  const seed: SkillSource[] = [];
   const hermes = path.join(os.homedir(), '.hermes', 'skills');
-  const seed: SkillSource[] = fs.existsSync(hermes) ? [{ name: 'hermes', type: 'dir', location: hermes }] : [];
+  if (fs.existsSync(hermes)) seed.push({ name: 'hermes', type: 'dir', location: hermes });
+  const openclaw = findOpenclawSkillsDir();
+  if (openclaw) seed.push({ name: 'openclaw', type: 'dir', location: openclaw });
   return { schemaVersion: 1, sources: seed };
 }
 

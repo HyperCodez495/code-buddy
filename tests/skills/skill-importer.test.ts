@@ -90,6 +90,37 @@ describe('skill-importer — remap makes imported skills discoverable + provenan
   });
 });
 
+describe('skill-importer — source-agnostic remap (OpenClaw + generic)', () => {
+  it('OpenClaw-style skill (no tags) gets triggers from name+description and requires from bins', () => {
+    // OpenClaw: name + description + metadata.openclaw.{emoji, requires.bins}; NO tags.
+    writeSkill(
+      path.join(src, 'diagram-maker'),
+      'name: diagram-maker\ndescription: "Create excalidraw diagrams and architecture flowcharts."\nmetadata:\n  openclaw:\n    emoji: "🧭"\n    requires:\n      bins: [node]',
+      '# Diagram Maker\nCreate diagrams as artifacts.',
+    );
+    importSkills(src, { destRoot: dest, source: 'openclaw' });
+    const installed = fs.readFileSync(path.join(dest, 'imported-diagram-maker', 'SKILL.md'), 'utf-8');
+    const skill = parseSkillFile(installed, path.join(dest, 'imported-diagram-maker', 'SKILL.md'), 'managed');
+    const triggers = skill.metadata.nativeEngine?.triggers ?? [];
+    expect(triggers).toContain('diagram-maker');
+    // derived from the description, since OpenClaw provides no tags
+    expect(triggers).toEqual(expect.arrayContaining(['excalidraw', 'diagrams']));
+    expect(skill.metadata.requires?.tools).toEqual(['node']); // from metadata.openclaw.requires.bins
+    expect(skill.metadata.source).toBe('openclaw');
+  });
+
+  it('hoists tags from any metadata.<source>.tags', () => {
+    writeSkill(path.join(src, 'thing'), 'name: thing\ndescription: "x."\nmetadata:\n  custom:\n    tags: [Alpha, Beta]', '# Thing');
+    importSkills(src, { destRoot: dest });
+    const skill = parseSkillFile(
+      fs.readFileSync(path.join(dest, 'imported-thing', 'SKILL.md'), 'utf-8'),
+      path.join(dest, 'imported-thing', 'SKILL.md'),
+      'managed',
+    );
+    expect(skill.metadata.tags).toEqual(expect.arrayContaining(['alpha', 'beta']));
+  });
+});
+
 describe('skill-importer — support files + conflicts', () => {
   it('copies support dirs and skips a conflict unless overwrite', () => {
     writeSkill(path.join(src, 'git-helper'), BENIGN_FM, BENIGN_BODY, { 'scripts/helper.sh': 'echo hello\n', 'references/notes.md': '# notes' });

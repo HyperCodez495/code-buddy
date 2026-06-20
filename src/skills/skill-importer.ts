@@ -108,19 +108,63 @@ function normalizeTags(raw: unknown): string[] {
   return out;
 }
 
-/** Derive discovery triggers (the primary matcher) from the name + tags. */
-function deriveTriggers(rawName: string, tags: string[]): string[] {
+const STOPWORDS = new Set([
+  'the', 'and', 'for', 'with', 'your', 'via', 'into', 'from', 'that', 'this', 'use', 'using', 'create',
+  'creates', 'creating', 'a', 'an', 'or', 'to', 'of', 'in', 'on', 'as', 'by', 'it', 'is', 'are', 'add',
+  'list', 'get', 'set', 'run', 'when', 'how', 'you', 'can', 'will', 'their', 'them', 'they', 'about',
+]);
+
+/** Derive discovery triggers (the primary matcher) from the name + tags + description keywords. */
+function deriveTriggers(rawName: string, tags: string[], description = ''): string[] {
   const nameWords = String(rawName).toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 3);
+  const descWords = String(description)
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter((w) => w.length >= 4 && !STOPWORDS.has(w));
   const seen = new Set<string>();
   const out: string[] = [];
-  for (const t of [String(rawName).toLowerCase(), ...tags, ...nameWords]) {
+  for (const t of [String(rawName).toLowerCase(), ...tags, ...nameWords, ...descWords]) {
     if (t && !seen.has(t)) {
       seen.add(t);
       out.push(t);
     }
-    if (out.length >= 10) break;
+    if (out.length >= 12) break;
   }
   return out;
+}
+
+/** Extract discovery tags from any source layout: top-level `tags`, or `metadata.<source>.tags`. */
+function extractTags(rawFm: Record<string, unknown>): unknown {
+  if (Array.isArray(rawFm.tags)) return rawFm.tags;
+  const meta = rawFm.metadata;
+  if (meta && typeof meta === 'object') {
+    for (const v of Object.values(meta as Record<string, unknown>)) {
+      if (v && typeof v === 'object' && Array.isArray((v as Record<string, unknown>).tags)) {
+        return (v as Record<string, unknown>).tags;
+      }
+    }
+  }
+  return [];
+}
+
+/** Map prerequisites/requires from any source → our SkillRequirements.tools. */
+function extractRequiresTools(rawFm: Record<string, unknown>): string[] {
+  const out = new Set<string>();
+  const add = (v: unknown): void => {
+    if (Array.isArray(v)) for (const x of v) if (typeof x === 'string') out.add(x);
+  };
+  // Hermes: prerequisites.commands
+  const prereq = rawFm.prerequisites as Record<string, unknown> | undefined;
+  if (prereq) add(prereq.commands);
+  // OpenClaw (and others): metadata.<source>.requires.bins
+  const meta = rawFm.metadata as Record<string, unknown> | undefined;
+  if (meta && typeof meta === 'object') {
+    for (const v of Object.values(meta)) {
+      const req = (v as Record<string, unknown> | undefined)?.requires as Record<string, unknown> | undefined;
+      if (req) add(req.bins);
+    }
+  }
+  return [...out];
 }
 
 /** Build a Code-Buddy-shaped SKILL.md from a raw (e.g. Hermes) frontmatter object + body. */
@@ -129,20 +173,20 @@ export function remapSkill(
   body: string,
   opts: { slug: string; source: string; pinned: boolean },
 ): string {
-  const hermes = (rawFm.metadata as Record<string, unknown> | undefined)?.hermes as
-    | Record<string, unknown>
-    | undefined;
-  const tags = normalizeTags(hermes?.tags ?? rawFm.tags);
+  const description = String(rawFm.description ?? '').trim() || `Imported skill ${opts.slug}`;
+  const tags = normalizeTags(extractTags(rawFm));
+  const requiresTools = extractRequiresTools(rawFm);
   const author = Array.isArray(rawFm.author) ? rawFm.author.join(', ') : rawFm.author;
   const meta: Record<string, unknown> = {
     name: opts.slug,
-    description: String(rawFm.description ?? '').trim() || `Imported skill ${opts.slug}`,
+    description,
     ...(rawFm.version ? { version: rawFm.version } : {}),
     ...(author ? { author } : {}),
     ...(rawFm.license ? { license: rawFm.license } : {}),
     ...(rawFm.platforms ? { platforms: rawFm.platforms } : {}),
     tags,
-    nativeEngine: { triggers: deriveTriggers(String(rawFm.name ?? opts.slug), tags) },
+    nativeEngine: { triggers: deriveTriggers(String(rawFm.name ?? opts.slug), tags, description) },
+    ...(requiresTools.length ? { requires: { tools: requiresTools } } : {}),
     imported: true,
     source: opts.source,
     ...(opts.pinned ? { pinned: true } : {}),
