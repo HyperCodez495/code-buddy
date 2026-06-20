@@ -94,6 +94,10 @@ pub mod live {
                     } else if changed && score < threshold {
                         changed = false;
                     }
+                } else {
+                    // Resolution / monitor change: re-baseline against the new frame
+                    // size and re-arm, instead of silently wedging the state machine.
+                    changed = false;
                 }
             }
             prev = Some(frame);

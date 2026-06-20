@@ -13,9 +13,6 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 hound = "3"
 
-# Live microphone capture is opt-in (needs libasound2-dev on Linux). The core
-# (thalamus + WAV audio + VAD + bridge) builds + tests without it.
-cpal = { version = "0.15", optional = true }
 # Live screen capture is opt-in (xcap, X11/Wayland). The pure change detector
 # builds + tests without it.
 xcap = { version = "0.0.14", optional = true }
@@ -37,7 +34,6 @@ tokio-stream = { version = "0.1", optional = true }
 
 [features]
 default = []
-live-mic = ["dep:cpal"]
 live-screen = ["dep:xcap"]
 neural-vad = ["dep:vad-rs", "dep:ort", "dep:ort-sys"]
 live-ui = ["dep:atspi", "dep:tokio-stream"]

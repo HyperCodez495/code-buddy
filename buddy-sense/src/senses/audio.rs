@@ -1,6 +1,7 @@
 //! Audio sense — light, local. Energy-based VAD over PCM → speech_start/end
-//! events. Heavy work (STT) is delegated to Code Buddy. A WAV source makes the
-//! whole path verifiable headless; a live microphone is opt-in (`live-mic`).
+//! events (or the Silero neural VAD behind `neural-vad`). Heavy work (STT) is
+//! delegated to Code Buddy. Input is a WAV file (verifiable headless); there is
+//! no live-microphone capture path yet.
 
 use crate::event::{Modality, SensoryEvent};
 

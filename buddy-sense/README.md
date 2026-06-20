@@ -5,9 +5,11 @@ A parallel, event-driven **nervous system** in Rust — the perception layer for
 
 The human brain is massively parallel: sight, hearing, and the heartbeat all run
 concurrently, gated by the brain, and memory consolidates in the background.
-`buddy-sense` reproduces that: each **sense** runs concurrently, a **thalamus**
+`buddy-sense` reproduces that: the **sense modules** run concurrently, a **thalamus**
 gates/coalesces the stream, and a **bridge** feeds events into Code Buddy's event
-bus, where they trigger processing (and heartbeat-paced memory consolidation).
+bus, where they trigger processing (and heartbeat-paced memory consolidation). The
+default daemon emits the heartbeat (and audio when given a WAV); the screen/ui live
+captures are opt-in features, and vision is a detector core with no live path yet.
 
 ![architecture](docs/architecture.svg)
 
@@ -15,8 +17,9 @@ bus, where they trigger processing (and heartbeat-paced memory consolidation).
   bounded channels (backpressure).
 - **Thalamus** (`bus.rs`): coalesces high-rate low-salience bursts, lets salient
   events bypass coalescing (an attention **gate** — note: it does not reorder by
-  priority), keeps a per-modality ring buffer, and broadcasts (the "global
-  workspace", GWT). The vital heartbeat is never coalesced.
+  priority), and broadcasts (the "global workspace", GWT). The vital heartbeat is
+  never coalesced. (A per-modality ring buffer is Phase-2/3 scaffolding, not yet
+  read by the binary; the real short-term memory is on the Code Buddy side.)
 - **Bridge** (`bridge.rs`): ships events as JSON over a WebSocket (loopback,
   Origin-checked, optional token) to Code Buddy's `sensory-bridge`.
 - Heavy analysis (STT, vision models, OCR) is **delegated to Code Buddy** — the
@@ -26,7 +29,7 @@ bus, where they trigger processing (and heartbeat-paced memory consolidation).
 
 | Sense | File | Emits | Live capture |
 |-------|------|-------|--------------|
-| **audio** | `senses/audio.rs` | `speech_start/end` (energy VAD, or Silero neural) | `live-mic` (cpal) / WAV |
+| **audio** | `senses/audio.rs` | `speech_start/end` (energy VAD, or Silero neural) | WAV file (no live mic yet) |
 | **vital** | `senses/vital.rs` | `heartbeat` (uptime, load) — the autonomic rhythm | always on |
 | **vision** | `senses/video.rs` | `motion` (→ Code Buddy `camera_analyze`) | detector core (frames fed) |
 | **screen** | `senses/screen.rs` | `change` (xcap screen diff) | `live-screen` (xcap) |
@@ -64,7 +67,6 @@ On the Code Buddy side: `CODEBUDDY_SENSORY=true buddy server` starts the bridge.
 
 | Feature | Adds | System / model needs |
 |---------|------|----------------------|
-| `live-mic` | live microphone (cpal) | `libasound2-dev` |
 | `live-screen` | live screen capture (xcap, X11/Wayland) | xcb libs |
 | `live-ui` | live AT-SPI focus events (atspi/zbus) | a running a11y bus (none to build) |
 | `neural-vad` | Silero neural VAD via ONNX Runtime | a model + onnxruntime — see [models/README.md](models/README.md) |

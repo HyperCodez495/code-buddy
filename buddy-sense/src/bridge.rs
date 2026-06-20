@@ -2,7 +2,7 @@
 //! sensory bridge, which re-emits them onto its internal event bus. Reconnects
 //! on failure; never panics.
 
-use futures_util::SinkExt;
+use futures_util::{SinkExt, StreamExt};
 use tokio::sync::broadcast;
 use tokio_tungstenite::tungstenite::Message;
 
@@ -23,20 +23,35 @@ pub async fn run_bridge(url: String, token: Option<String>, mut rx: broadcast::R
         match tokio_tungstenite::connect_async(&url).await {
             Ok((mut ws, _)) => {
                 eprintln!("[buddy-sense] bridge connected → {url}");
+                let mut keepalive = tokio::time::interval(std::time::Duration::from_secs(15));
                 loop {
-                    match rx.recv().await {
-                        Ok(ev) => {
-                            if let Some(text) = frame_json(&ev, token.as_deref()) {
-                                if ws.send(Message::Text(text.into())).await.is_err() {
-                                    break;
+                    tokio::select! {
+                        msg = rx.recv() => match msg {
+                            Ok(ev) => {
+                                if let Some(text) = frame_json(&ev, token.as_deref()) {
+                                    if ws.send(Message::Text(text.into())).await.is_err() {
+                                        break;
+                                    }
                                 }
                             }
+                            // Lagged: we dropped some events under load — keep going.
+                            Err(broadcast::error::RecvError::Lagged(n)) => {
+                                eprintln!("[buddy-sense] bridge lagged, dropped {n} events");
+                            }
+                            Err(broadcast::error::RecvError::Closed) => return,
+                        },
+                        // Proactive keepalive: detect a half-open socket when traffic is quiet.
+                        _ = keepalive.tick() => {
+                            if ws.send(Message::Ping(Vec::new().into())).await.is_err() {
+                                break;
+                            }
                         }
-                        // Lagged: we dropped some events under load — keep going.
-                        Err(broadcast::error::RecvError::Lagged(n)) => {
-                            eprintln!("[buddy-sense] bridge lagged, dropped {n} events");
+                        // Poll reads so tungstenite auto-pongs + we notice a peer Close.
+                        incoming = ws.next() => match incoming {
+                            Some(Ok(Message::Close(_))) | None => break, // reconnect
+                            Some(Ok(_)) => {}
+                            Some(Err(_)) => break,
                         }
-                        Err(broadcast::error::RecvError::Closed) => return,
                     }
                 }
             }

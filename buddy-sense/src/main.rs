@@ -27,9 +27,17 @@ fn audio_events_for(path: &str) -> Result<Vec<SensoryEvent>, String> {
     {
         if let Ok(model) = std::env::var("BUDDY_SENSE_VAD_MODEL") {
             if std::path::Path::new(&model).exists() {
-                let (samples, rate) = senses::audio::read_wav_mono(path)?;
-                eprintln!("[buddy-sense] audio: neural VAD (Silero)");
-                return senses::audio::neural::vad_events_neural(&samples, rate, &model);
+                // Fall through to the energy VAD on any neural error (bad rate,
+                // missing onnxruntime, decode failure) — never go deaf.
+                match senses::audio::read_wav_mono(path)
+                    .and_then(|(samples, rate)| senses::audio::neural::vad_events_neural(&samples, rate, &model))
+                {
+                    Ok(events) => {
+                        eprintln!("[buddy-sense] audio: neural VAD (Silero)");
+                        return Ok(events);
+                    }
+                    Err(e) => eprintln!("[buddy-sense] neural VAD failed ({e}); falling back to energy VAD"),
+                }
             }
         }
     }
