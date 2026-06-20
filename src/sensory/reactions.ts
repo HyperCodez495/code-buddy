@@ -8,6 +8,7 @@
 
 import { getGlobalEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
+import { getSensoryMemory } from './sensory-memory.js';
 import type { BaseEvent } from '../events/types.js';
 
 export interface Perception {
@@ -31,6 +32,7 @@ export function wireSensoryReactions(onPerception?: (p: Perception, evt: BaseEve
   const id = bus.on('sensory:perception', (evt: BaseEvent) => {
     const p = perceptionOf(evt);
     logger.info(`[sensory] ${p.modality}/${p.kind} (salience ${p.salience ?? 0})`);
+    getSensoryMemory().push(p); // short-term memory → consolidated by dreaming
     onPerception?.(p, evt);
   });
   return () => {

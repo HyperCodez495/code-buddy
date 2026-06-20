@@ -1129,6 +1129,16 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             everyBeats,
             handler: (ctx) => logger.info(`[heartbeat] pacemaker tick — beat ${ctx.beat} (load ${ctx.load1 ?? '?'})`),
           });
+          // Dreaming — consolidate short-term sensory memory every N beats.
+          const dreamEvery = Math.max(1, Number(process.env.CODEBUDDY_DREAM_EVERY ?? 30));
+          heart.register({
+            name: 'dreaming',
+            everyBeats: dreamEvery,
+            handler: async () => {
+              const { runDreamingPass } = await import('../sensory/dreaming.js');
+              await runDreamingPass();
+            },
+          });
           heart.start();
           logger.info(`Sensory bridge: Enabled (buddy-sense → event bus; heartbeat treatments every ${everyBeats} beats)`);
         } catch (err) {
