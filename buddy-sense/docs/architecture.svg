@@ -1,132 +1,198 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1000" height="640" viewBox="0 0 1000 640" font-family="Segoe UI, Helvetica, Arial, sans-serif">
-  <defs>
-    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
-      <path d="M0,0 L8,3 L0,6 z" fill="#5a6b7b"/>
-    </marker>
-    <style>
-      .title { font-size: 22px; font-weight: 700; fill: #1b2733; }
-      .sub { font-size: 12px; fill: #5a6b7b; }
-      .lane { font-size: 13px; font-weight: 700; fill: #34465a; letter-spacing: .5px; }
-      .box { fill: #ffffff; stroke: #c3ced9; stroke-width: 1.5; rx: 8; }
-      .name { font-size: 13px; font-weight: 600; fill: #1b2733; }
-      .desc { font-size: 11px; fill: #6b7a89; }
-      .edge { stroke: #5a6b7b; stroke-width: 1.6; fill: none; }
-      .brain { font-size: 10.5px; font-style: italic; fill: #8a6d3b; }
-    </style>
-  </defs>
-
-  <text x="32" y="38" class="title">buddy-sense — the nervous system</text>
-  <text x="32" y="58" class="sub">Parallel senses (Rust) → thalamus → WebSocket bridge → Code Buddy's event bus (TypeScript). Local, $0, opt-in.</text>
-
-  <!-- Lane backgrounds -->
-  <rect x="20" y="76" width="430" height="544" rx="12" fill="#f3f7fb" stroke="#dde6ee"/>
-  <rect x="470" y="76" width="510" height="544" rx="12" fill="#f6f4fb" stroke="#e6e0ee"/>
-  <text x="40" y="98" class="lane">buddy-sense  ·  RUST DAEMON</text>
-  <text x="490" y="98" class="lane">CODE BUDDY  ·  TYPESCRIPT</text>
-
-  <!-- Senses -->
-  <text x="40" y="124" class="sub">SENSES (run concurrently)</text>
-  <g>
-    <rect x="40" y="132" width="190" height="50" class="box"/>
-    <text x="50" y="152" class="name">audio</text>
-    <text x="50" y="168" class="desc">cpal / WAV · energy VAD</text>
-    <text x="50" y="178" class="desc">+ Silero neural (opt-in)</text>
-  </g>
-  <g>
-    <rect x="40" y="190" width="190" height="44" class="box"/>
-    <text x="50" y="210" class="name">vital — heartbeat</text>
-    <text x="50" y="226" class="desc">autonomic rhythm · uptime, load</text>
-  </g>
-  <g>
-    <rect x="40" y="242" width="190" height="44" class="box"/>
-    <text x="50" y="262" class="name">vision</text>
-    <text x="50" y="278" class="desc">motion detect → camera_analyze</text>
-  </g>
-  <g>
-    <rect x="40" y="294" width="190" height="44" class="box"/>
-    <text x="50" y="314" class="name">screen</text>
-    <text x="50" y="330" class="desc">xcap change-detect (live-screen)</text>
-  </g>
-  <g>
-    <rect x="40" y="346" width="190" height="44" class="box"/>
-    <text x="50" y="366" class="name">ui</text>
-    <text x="50" y="382" class="desc">AT-SPI focus (live-ui)</text>
-  </g>
-  <text x="40" y="408" class="sub">bounded mpsc (backpressure) ▸</text>
-
-  <!-- Thalamus -->
-  <g>
-    <rect x="250" y="150" width="180" height="190" class="box" fill="#eaf2fb" stroke="#9fc0e3"/>
-    <text x="262" y="174" class="name">THALAMUS (bus.rs)</text>
-    <text x="262" y="196" class="desc">• coalesce high-rate bursts</text>
-    <text x="262" y="212" class="desc">• salience gate (escalate)</text>
-    <text x="262" y="228" class="desc">• vital never coalesced</text>
-    <text x="262" y="244" class="desc">• ring-buffer memory</text>
-    <text x="262" y="260" class="desc">• broadcast (fan-out)</text>
-    <text x="262" y="300" class="brain">≈ attention gate</text>
-    <text x="262" y="316" class="brain">≈ global workspace</text>
-  </g>
-  <!-- sense -> thalamus arrows -->
-  <path class="edge" d="M230,157 L250,200" marker-end="url(#arrow)"/>
-  <path class="edge" d="M230,212 L250,222" marker-end="url(#arrow)"/>
-  <path class="edge" d="M230,264 L250,244" marker-end="url(#arrow)"/>
-  <path class="edge" d="M230,316 L250,266" marker-end="url(#arrow)"/>
-  <path class="edge" d="M230,368 L250,290" marker-end="url(#arrow)"/>
-
-  <!-- Bridge -->
-  <g>
-    <rect x="250" y="420" width="180" height="56" class="box"/>
-    <text x="262" y="442" class="name">bridge (WebSocket)</text>
-    <text x="262" y="460" class="desc">serialize + token · reconnect</text>
-  </g>
-  <path class="edge" d="M340,340 L340,420" marker-end="url(#arrow)"/>
-
-  <!-- WS crossing -->
-  <path class="edge" stroke-dasharray="5 4" d="M430,448 L470,300 L500,260" marker-end="url(#arrow)"/>
-  <text x="436" y="500" class="sub">ws://127.0.0.1:8129</text>
-  <text x="436" y="514" class="desc">loopback · Origin-checked · token</text>
-
-  <!-- Code Buddy side -->
-  <g>
-    <rect x="500" y="120" width="220" height="48" class="box"/>
-    <text x="512" y="140" class="name">sensory-bridge.ts</text>
-    <text x="512" y="156" class="desc">loopback WS → getGlobalEventBus()</text>
-  </g>
-  <g>
-    <rect x="500" y="200" width="220" height="46" class="box" fill="#efeafb" stroke="#b9a6e3"/>
-    <text x="512" y="220" class="name">event bus</text>
-    <text x="512" y="236" class="desc">emit('sensory:perception')</text>
-  </g>
-  <path class="edge" d="M610,168 L610,200" marker-end="url(#arrow)"/>
-
-  <!-- reactions -->
-  <text x="500" y="276" class="sub">SUBSCRIBERS (reactions)</text>
-  <g>
-    <rect x="500" y="284" width="220" height="44" class="box"/>
-    <text x="512" y="304" class="name">reactions → short-term memory</text>
-    <text x="512" y="320" class="desc">sensory-memory (rolling buffer)</text>
-  </g>
-  <g>
-    <rect x="500" y="336" width="220" height="44" class="box"/>
-    <text x="512" y="356" class="name">heartbeat-scheduler</text>
-    <text x="512" y="372" class="desc">treatments every N beats (pacemaker)</text>
-  </g>
-  <g>
-    <rect x="750" y="336" width="210" height="44" class="box" fill="#eafbf1" stroke="#9fe3bf"/>
-    <text x="762" y="356" class="name">dreaming</text>
-    <text x="762" y="372" class="desc">consolidate → CODEBUDDY_MEMORY.md</text>
-  </g>
-  <g>
-    <rect x="750" y="284" width="210" height="44" class="box"/>
-    <text x="762" y="304" class="name">vision / screen / ui reactions</text>
-    <text x="762" y="320" class="desc">camera_analyze · OCR · percepts.jsonl</text>
-  </g>
-  <path class="edge" d="M720,222 L750,300" marker-end="url(#arrow)"/>
-  <path class="edge" d="M610,246 L610,284" marker-end="url(#arrow)"/>
-  <path class="edge" d="M610,328 L610,336" marker-end="url(#arrow)"/>
-  <path class="edge" d="M720,358 L750,358" marker-end="url(#arrow)"/>
-  <text x="724" y="352" class="brain">every N beats</text>
-
-  <!-- footer -->
-  <text x="40" y="600" class="desc">Heavy analysis (STT, vision) is delegated to Code Buddy — the daemon stays light. Opt-in features: live-mic, live-screen, live-ui, neural-vad.</text>
+<?xml version="1.0" encoding="UTF-8" standalone="no"?>
+<!DOCTYPE svg PUBLIC "-//W3C//DTD SVG 1.1//EN"
+ "http://www.w3.org/Graphics/SVG/1.1/DTD/svg11.dtd">
+<!-- Generated by graphviz version 14.1.3 (20260303.0454)
+ -->
+<!-- Title: nervous_system Pages: 1 -->
+<svg width="1576pt" height="386pt"
+ viewBox="0.00 0.00 1576.00 386.00" xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink">
+<g id="graph0" class="graph" transform="scale(1 1) rotate(0) translate(4 382)">
+<title>nervous_system</title>
+<polygon fill="white" stroke="none" points="-4,4 -4,-382 1571.5,-382 1571.5,4 -4,4"/>
+<text xml:space="preserve" text-anchor="middle" x="783.75" y="-363.55" font-family="Helvetica,sans-Serif" font-size="11.00">buddy&#45;sense — the nervous system</text>
+<text xml:space="preserve" text-anchor="middle" x="783.75" y="-350.05" font-family="Helvetica,sans-Serif" font-size="11.00">parallel senses → thalamus → WebSocket bridge → Code Buddy event bus (local, $0, opt&#45;in)</text>
+<g id="clust1" class="cluster">
+<title>cluster_rust</title>
+<path fill="#f3f7fb" stroke="#dde6ee" d="M20,-8C20,-8 609.25,-8 609.25,-8 615.25,-8 621.25,-14 621.25,-20 621.25,-20 621.25,-323 621.25,-323 621.25,-329 615.25,-335 609.25,-335 609.25,-335 20,-335 20,-335 14,-335 8,-329 8,-323 8,-323 8,-20 8,-20 8,-14 14,-8 20,-8"/>
+<text xml:space="preserve" text-anchor="middle" x="314.62" y="-319.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#34465a">buddy&#45;sense · RUST DAEMON</text>
+</g>
+<g id="clust2" class="cluster">
+<title>cluster_senses</title>
+<path fill="white" stroke="#cdd9e4" d="M28,-16C28,-16 219,-16 219,-16 225,-16 231,-22 231,-28 231,-28 231,-293 231,-293 231,-299 225,-305 219,-305 219,-305 28,-305 28,-305 22,-305 16,-299 16,-293 16,-293 16,-28 16,-28 16,-22 22,-16 28,-16"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-291.5" font-family="Helvetica,sans-Serif" font-size="10.00" fill="#34465a">senses (run concurrently)</text>
+</g>
+<g id="clust3" class="cluster">
+<title>cluster_cb</title>
+<path fill="#f6f4fb" stroke="#e6e0ee" d="M746.25,-70C746.25,-70 1547.5,-70 1547.5,-70 1553.5,-70 1559.5,-76 1559.5,-82 1559.5,-82 1559.5,-240 1559.5,-240 1559.5,-246 1553.5,-252 1547.5,-252 1547.5,-252 746.25,-252 746.25,-252 740.25,-252 734.25,-246 734.25,-240 734.25,-240 734.25,-82 734.25,-82 734.25,-76 740.25,-70 746.25,-70"/>
+<text xml:space="preserve" text-anchor="middle" x="1146.88" y="-236.6" font-family="Helvetica,sans-Serif" font-size="12.00" fill="#34465a">CODE BUDDY · TYPESCRIPT</text>
+</g>
+<!-- audio -->
+<g id="node1" class="node">
+<title>audio</title>
+<path fill="white" stroke="#c3ced9" d="M211,-60C211,-60 36,-60 36,-60 30,-60 24,-54 24,-48 24,-48 24,-36 24,-36 24,-30 30,-24 36,-24 36,-24 211,-24 211,-24 217,-24 223,-30 223,-36 223,-36 223,-48 223,-48 223,-54 217,-60 211,-60"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-45.05" font-family="Helvetica,sans-Serif" font-size="11.00">audio</text>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-31.55" font-family="Helvetica,sans-Serif" font-size="11.00">energy VAD + Silero (neural&#45;vad)</text>
+</g>
+<!-- thalamus -->
+<g id="node6" class="node">
+<title>thalamus</title>
+<path fill="#eaf2fb" stroke="#9fc0e3" d="M436.5,-181C436.5,-181 272,-181 272,-181 266,-181 260,-175 260,-169 260,-169 260,-131 260,-131 260,-125 266,-119 272,-119 272,-119 436.5,-119 436.5,-119 442.5,-119 448.5,-125 448.5,-131 448.5,-131 448.5,-169 448.5,-169 448.5,-175 442.5,-181 436.5,-181"/>
+<text xml:space="preserve" text-anchor="middle" x="354.25" y="-166.55" font-family="Helvetica,sans-Serif" font-size="11.00">THALAMUS &#160;(bus.rs)</text>
+<text xml:space="preserve" text-anchor="middle" x="354.25" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">coalesce · salience gate</text>
+<text xml:space="preserve" text-anchor="middle" x="354.25" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">vital never coalesced</text>
+<text xml:space="preserve" text-anchor="middle" x="354.25" y="-126.05" font-family="Helvetica,sans-Serif" font-size="11.00">ring&#45;buffer memory · broadcast</text>
+</g>
+<!-- audio&#45;&gt;thalamus -->
+<g id="edge1" class="edge">
+<title>audio&#45;&gt;thalamus</title>
+<path fill="none" stroke="#5a6b7b" d="M208.55,-60.45C216.26,-62.99 223.85,-65.83 231,-69 256.55,-80.31 282.67,-96.81 304.16,-111.97"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="301.99,-114.72 312.16,-117.71 306.07,-109.04 301.99,-114.72"/>
+</g>
+<!-- vital -->
+<g id="node2" class="node">
+<title>vital</title>
+<path fill="#fdeef0" stroke="#e6a9b4" d="M164.12,-114C164.12,-114 82.88,-114 82.88,-114 76.88,-114 70.88,-108 70.88,-102 70.88,-102 70.88,-90 70.88,-90 70.88,-84 76.88,-78 82.88,-78 82.88,-78 164.12,-78 164.12,-78 170.12,-78 176.12,-84 176.12,-90 176.12,-90 176.12,-102 176.12,-102 176.12,-108 170.12,-114 164.12,-114"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-99.05" font-family="Helvetica,sans-Serif" font-size="11.00">vital · heartbeat</text>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-85.55" font-family="Helvetica,sans-Serif" font-size="11.00">uptime, load</text>
+</g>
+<!-- vital&#45;&gt;thalamus -->
+<g id="edge2" class="edge">
+<title>vital&#45;&gt;thalamus</title>
+<path fill="none" stroke="#5a6b7b" d="M176.41,-108.25C197.88,-113.32 223.59,-119.39 248.67,-125.31"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="247.73,-128.69 258.27,-127.58 249.34,-121.87 247.73,-128.69"/>
+</g>
+<!-- vision -->
+<g id="node3" class="node">
+<title>vision</title>
+<path fill="white" stroke="#c3ced9" d="M191.5,-168C191.5,-168 55.5,-168 55.5,-168 49.5,-168 43.5,-162 43.5,-156 43.5,-156 43.5,-144 43.5,-144 43.5,-138 49.5,-132 55.5,-132 55.5,-132 191.5,-132 191.5,-132 197.5,-132 203.5,-138 203.5,-144 203.5,-144 203.5,-156 203.5,-156 203.5,-162 197.5,-168 191.5,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">vision</text>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">motion → camera_analyze</text>
+</g>
+<!-- vision&#45;&gt;thalamus -->
+<g id="edge3" class="edge">
+<title>vision&#45;&gt;thalamus</title>
+<path fill="none" stroke="#5a6b7b" d="M203.86,-150C218.26,-150 233.47,-150 248.47,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="248.36,-153.5 258.36,-150 248.36,-146.5 248.36,-153.5"/>
+</g>
+<!-- screen -->
+<g id="node4" class="node">
+<title>screen</title>
+<path fill="white" stroke="#c3ced9" d="M179.12,-222C179.12,-222 67.88,-222 67.88,-222 61.88,-222 55.88,-216 55.88,-210 55.88,-210 55.88,-198 55.88,-198 55.88,-192 61.88,-186 67.88,-186 67.88,-186 179.12,-186 179.12,-186 185.12,-186 191.12,-192 191.12,-198 191.12,-198 191.12,-210 191.12,-210 191.12,-216 185.12,-222 179.12,-222"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-207.05" font-family="Helvetica,sans-Serif" font-size="11.00">screen</text>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-193.55" font-family="Helvetica,sans-Serif" font-size="11.00">xcap diff (live&#45;screen)</text>
+</g>
+<!-- screen&#45;&gt;thalamus -->
+<g id="edge4" class="edge">
+<title>screen&#45;&gt;thalamus</title>
+<path fill="none" stroke="#5a6b7b" d="M191.59,-188.16C209.52,-183.93 229.34,-179.25 248.78,-174.66"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="249.44,-178.1 258.37,-172.4 247.83,-171.29 249.44,-178.1"/>
+</g>
+<!-- ui -->
+<g id="node5" class="node">
+<title>ui</title>
+<path fill="white" stroke="#c3ced9" d="M175.38,-276C175.38,-276 71.62,-276 71.62,-276 65.62,-276 59.62,-270 59.62,-264 59.62,-264 59.62,-252 59.62,-252 59.62,-246 65.62,-240 71.62,-240 71.62,-240 175.38,-240 175.38,-240 181.38,-240 187.38,-246 187.38,-252 187.38,-252 187.38,-264 187.38,-264 187.38,-270 181.38,-276 175.38,-276"/>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-261.05" font-family="Helvetica,sans-Serif" font-size="11.00">ui</text>
+<text xml:space="preserve" text-anchor="middle" x="123.5" y="-247.55" font-family="Helvetica,sans-Serif" font-size="11.00">AT&#45;SPI focus (live&#45;ui)</text>
+</g>
+<!-- ui&#45;&gt;thalamus -->
+<g id="edge5" class="edge">
+<title>ui&#45;&gt;thalamus</title>
+<path fill="none" stroke="#5a6b7b" d="M187.63,-245.73C202.19,-241.88 217.4,-237.02 231,-231 256.55,-219.69 282.67,-203.19 304.16,-188.03"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="306.07,-190.96 312.16,-182.29 301.99,-185.28 306.07,-190.96"/>
+</g>
+<!-- bridge -->
+<g id="node7" class="node">
+<title>bridge</title>
+<path fill="white" stroke="#c3ced9" d="M601.25,-168C601.25,-168 497.5,-168 497.5,-168 491.5,-168 485.5,-162 485.5,-156 485.5,-156 485.5,-144 485.5,-144 485.5,-138 491.5,-132 497.5,-132 497.5,-132 601.25,-132 601.25,-132 607.25,-132 613.25,-138 613.25,-144 613.25,-144 613.25,-156 613.25,-156 613.25,-162 607.25,-168 601.25,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="549.38" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">bridge</text>
+<text xml:space="preserve" text-anchor="middle" x="549.38" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">(WebSocket · token)</text>
+</g>
+<!-- thalamus&#45;&gt;bridge -->
+<g id="edge6" class="edge">
+<title>thalamus&#45;&gt;bridge</title>
+<path fill="none" stroke="#5a6b7b" d="M448.98,-150C457.34,-150 465.73,-150 473.9,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="473.76,-153.5 483.76,-150 473.76,-146.5 473.76,-153.5"/>
+</g>
+<!-- sbridge -->
+<g id="node8" class="node">
+<title>sbridge</title>
+<path fill="white" stroke="#c3ced9" d="M888,-168C888,-168 754.25,-168 754.25,-168 748.25,-168 742.25,-162 742.25,-156 742.25,-156 742.25,-144 742.25,-144 742.25,-138 748.25,-132 754.25,-132 754.25,-132 888,-132 888,-132 894,-132 900,-138 900,-144 900,-144 900,-156 900,-156 900,-162 894,-168 888,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="821.12" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">sensory&#45;bridge.ts</text>
+<text xml:space="preserve" text-anchor="middle" x="821.12" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">loopback · Origin&#45;checked</text>
+</g>
+<!-- bridge&#45;&gt;sbridge -->
+<g id="edge12" class="edge">
+<title>bridge&#45;&gt;sbridge</title>
+<path fill="none" stroke="#5a6b7b" stroke-dasharray="5,2" d="M613.62,-150C648.49,-150 692.35,-150 730.67,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="730.33,-153.5 740.33,-150 730.33,-146.5 730.33,-153.5"/>
+<text xml:space="preserve" text-anchor="middle" x="677.75" y="-163.95" font-family="Helvetica,sans-Serif" font-size="9.00">ws://127.0.0.1:8129</text>
+<text xml:space="preserve" text-anchor="middle" x="677.75" y="-152.7" font-family="Helvetica,sans-Serif" font-size="9.00">loopback · token</text>
+</g>
+<!-- bus -->
+<g id="node9" class="node">
+<title>bus</title>
+<path fill="#efeafb" stroke="#b9a6e3" d="M1046,-168C1046,-168 949,-168 949,-168 943,-168 937,-162 937,-156 937,-156 937,-144 937,-144 937,-138 943,-132 949,-132 949,-132 1046,-132 1046,-132 1052,-132 1058,-138 1058,-144 1058,-144 1058,-156 1058,-156 1058,-162 1052,-168 1046,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="997.5" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">event bus</text>
+<text xml:space="preserve" text-anchor="middle" x="997.5" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">sensory:perception</text>
+</g>
+<!-- sbridge&#45;&gt;bus -->
+<g id="edge7" class="edge">
+<title>sbridge&#45;&gt;bus</title>
+<path fill="none" stroke="#5a6b7b" d="M900.39,-150C908.63,-150 916.99,-150 925.15,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="925.02,-153.5 935.02,-150 925.02,-146.5 925.02,-153.5"/>
+</g>
+<!-- react -->
+<g id="node10" class="node">
+<title>react</title>
+<path fill="white" stroke="#c3ced9" d="M1244.88,-114C1244.88,-114 1144.88,-114 1144.88,-114 1138.88,-114 1132.88,-108 1132.88,-102 1132.88,-102 1132.88,-90 1132.88,-90 1132.88,-84 1138.88,-78 1144.88,-78 1144.88,-78 1244.88,-78 1244.88,-78 1250.88,-78 1256.88,-84 1256.88,-90 1256.88,-90 1256.88,-102 1256.88,-102 1256.88,-108 1250.88,-114 1244.88,-114"/>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-99.05" font-family="Helvetica,sans-Serif" font-size="11.00">reactions →</text>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-85.55" font-family="Helvetica,sans-Serif" font-size="11.00">short&#45;term memory</text>
+</g>
+<!-- bus&#45;&gt;react -->
+<g id="edge8" class="edge">
+<title>bus&#45;&gt;react</title>
+<path fill="none" stroke="#5a6b7b" d="M1058.45,-133.16C1070.55,-129.78 1083.18,-126.27 1095,-123 1103.6,-120.62 1112.62,-118.14 1121.57,-115.69"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="1122.23,-119.14 1130.95,-113.12 1120.38,-112.38 1122.23,-119.14"/>
+</g>
+<!-- sched -->
+<g id="node11" class="node">
+<title>sched</title>
+<path fill="white" stroke="#c3ced9" d="M1262.5,-168C1262.5,-168 1127.25,-168 1127.25,-168 1121.25,-168 1115.25,-162 1115.25,-156 1115.25,-156 1115.25,-144 1115.25,-144 1115.25,-138 1121.25,-132 1127.25,-132 1127.25,-132 1262.5,-132 1262.5,-132 1268.5,-132 1274.5,-138 1274.5,-144 1274.5,-144 1274.5,-156 1274.5,-156 1274.5,-162 1268.5,-168 1262.5,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">heartbeat&#45;scheduler</text>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">treatments every N beats</text>
+</g>
+<!-- bus&#45;&gt;sched -->
+<g id="edge9" class="edge">
+<title>bus&#45;&gt;sched</title>
+<path fill="none" stroke="#5a6b7b" d="M1058.45,-150C1072.8,-150 1088.43,-150 1103.82,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="1103.44,-153.5 1113.44,-150 1103.44,-146.5 1103.44,-153.5"/>
+</g>
+<!-- percept -->
+<g id="node13" class="node">
+<title>percept</title>
+<path fill="white" stroke="#c3ced9" d="M1282.75,-222C1282.75,-222 1107,-222 1107,-222 1101,-222 1095,-216 1095,-210 1095,-210 1095,-198 1095,-198 1095,-192 1101,-186 1107,-186 1107,-186 1282.75,-186 1282.75,-186 1288.75,-186 1294.75,-192 1294.75,-198 1294.75,-198 1294.75,-210 1294.75,-210 1294.75,-216 1288.75,-222 1282.75,-222"/>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-207.05" font-family="Helvetica,sans-Serif" font-size="11.00">vision / screen / ui reactions</text>
+<text xml:space="preserve" text-anchor="middle" x="1194.88" y="-193.55" font-family="Helvetica,sans-Serif" font-size="11.00">camera_analyze · OCR · percepts</text>
+</g>
+<!-- bus&#45;&gt;percept -->
+<g id="edge10" class="edge">
+<title>bus&#45;&gt;percept</title>
+<path fill="none" stroke="#5a6b7b" d="M1058.45,-166.84C1070.55,-170.22 1083.18,-173.73 1095,-177 1101.58,-178.82 1108.42,-180.7 1115.28,-182.58"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="1114.02,-185.87 1124.59,-185.14 1115.87,-179.12 1114.02,-185.87"/>
+</g>
+<!-- dream -->
+<g id="node12" class="node">
+<title>dream</title>
+<path fill="#eafbf1" stroke="#9fe3bf" d="M1539.5,-168C1539.5,-168 1405,-168 1405,-168 1399,-168 1393,-162 1393,-156 1393,-156 1393,-144 1393,-144 1393,-138 1399,-132 1405,-132 1405,-132 1539.5,-132 1539.5,-132 1545.5,-132 1551.5,-138 1551.5,-144 1551.5,-144 1551.5,-156 1551.5,-156 1551.5,-162 1545.5,-168 1539.5,-168"/>
+<text xml:space="preserve" text-anchor="middle" x="1472.25" y="-153.05" font-family="Helvetica,sans-Serif" font-size="11.00">dreaming →</text>
+<text xml:space="preserve" text-anchor="middle" x="1472.25" y="-139.55" font-family="Helvetica,sans-Serif" font-size="11.00">CODEBUDDY_MEMORY.md</text>
+</g>
+<!-- sched&#45;&gt;dream -->
+<g id="edge11" class="edge">
+<title>sched&#45;&gt;dream</title>
+<path fill="none" stroke="#5a6b7b" d="M1274.79,-150C1308.06,-150 1346.96,-150 1381.34,-150"/>
+<polygon fill="#5a6b7b" stroke="#5a6b7b" points="1381.29,-153.5 1391.29,-150 1381.29,-146.5 1381.29,-153.5"/>
+<text xml:space="preserve" text-anchor="middle" x="1343.88" y="-152.7" font-family="Helvetica,sans-Serif" font-size="9.00">every N beats</text>
+</g>
+</g>
 </svg>

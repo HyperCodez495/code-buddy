@@ -1,0 +1,21 @@
+// Heartbeat-paced memory consolidation ("dreaming"). Render via Kroki (docs/README.md).
+digraph dreaming {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", labelloc="t",
+         label="Heartbeat-paced memory consolidation — \"dreaming\"\nevery N beats, short-term perception is consolidated into long-term memory"];
+  node  [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", fillcolor="white", color="#c3ced9"];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b7b"];
+
+  heartbeat [label="vital · heartbeat\n(pacemaker)\n♥ every HEARTBEAT_MS", fillcolor="#fdeef0", color="#e6a9b4"];
+  percepts  [label="perceptions\n(audio / vision / screen / ui)"];
+  shortterm [label="short-term memory\n(rolling buffer)", fillcolor="#eef4fb", color="#9fc0e3"];
+  dreaming  [label="dreaming pass\nconsolidate(): counts by kind,\nsalient events, window, avg load", fillcolor="#eafbf1", color="#9fe3bf"];
+  journal   [label="dream journal\ndreams.jsonl (rotated)"];
+  longterm  [label="long-term memory\nsalient → CODEBUDDY_MEMORY.md\n(the file the agent reads)", fillcolor="#efeafb", color="#b9a6e3"];
+
+  percepts  -> shortterm [label="reactions push"];
+  heartbeat -> dreaming  [label="every N beats"];
+  shortterm -> dreaming  [label="drain"];
+  dreaming  -> journal;
+  dreaming  -> longterm  [label="salient only"];
+}

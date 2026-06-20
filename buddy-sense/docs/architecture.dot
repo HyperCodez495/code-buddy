@@ -1,0 +1,45 @@
+// buddy-sense — the nervous system. Render: see docs/README.md (Kroki).
+digraph nervous_system {
+  rankdir=LR;
+  graph [fontname="Helvetica", fontsize=11, bgcolor="white", labelloc="t",
+         label="buddy-sense — the nervous system\nparallel senses → thalamus → WebSocket bridge → Code Buddy event bus (local, $0, opt-in)"];
+  node  [fontname="Helvetica", fontsize=11, shape=box, style="rounded,filled", fillcolor="white", color="#c3ced9"];
+  edge  [fontname="Helvetica", fontsize=9, color="#5a6b7b"];
+
+  subgraph cluster_rust {
+    label="buddy-sense · RUST DAEMON"; fontsize=12; fontcolor="#34465a";
+    style="rounded,filled"; fillcolor="#f3f7fb"; color="#dde6ee";
+
+    subgraph cluster_senses {
+      label="senses (run concurrently)"; fontsize=10; color="#cdd9e4"; style="rounded";
+      audio  [label="audio\nenergy VAD + Silero (neural-vad)"];
+      vital  [label="vital · heartbeat\nuptime, load", fillcolor="#fdeef0", color="#e6a9b4"];
+      vision [label="vision\nmotion → camera_analyze"];
+      screen [label="screen\nxcap diff (live-screen)"];
+      ui     [label="ui\nAT-SPI focus (live-ui)"];
+    }
+    thalamus [label="THALAMUS  (bus.rs)\ncoalesce · salience gate\nvital never coalesced\nring-buffer memory · broadcast", fillcolor="#eaf2fb", color="#9fc0e3"];
+    bridge   [label="bridge\n(WebSocket · token)"];
+
+    audio -> thalamus; vital -> thalamus; vision -> thalamus; screen -> thalamus; ui -> thalamus;
+    thalamus -> bridge;
+  }
+
+  subgraph cluster_cb {
+    label="CODE BUDDY · TYPESCRIPT"; fontsize=12; fontcolor="#34465a";
+    style="rounded,filled"; fillcolor="#f6f4fb"; color="#e6e0ee";
+
+    sbridge [label="sensory-bridge.ts\nloopback · Origin-checked"];
+    bus     [label="event bus\nsensory:perception", fillcolor="#efeafb", color="#b9a6e3"];
+    react   [label="reactions →\nshort-term memory"];
+    sched   [label="heartbeat-scheduler\ntreatments every N beats"];
+    dream   [label="dreaming →\nCODEBUDDY_MEMORY.md", fillcolor="#eafbf1", color="#9fe3bf"];
+    percept [label="vision / screen / ui reactions\ncamera_analyze · OCR · percepts"];
+
+    sbridge -> bus;
+    bus -> react; bus -> sched; bus -> percept;
+    sched -> dream [label="every N beats"];
+  }
+
+  bridge -> sbridge [label="ws://127.0.0.1:8129\nloopback · token", style=dashed];
+}
