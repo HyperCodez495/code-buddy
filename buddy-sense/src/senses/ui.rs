@@ -33,11 +33,14 @@ pub mod live {
     use super::*;
     use atspi::events::object::StateChangedEvent;
     use atspi::events::ObjectEvents;
+    use atspi::proxy::accessible::ObjectRefExt;
     use tokio::sync::mpsc;
     use tokio_stream::StreamExt;
 
-    /// Stream AT-SPI focus events → `Ui/element_focus` into the thalamus. Connects
-    /// to the running a11y bus; never panics (logs + returns on failure).
+    /// Stream AT-SPI focus events → `Ui/element_focus` into the thalamus, resolving
+    /// the focused accessible's HUMAN name (window title / element label) via the
+    /// AT-SPI proxy instead of the raw D-Bus bus name. Connects to the running
+    /// a11y bus; never panics (logs + returns on failure).
     pub async fn run(tx: mpsc::Sender<SensoryEvent>) {
         let atspi = match atspi::AccessibilityConnection::new().await {
             Ok(a) => a,
@@ -50,6 +53,7 @@ pub mod live {
             eprintln!("[buddy-sense] atspi register failed: {e}");
             return;
         }
+        let conn = atspi.connection().clone();
         let events = atspi.event_stream();
         tokio::pin!(events);
         while let Some(Ok(ev)) = events.next().await {
@@ -57,7 +61,18 @@ pub mod live {
                 continue;
             };
             if change.state == "focused".into() && change.enabled {
-                let name = change.item.name().map(|n| n.to_string()).unwrap_or_default();
+                // Resolve the accessible's human name (best-effort, time-boxed so a
+                // slow/absent proxy never stalls the event loop). Fall back to a
+                // generic label rather than dropping the event.
+                let resolved = match change.item.clone().into_accessible_proxy(&conn).await {
+                    Ok(proxy) => tokio::time::timeout(std::time::Duration::from_millis(300), proxy.name())
+                        .await
+                        .ok()
+                        .and_then(|r| r.ok())
+                        .unwrap_or_default(),
+                    Err(_) => String::new(),
+                };
+                let name = if resolved.trim().is_empty() { "(focus)".to_string() } else { resolved };
                 if tx.send(map_signal(&UiSignal::ElementFocus { name })).await.is_err() {
                     break;
                 }
