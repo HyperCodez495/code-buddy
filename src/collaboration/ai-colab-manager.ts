@@ -77,8 +77,13 @@ export class AIColabManager {
 
   constructor(workingDirectory: string = process.cwd()) {
     this.colabFilePath = path.join(workingDirectory, 'COLAB.md');
-    this.tasksFilePath = path.join(workingDirectory, '.codebuddy', 'colab-tasks.json');
-    this.workLogFilePath = path.join(workingDirectory, '.codebuddy', 'colab-worklog.json');
+    // The shared fleet board `.codebuddy/colab-tasks.json` is now owned solely by
+    // FleetColabStore (the kanban_* tools + the autonomous daemon). This legacy
+    // `/colab` manager uses an incompatible schema (`not_started` status, no
+    // version/comment preservation, non-atomic full-file rewrite), so it writes
+    // its OWN files to avoid clobbering the unified board. See ColabKanbanAdapter.
+    this.tasksFilePath = path.join(workingDirectory, '.codebuddy', 'ai-colab-tasks.json');
+    this.workLogFilePath = path.join(workingDirectory, '.codebuddy', 'ai-colab-worklog.json');
 
     this.config = {
       project: 'Code Buddy',
@@ -413,8 +418,8 @@ Couverture de tests actuelle: ${this.config.currentCoverage}% (objectif: ${this.
 
 - \`COLAB.md\` - Document de coordination principal
 - \`CLAUDE.md\` - Instructions de build et développement
-- \`.codebuddy/colab-tasks.json\` - Tâches en cours
-- \`.codebuddy/colab-worklog.json\` - Journal de travail
+- \`.codebuddy/ai-colab-tasks.json\` - Tâches en cours
+- \`.codebuddy/ai-colab-worklog.json\` - Journal de travail
 
 ### Règles de Collaboration
 
