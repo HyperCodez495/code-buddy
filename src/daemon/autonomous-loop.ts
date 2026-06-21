@@ -150,13 +150,10 @@ export class FleetAutonomousLoop {
   private readonly executor: TaskExecutor;
   private readonly policy: ModelTierPolicy;
   private readonly enabled: () => boolean;
-  /**
-   * Per-task consecutive-failure counts (in-memory, this run). Fed to
-   * {@link chooseAutonomousModel} so a task that keeps failing on the cheap tier
-   * escalates to a stronger model (policy `escalateAfterFailures`). Cleared on
-   * success. Resets across process restarts — escalation is a within-run feature.
-   */
-  private readonly failures = new Map<string, number>();
+  // Per-task failure counts now live on the task itself (`ColabTask.attempts`,
+  // persisted by FleetColabStore) so they survive daemon restarts and are visible
+  // cross-machine. They feed {@link chooseAutonomousModel} for model-ladder
+  // escalation AND the retry budget that dead-letters a hopeless task.
   private readonly goalJudge: ColabGoalJudge | undefined;
   private readonly selfImprove: SelfImproveHook;
   private readonly selfImproveCooldownMs: number;
@@ -224,6 +221,11 @@ export class FleetAutonomousLoop {
 
     this.store.updatePresence({ status: 'active' });
 
+    // Zombie sweep (Hermes-kanban parity): reclaim crashed peers' expired claims
+    // before picking work. Each reclaim counts against the task's retry budget,
+    // dead-lettering a task that has been claimed-and-abandoned too many times.
+    this.store.reclaimExpired();
+
     const next = this.store.nextClaimable();
     if (!next) {
       // No real work — use the idle moment for one bounded self-improvement
@@ -242,7 +244,7 @@ export class FleetAutonomousLoop {
     }
 
     this.store.updatePresence({ status: 'active', currentTask: task.title });
-    const failures = this.failures.get(task.id) ?? 0;
+    const failures = task.attempts ?? 0;
     const model = chooseAutonomousModel(
       this.tierConfig,
       { priority: task.priority, ...(failures > 0 ? { failures } : {}) },
@@ -267,7 +269,7 @@ export class FleetAutonomousLoop {
         if (goalOutcome) return goalOutcome;
         // null → judge said done (or skipped): fall through to completion.
       }
-      this.failures.delete(task.id);
+      this.store.resetAttempts(task.id);
       this.store.completeTask(task.id, {
         summary: result.summary,
         filesModified: result.filesModified ?? [],
@@ -277,19 +279,26 @@ export class FleetAutonomousLoop {
       return { outcome: 'completed', taskId: task.id, taskTitle: task.title, model };
     }
 
-    // Track the failure so the next attempt can escalate up the model ladder.
-    this.failures.set(task.id, failures + 1);
-
-    // Failure: log it and release the task so it can be retried (or escalated).
+    // Persist the failure (retry-budget counter — survives restarts, visible
+    // cross-machine). The next attempt can escalate up the model ladder; once the
+    // budget is exhausted the task is dead-lettered to `blocked` (the Review
+    // column) instead of being released to spin forever.
+    const { attempts, exhausted } = this.store.recordFailure(task.id);
     this.store.appendWorklog({
       agent: this.store.agentId,
       taskId: task.id,
       summary: `Autonomous attempt failed: ${result.summary}`,
       filesModified: [],
       issues: [result.error ?? 'unknown error'],
-      nextSteps: ['retry on a later tick or escalate to the strong model'],
+      nextSteps: exhausted
+        ? [`retry budget (${attempts} attempts) exhausted — dead-lettered for human review`]
+        : ['retry on a later tick or escalate to the strong model'],
     });
-    this.store.releaseTask(task.id);
+    if (exhausted) {
+      this.store.blockTask(task.id, `Failed ${attempts}× (retry budget exhausted) — needs review`);
+    } else {
+      this.store.releaseTask(task.id);
+    }
     this.store.updatePresence({ status: 'idle', currentTask: null });
     return {
       outcome: 'failed',

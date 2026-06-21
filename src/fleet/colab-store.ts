@@ -42,6 +42,13 @@ const PRIORITY_RANK: Record<ColabTaskPriority, number> = {
 
 const DEFAULT_CLAIM_TTL_MS = 15 * 60 * 1000;
 
+/**
+ * Default retry budget (Hermes-kanban parity): how many times a task may fail or
+ * be reclaimed as a zombie before it is dead-lettered to `blocked` (the "Review"
+ * column) instead of spinning forever. Per-task `retryBudget` overrides this.
+ */
+const DEFAULT_RETRY_BUDGET = 3;
+
 export interface ColabTask {
   id: string;
   title: string;
@@ -51,6 +58,21 @@ export interface ColabTask {
   assignedAgent?: string | null;
   claimedBy?: string | null;
   claimedAt?: string | null;
+  /**
+   * Last lease renewal (heartbeat). A live worker calls {@link FleetColabStore.heartbeat}
+   * to re-stamp `claimedAt`, so {@link FleetColabStore.isClaimExpired} (which measures
+   * `claimedAt` age) doubles as zombie detection: a silent claim ages out, a
+   * heartbeated one does not. Informational mirror of the last bump.
+   */
+  lastHeartbeatAt?: string | null;
+  /**
+   * Persisted failure/zombie-reclaim count (Hermes-kanban retry-budget parity).
+   * Survives daemon restarts and is visible cross-machine, unlike an in-memory
+   * counter. Reset on success; incremented on each failed attempt or zombie reclaim.
+   */
+  attempts?: number;
+  /** Per-task override of the dead-letter threshold (default {@link DEFAULT_RETRY_BUDGET}). */
+  retryBudget?: number;
   completedAt?: string | null;
   blockedReason?: string;
   filesToModify?: string[];
@@ -116,6 +138,12 @@ export interface FleetColabStoreConfig {
    * not stay stuck. Lazy-on-read (no timer); 0 disables. Default 15 min.
    */
   claimTtlMs?: number;
+  /**
+   * Default retry budget for tasks that don't set their own (default
+   * {@link DEFAULT_RETRY_BUDGET}). After this many failures/zombie-reclaims a task
+   * is dead-lettered to `blocked` for review instead of being retried forever.
+   */
+  retryBudget?: number;
   /** Injectable clock (epoch ms) for deterministic tests. */
   now?: () => number;
   /** Injectable id generator for deterministic tests. */
@@ -141,6 +169,8 @@ export interface AddTaskInput {
   dependsOn?: string[];
   goalMode?: boolean;
   goalMaxTurns?: number;
+  /** Per-task dead-letter threshold override (default {@link DEFAULT_RETRY_BUDGET}). */
+  retryBudget?: number;
   createdBy?: string;
   id?: string;
 }
@@ -188,6 +218,8 @@ export class FleetColabStore {
   private readonly now: () => number;
   private readonly generateId: (prefix: string) => string;
   private readonly claimTtlMs: number;
+  private readonly retryBudget: number;
+  private writeSeq = 0;
   private readonly tasksPath: string;
   private readonly worklogPath: string;
   private readonly presencePath: string;
@@ -201,6 +233,7 @@ export class FleetColabStore {
     let counter = 0;
     this.generateId = config.generateId ?? ((prefix: string) => `${prefix}-${this.now()}-${++counter}`);
     this.claimTtlMs = config.claimTtlMs ?? DEFAULT_CLAIM_TTL_MS;
+    this.retryBudget = config.retryBudget && config.retryBudget > 0 ? config.retryBudget : DEFAULT_RETRY_BUDGET;
     this.tasksPath = path.join(this.dir, 'colab-tasks.json');
     this.worklogPath = path.join(this.dir, 'colab-worklog.json');
     this.presencePath = path.join(this.dir, 'presence.json');
@@ -239,10 +272,20 @@ export class FleetColabStore {
     return Number.isFinite(claimedMs) && nowMs - claimedMs > this.claimTtlMs;
   }
 
+  /** The dead-letter threshold for a task (its own `retryBudget`, else the store default). */
+  resolveRetryBudget(task: Pick<ColabTask, 'retryBudget'>): number {
+    return typeof task.retryBudget === 'number' && task.retryBudget > 0 ? task.retryBudget : this.retryBudget;
+  }
+
   /**
-   * Sweep expired claims back to `open` (for a daemon to call proactively).
-   * Returns the reclaimed task ids. Lazy callers can rely on {@link nextClaimable},
-   * which already treats expired claims as available.
+   * Sweep expired claims (zombie detection) — a crashed agent's claim ages out
+   * because it stopped heartbeating. Each reclaim counts against the task's
+   * retry budget: under budget it returns to `open` for retry; at/over budget it
+   * is dead-lettered to `blocked` (the "Review" column) instead of spinning
+   * forever. Returns every reclaimed task id (re-opened or dead-lettered).
+   * Lazy callers can rely on {@link nextClaimable}, which treats an expired claim
+   * as available — but only the sweep enforces the retry budget, so a daemon
+   * should call this each tick.
    */
   reclaimExpired(): string[] {
     const file = this.readTasks();
@@ -250,14 +293,69 @@ export class FleetColabStore {
     const reclaimed: string[] = [];
     for (const task of file.tasks) {
       if (this.isClaimExpired(task, nowMs)) {
-        task.status = 'open';
+        task.attempts = (task.attempts ?? 0) + 1;
         task.claimedBy = null;
         task.claimedAt = null;
+        task.lastHeartbeatAt = null;
+        if (task.attempts >= this.resolveRetryBudget(task)) {
+          task.status = 'blocked';
+          task.blockedReason = `Reclaimed ${task.attempts}× (retry budget ${this.resolveRetryBudget(task)} exhausted) — needs review`;
+        } else {
+          task.status = 'open';
+        }
         reclaimed.push(task.id);
       }
     }
     if (reclaimed.length > 0) this.writeTasks(file);
     return reclaimed;
+  }
+
+  /**
+   * Renew a claim's lease (Hermes-kanban heartbeat). Re-stamps `claimedAt` and
+   * `lastHeartbeatAt` so a long-running but live worker is not reclaimed as a
+   * zombie. Only valid while the task is `in_progress`; when `agentId` is given it
+   * must match the current claimant.
+   */
+  heartbeat(taskId: string, agentId: string = this.agentId): ColabTask {
+    const file = this.readTasks();
+    const task = file.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
+    if (task.status !== 'in_progress') {
+      throw new Error(`Task '${taskId}' is '${task.status}', not in_progress — cannot heartbeat`);
+    }
+    if (task.claimedBy && agentId && task.claimedBy !== agentId) {
+      throw new Error(`Task '${taskId}' is claimed by '${task.claimedBy}', not '${agentId}'`);
+    }
+    const stamp = this.isoNow();
+    task.claimedAt = stamp;
+    task.lastHeartbeatAt = stamp;
+    this.writeTasks(file);
+    return { ...task };
+  }
+
+  /**
+   * Record a failed attempt (persisted retry-budget counter). Increments
+   * `attempts` and reports whether the budget is now exhausted, so the caller can
+   * dead-letter (`blockTask`) vs retry (`releaseTask`). Does not change status —
+   * the daemon owns the worklog/release flow.
+   */
+  recordFailure(taskId: string): { task: ColabTask; attempts: number; exhausted: boolean } {
+    const file = this.readTasks();
+    const task = file.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
+    task.attempts = (task.attempts ?? 0) + 1;
+    this.writeTasks(file);
+    return { task: { ...task }, attempts: task.attempts, exhausted: task.attempts >= this.resolveRetryBudget(task) };
+  }
+
+  /** Reset the retry-budget counter (call on a successful attempt). */
+  resetAttempts(taskId: string): ColabTask {
+    const file = this.readTasks();
+    const task = file.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
+    if (task.attempts) task.attempts = 0;
+    this.writeTasks(file);
+    return { ...task };
   }
 
   /** Dependency ids that are not yet `completed` (unknown/missing ids count as unmet). */
@@ -398,6 +496,7 @@ export class FleetColabStore {
       ...(input.dependsOn && input.dependsOn.length > 0 ? { dependsOn: [...new Set(input.dependsOn)] } : {}),
       ...(input.goalMode ? { goalMode: true } : {}),
       ...(goalMaxTurns !== undefined ? { goalMaxTurns } : {}),
+      ...(input.retryBudget && input.retryBudget > 0 ? { retryBudget: input.retryBudget } : {}),
       createdBy: input.createdBy ?? this.agentId,
       createdAt: this.isoNow(),
     };
@@ -550,8 +649,27 @@ export class FleetColabStore {
     }
   }
 
+  /**
+   * Atomic write (temp file + rename). `fs.renameSync` is atomic on POSIX, so a
+   * concurrent same-host reader/writer never sees a half-written file — important
+   * now that the daemon, the `kanban_*` tools, and `/colab` can all drive the
+   * same `colab-tasks.json`. (Cross-machine arbitration stays git-push-order by
+   * design; this guards only the local race.) Mirrors the idiom in
+   * `src/kanban/kanban-store.ts`.
+   */
   private writeJson(filePath: string, value: unknown): void {
     fs.mkdirSync(path.dirname(filePath), { recursive: true });
-    fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+    const tempPath = `${filePath}.${process.pid}.${++this.writeSeq}.tmp`;
+    try {
+      fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf-8');
+      fs.renameSync(tempPath, filePath);
+    } catch (err) {
+      try {
+        fs.rmSync(tempPath, { force: true });
+      } catch {
+        /* best-effort cleanup */
+      }
+      throw err;
+    }
   }
 }
