@@ -9,7 +9,7 @@ Use this page when you want to try Cowork from a GitHub checkout, validate the
 ChatGPT subscription route, or explain what the desktop app adds beyond the CLI.
 
 > 📚 **Full Cowork documentation set** (architecture, every panel, visual workflows,
-> build/run, settings, troubleshooting): [`cowork/docs/`](../cowork/docs/README.md).
+> build/run, settings, troubleshooting): [`docs/cowork/`](cowork/README.md).
 
 ## What Cowork Adds
 
