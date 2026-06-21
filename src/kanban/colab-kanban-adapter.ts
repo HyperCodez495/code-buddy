@@ -171,6 +171,41 @@ export class ColabKanbanAdapter {
   }
 }
 
+/**
+ * Migrate cards from a legacy `kanban-board.json` (read as {@link KanbanCard}s)
+ * into the unified fleet board. Idempotent: a card whose id already exists is
+ * skipped, as are archived cards (colab has no archived state). Comments and
+ * free-form links are carried over; ephemeral heartbeats are not. Returns the
+ * imported / skipped ids so a CLI can report the migration.
+ */
+export function importKanbanCards(
+  cards: KanbanCard[],
+  store: FleetColabStore,
+): { imported: string[]; skipped: string[] } {
+  const imported: string[] = [];
+  const skipped: string[] = [];
+  const existing = new Set(store.listTasks().map((t) => t.id));
+  for (const card of cards) {
+    if (card.status === 'archived' || existing.has(card.id)) {
+      skipped.push(card.id);
+      continue;
+    }
+    store.addTask({
+      id: card.id,
+      title: card.title,
+      status: STATUS_TO_COLAB[card.status],
+      priority: PRIORITY_TO_COLAB[card.priority],
+      ...(card.description ? { description: card.description } : {}),
+      ...(card.tags.length > 0 ? { tags: card.tags } : {}),
+      ...(card.assignee ? { assignee: card.assignee } : {}),
+    });
+    for (const c of card.comments) store.addComment(card.id, c.text, c.author);
+    for (const l of card.links) store.addLink(card.id, l.target, l.label);
+    imported.push(card.id);
+  }
+  return { imported, skipped };
+}
+
 function toKanbanCard(task: ColabTask): KanbanCard {
   const createdAt = task.createdAt ?? task.claimedAt ?? new Date(0).toISOString();
   const updatedAt =

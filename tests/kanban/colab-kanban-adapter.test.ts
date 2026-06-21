@@ -3,8 +3,9 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
-import { ColabKanbanAdapter } from '../../src/kanban/colab-kanban-adapter';
+import { ColabKanbanAdapter, importKanbanCards } from '../../src/kanban/colab-kanban-adapter';
 import { FleetColabStore } from '../../src/fleet/colab-store';
+import { KanbanStore } from '../../src/kanban/kanban-store';
 
 /**
  * The unification seam: kanban_* tools (via this adapter) and the autonomous
@@ -90,5 +91,37 @@ describe('ColabKanbanAdapter (unified kanban board)', () => {
 
     expect((await adapter.listCards({ includeDone: false })).map((c) => c.title)).toEqual(['B']);
     expect((await adapter.listCards({ tag: 'keep' })).map((c) => c.title)).toEqual(['A']);
+  });
+
+  describe('importKanbanCards (migrate a legacy board)', () => {
+    it('migrates cards into the unified board, mapping status/priority, skipping archived; idempotent', async () => {
+      // Seed a legacy kanban-board.json via KanbanStore.
+      const legacy = new KanbanStore({ rootDir: dir });
+      const urgent = await legacy.createCard({ title: 'Urgent legacy', priority: 'urgent', tags: ['x'] });
+      await legacy.commentCard(urgent.id, 'a note', 'bob');
+      await legacy.linkCard(urgent.id, 'pr:7', 'the PR');
+      const done = await legacy.createCard({ title: 'Done legacy' });
+      await legacy.completeCard(done.id);
+      const arch = await legacy.createCard({ title: 'Archived legacy' });
+      await legacy.archiveCard(arch.id);
+
+      const cards = await legacy.listCards({ includeArchived: true, includeDone: true });
+      const store = colab();
+      const { imported, skipped } = importKanbanCards(cards, store);
+
+      expect(imported.sort()).toEqual([done.id, urgent.id].sort());
+      expect(skipped).toEqual([arch.id]); // archived is skipped
+
+      const migrated = store.getTask(urgent.id);
+      expect(migrated?.priority).toBe('critical'); // urgent -> critical
+      expect(migrated?.tags).toEqual(['x']);
+      expect(migrated?.comments?.[0]?.text).toBe('a note');
+      expect(migrated?.links?.[0]?.target).toBe('pr:7');
+      expect(store.getTask(done.id)?.status).toBe('completed'); // done -> completed
+
+      // Idempotent: a second import skips everything.
+      const second = importKanbanCards(cards, store);
+      expect(second.imported).toEqual([]);
+    });
   });
 });

@@ -1053,6 +1053,24 @@ export function registerFleetAutonomyCommands(program: Command): void {
       }
     });
 
+  tasks
+    .command('import-kanban')
+    .description('Migrate cards from a legacy kanban-board.json into the unified fleet board')
+    .option('--board <path>', 'source kanban-board.json (default <cwd>/.codebuddy/kanban-board.json)')
+    .option('--dir <path>', 'target colab dir')
+    .option('--json', 'output JSON')
+    .action(async (opts: { board?: string; dir?: string; json?: boolean }) => {
+      const { KanbanStore } = await import('../../kanban/kanban-store.js');
+      const { FleetColabStore } = await import('../../fleet/colab-store.js');
+      const { importKanbanCards } = await import('../../kanban/colab-kanban-adapter.js');
+      const source = new KanbanStore(opts.board ? { boardPath: opts.board } : {});
+      const cards = await source.listCards({ includeArchived: true, includeDone: true });
+      const store = new FleetColabStore({ ...(opts.dir ? { dir: opts.dir } : {}) });
+      const { imported, skipped } = importKanbanCards(cards, store);
+      if (opts.json) { console.log(JSON.stringify({ imported, skipped }, null, 2)); return; }
+      console.log(`Imported ${imported.length} card(s) into the unified board, skipped ${skipped.length} (archived or already present).`);
+    });
+
   fleet
     .command('swarm <goal>')
     .description('Create a workers → verifier → synthesizer task graph')
