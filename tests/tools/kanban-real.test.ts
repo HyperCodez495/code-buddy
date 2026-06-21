@@ -155,12 +155,15 @@ describe('Hermes Kanban real workspace integration', () => {
 
     const listed = parseToolOutput(await byName.get('kanban_list')!.execute({ include_done: true }));
     expect(listed.count).toBe(1);
-    expect(listed.boardPath).toBe(path.join(tempWorkspace, '.codebuddy', 'kanban-board.json'));
+    // Unified board: the kanban_* tools now drive the shared fleet queue
+    // (colab-tasks.json) the autonomous daemon claims from, not a separate
+    // kanban-board.json. This is the parity-gap closure.
+    expect(listed.boardPath).toBe(path.join(tempWorkspace, '.codebuddy', 'colab-tasks.json'));
 
     const shown = parseToolOutput(await byName.get('kanban_show')!.execute({ id: cardId }));
     expect((shown.card as Record<string, unknown>).id).toBe(cardId);
 
-    await expect(fs.stat(path.join(tempWorkspace, '.codebuddy', 'kanban-board.json'))).resolves.toBeTruthy();
+    await expect(fs.stat(path.join(tempWorkspace, '.codebuddy', 'colab-tasks.json'))).resolves.toBeTruthy();
   });
 
   it('marks official Hermes kanban tools as exact local tool parity', () => {

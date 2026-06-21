@@ -101,6 +101,38 @@ export interface ColabTask {
   goalLastReason?: string;
   createdBy?: string;
   createdAt?: string;
+  // ── Board surface (Hermes-kanban parity, used by the unified kanban_* tools) ──
+  /** Free-text labels for filtering (`kanban_list --tag`). */
+  tags?: string[];
+  /** Human/agent the card is assigned to (distinct from `claimedBy`, which is the live worker). */
+  assignee?: string;
+  /** Discussion thread (block/unblock/complete also append here). */
+  comments?: ColabComment[];
+  /** Progress pings (each also renews the lease via {@link FleetColabStore.heartbeat}). */
+  heartbeats?: ColabHeartbeat[];
+  /** Free-form references (PRs, commits, files) — NOT DAG edges; dependency edges live in `dependsOn`. */
+  links?: ColabLink[];
+}
+
+export interface ColabComment {
+  id: string;
+  author?: string;
+  text: string;
+  createdAt: string;
+}
+
+export interface ColabHeartbeat {
+  id: string;
+  author?: string;
+  message?: string;
+  createdAt: string;
+}
+
+export interface ColabLink {
+  id: string;
+  target: string;
+  label?: string;
+  createdAt: string;
 }
 
 export interface ColabWorklogFileChange {
@@ -171,6 +203,9 @@ export interface AddTaskInput {
   goalMaxTurns?: number;
   /** Per-task dead-letter threshold override (default {@link DEFAULT_RETRY_BUDGET}). */
   retryBudget?: number;
+  tags?: string[];
+  assignee?: string;
+  status?: ColabTaskStatus;
   createdBy?: string;
   id?: string;
 }
@@ -485,9 +520,11 @@ export class FleetColabStore {
       id: input.id ?? this.generateId('task'),
       title: input.title,
       ...(input.description ? { description: input.description } : {}),
-      status: 'open',
+      status: input.status ?? 'open',
       priority: input.priority ?? 'medium',
       assignedAgent: null,
+      ...(input.assignee ? { assignee: input.assignee } : {}),
+      ...(input.tags && input.tags.length > 0 ? { tags: [...new Set(input.tags)] } : {}),
       claimedBy: null,
       claimedAt: null,
       ...(input.filesToModify ? { filesToModify: input.filesToModify } : {}),
@@ -531,6 +568,84 @@ export class FleetColabStore {
     else delete child.dependsOn;
     this.writeTasks(file);
     return true;
+  }
+
+  // ── Board surface (Hermes-kanban parity, drives the unified kanban_* tools) ──
+
+  /** Append a comment to a task's discussion thread. */
+  addComment(taskId: string, text: string, author?: string): ColabTask {
+    const trimmed = text.trim();
+    if (!trimmed) throw new Error('comment text is required');
+    return this.mutateTask(taskId, (task) => {
+      (task.comments ??= []).push({
+        id: this.generateId('cmt'),
+        text: trimmed,
+        createdAt: this.isoNow(),
+        ...(author?.trim() ? { author: author.trim() } : {}),
+      });
+    });
+  }
+
+  /** Attach a free-form reference (PR/commit/file/url) — not a DAG edge (see {@link link}). */
+  addLink(taskId: string, target: string, label?: string): ColabTask {
+    const trimmed = target.trim();
+    if (!trimmed) throw new Error('link target is required');
+    return this.mutateTask(taskId, (task) => {
+      (task.links ??= []).push({
+        id: this.generateId('lnk'),
+        target: trimmed,
+        createdAt: this.isoNow(),
+        ...(label?.trim() ? { label: label.trim() } : {}),
+      });
+    });
+  }
+
+  /**
+   * Tool-facing heartbeat: records a progress ping AND renews the lease. Lenient
+   * (unlike {@link heartbeat}, which is the strict programmatic lease-renewal):
+   * an `open` task transitions to `in_progress` and is claimed by `agentId`, so
+   * an agent pinging a fresh card takes ownership the way Hermes's kanban does.
+   */
+  recordHeartbeat(taskId: string, message?: string, author?: string, agentId: string = this.agentId): ColabTask {
+    return this.mutateTask(taskId, (task) => {
+      const stamp = this.isoNow();
+      if (task.status === 'open') {
+        task.status = 'in_progress';
+        task.claimedBy = task.claimedBy ?? agentId;
+      }
+      task.claimedAt = stamp;
+      task.lastHeartbeatAt = stamp;
+      (task.heartbeats ??= []).push({
+        id: this.generateId('hb'),
+        createdAt: stamp,
+        ...(message?.trim() ? { message: message.trim() } : {}),
+        ...(author?.trim() ? { author: author.trim() } : {}),
+      });
+    });
+  }
+
+  /** Resume a blocked task (back to in_progress) and record why. Mirrors `kanban_unblock`. */
+  unblockTask(taskId: string, comment?: string, author?: string): ColabTask {
+    return this.mutateTask(taskId, (task) => {
+      if (task.status === 'blocked') task.status = 'in_progress';
+      delete task.blockedReason;
+      (task.comments ??= []).push({
+        id: this.generateId('cmt'),
+        text: comment?.trim() || 'Unblocked',
+        createdAt: this.isoNow(),
+        ...(author?.trim() ? { author: author.trim() } : {}),
+      });
+    });
+  }
+
+  /** Shared read-modify-write helper for single-task surface mutations. */
+  private mutateTask(taskId: string, mutate: (task: ColabTask) => void): ColabTask {
+    const file = this.readTasks();
+    const task = file.tasks.find((t) => t.id === taskId);
+    if (!task) throw new Error(`Unknown fleet task '${taskId}'`);
+    mutate(task);
+    this.writeTasks(file);
+    return { ...task };
   }
 
   // ── Worklog ───────────────────────────────────────────────────────────────

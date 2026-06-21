@@ -10,13 +10,13 @@ import {
   KANBAN_SHOW_TOOL,
   KANBAN_UNBLOCK_TOOL,
 } from '../../codebuddy/tool-definitions/kanban-tools.js';
-import {
-  KanbanStore,
-  type CreateKanbanCardInput,
-  type KanbanPriority,
-  type KanbanStatus,
-  type KanbanStoreOptions,
-  type ListKanbanCardsFilter,
+import { ColabKanbanAdapter } from '../../kanban/colab-kanban-adapter.js';
+import type {
+  CreateKanbanCardInput,
+  KanbanPriority,
+  KanbanStatus,
+  KanbanStoreOptions,
+  ListKanbanCardsFilter,
 } from '../../kanban/kanban-store.js';
 import type {
   ITool,
@@ -29,7 +29,7 @@ import type {
 
 type KanbanToolDefinition = typeof KANBAN_CREATE_TOOL;
 type KanbanToolExecutor = (
-  store: KanbanStore,
+  store: ColabKanbanAdapter,
   input: Record<string, unknown>,
 ) => Promise<unknown>;
 
@@ -92,8 +92,8 @@ class KanbanTool implements ITool {
     return true;
   }
 
-  private createStore(context?: IToolExecutionContext): KanbanStore {
-    return new KanbanStore({
+  private createStore(context?: IToolExecutionContext): ColabKanbanAdapter {
+    return new ColabKanbanAdapter({
       ...this.options,
       rootDir: this.options.rootDir ?? context?.cwd,
     });
