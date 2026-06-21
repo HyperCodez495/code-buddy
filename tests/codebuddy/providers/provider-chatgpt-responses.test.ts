@@ -787,6 +787,43 @@ describe('ChatGptResponsesProvider — chatStream wiring', () => {
     expect(body2.model).toBe('gpt-5.2');
   });
 
+  it('proactive remap: a mis-routed non-Codex model (grok-*) uses the configured model, no failed round-trip', async () => {
+    // Backend would serve a single successful response.
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      streamingResponse([
+        'data: {"type":"response.output_text.delta","delta":"OK"}\n\n',
+        'data: {"type":"response.completed"}\n\n',
+      ]),
+    );
+
+    // Constructed with the user's configured ChatGPT model…
+    const provider = new ChatGptResponsesProvider({
+      authProvider: async () => authBundle(),
+      model: 'gpt-5.5',
+      defaultMaxTokens: 1000,
+    });
+    // …but the agent's task-router hands back a grok coding model mid-session
+    // (this is what crashed: grok → 400, fallback gpt-5.2 → 400 → throw).
+    provider.setModel('grok-code-fast-1');
+
+    const out: string[] = [];
+    for await (const chunk of provider.chatStream(
+      [{ role: 'user', content: 'fix the bug' } as CodeBuddyMessage],
+      [],
+      {}, // no explicit --model override
+    )) {
+      const c = chunk.choices[0]?.delta?.content;
+      if (c) out.push(c);
+    }
+
+    // The grok slug was remapped to the configured gpt-5.5 BEFORE the request:
+    // a single call, and it never sent a non-Codex model to the backend.
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const body = JSON.parse((fetchMock.mock.calls[0]![1] as RequestInit).body as string);
+    expect(body.model).toBe('gpt-5.5');
+    expect(out.join('')).toBe('OK');
+  });
+
   it('auto-fallback: skipped when caller pinned --model explicitly', async () => {
     vi.spyOn(globalThis, 'fetch').mockResolvedValue(
       new Response(
