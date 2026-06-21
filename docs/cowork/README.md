@@ -14,6 +14,7 @@ les workflows visuels, le build, les réglages et le dépannage.
 | [00 — Vue d'ensemble](00-overview.md) | Ce qu'est Cowork, le moteur embarqué, la stack, le lancement |
 | [01 — Architecture](01-architecture.md) | main / preload / renderer, le pont IPC, l'état persistant |
 | [02 — Les panneaux](02-panels.md) | Tous les onglets du dock, par groupe, avec leur statut |
+| [— Panneaux de réglages](settings-panels.md) | Détail des onglets de la fenêtre Settings |
 | [03 — Workflows visuels](03-workflows.md) | Le DAG visuel → l'Orchestrator core (pool de 4 agents) |
 | [04 — Build, dev, run](04-build-run.md) | `build:gui`, la boucle de dev Linux, `rebuild`, les tests |
 | [05 — Réglages & serveur](05-settings-server.md) | Providers/modèles, OAuth, le serveur HTTP embarqué |
