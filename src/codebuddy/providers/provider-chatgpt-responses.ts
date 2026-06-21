@@ -93,11 +93,7 @@ function pickFallbackModel(current: string): string | null {
 }
 
 /** Models served only by the classic OpenAI API — the ChatGPT/Codex backend
- *  never exposes them. When one reaches this provider WITHOUT an explicit user
- *  choice (e.g. a secondary call inheriting the global `gpt-4o` config default
- *  instead of the active session model), remap proactively to the known-good
- *  Codex model. This skips a guaranteed-failed round-trip and the noisy
- *  user-facing warning. (smoke-test finding F7, 2026-05-29) */
+ *  never exposes them. (smoke-test finding F7, 2026-05-29) */
 const CODEX_UNSUPPORTED_MODELS = new Set([
   'gpt-4o',
   'gpt-4o-mini',
@@ -106,15 +102,38 @@ const CODEX_UNSUPPORTED_MODELS = new Set([
   'gpt-3.5-turbo',
 ]);
 
-function resolveCodexModel(model: string, hasExplicitModel: boolean): string {
-  if (!hasExplicitModel && CODEX_UNSUPPORTED_MODELS.has(model)) {
-    const remapped = FALLBACK_MODELS[0] ?? 'gpt-5.2';
-    logger.debug(
-      `[chatgpt-responses] "${model}" is not served by the Codex backend; using "${remapped}". Set --model to override.`,
-    );
-    return remapped;
-  }
-  return model;
+/** True when the ChatGPT/Codex backend can actually serve `model`: the gpt-5
+ *  family, the o-series reasoning models, and codex-suffixed slugs. Classic
+ *  gpt-4* (CODEX_UNSUPPORTED_MODELS) and other vendors' models (grok-*,
+ *  claude-*, gemini-*, …) are NOT served and would 400. */
+function isCodexServableModel(model: string): boolean {
+  if (CODEX_UNSUPPORTED_MODELS.has(model)) return false;
+  if (FALLBACK_MODELS.includes(model)) return true;
+  return /^gpt-5/i.test(model) || /^o[1-9]/i.test(model) || /codex/i.test(model);
+}
+
+/** When a model the Codex backend cannot serve reaches this provider WITHOUT an
+ *  explicit `--model`, remap proactively — preferring the user's configured
+ *  session model — instead of firing a guaranteed-failed round-trip (and a
+ *  confusing fallback to yet another unsupported slug). Two real mis-routes hit
+ *  this: a secondary call inheriting a classic `gpt-4o` default (F7), and the
+ *  agent's task-router handing back a `grok-*` coding model on a ChatGPT session
+ *  (which otherwise 400s, then falls back to gpt-5.2 and 400s again → crash).
+ *  An explicit `--model` is always respected. (cross-vendor fix, 2026-06-21) */
+function resolveCodexModel(
+  model: string,
+  hasExplicitModel: boolean,
+  configuredModel?: string,
+): string {
+  if (hasExplicitModel || isCodexServableModel(model)) return model;
+  const target =
+    configuredModel && isCodexServableModel(configuredModel)
+      ? configuredModel
+      : (FALLBACK_MODELS[0] ?? 'gpt-5.2');
+  logger.debug(
+    `[chatgpt-responses] "${model}" is not served by the Codex backend; using "${target}". Set --model to override.`,
+  );
+  return target;
 }
 
 // ─────────────────────────────────────────────────────────────────────
@@ -205,11 +224,16 @@ export class ChatGptResponsesProvider implements Provider {
    */
   private lastTurnReasoningItems: ResponsesReasoningItem[] = [];
   private disableModelFallback: boolean;
+  /** The model this provider was constructed with (the user's configured
+   *  session model). Never mutated by per-call overrides or fallback, so it is
+   *  the safe remap target when a mis-routed / non-Codex model arrives. */
+  private readonly configuredModel: string;
 
   constructor(opts: ChatGptResponsesProviderOptions) {
     this.authProvider = opts.authProvider;
     this.refreshAuth = opts.refreshAuth ?? opts.authProvider;
     this.currentModel = opts.model;
+    this.configuredModel = opts.model;
     this.promptCacheKey = `cb-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
     this.disableModelFallback = opts.disableModelFallback ?? false;
   }
@@ -271,7 +295,11 @@ export class ChatGptResponsesProvider implements Provider {
     tools: CodeBuddyTool[] = [],
     opts: ChatOptions = {}
   ): AsyncGenerator<ChatCompletionChunk, void, unknown> {
-    const model = resolveCodexModel(opts.model ?? this.currentModel, opts.model != null);
+    const model = resolveCodexModel(
+      opts.model ?? this.currentModel,
+      opts.model != null,
+      this.configuredModel,
+    );
     // If this is a brand-new conversational turn (last user message has
     // no preceding tool round in messages), drop any stale reasoning
     // blobs from the previous turn — they belonged to a different

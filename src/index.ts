@@ -576,6 +576,21 @@ async function saveCommandLineSettings(
   }
 }
 
+/**
+ * A saved/default model is only usable if it matches the detected provider's
+ * backend: a `grok-*` slug 404s on the ChatGPT/Codex backend, and a `gpt-5.*`
+ * slug 404s on xAI. We only enforce this for the two providers with a known
+ * hard incompatibility (grok ↔ chatgpt); other providers are left untouched so
+ * local/OpenAI/Anthropic model names pass through as before.
+ */
+function isModelCompatibleWithProvider(model: string, provider?: string): boolean {
+  if (!provider) return true;
+  const looksGrok = /grok/i.test(model);
+  if (provider === 'grok') return looksGrok;
+  if (provider === 'chatgpt') return /^(gpt-|o[1-9]|codex)/i.test(model) && !looksGrok;
+  return true;
+}
+
 // Load model from detected provider or user settings
 async function loadModel(): Promise<string | undefined> {
   await ensureEnvLoaded();
@@ -587,15 +602,15 @@ async function loadModel(): Promise<string | undefined> {
 
   // 2. Project/user settings override auto-detection — UNLESS the saved model is
   //    incompatible with the detected provider. A `gpt-5.5` left in settings.json
-  //    would 404 against xAI after `buddy login xai`; prefer the Grok default then.
+  //    would 404 against xAI after `buddy login xai`; symmetrically, a stale
+  //    `grok-code-fast-1` default 404s against the ChatGPT/Codex backend (which
+  //    then falls back to another unsupported slug and crashes). In either
+  //    mismatch, prefer the detected provider's own default model.
   try {
     const getSettingsManager = await lazyImport.settingsManager();
     const settingsModel = getSettingsManager().getCurrentModel();
-    if (settingsModel) {
-      const grokProvider = detected?.provider === 'grok';
-      if (!grokProvider || /grok/i.test(settingsModel)) {
-        return settingsModel;
-      }
+    if (settingsModel && isModelCompatibleWithProvider(settingsModel, detected?.provider)) {
+      return settingsModel;
     }
   } catch (_err) {
     logger.debug('Failed to load model from settings manager', { error: _err });
