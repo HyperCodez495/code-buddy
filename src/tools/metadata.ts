@@ -1269,7 +1269,7 @@ export const TOOL_METADATA: ToolMetadata[] = [
     category: 'utility' as ToolCategory,
     keywords: ['gitnexus', 'ask', 'query', 'understand', 'explain', 'search', 'related files', 'dependents', 'tests'],
     priority: 6,
-    description: 'Consult GitNexus for a query or code understanding request (read-only)',
+    description: 'Consult CodeExplorer for a query or code understanding request (read-only)',
     fleetSafe: true,
   },
   {

@@ -1,5 +1,5 @@
 /**
- * Graph Tool Definitions — GitNexus Knowledge Graph
+ * Graph Tool Definitions — CodeExplorer Knowledge Graph
  *
  * OpenAI function calling schemas for:
  * - analyze_impact: Blast radius analysis for symbol changes

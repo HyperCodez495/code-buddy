@@ -308,7 +308,7 @@ export {
 // Session tools (multi-agent coordination — Phase E wake)
 export { SESSION_TOOLS } from './session-tools.js';
 
-// GitNexus tools
+// CodeExplorer tools
 export {
   GITNEXUS_ASK_TOOL,
   GITNEXUS_TOOLS,

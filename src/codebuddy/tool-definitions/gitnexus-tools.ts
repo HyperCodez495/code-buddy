@@ -1,7 +1,7 @@
 /**
- * GitNexus Tool Definitions
+ * CodeExplorer Tool Definitions
  *
- * OpenAI function calling schema for the GitNexus tool.
+ * OpenAI function calling schema for the CodeExplorer tool.
  */
 
 import type { CodeBuddyTool } from './types.js';
@@ -11,13 +11,13 @@ export const GITNEXUS_ASK_TOOL: CodeBuddyTool = {
   function: {
     name: 'gitnexus_ask',
     description:
-      'Consult GitNexus for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.',
+      'Consult CodeExplorer for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.',
     parameters: {
       type: 'object',
       properties: {
         query: {
           type: 'string',
-          description: 'The query or task description to ask GitNexus about.',
+          description: 'The query or task description to ask CodeExplorer about.',
         },
       },
       required: ['query'],

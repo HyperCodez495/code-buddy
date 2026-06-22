@@ -232,7 +232,7 @@ export function initializeToolRegistry(): void {
   // peer_delegate returns a clear error when no peers are connected.
   registerGroup(FLEET_TOOLS);
 
-  // GitNexus tools
+  // CodeExplorer tools
   registerGroup(GITNEXUS_TOOLS);
 
   isRegistryInitialized = true;

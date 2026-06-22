@@ -1,5 +1,5 @@
 /**
- * Graph Slash Command Handlers — GitNexus Knowledge Graph
+ * Graph Slash Command Handlers — CodeExplorer Knowledge Graph
  *
  * /impact <symbol>  — Analyze blast radius of changing a symbol
  * /processes         — Detect execution flows in the codebase

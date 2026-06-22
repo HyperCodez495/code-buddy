@@ -1,12 +1,12 @@
 /**
- * GitNexus Manager
+ * CodeExplorer Manager
  *
- * Handles GitNexus indexing, stats retrieval, and MCP server lifecycle.
- * GitNexus provides code graph analysis (symbols, relations, processes, clusters)
+ * Handles CodeExplorer indexing, stats retrieval, and MCP server lifecycle.
+ * CodeExplorer provides code graph analysis (symbols, relations, processes, clusters)
  * and exposes them via an MCP server for agent consumption.
  *
  * Usage:
- *   const mgr = getGitNexusManager('/path/to/repo');
+ *   const mgr = getCodeExplorerManager('/path/to/repo');
  *   if (mgr.isInstalled() && !mgr.isRepoIndexed()) {
  *     await mgr.analyze();
  *   }
@@ -18,7 +18,7 @@ import * as path from 'path';
 import * as fs from 'fs';
 import { logger } from '../../utils/logger.js';
 
-export interface GitNexusStats {
+export interface CodeExplorerStats {
   symbols: number;
   relations: number;
   processes: number;
@@ -27,7 +27,7 @@ export interface GitNexusStats {
   stale: boolean;
 }
 
-const DEFAULT_STATS: GitNexusStats = {
+const DEFAULT_STATS: CodeExplorerStats = {
   symbols: 0,
   relations: 0,
   processes: 0,
@@ -37,9 +37,9 @@ const DEFAULT_STATS: GitNexusStats = {
 };
 
 /** Singleton cache keyed by resolved repo path */
-const instances = new Map<string, GitNexusManager>();
+const instances = new Map<string, CodeExplorerManager>();
 
-export class GitNexusManager {
+export class CodeExplorerManager {
   private repoPath: string;
   private mcpProcess: ChildProcess | null = null;
 
@@ -47,10 +47,10 @@ export class GitNexusManager {
     this.repoPath = path.resolve(repoPath);
   }
 
-  /** Check whether the `gitnexus` CLI is available via npx. */
+  /** Check whether the `code-explorer` CLI is available on PATH. */
   isInstalled(): boolean {
     try {
-      execSync('npx gitnexus --version', {
+      execSync('code-explorer --version', {
         stdio: 'pipe',
         timeout: 10_000,
         cwd: this.repoPath,
@@ -61,26 +61,26 @@ export class GitNexusManager {
     }
   }
 
-  /** Check whether the repo has been indexed (`.gitnexus/` directory exists). */
+  /** Check whether the repo has been indexed (`.codeexplorer/` directory exists). */
   isRepoIndexed(): boolean {
-    return fs.existsSync(path.join(this.repoPath, '.gitnexus'));
+    return fs.existsSync(path.join(this.repoPath, '.codeexplorer'));
   }
 
   /**
-   * Run `npx gitnexus analyze` to index the repository.
+   * Run `code-explorer analyze` to index the repository.
    *
-   * @param options.force  - Re-index even if `.gitnexus/` already exists.
+   * @param options.force  - Re-index even if `.codeexplorer/` already exists.
    * @param options.withSkills - Also generate skill annotations.
    */
   async analyze(options: { force?: boolean; withSkills?: boolean } = {}): Promise<void> {
-    const args = ['gitnexus', 'analyze'];
+    const args = ['analyze'];
     if (options.force) args.push('--force');
     if (options.withSkills) args.push('--with-skills');
 
-    logger.info(`GitNexus: analyzing repo at ${this.repoPath}`, { args });
+    logger.info(`CodeExplorer: analyzing repo at ${this.repoPath}`, { args });
 
     return new Promise<void>((resolve, reject) => {
-      const child = spawn('npx', args, {
+      const child = spawn('code-explorer', args, {
         cwd: this.repoPath,
         stdio: 'pipe',
         shell: true,
@@ -90,7 +90,7 @@ export class GitNexusManager {
 
       child.stdout?.on('data', (chunk: Buffer) => {
         const line = chunk.toString().trim();
-        if (line) logger.debug(`GitNexus analyze: ${line}`);
+        if (line) logger.debug(`CodeExplorer analyze: ${line}`);
       });
 
       child.stderr?.on('data', (chunk: Buffer) => {
@@ -98,16 +98,16 @@ export class GitNexusManager {
       });
 
       child.on('error', (err) => {
-        logger.error('GitNexus analyze failed to start', { error: err.message });
-        reject(new Error(`GitNexus analyze failed to start: ${err.message}`));
+        logger.error('CodeExplorer analyze failed to start', { error: err.message });
+        reject(new Error(`CodeExplorer analyze failed to start: ${err.message}`));
       });
 
       child.on('close', (code) => {
         if (code === 0) {
-          logger.info('GitNexus: analysis complete');
+          logger.info('CodeExplorer: analysis complete');
           resolve();
         } else {
-          const msg = `GitNexus analyze exited with code ${code}: ${stderr.trim()}`;
+          const msg = `CodeExplorer analyze exited with code ${code}: ${stderr.trim()}`;
           logger.error(msg);
           reject(new Error(msg));
         }
@@ -116,11 +116,11 @@ export class GitNexusManager {
   }
 
   /**
-   * Read stats from `.gitnexus/meta.json`.
+   * Read stats from `.codeexplorer/meta.json`.
    * Returns defaults if the index does not exist.
    */
-  getStats(): GitNexusStats {
-    const metaPath = path.join(this.repoPath, '.gitnexus', 'meta.json');
+  getStats(): CodeExplorerStats {
+    const metaPath = path.join(this.repoPath, '.codeexplorer', 'meta.json');
     if (!fs.existsSync(metaPath)) {
       return { ...DEFAULT_STATS };
     }
@@ -138,7 +138,7 @@ export class GitNexusManager {
         stale: meta.stale === true,
       };
     } catch (err) {
-      logger.warn('GitNexus: failed to read meta.json', {
+      logger.warn('CodeExplorer: failed to read meta.json', {
         error: err instanceof Error ? err.message : String(err),
       });
       return { ...DEFAULT_STATS };
@@ -146,42 +146,42 @@ export class GitNexusManager {
   }
 
   /**
-   * Start the GitNexus MCP server as a child process (stdio transport).
+   * Start the CodeExplorer MCP server as a child process (stdio transport).
    * Only one server is kept alive per manager instance.
    */
   async startMCPServer(): Promise<void> {
     if (this.mcpProcess) {
-      logger.debug('GitNexus MCP server already running');
+      logger.debug('CodeExplorer MCP server already running');
       return;
     }
 
-    logger.info('GitNexus: starting MCP server');
+    logger.info('CodeExplorer: starting MCP server');
 
-    this.mcpProcess = spawn('npx', ['-y', 'gitnexus@latest', 'mcp'], {
+    this.mcpProcess = spawn('code-explorer', ['mcp'], {
       cwd: this.repoPath,
       stdio: ['pipe', 'pipe', 'pipe'],
       shell: true,
     });
 
     this.mcpProcess.on('error', (err) => {
-      logger.error('GitNexus MCP server error', { error: err.message });
+      logger.error('CodeExplorer MCP server error', { error: err.message });
       this.mcpProcess = null;
     });
 
     this.mcpProcess.on('close', (code) => {
-      logger.debug(`GitNexus MCP server exited with code ${code}`);
+      logger.debug(`CodeExplorer MCP server exited with code ${code}`);
       this.mcpProcess = null;
     });
 
     // Give the server a moment to start
     await new Promise<void>((resolve) => setTimeout(resolve, 200));
-    logger.info('GitNexus MCP server started');
+    logger.info('CodeExplorer MCP server started');
   }
 
   /** Stop the MCP server if running. */
   stopMCPServer(): void {
     if (this.mcpProcess) {
-      logger.debug('GitNexus: stopping MCP server');
+      logger.debug('CodeExplorer: stopping MCP server');
       this.mcpProcess.kill();
       this.mcpProcess = null;
     }
@@ -204,21 +204,21 @@ export class GitNexusManager {
 }
 
 /**
- * Get or create a singleton GitNexusManager for the given repo path.
+ * Get or create a singleton CodeExplorerManager for the given repo path.
  * Defaults to `process.cwd()` if no path is provided.
  */
-export function getGitNexusManager(repoPath?: string): GitNexusManager {
+export function getCodeExplorerManager(repoPath?: string): CodeExplorerManager {
   const resolved = path.resolve(repoPath || process.cwd());
   let manager = instances.get(resolved);
   if (!manager) {
-    manager = new GitNexusManager(resolved);
+    manager = new CodeExplorerManager(resolved);
     instances.set(resolved, manager);
   }
   return manager;
 }
 
 /** Clear the singleton cache (for testing). */
-export function clearGitNexusManagerCache(): void {
+export function clearCodeExplorerManagerCache(): void {
   instances.forEach((mgr) => mgr.dispose());
   instances.clear();
 }

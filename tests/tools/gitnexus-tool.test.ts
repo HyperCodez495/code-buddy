@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { GitNexusTool } from '../../src/tools/gitnexus-tool.js';
+import { CodeExplorerTool } from '../../src/tools/gitnexus-tool.js';
 
-describe('GitNexusTool', () => {
+describe('CodeExplorerTool', () => {
   const originalEnvEndpoint = process.env.GITNEXUS_ENDPOINT;
   const originalEnvApiKey = process.env.GITNEXUS_API_KEY;
 
@@ -22,7 +22,7 @@ describe('GitNexusTool', () => {
         likelyFiles: ['src/index.ts'],
         dependentSymbols: ['run()'],
         testsToWatch: ['tests/index.test.ts'],
-        notes: 'Consult with GitNexus details.',
+        notes: 'Consult with CodeExplorer details.',
       };
 
       vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -31,13 +31,13 @@ describe('GitNexusTool', () => {
         text: () => Promise.resolve(''),
       } as any);
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.ask('how does it start?');
 
       expect(result.likelyFiles).toEqual(['src/index.ts']);
       expect(result.dependentSymbols).toEqual(['run()']);
       expect(result.testsToWatch).toEqual(['tests/index.test.ts']);
-      expect(result.notes).toBe('Consult with GitNexus details.');
+      expect(result.notes).toBe('Consult with CodeExplorer details.');
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
         'http://test-gitnexus:3000/ask',
@@ -52,7 +52,7 @@ describe('GitNexusTool', () => {
       );
     });
 
-    it('degrades gracefully when GitNexus returns an HTTP error', async () => {
+    it('degrades gracefully when CodeExplorer returns an HTTP error', async () => {
       vi.spyOn(globalThis, 'fetch').mockResolvedValue({
         ok: false,
         status: 500,
@@ -60,7 +60,7 @@ describe('GitNexusTool', () => {
         text: () => Promise.resolve('Error text'),
       } as any);
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.ask('should fail');
 
       expect(result.likelyFiles).toEqual([]);
@@ -69,10 +69,10 @@ describe('GitNexusTool', () => {
       expect(result.notes).toContain('offline or returned an error');
     });
 
-    it('degrades gracefully when GitNexus fetch throws an error (offline)', async () => {
+    it('degrades gracefully when CodeExplorer fetch throws an error (offline)', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Connection refused'));
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.ask('should fail');
 
       expect(result.likelyFiles).toEqual([]);
@@ -83,7 +83,7 @@ describe('GitNexusTool', () => {
 
     it('degrades gracefully when endpoint is not configured', async () => {
       delete process.env.GITNEXUS_ENDPOINT;
-      const tool = new GitNexusTool({ endpoint: '' });
+      const tool = new CodeExplorerTool({ endpoint: '' });
       const result = await tool.ask('where is it?');
 
       expect(result.likelyFiles).toEqual([]);
@@ -99,7 +99,7 @@ describe('GitNexusTool', () => {
         text: () => Promise.resolve(''),
       } as any);
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.pushSession('We resolved the issue.');
 
       expect(result.ok).toBe(true);
@@ -115,7 +115,7 @@ describe('GitNexusTool', () => {
     it('degrades gracefully on HTTP error', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Network error'));
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.pushSession('summary');
 
       expect(result.ok).toBe(false);
@@ -135,7 +135,7 @@ describe('GitNexusTool', () => {
         text: () => Promise.resolve(''),
       } as any);
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.readWorldModel();
 
       expect(result).toEqual(mockInvariants);
@@ -150,7 +150,7 @@ describe('GitNexusTool', () => {
     it('degrades gracefully on HTTP error', async () => {
       vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('Timeout'));
 
-      const tool = new GitNexusTool();
+      const tool = new CodeExplorerTool();
       const result = await tool.readWorldModel();
 
       expect(result).toBeNull();

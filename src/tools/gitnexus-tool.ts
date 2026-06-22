@@ -1,20 +1,20 @@
 /**
- * GitNexus Tool Client
+ * CodeExplorer Tool Client
  *
- * Consultative, read-only interface to GitNexus endpoints (/ask, /push-session, /world-model).
+ * Consultative, read-only interface to CodeExplorer endpoints (/ask, /push-session, /world-model).
  * Degrades gracefully by returning empty contexts/invariants and detailed notes on timeout/offline.
  */
 
 import { logger } from '../utils/logger.js';
 import { redactSecrets } from '../security/data-redaction.js';
 
-export interface GitNexusConfig {
+export interface CodeExplorerConfig {
   endpoint?: string;
   apiKey?: string;
   timeoutMs?: number;
 }
 
-export interface GitNexusContext {
+export interface CodeExplorerContext {
   likelyFiles: string[];        // fichiers probablement concernés
   dependentSymbols: string[];   // symboles dépendants
   testsToWatch: string[];       // tests/modules à surveiller
@@ -26,12 +26,12 @@ export interface WorldModelInvariants {
   invariants: string[];
 }
 
-export class GitNexusTool {
+export class CodeExplorerTool {
   private endpoint: string;
   private apiKey: string;
   private timeoutMs: number;
 
-  constructor(config?: GitNexusConfig) {
+  constructor(config?: CodeExplorerConfig) {
     this.endpoint = config?.endpoint || process.env.GITNEXUS_ENDPOINT || '';
     this.apiKey = config?.apiKey || process.env.GITNEXUS_API_KEY || '';
     this.timeoutMs = config?.timeoutMs ?? Number(process.env.GITNEXUS_TIMEOUT_MS || 5000);
@@ -42,7 +42,7 @@ export class GitNexusTool {
    */
   private async request<T>(path: string, options: { method: string; body?: unknown }): Promise<T | null> {
     if (!this.endpoint) {
-      logger.debug(`GitNexus: No endpoint configured, skipping request to ${path}`);
+      logger.debug(`CodeExplorer: No endpoint configured, skipping request to ${path}`);
       return null;
     }
 
@@ -80,7 +80,7 @@ export class GitNexusTool {
     } catch (error) {
       const rawMsg = error instanceof Error ? error.message : String(error);
       const msg = redactSecrets(rawMsg);
-      logger.warn(`GitNexus request to ${path} failed: ${msg}`);
+      logger.warn(`CodeExplorer request to ${path} failed: ${msg}`);
       return null;
     } finally {
       clearTimeout(timer);
@@ -88,22 +88,22 @@ export class GitNexusTool {
   }
 
   /**
-   * Lecture seule : interroge GitNexus pour une tâche/texte. Dégrade proprement si indisponible.
+   * Lecture seule : interroge CodeExplorer pour une tâche/texte. Dégrade proprement si indisponible.
    */
-  async ask(query: string): Promise<GitNexusContext> {
+  async ask(query: string): Promise<CodeExplorerContext> {
     const redactedQuery = redactSecrets(query);
-    logger.debug(`GitNexus.ask called with query: ${redactedQuery}`);
+    logger.debug(`CodeExplorer.ask called with query: ${redactedQuery}`);
 
     if (!this.endpoint) {
       return {
         likelyFiles: [],
         dependentSymbols: [],
         testsToWatch: [],
-        notes: 'GitNexus is not configured (missing endpoint).',
+        notes: 'CodeExplorer is not configured (missing endpoint).',
       };
     }
 
-    const response = await this.request<GitNexusContext>('/ask', {
+    const response = await this.request<CodeExplorerContext>('/ask', {
       method: 'POST',
       body: { query },
     });
@@ -113,7 +113,7 @@ export class GitNexusTool {
         likelyFiles: [],
         dependentSymbols: [],
         testsToWatch: [],
-        notes: 'GitNexus is offline or returned an error.',
+        notes: 'CodeExplorer is offline or returned an error.',
       };
     }
 
@@ -126,11 +126,11 @@ export class GitNexusTool {
   }
 
   /**
-   * Pousse le résumé de session vers GitNexus (mémoire technique).
+   * Pousse le résumé de session vers CodeExplorer (mémoire technique).
    */
   async pushSession(summary: string): Promise<{ ok: boolean }> {
     const redactedSummary = redactSecrets(summary);
-    logger.debug(`GitNexus.pushSession called: ${redactedSummary}`);
+    logger.debug(`CodeExplorer.pushSession called: ${redactedSummary}`);
 
     if (!this.endpoint) {
       return { ok: false };
@@ -148,7 +148,7 @@ export class GitNexusTool {
    * Lecture des invariants du world model.
    */
   async readWorldModel(): Promise<WorldModelInvariants | null> {
-    logger.debug('GitNexus.readWorldModel called');
+    logger.debug('CodeExplorer.readWorldModel called');
 
     if (!this.endpoint) {
       return null;

@@ -36,26 +36,26 @@ vi.mock('fs', async (importOriginal) => {
 });
 
 import {
-  GitNexusManager,
-  getGitNexusManager,
-  clearGitNexusManagerCache,
-} from '../../src/plugins/gitnexus/GitNexusManager.js';
-import { GitNexusMCPClient } from '../../src/plugins/gitnexus/GitNexusMCPClient.js';
+  CodeExplorerManager,
+  getCodeExplorerManager,
+  clearCodeExplorerManagerCache,
+} from '../../src/plugins/code-explorer/CodeExplorerManager.js';
+import { CodeExplorerMCPClient } from '../../src/plugins/code-explorer/CodeExplorerMCPClient.js';
 import type {
-  GitNexusStats,
+  CodeExplorerStats,
   GNQueryResult,
   GNContextResult,
   GNImpactResult,
-} from '../../src/plugins/gitnexus/index.js';
+} from '../../src/plugins/code-explorer/index.js';
 
-describe('GitNexusManager', () => {
-  let manager: GitNexusManager;
+describe('CodeExplorerManager', () => {
+  let manager: CodeExplorerManager;
   const testRepoPath = '/test/repo';
 
   beforeEach(() => {
     vi.clearAllMocks();
-    clearGitNexusManagerCache();
-    manager = new GitNexusManager(testRepoPath);
+    clearCodeExplorerManagerCache();
+    manager = new CodeExplorerManager(testRepoPath);
   });
 
   afterEach(() => {
@@ -88,18 +88,18 @@ describe('GitNexusManager', () => {
   });
 
   describe('isRepoIndexed', () => {
-    it('should return true when .gitnexus directory exists', () => {
+    it('should return true when .codeexplorer directory exists', () => {
       (fs.existsSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
         true,
       );
 
       expect(manager.isRepoIndexed()).toBe(true);
       expect(fs.existsSync).toHaveBeenCalledWith(
-        path.join(path.resolve(testRepoPath), '.gitnexus'),
+        path.join(path.resolve(testRepoPath), '.codeexplorer'),
       );
     });
 
-    it('should return false when .gitnexus directory does not exist', () => {
+    it('should return false when .codeexplorer directory does not exist', () => {
       (fs.existsSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
         false,
       );
@@ -340,7 +340,7 @@ describe('GitNexusManager', () => {
       });
 
       await expect(manager.analyze()).rejects.toThrow(
-        /GitNexus analyze exited with code 1/,
+        /CodeExplorer analyze exited with code 1/,
       );
     });
   });
@@ -352,33 +352,33 @@ describe('GitNexusManager', () => {
   });
 });
 
-describe('getGitNexusManager (singleton)', () => {
+describe('getCodeExplorerManager (singleton)', () => {
   beforeEach(() => {
-    clearGitNexusManagerCache();
+    clearCodeExplorerManagerCache();
   });
 
   afterEach(() => {
-    clearGitNexusManagerCache();
+    clearCodeExplorerManagerCache();
   });
 
   it('should return the same instance for the same path', () => {
-    const a = getGitNexusManager('/test/path');
-    const b = getGitNexusManager('/test/path');
+    const a = getCodeExplorerManager('/test/path');
+    const b = getCodeExplorerManager('/test/path');
     expect(a).toBe(b);
   });
 
   it('should return different instances for different paths', () => {
-    const a = getGitNexusManager('/test/path-a');
-    const b = getGitNexusManager('/test/path-b');
+    const a = getCodeExplorerManager('/test/path-a');
+    const b = getCodeExplorerManager('/test/path-b');
     expect(a).not.toBe(b);
   });
 });
 
-describe('GitNexusMCPClient', () => {
-  let client: GitNexusMCPClient;
+describe('CodeExplorerMCPClient', () => {
+  let client: CodeExplorerMCPClient;
 
   beforeEach(() => {
-    client = new GitNexusMCPClient('test-repo');
+    client = new CodeExplorerMCPClient('test-repo');
   });
 
   afterEach(async () => {
@@ -472,49 +472,49 @@ describe('GitNexusMCPClient', () => {
   describe('error handling', () => {
     it('should throw when calling tools without connecting', async () => {
       await expect(client.query('test')).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling context without connecting', async () => {
       await expect(client.context('sym')).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling impact without connecting', async () => {
       await expect(client.impact('file.ts')).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling cypher without connecting', async () => {
       await expect(client.cypher('MATCH (n) RETURN n')).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling getClusters without connecting', async () => {
       await expect(client.getClusters()).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling getProcesses without connecting', async () => {
       await expect(client.getProcesses()).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling getRepoContext without connecting', async () => {
       await expect(client.getRepoContext()).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
 
     it('should throw when calling getArchitectureMap without connecting', async () => {
       await expect(client.getArchitectureMap()).rejects.toThrow(
-        'GitNexusMCPClient is not connected',
+        'CodeExplorerMCPClient is not connected',
       );
     });
   });

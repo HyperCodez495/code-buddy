@@ -66,7 +66,7 @@ import {
   createExitPlanModeTools,
   createGuiTools,
   createSessionTools,
-  createGitNexusTools,
+  createCodeExplorerTools,
   createScreenpipeTools,
 } from "../tools/registry/index.js";
 import type { FormalToolRegistry, IToolExecutionContext } from "../tools/registry/index.js";
@@ -365,7 +365,7 @@ export class ToolHandler {
       ...createExitPlanModeTools(),
       ...createGuiTools(),
       ...createSessionTools(),
-      ...createGitNexusTools(),
+      ...createCodeExplorerTools(),
       ...createScreenpipeTools(),
       // Self-improvement: the agent can author its own tools (opt-in only).
       ...(process.env.CODEBUDDY_SELF_IMPROVE === 'true' ? [createRegisterToolTool()] : []),

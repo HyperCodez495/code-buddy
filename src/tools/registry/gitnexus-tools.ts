@@ -1,17 +1,17 @@
 /**
- * GitNexus Tool Adapter
+ * CodeExplorer Tool Adapter
  *
- * ITool-compliant adapter for the GitNexus tool.
+ * ITool-compliant adapter for the CodeExplorer tool.
  */
 
 import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
-import { GitNexusTool } from '../gitnexus-tool.js';
+import { CodeExplorerTool } from '../gitnexus-tool.js';
 
-export class GitNexusAskTool implements ITool {
+export class CodeExplorerAskTool implements ITool {
   readonly name = 'gitnexus_ask';
   readonly description =
-    'Consult GitNexus for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.';
+    'Consult CodeExplorer for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.';
 
   async execute(input: Record<string, unknown>): Promise<ToolResult> {
     const query = typeof input.query === 'string' ? input.query : '';
@@ -23,7 +23,7 @@ export class GitNexusAskTool implements ITool {
     }
 
     try {
-      const gitNexus = new GitNexusTool();
+      const gitNexus = new CodeExplorerTool();
       const result = await gitNexus.ask(query);
       return {
         success: true,
@@ -46,7 +46,7 @@ export class GitNexusAskTool implements ITool {
         properties: {
           query: {
             type: 'string',
-            description: 'The query or task description to ask GitNexus about.',
+            description: 'The query or task description to ask CodeExplorer about.',
           },
         },
         required: ['query'],
@@ -82,10 +82,10 @@ export class GitNexusAskTool implements ITool {
   }
 }
 
-export function createGitNexusTools(): ITool[] {
-  return [new GitNexusAskTool()];
+export function createCodeExplorerTools(): ITool[] {
+  return [new CodeExplorerAskTool()];
 }
 
-export function resetGitNexusInstances(): void {
+export function resetCodeExplorerInstances(): void {
   // Stateless tool — nothing to reset
 }

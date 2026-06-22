@@ -1,13 +1,13 @@
 /**
- * GitNexus MCP Client
+ * CodeExplorer MCP Client
  *
- * Talks to a GitNexus MCP server to query the code graph.
+ * Talks to a CodeExplorer MCP server to query the code graph.
  * Currently operates in **stub mode** — all methods return empty/default
  * results so the rest of the codebase can integrate without requiring
- * a real GitNexus installation. The real MCP transport will be wired
+ * a real CodeExplorer installation. The real MCP transport will be wired
  * in a follow-up once gitnexus is available.
  *
- * Tools exposed by GitNexus MCP:
+ * Tools exposed by CodeExplorer MCP:
  *   - query   — natural-language search over the code graph
  *   - context — symbol-level call/import graph + process membership
  *   - impact  — blast-radius analysis (upstream/downstream)
@@ -87,7 +87,7 @@ export interface GNProcess {
 
 // ── Client ──────────────────────────────────────────────────────────
 
-export class GitNexusMCPClient {
+export class CodeExplorerMCPClient {
   private repoName: string;
   private connected = false;
 
@@ -96,7 +96,7 @@ export class GitNexusMCPClient {
   }
 
   /**
-   * Connect to the GitNexus MCP server.
+   * Connect to the CodeExplorer MCP server.
    *
    * In the real implementation this will use `@modelcontextprotocol/sdk`
    * `StdioClientTransport` with:
@@ -107,7 +107,7 @@ export class GitNexusMCPClient {
    */
   async connect(): Promise<void> {
     this.connected = true;
-    logger.debug('GitNexus MCP client connected (stub mode)', {
+    logger.debug('CodeExplorer MCP client connected (stub mode)', {
       repo: this.repoName,
     });
   }
@@ -115,7 +115,7 @@ export class GitNexusMCPClient {
   /** Disconnect from the MCP server. */
   async disconnect(): Promise<void> {
     this.connected = false;
-    logger.debug('GitNexus MCP client disconnected', {
+    logger.debug('CodeExplorer MCP client disconnected', {
       repo: this.repoName,
     });
   }
@@ -138,7 +138,7 @@ export class GitNexusMCPClient {
    */
   async query(q: string): Promise<GNQueryResult> {
     this.assertConnected();
-    logger.debug('GitNexus query', { query: q, repo: this.repoName });
+    logger.debug('CodeExplorer query', { query: q, repo: this.repoName });
     // Stub: real impl calls callTool('query', { query: q, repo: this.repoName })
     return { processes: [], definitions: [] };
   }
@@ -149,7 +149,7 @@ export class GitNexusMCPClient {
    */
   async context(symbolName: string): Promise<GNContextResult> {
     this.assertConnected();
-    logger.debug('GitNexus context', { symbol: symbolName, repo: this.repoName });
+    logger.debug('CodeExplorer context', { symbol: symbolName, repo: this.repoName });
     return {
       symbol: {
         uid: symbolName,
@@ -174,7 +174,7 @@ export class GitNexusMCPClient {
     direction: 'upstream' | 'downstream' = 'upstream',
   ): Promise<GNImpactResult> {
     this.assertConnected();
-    logger.debug('GitNexus impact', { target, direction, repo: this.repoName });
+    logger.debug('CodeExplorer impact', { target, direction, repo: this.repoName });
     return {
       target,
       affected: [],
@@ -184,11 +184,11 @@ export class GitNexusMCPClient {
   }
 
   /**
-   * Execute a raw Cypher query against the GitNexus graph database.
+   * Execute a raw Cypher query against the CodeExplorer graph database.
    */
   async cypher(query: string): Promise<unknown[]> {
     this.assertConnected();
-    logger.debug('GitNexus cypher', { query, repo: this.repoName });
+    logger.debug('CodeExplorer cypher', { query, repo: this.repoName });
     return [];
   }
 
@@ -222,7 +222,7 @@ export class GitNexusMCPClient {
 
   private assertConnected(): void {
     if (!this.connected) {
-      throw new Error('GitNexusMCPClient is not connected. Call connect() first.');
+      throw new Error('CodeExplorerMCPClient is not connected. Call connect() first.');
     }
   }
 }

@@ -188,7 +188,7 @@ const DEFAULT_MODEL_CONFIGS: ModelToolConfig[] = [
 
   // ChatGPT Codex backend (Phase d.23) — exposed via OAuth subscription
   // auth at chatgpt.com/backend-api/codex/responses. `gpt-5.5` matches the
-  // GitNexus helper default; `gpt-5.2` remains the known-good fallback.
+  // CodeExplorer helper default; `gpt-5.2` remains the known-good fallback.
   {
     model: 'gpt-5.5*',
     supportsReasoning: true,

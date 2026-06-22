@@ -2961,7 +2961,7 @@ export class TestRunnerBridge extends EventEmitter {
           'tests/plugins/plugin-sdk-channel.test.ts',
           'tests/plugins/plugin-manager.test.ts',
           'tests/plugins/plugin-conflict-detector.test.ts',
-          'tests/plugins/gitnexus.test.ts',
+          'tests/plugins/code-explorer.test.ts',
           'tests/plugins/extra-providers.test.ts',
           'tests/plugins/cloud-providers.test.ts',
           'tests/features/plugins-teams-output.test.ts',

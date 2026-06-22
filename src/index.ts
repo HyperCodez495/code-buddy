@@ -2966,9 +2966,9 @@ addLazyCommandGroup(program, 'fleet', 'Inspect Fleet routing and dispatch policy
   registerFleetCommands(program);
 });
 
-addLazyCommandGroup(program, 'gitnexus', 'Interact with GitNexus for code understanding and session syncing', async () => {
-  const { registerGitNexusCommands } = await import('./commands/cli/gitnexus-commands.js');
-  registerGitNexusCommands(program);
+addLazyCommandGroup(program, 'gitnexus', 'Interact with CodeExplorer for code understanding and session syncing', async () => {
+  const { registerCodeExplorerCommands } = await import('./commands/cli/gitnexus-commands.js');
+  registerCodeExplorerCommands(program);
 });
 
 addLazyCommandGroup(program, 'hermes', 'Inspect the native Hermes-inspired Code Buddy agent profile', async () => {

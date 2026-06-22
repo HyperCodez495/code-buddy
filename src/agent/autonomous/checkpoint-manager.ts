@@ -5,7 +5,7 @@ import { AgenticCodingTaskContract } from './agentic-coding-contract.js';
 // Type-only import: breaks the agentic-coding-runner ↔ checkpoint-manager cycle
 // (madge runs with skipTypeImports, so `import type` edges are not counted).
 import type { AgenticCodingRunOptions, AgenticCodingRunReport, AgenticCodingVerificationResult } from './agentic-coding-runner.js';
-import { GitNexusContext, WorldModelInvariants } from '../../tools/gitnexus-tool.js';
+import { CodeExplorerContext, WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 
 export interface AgenticCodingCheckpoint {
   runId: string;
@@ -18,7 +18,7 @@ export interface AgenticCodingCheckpoint {
   reports?: AgenticCodingRunReport[];
   timestamp: string;
   verification?: AgenticCodingVerificationResult[];
-  gitnexusEvidence?: GitNexusContext;
+  codeexplorerEvidence?: CodeExplorerContext;
   worldModelInvariants?: WorldModelInvariants | null;
 }
 

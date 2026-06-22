@@ -28,7 +28,7 @@ import {
 // Re-export the extracted path helpers for backward compatibility — they used
 // to be defined in this module and are imported from here elsewhere.
 export { normalizeGitPath, isPathAllowedByContract, resolveRepoPath };
-import { GitNexusTool, type GitNexusContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
+import { CodeExplorerTool, type CodeExplorerContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
 import { evaluateScope } from '../scope-awareness.js';
 import type { FleetDispatchProfile } from '../../fleet/dispatch-profile.js';
 import { getActiveRunStore, RunStore } from '../../observability/run-store.js';
@@ -1815,7 +1815,7 @@ export interface AgenticCodingRunReport {
   verificationRequested: boolean;
   workflow: AgenticCodingWorkflowReport;
   workflowBuilderProposal?: AgenticCodingWorkflowBuilderProposalReport;
-  gitnexusEvidence?: GitNexusContext;
+  codeexplorerEvidence?: CodeExplorerContext;
   worldModelInvariants?: WorldModelInvariants | null;
 }
 
@@ -4648,13 +4648,13 @@ export function buildAgenticCodingEditProposalProducerDispatch(
             `Recommended tool call: ${fleet.invocation?.tool ?? 'none'} ${JSON.stringify(fleet.invocation?.args ?? {})}`,
             ...fleet.safety.map((note) => `- ${note}`),
           ] : []),
-          ...(report.gitnexusEvidence ? [
+          ...(report.codeexplorerEvidence ? [
             '',
-            '=== GitNexus Context & Insights ===',
-            `Likely Files to Edit: ${JSON.stringify(report.gitnexusEvidence.likelyFiles)}`,
-            `Dependent Symbols: ${JSON.stringify(report.gitnexusEvidence.dependentSymbols)}`,
-            `Tests to Watch: ${JSON.stringify(report.gitnexusEvidence.testsToWatch)}`,
-            `Notes: ${report.gitnexusEvidence.notes || 'None'}`
+            '=== CodeExplorer Context & Insights ===',
+            `Likely Files to Edit: ${JSON.stringify(report.codeexplorerEvidence.likelyFiles)}`,
+            `Dependent Symbols: ${JSON.stringify(report.codeexplorerEvidence.dependentSymbols)}`,
+            `Tests to Watch: ${JSON.stringify(report.codeexplorerEvidence.testsToWatch)}`,
+            `Notes: ${report.codeexplorerEvidence.notes || 'None'}`
           ] : []),
           ...(report.worldModelInvariants ? [
             '',
@@ -5065,7 +5065,7 @@ export function aggregateReports(
 
   const uniqueBlockedReasons = Array.from(new Set(blockedReasons));
   const uniqueValidationErrors = Array.from(new Set(validationErrors));
-  const gitnexusEvidence = reports.find(r => r.gitnexusEvidence)?.gitnexusEvidence;
+  const codeexplorerEvidence = reports.find(r => r.codeexplorerEvidence)?.codeexplorerEvidence;
   const worldModelInvariants = reports.find(r => r.worldModelInvariants)?.worldModelInvariants;
 
   const plan = buildExecutionPlan({
@@ -5121,7 +5121,7 @@ export function aggregateReports(
     verification,
     verificationRequested: Boolean(options.runVerification),
     workflow: buildWorkflowReport(plan),
-    gitnexusEvidence,
+    codeexplorerEvidence,
     worldModelInvariants,
   };
 }
@@ -5196,7 +5196,7 @@ export function buildFinalReport(checkpoint: AgenticCodingCheckpoint): AgenticCo
     verification,
     verificationRequested: Boolean(options.runVerification),
     workflow: buildWorkflowReport(plan),
-    gitnexusEvidence: checkpoint.gitnexusEvidence,
+    codeexplorerEvidence: checkpoint.codeexplorerEvidence,
     worldModelInvariants: checkpoint.worldModelInvariants,
   };
 }
@@ -5420,21 +5420,21 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   const repo = contract?.repo ?? '';
   const rulesFiles = contract ? await collectRulesFiles(contract.repo) : [];
   const executionGate = contract ? assessAgenticCodingExecutionGate(contract) : undefined;
-  let gitnexusEvidence: GitNexusContext | undefined;
+  let codeexplorerEvidence: CodeExplorerContext | undefined;
   let worldModelInvariants: WorldModelInvariants | null = null;
-  if (checkpointToResume?.gitnexusEvidence) {
-    gitnexusEvidence = checkpointToResume.gitnexusEvidence;
+  if (checkpointToResume?.codeexplorerEvidence) {
+    codeexplorerEvidence = checkpointToResume.codeexplorerEvidence;
   } else if (contract) {
     observability.stepStart('gitnexus-context', { task: contract.task });
-    const gitnexus = new GitNexusTool();
-    gitnexusEvidence = await gitnexus.ask(contract.task);
-    observability.stepEnd('gitnexus-context', { hasEvidence: Boolean(gitnexusEvidence) });
+    const gitnexus = new CodeExplorerTool();
+    codeexplorerEvidence = await gitnexus.ask(contract.task);
+    observability.stepEnd('gitnexus-context', { hasEvidence: Boolean(codeexplorerEvidence) });
   }
   if (checkpointToResume?.worldModelInvariants !== undefined) {
     worldModelInvariants = checkpointToResume.worldModelInvariants;
   } else if (contract) {
     observability.stepStart('world-model-read', { repo: contract.repo });
-    const gitnexus = new GitNexusTool();
+    const gitnexus = new CodeExplorerTool();
     worldModelInvariants = await gitnexus.readWorldModel();
     observability.stepEnd('world-model-read', { hasInvariants: Boolean(worldModelInvariants) });
   }
@@ -5496,7 +5496,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       verificationRequested: Boolean(options.runVerification),
       workflow: buildWorkflowReport(plan),
       workflowBuilderProposal,
-      gitnexusEvidence,
+      codeexplorerEvidence,
       worldModelInvariants,
     });
   }
@@ -5532,7 +5532,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
       contract: finalContract,
       step: 'initialized',
       timestamp: new Date().toISOString(),
-      gitnexusEvidence,
+      codeexplorerEvidence,
       worldModelInvariants,
     });
     observability.stepEnd('checkpoint-save', { checkpointStep: 'initialized', runId: options.runId });
@@ -5754,7 +5754,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
           edges: [],
         },
         workflowBuilderProposal,
-        gitnexusEvidence,
+        codeexplorerEvidence,
         worldModelInvariants,
       };
       const tempArtifacts = deriveAgenticCodingProposalLoopArtifacts(
@@ -5903,7 +5903,7 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
     verificationRequested: Boolean(options.runVerification),
     workflow: buildWorkflowReport(plan),
     workflowBuilderProposal,
-    gitnexusEvidence,
+    codeexplorerEvidence,
     worldModelInvariants,
   });
 }
@@ -8089,7 +8089,7 @@ export function buildAgenticCodingProposalLoopCoworkWorkspace(
     kind: 'agentic-coding-harness-contract',
     label: 'Harness / security and orchestration contract',
     mode: 'passive',
-    objective: 'Converge Cowork, Code Buddy, GitNexus, Fleet and workflow artifacts around explicit authority boundaries.',
+    objective: 'Converge Cowork, Code Buddy, CodeExplorer, Fleet and workflow artifacts around explicit authority boundaries.',
     safetyNotes: [
       'Harness data is display metadata only.',
       'It defines what each artifact means; it does not execute, approve, write memory, push or deploy.',

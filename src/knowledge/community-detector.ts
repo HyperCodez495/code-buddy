@@ -1,5 +1,5 @@
 /**
- * Community Detection — GitNexus Knowledge Graph
+ * Community Detection — CodeExplorer Knowledge Graph
  *
  * Simplified label propagation algorithm for detecting architectural
  * modules/clusters in the code graph. Each node starts with its own

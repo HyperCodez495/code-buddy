@@ -1,5 +1,5 @@
 /**
- * Process Detection — GitNexus Knowledge Graph
+ * Process Detection — CodeExplorer Knowledge Graph
  *
  * Detects execution flows by BFS from entry points in the code graph.
  * Entry points are functions with no internal callers (or matching

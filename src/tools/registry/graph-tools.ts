@@ -1,5 +1,5 @@
 /**
- * Graph Tool Adapters — GitNexus Knowledge Graph
+ * Graph Tool Adapters — CodeExplorer Knowledge Graph
  *
  * ITool-compliant adapters for the FormalToolRegistry:
  * - AnalyzeImpactTool: blast radius analysis
