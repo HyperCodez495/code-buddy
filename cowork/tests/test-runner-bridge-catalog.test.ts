@@ -758,7 +758,7 @@ function makeWorkspace(): string {
   writeFileSync(path.join(root, 'tests', 'plugins', 'plugin-sdk-channel.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'plugins', 'plugin-manager.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'plugins', 'plugin-conflict-detector.test.ts'), '');
-  writeFileSync(path.join(root, 'tests', 'plugins', 'gitnexus.test.ts'), '');
+  writeFileSync(path.join(root, 'tests', 'plugins', 'code-explorer.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'plugins', 'extra-providers.test.ts'), '');
   writeFileSync(path.join(root, 'tests', 'plugins', 'cloud-providers.test.ts'), '');
   mkdirSync(path.join(root, 'tests', 'skills'), { recursive: true });

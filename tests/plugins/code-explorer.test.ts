@@ -63,20 +63,20 @@ describe('CodeExplorerManager', () => {
   });
 
   describe('isInstalled', () => {
-    it('should return true when gitnexus CLI is available', () => {
+    it('should return true when code-explorer CLI is available', () => {
       (execSync as unknown as ReturnType<typeof vi.fn>).mockReturnValue(
         Buffer.from('1.0.0'),
       );
 
       expect(manager.isInstalled()).toBe(true);
-      expect(execSync).toHaveBeenCalledWith('npx gitnexus --version', {
+      expect(execSync).toHaveBeenCalledWith('npx code-explorer --version', {
         stdio: 'pipe',
         timeout: 10_000,
         cwd: path.resolve(testRepoPath),
       });
     });
 
-    it('should return false when gitnexus CLI is not available', () => {
+    it('should return false when code-explorer CLI is not available', () => {
       (execSync as unknown as ReturnType<typeof vi.fn>).mockImplementation(
         () => {
           throw new Error('command not found');
@@ -225,7 +225,7 @@ describe('CodeExplorerManager', () => {
   });
 
   describe('analyze', () => {
-    it('should spawn npx gitnexus analyze', async () => {
+    it('should spawn npx code-explorer analyze', async () => {
       const mockOn = vi.fn();
       const mockStdout = { on: vi.fn() };
       const mockStderr = { on: vi.fn() };
@@ -251,7 +251,7 @@ describe('CodeExplorerManager', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'npx',
-        ['gitnexus', 'analyze'],
+        ['code-explorer', 'analyze'],
         expect.objectContaining({
           cwd: path.resolve(testRepoPath),
           shell: true,
@@ -281,7 +281,7 @@ describe('CodeExplorerManager', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'npx',
-        ['gitnexus', 'analyze', '--force'],
+        ['code-explorer', 'analyze', '--force'],
         expect.anything(),
       );
     });
@@ -308,7 +308,7 @@ describe('CodeExplorerManager', () => {
 
       expect(spawn).toHaveBeenCalledWith(
         'npx',
-        ['gitnexus', 'analyze', '--with-skills'],
+        ['code-explorer', 'analyze', '--with-skills'],
         expect.anything(),
       );
     });

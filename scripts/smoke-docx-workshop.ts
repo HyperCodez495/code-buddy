@@ -44,11 +44,11 @@ interface GenerateDocumentToolData {
 
 const scriptDir = path.dirname(fileURLToPath(import.meta.url));
 const projectRoot = path.resolve(scriptDir, '..');
-const referenceProjectRoot = path.resolve(projectRoot, '..', 'gitnexus-rs-from-c');
+const referenceProjectRoot = path.resolve(projectRoot, '..', 'code-explorer-rs-from-c');
 const fallbackSourcePath = path.resolve(
   projectRoot,
   '..',
-  'gitnexus-rs-from-c',
+  'code-explorer-rs-from-c',
   'Audit_Methodologique_ASPNET_MVC5.docx'
 );
 const preferredQuestionsSourcePath = path.join(

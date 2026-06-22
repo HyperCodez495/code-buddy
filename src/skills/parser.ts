@@ -86,7 +86,7 @@ function parseMetadata(yamlContent: string, sourcePath: string): SkillMetadata {
     // Parse allowed-tools (Standard compatibility)
     let allowedTools = parsed['allowed-tools'];
     if (typeof allowedTools === 'string') {
-      // Native Engine uses comma separated values like: Bash(gitnexus *), Read, Grep, Glob
+      // Native Engine uses comma separated values like: Bash(code-explorer *), Read, Grep, Glob
       const toolsList = allowedTools.split(',').map(t => t.trim());
 
       const mappedTools: string[] = [];

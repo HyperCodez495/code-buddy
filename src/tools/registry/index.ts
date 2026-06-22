@@ -382,7 +382,7 @@ export {
   CodeExplorerAskTool,
   createCodeExplorerTools,
   resetCodeExplorerInstances,
-} from './gitnexus-tools.js';
+} from './code-explorer-tools.js';
 
 // Tool Adapters - Screenpipe (screen_memory)
 export {
@@ -517,7 +517,7 @@ export async function createAllToolsAsync(): Promise<ITool[]> {
   const { createFleetTools } = await import('./fleet-tools.js');
   const { createAskUserQuestionTools } = await import('./ask-user-question-tools.js');
   const { createExitPlanModeTools } = await import('./exit-plan-mode-tools.js');
-  const { createCodeExplorerTools } = await import('./gitnexus-tools.js');
+  const { createCodeExplorerTools } = await import('./code-explorer-tools.js');
   
   // Await MCP Manager initialization before registering its tools
   const { getMcpManager } = await import('../mcp/mcp-manager.js');
@@ -725,5 +725,5 @@ import { createExitPlanModeTools } from './exit-plan-mode-tools.js';
 import { createGuiTools } from './gui-tools.js';
 import { createSessionTools } from './session-tools.js';
 import { createAliasTools } from './tool-aliases.js';
-import { createCodeExplorerTools } from './gitnexus-tools.js';
+import { createCodeExplorerTools } from './code-explorer-tools.js';
 export * from "./windows-tools.js";

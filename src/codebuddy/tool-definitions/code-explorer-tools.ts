@@ -6,10 +6,10 @@
 
 import type { CodeBuddyTool } from './types.js';
 
-export const GITNEXUS_ASK_TOOL: CodeBuddyTool = {
+export const CODE_EXPLORER_ASK_TOOL: CodeBuddyTool = {
   type: 'function',
   function: {
-    name: 'gitnexus_ask',
+    name: 'code_explorer_ask',
     description:
       'Consult CodeExplorer for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.',
     parameters: {
@@ -25,4 +25,4 @@ export const GITNEXUS_ASK_TOOL: CodeBuddyTool = {
   },
 };
 
-export const GITNEXUS_TOOLS: CodeBuddyTool[] = [GITNEXUS_ASK_TOOL];
+export const CODE_EXPLORER_TOOLS: CodeBuddyTool[] = [CODE_EXPLORER_ASK_TOOL];

@@ -444,7 +444,7 @@ export abstract class BaseAgent extends EventEmitter implements Agent {
   }
 
   /** Resolves once MCP server initialization has settled (or no-op if MCP was
-   * never started). Headless/one-shot callers await this so the gitnexus-style
+   * never started). Headless/one-shot callers await this so the code-explorer-style
    * MCP tools are registered before the first turn instead of racing init. */
   getMCPReady(): Promise<void> {
     return this.infrastructureFacade.getMCPReady();

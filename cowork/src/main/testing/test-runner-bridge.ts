@@ -2992,7 +2992,7 @@ export class TestRunnerBridge extends EventEmitter {
         path.join(workspace, 'tests', 'plugins', 'plugin-sdk-channel.test.ts'),
         path.join(workspace, 'tests', 'plugins', 'plugin-manager.test.ts'),
         path.join(workspace, 'tests', 'plugins', 'plugin-conflict-detector.test.ts'),
-        path.join(workspace, 'tests', 'plugins', 'gitnexus.test.ts'),
+        path.join(workspace, 'tests', 'plugins', 'code-explorer.test.ts'),
         path.join(workspace, 'tests', 'plugins', 'extra-providers.test.ts'),
         path.join(workspace, 'tests', 'plugins', 'cloud-providers.test.ts'),
         path.join(workspace, 'tests', 'features', 'plugins-teams-output.test.ts'),

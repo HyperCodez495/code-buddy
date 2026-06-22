@@ -29,7 +29,7 @@ import {
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
   SESSION_TOOLS,
-  GITNEXUS_TOOLS,
+  CODE_EXPLORER_TOOLS,
 } from '../codebuddy/tool-definitions/index.js';
 import { FLEET_TOOLS } from '../codebuddy/fleet-tool-defs.js';
 import {
@@ -68,7 +68,7 @@ export function collectOfflineBuiltinTools(): CodeBuddyTool[] {
     CODEBASE_REPLACE_TOOLS,
     SESSION_TOOLS,
     FLEET_TOOLS,
-    GITNEXUS_TOOLS,
+    CODE_EXPLORER_TOOLS,
   ];
   const byName = new Map<string, CodeBuddyTool>();
   for (const tool of groups.flat()) {

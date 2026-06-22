@@ -32,9 +32,9 @@ export class CodeExplorerTool {
   private timeoutMs: number;
 
   constructor(config?: CodeExplorerConfig) {
-    this.endpoint = config?.endpoint || process.env.GITNEXUS_ENDPOINT || '';
-    this.apiKey = config?.apiKey || process.env.GITNEXUS_API_KEY || '';
-    this.timeoutMs = config?.timeoutMs ?? Number(process.env.GITNEXUS_TIMEOUT_MS || 5000);
+    this.endpoint = config?.endpoint || process.env.CODE_EXPLORER_ENDPOINT || '';
+    this.apiKey = config?.apiKey || process.env.CODE_EXPLORER_API_KEY || '';
+    this.timeoutMs = config?.timeoutMs ?? Number(process.env.CODE_EXPLORER_TIMEOUT_MS || 5000);
   }
 
   /**

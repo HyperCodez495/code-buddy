@@ -310,9 +310,9 @@ export { SESSION_TOOLS } from './session-tools.js';
 
 // CodeExplorer tools
 export {
-  GITNEXUS_ASK_TOOL,
-  GITNEXUS_TOOLS,
-} from './gitnexus-tools.js';
+  CODE_EXPLORER_ASK_TOOL,
+  CODE_EXPLORER_TOOLS,
+} from './code-explorer-tools.js';
 
 // Re-export CodeBuddyTool from client for convenience
 export type { CodeBuddyTool as Tool } from './types.js';

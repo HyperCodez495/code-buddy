@@ -1,18 +1,18 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { CodeExplorerTool } from '../../src/tools/gitnexus-tool.js';
+import { CodeExplorerTool } from '../../src/tools/code-explorer-tool.js';
 
 describe('CodeExplorerTool', () => {
-  const originalEnvEndpoint = process.env.GITNEXUS_ENDPOINT;
-  const originalEnvApiKey = process.env.GITNEXUS_API_KEY;
+  const originalEnvEndpoint = process.env.CODE_EXPLORER_ENDPOINT;
+  const originalEnvApiKey = process.env.CODE_EXPLORER_API_KEY;
 
   beforeEach(() => {
-    process.env.GITNEXUS_ENDPOINT = 'http://test-gitnexus:3000';
-    process.env.GITNEXUS_API_KEY = 'test-gitnexus-key';
+    process.env.CODE_EXPLORER_ENDPOINT = 'http://test-code-explorer:3000';
+    process.env.CODE_EXPLORER_API_KEY = 'test-code-explorer-key';
   });
 
   afterEach(() => {
-    process.env.GITNEXUS_ENDPOINT = originalEnvEndpoint;
-    process.env.GITNEXUS_API_KEY = originalEnvApiKey;
+    process.env.CODE_EXPLORER_ENDPOINT = originalEnvEndpoint;
+    process.env.CODE_EXPLORER_API_KEY = originalEnvApiKey;
     vi.restoreAllMocks();
   });
 
@@ -40,11 +40,11 @@ describe('CodeExplorerTool', () => {
       expect(result.notes).toBe('Consult with CodeExplorer details.');
 
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'http://test-gitnexus:3000/ask',
+        'http://test-code-explorer:3000/ask',
         expect.objectContaining({
           method: 'POST',
           headers: expect.objectContaining({
-            'Authorization': 'Bearer test-gitnexus-key',
+            'Authorization': 'Bearer test-code-explorer-key',
             'Content-Type': 'application/json',
           }),
           body: JSON.stringify({ query: 'how does it start?' }),
@@ -82,7 +82,7 @@ describe('CodeExplorerTool', () => {
     });
 
     it('degrades gracefully when endpoint is not configured', async () => {
-      delete process.env.GITNEXUS_ENDPOINT;
+      delete process.env.CODE_EXPLORER_ENDPOINT;
       const tool = new CodeExplorerTool({ endpoint: '' });
       const result = await tool.ask('where is it?');
 
@@ -104,7 +104,7 @@ describe('CodeExplorerTool', () => {
 
       expect(result.ok).toBe(true);
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'http://test-gitnexus:3000/push-session',
+        'http://test-code-explorer:3000/push-session',
         expect.objectContaining({
           method: 'POST',
           body: JSON.stringify({ summary: 'We resolved the issue.' }),
@@ -140,7 +140,7 @@ describe('CodeExplorerTool', () => {
 
       expect(result).toEqual(mockInvariants);
       expect(globalThis.fetch).toHaveBeenCalledWith(
-        'http://test-gitnexus:3000/world-model',
+        'http://test-code-explorer:3000/world-model',
         expect.objectContaining({
           method: 'GET',
         })

@@ -990,7 +990,7 @@ async function processPromptHeadless(
   const previousHeadless = process.env.CODEBUDDY_HEADLESS;
   // Headless defaults MCP OFF (startup cost / determinism), but respect an
   // explicit opt-in so `CODEBUDDY_DISABLE_MCP=false buddy -p …` can use MCP
-  // servers (e.g. the Code Explorer / gitnexus bridge, or the benchmark's
+  // servers (e.g. the Code Explorer / code-explorer bridge, or the benchmark's
   // "with graph" condition). Mirrors the opt-in pattern in goal-cli.ts.
   process.env.CODEBUDDY_DISABLE_MCP = process.env.CODEBUDDY_DISABLE_MCP ?? 'true';
   process.env.CODEBUDDY_HEADLESS = 'true';
@@ -1004,7 +1004,7 @@ async function processPromptHeadless(
 
     await agent.systemPromptReady;
     // When MCP is opted in for this headless run, wait for the servers to finish
-    // connecting so their tools (e.g. the Code Explorer / gitnexus bridge) are
+    // connecting so their tools (e.g. the Code Explorer / code-explorer bridge) are
     // registered before the first turn — otherwise the one-shot turn races init
     // and the agent never sees the MCP tools.
     if (process.env.CODEBUDDY_DISABLE_MCP !== 'true') {
@@ -2966,8 +2966,8 @@ addLazyCommandGroup(program, 'fleet', 'Inspect Fleet routing and dispatch policy
   registerFleetCommands(program);
 });
 
-addLazyCommandGroup(program, 'gitnexus', 'Interact with CodeExplorer for code understanding and session syncing', async () => {
-  const { registerCodeExplorerCommands } = await import('./commands/cli/gitnexus-commands.js');
+addLazyCommandGroup(program, 'code-explorer', 'Interact with CodeExplorer for code understanding and session syncing', async () => {
+  const { registerCodeExplorerCommands } = await import('./commands/cli/code-explorer-commands.js');
   registerCodeExplorerCommands(program);
 });
 

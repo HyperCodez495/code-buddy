@@ -5,7 +5,7 @@
  * Currently operates in **stub mode** — all methods return empty/default
  * results so the rest of the codebase can integrate without requiring
  * a real CodeExplorer installation. The real MCP transport will be wired
- * in a follow-up once gitnexus is available.
+ * in a follow-up once code-explorer is available.
  *
  * Tools exposed by CodeExplorer MCP:
  *   - query   — natural-language search over the code graph
@@ -101,7 +101,7 @@ export class CodeExplorerMCPClient {
    * In the real implementation this will use `@modelcontextprotocol/sdk`
    * `StdioClientTransport` with:
    *   command: 'npx'
-   *   args: ['-y', 'gitnexus@latest', 'mcp']
+   *   args: ['-y', 'code-explorer@latest', 'mcp']
    *
    * For now this is a stub that marks the client as connected.
    */

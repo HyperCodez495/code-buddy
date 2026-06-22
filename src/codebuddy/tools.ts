@@ -55,7 +55,7 @@ import {
   EXIT_PLAN_MODE_TOOLS,
   CODEBASE_REPLACE_TOOLS,
   SESSION_TOOLS,
-  GITNEXUS_TOOLS,
+  CODE_EXPLORER_TOOLS,
   WINDOWS_TOOLS,
 } from "./tool-definitions/index.js";
 import { FLEET_TOOLS } from "./fleet-tool-defs.js";
@@ -114,7 +114,7 @@ export function getBuiltinToolNames(): string[] {
     CODEBASE_REPLACE_TOOLS,
     SESSION_TOOLS,
     FLEET_TOOLS,
-    GITNEXUS_TOOLS,
+    CODE_EXPLORER_TOOLS,
     WINDOWS_TOOLS,
   ];
 
@@ -233,7 +233,7 @@ export function initializeToolRegistry(): void {
   registerGroup(FLEET_TOOLS);
 
   // CodeExplorer tools
-  registerGroup(GITNEXUS_TOOLS);
+  registerGroup(CODE_EXPLORER_TOOLS);
 
   isRegistryInitialized = true;
   logger.debug('Tool registry initialized with built-in tools');
@@ -254,14 +254,14 @@ export function getMCPManager(): MCPManager {
 }
 
 /**
- * True when the Code Explorer (gitnexus) MCP tools are connected — i.e. at least
- * one `mcp__gitnexus__*` tool is registered. Used to conditionally steer the
+ * True when the Code Explorer (code-explorer) MCP tools are connected — i.e. at least
+ * one `mcp__code-explorer__*` tool is registered. Used to conditionally steer the
  * agent toward Code Explorer for relationship/impact questions. Returns false
  * (no behavior change) whenever Code Explorer is not installed.
  */
 export function isCodeExplorerAvailable(): boolean {
   try {
-    return getMCPManager().getTools().some((t) => t.name.startsWith('mcp__gitnexus__'));
+    return getMCPManager().getTools().some((t) => t.name.startsWith('mcp__code-explorer__'));
   } catch {
     return false;
   }
@@ -515,15 +515,15 @@ export async function getAllCodeBuddyTools(): Promise<CodeBuddyTool[]> {
   // Apply CLI tool filter (--enabled-tools, --disabled-tools, --allowed-tools)
   allTools = applyToolFilter(allTools);
 
-  // When Code Explorer (gitnexus) is connected, make the built-in graph tools
+  // When Code Explorer (code-explorer) is connected, make the built-in graph tools
   // defer to it at the decision point — its graph is broader / more complete.
   // Conditional & non-mutating: returns fresh objects only for code_graph /
-  // codebase_map, and only when a gitnexus tool is present (no change otherwise).
-  if (allTools.some((t) => t.function.name.startsWith('mcp__gitnexus__'))) {
+  // codebase_map, and only when a code-explorer tool is present (no change otherwise).
+  if (allTools.some((t) => t.function.name.startsWith('mcp__code-explorer__'))) {
     const DEFER =
-      ' NOTE: Code Explorer (gitnexus) is available — for code-relationship, blast-radius/impact, ' +
-      'dead-code and cycle questions PREFER its MCP tools (`mcp__gitnexus__impact` / `context` / ' +
-      '`query` / `find_cycles`); use this built-in only as a fallback if a gitnexus tool errors.';
+      ' NOTE: Code Explorer (code-explorer) is available — for code-relationship, blast-radius/impact, ' +
+      'dead-code and cycle questions PREFER its MCP tools (`mcp__code-explorer__impact` / `context` / ' +
+      '`query` / `find_cycles`); use this built-in only as a fallback if a code-explorer tool errors.';
     allTools = allTools.map((t) =>
       t.function.name === 'code_graph' || t.function.name === 'codebase_map'
         ? { ...t, function: { ...t.function, description: (t.function.description ?? '') + DEFER } }

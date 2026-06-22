@@ -28,7 +28,7 @@ import {
 // Re-export the extracted path helpers for backward compatibility — they used
 // to be defined in this module and are imported from here elsewhere.
 export { normalizeGitPath, isPathAllowedByContract, resolveRepoPath };
-import { CodeExplorerTool, type CodeExplorerContext, type WorldModelInvariants } from '../../tools/gitnexus-tool.js';
+import { CodeExplorerTool, type CodeExplorerContext, type WorldModelInvariants } from '../../tools/code-explorer-tool.js';
 import { evaluateScope } from '../scope-awareness.js';
 import type { FleetDispatchProfile } from '../../fleet/dispatch-profile.js';
 import { getActiveRunStore, RunStore } from '../../observability/run-store.js';
@@ -5425,17 +5425,17 @@ export async function runAgenticCodingCell(options: AgenticCodingRunOptions): Pr
   if (checkpointToResume?.codeexplorerEvidence) {
     codeexplorerEvidence = checkpointToResume.codeexplorerEvidence;
   } else if (contract) {
-    observability.stepStart('gitnexus-context', { task: contract.task });
-    const gitnexus = new CodeExplorerTool();
-    codeexplorerEvidence = await gitnexus.ask(contract.task);
-    observability.stepEnd('gitnexus-context', { hasEvidence: Boolean(codeexplorerEvidence) });
+    observability.stepStart('code-explorer-context', { task: contract.task });
+    const codeExplorer = new CodeExplorerTool();
+    codeexplorerEvidence = await codeExplorer.ask(contract.task);
+    observability.stepEnd('code-explorer-context', { hasEvidence: Boolean(codeexplorerEvidence) });
   }
   if (checkpointToResume?.worldModelInvariants !== undefined) {
     worldModelInvariants = checkpointToResume.worldModelInvariants;
   } else if (contract) {
     observability.stepStart('world-model-read', { repo: contract.repo });
-    const gitnexus = new CodeExplorerTool();
-    worldModelInvariants = await gitnexus.readWorldModel();
+    const codeExplorer = new CodeExplorerTool();
+    worldModelInvariants = await codeExplorer.readWorldModel();
     observability.stepEnd('world-model-read', { hasInvariants: Boolean(worldModelInvariants) });
   }
   let dirtyFiles: AgenticCodingDirtyFile[] = [];

@@ -6,10 +6,10 @@
 
 import type { ToolResult } from '../../types/index.js';
 import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
-import { CodeExplorerTool } from '../gitnexus-tool.js';
+import { CodeExplorerTool } from '../code-explorer-tool.js';
 
 export class CodeExplorerAskTool implements ITool {
-  readonly name = 'gitnexus_ask';
+  readonly name = 'code_explorer_ask';
   readonly description =
     'Consult CodeExplorer for a query or code understanding request. Returns related files, dependent symbols, tests to watch, and technical recommendations. This is a read-only tool.';
 
@@ -23,8 +23,8 @@ export class CodeExplorerAskTool implements ITool {
     }
 
     try {
-      const gitNexus = new CodeExplorerTool();
-      const result = await gitNexus.ask(query);
+      const codeExplorer = new CodeExplorerTool();
+      const result = await codeExplorer.ask(query);
       return {
         success: true,
         output: JSON.stringify(result, null, 2),
@@ -70,7 +70,7 @@ export class CodeExplorerAskTool implements ITool {
       name: this.name,
       description: this.description,
       category: 'utility' as ToolCategoryType,
-      keywords: ['gitnexus', 'ask', 'query', 'understand', 'explain', 'search', 'related files', 'dependents', 'tests'],
+      keywords: ['code-explorer', 'ask', 'query', 'understand', 'explain', 'search', 'related files', 'dependents', 'tests'],
       priority: 6,
       modifiesFiles: false,
       makesNetworkRequests: true,

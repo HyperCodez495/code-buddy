@@ -1265,9 +1265,9 @@ export const TOOL_METADATA: ToolMetadata[] = [
     description: 'Spawn an isolated sandboxed sub-agent session for a delegated task (depth-3 + 10/workflow caps)',
   },
   {
-    name: 'gitnexus_ask',
+    name: 'code_explorer_ask',
     category: 'utility' as ToolCategory,
-    keywords: ['gitnexus', 'ask', 'query', 'understand', 'explain', 'search', 'related files', 'dependents', 'tests'],
+    keywords: ['code-explorer', 'ask', 'query', 'understand', 'explain', 'search', 'related files', 'dependents', 'tests'],
     priority: 6,
     description: 'Consult CodeExplorer for a query or code understanding request (read-only)',
     fleetSafe: true,
