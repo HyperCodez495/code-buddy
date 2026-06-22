@@ -7,6 +7,10 @@ les workflows visuels, le build, les réglages et le dépannage.
 
 > Honnêteté : chaque page signale ce qui est **solide** et ce qui est **expérimental**.
 
+> 📘 **Vous cherchez le mode d'emploi ?** Cette doc est orientée **dev/architecture**. Pour un
+> **manuel utilisateur** pas-à-pas (installation, interface, permissions, multi-agent, réglages,
+> raccourcis, dépannage), voir **[`user-manual/`](user-manual/README.md)**.
+
 ## Sommaire
 
 | Page | Contenu |
