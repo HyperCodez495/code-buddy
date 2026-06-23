@@ -110,12 +110,12 @@ An open-source, multi-provider AI coding agent with a terminal UI, an HTTP/WebSo
       <sub><b>Chat + live tools, on demand</b><br/>"Bonjour" answers instantly; <i>"what time is it?"</i> and <i>"tomorrow's weather in Paris?"</i> pull the time and <b><code>web_search</code></b> tools — only when actually asked.</sub>
     </td>
     <td width="33%" align="center" valign="top">
-      <img src="docs/screenshots/telegram-companion-selfcode.jpg" alt="Telegram chat: the agent reads its own source code and explains its recursive self-improvement" width="250"/><br/>
-      <sub><b>Reads its own code</b><br/>Inspects its own source via <code>view_file</code>, then explains its <b>recursive self-improvement</b> — the <code>lessons_*</code> system that learns across sessions.</sub>
+      <img src="docs/screenshots/telegram-companion-selfcode.jpg" alt="Telegram chat: the agent confirms it can read and inspect its own source code via view_file" width="250"/><br/>
+      <sub><b>Reads its own code</b><br/>Confirms it can inspect its own source (or any accessible file) via <code>view_file</code> — then introduces its recursive self-improvement →</sub>
     </td>
     <td width="33%" align="center" valign="top">
-      <img src="docs/screenshots/telegram-companion-memory.jpg" alt="Telegram chat: the agent explains its persistent project and user memory" width="250"/><br/>
-      <sub><b>Persistent memory</b><br/>Project + user memory that survive across sessions (<code>remember</code> / <code>memory_propose</code>) — a real agent, not just a chat buffer.</sub>
+      <img src="docs/screenshots/telegram-companion-recursive.jpg" alt="Telegram chat: the agent explains its recursive self-improvement — Manus-inspired lessons in RULE / PATTERN / CONTEXT categories, stored in .codebuddy/lessons.md" width="250"/><br/>
+      <sub><b>Improves itself across sessions</b><br/>The <code>lessons_*</code> loop (Manus-inspired): after each fix or success it extracts <b>RULE / PATTERN / CONTEXT</b> lessons, persisted to <code>.codebuddy/lessons.md</code> (project + global). <i>Accurate — matches its real source.</i></sub>
     </td>
   </tr>
 </table>
