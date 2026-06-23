@@ -925,6 +925,32 @@ export class TelegramChannel extends BaseChannel {
   }
 
   /**
+   * Answer by VOICE: synthesize `text` locally (Piper → OGG/Opus) and send it as
+   * a Telegram voice note via multipart upload. Used to mirror the user's
+   * modality — when they send a voice note, the bot can reply with one too.
+   * Throws on failure so the caller keeps the text reply as the fallback.
+   */
+  async sendVoiceReply(channelId: string, text: string): Promise<void> {
+    const { localTtsAvailable, synthesizeToOgg } = await import('../../voice/local-tts.js');
+    if (!localTtsAvailable()) throw new Error('local TTS (Piper) unavailable');
+    // Cap spoken length — a short reply is fine, avoid minutes of audio.
+    const spoken = text.length > 800 ? `${text.slice(0, 800)}…` : text;
+    const ogg = await synthesizeToOgg(spoken);
+    const fs = await import('node:fs/promises');
+    try {
+      const bytes = await fs.readFile(ogg);
+      const form = new FormData();
+      form.append('chat_id', channelId);
+      form.append('voice', new Blob([bytes], { type: 'audio/ogg' }), 'voice.ogg');
+      const url = `${TELEGRAM_API_BASE}/bot${this.telegramConfig.token}/sendVoice`;
+      const res = await fetch(url, { method: 'POST', body: form });
+      if (!res.ok) throw new Error(`sendVoice HTTP ${res.status}`);
+    } finally {
+      await fs.unlink(ogg).catch(() => undefined);
+    }
+  }
+
+  /**
    * Get file download URL
    */
   async getFileUrl(fileId: string): Promise<string> {
