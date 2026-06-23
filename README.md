@@ -17,7 +17,7 @@
 <p align="center">
   <a href="https://github.com/phuetz/code-buddy/stargazers"><img src="https://img.shields.io/github/stars/phuetz/code-buddy?style=flat-square&logo=github&color=feca57&label=Star" alt="GitHub stars"/></a>
   <img src="https://img.shields.io/badge/Tests-27K%2B-00d26a?style=flat-square&logo=jest" alt="Tests"/>
-  <img src="https://img.shields.io/badge/v1.3.1-GA-blueviolet?style=flat-square" alt="Version 1.3.1 GA"/>
+  <img src="https://img.shields.io/badge/v1.4.0-GA-blueviolet?style=flat-square" alt="Version 1.4.0 GA"/>
 </p>
 
 <br/>
@@ -126,7 +126,7 @@ More desktop demos (Fleet, Autonomy, Companion, …) and captures: [`cowork/read
 
 ## What's shipped
 
-**1.2.0 GA — these aren't roadmap items.** The captures above are unedited, and the core runs today:
+**1.4.0 GA — these aren't roadmap items.** The captures above are unedited, and the core runs today:
 
 - ✅ **`$0` local coding agent** — a local Ollama model reasons on screen, then calls tools to do real work. *(the demos above)*
 - ✅ **ChatGPT Plus/Pro → `gpt-5.5` at `$0`** — `buddy login`, flat-fee, no API key, no per-token metering.
