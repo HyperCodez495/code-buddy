@@ -113,7 +113,10 @@ const DEFAULT_CONFIG: ToolSelectionConfig = {
   // "agent proposes, human approves" path, so the model must always see it (a
   // RAG-gated propose tool would rarely surface). `lessons_list` stays out
   // (admin-style, not needed per-turn). Wakes the dormant feature in lessons-tracker.ts.
-  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search'],
+  // `tool_search` is ALWAYS exposed so the model can discover & pull ANY tool
+  // on demand when the per-query TF-IDF subset missed it (progressive disclosure,
+  // like Codex/Claude). Without it, a tool outside the top-K is unreachable.
+  alwaysInclude: ['view_file', 'bash', 'search', 'str_replace_editor', 'web_search', 'remember', 'memory_propose', 'lessons_add', 'lessons_propose', 'lessons_search', 'tool_search'],
   useAdaptiveThreshold: true,
   enableCaching: true,
   cacheTTLMs: 5 * 60 * 1000, // 5 minutes

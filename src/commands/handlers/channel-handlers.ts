@@ -457,15 +457,8 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
 
   manager.onMessage(async (message, channel) => {
     try {
-      const apiKey = process.env.GROK_API_KEY || process.env.XAI_API_KEY || '';
-      if (!apiKey) {
-        logger.warn('No API key for channel AI responses');
-        return;
-      }
-
-      const { checkDMPairing, getDMPairing, getRouteAgentConfig } = await import('../../channels/core.js');
-
-      // 1. Check DM pairing first
+      // 1. DM pairing gate — unapproved senders get a code, then we stop.
+      const { checkDMPairing, getDMPairing } = await import('../../channels/core.js');
       const pairingStatus = await checkDMPairing(message);
       if (!pairingStatus.approved) {
         if (pairingStatus.code) {
@@ -480,16 +473,44 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
-      // 2. Resolve route-backed agent config
-      const agentConfig = getRouteAgentConfig(message);
+      // Nothing to answer (e.g. a non-text message with no transcription).
+      if (!message.content || !message.content.trim()) {
+        return;
+      }
 
-      // 3. Instantiate Agent with routed config
+      // 2. Context-adaptive agent reply (« comme Claude »): the agent's own
+      //    query-classifier + buildForQuery scale the system prompt to the
+      //    request (a greeting → minimal ~800B prompt, NOT the 73KB legacy),
+      //    and tools load on demand — RAG selects only the relevant ~15 and the
+      //    `tool_search` meta-tool pulls more when actually needed. Bounded
+      //    rounds keep a simple chat fast while a real task can still act.
+      const { resolveProviderFromEnv } = await import('../../fleet/peer-chat-client-factory.js');
+      const knownProviders = ['ollama', 'chatgpt', 'gemini', 'grok', 'anthropic'];
+      const preferredProvider =
+        process.env.CODEBUDDY_PROVIDER && knownProviders.includes(process.env.CODEBUDDY_PROVIDER)
+          ? process.env.CODEBUDDY_PROVIDER
+          : 'auto';
+      const resolved = resolveProviderFromEnv(preferredProvider as never);
+      if (!resolved) {
+        logger.warn('No LLM provider for channel chat — set CODEBUDDY_PROVIDER + a provider key/env');
+        return;
+      }
+
+      const { getRouteAgentConfig } = await import('../../channels/core.js');
       const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
-      const model = agentConfig.model || process.env.GROK_MODEL || 'grok-3-latest';
-      const maxRounds = agentConfig.maxToolRounds;
-      const agent = new CodeBuddyAgent(apiKey, process.env.GROK_BASE_URL, model, maxRounds);
+      const agentConfig = getRouteAgentConfig(message);
+      const model = agentConfig.model || resolved.model;
+      const agent = new CodeBuddyAgent(
+        resolved.apiKey || 'local',
+        resolved.baseUrl,
+        model,
+        agentConfig.maxToolRounds ?? 6, // bounded (vs the 50-round default)
+        true, // useRAGToolSelection — relevant tools on demand, not all ~194
+        process.env.CODEBUDDY_CHANNEL_PROMPT_ID || 'auto', // minimal/adaptive prompt, not the 73KB legacy
+        process.cwd(),
+      );
 
-      // 4. Resume/Initialize session history
+      // Multi-turn: restore prior session history into the agent.
       const sessionKey = message.sessionKey || 'default-global';
       const sessionStore = agent.getSessionStore();
       let session = await sessionStore.loadSession(sessionKey);
@@ -505,22 +526,18 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         };
         await sessionStore.saveSession(session);
       }
-
       await sessionStore.resumeSession(sessionKey);
-
-      const activeSession = session!;
-      if (activeSession.messages && activeSession.messages.length > 0) {
-        const chatHistory = sessionStore.convertMessagesToChatEntries(activeSession.messages);
-        const messages = activeSession.messages.map(m => ({
-          role: m.type === 'user' ? 'user' as const : 'assistant' as const,
-          content: m.content
+      if (session.messages && session.messages.length > 0) {
+        const chatHistory = sessionStore.convertMessagesToChatEntries(session.messages);
+        const priorMessages = session.messages.map((m) => ({
+          role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
+          content: m.content,
         }));
         const historyRestorer = agent as unknown as AgentHistoryRestorer;
         historyRestorer.historyManager.setChatHistory(chatHistory);
-        historyRestorer.historyManager.setMessages(messages);
+        historyRestorer.historyManager.setMessages(priorMessages);
       }
 
-      // 5. Run agent turn
       const entries = await agent.processUserMessage(message.content);
       const lastEntry = entries[entries.length - 1];
       const response = lastEntry ? String(lastEntry.content) : '';
