@@ -101,6 +101,25 @@ An open-source, multi-provider AI coding agent with a terminal UI, an HTTP/WebSo
   <img src="docs/screenshots/self-audit-bug-1.png" alt="Self-audit bug found" width="820"/>
 </p>
 
+**On your phone — chat with the same agent over Telegram.** Code Buddy runs as a messaging-channel bot, so the agent you use in the terminal is reachable from your pocket. Real, unedited captures (the bot is named *"Lisa"* here). The system prompt and tools **scale to each question** — light and instant for plain chat, escalating to load tools only when the request needs them (the same on-demand pattern as Codex / Claude):
+
+<table>
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-chat.jpg" alt="Telegram chat: instant greeting, the time, and tomorrow's live weather in Paris via web search" width="250"/><br/>
+      <sub><b>Chat + live tools, on demand</b><br/>"Bonjour" answers instantly; <i>"what time is it?"</i> and <i>"tomorrow's weather in Paris?"</i> pull the time and <b><code>web_search</code></b> tools — only when actually asked.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-selfcode.jpg" alt="Telegram chat: the agent reads its own source code and explains its recursive self-improvement" width="250"/><br/>
+      <sub><b>Reads its own code</b><br/>Inspects its own source via <code>view_file</code>, then explains its <b>recursive self-improvement</b> — the <code>lessons_*</code> system that learns across sessions.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-memory.jpg" alt="Telegram chat: the agent explains its persistent project and user memory" width="250"/><br/>
+      <sub><b>Persistent memory</b><br/>Project + user memory that survive across sessions (<code>remember</code> / <code>memory_propose</code>) — a real agent, not just a chat buffer.</sub>
+    </td>
+  </tr>
+</table>
+
 More desktop demos (Fleet, Autonomy, Companion, …) and captures: [`cowork/readme.md`](cowork/readme.md#demo) · [`docs/screenshots/`](docs/screenshots/README.md).
 
 ---
