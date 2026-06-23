@@ -552,7 +552,10 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
   switch (config.type) {
     case 'telegram': {
       const { TelegramChannel } = await import('../../channels/telegram/index.js');
-      return new TelegramChannel({ botToken: config.token || '', ...opts } as unknown as import('../../channels/index.js').TelegramConfig);
+      // TelegramChannel reads `config.token` (client.ts) — pass `token`, not
+      // `botToken`, or it throws "Telegram bot token is required" and the
+      // channel never starts from channels.json / server intake.
+      return new TelegramChannel({ token: config.token || '', ...opts } as unknown as import('../../channels/index.js').TelegramConfig);
     }
     case 'discord': {
       const { DiscordChannel } = await import('../../channels/discord/index.js');
