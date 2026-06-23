@@ -101,6 +101,25 @@ An open-source, multi-provider AI coding agent with a terminal UI, an HTTP/WebSo
   <img src="docs/screenshots/self-audit-bug-1.png" alt="Self-audit bug found" width="820"/>
 </p>
 
+**On your phone — chat with the same agent over Telegram.** Code Buddy runs as a messaging-channel bot, so the agent you use in the terminal is reachable from your pocket. Real, unedited captures (the bot is named *"Lisa"* here). The system prompt and tools **scale to each question** — light and instant for plain chat, escalating to load tools only when the request needs them (the same on-demand pattern as Codex / Claude):
+
+<table>
+  <tr>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-chat.jpg" alt="Telegram chat: instant greeting, the time, and tomorrow's live weather in Paris via web search" width="250"/><br/>
+      <sub><b>Chat + live tools, on demand</b><br/>"Bonjour" answers instantly; <i>"what time is it?"</i> and <i>"tomorrow's weather in Paris?"</i> pull the time and <b><code>web_search</code></b> tools — only when actually asked.</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-selfcode.jpg" alt="Telegram chat: the agent confirms it can read and inspect its own source code via view_file" width="250"/><br/>
+      <sub><b>Reads its own code</b><br/>Confirms it can inspect its own source (or any accessible file) via <code>view_file</code> — then introduces its recursive self-improvement →</sub>
+    </td>
+    <td width="33%" align="center" valign="top">
+      <img src="docs/screenshots/telegram-companion-recursive.jpg" alt="Telegram chat: the agent explains its recursive self-improvement — Manus-inspired lessons in RULE / PATTERN / CONTEXT categories, stored in .codebuddy/lessons.md" width="250"/><br/>
+      <sub><b>Improves itself across sessions</b><br/>The <code>lessons_*</code> loop (Manus-inspired): after each fix or success it extracts <b>RULE / PATTERN / CONTEXT</b> lessons, persisted to <code>.codebuddy/lessons.md</code> (project + global). <i>Accurate — matches its real source.</i></sub>
+    </td>
+  </tr>
+</table>
+
 More desktop demos (Fleet, Autonomy, Companion, …) and captures: [`cowork/readme.md`](cowork/readme.md#demo) · [`docs/screenshots/`](docs/screenshots/README.md).
 
 ---

@@ -313,8 +313,26 @@ export class TextToSpeechManager extends EventEmitter {
     return new Promise((resolve, reject) => {
       const audioFile = path.join(this.tempDir, `tts_${Date.now()}.wav`);
 
+      // Resolve the Piper binary + voice model. Defaults to `piper` on PATH
+      // (no model), but honors the local-voice-stack convention shared with
+      // Cowork so a self-hosted Piper (e.g. ai-stack fr_FR-siwis-medium) works
+      // out of the box: COWORK_PIPER_BIN / COWORK_PIPER_VOICE (or the
+      // CODEBUDDY_* aliases, or a `.onnx` path set as the configured voice).
+      const piperBin =
+        process.env.COWORK_PIPER_BIN || process.env.CODEBUDDY_PIPER_BIN || 'piper';
+      const voiceModel =
+        process.env.COWORK_PIPER_VOICE ||
+        process.env.CODEBUDDY_PIPER_VOICE ||
+        (this.config.voice && this.config.voice.endsWith('.onnx')
+          ? this.config.voice
+          : undefined);
+      const piperArgs = ['--output_file', audioFile];
+      if (voiceModel) {
+        piperArgs.push('--model', voiceModel);
+      }
+
       // Piper reads from stdin and outputs to file
-      const piper = spawn('piper', ['--output_file', audioFile]);
+      const piper = spawn(piperBin, piperArgs);
 
       piper.stdin?.write(text);
       piper.stdin?.end();

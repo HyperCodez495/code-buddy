@@ -531,6 +531,23 @@ export async function getAllCodeBuddyTools(): Promise<CodeBuddyTool[]> {
     );
   }
 
+  // Populate the `tool_search` BM25 index so the model can DISCOVER any tool on
+  // demand (progressive disclosure, like Codex/Claude). It was never
+  // initialized, leaving tool_search blind ("No tools found"). Index the full
+  // set (built-in + MCP + plugin) so a tool outside the per-query TF-IDF subset
+  // is still reachable when the model calls tool_search.
+  try {
+    const { initToolSearchIndex } = await import('../tools/tool-search.js');
+    initToolSearchIndex(
+      allTools.map((t) => ({
+        name: t.function.name,
+        description: t.function.description ?? '',
+      })),
+    );
+  } catch {
+    // tool-search is optional — never block tool assembly.
+  }
+
   return allTools;
 }
 
