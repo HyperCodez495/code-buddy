@@ -2806,6 +2806,37 @@ program
     );
   });
 
+// Council — capability-aware multi-LLM router + ensemble (judge + consensus) + learning.
+program
+  .command("council [task...]")
+  .description("Ask several capable LLMs the same task, judge + reconcile the answers, and learn which model is best per task type")
+  .option("-n, --count <n>", "How many models to consult (default 3)")
+  .option("--models <list>", "Restrict to these providers/models (comma list)")
+  .option("--judge <model>", "Provider/model to use as the impartial judge")
+  .option("--task-type <tag>", "Override inferred task type (code|reasoning|french|vision|general)")
+  .option("--no-consensus", "Skip the consensus/agreement summary")
+  .option("--scoreboard", "Print the learned model ranking and exit")
+  .action(
+    async (
+      taskParts: string[] = [],
+      options: { count?: string; models?: string; judge?: string; taskType?: string; consensus?: boolean; scoreboard?: boolean },
+    ) => {
+      const { runCouncil } = await import("./commands/council.js");
+      await runCouncil(
+        (taskParts || []).join(" ").trim(),
+        {
+          count: options.count ? Number(options.count) : undefined,
+          models: options.models,
+          judge: options.judge,
+          taskType: options.taskType,
+          consensus: options.consensus,
+          scoreboard: options.scoreboard,
+        },
+        cli.stdout,
+      );
+    },
+  );
+
 // MCP Server command - run Code Buddy as an MCP tool provider over stdio
 program
   .command("mcp-server")
