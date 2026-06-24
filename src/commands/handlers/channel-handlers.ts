@@ -563,7 +563,8 @@ async function getOrCreateChannelAgent(
   // agent to uv (installed) for ephemeral envs, and to save images to an absolute
   // path it names — the handler then delivers that file to the chat as a photo.
   const pythonHint =
-    'For Python tasks needing packages (plotting, data, etc.): do NOT use `pip`/`pip3 install` (the system Python is locked, PEP 668). Use `uv` instead — e.g. `uv run --with matplotlib --with pandas --with numpy python script.py`. When you produce a chart or image, SAVE it to an absolute path like `/tmp/<name>.png` and state that exact path in your reply — it will be sent to the user automatically.';
+    'ACTING vs SHOWING: when the user asks you to draw, plot, generate, create, compute or build something, you MUST actually DO it by running tools/code now — do NOT just print the code or instructions and stop. Execute it and deliver the real artifact. ' +
+    'For Python work needing packages (plotting, data, etc.): do NOT use `pip`/`pip3 install` (system Python is PEP 668-locked). Use `uv` — e.g. write the script to a file then run `uv run --with matplotlib --with pandas --with numpy python /tmp/plot.py` (matplotlib must use the Agg backend). When you produce a chart/image, SAVE it to an absolute path like `/tmp/<name>.png` and state that exact path in your reply — it is then sent to the user automatically as a photo.';
   const channelSystemPromptAppend =
     [persona?.systemPrompt, codeExplorerHint, pythonHint].filter(Boolean).join('\n\n') || undefined;
   const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
