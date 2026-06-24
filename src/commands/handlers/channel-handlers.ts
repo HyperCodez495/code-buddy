@@ -627,10 +627,17 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
+      // Diagnostic: what actually arrives at the handler (content preview).
+      logger.info('[channel] inbound', {
+        preview: message.content.slice(0, 48),
+        isCommand: (message as { isCommand?: boolean }).isCommand === true,
+      });
+
       // /council <task> — convene the multi-LLM council (ask several capable
       // LLMs, an impartial judge keeps the best, and it learns which model is
       // best per task type over time). `/council` alone shows the scoreboard.
-      const councilCmd = message.content.trim().match(/^\/council\b\s*([\s\S]*)$/i);
+      // Trigger is forgiving: optional leading slash + FR alias `conseil`.
+      const councilCmd = message.content.trim().match(/^\/?(?:council|conseil)\b\s*([\s\S]*)$/i);
       if (councilCmd) {
         const task = (councilCmd[1] || '').trim();
         await channel.send({
