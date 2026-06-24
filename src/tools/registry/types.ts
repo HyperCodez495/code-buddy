@@ -208,6 +208,9 @@ export interface IToolExecutionContext {
   dryRun?: boolean;
   /** Abort signal for cancellation */
   abortSignal?: AbortSignal;
+  /** Multi-bot channels (e.g. Telegram): the bot that triggered this call, used
+   *  to scope per-bot persistent memory / lessons. Undefined = global (default). */
+  botId?: string;
   /** Custom context data */
   extra?: Record<string, unknown>;
 }

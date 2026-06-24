@@ -260,6 +260,7 @@ export class ToolHandler {
    * process directory. `undefined` falls back to `process.cwd()` (CLI default).
    */
   private currentWorkingDirectory: string | undefined;
+  private currentBotId: string | undefined;
 
   constructor(private deps: ToolHandlerDependencies) {
     this.registry = getFormalToolRegistry();
@@ -304,6 +305,14 @@ export class ToolHandler {
    */
   setWorkingDirectory(dir: string | undefined): void {
     this.currentWorkingDirectory = dir;
+  }
+
+  /**
+   * Multi-bot channels: tag tool-execution contexts with the bot id so per-bot
+   * state (persistent memory, lessons) is scoped to that bot. Undefined = global.
+   */
+  setBotId(botId: string | undefined): void {
+    this.currentBotId = botId;
   }
 
   /**
@@ -928,6 +937,7 @@ export class ToolHandler {
     const metadata = registeredTool.metadata;
     const context: IToolExecutionContext = {
       cwd: this.currentWorkingDirectory ?? process.cwd(),
+      botId: this.currentBotId,
     };
 
     // Handle bash tool with hooks and auto-repair

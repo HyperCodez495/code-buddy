@@ -10,7 +10,7 @@
  */
 
 import type { ToolResult } from '../../types/index.js';
-import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType } from './types.js';
+import type { ITool, ToolSchema, IToolMetadata, IValidationResult, ToolCategoryType, IToolExecutionContext } from './types.js';
 import { getMemoryManager, type MemoryCategory } from '../../memory/persistent-memory.js';
 import { getMemoryCandidateQueue } from '../../memory/memory-candidate-queue.js';
 import { executeHermesLifecycleHook } from '../../hooks/hermes-lifecycle-hooks.js';
@@ -24,8 +24,12 @@ export class RememberTool implements ITool {
   readonly description =
     'Store important information, decisions, or preferences in persistent memory. This survives across sessions and is project-scoped by default.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const mm = getMemoryManager();
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    // Per-bot memory (multi-bot channels): scope by botId so bots don't share
+    // each other's facts. No botId = global memory (default). initialize() is
+    // idempotent, so this is cheap for the already-initialized global instance.
+    const mm = getMemoryManager(undefined, context?.botId);
+    await mm.initialize();
 
     let key = input.key as string;
     let value = input.value as string;
@@ -145,8 +149,12 @@ export class ReplaceMemoryTool implements ITool {
   readonly description =
     'Replace an existing persistent memory entry. Use when a stored fact is obsolete or too verbose and must be rewritten under the memory char budget.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const mm = getMemoryManager();
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    // Per-bot memory (multi-bot channels): scope by botId so bots don't share
+    // each other's facts. No botId = global memory (default). initialize() is
+    // idempotent, so this is cheap for the already-initialized global instance.
+    const mm = getMemoryManager(undefined, context?.botId);
+    await mm.initialize();
 
     let key = input.key as string;
     let value = input.value as string;
@@ -383,8 +391,12 @@ export class RecallTool implements ITool {
   readonly description =
     'Explicitly retrieve a specific memory entry by its key. Use this if the information is not currently in your system prompt.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const mm = getMemoryManager();
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    // Per-bot memory (multi-bot channels): scope by botId so bots don't share
+    // each other's facts. No botId = global memory (default). initialize() is
+    // idempotent, so this is cheap for the already-initialized global instance.
+    const mm = getMemoryManager(undefined, context?.botId);
+    await mm.initialize();
     const key = input.key as string;
     const scope = input.scope as 'project' | 'user' | undefined;
 
@@ -465,8 +477,12 @@ export class ForgetTool implements ITool {
   readonly description =
     'Remove a memory entry that is no longer valid or useful.';
 
-  async execute(input: Record<string, unknown>): Promise<ToolResult> {
-    const mm = getMemoryManager();
+  async execute(input: Record<string, unknown>, context?: IToolExecutionContext): Promise<ToolResult> {
+    // Per-bot memory (multi-bot channels): scope by botId so bots don't share
+    // each other's facts. No botId = global memory (default). initialize() is
+    // idempotent, so this is cheap for the already-initialized global instance.
+    const mm = getMemoryManager(undefined, context?.botId);
+    await mm.initialize();
     const key = input.key as string;
     const scope = (input.scope as 'project' | 'user') ?? 'project';
 

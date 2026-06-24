@@ -584,6 +584,15 @@ Look at the screenshot and find the element matching the user's intent. Output o
     this.toolHandler.setRunId(runId);
   }
 
+  /**
+   * Multi-bot channels: scope this agent's per-bot state (persistent memory,
+   * lessons) to a bot id. Tool-execution contexts get tagged with it so
+   * `remember`/`lessons` write under `~/.codebuddy/bots/<botId>/`.
+   */
+  public setChannelBotId(botId: string | undefined): void {
+    this.toolHandler.setBotId(botId);
+  }
+
   private async initializeAgentSystemPrompt(
     systemPromptId: string | undefined,
     modelName: string,

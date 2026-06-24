@@ -564,6 +564,8 @@ async function getOrCreateChannelAgent(
     process.cwd(),
     persona?.systemPrompt, // systemPromptAppend — the bot's persona, appended to the base prompt
   );
+  // Scope per-bot state (memory/lessons) to this bot so bots don't share facts.
+  agent.setChannelBotId(botId);
   // Persistence: reload prior conversation from disk on a cold agent (after a
   // daemon restart or cache eviction), so continuity survives the in-memory cache.
   await restoreChannelSession(agent, sessionKey);

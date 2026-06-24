@@ -1032,18 +1032,42 @@ export class PersistentMemoryManager extends EventEmitter {
   }
 }
 
-// Singleton instance
+// Default singleton instance (no bot scope) + per-bot instances.
 let memoryManagerInstance: PersistentMemoryManager | null = null;
+const memoryManagerByBot = new Map<string, PersistentMemoryManager>();
 
-export function getMemoryManager(config?: Partial<MemoryConfig>): PersistentMemoryManager {
-  if (!memoryManagerInstance) {
-    memoryManagerInstance = new PersistentMemoryManager(config);
+/**
+ * Get the memory manager. With no `botId`, returns the global singleton (default
+ * — CLI / desktop / server behavior unchanged). With a `botId` (multi-bot
+ * channels), returns a per-bot instance whose memory files live under
+ * `~/.codebuddy/bots/<botId>/`, so bots never share each other's `remember` facts.
+ */
+export function getMemoryManager(
+  config?: Partial<MemoryConfig>,
+  botId?: string,
+): PersistentMemoryManager {
+  if (!botId) {
+    if (!memoryManagerInstance) {
+      memoryManagerInstance = new PersistentMemoryManager(config);
+    }
+    return memoryManagerInstance;
   }
-  return memoryManagerInstance;
+  let inst = memoryManagerByBot.get(botId);
+  if (!inst) {
+    const botDir = path.join(os.homedir(), '.codebuddy', 'bots', botId);
+    inst = new PersistentMemoryManager({
+      ...(config ?? {}),
+      userMemoryPath: path.join(botDir, 'memory.md'),
+      projectMemoryPath: path.join(botDir, 'CODEBUDDY_MEMORY.md'),
+    });
+    memoryManagerByBot.set(botId, inst);
+  }
+  return inst;
 }
 
 export function resetMemoryManagerForTests(): void {
   memoryManagerInstance = null;
+  memoryManagerByBot.clear();
 }
 
 export async function initializeMemory(config?: Partial<MemoryConfig>): Promise<PersistentMemoryManager> {
