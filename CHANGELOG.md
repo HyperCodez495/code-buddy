@@ -8,6 +8,25 @@ once it reaches `1.0.0`.
 
 ---
 
+## [1.6.0] — 2026-06-24
+
+### Added
+- **Two-way voice over Telegram** — inbound voice notes transcribed locally (faster-whisper); replies optionally synthesized back as voice notes (Piper → ffmpeg OGG/Opus). Fully local, `$0`; degrades to text when engines are absent.
+- **Image / artifact delivery** — the channel agent can generate charts/files and send them to the chat as photos (`TelegramClient.sendImageFile`, multipart `sendPhoto`); the handler detects image paths in replies and delivers them.
+- **Remote tool-approval over messaging channels** — tools needing confirmation now ask `/approve <id>` / `/deny <id>` over Telegram (wires the previously-dormant `RemoteApprovalService` into `ConfirmationService`), so a non-interactive daemon asks the user instead of failing closed.
+- **Per-bot personas + isolated memory** — run multiple bots from one process, each with its own system prompt/model and its own conversation history + `remember` memory (`~/.codebuddy/bots/<botId>/`).
+- **Conversation persistence** — channel conversations restore from disk on a cold agent and save after each turn (survive daemon restarts), via a per-chat cached agent.
+- Channel providers may now be `chatgpt-oauth` and `gemini-cli` (flat-fee subscription brains); opt-in Code Explorer nudge + `code-explorer` safe-listing.
+
+### Changed
+- MCP deferred-schema threshold is configurable via `CODEBUDDY_MCP_DEFER_THRESHOLD` (deferred param-less stubs were skipped by some models).
+
+### Fixed
+- **MCP init no longer hangs on one unresponsive server** — `ensureServersInitialized` wraps each server in a per-server timeout (`CODEBUDDY_MCP_INIT_TIMEOUT_MS`, default 15s); previously a single hung server blocked *all* MCP tools from loading.
+- Telegram channel starts from `channels.json` / server intake (correct `token` field); the channel agent is provider-agnostic + context-adaptive (minimal prompt + RAG tools) instead of the legacy ~73KB prompt.
+
+---
+
 ## [1.2.0] — 2026-06-18
 
 Post-1.0 work tracked in the V1.1 roadmap: OpenAPI spec (WS8-T2),
