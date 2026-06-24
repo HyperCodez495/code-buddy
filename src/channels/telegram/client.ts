@@ -69,6 +69,21 @@ export class TelegramChannel extends BaseChannel {
     return `${TELEGRAM_API_BASE}/bot${this.telegramConfig.token}`;
   }
 
+  /**
+   * Stable per-bot id, derived synchronously from the token (the part before
+   * the colon in `<botId>:<secret>` IS the bot's numeric id — no need to wait
+   * for getMe). Used to isolate sessions per bot when several bots share one
+   * process, and to look up per-bot persona config.
+   */
+  get botId(): string {
+    return (this.telegramConfig.token || '').split(':')[0] || 'unknown';
+  }
+
+  /** Prefix a session key with this bot's id so two bots never share a chat session. */
+  private scopeSessionKey(base: string | undefined): string {
+    return `${this.botId}:${base ?? 'global'}`;
+  }
+
   /** Lazy getter for ProFeatures bundle with TelegramProFormatter */
   get pro(): ProFeatures {
     if (!this._pro) {
@@ -482,7 +497,7 @@ export class TelegramChannel extends BaseChannel {
     const parsed = this.parseCommand(message);
 
     // Attach session key for session isolation
-    parsed.sessionKey = getSessionKey(parsed);
+    parsed.sessionKey = this.scopeSessionKey(getSessionKey(parsed));
 
     // DM pairing check: gate unapproved DM senders
     const pairingStatus = await checkDMPairing(parsed);
@@ -560,7 +575,7 @@ export class TelegramChannel extends BaseChannel {
       };
 
       // Attach session key for session isolation
-      message.sessionKey = getSessionKey(message);
+      message.sessionKey = this.scopeSessionKey(getSessionKey(message));
 
       this.emit('command', message);
     }
@@ -699,6 +714,7 @@ export class TelegramChannel extends BaseChannel {
     return {
       id: String(chat.id),
       type: 'telegram',
+      botId: this.botId, // which bot received this — for per-bot routing/persona
       name: chat.title || chat.username || chat.first_name,
       isDM: chat.type === 'private',
       isGroup: chat.type === 'group' || chat.type === 'supergroup',

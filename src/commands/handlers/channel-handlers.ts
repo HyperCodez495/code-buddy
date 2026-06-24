@@ -465,10 +465,80 @@ const channelAgentCache = new Map<string, CachedChannelAgent>();
 const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
 const CHANNEL_AGENT_MAX = 50;
 
+/**
+ * Per-bot persona for multi-bot channels: each bot (keyed by its id) can run its
+ * own model + appended system prompt. Registered at instantiateChannel time from
+ * the channels.json `options`.
+ */
+interface ChannelBotPersona {
+  name?: string;
+  systemPrompt?: string;
+  model?: string;
+}
+const channelBotPersonas = new Map<string, ChannelBotPersona>();
+export function registerChannelBotPersona(botId: string, persona: ChannelBotPersona): void {
+  if (botId) channelBotPersonas.set(botId, persona);
+}
+
+/** Reload a chat's prior history from the disk session store into a cold agent. */
+async function restoreChannelSession(
+  agent: import('../../agent/codebuddy-agent.js').CodeBuddyAgent,
+  sessionKey: string,
+): Promise<void> {
+  try {
+    const store = agent.getSessionStore();
+    const session = await store.loadSession(sessionKey);
+    if (!session?.messages?.length) return;
+    const restorer = agent as unknown as AgentHistoryRestorer;
+    restorer.historyManager.setChatHistory(store.convertMessagesToChatEntries(session.messages));
+    restorer.historyManager.setMessages(
+      session.messages
+        .filter((m) => m.type === 'user' || m.type === 'assistant')
+        .map((m) => ({
+          role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
+          content: m.content,
+        })),
+    );
+  } catch (err) {
+    logger.warn(`channel session restore failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Persist the agent's current conversation to disk so it survives restarts/eviction. */
+async function persistChannelSession(
+  agent: import('../../agent/codebuddy-agent.js').CodeBuddyAgent,
+  sessionKey: string,
+): Promise<void> {
+  try {
+    const store = agent.getSessionStore();
+    const messages = agent
+      .getChatHistory()
+      .filter((e) => e.type === 'user' || e.type === 'assistant' || e.type === 'tool_result')
+      .map((e) => ({
+        type: e.type as 'user' | 'assistant' | 'tool_result',
+        content: String(e.content ?? ''),
+        timestamp: (e.timestamp instanceof Date ? e.timestamp : new Date()).toISOString(),
+      }));
+    const existing = await store.loadSession(sessionKey);
+    await store.saveSession({
+      id: sessionKey,
+      name: existing?.name || `Channel ${sessionKey}`,
+      model: existing?.model || 'channel',
+      createdAt: existing?.createdAt || new Date(),
+      lastAccessedAt: new Date(),
+      messages,
+      workingDirectory: existing?.workingDirectory || process.cwd(),
+    });
+  } catch (err) {
+    logger.warn(`channel session persist failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
 async function getOrCreateChannelAgent(
   sessionKey: string,
   resolved: { apiKey: string; baseUrl: string; model: string },
   agentConfig: { model?: string; maxToolRounds?: number },
+  botId?: string,
 ): Promise<import('../../agent/codebuddy-agent.js').CodeBuddyAgent> {
   const now = Date.now();
   // Evict idle agents first.
@@ -480,8 +550,10 @@ async function getOrCreateChannelAgent(
     hit.lastUsed = now;
     return hit.agent;
   }
+  // Per-bot persona (multi-bot): a bot may define its own model + system prompt.
+  const persona = botId ? channelBotPersonas.get(botId) : undefined;
   const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
-  const model = agentConfig.model || resolved.model;
+  const model = persona?.model || agentConfig.model || resolved.model;
   const agent = new CodeBuddyAgent(
     resolved.apiKey || 'local',
     resolved.baseUrl,
@@ -490,7 +562,11 @@ async function getOrCreateChannelAgent(
     true, // useRAGToolSelection — relevant tools on demand, not all ~194
     process.env.CODEBUDDY_CHANNEL_PROMPT_ID || 'auto', // minimal/adaptive prompt, not the 73KB legacy
     process.cwd(),
+    persona?.systemPrompt, // systemPromptAppend — the bot's persona, appended to the base prompt
   );
+  // Persistence: reload prior conversation from disk on a cold agent (after a
+  // daemon restart or cache eviction), so continuity survives the in-memory cache.
+  await restoreChannelSession(agent, sessionKey);
   // Bound cache size: drop the least-recently-used agent.
   if (channelAgentCache.size >= CHANNEL_AGENT_MAX) {
     let lruKey: string | undefined;
@@ -557,10 +633,11 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       const sessionKey = message.sessionKey || 'default-global';
 
       // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
-      // persists in-memory across messages. A fresh agent per message forgot the
-      // previous turn (its in-memory history was never saved back), which broke
-      // conversation continuity ("aide-moi" → "salut, que puis-je faire ?").
-      const agent = await getOrCreateChannelAgent(sessionKey, resolved, agentConfig);
+      // persists in-memory across messages; restored from disk on a cold start.
+      // botId selects the per-bot persona and is already baked into sessionKey,
+      // so different bots keep separate agents + histories.
+      const botId = message.channel?.botId;
+      const agent = await getOrCreateChannelAgent(sessionKey, resolved, agentConfig, botId);
 
       const entries = await agent.processUserMessage(message.content);
       const lastEntry = entries[entries.length - 1];
@@ -589,6 +666,9 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           );
         }
       }
+
+      // 8. Persist the conversation so it survives a daemon restart / cache eviction.
+      await persistChannelSession(agent, sessionKey);
     } catch (err) {
       logger.error('Channel AI response failed', { error: err instanceof Error ? err.message : String(err) });
     }
@@ -610,6 +690,18 @@ export async function instantiateChannel(config: ChannelConfigEntry): Promise<im
   switch (config.type) {
     case 'telegram': {
       const { TelegramChannel } = await import('../../channels/telegram/index.js');
+      // Multi-bot persona: the token prefix is the bot id. Register this bot's
+      // model + appended system prompt (from channels.json `options`) so the
+      // agent built for its messages takes on that persona.
+      const tgBotId = (config.token || '').split(':')[0];
+      const tgOpts = opts as { name?: string; systemPrompt?: string; model?: string };
+      if (tgBotId) {
+        registerChannelBotPersona(tgBotId, {
+          name: tgOpts.name,
+          systemPrompt: tgOpts.systemPrompt,
+          model: tgOpts.model,
+        });
+      }
       // TelegramChannel reads `config.token` (client.ts) — pass `token`, not
       // `botToken`, or it throws "Telegram bot token is required" and the
       // channel never starts from channels.json / server intake.

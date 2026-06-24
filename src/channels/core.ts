@@ -100,6 +100,9 @@ export interface ChannelInfo {
   id: string;
   /** Channel type */
   type: ChannelType;
+  /** For multi-bot channels (e.g. Telegram), the id of the bot that received
+   *  this message — used to isolate sessions and select a per-bot persona. */
+  botId?: string;
   /** Channel name */
   name?: string;
   /** Is this a direct message */
