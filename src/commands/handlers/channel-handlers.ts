@@ -660,7 +660,7 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       //    `tool_search` meta-tool pulls more when actually needed. Bounded
       //    rounds keep a simple chat fast while a real task can still act.
       const { resolveProviderFromEnv } = await import('../../fleet/peer-chat-client-factory.js');
-      const knownProviders = ['ollama', 'chatgpt', 'gemini', 'grok', 'anthropic'];
+      const knownProviders = ['ollama', 'chatgpt', 'chatgpt-oauth', 'gemini', 'gemini-cli', 'grok', 'anthropic'];
       const preferredProvider =
         process.env.CODEBUDDY_PROVIDER && knownProviders.includes(process.env.CODEBUDDY_PROVIDER)
           ? process.env.CODEBUDDY_PROVIDER
