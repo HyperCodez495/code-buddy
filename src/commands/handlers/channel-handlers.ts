@@ -451,6 +451,62 @@ export function __resetChannelAIHandlerForTests(): void {
  * single source of truth for inbound handling, shared by the CLI (`buddy
  * channels start`) and the embedded server intake.
  */
+/**
+ * One agent per chat session (keyed by sessionKey), reused across messages so
+ * the in-memory conversation history carries over — this is what makes a
+ * channel conversation feel continuous. Bounded by idle-TTL + max size so a
+ * long-lived daemon doesn't leak agents.
+ */
+interface CachedChannelAgent {
+  agent: import('../../agent/codebuddy-agent.js').CodeBuddyAgent;
+  lastUsed: number;
+}
+const channelAgentCache = new Map<string, CachedChannelAgent>();
+const CHANNEL_AGENT_IDLE_MS = 2 * 60 * 60 * 1000; // evict after 2h idle
+const CHANNEL_AGENT_MAX = 50;
+
+async function getOrCreateChannelAgent(
+  sessionKey: string,
+  resolved: { apiKey: string; baseUrl: string; model: string },
+  agentConfig: { model?: string; maxToolRounds?: number },
+): Promise<import('../../agent/codebuddy-agent.js').CodeBuddyAgent> {
+  const now = Date.now();
+  // Evict idle agents first.
+  for (const [key, cached] of channelAgentCache) {
+    if (now - cached.lastUsed > CHANNEL_AGENT_IDLE_MS) channelAgentCache.delete(key);
+  }
+  const hit = channelAgentCache.get(sessionKey);
+  if (hit) {
+    hit.lastUsed = now;
+    return hit.agent;
+  }
+  const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
+  const model = agentConfig.model || resolved.model;
+  const agent = new CodeBuddyAgent(
+    resolved.apiKey || 'local',
+    resolved.baseUrl,
+    model,
+    agentConfig.maxToolRounds ?? 6, // bounded (vs the 50-round default)
+    true, // useRAGToolSelection — relevant tools on demand, not all ~194
+    process.env.CODEBUDDY_CHANNEL_PROMPT_ID || 'auto', // minimal/adaptive prompt, not the 73KB legacy
+    process.cwd(),
+  );
+  // Bound cache size: drop the least-recently-used agent.
+  if (channelAgentCache.size >= CHANNEL_AGENT_MAX) {
+    let lruKey: string | undefined;
+    let lruTime = Infinity;
+    for (const [key, cached] of channelAgentCache) {
+      if (cached.lastUsed < lruTime) {
+        lruTime = cached.lastUsed;
+        lruKey = key;
+      }
+    }
+    if (lruKey) channelAgentCache.delete(lruKey);
+  }
+  channelAgentCache.set(sessionKey, { agent, lastUsed: now });
+  return agent;
+}
+
 export async function registerAIMessageHandler(manager: import('../../channels/index.js').ChannelManager): Promise<void> {
   if (aiHandlerRegistered) return;
   aiHandlerRegistered = true;
@@ -497,46 +553,14 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       }
 
       const { getRouteAgentConfig } = await import('../../channels/core.js');
-      const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
       const agentConfig = getRouteAgentConfig(message);
-      const model = agentConfig.model || resolved.model;
-      const agent = new CodeBuddyAgent(
-        resolved.apiKey || 'local',
-        resolved.baseUrl,
-        model,
-        agentConfig.maxToolRounds ?? 6, // bounded (vs the 50-round default)
-        true, // useRAGToolSelection — relevant tools on demand, not all ~194
-        process.env.CODEBUDDY_CHANNEL_PROMPT_ID || 'auto', // minimal/adaptive prompt, not the 73KB legacy
-        process.cwd(),
-      );
-
-      // Multi-turn: restore prior session history into the agent.
       const sessionKey = message.sessionKey || 'default-global';
-      const sessionStore = agent.getSessionStore();
-      let session = await sessionStore.loadSession(sessionKey);
-      if (!session) {
-        session = {
-          id: sessionKey,
-          name: `Channel session ${sessionKey}`,
-          model,
-          createdAt: new Date(),
-          lastAccessedAt: new Date(),
-          messages: [],
-          workingDirectory: process.cwd(),
-        };
-        await sessionStore.saveSession(session);
-      }
-      await sessionStore.resumeSession(sessionKey);
-      if (session.messages && session.messages.length > 0) {
-        const chatHistory = sessionStore.convertMessagesToChatEntries(session.messages);
-        const priorMessages = session.messages.map((m) => ({
-          role: m.type === 'user' ? ('user' as const) : ('assistant' as const),
-          content: m.content,
-        }));
-        const historyRestorer = agent as unknown as AgentHistoryRestorer;
-        historyRestorer.historyManager.setChatHistory(chatHistory);
-        historyRestorer.historyManager.setMessages(priorMessages);
-      }
+
+      // Reuse ONE agent per chat (cached by sessionKey) so multi-turn context
+      // persists in-memory across messages. A fresh agent per message forgot the
+      // previous turn (its in-memory history was never saved back), which broke
+      // conversation continuity ("aide-moi" → "salut, que puis-je faire ?").
+      const agent = await getOrCreateChannelAgent(sessionKey, resolved, agentConfig);
 
       const entries = await agent.processUserMessage(message.content);
       const lastEntry = entries[entries.length - 1];
