@@ -559,8 +559,13 @@ async function getOrCreateChannelAgent(
   const codeExplorerHint = ceBin
     ? `CODE EXPLORER is available for the user's indexed code repositories. For ANY question about repos, code structure, blast-radius/impact, dependencies, dead code, cycles, or code search, you MUST use it — call the \`mcp__code-explorer__*\` tools (list_repos, query, context, impact, find_cycles, hotspots, search_code), or if a tool call isn't available run the CLI via bash: \`${ceBin} <subcommand>\` (e.g. \`${ceBin} list\`, \`${ceBin} query "text"\`, \`${ceBin} impact <symbol>\`). Never reply that you cannot list repositories or analyze code — you can, through Code Explorer.`
     : undefined;
+  // Python tasks: the system Python is PEP 668-locked (no global pip). Steer the
+  // agent to uv (installed) for ephemeral envs, and to save images to an absolute
+  // path it names — the handler then delivers that file to the chat as a photo.
+  const pythonHint =
+    'For Python tasks needing packages (plotting, data, etc.): do NOT use `pip`/`pip3 install` (the system Python is locked, PEP 668). Use `uv` instead — e.g. `uv run --with matplotlib --with pandas --with numpy python script.py`. When you produce a chart or image, SAVE it to an absolute path like `/tmp/<name>.png` and state that exact path in your reply — it will be sent to the user automatically.';
   const channelSystemPromptAppend =
-    [persona?.systemPrompt, codeExplorerHint].filter(Boolean).join('\n\n') || undefined;
+    [persona?.systemPrompt, codeExplorerHint, pythonHint].filter(Boolean).join('\n\n') || undefined;
   const { CodeBuddyAgent } = await import('../../agent/codebuddy-agent.js');
   const model = persona?.model || agentConfig.model || resolved.model;
   const agent = new CodeBuddyAgent(
@@ -701,6 +706,29 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
           logger.warn(
             `Voice reply skipped: ${voiceErr instanceof Error ? voiceErr.message : String(voiceErr)}`,
           );
+        }
+      }
+
+      // 7b. Deliver image artifacts: if the reply names image paths that exist
+      //     on disk (e.g. a chart the agent just generated), send them as photos.
+      const imageChannel = channel as unknown as {
+        sendImageFile?: (channelId: string, imagePath: string, caption?: string) => Promise<void>;
+      };
+      if (typeof imageChannel.sendImageFile === 'function') {
+        const os = await import('node:os');
+        const fsp = await import('node:fs/promises');
+        const matches = response.match(/(?:~\/|\/)[\w./-]+\.(?:png|jpe?g|gif|webp)/gi) || [];
+        const seen = new Set<string>();
+        for (const raw of matches) {
+          const p = raw.startsWith('~/') ? os.homedir() + raw.slice(1) : raw;
+          if (seen.has(p) || seen.size >= 4) continue;
+          seen.add(p);
+          try {
+            await fsp.access(p);
+            await imageChannel.sendImageFile(message.channel.id, p);
+          } catch {
+            // path isn't a real/accessible image — skip
+          }
         }
       }
 

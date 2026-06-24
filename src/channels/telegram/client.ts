@@ -967,6 +967,25 @@ export class TelegramChannel extends BaseChannel {
   }
 
   /**
+   * Send a local image file (e.g. a chart the agent generated) to the chat as a
+   * photo, via multipart sendPhoto. Lets the bot deliver visual artifacts.
+   */
+  async sendImageFile(channelId: string, imagePath: string, caption?: string): Promise<void> {
+    const fs = await import('node:fs/promises');
+    const path = await import('node:path');
+    const bytes = await fs.readFile(imagePath);
+    const ext = (path.extname(imagePath).slice(1) || 'png').toLowerCase();
+    const mime = ext === 'jpg' || ext === 'jpeg' ? 'image/jpeg' : `image/${ext}`;
+    const form = new FormData();
+    form.append('chat_id', channelId);
+    if (caption) form.append('caption', caption.slice(0, 1024));
+    form.append('photo', new Blob([bytes], { type: mime }), path.basename(imagePath));
+    const url = `${TELEGRAM_API_BASE}/bot${this.telegramConfig.token}/sendPhoto`;
+    const res = await fetch(url, { method: 'POST', body: form });
+    if (!res.ok) throw new Error(`sendPhoto HTTP ${res.status}`);
+  }
+
+  /**
    * Get file download URL
    */
   async getFileUrl(fileId: string): Promise<string> {
