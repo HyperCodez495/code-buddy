@@ -627,6 +627,43 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
+      // /council <task> — convene the multi-LLM council (ask several capable
+      // LLMs, an impartial judge keeps the best, and it learns which model is
+      // best per task type over time). `/council` alone shows the scoreboard.
+      const councilCmd = message.content.trim().match(/^\/council\b\s*([\s\S]*)$/i);
+      if (councilCmd) {
+        const task = (councilCmd[1] || '').trim();
+        await channel.send({
+          channelId: message.channel.id,
+          content: task
+            ? `🧠 Council sur « ${task.slice(0, 100)} » — j'interroge plusieurs IA, je juge et j'apprends… (≈30 s)`
+            : '📊 Scoreboard du council…',
+          replyTo: message.id,
+        });
+        const lines: string[] = [];
+        try {
+          const { runCouncil } = await import('../../commands/council.js');
+          await runCouncil(task, task ? {} : { scoreboard: true }, (s) => lines.push(s));
+        } catch (councilErr) {
+          lines.push(`❌ Council a échoué : ${councilErr instanceof Error ? councilErr.message : String(councilErr)}`);
+        }
+        // Telegram caps messages ~4096 chars; flush on line boundaries.
+        const full = lines.join('\n').trim() || '(aucune sortie)';
+        let buf = '';
+        const flush = async () => {
+          if (buf) {
+            await channel.send({ channelId: message.channel.id, content: buf });
+            buf = '';
+          }
+        };
+        for (const ln of full.split('\n')) {
+          if (buf.length + ln.length + 1 > 3800) await flush();
+          buf += (buf ? '\n' : '') + ln;
+        }
+        await flush();
+        return;
+      }
+
       // Remote tool-approval over Telegram. A daemon has no interactive terminal,
       // so tools that need confirmation fail closed. Instead: intercept
       // `/approve <id>` / `/deny <id>` and resolve the pending approval (the agent
