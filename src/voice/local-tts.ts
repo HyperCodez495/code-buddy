@@ -88,6 +88,38 @@ export interface LocalTtsOptions {
 }
 
 /**
+ * Turn Markdown into clean prose for speech, so the TTS doesn't literally read
+ * out "asterisk asterisk", backticks, hashes or bullet dashes — it should sound
+ * like a person talking, not a screen reader narrating syntax.
+ */
+export function cleanForSpeech(text: string): string {
+  let t = text;
+  // Fenced code blocks: keep the inner text, drop the ``` fences/language tag.
+  t = t.replace(/```[\w-]*\n?/g, '').replace(/```/g, '');
+  // Inline code, bold, italic — keep the words, drop the markers.
+  t = t.replace(/`([^`]+)`/g, '$1');
+  t = t.replace(/\*\*([^*]+)\*\*/g, '$1').replace(/\*([^*]+)\*/g, '$1');
+  t = t.replace(/__([^_]+)__/g, '$1').replace(/_([^_]+)_/g, '$1');
+  // Links / images → spoken label only.
+  t = t.replace(/!\[([^\]]*)\]\([^)]*\)/g, '$1');
+  t = t.replace(/\[([^\]]+)\]\([^)]*\)/g, '$1');
+  // Line-start markers: headings, blockquotes, list bullets, ordered items.
+  t = t.replace(/^\s{0,3}#{1,6}\s+/gm, '');
+  t = t.replace(/^\s*>\s?/gm, '');
+  t = t.replace(/^\s*[-*+]\s+/gm, '');
+  t = t.replace(/^\s*\d+[.)]\s+/gm, '');
+  // Horizontal rules.
+  t = t.replace(/^\s*([-*_])\1{2,}\s*$/gm, '');
+  // Any leftover Markdown punctuation a voice would mispronounce.
+  t = t.replace(/[*_`#>~]/g, '');
+  // Newlines → sentence breaks; collapse and de-duplicate punctuation/space.
+  t = t.replace(/\n{2,}/g, '. ').replace(/\n/g, '. ');
+  t = t.replace(/\s{2,}/g, ' ');
+  t = t.replace(/\s*\.(\s*\.)+\s*/g, '. ');
+  return t.trim();
+}
+
+/**
  * Synthesize `text` to an OGG/Opus file (Telegram voice-note format) and return
  * its path. Caller is responsible for deleting the file. Throws if Piper or
  * ffmpeg fail; callers should catch and fall back to a text-only reply.
@@ -105,7 +137,7 @@ export async function synthesizeToOgg(text: string, options: LocalTtsOptions = {
   if (voice) piperArgs.push('--model', voice);
 
   try {
-    await run(bin, piperArgs, { stdin: text, timeoutMs });
+    await run(bin, piperArgs, { stdin: cleanForSpeech(text), timeoutMs });
     // Telegram voice notes want OGG/Opus mono. 32 kbps is plenty for speech.
     await run(
       ffmpeg,
