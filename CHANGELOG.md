@@ -8,6 +8,16 @@ once it reaches `1.0.0`.
 
 ---
 
+## [1.6.1] — 2026-06-25
+
+### Added
+- **Unified rendering core (`src/rendering/`)** — parse markdown once (`marked` AST) and render per surface. First renderer: `renderTelegramHtml` → Telegram's robust HTML subset.
+
+### Changed
+- **Telegram replies now render markdown** instead of showing it raw. Bold/italic/inline-code/code-blocks/links/blockquotes render as Telegram HTML (`<b> <i> <code> <pre> <a> <blockquote>`), with `& < >` escaped. **Wide comparison tables** render as a mobile-friendly vertical layout (bold row title + `Header : value`); narrow tables keep the aligned monospace grid. Output is split into ≤4096-char chunks with always-balanced tags, and falls back to plain text if Telegram ever rejects the HTML. (Terminal/Ink ANSI + plain renderers to follow.)
+
+---
+
 ## [1.6.0] — 2026-06-24
 
 ### Added
