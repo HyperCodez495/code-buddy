@@ -1140,6 +1140,12 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             } else if (process.env.CODEBUDDY_SENSORY_CAMERA === 'true') {
               logger.warn('Sensory vision reaction NOT enabled: set CODEBUDDY_SENSORY_TOKEN to allow camera triggering.');
             }
+            // Semantic vision events (person_entered/left, drowsy) from the vision sidecar.
+            if (shouldWireVisionReaction({ camera: process.env.CODEBUDDY_SENSORY_CAMERA, token: sensoryToken })) {
+              const { wireSemanticVisionReaction } = await import('../sensory/semantic-vision-reaction.js');
+              sensoryTeardown.push(wireSemanticVisionReaction());
+              logger.info('Sensory semantic-vision reaction: Enabled (person/drowsy → alert)');
+            }
           }
           // Screen reaction (opt-in) — also token-gated (an injected analyzer could capture the desktop).
           if (process.env.CODEBUDDY_SENSORY_SCREEN === 'true') {

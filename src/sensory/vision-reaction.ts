@@ -16,6 +16,7 @@ import { getGlobalEventBus } from '../events/event-bus.js';
 import { logger } from '../utils/logger.js';
 import type { BaseEvent } from '../events/types.js';
 import { perceptionOf } from './reactions.js';
+import { sendTelegramAlert } from './alert.js';
 
 export interface VisionAnalysis {
   success: boolean;
@@ -69,34 +70,6 @@ async function defaultAnalyze(prompt: string, imagePath?: string): Promise<Visio
  * trigger the analysis, so an unauthenticated bridge must not be able to. */
 export function shouldWireVisionReaction(env: { camera?: string; token?: string }): boolean {
   return env.camera === 'true' && Boolean(env.token);
-}
-
-/** Best-effort Telegram alert (photo + caption) via a bot token + chat id from
- *  env. No-op when unconfigured — alerting is opt-in. Never throws. */
-async function sendTelegramAlert(caption: string, imagePath?: string): Promise<void> {
-  const token = process.env.CODEBUDDY_SENSORY_ALERT_TOKEN;
-  const chat = process.env.CODEBUDDY_SENSORY_ALERT_CHAT;
-  if (!token || !chat) return;
-  try {
-    if (imagePath) {
-      const fs = await import('node:fs/promises');
-      const path = await import('node:path');
-      const bytes = await fs.readFile(imagePath);
-      const form = new FormData();
-      form.append('chat_id', chat);
-      form.append('caption', caption.slice(0, 1024));
-      form.append('photo', new Blob([bytes], { type: 'image/jpeg' }), path.basename(imagePath));
-      await fetch(`https://api.telegram.org/bot${token}/sendPhoto`, { method: 'POST', body: form });
-    } else {
-      await fetch(`https://api.telegram.org/bot${token}/sendMessage`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ chat_id: chat, text: caption }),
-      });
-    }
-  } catch (err) {
-    logger.warn(`[vision] alert failed: ${err instanceof Error ? err.message : String(err)}`);
-  }
 }
 
 /** Word-overlap (Jaccard) between two scene descriptions, 0..1. Used to decide
