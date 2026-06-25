@@ -99,11 +99,29 @@ async function sendTelegramAlert(caption: string, imagePath?: string): Promise<v
   }
 }
 
+/** Word-overlap (Jaccard) between two scene descriptions, 0..1. Used to decide
+ *  whether a new scene is "the same as last time" (→ suppress a duplicate alert). */
+function sceneSimilarity(a: string, b: string): number {
+  const toks = (s: string) => new Set(s.toLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []);
+  const wa = toks(a);
+  const wb = toks(b);
+  if (wa.size === 0 || wb.size === 0) return 0;
+  let inter = 0;
+  for (const w of wa) if (wb.has(w)) inter++;
+  return inter / (wa.size + wb.size - inter);
+}
+
 export function wireVisionReaction(options: VisionReactionOptions = {}): () => void {
   const bus = getGlobalEventBus();
   const debounceMs = options.debounceMs ?? Number(process.env.CODEBUDDY_VISION_DEBOUNCE_MS ?? 8000);
   const now = options.now ?? (() => Date.now());
   const analyzer: VisionAnalyzer = options.analyzer ?? { analyze: defaultAnalyze };
+  // Anti-spam: for a remote watch, only alert when the scene meaningfully CHANGES
+  // vs the last alerted scene, or after a long cooldown (periodic refresh).
+  const alertCooldownMs = Number(process.env.CODEBUDDY_VISION_ALERT_COOLDOWN_MS ?? 300_000);
+  const alertSimThreshold = Number(process.env.CODEBUDDY_VISION_ALERT_SIM ?? 0.6);
+  let lastAlertAt = Number.NEGATIVE_INFINITY;
+  let lastAlertedDesc = '';
   let lastAt = Number.NEGATIVE_INFINITY;
   let inFlight = false;
 
@@ -143,7 +161,14 @@ export function wireVisionReaction(options: VisionReactionOptions = {}): () => v
           options.cwd ? { cwd: options.cwd } : {},
         );
         logger.info(`[vision] motion analyzed → ${desc}`);
-        await sendTelegramAlert(`👁️ Mouvement${payload.camera ? ` (${payload.camera})` : ''} : ${desc}`, frame);
+        // Alert only on a meaningfully different scene OR after the cooldown.
+        if (sceneSimilarity(desc, lastAlertedDesc) < alertSimThreshold || now() - lastAlertAt >= alertCooldownMs) {
+          lastAlertAt = now();
+          lastAlertedDesc = desc;
+          await sendTelegramAlert(`👁️ Mouvement${payload.camera ? ` (${payload.camera})` : ''} : ${desc}`, frame);
+        } else {
+          logger.info('[vision] alert suppressed (scène similaire dans le cooldown)');
+        }
       } catch (err) {
         logger.warn(`[vision] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
