@@ -8,6 +8,14 @@ once it reaches `1.0.0`.
 
 ---
 
+## [Unreleased]
+
+### Added
+- **Robot vision — "the eyes" (experimental, operational).** `buddy-vision/` (Python sidecar, sibling to `buddy-sense/`) watches a camera and emits **semantic** events into the sensory bus — `person_entered` / `person_left` and `drowsy` (MediaPipe FaceLandmarker; each detector a **state machine → one event per transition**, no spam). On the Code Buddy side, `semantic-vision-reaction.ts` turns these into a Telegram alert (photo + caption); `vision-reaction.ts` now describes the keyframe with a **real local vision model** (`CODEBUDDY_VISION_MODEL`, e.g. moondream — gemma is text-only) and **dedups** repeat scenes. `buddy-sense`'s vision sense gained live camera capture (`live-vision`). Built for remote watch; all local, `$0`. Setup: `buddy-vision/setup.sh`.
+- **Unified rendering core finished.** `src/rendering/ansi.ts` (markdown→ANSI terminal) + `plain.ts` (markdown→clean plain text) complete the `render(md, 'telegram'|'ansi'|'plain')` façade started in 1.6.1.
+
+---
+
 ## [1.6.1] — 2026-06-25
 
 ### Added
