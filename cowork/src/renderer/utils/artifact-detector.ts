@@ -31,7 +31,7 @@ const KIND_BY_LANGUAGE: Record<string, RenderableArtifactKind> = {
   json: 'json',
 };
 
-function detectKind(language: string, code: string): RenderableArtifactKind | null {
+export function detectKind(language: string, code: string): RenderableArtifactKind | null {
   const lang = language.toLowerCase().trim();
   if (KIND_BY_LANGUAGE[lang]) {
     return KIND_BY_LANGUAGE[lang];
@@ -56,7 +56,7 @@ function detectKind(language: string, code: string): RenderableArtifactKind | nu
   return null;
 }
 
-function inferTitle(kind: RenderableArtifactKind, source: string): string | undefined {
+export function inferTitle(kind: RenderableArtifactKind, source: string): string | undefined {
   if (kind === 'html' || kind === 'svg') {
     const match = source.match(/<title>([^<]+)<\/title>/i);
     if (match) return match[1].trim();
@@ -142,7 +142,7 @@ export function detectArtifacts(text: string): RenderableArtifact[] {
   return artifacts;
 }
 
-function simpleHash(input: string): string {
+export function simpleHash(input: string): string {
   let h = 0;
   for (let i = 0; i < input.length; i++) {
     h = (h << 5) - h + input.charCodeAt(i);
