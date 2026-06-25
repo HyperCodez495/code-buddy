@@ -33,6 +33,9 @@ export interface CouncilOptions {
 
 type Emit = (s: string) => void;
 
+/** Per-model wall-clock cap so a slow model never blocks the council. */
+const COUNCIL_TIMEOUT_MS = Number(process.env.CODEBUDDY_COUNCIL_TIMEOUT_MS) || 45000;
+
 // --- capability heuristics (deriveStrengths in capability-registry is private) ---
 
 function inferStrengths(model: string): ModelStrength[] {
@@ -161,13 +164,18 @@ async function judgeAnswers(
   let winnerIdx = 0;
   let rationale = '';
   try {
-    const resp = await client.chat(
-      [
-        { role: 'system', content: sys },
-        { role: 'user', content: user },
-      ],
-      [],
-    );
+    const resp = await Promise.race([
+      client.chat(
+        [
+          { role: 'system', content: sys },
+          { role: 'user', content: user },
+        ],
+        [],
+      ),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`judge timeout >${Math.round(COUNCIL_TIMEOUT_MS / 1000)}s`)), COUNCIL_TIMEOUT_MS),
+      ),
+    ]);
     const text = resp?.choices?.[0]?.message?.content ?? '';
     const json = extractJson(text);
     if (json) {
@@ -270,37 +278,42 @@ export async function runCouncil(task: string, opts: CouncilOptions, out: Emit):
       picked.map((p) => `${p.c.model}${p.hist > 0 ? ` (${Math.round(p.hist * 100)}% hist)` : ''}`).join(', '),
   );
 
-  let answers: { modelId: string; modelName: string; content: string; latency: number; tokensUsed: number; cost?: number }[] = [];
-  try {
-    const { createParallelExecutor } = await import('../agent/parallel/parallel-executor.js');
-    const models = picked.map((p) => ({
-      id: `${p.c.provider}:${p.c.model}`,
-      name: p.c.model,
-      provider: 'codebuddy' as const,
-      model: p.c.model,
-      apiKey: p.c.apiKey,
-      baseURL: p.c.baseURL,
-      enabled: true,
-      costPerToken: p.c.costInputUsdPerMtok / 1_000_000,
-    }));
-    const executor = createParallelExecutor({ models, strategy: 'ensemble' });
-    const result = await executor.execute(task);
-    answers = result.responses
-      .filter((r) => !r.error && r.content?.trim())
-      .map((r) => ({
-        modelId: r.modelId,
-        modelName: r.modelName,
-        content: r.content,
-        latency: r.latency,
-        tokensUsed: r.tokensUsed,
-        cost: r.cost,
-      }));
-    const failed = result.responses.filter((r) => r.error);
-    for (const r of failed) out(`  ⚠️ ${r.modelName}: ${(r.error ?? '').slice(0, 120)}`);
-  } catch (err) {
-    out(`❌ Échec du fan-out: ${err instanceof Error ? err.message : String(err)}`);
-    return;
-  }
+  // Direct fan-out with a per-model timeout so one slow model (e.g. a big local
+  // CPU model) can never block the whole council. allSettled never rejects;
+  // timed-out / failed models are simply dropped from the panel.
+  type Answer = { modelId: string; modelName: string; content: string; latency: number; tokensUsed: number; cost: number };
+  const settled = await Promise.allSettled(
+    picked.map(async (p): Promise<Answer> => {
+      const client = new CodeBuddyClient(p.c.apiKey ?? '', p.c.model, p.c.baseURL);
+      const t0 = Date.now();
+      const resp = await Promise.race([
+        client.chat([{ role: 'user', content: task }], []),
+        new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error(`timeout >${Math.round(COUNCIL_TIMEOUT_MS / 1000)}s`)), COUNCIL_TIMEOUT_MS),
+        ),
+      ]);
+      const content = resp?.choices?.[0]?.message?.content ?? '';
+      if (!content.trim()) throw new Error('réponse vide');
+      const usage = resp?.usage;
+      return {
+        modelId: p.c.provider,
+        modelName: p.c.model,
+        content,
+        latency: Date.now() - t0,
+        tokensUsed: usage?.total_tokens ?? 0,
+        cost: ((usage?.prompt_tokens ?? 0) / 1_000_000) * p.c.costInputUsdPerMtok,
+      };
+    }),
+  );
+  const answers: Answer[] = settled
+    .filter((s): s is PromiseFulfilledResult<Answer> => s.status === 'fulfilled')
+    .map((s) => s.value);
+  settled.forEach((s, i) => {
+    if (s.status === 'rejected') {
+      const reason = s.reason instanceof Error ? s.reason.message : String(s.reason);
+      out(`  ⚠️ ${picked[i]!.c.model}: ${reason.slice(0, 120)}`);
+    }
+  });
 
   if (answers.length === 0) {
     out('❌ Toutes les IA ont échoué.');
