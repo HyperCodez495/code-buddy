@@ -1146,6 +1146,16 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               sensoryTeardown.push(wireSemanticVisionReaction());
               logger.info('Sensory semantic-vision reaction: Enabled (person/drowsy → alert)');
             }
+            // Event→action rules engine (a camera event triggers code) — opt-in + token-gated,
+            // since rules can run shell. Safety lives in sensory-action-executor (env-only context,
+            // destructive-block). Off unless CODEBUDDY_SENSORY_RULES=true AND a token is set.
+            if (process.env.CODEBUDDY_SENSORY_RULES === 'true' && sensoryToken) {
+              const { wireSensoryRules } = await import('../sensory/sensory-rules-engine.js');
+              sensoryTeardown.push(wireSensoryRules());
+              logger.info('Sensory rules engine: Enabled (event → shell/webhook/alert/agent)');
+            } else if (process.env.CODEBUDDY_SENSORY_RULES === 'true') {
+              logger.warn('Sensory rules NOT enabled: set CODEBUDDY_SENSORY_TOKEN (rules can run shell).');
+            }
           }
           // Screen reaction (opt-in) — also token-gated (an injected analyzer could capture the desktop).
           if (process.env.CODEBUDDY_SENSORY_SCREEN === 'true') {

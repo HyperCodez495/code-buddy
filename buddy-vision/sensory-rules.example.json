@@ -1,0 +1,37 @@
+{
+  "_comment": "Copy to ~/.codebuddy/sensory-rules.json and run buddy server with CODEBUDDY_SENSORY_RULES=true + CODEBUDDY_SENSORY_TOKEN. Event data reaches shell/agent actions ONLY via env (VISION_KIND, VISION_CAMERA, VISION_DESC, VISION_IMAGE, VISION_SALIENCE) + stdin JSON — never interpolated. Destructive commands (rm -rf, dd, sudo, ...) are hard-blocked.",
+  "rules": [
+    {
+      "id": "log-arrivals",
+      "name": "Log every person arrival to a file",
+      "enabled": true,
+      "match": { "modality": "vision", "kind": "person_entered" },
+      "action": { "type": "shell", "command": "printf '%s %s: %s\\n' \"$(date -Is)\" \"$VISION_CAMERA\" \"$VISION_DESC\" >> ~/arrivals.log" },
+      "cooldownMs": 5000
+    },
+    {
+      "id": "night-intruder",
+      "name": "Person at night -> fire a webhook (e.g. Home Assistant turns a light on)",
+      "enabled": false,
+      "match": { "kind": "person_entered", "between": ["22:00", "06:00"] },
+      "action": { "type": "webhook", "url": "http://homeassistant.local:8123/api/webhook/your-id" },
+      "cooldownMs": 60000
+    },
+    {
+      "id": "drowsy-guardian",
+      "name": "Drowsiness -> alert (guardian angel)",
+      "enabled": true,
+      "match": { "kind": "drowsy" },
+      "action": { "type": "alert", "message": "😴 Reste éveillé !" },
+      "cooldownMs": 30000
+    },
+    {
+      "id": "smart-on-arrival",
+      "name": "Person entered -> let the agent decide what to do (uses its own tool guardrails)",
+      "enabled": false,
+      "match": { "kind": "person_entered" },
+      "action": { "type": "agent", "prompt": "Someone just appeared on camera $VISION_CAMERA: $VISION_DESC. Decide if anything should be logged or notified, briefly.", "timeoutMs": 60000 },
+      "cooldownMs": 120000
+    }
+  ]
+}
