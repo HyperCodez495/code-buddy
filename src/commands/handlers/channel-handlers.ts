@@ -627,12 +627,6 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         return;
       }
 
-      // Diagnostic: what actually arrives at the handler (content preview).
-      logger.info('[channel] inbound', {
-        preview: message.content.slice(0, 48),
-        isCommand: (message as { isCommand?: boolean }).isCommand === true,
-      });
-
       // /council <task> — convene the multi-LLM council (ask several capable
       // LLMs, an impartial judge keeps the best, and it learns which model is
       // best per task type over time). `/council` alone shows the scoreboard.

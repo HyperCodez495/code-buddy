@@ -464,13 +464,21 @@ export class TelegramChannel extends BaseChannel {
    * Handle an update
    */
   private async handleUpdate(update: TelegramUpdate): Promise<void> {
-    if (update.message) {
-      await this.handleMessage(update.message);
-    } else if (update.edited_message) {
-      // Could emit 'message-edited' event
-      await this.handleMessage(update.edited_message);
-    } else if (update.callback_query) {
-      await this.handleCallbackQuery(update.callback_query);
+    // Guard the whole dispatch: a throw here used to be swallowed by the poll
+    // loop's catch, silently dropping the message with no trace.
+    try {
+      if (update.message) {
+        await this.handleMessage(update.message);
+      } else if (update.edited_message) {
+        // Could emit 'message-edited' event
+        await this.handleMessage(update.edited_message);
+      } else if (update.callback_query) {
+        await this.handleCallbackQuery(update.callback_query);
+      }
+    } catch (e) {
+      logger.error('Telegram update handler error', {
+        err: e instanceof Error ? (e.stack || e.message) : String(e),
+      });
     }
   }
 
@@ -526,8 +534,15 @@ export class TelegramChannel extends BaseChannel {
       }
     }
 
-    // Route enhanced commands
-    if (parsed.isCommand && this.telegramConfig.enhancedCommands !== false) {
+    // Route enhanced commands — but let `council`/`conseil` fall through to the
+    // normal message path so the channel AI handler can convene the multi-LLM
+    // council (the pro command router doesn't own these).
+    const passthroughCommands = new Set(['council', 'conseil']);
+    if (
+      parsed.isCommand &&
+      this.telegramConfig.enhancedCommands !== false &&
+      !passthroughCommands.has((parsed.commandName ?? '').toLowerCase())
+    ) {
       const handled = await this.routeEnhancedCommand(parsed, chatId, userId);
       if (handled) return;
     }
