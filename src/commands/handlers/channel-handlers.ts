@@ -648,20 +648,39 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         } catch (councilErr) {
           lines.push(`❌ Council a échoué : ${councilErr instanceof Error ? councilErr.message : String(councilErr)}`);
         }
-        // Telegram caps messages ~4096 chars; flush on line boundaries.
         const full = lines.join('\n').trim() || '(aucune sortie)';
-        let buf = '';
-        const flush = async () => {
-          if (buf) {
-            await channel.send({ channelId: message.channel.id, content: buf });
+
+        // Render the aligned tables (📊 détail par IA + learned ranking) in a
+        // monospace code block so Telegram's proportional font doesn't break the
+        // padded columns; the prose (the winning answer) stays normal text.
+        let tableStart = full.indexOf('📊 Détail par IA');
+        if (tableStart < 0) tableStart = full.search(/Learned model ranking|No council history/);
+        const prose = tableStart >= 0 ? full.slice(0, tableStart).trim() : full;
+        const tables = tableStart >= 0 ? full.slice(tableStart).trim() : '';
+
+        // Telegram caps messages ~4096 chars; flush on line boundaries.
+        const sendChunked = async (text: string, mono: boolean): Promise<void> => {
+          if (!text) return;
+          const limit = mono ? 3600 : 3800;
+          let buf = '';
+          const flush = async () => {
+            if (!buf) return;
+            await channel.send({
+              channelId: message.channel.id,
+              content: mono ? '```\n' + buf + '\n```' : buf,
+              parseMode: mono ? 'markdown' : undefined,
+            });
             buf = '';
+          };
+          for (const ln of text.split('\n')) {
+            if (buf.length + ln.length + 1 > limit) await flush();
+            buf += (buf ? '\n' : '') + ln;
           }
+          await flush();
         };
-        for (const ln of full.split('\n')) {
-          if (buf.length + ln.length + 1 > 3800) await flush();
-          buf += (buf ? '\n' : '') + ln;
-        }
-        await flush();
+
+        await sendChunked(prose, false);
+        await sendChunked(tables, true);
         return;
       }
 
