@@ -75,6 +75,11 @@ function runShell(command: string, ctx: SensoryEventContext, timeoutMs: number):
       resolve({ ok: false, detail: String(err) });
     });
     // Full event also on stdin as JSON — again, never spliced into the command.
+    // The command may not read stdin and may exit first → swallow the EPIPE on the
+    // stdin stream (an unhandled 'error' here would crash the host process).
+    child.stdin?.on('error', () => {
+      /* child closed stdin without reading (EPIPE) — harmless */
+    });
     try {
       child.stdin?.end(JSON.stringify(ctx));
     } catch {
