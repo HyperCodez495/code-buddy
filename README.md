@@ -201,8 +201,12 @@ buddy --yolo                                       # full autonomy
 ```bash
 buddy llm                                    # list the LLMs you're logged into + the failover order
 buddy llm ensemble "is this approach sound?" # ask ChatGPT + Grok + Ollama together, then synthesize
+buddy council "compare REST vs GraphQL"      # route by capability, judge the best answer, LEARN which AI wins per task type
+buddy council --scoreboard                   # the learned ranking (which model is best for code / reasoning / …)
 CODEBUDDY_LLM_FAILOVER=1 buddy -p "…"         # if the primary errors, auto-continue on the next active LLM
 ```
+
+**`buddy council`** takes the ensemble further: it routes a task to the *best-suited* models by capability (and by their past win rate), an impartial judge keeps the single best answer, and a scoreboard **learns which AI is best for which kind of task** over time — so it gets smarter the more you use it. Works in Telegram too (`council <task>`).
 
 <p align="center">
   <img src="docs/assets/llm-demo.gif" alt="buddy llm lists your active LLMs, then auto-fails over from Grok to ChatGPT when the primary errors" width="760"/>
