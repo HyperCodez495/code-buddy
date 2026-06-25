@@ -748,12 +748,36 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
       const lastEntry = entries[entries.length - 1];
       const response = lastEntry ? String(lastEntry.content) : '';
 
-      // 6. Deliver reply (text)
-      await channel.send({
-        channelId: message.channel.id,
-        content: response,
-        replyTo: message.id,
-      });
+      // 6. Deliver the reply. On Telegram, render the agent's markdown to the
+      //    robust HTML subset (bold / code / tables / links) so it doesn't show
+      //    raw; if Telegram rejects the HTML (success:false) fall back to plain
+      //    text. Other channels keep native markdown (Discord/Slack render it).
+      if (channel.type === 'telegram' && response.trim()) {
+        const { renderTelegramHtml } = await import('../../rendering/telegram-html.js');
+        const chunks = renderTelegramHtml(response);
+        let ok = chunks.length > 0;
+        for (let i = 0; i < chunks.length; i++) {
+          const res = await channel.send({
+            channelId: message.channel.id,
+            content: chunks[i]!,
+            parseMode: 'html',
+            replyTo: i === 0 ? message.id : undefined,
+          });
+          if (!res?.success) {
+            ok = false;
+            break;
+          }
+        }
+        if (!ok) {
+          await channel.send({ channelId: message.channel.id, content: response, replyTo: message.id });
+        }
+      } else {
+        await channel.send({
+          channelId: message.channel.id,
+          content: response,
+          replyTo: message.id,
+        });
+      }
 
       // 7. If the user SPOKE (voice note), answer by voice too — mirror the
       //    modality. Best-effort: the text reply already landed, so a TTS/upload
