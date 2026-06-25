@@ -3,7 +3,7 @@
  *
  * Slide-out panel that renders artifacts detected in assistant messages:
  * HTML (sandboxed iframe), SVG (inline), Mermaid (client-side render),
- * React/JSX (source only), JSON (pretty-printed).
+ * React/JSX (live preview via CDN React+Babel), JSON (pretty-printed).
  *
  * Driven by store.activeArtifact — setting it opens the panel.
  *
@@ -15,6 +15,7 @@ import { useTranslation } from 'react-i18next';
 import { X, Code2, Eye, Copy, Check, Download } from 'lucide-react';
 import { useAppStore } from '../store';
 import { AgenticHarnessStrip, parseAgenticHarnessArtifact } from './agentic-harness-strip';
+import { buildReactPreviewDoc } from '../utils/react-preview';
 
 type TabKey = 'preview' | 'source';
 
@@ -27,7 +28,7 @@ function escapeHtml(input: string): string {
  * Mermaid loads from a local copy bundled with the renderer (or CDN fallback
  * if not available — gated by CSP in the iframe).
  */
-function buildIframeDoc(kind: 'html' | 'svg' | 'mermaid', source: string): string {
+function buildIframeDoc(kind: 'html' | 'svg' | 'mermaid' | 'react', source: string): string {
   if (kind === 'html') {
     // If the source is a full HTML document, use it as-is.
     if (/<html[\s>]/i.test(source)) return source;
@@ -87,6 +88,13 @@ ${source}
 </html>`;
   }
 
+  if (kind === 'react') {
+    // React lives only in the sandboxed iframe (React/ReactDOM/Babel from CDN, like
+    // mermaid). The harness (strip modules, find component, inject hooks) is a pure,
+    // tested helper.
+    return buildReactPreviewDoc(source);
+  }
+
   return '';
 }
 
@@ -113,7 +121,8 @@ export const ArtifactPanel: React.FC = () => {
     if (
       activeArtifact.kind === 'html' ||
       activeArtifact.kind === 'svg' ||
-      activeArtifact.kind === 'mermaid'
+      activeArtifact.kind === 'mermaid' ||
+      activeArtifact.kind === 'react'
     ) {
       return buildIframeDoc(activeArtifact.kind, activeArtifact.source);
     }
@@ -165,6 +174,7 @@ export const ArtifactPanel: React.FC = () => {
     activeArtifact.kind === 'html' ||
     activeArtifact.kind === 'svg' ||
     activeArtifact.kind === 'mermaid' ||
+    activeArtifact.kind === 'react' ||
     Boolean(agenticHarness);
 
   return (
