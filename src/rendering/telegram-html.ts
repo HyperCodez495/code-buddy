@@ -80,18 +80,43 @@ function inlineToPlain(tokens: Token[] | undefined): string {
   return out;
 }
 
-/** A markdown table → aligned monospace text (to be wrapped in <pre>). */
-function renderTableMono(t: Tokens.Table): string {
-  const headers = t.header.map((c) => inlineToPlain(c.tokens));
-  const rows = t.rows.map((r) => r.map((c) => inlineToPlain(c.tokens)));
+/** Mobile Telegram <pre> wraps past ~40 monospace chars, which destroys column
+ *  alignment — so only narrow tables get the aligned grid; wider ones become a
+ *  vertical "record" layout (bold row title + `Header : value` lines). */
+const TABLE_FIT_WIDTH = 40;
+
+/** A markdown table → a complete Telegram-HTML block (aligned <pre> if it fits
+ *  the mobile width, otherwise a responsive vertical layout). */
+function renderTableBlock(t: Tokens.Table): string {
+  const headers = t.header.map((c) => inlineToPlain(c.tokens).trim());
+  const rows = t.rows.map((r) => r.map((c) => inlineToPlain(c.tokens).trim()));
   const cols = headers.length;
   const widths: number[] = [];
   for (let i = 0; i < cols; i++) {
     widths[i] = Math.max(headers[i]?.length ?? 0, ...rows.map((r) => (r[i] ?? '').length), 1);
   }
-  const fmt = (cells: string[]) => cells.map((c, i) => (c ?? '').padEnd(widths[i]!)).join('  ').trimEnd();
-  const sep = widths.map((w) => '─'.repeat(w)).join('  ');
-  return [fmt(headers), sep, ...rows.map(fmt)].join('\n');
+  const totalWidth = widths.reduce((a, b) => a + b, 0) + (cols - 1) * 2;
+  const hasNewline = [...headers, ...rows.flat()].some((c) => c.includes('\n'));
+
+  // Narrow + single-line → aligned monospace grid.
+  if (totalWidth <= TABLE_FIT_WIDTH && !hasNewline) {
+    const fmt = (cells: string[]) => cells.map((c, i) => (c ?? '').padEnd(widths[i]!)).join('  ').trimEnd();
+    const sep = widths.map((w) => '─'.repeat(w)).join('  ');
+    const text = [fmt(headers), sep, ...rows.map(fmt)].join('\n');
+    return `<pre>${escapeHtml(text)}</pre>`;
+  }
+
+  // Wide → vertical records: first column is the bold row title, the rest are
+  // `Header : value`. Reads cleanly at any screen width (no horizontal wrap).
+  return rows
+    .map((r) => {
+      const lines = [`<b>${escapeHtml(r[0] ?? '')}</b>`];
+      for (let i = 1; i < cols; i++) {
+        if (r[i]) lines.push(`${escapeHtml(headers[i] ?? '')} : ${escapeHtml(r[i]!)}`);
+      }
+      return lines.join('\n');
+    })
+    .join('\n\n');
 }
 
 // --- block tokens → array of balanced-HTML fragments -----------------------
@@ -117,7 +142,7 @@ function renderBlocks(tokens: Token[]): string[] {
         blocks.push(`<pre>${escapeHtml((t as Tokens.Code).text)}</pre>`);
         break;
       case 'table':
-        blocks.push(`<pre>${escapeHtml(renderTableMono(t as Tokens.Table))}</pre>`);
+        blocks.push(renderTableBlock(t as Tokens.Table));
         break;
       case 'blockquote':
         blocks.push(`<blockquote>${renderBlocks((t as Tokens.Blockquote).tokens).join('\n')}</blockquote>`);

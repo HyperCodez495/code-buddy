@@ -31,6 +31,17 @@ describe('renderTelegramHtml', () => {
     expect(out).toContain('gpt    0.9');
   });
 
+  it('renders a WIDE table as a mobile-friendly vertical record layout', () => {
+    const md =
+      '| Critère | REST | GraphQL |\n|---|---|---|\n' +
+      '| Principe | Plusieurs endpoints (/users, /posts) | Un endpoint unique (/graphql) |';
+    const out = one(md);
+    expect(out).not.toContain('<pre>'); // too wide for the aligned grid
+    expect(out).toContain('<b>Principe</b>'); // first column = bold row title
+    expect(out).toContain('REST : Plusieurs endpoints (/users, /posts)');
+    expect(out).toContain('GraphQL : Un endpoint unique (/graphql)');
+  });
+
   it('only links safe http(s) hrefs, keeps text otherwise', () => {
     expect(one('[x](https://e.com)')).toBe('<a href="https://e.com">x</a>');
     expect(one('[x](javascript:alert(1))')).toBe('x');
