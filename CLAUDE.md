@@ -201,6 +201,9 @@ Persistent memory lives at `.codebuddy/CODEBUDDY_MEMORY.md` (project) and `~/.co
 | `CODEBUDDY_FLEET_MAX_CONCURRENCY` | Peer capacity → live `utilization` in heartbeats + daemon saturation backpressure (`src/fleet/fleet-load.ts`) |
 | Search keys | `BRAVE_API_KEY`, `EXA_API_KEY`, `PERPLEXITY_API_KEY`, `OPENROUTER_API_KEY`, `FIRECRAWL_API_KEY` |
 | `PICOVOICE_ACCESS_KEY` | Porcupine wake word (text-match fallback if absent) |
+| `CODEBUDDY_SENSORY_SPEAK` | Close the voice loop: `speech_end → STT → think → speak`. **Requires `CODEBUDDY_TTS_VOICE`** (else the robot hears but stays silent — server logs loud) |
+| `CODEBUDDY_SENSORY_SPEAK_MODEL` | Local text model for the spoken reply (default `llama3.2` — must be pulled in Ollama) |
+| `CODEBUDDY_TTS_VOICE` / `CODEBUDDY_TTS_PIPER_MODEL` | Path to a Piper `.onnx` voice. Enables the `piper` TTS provider (`auto` picks it only when set) + the voice loop's synthesis |
 | `OMNIPARSER_API_URL` / `OMNIPARSER_API_KEY` | Base URL (default `http://localhost:8000`) + optional Bearer for a self-hosted OmniParser v2 server, enabling `computer_control` `snapshot_with_screenshot` + `useOmniParser` (no-op if unreachable) |
 | `SENTRY_DSN`, `OTEL_EXPORTER_OTLP_ENDPOINT` | Observability |
 | `PERF_TIMING`, `CACHE_TRACE`, `VERBOSE` | Debug flags |

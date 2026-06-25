@@ -87,6 +87,10 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
       } catch (err) {
         logger.warn(`[speech] reaction failed: ${err instanceof Error ? err.message : String(err)}`);
       } finally {
+        // Re-stamp AFTER the full hear→think→speak cycle so the debounce window
+        // restarts from end-of-playback. When onHeard speaks (voice-loop), this
+        // suppresses the robot re-hearing the tail of its own voice (echo guard).
+        lastAt = now();
         inFlight = false;
       }
     })();

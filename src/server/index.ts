@@ -1168,10 +1168,23 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
             }
           }
           // Speech reaction (opt-in) — speech_end → STT → 'hearing' percept (+ onHeard hook).
+          // With CODEBUDDY_SENSORY_SPEAK=true the loop closes: STT → think (local $0) → speak (Piper).
           if (process.env.CODEBUDDY_SENSORY_SPEECH === 'true') {
             const { wireSpeechReaction } = await import('../sensory/speech-reaction.js');
-            sensoryTeardown.push(wireSpeechReaction());
-            logger.info('Sensory speech reaction: Enabled (speech_end → STT → percept)');
+            if (process.env.CODEBUDDY_SENSORY_SPEAK === 'true') {
+              const { makeVoiceReply, describeVoiceReadiness } = await import('../sensory/voice-loop.js');
+              const readiness = describeVoiceReadiness();
+              // Fail LOUD: a wired-but-silent robot looks broken. Name what to set.
+              for (const w of readiness.warnings) logger.warn(`[voice] ${w}`);
+              sensoryTeardown.push(wireSpeechReaction({ onHeard: makeVoiceReply() }));
+              logger.info(
+                `Sensory speech reaction: Enabled (speech_end → STT → think[${readiness.model}] → speak` +
+                  `${readiness.speakReady ? `[${readiness.voice}]` : ' — SILENT until CODEBUDDY_TTS_VOICE is set'})`,
+              );
+            } else {
+              sensoryTeardown.push(wireSpeechReaction());
+              logger.info('Sensory speech reaction: Enabled (speech_end → STT → percept)');
+            }
           }
           // Privacy: camera/screen descriptions land in percepts.jsonl — warn if not encrypted at rest.
           if (

@@ -4,7 +4,7 @@ import path from 'path';
 
 import { commandExists } from '../utils/command-exists.js';
 
-export type TextToSpeechProvider = 'auto' | 'system' | 'edge-tts' | 'espeak' | 'say' | 'audioreader';
+export type TextToSpeechProvider = 'auto' | 'system' | 'edge-tts' | 'espeak' | 'say' | 'audioreader' | 'piper';
 
 export interface TextToSpeechOptions {
   rootDir?: string;
@@ -46,6 +46,14 @@ const DEFAULT_TIMEOUT_MS = 120_000;
 const DEFAULT_MAX_TEXT_LENGTH = 4_000;
 const SUPPORTED_OUTPUTS = new Set(['wav', 'mp3', 'aiff']);
 
+/** Resolve the Piper voice model: an explicit `voice` (path to .onnx) wins, else
+ *  the configured env (`CODEBUDDY_TTS_PIPER_MODEL` / `CODEBUDDY_TTS_VOICE`). Piper
+ *  has no default voice — without a model there is nothing to synthesize. */
+function resolvePiperModel(voice?: string): string | undefined {
+  const candidate = voice ?? process.env.CODEBUDDY_TTS_PIPER_MODEL ?? process.env.CODEBUDDY_TTS_VOICE;
+  return candidate && candidate.trim() ? candidate.trim() : undefined;
+}
+
 export async function synthesizeTextToSpeech(
   input: TextToSpeechInput,
   options: TextToSpeechOptions = {},
@@ -74,6 +82,7 @@ export async function synthesizeTextToSpeech(
   } else {
     await runCommand(command.command, command.args, {
       env: command.env,
+      stdin: command.stdin,
       timeoutMs: input.timeoutMs ?? DEFAULT_TIMEOUT_MS,
       spawnImpl: options.runtime?.spawn ?? spawn,
     });
@@ -115,6 +124,9 @@ export async function listAvailableTextToSpeechProviders(options: TextToSpeechOp
   if (await commandExists('espeak', { platform })) {
     providers.push('espeak');
   }
+  if (resolvePiperModel() && await commandExists('piper', { platform })) {
+    providers.push('piper');
+  }
   return providers;
 }
 
@@ -149,13 +161,19 @@ async function resolveProvider(
   if (platform === 'darwin' && await commandExists('say', { platform })) {
     return 'say';
   }
+  // Prefer Piper (real neural voice) ONLY when a model is explicitly configured —
+  // otherwise leave the existing order untouched so current Linux callers don't
+  // silently switch voice (a piper binary alone is not enough: it has no default voice).
+  if (resolvePiperModel() && await commandExists('piper', { platform })) {
+    return 'piper';
+  }
   if (await commandExists('edge-tts', { platform })) {
     return 'edge-tts';
   }
   if (await commandExists('espeak', { platform })) {
     return 'espeak';
   }
-  throw new Error('No local TTS provider available. Install edge-tts/espeak, use macOS say, Windows PowerShell SAPI, or choose audioreader when configured.');
+  throw new Error('No local TTS provider available. Install edge-tts/espeak/piper, use macOS say, Windows PowerShell SAPI, or choose audioreader when configured.');
 }
 
 function resolveOutputFormat(
@@ -178,6 +196,7 @@ function resolveOutputFormat(
   if (provider === 'say') {
     return 'aiff';
   }
+  // system / espeak / audioreader / piper all emit WAV.
   return 'wav';
 }
 
@@ -188,6 +207,7 @@ function validateProviderFormat(provider: Exclude<TextToSpeechProvider, 'auto'>,
     espeak: ['wav'],
     say: ['aiff'],
     audioreader: ['wav'],
+    piper: ['wav'],
   };
   if (!supported[provider].includes(format)) {
     throw new Error(`Provider ${provider} supports ${supported[provider].join(', ')} output, not ${format}`);
@@ -218,10 +238,22 @@ function buildProviderCommand(
   provider: Exclude<TextToSpeechProvider, 'auto'>,
   input: TextToSpeechInput & { text: string; outputPath: string; format: TextToSpeechResult['format'] },
   options: TextToSpeechOptions,
-): { kind: 'spawn'; command: string; args: string[]; env?: NodeJS.ProcessEnv } | { kind: 'node'; run: () => Promise<void> } {
+): { kind: 'spawn'; command: string; args: string[]; env?: NodeJS.ProcessEnv; stdin?: string } | { kind: 'node'; run: () => Promise<void> } {
   switch (provider) {
     case 'system':
       return buildWindowsSystemCommand(input, options);
+    case 'piper': {
+      const model = resolvePiperModel(input.voice);
+      if (!model) {
+        throw new Error('Piper requires a voice model: set CODEBUDDY_TTS_PIPER_MODEL (or CODEBUDDY_TTS_VOICE / voice) to a .onnx path.');
+      }
+      return {
+        kind: 'spawn',
+        command: 'piper',
+        args: ['--model', model, '--output_file', input.outputPath],
+        stdin: input.text, // Piper reads the utterance from stdin
+      };
+    }
     case 'edge-tts':
       return {
         kind: 'spawn',
@@ -315,6 +347,7 @@ function runCommand(
   args: string[],
   options: {
     env?: NodeJS.ProcessEnv;
+    stdin?: string;
     timeoutMs: number;
     spawnImpl: typeof spawn;
   },
@@ -323,8 +356,12 @@ function runCommand(
     const child = options.spawnImpl(command, args, {
       env: options.env,
       windowsHide: true,
-      stdio: ['ignore', 'pipe', 'pipe'],
+      stdio: [options.stdin !== undefined ? 'pipe' : 'ignore', 'pipe', 'pipe'],
     });
+    if (options.stdin !== undefined) {
+      child.stdin?.on('error', () => {}); // ignore EPIPE if the process closes stdin early
+      child.stdin?.end(options.stdin);
+    }
     let stderr = '';
     let stdout = '';
     let settled = false;
