@@ -658,17 +658,22 @@ export async function registerAIMessageHandler(manager: import('../../channels/i
         const prose = tableStart >= 0 ? full.slice(0, tableStart).trim() : full;
         const tables = tableStart >= 0 ? full.slice(tableStart).trim() : '';
 
-        // Telegram caps messages ~4096 chars; flush on line boundaries.
+        // Telegram caps messages ~4096 chars; flush on line boundaries. Tables
+        // go in an HTML <pre> block (monospace) — HTML is the robust mode: inside
+        // <pre> only &, <, > need escaping (vs MarkdownV2's ~18 escapes / legacy
+        // Markdown's fragility). See Telegram Bot API "Formatting options".
+        const htmlEscape = (s: string): string =>
+          s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         const sendChunked = async (text: string, mono: boolean): Promise<void> => {
           if (!text) return;
-          const limit = mono ? 3600 : 3800;
+          const limit = mono ? 3500 : 3800;
           let buf = '';
           const flush = async () => {
             if (!buf) return;
             await channel.send({
               channelId: message.channel.id,
-              content: mono ? '```\n' + buf + '\n```' : buf,
-              parseMode: mono ? 'markdown' : undefined,
+              content: mono ? '<pre>' + htmlEscape(buf) + '</pre>' : buf,
+              parseMode: mono ? 'html' : undefined,
             });
             buf = '';
           };
