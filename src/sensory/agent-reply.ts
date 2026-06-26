@@ -54,18 +54,30 @@ function msg(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
 }
 
-/** Default agent turn: a headless CodeBuddyAgent on the fastest TOOL-CALLING model. */
+/** Default agent turn: a headless CodeBuddyAgent.
+ *  Model: `CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL` if pinned, else the fastest TOOL-CALLING
+ *  model. NOTE the trade-off: an agent turn reads/reasons/acts, so it wants CAPABILITY +
+ *  context, not raw speed — the fastest tool-caller can be a tiny model whose context gets
+ *  truncated and whose answers are wrong. For accurate commands, pin a capable local model
+ *  (e.g. devstral-small-2:24b-instruct or qwen3.6:27b) via the env var. */
 function makeDefaultAgentRunner(cwd: string): AgentRunner {
   return async (transcript: string): Promise<string> => {
-    const { selectFastestModel } = await import('../fleet/model-selector.js');
     const { resolveVoiceModel } = await import('./voice-loop.js');
-    // The turn needs reliable tool calls; fall back to the fast reply route if none qualifies.
-    const sel = await selectFastestModel(transcript, { requireToolCalling: true });
-    const route = sel
-      ? { model: sel.model, apiKey: sel.apiKey ?? 'ollama', baseURL: sel.baseURL }
-      : await resolveVoiceModel(transcript);
-    if (!sel) {
-      logger.warn('[voice-act] no tool-calling model available — using the fast reply model (tool use may be unreliable)');
+    const pinned = process.env.CODEBUDDY_SENSORY_SPEAK_AGENT_MODEL;
+    let route: { model: string; apiKey: string; baseURL?: string };
+    if (pinned) {
+      const fallback = await resolveVoiceModel(transcript);
+      route = { model: pinned, apiKey: fallback.apiKey, baseURL: fallback.baseURL };
+    } else {
+      const { selectFastestModel } = await import('../fleet/model-selector.js');
+      // The turn needs reliable tool calls; fall back to the fast reply route if none qualifies.
+      const sel = await selectFastestModel(transcript, { requireToolCalling: true });
+      if (sel) {
+        route = { model: sel.model, apiKey: sel.apiKey ?? 'ollama', ...(sel.baseURL ? { baseURL: sel.baseURL } : {}) };
+      } else {
+        route = await resolveVoiceModel(transcript);
+        logger.warn('[voice-act] no tool-calling model available — using the fast reply model (tool use may be unreliable)');
+      }
     }
     logger.info(`[voice-act] agent turn on ${route.model}`);
     const { CodeBuddyAgent } = await import('../agent/codebuddy-agent.js');

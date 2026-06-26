@@ -95,7 +95,16 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
         : `Voice ACT is ON in '${permissionMode}' posture — spoken commands will EDIT FILES / RUN ` +
             'COMMANDS derived from a possibly-misheard transcript. Static blocklist (rm/mkfs/chaining) ' +
             'and secret/deploy guard still apply, but git reset --hard / truncate / redirections are NOT ' +
-            "blocked. Use 'plan' unless you mean it. Run the speaking actor in its own process.",
+            "blocked. Use 'plan' unless you mean it.",
+    );
+    // The posture is process-GLOBAL (PermissionModeManager singleton). On `buddy server`,
+    // which also serves HTTP/fleet sessions, the first voice turn flips the mode for the whole
+    // process — a read-only leak under 'plan', a privilege ESCALATION of every concurrent
+    // session under dontAsk/bypass. Run the speaking actor in its OWN process.
+    warnings.push(
+      'Voice ACT sets a PROCESS-GLOBAL permission posture — run the speaking actor in its own ' +
+        'process (a dedicated `buddy server`), not one also serving interactive/HTTP/fleet sessions, ' +
+        `or the '${permissionMode}' posture leaks into them.`,
     );
   }
 
