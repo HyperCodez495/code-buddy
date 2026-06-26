@@ -11,6 +11,19 @@ once it reaches `1.0.0`.
 ## [Unreleased]
 
 ### Added
+- **Several Code Buddy machines collaborate on one question — `council --fleet`.** The fleet WS mesh
+  (`peer.chat` across machines) was real but only proven cross-host once and never as a repeatable
+  two-instance test; the collaboration verbs (`council`/`swarm`) were in-process. Now `buddy council
+  "<task>" --fleet` **folds connected fleet peers into the SAME judged set**: it asks each connected
+  machine's Code Buddy via `peer.chat` (parallel, per-peer timeout, a slow/absent peer is dropped —
+  never crashes the council), then the existing judge + consensus + model-scoreboard score all
+  answers — local and remote — together (source-agnostic). New `buddy fleet token` mints a scoped
+  JWT (`peer:invoke` + `fleet:listen`) so another machine can join via `/fleet listen --jwt` —
+  closing the auth gap (`--no-auth` deliberately does NOT grant `peer:invoke`; the fleet requires a
+  token). **Proven live across two real server processes** on one box ($0 local Ollama): two
+  machines (qwen2.5:7b + gemma4) each answered and were judged together
+  (`scripts/fleet-council-2proc-smoke.ts`); a real Tailscale multi-machine run uses the same recipe
+  (`docs/fleet-guide.md`).
 - **The robot's voice follows you — voice notes to Telegram/phone when you're away.** New
   `sendTelegramVoice(text)` (`src/sensory/alert.ts`) synthesizes the line to OGG/Opus (reusing the
   existing `synthesizeToOgg` Piper→ffmpeg pipeline — the format Telegram voice notes require) and

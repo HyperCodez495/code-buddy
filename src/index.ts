@@ -3003,10 +3003,11 @@ program
   .option("--task-type <tag>", "Override inferred task type (code|reasoning|french|vision|general)")
   .option("--no-consensus", "Skip the consensus/agreement summary")
   .option("--scoreboard", "Print the learned model ranking and exit")
+  .option("--fleet", "Also consult connected fleet peers (other machines' Code Buddy) over the network")
   .action(
     async (
       taskParts: string[] = [],
-      options: { count?: string; models?: string; judge?: string; taskType?: string; consensus?: boolean; scoreboard?: boolean },
+      options: { count?: string; models?: string; judge?: string; taskType?: string; consensus?: boolean; scoreboard?: boolean; fleet?: boolean },
     ) => {
       const { runCouncil } = await import("./commands/council.js");
       await runCouncil(
@@ -3018,6 +3019,7 @@ program
           taskType: options.taskType,
           consensus: options.consensus,
           scoreboard: options.scoreboard,
+          fleet: options.fleet,
         },
         cli.stdout,
       );

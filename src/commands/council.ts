@@ -30,12 +30,74 @@ export interface CouncilOptions {
   consensus?: boolean;
   /** Just print the learned scoreboard and exit. */
   scoreboard?: boolean;
+  /** Also consult connected fleet peers (other machines' Code Buddy) via peer.chat. */
+  fleet?: boolean;
+  /** Inject peer connections (tests/scripts); else read getFleetRegistry().list(). */
+  fleetPeers?: Array<{ id: string; listener: { request: (m: string, p?: Record<string, unknown>, o?: { timeoutMs?: number }) => Promise<unknown> } }>;
+  /** Per-peer timeout for the fleet round-trip (default = COUNCIL_TIMEOUT_MS). */
+  peerTimeoutMs?: number;
 }
 
 type Emit = (s: string) => void;
 
 /** Per-model wall-clock cap so a slow model never blocks the council. */
 const COUNCIL_TIMEOUT_MS = Number(process.env.CODEBUDDY_COUNCIL_TIMEOUT_MS) || 45000;
+
+// --- fleet: consult other machines' Code Buddy over the WS mesh ---
+
+export interface PeerAnswer {
+  modelId: string;
+  modelName: string;
+  content: string;
+  latency: number;
+  tokensUsed: number;
+  cost: number;
+}
+export interface CouncilPeer {
+  id: string;
+  listener: {
+    request: (method: string, params?: Record<string, unknown>, options?: { timeoutMs?: number }) => Promise<unknown>;
+  };
+}
+
+/**
+ * Ask each connected fleet peer the same task via `peer.chat` (parallel, per-peer timeout). A
+ * slow/absent/failing peer is dropped into `errors` — never crashing the council. The returned
+ * answers are structurally the council's own Answer shape, so they fold into the SAME judged set.
+ */
+export async function gatherPeerAnswers(
+  task: string,
+  peers: CouncilPeer[],
+  timeoutMs: number,
+): Promise<{ answers: PeerAnswer[]; errors: Array<{ id: string; message: string }> }> {
+  const settled = await Promise.allSettled(
+    peers.map(async (p): Promise<PeerAnswer> => {
+      const t0 = Date.now();
+      const resp = (await p.listener.request('peer.chat', { prompt: task }, { timeoutMs })) as {
+        text?: string;
+        modelRequested?: string;
+        usage?: { total_tokens?: number };
+      };
+      const content = (resp?.text ?? '').trim();
+      if (!content) throw new Error('réponse vide');
+      return {
+        modelId: p.id,
+        modelName: `${p.id}:${resp.modelRequested ?? 'peer'}`,
+        content,
+        latency: Date.now() - t0,
+        tokensUsed: resp.usage?.total_tokens ?? 0,
+        cost: 0, // peers are your own machines → $0 marginal
+      };
+    }),
+  );
+  const answers: PeerAnswer[] = [];
+  const errors: Array<{ id: string; message: string }> = [];
+  settled.forEach((s, i) => {
+    if (s.status === 'fulfilled') answers.push(s.value);
+    else errors.push({ id: peers[i]!.id, message: s.reason instanceof Error ? s.reason.message : String(s.reason) });
+  });
+  return { answers, errors };
+}
 
 // --- capability heuristics (inferStrengths / inferTaskType shared with the
 //     latency-aware selector; see fleet/model-capability-heuristics.ts) ---
@@ -288,6 +350,34 @@ export async function runCouncil(task: string, opts: CouncilOptions, out: Emit):
       out(`  ⚠️ ${picked[i]!.c.model}: ${reason.slice(0, 120)}`);
     }
   });
+
+  // Fleet — ALSO consult connected peers (other machines' Code Buddy) over the WS mesh via
+  // peer.chat, and fold their answers into the SAME judged set. The judge/consensus/scoreboard
+  // are source-agnostic (they score answers, not where answers came from). A slow/absent peer is
+  // dropped (allSettled + per-peer timeout), never blocking the council.
+  if (opts.fleet) {
+    let peers = opts.fleetPeers;
+    if (!peers) {
+      try {
+        const { getFleetRegistry } = await import('../fleet/fleet-registry.js');
+        peers = getFleetRegistry().list().map((e) => ({ id: e.id, listener: e.listener }));
+      } catch {
+        peers = [];
+      }
+    }
+    if (peers.length === 0) {
+      out("🛰️  Fleet — aucun pair connecté (lance `/fleet listen ws://… --jwt …` d'abord).");
+    } else {
+      out(`🛰️  Fleet — ${peers.length} machine(s) distante(s) consultée(s)…`);
+      const { answers: peerAnswers, errors } = await gatherPeerAnswers(
+        task,
+        peers,
+        opts.peerTimeoutMs ?? COUNCIL_TIMEOUT_MS,
+      );
+      for (const a of peerAnswers) answers.push(a);
+      for (const e of errors) out(`  ⚠️ ${e.id}: ${e.message.slice(0, 120)}`);
+    }
+  }
 
   if (answers.length === 0) {
     out('❌ Toutes les IA ont échoué.');

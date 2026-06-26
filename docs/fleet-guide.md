@@ -51,6 +51,37 @@ Gemini peer, all from the same fleet topology.
 
 ---
 
+## Quickstart — several machines collaborate on one question (`council --fleet`)
+
+The fleet **requires a token** for `peer:invoke` (the LLM/tool RPC). **`--no-auth` deliberately does
+NOT grant `peer:invoke`** — it only grants `chat/tools/sessions/memory`. So a `buddy server
+--no-auth` (like the autonomy-queue service `~/DEV/ai-stack/codebuddy-fleet.service`) serves the
+event bus and the autonomous queue, but **not** cross-machine `peer.chat`. For collaboration, run
+the servers **auth-enabled with a shared `JWT_SECRET`** and mint a scoped token.
+
+```bash
+# On each worker machine (B, C, …): a Code Buddy server, auth on, its own local model.
+JWT_SECRET=<shared-secret> CODEBUDDY_PEER_MODEL=qwen3.6:27b \
+  buddy server --port 3010 --host 0.0.0.0          # exposes ws://<this-host>:3010/ws
+
+# Mint a token to hand to the coordinator (same JWT_SECRET as the server):
+JWT_SECRET=<shared-secret> buddy fleet token --ttl 30d   # prints a JWT (peer:invoke + fleet:listen)
+
+# On the coordinator machine (A), connect to each worker (Tailscale / LAN address), then ask all:
+/fleet listen ws://100.73.222.64:3010/ws --jwt <token> --name darkstar
+/fleet listen ws://100.98.18.76:3010/ws  --jwt <token> --name ministar-linux
+buddy council "Propose une architecture pour X" --fleet
+# → each connected machine answers via its own LLM; the council judges + reconciles all answers,
+#   and the model-scoreboard learns which machine/model wins per task type. ($0 on local LLMs.)
+```
+
+**Proven (this box, two real server PIDs, $0):** two `buddy server` (3010 qwen2.5:7b + 3020
+gemma4), a coordinator connected to both, `council --fleet` → both machines contributed an answer,
+judged together (`scripts/fleet-council-2proc-smoke.ts`). A true multi-machine Tailscale run uses
+the same recipe with your real hosts.
+
+---
+
 ## Architecture
 
 ```
