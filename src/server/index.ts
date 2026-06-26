@@ -1311,6 +1311,17 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
           logger.warn(`Companion presence failed to start: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      // Companion idle (opt-in): when ALONE, it does useful safe work ($0, read-only/reversible) and
+      // leaves reviewable artifacts in the idle log — never acts on your repos/prod. See idle-loop.ts.
+      if (process.env.CODEBUDDY_COMPANION_IDLE === 'true') {
+        try {
+          const { wireIdleLoop } = await import('../companion/idle-loop.js');
+          sensoryTeardown.push(wireIdleLoop());
+          logger.info('Companion idle: Enabled (CODEBUDDY_COMPANION_IDLE) — alone-only useful work, $0, artifacts only');
+        } catch (err) {
+          logger.warn(`Companion idle failed to start: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       logger.info(`Auth: ${config.authEnabled ? 'Enabled' : 'Disabled'}`);
       if (!isLoopbackHost(config.host)) {
         logger.warn(
