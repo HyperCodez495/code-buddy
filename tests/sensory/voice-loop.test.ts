@@ -1,24 +1,67 @@
-import { describe, it, expect } from 'vitest';
-import { makeVoiceReply, describeVoiceReadiness } from '../../src/sensory/voice-loop.js';
+import { describe, it, expect, afterEach } from 'vitest';
+import {
+  makeVoiceReply,
+  describeVoiceReadiness,
+  resolveVoiceModel,
+  resetVoiceModelCache,
+} from '../../src/sensory/voice-loop.js';
 
 describe('voice loop — readiness (fail-loud prereqs)', () => {
   it('is not speak-ready and warns about the voice when none is configured', () => {
     const r = describeVoiceReadiness({});
     expect(r.speakReady).toBe(false);
     expect(r.voice).toBeUndefined();
-    expect(r.model).toBe('llama3.2');
+    // No pinned model → the reply model is latency-routed at call time.
+    expect(r.routed).toBe(true);
+    expect(r.model).toBe('auto');
     expect(r.warnings.some((w) => w.includes('CODEBUDDY_TTS_VOICE'))).toBe(true);
+    expect(r.warnings.some((w) => w.includes('latency-routed'))).toBe(true);
   });
 
-  it('is speak-ready when a voice and model are configured', () => {
+  it('is speak-ready and pins the model when a voice and model are configured', () => {
     const r = describeVoiceReadiness({
       CODEBUDDY_TTS_VOICE: '/voices/fr.onnx',
       CODEBUDDY_SENSORY_SPEAK_MODEL: 'qwen2.5:7b-instruct',
     });
     expect(r.speakReady).toBe(true);
     expect(r.voice).toBe('/voices/fr.onnx');
+    expect(r.routed).toBe(false);
     expect(r.model).toBe('qwen2.5:7b-instruct');
     expect(r.warnings.some((w) => w.includes('HEAR but stay SILENT'))).toBe(false);
+  });
+
+  it('treats CODEBUDDY_SENSORY_SPEAK_MODEL=auto as routed', () => {
+    const r = describeVoiceReadiness({ CODEBUDDY_SENSORY_SPEAK_MODEL: 'auto' });
+    expect(r.routed).toBe(true);
+    expect(r.model).toBe('auto');
+  });
+});
+
+describe('voice loop — model resolution (env authoritative)', () => {
+  const SAVED = {
+    model: process.env.CODEBUDDY_SENSORY_SPEAK_MODEL,
+    base: process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL,
+    key: process.env.OLLAMA_API_KEY,
+  };
+  afterEach(() => {
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = SAVED.model;
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = SAVED.base;
+    process.env.OLLAMA_API_KEY = SAVED.key;
+    if (SAVED.model === undefined) delete process.env.CODEBUDDY_SENSORY_SPEAK_MODEL;
+    if (SAVED.base === undefined) delete process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL;
+    if (SAVED.key === undefined) delete process.env.OLLAMA_API_KEY;
+    resetVoiceModelCache();
+  });
+
+  it('pins the model from CODEBUDDY_SENSORY_SPEAK_MODEL (no routing)', async () => {
+    process.env.CODEBUDDY_SENSORY_SPEAK_MODEL = 'mistral-small:24b';
+    process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL = 'http://localhost:9999/v1';
+    process.env.OLLAMA_API_KEY = 'secret';
+    const r = await resolveVoiceModel('Bonjour');
+    expect(r.model).toBe('mistral-small:24b');
+    expect(r.baseURL).toBe('http://localhost:9999/v1');
+    expect(r.apiKey).toBe('secret');
+    expect(r.reason).toContain('pinned');
   });
 });
 

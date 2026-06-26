@@ -14,6 +14,7 @@
 import { CodeBuddyClient } from '../codebuddy/client.js';
 import { computeTextConsensus, type ConsensusSource } from '../fleet/result-aggregator.js';
 import { getModelScoreboard } from '../fleet/model-scoreboard.js';
+import { inferStrengths, inferTaskType } from '../fleet/model-capability-heuristics.js';
 import type { ModelStrength } from '../fleet/types.js';
 
 export interface CouncilOptions {
@@ -36,26 +37,8 @@ type Emit = (s: string) => void;
 /** Per-model wall-clock cap so a slow model never blocks the council. */
 const COUNCIL_TIMEOUT_MS = Number(process.env.CODEBUDDY_COUNCIL_TIMEOUT_MS) || 45000;
 
-// --- capability heuristics (deriveStrengths in capability-registry is private) ---
-
-function inferStrengths(model: string): ModelStrength[] {
-  const m = model.toLowerCase();
-  const s = new Set<ModelStrength>(['tool-calling']);
-  if (/code|coder|codex/.test(m)) s.add('code');
-  if (/opus|gpt-5|o1|o3|reason|think|r1|qwq|deepseek/.test(m)) {
-    s.add('reasoning');
-    s.add('thinking');
-  }
-  if (/gpt-5|gemini|sonnet|opus|grok-[34]|grok-4/.test(m)) s.add('reasoning');
-  if (/flash|mini|fast|haiku|small|nano|:3b|:4b|:7b|:8b/.test(m)) {
-    s.add('fast');
-    s.add('cheap');
-  }
-  if (/gemini|pro|opus|sonnet|long|1m|200k|128k/.test(m)) s.add('long-context');
-  if (/mistral|qwen|gemma|mixtral/.test(m)) s.add('french');
-  if (/vision|gpt-4o|gpt-5|gemini|grok-2-vision/.test(m)) s.add('vision');
-  return [...s];
-}
+// --- capability heuristics (inferStrengths / inferTaskType shared with the
+//     latency-aware selector; see fleet/model-capability-heuristics.ts) ---
 
 const TASK_REQUIRES: Record<string, ModelStrength[]> = {
   code: ['code', 'reasoning'],
@@ -64,15 +47,6 @@ const TASK_REQUIRES: Record<string, ModelStrength[]> = {
   vision: ['vision'],
   general: ['reasoning', 'fast'],
 };
-
-function inferTaskType(task: string): string {
-  const t = task.toLowerCase();
-  if (/\b(code|fonction|function|bug|refactor|impl[ée]ment|classe|class|api|script|compile|regex|sql)\b/.test(t)) return 'code';
-  if (/\b(prouve|d[ée]montre|raisonn|reason|prove|analyse|strat[ée]gie|pourquoi|math|calcul|optimi)\b/.test(t)) return 'reasoning';
-  if (/\b(image|photo|capture|screenshot|diagram|graph)\b/.test(t)) return 'vision';
-  if (/[éèàçùêîô]/.test(task) || /\b(fran[çc]ais|france|french)\b/.test(t)) return 'french';
-  return 'general';
-}
 
 function matchScore(strengths: ModelStrength[], required: ModelStrength[]): number {
   if (required.length === 0) return 0.5;

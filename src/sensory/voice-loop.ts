@@ -18,6 +18,7 @@
 import { spawn } from 'child_process';
 import { logger } from '../utils/logger.js';
 import { commandExists } from '../utils/command-exists.js';
+import { inferTaskType } from '../fleet/model-capability-heuristics.js';
 
 /** Think: turn what was heard into a short spoken reply ('' → stay silent). */
 export type ReplyFn = (heard: string) => Promise<string>;
@@ -42,8 +43,10 @@ export interface VoiceReplyOptions {
 }
 
 export interface VoiceReadiness {
-  /** Text model the default replyFn will try (must be pulled in Ollama). */
+  /** Text model the default replyFn will try, or 'auto' when latency-routed at call time. */
   model: string;
+  /** True when the reply model is chosen by the latency router (no explicit override). */
+  routed: boolean;
   /** Piper voice model path, if configured. */
   voice?: string;
   /** True when speech-out can work (a voice is configured). */
@@ -56,7 +59,9 @@ export interface VoiceReadiness {
  *  SPEAK. The robot still HEARS without these; it just stays silent. Used by the server to
  *  fail LOUD (name the env) instead of being mutely wired. */
 export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): VoiceReadiness {
-  const model = env.CODEBUDDY_SENSORY_SPEAK_MODEL || 'llama3.2';
+  const override = env.CODEBUDDY_SENSORY_SPEAK_MODEL;
+  const routed = !override || override.toLowerCase() === 'auto';
+  const model = routed ? 'auto' : override;
   const voice = env.CODEBUDDY_TTS_VOICE || env.CODEBUDDY_TTS_PIPER_MODEL || undefined;
   const warnings: string[] = [];
   if (!voice) {
@@ -66,9 +71,13 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
     );
   }
   warnings.push(
-    `Voice reply uses local text model '${model}' (override with CODEBUDDY_SENSORY_SPEAK_MODEL) — it must be pulled in Ollama, else replies are empty (silent).`,
+    routed
+      ? 'Voice reply model is latency-routed (lowest-latency capable LLM among your active providers; ' +
+          'set CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY=true to keep it on-box, or pin one with ' +
+          'CODEBUDDY_SENSORY_SPEAK_MODEL=<model>). The chosen model must be reachable, else replies are silent.'
+      : `Voice reply uses pinned model '${model}' (CODEBUDDY_SENSORY_SPEAK_MODEL) — it must be pulled/reachable, else replies are empty (silent).`,
   );
-  return { model, ...(voice ? { voice } : {}), speakReady: Boolean(voice), warnings };
+  return { model, routed, ...(voice ? { voice } : {}), speakReady: Boolean(voice), warnings };
 }
 
 const SPEAK_SYSTEM_PROMPT =
@@ -76,14 +85,92 @@ const SPEAK_SYSTEM_PROMPT =
   "Réponds en français, en UNE à DEUX phrases courtes, naturelles, parlées. " +
   "Pas de markdown, pas de listes, pas de code, pas d'emoji.";
 
-/** Default think: a short companion reply from a LOCAL LLM (Ollama, $0). Mirrors the
- *  local-inference pattern of vision-reaction.ts. Best-effort: any failure → '' (silence). */
+/** A resolved text model for the spoken reply. */
+interface VoiceModelRoute {
+  model: string;
+  apiKey: string;
+  baseURL: string;
+  /** Diagnostic — how this model was chosen (router rationale or 'pinned'/'fallback'). */
+  reason: string;
+}
+
+/** Short-lived cache of the routed model, keyed by `taskType|localOnly`. Routing
+ *  re-probes providers and may trigger an inline xAI token refresh, so we must not
+ *  pay that on every spoken turn — fluidity is the whole point. */
+const routeCache = new Map<string, { route: VoiceModelRoute; at: number }>();
+
+function routeTtlMs(): number {
+  const n = Number(process.env.CODEBUDDY_SENSORY_SPEAK_ROUTE_TTL_MS);
+  return Number.isFinite(n) && n >= 0 ? n : 60_000;
+}
+
+/** Test seam — clear the routing cache. */
+export function resetVoiceModelCache(): void {
+  routeCache.clear();
+}
+
+/**
+ * Resolve which LLM answers a spoken utterance. Fluidity is everything for a
+ * companion (a 16s reply breaks the spell), so by default we route to the
+ * LOWEST-LATENCY capable LLM via the shared selector — the same "which LLM is
+ * best for this task" system the council uses, but with a latency objective.
+ *
+ * `CODEBUDDY_SENSORY_SPEAK_MODEL` stays authoritative: set it (to anything but
+ * 'auto') to pin a model. `CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY=true` prefers the
+ * local runtime endpoints. The routed result is cached briefly (see
+ * `CODEBUDDY_SENSORY_SPEAK_ROUTE_TTL_MS`). Never-throws — on any miss we fall
+ * back to a reachable local default.
+ */
+export async function resolveVoiceModel(heard: string): Promise<VoiceModelRoute> {
+  const env = process.env;
+  const apiKey = env.OLLAMA_API_KEY || 'ollama';
+  const baseURL =
+    env.CODEBUDDY_SENSORY_SPEAK_BASE_URL ||
+    env.CODEBUDDY_VISION_BASE_URL ||
+    'http://127.0.0.1:11434/v1';
+  const override = env.CODEBUDDY_SENSORY_SPEAK_MODEL;
+
+  // Explicit pin wins (env authoritative) — no routing, no cache.
+  if (override && override.toLowerCase() !== 'auto') {
+    return { model: override, apiKey, baseURL, reason: 'pinned (CODEBUDDY_SENSORY_SPEAK_MODEL)' };
+  }
+
+  const localOnly = env.CODEBUDDY_SENSORY_SPEAK_LOCAL_ONLY === 'true';
+  const taskType = inferTaskType(heard);
+  const key = `${taskType}|${localOnly}`;
+  const hit = routeCache.get(key);
+  if (hit && Date.now() - hit.at < routeTtlMs()) return hit.route;
+
+  // Route to the fastest capable LLM among the active providers.
+  try {
+    const { selectFastestModel } = await import('../fleet/model-selector.js');
+    const sel = await selectFastestModel(heard, { taskType, localOnly });
+    if (sel) {
+      const route: VoiceModelRoute = {
+        model: sel.model,
+        apiKey: sel.apiKey ?? apiKey,
+        baseURL: sel.baseURL ?? baseURL,
+        reason: sel.reason,
+      };
+      routeCache.set(key, { route, at: Date.now() });
+      return route;
+    }
+  } catch (err) {
+    logger.debug(`[voice] model routing skipped: ${err instanceof Error ? err.message : String(err)}`);
+  }
+
+  // Fallback: the documented default (may be silent if not pulled — readiness warns).
+  return { model: override || 'llama3.2', apiKey, baseURL, reason: 'fallback default' };
+}
+
+/** Default think: a short companion reply from the fastest capable LLM ($0 when local).
+ *  Mirrors the local-inference pattern of vision-reaction.ts. Best-effort: any failure → '' (silence). */
 async function defaultReply(heard: string): Promise<string> {
   try {
     const { CodeBuddyClient } = await import('../codebuddy/client.js');
-    const model = process.env.CODEBUDDY_SENSORY_SPEAK_MODEL || 'llama3.2';
-    const baseURL = process.env.CODEBUDDY_SENSORY_SPEAK_BASE_URL || process.env.CODEBUDDY_VISION_BASE_URL || 'http://127.0.0.1:11434/v1';
-    const client = new CodeBuddyClient(process.env.OLLAMA_API_KEY || 'ollama', model, baseURL);
+    const route = await resolveVoiceModel(heard);
+    logger.debug(`[voice] reply model: ${route.model} — ${route.reason}`);
+    const client = new CodeBuddyClient(route.apiKey, route.model, route.baseURL);
     const resp = await client.chat(
       [
         { role: 'system', content: SPEAK_SYSTEM_PROMPT },
