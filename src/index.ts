@@ -2438,6 +2438,34 @@ program
     }
   });
 
+program
+  .command("voice")
+  .description("Push-to-talk voice commands — speak an instruction, the agent acts, the reply is spoken")
+  .option(
+    "--mode <mode>",
+    "voice ACT posture: plan (read-only, default) | dontAsk | bypassPermissions (can edit/run)",
+    "plan",
+  )
+  .action(async (options) => {
+    const allowed = ["plan", "dontAsk", "bypassPermissions"] as const;
+    const mode = (allowed as readonly string[]).includes(options.mode) ? options.mode : "plan";
+    if (mode !== options.mode) {
+      cli.stdout(`⚠️  Unknown --mode '${options.mode}', falling back to 'plan' (read-only).`);
+    }
+    if (mode !== "plan") {
+      cli.stdout(
+        `⚠️  Posture '${mode}': voice can EDIT FILES / RUN COMMANDS from a possibly-misheard transcript. Ctrl-C to abort.`,
+      );
+    }
+    try {
+      const { runVoiceCommand } = await import("./cli/voice-command.js");
+      await runVoiceCommand({ permissionMode: mode as "plan" | "dontAsk" | "bypassPermissions" });
+    } catch (error) {
+      logger.error("Voice command session failed", error instanceof Error ? error : new Error(String(error)));
+      process.exit(1);
+    }
+  });
+
 // Cowork (the Electron desktop GUI) needs Node >= 22; the terminal CLI runs on
 // Node >= 18. Without this guard a Node 18/20 user gets a cryptic Electron/Vite
 // crash mid-launch instead of a clear message — a classic first-run star-killer.

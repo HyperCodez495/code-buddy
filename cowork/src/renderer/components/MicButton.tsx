@@ -19,6 +19,8 @@ interface MicButtonProps {
   language?: string;
   /** Hard cap in ms — recording auto-stops after this delay. */
   maxDurationMs?: number;
+  /** Cosmetic: when true, releasing EXECUTES the transcript (command mode) — reflected in the title. */
+  commandMode?: boolean;
 }
 
 type Status = 'idle' | 'recording' | 'transcribing' | 'unsupported' | 'error';
@@ -31,6 +33,7 @@ export const MicButton: React.FC<MicButtonProps> = ({
   onTranscript,
   language = 'fr',
   maxDurationMs = 60000,
+  commandMode = false,
 }) => {
   const { t } = useTranslation();
   const [status, setStatus] = useState<Status>('idle');
@@ -173,7 +176,9 @@ export const MicButton: React.FC<MicButtonProps> = ({
       ? t('voice.transcribing', 'Transcribing…')
       : isError
         ? t('voice.error', 'Voice error: {{msg}}', { msg: errorMsg ?? 'unknown' })
-        : t('voice.start', 'Hold to record (FR)');
+        : commandMode
+          ? t('voice.startCommand', 'Record a command — releasing will EXECUTE it (FR)')
+          : t('voice.start', 'Hold to record (FR)');
 
   return (
     <button

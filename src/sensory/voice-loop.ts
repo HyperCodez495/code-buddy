@@ -51,6 +51,10 @@ export interface VoiceReadiness {
   voice?: string;
   /** True when speech-out can work (a voice is configured). */
   speakReady: boolean;
+  /** True when CODEBUDDY_SENSORY_SPEAK_ACT is on (spoken commands drive a real agent turn). */
+  act: boolean;
+  /** Voice ACT permission posture when act is on (plan | dontAsk | bypassPermissions). */
+  permissionMode?: string;
   /** Actionable, loud-by-design warnings naming the env to set. */
   warnings: string[];
 }
@@ -77,16 +81,42 @@ export function describeVoiceReadiness(env: NodeJS.ProcessEnv = process.env): Vo
           'CODEBUDDY_SENSORY_SPEAK_MODEL=<model>). The chosen model must be reachable, else replies are silent.'
       : `Voice reply uses pinned model '${model}' (CODEBUDDY_SENSORY_SPEAK_MODEL) — it must be pulled/reachable, else replies are empty (silent).`,
   );
-  return { model, routed, ...(voice ? { voice } : {}), speakReady: Boolean(voice), warnings };
+
+  // Voice ACT — spoken commands drive a real agent turn that CAN edit/run, under a posture.
+  const act = env.CODEBUDDY_SENSORY_SPEAK_ACT === 'true';
+  const permissionMode = act
+    ? (env.CODEBUDDY_SENSORY_SPEAK_PERMISSION_MODE || 'plan').toLowerCase()
+    : undefined;
+  if (act) {
+    warnings.push(
+      permissionMode === 'plan'
+        ? "Voice ACT is ON in 'plan' posture — spoken commands run a READ-ONLY agent turn " +
+            '(reads/search only; writes + shell are denied). Safe default.'
+        : `Voice ACT is ON in '${permissionMode}' posture — spoken commands will EDIT FILES / RUN ` +
+            'COMMANDS derived from a possibly-misheard transcript. Static blocklist (rm/mkfs/chaining) ' +
+            'and secret/deploy guard still apply, but git reset --hard / truncate / redirections are NOT ' +
+            "blocked. Use 'plan' unless you mean it. Run the speaking actor in its own process.",
+    );
+  }
+
+  return {
+    model,
+    routed,
+    ...(voice ? { voice } : {}),
+    speakReady: Boolean(voice),
+    act,
+    ...(permissionMode ? { permissionMode } : {}),
+    warnings,
+  };
 }
 
-const SPEAK_SYSTEM_PROMPT =
+export const SPEAK_SYSTEM_PROMPT =
   "Tu es le compagnon robot de Patrice. On te parle à voix haute et tu réponds à voix haute. " +
   "Réponds en français, en UNE à DEUX phrases courtes, naturelles, parlées. " +
   "Pas de markdown, pas de listes, pas de code, pas d'emoji.";
 
 /** A resolved text model for the spoken reply. */
-interface VoiceModelRoute {
+export interface VoiceModelRoute {
   model: string;
   apiKey: string;
   baseURL: string;

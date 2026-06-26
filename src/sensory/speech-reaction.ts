@@ -26,8 +26,9 @@ export interface SpeechReactionOptions {
   onHeard?: (text: string) => void | Promise<void>;
 }
 
-/** Default transcriber: local faster-whisper (base), best-effort, $0. */
-async function defaultTranscribe(wav: string): Promise<string> {
+/** Default transcriber: local faster-whisper (base), best-effort, $0. Exported so the
+ *  push-to-talk CLI path (`buddy voice`) transcribes through the exact same STT as the daemon. */
+export async function transcribeWav(wav: string): Promise<string> {
   const { spawn } = await import('child_process');
   const model = process.env.CODEBUDDY_SPEECH_MODEL ?? 'base';
   const py = [
@@ -50,7 +51,7 @@ export function wireSpeechReaction(options: SpeechReactionOptions = {}): () => v
   const bus = getGlobalEventBus();
   const debounceMs = options.debounceMs ?? Number(process.env.CODEBUDDY_SPEECH_DEBOUNCE_MS ?? 4000);
   const now = options.now ?? (() => Date.now());
-  const transcribe = options.transcriber ?? defaultTranscribe;
+  const transcribe = options.transcriber ?? transcribeWav;
   let lastAt = Number.NEGATIVE_INFINITY;
   let inFlight = false;
 

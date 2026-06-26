@@ -1176,9 +1176,25 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
               const readiness = describeVoiceReadiness();
               // Fail LOUD: a wired-but-silent robot looks broken. Name what to set.
               for (const w of readiness.warnings) logger.warn(`[voice] ${w}`);
-              sensoryTeardown.push(wireSpeechReaction({ onHeard: makeVoiceReply() }));
+              // ACT (opt-in): a spoken command drives a REAL agent turn (can edit/run) under a
+              // permission posture. Default off → today's chatty companion reply.
+              let replyFn;
+              if (readiness.act) {
+                const { makeAgentReply } = await import('../sensory/agent-reply.js');
+                replyFn = makeAgentReply({
+                  permissionMode: (readiness.permissionMode as
+                    | 'plan'
+                    | 'dontAsk'
+                    | 'bypassPermissions') || 'plan',
+                });
+              }
+              sensoryTeardown.push(
+                wireSpeechReaction({ onHeard: makeVoiceReply(replyFn ? { replyFn } : {}) }),
+              );
               logger.info(
-                `Sensory speech reaction: Enabled (speech_end → STT → think[${readiness.model}] → speak` +
+                `Sensory speech reaction: Enabled (speech_end → STT → ${
+                  readiness.act ? `agent[${readiness.permissionMode}]` : `think[${readiness.model}]`
+                } → speak` +
                   `${readiness.speakReady ? `[${readiness.voice}]` : ' — SILENT until CODEBUDDY_TTS_VOICE is set'})`,
               );
             } else {

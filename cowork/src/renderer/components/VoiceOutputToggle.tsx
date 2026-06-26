@@ -16,6 +16,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Volume2, VolumeX } from 'lucide-react';
 import type { VoiceConversationEvent } from '../types';
+import { condenseForSpeech } from '../utils/speech-text';
 
 const STORAGE_KEY = 'cowork.voice.tts.enabled';
 
@@ -97,15 +98,6 @@ export function interruptSpeech(reason: VoiceInterruptionReason = 'manual'): boo
   return hadPlayback;
 }
 
-function cleanForSpeech(text: string): string {
-  return text
-    .replace(/```[\s\S]*?```/g, '')
-    .replace(/`([^`]+)`/g, '$1')
-    .replace(/[*_~#>]/g, '')
-    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
-    .trim();
-}
-
 async function speakViaPiper(text: string): Promise<boolean> {
   const api = window.electronAPI?.voice;
   if (!api?.speak) return false;
@@ -165,7 +157,8 @@ function speakViaBrowser(text: string): void {
  */
 export async function speakText(text: string): Promise<void> {
   if (!isTtsEnabled()) return;
-  const clean = cleanForSpeech(text);
+  // Condense to a spoken-length digest — reading a full markdown answer aloud is unusable.
+  const clean = condenseForSpeech(text);
   if (!clean) return;
   const piperOk = await speakViaPiper(clean);
   if (piperOk) return;

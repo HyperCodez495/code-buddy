@@ -1,12 +1,13 @@
 import React from 'react';
 import { useTranslation } from 'react-i18next';
-import { Clock, FileSearch, Plus, Send, Square, Target, Trash2, Pencil, X } from 'lucide-react';
+import { Clock, FileSearch, Plus, Send, Square, Target, Trash2, Pencil, X, Terminal } from 'lucide-react';
 import { MentionAutocomplete, type MentionItem } from './MentionAutocomplete';
 import { SlashCommandPalette, type SlashCommandItem } from './SlashCommandPalette';
 import { MicButton } from './MicButton';
 import { MemoryEditCard } from './MemoryEditCard';
 import { FileAttachmentChip } from './FileAttachmentChip';
 import type { AttachedFile } from '../utils/file-attachment-helpers';
+import { isVoiceCommandMode, setVoiceCommandMode } from '../utils/speech-text';
 
 export interface MessageComposerProps {
   prompt: string;
@@ -60,7 +61,16 @@ export interface MessageComposerProps {
 
 export function MessageComposer(props: MessageComposerProps) {
   const { t } = useTranslation();
-  
+  // Voice command mode: push-to-talk EXECUTES the transcript (vs. dictation into the composer).
+  const [voiceCommandMode, setVCM] = React.useState<boolean>(isVoiceCommandMode());
+  const toggleVoiceCommandMode = React.useCallback(() => {
+    setVCM((on) => {
+      const next = !on;
+      setVoiceCommandMode(next);
+      return next;
+    });
+  }, []);
+
   return (
     <div
       className="pb-4 pt-2 w-full bg-gradient-to-t from-background via-background to-transparent"
@@ -300,11 +310,39 @@ export function MessageComposer(props: MessageComposerProps) {
             />
 
             <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={toggleVoiceCommandMode}
+                title={
+                  voiceCommandMode
+                    ? t('voice.commandModeOn', 'Voice command mode: speaking executes the instruction')
+                    : t('voice.commandModeOff', 'Dictation mode: speaking fills the box')
+                }
+                aria-pressed={voiceCommandMode}
+                className={`w-9 h-9 rounded-2xl flex items-center justify-center transition-colors ${
+                  voiceCommandMode
+                    ? 'bg-primary/15 text-primary'
+                    : 'text-text-muted hover:bg-background/60'
+                }`}
+              >
+                <Terminal className="w-4 h-4" />
+              </button>
+
               <MicButton
                 language="fr"
+                commandMode={voiceCommandMode}
                 onTranscript={(text) => {
-                  props.setPrompt((current) => (current ? `${current} ${text}` : text));
-                  props.textareaRef.current?.focus();
+                  if (voiceCommandMode) {
+                    // Command mode: execute the transcript as if typed + submitted.
+                    // handleSubmit reads textareaRef.value first, so set it to avoid the
+                    // setState race (setPrompt is async and wouldn't be visible yet).
+                    if (props.textareaRef.current) props.textareaRef.current.value = text;
+                    props.setPrompt(text);
+                    void props.handleSubmit();
+                  } else {
+                    props.setPrompt((current) => (current ? `${current} ${text}` : text));
+                    props.textareaRef.current?.focus();
+                  }
                 }}
               />
 
