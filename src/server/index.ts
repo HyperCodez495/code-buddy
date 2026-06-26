@@ -1299,6 +1299,18 @@ export async function startServer(userConfig: Partial<ServerConfig> = {}): Promi
           logger.warn(`Reminders failed to start: ${err instanceof Error ? err.message : String(err)}`);
         }
       }
+      // Companion presence (opt-in): the conductor that occasionally says one small warm thing when
+      // the moment warrants (check-in / debrief / encouragement / break) and is otherwise silent.
+      // Hard-gated (quiet hours, presence-aware, hourly cap) — see presence-loop.ts.
+      if (process.env.CODEBUDDY_COMPANION_PRESENCE === 'true') {
+        try {
+          const { wirePresenceLoop } = await import('../companion/presence-loop.js');
+          sensoryTeardown.push(wirePresenceLoop());
+          logger.info('Companion presence: Enabled (CODEBUDDY_COMPANION_PRESENCE) — gentle proactive presence, default-silent');
+        } catch (err) {
+          logger.warn(`Companion presence failed to start: ${err instanceof Error ? err.message : String(err)}`);
+        }
+      }
       logger.info(`Auth: ${config.authEnabled ? 'Enabled' : 'Disabled'}`);
       if (!isLoopbackHost(config.host)) {
         logger.warn(
